@@ -10,3 +10,4 @@ local.properties
 *.hprof
 /captures
 .externalNativeBuild/
+CPPlayer/
