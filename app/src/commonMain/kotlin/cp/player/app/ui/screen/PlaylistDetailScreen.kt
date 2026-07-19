@@ -16,10 +16,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -182,6 +185,7 @@ private fun PlaylistDetailContent(
     onTrackClick: (Int) -> Unit,
     onTrackOptions: (cp.player.kmp.music.TrackSummary) -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
@@ -242,10 +246,35 @@ private fun PlaylistDetailContent(
                             )
                         }
                         Spacer(Modifier.height(12.dp))
-                        Button(onClick = onPlayAll, enabled = detail.tracks.isNotEmpty()) {
-                            Icon(Icons.Filled.PlayArrow, null)
-                            Spacer(Modifier.size(8.dp))
-                            Text("播放全部")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = onPlayAll, enabled = detail.tracks.isNotEmpty()) {
+                                Icon(Icons.Filled.PlayArrow, null)
+                                Spacer(Modifier.size(8.dp))
+                                Text("播放全部")
+                            }
+                            var subscribed by remember { mutableStateOf(false) }
+                            FilledTonalButton(
+                                onClick = {
+                                    if (subscribed) return@FilledTonalButton
+                                    scope.launch {
+                                        val ok = runCatching {
+                                            AppModel.api.subscribePlaylist(detail.summary.id, t = 1)
+                                            true
+                                        }.getOrDefault(false)
+                                        if (ok) {
+                                            subscribed = true
+                                            cp.player.app.ui.util.UiEvents.notify("已收藏歌单")
+                                        } else {
+                                            cp.player.app.ui.util.UiEvents.notify("收藏失败")
+                                        }
+                                    }
+                                },
+                            ) {
+                                Icon(
+                                    if (subscribed) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                                    contentDescription = "收藏歌单",
+                                )
+                            }
                         }
                     }
                 }

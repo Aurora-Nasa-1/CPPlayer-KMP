@@ -31,6 +31,22 @@ class HomeScreenModel : ScreenModel {
 
     init { refresh() }
 
+    /** 播放私人 FM：拉取一批 FM 曲目并整体入队。 */
+    fun playPersonalFm() {
+        screenModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { MusicSourceFromApi.getPersonalFm(AppModel.api) }.getOrNull()
+            }
+            val songs = (result as? BackendResult.Success)?.data.orEmpty()
+            if (songs.isEmpty()) {
+                cp.player.app.ui.util.UiEvents.notify("私人FM暂不可用，请稍后再试")
+                return@launch
+            }
+            val provider = AppModel.activeProviderId()
+            AppModel.playback.playQueue(songs.map { "$provider://song/${it.id}" }, startIndex = 0)
+        }
+    }
+
     fun refresh() {
         if (_state.value.loading && _state.value.dailySongs.isNotEmpty()) return
         screenModelScope.launch {

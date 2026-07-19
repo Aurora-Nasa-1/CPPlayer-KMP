@@ -122,7 +122,6 @@ object MusicSourceFromApi {
     }
 
     // ============ 云盘歌曲 ============
-
     /**
      * 解析云盘歌曲列表（user/cloud）。
      *
@@ -141,6 +140,20 @@ object MusicSourceFromApi {
                     ?: (obj["simpleSong"] as? JsonObject)
                     ?: obj
                 inner.toTrackSummary().takeIf { it.id.isNotBlank() }
+            }
+        }
+    }
+
+    // ============ 私人 FM ============
+
+    /** 解析私人 FM 歌曲列表（personal/fm）：`{ data: [...track...] }`。 */
+    fun parseFmSongs(json: JsonElement): MusicResult<List<TrackSummary>> {
+        return json.toMusicResult {
+            val array = (this["data"] as? JsonArray)
+                ?: (this["songs"] as? JsonArray)
+                ?: JsonArray(emptyList())
+            array.mapNotNull { el ->
+                (el as? JsonObject)?.toTrackSummary()?.takeIf { it.id.isNotBlank() }
             }
         }
     }
@@ -202,4 +215,7 @@ object MusicSourceFromApi {
 
     suspend fun getUserCloud(api: MusicApiService, limit: Int = 200, offset: Int = 0): MusicResult<List<TrackSummary>> =
         parseCloudSongs(api.getUserCloud(limit, offset))
+
+    suspend fun getPersonalFm(api: MusicApiService): MusicResult<List<TrackSummary>> =
+        parseFmSongs(api.getPersonalFm())
 }

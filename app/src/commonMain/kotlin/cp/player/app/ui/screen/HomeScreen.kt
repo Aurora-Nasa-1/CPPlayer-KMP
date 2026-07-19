@@ -82,6 +82,7 @@ private fun HomeScreenContent(model: HomeScreenModel) {
     var selectedTrack by remember { mutableStateOf<TrackSummary?>(null) }
     var addToPlaylistTrack by remember { mutableStateOf<TrackSummary?>(null) }
     val likedIds by AppModel.playback.likedIds.collectAsState()
+    val recentTracks by AppModel.recentTracksFlow.collectAsState()
     val scope = rememberCoroutineScope()
     val navigator = LocalNavigator.currentOrThrow
     val provider = AppModel.activeProviderId()
@@ -120,15 +121,7 @@ private fun HomeScreenContent(model: HomeScreenModel) {
                         }
                     }
                 },
-                fmOnPersonalFmClick = {
-                    if (dailySongs.isNotEmpty()) {
-                        scope.launch {
-                            AppModel.playback.playQueue(
-                                dailySongs.map { "$provider://song/${it.id}" }, startIndex = 0,
-                            )
-                        }
-                    }
-                },
+                fmOnPersonalFmClick = model::playPersonalFm,
                 userPlaylists = userPlaylists,
                 onPlaylistClick = { navigator.push(PlaylistDetailScreen(it)) },
             )
@@ -169,14 +162,14 @@ private fun HomeScreenContent(model: HomeScreenModel) {
             }
         }
 
-        if (dailySongs.isNotEmpty()) {
+        if (recentTracks.isNotEmpty()) {
             item {
                 SectionHeader(title = "最近播放") {
                     FilledTonalButton(
                         onClick = {
                             scope.launch {
                                 AppModel.playback.playQueue(
-                                    dailySongs.map { "$provider://song/${it.id}" },
+                                    recentTracks.map { "$provider://song/${it.id}" },
                                     startIndex = 0,
                                 )
                             }
@@ -189,15 +182,15 @@ private fun HomeScreenContent(model: HomeScreenModel) {
             }
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    dailySongs.take(5).forEachIndexed { index, track ->
+                    recentTracks.take(5).forEachIndexed { index, track ->
                         SongItem(
                             track = track,
                             index = index,
-                            total = dailySongs.take(5).size,
+                            total = recentTracks.take(5).size,
                             onClick = {
                                 scope.launch {
                                     AppModel.playback.playQueue(
-                                        dailySongs.map { "$provider://song/${it.id}" }, startIndex = index,
+                                        recentTracks.map { "$provider://song/${it.id}" }, startIndex = index,
                                     )
                                 }
                             },

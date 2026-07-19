@@ -183,6 +183,81 @@ object AppModel {
         runCatching { playback.refreshFavorites() }
     }
 
+    // ============ 最近播放（持久化） ============
+
+    private val KEY_RECENT_TRACKS = "recent_tracks"
+    private val RECENT_LIMIT = 30
+
+    private val _recentTracks = MutableStateFlow(loadRecentTracks())
+    val recentTracksFlow: StateFlow<List<cp.player.kmp.music.TrackSummary>> = _recentTracks.asStateFlow()
+
+    private var historyRecorderStarted = false
+
+    /** 启动播放历史记录（幂等）：监听当前曲目变化，去重后前移并持久化。 */
+    fun startHistoryRecorder() {
+        if (historyRecorderStarted) return
+        historyRecorderStarted = true
+        modelScope.launch {
+            var lastRecordedId: String? = null
+            playback.state.collect { st ->
+                val track = st.currentTrack
+                if (track != null && st.isPlaying && track.id != lastRecordedId) {
+                    lastRecordedId = track.id
+                    recordRecentTrack(track)
+                }
+            }
+        }
+    }
+
+    private fun recordRecentTrack(track: cp.player.kmp.music.TrackSummary) {
+        val updated = (listOf(track) + _recentTracks.value.filter { it.id != track.id })
+            .take(RECENT_LIMIT)
+        _recentTracks.value = updated
+        saveRecentTracks(updated)
+    }
+
+    private fun saveRecentTracks(tracks: List<cp.player.kmp.music.TrackSummary>) {
+        runCatching {
+            val array = kotlinx.serialization.json.buildJsonArray {
+                tracks.forEach { t ->
+                    add(kotlinx.serialization.json.buildJsonObject {
+                        put("id", t.id)
+                        put("name", t.name)
+                        put("artist", t.artist)
+                        put("album", t.album ?: "")
+                        put("coverUrl", t.coverUrl ?: "")
+                        put("durationMs", t.durationMs)
+                    })
+                }
+            }
+            settings.putString(KEY_RECENT_TRACKS, array.toString())
+        }
+    }
+
+    private fun loadRecentTracks(): List<cp.player.kmp.music.TrackSummary> {
+        return runCatching {
+            val raw = settings.getString(KEY_RECENT_TRACKS) ?: return emptyList()
+            val array = kotlinx.serialization.json.Json.parseToJsonElement(raw)
+                as? kotlinx.serialization.json.JsonArray ?: return emptyList()
+            array.mapNotNull { el ->
+                val obj = el as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                fun str(key: String) =
+                    (obj[key] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: ""
+                val id = str("id")
+                if (id.isBlank()) return@mapNotNull null
+                cp.player.kmp.music.TrackSummary(
+                    id = id,
+                    name = str("name"),
+                    artist = str("artist"),
+                    album = str("album").ifBlank { null },
+                    coverUrl = str("coverUrl").ifBlank { null },
+                    durationMs = (obj["durationMs"] as? kotlinx.serialization.json.JsonPrimitive)
+                        ?.let { runCatching { it.content.toLong() }.getOrNull() } ?: 0L,
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
     // ============ Provider 管理（封装 [MusicBackend] 并返回类型安全结果） ============
 
     fun availableProviders(): List<BackendProvider> = backend.getAvailableProviders()
