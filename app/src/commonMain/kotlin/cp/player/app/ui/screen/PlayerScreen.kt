@@ -112,8 +112,8 @@ import kotlin.math.roundToInt
  * - 无 `SyncedLyrics` 第三方库 → 用 KMP `cp.player.kmp.playback.SyncedLyricLine`。
  * - 无 `WindowWidthSizeClass` → 永远走移动布局（即窄屏样式），desktop 与 mobile 同 UI。
  *
- * 三页 HorizontalPager：歌词 / 播放器 / 评论占位。播放器页可下拉关闭。
- * 评论下载/睡眠定时器/推荐相似等高端功能以"待接入"占位出现。
+ * 三页 HorizontalPager：歌词 / 播放器 / 评论。播放器页可下拉关闭。
+ * 已接入：收藏（likeSong）、加入歌单、睡眠定时、不感兴趣、随机播放、评论点赞。
  */
 class PlayerScreen : Screen {
 
@@ -369,9 +369,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                     }
                                 },
                             )
-                            2 -> track?.let {
-                                CommentPage(it.id, "music")
-                            } ?: CommentsPagePlaceholder()
+                            2 -> CommentPage(track.id, "music")
                         }
                     }
                 }
@@ -787,36 +785,6 @@ private fun CommentItem(comment: cp.player.app.ui.model.Comment, onLike: () -> U
                 Modifier.padding(top = 12.dp),
                 thickness = 0.5.dp,
                 color = MaterialTheme.colorScheme.outlineVariant
-            )
-        }
-    }
-}
-
-// ============================== 评论页占位 ==============================
-
-@Composable
-private fun CommentsPagePlaceholder() {
-    Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                Icons.AutoMirrored.Filled.QueueMusic,
-                null,
-                Modifier.size(64.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-            )
-            Spacer(Modifier.height(12.dp))
-            Text(
-                "评论与相似歌曲 — 待接入",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                "本页将在后续版本对接 MusicApiService.getComments。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                textAlign = TextAlign.Center,
             )
         }
     }
