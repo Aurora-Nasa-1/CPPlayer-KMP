@@ -45,6 +45,8 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -183,7 +185,11 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
     // 状态：sheet / 弹窗
     var showQueueSheet by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
+    var showAddToPlaylist by remember { mutableStateOf(false) }
+    var showSleepTimer by remember { mutableStateOf(false) }
     var showTranslation by remember { mutableStateOf(true) }
+    val playerScope = rememberCoroutineScope()
+    val controller = AppModel.playback
 
     // Pager 三页：0=歌词，1=播放器，2=评论
     val pagerState = rememberPagerState(initialPage = 1) { 3 }
@@ -331,7 +337,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                 onSeek = onSeek,
                                 onRepeat = onRepeat,
                                 isFavorite = state.isFavorite,
-                                onLikeClick = { /* 待接入：收藏 */ },
+                                onLikeClick = { playerScope.launch { controller.toggleFavorite() } },
                             )
                             1 -> PlayerPage(
                                 state = state,
@@ -341,10 +347,27 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                 onSkipPrev = onSkipPrev,
                                 onSeek = onSeek,
                                 onRepeat = onRepeat,
-                                onLikeClick = { /* 待接入：收藏 */ },
+                                onShuffle = onShuffle,
+                                onLikeClick = { playerScope.launch { controller.toggleFavorite() } },
                                 onMoreClick = { showMoreMenu = true },
                                 showMoreMenu = showMoreMenu,
                                 onDismissMore = { showMoreMenu = false },
+                                onAddToPlaylist = {
+                                    showMoreMenu = false
+                                    showAddToPlaylist = true
+                                },
+                                onSleepTimer = {
+                                    showMoreMenu = false
+                                    showSleepTimer = true
+                                },
+                                onDislike = {
+                                    showMoreMenu = false
+                                    playerScope.launch {
+                                        runCatching { AppModel.api.dislikeSong(track.id) }
+                                        cp.player.app.ui.util.UiEvents.notify("已标记不感兴趣")
+                                        controller.skipNext()
+                                    }
+                                },
                             )
                             2 -> track?.let {
                                 CommentPage(it.id, "music")
@@ -365,6 +388,23 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             onMove = onMoveQueue,
             onClear = onClearQueue,
             onClose = { showQueueSheet = false },
+        )
+    }
+
+    if (showAddToPlaylist) {
+        cp.player.app.ui.component.AddToPlaylistSheet(
+            trackId = track.id,
+            onDismiss = { showAddToPlaylist = false },
+        )
+    }
+
+    if (showSleepTimer) {
+        cp.player.app.ui.component.SleepTimerDialog(
+            activeRemainingMs = state.sleepTimerRemainingMs,
+            afterTrackActive = state.sleepAfterTrack,
+            onSelect = controller::setSleepTimer,
+            onCancelTimer = controller::cancelSleepTimer,
+            onDismiss = { showSleepTimer = false },
         )
     }
 }
@@ -412,17 +452,10 @@ IconButton(onClick = onRepeat) {
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                IconButton(onClick = onLikeClick) {
-                    AnimatedContent(targetState = state.isFavorite, label = "LikeAnimation") { fav ->
-                        Icon(
-                            imageVector = if (fav) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                            contentDescription = "Like",
-                            modifier = Modifier.size(28.dp),
-                            tint = if (fav) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+                cp.player.app.ui.component.ExpressiveLikeButton(
+                    isFavorite = state.isFavorite,
+                    onClick = onLikeClick,
+                )
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -441,10 +474,14 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
     onSkipPrev: () -> Unit,
     onSeek: (Long) -> Unit,
     onRepeat: () -> Unit,
+    onShuffle: () -> Unit,
     onLikeClick: () -> Unit,
     onMoreClick: () -> Unit,
     showMoreMenu: Boolean,
     onDismissMore: () -> Unit,
+    onAddToPlaylist: () -> Unit,
+    onSleepTimer: () -> Unit,
+    onDislike: () -> Unit,
 ) {
     val track = state.currentTrack ?: return
 
@@ -515,17 +552,10 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                     )
                 )
             }
-            IconButton(onClick = onLikeClick) {
-                AnimatedContent(targetState = state.isFavorite, label = "LikeAnim") { fav ->
-                    Icon(
-                        imageVector = if (fav) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                        contentDescription = "Like",
-                        modifier = Modifier.size(28.dp),
-                        tint = if (fav) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+            cp.player.app.ui.component.ExpressiveLikeButton(
+                isFavorite = state.isFavorite,
+                onClick = onLikeClick,
+            )
         }
 
         // 进度条（含中央音质 chip）
@@ -569,6 +599,13 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                IconButton(onClick = onShuffle) {
+                    Icon(
+                        Icons.Filled.Shuffle, "随机播放", Modifier.size(24.dp),
+                        tint = if (state.shuffleEnabled) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 IconButton(onClick = onRepeat) {
                     val icon = when (state.repeatMode) {
                         RepeatMode.ONE -> Icons.Filled.RepeatOne
@@ -580,17 +617,10 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                IconButton(onClick = onLikeClick) {
-                    AnimatedContent(targetState = state.isFavorite, label = "LikeAnim") { fav ->
-                        Icon(
-                            imageVector = if (fav) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                            contentDescription = "Like",
-                            modifier = Modifier.size(28.dp),
-                            tint = if (fav) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+                cp.player.app.ui.component.ExpressiveLikeButton(
+                    isFavorite = state.isFavorite,
+                    onClick = onLikeClick,
+                )
                 Box {
                     IconButton(onClick = onMoreClick) {
                         Icon(
@@ -602,19 +632,24 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                     DropdownMenu(expanded = showMoreMenu, onDismissRequest = onDismissMore) {
                         DropdownMenuItem(
                             text = { Text("加入歌单") },
-                            onClick = onDismissMore,
+                            onClick = onAddToPlaylist,
                         )
                         DropdownMenuItem(
-                            text = { Text("下载") },
-                            onClick = onDismissMore,
-                        )
-                        DropdownMenuItem(
-                            text = { Text("睡眠定时") },
-                            onClick = onDismissMore,
+                            text = {
+                                Text(
+                                    when {
+                                        state.sleepAfterTrack -> "睡眠定时 · 播完本曲"
+                                        state.sleepTimerRemainingMs != null ->
+                                            "睡眠定时 · ${(state.sleepTimerRemainingMs!! / 60_000L) + 1} 分钟"
+                                        else -> "睡眠定时"
+                                    }
+                                )
+                            },
+                            onClick = onSleepTimer,
                         )
                         DropdownMenuItem(
                             text = { Text("不感兴趣") },
-                            onClick = onDismissMore,
+                            onClick = onDislike,
                         )
                     }
                 }
@@ -703,7 +738,7 @@ private fun CommentPage(id: String, type: String) {
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     items(state.comments) { comment ->
-                        CommentItem(comment)
+                        CommentItem(comment, onLike = { model.toggleLike(comment) })
                     }
                 }
             }
@@ -712,7 +747,7 @@ private fun CommentPage(id: String, type: String) {
 }
 
 @Composable
-private fun CommentItem(comment: cp.player.app.ui.model.Comment) {
+private fun CommentItem(comment: cp.player.app.ui.model.Comment, onLike: () -> Unit) {
     Row(Modifier.fillMaxWidth()) {
         AsyncImage(
             model = comment.avatar,
@@ -729,12 +764,15 @@ private fun CommentItem(comment: cp.player.app.ui.model.Comment) {
                     modifier = Modifier.weight(1f),
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                Icon(
-                    Icons.Outlined.ThumbUp,
-                    contentDescription = null,
-                    modifier = Modifier.size(14.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                androidx.compose.material3.IconButton(onClick = onLike, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        if (comment.liked) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
+                        contentDescription = "点赞",
+                        modifier = Modifier.size(14.dp),
+                        tint = if (comment.liked) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Spacer(Modifier.width(4.dp))
                 Text(
                     comment.likedCount.toString(),

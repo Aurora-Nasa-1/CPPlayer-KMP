@@ -69,6 +69,24 @@ class PlaybackControllerImpl(
     /** 加载世代替换旧任务状态过时写入。 */
     private var loadGeneration = 0
 
+    // ============ 收藏状态 ============
+
+    private val _likedIds = MutableStateFlow<Set<String>>(emptySet())
+    override val likedIds: StateFlow<Set<String>> = _likedIds.asStateFlow()
+
+    /** 收藏列表是否已成功拉取过（避免每次切歌重复请求）。 */
+    private var favoritesLoaded = false
+    private var favoritesLoadingJob: Job? = null
+
+    // ============ 音质 ============
+
+    private var qualityLevel: String = "exhigh"
+
+    // ============ 睡眠定时 ============
+
+    private var sleepTimerJob: Job? = null
+    private var sleepAfterTrack = false
+
     init {
         observePlatform()
     }
@@ -296,6 +314,131 @@ class PlaybackControllerImpl(
         updateState { it.copy(repeatMode = mode) }
     }
 
+    // ============ 收藏 ============
+
+    override suspend fun toggleFavorite() {
+        val mediaId = _queue.getOrNull(_index)?.mediaId ?: return
+        toggleFavoriteFor(mediaId)
+    }
+
+    override suspend fun toggleFavoriteFor(mediaId: String) {
+        val parsed = runCatching { cp.player.kmp.music.CPMediaId.parse(mediaId) }.getOrNull() ?: return
+        if (parsed.providerId == "local") return
+        val id = parsed.resourceId
+        ensureFavoritesLoaded()
+        val currentlyLiked = id in _likedIds.value
+        val target = !currentlyLiked
+        // 乐观更新
+        applyLike(id, target)
+        val ok = runCatching {
+            val json = api.likeSong(id, target)
+            val code = ((json as? kotlinx.serialization.json.JsonObject)
+                ?.get("code") as? kotlinx.serialization.json.JsonPrimitive)
+                ?.let { runCatching { it.content.toInt() }.getOrNull() }
+            code == null || code in listOf(200, 201, 301)
+        }.getOrDefault(false)
+        if (!ok) {
+            // 回滚
+            applyLike(id, currentlyLiked)
+        }
+    }
+
+    override suspend fun refreshFavorites() {
+        favoritesLoaded = false
+        favoritesLoadingJob?.cancel()
+        ensureFavoritesLoadedInternal(force = true)
+    }
+
+    /** 后台确保收藏列表已加载（只触发一次，失败静默）。 */
+    private fun ensureFavoritesLoaded() {
+        if (favoritesLoaded || favoritesLoadingJob?.isActive == true) return
+        favoritesLoadingJob = scope.launch { ensureFavoritesLoadedInternal() }
+    }
+
+    private suspend fun ensureFavoritesLoadedInternal(force: Boolean = false) {
+        if (favoritesLoaded && !force) return
+        runCatching {
+            val status = api.getLoginStatus()
+            val root = (status as? kotlinx.serialization.json.JsonObject) ?: return@runCatching
+            val data = (root["data"] as? kotlinx.serialization.json.JsonObject) ?: root
+            val account = (data["account"] as? kotlinx.serialization.json.JsonObject)
+                ?: (data["profile"] as? kotlinx.serialization.json.JsonObject)
+            val uid = account?.let {
+                (it["id"] as? kotlinx.serialization.json.JsonPrimitive)
+                    ?.let { p -> runCatching { p.content.toLong() }.getOrNull() }
+            }
+            if (uid == null) {
+                // 未登录/登出：清空收藏集合
+                _likedIds.value = emptySet()
+                updateState { s -> s.copy(isFavorite = false) }
+                return@runCatching
+            }
+            val likeJson = api.getLikeList(uid)
+            val likeRoot = (likeJson as? kotlinx.serialization.json.JsonObject) ?: return@runCatching
+            val ids = ((likeRoot["ids"] ?: likeRoot["data"] ?: (likeRoot["data"] as? kotlinx.serialization.json.JsonObject)?.get("ids"))
+                    as? kotlinx.serialization.json.JsonArray)
+                ?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+                ?.toSet()
+                ?: return@runCatching
+            _likedIds.value = ids
+            favoritesLoaded = true
+            syncIsFavorite()
+        }
+    }
+
+    private fun applyLike(id: String, liked: Boolean) {
+        _likedIds.value = if (liked) _likedIds.value + id else _likedIds.value - id
+        syncIsFavorite()
+    }
+
+    /** 把当前曲目收藏态同步进 UI 状态。 */
+    private fun syncIsFavorite() {
+        val mediaId = _queue.getOrNull(_index)?.mediaId ?: return
+        val parsed = runCatching { cp.player.kmp.music.CPMediaId.parse(mediaId) }.getOrNull() ?: return
+        val fav = parsed.resourceId in _likedIds.value
+        updateState { it.copy(isFavorite = fav) }
+    }
+
+    // ============ 音质 ============
+
+    override fun setQuality(level: String) {
+        if (level.isBlank()) return
+        qualityLevel = level
+        updateState { it.copy(qualityLevel = level) }
+    }
+
+    // ============ 睡眠定时 ============
+
+    override fun setSleepTimer(minutes: Int) {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        if (minutes == PlaybackController.SLEEP_AFTER_TRACK) {
+            sleepAfterTrack = true
+            updateState { it.copy(sleepAfterTrack = true, sleepTimerRemainingMs = null) }
+            return
+        }
+        sleepAfterTrack = false
+        var remaining = minutes * 60_000L
+        updateState { it.copy(sleepAfterTrack = false, sleepTimerRemainingMs = remaining) }
+        sleepTimerJob = scope.launch {
+            while (remaining > 0) {
+                kotlinx.coroutines.delay(1_000L)
+                remaining -= 1_000L
+                updateState { it.copy(sleepTimerRemainingMs = remaining.coerceAtLeast(0L)) }
+            }
+            // 到时：暂停并清除定时
+            platform.pause()
+            cancelSleepTimer()
+        }
+    }
+
+    override fun cancelSleepTimer() {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        sleepAfterTrack = false
+        updateState { it.copy(sleepAfterTrack = false, sleepTimerRemainingMs = null) }
+    }
+
     override fun toggleShuffle() {
         _shuffle = !_shuffle
         if (_shuffle) {
@@ -342,6 +485,7 @@ class PlaybackControllerImpl(
 
     override fun release() {
         scrobbleTickJob?.cancel(); scrobbleJob?.cancel(); lyricsJob?.cancel(); loadJob?.cancel()
+        sleepTimerJob?.cancel(); favoritesLoadingJob?.cancel()
         platform.release()
     }
 
@@ -373,7 +517,11 @@ class PlaybackControllerImpl(
                 )
             )
             if (summary == null) return@launch
-            val urlResult = source.getSongUrl(mediaId, level = "exhigh")
+            ensureFavoritesLoaded()
+            emit(_state.value.copy(
+                isFavorite = cp.player.kmp.music.CPMediaId.parse(mediaId).resourceId in _likedIds.value,
+            ))
+            val urlResult = source.getSongUrl(mediaId, level = qualityLevel)
             val songUrl = urlResult.getOrNull()
             if (songUrl == null || songUrl.url.isBlank()) {
                 emit(_state.value.copy(
@@ -401,6 +549,12 @@ class PlaybackControllerImpl(
 
     private fun onTrackEnded() {
         scope.launch {
+            if (sleepAfterTrack) {
+                // 睡眠定时：播完当前后暂停，不再自动续播
+                cancelSleepTimer()
+                updateState { it.copy(isPlaying = false) }
+                return@launch
+            }
             when (_repeat) {
                 RepeatMode.ONE -> {
                     platform.seekTo(0L); platform.play()
@@ -503,6 +657,7 @@ class PlaybackControllerImpl(
                 formatInfo = null,
                 error = null,
                 sourceId = null,
+                isFavorite = false,
             )
         }
     }

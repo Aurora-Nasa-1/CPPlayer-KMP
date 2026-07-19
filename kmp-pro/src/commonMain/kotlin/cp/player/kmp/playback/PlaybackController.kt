@@ -56,6 +56,36 @@ interface PlaybackController {
     fun setRepeatMode(mode: RepeatMode)
     fun toggleShuffle()
 
+    // ============ 收藏 ============
+
+    /** 当前账号已收藏的歌曲 ID 集合（裸资源 ID，非 mediaId）。未登录/未加载时为空集。 */
+    val likedIds: StateFlow<Set<String>>
+
+    /** 切换当前播放曲目的收藏状态（乐观更新，失败自动回滚）。 */
+    suspend fun toggleFavorite()
+
+    /** 切换指定 mediaId 曲目的收藏状态（供列表/弹层使用）。 */
+    suspend fun toggleFavoriteFor(mediaId: String)
+
+    /** 强制重新拉取收藏列表（登录/登出/切换账号后调用）。 */
+    suspend fun refreshFavorites()
+
+    // ============ 音质 ============
+
+    /** 设置在线播放音质等级（standard/exhigh/lossless/hires…），作用于后续加载的曲目。 */
+    fun setQuality(level: String)
+
+    // ============ 睡眠定时 ============
+
+    /**
+     * 设置睡眠定时：[minutes] > 0 表示 N 分钟后自动暂停；
+     * 传 [SLEEP_AFTER_TRACK] 表示播完当前曲目后暂停。
+     */
+    fun setSleepTimer(minutes: Int)
+
+    /** 取消睡眠定时。 */
+    fun cancelSleepTimer()
+
     // ============ 歌词 ============
 
     /**
@@ -68,4 +98,9 @@ interface PlaybackController {
 
     fun setVolume(volume: Float)
     fun release()
+
+    companion object {
+        /** [setSleepTimer] 特殊值：播完当前曲目后暂停。 */
+        const val SLEEP_AFTER_TRACK = 0
+    }
 }

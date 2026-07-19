@@ -24,6 +24,12 @@ data class PlaybackUiState(
     val formatInfo: AudioFormatInfo? = null,
     val error: String? = null,
     val sourceId: String? = null,
-    /** 是否被收藏（视觉用；当前实现永远是 false，留给后续接入 likeSong）。 */
+    /** 是否被收藏（接入 likeSong；未登录时恒为 false）。 */
     val isFavorite: Boolean = false,
+    /** 当前在线播放音质等级（standard/exhigh/lossless/hires…）。 */
+    val qualityLevel: String = "exhigh",
+    /** 睡眠定时剩余毫秒；null 表示未设置。 */
+    val sleepTimerRemainingMs: Long? = null,
+    /** 睡眠定时模式为"播完当前曲目后暂停"。 */
+    val sleepAfterTrack: Boolean = false,
 )

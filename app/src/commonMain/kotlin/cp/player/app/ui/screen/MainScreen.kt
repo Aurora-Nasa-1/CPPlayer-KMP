@@ -85,9 +85,21 @@ class MainScreen : Screen {
         }
         val playbackState by AppModel.playback.state.collectAsState()
         val controller = AppModel.playback
+        val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
         val selectTab: (Int) -> Unit = { index ->
             if (index !in visitedTabs) visitedTabs.add(index)
             selectedIndex = index
+        }
+
+        // 全局 Snackbar：收集各 Screen/ScreenModel 发出的操作反馈
+        androidx.compose.runtime.LaunchedEffect(Unit) {
+            cp.player.app.ui.util.UiEvents.messages.collect { message ->
+                snackbarHostState.showSnackbar(
+                    message,
+                    withDismissAction = true,
+                    duration = androidx.compose.material3.SnackbarDuration.Short,
+                )
+            }
         }
 
         var isPlayerExpanded by rememberSaveable { mutableStateOf(false) }
@@ -137,6 +149,20 @@ class MainScreen : Screen {
                     modifier = Modifier
                         .fillMaxSize()
                         .background(Color.Black.copy(alpha = expandProgress * 0.3f))
+                )
+            }
+
+            // 全局 Snackbar（操作反馈）
+            androidx.compose.material3.SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter)
+                    .padding(bottom = if (playbackState.currentTrack != null) 180.dp else 96.dp),
+            ) { data ->
+                androidx.compose.material3.Snackbar(
+                    snackbarData = data,
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                    containerColor = MaterialTheme.colorScheme.inverseSurface,
+                    contentColor = MaterialTheme.colorScheme.inverseOnSurface,
                 )
             }
 
@@ -220,11 +246,12 @@ private fun AppTopBar(title: String, navigator: cafe.adriel.voyager.navigator.Na
                 onClick = { navigator?.push(SettingsScreen()) },
                 modifier = Modifier.padding(end = 8.dp)
             ) {
-                val avatarUrl = "" // TODO: 从 AppModel 获取当前用户头像
-                if (avatarUrl.isNotEmpty()) {
+                val profile by AppModel.userProfileFlow.collectAsState()
+                val avatarUrl = profile?.avatarUrl
+                if (!avatarUrl.isNullOrBlank()) {
                     AsyncImage(
                         model = avatarUrl,
-                        contentDescription = "User Avatar",
+                        contentDescription = "用户头像",
                         modifier = Modifier.size(32.dp).clip(CircleShape),
                         contentScale = ContentScale.Crop
                     )

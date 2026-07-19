@@ -337,6 +337,7 @@ class LoginScreenModel : ScreenModel {
                     if (!cookie.isNullOrEmpty()) AppModel.cookieStorage.saveCookie(providerId(), cookie)
                     isLogged.value = true
                     message.value = "扫码登录成功"
+                    runCatching { AppModel.refreshUserProfile() }
                     return
                 }
                 800 -> {
@@ -401,6 +402,7 @@ class LoginScreenModel : ScreenModel {
             AppModel.cookieStorage.clear(providerId())
             isLogged.value = false
             message.value = "已退出登录"
+            runCatching { AppModel.refreshUserProfile() }
         }
     }
 
@@ -423,6 +425,7 @@ class LoginScreenModel : ScreenModel {
             if (!cookie.isNullOrEmpty()) AppModel.cookieStorage.saveCookie(providerId(), cookie)
             isLogged.value = true
             message.value = "登录成功"
+            screenModelScope.launch { runCatching { AppModel.refreshUserProfile() } }
         } else {
             message.value = "登录失败 code=$code"
         }

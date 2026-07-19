@@ -26,6 +26,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +64,9 @@ class PlaylistDetailScreen(private val playlist: PlaylistSummary) : Screen {
         var loading by remember(playlist.id) { mutableStateOf(true) }
         var error by remember(playlist.id) { mutableStateOf<String?>(null) }
         var reloadKey by remember { mutableStateOf(0) }
+        var selectedTrack by remember { mutableStateOf<cp.player.kmp.music.TrackSummary?>(null) }
+        var addToPlaylistTrack by remember { mutableStateOf<cp.player.kmp.music.TrackSummary?>(null) }
+        val likedIds by AppModel.playback.likedIds.collectAsState()
 
         LaunchedEffect(playlist.id, reloadKey) {
             loading = true
@@ -130,8 +134,43 @@ class PlaylistDetailScreen(private val playlist: PlaylistSummary) : Screen {
                             )
                         }
                     },
+                    onTrackOptions = { selectedTrack = it },
                 )
             }
+        }
+
+        selectedTrack?.let { track ->
+            cp.player.app.ui.component.SongOptionsSheet(
+                songName = track.name,
+                artistName = track.artist,
+                isFavorite = track.id in likedIds,
+                isDownloaded = false,
+                onDismiss = { selectedTrack = null },
+                onPlay = {
+                    scope.launch {
+                        AppModel.playback.playQueue(listOf("$provider://song/${track.id}"), startIndex = 0)
+                    }
+                },
+                onToggleFavorite = {
+                    scope.launch {
+                        val target = track.id !in likedIds
+                        AppModel.playback.toggleFavoriteFor("$provider://song/${track.id}")
+                        cp.player.app.ui.util.UiEvents.notify(if (target) "已收藏" else "已取消收藏")
+                    }
+                },
+                onAddToQueue = {
+                    scope.launch { AppModel.playback.addToQueue("$provider://song/${track.id}") }
+                    cp.player.app.ui.util.UiEvents.notify("已加入播放队列")
+                },
+                onAddToPlaylist = { addToPlaylistTrack = track },
+            )
+        }
+
+        addToPlaylistTrack?.let { track ->
+            cp.player.app.ui.component.AddToPlaylistSheet(
+                trackId = track.id,
+                onDismiss = { addToPlaylistTrack = null },
+            )
         }
     }
 }
@@ -141,6 +180,7 @@ private fun PlaylistDetailContent(
     detail: PlaylistDetail,
     onPlayAll: () -> Unit,
     onTrackClick: (Int) -> Unit,
+    onTrackOptions: (cp.player.kmp.music.TrackSummary) -> Unit,
 ) {
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -224,6 +264,7 @@ private fun PlaylistDetailContent(
                     index = index,
                     total = detail.tracks.size,
                     onClick = { onTrackClick(index) },
+                    onOptionsClick = { onTrackOptions(track) },
                 )
             }
         }

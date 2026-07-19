@@ -16,3 +16,5 @@ actual fun openUrl(url: String) {
         }
     } catch (_: Exception) {}
 }
+
+actual fun clearImageCache(): Boolean = true

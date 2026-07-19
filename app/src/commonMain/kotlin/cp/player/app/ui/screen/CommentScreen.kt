@@ -66,7 +66,7 @@ class CommentScreen(val id: String, val type: String = "music") : Screen {
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             items(state.comments) { comment ->
-                                CommentItem(comment)
+                                CommentItem(comment, onLike = { model.toggleLike(comment) })
                             }
                         }
                     }
@@ -76,7 +76,7 @@ class CommentScreen(val id: String, val type: String = "music") : Screen {
     }
 
     @Composable
-    private fun CommentItem(comment: Comment) {
+    private fun CommentItem(comment: Comment, onLike: () -> Unit) {
         Row(Modifier.fillMaxWidth()) {
             AsyncImage(
                 model = comment.avatar,
@@ -92,7 +92,7 @@ class CommentScreen(val id: String, val type: String = "music") : Screen {
                         style = MaterialTheme.typography.titleSmall,
                         modifier = Modifier.weight(1f)
                     )
-                    IconButton(onClick = { /* TODO */ }, modifier = Modifier.size(32.dp)) {
+                    IconButton(onClick = onLike, modifier = Modifier.size(32.dp)) {
                         Icon(
                             if (comment.liked) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
                             contentDescription = null,

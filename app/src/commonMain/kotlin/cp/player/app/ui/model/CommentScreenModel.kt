@@ -64,4 +64,23 @@ class CommentScreenModel(val id: String, val type: String) : ScreenModel {
             }
         }
     }
+
+    /** 点赞/取消点赞评论（乐观更新，失败回滚）。 */
+    fun toggleLike(comment: Comment) {
+        val target = !comment.liked
+        updateComment(comment.copy(liked = target, likedCount = comment.likedCount + if (target) 1 else -1))
+        screenModelScope.launch {
+            val ok = runCatching {
+                AppModel.api.likeComment(id, comment.id, type, target)
+                true
+            }.getOrDefault(false)
+            if (!ok) updateComment(comment)
+        }
+    }
+
+    private fun updateComment(updated: Comment) {
+        _state.value = _state.value.copy(
+            comments = _state.value.comments.map { if (it.id == updated.id) updated else it }
+        )
+    }
 }

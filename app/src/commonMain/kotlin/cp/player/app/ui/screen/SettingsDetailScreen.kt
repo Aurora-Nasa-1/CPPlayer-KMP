@@ -11,6 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -21,6 +22,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,7 +51,7 @@ class SettingsDetailScreen : Screen {
         val dynAvailable = supportsDynamicColor()
 
         LegacyPageScaffold(
-            title = "账号与偏好",
+            title = "偏好设置",
             navigationIcon = {
                 IconButton(onClick = { navigator.pop() }) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
@@ -117,7 +119,65 @@ class SettingsDetailScreen : Screen {
 
                 Spacer(Modifier.height(24.dp))
                 Text(
-                    "提示：切换主题即时生效，无需重启。",
+                    "播放",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+
+                val quality by AppModel.playbackQualityFlow.collectAsState()
+                LegacyListItem(
+                    index = 0,
+                    total = 1,
+                    onClick = null,
+                    headlineContent = { Text("在线播放音质") },
+                    supportingContent = {
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            AppModel.qualityOptions.forEach { (level, label) ->
+                                FilterChip(
+                                    selected = quality == level,
+                                    onClick = { AppModel.setPlaybackQuality(level) },
+                                    label = { Text(label) },
+                                )
+                            }
+                        }
+                    },
+                )
+
+                Spacer(Modifier.height(24.dp))
+                Text(
+                    "存储",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+
+                LegacyListItem(
+                    index = 0,
+                    total = 1,
+                    onClick = {
+                        val ok = cp.player.app.platform.clearImageCache()
+                        cp.player.app.ui.util.UiEvents.notify(
+                            if (ok) "图片缓存已清理" else "缓存清理失败"
+                        )
+                    },
+                    headlineContent = { Text("清理图片缓存") },
+                    supportingContent = { Text("释放封面等图片占用的缓存空间") },
+                    trailingContent = {
+                        Icon(
+                            Icons.Filled.CleaningServices,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                )
+
+                Spacer(Modifier.height(24.dp))
+                Text(
+                    "提示：切换主题与音质即时生效，无需重启。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

@@ -79,24 +79,9 @@ private fun SettingsScreenContent() {
                 ) { navigator.push(LoginScreen()) },
                 SettingsEntry(
                     Icons.Filled.ManageAccounts,
-                    "外观设置",
-                    "主题模式、动态取色、纯黑模式",
+                    "偏好设置",
+                    "主题、播放音质、缓存清理",
                 ) { navigator.push(SettingsDetailScreen()) },
-            ),
-        )
-        SettingsSection(
-            title = "播放与下载",
-            entries = listOf(
-                SettingsEntry(
-                    Icons.Filled.Notifications,
-                    "通知栏控制",
-                    "显示媒体控制、进度条支持",
-                ) { /* TODO */ },
-                SettingsEntry(
-                    Icons.Filled.Download,
-                    "下载管理",
-                    "并行下载数、存储路径、音质选择",
-                ) { /* TODO */ },
             ),
         )
         SettingsSection(
@@ -107,16 +92,6 @@ private fun SettingsScreenContent() {
                     "API 健康监控",
                     "查看调用状态、日志与回退信息",
                 ) { navigator.push(HealthScreen()) },
-            ),
-        )
-        SettingsSection(
-            title = "数据与清理",
-            entries = listOf(
-                SettingsEntry(
-                    Icons.Filled.CleaningServices,
-                    "缓存管理",
-                    "清理图片缓存、临时文件",
-                ) { /* TODO */ },
             ),
         )
         SettingsSection(

@@ -31,3 +31,10 @@ expect fun isPackageInstalled(packageName: String): Boolean
  * @param url 要打开的链接
  */
 expect fun openUrl(url: String)
+
+/**
+ * 清空应用图片缓存（Coil 内存 + 磁盘）。
+ *
+ * @return 是否执行了清理
+ */
+expect fun clearImageCache(): Boolean

@@ -80,6 +80,8 @@ private fun HomeScreenContent(model: HomeScreenModel) {
     val loading = state.loading
     val error = state.error
     var selectedTrack by remember { mutableStateOf<TrackSummary?>(null) }
+    var addToPlaylistTrack by remember { mutableStateOf<TrackSummary?>(null) }
+    val likedIds by AppModel.playback.likedIds.collectAsState()
     val scope = rememberCoroutineScope()
     val navigator = LocalNavigator.currentOrThrow
     val provider = AppModel.activeProviderId()
@@ -235,7 +237,7 @@ private fun HomeScreenContent(model: HomeScreenModel) {
         SongOptionsSheet(
             songName = track.name,
             artistName = track.artist,
-            isFavorite = false,
+            isFavorite = track.id in likedIds,
             isDownloaded = false,
             onDismiss = { selectedTrack = null },
             onPlay = {
@@ -243,10 +245,25 @@ private fun HomeScreenContent(model: HomeScreenModel) {
                     AppModel.playback.playQueue(listOf("$provider://song/${track.id}"), startIndex = 0)
                 }
             },
-            onToggleFavorite = { },
+            onToggleFavorite = {
+                scope.launch {
+                    val target = track.id !in likedIds
+                    AppModel.playback.toggleFavoriteFor("$provider://song/${track.id}")
+                    cp.player.app.ui.util.UiEvents.notify(if (target) "已收藏" else "已取消收藏")
+                }
+            },
             onAddToQueue = {
                 scope.launch { AppModel.playback.addToQueue("$provider://song/${track.id}") }
+                cp.player.app.ui.util.UiEvents.notify("已加入播放队列")
             },
+            onAddToPlaylist = { addToPlaylistTrack = track },
+        )
+    }
+
+    addToPlaylistTrack?.let { track ->
+        cp.player.app.ui.component.AddToPlaylistSheet(
+            trackId = track.id,
+            onDismiss = { addToPlaylistTrack = null },
         )
     }
 }

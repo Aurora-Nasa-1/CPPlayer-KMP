@@ -99,3 +99,15 @@ actual fun openUrl(url: String) {
         ctx.startActivity(intent)
     } catch (_: Exception) {}
 }
+
+actual fun clearImageCache(): Boolean {
+    val ctx = ctxOrNull ?: return false
+    return try {
+        val loader = coil3.SingletonImageLoader.get(ctx)
+        loader.memoryCache?.clear()
+        loader.diskCache?.clear()
+        true
+    } catch (_: Exception) {
+        false
+    }
+}

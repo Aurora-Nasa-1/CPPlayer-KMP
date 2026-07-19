@@ -2,6 +2,7 @@ package cp.player.app.ui.component
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,11 +53,8 @@ import kotlinx.coroutines.launch
  * 队列抽屉（KMP 等效原项目 `QueueBottomSheet`）。
  *
  * ModalBottomSheet 内含 LazyList：每行显示封面/标题/歌手，点击播放该位置；
- * 右侧 More 按钮未接入（保留以维持视觉一致）。
- * 底部工具行：定位当前 / 保存为歌单（占位）/ 清空。
- *
- * 拖拽重排暂未在 KMP 实现（`PlaybackController.moveQueueItem` 已暴露），
- * 视觉上仍保留 Drag handle 图标，但点击无副作用——后续可接入 `detectDragGesturesAfterLongPress`。
+ * 右侧 More 按钮可从队列移除；长按 Drag handle 拖拽重排（[onMove]）。
+ * 底部工具行：定位当前 / 保存为歌单 / 清空。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,6 +70,7 @@ fun QueueBottomSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    var showSaveDialog by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onClose,
@@ -98,20 +98,6 @@ fun QueueBottomSheet(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.clickable { /* All Songs — 待接入 */ },
-                    ) {
-                        Row(
-                            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null, Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("All", style = MaterialTheme.typography.labelMedium)
-                        }
-                    }
                 }
 
                 Spacer(Modifier.height(8.dp))
@@ -127,6 +113,11 @@ fun QueueBottomSheet(
                             item = item,
                             isCurrent = isCurrent,
                             onPlay = { onPlayAt(i) },
+                            onRemove = { onRemove(i) },
+                            onDragBy = { dir ->
+                                val target = i + dir
+                                if (target in queue.indices) onMove(i, target)
+                            },
                         )
                     }
                 }
@@ -155,7 +146,7 @@ fun QueueBottomSheet(
                             }) {
                                 Icon(Icons.Filled.LocationSearching, "定位当前")
                             }
-                            IconButton(onClick = { /* 保存为歌单 — 待接入 */ }) {
+                            IconButton(onClick = { showSaveDialog = true }) {
                                 Icon(Icons.AutoMirrored.Filled.PlaylistAdd, "保存为歌单")
                             }
                             IconButton(onClick = onClear) {
@@ -167,6 +158,27 @@ fun QueueBottomSheet(
             }
         }
     }
+
+    if (showSaveDialog) {
+        CreatePlaylistDialog(
+            onDismiss = { showSaveDialog = false },
+            onCreated = { newId ->
+                showSaveDialog = false
+                if (newId != null) {
+                    scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                        val ids = queue.mapNotNull {
+                            runCatching { cp.player.kmp.music.CPMediaId.parse(it.mediaId).resourceId }.getOrNull()
+                        }.filter { it.isNotBlank() }
+                        val ok = ids.isNotEmpty() && runCatching {
+                            cp.player.app.AppModel.api.addTracksToPlaylist(newId, ids)
+                        }.isSuccess
+                        if (ok) cp.player.app.ui.util.UiEvents.notify("队列已保存为歌单")
+                        else cp.player.app.ui.util.UiEvents.notify("保存歌单失败")
+                    }
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -174,9 +186,14 @@ private fun QueueRow(
     item: QueueItem,
     isCurrent: Boolean,
     onPlay: () -> Unit,
+    onRemove: () -> Unit,
+    onDragBy: (Int) -> Unit,
 ) {
     val bg = if (isCurrent) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+    var showMenu by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    var dragAccum by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0f) }
 
     Surface(
         Modifier.fillMaxWidth(),
@@ -189,9 +206,24 @@ private fun QueueRow(
         ) {
             Icon(
                 Icons.Filled.DragIndicator,
-                "拖拽重排（暂未接入）",
+                "长按拖拽重排",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 4.dp),
+                modifier = Modifier
+                    .padding(horizontal = 4.dp)
+                    .pointerInput(Unit) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = { dragAccum = 0f },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                dragAccum += dragAmount.y
+                                val threshold = with(density) { 72.dp.toPx() }
+                                while (dragAccum > threshold) { onDragBy(1); dragAccum -= threshold }
+                                while (dragAccum < -threshold) { onDragBy(-1); dragAccum += threshold }
+                            },
+                            onDragEnd = { dragAccum = 0f },
+                            onDragCancel = { dragAccum = 0f },
+                        )
+                    },
             )
             Spacer(Modifier.width(4.dp))
             Row(
@@ -239,8 +271,22 @@ private fun QueueRow(
                     )
                 }
             }
-            IconButton(onClick = { /* row options — 待接入 */ }) {
-                Icon(Icons.Filled.MoreVert, "更多")
+            Box {
+                IconButton(onClick = { showMenu = true }) {
+                    Icon(Icons.Filled.MoreVert, "更多")
+                }
+                androidx.compose.material3.DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false },
+                ) {
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("从队列移除") },
+                        onClick = {
+                            showMenu = false
+                            onRemove()
+                        },
+                    )
+                }
             }
             if (isCurrent) {
                 Spacer(Modifier.width(8.dp))

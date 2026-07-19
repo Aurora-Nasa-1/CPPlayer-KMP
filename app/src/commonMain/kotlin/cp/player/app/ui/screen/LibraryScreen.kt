@@ -30,9 +30,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.rounded.AutoGraph
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CloudQueue
-import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -78,14 +77,14 @@ private data class FilterTab(val label: String, val icon: ImageVector)
 private fun LibraryScreenContent(model: LibraryScreenModel) {
     val state by model.state.collectAsState()
     var selectedPlaylist by remember { mutableStateOf<PlaylistSummary?>(null) }
+    var confirmDelete by remember { mutableStateOf<PlaylistSummary?>(null) }
+    var showCreateDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val navigator = LocalNavigator.currentOrThrow
 
     val filters = listOf(
         FilterTab("歌单", Icons.Rounded.QueueMusic),
-        FilterTab("下载", Icons.Rounded.DownloadDone),
         FilterTab("云盘", Icons.Rounded.CloudQueue),
-        FilterTab("Live", Icons.Rounded.AutoGraph),
     )
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { filters.size })
 
@@ -96,6 +95,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
             onFilterSelected = { index ->
                 scope.launch { pagerState.animateScrollToPage(index) }
             },
+            onCreatePlaylist = { showCreateDialog = true },
         )
 
         Surface(
@@ -117,9 +117,15 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
                         onPlaylistClick = { navigator.push(PlaylistDetailScreen(it)) },
                         onPlaylistOptions = { selectedPlaylist = it },
                     )
-                    1 -> PlaceholderTab("下载管理", "下载的歌曲将在此显示。")
-                    2 -> PlaceholderTab("云盘歌曲", "登录后可查看云盘歌曲。")
-                    3 -> PlaceholderTab("Live Sort", "实时排序功能。")
+                    1 -> CloudTab(
+                        songs = state.cloudSongs,
+                        loading = state.cloudLoading,
+                        error = state.cloudError,
+                        loaded = state.cloudLoaded,
+                        onLoad = { model.loadCloud() },
+                        onRetry = { model.loadCloud(force = true) },
+                        onSongClick = model::playCloud,
+                    )
                 }
             }
         }
@@ -128,7 +134,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
     selectedPlaylist?.let { playlist ->
         PlaylistOptionsSheet(
             playlistName = playlist.name,
-            isOwner = true,
+            isOwner = model.isOwner(playlist),
             onDismiss = { selectedPlaylist = null },
             onPlay = {
                 model.play(playlist)
@@ -136,7 +142,94 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
             onAddToQueue = {
                 model.play(playlist, addOnly = true)
             },
+            onDelete = {
+                confirmDelete = playlist
+            },
         )
+    }
+
+    confirmDelete?.let { playlist ->
+        val owner = model.isOwner(playlist)
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmDelete = null },
+            title = { Text(if (owner) "删除歌单" else "取消收藏") },
+            text = {
+                Text(
+                    if (owner) "确定删除「${playlist.name}」吗？此操作不可恢复。"
+                    else "确定取消收藏「${playlist.name}」吗？"
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        model.deleteOrUnsubscribe(playlist)
+                        confirmDelete = null
+                    },
+                ) { Text("确定", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmDelete = null }) {
+                    Text("取消")
+                }
+            },
+        )
+    }
+
+    if (showCreateDialog) {
+        cp.player.app.ui.component.CreatePlaylistDialog(
+            onDismiss = { showCreateDialog = false },
+            onCreated = { created ->
+                showCreateDialog = false
+                if (created != null) model.refresh()
+            },
+        )
+    }
+}
+
+@Composable
+private fun CloudTab(
+    songs: List<cp.player.kmp.music.TrackSummary>,
+    loading: Boolean,
+    error: String?,
+    loaded: Boolean,
+    onLoad: () -> Unit,
+    onRetry: () -> Unit,
+    onSongClick: (Int) -> Unit,
+) {
+    androidx.compose.runtime.LaunchedEffect(Unit) { onLoad() }
+    when {
+        loading -> StateSurface(Modifier.padding(16.dp)) {
+            ContentState(title = "正在加载云盘", message = "正在同步云盘歌曲", loading = true)
+        }
+        error != null -> StateSurface(Modifier.padding(16.dp)) {
+            ContentState(
+                title = "云盘加载失败",
+                message = error,
+                error = true,
+                actionLabel = "重试",
+                onAction = onRetry,
+            )
+        }
+        songs.isEmpty() -> StateSurface(Modifier.padding(16.dp)) {
+            ContentState(
+                title = "云盘空空如也",
+                message = if (loaded) "把歌曲上传到云盘后会显示在这里" else "登录后可查看云盘歌曲",
+            )
+        }
+        else -> LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            items(songs.size) { index ->
+                cp.player.app.ui.component.SongItem(
+                    track = songs[index],
+                    index = index,
+                    total = songs.size,
+                    onClick = { onSongClick(index) },
+                )
+            }
+        }
     }
 }
 
@@ -145,6 +238,7 @@ private fun LibraryTopFilters(
     filters: List<FilterTab>,
     selectedIndex: Int,
     onFilterSelected: (Int) -> Unit,
+    onCreatePlaylist: () -> Unit,
 ) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
@@ -191,6 +285,18 @@ private fun LibraryTopFilters(
                     }
                 }
             }
+        }
+        // 新建歌单按钮
+        Surface(
+            onClick = onCreatePlaylist,
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+        ) {
+            Icon(
+                Icons.Rounded.Add, "新建歌单",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(10.dp).size(20.dp),
+            )
         }
     }
 }

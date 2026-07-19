@@ -12,6 +12,10 @@ import cp.player.kmp.util.SettingsStorage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.longOrNull
 
 /**
  * 应用顶层服务定位器。
@@ -68,6 +72,7 @@ object AppModel {
     private val KEY_THEME_MODE = "theme_mode"
     private val KEY_DYNAMIC_COLOR = "dynamic_color"
     private val KEY_PURE_BLACK = "pure_black"
+    private val KEY_PLAYBACK_QUALITY = "playback_quality"
 
     private val _themeMode = MutableStateFlow(themeMode())
     val themeModeFlow: StateFlow<cp.player.app.ui.theme.ThemeMode> = _themeMode.asStateFlow()
@@ -97,6 +102,85 @@ object AppModel {
     fun setPureBlack(enabled: Boolean) {
         settings.putString(KEY_PURE_BLACK, enabled.toString())
         _pureBlack.value = enabled
+    }
+
+    // ============ 播放音质（持久化） ============
+
+    /** 可选在线音质等级（level → 展示名）。 */
+    val qualityOptions: List<Pair<String, String>> = listOf(
+        "standard" to "标准",
+        "exhigh" to "极高",
+        "lossless" to "无损",
+        "hires" to "Hi-Res",
+    )
+
+    private val _playbackQuality = MutableStateFlow(playbackQuality())
+    val playbackQualityFlow: StateFlow<String> = _playbackQuality.asStateFlow()
+
+    fun playbackQuality(): String = settings.getString(KEY_PLAYBACK_QUALITY) ?: "exhigh"
+
+    /** 设置在线播放音质并立即同步到播放控制器（作用于后续加载的曲目）。 */
+    fun setPlaybackQuality(level: String) {
+        settings.putString(KEY_PLAYBACK_QUALITY, level)
+        _playbackQuality.value = level
+        runCatching { playback.setQuality(level) }
+    }
+
+    /** 启动时把持久化音质同步给播放控制器。 */
+    fun syncPlaybackQuality() {
+        runCatching { playback.setQuality(playbackQuality()) }
+    }
+
+    // ============ 当前用户资料 ============
+
+    data class UserProfile(
+        val uid: Long,
+        val nickname: String,
+        val avatarUrl: String,
+    )
+
+    private val _userProfile = MutableStateFlow<UserProfile?>(null)
+    val userProfileFlow: StateFlow<UserProfile?> = _userProfile.asStateFlow()
+
+    private var profileRefreshJob: kotlinx.coroutines.Job? = null
+
+    /** AppModel 内部协程域（资料/收藏刷新等后台任务）。 */
+    private val modelScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default
+    )
+
+    /**
+     * 拉取当前登录用户资料（uid/昵称/头像），并顺带刷新收藏列表。
+     * 未登录时清空资料。可在 App 启动、登录成功、登出后调用。
+     */
+    fun refreshUserProfile() {
+        profileRefreshJob?.cancel()
+        profileRefreshJob = modelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val profile = runCatching {
+                val status = api.getLoginStatus()
+                val root = status as? kotlinx.serialization.json.JsonObject ?: return@runCatching null
+                val data = (root["data"] as? kotlinx.serialization.json.JsonObject) ?: root
+                val account = (data["account"] as? kotlinx.serialization.json.JsonObject)
+                val prof = (data["profile"] as? kotlinx.serialization.json.JsonObject) ?: account
+                val uid = (account?.get("id") ?: prof?.get("userId"))
+                    ?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.longOrNull }
+                    ?: return@runCatching null
+                UserProfile(
+                    uid = uid,
+                    nickname = (prof?.get("nickname") as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "",
+                    avatarUrl = (prof?.get("avatarUrl") as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "",
+                )
+            }.getOrNull()
+            _userProfile.value = profile
+            // 收藏列表与账号绑定，资料刷新后同步刷新
+            runCatching { playback.refreshFavorites() }
+        }
+    }
+
+    /** 清空当前用户资料（登出后调用）。 */
+    fun clearUserProfile() {
+        _userProfile.value = null
+        runCatching { playback.refreshFavorites() }
     }
 
     // ============ Provider 管理（封装 [MusicBackend] 并返回类型安全结果） ============

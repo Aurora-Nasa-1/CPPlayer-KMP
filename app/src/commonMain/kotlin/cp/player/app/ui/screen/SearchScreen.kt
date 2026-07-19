@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
@@ -56,6 +57,13 @@ class SearchScreen : Screen {
         val state by model.state.collectAsState()
         val scope = rememberCoroutineScope()
         val provider = AppModel.activeProviderId()
+        val likedIds by AppModel.playback.likedIds.collectAsState()
+        var selectedTrack by androidx.compose.runtime.remember {
+            androidx.compose.runtime.mutableStateOf<cp.player.kmp.music.TrackSummary?>(null)
+        }
+        var addToPlaylistTrack by androidx.compose.runtime.remember {
+            androidx.compose.runtime.mutableStateOf<cp.player.kmp.music.TrackSummary?>(null)
+        }
 
         Column(Modifier.fillMaxSize()) {
             OutlinedTextField(
@@ -172,12 +180,47 @@ class SearchScreen : Screen {
                                             )
                                         }
                                     },
+                                    onOptionsClick = { selectedTrack = track },
                                 )
                             }
                         }
                     }
                 }
             }
+        }
+
+        selectedTrack?.let { track ->
+            cp.player.app.ui.component.SongOptionsSheet(
+                songName = track.name,
+                artistName = track.artist,
+                isFavorite = track.id in likedIds,
+                isDownloaded = false,
+                onDismiss = { selectedTrack = null },
+                onPlay = {
+                    scope.launch {
+                        AppModel.playback.playQueue(listOf("$provider://song/${track.id}"), startIndex = 0)
+                    }
+                },
+                onToggleFavorite = {
+                    scope.launch {
+                        val target = track.id !in likedIds
+                        AppModel.playback.toggleFavoriteFor("$provider://song/${track.id}")
+                        cp.player.app.ui.util.UiEvents.notify(if (target) "已收藏" else "已取消收藏")
+                    }
+                },
+                onAddToQueue = {
+                    scope.launch { AppModel.playback.addToQueue("$provider://song/${track.id}") }
+                    cp.player.app.ui.util.UiEvents.notify("已加入播放队列")
+                },
+                onAddToPlaylist = { addToPlaylistTrack = track },
+            )
+        }
+
+        addToPlaylistTrack?.let { track ->
+            cp.player.app.ui.component.AddToPlaylistSheet(
+                trackId = track.id,
+                onDismiss = { addToPlaylistTrack = null },
+            )
         }
     }
 }

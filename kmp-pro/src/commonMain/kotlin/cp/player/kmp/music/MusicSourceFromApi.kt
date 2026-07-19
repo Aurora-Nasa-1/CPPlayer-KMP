@@ -121,6 +121,30 @@ object MusicSourceFromApi {
         }
     }
 
+    // ============ 云盘歌曲 ============
+
+    /**
+     * 解析云盘歌曲列表（user/cloud）。
+     *
+     * 兼容两种返回形态：
+     * - `{ data: [{ songId, simpleSong/song: {...} }] }`（官方云盘）
+     * - `{ data: [...track...] }`（直接曲目对象）
+     */
+    fun parseCloudSongs(json: JsonElement): MusicResult<List<TrackSummary>> {
+        return json.toMusicResult {
+            val array = (this["data"] as? JsonArray)
+                ?: ((this["data"] as? JsonObject)?.get("data") as? JsonArray)
+                ?: JsonArray(emptyList())
+            array.mapNotNull { el ->
+                val obj = el as? JsonObject ?: return@mapNotNull null
+                val inner = (obj["song"] as? JsonObject)
+                    ?: (obj["simpleSong"] as? JsonObject)
+                    ?: obj
+                inner.toTrackSummary().takeIf { it.id.isNotBlank() }
+            }
+        }
+    }
+
     // ============ 单元解析扩展 ============
 
     private fun JsonObject.toPlaylistSummary(): PlaylistSummary {
@@ -175,4 +199,7 @@ object MusicSourceFromApi {
 
     suspend fun getUserPlaylists(api: MusicApiService, uid: Long): MusicResult<List<PlaylistSummary>> =
         parseUserPlaylists(api.getUserPlaylists(uid))
+
+    suspend fun getUserCloud(api: MusicApiService, limit: Int = 200, offset: Int = 0): MusicResult<List<TrackSummary>> =
+        parseCloudSongs(api.getUserCloud(limit, offset))
 }
