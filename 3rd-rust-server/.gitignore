@@ -1,0 +1,33 @@
+# Build artifacts
+/target/
+**/*.rs.bk
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+
+# Android
+.gradle/
+build/
+local.properties
+.cxx/
+captures/
+*.apk
+*.ap_
+*.dex
+/android/app/build/
+/android/build/
+/android/local.properties
+/android/.gradle/
