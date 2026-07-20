@@ -35,13 +35,18 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -70,7 +75,7 @@ fun QueueBottomSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    var showSaveDialog by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var showSaveDialog by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onClose,
@@ -191,9 +196,9 @@ private fun QueueRow(
 ) {
     val bg = if (isCurrent) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
-    var showMenu by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    var dragAccum by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0f) }
+    var showMenu by remember { mutableStateOf(false) }
+    val density = LocalDensity.current
+    var dragAccum by remember { mutableStateOf(0f) }
 
     Surface(
         Modifier.fillMaxWidth(),

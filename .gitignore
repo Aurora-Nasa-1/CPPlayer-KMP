@@ -11,3 +11,4 @@ local.properties
 /captures
 .externalNativeBuild/
 CPPlayer/
+3rd-rust-server/

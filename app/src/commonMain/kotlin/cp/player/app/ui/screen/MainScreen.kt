@@ -106,7 +106,7 @@ class MainScreen : Screen {
         val scope = rememberCoroutineScope()
         
         // 捕捉返回键
-        androidx.activity.compose.BackHandler(enabled = isPlayerExpanded) {
+        cp.player.app.platform.BackHandler(enabled = isPlayerExpanded) {
             isPlayerExpanded = false
         }
 

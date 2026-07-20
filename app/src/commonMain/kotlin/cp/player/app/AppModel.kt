@@ -180,7 +180,7 @@ object AppModel {
     /** 清空当前用户资料（登出后调用）。 */
     fun clearUserProfile() {
         _userProfile.value = null
-        runCatching { playback.refreshFavorites() }
+        modelScope.launch { runCatching { playback.refreshFavorites() } }
     }
 
     // ============ 最近播放（持久化） ============

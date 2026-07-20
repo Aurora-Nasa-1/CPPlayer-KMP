@@ -1,5 +1,6 @@
 package cp.player.app.platform
 
+import androidx.compose.runtime.Composable
 import java.awt.Desktop
 import java.net.URI
 
@@ -18,3 +19,8 @@ actual fun openUrl(url: String) {
 }
 
 actual fun clearImageCache(): Boolean = true
+
+@Composable
+actual fun BackHandler(enabled: Boolean, onBack: () -> Unit) {
+    // No-op for Desktop
+}
