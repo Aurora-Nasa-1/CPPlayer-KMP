@@ -1,6 +1,7 @@
 package cp.player.app
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -25,7 +26,7 @@ import cp.player.kmp.MusicBackend
  * - [BackendState.Ready] → [MainScreen]
  *
  * 通过观察 [MusicBackend.stateFlow] 响应 Provider 增删导致的瞬态切换，
- * 但根 Navigator 仅在启动时决定起点——后续切换由各 Screen 自行 push/replace。
+ * 根 Navigator 起点由首次组合决定；后续 Ready 状态变化通过 LaunchedEffect 自动导航。
  */
 @Composable
 fun App() {
@@ -53,6 +54,15 @@ fun App() {
                 }
             }
             Navigator(start) { navigator ->
+                // 当 state 变为 Ready 时自动替换为 MainScreen
+                LaunchedEffect(state) {
+                    val isOnMain = try {
+                        navigator.lastItem is MainScreen
+                    } catch (_: Throwable) { false }
+                    if (state is BackendState.Ready && !isOnMain) {
+                        navigator.replaceAll(MainScreen())
+                    }
+                }
                 SlideTransition(navigator)
             }
         }

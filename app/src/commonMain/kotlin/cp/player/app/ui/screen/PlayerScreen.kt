@@ -273,23 +273,22 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                 label = "TopBarTitle",
                             ) { page ->
                                 if (page == 1) {
-                                    // 播放器页无标题
                                     Text("", Modifier.fillMaxWidth())
                                 } else {
                                     Column {
                                         Text(
-                                            track.name,
+                                            text = track.name,
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.SemiBold,
                                             maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
-                                            track.artist,
+                                            text = track.artist,
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                                             maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
@@ -305,28 +304,44 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                             }
                         },
                         actions = {
-                            // 歌词页：翻译开关；其它页：队列按钮
-                            if (pagerState.currentPage == 0) {
-                                IconButton(onClick = { showTranslation = !showTranslation }) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Translate,
-                                        contentDescription = "翻译",
-                                        tint = if (showTranslation) MaterialTheme.colorScheme.onSurface
-                                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                                    )
+                            AnimatedContent(
+                                targetState = pagerState.currentPage,
+                                label = "TopBarActions"
+                            ) { page ->
+                                when (page) {
+                                    0 -> {
+                                        IconButton(
+                                            onClick = { showTranslation = !showTranslation },
+                                            modifier = Modifier.padding(end = 8.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Translate,
+                                                contentDescription = "翻译",
+                                                tint = if (showTranslation) MaterialTheme.colorScheme.onSurface
+                                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                                            )
+                                        }
+                                    }
+                                    else -> {
+                                        IconButton(
+                                            onClick = { showQueueSheet = true },
+                                            modifier = Modifier.padding(end = 8.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f), CircleShape)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                                contentDescription = "队列",
+                                                tint = MaterialTheme.colorScheme.onSurface,
+                                            )
+                                        }
+                                    }
                                 }
                             }
-                            IconButton(onClick = { showQueueSheet = true }) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                    contentDescription = "队列",
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                )
-                            }
                         },
-                        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = Color.Transparent
+                        )
                     )
-                },
+                }
             ) { inner ->
                 Box(Modifier.fillMaxSize().padding(inner)) {
                     HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
@@ -363,7 +378,10 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                 onDislike = {
                                     showMoreMenu = false
                                     playerScope.launch {
-                                        runCatching { AppModel.api.dislikeSong(track.id) }
+                                        runCatching { 
+                                            val rawId = runCatching { cp.player.kmp.music.CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)
+                                            AppModel.api.dislikeSong(rawId) 
+                                        }
                                         cp.player.app.ui.util.UiEvents.notify("已标记不感兴趣")
                                         controller.skipNext()
                                     }
@@ -432,7 +450,7 @@ private fun LyricsPage(
         Surface(
             Modifier.fillMaxWidth().padding(top = 4.dp),
             shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+            color = MaterialTheme.colorScheme.surfaceVariant,
         ) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -590,7 +608,7 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
         Surface(
             Modifier.fillMaxWidth().padding(top = 4.dp),
             shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+            color = MaterialTheme.colorScheme.surfaceVariant,
         ) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),

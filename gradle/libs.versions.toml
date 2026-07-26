@@ -12,8 +12,17 @@ qrose = "1.0.1"
 media3 = "1.4.1"
 javafx = "21"
 coil = "3.3.0"
+mp3spi = "1.9.5.4"
+jflac = "1.5.2"
+jlayer = "1.0.1"
+dbus-java = "5.1.0"
+jna = "5.15.0"
+accompanist-lyrics-ui = "1.0.19"
+accompanist-lyrics-core = "0.4.5"
 
 [libraries]
+accompanist-lyrics-ui = { module = "com.mocharealm.accompanist:lyrics-ui", version.ref = "accompanist-lyrics-ui" }
+accompanist-lyrics-core = { module = "com.mocharealm.accompanist:lyrics-core", version.ref = "accompanist-lyrics-core" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }
@@ -33,8 +42,16 @@ qrose = { module = "io.github.alexzhirkevich:qrose", version.ref = "qrose" }
 androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
 androidx-media3-datasource = { group = "androidx.media3", name = "media3-datasource", version.ref = "media3" }
 androidx-media3-datasource-okhttp = { group = "androidx.media3", name = "media3-datasource-okhttp", version.ref = "media3" }
+composemediaplayer-audio = { module = "io.github.kdroidfilter:composemediaplayer-audio", version = "0.11.3" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
+mp3spi = { module = "com.googlecode.soundlibs:mp3spi", version.ref = "mp3spi" }
+jflac-codec = { module = "org.jflac:jflac-codec", version.ref = "jflac" }
+jlayer = { module = "javazoom:jlayer", version.ref = "jlayer" }
+dbus-java-core = { module = "com.github.hypfvieh:dbus-java-core", version.ref = "dbus-java" }
+dbus-java-transport-native-unixsocket = { module = "com.github.hypfvieh:dbus-java-transport-native-unixsocket", version.ref = "dbus-java" }
+jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
+jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

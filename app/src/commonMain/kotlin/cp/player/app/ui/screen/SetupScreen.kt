@@ -150,10 +150,12 @@ private fun SetupScreenContent(
 
                 message?.let {
                     Spacer(Modifier.height(12.dp))
+                    val isError = it.contains("失败") || it.contains("错误") || it.contains("异常")
+                        || it.contains("不支持") || it.contains("无法") || it.contains("未就绪")
                     Text(
                         it,
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (providers.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                        color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                         textAlign = TextAlign.Center,
                     )
                 }

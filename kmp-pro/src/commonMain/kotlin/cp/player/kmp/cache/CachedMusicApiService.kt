@@ -4,9 +4,9 @@ import cp.player.kmp.api.MusicApiMethod
 import cp.player.kmp.api.MusicApiService
 import cp.player.kmp.monitor.HealthMonitor
 import cp.player.kmp.provider.ProviderManager
+import cp.player.kmp.util.currentTimeMillis
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.datetime.Clock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -74,7 +74,7 @@ class CachedMusicApiService(
         // 1) 先返回缓存（若存在）
         val cached = cache.get(key)
         if (cached != null) {
-            val now = Clock.System.now().toEpochMilliseconds()
+            val now = currentTimeMillis()
             emit(CacheResult.Cached(
                 data = cached.data,
                 ageMs = cached.age(now),
@@ -154,7 +154,7 @@ class CachedMusicApiService(
             if (provider.id == current?.id) continue // 跳过已失败的当前 Provider
             val mapped = provider.apiMap?.get(method) ?: method
             if (mapped.isEmpty() || mapped.equals("unsupported", ignoreCase = true)) continue
-            val start = Clock.System.now().toEpochMilliseconds()
+            val start = currentTimeMillis()
             try {
                 val raw = provider.callApi(mapped, params)
                 val parsed = parseOrNull(raw) ?: continue
@@ -162,7 +162,7 @@ class CachedMusicApiService(
                 val ok = code == 200 || code == 0 || code == 201 || code == 301
                 HealthMonitor.recordCall(HealthMonitor.ApiCallRecord(
                     timestamp = start, providerId = provider.id, method = method,
-                    durationMs = Clock.System.now().toEpochMilliseconds() - start,
+                    durationMs = currentTimeMillis() - start,
                     success = ok, wasFallback = true, fallbackFrom = current?.id,
                     responseCode = code
                 ))
@@ -170,7 +170,7 @@ class CachedMusicApiService(
             } catch (e: Exception) {
                 HealthMonitor.recordCall(HealthMonitor.ApiCallRecord(
                     timestamp = start, providerId = provider.id, method = method,
-                    durationMs = Clock.System.now().toEpochMilliseconds() - start,
+                    durationMs = currentTimeMillis() - start,
                     success = false, errorMessage = e.message, wasFallback = true,
                     fallbackFrom = current?.id
                 ))

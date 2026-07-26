@@ -12,8 +12,8 @@ version = "1.0.0"
 kotlin {
     android {
         namespace = "cp.player.kmp"
-        compileSdk = 35
-        minSdk = 24
+        compileSdk = 36
+        minSdk = 29
     }
     jvm("desktop") {
         compilerOptions { jvmTarget.set(JvmTarget.JVM_21) }
@@ -27,6 +27,7 @@ kotlin {
         desktopMain.dependsOn(jvmMain)
 
         commonMain.dependencies {
+            implementation(libs.composemediaplayer.audio)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.datetime)
@@ -52,9 +53,14 @@ kotlin {
             else -> "linux"
         }
         desktopMain.dependencies {
-            implementation("org.openjfx:javafx-media:${libs.versions.javafx.get()}:$fxOsClassifier")
             implementation("org.openjfx:javafx-graphics:${libs.versions.javafx.get()}:$fxOsClassifier")
             implementation("org.openjfx:javafx-base:${libs.versions.javafx.get()}:$fxOsClassifier")
+            // dbus-java for MPRIS (Linux)
+            implementation(libs.dbus.java.core)
+            implementation(libs.dbus.java.transport.native.unixsocket)
+            // JNA for libmpv + Windows SMTC
+            implementation(libs.jna)
+            implementation(libs.jna.platform)
         }
     }
 }

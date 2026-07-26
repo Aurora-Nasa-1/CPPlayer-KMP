@@ -14,8 +14,8 @@ version = "1.0.0"
 kotlin {
     android {
         namespace = "cp.player.app.lib"
-        compileSdk = 35
-        minSdk = 24
+        compileSdk = 36
+        minSdk = 29
     }
     jvm("desktop") {
         compilerOptions { jvmTarget.set(JvmTarget.JVM_21) }
@@ -25,6 +25,7 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 api(project(":kmp-pro"))
+                implementation(libs.composemediaplayer.audio)
                 implementation(compose.runtime)
                 implementation(compose.foundation)
                 implementation(compose.material3)
@@ -42,6 +43,8 @@ kotlin {
                 implementation(libs.ktor.client.core)
                 implementation(libs.ktor.client.content.negotiation)
                 implementation(libs.ktor.serialization.json)
+                implementation(libs.accompanist.lyrics.ui)
+                implementation(libs.accompanist.lyrics.core)
             }
         }
         val androidMain by getting {

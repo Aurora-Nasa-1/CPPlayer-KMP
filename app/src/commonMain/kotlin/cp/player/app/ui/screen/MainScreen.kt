@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.animation.AnimatedContent
@@ -42,6 +43,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -69,7 +71,7 @@ import cp.player.app.ui.component.CpSpacing
 
 /** Responsive application shell for the four primary destinations. */
 class MainScreen : Screen {
-    @OptIn(ExperimentalSharedTransitionApi::class)
+    @OptIn(ExperimentalSharedTransitionApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
     @Composable
     override fun Content() {
         var selectedIndex by rememberSaveable { mutableIntStateOf(0) }
@@ -80,7 +82,6 @@ class MainScreen : Screen {
                 TabItem(HomeScreen(), "首页", Icons.Filled.Home, Icons.Outlined.Home),
                 TabItem(SearchScreen(), "搜索", Icons.Filled.Search, Icons.Outlined.Search),
                 TabItem(LibraryScreen(), "我的", Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic),
-                TabItem(SettingsScreen(), "设置", Icons.Filled.Settings, Icons.Outlined.Settings),
             )
         }
         val playbackState by AppModel.playback.state.collectAsState()
@@ -118,7 +119,8 @@ class MainScreen : Screen {
 
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val expanded = maxWidth >= 840.dp
-            
+
+            CompositionLocalProvider(cp.player.app.ui.component.LocalIsExpanded provides expanded) {
             // 主内容，应用缩放和变暗
             Box(Modifier.fillMaxSize().graphicsLayer {
                 val scale = 1f - expandProgress * 0.03f
@@ -126,20 +128,27 @@ class MainScreen : Screen {
                 scaleY = scale
                 translationY = expandProgress * 8f
             }) {
+                val scrollBehavior = androidx.compose.material3.TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+                
                 if (expanded) {
                     Row(Modifier.fillMaxSize()) {
                         AppNavigationRail(tabs, selectedIndex, selectTab)
-                        Column(Modifier.weight(1f)) {
-                            AppTopBar(tabs[selectedIndex].label, navigator)
-                            TabContent(tabs, visitedTabs, selectedIndex, Modifier.weight(1f))
+                        androidx.compose.material3.Scaffold(
+                            modifier = Modifier.weight(1f).nestedScroll(scrollBehavior.nestedScrollConnection),
+                            topBar = { AppTopBar(tabs[selectedIndex].label, navigator, scrollBehavior) },
+                            containerColor = Color.Transparent
+                        ) { padding ->
+                            TabContent(tabs, visitedTabs, selectedIndex, Modifier.fillMaxSize().padding(padding))
                         }
                     }
                 } else {
-                    Column(Modifier.fillMaxSize()) {
-                        AppTopBar(tabs[selectedIndex].label, navigator)
-                        TabContent(tabs, visitedTabs, selectedIndex, Modifier.weight(1f))
-                        // 占位 miniplayer 的高度，如果需要的话可以放个 Spacer
-                        AppNavigationBar(tabs, selectedIndex, selectTab)
+                    androidx.compose.material3.Scaffold(
+                        modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
+                        topBar = { AppTopBar(tabs[selectedIndex].label, navigator, scrollBehavior) },
+                        bottomBar = { AppNavigationBar(tabs, selectedIndex, selectTab) },
+                        containerColor = Color.Transparent
+                    ) { padding ->
+                        TabContent(tabs, visitedTabs, selectedIndex, Modifier.fillMaxSize().padding(padding))
                     }
                 }
             }
@@ -219,51 +228,52 @@ class MainScreen : Screen {
                 }
             }
         } // End of SharedTransitionLayout
+        } // End of CompositionLocalProvider
         } // End of BoxWithConstraints
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AppTopBar(title: String, navigator: cafe.adriel.voyager.navigator.Navigator?) {
+private fun AppTopBar(title: String, navigator: cafe.adriel.voyager.navigator.Navigator?, scrollBehavior: androidx.compose.material3.TopAppBarScrollBehavior? = null) {
     val activeProvider by AppModel.activeProviderFlow.collectAsState()
     
-    TopAppBar(
+    androidx.compose.material3.LargeTopAppBar(
         title = {
-            Column {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                activeProvider?.let {
-                    Text(
-                        it.name,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+            val titleText = title
+            Text(
+                text = titleText,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
         },
         actions = {
-            IconButton(
+            val profile by AppModel.userProfileFlow.collectAsState()
+            val avatarUrl = profile?.avatarUrl
+            androidx.compose.material3.FilledIconButton(
                 onClick = { navigator?.push(SettingsScreen()) },
-                modifier = Modifier.padding(end = 8.dp)
+                modifier = Modifier.padding(end = 4.dp),
+                colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                )
             ) {
-                val profile by AppModel.userProfileFlow.collectAsState()
-                val avatarUrl = profile?.avatarUrl
                 if (!avatarUrl.isNullOrBlank()) {
                     AsyncImage(
                         model = avatarUrl,
                         contentDescription = "用户头像",
-                        modifier = Modifier.size(32.dp).clip(CircleShape),
+                        modifier = Modifier.size(24.dp).clip(CircleShape),
                         contentScale = ContentScale.Crop
                     )
                 } else {
                     Icon(
                         Icons.Filled.Settings,
                         contentDescription = "Settings",
-                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
             }
         },
+        scrollBehavior = scrollBehavior,
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = Color.Transparent,
             scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,

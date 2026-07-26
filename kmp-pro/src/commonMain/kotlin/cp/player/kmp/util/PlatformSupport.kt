@@ -2,6 +2,9 @@ package cp.player.kmp.util
 
 import cp.player.kmp.provider.BackendProvider
 
+/** 跨平台毫秒时间戳（避免 kotlinx-datetime 运行时缺失问题）。 */
+expect fun currentTimeMillis(): Long
+
 /**
  * 平台支持抽象（端口探测 / 文件系统 / ELF 校验 / 入口解析）。
  *

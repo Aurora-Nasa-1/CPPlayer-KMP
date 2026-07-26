@@ -1,6 +1,6 @@
 package cp.player.kmp.cache
 
-import kotlinx.datetime.Clock
+import cp.player.kmp.util.currentTimeMillis
 import kotlinx.serialization.json.JsonElement
 
 /**
@@ -62,6 +62,6 @@ fun cacheKey(
 }
 
 /** 便捷封装：存入完整数据时自动计算指纹并打时间戳。 */
-fun ApiCache.putData(key: String, data: JsonElement, now: Long = Clock.System.now().toEpochMilliseconds()) {
+fun ApiCache.putData(key: String, data: JsonElement, now: Long = currentTimeMillis()) {
     put(key, CacheEntry(data = data, fingerprint = Fingerprinter.compute(data), timestamp = now))
 }

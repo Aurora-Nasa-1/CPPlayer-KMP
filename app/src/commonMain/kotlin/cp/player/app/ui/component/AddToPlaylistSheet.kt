@@ -78,12 +78,16 @@ fun AddToPlaylistSheet(
         }
     }
 
+    fun extractRawId(fullId: String): String {
+        return runCatching { cp.player.kmp.music.CPMediaId.parse(fullId).resourceId }.getOrDefault(fullId)
+    }
+
     fun addTo(playlistId: Long) {
         if (busy) return
         busy = true
         scope.launch(Dispatchers.IO) {
             val ok = runCatching {
-                AppModel.api.addTracksToPlaylist(playlistId, listOf(trackId))
+                AppModel.api.addTracksToPlaylist(playlistId, listOf(extractRawId(trackId)))
             }.isSuccess
             withContext(Dispatchers.Main) {
                 busy = false

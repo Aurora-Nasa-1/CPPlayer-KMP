@@ -73,7 +73,8 @@ class MusicApiServiceImpl(
                 errorMessage = buildErrorMessage(json, issues, success),
                 responseWarnings = warnings,
                 responseCode = code,
-                expectedField = issues.firstOrNull { it.expected != null }?.expected
+                expectedField = issues.firstOrNull { it.expected != null }?.expected,
+                rawResponse = result
             ))
             json
         } catch (e: Exception) {
@@ -86,7 +87,8 @@ class MusicApiServiceImpl(
                 level = HealthMonitor.HealthLevel.ERROR,
                 errorCode = 500,
                 errorMessage = "JSON parse error: ${e.message}",
-                responseWarnings = listOf(HealthMonitor.ResponseWarning.MALFORMED_RESPONSE)
+                responseWarnings = listOf(HealthMonitor.ResponseWarning.MALFORMED_RESPONSE),
+                rawResponse = result
             ))
             buildJsonObject {
                 put("code", 500)
@@ -132,7 +134,7 @@ class MusicApiServiceImpl(
     override suspend fun getUserCloud(limit: Int, offset: Int): JsonElement =
         callApi(MusicApiMethod.USER_CLOUD, mapOf("limit" to limit.toString(), "offset" to offset.toString()))
     override suspend fun getLikeList(uid: Long): JsonElement =
-        callApi(MusicApiMethod.USER_LIKE_LIST, mapOf("uid" to uid.toString()))
+        callApi(MusicApiMethod.USER_LIKE_LIST, mapOf("uid" to uid.toString(), "timestamp" to now().toString()))
     override suspend fun likeSong(id: String, like: Boolean): JsonElement =
         callApi(MusicApiMethod.USER_LIKE, mapOf("id" to id, "like" to like.toString()))
     override suspend fun getRecommendedSongs(): JsonElement = callApi(MusicApiMethod.USER_RECOMMEND_SONGS)
@@ -217,18 +219,8 @@ class MusicApiServiceImpl(
 
     // ======================== 社交 Social ========================
 
-    override suspend fun getComments(id: String, type: String, limit: Int, offset: Int, sortType: Int): JsonElement {
-        val pageNo = (offset / limit) + 1
-        return callApi(getCommentMethod(type), mapOf(
-            "id" to id,
-            "type" to typeToCode(type),
-            "limit" to limit.toString(),
-            "offset" to offset.toString(),
-            "pageSize" to limit.toString(),
-            "pageNo" to pageNo.toString(),
-            "sortType" to sortType.toString()
-        ))
-    }
+    override suspend fun getComments(id: String, type: String, limit: Int, offset: Int, sortType: Int): JsonElement =
+        callApi(getCommentMethod(type), mapOf("id" to id, "limit" to limit.toString(), "offset" to offset.toString(), "sortType" to sortType.toString()))
     override suspend fun getFloorComments(id: String, parentCommentId: Long, type: String, limit: Int, time: Long): JsonElement {
         val t = typeToCode(type)
         val params = mutableMapOf("id" to id, "parentCommentId" to parentCommentId.toString(), "type" to t, "limit" to limit.toString())
@@ -463,7 +455,8 @@ class MusicApiServiceImpl(
                             timestamp = startTime, providerId = provider.id, method = method,
                             durationMs = now() - startTime, success = true,
                             wasFallback = provider.id != current?.id,
-                            fallbackFrom = if (provider.id != current?.id) current?.id else null
+                            fallbackFrom = if (provider.id != current?.id) current?.id else null,
+                            rawResponse = result
                         ))
                         return value
                     }
@@ -472,7 +465,8 @@ class MusicApiServiceImpl(
                         timestamp = startTime, providerId = provider.id, method = method,
                         durationMs = now() - startTime, success = false, errorMessage = e.message,
                         wasFallback = provider.id != current?.id,
-                        fallbackFrom = if (provider.id != current?.id) current?.id else null
+                        fallbackFrom = if (provider.id != current?.id) current?.id else null,
+                        rawResponse = e.message
                     ))
                 }
                 if (attempt < 2) delay(200L)
@@ -510,8 +504,7 @@ class MusicApiServiceImpl(
         MusicApiMethod.COMMENT_MUSIC to "comments",
         MusicApiMethod.COMMENT_PLAYLIST to "comments",
         MusicApiMethod.COMMENT_ALBUM to "comments",
-        MusicApiMethod.COMMENT_FLOOR to "data",
-        MusicApiMethod.COMMENT_NEW to "data",
+        MusicApiMethod.COMMENT_FLOOR to "comments",
         MusicApiMethod.MESSAGE_PRIVATE to "msgs",
         MusicApiMethod.MESSAGE_PRIVATE_HISTORY to "msgs",
         MusicApiMethod.MESSAGE_RECENT_CONTACT to "data",
@@ -625,25 +618,20 @@ class MusicApiServiceImpl(
                 ))
             }
         }
-        
-        // 只有当状态码表示成功时，才校验数据字段
-        val isSuccess = code == 200 || code == 0 || code == 201
-        if (isSuccess) {
-            // 2. 数据字段
-            val expected = EXPECTED_FIELDS[method]
-            if (expected != null && json[expected] == null) {
-                val found = FALLBACK_FIELDS.firstOrNull { it != expected && json[it] != null }
-                if (found == null) {
-                    issues.add(ValidationIssue(HealthMonitor.ResponseWarning.MISSING_DATA_FIELD, expected = expected))
-                }
+        // 2. 数据字段
+        val expected = EXPECTED_FIELDS[method]
+        if (expected != null && json[expected] == null) {
+            val found = FALLBACK_FIELDS.firstOrNull { it != expected && json[it] != null }
+            if (found == null) {
+                issues.add(ValidationIssue(HealthMonitor.ResponseWarning.MISSING_DATA_FIELD, expected = expected))
             }
-            // 2b. 空数组/对象
-            json[expected]?.let { field ->
-                if (field is kotlinx.serialization.json.JsonArray && field.isEmpty()) {
-                    issues.add(ValidationIssue(HealthMonitor.ResponseWarning.EMPTY_DATA_ARRAY, expected = expected))
-                } else if (field is JsonObject && field.isEmpty()) {
-                    issues.add(ValidationIssue(HealthMonitor.ResponseWarning.EMPTY_DATA_OBJECT, expected = expected))
-                }
+        }
+        // 2b. 空数组/对象
+        json[expected]?.let { field ->
+            if (field is kotlinx.serialization.json.JsonArray && field.isEmpty()) {
+                issues.add(ValidationIssue(HealthMonitor.ResponseWarning.EMPTY_DATA_ARRAY, expected = expected))
+            } else if (field is JsonObject && field.isEmpty()) {
+                issues.add(ValidationIssue(HealthMonitor.ResponseWarning.EMPTY_DATA_OBJECT, expected = expected))
             }
         }
         // 3. URL 方法

@@ -35,8 +35,12 @@ class JniProvider(
     external fun analyzeAudioFile(path: String): String
 
     override fun startServer(context: PlatformContext, port: Int) {
+        log("startServer 开始: soPath=$soPath, port=$port")
         loadNativeLibrary()
-        if (!isLoaded) throw IllegalStateException("JNI 库加载失败: $loadError")
+        if (!isLoaded) {
+            log("startServer 失败: JNI 库加载失败: $loadError")
+            throw IllegalStateException("JNI 库加载失败: $loadError")
+        }
         try {
             startNativeServer("127.0.0.1", port)
             log("JNI 服务启动成功: $soPath, port=$port")
@@ -53,13 +57,19 @@ class JniProvider(
     }
 
     override fun callApi(method: String, params: Map<String, String>): String {
-        if (!isLoaded) return """{"code": 500, "msg": "JNI not loaded: ${loadError ?: "unknown"}"}"""
+        if (!isLoaded) {
+            log("callApi 被调用但 JNI 未加载: method=$method, loadError=$loadError")
+            return """{"code": 500, "msg": "JNI not loaded: ${loadError ?: "unknown"}"}"""
+        }
         val json = buildMap { params.forEach { (k, v) -> put(k, v) } }
             .entries.joinToString(separator = ",", prefix = "{", postfix = "}") {
                 "\"${it.key}\":\"${it.value}\""
             }
+        log("callApi -> nativeCallApi: method=$method, json=$json")
         return try {
-            nativeCallApi(method, json)
+            val result = nativeCallApi(method, json)
+            log("callApi <- nativeCallApi: method=$method, result=${result.take(200)}")
+            result
         } catch (e: Throwable) {
             isLoaded = false
             loadError = "JNI 调用崩溃: ${e.message}"

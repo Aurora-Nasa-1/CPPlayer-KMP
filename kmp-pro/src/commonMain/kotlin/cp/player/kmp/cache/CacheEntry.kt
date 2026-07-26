@@ -1,6 +1,6 @@
 package cp.player.kmp.cache
 
-import kotlinx.datetime.Clock
+import cp.player.kmp.util.currentTimeMillis
 import kotlinx.serialization.json.JsonElement
 
 /**
@@ -18,5 +18,5 @@ data class CacheEntry(
     val fingerprint: String,
     val timestamp: Long
 ) {
-    fun age(now: Long = Clock.System.now().toEpochMilliseconds()): Long = now - timestamp
+    fun age(now: Long = currentTimeMillis()): Long = now - timestamp
 }

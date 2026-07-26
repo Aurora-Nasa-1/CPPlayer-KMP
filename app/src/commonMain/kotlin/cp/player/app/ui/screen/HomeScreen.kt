@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -129,17 +130,24 @@ private fun HomeScreenContent(model: HomeScreenModel) {
 
         if (dailySongs.isNotEmpty()) {
             item {
-                DailyMixCard(
-                    songs = dailySongs,
-                    onSongClick = { track ->
-                        scope.launch {
-                            AppModel.playback.playQueue(
-                                dailySongs.map { "$provider://song/${it.id}" },
-                                startIndex = dailySongs.indexOf(track).coerceAtLeast(0),
-                            )
-                        }
-                    },
-                )
+                val expanded = cp.player.app.ui.component.LocalIsExpanded.current
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    DailyMixCard(
+                        songs = dailySongs,
+                        onSongClick = { track ->
+                            scope.launch {
+                                AppModel.playback.playQueue(
+                                    dailySongs.map { "$provider://song/${it.id}" },
+                                    startIndex = dailySongs.indexOf(track).coerceAtLeast(0),
+                                )
+                            }
+                        },
+                        modifier = if (expanded) Modifier.widthIn(max = 700.dp) else Modifier,
+                    )
+                }
             }
         }
 
@@ -267,7 +275,10 @@ private fun DailyMixCard(
     onSongClick: (TrackSummary) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val expanded = cp.player.app.ui.component.LocalIsExpanded.current
     val coverUrl = songs.firstOrNull()?.coverUrl
+    val bgHeight = if (expanded) 140.dp else 200.dp
+
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
@@ -277,11 +288,11 @@ private fun DailyMixCard(
             if (!coverUrl.isNullOrBlank()) {
                 AsyncImage(
                     model = coverUrl, contentDescription = null,
-                    modifier = Modifier.fillMaxWidth().height(200.dp), contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxWidth().height(bgHeight), contentScale = ContentScale.Crop,
                 )
             }
             Box(
-                Modifier.fillMaxWidth().height(200.dp).background(
+                Modifier.fillMaxWidth().height(bgHeight).background(
                     Brush.verticalGradient(
                         colorStops = arrayOf(
                             0.0f to Color.Black.copy(alpha = 0.48f),
@@ -299,7 +310,12 @@ private fun DailyMixCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("每日推荐", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(
+                            "每日推荐",
+                            style = if (expanded) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                        )
                         Spacer(Modifier.height(2.dp))
                         Text("${songs.size} 首 · 根据你的口味生成", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.7f))
                     }
@@ -314,17 +330,21 @@ private fun DailyMixCard(
                         }
                     }
                 }
-                MosaicCoverGrid(songs = songs, onSongClick = onSongClick)
+                MosaicCoverGrid(songs = songs, onSongClick = onSongClick, gridRows = if (expanded) 3 else 4)
             }
         }
     }
 }
 
 @Composable
-private fun MosaicCoverGrid(songs: List<TrackSummary>, onSongClick: (TrackSummary) -> Unit) {
+private fun MosaicCoverGrid(
+    songs: List<TrackSummary>,
+    onSongClick: (TrackSummary) -> Unit,
+    gridRows: Int = 4,
+) {
     val urls = songs.map { it.coverUrl ?: "" }.filter { it.isNotEmpty() }
     if (urls.isEmpty()) return
-    val gridCols = 6; val gridRows = 4; val gap = 2.dp
+    val gridCols = 6; val gap = 2.dp
 
     val seed = remember(songs) { songs.take(6).fold(System.currentTimeMillis()) { acc, s -> acc * 31 + s.id.hashCode().toLong() } }
     val tiles = remember(seed) {

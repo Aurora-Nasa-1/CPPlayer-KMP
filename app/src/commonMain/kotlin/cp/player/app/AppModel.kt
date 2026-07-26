@@ -221,12 +221,12 @@ object AppModel {
             val array = kotlinx.serialization.json.buildJsonArray {
                 tracks.forEach { t ->
                     add(kotlinx.serialization.json.buildJsonObject {
-                        put("id", t.id)
-                        put("name", t.name)
-                        put("artist", t.artist)
-                        put("album", t.album ?: "")
-                        put("coverUrl", t.coverUrl ?: "")
-                        put("durationMs", t.durationMs)
+                        put("id", kotlinx.serialization.json.JsonPrimitive(t.id))
+                        put("name", kotlinx.serialization.json.JsonPrimitive(t.name))
+                        put("artist", kotlinx.serialization.json.JsonPrimitive(t.artist))
+                        put("album", kotlinx.serialization.json.JsonPrimitive(t.album ?: ""))
+                        put("coverUrl", kotlinx.serialization.json.JsonPrimitive(t.coverUrl ?: ""))
+                        put("durationMs", kotlinx.serialization.json.JsonPrimitive(t.durationMs))
                     })
                 }
             }

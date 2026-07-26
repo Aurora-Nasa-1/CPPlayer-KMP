@@ -326,6 +326,7 @@ class PlaybackControllerImpl(
         if (parsed.providerId == "local") return
         val id = parsed.resourceId
         ensureFavoritesLoaded()
+        favoritesLoadingJob?.join() // 等待加载完成，避免新状态被旧列表覆盖
         val currentlyLiked = id in _likedIds.value
         val target = !currentlyLiked
         // 乐观更新
@@ -540,10 +541,36 @@ class PlaybackControllerImpl(
                 platform.load(songUrl.url, startPositionMs = 0L, headers = headers)
                 platform.play()
                 refreshLyrics()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Throwable) {
                 val msg = e.message ?: e.javaClass.simpleName
+                // 播放失败 → 自动降级到 standard 音质重试一次（JavaFX/格式问题/网络等均适用）
+                if (qualityLevel != "standard") {
+                    val retried = retryWithStandardQuality(mediaId)
+                    if (retried) return@launch
+                }
                 emit(_state.value.copy(isBuffering = false, error = msg))
             }
+        }
+    }
+
+    /** 格式不支持时降级到 standard 音质重试。成功返回 true。 */
+    private suspend fun retryWithStandardQuality(mediaId: String): Boolean {
+        updateState { it.copy(error = "音质降级中…") }
+        return try {
+            val fallback = source.getSongUrl(mediaId, level = "standard").getOrNull() ?: return false
+            if (fallback.url.isBlank()) return false
+            val headers = buildMap {
+                fallback.cookie?.takeIf { it.isNotBlank() }?.let { put("Cookie", it) }
+                if (!containsKey("Cookie")) cookieProvider()?.takeIf { it.isNotBlank() }?.let { put("Cookie", it) }
+            }
+            platform.load(fallback.url, startPositionMs = 0L, headers = headers)
+            platform.play()
+            refreshLyrics()
+            true
+        } catch (_: Throwable) {
+            false
         }
     }
 

@@ -14,10 +14,10 @@ plugins {
 
 android {
     namespace = "cp.player.app"
-    compileSdk = 35
+    compileSdk = 36
     defaultConfig {
         applicationId = "cp.player.app"
-        minSdk = 24
+        minSdk = 29
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"

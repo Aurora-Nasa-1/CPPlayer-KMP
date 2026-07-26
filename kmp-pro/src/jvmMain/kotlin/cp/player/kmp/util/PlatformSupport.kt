@@ -5,6 +5,9 @@ import java.io.FileOutputStream
 import java.net.ServerSocket
 import java.util.zip.ZipInputStream
 
+/** JVM actual：直接调用 System.currentTimeMillis()。 */
+actual fun currentTimeMillis(): Long = System.currentTimeMillis()
+
 /**
  * JVM 共享平台支持（Android 与 Desktop 共用）。
  *

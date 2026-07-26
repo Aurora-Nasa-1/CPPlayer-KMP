@@ -47,6 +47,7 @@ import cp.player.kmp.music.PlaylistSummary
  * 快速访问区域：HorizontalPager 滑动切换 FM 快捷入口 / 用户歌单预览。
  *
  * 对应原项目 MainScreen 中的 QuickAccessCards 区域。
+ * 在 Expanded 布局下减弱动画幅度，避免大屏上视觉过于夸张。
  */
 @Composable
 fun QuickAccessSection(
@@ -56,6 +57,7 @@ fun QuickAccessSection(
     onPlaylistClick: (PlaylistSummary) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val expanded = LocalIsExpanded.current
     val quickAccessItems = buildList {
         add(QuickAccessItemType.Fm)
         userPlaylists.take(5).forEach { playlist ->
@@ -74,12 +76,12 @@ fun QuickAccessSection(
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 32.dp),
+            contentPadding = PaddingValues(horizontal = if (expanded) 16.dp else 32.dp),
             pageSpacing = 16.dp,
         ) { page ->
             val isCurrent = page == pagerState.currentPage
             val alpha by animateFloatAsState(
-                targetValue = if (isCurrent) 1f else 0.7f,
+                targetValue = if (isCurrent) 1f else if (expanded) 0.85f else 0.7f,
                 animationSpec = tween(300),
                 label = "pageAlpha",
             )
@@ -117,9 +119,14 @@ fun QuickAccessSection(
                             animationSpec = tween(300),
                             label = "indicatorColor",
                         )
+                        val indicatorWidth = if (expanded) {
+                            if (isSelected) 20.dp else 8.dp
+                        } else {
+                            if (isSelected) 36.dp else 8.dp
+                        }
                         Box(
                             modifier = Modifier
-                                .size(if (isSelected) 36.dp else 8.dp)
+                                .size(width = indicatorWidth, height = 8.dp)
                                 .clip(CircleShape)
                                 .background(indicatorColor),
                             contentAlignment = Alignment.Center,

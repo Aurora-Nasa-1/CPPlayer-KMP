@@ -29,7 +29,10 @@ class HomeScreenModel : ScreenModel {
     private val _state = MutableStateFlow(HomeUiState())
     val state: StateFlow<HomeUiState> = _state.asStateFlow()
 
-    init { refresh() }
+    init {
+        println("[HomeScreenModel] init - calling refresh()")
+        refresh()
+    }
 
     /** 播放私人 FM：拉取一批 FM 曲目并整体入队。 */
     fun playPersonalFm() {
@@ -48,17 +51,24 @@ class HomeScreenModel : ScreenModel {
     }
 
     fun refresh() {
+        println("[HomeScreenModel] refresh() called, loading=${_state.value.loading}, dailySongs=${_state.value.dailySongs.size}")
         if (_state.value.loading && _state.value.dailySongs.isNotEmpty()) return
         screenModelScope.launch {
             _state.value = _state.value.copy(loading = true, error = null)
+            println("[HomeScreenModel] refresh() launching loadHome on IO")
             _state.value = withContext(Dispatchers.IO) { loadHome() }.copy(loading = false)
+            println("[HomeScreenModel] refresh() loadHome completed, error=${_state.value.error}")
         }
     }
 
     private suspend fun loadHome(): HomeUiState {
         var error: String? = null
+        println("[HomeScreenModel] loadHome 开始")
         val songs = runCatching {
-            MusicSourceFromApi.parseRecommendedSongs(AppModel.api.getRecommendedSongs())
+            println("[HomeScreenModel] 调用 getRecommendedSongs")
+            val raw = AppModel.api.getRecommendedSongs()
+            println("[HomeScreenModel] getRecommendedSongs 返回: ${raw.toString().take(200)}")
+            MusicSourceFromApi.parseRecommendedSongs(raw)
         }.fold(
             onSuccess = {
                 when (it) {

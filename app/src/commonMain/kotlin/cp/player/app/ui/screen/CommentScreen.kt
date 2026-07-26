@@ -34,19 +34,11 @@ class CommentScreen(val id: String, val type: String = "music") : Screen {
         val state by model.state.collectAsState()
         val navigator = LocalNavigator.current
 
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text("评论") },
-                    navigationIcon = {
-                        IconButton(onClick = { navigator?.pop() }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
-                        }
-                    }
-                )
-            }
+        cp.player.app.ui.component.AppScaffold(
+            title = "评论",
+            onBackPressed = { navigator?.pop() }
         ) { padding ->
-            Box(Modifier.fillMaxSize().padding(padding)) {
+            Box(Modifier.fillMaxSize()) {
                 when {
                     state.loading && state.comments.isEmpty() -> {
                         CircularProgressIndicator(Modifier.align(Alignment.Center))

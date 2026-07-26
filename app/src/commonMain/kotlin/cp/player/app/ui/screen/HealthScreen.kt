@@ -42,9 +42,6 @@ import cp.player.app.AppModel
 import cp.player.app.ui.component.LegacyListItem
 import cp.player.app.ui.component.LegacyPageScaffold
 import cp.player.kmp.monitor.HealthMonitor
-import kotlinx.datetime.Instant
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
 
 class HealthScreen : Screen {
     @OptIn(ExperimentalMaterial3Api::class)
@@ -66,11 +63,12 @@ class HealthScreen : Screen {
             navigationIcon = {
                 IconButton(onClick = { navigator.pop() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
             },
-            actions = {
-                IconButton(onClick = { AppModel.health.clearRecords() }) {
-                    Icon(Icons.Filled.DeleteSweep, "清空")
-                }
-            },
+            topBarActions = listOf(
+                cp.player.app.ui.component.TopBarAction(
+                    icon = { Icon(Icons.Filled.DeleteSweep, "清空") },
+                    onClick = { AppModel.health.clearRecords() }
+                )
+            ),
         ) { pageModifier ->
             Column(pageModifier) {
                 OverviewCard(overall, records.size)
@@ -130,15 +128,17 @@ private fun RecordRow(record: HealthMonitor.ApiCallRecord, index: Int, total: In
         HealthMonitor.HealthLevel.ERROR -> MaterialTheme.colorScheme.error
     }
     val time = runCatching {
-        Instant.fromEpochMilliseconds(record.timestamp)
-            .toLocalDateTime(TimeZone.currentSystemDefault())
-            .time.toString().substring(0, 8)
+        java.time.Instant.ofEpochMilli(record.timestamp)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toLocalTime().toString().substring(0, 8)
     }.getOrDefault("--:--:--")
+
+    var showRaw by remember { mutableStateOf(false) }
 
     LegacyListItem(
         index = index,
         total = total,
-        onClick = null,
+        onClick = { if (record.rawResponse != null) showRaw = true },
         leadingContent = { Icon(Icons.Filled.BugReport, null, tint = color) },
         headlineContent = {
             Text("${record.method} · ${record.providerId}", fontWeight = FontWeight.Medium)
@@ -158,6 +158,25 @@ private fun RecordRow(record: HealthMonitor.ApiCallRecord, index: Int, total: In
         },
         modifier = Modifier.fillMaxWidth(),
     )
+    
+    if (showRaw && record.rawResponse != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showRaw = false },
+            title = { Text("API 原始返回内容") },
+            text = {
+                LazyColumn {
+                    item {
+                        androidx.compose.foundation.text.selection.SelectionContainer {
+                            Text(record.rawResponse.toString(), style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { showRaw = false }) { Text("关闭") }
+            }
+        )
+    }
 }
 
 private fun levelText(level: HealthMonitor.HealthLevel) = when (level) {

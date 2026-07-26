@@ -69,7 +69,9 @@ object HealthMonitor {
         val responseWarnings: List<ResponseWarning> = emptyList(),
         val responseCode: Int? = null,
         /** 期望的数据字段名（如 "data", "playlist"），仅 MISSING_DATA_FIELD 时有值 */
-        val expectedField: String? = null
+        val expectedField: String? = null,
+        /** 原始返回内容（JSON 字符串） */
+        val rawResponse: String? = null
     )
 
     data class ProviderHealthStats(
