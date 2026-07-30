@@ -13,6 +13,11 @@ interface UnifiedMusicSource {
     suspend fun getTrackDetail(mediaId: String): MusicResult<TrackSummary>
 
     /**
+     * 批量获取歌曲详情
+     */
+    suspend fun getTrackDetails(mediaIds: List<String>): MusicResult<List<TrackSummary>>
+
+    /**
      * 获取歌曲播放地址
      */
     suspend fun getSongUrl(mediaId: String, level: String = "standard"): MusicResult<SongUrl>

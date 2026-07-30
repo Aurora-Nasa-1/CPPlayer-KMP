@@ -51,6 +51,52 @@ class UnifiedMusicSourceImpl(
         }
     }
 
+    override suspend fun getTrackDetails(mediaIds: List<String>): MusicResult<List<TrackSummary>> {
+        val summaries = mutableListOf<TrackSummary>()
+        val parsedIds = mediaIds.map { CPMediaId.parse(it) }
+        
+        val localIds = parsedIds.filter { it.providerId == "local" }
+        if (localIds.isNotEmpty()) {
+            val list = localMusicSource.cached()
+            for (id in localIds) {
+                val song = list.find { it.path == id.resourceId }
+                if (song != null) {
+                    summaries.add(TrackSummary(
+                        id = id.toString(),
+                        name = song.title,
+                        artist = song.artist ?: "Unknown",
+                        album = song.album,
+                        coverUrl = null,
+                        durationMs = song.durationMs
+                    ))
+                }
+            }
+        }
+        
+        val apiIds = parsedIds.filter { it.providerId != "local" }
+        if (apiIds.isNotEmpty()) {
+            // 分批请求以避免 URI 过长
+            for (chunk in apiIds.chunked(500)) {
+                try {
+                    val json = musicApiService.getSongDetail(chunk.map { it.resourceId })
+                    val songs = (json as? JsonObject)?.get("songs")?.jsonArray
+                    songs?.forEach { songJson ->
+                        val trackObj = songJson.jsonObject
+                        val rid = (trackObj["id"] as? JsonPrimitive)?.contentOrNull ?: return@forEach
+                        val matchedApiId = chunk.find { it.resourceId == rid }
+                        if (matchedApiId != null) {
+                            summaries.add(trackObj.toTrackSummary(matchedApiId.toString()))
+                        }
+                    }
+                } catch (e: Exception) {
+                    // 忽略或记录错误
+                }
+            }
+        }
+        
+        return BackendResult.Success(summaries)
+    }
+
     override suspend fun getSongUrl(mediaId: String, level: String): MusicResult<SongUrl> {
         val id = CPMediaId.parse(mediaId)
         if (id.providerId == "local") {

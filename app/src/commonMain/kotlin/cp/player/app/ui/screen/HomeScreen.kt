@@ -87,6 +87,7 @@ private fun HomeScreenContent(model: HomeScreenModel) {
     val scope = rememberCoroutineScope()
     val navigator = LocalNavigator.currentOrThrow
     val provider = AppModel.activeProviderId()
+    val toMediaId = { id: String -> if (id.contains("://")) id else "$provider://song/$id" }
 
     if (loading) {
         Column(Modifier.fillMaxSize()) {
@@ -117,7 +118,7 @@ private fun HomeScreenContent(model: HomeScreenModel) {
                     if (dailySongs.isNotEmpty()) {
                         scope.launch {
                             AppModel.playback.playQueue(
-                                dailySongs.map { "$provider://song/${it.id}" }, startIndex = 0,
+                                dailySongs.map { toMediaId(it.id) }, startIndex = 0,
                             )
                         }
                     }
@@ -140,7 +141,7 @@ private fun HomeScreenContent(model: HomeScreenModel) {
                         onSongClick = { track ->
                             scope.launch {
                                 AppModel.playback.playQueue(
-                                    dailySongs.map { "$provider://song/${it.id}" },
+                                    dailySongs.map { toMediaId(it.id) },
                                     startIndex = dailySongs.indexOf(track).coerceAtLeast(0),
                                 )
                             }
@@ -177,7 +178,7 @@ private fun HomeScreenContent(model: HomeScreenModel) {
                         onClick = {
                             scope.launch {
                                 AppModel.playback.playQueue(
-                                    recentTracks.map { "$provider://song/${it.id}" },
+                                    recentTracks.map { toMediaId(it.id) },
                                     startIndex = 0,
                                 )
                             }
@@ -198,7 +199,7 @@ private fun HomeScreenContent(model: HomeScreenModel) {
                             onClick = {
                                 scope.launch {
                                     AppModel.playback.playQueue(
-                                        recentTracks.map { "$provider://song/${it.id}" }, startIndex = index,
+                                        recentTracks.map { toMediaId(it.id) }, startIndex = index,
                                     )
                                 }
                             },
@@ -243,18 +244,18 @@ private fun HomeScreenContent(model: HomeScreenModel) {
             onDismiss = { selectedTrack = null },
             onPlay = {
                 scope.launch {
-                    AppModel.playback.playQueue(listOf("$provider://song/${track.id}"), startIndex = 0)
+                    AppModel.playback.playQueue(listOf(toMediaId(track.id)), startIndex = 0)
                 }
             },
             onToggleFavorite = {
                 scope.launch {
                     val target = track.id !in likedIds
-                    AppModel.playback.toggleFavoriteFor("$provider://song/${track.id}")
+                    AppModel.playback.toggleFavoriteFor(toMediaId(track.id))
                     cp.player.app.ui.util.UiEvents.notify(if (target) "已收藏" else "已取消收藏")
                 }
             },
             onAddToQueue = {
-                scope.launch { AppModel.playback.addToQueue("$provider://song/${track.id}") }
+                scope.launch { AppModel.playback.addToQueue(toMediaId(track.id)) }
                 cp.player.app.ui.util.UiEvents.notify("已加入播放队列")
             },
             onAddToPlaylist = { addToPlaylistTrack = track },

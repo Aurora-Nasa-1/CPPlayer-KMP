@@ -692,8 +692,8 @@ class MusicApiServiceImpl(
         else -> "0"
     }
 
-    /** 毫秒时间戳。使用 kotlinx-datetime，无需平台 actual。 */
-    private fun now(): Long = kotlinx.datetime.Clock.System.now().toEpochMilliseconds()
+    /** 毫秒时间戳。使用自定义跨平台方法，避免 kotlinx-datetime 运行时缺失问题。 */
+    private fun now(): Long = cp.player.kmp.util.currentTimeMillis()
 
     private val parser = Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
 

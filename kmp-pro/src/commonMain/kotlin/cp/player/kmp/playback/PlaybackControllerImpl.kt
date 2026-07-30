@@ -641,9 +641,32 @@ class PlaybackControllerImpl(
     // ============ 队列解析（懒解析） ============
 
     private fun resolveQueueInBackground(startFrom: Int) {
-        val toResolve = _queue.indices.sortedBy { if (it == startFrom) 0 else 1 + kotlin.math.abs(it - startFrom) }
+        val toResolveIndices = _queue.indices.sortedBy { if (it == startFrom) 0 else 1 + kotlin.math.abs(it - startFrom) }
+        val toResolveEntries = toResolveIndices.filter { _queue[it].summary == null }
+        if (toResolveEntries.isEmpty()) return
+
         scope.launch {
-            toResolve.forEach { i -> resolveEntry(i) }
+            for (chunk in toResolveEntries.chunked(50)) {
+                val mediaIds = chunk.map { _queue[it].mediaId }
+                val result = source.getTrackDetails(mediaIds).getOrNull() ?: emptyList()
+                val map = result.associateBy { it.id }
+                
+                var changed = false
+                for (i in chunk) {
+                    val entry = _queue.getOrNull(i) ?: continue
+                    if (entry.summary == null) {
+                        val summary = map[entry.mediaId]
+                        if (summary != null) {
+                            entry.summary = summary
+                            if (i == _index) {
+                                updateState { it.copy(currentTrack = summary, currentIndex = _index, durationMs = summary.durationMs.takeIf { d -> d > 0 } ?: it.durationMs) }
+                            }
+                            changed = true
+                        }
+                    }
+                }
+                if (changed) pushQueueState()
+            }
         }
     }
 
