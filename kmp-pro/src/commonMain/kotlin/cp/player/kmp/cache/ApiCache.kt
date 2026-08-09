@@ -24,18 +24,25 @@ interface ApiCache {
  * 适合"先返回缓存，再后台比对"场景的临时存储；如需跨重启保留请提供平台持久化实现。
  */
 class InMemoryApiCache(private val maxEntries: Int = 64) : ApiCache {
-    private val store = object : LinkedHashMap<String, CacheEntry>(16, 0.75f, true) {
-        override fun removeEldestEntry(eldest: Map.Entry<String, CacheEntry>?): Boolean {
-            return size > maxEntries
-        }
+    private val store = LinkedHashMap<String, CacheEntry>()
+
+    @Synchronized
+    override fun get(key: String): CacheEntry? {
+        val entry = store.remove(key) ?: return null
+        store[key] = entry
+        return entry
     }
 
     @Synchronized
-    override fun get(key: String): CacheEntry? = store[key]
-
-    @Synchronized
     override fun put(key: String, entry: CacheEntry) {
+        store.remove(key)
         store[key] = entry
+        if (store.size > maxEntries) {
+            val eldestKey = store.keys.firstOrNull()
+            if (eldestKey != null) {
+                store.remove(eldestKey)
+            }
+        }
     }
 
     @Synchronized
@@ -55,8 +62,8 @@ fun cacheKey(
     params: Map<String, String>,
     cookie: String? = null
 ): String {
-    val sortedParams = params.toSortedMap()
-        .entries.joinToString("&") { (k, v) -> "$k=$v" }
+    val sortedParams = params.entries.sortedBy { it.key }
+        .joinToString("&") { (k, v) -> "$k=$v" }
     val ck = (cookie?.hashCode() ?: 0)
     return "$providerId#$method#$sortedParams#$ck"
 }
