@@ -1,0 +1,3 @@
+## 2025-02-23 - Accessibility Improvements
+**Learning:** Found several places where accessibility can be improved without adding complex UI changes. For example, replacing `contentDescription = null` with descriptive text or `"""" (empty string to hide decorative icons from screen readers, though Jetpack Compose handles null/empty interchangeably). More importantly, some icons completely lack descriptive context, such as the ThumbUp icon in the CommentItem missing a proper description depending on its state. Or adding meaningful descriptions to Images.
+**Action:** Enhance accessibility by providing meaningful `contentDescription` to Icons and AsyncImages, especially those that convey state or action, like the Like button in comments.
