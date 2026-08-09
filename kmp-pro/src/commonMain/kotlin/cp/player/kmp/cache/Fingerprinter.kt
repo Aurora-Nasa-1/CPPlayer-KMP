@@ -42,11 +42,13 @@ object Fingerprinter {
         // 3. 主数据数组的 id 列表（探测常见数据数组键）
         val primaryArray = pickPrimaryArray(json)
         if (primaryArray != null) {
-            val ids = primaryArray.mapNotNull { item ->
+            // ⚡ Bolt: Use asSequence() to lazily process large JSON arrays, avoiding full array iteration and intermediate list allocations.
+            val ids = primaryArray.asSequence().mapNotNull { item ->
                 if (item is JsonObject) idOf(item) else null
             }
                 .distinct()
                 .take(64)
+                .toList()
                 .sorted()
                 .joinToString(",")
             sb.append("ids=").append(ids).append('|')

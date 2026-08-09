@@ -673,7 +673,7 @@ class MusicApiServiceImpl(
                 if (s.startsWith("http") && s.length > 12 && !s.contains("null")) return s
             }
             is JsonObject -> {
-                for (key in listOf("url", "picUrl", "coverImgUrl", "avatarUrl")) {
+                for (key in URL_KEYS) {
                     val p = element[key]
                     if (p is JsonPrimitive) {
                         val s = p.contentOrNull
@@ -687,6 +687,11 @@ class MusicApiServiceImpl(
             }
         }
         return null
+    }
+
+    companion object {
+        // ⚡ Bolt: Cache url keys to avoid list allocation on every recursive call
+        private val URL_KEYS = listOf("url", "picUrl", "coverImgUrl", "avatarUrl")
     }
 
     private fun typeToCode(type: String): String = when (type) {

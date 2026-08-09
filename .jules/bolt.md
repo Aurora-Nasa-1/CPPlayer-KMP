@@ -1,0 +1,3 @@
+## 2023-10-27 - Eager vs Lazy collection operations on large JSON API responses
+**Learning:** In KMP-PRO, when `Fingerprinter` calculates the signature of large API responses (e.g. taking the top 64 IDs from an array that can be 1000+ items long), doing `.mapNotNull { ... }.distinct().take(64)` will eagerly process and allocate intermediate collections for the entire array before truncating. For large JSON APIs, this causes unnecessary garbage generation and performance overhead during caching/fingerprinting.
+**Action:** Use `.asSequence()` on large JSON arrays before chaining functional operators (`mapNotNull`, `filter`, `distinct`) and terminating with `.take(N).toList()` or similar, so only the minimal required items are processed.
