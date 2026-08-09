@@ -145,6 +145,10 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
             onDelete = {
                 confirmDelete = playlist
             },
+            coverUrl = playlist.coverUrl,
+            // 媒体库中的歌单均为已收藏/自建；非 owner 时复用 confirmDelete 确认弹窗（文案按 owner 区分）
+            isFavorite = true,
+            onToggleFavorite = { confirmDelete = playlist },
         )
     }
 

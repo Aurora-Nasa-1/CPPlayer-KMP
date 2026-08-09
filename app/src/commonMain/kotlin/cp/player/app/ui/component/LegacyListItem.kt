@@ -1,5 +1,7 @@
 package cp.player.app.ui.component
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,12 +19,14 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
 
 /** Pure UI counterpart of the segmented list rows used by the Android app. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LegacyListItem(
     index: Int,
     total: Int,
     onClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
     leadingContent: (@Composable () -> Unit)? = null,
     headlineContent: @Composable () -> Unit,
@@ -30,14 +34,8 @@ fun LegacyListItem(
     trailingContent: (@Composable RowScope.() -> Unit)? = null,
 ) {
     val press = rememberPressedScale()
-    Surface(
-        onClick = onClick ?: {},
-        enabled = onClick != null,
-        interactionSource = press.first,
-        modifier = modifier.fillMaxWidth().then(if (onClick != null) press.second else Modifier),
-        shape = legacySegmentShape(index, total),
-        color = containerColor,
-    ) {
+    // Surface 自带 onClick 不支持长按，需要长按时改用 combinedClickable
+    val content: @Composable () -> Unit = {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -50,6 +48,25 @@ fun LegacyListItem(
             }
             trailingContent?.invoke(this)
         }
+    }
+    if (onLongClick != null) {
+        Surface(
+            modifier = modifier.fillMaxWidth()
+                .combinedClickable(onClick = onClick ?: {}, onLongClick = onLongClick),
+            shape = legacySegmentShape(index, total),
+            color = containerColor,
+            content = content,
+        )
+    } else {
+        Surface(
+            onClick = onClick ?: {},
+            enabled = onClick != null,
+            interactionSource = press.first,
+            modifier = modifier.fillMaxWidth().then(if (onClick != null) press.second else Modifier),
+            shape = legacySegmentShape(index, total),
+            color = containerColor,
+            content = content,
+        )
     }
 }
 

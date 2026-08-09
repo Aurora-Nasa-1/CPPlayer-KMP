@@ -2,6 +2,8 @@ package cp.player.kmp.provider
 
 import cp.player.kmp.util.PlatformContext
 import cp.player.kmp.util.PlatformSupport
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import java.io.File
 
 class JniProvider(
@@ -59,12 +61,15 @@ class JniProvider(
     override fun callApi(method: String, params: Map<String, String>): String {
         if (!isLoaded) {
             log("callApi 被调用但 JNI 未加载: method=$method, loadError=$loadError")
-            return """{"code": 500, "msg": "JNI not loaded: ${loadError ?: "unknown"}"}"""
+            return buildJsonObject {
+                put("code", JsonPrimitive(500))
+                put("msg", JsonPrimitive("JNI not loaded: ${loadError ?: "unknown"}"))
+            }.toString()
         }
-        val json = buildMap { params.forEach { (k, v) -> put(k, v) } }
-            .entries.joinToString(separator = ",", prefix = "{", postfix = "}") {
-                "\"${it.key}\":\"${it.value}\""
-            }
+        // 用 buildJsonObject 构造参数 JSON，自动转义 cookie 等值中的 " \ 等特殊字符
+        val json = buildJsonObject {
+            params.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
+        }.toString()
         log("callApi -> nativeCallApi: method=$method, json=$json")
         return try {
             val result = nativeCallApi(method, json)

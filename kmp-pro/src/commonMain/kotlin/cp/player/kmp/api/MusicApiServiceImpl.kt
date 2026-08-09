@@ -33,7 +33,10 @@ class MusicApiServiceImpl(
     // ======================== 通用 ========================
 
     override suspend fun callApi(method: String, map: Map<String, String>, cookie: String?): JsonElement {
-        val isAuth = method.startsWith("login") || method.startsWith("register") || method.startsWith("captcha")
+        // 登录动作接口（login/register/captcha）不带旧 cookie；
+        // 但 login/status 是只读查询接口，必须注入已存储的 cookie 才能取回当前登录态。
+        val isAuth = method != MusicApiMethod.AUTH_LOGIN_STATUS &&
+            (method.startsWith("login") || method.startsWith("register") || method.startsWith("captcha"))
         val providerId = providerManager.getCurrentProviderId()
         val effectiveCookie = if (isAuth && cookie == null) null
             else cookie ?: cookieStorage.getCookie(providerId)

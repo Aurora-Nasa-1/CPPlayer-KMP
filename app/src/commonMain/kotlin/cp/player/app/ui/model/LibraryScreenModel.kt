@@ -3,6 +3,7 @@ package cp.player.app.ui.model
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
+import cp.player.app.extractUidFromLoginStatus
 import cp.player.app.ui.util.UiEvents
 import cp.player.kmp.BackendResult
 import cp.player.kmp.music.MusicSourceFromApi
@@ -12,11 +13,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.longOrNull
 
 data class LibraryUiState(
     val playlists: List<PlaylistSummary> = emptyList(),
@@ -32,24 +31,29 @@ class LibraryScreenModel : ScreenModel {
     private val _state = MutableStateFlow(LibraryUiState())
     val state: StateFlow<LibraryUiState> = _state.asStateFlow()
 
-    init { refresh() }
+    init {
+        refresh()
+        // 订阅登录态变化（登录成功/登出后 userProfile 更新），自动刷新媒体库；
+        // drop(1) 跳过首次收集的当前值，避免与 init 中的 refresh() 重复加载。
+        // StateFlow 只在值真正变化时发射，无需额外去重。
+        screenModelScope.launch {
+            AppModel.userProfileFlow.drop(1).collect { refresh() }
+        }
+    }
 
     fun refresh() {
         screenModelScope.launch {
             _state.value = _state.value.copy(loading = true, error = null)
             _state.value = withContext(Dispatchers.IO) {
                 runCatching {
-                    val status = AppModel.api.getLoginStatus()
-                    val root = status as? JsonObject
-                    val data = (root?.get("data") as? JsonObject) ?: root
-                    val account = (data?.get("account") as? JsonObject)
-                        ?: (data?.get("profile") as? JsonObject)
-                    val uid = (account?.get("id") as? JsonPrimitive)?.longOrNull
-                    val playlists = if (uid == null) emptyList() else {
+                    val uid = extractUidFromLoginStatus(AppModel.api.getLoginStatus())
+                    if (uid == null) {
+                        _state.value.copy(loading = false, error = "未登录或登录已过期")
+                    } else {
                         val parsed = MusicSourceFromApi.parseUserPlaylists(AppModel.api.getUserPlaylists(uid))
-                        (parsed as? BackendResult.Success)?.data.orEmpty()
+                        val playlists = (parsed as? BackendResult.Success)?.data.orEmpty()
+                        _state.value.copy(playlists = playlists, loading = false)
                     }
-                    _state.value.copy(playlists = playlists, loading = false)
                 }.getOrElse {
                     _state.value.copy(loading = false, error = it.message ?: "媒体库加载失败")
                 }

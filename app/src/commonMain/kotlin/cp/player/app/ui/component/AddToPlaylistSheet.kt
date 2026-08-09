@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
+import cp.player.app.extractUidFromLoginStatus
 import cp.player.app.ui.util.UiEvents
 import cp.player.kmp.BackendResult
 import cp.player.kmp.music.MusicSourceFromApi
@@ -49,12 +50,12 @@ import kotlinx.serialization.json.longOrNull
 /**
  * "加入歌单"底部弹层。
  *
- * 展示当前账号的歌单列表，点击即把 [trackId] 加入对应歌单；
+ * 展示当前账号的歌单列表，点击即把 [trackIds] 加入对应歌单；
  * 顶部支持输入名称一键新建歌单并加入。结果通过 [UiEvents] 全局提示反馈。
  */
 @Composable
 fun AddToPlaylistSheet(
-    trackId: String,
+    trackIds: List<String>,
     onDismiss: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -65,13 +66,11 @@ fun AddToPlaylistSheet(
     LaunchedEffect(Unit) {
         playlists = withContext(Dispatchers.IO) {
             runCatching {
-                val status = AppModel.api.getLoginStatus()
-                val root = status as? JsonObject ?: return@runCatching null
-                val data = (root["data"] as? JsonObject) ?: root
-                val account = (data["account"] as? JsonObject)
-                    ?: (data["profile"] as? JsonObject)
-                    ?: return@runCatching null
-                val uid = (account["id"] as? JsonPrimitive)?.longOrNull ?: return@runCatching null
+                val uid = extractUidFromLoginStatus(AppModel.api.getLoginStatus())
+                if (uid == null) {
+                    withContext(Dispatchers.Main) { UiEvents.notify("未登录或登录已过期") }
+                    return@runCatching emptyList()
+                }
                 (MusicSourceFromApi.parseUserPlaylists(AppModel.api.getUserPlaylists(uid))
                         as? BackendResult.Success)?.data
             }.getOrNull()
@@ -85,14 +84,15 @@ fun AddToPlaylistSheet(
     fun addTo(playlistId: Long) {
         if (busy) return
         busy = true
+        val ids = trackIds.map(::extractRawId)
         scope.launch(Dispatchers.IO) {
             val ok = runCatching {
-                AppModel.api.addTracksToPlaylist(playlistId, listOf(extractRawId(trackId)))
+                AppModel.api.addTracksToPlaylist(playlistId, ids)
             }.isSuccess
             withContext(Dispatchers.Main) {
                 busy = false
                 if (ok) {
-                    UiEvents.notify("已加入歌单")
+                    UiEvents.notify("已添加 ${ids.size} 首歌曲")
                     onDismiss()
                 } else {
                     UiEvents.notify("加入歌单失败")
@@ -203,4 +203,13 @@ fun AddToPlaylistSheet(
             }
         }
     }
+}
+
+/** 单歌曲便捷重载，保持既有调用点兼容。 */
+@Composable
+fun AddToPlaylistSheet(
+    trackId: String,
+    onDismiss: () -> Unit,
+) {
+    AddToPlaylistSheet(trackIds = listOf(trackId), onDismiss = onDismiss)
 }

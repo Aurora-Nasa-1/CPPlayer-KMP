@@ -1,6 +1,7 @@
 package cp.player.app.ui.component
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -27,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import cp.player.app.ui.util.resized
 import cp.player.kmp.music.TrackSummary
 
 /**
@@ -34,6 +37,7 @@ import cp.player.kmp.music.TrackSummary
  *
  * 封面 52dp + 歌名/歌手 + 右侧 MoreVert 圆形按钮。
  * 点击主体区域触发 [onClick]，点击 MoreVert 触发 [onOptionsClick]。
+ * [selectionMode] 为 true 时以 Checkbox 替代封面、隐藏 MoreVert，用于多选场景。
  */
 @Composable
 fun SongItem(
@@ -45,17 +49,31 @@ fun SongItem(
     index: Int = 0,
     total: Int = 0,
     isCurrentlyPlaying: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
+    selectionMode: Boolean = false,
+    isSelected: Boolean = false,
 ) {
     val shape = MaterialTheme.shapes.medium
     LegacyListItem(
         index = index.coerceAtLeast(0),
         total = total.coerceAtLeast(1),
         onClick = onClick,
+        onLongClick = onLongClick,
         modifier = modifier,
-        containerColor = if (isCurrentlyPlaying) MaterialTheme.colorScheme.primaryContainer
-        else MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = when {
+            selectionMode && isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+            isCurrentlyPlaying -> MaterialTheme.colorScheme.primaryContainer
+            else -> if (isSystemInDarkTheme()) MaterialTheme.colorScheme.surfaceContainerHighest
+            else MaterialTheme.colorScheme.surface
+        },
         leadingContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            if (selectionMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = null,
+                )
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                 if (showIndex) {
                     Text(
                         text = "${index + 1}",
@@ -72,7 +90,7 @@ fun SongItem(
                 ) {
                     if (!track.coverUrl.isNullOrBlank()) {
                         AsyncImage(
-                            model = track.coverUrl,
+                            model = track.coverUrl.resized(180),
                             contentDescription = null,
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop,
@@ -80,6 +98,7 @@ fun SongItem(
                     } else {
                         Icon(Icons.Filled.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                }
                 }
             }
         },
@@ -109,11 +128,11 @@ fun SongItem(
                 overflow = TextOverflow.Ellipsis,
             )
         },
-        trailingContent = if (onOptionsClick != null) {{
+        trailingContent = if (!selectionMode && onOptionsClick != null) {{
             IconButton(
                 onClick = onOptionsClick,
                 colors = androidx.compose.material3.IconButtonDefaults.iconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ),
                 modifier = Modifier.size(40.dp),
             ) {

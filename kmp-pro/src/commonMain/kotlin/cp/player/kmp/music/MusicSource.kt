@@ -91,6 +91,17 @@ data class PlaylistDetail(
 )
 
 /**
+ * 歌单曲目分页结果。
+ *
+ * [hasMore] 取服务端布尔（`more` / `hasMore`），服务端未给出时默认 false；
+ * 调用方可结合 `tracks.size >= limit` 兜底判断。
+ */
+data class PlaylistTracksPage(
+    val tracks: List<TrackSummary>,
+    val hasMore: Boolean,
+)
+
+/**
  * 歌曲摘要（列表/队列用）。
  */
 data class TrackSummary(

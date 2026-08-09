@@ -3,6 +3,7 @@ package cp.player.app.ui.model
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
+import cp.player.app.extractUidFromLoginStatus
 import cp.player.kmp.BackendResult
 import cp.player.kmp.music.MusicSourceFromApi
 import cp.player.kmp.music.PlaylistSummary
@@ -13,9 +14,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.longOrNull
 
 data class HomeUiState(
     val dailySongs: List<TrackSummary> = emptyList(),
@@ -83,11 +81,11 @@ class HomeScreenModel : ScreenModel {
             MusicSourceFromApi.parseRecommendedPlaylists(AppModel.api.getRecommendedPlaylists())
         }.getOrNull().let { (it as? BackendResult.Success)?.data.orEmpty() }
         val user = runCatching {
-            val status = AppModel.api.getLoginStatus()
-            val account = (status as? JsonObject)?.get("account") as? JsonObject
-                ?: (status as? JsonObject)?.get("profile") as? JsonObject
-            val uid = account?.get("id")?.let { (it as? JsonPrimitive)?.longOrNull }
-            if (uid == null) emptyList() else {
+            val uid = extractUidFromLoginStatus(AppModel.api.getLoginStatus())
+            if (uid == null) {
+                if (error == null) error = "未登录或登录已过期"
+                emptyList()
+            } else {
                 val result = MusicSourceFromApi.parseUserPlaylists(AppModel.api.getUserPlaylists(uid))
                 (result as? BackendResult.Success)?.data.orEmpty()
             }

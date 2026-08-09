@@ -13,9 +13,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.longOrNull
 
 /**
  * 应用顶层服务定位器。
@@ -159,12 +156,10 @@ object AppModel {
             val profile = runCatching {
                 val status = api.getLoginStatus()
                 val root = status as? kotlinx.serialization.json.JsonObject ?: return@runCatching null
-                val data = (root["data"] as? kotlinx.serialization.json.JsonObject) ?: root
-                val account = (data["account"] as? kotlinx.serialization.json.JsonObject)
-                val prof = (data["profile"] as? kotlinx.serialization.json.JsonObject) ?: account
-                val uid = (account?.get("id") ?: prof?.get("userId"))
-                    ?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.longOrNull }
-                    ?: return@runCatching null
+                val uid = extractUidFromLoginStatus(root) ?: return@runCatching null
+                val data = unwrapLoginStatusData(root) ?: return@runCatching null
+                val prof = (data["profile"] as? kotlinx.serialization.json.JsonObject)
+                    ?: (data["account"] as? kotlinx.serialization.json.JsonObject)
                 UserProfile(
                     uid = uid,
                     nickname = (prof?.get("nickname") as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "",

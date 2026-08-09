@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
@@ -111,6 +112,30 @@ object MusicSourceFromApi {
         }
     }
 
+    // ============ 歌单曲目（分页） ============
+
+    /**
+     * 解析歌单全部歌曲分页接口（playlist/track/all）。
+     *
+     * 曲目数组兼容 `songs` / `tracks` 字段；hasMore 优先取 `more`，
+     * 其次 `hasMore`，服务端未给出时默认 false（调用方可用
+     * `tracks.size >= limit` 兜底）。
+     */
+    fun parsePlaylistTracks(json: JsonElement): MusicResult<PlaylistTracksPage> {
+        return json.toMusicResult {
+            val array = (this["songs"] as? JsonArray)
+                ?: (this["tracks"] as? JsonArray)
+                ?: JsonArray(emptyList())
+            val tracks = array.mapNotNull { el ->
+                (el as? JsonObject)?.toTrackSummary()?.takeIf { it.id.isNotBlank() }
+            }
+            val hasMore = ((this["more"] as? JsonPrimitive)?.booleanOrNull)
+                ?: (this["hasMore"] as? JsonPrimitive)?.booleanOrNull
+                ?: false
+            PlaylistTracksPage(tracks = tracks, hasMore = hasMore)
+        }
+    }
+
     // ============ 用户歌单 ============
 
     fun parseUserPlaylists(json: JsonElement): MusicResult<List<PlaylistSummary>> {
@@ -203,6 +228,9 @@ object MusicSourceFromApi {
     /** 用 [api] 调用 + 直接解析的封装。 */
     suspend fun getPlaylistDetail(api: MusicApiService, id: Long): MusicResult<PlaylistDetail> =
         parsePlaylistDetail(api.getPlaylistDetail(id))
+
+    suspend fun getPlaylistTracks(api: MusicApiService, id: Long, limit: Int = 300, offset: Int = 0): MusicResult<PlaylistTracksPage> =
+        parsePlaylistTracks(api.getPlaylistTracks(id, limit, offset))
 
     suspend fun getRecommendedPlaylists(api: MusicApiService, limit: Int = 30): MusicResult<List<PlaylistSummary>> =
         parseRecommendedPlaylists(api.getRecommendedPlaylists())
