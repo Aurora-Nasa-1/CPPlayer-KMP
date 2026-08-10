@@ -235,7 +235,7 @@ class AndroidLocalMediaSource(private val context: Context) : LocalMediaSource {
     /** 递归遍历 SAF 树（[DocumentsContract]，框架 API，无额外依赖）。 */
     private fun walkTree(treeUri: Uri, docId: String, out: MutableList<LocalMediaItem>) {
         val childrenUri = runCatching {
-            DocumentsContract.buildChildDocumentsUriUsingTreeDocId(treeUri, docId)
+            DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, docId)
         }.getOrNull() ?: return
         val projection = arrayOf(
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -263,7 +263,7 @@ class AndroidLocalMediaSource(private val context: Context) : LocalMediaSource {
                 val mediaType = MediaType.fromFileName(name)
                 if (mediaType == MediaType.OTHER) continue
                 val docUri = runCatching {
-                    DocumentsContract.buildDocumentUriUsingTreeDocId(treeUri, childId)
+                    DocumentsContract.buildDocumentUriUsingTree(treeUri, childId)
                 }.getOrNull() ?: continue
                 out += LocalMediaItem(
                     path = docUri.toString(),
