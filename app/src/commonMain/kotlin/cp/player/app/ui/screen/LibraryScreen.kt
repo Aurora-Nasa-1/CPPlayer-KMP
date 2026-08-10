@@ -114,6 +114,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
                         loading = state.loading,
                         error = state.error,
                         onRetry = model::refresh,
+                        isOwner = model::isOwner,
                         onPlaylistClick = { navigator.push(PlaylistDetailScreen(it)) },
                         onPlaylistOptions = { selectedPlaylist = it },
                     )
@@ -311,6 +312,7 @@ private fun PlaylistsTab(
     loading: Boolean,
     error: String?,
     onRetry: () -> Unit,
+    isOwner: (PlaylistSummary) -> Boolean,
     onPlaylistClick: (PlaylistSummary) -> Unit,
     onPlaylistOptions: (PlaylistSummary) -> Unit,
 ) {
@@ -339,8 +341,7 @@ private fun PlaylistsTab(
         items(playlists.size) { index ->
             PlaylistItem(
                 playlist = playlists[index],
-                index = index,
-                total = playlists.size,
+                isOwner = isOwner(playlists[index]),
                 onClick = { onPlaylistClick(playlists[index]) },
                 onOptionsClick = { onPlaylistOptions(playlists[index]) },
             )

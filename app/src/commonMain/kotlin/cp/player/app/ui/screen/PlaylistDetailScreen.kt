@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
@@ -68,16 +69,22 @@ import cp.player.app.AppModel
 import cp.player.app.platform.BackHandler
 import cp.player.app.platform.shareText
 import cp.player.app.ui.component.AddToPlaylistSheet
+import cp.player.app.ui.component.AddSongsOptionsSheet
 import cp.player.app.ui.component.AppScaffold
 import cp.player.app.ui.component.PlaylistOptionsSheet
+import cp.player.app.ui.component.PlaylistPickerSheet
 import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.SongOptionsSheet
+import cp.player.app.ui.component.SourceSongsSelectionSheet
 import cp.player.app.ui.component.TopBarAction
 import cp.player.app.ui.model.PlaylistDetailScreenModel
 import cp.player.app.ui.model.PlaylistDetailUiState
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.formatTimeMs
 import cp.player.app.ui.util.resized
+import cp.player.kmp.BackendResult
+import cp.player.kmp.music.CPMediaId
+import cp.player.kmp.music.MusicSourceFromApi
 import cp.player.kmp.music.PlaylistSummary
 import cp.player.kmp.music.TrackSummary
 import kotlinx.coroutines.Dispatchers
@@ -132,6 +139,11 @@ private fun PlaylistDetailContent(playlist: PlaylistSummary, model: PlaylistDeta
     var optionsTarget by remember { mutableStateOf<TrackSummary?>(null) }
     var showInfoTarget by remember { mutableStateOf<TrackSummary?>(null) }
     var addToPlaylistIds by remember { mutableStateOf<List<String>?>(null) }
+    // 添加歌曲来源流程（移植旧项目）：来源选项 → 歌单选择器/队列 → 歌曲多选
+    var showAddSongsOptions by remember { mutableStateOf(false) }
+    var showImportPicker by remember { mutableStateOf(false) }
+    var importSource by remember { mutableStateOf<PlaylistSummary?>(null) }
+    var showQueueSelection by remember { mutableStateOf(false) }
     // 非 owner 歌单的收藏态（Screen 内简化维护）
     var playlistFavorite by remember { mutableStateOf(false) }
 
@@ -147,6 +159,12 @@ private fun PlaylistDetailContent(playlist: PlaylistSummary, model: PlaylistDeta
     val trackCount = if (state.tracks.isNotEmpty()) state.tracks.size
         else (state.summary?.trackCount ?: playlist.trackCount)
     val durationStr = if (state.tracks.isEmpty()) "…" else formatTimeMs(totalDurationMs)
+
+    // "添加"按钮：仅创建者可向歌单导入歌曲
+    val openAddSongs: () -> Unit = {
+        if (isOwner) showAddSongsOptions = true
+        else UiEvents.notify("仅歌单创建者可添加歌曲")
+    }
 
     val togglePlaylistFavorite: () -> Unit = {
         val target = !playlistFavorite
@@ -180,6 +198,7 @@ private fun PlaylistDetailContent(playlist: PlaylistSummary, model: PlaylistDeta
                 onSongOptions = { optionsTarget = it },
                 onOpenPlaylistSheet = { showPlaylistSheet = true },
                 onAddSelectedToPlaylist = { addToPlaylistIds = state.selectedIds.toList() },
+                onAddTracks = openAddSongs,
             )
         } else {
             NarrowLayout(
@@ -195,6 +214,7 @@ private fun PlaylistDetailContent(playlist: PlaylistSummary, model: PlaylistDeta
                 onSongOptions = { optionsTarget = it },
                 onOpenPlaylistSheet = { showPlaylistSheet = true },
                 onAddSelectedToPlaylist = { addToPlaylistIds = state.selectedIds.toList() },
+                onAddTracks = openAddSongs,
             )
         }
     }
@@ -227,7 +247,7 @@ private fun PlaylistDetailContent(playlist: PlaylistSummary, model: PlaylistDeta
             songName = track.name,
             artistName = track.artist,
             isFavorite = model.isLiked(track.id),
-            isDownloaded = false,
+            isDownloaded = AppModel.isDownloaded(track.id),
             onDismiss = { optionsTarget = null },
             // 点击时对当前列表重新求值索引，避免弹层组合时固化过期 index
             onPlay = {
@@ -242,6 +262,7 @@ private fun PlaylistDetailContent(playlist: PlaylistSummary, model: PlaylistDeta
                 }
             },
             onAddToPlaylist = { addToPlaylistIds = listOf(track.id) },
+            onDownload = { AppModel.downloadTrack(track) },
             onShowInfo = { showInfoTarget = track },
             onShare = {
                 shareText("「${track.name}」 https://music.163.com/#/song?id=${track.id}")
@@ -253,6 +274,75 @@ private fun PlaylistDetailContent(playlist: PlaylistSummary, model: PlaylistDeta
     // 多选 / 单曲：加入歌单
     addToPlaylistIds?.let { ids ->
         AddToPlaylistSheet(trackIds = ids, onDismiss = { addToPlaylistIds = null })
+    }
+
+    // 添加歌曲：来源选项（移植旧项目"添加歌曲"弹层）
+    if (showAddSongsOptions) {
+        AddSongsOptionsSheet(
+            onDismiss = { showAddSongsOptions = false },
+            onImportFromPlaylist = {
+                showAddSongsOptions = false
+                showImportPicker = true
+            },
+            onAddFromQueue = {
+                showAddSongsOptions = false
+                showQueueSelection = true
+            },
+        )
+    }
+
+    // 从歌单导入：源歌单选择器（排除当前歌单）
+    if (showImportPicker) {
+        PlaylistPickerSheet(
+            title = "从歌单导入",
+            excludePlaylistId = playlist.id,
+            onDismiss = { showImportPicker = false },
+            onSelected = { source ->
+                showImportPicker = false
+                importSource = source
+            },
+        )
+    }
+
+    // 从歌单导入：源歌曲多选
+    importSource?.let { source ->
+        SourceSongsSelectionSheet(
+            sourceName = source.name,
+            fetchSongs = {
+                withContext(Dispatchers.IO) {
+                    val page = MusicSourceFromApi.getPlaylistTracks(AppModel.api, source.id, limit = 300, offset = 0)
+                    (page as? BackendResult.Success)?.data?.tracks.orEmpty()
+                }
+            },
+            onDismiss = { importSource = null },
+            onAddSelected = { tracks ->
+                model.addTracks(tracks)
+                importSource = null
+            },
+        )
+    }
+
+    // 从播放队列添加：队列歌曲多选
+    if (showQueueSelection) {
+        val queueTracks = playbackState.queue.map { item ->
+            TrackSummary(
+                id = runCatching { CPMediaId.parse(item.mediaId).resourceId }.getOrDefault(item.mediaId),
+                name = item.title,
+                artist = item.artist,
+                album = item.album,
+                coverUrl = item.coverUrl,
+                durationMs = item.durationMs,
+            )
+        }
+        SourceSongsSelectionSheet(
+            sourceName = "正在播放",
+            initialSongs = queueTracks,
+            onDismiss = { showQueueSelection = false },
+            onAddSelected = { tracks ->
+                model.addTracks(tracks)
+                showQueueSelection = false
+            },
+        )
     }
 
     // INFO 弹窗（getSongDetail 内联解析）
@@ -362,6 +452,7 @@ private fun NarrowLayout(
     onSongOptions: (TrackSummary) -> Unit,
     onOpenPlaylistSheet: () -> Unit,
     onAddSelectedToPlaylist: () -> Unit,
+    onAddTracks: () -> Unit,
 ) {
     if (state.selectionMode) {
         AppScaffold(
@@ -407,6 +498,7 @@ private fun NarrowLayout(
                 withHeader = false,
                 onSongOptions = onSongOptions,
                 onSortClick = onOpenPlaylistSheet,
+                onAddTracks = onAddTracks,
             )
         }
     } else {
@@ -469,6 +561,7 @@ private fun NarrowLayout(
                 withHeader = true,
                 onSongOptions = onSongOptions,
                 onSortClick = onOpenPlaylistSheet,
+                onAddTracks = onAddTracks,
             )
         }
     }
@@ -491,6 +584,7 @@ private fun WideLayout(
     onSongOptions: (TrackSummary) -> Unit,
     onOpenPlaylistSheet: () -> Unit,
     onAddSelectedToPlaylist: () -> Unit,
+    onAddTracks: () -> Unit,
 ) {
     Row(Modifier.fillMaxSize()) {
         // 左侧：歌单信息面板
@@ -547,8 +641,9 @@ private fun WideLayout(
             PlaylistHeader(
                 onPlayAll = { model.playAll() },
                 onShuffle = { model.playShuffle() },
-                onAdd = { UiEvents.notify("请在歌曲更多菜单中加入歌单") },
+                onAdd = onAddTracks,
                 onSort = onOpenPlaylistSheet,
+                onDownloadAll = { AppModel.downloadTracks(displayTracks) },
             )
         }
 
@@ -562,6 +657,7 @@ private fun WideLayout(
                 withHeader = false,
                 onSongOptions = onSongOptions,
                 onSortClick = onOpenPlaylistSheet,
+                onAddTracks = onAddTracks,
                 modifier = Modifier.widthIn(max = 900.dp).align(Alignment.TopCenter),
                 topContentPadding = 72.dp,
             )
@@ -622,6 +718,7 @@ private fun TrackList(
     withHeader: Boolean,
     onSongOptions: (TrackSummary) -> Unit,
     onSortClick: () -> Unit,
+    onAddTracks: () -> Unit,
     modifier: Modifier = Modifier,
     topContentPadding: Dp = 0.dp,
 ) {
@@ -663,8 +760,9 @@ private fun TrackList(
                     PlaylistHeader(
                         onPlayAll = { model.playAll() },
                         onShuffle = { model.playShuffle() },
-                        onAdd = { UiEvents.notify("请在歌曲更多菜单中加入歌单") },
+                        onAdd = onAddTracks,
                         onSort = onSortClick,
+                        onDownloadAll = { AppModel.downloadTracks(displayTracks) },
                     )
                 }
             }
@@ -757,6 +855,7 @@ private fun PlaylistHeader(
     onShuffle: () -> Unit,
     onAdd: () -> Unit,
     onSort: () -> Unit,
+    onDownloadAll: () -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -867,6 +966,34 @@ private fun PlaylistHeader(
                         fontWeight = FontWeight.Medium,
                     )
                 }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // 第三行：全部下载
+        Surface(
+            onClick = onDownloadAll,
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+        ) {
+            Row(
+                Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Filled.Download,
+                    contentDescription = "全部下载",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "全部下载",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Medium,
+                )
             }
         }
     }

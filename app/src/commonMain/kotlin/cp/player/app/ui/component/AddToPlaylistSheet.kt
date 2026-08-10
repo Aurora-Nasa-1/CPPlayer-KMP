@@ -15,12 +15,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,10 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
-import cp.player.app.extractUidFromLoginStatus
 import cp.player.app.ui.util.UiEvents
-import cp.player.kmp.BackendResult
-import cp.player.kmp.music.MusicSourceFromApi
 import cp.player.kmp.music.PlaylistSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -48,9 +43,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
 /**
- * "加入歌单"底部弹层。
+ * "添加到歌单"底部弹层（1:1 移植旧项目 `AddToPlaylistBottomSheet` 界面）。
  *
- * 展示当前账号的歌单列表，点击即把 [trackIds] 加入对应歌单；
+ * 展示当前账号创建的歌单列表（封面行样式），点击即把 [trackIds] 加入对应歌单；
  * 顶部支持输入名称一键新建歌单并加入。结果通过 [UiEvents] 全局提示反馈。
  */
 @Composable
@@ -65,15 +60,7 @@ fun AddToPlaylistSheet(
 
     LaunchedEffect(Unit) {
         playlists = withContext(Dispatchers.IO) {
-            runCatching {
-                val uid = extractUidFromLoginStatus(AppModel.api.getLoginStatus())
-                if (uid == null) {
-                    withContext(Dispatchers.Main) { UiEvents.notify("未登录或登录已过期") }
-                    return@runCatching emptyList()
-                }
-                (MusicSourceFromApi.parseUserPlaylists(AppModel.api.getUserPlaylists(uid))
-                        as? BackendResult.Success)?.data
-            }.getOrNull()
+            runCatching { fetchOwnedPlaylists() }.getOrDefault(emptyList())
         }
     }
 
@@ -129,9 +116,9 @@ fun AddToPlaylistSheet(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
-                "加入歌单",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
+                "添加到歌单",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
             )
 
             // 新建歌单行
@@ -168,36 +155,14 @@ fun AddToPlaylistSheet(
                 )
                 else -> LazyColumn(
                     Modifier.fillMaxWidth().heightIn(max = 360.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
                     contentPadding = PaddingValues(vertical = 4.dp),
                 ) {
-                    itemsIndexed(playlists!!, key = { _, p -> p.id }) { index, playlist ->
-                        Surface(
+                    itemsIndexed(playlists!!, key = { _, p -> p.id }) { _, playlist ->
+                        PlaylistPickerRow(
+                            playlist = playlist,
                             onClick = { addTo(playlist.id) },
-                            shape = MaterialTheme.shapes.large,
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Row(
-                                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                Icon(
-                                    Icons.Filled.QueueMusic,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                )
-                                Column(Modifier.weight(1f)) {
-                                    Text(playlist.name, style = MaterialTheme.typography.titleSmall, maxLines = 1)
-                                    Text(
-                                        "${playlist.trackCount} 首",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                        }
+                        )
                     }
                 }
             }

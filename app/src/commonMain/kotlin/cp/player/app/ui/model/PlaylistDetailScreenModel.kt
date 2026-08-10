@@ -280,6 +280,37 @@ class PlaylistDetailScreenModel : ScreenModel {
         }
     }
 
+    /** 向当前歌单添加歌曲（"从歌单导入 / 从播放队列添加"，仅 owner 有效）。
+     *
+     * 成功后本地追加（按 id 去重保序）并同步 trackCount，避免重新拉取整页。
+     */
+    fun addTracks(newTracks: List<TrackSummary>) {
+        val playlist = _state.value.summary ?: return
+        if (newTracks.isEmpty() || !isOwner()) return
+        screenModelScope.launch {
+            val ids = newTracks.map { it.id }
+            val ok = withContext(Dispatchers.IO) {
+                runCatching { isApiSuccess(AppModel.api.addTracksToPlaylist(playlist.id, ids)) }
+                    .getOrDefault(false)
+            }
+            if (ok) {
+                var addedCount = 0
+                _state.update { s ->
+                    val seen = s.tracks.mapTo(HashSet()) { it.id }
+                    val added = newTracks.filter { seen.add(it.id) }
+                    addedCount = added.size
+                    s.copy(
+                        tracks = s.tracks + added,
+                        summary = s.summary?.copy(trackCount = s.summary.trackCount + added.size),
+                    )
+                }
+                UiEvents.notify(if (addedCount > 0) "已添加 $addedCount 首歌曲" else "所选歌曲均已在歌单中")
+            } else {
+                UiEvents.notify("加入歌单失败")
+            }
+        }
+    }
+
     /** 从歌单移除曲目（仅 owner 有效）；成功后本地剔除并退出多选。 */
     fun removeTracks(trackIds: List<String>) {
         val playlist = _state.value.summary ?: return
