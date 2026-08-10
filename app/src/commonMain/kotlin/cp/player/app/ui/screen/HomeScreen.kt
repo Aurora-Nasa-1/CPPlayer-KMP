@@ -52,6 +52,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.ui.component.ContentState
+import cp.player.app.ui.util.resized
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.PageHeader
 import cp.player.app.ui.component.PlaylistCoverCard
@@ -291,8 +292,9 @@ private fun DailyMixCard(
     ) {
         Box(Modifier.fillMaxWidth()) {
             if (!coverUrl.isNullOrBlank()) {
+                // [Bolt] Fetch a resized 600px image instead of full resolution to save network/memory
                 AsyncImage(
-                    model = coverUrl, contentDescription = null,
+                    model = coverUrl.resized(600), contentDescription = null,
                     modifier = Modifier.fillMaxWidth().height(bgHeight), contentScale = ContentScale.Crop,
                 )
             }
@@ -391,8 +393,9 @@ private fun MosaicCoverGrid(
                 val wPx = s * cellW + (s - 1) * gapPx; val hPx = s * cellPx + (s - 1) * gapPx
                 val xPx = tile.col * (cellW + gapPx); val yPx = tile.row * (cellPx + gapPx)
                 val song = songs.getOrNull(tile.urlIndex)
+                // [Bolt] Fetch a resized 200px thumbnail to reduce network traffic and memory usage in lists
                 AsyncImage(
-                    model = urls[tile.urlIndex % urls.size],
+                    model = urls[tile.urlIndex % urls.size].resized(200),
                     contentDescription = song?.name,
                     modifier = Modifier
                         .offset(x = with(density) { xPx.toDp() }, y = with(density) { yPx.toDp() })

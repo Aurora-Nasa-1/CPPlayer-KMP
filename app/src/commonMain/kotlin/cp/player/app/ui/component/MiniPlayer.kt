@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.kmp.playback.PlaybackUiState
 import cp.player.app.ui.theme.CpShapes
+import cp.player.app.ui.util.resized
 
 /**
  * 底部 MiniBar（KMP 等效原项目 `BottomPlaybackBar`）。
@@ -94,8 +95,9 @@ fun androidx.compose.animation.SharedTransitionScope.MiniPlayer(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (!track.coverUrl.isNullOrBlank()) {
+                    // [Bolt] Use resized cover (150px) to conserve memory & bandwidth on the mini-player
                     AsyncImage(
-                        model = track.coverUrl,
+                        model = track.coverUrl.resized(150),
                         contentDescription = null,
                         modifier = Modifier.size(48.dp)
                             .sharedBounds(

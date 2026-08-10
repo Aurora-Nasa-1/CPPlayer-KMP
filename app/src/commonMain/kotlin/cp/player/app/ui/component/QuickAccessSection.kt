@@ -45,6 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.platform.isAndroidPlatform
+import cp.player.app.ui.util.resized
 import cp.player.kmp.music.PlaylistSummary
 import kotlinx.coroutines.launch
 
@@ -170,8 +171,9 @@ fun QuickAccessSection(
                                     }
                                     is QuickAccessItemType.PlaylistPreview -> {
                                         if (!item.playlist.coverUrl.isNullOrBlank()) {
+                                            // [Bolt] Fetch smaller (200px) covers for quick access previews to speed up rendering
                                             AsyncImage(
-                                                model = item.playlist.coverUrl,
+                                                model = item.playlist.coverUrl.resized(200),
                                                 contentDescription = null,
                                                 modifier = Modifier.fillMaxSize().clip(CircleShape),
                                                 contentScale = ContentScale.Crop,
@@ -335,8 +337,9 @@ private fun PlaylistPreviewCard(
             contentAlignment = Alignment.Center,
         ) {
             if (!playlist.coverUrl.isNullOrBlank()) {
+                // [Bolt] Downsize quick access section playlists to 200px to reduce payload and memory usage
                 AsyncImage(
-                    model = playlist.coverUrl,
+                    model = playlist.coverUrl.resized(200),
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,

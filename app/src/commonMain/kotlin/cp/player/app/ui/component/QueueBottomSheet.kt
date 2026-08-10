@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.kmp.playback.QueueItem
+import cp.player.app.ui.util.resized
 import kotlinx.coroutines.launch
 
 /**
@@ -236,8 +237,9 @@ private fun QueueRow(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (!item.coverUrl.isNullOrBlank()) {
+                    // [Bolt] Fetch smaller (150px) cover images for the queue list to reduce loading time
                     AsyncImage(
-                        model = item.coverUrl,
+                        model = item.coverUrl.resized(150),
                         contentDescription = "封面",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))

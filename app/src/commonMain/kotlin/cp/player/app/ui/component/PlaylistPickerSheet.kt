@@ -44,6 +44,7 @@ import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.extractUidFromLoginStatus
 import cp.player.app.ui.util.UiEvents
+import cp.player.app.ui.util.resized
 import cp.player.kmp.BackendResult
 import cp.player.kmp.music.MusicSourceFromApi
 import cp.player.kmp.music.PlaylistSummary
@@ -78,8 +79,9 @@ fun PlaylistPickerRow(
                 contentAlignment = Alignment.Center,
             ) {
                 if (!playlist.coverUrl.isNullOrBlank()) {
+                    // [Bolt] Fetch a resized 150px thumbnail to reduce network traffic when loading picker sheet
                     AsyncImage(
-                        model = playlist.coverUrl,
+                        model = playlist.coverUrl.resized(150),
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,

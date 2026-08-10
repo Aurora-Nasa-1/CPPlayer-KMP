@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.kmp.music.PlaylistSummary
+import cp.player.app.ui.util.resized
 
 /**
  * 媒体库歌单列表项（Library 页面使用）。
@@ -67,8 +68,9 @@ fun PlaylistItem(
                 contentAlignment = Alignment.Center,
             ) {
                 if (!playlist.coverUrl.isNullOrBlank()) {
+                    // [Bolt] Fetch smaller (300px) covers for playlist cards to drastically reduce list payload
                     AsyncImage(
-                        model = playlist.coverUrl,
+                        model = playlist.coverUrl.resized(300),
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
@@ -138,8 +140,9 @@ fun PlaylistCoverCard(
     ) {
         Box(modifier = Modifier.size(160.dp)) {
             if (!playlist.coverUrl.isNullOrBlank()) {
+                // [Bolt] Limit playlist thumbnail downloads to 300px to avoid large memory footprints
                 AsyncImage(
-                    model = playlist.coverUrl,
+                    model = playlist.coverUrl.resized(300),
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.extraLarge),
                     contentScale = ContentScale.Crop,
