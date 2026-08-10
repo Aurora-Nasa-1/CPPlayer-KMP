@@ -1,0 +1,19 @@
+schema_version: 1
+module_path: ""
+title: CPPlayer KMP 多平台音乐播放器工程根
+scope:
+    - README.md
+    - Agent.md
+    - .gitignore
+    - build.gradle.kts
+    - gradle.properties
+    - settings.gradle.kts
+    - gradlew.bat
+    - gradle/
+    - .evox/
+    - .tmp-verify/
+    - PROVIDER_DEV_GUIDE.md
+    - gradlew
+source_files: []
+depends_on: []
+related_to: []

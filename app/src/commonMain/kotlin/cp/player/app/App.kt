@@ -34,11 +34,12 @@ fun App() {
     val dynamic by AppModel.dynamicColorFlow.collectAsState()
     val pureBlack by AppModel.pureBlackFlow.collectAsState()
 
-    // 启动：应用持久化音质到播放控制器 + 拉取用户资料/收藏 + 启动播放历史记录
+    // 启动：应用持久化音质到播放控制器 + 拉取用户资料/收藏 + 启动播放历史记录 + 补齐最近播放缺失字段
     androidx.compose.runtime.LaunchedEffect(Unit) {
         AppModel.syncPlaybackQuality()
         AppModel.refreshUserProfile()
         AppModel.startHistoryRecorder()
+        AppModel.startRecentTracksEnrich()
     }
 
     CpTheme(themeMode = themeMode, dynamicColor = dynamic, pureBlack = pureBlack) {

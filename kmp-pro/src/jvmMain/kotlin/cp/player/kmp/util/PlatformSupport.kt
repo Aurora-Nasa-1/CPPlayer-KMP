@@ -32,6 +32,10 @@ actual object PlatformSupport {
 
     actual fun modulesDir(context: PlatformContext): String = PlatformInfo.modulesDirectory(context)
 
+    actual fun defaultDownloadsDir(context: PlatformContext): String = PlatformInfo.downloadsDirectory(context)
+
+    actual fun dataDir(context: PlatformContext): String = PlatformInfo.dataDirectory(context)
+
     actual fun unzipTo(zipPath: String, destDir: String): Boolean {
         val dest = File(destDir).canonicalFile
         if (!dest.exists()) dest.mkdirs()
@@ -63,6 +67,33 @@ actual object PlatformSupport {
     actual fun readTextFile(path: String): String? = File(path).takeIf { it.exists() }?.readText()
 
     actual fun exists(path: String): Boolean = File(path).exists()
+
+    actual fun fileSize(path: String): Long = File(path).takeIf { it.exists() }?.length() ?: 0L
+
+    actual fun fileLastModified(path: String): Long = File(path).takeIf { it.exists() }?.lastModified() ?: 0L
+
+    actual fun ensureDir(path: String): Boolean = File(path).let { if (it.exists()) it.isDirectory else it.mkdirs() }
+
+    actual fun moveFile(src: String, dest: String): Boolean = try {
+        java.nio.file.Files.move(File(src).toPath(), File(dest).toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+        true
+    } catch (e: Exception) {
+        try {
+            java.nio.file.Files.move(File(src).toPath(), File(dest).toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            true
+        } catch (e2: Exception) {
+            File(src).renameTo(File(dest))
+        }
+    }
+
+    actual fun writeTextFile(path: String, content: String): Boolean = try {
+        val file = File(path)
+        file.parentFile?.mkdirs()
+        file.writeText(content)
+        true
+    } catch (e: Exception) {
+        false
+    }
 
     actual fun resolveEntryPoint(moduleDir: String, entryPoint: String, supportedAbis: List<String>?): String {
         val dir = File(moduleDir)

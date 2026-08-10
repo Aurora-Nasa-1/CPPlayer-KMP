@@ -39,6 +39,30 @@ actual fun rememberZipPicker(onPicked: (zipPath: String?) -> Unit): () -> Unit {
     return { launcher.launch("application/zip") }
 }
 
+@Composable
+actual fun rememberDirectoryPicker(onPicked: (dirPath: String?) -> Unit): () -> Unit {
+    val context = LocalContext.current
+    val currentOnPicked = rememberUpdatedState(onPicked)
+
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) {
+            currentOnPicked.value(null)
+            return@rememberLauncherForActivityResult
+        }
+        // 持久化授权，保证后续访问该树不需再次弹框
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
+        }
+        currentOnPicked.value(uri.toString())
+    }
+
+    return { launcher.launch(null) }
+}
+
 actual fun sendPlatformToast(message: String) { toast(message) }
 
 private var appContext: Context? = null

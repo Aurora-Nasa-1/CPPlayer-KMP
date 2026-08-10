@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: android_app_wrapper
+title: Android 应用入口与 KMP 桥接层
+scope:
+    - androidApp/
+source_files: []
+depends_on: []
+related_to:
+    - path: kmp_core
+    - path: kmp_ui_app/app_bootstrap

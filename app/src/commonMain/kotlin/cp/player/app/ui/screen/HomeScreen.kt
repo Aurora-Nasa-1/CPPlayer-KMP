@@ -236,11 +236,14 @@ private fun HomeScreenContent(model: HomeScreenModel) {
     }
 
     selectedTrack?.let { track ->
+        // 最近播放记录里保存的是完整 mediaId（如 netease://song/123），收藏集合是裸 id，需解析后再比较
+        val favId = runCatching { cp.player.kmp.music.CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)
         SongOptionsSheet(
             songName = track.name,
             artistName = track.artist,
-            isFavorite = track.id in likedIds,
-            isDownloaded = false,
+            coverUrl = track.coverUrl,
+            isFavorite = favId in likedIds,
+            isDownloaded = AppModel.isDownloaded(track.id),
             onDismiss = { selectedTrack = null },
             onPlay = {
                 scope.launch {
@@ -249,7 +252,7 @@ private fun HomeScreenContent(model: HomeScreenModel) {
             },
             onToggleFavorite = {
                 scope.launch {
-                    val target = track.id !in likedIds
+                    val target = favId !in likedIds
                     AppModel.playback.toggleFavoriteFor(toMediaId(track.id))
                     cp.player.app.ui.util.UiEvents.notify(if (target) "已收藏" else "已取消收藏")
                 }
@@ -259,6 +262,7 @@ private fun HomeScreenContent(model: HomeScreenModel) {
                 cp.player.app.ui.util.UiEvents.notify("已加入播放队列")
             },
             onAddToPlaylist = { addToPlaylistTrack = track },
+            onDownload = { AppModel.downloadTrack(track) },
         )
     }
 

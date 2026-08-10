@@ -24,6 +24,8 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoGraph
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -31,6 +33,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,7 +44,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import cp.player.app.platform.isAndroidPlatform
 import cp.player.kmp.music.PlaylistSummary
+import kotlinx.coroutines.launch
 
 /**
  * 快速访问区域：HorizontalPager 滑动切换 FM 快捷入口 / 用户歌单预览。
@@ -68,6 +73,14 @@ fun QuickAccessSection(
 
     val initialPage = if (quickAccessItems.size > 1) 1 else 0
     val pagerState = rememberPagerState(initialPage = initialPage) { quickAccessItems.size }
+    val scope = rememberCoroutineScope()
+    // 翻页统一入口：动画进行中忽略连续触发，避免滚轮快速滚动时翻页过冲
+    val goPage: (Int) -> Unit = { target ->
+        val page = target.coerceIn(0, quickAccessItems.size - 1)
+        if (page != pagerState.currentPage && !pagerState.isScrollInProgress) {
+            scope.launch { pagerState.animateScrollToPage(page) }
+        }
+    }
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -75,7 +88,11 @@ fun QuickAccessSection(
     ) {
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().desktopPagerMouseControl(
+                pageCount = quickAccessItems.size,
+                onScrollLeft = { goPage(pagerState.currentPage - 1) },
+                onScrollRight = { goPage(pagerState.currentPage + 1) },
+            ),
             contentPadding = PaddingValues(horizontal = if (expanded) 16.dp else 32.dp),
             pageSpacing = 16.dp,
         ) { page ->
@@ -103,6 +120,8 @@ fun QuickAccessSection(
         }
 
         if (quickAccessItems.size > 1) {
+            // 桌面端无触屏滑动，额外提供左右切换按钮
+            val showArrows = !isAndroidPlatform()
             Box(
                 modifier = Modifier.height(48.dp).fillMaxWidth(),
                 contentAlignment = Alignment.Center,
@@ -111,6 +130,15 @@ fun QuickAccessSection(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    if (showArrows) {
+                        CompactIconButton(
+                            icon = Icons.Filled.ChevronLeft,
+                            contentDescription = "上一张",
+                            enabled = pagerState.currentPage > 0,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            onClick = { goPage(pagerState.currentPage - 1) },
+                        )
+                    }
                     quickAccessItems.forEachIndexed { index, item ->
                         val isSelected = index == pagerState.currentPage
                         val indicatorColor by animateColorAsState(
@@ -153,6 +181,15 @@ fun QuickAccessSection(
                                 }
                             }
                         }
+                    }
+                    if (showArrows) {
+                        CompactIconButton(
+                            icon = Icons.Filled.ChevronRight,
+                            contentDescription = "下一张",
+                            enabled = pagerState.currentPage < quickAccessItems.size - 1,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            onClick = { goPage(pagerState.currentPage + 1) },
+                        )
                     }
                 }
             }

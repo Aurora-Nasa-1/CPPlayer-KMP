@@ -20,6 +20,12 @@ expect object PlatformSupport {
     /** 模块根目录（每个平台的具体路径） */
     fun modulesDir(context: PlatformContext): String
 
+    /** 平台默认下载目录（不存在时创建） */
+    fun defaultDownloadsDir(context: PlatformContext): String
+
+    /** 应用数据目录（存放 downloads.json 等元数据，与 [modulesDir] 同级风格） */
+    fun dataDir(context: PlatformContext): String
+
     /**
      * 解压 zip 到目标目录（带路径穿越保护）。
      * @return true 成功
@@ -34,6 +40,21 @@ expect object PlatformSupport {
 
     /** 判断文件/目录是否存在 */
     fun exists(path: String): Boolean
+
+    /** 文件大小（字节）；不存在返回 0 */
+    fun fileSize(path: String): Long
+
+    /** 文件最后修改时间戳（毫秒）；不存在返回 0 */
+    fun fileLastModified(path: String): Long
+
+    /** 确保目录存在（不存在则递归创建）；返回是否为目录 */
+    fun ensureDir(path: String): Boolean
+
+    /** 移动/重命名单个文件（优先原子 rename，失败降级普通替换） */
+    fun moveFile(src: String, dest: String): Boolean
+
+    /** 写文本文件（自动创建父目录）；返回是否成功 */
+    fun writeTextFile(path: String, content: String): Boolean
 
     /**
      * 按平台 ABI 顺序解析模块入口文件路径。

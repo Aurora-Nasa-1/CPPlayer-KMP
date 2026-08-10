@@ -193,8 +193,9 @@ class SearchScreen : Screen {
             cp.player.app.ui.component.SongOptionsSheet(
                 songName = track.name,
                 artistName = track.artist,
+                coverUrl = track.coverUrl,
                 isFavorite = track.id in likedIds,
-                isDownloaded = false,
+                isDownloaded = AppModel.isDownloaded(track.id),
                 onDismiss = { selectedTrack = null },
                 onPlay = {
                     scope.launch {
@@ -213,6 +214,7 @@ class SearchScreen : Screen {
                     cp.player.app.ui.util.UiEvents.notify("已加入播放队列")
                 },
                 onAddToPlaylist = { addToPlaylistTrack = track },
+                onDownload = { AppModel.downloadTrack(track) },
             )
         }
 

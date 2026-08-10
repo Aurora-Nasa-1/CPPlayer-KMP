@@ -1,0 +1,75 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: zh-CN
+branch: main
+nodes_managed: true
+exported_at: "2026-08-10T01:06:25Z"
+modules:
+    "":
+        dir_name: CPPlayer KMP 多平台音乐播放器工程根
+        title: CPPlayer KMP 多平台音乐播放器工程根
+        scope:
+            - README.md
+            - Agent.md
+            - .gitignore
+            - build.gradle.kts
+            - gradle.properties
+            - settings.gradle.kts
+            - gradlew.bat
+            - gradle/
+            - .evox/
+            - .tmp-verify/
+            - PROVIDER_DEV_GUIDE.md
+            - gradlew
+        source_files: []
+        children:
+            - android_app_wrapper
+            - kmp_core
+            - kmp_ui_app
+        depends_on: []
+        related_to: []
+    android_app_wrapper:
+        dir_name: Android 应用入口与 KMP 桥接层
+        title: Android 应用入口与 KMP 桥接层
+        scope:
+            - androidApp/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: kmp_core
+            - path: kmp_ui_app/app_bootstrap
+    kmp_core:
+        dir_name: CPPlayer KMP 后端核心（Provider 插件化 + 播放控制）
+        title: CPPlayer KMP 后端核心（Provider 插件化 + 播放控制）
+        scope:
+            - kmp-pro/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: android_app_wrapper
+            - path: kmp_ui_app/app_bootstrap
+    kmp_ui_app:
+        dir_name: KMP 音乐播放器 UI 应用层
+        title: KMP 音乐播放器 UI 应用层
+        scope:
+            - app/
+        source_files: []
+        children:
+            - kmp_ui_app/app_bootstrap
+        depends_on: []
+        related_to: []
+    kmp_ui_app/app_bootstrap:
+        dir_name: 应用启动与顶层状态编排
+        title: 应用启动与顶层状态编排
+        scope:
+            - app/src/commonMain/kotlin/cp/player/app/App.kt
+            - app/src/commonMain/kotlin/cp/player/app/AppModel.kt
+            - app/src/commonMain/kotlin/cp/player/app/LoginStatusParser.kt
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: android_app_wrapper
+            - path: kmp_core

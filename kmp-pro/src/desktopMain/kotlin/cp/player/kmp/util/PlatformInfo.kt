@@ -10,4 +10,14 @@ actual object PlatformInfo {
         return File(System.getProperty("user.home"), ".kmp-pro/modules")
             .apply { if (!exists()) mkdirs() }.absolutePath
     }
+
+    actual fun downloadsDirectory(context: PlatformContext): String {
+        return File(System.getProperty("user.home"), ".kmp-pro/downloads")
+            .apply { if (!exists()) mkdirs() }.absolutePath
+    }
+
+    actual fun dataDirectory(context: PlatformContext): String {
+        return File(System.getProperty("user.home"), ".kmp-pro")
+            .apply { if (!exists()) mkdirs() }.absolutePath
+    }
 }

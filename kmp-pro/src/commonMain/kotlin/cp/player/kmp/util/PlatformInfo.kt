@@ -17,4 +17,16 @@ expect object PlatformInfo {
      * @param context 平台上下文（Android 用以取 filesDir；Desktop 忽略）
      */
     fun modulesDirectory(context: PlatformContext): String
+
+    /**
+     * 平台默认下载目录（不存在时创建）。
+     * @param context 平台上下文（Android 用以取外部文件目录；Desktop 忽略）
+     */
+    fun downloadsDirectory(context: PlatformContext): String
+
+    /**
+     * 应用数据目录（存放 downloads.json 等元数据，与 [modulesDirectory] 同级风格）。
+     * @param context 平台上下文（Android 用以取 filesDir；Desktop 忽略）
+     */
+    fun dataDirectory(context: PlatformContext): String
 }

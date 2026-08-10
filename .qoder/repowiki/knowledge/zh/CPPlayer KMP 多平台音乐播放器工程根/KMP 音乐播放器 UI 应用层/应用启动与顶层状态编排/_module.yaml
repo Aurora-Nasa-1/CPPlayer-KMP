@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: kmp_ui_app/app_bootstrap
+title: 应用启动与顶层状态编排
+scope:
+    - app/src/commonMain/kotlin/cp/player/app/App.kt
+    - app/src/commonMain/kotlin/cp/player/app/AppModel.kt
+    - app/src/commonMain/kotlin/cp/player/app/LoginStatusParser.kt
+source_files: []
+depends_on: []
+related_to:
+    - path: android_app_wrapper
+    - path: kmp_core

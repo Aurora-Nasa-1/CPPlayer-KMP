@@ -12,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CleaningServices
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -155,9 +156,54 @@ class SettingsDetailScreen : Screen {
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 )
 
+                // 下载目录：仅 Desktop 可改；Android SAF 树 URI 不能作为写入目录，
+                // 固定保存到应用私有目录并给出提示。
+                val downloadDir by AppModel.downloadDirFlow.collectAsState()
+                val isAndroid = cp.player.app.platform.isAndroidPlatform()
+                val pickDownloadDir = cp.player.app.platform.rememberDirectoryPicker { path ->
+                    if (!path.isNullOrBlank()) {
+                        AppModel.setDownloadDir(path)
+                        cp.player.app.ui.util.UiEvents.notify("下载目录已更新，仅对后续下载生效")
+                    }
+                }
                 LegacyListItem(
                     index = 0,
-                    total = 1,
+                    total = 2,
+                    onClick = if (isAndroid) null else ({ pickDownloadDir() }),
+                    headlineContent = { Text("下载目录") },
+                    supportingContent = {
+                        Column {
+                            if (isAndroid) {
+                                Text(
+                                    "Android 下载固定保存到应用私有目录",
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                            Text(
+                                downloadDir.ifBlank { "默认下载目录" },
+                                maxLines = 2,
+                            )
+                            Text(
+                                "仅对后续下载生效",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    },
+                    trailingContent = {
+                        if (!isAndroid) {
+                            Icon(
+                                Icons.Filled.FolderOpen,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    },
+                )
+
+                LegacyListItem(
+                    index = 1,
+                    total = 2,
                     onClick = {
                         val ok = cp.player.app.platform.clearImageCache()
                         cp.player.app.ui.util.UiEvents.notify(

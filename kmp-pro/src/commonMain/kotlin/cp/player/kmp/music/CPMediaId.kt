@@ -7,6 +7,9 @@ package cp.player.kmp.music
  * 示例:
  * - 本地音乐: local://song//storage/emulated/0/Music/song.mp3
  * - 网易云: netease://song/12345
+ *
+ * 本地媒体条目（下载 / 导入的本地文件）mediaId 规则约定为:
+ * `local://{audio|video}/{path}`，其中 path 为文件绝对路径或 content:// uri。
  */
 data class CPMediaId(
     val providerId: String,
@@ -18,6 +21,12 @@ data class CPMediaId(
     }
 
     companion object {
+        /** resourceType: 本地音频条目 */
+        const val RESOURCE_AUDIO = "audio"
+
+        /** resourceType: 本地视频条目 */
+        const val RESOURCE_VIDEO = "video"
+
         fun parse(mediaIdStr: String): CPMediaId {
             val parts = mediaIdStr.split("://", limit = 2)
             if (parts.size != 2) throw IllegalArgumentException("Invalid CPMediaId format: $mediaIdStr")
