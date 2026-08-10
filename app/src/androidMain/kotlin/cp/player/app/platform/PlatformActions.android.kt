@@ -16,6 +16,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 
+actual fun isAndroidPlatform(): Boolean = true
+
 actual fun saveQrCodeToGallery(base64Image: String, fileName: String) {
     val ctx = ctxOrNull ?: return
     try {
@@ -111,6 +113,32 @@ actual fun clearImageCache(): Boolean {
     } catch (_: Exception) {
         false
     }
+}
+
+// ============ 媒体扫描运行时权限（app 模块不依赖 androidApp，经回调桥接 MainActivity） ============
+
+@Volatile
+private var mediaPermissionRequester: (() -> Unit)? = null
+
+@Volatile
+private var mediaPermissionGrantedCallback: (() -> Unit)? = null
+
+/** 注册权限申请入口（由 MainActivity 启动时调用，内部调 requestPermissions）。 */
+fun setMediaPermissionRequester(requester: (() -> Unit)?) {
+    mediaPermissionRequester = requester
+}
+
+/** 权限已授予时由 Activity 层调用，转发给已注册的 UI 回调（如自动重试扫描）。 */
+fun notifyMediaReadPermissionGranted() {
+    mediaPermissionGrantedCallback?.invoke()
+}
+
+actual fun requestMediaScanPermission() {
+    mediaPermissionRequester?.invoke()
+}
+
+actual fun setOnMediaPermissionGranted(callback: (() -> Unit)?) {
+    mediaPermissionGrantedCallback = callback
 }
 
 @Composable

@@ -2,7 +2,7 @@ package cp.player.kmp.music
 
 import cp.player.kmp.BackendResult
 import cp.player.kmp.api.MusicApiService
-import cp.player.kmp.local.LocalMusicSource
+import cp.player.kmp.local.LocalMediaSource
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -14,23 +14,23 @@ import kotlinx.serialization.json.longOrNull
 
 class UnifiedMusicSourceImpl(
     private val musicApiService: MusicApiService,
-    private val localMusicSource: LocalMusicSource
+    private val localMusicSource: LocalMediaSource
 ) : UnifiedMusicSource {
 
     override suspend fun getTrackDetail(mediaId: String): MusicResult<TrackSummary> {
         val id = CPMediaId.parse(mediaId)
         if (id.providerId == "local") {
-            val list = localMusicSource.cached()
-            val song = list.find { it.path == id.resourceId }
-            return if (song != null) {
+            val list = localMusicSource.items().value
+            val item = list.find { it.path == id.resourceId }
+            return if (item != null) {
                 BackendResult.Success(
                     TrackSummary(
                         id = mediaId,
-                        name = song.title,
-                        artist = song.artist ?: "Unknown",
-                        album = song.album,
-                        coverUrl = null,
-                        durationMs = song.durationMs
+                        name = item.title,
+                        artist = item.artist ?: "Unknown",
+                        album = item.album,
+                        coverUrl = item.coverUri,
+                        durationMs = item.durationMs
                     )
                 )
             } else {
@@ -57,17 +57,17 @@ class UnifiedMusicSourceImpl(
         
         val localIds = parsedIds.filter { it.providerId == "local" }
         if (localIds.isNotEmpty()) {
-            val list = localMusicSource.cached()
+            val list = localMusicSource.items().value
             for (id in localIds) {
-                val song = list.find { it.path == id.resourceId }
-                if (song != null) {
+                val item = list.find { it.path == id.resourceId }
+                if (item != null) {
                     summaries.add(TrackSummary(
                         id = id.toString(),
-                        name = song.title,
-                        artist = song.artist ?: "Unknown",
-                        album = song.album,
-                        coverUrl = null,
-                        durationMs = song.durationMs
+                        name = item.title,
+                        artist = item.artist ?: "Unknown",
+                        album = item.album,
+                        coverUrl = item.coverUri,
+                        durationMs = item.durationMs
                     ))
                 }
             }
@@ -100,7 +100,10 @@ class UnifiedMusicSourceImpl(
     override suspend fun getSongUrl(mediaId: String, level: String): MusicResult<SongUrl> {
         val id = CPMediaId.parse(mediaId)
         if (id.providerId == "local") {
-            return BackendResult.Success(SongUrl(id.resourceId, level, null, null))
+            val item = localMusicSource.items().value.find { it.path == id.resourceId }
+                // 条目缺失时返回 Error（与 getTrackDetail 行为一致），不得以裸路径伪装 Success
+                ?: return BackendResult.Error("Local media not found: $mediaId")
+            return BackendResult.Success(SongUrl(item.path, level, item.sizeBytes, null))
         }
         return try {
             val json = musicApiService.getSongUrl(id.resourceId, level)

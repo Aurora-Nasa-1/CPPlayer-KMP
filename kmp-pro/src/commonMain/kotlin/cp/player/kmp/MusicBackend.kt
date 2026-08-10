@@ -6,8 +6,12 @@ import cp.player.kmp.cache.ApiCache
 import cp.player.kmp.cache.CacheConfig
 import cp.player.kmp.cache.CachedMusicApiService
 import cp.player.kmp.cache.InMemoryApiCache
-import cp.player.kmp.local.LocalMusicSource
-import cp.player.kmp.local.LocalSongMetadata
+import cp.player.kmp.download.MediaDownloadManager
+import cp.player.kmp.download.MediaDownloadManagerImpl
+import cp.player.kmp.local.LocalMediaSource
+import cp.player.kmp.local.ScanProgress
+import cp.player.kmp.local.createLocalMediaSource
+import cp.player.kmp.media.LocalMediaItem
 import cp.player.kmp.monitor.HealthMonitor
 import cp.player.kmp.playback.PlaybackController
 import cp.player.kmp.playback.PlaybackControllerImpl
@@ -23,9 +27,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.launch
 
 /**
  * CPPlayer 后端统一入口（KMP 版）。
@@ -39,10 +46,13 @@ import kotlinx.coroutines.flow.asStateFlow
  * 2. **Provider 管理**：导入 / 切换 / 删除音源模块，导入时自动激活首个 Provider。
  * 3. **音乐数据访问**：通过 [musicApi] / [cachedMusicApi] 提供云音乐 API（原 [MusicApiService]），
  *    后续将逐步迁移到更高层的 [MusicSource]（待实现，见 below）。
- * 4. **本地音乐**：通过 [localMusic] 访问本地音乐列表（当前为占位接口，后续平台不实现可返回空）。
+ * 4. **本地媒体**：通过 [localMedia] 访问平台本地媒体源（扫描 / 导入 / 下载登记），
+ *    并经由 [unifiedSource] 参与统一 MediaId 路由（[localMusic] 为兼容别名）。
  * 5. **播放控制**：通过 [playback] 访问播放引擎（当前为占位，后续平台注入 actual）。
  * 6. **健康监控**：通过 [health] 访问带 [HealthMonitor.HealthLevel] 三级分类的 API 健康数据。
  * 7. **错误处理**：所有可失败操作返回 [BackendResult]，UI 可穷举 [Success]/[Error]/[Unsupported]。
+ * 8. **下载管理**：通过 [downloadManager] 提供媒体下载（入队 / 暂停 / 断点续传 / 重试），
+ *    下载完成的产物自动登记到 [localMedia]（source = DOWNLOADED）。
  *
  * ### 使用约定
  * ```kotlin
@@ -112,11 +122,26 @@ class MusicBackend private constructor(
     // ============ 本地音乐 ============
 
     @Deprecated("请使用统一访问入口 unifiedSource", ReplaceWith("unifiedSource"))
-    var localMusic: LocalMusicSource = NoopLocalMusicSource
+    var localMusic: LocalMediaSource
+        get() = _localMusic
         internal set(value) {
-            field = value
-            _unifiedSource = cp.player.kmp.music.UnifiedMusicSourceImpl(cachedMusicApi, value)
+            attachLocalMedia(value)
         }
+
+    private var _localMusic: LocalMediaSource = NoopLocalMusicSource
+
+    /**
+     * 本地媒体源一次性装配：赋值 [NoopLocalMusicSource] 之外的真实实现，
+     * 并重建 [unifiedSource] 纳入本地源。
+     *
+     * 守卫：仅允许从 [NoopLocalMusicSource] 迁移一次；二次赋值抛异常，
+     * 防止重建 [unifiedSource] 导致 playback/download 持有旧实例。
+     */
+    private fun attachLocalMedia(source: LocalMediaSource) {
+        check(_localMusic is NoopLocalMusicSource) { "本地媒体源已装配，不允许二次赋值" }
+        _localMusic = source
+        _unifiedSource = cp.player.kmp.music.UnifiedMusicSourceImpl(cachedMusicApi, source)
+    }
 
     // ============ 统一音乐源 (统一 MediaId) ============
 
@@ -127,6 +152,58 @@ class MusicBackend private constructor(
      * 根据传入的 CPMediaId 自动路由到对应的 Provider 或本地源，并转换数据模型。
      */
     val unifiedSource: cp.player.kmp.music.UnifiedMusicSource get() = _unifiedSource
+
+    // ============ 本地媒体源（平台 actual，惰性装配） ============
+
+    private val localMediaLazy = lazy {
+        createLocalMediaSource(context).also { attachLocalMedia(it) }
+    }
+
+    /**
+     * 平台本地媒体源（真实实现，由 [createLocalMediaSource] 装配）。
+     *
+     * 首次访问时构造并同步赋给 [localMusic]（其 setter 会重建 [unifiedSource]，
+     * 保证统一路由包含本地源）。惰性委托默认 SYNCHRONIZED，多线程安全、单例语义。
+     *
+     * [init] 完成时已显式触发装配（见 [bootstrapLocalStack]），前端可直接使用。
+     */
+    val localMedia: LocalMediaSource by localMediaLazy
+
+    // ============ 下载管理（前端唯一下载入口） ============
+
+    private val downloadManagerLazy = lazy {
+        // 先确保 localMedia 已装配：其 setter 会重建 unifiedSource，
+        // 保证下载侧持有的 source 与最终统一路由一致（顺序不可颠倒）。
+        localMedia
+        MediaDownloadManagerImpl(
+            source = unifiedSource,
+            settings = settings,
+            context = context,
+            onCompleted = { _, item -> localMedia.addExternalItems(listOf(item)) },
+        ).also { manager ->
+            // 引擎内部自建 IO 协程域；此处仅在 backendScope 上触发一次持久化任务恢复
+            backendScope.launch(Dispatchers.IO) { manager.start() }
+        }
+    }
+
+    /**
+     * 媒体下载管理门面。惰性创建：绑定 [unifiedSource] 取链 + [localMedia] 登记产物。
+     *
+     * 首次访问时创建并在 [backendScope] 上异步恢复持久化任务（[MediaDownloadManager.start]）。
+     * [init] 完成时已显式触发装配（见 [bootstrapLocalStack]），前端可直接观察 [MediaDownloadManager.tasksFlow]。
+     */
+    val downloadManager: MediaDownloadManager by downloadManagerLazy
+
+    /**
+     * 本地媒体 + 下载管理的启动装配（init 末尾调用一次）。
+     *
+     * 顺序固定：先 [localMedia]（重建 unifiedSource 纳入本地源），
+     * 后 [downloadManager]（绑定含本地源的 unifiedSource 并异步恢复下载任务）。
+     */
+    private fun bootstrapLocalStack() {
+        localMedia
+        downloadManager
+    }
 
     // ============ 播放引擎（占位，后续平台注入 actual） ============
 
@@ -261,6 +338,10 @@ class MusicBackend private constructor(
     fun reset() {
         runCatching { activeProvider()?.stopServer() }
         runCatching { playbackController.release() }
+        // 仅在已装配时关闭下载引擎（避免 reset 反向触发惰性初始化）
+        if (downloadManagerLazy.isInitialized()) {
+            runCatching { downloadManager.shutdown() }
+        }
         backendScope.cancel()
         _stateFlow.value = BackendState.Uninitialized
         synchronized(COMPA) {
@@ -361,6 +442,8 @@ class MusicBackend private constructor(
                 )
                 // 初始化完成后计算终态
                 backend.stateFromInit()
+                // 装配本地媒体源与下载管理器（恢复持久化下载任务）
+                backend.bootstrapLocalStack()
                 INSTANCE = backend
                 return backend
             }
@@ -390,10 +473,17 @@ class MusicBackend private constructor(
 
 // ============ 占位实现 ============
 
-/** 空操作本地音乐源（返回空列表）。 */
-object NoopLocalMusicSource : LocalMusicSource {
-    override suspend fun scan(directory: String?): List<LocalSongMetadata> = emptyList()
-    override fun cached(): List<LocalSongMetadata> = emptyList()
+/** 空操作本地媒体源（返回空列表 / 空流）。 */
+object NoopLocalMusicSource : LocalMediaSource {
+    private val emptyItems = MutableStateFlow<List<LocalMediaItem>>(emptyList())
+    private val emptyScanning = MutableStateFlow(false)
+
+    override suspend fun scan(): Flow<ScanProgress> = emptyFlow()
+    override suspend fun importFolder(uri: String): Int = 0
+    override fun removeItem(item: LocalMediaItem) {}
+    override fun items(): StateFlow<List<LocalMediaItem>> = emptyItems
+    override val isScanningFlow: StateFlow<Boolean> = emptyScanning
+    override fun addExternalItems(items: List<LocalMediaItem>) {}
 }
 
 /** 空操作播放引擎（所有操作无效果）。 */

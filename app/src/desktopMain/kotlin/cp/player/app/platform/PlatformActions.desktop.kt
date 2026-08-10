@@ -4,6 +4,8 @@ import androidx.compose.runtime.Composable
 import java.awt.Desktop
 import java.net.URI
 
+actual fun isAndroidPlatform(): Boolean = false
+
 actual fun saveQrCodeToGallery(base64Image: String, fileName: String) {}
 
 actual fun openTargetApp(packageName: String) {}
@@ -19,6 +21,14 @@ actual fun openUrl(url: String) {
 }
 
 actual fun clearImageCache(): Boolean = true
+
+actual fun requestMediaScanPermission() {
+    // 桌面无需运行时媒体读取权限，空实现
+}
+
+actual fun setOnMediaPermissionGranted(callback: (() -> Unit)?) {
+    // 桌面无授权流程，无需保存回调
+}
 
 @Composable
 actual fun BackHandler(enabled: Boolean, onBack: () -> Unit) {
