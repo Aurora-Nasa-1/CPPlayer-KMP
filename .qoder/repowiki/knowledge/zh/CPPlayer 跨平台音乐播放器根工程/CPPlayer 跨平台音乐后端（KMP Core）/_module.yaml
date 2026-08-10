@@ -1,6 +1,6 @@
 schema_version: 1
 module_path: kmp_core
-title: CPPlayer KMP 后端核心（Provider 插件化 + 播放控制）
+title: CPPlayer 跨平台音乐后端（KMP Core）
 scope:
     - kmp-pro/
 source_files: []

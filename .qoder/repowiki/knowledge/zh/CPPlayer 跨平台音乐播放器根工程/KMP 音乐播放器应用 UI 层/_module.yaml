@@ -1,6 +1,6 @@
 schema_version: 1
 module_path: kmp_ui_app
-title: KMP 音乐播放器 UI 应用层
+title: KMP 音乐播放器应用 UI 层
 scope:
     - app/
 source_files: []

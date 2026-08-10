@@ -3,11 +3,11 @@ schema_version: 1
 locale: zh-CN
 branch: main
 nodes_managed: true
-exported_at: "2026-08-10T01:06:25Z"
+exported_at: "2026-08-10T05:22:20Z"
 modules:
     "":
-        dir_name: CPPlayer KMP 多平台音乐播放器工程根
-        title: CPPlayer KMP 多平台音乐播放器工程根
+        dir_name: CPPlayer 跨平台音乐播放器根工程
+        title: CPPlayer 跨平台音乐播放器根工程
         scope:
             - README.md
             - Agent.md
@@ -29,8 +29,8 @@ modules:
         depends_on: []
         related_to: []
     android_app_wrapper:
-        dir_name: Android 应用入口与 KMP 桥接层
-        title: Android 应用入口与 KMP 桥接层
+        dir_name: Android 应用壳与入口（MainActivity）
+        title: Android 应用壳与入口（MainActivity）
         scope:
             - androidApp/
         source_files: []
@@ -40,8 +40,8 @@ modules:
             - path: kmp_core
             - path: kmp_ui_app/app_bootstrap
     kmp_core:
-        dir_name: CPPlayer KMP 后端核心（Provider 插件化 + 播放控制）
-        title: CPPlayer KMP 后端核心（Provider 插件化 + 播放控制）
+        dir_name: CPPlayer 跨平台音乐后端（KMP Core）
+        title: CPPlayer 跨平台音乐后端（KMP Core）
         scope:
             - kmp-pro/
         source_files: []
@@ -51,8 +51,8 @@ modules:
             - path: android_app_wrapper
             - path: kmp_ui_app/app_bootstrap
     kmp_ui_app:
-        dir_name: KMP 音乐播放器 UI 应用层
-        title: KMP 音乐播放器 UI 应用层
+        dir_name: KMP 音乐播放器应用 UI 层
+        title: KMP 音乐播放器应用 UI 层
         scope:
             - app/
         source_files: []

@@ -1,6 +1,6 @@
 schema_version: 1
 module_path: ""
-title: CPPlayer KMP 多平台音乐播放器工程根
+title: CPPlayer 跨平台音乐播放器根工程
 scope:
     - README.md
     - Agent.md
