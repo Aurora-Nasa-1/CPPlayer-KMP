@@ -200,7 +200,7 @@ class MusicApiServiceImpl(
         HealthMonitor.recordCall(HealthMonitor.ApiCallRecord(
             timestamp = now(), providerId = providerManager.getCurrentProviderId(),
             method = MusicApiMethod.SONG_URL_V1_302, durationMs = 0, success = false,
-            wasFallback = true, fallbackFrom = MusicApiMethod.SONG_URL_V1,
+            wasFallback = true, fallbackFrom = MusicApiMethod.SONG_URL_V1_302,
             errorMessage = "302 版本无有效 URL，自动回退"
         ))
         return callApi(MusicApiMethod.SONG_URL_V1, params)
