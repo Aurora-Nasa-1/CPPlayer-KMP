@@ -1,0 +1,3 @@
+## 2024-05-18 - Jetpack Compose LazyColumn keys
+**Learning:** In Jetpack Compose (and multiplatform), neglecting to provide a `key` parameter to `items` in a `LazyList` (like `LazyColumn` or `LazyRow`) causes Compose to use item index as a fallback identity. This leads to inefficient and unnecessary recompositions of all elements subsequent to any list mutation (insert, delete, reorder) because the indices shift.
+**Action:** Always provide a stable `key` parameter (usually an entity `id`) to the `items` block in Compose `LazyColumn`/`LazyRow` declarations to ensure Compose can track item identity independently of position.

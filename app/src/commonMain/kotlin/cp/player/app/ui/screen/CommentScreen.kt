@@ -57,7 +57,8 @@ class CommentScreen(val id: String, val type: String = "music") : Screen {
                             contentPadding = PaddingValues(16.dp),
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            items(state.comments) { comment ->
+                            // OPTIMIZATION: Add `key` parameter to prevent unnecessary recompositions in LazyColumn.
+                            items(state.comments, key = { it.id }) { comment ->
                                 CommentItem(comment, onLike = { model.toggleLike(comment) })
                             }
                         }
