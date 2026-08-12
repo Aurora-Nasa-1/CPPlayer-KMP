@@ -73,7 +73,7 @@ fun AppScaffold(
                                 contentColor = MaterialTheme.colorScheme.onSurface
                             )
                         ) {
-                            Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                            Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                         }
                     }
                 },

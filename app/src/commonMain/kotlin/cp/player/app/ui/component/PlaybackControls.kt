@@ -68,7 +68,7 @@ fun PlaybackControls(
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.Filled.SkipPrevious,
-                        contentDescription = "Previous",
+                        contentDescription = "上一首",
                         modifier = Modifier.size(sideIconSize),
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
@@ -90,7 +90,7 @@ fun PlaybackControls(
                     } else {
                         Icon(
                             imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            contentDescription = "Play/Pause",
+                            contentDescription = if (isPlaying) "暂停" else "播放",
                             modifier = Modifier.size(centerIconSize),
                             tint = MaterialTheme.colorScheme.onPrimary,
                         )
@@ -107,7 +107,7 @@ fun PlaybackControls(
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.Filled.SkipNext,
-                        contentDescription = "Next",
+                        contentDescription = "下一首",
                         modifier = Modifier.size(sideIconSize),
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
