@@ -144,7 +144,7 @@ fun androidx.compose.animation.SharedTransitionScope.MiniPlayer(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onSkipPrev, modifier = Modifier.size(40.dp)) {
-                        Icon(Icons.Outlined.SkipPrevious, "Prev", Modifier.size(24.dp))
+                        Icon(Icons.Outlined.SkipPrevious, "上一首", Modifier.size(24.dp))
                     }
                     FilledIconButton(
                         onClick = onTogglePlay,
@@ -163,13 +163,13 @@ fun androidx.compose.animation.SharedTransitionScope.MiniPlayer(
                         } else {
                             Icon(
                                 imageVector = if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                contentDescription = if (state.isPlaying) "Pause" else "Play",
+                                contentDescription = if (state.isPlaying) "暂停" else "播放",
                                 modifier = Modifier.size(24.dp),
                             )
                         }
                     }
                     IconButton(onClick = onSkipNext, modifier = Modifier.size(40.dp)) {
-                        Icon(Icons.Outlined.SkipNext, "Next", Modifier.size(24.dp))
+                        Icon(Icons.Outlined.SkipNext, "下一首", Modifier.size(24.dp))
                     }
                 }
             }

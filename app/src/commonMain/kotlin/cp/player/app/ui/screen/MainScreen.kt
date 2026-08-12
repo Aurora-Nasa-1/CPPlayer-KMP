@@ -268,7 +268,7 @@ private fun AppTopBar(title: String, navigator: cafe.adriel.voyager.navigator.Na
                 } else {
                     Icon(
                         Icons.Filled.Settings,
-                        contentDescription = "Settings",
+                        contentDescription = "设置",
                     )
                 }
             }
