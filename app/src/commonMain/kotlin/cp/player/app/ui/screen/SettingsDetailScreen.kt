@@ -194,7 +194,7 @@ class SettingsDetailScreen : Screen {
                         if (!isAndroid) {
                             Icon(
                                 Icons.Filled.FolderOpen,
-                                contentDescription = null,
+                                contentDescription = "打开文件夹",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -215,7 +215,7 @@ class SettingsDetailScreen : Screen {
                     trailingContent = {
                         Icon(
                             Icons.Filled.CleaningServices,
-                            contentDescription = null,
+                            contentDescription = "清理",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     },

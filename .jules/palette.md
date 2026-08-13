@@ -1,0 +1,3 @@
+## 2024-05-17 - Compose Multiplatform Icon Accessibility
+**Learning:** Found several instances of functional icons (e.g., FolderOpen, CleaningServices, ThumbUp) being used in Jetpack Compose UI with `contentDescription = null`, which hides them from screen readers entirely. Since these are actionable or stateful indicators (not purely decorative), they should have localized descriptions.
+**Action:** Replace `contentDescription = null` with short, descriptive Chinese strings (matching the app's locale) on interactive or meaningful icons (like settings actions or toggle buttons) for better screen reader support.
