@@ -87,7 +87,7 @@ class CommentScreen(val id: String, val type: String = "music") : Screen {
                     IconButton(onClick = onLike, modifier = Modifier.size(32.dp)) {
                         Icon(
                             if (comment.liked) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
-                            contentDescription = null,
+                            contentDescription = "点赞",
                             tint = if (comment.liked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(16.dp)
                         )
