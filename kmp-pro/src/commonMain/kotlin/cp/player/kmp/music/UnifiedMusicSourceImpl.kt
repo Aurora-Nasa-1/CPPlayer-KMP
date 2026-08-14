@@ -58,8 +58,10 @@ class UnifiedMusicSourceImpl(
         val localIds = parsedIds.filter { it.providerId == "local" }
         if (localIds.isNotEmpty()) {
             val list = localMusicSource.items().value
+            // Bolt: Optimize O(N^2) lookup to O(N) by using a hash map
+            val localMap = list.associateBy { it.path }
             for (id in localIds) {
-                val item = list.find { it.path == id.resourceId }
+                val item = localMap[id.resourceId]
                 if (item != null) {
                     summaries.add(TrackSummary(
                         id = id.toString(),
