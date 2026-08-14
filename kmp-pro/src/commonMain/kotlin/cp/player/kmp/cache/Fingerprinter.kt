@@ -32,7 +32,8 @@ object Fingerprinter {
         sb.append("code=").append(json["code"]?.let { asString(it) } ?: "_").append('|')
 
         // 2. 顶层数组长度集合
-        val arrayLens = json.entries
+        // Performance optimization: use asSequence() for lazy evaluation to avoid intermediate collections
+        val arrayLens = json.entries.asSequence()
             .filter { it.value is JsonArray }
             .map { it.key + "=" + (it.value as JsonArray).size }
             .sorted()
@@ -42,7 +43,9 @@ object Fingerprinter {
         // 3. 主数据数组的 id 列表（探测常见数据数组键）
         val primaryArray = pickPrimaryArray(json)
         if (primaryArray != null) {
-            val ids = primaryArray.mapNotNull { item ->
+            // Performance optimization: use asSequence() for lazy evaluation to avoid intermediate lists
+            // and allow take(64) to short-circuit processing on large arrays early
+            val ids = primaryArray.asSequence().mapNotNull { item ->
                 if (item is JsonObject) idOf(item) else null
             }
                 .distinct()
