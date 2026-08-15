@@ -697,8 +697,11 @@ private fun ProgressRow(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // ⚡ Bolt: Memoize formatted time string to avoid string allocation/concatenation
+            // on every millisecond tick. Recompute only when the truncated second changes.
+            val formattedPosition = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
             Text(
-                formatTimeMs(state.positionMs),
+                formattedPosition,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
@@ -710,8 +713,10 @@ private fun ProgressRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 )
             }
+            // ⚡ Bolt: Memoize duration string, as it only changes when the track changes
+            val formattedDuration = remember(duration) { formatTimeMs(duration) }
             Text(
-                formatTimeMs(duration),
+                formattedDuration,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
