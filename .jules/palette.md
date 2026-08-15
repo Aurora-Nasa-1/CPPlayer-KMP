@@ -1,0 +1,3 @@
+## 2024-05-19 - Dynamic Accessibility Labels on Toggle Buttons
+**Learning:** For interactive UI elements with binary states (e.g. like buttons), static accessibility labels fail to convey the current state or the expected action of clicking it. In `CommentScreen` and `PlayerScreen`, a toggle like button had a static "点赞" label or `null` label regardless of state, causing a poor screen reader experience.
+**Action:** When finding buttons that toggle state, ensure the `contentDescription` changes dynamically based on the current state. For example: `contentDescription = if (isLiked) "取消点赞" else "点赞"`.

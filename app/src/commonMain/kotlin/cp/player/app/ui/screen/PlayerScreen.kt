@@ -783,7 +783,7 @@ private fun CommentItem(comment: cp.player.app.ui.model.Comment, onLike: () -> U
                 androidx.compose.material3.IconButton(onClick = onLike, modifier = Modifier.size(32.dp)) {
                     Icon(
                         if (comment.liked) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
-                        contentDescription = "点赞",
+                        contentDescription = if (comment.liked) "取消点赞" else "点赞",
                         modifier = Modifier.size(14.dp),
                         tint = if (comment.liked) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant
