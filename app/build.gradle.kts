@@ -9,7 +9,8 @@ plugins {
 }
 
 group = "cp.player"
-version = "1.0.0"
+version = providers.gradleProperty("app.versionName").orElse("1.0.0").get()
+val appVersionName = providers.gradleProperty("app.versionName").orElse("1.0.0").get()
 
 kotlin {
     android {
@@ -70,7 +71,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Dmg, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi)
             packageName = "CPPlayer"
-            packageVersion = "1.0.0"
+            packageVersion = appVersionName
         }
     }
 }

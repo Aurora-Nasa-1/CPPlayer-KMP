@@ -103,6 +103,24 @@ actual fun openUrl(url: String) {
     } catch (_: Exception) {}
 }
 
+actual fun downloadUpdate(url: String, fileName: String) {
+    val ctx = ctxOrNull ?: return
+    try {
+        val request = android.app.DownloadManager.Request(Uri.parse(url))
+            .setTitle(fileName)
+            .setDescription("CPPlayer 更新包")
+            .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+            .setAllowedOverMetered(true)
+            .setAllowedOverRoaming(false)
+        val manager = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+        manager.enqueue(request)
+        sendPlatformToast("已开始下载更新")
+    } catch (e: Exception) {
+        openUrl(url)
+    }
+}
+
 actual fun clearImageCache(): Boolean {
     val ctx = ctxOrNull ?: return false
     return try {

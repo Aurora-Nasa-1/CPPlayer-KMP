@@ -29,9 +29,11 @@ private fun ensureBackendInitialized() {
         )
         AppModel.markInitialized()
         AppVersion.init(
-            versionName = "1.0.0",
-            versionCode = 1,
+            versionName = BuildInfo.VERSION_NAME,
+            versionCode = BuildInfo.VERSION_CODE,
+            gitSha = BuildInfo.GIT_SHA,
             isDesktop = true,
+            releaseChannel = System.getProperty("cp.player.releaseChannel", "stable"),
         )
         backendReady = true
     }

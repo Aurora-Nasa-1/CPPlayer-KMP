@@ -20,6 +20,8 @@ actual fun openUrl(url: String) {
     } catch (_: Exception) {}
 }
 
+actual fun downloadUpdate(url: String, fileName: String) = openUrl(url)
+
 actual fun clearImageCache(): Boolean = true
 
 actual fun requestMediaScanPermission() {

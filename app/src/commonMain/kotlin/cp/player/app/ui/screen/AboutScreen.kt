@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
+import cp.player.app.platform.downloadUpdate
 import cp.player.app.platform.openUrl
 import cp.player.app.ui.component.LegacyListItem
 import cp.player.app.ui.component.LegacyPageScaffold
@@ -165,7 +166,9 @@ class AboutScreen : Screen {
                 result = updateResult!!,
                 onDismiss = { showUpdateDialog = false },
                 onDownload = {
-                    updateResult?.downloadUrl?.let { openUrl(it) }
+                    updateResult?.let { result ->
+                        downloadUpdate(result.downloadUrl ?: result.releaseUrl, result.assetName ?: "CPPlayer-${result.versionName}")
+                    }
                     showUpdateDialog = false
                 },
             )

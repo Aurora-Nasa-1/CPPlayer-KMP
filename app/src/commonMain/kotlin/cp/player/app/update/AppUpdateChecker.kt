@@ -1,6 +1,7 @@
 package cp.player.app.update
 
 import cp.player.app.version.AppVersion
+import cp.player.app.platform.isAndroidPlatform
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -20,6 +21,7 @@ object AppUpdateChecker {
         val changelog: String?,
         val publishedAt: String?,
         val releaseUrl: String,
+        val assetName: String? = null,
     )
 
     @Serializable
@@ -59,10 +61,11 @@ object AppUpdateChecker {
             if (compareVersions(AppVersion.versionName, remoteVersionName) >= 0) return null
 
             val changelog = buildChangelog(releases, AppVersion.versionName)
-            val downloadUrl = latest.assets
-                .firstOrNull { it.name.endsWith(".apk", ignoreCase = true) }
-                ?.browserDownloadUrl
-                ?: latest.htmlUrl
+            val asset = latest.assets.firstOrNull { asset ->
+                if (isAndroidPlatform()) asset.name.endsWith(".apk", ignoreCase = true)
+                else asset.name.endsWith(".msi", true) || asset.name.endsWith(".dmg", true) || asset.name.endsWith(".deb", true)
+            }
+            val downloadUrl = asset?.browserDownloadUrl ?: latest.htmlUrl
 
             UpdateResult(
                 versionName = remoteVersionName,
@@ -71,6 +74,7 @@ object AppUpdateChecker {
                 changelog = changelog.ifBlank { latest.body },
                 publishedAt = latest.publishedAt,
                 releaseUrl = latest.htmlUrl,
+                assetName = asset?.name,
             )
         } catch (_: Exception) {
             null

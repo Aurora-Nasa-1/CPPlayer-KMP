@@ -42,6 +42,9 @@ expect fun isPackageInstalled(packageName: String): Boolean
  */
 expect fun openUrl(url: String)
 
+/** Download a release asset using the platform's native download flow. */
+expect fun downloadUpdate(url: String, fileName: String)
+
 /**
  * 清空应用图片缓存（Coil 内存 + 磁盘）。
  *

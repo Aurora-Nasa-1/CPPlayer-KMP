@@ -14,17 +14,21 @@ object AppVersion {
         internal set
     var isDesktop: Boolean = false
         internal set
+    var releaseChannel: String = "stable"
+        internal set
 
     fun init(
         versionName: String,
         versionCode: Int = 1,
         gitSha: String = "unknown",
         isDesktop: Boolean = false,
+        releaseChannel: String = "stable",
     ) {
         this.versionName = versionName
         this.versionCode = versionCode
         this.gitSha = gitSha
         this.isDesktop = isDesktop
+        this.releaseChannel = releaseChannel
     }
 
     val fullVersion: String get() = "v$versionName ($versionCode)"

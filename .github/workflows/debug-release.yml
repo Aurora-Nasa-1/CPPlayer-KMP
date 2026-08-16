@@ -1,0 +1,56 @@
+name: Debug Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "debug-v*"
+
+permissions:
+  contents: write
+
+env:
+  JAVA_VERSION: "21"
+
+jobs:
+  debug-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#debug-v}"
+          if [[ "$tag" == "$GITHUB_SHA" || -z "$version" ]]; then
+            version="0.0.0-debug.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "code=$((100000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_OUTPUT"
+
+      - name: Build debug APK
+        run: ./gradlew :androidApp:assembleDebug --no-daemon -Papp.versionName=${{ steps.meta.outputs.version }} -Papp.versionCode=${{ steps.meta.outputs.code }} -Papp.releaseChannel=debug
+
+      - name: Rename APK
+        shell: bash
+        run: cp androidApp/build/outputs/apk/debug/androidApp-debug.apk "CPPlayer-${{ steps.meta.outputs.version }}-debug.apk"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: debug-v${{ steps.meta.outputs.version }}
+          name: CPPlayer ${{ steps.meta.outputs.version }} (debug)
+          prerelease: true
+          generate_release_notes: true
+          files: CPPlayer-${{ steps.meta.outputs.version }}-debug.apk

@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
                 versionCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P)
                     pkgInfo.longVersionCode.toInt() else pkgInfo.versionCode,
                 gitSha = BuildConfig.GIT_SHA,
+                releaseChannel = BuildConfig.RELEASE_CHANNEL,
             )
         }
 
