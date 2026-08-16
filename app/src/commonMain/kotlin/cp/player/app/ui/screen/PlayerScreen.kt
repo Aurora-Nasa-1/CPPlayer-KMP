@@ -681,6 +681,11 @@ private fun ProgressRow(
     onSeek: (Long) -> Unit,
 ) {
     val duration = state.durationMs.coerceAtLeast(0)
+
+    // Memoize string formatting to prevent excessive allocation on every position tick
+    val positionStr = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
+    val durationStr = remember(duration) { formatTimeMs(duration) }
+
     var seekValue by remember { androidx.compose.runtime.mutableStateOf<Float?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
         androidx.compose.material3.Slider(
@@ -698,7 +703,7 @@ private fun ProgressRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                formatTimeMs(state.positionMs),
+                positionStr,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
@@ -711,7 +716,7 @@ private fun ProgressRow(
                 )
             }
             Text(
-                formatTimeMs(duration),
+                durationStr,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
