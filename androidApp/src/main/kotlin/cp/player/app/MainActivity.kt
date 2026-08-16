@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.content.Intent
+import androidx.core.content.ContextCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -31,6 +33,10 @@ class MainActivity : ComponentActivity() {
             settings = defaultSettingsStorage(),
         )
         AppModel.markInitialized()
+        ContextCompat.startForegroundService(
+            this,
+            Intent(this, PlaybackMediaSessionService::class.java),
+        )
 
         runCatching {
             val pkgInfo = packageManager.getPackageInfo(packageName, 0)
@@ -48,6 +54,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         if (instance === this) instance = null
+        // The foreground media service owns the background session and is not stopped
+        // here, so rotating or backgrounding the Activity does not interrupt playback.
         super.onDestroy()
     }
 

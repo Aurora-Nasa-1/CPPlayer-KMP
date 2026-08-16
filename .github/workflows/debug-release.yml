@@ -42,9 +42,14 @@ jobs:
       - name: Build debug APK
         run: ./gradlew :androidApp:assembleDebug --no-daemon -Papp.versionName=${{ steps.meta.outputs.version }} -Papp.versionCode=${{ steps.meta.outputs.code }} -Papp.releaseChannel=debug
 
-      - name: Rename APK
+      - name: Build Windows installer
+        run: ./gradlew :app:packageMsi --no-daemon -Papp.versionName=${{ steps.meta.outputs.version }} -Papp.releaseChannel=debug
+
+      - name: Rename assets
         shell: bash
-        run: cp androidApp/build/outputs/apk/debug/androidApp-debug.apk "CPPlayer-${{ steps.meta.outputs.version }}-debug.apk"
+        run: |
+          cp androidApp/build/outputs/apk/debug/androidApp-debug.apk "CPPlayer-${{ steps.meta.outputs.version }}-android-debug.apk"
+          cp app/build/compose/binaries/main/msi/CPPlayer-${{ steps.meta.outputs.version }}.msi "CPPlayer-${{ steps.meta.outputs.version }}-windows-debug.msi"
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
@@ -53,4 +58,6 @@ jobs:
           name: CPPlayer ${{ steps.meta.outputs.version }} (debug)
           prerelease: true
           generate_release_notes: true
-          files: CPPlayer-${{ steps.meta.outputs.version }}-debug.apk
+          files: |
+            CPPlayer-${{ steps.meta.outputs.version }}-android-debug.apk
+            CPPlayer-${{ steps.meta.outputs.version }}-windows-debug.msi

@@ -154,6 +154,4 @@ class AudioPlayerImpl : PlatformPlayer {
     }
 }
 
-fun createPlatformPlayer(context: PlatformContext): PlatformPlayer {
-    return AudioPlayerImpl()
-}
+expect fun createPlatformPlayer(context: PlatformContext): PlatformPlayer

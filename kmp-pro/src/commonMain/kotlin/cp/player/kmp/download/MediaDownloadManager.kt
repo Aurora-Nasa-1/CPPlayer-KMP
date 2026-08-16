@@ -101,6 +101,7 @@ class MediaDownloadManagerImpl(
     )
     private val engine = DownloadEngine(source, config, executor, store, ::deliverCompleted)
     private val enqueueMutex = Mutex()
+    private val lifecycleMutex = Mutex()
     private var started = false
 
     override val tasksFlow: StateFlow<List<DownloadTask>> get() = engine.tasksFlow
@@ -108,20 +109,22 @@ class MediaDownloadManagerImpl(
     override fun taskFlow(id: String): Flow<DownloadTask?> = engine.taskFlow(id)
 
     override suspend fun start() {
-        if (started) return
-        started = true
-        // Store 已将 DOWNLOADING/PENDING 复位为 FAILED；此处补处理 COMPLETED 但文件丢失
-        val restored = store.load().map { task ->
-            if (task.status == DownloadStatus.COMPLETED &&
-                task.localPath?.let { PlatformSupport.exists(it) } != true
-            ) {
-                task.copy(status = DownloadStatus.FAILED, error = "本地文件丢失，请重新下载")
-            } else {
-                task
+        lifecycleMutex.withLock {
+            if (started) return
+            // Mark started only after a successful restore, so a transient storage failure can retry.
+            val restored = store.load().map { task ->
+                if (task.status == DownloadStatus.COMPLETED &&
+                    task.localPath?.let { PlatformSupport.exists(it) } != true
+                ) {
+                    task.copy(status = DownloadStatus.FAILED, error = "本地文件丢失，请重新下载")
+                } else {
+                    task
+                }
             }
+            engine.restore(restored)
+            store.save(restored)
+            started = true
         }
-        engine.restore(restored)
-        store.save(restored)
     }
 
     override suspend fun enqueue(

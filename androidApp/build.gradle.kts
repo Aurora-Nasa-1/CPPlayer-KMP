@@ -28,6 +28,14 @@ android {
         buildConfigField("String", "GIT_SHA", "\"${getGitSha()}\"")
         buildConfigField("String", "RELEASE_CHANNEL", "\"$appReleaseChannel\"")
     }
+    buildTypes {
+        // Optimized local install build: keeps release optimizations but uses debug signing.
+        create("fastrelease") {
+            initWith(getByName("release"))
+            matchingFallbacks += listOf("release")
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
     buildFeatures { buildConfig = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
@@ -42,4 +50,6 @@ dependencies {
     implementation(project(":app"))
     implementation(libs.androidx.activity.compose)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.androidx.media3.session)
+    implementation(libs.androidx.media3.exoplayer)
 }

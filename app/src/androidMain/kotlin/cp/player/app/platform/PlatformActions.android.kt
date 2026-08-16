@@ -17,6 +17,7 @@ import java.io.File
 import java.io.FileOutputStream
 
 actual fun isAndroidPlatform(): Boolean = true
+actual fun desktopPlatform(): String = "android"
 
 actual fun saveQrCodeToGallery(base64Image: String, fileName: String) {
     val ctx = ctxOrNull ?: return

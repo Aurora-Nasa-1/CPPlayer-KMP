@@ -64,6 +64,9 @@ class DownloadEngine(
     private val progressMutex = Mutex()
     private val lastProgressEmit = mutableMapOf<String, Long>()
 
+    /** Serialize snapshots so a slow disk write cannot overwrite a newer state. */
+    private val persistMutex = Mutex()
+
     /** 目标路径解析锁：「解析路径 + 写入 localPath」整体原子化，避免同名任务并发解析出同一路径。 */
     private val pathMutex = Mutex()
 
@@ -93,16 +96,14 @@ class DownloadEngine(
     }
 
     /** 提交新任务（或重置已有任务）并立即入队。 */
-    fun submit(task: DownloadTask) {
-        scope.launch {
-            val fresh = task.copy(status = DownloadStatus.PENDING, error = null)
-            _tasks.update { list ->
-                if (list.any { it.id == fresh.id }) list.map { if (it.id == fresh.id) fresh else it }
-                else list + fresh
-            }
-            persist()
-            launchJob(fresh.id)
+    suspend fun submit(task: DownloadTask) {
+        val fresh = task.copy(status = DownloadStatus.PENDING, error = null)
+        _tasks.update { list ->
+            if (list.any { it.id == fresh.id }) list.map { if (it.id == fresh.id) fresh else it }
+            else list + fresh
         }
+        persist()
+        launchJob(fresh.id)
     }
 
     /** 暂停：条件式原子转 PAUSED（仅从 PENDING/DOWNLOADING），成功后 cancel Job（保留 .part 供续传）。 */
@@ -459,7 +460,10 @@ class DownloadEngine(
     }
 
     private suspend fun persist() {
-        store?.save(_tasks.value)
+        val taskSnapshot = _tasks.value
+        persistMutex.withLock {
+            store?.save(taskSnapshot)
+        }
     }
 
     companion object {

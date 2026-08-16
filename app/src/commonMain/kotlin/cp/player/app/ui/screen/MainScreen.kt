@@ -6,10 +6,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
@@ -82,6 +84,7 @@ class MainScreen : Screen {
                 TabItem(HomeScreen(), "首页", Icons.Filled.Home, Icons.Outlined.Home),
                 TabItem(SearchScreen(), "搜索", Icons.Filled.Search, Icons.Outlined.Search),
                 TabItem(LibraryScreen(), "我的", Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic),
+                TabItem(DownloadsScreen(), "下载", Icons.Filled.Download, Icons.Outlined.Download),
             )
         }
         val playbackState by AppModel.playback.state.collectAsState()

@@ -1,0 +1,70 @@
+name: Desktop Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "debug-v*"
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  JAVA_VERSION: "21"
+
+jobs:
+  desktop:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            task: packageMsi
+            asset: msi
+          - os: ubuntu-latest
+            platform: linux
+            task: packageDeb
+            asset: deb
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - name: Resolve version
+        id: meta
+        shell: bash
+        run: |
+          tag="$GITHUB_REF_NAME"
+          version="${tag#debug-v}"
+          version="${version#v}"
+          if [[ "$tag" == "$GITHUB_SHA" || -z "$version" ]]; then version="0.0.0-debug.${GITHUB_RUN_NUMBER}"; fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Build desktop package
+        shell: bash
+        run: ./gradlew :app:${{ matrix.task }} --no-daemon -Papp.versionName=${{ steps.meta.outputs.version }}
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: CPPlayer-${{ steps.meta.outputs.version }}-${{ matrix.platform }}
+          path: app/build/compose/binaries/main/${{ matrix.asset }}/*
+
+  publish:
+    needs: desktop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          pattern: CPPlayer-*
+          merge-multiple: true
+      - name: Publish desktop assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          prerelease: ${{ startsWith(github.ref_name, 'debug-') }}
+          files: release-assets/**/*

@@ -1,6 +1,7 @@
 package cp.player.app.update
 
 import cp.player.app.version.AppVersion
+import cp.player.app.platform.desktopPlatform
 import cp.player.app.platform.isAndroidPlatform
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -62,8 +63,12 @@ object AppUpdateChecker {
 
             val changelog = buildChangelog(releases, AppVersion.versionName)
             val asset = latest.assets.firstOrNull { asset ->
-                if (isAndroidPlatform()) asset.name.endsWith(".apk", ignoreCase = true)
-                else asset.name.endsWith(".msi", true) || asset.name.endsWith(".dmg", true) || asset.name.endsWith(".deb", true)
+                when {
+                    isAndroidPlatform() -> asset.name.endsWith(".apk", ignoreCase = true)
+                    desktopPlatform() == "windows" -> asset.name.endsWith(".msi", ignoreCase = true) || asset.name.endsWith(".zip", ignoreCase = true)
+                    desktopPlatform() == "linux" -> asset.name.endsWith(".deb", ignoreCase = true) || asset.name.endsWith(".tar.gz", ignoreCase = true)
+                    else -> asset.name.endsWith(".msi", true) || asset.name.endsWith(".deb", true)
+                }
             }
             val downloadUrl = asset?.browserDownloadUrl ?: latest.htmlUrl
 

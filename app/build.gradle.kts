@@ -1,3 +1,4 @@
+import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -11,6 +12,7 @@ plugins {
 group = "cp.player"
 version = providers.gradleProperty("app.versionName").orElse("1.0.0").get()
 val appVersionName = providers.gradleProperty("app.versionName").orElse("1.0.0").get()
+val appPackageVersion = appVersionName.substringBefore('-').ifBlank { "1.0.0" }
 
 kotlin {
     android {
@@ -20,6 +22,9 @@ kotlin {
     }
     jvm("desktop") {
         compilerOptions { jvmTarget.set(JvmTarget.JVM_21) }
+        mainRun {
+            mainClass = "cp.player.app.MainKt"
+        }
     }
 
     sourceSets {
@@ -51,6 +56,7 @@ kotlin {
         val androidMain by getting {
             dependencies {
                 implementation(libs.androidx.activity.compose)
+                implementation(libs.androidx.media.compat)
                 implementation(libs.kotlinx.coroutines.android)
                 implementation(libs.ktor.client.okhttp)
             }
@@ -59,6 +65,8 @@ kotlin {
             dependencies {
                 implementation(compose.desktop.currentOs)
                 implementation(libs.kotlinx.coroutines.swing)
+                implementation(libs.dbus.java.core)
+                implementation(libs.dbus.java.transport.native.unixsocket)
                 implementation(libs.ktor.client.okhttp)
             }
         }
@@ -69,9 +77,9 @@ compose.desktop {
     application {
         mainClass = "cp.player.app.MainKt"
         nativeDistributions {
-            targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Dmg, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi)
+            targetFormats(TargetFormat.Dmg, TargetFormat.Deb, TargetFormat.Msi)
             packageName = "CPPlayer"
-            packageVersion = appVersionName
+            packageVersion = appPackageVersion
         }
     }
 }

@@ -5,6 +5,11 @@ import java.awt.Desktop
 import java.net.URI
 
 actual fun isAndroidPlatform(): Boolean = false
+actual fun desktopPlatform(): String = when {
+    System.getProperty("os.name", "").contains("win", ignoreCase = true) -> "windows"
+    System.getProperty("os.name", "").contains("linux", ignoreCase = true) -> "linux"
+    else -> "desktop"
+}
 
 actual fun saveQrCodeToGallery(base64Image: String, fileName: String) {}
 

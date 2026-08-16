@@ -15,6 +15,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 
@@ -28,6 +30,7 @@ fun ExpressiveLikeButton(
     modifier: Modifier = Modifier,
 ) {
     var pressed by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = when {
             pressed -> 1.35f
@@ -46,11 +49,21 @@ fun ExpressiveLikeButton(
         else MaterialTheme.colorScheme.onSurfaceVariant,
         label = "likeTint",
     )
+    val scope = rememberCoroutineScope()
     IconButton(
         onClick = {
+            if (busy) return@IconButton
             pressed = true
-            onClick()
+            busy = true
+            scope.launch {
+                try {
+                    onClick()
+                } finally {
+                    busy = false
+                }
+            }
         },
+        enabled = !busy,
         modifier = modifier,
     ) {
         Icon(

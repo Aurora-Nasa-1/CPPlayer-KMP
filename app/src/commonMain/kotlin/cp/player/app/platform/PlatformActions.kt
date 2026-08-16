@@ -10,6 +10,9 @@ import androidx.compose.runtime.Composable
  */
 expect fun isAndroidPlatform(): Boolean
 
+/** Current desktop distribution family (`windows` or `linux`). */
+expect fun desktopPlatform(): String
+
 /**
  * 保存 Base64 编码的图片到系统相册。
  * 仅 Android 端生效，Desktop 端为空操作。
@@ -74,3 +77,4 @@ expect fun setOnMediaPermissionGranted(callback: (() -> Unit)?)
  */
 @Composable
 expect fun BackHandler(enabled: Boolean = true, onBack: () -> Unit)
+

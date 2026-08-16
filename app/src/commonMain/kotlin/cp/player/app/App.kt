@@ -14,6 +14,7 @@ import cafe.adriel.voyager.transitions.SlideTransition
 import cp.player.app.ui.screen.MainScreen
 import cp.player.app.ui.screen.SetupScreen
 import cp.player.app.ui.theme.CpTheme
+import cp.player.app.platform.PlatformMediaControlsEffect
 import cp.player.kmp.BackendState
 import cp.player.kmp.MusicBackend
 
@@ -33,6 +34,12 @@ fun App() {
     val themeMode by AppModel.themeModeFlow.collectAsState()
     val dynamic by AppModel.dynamicColorFlow.collectAsState()
     val pureBlack by AppModel.pureBlackFlow.collectAsState()
+
+    val playbackState by AppModel.playback.state.collectAsState()
+    PlatformMediaControlsEffect(
+        controller = AppModel.playback,
+        state = playbackState,
+    )
 
     // 启动：应用持久化音质到播放控制器 + 拉取用户资料/收藏 + 启动播放历史记录 + 补齐最近播放缺失字段
     androidx.compose.runtime.LaunchedEffect(Unit) {
