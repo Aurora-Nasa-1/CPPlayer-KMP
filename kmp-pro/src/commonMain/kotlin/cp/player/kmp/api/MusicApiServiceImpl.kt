@@ -200,7 +200,7 @@ class MusicApiServiceImpl(
         HealthMonitor.recordCall(HealthMonitor.ApiCallRecord(
             timestamp = now(), providerId = providerManager.getCurrentProviderId(),
             method = MusicApiMethod.SONG_URL_V1_302, durationMs = 0, success = false,
-            wasFallback = true, fallbackFrom = MusicApiMethod.SONG_URL_V1,
+            wasFallback = true, fallbackFrom = MusicApiMethod.SONG_URL_V1_302,
             errorMessage = "302 版本无有效 URL，自动回退"
         ))
         return callApi(MusicApiMethod.SONG_URL_V1, params)
@@ -486,88 +486,6 @@ class MusicApiServiceImpl(
         val detail: String = ""
     )
 
-    private val EXPECTED_FIELDS = mapOf(
-        MusicApiMethod.SEARCH_CLOUD to "result",
-        MusicApiMethod.USER_PLAYLIST to "playlist",
-        MusicApiMethod.USER_PLAYLIST_CREATE to "playlist",
-        MusicApiMethod.USER_PLAYLIST_COLLECT to "playlist",
-        MusicApiMethod.USER_DETAIL to "profile",
-        MusicApiMethod.USER_CLOUD to "data",
-        MusicApiMethod.USER_LIKE_LIST to "ids",
-        MusicApiMethod.USER_RECOMMEND_SONGS to "data",
-        MusicApiMethod.USER_RECOMMEND_RESOURCE to "recommend",
-        MusicApiMethod.PLAYLIST_DETAIL to "playlist",
-        MusicApiMethod.PLAYLIST_TRACK_ALL to "songs",
-        MusicApiMethod.ALBUM_DETAIL to "album",
-        MusicApiMethod.ARTIST_DETAIL to "data",
-        MusicApiMethod.ARTIST_SONGS to "songs",
-        MusicApiMethod.ARTIST_ALBUM to "hotAlbums",
-        MusicApiMethod.SONG_DETAIL to "songs",
-        MusicApiMethod.LYRIC_NEW to "lrc",
-        MusicApiMethod.COMMENT_MUSIC to "comments",
-        MusicApiMethod.COMMENT_PLAYLIST to "comments",
-        MusicApiMethod.COMMENT_ALBUM to "comments",
-        MusicApiMethod.COMMENT_FLOOR to "comments",
-        MusicApiMethod.MESSAGE_PRIVATE to "msgs",
-        MusicApiMethod.MESSAGE_PRIVATE_HISTORY to "msgs",
-        MusicApiMethod.MESSAGE_RECENT_CONTACT to "data",
-        MusicApiMethod.SONG_URL_V1 to "data",
-        MusicApiMethod.SONG_URL_V1_302 to "data",
-        MusicApiMethod.SONG_DOWNLOAD_URL to "data",
-        MusicApiMethod.TOPLIST to "list",
-        MusicApiMethod.TOPLIST_DETAIL to "list",
-        MusicApiMethod.TOP_SONG to "data",
-        MusicApiMethod.TOP_ALBUM to "albums",
-        MusicApiMethod.TOP_ARTISTS to "artists",
-        MusicApiMethod.TOP_PLAYLIST to "playlists",
-        MusicApiMethod.TOP_PLAYLIST_HIGHQUALITY to "playlists",
-        MusicApiMethod.PERSONALIZED to "result",
-        MusicApiMethod.PERSONALIZED_NEWSONG to "result",
-        MusicApiMethod.BANNER to "banners",
-        MusicApiMethod.SIMI_SONG to "songs",
-        MusicApiMethod.SIMI_ARTIST to "artists",
-        MusicApiMethod.SIMI_PLAYLIST to "playlists",
-        MusicApiMethod.MV_DETAIL to "data",
-        MusicApiMethod.MV_URL to "data",
-        MusicApiMethod.MV_ALL to "data",
-        MusicApiMethod.MV_FIRST to "data",
-        MusicApiMethod.MV_SUBLIST to "data",
-        MusicApiMethod.VIDEO_DETAIL to "data",
-        MusicApiMethod.VIDEO_URL to "urls",
-        MusicApiMethod.VIDEO_GROUP to "data",
-        MusicApiMethod.VIDEO_TIMELINE_ALL to "datas",
-        MusicApiMethod.DJ_DETAIL to "data",
-        MusicApiMethod.DJ_PROGRAM to "programs",
-        MusicApiMethod.DJ_HOT to "djRadios",
-        MusicApiMethod.DJ_TOPLIST to "toplist",
-        MusicApiMethod.DJ_RECOMMEND to "djRadios",
-        MusicApiMethod.DJ_SUBLIST to "djRadios",
-        MusicApiMethod.PROGRAM_RECOMMEND to "programs",
-        MusicApiMethod.ALBUM_LIST to "products",
-        MusicApiMethod.ALBUM_NEW to "albums",
-        MusicApiMethod.ALBUM_NEWEST to "albums",
-        MusicApiMethod.ALBUM_SUBLIST to "data",
-        MusicApiMethod.ARTIST_TOP_SONG to "songs",
-        MusicApiMethod.ARTIST_SUBLIST to "data",
-        MusicApiMethod.ARTIST_MV to "mvs",
-        MusicApiMethod.ARTIST_LIST to "artists",
-        MusicApiMethod.USER_RECORD to "allData",
-        MusicApiMethod.USER_FOLLOWS to "follow",
-        MusicApiMethod.USER_FOLLOWEDS to "followeds",
-        MusicApiMethod.USER_EVENT to "events",
-        MusicApiMethod.USER_ACCOUNT to "profile",
-        MusicApiMethod.USER_DJ to "data",
-        MusicApiMethod.PLAYLIST_CATLIST to "categories",
-        MusicApiMethod.PLAYLIST_HOT to "tags",
-        MusicApiMethod.PLAYLIST_SUBSCRIBERS to "subscribers",
-        MusicApiMethod.PLAYLIST_HIGHQUALITY_TAGS to "tags",
-        MusicApiMethod.CALENDAR to "data",
-        MusicApiMethod.EVENT to "events",
-        MusicApiMethod.RECORD_RECENT_SONG to "data"
-    )
-
-    private val FALLBACK_FIELDS = listOf("data", "result", "playlist", "songs", "albums", "artists", "comments", "msgs", "hotData", "list")
-
     private fun buildErrorMessage(json: JsonObject, issues: List<ValidationIssue>, success: Boolean): String? {
         if (success && issues.isEmpty()) return null
         val parts = mutableListOf<String>()
@@ -673,7 +591,7 @@ class MusicApiServiceImpl(
                 if (s.startsWith("http") && s.length > 12 && !s.contains("null")) return s
             }
             is JsonObject -> {
-                for (key in listOf("url", "picUrl", "coverImgUrl", "avatarUrl")) {
+                for (key in URL_KEYS) {
                     val p = element[key]
                     if (p is JsonPrimitive) {
                         val s = p.contentOrNull
@@ -698,9 +616,95 @@ class MusicApiServiceImpl(
     /** 毫秒时间戳。使用自定义跨平台方法，避免 kotlinx-datetime 运行时缺失问题。 */
     private fun now(): Long = cp.player.kmp.util.currentTimeMillis()
 
-    private val parser = Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
-
     private fun parseJsonObject(raw: String): JsonObject = parser.parseToJsonElement(raw).jsonObject
+
+    companion object {
+        private val parser = Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
+
+        private val URL_KEYS = arrayOf("url", "picUrl", "coverImgUrl", "avatarUrl")
+
+        private val FALLBACK_FIELDS = listOf("data", "result", "playlist", "songs", "albums", "artists", "comments", "msgs", "hotData", "list")
+
+        private val EXPECTED_FIELDS = mapOf(
+            MusicApiMethod.SEARCH_CLOUD to "result",
+            MusicApiMethod.USER_PLAYLIST to "playlist",
+            MusicApiMethod.USER_PLAYLIST_CREATE to "playlist",
+            MusicApiMethod.USER_PLAYLIST_COLLECT to "playlist",
+            MusicApiMethod.USER_DETAIL to "profile",
+            MusicApiMethod.USER_CLOUD to "data",
+            MusicApiMethod.USER_LIKE_LIST to "ids",
+            MusicApiMethod.USER_RECOMMEND_SONGS to "data",
+            MusicApiMethod.USER_RECOMMEND_RESOURCE to "recommend",
+            MusicApiMethod.PLAYLIST_DETAIL to "playlist",
+            MusicApiMethod.PLAYLIST_TRACK_ALL to "songs",
+            MusicApiMethod.ALBUM_DETAIL to "album",
+            MusicApiMethod.ARTIST_DETAIL to "data",
+            MusicApiMethod.ARTIST_SONGS to "songs",
+            MusicApiMethod.ARTIST_ALBUM to "hotAlbums",
+            MusicApiMethod.SONG_DETAIL to "songs",
+            MusicApiMethod.LYRIC_NEW to "lrc",
+            MusicApiMethod.COMMENT_MUSIC to "comments",
+            MusicApiMethod.COMMENT_PLAYLIST to "comments",
+            MusicApiMethod.COMMENT_ALBUM to "comments",
+            MusicApiMethod.COMMENT_FLOOR to "comments",
+            MusicApiMethod.MESSAGE_PRIVATE to "msgs",
+            MusicApiMethod.MESSAGE_PRIVATE_HISTORY to "msgs",
+            MusicApiMethod.MESSAGE_RECENT_CONTACT to "data",
+            MusicApiMethod.SONG_URL_V1 to "data",
+            MusicApiMethod.SONG_URL_V1_302 to "data",
+            MusicApiMethod.SONG_DOWNLOAD_URL to "data",
+            MusicApiMethod.TOPLIST to "list",
+            MusicApiMethod.TOPLIST_DETAIL to "list",
+            MusicApiMethod.TOP_SONG to "data",
+            MusicApiMethod.TOP_ALBUM to "albums",
+            MusicApiMethod.TOP_ARTISTS to "artists",
+            MusicApiMethod.TOP_PLAYLIST to "playlists",
+            MusicApiMethod.TOP_PLAYLIST_HIGHQUALITY to "playlists",
+            MusicApiMethod.PERSONALIZED to "result",
+            MusicApiMethod.PERSONALIZED_NEWSONG to "result",
+            MusicApiMethod.BANNER to "banners",
+            MusicApiMethod.SIMI_SONG to "songs",
+            MusicApiMethod.SIMI_ARTIST to "artists",
+            MusicApiMethod.SIMI_PLAYLIST to "playlists",
+            MusicApiMethod.MV_DETAIL to "data",
+            MusicApiMethod.MV_URL to "data",
+            MusicApiMethod.MV_ALL to "data",
+            MusicApiMethod.MV_FIRST to "data",
+            MusicApiMethod.MV_SUBLIST to "data",
+            MusicApiMethod.VIDEO_DETAIL to "data",
+            MusicApiMethod.VIDEO_URL to "urls",
+            MusicApiMethod.VIDEO_GROUP to "data",
+            MusicApiMethod.VIDEO_TIMELINE_ALL to "datas",
+            MusicApiMethod.DJ_DETAIL to "data",
+            MusicApiMethod.DJ_PROGRAM to "programs",
+            MusicApiMethod.DJ_HOT to "djRadios",
+            MusicApiMethod.DJ_TOPLIST to "toplist",
+            MusicApiMethod.DJ_RECOMMEND to "djRadios",
+            MusicApiMethod.DJ_SUBLIST to "djRadios",
+            MusicApiMethod.PROGRAM_RECOMMEND to "programs",
+            MusicApiMethod.ALBUM_LIST to "products",
+            MusicApiMethod.ALBUM_NEW to "albums",
+            MusicApiMethod.ALBUM_NEWEST to "albums",
+            MusicApiMethod.ALBUM_SUBLIST to "data",
+            MusicApiMethod.ARTIST_TOP_SONG to "songs",
+            MusicApiMethod.ARTIST_SUBLIST to "data",
+            MusicApiMethod.ARTIST_MV to "mvs",
+            MusicApiMethod.ARTIST_LIST to "artists",
+            MusicApiMethod.USER_RECORD to "allData",
+            MusicApiMethod.USER_FOLLOWS to "follow",
+            MusicApiMethod.USER_FOLLOWEDS to "followeds",
+            MusicApiMethod.USER_EVENT to "events",
+            MusicApiMethod.USER_ACCOUNT to "profile",
+            MusicApiMethod.USER_DJ to "data",
+            MusicApiMethod.PLAYLIST_CATLIST to "categories",
+            MusicApiMethod.PLAYLIST_HOT to "tags",
+            MusicApiMethod.PLAYLIST_SUBSCRIBERS to "subscribers",
+            MusicApiMethod.PLAYLIST_HIGHQUALITY_TAGS to "tags",
+            MusicApiMethod.CALENDAR to "data",
+            MusicApiMethod.EVENT to "events",
+            MusicApiMethod.RECORD_RECENT_SONG to "data"
+        )
+    }
 }
 
 /** BackendProvider 轻量引用（用于容灾遍历，避免直接强依赖实现类）。 */

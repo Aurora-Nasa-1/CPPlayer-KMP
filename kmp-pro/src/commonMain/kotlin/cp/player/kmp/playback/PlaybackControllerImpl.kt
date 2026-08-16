@@ -131,10 +131,21 @@ class PlaybackControllerImpl(
     private fun computeLyricIndex(lyrics: LyricsState, pos: Long): Int {
         val lines = (lyrics as? LyricsState.Success)?.lines ?: return -1
         if (lines.isEmpty()) return -1
-        // 找最后一行 time<=pos
+        // ⚡ Bolt: Use binary search (O(log n)) instead of linear search (O(n)) to find the active lyric line.
+        // This function is called continuously on every position tick (e.g. 60+ times per second),
+        // and lines are guaranteed to be sorted by time.
+        // We look for the *last* line where time <= pos.
+        var low = 0
+        var high = lines.lastIndex
         var idx = -1
-        for (i in lines.indices) {
-            if (lines[i].time <= pos) idx = i else break
+        while (low <= high) {
+            val mid = (low + high) ushr 1
+            if (lines[mid].time <= pos) {
+                idx = mid
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
         }
         return idx
     }
