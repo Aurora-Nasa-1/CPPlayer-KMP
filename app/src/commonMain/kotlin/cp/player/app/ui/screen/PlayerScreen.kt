@@ -754,7 +754,7 @@ private fun CommentPage(id: String, type: String) {
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     // OPTIMIZATION: Add `key` parameter to prevent unnecessary recompositions in LazyColumn.
-                    items(state.comments, key = { it.id }) { comment ->
+                    items(state.comments, key = { "${it.id}_${it.hashCode()}" }) { comment ->
                         CommentItem(comment, onLike = { model.toggleLike(comment) })
                     }
                 }

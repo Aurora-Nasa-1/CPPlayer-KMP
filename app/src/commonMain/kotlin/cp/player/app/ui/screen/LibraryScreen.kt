@@ -227,7 +227,7 @@ private fun CloudTab(
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             // OPTIMIZATION: Add `key` parameter to prevent unnecessary recompositions in LazyColumn.
-            items(songs.size, key = { index -> songs[index].id }) { index ->
+            items(songs.size, key = { index -> "${songs[index].id}_$index" }) { index ->
                 cp.player.app.ui.component.SongItem(
                     track = songs[index],
                     index = index,
@@ -340,7 +340,7 @@ private fun PlaylistsTab(
         contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
     ) {
         // OPTIMIZATION: Add `key` parameter to prevent unnecessary recompositions in LazyColumn.
-        items(playlists.size, key = { index -> playlists[index].id }) { index ->
+        items(playlists.size, key = { index -> "${playlists[index].id}_$index" }) { index ->
             PlaylistItem(
                 playlist = playlists[index],
                 isOwner = isOwner(playlists[index]),
