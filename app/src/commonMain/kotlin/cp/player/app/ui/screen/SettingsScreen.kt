@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -56,7 +57,7 @@ import cp.player.app.ui.component.PageHeader
 
 /** 设置详情页标识，用于 Expanded 布局的 list-detail 模式。 */
 private enum class SettingsDetail {
-    ProviderManagement, Login, Preferences, Health, About,
+    ProviderManagement, Login, Preferences, Playback, Health, About,
 }
 
 class SettingsScreen : Screen {
@@ -150,6 +151,7 @@ private fun SettingsDetail.toScreen(): Screen = when (this) {
     SettingsDetail.ProviderManagement -> ProviderManagementScreen()
     SettingsDetail.Login -> LoginScreen()
     SettingsDetail.Preferences -> SettingsDetailScreen()
+    SettingsDetail.Playback -> PlaybackSettingsScreen()
     SettingsDetail.Health -> HealthScreen()
     SettingsDetail.About -> AboutScreen()
 }
@@ -191,9 +193,15 @@ private fun SettingsList(
                 SettingsEntry(
                     Icons.Filled.ManageAccounts,
                     "偏好设置",
-                    "主题、播放音质、缓存清理",
+                    "主题、动态取色、缓存与下载目录",
                     SettingsDetail.Preferences,
                 ) { navigator?.push(SettingsDetailScreen()) },
+                SettingsEntry(
+                    Icons.Filled.Bedtime,
+                    "播放设置",
+                    "音质、播放行为与睡眠定时",
+                    SettingsDetail.Playback,
+                ) { navigator?.push(PlaybackSettingsScreen()) },
             ),
             selectedDetail = selectedDetail,
             onDetailSelected = onDetailSelected,
