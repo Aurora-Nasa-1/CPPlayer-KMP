@@ -37,6 +37,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
+import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.ui.component.LegacyListItem
@@ -128,9 +131,9 @@ private fun RecordRow(record: HealthMonitor.ApiCallRecord, index: Int, total: In
         HealthMonitor.HealthLevel.ERROR -> MaterialTheme.colorScheme.error
     }
     val time = runCatching {
-        java.time.Instant.ofEpochMilli(record.timestamp)
-            .atZone(java.time.ZoneId.systemDefault())
-            .toLocalTime().toString().substring(0, 8)
+        Instant.fromEpochMilliseconds(record.timestamp)
+            .toLocalDateTime(TimeZone.currentSystemDefault())
+            .time.toString().take(8)
     }.getOrDefault("--:--:--")
 
     var showRaw by remember { mutableStateOf(false) }

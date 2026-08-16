@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.IconButton
 
 /**
  * 主控件行（KMP 等效原项目 `PlaybackControls`）。
@@ -59,20 +60,16 @@ fun PlaybackControls(
             horizontalArrangement = horizontalArrangement,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Surface(
+            androidx.compose.material3.IconButton(
                 onClick = onSkipPrevious,
-                shape = CircleShape,
                 modifier = sideButtonModifier,
-                color = Color.Transparent,
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Filled.SkipPrevious,
-                        contentDescription = "Previous",
-                        modifier = Modifier.size(sideIconSize),
-                        tint = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Filled.SkipPrevious,
+                    contentDescription = "上一首",
+                    modifier = Modifier.size(sideIconSize),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
             }
 
             Surface(
@@ -90,7 +87,7 @@ fun PlaybackControls(
                     } else {
                         Icon(
                             imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            contentDescription = "Play/Pause",
+                            contentDescription = "播放/暂停",
                             modifier = Modifier.size(centerIconSize),
                             tint = MaterialTheme.colorScheme.onPrimary,
                         )
@@ -98,20 +95,16 @@ fun PlaybackControls(
                 }
             }
 
-            Surface(
+            androidx.compose.material3.IconButton(
                 onClick = onSkipNext,
-                shape = CircleShape,
                 modifier = sideButtonModifier,
-                color = Color.Transparent,
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Filled.SkipNext,
-                        contentDescription = "Next",
-                        modifier = Modifier.size(sideIconSize),
-                        tint = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Filled.SkipNext,
+                    contentDescription = "下一首",
+                    modifier = Modifier.size(sideIconSize),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
             }
         }
     }

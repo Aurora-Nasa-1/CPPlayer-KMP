@@ -55,8 +55,8 @@ fun cacheKey(
     params: Map<String, String>,
     cookie: String? = null
 ): String {
-    val sortedParams = params.toSortedMap()
-        .entries.joinToString("&") { (k, v) -> "$k=$v" }
+    val sortedParams = params.entries.sortedBy { it.key }
+        .joinToString("&") { (k, v) -> "$k=$v" }
     val ck = (cookie?.hashCode() ?: 0)
     return "$providerId#$method#$sortedParams#$ck"
 }
