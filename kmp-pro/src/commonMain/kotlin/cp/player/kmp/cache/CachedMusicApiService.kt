@@ -147,10 +147,8 @@ class CachedMusicApiService(
      * - 每次尝试记录到 [HealthMonitor]（成功时标记 wasFallback）
      */
     private suspend fun tryFallback(method: String, params: Map<String, String>): JsonElement? {
-        val ordered = allProviders().toMutableList()
         val current = providerManager.currentProvider
-        if (current != null) { ordered.remove(current); ordered.add(0, current) }
-        for (provider in ordered) {
+        for (provider in allProviders()) {
             if (provider.id == current?.id) continue // 跳过已失败的当前 Provider
             val mapped = provider.apiMap?.get(method) ?: method
             if (mapped.isEmpty() || mapped.equals("unsupported", ignoreCase = true)) continue
