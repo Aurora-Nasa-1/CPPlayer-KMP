@@ -697,8 +697,14 @@ private fun ProgressRow(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // ⚡ Bolt: Memoize formatted playback time string.
+            // positionMs updates continuously via flow, causing high allocation overhead
+            // if we format every frame. Memoizing by integer seconds stops redundant object creation.
+            val positionStr = remember(state.positionMs / 1000) {
+                formatTimeMs(state.positionMs)
+            }
             Text(
-                formatTimeMs(state.positionMs),
+                positionStr,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
@@ -710,8 +716,11 @@ private fun ProgressRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 )
             }
+            val durationStr = remember(duration) {
+                formatTimeMs(duration)
+            }
             Text(
-                formatTimeMs(duration),
+                durationStr,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )

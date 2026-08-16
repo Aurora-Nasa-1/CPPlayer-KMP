@@ -7,3 +7,6 @@
 ## 2024-05-14 - Active Lyric Binary Search Optimization
 **Learning:** Functions invoked continuously by UI tick flows (like `platform.positionMs.onEach`) should avoid O(n) loops. We were using O(n) linear search over the lyric list up to 60 times a second to find the active line index.
 **Action:** Replaced linear search with binary search since parsed lyric lines are already guaranteed sorted. This reduces index lookup from O(n) to O(log n), providing a measurable win for long songs or dense YRC word-level lyrics.
+## 2024-05-14 - Compose High-Frequency Recomposition Optimizations
+**Learning:** Continuous state emissions like playback `positionMs` cause expensive garbage collection when string formatting (like `formatTimeMs`) is performed directly in the view on every frame.
+**Action:** Use `remember` with a truncated key (like `positionMs / 1000`) to memoize strings that only visibly change once per second. This stops redundant string allocations on high-frequency Compose updates.
