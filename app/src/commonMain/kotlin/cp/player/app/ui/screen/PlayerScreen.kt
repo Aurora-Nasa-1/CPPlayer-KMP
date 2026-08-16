@@ -462,8 +462,13 @@ IconButton(onClick = onRepeat) {
                         RepeatMode.ONE -> Icons.Filled.RepeatOne
                         else -> Icons.Filled.Repeat
                     }
+                    val repeatDesc = when (state.repeatMode) {
+                        RepeatMode.OFF -> "开启循环"
+                        RepeatMode.ALL -> "单曲循环"
+                        RepeatMode.ONE -> "取消循环"
+                    }
                     Icon(
-                        icon, "循环", Modifier.size(24.dp),
+                        icon, repeatDesc, Modifier.size(24.dp),
                         tint = if (state.repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -617,7 +622,9 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
             ) {
                 IconButton(onClick = onShuffle) {
                     Icon(
-                        Icons.Filled.Shuffle, "随机播放", Modifier.size(24.dp),
+                        Icons.Filled.Shuffle,
+                        if (state.shuffleEnabled) "关闭随机播放" else "开启随机播放",
+                        Modifier.size(24.dp),
                         tint = if (state.shuffleEnabled) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -627,8 +634,13 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                         RepeatMode.ONE -> Icons.Filled.RepeatOne
                         else -> Icons.Filled.Repeat
                     }
+                    val repeatDesc = when (state.repeatMode) {
+                        RepeatMode.OFF -> "开启循环"
+                        RepeatMode.ALL -> "单曲循环"
+                        RepeatMode.ONE -> "取消循环"
+                    }
                     Icon(
-                        icon, "循环", Modifier.size(24.dp),
+                        icon, repeatDesc, Modifier.size(24.dp),
                         tint = if (state.repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
