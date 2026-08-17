@@ -28,7 +28,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,7 +50,9 @@ import cp.player.app.ui.component.PageHeader
 import cp.player.app.ui.component.SectionHeader
 import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.StateSurface
+import cp.player.app.ui.component.PlaylistItem
 import cp.player.app.ui.model.SearchScreenModel
+import cp.player.kmp.api.MusicApiMethod
 import kotlinx.coroutines.launch
 
 class SearchScreen : Screen {
@@ -93,7 +96,48 @@ class SearchScreen : Screen {
                 },
                 shape = RoundedCornerShape(percent = 50),
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
+            if (state.query.isNotBlank() || state.result != null) {
+                androidx.compose.foundation.lazy.LazyRow(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = CpSpacing.pageHorizontal),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    val types = listOf(
+                        MusicApiMethod.SEARCH_TYPE_SONG to "歌曲",
+                        MusicApiMethod.SEARCH_TYPE_ALBUM to "专辑",
+                        MusicApiMethod.SEARCH_TYPE_ARTIST to "歌手",
+                        MusicApiMethod.SEARCH_TYPE_PLAYLIST to "歌单",
+                    )
+                    items(types.size) { index ->
+                        val (type, label) = types[index]
+                        FilterChip(
+                            selected = state.searchType == type,
+                            onClick = { model.selectSearchType(type) },
+                            label = { Text(label) },
+                        )
+                    }
+                }
+            }
+            if (state.query.isNotBlank() && state.suggestions.isNotEmpty() && state.result == null) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = CpSpacing.pageHorizontal),
+                    shape = RoundedCornerShape(16.dp),
+                    tonalElevation = 3.dp,
+                ) {
+                    Column(Modifier.padding(vertical = 6.dp)) {
+                        state.suggestions.forEach { suggestion ->
+                            Row(
+                                Modifier.fillMaxWidth().clickable { model.search(suggestion) }.padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.width(12.dp))
+                                Text(suggestion)
+                            }
+                        }
+                    }
+                }
+            }
 
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                 when {
@@ -134,19 +178,7 @@ class SearchScreen : Screen {
                                     }
                                 }
                             }
-                            if (state.suggestions.isNotEmpty()) {
-                                SectionHeader(title = "搜索建议")
-                                state.suggestions.forEach { suggestion ->
-                                    Row(
-                                        Modifier.fillMaxWidth().clickable { model.search(suggestion) }.padding(vertical = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        Spacer(Modifier.width(12.dp))
-                                        Text(suggestion)
-                                    }
-                                }
-                            } else if (state.query.isBlank()) {
+                            if (state.query.isBlank()) {
                                 SectionHeader(title = "热门搜索")
                                 state.hotSearches.forEachIndexed { index, hot ->
                                     Row(
@@ -176,44 +208,60 @@ class SearchScreen : Screen {
                             }
                         }
                     }
-                    state.result!!.songs.isEmpty() -> ContentState(
-                        title = "没有找到结果",
-                        message = "试试更短的关键词或检查拼写",
-                        modifier = Modifier.padding(top = 32.dp),
-                    )
+                    state.result == null -> Unit
                     else -> {
-                        val songs = state.result!!.songs
-                        LazyColumn(
-                            Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(
-                                start = 12.dp,
-                                end = 12.dp,
-                                bottom = 32.dp,
-                            ),
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
-                        ) {
-                            item {
-                                SectionHeader(
-                                    title = "搜索结果",
-                                    supportingText = "${songs.size} 首歌曲",
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
-                                )
-                            }
-                            itemsIndexed(songs, key = { _, track -> track.id }) { index, track ->
-                                SongItem(
-                                    track = track,
-                                    index = index,
-                                    total = songs.size,
-                                    onClick = {
-                                        scope.launch {
-                                            AppModel.playback.playQueue(
-                                                songs.map { "$provider://song/${it.id}" },
-                                                startIndex = index,
-                                            )
+                        val result = state.result!!
+                        val count = when (state.searchType) {
+                            MusicApiMethod.SEARCH_TYPE_SONG -> result.songs.size
+                            MusicApiMethod.SEARCH_TYPE_ALBUM, MusicApiMethod.SEARCH_TYPE_PLAYLIST -> result.playlists.size
+                            else -> result.artists.size
+                        }
+                        if (count == 0) {
+                            ContentState(
+                                title = "没有找到结果",
+                                message = "试试更短的关键词或切换搜索类型",
+                                modifier = Modifier.padding(top = 32.dp),
+                            )
+                        } else {
+                            LazyColumn(
+                                Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 32.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                item {
+                                    SectionHeader(
+                                        title = "搜索结果",
+                                        supportingText = "$count 项",
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
+                                    )
+                                }
+                                when (state.searchType) {
+                                    MusicApiMethod.SEARCH_TYPE_SONG -> itemsIndexed(result.songs, key = { _, track -> track.id }) { index, track ->
+                                        SongItem(
+                                            track = track, index = index, total = result.songs.size,
+                                            onClick = { scope.launch { AppModel.playback.playQueue(result.songs.map { "$provider://song/${it.id}" }, index) } },
+                                            onOptionsClick = { selectedTrack = track },
+                                        )
+                                    }
+                                    MusicApiMethod.SEARCH_TYPE_ALBUM, MusicApiMethod.SEARCH_TYPE_PLAYLIST -> itemsIndexed(result.playlists, key = { _, playlist -> playlist.id }) { _, playlist ->
+                                        PlaylistItem(
+                                            playlist = playlist,
+                                            isOwner = false,
+                                            onClick = { /* 详情页可从首页后续接入 */ },
+                                            onOptionsClick = {},
+                                        )
+                                    }
+                                    MusicApiMethod.SEARCH_TYPE_ARTIST -> itemsIndexed(result.artists, key = { _, artist -> artist.id }) { _, artist ->
+                                        Row(
+                                            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.primary)
+                                            Spacer(Modifier.width(12.dp))
+                                            Text(artist.name, style = MaterialTheme.typography.titleMedium)
                                         }
-                                    },
-                                    onOptionsClick = { selectedTrack = track },
-                                )
+                                    }
+                                }
                             }
                         }
                     }

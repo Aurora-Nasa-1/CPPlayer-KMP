@@ -5,8 +5,10 @@ import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
 import cp.player.kmp.BackendResult
 import cp.player.kmp.music.MusicSourceFromApi
+import cp.player.kmp.api.MusicApiMethod
 import cp.player.kmp.music.SearchResult
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,6 +30,7 @@ data class HotSearch(
 
 data class SearchUiState(
     val query: String = "",
+    val searchType: Int = MusicApiMethod.SEARCH_TYPE_SONG,
     val result: SearchResult? = null,
     val loading: Boolean = false,
     val error: String? = null,
@@ -96,9 +99,12 @@ class SearchScreenModel : ScreenModel {
             return
         }
         suggestionJob = screenModelScope.launch {
-            val response = runCatching { AppModel.api.getSearchSuggestions(query.trim()) }.getOrNull()
+            delay(250)
+            val requestedQuery = query.trim()
+            val response = runCatching { AppModel.api.getSearchSuggestions(requestedQuery) }.getOrNull()
+            if (_state.value.query.trim() != requestedQuery) return@launch
             val suggestions = response?.parseSuggestions().orEmpty()
-                .filterNot { it.equals(query.trim(), ignoreCase = true) }
+                .filterNot { it.equals(requestedQuery, ignoreCase = true) }
                 .distinct()
                 .take(8)
             _state.value = _state.value.copy(suggestions = suggestions)
@@ -130,7 +136,13 @@ class SearchScreenModel : ScreenModel {
         _state.value = _state.value.copy(searchHistory = emptyList())
     }
 
-    fun search(keyword: String = _state.value.query) {
+    fun selectSearchType(type: Int) {
+        if (type == _state.value.searchType) return
+        _state.value = _state.value.copy(searchType = type)
+        if (_state.value.query.isNotBlank()) search()
+    }
+
+    fun search(keyword: String = _state.value.query, type: Int = _state.value.searchType) {
         val finalKeyword = keyword.trim()
         if (finalKeyword.isEmpty() || _state.value.loading) return
         suggestionJob?.cancel()
@@ -139,13 +151,14 @@ class SearchScreenModel : ScreenModel {
         saveHistory(trimmedHistory)
         _state.value = _state.value.copy(
             query = finalKeyword,
+            searchType = type,
             searchHistory = trimmedHistory,
             suggestions = emptyList(),
             result = null,
         )
         screenModelScope.launch {
             _state.value = _state.value.copy(loading = true, error = null)
-            val response = runCatching { MusicSourceFromApi.search(AppModel.api, finalKeyword) }
+            val response = runCatching { MusicSourceFromApi.search(AppModel.api, finalKeyword, type) }
                 .getOrElse { BackendResult.Error(it.message ?: "搜索失败") }
             _state.value = when (response) {
                 is BackendResult.Success -> _state.value.copy(result = response.data, loading = false)
