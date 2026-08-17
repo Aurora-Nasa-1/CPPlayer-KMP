@@ -3,6 +3,11 @@ package cp.player.kmp.playback
 import cp.player.kmp.api.MusicApiService
 import cp.player.kmp.music.TrackSummary
 import cp.player.kmp.music.UnifiedMusicSource
+import cp.player.kmp.model.LyricsInfo
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -472,22 +477,29 @@ class PlaybackControllerImpl(
         }
         lyricsJob?.cancel()
         lyricsJob = scope.launch {
-            updateState { it.copy(lyrics = LyricsState.Loading, activeLyricIndex = -1) }
+            updateState { it.copy(lyrics = LyricsState.Loading, lyricsInfo = null, activeLyricIndex = -1) }
             val parsed = try {
                 val id = cp.player.kmp.music.CPMediaId.parse(mediaId)
                 if (id.providerId == "local") {
-                    updateState { it.copy(lyrics = LyricsState.NoLyrics) }
+                    updateState { it.copy(lyrics = LyricsState.NoLyrics, lyricsInfo = null) }
                     return@launch
                 }
                 val json = api.getLyric(id.resourceId)
                 val lines = LyricsParser.parse(json)
-                if (lines.isEmpty()) LyricsState.NoLyrics
-                else LyricsState.Success(lines)
+                val info = extractLyricsInfo(json, lines)
+                val state = if (lines.isEmpty()) LyricsState.NoLyrics else LyricsState.Success(lines)
+                state to info
             } catch (e: Throwable) {
-                LyricsState.Error(e.message ?: "歌词获取失败")
+                LyricsState.Error(e.message ?: "歌词获取失败") to null
             }
             val pos = platform.positionMs.value
-            updateState { it.copy(lyrics = parsed, activeLyricIndex = computeLyricIndex(parsed, pos)) }
+            updateState {
+                it.copy(
+                    lyrics = parsed.first,
+                    lyricsInfo = parsed.second,
+                    activeLyricIndex = computeLyricIndex(parsed.first, pos),
+                )
+            }
         }
     }
 
@@ -674,6 +686,32 @@ class PlaybackControllerImpl(
         return (0 until size).shuffled(Random(System.nanoTime()))
     }
 
+    private fun extractLyricsInfo(json: JsonElement, lines: List<SyncedLyricLine>): LyricsInfo {
+        val obj = json as? JsonObject
+        val yrc = ((obj?.get("yrc") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
+        val tlyric = ((obj?.get("tlyric") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
+        val romalrc = ((obj?.get("romalrc") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
+        val lrc = ((obj?.get("lrc") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
+            ?: (obj?.get("lyric") as? JsonPrimitive)?.contentOrNull
+            ?: ((obj?.get("klyric") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
+
+        val format = when {
+            !yrc.isNullOrBlank() -> "YRC"
+            !lrc.isNullOrBlank() -> "LRC"
+            else -> "Unknown"
+        }
+        val hasWordLevel = lines.any { it.words.isNotEmpty() }
+        val hasTranslation = lines.any { !it.translation.isNullOrBlank() } || !tlyric.isNullOrBlank()
+        val hasPhonetic = lines.any { !it.romanization.isNullOrBlank() } || !romalrc.isNullOrBlank()
+        return LyricsInfo(
+            source = "MusicApiService.getLyric",
+            format = format,
+            hasWordLevel = hasWordLevel,
+            hasTranslation = hasTranslation,
+            hasPhonetic = hasPhonetic,
+        )
+    }
+
     private fun ensureOrderScopeSafe() { /* placeholder for future constraints */ }
 
     // ============ 队列解析（懒解析） ============
@@ -743,6 +781,7 @@ class PlaybackControllerImpl(
                 isPlaying = false,
                 isBuffering = false,
                 formatInfo = null,
+                lyricsInfo = null,
                 error = null,
                 sourceId = null,
                 isFavorite = false,

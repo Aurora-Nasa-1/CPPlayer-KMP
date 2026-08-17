@@ -48,10 +48,9 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -61,6 +60,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -95,12 +95,14 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
+import cp.player.app.platform.shareText
+import cp.player.app.ui.component.PlayerMoreBottomSheet
 import cp.player.app.ui.component.QueueBottomSheet
 import cp.player.app.ui.model.CommentScreenModel
 import cp.player.app.ui.util.formatTimeMs
+import cp.player.kmp.playback.AudioFormatInfo
 import cp.player.kmp.playback.LyricsState
 import cp.player.kmp.playback.RepeatMode
-import androidx.compose.foundation.lazy.items
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -187,6 +189,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
     var showMoreMenu by remember { mutableStateOf(false) }
     var showAddToPlaylist by remember { mutableStateOf(false) }
     var showSleepTimer by remember { mutableStateOf(false) }
+    var showSongInfo by remember { mutableStateOf(false) }
     var showTranslation by remember { mutableStateOf(true) }
     val playerScope = rememberCoroutineScope()
     val controller = AppModel.playback
@@ -371,16 +374,28 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                     showMoreMenu = false
                                     showAddToPlaylist = true
                                 },
+                                onDownload = {
+                                    showMoreMenu = false
+                                    AppModel.downloadTrack(track)
+                                },
                                 onSleepTimer = {
                                     showMoreMenu = false
                                     showSleepTimer = true
                                 },
+                                onShare = {
+                                    showMoreMenu = false
+                                    shareText("${track.name} - ${track.artist}\nhttps://music.163.com/song?id=${runCatching { cp.player.kmp.music.CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)}")
+                                },
+                                onShowInfo = {
+                                    showMoreMenu = false
+                                    showSongInfo = true
+                                },
                                 onDislike = {
                                     showMoreMenu = false
                                     playerScope.launch {
-                                        runCatching { 
+                                        runCatching {
                                             val rawId = runCatching { cp.player.kmp.music.CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)
-                                            AppModel.api.dislikeSong(rawId) 
+                                            AppModel.api.dislikeSong(rawId)
                                         }
                                         cp.player.app.ui.util.UiEvents.notify("已标记不感兴趣")
                                         controller.skipNext()
@@ -421,6 +436,14 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             onSelect = controller::setSleepTimer,
             onCancelTimer = controller::cancelSleepTimer,
             onDismiss = { showSleepTimer = false },
+        )
+    }
+
+    if (showSongInfo) {
+        SongInfoDialog(
+            track = track,
+            formatInfo = state.formatInfo,
+            onDismiss = { showSongInfo = false },
         )
     }
 }
@@ -496,7 +519,10 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
     showMoreMenu: Boolean,
     onDismissMore: () -> Unit,
     onAddToPlaylist: () -> Unit,
+    onDownload: () -> Unit,
     onSleepTimer: () -> Unit,
+    onShare: () -> Unit,
+    onShowInfo: () -> Unit,
     onDislike: () -> Unit,
 ) {
     val track = state.currentTrack ?: return
@@ -645,27 +671,20 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    DropdownMenu(expanded = showMoreMenu, onDismissRequest = onDismissMore) {
-                        DropdownMenuItem(
-                            text = { Text("加入歌单") },
-                            onClick = onAddToPlaylist,
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    when {
-                                        state.sleepAfterTrack -> "睡眠定时 · 播完本曲"
-                                        state.sleepTimerRemainingMs != null ->
-                                            "睡眠定时 · ${(state.sleepTimerRemainingMs!! / 60_000L) + 1} 分钟"
-                                        else -> "睡眠定时"
-                                    }
-                                )
-                            },
-                            onClick = onSleepTimer,
-                        )
-                        DropdownMenuItem(
-                            text = { Text("不感兴趣") },
-                            onClick = onDislike,
+                    if (showMoreMenu) {
+                        PlayerMoreBottomSheet(
+                            track = track,
+                            isDownloaded = AppModel.isDownloaded(track.id),
+                            formatInfo = state.formatInfo,
+                            sleepAfterTrack = state.sleepAfterTrack,
+                            sleepTimerRemainingMs = state.sleepTimerRemainingMs,
+                            onDismiss = onDismissMore,
+                            onAddToPlaylist = onAddToPlaylist,
+                            onDownload = onDownload,
+                            onSleepTimer = onSleepTimer,
+                            onShare = onShare,
+                            onShowInfo = onShowInfo,
+                            onDislike = onDislike,
                         )
                     }
                 }
@@ -673,6 +692,42 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
         }
         Spacer(Modifier.height(8.dp))
     }
+}
+
+@Composable
+private fun SongInfoDialog(
+    track: cp.player.kmp.music.TrackSummary,
+    formatInfo: AudioFormatInfo?,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("歌曲信息", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        text = {
+            val info = formatInfo
+            Text(
+                buildString {
+                    append("歌曲：").append(track.name)
+                    append("\n歌手：").append(track.artist)
+                    append("\n专辑：").append(track.album ?: "未知专辑")
+                    append("\n时长：").append(formatTimeMs(track.durationMs))
+                    append("\n歌曲 ID：").append(track.id)
+                    if (info != null) {
+                        append("\n\n音频格式")
+                        info.codecName?.takeIf(String::isNotBlank)?.let { append("\n编码：").append(it) }
+                        info.sampleRate?.takeIf { it > 0 }?.let { append("\n采样率：").append(it).append(" Hz") }
+                        info.bitDepth?.takeIf { it > 0 }?.let { append("\n位深：").append(it).append(" bit") }
+                        info.bitrate?.takeIf { it > 0 }?.let { append("\n码率：").append(it / 1000).append(" kbps") }
+                        info.channels?.takeIf { it > 0 }?.let { append("\n声道：").append(it) }
+                        info.mimeType?.takeIf(String::isNotBlank)?.let { append("\nMIME：").append(it) }
+                    }
+                }
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
+        },
+    )
 }
 
 @Composable

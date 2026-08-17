@@ -3,6 +3,8 @@ package cp.player.app.ui.component
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -53,6 +55,7 @@ fun LegacyPageScaffold(
 @Composable
 fun LegacyModalBottomSheet(
     onDismissRequest: () -> Unit,
+    bottomPadding: androidx.compose.ui.unit.Dp = 32.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     ModalBottomSheet(
@@ -66,6 +69,13 @@ fun LegacyModalBottomSheet(
                 height = 4.dp,
             )
         },
-        content = content,
-    )
+    ) {
+        androidx.compose.foundation.layout.Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(bottom = bottomPadding),
+            content = content,
+        )
+    }
 }

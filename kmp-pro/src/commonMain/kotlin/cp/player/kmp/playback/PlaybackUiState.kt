@@ -1,6 +1,7 @@
 package cp.player.kmp.playback
 
 import cp.player.kmp.music.TrackSummary
+import cp.player.kmp.model.LyricsInfo
 
 /**
  * 前端播放界面的完整渲染状态（不可变）。
@@ -20,6 +21,7 @@ data class PlaybackUiState(
     val repeatMode: RepeatMode = RepeatMode.OFF,
     val shuffleEnabled: Boolean = false,
     val lyrics: LyricsState = LyricsState.Idle,
+    val lyricsInfo: LyricsInfo? = null,
     val activeLyricIndex: Int = -1,
     val formatInfo: AudioFormatInfo? = null,
     val error: String? = null,

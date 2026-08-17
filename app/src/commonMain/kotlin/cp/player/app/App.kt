@@ -1,16 +1,27 @@
 package cp.player.app
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.transitions.SlideTransition
+import cp.player.app.ui.component.MiniPlayer
 import cp.player.app.ui.screen.MainScreen
 import cp.player.app.ui.screen.SetupScreen
 import cp.player.app.ui.theme.CpTheme
@@ -29,6 +40,7 @@ import cp.player.kmp.MusicBackend
  * 通过观察 [MusicBackend.stateFlow] 响应 Provider 增删导致的瞬态切换，
  * 根 Navigator 起点由首次组合决定；后续 Ready 状态变化通过 LaunchedEffect 自动导航。
  */
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun App() {
     val themeMode by AppModel.themeModeFlow.collectAsState()
@@ -71,7 +83,42 @@ fun App() {
                         navigator.replaceAll(MainScreen())
                     }
                 }
-                SlideTransition(navigator)
+
+                Box(Modifier.fillMaxSize()) {
+                    SlideTransition(navigator)
+
+                    // MainScreen already owns this overlay; all other pages get the
+                    // same controller here so playback remains accessible globally.
+                    val showMiniPlayer = state is BackendState.Ready &&
+                        navigator.lastItem !is MainScreen &&
+                        navigator.lastItem !is cp.player.app.ui.screen.PlayerScreen
+                    if (showMiniPlayer) {
+                        val playbackState by AppModel.playback.state.collectAsState()
+                        val controller = AppModel.playback
+                        SharedTransitionLayout(Modifier.fillMaxSize()) {
+                            AnimatedContent(
+                                targetState = playbackState.currentTrack != null,
+                                transitionSpec = {
+                                    fadeIn(tween(200)) togetherWith fadeOut(tween(200))
+                                },
+                                label = "GlobalMiniPlayer",
+                                modifier = Modifier.align(Alignment.BottomCenter),
+                            ) { hasTrack ->
+                                if (hasTrack) {
+                                    MiniPlayer(
+                                        state = playbackState,
+                                        animatedVisibilityScope = this@AnimatedContent,
+                                        onClick = { navigator.push(cp.player.app.ui.screen.PlayerScreen()) },
+                                        onTogglePlay = controller::togglePlayPause,
+                                        onSkipPrev = controller::skipPrevious,
+                                        onSkipNext = controller::skipNext,
+                                        modifier = Modifier.navigationBarsPadding(),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
