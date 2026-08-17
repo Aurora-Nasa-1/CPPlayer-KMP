@@ -753,20 +753,20 @@ private fun ProgressRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                formatTimeMs(state.positionMs),
+                remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) },
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
             // 音质 chip
             state.formatInfo?.let { info ->
                 Text(
-                    "${info.qualityLabel}",
+                    info.qualityLabel,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 )
             }
             Text(
-                formatTimeMs(duration),
+                remember(duration) { formatTimeMs(duration) },
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
