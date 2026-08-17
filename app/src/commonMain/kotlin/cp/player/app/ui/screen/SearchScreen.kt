@@ -20,7 +20,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -28,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -109,37 +112,66 @@ class SearchScreen : Screen {
                     state.result == null -> {
                         Column(
                             Modifier.fillMaxSize().padding(horizontal = CpSpacing.pageHorizontal),
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
+                            if (state.query.isBlank() && state.searchHistory.isNotEmpty()) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    SectionHeader(title = "最近搜索")
+                                    TextButton(onClick = model::clearHistory) { Text("清空") }
+                                }
+                                state.searchHistory.forEach { keyword ->
+                                    Row(
+                                        Modifier.fillMaxWidth().clickable { model.search(keyword) }.padding(vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Icon(Icons.Filled.History, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Spacer(Modifier.width(12.dp))
+                                        Text(keyword)
+                                    }
+                                }
+                            }
                             if (state.suggestions.isNotEmpty()) {
                                 SectionHeader(title = "搜索建议")
                                 state.suggestions.forEach { suggestion ->
                                     Row(
                                         Modifier.fillMaxWidth().clickable { model.search(suggestion) }.padding(vertical = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                                        verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                         Spacer(Modifier.width(12.dp))
                                         Text(suggestion)
                                     }
                                 }
-                            } else {
+                            } else if (state.query.isBlank()) {
                                 SectionHeader(title = "热门搜索")
-                                FlowRow(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    state.hotSearches.forEach { keyword ->
-                                        SuggestionChip(
-                                            onClick = { model.search(keyword) },
-                                            label = { Text(keyword) }
+                                state.hotSearches.forEachIndexed { index, hot ->
+                                    Row(
+                                        Modifier.fillMaxWidth().clickable { model.search(hot.keyword) }.padding(vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            "${index + 1}",
+                                            modifier = Modifier.width(28.dp),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = if (index < 3) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
+                                        Column(Modifier.weight(1f)) {
+                                            Text(hot.keyword)
+                                            if (hot.description.isNotBlank()) {
+                                                Text(hot.description, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                                            }
+                                        }
+                                        Icon(Icons.AutoMirrored.Filled.TrendingUp, null, tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
                                     }
                                 }
                                 ContentState(
                                     title = "发现下一首喜欢的音乐",
                                     message = "输入关键词后按搜索键",
-                                    modifier = Modifier.padding(top = 32.dp),
+                                    modifier = Modifier.padding(top = 20.dp),
                                 )
                             }
                         }
