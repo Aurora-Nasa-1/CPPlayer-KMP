@@ -549,7 +549,19 @@ class PlaybackControllerImpl(
                 }
             }
             try {
-                platform.load(songUrl.url, startPositionMs = 0L, headers = headers)
+                platform.load(
+                    songUrl.url,
+                    startPositionMs = 0L,
+                    headers = headers,
+                    metadata = PlaybackMetadata(
+                        id = mediaId,
+                        title = summary.name,
+                        artist = summary.artist,
+                        album = summary.album,
+                        coverUrl = summary.coverUrl,
+                        durationMs = summary.durationMs,
+                    ),
+                )
                 platform.play()
                 refreshLyrics()
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -576,7 +588,22 @@ class PlaybackControllerImpl(
                 fallback.cookie?.takeIf { it.isNotBlank() }?.let { put("Cookie", it) }
                 if (!containsKey("Cookie")) cookieProvider()?.takeIf { it.isNotBlank() }?.let { put("Cookie", it) }
             }
-            platform.load(fallback.url, startPositionMs = 0L, headers = headers)
+            val summary = _queue.getOrNull(_index)?.summary
+            platform.load(
+                fallback.url,
+                startPositionMs = 0L,
+                headers = headers,
+                metadata = summary?.let {
+                    PlaybackMetadata(
+                        id = mediaId,
+                        title = it.name,
+                        artist = it.artist,
+                        album = it.album,
+                        coverUrl = it.coverUrl,
+                        durationMs = it.durationMs,
+                    )
+                },
+            )
             platform.play()
             refreshLyrics()
             true

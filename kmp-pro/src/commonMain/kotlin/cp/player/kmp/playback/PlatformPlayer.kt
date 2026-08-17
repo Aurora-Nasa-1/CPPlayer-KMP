@@ -20,7 +20,12 @@ interface PlatformPlayer {
     val formatInfo: StateFlow<AudioFormatInfo?>
     val supportsExclusiveAudio: Boolean get() = false
 
-    suspend fun load(url: String, startPositionMs: Long = 0L, headers: Map<String, String> = emptyMap())
+    suspend fun load(
+        url: String,
+        startPositionMs: Long = 0L,
+        headers: Map<String, String> = emptyMap(),
+        metadata: PlaybackMetadata? = null,
+    )
     fun play()
     fun pause()
     fun seekTo(positionMs: Long)
@@ -29,6 +34,7 @@ interface PlatformPlayer {
     fun setVolume(volume: Float)
     fun getVolume(): Float
 }
+
 
 sealed class PlatformPlaybackState {
     data object Idle : PlatformPlaybackState()
@@ -103,7 +109,7 @@ class AudioPlayerImpl : PlatformPlayer {
         }
     }
 
-    override suspend fun load(url: String, startPositionMs: Long, headers: Map<String, String>) {
+    override suspend fun load(url: String, startPositionMs: Long, headers: Map<String, String>, metadata: PlaybackMetadata?) {
         _state.value = PlatformPlaybackState.Buffering
         lastUrl = url
         justLoaded = true

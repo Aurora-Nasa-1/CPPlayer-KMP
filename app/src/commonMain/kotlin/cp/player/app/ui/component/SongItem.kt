@@ -84,7 +84,7 @@ fun SongItem(
                     )
                 }
                 Box(
-                    Modifier.size(56.dp).clip(shape)
+                    Modifier.size(52.dp).clip(shape)
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                     contentAlignment = Alignment.Center,
                 ) {

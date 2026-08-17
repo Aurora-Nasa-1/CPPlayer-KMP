@@ -77,6 +77,11 @@ class DownloadsScreen : Screen {
 private data class DownloadsTab(val label: String, val icon: ImageVector)
 
 @Composable
+internal fun DownloadsLibraryTab(model: DownloadsScreenModel) {
+    DownloadsScreenContent(model)
+}
+
+@Composable
 private fun DownloadsScreenContent(model: DownloadsScreenModel) {
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()

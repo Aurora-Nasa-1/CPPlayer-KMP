@@ -17,14 +17,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -52,9 +52,9 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.ui.component.ContentState
+import cp.player.app.ui.component.ExpressiveListCard
 import cp.player.app.ui.util.resized
 import cp.player.app.ui.component.CpSpacing
-import cp.player.app.ui.component.PageHeader
 import cp.player.app.ui.component.PlaylistCoverCard
 import cp.player.app.ui.component.QuickAccessSection
 import cp.player.app.ui.component.SectionHeader
@@ -92,7 +92,10 @@ private fun HomeScreenContent(model: HomeScreenModel) {
 
     if (loading) {
         Column(Modifier.fillMaxSize()) {
-            StateSurface(Modifier.padding(horizontal = CpSpacing.pageHorizontal)) {
+            StateSurface(
+                Modifier.padding(horizontal = CpSpacing.pageHorizontal)
+                    .widthIn(max = 1320.dp),
+            ) {
                 ContentState(
                     title = "正在准备推荐",
                     message = "正在同步每日歌曲与歌单",
@@ -103,7 +106,42 @@ private fun HomeScreenContent(model: HomeScreenModel) {
         return
     }
 
-    LazyColumn(
+    if (cp.player.app.ui.component.LocalIsExpanded.current) {
+        DesktopHomeLayout(
+            dailySongs = dailySongs,
+            recommendedPlaylists = recommendedPlaylists,
+            userPlaylists = userPlaylists,
+            recentTracks = recentTracks,
+            error = error,
+            onRefresh = model::refresh,
+            onFmRecommendClick = {
+                if (dailySongs.isNotEmpty()) {
+                    scope.launch {
+                        AppModel.playback.playQueue(
+                            dailySongs.map { toMediaId(it.id) }, startIndex = 0,
+                        )
+                    }
+                }
+            },
+            onPersonalFmClick = model::playPersonalFm,
+            onPlaylistClick = { navigator.push(PlaylistDetailScreen(it)) },
+            onSongClick = { track ->
+                scope.launch {
+                    AppModel.playback.playQueue(
+                        dailySongs.map { toMediaId(it.id) },
+                        startIndex = dailySongs.indexOf(track).coerceAtLeast(0),
+                    )
+                }
+            },
+            onRecentTrackClick = { _, index ->
+                scope.launch {
+                    AppModel.playback.playQueue(
+                        recentTracks.map { toMediaId(it.id) }, startIndex = index,
+                    )
+                }
+            },
+        )
+    } else LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
             top = CpSpacing.pageTop,
@@ -272,6 +310,111 @@ private fun HomeScreenContent(model: HomeScreenModel) {
             trackId = track.id,
             onDismiss = { addToPlaylistTrack = null },
         )
+    }
+}
+
+@Composable
+private fun DesktopHomeLayout(
+    dailySongs: List<TrackSummary>,
+    recommendedPlaylists: List<cp.player.kmp.music.PlaylistSummary>,
+    userPlaylists: List<cp.player.kmp.music.PlaylistSummary>,
+    recentTracks: List<TrackSummary>,
+    error: String?,
+    onRefresh: () -> Unit,
+    onFmRecommendClick: () -> Unit,
+    onPersonalFmClick: () -> Unit,
+    onPlaylistClick: (cp.player.kmp.music.PlaylistSummary) -> Unit,
+    onSongClick: (TrackSummary) -> Unit,
+    onRecentTrackClick: (TrackSummary, Int) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().widthIn(max = 1320.dp),
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                QuickAccessSection(
+                    fmOnRecommendClick = onFmRecommendClick,
+                    fmOnPersonalFmClick = onPersonalFmClick,
+                    userPlaylists = userPlaylists,
+                    onPlaylistClick = onPlaylistClick,
+                )
+                if (dailySongs.isNotEmpty()) {
+                    DailyMixCard(
+                        songs = dailySongs,
+                        onSongClick = onSongClick,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                if (recommendedPlaylists.isNotEmpty()) {
+                    ExpressiveListCard(
+                        title = "推荐歌单",
+                        trailing = null,
+                    ) {
+                        LazyRow(
+                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 20.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            itemsIndexed(recommendedPlaylists.take(12)) { _, playlist ->
+                                PlaylistCoverCard(playlist, { onPlaylistClick(playlist) })
+                            }
+                        }
+                    }
+                }
+            }
+            Column(
+                modifier = Modifier.widthIn(min = 300.dp, max = 380.dp).width(340.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                ExpressiveListCard(
+                    title = "最近播放",
+                    trailing = null,
+                ) {
+                    if (recentTracks.isEmpty()) {
+                        ContentState(
+                            title = "还没有最近播放",
+                            message = "播放歌曲后会显示在这里",
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                        )
+                    } else {
+                        Column(
+                            modifier = Modifier.padding(bottom = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            recentTracks.take(8).forEachIndexed { index, track ->
+                                SongItem(
+                                    track = track,
+                                    index = index,
+                                    total = recentTracks.take(8).size,
+                                    onClick = { onRecentTrackClick(track, index) },
+                                    onOptionsClick = {},
+                                    modifier = Modifier.padding(horizontal = 8.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+                if (error != null) {
+                    StateSurface {
+                        ContentState(
+                            title = "推荐内容未完全加载",
+                            message = error,
+                            error = true,
+                            actionLabel = "重试",
+                            onAction = onRefresh,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

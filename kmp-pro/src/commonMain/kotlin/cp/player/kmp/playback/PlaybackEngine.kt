@@ -88,6 +88,7 @@ sealed class PlaybackState {
  * 播放元信息（与播放引擎解耦的最小集合）。
  */
 data class PlaybackMetadata(
+    val id: String = "",
     val title: String,
     val artist: String?,
     val album: String?,

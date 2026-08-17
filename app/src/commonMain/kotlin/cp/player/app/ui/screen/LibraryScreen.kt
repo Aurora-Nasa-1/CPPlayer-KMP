@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CloudQueue
 import androidx.compose.material.icons.rounded.QueueMusic
@@ -61,6 +62,7 @@ import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.PageHeader
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.model.LibraryScreenModel
+import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.kmp.music.PlaylistSummary
 import kotlinx.coroutines.launch
 
@@ -81,10 +83,12 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
     var showCreateDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val navigator = LocalNavigator.currentOrThrow
+    val downloadsModel = remember { DownloadsScreenModel() }
 
     val filters = listOf(
         FilterTab("歌单", Icons.Rounded.QueueMusic),
         FilterTab("云盘", Icons.Rounded.CloudQueue),
+        FilterTab("下载", Icons.Filled.Download),
     )
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { filters.size })
 
@@ -100,7 +104,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
 
         Surface(
             Modifier.fillMaxSize(),
-            shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             color = MaterialTheme.colorScheme.surfaceContainerLow,
         ) {
             HorizontalPager(
@@ -127,6 +131,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
                         onRetry = { model.loadCloud(force = true) },
                         onSongClick = model::playCloud,
                     )
+                    2 -> DownloadsLibraryTab(downloadsModel)
                 }
             }
         }
@@ -223,8 +228,8 @@ private fun CloudTab(
         }
         else -> LazyColumn(
             Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 96.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(songs.size) { index ->
                 cp.player.app.ui.component.SongItem(
@@ -337,12 +342,12 @@ private fun PlaylistsTab(
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
-            start = 12.dp,
-            end = 12.dp,
-            top = 8.dp,
+            start = 16.dp,
+            end = 16.dp,
+            top = 16.dp,
             bottom = 96.dp,
         ),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(playlists.size) { index ->
             PlaylistItem(

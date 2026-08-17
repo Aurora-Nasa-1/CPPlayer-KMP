@@ -37,9 +37,9 @@ fun LegacyListItem(
     // Surface 自带 onClick 不支持长按，需要长按时改用 combinedClickable
     val content: @Composable () -> Unit = {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             leadingContent?.invoke()
             Column(Modifier.weight(1f)) {

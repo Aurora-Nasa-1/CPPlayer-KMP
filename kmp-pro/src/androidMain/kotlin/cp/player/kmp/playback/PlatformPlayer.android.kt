@@ -78,9 +78,22 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
         })
     }
 
-    override suspend fun load(url: String, startPositionMs: Long, headers: Map<String, String>) {
+    override suspend fun load(url: String, startPositionMs: Long, headers: Map<String, String>, metadata: PlaybackMetadata?) {
         val dataSource = DefaultHttpDataSource.Factory().setDefaultRequestProperties(headers)
-        player.setMediaSource(DefaultMediaSourceFactory(dataSource).createMediaSource(MediaItem.fromUri(Uri.parse(url))))
+        val mediaMetadata = metadata?.let {
+            MediaMetadata.Builder()
+                .setTitle(it.title)
+                .setArtist(it.artist)
+                .setAlbumTitle(it.album)
+                .setArtworkUri(it.coverUrl?.let(Uri::parse))
+                .build()
+        }
+        val mediaItem = MediaItem.Builder()
+            .setUri(Uri.parse(url))
+            .setMediaId(metadata?.id?.takeIf { it.isNotBlank() } ?: url)
+            .setMediaMetadata(mediaMetadata ?: MediaMetadata.Builder().build())
+            .build()
+        player.setMediaSource(DefaultMediaSourceFactory(dataSource).createMediaSource(mediaItem))
         player.prepare()
         player.seekTo(startPositionMs)
         player.play()

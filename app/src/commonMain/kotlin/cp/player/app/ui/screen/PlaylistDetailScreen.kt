@@ -748,12 +748,12 @@ private fun TrackList(
         else -> LazyColumn(
             modifier = modifier.fillMaxSize(),
             contentPadding = PaddingValues(
-                start = 16.dp,
-                end = 16.dp,
-                top = topContentPadding,
+                start = 20.dp,
+                end = 20.dp,
+                top = topContentPadding + 8.dp,
                 bottom = 96.dp,
             ),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             if (withHeader) {
                 item(key = "__header__") {
@@ -858,16 +858,16 @@ private fun PlaylistHeader(
     onDownloadAll: () -> Unit,
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 0.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.Start,
     ) {
         // 第一行：播放 + 随机
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Surface(
                 onClick = onPlayAll,
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(18.dp),
                 color = MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.weight(1f).height(56.dp),
+                modifier = Modifier.weight(1f).height(52.dp),
             ) {
                 Row(
                     Modifier.fillMaxSize(),
@@ -890,9 +890,9 @@ private fun PlaylistHeader(
             }
             Surface(
                 onClick = onShuffle,
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(18.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.weight(1f).height(56.dp),
+                modifier = Modifier.weight(1f).height(52.dp),
             ) {
                 Row(
                     Modifier.fillMaxSize(),
@@ -915,7 +915,7 @@ private fun PlaylistHeader(
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
 
         // 第二行：添加 + 排序
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -923,7 +923,7 @@ private fun PlaylistHeader(
                 onClick = onAdd,
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                modifier = Modifier.weight(1.2f).height(48.dp),
+                modifier = Modifier.weight(1.2f).height(46.dp),
             ) {
                 Row(
                     Modifier.fillMaxSize(),
@@ -947,7 +947,7 @@ private fun PlaylistHeader(
                 onClick = onSort,
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                modifier = Modifier.weight(1.2f).height(48.dp),
+                modifier = Modifier.weight(1.2f).height(46.dp),
             ) {
                 Row(
                     Modifier.fillMaxSize(),
@@ -969,14 +969,14 @@ private fun PlaylistHeader(
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
 
         // 第三行：全部下载
         Surface(
             onClick = onDownloadAll,
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHighest,
-            modifier = Modifier.fillMaxWidth().height(48.dp),
+            modifier = Modifier.fillMaxWidth().height(46.dp),
         ) {
             Row(
                 Modifier.fillMaxSize(),
