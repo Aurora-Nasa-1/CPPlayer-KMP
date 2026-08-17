@@ -1,0 +1,3 @@
+## 2024-05-24 - Dynamic States and Localization for Interactive Elements
+**Learning:** Hardcoded accessibility labels (e.g., static "播放/暂停" for play/pause, or English default "Prev"/"Next") fail to convey current context accurately and can disrupt localized experiences. Interactive elements with toggling states need dynamic `contentDescription`s reflecting exactly what action the user will take next (e.g., "暂停" when playing, "播放" when paused).
+**Action:** Always map toggle button `contentDescription`s to the relevant UI state variable, and rigorously match the app's primary language instead of assuming English placeholders.
