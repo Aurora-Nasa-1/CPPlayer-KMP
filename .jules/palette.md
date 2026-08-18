@@ -1,0 +1,3 @@
+## 2024-05-24 - Dynamic Accessibility Labels for State Toggle Buttons
+**Learning:** For interactive UI elements with toggling or multiple states (e.g., play/pause, shuffle, repeat modes), static descriptions like "Shuffle" or "Repeat" are insufficient. They should dynamically reflect the action that will happen when clicked (e.g., "开启单曲循环" - Enable single repeat) or the current state combined with an action (e.g., "关闭随机播放" - Disable shuffle) to properly convey expectations to screen reader users, matching the primary UI localization (Simplified Chinese).
+**Action:** When implementing multi-state or toggle buttons, check the current `contentDescription`. If it is static, implement a dynamic `contentDescription` using an `if` or `when` block based on the current state.
