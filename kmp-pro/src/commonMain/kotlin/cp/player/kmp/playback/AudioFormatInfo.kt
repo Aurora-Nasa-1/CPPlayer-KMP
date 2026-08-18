@@ -14,10 +14,9 @@ data class AudioFormatInfo(
     val mimeType: String? = null,
 ) {
     /** 归一化的音质等级标签，用于 UI 摘要展示。 */
-    val qualityLabel: String
-        get() = buildList {
-            codecName?.let { add(it) }
-            bitDepth?.let { add("${it}bit") }
-            sampleRate?.let { add("${it / 1000}kHz") }
-        }.joinToString(" · ").ifEmpty { "标准" }
+    val qualityLabel: String = buildList {
+        codecName?.let { add(it) }
+        bitDepth?.let { add("${it}bit") }
+        sampleRate?.let { add("${it / 1000}kHz") }
+    }.joinToString(" · ").ifEmpty { "标准" }
 }
