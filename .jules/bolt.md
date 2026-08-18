@@ -1,0 +1,3 @@
+## 2025-02-12 - Recomposition Optimization for PlayerScreen
+**Learning:** In Jetpack Compose (Compose Multiplatform), fast-changing state like `positionMs` is emitted continuously via `PlaybackUiState`. Using `formatTimeMs` with direct `positionMs` value causes excessive recompositions since the output string doesn't change every millisecond, and string allocations add garbage collection overhead.
+**Action:** Truncate timestamps to seconds before formatting string displays by doing `(state.positionMs / 1000) * 1000` when calling `formatTimeMs` or implement derivation with `remember` to memoize to avoid high CPU overhead and excessive garbage collection.
