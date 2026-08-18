@@ -752,21 +752,23 @@ private fun ProgressRow(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            val formattedPosition = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
             Text(
-                formatTimeMs(state.positionMs),
+                formattedPosition,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
             // 音质 chip
             state.formatInfo?.let { info ->
                 Text(
-                    "${info.qualityLabel}",
+                    info.qualityLabel,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 )
             }
+            val formattedDuration = remember(duration / 1000) { formatTimeMs(duration) }
             Text(
-                formatTimeMs(duration),
+                formattedDuration,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
