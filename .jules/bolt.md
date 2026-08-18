@@ -1,0 +1,3 @@
+## 2024-05-24 - Memoizing Time Format Strings in Recomposing UI
+ **Learning:** In Compose, fast-changing state like `positionMs` emitted continuously via `PlaybackUiState` causes excessive rapid recompositions. String formatting like `formatTimeMs` performed directly during recomposition allocates new strings constantly, causing huge garbage collection overhead.
+ **Action:** Isolate these state evaluations to smaller components or use `remember` with a stable, truncated key (like `state.positionMs / 1000` for seconds) to memoize derived variables and string displays, eliminating unnecessary memory allocations per frame.
