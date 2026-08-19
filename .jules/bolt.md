@@ -1,0 +1,3 @@
+## 2024-03-24 - [Compose Multiplatform] Time string memoization and GC overhead
+**Learning:** In Compose UI code handling rapid states like `positionMs` (which can emit at 60fps), repeatedly deriving strings without memoization and using dynamic getters (e.g. `get() = buildList { ... }` in Data Classes) generates excessive short-lived objects. This leads to frequent Garbage Collection pauses that cause UI jank.
+**Action:** When a UI component observes a millisecond-precision position timer, always memoize string formatting by transforming the state to seconds (e.g. `remember(ms / 1000) { format(ms) }`). For DTO/Data Classes, use eagerly evaluated `val` properties instead of dynamic getters for derived strings, reducing GC churn during recomposition.
