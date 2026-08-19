@@ -66,10 +66,14 @@ import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.kmp.music.PlaylistSummary
 import kotlinx.coroutines.launch
 
-class LibraryScreen : Screen {
+class LibraryScreen(private val initialPlaylistId: Long? = null) : Screen {
     @Composable
     override fun Content() {
-        LibraryScreenContent(rememberScreenModel { LibraryScreenModel() })
+        val model = rememberScreenModel { LibraryScreenModel() }
+        androidx.compose.runtime.LaunchedEffect(initialPlaylistId) {
+            if (initialPlaylistId != null) model.selectPlaylist(initialPlaylistId)
+        }
+        LibraryScreenContent(model)
     }
 }
 
@@ -85,18 +89,36 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
     val navigator = LocalNavigator.currentOrThrow
     val downloadsModel = remember { DownloadsScreenModel() }
 
+    androidx.compose.runtime.LaunchedEffect(state.selectedPlaylistId, state.playlists) {
+        val target = state.selectedPlaylistId ?: return@LaunchedEffect
+        state.playlists.firstOrNull { it.id == target }?.let { navigator.push(PlaylistDetailScreen(it)) }
+    }
+
     val filters = listOf(
         FilterTab("歌单", Icons.Rounded.QueueMusic),
         FilterTab("云盘", Icons.Rounded.CloudQueue),
         FilterTab("下载", Icons.Filled.Download),
     )
-    val pagerState = rememberPagerState(initialPage = 0, pageCount = { filters.size })
+    val pagerState = rememberPagerState(initialPage = state.selectedTab, pageCount = { filters.size })
+
+    androidx.compose.runtime.LaunchedEffect(state.selectedTab) {
+        if (pagerState.currentPage != state.selectedTab) pagerState.animateScrollToPage(state.selectedTab)
+    }
 
     Column(Modifier.fillMaxSize()) {
+        if (cp.player.app.ui.component.LocalIsExpanded.current) {
+            Text(
+                text = "我的音乐",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+            )
+        }
         LibraryTopFilters(
             filters = filters,
             selectedIndex = pagerState.currentPage,
             onFilterSelected = { index ->
+                model.selectTab(index)
                 scope.launch { pagerState.animateScrollToPage(index) }
             },
             onCreatePlaylist = { showCreateDialog = true },

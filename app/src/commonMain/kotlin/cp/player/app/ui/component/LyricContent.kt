@@ -65,11 +65,14 @@ fun LyricContent(
             val en = (l.endTime ?: (l.time + 5000)).toInt()
             if (l.words.isNotEmpty()) {
                 KaraokeLine.MainKaraokeLine(
-                    syllables = l.words.map { w ->
+                    syllables = l.words.mapNotNull { w ->
+                        val st = w.beginTime.toInt()
+                        val en = w.endTime.toInt().coerceAtLeast(st)
+                        if (w.text.isBlank()) return@mapNotNull null
                         com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeSyllable(
                             content = w.text,
-                            start = w.beginTime.toInt(),
-                            end = w.endTime.toInt(),
+                            start = st,
+                            end = en,
                             phonetic = ""
                         )
                     },

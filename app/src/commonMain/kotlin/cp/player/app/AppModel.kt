@@ -9,6 +9,8 @@ import cp.player.kmp.playback.PlaybackController
 import cp.player.kmp.provider.BackendProvider
 import cp.player.kmp.provider.ProviderCookieStorage
 import cp.player.kmp.util.SettingsStorage
+import cp.player.app.repository.AuthRepository
+import cp.player.app.repository.MusicRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,10 +51,17 @@ object AppModel {
     val cookieStorage: ProviderCookieStorage get() = backend.cookieStorage
     val settings: SettingsStorage get() = cp.player.kmp.util.defaultSettingsStorage()
 
-    /** 直通版音乐 API（无缓存，cookie 自动注入 + 健康记录）。 */
+    /** Application-facing repository; new UI code should use this instead of raw API. */
+    val musicRepository: MusicRepository get() = MusicRepository(backend.musicApi)
+
+    val authRepository: AuthRepository get() = AuthRepository(backend.musicApi)
+
+    /** Transitional raw API access for operations not migrated yet. */
+    @Deprecated("Use musicRepository or a feature repository")
     val api: cp.player.kmp.api.MusicApiService get() = backend.musicApi
 
     /** 带缓存的音乐 API（先返回缓存，后台拉取，指纹比对，差异 Fresh）。 */
+    @Deprecated("Use a repository method")
     val cachedApi: cp.player.kmp.cache.CachedMusicApiService get() = backend.cachedApi
 
     /** 当前活跃 Provider 唯一 ID（无活跃时返回 "default"）。 */
@@ -64,6 +73,10 @@ object AppModel {
     val playback: PlaybackController get() = backend.playbackController
 
     fun markInitialized() { _initialized.value = true }
+
+    fun retryBackendBootstrap() {
+        _initialized.value = true
+    }
 
     // ============ 设置（持久化） ============
 

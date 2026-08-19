@@ -4,7 +4,6 @@ import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
 import cp.player.kmp.BackendResult
-import cp.player.kmp.music.MusicSourceFromApi
 import cp.player.kmp.api.MusicApiMethod
 import cp.player.kmp.music.SearchResult
 import kotlinx.coroutines.Job
@@ -39,14 +38,15 @@ data class SearchUiState(
     val searchHistory: List<String> = emptyList(),
 )
 
-class SearchScreenModel : ScreenModel {
-    private val _state = MutableStateFlow(SearchUiState())
+class SearchScreenModel(private val initialQuery: String = "") : ScreenModel {
+    private val _state = MutableStateFlow(SearchUiState(query = initialQuery))
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
     private var suggestionJob: Job? = null
 
     init {
         _state.value = _state.value.copy(searchHistory = readHistory())
         loadHotSearches()
+        if (initialQuery.isNotBlank()) search(initialQuery)
     }
 
     private fun readHistory(): List<String> = AppModel.settings
@@ -64,7 +64,7 @@ class SearchScreenModel : ScreenModel {
 
     private fun loadHotSearches() {
         screenModelScope.launch {
-            val response = runCatching { AppModel.api.getHotSearches() }.getOrNull()
+            val response = runCatching { AppModel.musicRepository.getHotSearches() }.getOrNull()
             val hot = response?.parseHotSearches().orEmpty()
             _state.value = _state.value.copy(
                 hotSearches = hot.ifEmpty {
@@ -101,7 +101,7 @@ class SearchScreenModel : ScreenModel {
         suggestionJob = screenModelScope.launch {
             delay(250)
             val requestedQuery = query.trim()
-            val response = runCatching { AppModel.api.getSearchSuggestions(requestedQuery) }.getOrNull()
+            val response = runCatching { AppModel.musicRepository.getSearchSuggestions(requestedQuery) }.getOrNull()
             if (_state.value.query.trim() != requestedQuery) return@launch
             val suggestions = response?.parseSuggestions().orEmpty()
                 .filterNot { it.equals(requestedQuery, ignoreCase = true) }
@@ -158,7 +158,7 @@ class SearchScreenModel : ScreenModel {
         )
         screenModelScope.launch {
             _state.value = _state.value.copy(loading = true, error = null)
-            val response = runCatching { MusicSourceFromApi.search(AppModel.api, finalKeyword, type) }
+            val response = runCatching { AppModel.musicRepository.search(finalKeyword, type) }
                 .getOrElse { BackendResult.Error(it.message ?: "搜索失败") }
             _state.value = when (response) {
                 is BackendResult.Success -> _state.value.copy(result = response.data, loading = false)

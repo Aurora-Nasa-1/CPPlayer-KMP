@@ -15,6 +15,7 @@ class PlaybackMediaSessionService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
 
     override fun onCreate() {
+        (application as? CPPlayerApplication)?.backend
         super.onCreate()
         val exoPlayer = SharedMedia3Player.get(this)
         player = exoPlayer

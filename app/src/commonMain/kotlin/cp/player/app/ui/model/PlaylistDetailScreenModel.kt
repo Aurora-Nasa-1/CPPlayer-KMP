@@ -3,7 +3,6 @@ package cp.player.app.ui.model
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
-import cp.player.app.extractUidFromLoginStatus
 import cp.player.app.ui.component.PlaylistSortType
 import cp.player.app.ui.util.UiEvents
 import cp.player.kmp.BackendResult
@@ -19,11 +18,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.intOrNull
 
 data class PlaylistDetailUiState(
     val summary: PlaylistSummary? = null,
@@ -72,9 +66,9 @@ class PlaylistDetailScreenModel : ScreenModel {
             val results = withContext(Dispatchers.IO) {
                 runCatching {
                     coroutineScope {
-                        val detail = async { MusicSourceFromApi.getPlaylistDetail(AppModel.api, summary.id) }
+                        val detail = async { AppModel.musicRepository.getPlaylistDetail(summary.id) }
                         val tracks = async {
-                            MusicSourceFromApi.getPlaylistTracks(AppModel.api, summary.id, limit = PAGE_SIZE, offset = 0)
+                            AppModel.musicRepository.getPlaylistTracks(summary.id, limit = PAGE_SIZE, offset = 0)
                         }
                         detail.await() to tracks.await()
                     }
@@ -129,7 +123,7 @@ class PlaylistDetailScreenModel : ScreenModel {
             val offset = _state.value.nextOffset
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    MusicSourceFromApi.getPlaylistTracks(AppModel.api, playlistId, limit = PAGE_SIZE, offset = offset)
+                    AppModel.musicRepository.getPlaylistTracks(playlistId, limit = PAGE_SIZE, offset = offset)
                 }.getOrNull()
             }
             if (fetchingPlaylistId == playlistId) {
@@ -267,9 +261,8 @@ class PlaylistDetailScreenModel : ScreenModel {
         screenModelScope.launch {
             val ok = withContext(Dispatchers.IO) {
                 runCatching {
-                    if (owner) AppModel.api.deletePlaylist(playlist.id)
-                    else AppModel.api.subscribePlaylist(playlist.id, t = 2)
-                    true
+                    if (owner) AppModel.musicRepository.deletePlaylist(playlist.id)
+                    else AppModel.musicRepository.unsubscribePlaylist(playlist.id)
                 }.getOrDefault(false)
             }
             UiEvents.notify(
@@ -290,7 +283,7 @@ class PlaylistDetailScreenModel : ScreenModel {
         screenModelScope.launch {
             val ids = newTracks.map { it.id }
             val ok = withContext(Dispatchers.IO) {
-                runCatching { isApiSuccess(AppModel.api.addTracksToPlaylist(playlist.id, ids)) }
+                runCatching { AppModel.musicRepository.addTracksToPlaylist(playlist.id, ids) }
                     .getOrDefault(false)
             }
             if (ok) {
@@ -317,7 +310,7 @@ class PlaylistDetailScreenModel : ScreenModel {
         if (trackIds.isEmpty() || !isOwner()) return
         screenModelScope.launch {
             val ok = withContext(Dispatchers.IO) {
-                runCatching { isApiSuccess(AppModel.api.removeTracksFromPlaylist(playlist.id, trackIds)) }
+                runCatching { AppModel.musicRepository.removeTracksFromPlaylist(playlist.id, trackIds) }
                     .getOrDefault(false)
             }
             if (ok) {
@@ -346,12 +339,10 @@ class PlaylistDetailScreenModel : ScreenModel {
     private fun loadLiked() {
         screenModelScope.launch {
             val ids = withContext(Dispatchers.IO) {
-                runCatching {
-                    val uid = extractUidFromLoginStatus(AppModel.api.getLoginStatus()) ?: return@runCatching emptySet()
-                    val json = AppModel.api.getLikeList(uid)
-                    val array = (json as? JsonObject)?.get("ids") as? JsonArray ?: JsonArray(emptyList())
-                    array.mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.takeIf { s -> s.isNotBlank() } }.toSet()
-                }.getOrDefault(emptySet())
+                when (val result = runCatching { AppModel.musicRepository.getLikeList() }.getOrNull()) {
+                    is BackendResult.Success -> result.data
+                    else -> emptySet()
+                }
             }
             _state.update { it.copy(likedIds = ids) }
         }
@@ -362,7 +353,7 @@ class PlaylistDetailScreenModel : ScreenModel {
         val liked = _state.value.likedIds.contains(track.id)
         screenModelScope.launch {
             val ok = withContext(Dispatchers.IO) {
-                runCatching { isApiSuccess(AppModel.api.likeSong(track.id, !liked)) }.getOrDefault(false)
+                runCatching { AppModel.musicRepository.likeSong(track.id, !liked) }.getOrDefault(false)
             }
             if (ok) {
                 _state.update { s ->
@@ -376,12 +367,4 @@ class PlaylistDetailScreenModel : ScreenModel {
 
     fun isLiked(trackId: String): Boolean = _state.value.likedIds.contains(trackId)
 
-    // ============ 工具 ============
-
-    /** 判定写操作类 API 响应是否成功（code 缺失时视为成功，与 Provider 直通语义一致）。 */
-    private fun isApiSuccess(json: kotlinx.serialization.json.JsonElement): Boolean {
-        val code = ((json as? JsonObject)?.get("code") as? JsonPrimitive)?.intOrNull
-            ?: ((json as? JsonObject)?.get("status") as? JsonPrimitive)?.intOrNull
-        return code == null || code == 200 || code == 0 || code == 201 || code == 301
-    }
 }

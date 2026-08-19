@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoGraph
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -59,6 +60,8 @@ import kotlinx.coroutines.launch
 fun QuickAccessSection(
     fmOnRecommendClick: () -> Unit,
     fmOnPersonalFmClick: () -> Unit,
+    onIntelligenceClick: () -> Unit = {},
+    onSimilarClick: () -> Unit = {},
     userPlaylists: List<PlaylistSummary>,
     onPlaylistClick: (PlaylistSummary) -> Unit,
     modifier: Modifier = Modifier,
@@ -71,6 +74,17 @@ fun QuickAccessSection(
         }
     }
     if (quickAccessItems.isEmpty()) return
+
+    if (expanded) {
+        DesktopQuickAccessGrid(
+            onRecommendClick = fmOnRecommendClick,
+            onPersonalFmClick = fmOnPersonalFmClick,
+            onIntelligenceClick = onIntelligenceClick,
+            onSimilarClick = onSimilarClick,
+            modifier = modifier,
+        )
+        return
+    }
 
     val initialPage = if (quickAccessItems.size > 1) 1 else 0
     val pagerState = rememberPagerState(initialPage = initialPage) { quickAccessItems.size }
@@ -112,8 +126,8 @@ fun QuickAccessSection(
                     onArrowClick = {
                         val item = quickAccessItems[page]
                         when (item) {
+                            QuickAccessItemType.Fm -> fmOnPersonalFmClick()
                             is QuickAccessItemType.PlaylistPreview -> onPlaylistClick(item.playlist)
-                            else -> fmOnPersonalFmClick()
                         }
                     },
                 )
@@ -199,6 +213,50 @@ fun QuickAccessSection(
     }
 }
 
+@Composable
+private fun DesktopQuickAccessGrid(
+    onRecommendClick: () -> Unit,
+    onPersonalFmClick: () -> Unit,
+    onIntelligenceClick: () -> Unit,
+    onSimilarClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val items = listOf(
+        Triple("每日推荐", "进入今日推荐歌单", onRecommendClick),
+        Triple("私人 FM", "连续获取更多 FM 歌曲", onPersonalFmClick),
+        Triple("心动模式", "围绕当前喜欢的歌延展", onIntelligenceClick),
+        Triple("相似歌曲", "进入相似歌曲列表", onSimilarClick),
+    )
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("发现音乐", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+            columns = androidx.compose.foundation.lazy.grid.GridCells.Adaptive(150.dp),
+            modifier = Modifier.fillMaxWidth().height(190.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            userScrollEnabled = false,
+        ) {
+            items(items.size) { index ->
+                val (label, subtitle, action) = items[index]
+                Surface(
+                    onClick = action,
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.fillMaxWidth().height(88.dp),
+                ) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.SpaceBetween) {
+                        Icon(Icons.Filled.AutoGraph, null, tint = MaterialTheme.colorScheme.primary)
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(label, fontWeight = FontWeight.SemiBold)
+                            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 private sealed class QuickAccessItemType {
     data object Fm : QuickAccessItemType()
     data class PlaylistPreview(val playlist: PlaylistSummary) : QuickAccessItemType()
@@ -220,7 +278,7 @@ private fun QuickAccessCard(
         onClick = onArrowClick,
     ) {
         when (item) {
-            is QuickAccessItemType.Fm -> {
+            QuickAccessItemType.Fm -> {
                 FmQuickAccessContent(
                     onRecommendClick = onFmRecommendClick,
                     onFmClick = onFmPersonalFmClick,

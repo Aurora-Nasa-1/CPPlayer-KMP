@@ -3,7 +3,6 @@ package cp.player.app.ui.model
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
-import cp.player.app.extractUidFromLoginStatus
 import cp.player.app.ui.util.UiEvents
 import cp.player.kmp.BackendResult
 import cp.player.kmp.music.MusicSourceFromApi
@@ -25,10 +24,14 @@ data class LibraryUiState(
     val cloudLoading: Boolean = false,
     val cloudError: String? = null,
     val cloudLoaded: Boolean = false,
+    val selectedPlaylistId: Long? = null,
+    val selectedTab: Int = 0,
 )
 
 class LibraryScreenModel : ScreenModel {
     private val _state = MutableStateFlow(LibraryUiState())
+    fun selectPlaylist(playlistId: Long?) { _state.value = _state.value.copy(selectedPlaylistId = playlistId, selectedTab = 0) }
+    fun selectTab(index: Int) { _state.value = _state.value.copy(selectedTab = index) }
     val state: StateFlow<LibraryUiState> = _state.asStateFlow()
 
     init {
@@ -46,13 +49,10 @@ class LibraryScreenModel : ScreenModel {
             _state.value = _state.value.copy(loading = true, error = null)
             _state.value = withContext(Dispatchers.IO) {
                 runCatching {
-                    val uid = extractUidFromLoginStatus(AppModel.api.getLoginStatus())
-                    if (uid == null) {
-                        _state.value.copy(loading = false, error = "未登录或登录已过期")
-                    } else {
-                        val parsed = MusicSourceFromApi.parseUserPlaylists(AppModel.api.getUserPlaylists(uid))
-                        val playlists = (parsed as? BackendResult.Success)?.data.orEmpty()
-                        _state.value.copy(playlists = playlists, loading = false)
+                    when (val result = AppModel.musicRepository.getCurrentUserPlaylists()) {
+                        is BackendResult.Success -> _state.value.copy(playlists = result.data, loading = false)
+                        is BackendResult.Error -> _state.value.copy(loading = false, error = result.message)
+                        is BackendResult.Unsupported -> _state.value.copy(loading = false, error = result.message)
                     }
                 }.getOrElse {
                     _state.value.copy(loading = false, error = it.message ?: "媒体库加载失败")
@@ -69,7 +69,7 @@ class LibraryScreenModel : ScreenModel {
         screenModelScope.launch {
             _state.value = _state.value.copy(cloudLoading = true, cloudError = null)
             val result = withContext(Dispatchers.IO) {
-                runCatching { MusicSourceFromApi.getUserCloud(AppModel.api) }.getOrNull()
+                runCatching { AppModel.musicRepository.getUserCloud() }.getOrNull()
             }
             when (result) {
                 is BackendResult.Success -> _state.value = _state.value.copy(
@@ -108,9 +108,8 @@ class LibraryScreenModel : ScreenModel {
     fun deleteOrUnsubscribe(playlist: PlaylistSummary) {
         screenModelScope.launch {
             val ok = runCatching {
-                if (isOwner(playlist)) AppModel.api.deletePlaylist(playlist.id)
-                else AppModel.api.subscribePlaylist(playlist.id, t = 2)
-                true
+                if (isOwner(playlist)) AppModel.musicRepository.deletePlaylist(playlist.id)
+                else AppModel.musicRepository.unsubscribePlaylist(playlist.id)
             }.getOrDefault(false)
             UiEvents.notify(
                 if (ok) (if (isOwner(playlist)) "已删除「${playlist.name}」" else "已取消收藏「${playlist.name}」")
@@ -122,7 +121,7 @@ class LibraryScreenModel : ScreenModel {
 
     fun play(playlist: PlaylistSummary, addOnly: Boolean = false) {
         screenModelScope.launch {
-            val result = MusicSourceFromApi.getPlaylistDetail(AppModel.api, playlist.id)
+            val result = AppModel.musicRepository.getPlaylistDetail(playlist.id)
             if (result !is BackendResult.Success) return@launch
             val ids = result.data.tracks.map { "${AppModel.activeProviderId()}://song/${it.id}" }
             if (ids.isEmpty()) return@launch

@@ -65,8 +65,7 @@ kotlin {
             dependencies {
                 implementation(compose.desktop.currentOs)
                 implementation(libs.kotlinx.coroutines.swing)
-                implementation(libs.dbus.java.core)
-                implementation(libs.dbus.java.transport.native.unixsocket)
+                implementation(libs.jmtc)
                 implementation(libs.ktor.client.okhttp)
             }
         }

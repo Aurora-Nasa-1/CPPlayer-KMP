@@ -28,8 +28,28 @@ android {
         buildConfigField("String", "GIT_SHA", "\"${getGitSha()}\"")
         buildConfigField("String", "RELEASE_CHANNEL", "\"$appReleaseChannel\"")
     }
+signingConfigs {
+        create("release") {
+            val keystorePath = System.getenv("KEYSTORE_FILE")
+            if (keystorePath != null && file(keystorePath).exists()) {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
-        // Optimized local install build: keeps release optimizations but uses debug signing.
+        getByName("release") {
+            isMinifyEnabled = false
+            // 绑定签名配置
+            val releaseSigning = signingConfigs.getByName("release")
+            if (releaseSigning.storeFile != null) {
+                signingConfig = releaseSigning
+            }
+        }
+        
         create("fastrelease") {
             initWith(getByName("release"))
             matchingFallbacks += listOf("release")

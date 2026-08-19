@@ -10,13 +10,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import cp.player.app.version.AppVersion
-import cp.player.kmp.MusicBackend
 import cp.player.app.platform.notifyMediaReadPermissionGranted
 import cp.player.app.platform.provideAppContext
 import cp.player.app.platform.setMediaPermissionRequester
-import cp.player.kmp.util.initKmpAndroidContext
-import cp.player.kmp.util.toPlatformContext
-import cp.player.kmp.util.defaultSettingsStorage
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -24,14 +20,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         instance = this
 
-        initKmpAndroidContext(this)
         provideAppContext(this)
         // 把媒体权限申请入口注册给 app 层（本地扫描 permissionDenied 时经此触发系统授权弹窗）
         setMediaPermissionRequester { requestMediaReadPermission() }
-        MusicBackend.init(
-            context = toPlatformContext(),
-            settings = defaultSettingsStorage(),
-        )
+        (application as CPPlayerApplication).backend
         AppModel.markInitialized()
         ContextCompat.startForegroundService(
             this,

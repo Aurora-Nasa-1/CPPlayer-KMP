@@ -13,12 +13,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.HorizontalDivider
@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import cp.player.app.ui.util.resized
 import cp.player.kmp.music.TrackSummary
+import cp.player.kmp.model.LyricsInfo
 import cp.player.kmp.playback.AudioFormatInfo
 
 @Composable
@@ -45,6 +46,7 @@ fun PlayerMoreBottomSheet(
     track: TrackSummary,
     isDownloaded: Boolean,
     formatInfo: AudioFormatInfo?,
+    lyricsInfo: LyricsInfo?,
     sleepAfterTrack: Boolean,
     sleepTimerRemainingMs: Long?,
     onDismiss: () -> Unit,
@@ -132,7 +134,7 @@ fun PlayerMoreBottomSheet(
                     PlayerPillButton(
                         modifier = Modifier.weight(1f),
                         text = "加入歌单",
-                        icon = Icons.Filled.PlaylistAdd,
+                        icon = Icons.AutoMirrored.Filled.PlaylistAdd,
                         bgColor = MaterialTheme.colorScheme.primaryContainer,
                         textColor = MaterialTheme.colorScheme.onPrimaryContainer,
                         onClick = {
@@ -224,6 +226,31 @@ fun PlayerMoreBottomSheet(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
+                    lyricsInfo?.let { info ->
+                        Spacer(Modifier.size(12.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Spacer(Modifier.size(12.dp))
+                        Text(
+                            text = "歌词信息",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(Modifier.size(8.dp))
+                        Text("来源: ${info.source}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("格式: ${info.format}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = "逐字歌词: ${if (info.hasWordLevel) "支持" else "不支持"}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (info.hasWordLevel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (info.hasTranslation) {
+                            Text("翻译: 有", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                        }
+                        if (info.hasPhonetic) {
+                            Text("音译: 有", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                        }
                     }
                     formatInfo?.let { info ->
                         Spacer(Modifier.size(12.dp))

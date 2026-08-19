@@ -43,6 +43,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.model.rememberScreenModel
+import cafe.adriel.voyager.navigator.LocalNavigator
+import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpSpacing
@@ -55,14 +57,15 @@ import cp.player.app.ui.model.SearchScreenModel
 import cp.player.kmp.api.MusicApiMethod
 import kotlinx.coroutines.launch
 
-class SearchScreen : Screen {
+class SearchScreen(private val initialQuery: String = "") : Screen {
     @OptIn(ExperimentalLayoutApi::class)
     @Composable
     override fun Content() {
-        val model = rememberScreenModel { SearchScreenModel() }
+        val model = rememberScreenModel { SearchScreenModel(initialQuery) }
         val state by model.state.collectAsState()
         val scope = rememberCoroutineScope()
         val provider = AppModel.activeProviderId()
+        val navigator = LocalNavigator.currentOrThrow
         val likedIds by AppModel.playback.likedIds.collectAsState()
         var selectedTrack by androidx.compose.runtime.remember {
             androidx.compose.runtime.mutableStateOf<cp.player.kmp.music.TrackSummary?>(null)
@@ -247,7 +250,7 @@ class SearchScreen : Screen {
                                         PlaylistItem(
                                             playlist = playlist,
                                             isOwner = false,
-                                            onClick = { /* 详情页可从首页后续接入 */ },
+                                            onClick = { navigator.push(PlaylistDetailScreen(playlist)) },
                                             onOptionsClick = {},
                                         )
                                     }

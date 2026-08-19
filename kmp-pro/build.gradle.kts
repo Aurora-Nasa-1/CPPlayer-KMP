@@ -55,12 +55,7 @@ kotlin {
         desktopMain.dependencies {
             implementation("org.openjfx:javafx-graphics:${libs.versions.javafx.get()}:$fxOsClassifier")
             implementation("org.openjfx:javafx-base:${libs.versions.javafx.get()}:$fxOsClassifier")
-            // dbus-java for MPRIS (Linux)
-            implementation(libs.dbus.java.core)
-            implementation(libs.dbus.java.transport.native.unixsocket)
-            // JNA for libmpv + Windows SMTC
-            implementation(libs.jna)
-            implementation(libs.jna.platform)
+            // JMTC supplies Windows SMTC and Linux MPRIS integration.
         }
     }
 }

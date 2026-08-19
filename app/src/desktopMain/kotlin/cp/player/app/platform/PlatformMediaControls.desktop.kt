@@ -6,15 +6,20 @@ import cp.player.kmp.playback.PlaybackUiState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 
-private var mpris: MprisMediaControls? = null
+private var jmtc: JmtcMediaControls? = null
 
 @Composable
 actual fun PlatformMediaControlsEffect(controller: PlaybackController, state: PlaybackUiState) {
     LaunchedEffect(controller) {
-        mpris = MprisMediaControls.create(controller).also { it.start() }
+        jmtc = JmtcMediaControls.create(controller).also { it.start() }
     }
-    LaunchedEffect(state) { mpris?.update(state) }
+    LaunchedEffect(state) {
+        jmtc?.update(state)
+    }
     DisposableEffect(Unit) {
-        onDispose { mpris?.stop(); mpris = null }
+        onDispose {
+            jmtc?.stop()
+            jmtc = null
+        }
     }
 }

@@ -295,8 +295,7 @@ class LoginScreenModel : ScreenModel {
     private suspend fun checkLoginStatus() {
         val hasCookie = AppModel.cookieStorage.getCookie(providerId())?.isNotEmpty() == true
         if (!hasCookie) return
-        val api = AppModel.api
-        val body = runCatching { api.getLoginStatus() }.getOrNull() ?: return
+        val body = runCatching { AppModel.authRepository.getLoginStatus() }.getOrNull() ?: return
         val ok = body.asCodeOk()
         isLogged.value = ok
         if (ok) message.value = "已恢复登录"
@@ -306,11 +305,10 @@ class LoginScreenModel : ScreenModel {
         screenModelScope.launch {
             isLoading.value = true
             try {
-                val api = AppModel.api
-                val keyResp = api.getQrKey()
+                val keyResp = AppModel.authRepository.getQrKey()
                 val key = keyResp.uniCodeKey()
                 if (key == null) { message.value = "获取二维码 key 失败"; return@launch }
-                val qrResp = api.createQrCode(key)
+                val qrResp = AppModel.authRepository.createQrCode(key)
                 qrUrl.value = qrResp.uniQrUrl()
                 qrImgBase64.value = qrResp.uniQrImage()
                 isLoading.value = false
@@ -324,10 +322,9 @@ class LoginScreenModel : ScreenModel {
     }
 
     private suspend fun pollQrStatus(key: String) {
-        val api = AppModel.api
         repeat(120) {
             kotlinx.coroutines.delay(2000L)
-            val resp = runCatching { api.checkQrStatus(key) }.getOrNull() ?: return@repeat
+            val resp = runCatching { AppModel.authRepository.checkQrStatus(key) }.getOrNull() ?: return@repeat
             val code = resp.asCode()
             when (code) {
                 801 -> message.value = "等待扫码..."
@@ -355,7 +352,7 @@ class LoginScreenModel : ScreenModel {
         screenModelScope.launch {
             isLoading.value = true
             try {
-                val body = AppModel.api.login(email, password)
+                val body = AppModel.authRepository.login(email, password)
                 handleLoginResult(body)
             } catch (e: Exception) {
                 message.value = "登录失败: ${e.message}"
@@ -368,7 +365,7 @@ class LoginScreenModel : ScreenModel {
         screenModelScope.launch {
             isLoading.value = true
             try {
-                val body = AppModel.api.loginWithPhone(phone, codeOrPass)
+                val body = AppModel.authRepository.loginWithPhone(phone, codeOrPass)
                 handleLoginResult(body)
             } catch (e: Exception) {
                 message.value = "登录失败: ${e.message}"
@@ -378,7 +375,7 @@ class LoginScreenModel : ScreenModel {
 
     fun sendCaptcha(phone: String) {
         screenModelScope.launch {
-            runCatching { AppModel.api.sendCaptcha(phone) }
+            runCatching { AppModel.authRepository.sendCaptcha(phone) }
                 .onSuccess { message.value = "验证码已发送（如支持）" }
                 .onFailure { message.value = "验证码发送失败: ${it.message}" }
         }
@@ -388,7 +385,7 @@ class LoginScreenModel : ScreenModel {
         screenModelScope.launch {
             isLoading.value = true
             try {
-                val body = AppModel.api.loginAnonymous()
+                val body = AppModel.authRepository.loginAnonymous()
                 handleLoginResult(body)
             } catch (e: Exception) {
                 message.value = "游客登录失败: ${e.message}"
@@ -398,7 +395,7 @@ class LoginScreenModel : ScreenModel {
 
     fun logout() {
         screenModelScope.launch {
-            runCatching { AppModel.api.logout() }
+            runCatching { AppModel.authRepository.logout() }
             AppModel.cookieStorage.clear(providerId())
             isLogged.value = false
             message.value = "已退出登录"

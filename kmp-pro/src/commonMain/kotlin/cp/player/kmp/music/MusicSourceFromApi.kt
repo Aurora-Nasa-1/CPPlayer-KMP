@@ -65,9 +65,9 @@ object MusicSourceFromApi {
     /** 从 `recommend` / `result` 数组解析推荐歌单摘要列表。 */
     fun parseRecommendedPlaylists(json: JsonElement): MusicResult<List<PlaylistSummary>> {
         return json.toMusicResult {
-            val array = (this["recommend"] ?: this["result"] ?: this["playlists"]) as? JsonArray
+            val array = (this["recommend"] ?: this["result"] ?: this["playlists"] ?: (this["data"] as? JsonObject)?.get("playlists")) as? JsonArray
                 ?: JsonArray(emptyList())
-            array.map { it.jsonObject.toPlaylistSummary() }
+            array.mapNotNull { (it as? JsonObject)?.toPlaylistSummary()?.takeIf { playlist -> playlist.id != 0L && playlist.name.isNotBlank() } }
         }
     }
 
@@ -77,9 +77,9 @@ object MusicSourceFromApi {
     fun parseRecommendedSongs(json: JsonElement): MusicResult<List<TrackSummary>> {
         return json.toMusicResult {
             val root = this["data"] as? JsonObject ?: this
-            val array = (root["dailySongs"] ?: root["songs"] ?: this["recommend"]) as? JsonArray
+            val array = (root["dailySongs"] ?: root["songs"] ?: this["recommend"] ?: this["result"]) as? JsonArray
                 ?: JsonArray(emptyList())
-            array.map { it.jsonObject.toTrackSummary() }
+            array.mapNotNull { (it as? JsonObject)?.toTrackSummary()?.takeIf { track -> track.id.isNotBlank() } }
         }
     }
 

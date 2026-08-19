@@ -1,12 +1,15 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -100,10 +103,19 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 
-class PlaylistDetailScreen(val playlist: PlaylistSummary) : Screen {
+class PlaylistDetailScreen(
+    val playlist: PlaylistSummary,
+    private val embedded: Boolean = false,
+    private val onEmbeddedBack: (() -> Unit)? = null,
+) : Screen {
     @Composable
     override fun Content() {
-        PlaylistDetailContent(playlist, rememberScreenModel { PlaylistDetailScreenModel() })
+        PlaylistDetailContent(
+            playlist = playlist,
+            model = rememberScreenModel { PlaylistDetailScreenModel() },
+            embedded = embedded,
+            onEmbeddedBack = onEmbeddedBack,
+        )
     }
 }
 
@@ -128,7 +140,15 @@ private fun formatPublishDate(ms: Long): String {
 }
 
 @Composable
-private fun PlaylistDetailContent(playlist: PlaylistSummary, model: PlaylistDetailScreenModel) {
+fun PlaylistDetailContent(
+    playlist: PlaylistSummary,
+    model: PlaylistDetailScreenModel,
+    embedded: Boolean = false,
+    onEmbeddedBack: (() -> Unit)? = null,
+    initialOverrideTracks: List<TrackSummary>? = null,
+    autoPlayIndex: Int? = null,
+    disableRemoteLoad: Boolean = false,
+) {
     val navigator = LocalNavigator.currentOrThrow
     val state by model.state.collectAsState()
     val playbackState by AppModel.playback.state.collectAsState()
@@ -183,6 +203,7 @@ private fun PlaylistDetailContent(playlist: PlaylistSummary, model: PlaylistDeta
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val isWide = maxWidth >= 840.dp
+        val canShowInlineBack = isWide && !embedded
         if (isWide) {
             WideLayout(
                 model = model,
@@ -194,7 +215,8 @@ private fun PlaylistDetailContent(playlist: PlaylistSummary, model: PlaylistDeta
                 durationStr = durationStr,
                 currentTrackId = currentTrackId,
                 isOwner = isOwner,
-                onBack = { navigator.pop() },
+                showBackButton = canShowInlineBack,
+                onBack = { if (embedded) onEmbeddedBack?.invoke() else navigator.pop() },
                 onSongOptions = { optionsTarget = it },
                 onOpenPlaylistSheet = { showPlaylistSheet = true },
                 onAddSelectedToPlaylist = { addToPlaylistIds = state.selectedIds.toList() },
@@ -210,7 +232,7 @@ private fun PlaylistDetailContent(playlist: PlaylistSummary, model: PlaylistDeta
                 durationStr = durationStr,
                 currentTrackId = currentTrackId,
                 isOwner = isOwner,
-                onBack = { navigator.pop() },
+                onBack = { if (embedded) onEmbeddedBack?.invoke() else navigator.pop() },
                 onSongOptions = { optionsTarget = it },
                 onOpenPlaylistSheet = { showPlaylistSheet = true },
                 onAddSelectedToPlaylist = { addToPlaylistIds = state.selectedIds.toList() },
@@ -580,25 +602,26 @@ private fun WideLayout(
     durationStr: String,
     currentTrackId: String?,
     isOwner: Boolean,
+    showBackButton: Boolean,
     onBack: () -> Unit,
     onSongOptions: (TrackSummary) -> Unit,
     onOpenPlaylistSheet: () -> Unit,
     onAddSelectedToPlaylist: () -> Unit,
     onAddTracks: () -> Unit,
 ) {
-    Row(Modifier.fillMaxSize()) {
+    Row(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         // 左侧：歌单信息面板
         Column(
             modifier = Modifier
-                .width(360.dp)
+                .width(320.dp)
                 .fillMaxHeight()
                 .verticalScroll(rememberScrollState())
-                .padding(24.dp),
+                .padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.height(16.dp))
             Surface(
-                modifier = Modifier.size(200.dp),
+                modifier = Modifier.size(176.dp),
                 shape = RoundedCornerShape(24.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 shadowElevation = 8.dp,
@@ -621,7 +644,7 @@ private fun WideLayout(
                     }
                 }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
             Text(
                 text = summary.name,
                 style = MaterialTheme.typography.headlineSmall,
@@ -637,7 +660,7 @@ private fun WideLayout(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(16.dp))
             PlaylistHeader(
                 onPlayAll = { model.playAll() },
                 onShuffle = { model.playShuffle() },
@@ -649,6 +672,7 @@ private fun WideLayout(
 
         // 右侧：歌曲列表
         Box(Modifier.weight(1f).fillMaxHeight()) {
+            val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
             TrackList(
                 model = model,
                 state = state,
@@ -658,47 +682,50 @@ private fun WideLayout(
                 onSongOptions = onSongOptions,
                 onSortClick = onOpenPlaylistSheet,
                 onAddTracks = onAddTracks,
-                modifier = Modifier.widthIn(max = 900.dp).align(Alignment.TopCenter),
-                topContentPadding = 72.dp,
+                modifier = Modifier.widthIn(max = 980.dp).align(Alignment.TopCenter),
+                topContentPadding = if (showBackButton || state.selectionMode) topInset + 56.dp else 0.dp,
             )
-            // 顶部导航行：返回 + 多选动作
-            Row(
-                modifier = Modifier.align(Alignment.TopStart).padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                FilledIconButton(
-                    onClick = onBack,
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                    ),
+            if (showBackButton || state.selectionMode) {
+                Row(
+                    modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp, top = topInset + 8.dp, end = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                }
-                if (state.selectionMode) {
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        text = "已选 ${state.selectedIds.size} 首",
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    IconButton(onClick = { model.selectAll() }) {
-                        Icon(Icons.Filled.SelectAll, contentDescription = "全选")
+                    if (showBackButton) {
+                        FilledIconButton(
+                            onClick = onBack,
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                            ),
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        }
                     }
-                    IconButton(
-                        onClick = {
-                            model.queueSelected()
-                            model.exitSelection()
-                        },
-                    ) {
-                        Icon(Icons.Filled.QueueMusic, contentDescription = "加入队列")
-                    }
-                    IconButton(onClick = onAddSelectedToPlaylist) {
-                        Icon(Icons.Filled.PlaylistAdd, contentDescription = "加入歌单")
-                    }
-                    if (isOwner) {
-                        IconButton(onClick = { model.removeTracks(state.selectedIds.toList()) }) {
-                            Icon(Icons.Filled.Delete, contentDescription = "从歌单移除")
+                    if (state.selectionMode) {
+                        if (showBackButton) Spacer(Modifier.width(12.dp))
+                        Text(
+                            text = "已选 ${state.selectedIds.size} 首",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        IconButton(onClick = { model.selectAll() }) {
+                            Icon(Icons.Filled.SelectAll, contentDescription = "全选")
+                        }
+                        IconButton(
+                            onClick = {
+                                model.queueSelected()
+                                model.exitSelection()
+                            },
+                        ) {
+                            Icon(Icons.Filled.QueueMusic, contentDescription = "加入队列")
+                        }
+                        IconButton(onClick = onAddSelectedToPlaylist) {
+                            Icon(Icons.Filled.PlaylistAdd, contentDescription = "加入歌单")
+                        }
+                        if (isOwner) {
+                            IconButton(onClick = { model.removeTracks(state.selectedIds.toList()) }) {
+                                Icon(Icons.Filled.Delete, contentDescription = "从歌单移除")
+                            }
                         }
                     }
                 }

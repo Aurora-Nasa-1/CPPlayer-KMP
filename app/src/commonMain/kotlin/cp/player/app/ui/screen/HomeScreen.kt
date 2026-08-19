@@ -31,19 +31,23 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,7 +75,9 @@ import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.SongOptionsSheet
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.model.HomeScreenModel
+import cp.player.app.ui.model.PlaylistDetailScreenModel
 import cp.player.app.ui.util.resized
+import cp.player.kmp.BackendResult
 import cp.player.kmp.music.PlaylistSummary
 import cp.player.kmp.music.TrackSummary
 import kotlinx.coroutines.launch
@@ -90,6 +96,9 @@ private fun HomeScreenContent(model: HomeScreenModel) {
     val state by model.state.collectAsState()
     val dailySongs = state.dailySongs
     val recommendedPlaylists = state.recommendedPlaylists
+    val hotPlaylists = state.hotPlaylists
+    val newSongs = state.newSongs
+    val playlistCount = recommendedPlaylists.size + hotPlaylists.size
     val userPlaylists = state.userPlaylists
     val loading = state.loading
     val error = state.error
@@ -118,23 +127,40 @@ private fun HomeScreenContent(model: HomeScreenModel) {
         return
     }
 
+    val dailyPlaylist = remember(dailySongs) {
+        PlaylistSummary(
+            id = -101L,
+            name = "每日推荐",
+            coverUrl = dailySongs.firstOrNull()?.coverUrl,
+            trackCount = dailySongs.size,
+            creatorName = "CPPlayer",
+        )
+    }
+    val newSongsPlaylist = remember(newSongs) {
+        PlaylistSummary(
+            id = -102L,
+            name = "推荐新歌",
+            coverUrl = newSongs.firstOrNull()?.coverUrl,
+            trackCount = newSongs.size,
+            creatorName = "CPPlayer",
+        )
+    }
+    val similarPlaylist = remember(dailySongs) {
+        PlaylistSummary(
+            id = -103L,
+            name = "相似歌曲",
+            coverUrl = dailySongs.firstOrNull()?.coverUrl,
+            trackCount = dailySongs.size,
+            creatorName = "CPPlayer",
+        )
+    }
     val playDailyQueue = {
         if (dailySongs.isNotEmpty()) {
-            scope.launch {
-                AppModel.playback.playQueue(
-                    dailySongs.map { toMediaId(it.id) },
-                    startIndex = 0,
-                )
-            }
+            navigator.push(HomeGeneratedPlaylistScreen(dailyPlaylist, dailySongs))
         }
     }
     val playDailyTrack: (TrackSummary) -> Unit = { track ->
-        scope.launch {
-            AppModel.playback.playQueue(
-                dailySongs.map { toMediaId(it.id) },
-                startIndex = dailySongs.indexOf(track).coerceAtLeast(0),
-            )
-        }
+        navigator.push(HomeGeneratedPlaylistScreen(dailyPlaylist, dailySongs, dailySongs.indexOf(track).coerceAtLeast(0)))
     }
     val playRecentAt: (Int) -> Unit = { index ->
         scope.launch {
@@ -149,12 +175,18 @@ private fun HomeScreenContent(model: HomeScreenModel) {
         DesktopHomeLayout(
             dailySongs = dailySongs,
             recommendedPlaylists = recommendedPlaylists,
+            hotPlaylists = hotPlaylists,
+            newSongs = newSongs,
             userPlaylists = userPlaylists,
             recentTracks = recentTracks,
             error = error,
             onRefresh = model::refresh,
-            onFmRecommendClick = playDailyQueue,
+            onFmRecommendClick = { navigator.push(HomeGeneratedPlaylistScreen(dailyPlaylist, dailySongs)) },
             onPersonalFmClick = model::playPersonalFm,
+            onIntelligenceClick = { model.playIntelligence(dailySongs.firstOrNull()) },
+            onSimilarClick = {
+                navigator.push(HomeGeneratedPlaylistScreen(similarPlaylist, emptyList(), 0, HomeGeneratedPlaylistKind.SimilarFromDaily))
+            },
             onPlaylistClick = { navigator.push(PlaylistDetailScreen(it)) },
             onSongClick = playDailyTrack,
             onRecentTrackClick = { _, index -> playRecentAt(index) },
@@ -173,8 +205,14 @@ private fun HomeScreenContent(model: HomeScreenModel) {
     ) {
         item {
             QuickAccessSection(
-                fmOnRecommendClick = playDailyQueue,
+                fmOnRecommendClick = { navigator.push(HomeGeneratedPlaylistScreen(dailyPlaylist, dailySongs)) },
                 fmOnPersonalFmClick = model::playPersonalFm,
+                onIntelligenceClick = {
+                    navigator.push(HomeGeneratedPlaylistScreen(dailyPlaylist, dailySongs, 0, HomeGeneratedPlaylistKind.IntelligenceFromDaily))
+                },
+                onSimilarClick = {
+                    navigator.push(HomeGeneratedPlaylistScreen(similarPlaylist, emptyList(), 0, HomeGeneratedPlaylistKind.SimilarFromDaily))
+                },
                 userPlaylists = userPlaylists,
                 onPlaylistClick = { navigator.push(PlaylistDetailScreen(it)) },
             )
@@ -190,6 +228,7 @@ private fun HomeScreenContent(model: HomeScreenModel) {
                     DailyMixCard(
                         songs = dailySongs,
                         onSongClick = playDailyTrack,
+                        onOpenPlaylist = { navigator.push(HomeGeneratedPlaylistScreen(dailyPlaylist, dailySongs)) },
                         modifier = if (expanded) Modifier.widthIn(max = 700.dp) else Modifier,
                     )
                 }
@@ -209,6 +248,32 @@ private fun HomeScreenContent(model: HomeScreenModel) {
                         PlaylistCoverCard(
                             playlist = playlist,
                             onClick = { navigator.push(PlaylistDetailScreen(playlist)) },
+                        )
+                    }
+                }
+            }
+        }
+
+        if (newSongs.isNotEmpty()) {
+            item {
+                SectionHeader(
+                    title = "推荐新歌",
+                    supportingText = "来自网易云推荐新歌",
+                )
+            }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    newSongs.take(8).forEachIndexed { index, track ->
+                        SongItem(
+                            track = track,
+                            index = index,
+                            total = newSongs.take(8).size,
+                            onClick = {
+                                scope.launch {
+                                    AppModel.playback.playQueue(newSongs.map { toMediaId(it.id) }, index)
+                                }
+                            },
+                            onOptionsClick = { selectedTrack = track },
                         )
                     }
                 }
@@ -254,7 +319,7 @@ private fun HomeScreenContent(model: HomeScreenModel) {
                 }
             }
         }
-        if (dailySongs.isEmpty() && recommendedPlaylists.isEmpty() && error == null) {
+        if (dailySongs.isEmpty() && playlistCount == 0 && error == null) {
             item {
                 StateSurface {
                     ContentState(
@@ -309,12 +374,16 @@ private fun HomeScreenContent(model: HomeScreenModel) {
 private fun DesktopHomeLayout(
     dailySongs: List<TrackSummary>,
     recommendedPlaylists: List<PlaylistSummary>,
+    hotPlaylists: List<PlaylistSummary>,
+    newSongs: List<TrackSummary>,
     userPlaylists: List<PlaylistSummary>,
     recentTracks: List<TrackSummary>,
     error: String?,
     onRefresh: () -> Unit,
     onFmRecommendClick: () -> Unit,
     onPersonalFmClick: () -> Unit,
+    onIntelligenceClick: () -> Unit,
+    onSimilarClick: () -> Unit,
     onPlaylistClick: (PlaylistSummary) -> Unit,
     onSongClick: (TrackSummary) -> Unit,
     onRecentTrackClick: (TrackSummary, Int) -> Unit,
@@ -366,6 +435,8 @@ private fun DesktopHomeLayout(
                     QuickAccessSection(
                         fmOnRecommendClick = onFmRecommendClick,
                         fmOnPersonalFmClick = onPersonalFmClick,
+                        onIntelligenceClick = onIntelligenceClick,
+                        onSimilarClick = onSimilarClick,
                         userPlaylists = userPlaylists,
                         onPlaylistClick = onPlaylistClick,
                     )
@@ -373,6 +444,7 @@ private fun DesktopHomeLayout(
                         DailyMixCard(
                             songs = dailySongs,
                             onSongClick = onSongClick,
+                            onOpenPlaylist = { onFmRecommendClick() },
                             modifier = Modifier.fillMaxWidth(),
                             compact = true,
                         )
@@ -425,7 +497,7 @@ private fun DesktopHomeLayout(
             if (recommendedPlaylists.isNotEmpty()) {
                 DensePlaylistSection(
                     title = "推荐歌单",
-                    supportingText = "参考旧版信息编排，保留当前高效数据流",
+                    supportingText = "点击歌单进入详情，查看完整曲目后再播放",
                     playlists = recommendedItems,
                     rows = recommendedRows,
                     cardWidth = playlistCardWidth,
@@ -433,7 +505,18 @@ private fun DesktopHomeLayout(
                 )
             }
 
-                if (dailySongs.isEmpty() && recommendedPlaylists.isEmpty() && error == null) {
+                if (hotPlaylists.isNotEmpty()) {
+                 DensePlaylistSection(
+                     title = "热门歌单",
+                     supportingText = "大家正在收藏的歌单",
+                     playlists = hotPlaylists.take(recommendedCapacity),
+                     rows = recommendedRows,
+                     cardWidth = playlistCardWidth,
+                     onPlaylistClick = onPlaylistClick,
+                 )
+             }
+
+                 if (dailySongs.isEmpty() && recommendedPlaylists.isEmpty() && hotPlaylists.isEmpty() && error == null) {
                     StateSurface {
                         ContentState(
                             title = "还没有个性化推荐",
@@ -450,6 +533,7 @@ private fun DesktopHomeLayout(
 private fun DailyMixCard(
     songs: List<TrackSummary>,
     onSongClick: (TrackSummary) -> Unit,
+    onOpenPlaylist: () -> Unit,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
 ) {
@@ -460,7 +544,7 @@ private fun DailyMixCard(
         expanded -> 140.dp
         else -> 200.dp
     }
-    val previewTracks = if (compact) songs.take(6) else songs.take(4)
+    val previewTracks = if (compact) songs.take(8) else songs.take(4)
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -503,13 +587,13 @@ private fun DailyMixCard(
                         )
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            if (compact) "大屏重排 ${songs.size} 首，优先给你更多可点内容" else "${songs.size} 首 · 根据你的口味生成",
+                            if (compact) "大屏日推 ${songs.size} 首，优先展示更多可点歌曲" else "${songs.size} 首 · 根据你的口味生成",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.White.copy(alpha = 0.76f),
                         )
                     }
                     Surface(
-                        onClick = { songs.firstOrNull()?.let(onSongClick) },
+                        onClick = onOpenPlaylist,
                         shape = MaterialTheme.shapes.medium,
                         color = Color.White.copy(alpha = 0.2f),
                     ) {
@@ -554,6 +638,7 @@ private fun DailySongRail(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                // Wide desktop keeps daily recommendations visible in a compact 2-column rail.
                 rowTracks.forEach { track ->
                     CompactTrackCard(
                         track = track,
@@ -630,22 +715,34 @@ private fun DenseSongSection(
                 modifier = Modifier.padding(horizontal = 8.dp),
             )
         } else {
-            LazyHorizontalGrid(
-                rows = GridCells.Fixed(rows),
-                modifier = Modifier.fillMaxWidth().height((rows * 82).dp)
-                    .padding(start = 8.dp, end = 8.dp, bottom = 10.dp),
+            val columnCount = 2
+            val columns = remember(tracks) {
+                List(columnCount) { columnIndex ->
+                    tracks.filterIndexed { index, _ -> index % columnCount == columnIndex }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.Top,
             ) {
-                itemsIndexed(tracks) { index, track ->
-                    SongItem(
-                        track = track,
-                        index = index,
-                        total = tracks.size,
-                        onClick = { onTrackClick(track, index) },
-                        onOptionsClick = { onTrackOptionsClick(track) },
-                        modifier = Modifier.width(cardWidth),
-                    )
+                columns.forEachIndexed { columnIndex, columnTracks ->
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        columnTracks.forEachIndexed { indexInColumn, track ->
+                            val originalIndex = columnIndex + indexInColumn * columnCount
+                            SongItem(
+                                track = track,
+                                index = indexInColumn,
+                                total = columnTracks.size,
+                                onClick = { onTrackClick(track, originalIndex) },
+                                onOptionsClick = { onTrackOptionsClick(track) },
+                                modifier = Modifier.width(cardWidth),
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -792,6 +889,60 @@ private fun responsiveFloat(width: Float, min: Float, max: Float, start: Float, 
 private fun responsiveDp(width: Float, min: Float, max: Float, start: Float, end: Float) =
     responsiveFloat(width, min, max, start, end).dp
 
+enum class HomeGeneratedPlaylistKind {
+    Static,
+    SimilarFromDaily,
+    IntelligenceFromDaily,
+}
+
+class HomeGeneratedPlaylistScreen(
+    private val playlist: PlaylistSummary,
+    private val initialTracks: List<TrackSummary>,
+    private val startIndex: Int = 0,
+    private val kind: HomeGeneratedPlaylistKind = HomeGeneratedPlaylistKind.Static,
+) : Screen {
+    @Composable
+    override fun Content() {
+        val model = rememberScreenModel { PlaylistDetailScreenModel() }
+        val sourceTracks by rememberUpdatedState(initialTracks)
+        val navigator = LocalNavigator.currentOrThrow
+        LaunchedEffect(kind, playlist.id, sourceTracks.firstOrNull()?.id) {
+            when (kind) {
+                HomeGeneratedPlaylistKind.Static -> Unit
+                HomeGeneratedPlaylistKind.SimilarFromDaily -> {
+                    val seed = sourceTracks.firstOrNull() ?: return@LaunchedEffect
+                    val result = try {
+                        AppModel.musicRepository.getSimilarSongs(seed.id)
+                    } catch (e: Exception) {
+                        BackendResult.Error(e.message ?: "获取相似歌曲失败", cause = e)
+                    }
+                    val tracks = (result as? BackendResult.Success)?.data.orEmpty()
+                    navigator.replace(HomeGeneratedPlaylistScreen(playlist, tracks))
+                }
+                HomeGeneratedPlaylistKind.IntelligenceFromDaily -> {
+                    val seed = sourceTracks.firstOrNull() ?: return@LaunchedEffect
+                    val result = try {
+                        AppModel.musicRepository.getIntelligenceSongs(seed.id)
+                    } catch (e: Exception) {
+                        BackendResult.Error(e.message ?: "获取心动歌曲失败", cause = e)
+                    }
+                    val tracks = (result as? BackendResult.Success)?.data.orEmpty()
+                    navigator.replace(HomeGeneratedPlaylistScreen(playlist, tracks))
+                }
+            }
+        }
+        PlaylistDetailContent(
+            playlist = playlist,
+            model = model,
+            embedded = false,
+            onEmbeddedBack = null,
+            initialOverrideTracks = initialTracks,
+            autoPlayIndex = startIndex,
+            disableRemoteLoad = true,
+        )
+    }
+}
+
 class RecentPlaysScreen : Screen {
     @Composable
     override fun Content() {
@@ -801,11 +952,13 @@ class RecentPlaysScreen : Screen {
         var selectedTrack by remember { mutableStateOf<TrackSummary?>(null) }
         val likedIds by AppModel.playback.likedIds.collectAsState()
         val toMediaId = { id: String -> if (id.contains("://")) id else "$provider://song/$id" }
+        val navigator = LocalNavigator.currentOrThrow
 
         Column(Modifier.fillMaxSize()) {
             PageTitleBar(
                 title = "最近播放",
                 subtitle = "完整历史列表",
+                onBack = { navigator.pop() },
                 action = {
                     if (recentTracks.isNotEmpty()) {
                         FilledTonalButton(
@@ -898,6 +1051,7 @@ class RecentPlaysScreen : Screen {
 private fun PageTitleBar(
     title: String,
     subtitle: String,
+    onBack: (() -> Unit)? = null,
     action: @Composable (() -> Unit)? = null,
 ) {
     Row(
@@ -910,6 +1064,11 @@ private fun PageTitleBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        if (onBack != null) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
+            }
+        }
         Column(Modifier.weight(1f)) {
             Text(
                 text = title,

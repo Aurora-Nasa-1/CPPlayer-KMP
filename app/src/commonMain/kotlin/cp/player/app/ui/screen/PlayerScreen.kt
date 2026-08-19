@@ -443,6 +443,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
         SongInfoDialog(
             track = track,
             formatInfo = state.formatInfo,
+            lyricsInfo = state.lyricsInfo,
             onDismiss = { showSongInfo = false },
         )
     }
@@ -676,6 +677,7 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                             track = track,
                             isDownloaded = AppModel.isDownloaded(track.id),
                             formatInfo = state.formatInfo,
+                            lyricsInfo = state.lyricsInfo,
                             sleepAfterTrack = state.sleepAfterTrack,
                             sleepTimerRemainingMs = state.sleepTimerRemainingMs,
                             onDismiss = onDismissMore,
@@ -698,6 +700,7 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
 private fun SongInfoDialog(
     track: cp.player.kmp.music.TrackSummary,
     formatInfo: AudioFormatInfo?,
+    lyricsInfo: cp.player.kmp.model.LyricsInfo?,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
@@ -712,6 +715,14 @@ private fun SongInfoDialog(
                     append("\n专辑：").append(track.album ?: "未知专辑")
                     append("\n时长：").append(formatTimeMs(track.durationMs))
                     append("\n歌曲 ID：").append(track.id)
+                    lyricsInfo?.let { lyric ->
+                        append("\n\n歌词信息")
+                        append("\n来源：").append(lyric.source)
+                        append("\n格式：").append(lyric.format)
+                        append("\n逐字歌词：").append(if (lyric.hasWordLevel) "支持" else "不支持")
+                        if (lyric.hasTranslation) append("\n翻译：有")
+                        if (lyric.hasPhonetic) append("\n音译：有")
+                    }
                     if (info != null) {
                         append("\n\n音频格式")
                         info.codecName?.takeIf(String::isNotBlank)?.let { append("\n编码：").append(it) }
@@ -815,6 +826,28 @@ private fun CommentPage(id: String, type: String) {
             }
         }
     }
+}
+
+@Composable
+fun DesktopLyricsContent(
+    state: cp.player.kmp.playback.PlaybackUiState,
+    onSeek: (Long) -> Unit,
+    onRepeat: () -> Unit,
+    onLikeClick: () -> Unit,
+) {
+    LyricsPage(
+        state = state,
+        showTranslation = true,
+        onSeek = onSeek,
+        onRepeat = onRepeat,
+        isFavorite = state.isFavorite,
+        onLikeClick = onLikeClick,
+    )
+}
+
+@Composable
+fun DesktopCommentContent(trackId: String) {
+    CommentPage(trackId, "music")
 }
 
 @Composable

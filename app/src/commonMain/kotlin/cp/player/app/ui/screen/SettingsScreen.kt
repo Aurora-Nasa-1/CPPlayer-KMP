@@ -1,6 +1,7 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,12 +26,11 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -45,12 +45,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.Navigator
-import cp.player.app.AppModel
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LegacyListItem
 import cp.player.app.ui.component.LocalIsExpanded
-import cp.player.app.ui.component.PageHeader
+
+@Composable
+private fun SettingsCategoryRail(onCategorySelected: (Int) -> Unit) {
+    Column(
+        modifier = Modifier.width(160.dp).fillMaxHeight().padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text("设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(12.dp))
+        listOf("通用设置", "播放设置", "外观设置", "音源与账户").forEachIndexed { index, label ->
+            Surface(
+                color = if (index == 0) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                shape = MaterialTheme.shapes.small,
+                modifier = Modifier.fillMaxWidth().clickable { onCategorySelected(index) },
+            ) { Text(label, modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp), style = MaterialTheme.typography.bodyMedium) }
+        }
+    }
+}
 
 /** 设置详情页标识，用于 Expanded 布局的 list-detail 模式。 */
 private enum class SettingsDetail {
@@ -64,17 +78,50 @@ private enum class SettingsDetail {
     Sponsor,
 }
 
-class SettingsScreen : Screen {
+class SettingsScreen(private val embedded: Boolean = false) : Screen {
     @Composable
-    override fun Content() { SettingsScreenContent() }
+    override fun Content() { SettingsScreenContent(embedded = embedded) }
 }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun SettingsScreenContent() {
+private fun SettingsScreenContent(embedded: Boolean = false) {
     val expanded = LocalIsExpanded.current
     val navigator = LocalNavigator.current
     var selectedDetail by remember { mutableStateOf<SettingsDetail?>(null) }
+
+    if (embedded && expanded) {
+        Row(Modifier.fillMaxSize()) {
+            Box(
+                Modifier.width(320.dp).fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.background)
+                    .verticalScroll(rememberScrollState())
+                    .padding(top = 8.dp, bottom = 24.dp),
+            ) {
+                SettingsList(
+                    navigator = null,
+                    selectedDetail = selectedDetail,
+                    onDetailSelected = { selectedDetail = it },
+                )
+            }
+            VerticalDivider(modifier = Modifier.fillMaxHeight(), color = MaterialTheme.colorScheme.outlineVariant)
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                val detail = selectedDetail
+                if (detail != null) {
+                    DesktopSettingsDetail(detail)
+                } else {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            "选择中间菜单查看设置内容",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+        return
+    }
 
     cp.player.app.ui.component.AppScaffold(
         title = "设置",
@@ -83,12 +130,18 @@ private fun SettingsScreenContent() {
     ) { padding ->
         if (expanded) {
             Row(Modifier.fillMaxSize().padding(padding)) {
-                // 左侧：设置列表（固定 320dp）
+                SettingsCategoryRail(onCategorySelected = { selectedDetail = when (it) {
+                    0 -> SettingsDetail.Appearance
+                    1 -> SettingsDetail.Playback
+                    2 -> SettingsDetail.UiLogic
+                    else -> SettingsDetail.ProviderManagement
+                } })
+                VerticalDivider(modifier = Modifier.fillMaxHeight(), color = MaterialTheme.colorScheme.outlineVariant)
                 Box(
                     Modifier.width(320.dp).fillMaxHeight()
-                        .background(MaterialTheme.colorScheme.surface)
+                        .background(MaterialTheme.colorScheme.background)
                         .verticalScroll(rememberScrollState())
-                        .padding(top = 16.dp, bottom = 32.dp),
+                        .padding(top = 8.dp, bottom = 24.dp),
                 ) {
                     SettingsList(
                         navigator = navigator,
@@ -96,28 +149,12 @@ private fun SettingsScreenContent() {
                         onDetailSelected = { selectedDetail = it },
                     )
                 }
-
-                // 分隔线
-                VerticalDivider(
-                    modifier = Modifier.fillMaxHeight(),
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                    thickness = 1.dp,
-                )
-
-                // 右侧：详情页（嵌入式 Navigator）
+                VerticalDivider(modifier = Modifier.fillMaxHeight(), color = MaterialTheme.colorScheme.outlineVariant)
+                // 右侧：次级设置项
                 Box(Modifier.weight(1f).fillMaxHeight()) {
                     val detail = selectedDetail
                     if (detail != null) {
-                        // key(detail) 确保切换不同详情时 Navigator 重建
-                        key(detail) {
-                            val screen = remember { detail.toScreen() }
-                            Navigator(screen) { nav ->
-                                LaunchedEffect(nav.lastItemOrNull) {
-                                    if (nav.lastItemOrNull == null) selectedDetail = null
-                                }
-                                cafe.adriel.voyager.transitions.FadeTransition(nav)
-                            }
-                        }
+                        DesktopSettingsDetail(detail)
                     } else {
                         // 未选中任何详情时的占位
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -137,12 +174,12 @@ private fun SettingsScreenContent() {
                     .padding(padding)
                     .verticalScroll(rememberScrollState())
                     .padding(
-                        start = CpSpacing.pageHorizontal,
-                        end = CpSpacing.pageHorizontal,
-                        top = 16.dp,
-                        bottom = 32.dp,
+                        start = 8.dp,
+                        end = 8.dp,
+                        top = 8.dp,
+                        bottom = 24.dp,
                     ),
-                verticalArrangement = Arrangement.spacedBy(CpSpacing.section),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 SettingsList(navigator = navigator, onDetailSelected = { /* compact 下由 entry.onClick 直接 push */ })
             }
@@ -152,14 +189,14 @@ private fun SettingsScreenContent() {
 
 /** SettingsDetail → Voyager Screen 映射。 */
 private fun SettingsDetail.toScreen(): Screen = when (this) {
-    SettingsDetail.Appearance -> SettingsDetailScreen()
+    SettingsDetail.Appearance -> AppearanceSettingsScreen()
     SettingsDetail.Playback -> PlaybackSettingsScreen()
-    SettingsDetail.UiLogic -> SettingsDetailScreen()
-    SettingsDetail.Storage -> SettingsDetailScreen()
+    SettingsDetail.UiLogic -> UiLogicSettingsScreen()
+    SettingsDetail.Storage -> StorageSettingsScreen()
     SettingsDetail.Health -> HealthScreen()
     SettingsDetail.ProviderManagement -> ProviderManagementScreen()
     SettingsDetail.About -> AboutScreen()
-    SettingsDetail.Sponsor -> AboutScreen()
+    SettingsDetail.Sponsor -> SponsorScreen()
 }
 
 /**
@@ -178,7 +215,7 @@ private fun SettingsList(
     val entries = remember { settingsEntries() }
 
     Column(
-        Modifier.fillMaxWidth().padding(horizontal = CpSpacing.pageHorizontal),
+        Modifier.fillMaxWidth().padding(horizontal = 8.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         entries.forEachIndexed { index, entry ->
@@ -193,6 +230,20 @@ private fun SettingsList(
                 },
             )
         }
+    }
+}
+
+@Composable
+private fun DesktopSettingsDetail(detail: SettingsDetail) {
+    when (detail) {
+        SettingsDetail.Appearance -> AppearanceSettingsScreen().Content()
+        SettingsDetail.Playback -> PlaybackSettingsScreen().Content()
+        SettingsDetail.UiLogic -> UiLogicSettingsScreen().Content()
+        SettingsDetail.Storage -> StorageSettingsScreen().Content()
+        SettingsDetail.Health -> HealthScreen().Content()
+        SettingsDetail.ProviderManagement -> ProviderManagementScreen().Content()
+        SettingsDetail.About -> AboutScreen().Content()
+        SettingsDetail.Sponsor -> SponsorScreen().Content()
     }
 }
 
@@ -214,7 +265,7 @@ private fun settingsEntries(): List<SettingsEntry> = listOf(
         title = "外观",
         subtitle = "主题、动态取色与纯黑模式",
         detail = SettingsDetail.Appearance,
-        screen = { SettingsDetailScreen() },
+        screen = { AppearanceSettingsScreen() },
     ),
     SettingsEntry(
         icon = Icons.Filled.Bedtime,
@@ -230,9 +281,9 @@ private fun settingsEntries(): List<SettingsEntry> = listOf(
         iconContainerColor = Color(0xFFE8F5E9),
         iconContentColor = Color(0xFF388E3C),
         title = "交互逻辑",
-        subtitle = "沿用旧版设置结构，占位复刻入口",
+        subtitle = "播放行为与旧版交互逻辑入口",
         detail = SettingsDetail.UiLogic,
-        screen = { SettingsDetailScreen() },
+        screen = { UiLogicSettingsScreen() },
     ),
     SettingsEntry(
         icon = Icons.Filled.Storage,
@@ -241,7 +292,7 @@ private fun settingsEntries(): List<SettingsEntry> = listOf(
         title = "存储与下载",
         subtitle = "缓存、图片清理与下载目录",
         detail = SettingsDetail.Storage,
-        screen = { SettingsDetailScreen() },
+        screen = { StorageSettingsScreen() },
     ),
     SettingsEntry(
         icon = Icons.Filled.BugReport,
@@ -275,9 +326,9 @@ private fun settingsEntries(): List<SettingsEntry> = listOf(
         iconContainerColor = Color(0xFFFCE4EC),
         iconContentColor = Color(0xFFE91E63),
         title = "赞助",
-        subtitle = "保留旧版入口视觉，用于后续扩展",
+        subtitle = "独立赞助页与项目支持入口",
         detail = SettingsDetail.Sponsor,
-        screen = { AboutScreen() },
+        screen = { SponsorScreen() },
     ),
 )
 
@@ -295,9 +346,13 @@ private fun SettingsRow(
         onClick = onClick,
         modifier = Modifier.heightIn(min = 68.dp),
         containerColor = if (isSelected) {
-            MaterialTheme.colorScheme.secondaryContainer
+            MaterialTheme.colorScheme.surfaceContainerHigh
         } else {
-            MaterialTheme.colorScheme.surface
+            if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                MaterialTheme.colorScheme.surfaceContainerHighest
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
         },
         leadingContent = {
             MonetIcon(

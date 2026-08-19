@@ -15,8 +15,7 @@ coil = "3.3.0"
 mp3spi = "1.9.5.4"
 jflac = "1.5.2"
 jlayer = "1.0.1"
-dbus-java = "5.1.0"
-jna = "5.15.0"
+jmtc = "0.0.3"
 accompanist-lyrics-ui = "1.0.19"
 accompanist-lyrics-core = "0.4.5"
 
@@ -50,10 +49,7 @@ coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version
 mp3spi = { module = "com.googlecode.soundlibs:mp3spi", version.ref = "mp3spi" }
 jflac-codec = { module = "org.jflac:jflac-codec", version.ref = "jflac" }
 jlayer = { module = "javazoom:jlayer", version.ref = "jlayer" }
-dbus-java-core = { module = "com.github.hypfvieh:dbus-java-core", version.ref = "dbus-java" }
-dbus-java-transport-native-unixsocket = { module = "com.github.hypfvieh:dbus-java-transport-native-unixsocket", version.ref = "dbus-java" }
-jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
-jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
+jmtc = { module = "io.github.selemba1000:JavaMediaTransportControls", version.ref = "jmtc" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

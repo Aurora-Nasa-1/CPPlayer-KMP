@@ -22,11 +22,12 @@ import androidx.compose.ui.Modifier
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.transitions.SlideTransition
 import cp.player.app.ui.component.MiniPlayer
+import cp.player.app.ui.screen.BackendErrorScreen
 import cp.player.app.ui.screen.MainScreen
 import cp.player.app.ui.screen.SetupScreen
+import cp.player.app.ui.screen.StartupScreen
 import cp.player.app.ui.theme.CpTheme
 import cp.player.app.platform.PlatformMediaControlsEffect
-import cp.player.kmp.BackendState
 import cp.player.kmp.MusicBackend
 
 /**
@@ -66,21 +67,31 @@ fun App() {
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background,
         ) {
-            val state by AppModel.backend.stateFlow.collectAsState()
-            val start = remember(state) {
-                when (state) {
-                    is BackendState.Ready -> MainScreen()
-                    else -> SetupScreen()
+            val initialized by AppModel.initialized.collectAsState()
+            val state by AppModel.backendState.collectAsState()
+            val startDestination = remember(initialized, state) {
+                AppState.startDestination(initialized, state)
+            }
+            val start = remember(startDestination) {
+                when (startDestination) {
+                    AppStartDestination.Loading -> StartupScreen("正在初始化后端…")
+                    AppStartDestination.Setup -> SetupScreen()
+                    AppStartDestination.Main -> MainScreen()
+                    is AppStartDestination.Error -> BackendErrorScreen(startDestination.message)
                 }
             }
             Navigator(start) { navigator ->
                 // 当 state 变为 Ready 时自动替换为 MainScreen
-                LaunchedEffect(state) {
-                    val isOnMain = try {
-                        navigator.lastItem is MainScreen
-                    } catch (_: Throwable) { false }
-                    if (state is BackendState.Ready && !isOnMain) {
-                        navigator.replaceAll(MainScreen())
+                LaunchedEffect(startDestination) {
+                    val target = when (startDestination) {
+                        AppStartDestination.Loading -> StartupScreen("正在初始化后端…")
+                        AppStartDestination.Setup -> SetupScreen()
+                        AppStartDestination.Main -> MainScreen()
+                        is AppStartDestination.Error -> BackendErrorScreen(startDestination.message)
+                    }
+                    val current = runCatching { navigator.lastItem }.getOrNull()
+                    if (current?.javaClass != target.javaClass) {
+                        navigator.replaceAll(target)
                     }
                 }
 
@@ -89,7 +100,7 @@ fun App() {
 
                     // MainScreen already owns this overlay; all other pages get the
                     // same controller here so playback remains accessible globally.
-                    val showMiniPlayer = state is BackendState.Ready &&
+                    val showMiniPlayer = startDestination is AppStartDestination.Main &&
                         navigator.lastItem !is MainScreen &&
                         navigator.lastItem !is cp.player.app.ui.screen.PlayerScreen
                     if (showMiniPlayer) {
