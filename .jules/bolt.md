@@ -1,0 +1,3 @@
+## 2026-08-19 - Optimize fast-changing text string in UI
+ **Learning:** In Jetpack Compose, fast-changing state like `positionMs` is emitted continuously via `PlaybackUiState` causing repeated string formatting (and GC allocations) on every recomposition when passed to a Text view.
+ **Action:** Isolate this state with `remember` block using a calculation truncated to seconds (e.g. `state.positionMs / 1000`) so the string allocation and format calculation only runs when the visible text actually needs to change (each second), avoiding high CPU/GC overhead.

@@ -116,8 +116,12 @@ fun DesktopPlayerScreen(
                             }
                             Slider(value = progress.coerceIn(0f, 1f), onValueChange = { onSeek((it * state.durationMs).toLong()) }, modifier = Modifier.fillMaxWidth())
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(formatTimeMs(state.positionMs), style = MaterialTheme.typography.labelSmall)
-                                Text(formatTimeMs(state.durationMs), style = MaterialTheme.typography.labelSmall)
+                                // Memoize derived time strings (truncated to seconds) to prevent redundant object
+                                // allocation during rapid recompositions caused by playback progress updates.
+                                val formattedPosition = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
+                                val formattedDuration = remember(state.durationMs) { formatTimeMs(state.durationMs) }
+                                Text(formattedPosition, style = MaterialTheme.typography.labelSmall)
+                                Text(formattedDuration, style = MaterialTheme.typography.labelSmall)
                             }
                             PlayerControls(state, onTogglePlay, onSkipNext, onSkipPrev, onRepeat, onShuffle)
                         }

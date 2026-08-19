@@ -763,8 +763,13 @@ private fun ProgressRow(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // Memoize derived time strings (truncated to seconds) to prevent redundant object
+            // allocation during rapid recompositions caused by playback progress updates.
+            val formattedPosition = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
+            val formattedDuration = remember(duration) { formatTimeMs(duration) }
+
             Text(
-                formatTimeMs(state.positionMs),
+                formattedPosition,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
@@ -777,7 +782,7 @@ private fun ProgressRow(
                 )
             }
             Text(
-                formatTimeMs(duration),
+                formattedDuration,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
