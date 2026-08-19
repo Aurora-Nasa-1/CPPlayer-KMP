@@ -13,11 +13,13 @@ data class AudioFormatInfo(
     val bitrate: Int? = null,
     val mimeType: String? = null,
 ) {
-    /** 归一化的音质等级标签，用于 UI 摘要展示。 */
-    val qualityLabel: String
-        get() = buildList {
-            codecName?.let { add(it) }
-            bitDepth?.let { add("${it}bit") }
-            sampleRate?.let { add("${it / 1000}kHz") }
-        }.joinToString(" · ").ifEmpty { "标准" }
+    /** 归一化的音质等级标签，用于 UI 摘要展示。
+     * Eagerly evaluated to avoid frequent list building and string interpolation
+     * during Jetpack Compose UI recomposition, reducing GC overhead.
+     */
+    val qualityLabel: String = buildList {
+        codecName?.let { add(it) }
+        bitDepth?.let { add("${it}bit") }
+        sampleRate?.let { add("${it / 1000}kHz") }
+    }.joinToString(" · ").ifEmpty { "标准" }
 }
