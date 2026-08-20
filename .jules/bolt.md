@@ -1,0 +1,3 @@
+## 2024-05-18 - Avoid Dynamic Getters in KMP States for Compose
+**Learning:** Compose reads state properties frequently during recomposition (e.g., 60 times a second for playback position updates). If a data class property (like `AudioFormatInfo.qualityLabel`) is implemented as a dynamic getter (`get() = ...`) containing collections/strings building, it triggers massive garbage collection pressure by reallocating objects on every frame.
+**Action:** Always prefer eagerly evaluated `val` properties or memoize derived strings with `remember(key)` (e.g., keying playback time by `positionMs / 1000`) for state data consumed by Jetpack Compose.
