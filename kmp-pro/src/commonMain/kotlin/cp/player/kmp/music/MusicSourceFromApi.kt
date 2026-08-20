@@ -29,9 +29,11 @@ object MusicSourceFromApi {
 
     // ============ code 判定（跨 Provider） ============
 
-    private fun codeOf(json: JsonElement): Int? =
-        ((json as? JsonObject)?.get("code") as? JsonPrimitive)?.intOrNull
-            ?: ((json as? JsonObject)?.get("status") as? JsonPrimitive)?.intOrNull
+    private fun codeOf(json: JsonElement): Int? {
+        val obj = json as? JsonObject
+        return (obj?.get("code") as? JsonPrimitive)?.intOrNull
+            ?: (obj?.get("status") as? JsonPrimitive)?.intOrNull
+    }
 
     private fun isSuccess(json: JsonElement): Boolean {
         val c = codeOf(json) ?: return false
