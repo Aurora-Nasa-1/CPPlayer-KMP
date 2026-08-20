@@ -38,10 +38,12 @@ class MusicRepository(private val api: MusicApiService) {
 
     suspend fun getPersonalFmBatch(targetSize: Int = 18, maxRequests: Int = 8): MusicResult<List<TrackSummary>> {
         val merged = mutableListOf<TrackSummary>()
+        val seenIds = mutableSetOf<String>()
         repeat(maxRequests.coerceAtLeast(1)) {
             when (val page = getPersonalFm()) {
                 is BackendResult.Success -> {
-                    val newItems = page.data.filter { candidate -> merged.none { it.id == candidate.id } }
+                    // Bolt: O(1) deduplication instead of O(N^2) using merged.none
+                    val newItems = page.data.filter { seenIds.add(it.id) }
                     merged += newItems
                     if (merged.size >= targetSize) return BackendResult.Success(merged.take(targetSize))
                     if (page.data.isEmpty()) return BackendResult.Success(merged)
@@ -111,8 +113,9 @@ class MusicRepository(private val api: MusicApiService) {
     suspend fun raw(block: suspend MusicApiService.() -> JsonElement): JsonElement = api.block()
 
     private fun isApiSuccess(json: JsonElement): Boolean {
-        val code = ((json as? JsonObject)?.get("code") as? JsonPrimitive)?.intOrNull
-            ?: ((json as? JsonObject)?.get("status") as? JsonPrimitive)?.intOrNull
+        val obj = json as? JsonObject
+        val code = (obj?.get("code") as? JsonPrimitive)?.intOrNull
+            ?: (obj?.get("status") as? JsonPrimitive)?.intOrNull
         return code == null || code == 200 || code == 0 || code == 201 || code == 301
     }
 }
