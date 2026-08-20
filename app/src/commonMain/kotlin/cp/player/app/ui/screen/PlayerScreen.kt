@@ -748,6 +748,11 @@ private fun ProgressRow(
 ) {
     val duration = state.durationMs.coerceAtLeast(0)
     var seekValue by remember { androidx.compose.runtime.mutableStateOf<Float?>(null) }
+
+    // Memoize timestamp strings to prevent unnecessary allocations during frequent recompositions
+    val positionStr = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
+    val durationStr = remember(duration) { formatTimeMs(duration) }
+
     Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
         androidx.compose.material3.Slider(
             value = seekValue ?: state.positionMs.toFloat(),
@@ -764,20 +769,20 @@ private fun ProgressRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                formatTimeMs(state.positionMs),
+                positionStr,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
             // 音质 chip
             state.formatInfo?.let { info ->
                 Text(
-                    "${info.qualityLabel}",
+                    info.qualityLabel,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 )
             }
             Text(
-                formatTimeMs(duration),
+                durationStr,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
