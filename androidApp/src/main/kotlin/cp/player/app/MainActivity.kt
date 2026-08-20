@@ -32,10 +32,11 @@ class MainActivity : ComponentActivity() {
 
         runCatching {
             val pkgInfo = packageManager.getPackageInfo(packageName, 0)
+            @Suppress("ObsoleteSdkInt")
             AppVersion.init(
                 versionName = pkgInfo.versionName ?: "1.0",
                 versionCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P)
-                    pkgInfo.longVersionCode.toInt() else pkgInfo.versionCode,
+                    pkgInfo.longVersionCode.toInt() else @Suppress("DEPRECATION") pkgInfo.versionCode,
                 gitSha = BuildConfig.GIT_SHA,
                 releaseChannel = BuildConfig.RELEASE_CHANNEL,
             )
