@@ -165,7 +165,7 @@ fun androidx.compose.animation.SharedTransitionScope.MiniPlayer(
                         } else {
                             Icon(
                                 imageVector = if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                contentDescription = if (state.isPlaying) "Pause" else "Play",
+                                contentDescription = if (state.isPlaying) "暂停" else "播放",
                                 modifier = Modifier.size(24.dp),
                             )
                         }

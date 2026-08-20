@@ -1,0 +1,3 @@
+## 2024-05-24 - Dynamic Accessibility Labels for Multi-State Playback Controls
+**Learning:** Hardcoded English or static content descriptions (e.g., "Play", "循环") on multi-state toggle buttons fail to communicate their current state or localization properly. In a primary Chinese application, "Play" should be localized, and toggle buttons (like Play/Pause or Shuffle On/Off) need dynamic descriptions that match the UI action about to happen, rather than a single static string.
+**Action:** Always use a dynamic `if (state) "Action A" else "Action B"` for toggles, ensuring strings are translated to the target locale (e.g. Simplified Chinese in this app) rather than generic English defaults.
