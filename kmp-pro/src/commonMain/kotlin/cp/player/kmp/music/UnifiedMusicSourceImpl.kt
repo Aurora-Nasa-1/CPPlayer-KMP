@@ -111,8 +111,9 @@ class UnifiedMusicSourceImpl(
             val json = musicApiService.getSongUrl(id.resourceId, level)
             val url = extractUrl(json)
             if (url != null && url.startsWith("http")) {
-                val sizeBytes = ((json as? JsonObject)?.get("size") as? JsonPrimitive)?.longOrNull
-                val cookie = ((json as? JsonObject)?.get("cookie") as? JsonPrimitive)?.contentOrNull
+                val jsonObj = json as? JsonObject
+                val sizeBytes = (jsonObj?.get("size") as? JsonPrimitive)?.longOrNull
+                val cookie = (jsonObj?.get("cookie") as? JsonPrimitive)?.contentOrNull
                 BackendResult.Success(SongUrl(url, level, sizeBytes, null, cookie))
             } else {
                 BackendResult.Error("No valid URL returned for $mediaId")
@@ -162,7 +163,7 @@ class UnifiedMusicSourceImpl(
                 if (s.startsWith("http") && s.length > 12 && !s.contains("null")) return s
             }
             is JsonObject -> {
-                for (key in listOf("url", "picUrl", "coverImgUrl", "avatarUrl")) {
+                for (key in URL_KEYS) {
                     val p = element[key]
                     if (p is JsonPrimitive) {
                         val s = p.contentOrNull
@@ -176,5 +177,9 @@ class UnifiedMusicSourceImpl(
             }
         }
         return null
+    }
+
+    companion object {
+        private val URL_KEYS = listOf("url", "picUrl", "coverImgUrl", "avatarUrl")
     }
 }
