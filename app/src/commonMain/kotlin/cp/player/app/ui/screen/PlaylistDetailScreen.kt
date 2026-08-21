@@ -373,8 +373,8 @@ fun PlaylistDetailContent(
         LaunchedEffect(track.id) {
             info = withContext(Dispatchers.IO) {
                 runCatching {
-                    val root = AppModel.api.getSongDetail(listOf(track.id))
-                    val songs = (root as? JsonObject)?.get("songs") as? JsonArray
+                    val root = AppModel.api.getSongDetail(listOf(track.id)) as? JsonObject ?: return@runCatching null
+                    val songs = root["songs"] as? JsonArray
                     val first = songs?.firstOrNull() as? JsonObject ?: return@runCatching null
                     val name = (first["name"] as? JsonPrimitive)?.contentOrNull ?: track.name
                     val artist = (first["ar"] as? JsonArray)
@@ -389,7 +389,7 @@ fun PlaylistDetailContent(
                     val publishTime = (first["publishTime"] as? JsonPrimitive)?.longOrNull?.takeIf { it > 0 }
                     val commentCount = (first["commentCount"] as? JsonPrimitive)?.longOrNull?.takeIf { it > 0 }
                     val mvId = (first["mv"] as? JsonPrimitive)?.longOrNull?.takeIf { it > 0 }
-                    val privilege = ((root as JsonObject)["privileges"] as? JsonArray)?.firstOrNull() as? JsonObject
+                    val privilege = (root["privileges"] as? JsonArray)?.firstOrNull() as? JsonObject
                     val maxbr = (privilege?.get("maxbr") as? JsonPrimitive)?.intOrNull?.takeIf { it > 0 }
                     val fee = (privilege?.get("fee") as? JsonPrimitive)?.intOrNull
                     SongDetailInfo(
