@@ -35,30 +35,30 @@ data class DownloadsUiState(
     val importing: Boolean = false,
 ) {
     /** 进行中任务：等待 / 下载中 / 暂停 / 失败 / 已取消。 */
-    val activeTasks: List<DownloadTask>
-        get() = tasks.filter {
-            it.status == DownloadStatus.PENDING ||
-                it.status == DownloadStatus.DOWNLOADING ||
-                it.status == DownloadStatus.PAUSED ||
-                it.status == DownloadStatus.FAILED ||
-                it.status == DownloadStatus.CANCELLED
-        }
+    // Bolt: Use eagerly evaluated property to avoid O(N) filtering on every access during UI recomposition
+    val activeTasks: List<DownloadTask> = tasks.filter {
+        it.status == DownloadStatus.PENDING ||
+            it.status == DownloadStatus.DOWNLOADING ||
+            it.status == DownloadStatus.PAUSED ||
+            it.status == DownloadStatus.FAILED ||
+            it.status == DownloadStatus.CANCELLED
+    }
 
     /** 已完成任务。 */
-    val completedTasks: List<DownloadTask>
-        get() = tasks.filter { it.status == DownloadStatus.COMPLETED }
+    // Bolt: Use eagerly evaluated property to avoid O(N) filtering on every access during UI recomposition
+    val completedTasks: List<DownloadTask> = tasks.filter { it.status == DownloadStatus.COMPLETED }
 
     /** 本地库：下载产物分组。 */
-    val downloadedItems: List<LocalMediaItem>
-        get() = localItems.filter {
-            it.source == cp.player.kmp.media.LocalMediaOrigin.DOWNLOADED
-        }
+    // Bolt: Use eagerly evaluated property to avoid O(N) filtering on every access during UI recomposition
+    val downloadedItems: List<LocalMediaItem> = localItems.filter {
+        it.source == cp.player.kmp.media.LocalMediaOrigin.DOWNLOADED
+    }
 
     /** 本地库：扫描/导入分组。 */
-    val importedItems: List<LocalMediaItem>
-        get() = localItems.filter {
-            it.source == cp.player.kmp.media.LocalMediaOrigin.IMPORTED
-        }
+    // Bolt: Use eagerly evaluated property to avoid O(N) filtering on every access during UI recomposition
+    val importedItems: List<LocalMediaItem> = localItems.filter {
+        it.source == cp.player.kmp.media.LocalMediaOrigin.IMPORTED
+    }
 }
 
 /**
