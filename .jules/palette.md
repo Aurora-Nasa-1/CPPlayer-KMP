@@ -1,0 +1,3 @@
+## 2024-05-18 - Localize English ARIA labels to Chinese
+**Learning:** Found english strings used for `contentDescription` on the MiniPlayer component like "Prev", "Next", "Play", "Pause". Since this application uses Simplified Chinese for its primary UI, english accessibility strings can cause regressions for non-Chinese screen readers and are jarring for Chinese users.
+**Action:** Replace English ARIA labels ("Prev", "Next", "Play", "Pause") with their localized Chinese equivalents ("上一首", "下一首", "播放", "暂停") in the MiniPlayer and any other relevant files to ensure consistency across the application.
