@@ -486,8 +486,13 @@ IconButton(onClick = onRepeat) {
                         RepeatMode.ONE -> Icons.Filled.RepeatOne
                         else -> Icons.Filled.Repeat
                     }
+                    val description = when (state.repeatMode) {
+                        RepeatMode.ONE -> "单曲循环"
+                        RepeatMode.ALL -> "列表循环"
+                        else -> "顺序播放"
+                    }
                     Icon(
-                        icon, "循环", Modifier.size(24.dp),
+                        icon, description, Modifier.size(24.dp),
                         tint = if (state.repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -654,8 +659,13 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                         RepeatMode.ONE -> Icons.Filled.RepeatOne
                         else -> Icons.Filled.Repeat
                     }
+                    val description = when (state.repeatMode) {
+                        RepeatMode.ONE -> "单曲循环"
+                        RepeatMode.ALL -> "列表循环"
+                        else -> "顺序播放"
+                    }
                     Icon(
-                        icon, "循环", Modifier.size(24.dp),
+                        icon, description, Modifier.size(24.dp),
                         tint = if (state.repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
