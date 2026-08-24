@@ -763,7 +763,6 @@ private fun ProgressRow(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Bolt: Memoize formatted strings to prevent excessive allocations during rapid ms-level updates
             Text(
                 remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) },
                 style = MaterialTheme.typography.labelMedium,

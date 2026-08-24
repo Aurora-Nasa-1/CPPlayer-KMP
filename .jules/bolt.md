@@ -1,0 +1,3 @@
+## 2026-08-24 - Data Class Optimization Anti-pattern in Compose State
+**Learning:** Eagerly evaluating heavy properties (like list filtering) inside Compose state data classes using `val` instead of `get()` can cause a performance regression when that state class is rapidly updated via `.copy()` (e.g., during ms-level progress ticks). Every `.copy()` forces O(N) recalculations and memory allocations, even if the UI is not rendering those properties.
+**Action:** When a UI state data class receives frequent state updates, keep dynamic getters (`get() = ...`) in the state model for derived heavy properties, and memoize the expensive operations directly in the Compose UI using `remember` where the data is actually used.
