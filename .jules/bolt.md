@@ -1,0 +1,3 @@
+## 2024-05-24 - Jetpack Compose Progress Bar Recomposition
+**Learning:** Frequent state updates (like `positionMs` changing every few milliseconds during playback) can cause excessive String allocations and garbage collection if format functions and string interpolations are called directly within the recomposing component without memoization.
+**Action:** When a continuous state updates, use `remember(state.positionMs / 1000)` to truncate to seconds (or another appropriate interval) to memoize derived values and avoid unnecessary recalculations/allocations on every frame. Avoid unnecessary string interpolations (e.g., `"${stringVar}"`) for existing string variables.

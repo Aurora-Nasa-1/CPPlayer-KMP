@@ -763,21 +763,27 @@ private fun ProgressRow(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // Bolt: Memoize the time string to prevent garbage collection on every frame
+            val currentSeconds = state.positionMs / 1000
+            val positionStr = remember(currentSeconds) { formatTimeMs(state.positionMs) }
             Text(
-                formatTimeMs(state.positionMs),
+                positionStr,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
             // 音质 chip
             state.formatInfo?.let { info ->
+                // Bolt: Remove unnecessary string interpolation to reduce string allocations
                 Text(
-                    "${info.qualityLabel}",
+                    info.qualityLabel,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 )
             }
+            // Bolt: Memoize the duration string as it changes infrequently
+            val durationStr = remember(duration) { formatTimeMs(duration) }
             Text(
-                formatTimeMs(duration),
+                durationStr,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
