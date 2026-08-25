@@ -552,7 +552,7 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                 if (!track.coverUrl.isNullOrBlank()) {
                     AsyncImage(
                         model = track.coverUrl,
-                        contentDescription = null,
+                        contentDescription = "歌曲封面",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
                     )
@@ -748,6 +748,11 @@ private fun ProgressRow(
 ) {
     val duration = state.durationMs.coerceAtLeast(0)
     var seekValue by remember { androidx.compose.runtime.mutableStateOf<Float?>(null) }
+
+    // Memoize formatted time strings based on seconds to reduce recomposition overhead
+    val formattedPosition = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
+    val formattedDuration = remember(duration / 1000) { formatTimeMs(duration) }
+
     Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
         androidx.compose.material3.Slider(
             value = seekValue ?: state.positionMs.toFloat(),
@@ -764,20 +769,20 @@ private fun ProgressRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                formatTimeMs(state.positionMs),
+                formattedPosition,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
             // 音质 chip
             state.formatInfo?.let { info ->
                 Text(
-                    "${info.qualityLabel}",
+                    info.qualityLabel,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 )
             }
             Text(
-                formatTimeMs(duration),
+                formattedDuration,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
@@ -855,7 +860,7 @@ private fun CommentItem(comment: cp.player.app.ui.model.Comment, onLike: () -> U
     Row(Modifier.fillMaxWidth()) {
         AsyncImage(
             model = comment.avatar,
-            contentDescription = null,
+            contentDescription = "用户头像",
             modifier = Modifier.size(40.dp).clip(CircleShape),
             contentScale = ContentScale.Crop
         )
