@@ -1,0 +1,3 @@
+## 2024-05-20 - Ensure Dynamic State Labels for Playback Toggles
+**Learning:** Found hardcoded accessibility descriptions (e.g. `contentDescription = "播放/暂停"`) and english placeholders (e.g. "Prev") for toggles/actions. Hardcoded toggles confuse screen readers because it doesn't clearly convey what the *action* is. Additionally, localizing strings correctly is key to providing accessible contexts.
+**Action:** When working on UI components that toggle state (like play/pause), use dynamic `if/else` checks for accessibility labels matching the state. Ensure all added `contentDescription` correctly translates to Simplified Chinese, the target demographic's primary language.
