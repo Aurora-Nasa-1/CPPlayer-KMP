@@ -43,7 +43,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -116,7 +115,7 @@ fun DesktopPlayerScreen(
                                 }
                             }
 
-                            var seekValue by remember { mutableStateOf<Float?>(null) }
+                            var seekValue by remember { androidx.compose.runtime.mutableStateOf<Float?>(null) }
                             Slider(
                                 value = seekValue ?: progress.coerceIn(0f, 1f),
                                 onValueChange = { seekValue = it },
