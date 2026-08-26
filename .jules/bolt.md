@@ -1,0 +1,3 @@
+## 2024-05-25 - Compose UI Progress Bar Recomposition
+**Learning:** Recomposition in Jetpack Compose media players can trigger excessive string allocations and garbage collection overhead when fast-changing states (like `positionMs`, which ticks every ~16ms) are passed directly to formatting functions. String interpolation inside recomposing blocks also compounds this issue.
+**Action:** Always wrap formatted time displays driven by continuous ticks in `remember(state.positionMs / 1000)` to throttle string generation to once per second. Additionally, remove any unnecessary string templates (`"${value}"`) and directly reference properties within text components.
