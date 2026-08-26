@@ -84,10 +84,6 @@ fun DesktopPlayerScreen(
         radius = 1200f,
     )
 
-    // [Bolt] Memoize time formatting to prevent excessive GC on tick
-    val positionStr = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
-    val durationStr = remember(state.durationMs) { formatTimeMs(state.durationMs) }
-
     Box(Modifier.fillMaxSize().background(background).padding(28.dp)) {
         Column(Modifier.fillMaxSize()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -120,8 +116,8 @@ fun DesktopPlayerScreen(
                             }
                             Slider(value = progress.coerceIn(0f, 1f), onValueChange = { onSeek((it * state.durationMs).toLong()) }, modifier = Modifier.fillMaxWidth())
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(positionStr, style = MaterialTheme.typography.labelSmall)
-                                Text(durationStr, style = MaterialTheme.typography.labelSmall)
+                                Text(formatTimeMs(state.positionMs), style = MaterialTheme.typography.labelSmall)
+                                Text(formatTimeMs(state.durationMs), style = MaterialTheme.typography.labelSmall)
                             }
                             PlayerControls(state, onTogglePlay, onSkipNext, onSkipPrev, onRepeat, onShuffle)
                         }

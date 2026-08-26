@@ -1,0 +1,39 @@
+--- ./app/src/commonMain/kotlin/cp/player/app/ui/screen/PlayerScreen.kt
++++ ./app/src/commonMain/kotlin/cp/player/app/ui/screen/PlayerScreen.kt
+@@ -747,6 +747,11 @@
+ ) {
+     val duration = state.durationMs.coerceAtLeast(0)
+     var seekValue by remember { androidx.compose.runtime.mutableStateOf<Float?>(null) }
++
++    // [Bolt] Memoize formatted time strings to avoid GC allocations on every progress tick
++    val positionStr = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
++    val durationStr = remember(duration) { formatTimeMs(duration) }
++
+     Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+         androidx.compose.material3.Slider(
+             value = seekValue ?: state.positionMs.toFloat(),
+@@ -762,20 +767,21 @@
+             verticalAlignment = Alignment.CenterVertically,
+         ) {
+             Text(
+-                formatTimeMs(state.positionMs),
++                positionStr,
+                 style = MaterialTheme.typography.labelMedium,
+                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+             )
+             // 音质 chip
+             state.formatInfo?.let { info ->
+                 Text(
+-                    "${info.qualityLabel}",
++                    // [Bolt] Remove unnecessary string interpolation
++                    info.qualityLabel,
+                     style = MaterialTheme.typography.labelSmall,
+                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                 )
+             }
+             Text(
+-                formatTimeMs(duration),
++                durationStr,
+                 style = MaterialTheme.typography.labelMedium,
+                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+             )
