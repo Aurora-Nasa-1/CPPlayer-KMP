@@ -1,0 +1,3 @@
+## 2024-05-19 - Dynamic Content Descriptions for Media Controls
+**Learning:** Found multiple instances where interactive player controls (Play/Pause, Repeat Mode, Shuffle) either had hardcoded English labels despite the app being localized in Simplified Chinese, or used static labels (like "播放/暂停" or "循环") that did not inform screen readers of the actual current state. Static labels on toggle buttons fail to convey the action that will occur upon activation.
+**Action:** When working on KMP/Android media players, always use dynamic accessibility descriptions (`if (isPlaying) "暂停" else "播放"`) that match the icon state. This accurately communicates to screen reader users what action will happen when they interact with the control, improving the micro-UX.
