@@ -87,7 +87,7 @@ fun PlaybackControls(
                     } else {
                         Icon(
                             imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            contentDescription = "播放/暂停",
+                            contentDescription = if (isPlaying) "暂停" else "播放",
                             modifier = Modifier.size(centerIconSize),
                             tint = MaterialTheme.colorScheme.onPrimary,
                         )

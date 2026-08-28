@@ -1,0 +1,3 @@
+## 2024-05-24 - Dynamic Content Descriptions for Multi-State Buttons
+**Learning:** In Compose Multiplatform, using static content descriptions (like "播放/暂停" or "循环") for interactive buttons that toggle between multiple states creates a confusing experience for screen reader users, as it does not communicate the current state or the expected action of the button correctly.
+**Action:** Always bind the `contentDescription` parameter directly to the same state variables that dictate the button's visual representation (e.g., using `if (isPlaying) "暂停" else "播放"` or `when (state.repeatMode)`), ensuring the accessibility label dynamically updates alongside the UI and clearly indicates what action the button will perform when clicked.
