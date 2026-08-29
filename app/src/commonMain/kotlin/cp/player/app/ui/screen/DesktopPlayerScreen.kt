@@ -42,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
@@ -79,10 +80,19 @@ fun DesktopPlayerScreen(
     val scope = rememberCoroutineScope()
     var selectedTab by remember { mutableIntStateOf(1) }
     val progress = if (state.durationMs > 0) state.positionMs.toFloat() / state.durationMs else 0f
-    val background = Brush.radialGradient(
-        colors = listOf(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.colorScheme.background),
-        radius = 1200f,
-    )
+
+    // Memoize the background brush to avoid unnecessary object allocation on rapid recompositions (e.g. from progress updates)
+    val color1 = MaterialTheme.colorScheme.surfaceContainerHigh
+    val color2 = MaterialTheme.colorScheme.background
+    val background = remember(color1, color2) {
+        Brush.radialGradient(
+            colors = listOf(color1, color2),
+            radius = 1200f,
+        )
+    }
+
+    // Local state for smooth slider dragging without triggering continuous engine seeks
+    var seekValue by remember { mutableStateOf<Float?>(null) }
 
     Box(Modifier.fillMaxSize().background(background).padding(28.dp)) {
         Column(Modifier.fillMaxSize()) {
@@ -114,9 +124,20 @@ fun DesktopPlayerScreen(
                                     Icon(if (state.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, "收藏", tint = if (state.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
-                            Slider(value = progress.coerceIn(0f, 1f), onValueChange = { onSeek((it * state.durationMs).toLong()) }, modifier = Modifier.fillMaxWidth())
+                            // Isolate drag state updates from actual engine seek commands to prevent UI and playback stutter
+                            Slider(
+                                value = seekValue ?: progress.coerceIn(0f, 1f),
+                                onValueChange = { seekValue = it },
+                                onValueChangeFinished = {
+                                    seekValue?.let {
+                                        onSeek((it * state.durationMs).toLong())
+                                        seekValue = null
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(formatTimeMs(state.positionMs), style = MaterialTheme.typography.labelSmall)
+                                Text(formatTimeMs((seekValue?.let { it * state.durationMs }?.toLong()) ?: state.positionMs), style = MaterialTheme.typography.labelSmall)
                                 Text(formatTimeMs(state.durationMs), style = MaterialTheme.typography.labelSmall)
                             }
                             PlayerControls(state, onTogglePlay, onSkipNext, onSkipPrev, onRepeat, onShuffle)
