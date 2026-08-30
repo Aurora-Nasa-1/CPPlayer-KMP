@@ -42,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
@@ -78,6 +79,7 @@ fun DesktopPlayerScreen(
     val track = state.currentTrack ?: return
     val scope = rememberCoroutineScope()
     var selectedTab by remember { mutableIntStateOf(1) }
+    var seekValue by remember { mutableStateOf<Float?>(null) }
     val progress = if (state.durationMs > 0) state.positionMs.toFloat() / state.durationMs else 0f
     val background = Brush.radialGradient(
         colors = listOf(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.colorScheme.background),
@@ -114,9 +116,20 @@ fun DesktopPlayerScreen(
                                     Icon(if (state.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, "收藏", tint = if (state.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
-                            Slider(value = progress.coerceIn(0f, 1f), onValueChange = { onSeek((it * state.durationMs).toLong()) }, modifier = Modifier.fillMaxWidth())
+                            Slider(
+                                value = seekValue ?: progress.coerceIn(0f, 1f),
+                                onValueChange = { seekValue = it },
+                                onValueChangeFinished = {
+                                    seekValue?.let {
+                                        onSeek((it * state.durationMs).toLong())
+                                        seekValue = null
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(formatTimeMs(state.positionMs), style = MaterialTheme.typography.labelSmall)
+                                val displayTimeMs = seekValue?.let { (it * state.durationMs).toLong() } ?: state.positionMs
+                                Text(formatTimeMs(displayTimeMs), style = MaterialTheme.typography.labelSmall)
                                 Text(formatTimeMs(state.durationMs), style = MaterialTheme.typography.labelSmall)
                             }
                             PlayerControls(state, onTogglePlay, onSkipNext, onSkipPrev, onRepeat, onShuffle)
