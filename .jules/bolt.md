@@ -1,0 +1,3 @@
+## 2024-08-30 - Continuous Slider UI State and Graphic Object Allocation Bottleneck
+**Learning:** During continuous UI updates (such as media playback progress), rapid state recomposition can cause high GC overhead if heavy objects (like `Brush`) are repeatedly instantiated. Additionally, directly binding progress `Slider` changes to a media engine action (like `onSeek`) can cause continuous stuttering.
+**Action:** Memoize heavy layout objects like `Brush` using `remember` when they depend on unchanging theme variables instead of instantiating them on every render frame. For continuous dragging components like `Slider`, buffer intermediate states with a local variable (`seekValue`) during `onValueChange` and perform the final engine action in `onValueChangeFinished`.
