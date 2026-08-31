@@ -1,0 +1,3 @@
+## 2024-05-19 - Fast-changing UI state caching in PlayerScreen
+**Learning:** In Compose UI, continuous state updates from playback engine (e.g. `positionMs` updating constantly) can cause severe GC overhead and high CPU usage if variables like formatted time strings (`formatTimeMs`) or text labels (`info.qualityLabel`) are eagerly evaluated during every recomposition on every frame.
+**Action:** When working with fast-changing playback state variables (like `positionMs`), use `remember` mapped to derived truncated components (like `state.positionMs / 1000` for seconds) or the dependent variable to memoize output and prevent heavy object and string allocations during constant recomposition.

@@ -763,21 +763,25 @@ private fun ProgressRow(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // ⚡ Bolt: Memoize formatted time strings to avoid allocating strings on every frame during fast-changing position updates
+            val positionStr = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
             Text(
-                formatTimeMs(state.positionMs),
+                positionStr,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
             // 音质 chip
             state.formatInfo?.let { info ->
+                val qualityStr = remember(info) { info.qualityLabel }
                 Text(
-                    "${info.qualityLabel}",
+                    qualityStr,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 )
             }
+            val durationStr = remember(duration) { formatTimeMs(duration) }
             Text(
-                formatTimeMs(duration),
+                durationStr,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
