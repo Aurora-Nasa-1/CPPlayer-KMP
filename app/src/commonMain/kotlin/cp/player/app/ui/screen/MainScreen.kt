@@ -379,7 +379,7 @@ private fun AppTopBar(
                     } else {
                         Icon(
                             Icons.Filled.Settings,
-                            contentDescription = "Settings",
+                            contentDescription = "设置",
                         )
                     }
                 }
@@ -423,7 +423,7 @@ private fun AppTopBar(
                     } else {
                         Icon(
                             Icons.Filled.Settings,
-                            contentDescription = "Settings",
+                            contentDescription = "设置",
                         )
                     }
                 }
