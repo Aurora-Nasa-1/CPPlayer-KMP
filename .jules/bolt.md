@@ -1,0 +1,6 @@
+# 2024-09-01
+
+- **Bottleneck Identified**: In Jetpack Compose, the `Brush.radialGradient` in `DesktopPlayerScreen` was being instantiated on every recomposition. As the playback position updates continuously (progress changes), this resulted in excessive memory allocations and subsequent garbage collection pressure.
+- **Stutter Identified**: The `Slider` component inside `DesktopPlayerScreen` called `onSeek` on every `onValueChange` instead of `onValueChangeFinished`. Triggering continuous engine calls via `onSeek` directly bound to UI changes causes severe UI and playback stutter.
+- **Fix**: Wrapped the heavy `Brush` creation inside a `remember` block keyed on `MaterialTheme.colorScheme` to ensure the gradient is instantiated only once across the continuous recomposition stream. Added local state `seekValue` for `Slider` drag events and delayed engine seek `onSeek` execution to `onValueChangeFinished` to eliminate continuous engine requests.
+- **Expected Impact**: Substantially reduced UI stuttering and smooth playback dragging. Reduced memory and GC pressure which provides consistent 60fps refresh rates on continuous screen updates.
