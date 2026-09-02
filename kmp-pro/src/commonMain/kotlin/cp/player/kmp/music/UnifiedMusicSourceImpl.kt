@@ -80,12 +80,14 @@ class UnifiedMusicSourceImpl(
             // 分批请求以避免 URI 过长
             for (chunk in apiIds.chunked(500)) {
                 try {
+                    // Bolt: Optimize O(N^2) lookup to O(1) by using a hash map
+                    val chunkMap = chunk.associateBy { it.resourceId }
                     val json = musicApiService.getSongDetail(chunk.map { it.resourceId })
                     val songs = (json as? JsonObject)?.get("songs")?.jsonArray
                     songs?.forEach { songJson ->
                         val trackObj = songJson.jsonObject
                         val rid = (trackObj["id"] as? JsonPrimitive)?.contentOrNull ?: return@forEach
-                        val matchedApiId = chunk.find { it.resourceId == rid }
+                        val matchedApiId = chunkMap[rid]
                         if (matchedApiId != null) {
                             summaries.add(trackObj.toTrackSummary(matchedApiId.toString()))
                         }
