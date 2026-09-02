@@ -78,7 +78,8 @@ fun DesktopPlayerScreen(
     val track = state.currentTrack ?: return
     val scope = rememberCoroutineScope()
     var selectedTab by remember { mutableIntStateOf(1) }
-    val progress = if (state.durationMs > 0) state.positionMs.toFloat() / state.durationMs else 0f
+    val duration = state.durationMs.coerceAtLeast(0)
+    var seekValue by remember { androidx.compose.runtime.mutableStateOf<Float?>(null) }
     val background = Brush.radialGradient(
         colors = listOf(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.colorScheme.background),
         radius = 1200f,
@@ -114,7 +115,15 @@ fun DesktopPlayerScreen(
                                     Icon(if (state.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, "收藏", tint = if (state.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
-                            Slider(value = progress.coerceIn(0f, 1f), onValueChange = { onSeek((it * state.durationMs).toLong()) }, modifier = Modifier.fillMaxWidth())
+                            Slider(
+                                value = seekValue ?: state.positionMs.toFloat(),
+                                onValueChange = { seekValue = it },
+                                onValueChangeFinished = {
+                                    seekValue?.let { onSeek(it.toLong().coerceAtLeast(0L)); seekValue = null }
+                                },
+                                valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text(formatTimeMs(state.positionMs), style = MaterialTheme.typography.labelSmall)
                                 Text(formatTimeMs(state.durationMs), style = MaterialTheme.typography.labelSmall)
