@@ -763,21 +763,26 @@ private fun ProgressRow(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // Bolt: Memoize formatTimeMs allocations based on truncated seconds
+            val positionText = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
             Text(
-                formatTimeMs(state.positionMs),
+                positionText,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
             // 音质 chip
             state.formatInfo?.let { info ->
+                // Bolt: Remove unnecessary string interpolation that causes GC overhead
                 Text(
-                    "${info.qualityLabel}",
+                    info.qualityLabel ?: "",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 )
             }
+            // Bolt: Memoize formatTimeMs allocations
+            val durationText = remember(duration / 1000) { formatTimeMs(duration) }
             Text(
-                formatTimeMs(duration),
+                durationText,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )

@@ -79,10 +79,16 @@ fun DesktopPlayerScreen(
     val scope = rememberCoroutineScope()
     var selectedTab by remember { mutableIntStateOf(1) }
     val progress = if (state.durationMs > 0) state.positionMs.toFloat() / state.durationMs else 0f
-    val background = Brush.radialGradient(
-        colors = listOf(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.colorScheme.background),
-        radius = 1200f,
-    )
+
+    // Bolt: Memoize expensive Brush creation to avoid recreating on every rapid state.positionMs recomposition
+    val surfaceContainerHigh = MaterialTheme.colorScheme.surfaceContainerHigh
+    val backgroundColor = MaterialTheme.colorScheme.background
+    val background = remember(surfaceContainerHigh, backgroundColor) {
+        Brush.radialGradient(
+            colors = listOf(surfaceContainerHigh, backgroundColor),
+            radius = 1200f,
+        )
+    }
 
     Box(Modifier.fillMaxSize().background(background).padding(28.dp)) {
         Column(Modifier.fillMaxSize()) {
@@ -114,10 +120,22 @@ fun DesktopPlayerScreen(
                                     Icon(if (state.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, "收藏", tint = if (state.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
-                            Slider(value = progress.coerceIn(0f, 1f), onValueChange = { onSeek((it * state.durationMs).toLong()) }, modifier = Modifier.fillMaxWidth())
+                            // Bolt: Use local state to avoid rapid engine seek calls that cause stuttering during dragging
+                            var seekProgress by remember { androidx.compose.runtime.mutableStateOf<Float?>(null) }
+                            Slider(
+                                value = seekProgress ?: progress.coerceIn(0f, 1f),
+                                onValueChange = { seekProgress = it },
+                                onValueChangeFinished = {
+                                    seekProgress?.let { onSeek((it * state.durationMs).toLong()); seekProgress = null }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(formatTimeMs(state.positionMs), style = MaterialTheme.typography.labelSmall)
-                                Text(formatTimeMs(state.durationMs), style = MaterialTheme.typography.labelSmall)
+                                // Bolt: Memoize formatTimeMs string allocations based on truncated seconds to reduce GC pressure
+                                val positionText = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
+                                val durationText = remember(state.durationMs / 1000) { formatTimeMs(state.durationMs) }
+                                Text(positionText, style = MaterialTheme.typography.labelSmall)
+                                Text(durationText, style = MaterialTheme.typography.labelSmall)
                             }
                             PlayerControls(state, onTogglePlay, onSkipNext, onSkipPrev, onRepeat, onShuffle)
                         }
