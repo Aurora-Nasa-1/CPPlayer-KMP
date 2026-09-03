@@ -1,6 +1,6 @@
 package cp.player.app.repository
 
-import cp.player.app.extractUidFromLoginStatus
+import cp.player.kmp.util.extractUidFromLoginStatus
 import cp.player.kmp.BackendResult
 import cp.player.kmp.api.MusicApiService
 import cp.player.kmp.music.MusicResult

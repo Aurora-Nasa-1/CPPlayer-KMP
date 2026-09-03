@@ -10,6 +10,7 @@ import cp.player.kmp.provider.BackendProvider
 import cp.player.kmp.provider.ProviderCookieStorage
 import cp.player.kmp.util.SettingsStorage
 import cp.player.app.repository.AuthRepository
+import cp.player.kmp.util.extractUidFromLoginStatus
 import cp.player.app.repository.MusicRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -266,7 +267,7 @@ object AppModel {
                 val status = api.getLoginStatus()
                 val root = status as? kotlinx.serialization.json.JsonObject ?: return@runCatching null
                 val uid = extractUidFromLoginStatus(root) ?: return@runCatching null
-                val data = unwrapLoginStatusData(root) ?: return@runCatching null
+                val data = cp.player.kmp.util.unwrapLoginStatusData(root) ?: return@runCatching null
                 val prof = (data["profile"] as? kotlinx.serialization.json.JsonObject)
                     ?: (data["account"] as? kotlinx.serialization.json.JsonObject)
                 UserProfile(

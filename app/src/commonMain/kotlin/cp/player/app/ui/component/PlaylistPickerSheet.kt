@@ -42,7 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
-import cp.player.app.extractUidFromLoginStatus
+import cp.player.kmp.util.extractUidFromLoginStatus
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.resized
 import cp.player.kmp.BackendResult

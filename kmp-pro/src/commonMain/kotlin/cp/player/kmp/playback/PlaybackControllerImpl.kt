@@ -1,6 +1,7 @@
 package cp.player.kmp.playback
 
 import cp.player.kmp.api.MusicApiService
+import cp.player.kmp.util.extractUidFromLoginStatus
 import cp.player.kmp.music.TrackSummary
 import cp.player.kmp.music.UnifiedMusicSource
 import cp.player.kmp.model.LyricsInfo
@@ -376,14 +377,7 @@ class PlaybackControllerImpl(
         if (favoritesLoaded && !force) return
         runCatching {
             val status = api.getLoginStatus()
-            val root = (status as? kotlinx.serialization.json.JsonObject) ?: return@runCatching
-            val data = (root["data"] as? kotlinx.serialization.json.JsonObject) ?: root
-            val account = (data["account"] as? kotlinx.serialization.json.JsonObject)
-                ?: (data["profile"] as? kotlinx.serialization.json.JsonObject)
-            val uid = account?.let {
-                (it["id"] as? kotlinx.serialization.json.JsonPrimitive)
-                    ?.let { p -> runCatching { p.content.toLong() }.getOrNull() }
-            }
+            val uid = extractUidFromLoginStatus(status)
             if (uid == null) {
                 // 未登录/登出：清空收藏集合
                 _likedIds.value = emptySet()

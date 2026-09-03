@@ -1,4 +1,4 @@
-package cp.player.app
+package cp.player.kmp.util
 
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
