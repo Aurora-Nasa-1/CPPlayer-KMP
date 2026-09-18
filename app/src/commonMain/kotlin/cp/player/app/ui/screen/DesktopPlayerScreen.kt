@@ -79,6 +79,9 @@ fun DesktopPlayerScreen(
     val scope = rememberCoroutineScope()
     var selectedTab by remember { mutableIntStateOf(1) }
     val progress = if (state.durationMs > 0) state.positionMs.toFloat() / state.durationMs else 0f
+    // ⚡ Bolt: memoize formatting to prevent excessive string allocations on frequent positionMs updates
+    val positionStr = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
+    val durationStr = remember(state.durationMs) { formatTimeMs(state.durationMs) }
     val background = Brush.radialGradient(
         colors = listOf(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.colorScheme.background),
         radius = 1200f,
@@ -116,8 +119,8 @@ fun DesktopPlayerScreen(
                             }
                             Slider(value = progress.coerceIn(0f, 1f), onValueChange = { onSeek((it * state.durationMs).toLong()) }, modifier = Modifier.fillMaxWidth())
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(formatTimeMs(state.positionMs), style = MaterialTheme.typography.labelSmall)
-                                Text(formatTimeMs(state.durationMs), style = MaterialTheme.typography.labelSmall)
+                                Text(positionStr, style = MaterialTheme.typography.labelSmall)
+                                Text(durationStr, style = MaterialTheme.typography.labelSmall)
                             }
                             PlayerControls(state, onTogglePlay, onSkipNext, onSkipPrev, onRepeat, onShuffle)
                         }
