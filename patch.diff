@@ -1,0 +1,41 @@
+--- ./app/src/commonMain/kotlin/cp/player/app/ui/screen/PlayerScreen.kt
++++ ./app/src/commonMain/kotlin/cp/player/app/ui/screen/PlayerScreen.kt
+@@ -486,7 +486,12 @@
+                         RepeatMode.ONE -> Icons.Filled.RepeatOne
+                         else -> Icons.Filled.Repeat
+                     }
++                    val contentDesc = when (state.repeatMode) {
++                        RepeatMode.ONE -> "单曲循环"
++                        RepeatMode.ALL -> "列表循环"
++                        else -> "关闭循环"
++                    }
+                     Icon(
+-                        icon, "循环", Modifier.size(24.dp),
++                        icon, contentDesc, Modifier.size(24.dp),
+                         tint = if (state.repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary
+                         else MaterialTheme.colorScheme.onSurfaceVariant,
+                     )
+@@ -644,7 +649,7 @@
+             ) {
+                 IconButton(onClick = onShuffle) {
+                     Icon(
+-                        Icons.Filled.Shuffle, "随机播放", Modifier.size(24.dp),
++                        Icons.Filled.Shuffle, if (state.shuffleEnabled) "关闭随机播放" else "开启随机播放", Modifier.size(24.dp),
+                         tint = if (state.shuffleEnabled) MaterialTheme.colorScheme.primary
+                         else MaterialTheme.colorScheme.onSurfaceVariant,
+                     )
+@@ -654,7 +659,12 @@
+                         RepeatMode.ONE -> Icons.Filled.RepeatOne
+                         else -> Icons.Filled.Repeat
+                     }
++                    val contentDesc = when (state.repeatMode) {
++                        RepeatMode.ONE -> "单曲循环"
++                        RepeatMode.ALL -> "列表循环"
++                        else -> "关闭循环"
++                    }
+                     Icon(
+-                        icon, "循环", Modifier.size(24.dp),
++                        icon, contentDesc, Modifier.size(24.dp),
+                         tint = if (state.repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary
+                         else MaterialTheme.colorScheme.onSurfaceVariant,
+                     )

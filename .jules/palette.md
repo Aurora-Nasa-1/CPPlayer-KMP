@@ -1,0 +1,3 @@
+## 2024-05-24 - Dynamic Accessibility Labels for Toggles
+**Learning:** Hardcoded accessibility strings like "播放/暂停" (Play/Pause) or "循环" (Repeat) on toggleable buttons do not provide enough context for screen reader users regarding the *current state* or the *action* that will occur. The labels should dynamically change based on the state. For example, a play button should say "播放" when paused, and "暂停" when playing, reflecting the action the user can take.
+**Action:** Always implement dynamic `contentDescription` properties in Compose UI for toggleable elements using conditional logic (e.g. `if (state.isPlaying) "暂停" else "播放"`) to provide clear, actionable descriptions.
