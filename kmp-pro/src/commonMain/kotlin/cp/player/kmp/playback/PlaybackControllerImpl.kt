@@ -197,9 +197,10 @@ class PlaybackControllerImpl(
     }
 
     override suspend fun removeQueueItem(index: Int) {
+        var wasCurrent = false
         navMutex.withLock {
             if (index !in _queue.indices) return@withLock
-            val wasCurrent = index == _index
+            wasCurrent = index == _index
             _queue.removeAt(index)
             if (_queue.isEmpty()) {
                 _index = -1
@@ -217,11 +218,13 @@ class PlaybackControllerImpl(
                 _orderPos = _order?.indexOf(_index) ?: _index.coerceAtLeast(0)
             } else if (_index > index) {
                 _index -= 1
+                _orderPos = _order?.indexOf(_index) ?: _index.coerceAtLeast(0)
+            } else {
+                _orderPos = _order?.indexOf(_index) ?: _index.coerceAtLeast(0)
             }
         }
         pushQueueState()
-        if (_queue.isNotEmpty() && index <= _index && _index >= 0) {
-            // 若移除了当前或之前的，按约定重新播放当前
+        if (_queue.isNotEmpty() && wasCurrent && _index >= 0) {
             playCurrent(skipIfSame = false)
         }
     }
