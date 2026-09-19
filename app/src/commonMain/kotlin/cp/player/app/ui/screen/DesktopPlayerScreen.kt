@@ -79,10 +79,16 @@ fun DesktopPlayerScreen(
     val scope = rememberCoroutineScope()
     var selectedTab by remember { mutableIntStateOf(1) }
     val progress = if (state.durationMs > 0) state.positionMs.toFloat() / state.durationMs else 0f
-    val background = Brush.radialGradient(
-        colors = listOf(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.colorScheme.background),
-        radius = 1200f,
-    )
+
+    // [Bolt] Memoize the Brush to prevent expensive graphic object recreation during recomposition
+    val color1 = MaterialTheme.colorScheme.surfaceContainerHigh
+    val color2 = MaterialTheme.colorScheme.background
+    val background = remember(color1, color2) {
+        Brush.radialGradient(
+            colors = listOf(color1, color2),
+            radius = 1200f,
+        )
+    }
 
     Box(Modifier.fillMaxSize().background(background).padding(28.dp)) {
         Column(Modifier.fillMaxSize()) {
@@ -115,9 +121,12 @@ fun DesktopPlayerScreen(
                                 }
                             }
                             Slider(value = progress.coerceIn(0f, 1f), onValueChange = { onSeek((it * state.durationMs).toLong()) }, modifier = Modifier.fillMaxWidth())
+                            // [Bolt] Memoize time formatting tied to second-level state to reduce garbage collection overhead
+                            val positionStr = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
+                            val durationStr = remember(state.durationMs) { formatTimeMs(state.durationMs) }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(formatTimeMs(state.positionMs), style = MaterialTheme.typography.labelSmall)
-                                Text(formatTimeMs(state.durationMs), style = MaterialTheme.typography.labelSmall)
+                                Text(positionStr, style = MaterialTheme.typography.labelSmall)
+                                Text(durationStr, style = MaterialTheme.typography.labelSmall)
                             }
                             PlayerControls(state, onTogglePlay, onSkipNext, onSkipPrev, onRepeat, onShuffle)
                         }
