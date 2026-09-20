@@ -763,8 +763,11 @@ private fun ProgressRow(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            val positionStr = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
+            val durationStr = remember(duration) { formatTimeMs(duration) }
+
             Text(
-                formatTimeMs(state.positionMs),
+                positionStr,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
@@ -777,7 +780,7 @@ private fun ProgressRow(
                 )
             }
             Text(
-                formatTimeMs(duration),
+                durationStr,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )

@@ -116,8 +116,10 @@ fun DesktopPlayerScreen(
                             }
                             Slider(value = progress.coerceIn(0f, 1f), onValueChange = { onSeek((it * state.durationMs).toLong()) }, modifier = Modifier.fillMaxWidth())
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(formatTimeMs(state.positionMs), style = MaterialTheme.typography.labelSmall)
-                                Text(formatTimeMs(state.durationMs), style = MaterialTheme.typography.labelSmall)
+                                val positionStr = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
+                                val durationStr = remember(state.durationMs) { formatTimeMs(state.durationMs) }
+                                Text(positionStr, style = MaterialTheme.typography.labelSmall)
+                                Text(durationStr, style = MaterialTheme.typography.labelSmall)
                             }
                             PlayerControls(state, onTogglePlay, onSkipNext, onSkipPrev, onRepeat, onShuffle)
                         }
