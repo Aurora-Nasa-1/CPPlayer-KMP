@@ -79,14 +79,12 @@ fun DesktopPlayerScreen(
     val track = state.currentTrack ?: return
     val scope = rememberCoroutineScope()
     var selectedTab by remember { mutableIntStateOf(1) }
-    // ⚡ Bolt: Maintain local slider drag state to prevent continuous backend seek spam (prevents engine stutter)
     var seekProgress by remember { mutableStateOf<Float?>(null) }
 
     val progress = if (state.durationMs > 0) state.positionMs.toFloat() / state.durationMs else 0f
     val currentProgress = seekProgress ?: progress
 
     val colors = listOf(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.colorScheme.background)
-    // ⚡ Bolt: Remember heavy Brush instances to avoid re-allocation during continuous recompositions driven by progress ticks (minimizes GC overhead)
     val background = remember(colors) {
         Brush.radialGradient(colors = colors, radius = 1200f)
     }
