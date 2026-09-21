@@ -208,7 +208,15 @@ interface MusicApiService {
      * 根据类型获取对应的评论 API 方法名
      */
     fun getCommentMethod(type: String): String {
-        return MusicApiMethod.COMMENT_NEW
+        return when (type) {
+            "music" -> MusicApiMethod.COMMENT_MUSIC
+            "mv" -> MusicApiMethod.COMMENT_MV
+            "playlist" -> MusicApiMethod.COMMENT_PLAYLIST
+            "album" -> MusicApiMethod.COMMENT_ALBUM
+            "dj" -> MusicApiMethod.COMMENT_DJ
+            "video" -> MusicApiMethod.COMMENT_VIDEO
+            else -> MusicApiMethod.COMMENT_NEW
+        }
     }
 
     /**
