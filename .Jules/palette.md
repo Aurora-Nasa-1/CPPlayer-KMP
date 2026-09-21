@@ -1,0 +1,3 @@
+## 2024-09-22 - [Simplified Chinese Accessibility Strategy]
+**Learning:** Hardcoded accessibility strings like `contentDescription` need to match the primary localization of the app (which is Simplified Chinese). Otherwise, screen readers will read mismatched English on an otherwise Chinese app.
+**Action:** When adding or updating `contentDescription` or any user-facing accessibility strings, ALWAYS use Simplified Chinese rather than defaulting to English. For example, use "设置" instead of "Settings", and "上一首" instead of "Prev".
