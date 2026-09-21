@@ -758,26 +758,30 @@ private fun ProgressRow(
             valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
             modifier = Modifier.fillMaxWidth(),
         )
+        val formattedPosition = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
+        val formattedDuration = remember(duration) { formatTimeMs(duration) }
+
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                formatTimeMs(state.positionMs),
+                formattedPosition,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
             // 音质 chip
             state.formatInfo?.let { info ->
+                val qualityLabel = remember(info) { info.qualityLabel }
                 Text(
-                    "${info.qualityLabel}",
+                    qualityLabel,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 )
             }
             Text(
-                formatTimeMs(duration),
+                formattedDuration,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
