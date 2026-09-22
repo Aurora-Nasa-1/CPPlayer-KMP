@@ -1,0 +1,3 @@
+## 2024-09-22 - Localized Accessibility Labels
+**Learning:** Hardcoded English accessibility labels (like "Back", "Play", "Pause") create an inconsistent and jarring screen reader experience in a localized application (Simplified Chinese).
+**Action:** Always ensure `contentDescription` strings and other accessibility labels are localized to match the application's primary UI language. Do not default to English.
