@@ -79,10 +79,13 @@ fun DesktopPlayerScreen(
     val scope = rememberCoroutineScope()
     var selectedTab by remember { mutableIntStateOf(1) }
     val progress = if (state.durationMs > 0) state.positionMs.toFloat() / state.durationMs else 0f
-    val background = Brush.radialGradient(
-        colors = listOf(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.colorScheme.background),
-        radius = 1200f,
-    )
+    val colorScheme = MaterialTheme.colorScheme
+    val background = remember(colorScheme) {
+        Brush.radialGradient(
+            colors = listOf(colorScheme.surfaceContainerHigh, colorScheme.background),
+            radius = 1200f,
+        )
+    }
 
     Box(Modifier.fillMaxSize().background(background).padding(28.dp)) {
         Column(Modifier.fillMaxSize()) {
