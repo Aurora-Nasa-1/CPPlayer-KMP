@@ -1,0 +1,3 @@
+## 2024-05-17 - Prevent continuous engine calls during Compose Slider drag
+**Learning:** Binding a playback engine's seek function directly to a Jetpack Compose `Slider`'s `onValueChange` causes severe performance bottlenecks. Rapid UI dragging translates to continuous engine state updates, leading to UI stutter and audio playback glitches.
+**Action:** Use a local state (`seekValue`) to memoize the slider drag progress during interaction (`onValueChange`). Defer the actual expensive engine call to `onValueChangeFinished` when the user has completed the interaction. Always sync the local display time label with the dragging state for a smooth UX.
