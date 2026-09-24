@@ -48,15 +48,12 @@ fun App() {
     val dynamic by AppModel.dynamicColorFlow.collectAsState()
     val pureBlack by AppModel.pureBlackFlow.collectAsState()
 
-    val playbackState by AppModel.playback.state.collectAsState()
-    PlatformMediaControlsEffect(
-        controller = AppModel.playback,
-        state = playbackState,
-    )
+    PlaybackMediaControlsBridge()
 
     // 启动：应用持久化音质到播放控制器 + 拉取用户资料/收藏 + 启动播放历史记录 + 补齐最近播放缺失字段
     androidx.compose.runtime.LaunchedEffect(Unit) {
         AppModel.syncPlaybackQuality()
+        AppModel.restoreLocalServer()
         AppModel.refreshUserProfile()
         AppModel.startHistoryRecorder()
         AppModel.startRecentTracksEnrich()
@@ -133,4 +130,22 @@ fun App() {
             }
         }
     }
+}
+
+/**
+ * 系统媒体控制（SMTC / MPRIS）的接线层。
+ *
+ * **刻意不把这段留在 [App] 里。** 播放中 `AppModel.playback.state` 每 200 ms
+ * （位置轮询）就会换一个新对象，若 [App] 直接 `collectAsState()` 它，[App] 自身
+ * 会每秒重组 5 次；由于该状态是不稳定类型，其 lambda 无法被 Compose 跳过，会连带
+ * Navigator / SlideTransition / SharedTransitionLayout 一起重算，与出帧抢 CPU。
+ * 隔离到这一层后，跟随播放状态重组的只剩这个极小的 composable。
+ */
+@Composable
+private fun PlaybackMediaControlsBridge() {
+    val playbackState by AppModel.playback.state.collectAsState()
+    PlatformMediaControlsEffect(
+        controller = AppModel.playback,
+        state = playbackState,
+    )
 }

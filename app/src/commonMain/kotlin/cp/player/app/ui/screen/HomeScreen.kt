@@ -136,15 +136,6 @@ private fun HomeScreenContent(model: HomeScreenModel) {
             creatorName = "CPPlayer",
         )
     }
-    val newSongsPlaylist = remember(newSongs) {
-        PlaylistSummary(
-            id = -102L,
-            name = "推荐新歌",
-            coverUrl = newSongs.firstOrNull()?.coverUrl,
-            trackCount = newSongs.size,
-            creatorName = "CPPlayer",
-        )
-    }
     val similarPlaylist = remember(dailySongs) {
         PlaylistSummary(
             id = -103L,
@@ -154,10 +145,14 @@ private fun HomeScreenContent(model: HomeScreenModel) {
             creatorName = "CPPlayer",
         )
     }
-    val playDailyQueue = {
-        if (dailySongs.isNotEmpty()) {
-            navigator.push(HomeGeneratedPlaylistScreen(dailyPlaylist, dailySongs))
-        }
+    val intelligencePlaylist = remember(dailySongs) {
+        PlaylistSummary(
+            id = -104L,
+            name = "心动模式",
+            coverUrl = dailySongs.firstOrNull()?.coverUrl,
+            trackCount = dailySongs.size,
+            creatorName = "CPPlayer",
+        )
     }
     val playDailyTrack: (TrackSummary) -> Unit = { track ->
         navigator.push(HomeGeneratedPlaylistScreen(dailyPlaylist, dailySongs, dailySongs.indexOf(track).coerceAtLeast(0)))
@@ -183,9 +178,27 @@ private fun HomeScreenContent(model: HomeScreenModel) {
             onRefresh = model::refresh,
             onFmRecommendClick = { navigator.push(HomeGeneratedPlaylistScreen(dailyPlaylist, dailySongs)) },
             onPersonalFmClick = model::playPersonalFm,
-            onIntelligenceClick = { model.playIntelligence(dailySongs.firstOrNull()) },
+            onIntelligenceClick = {
+                navigator.push(
+                    HomeGeneratedPlaylistScreen(
+                        intelligencePlaylist,
+                        emptyList(),
+                        0,
+                        HomeGeneratedPlaylistKind.IntelligenceFromDaily,
+                        seedTrackId = dailySongs.firstOrNull()?.id,
+                    )
+                )
+            },
             onSimilarClick = {
-                navigator.push(HomeGeneratedPlaylistScreen(similarPlaylist, emptyList(), 0, HomeGeneratedPlaylistKind.SimilarFromDaily))
+                navigator.push(
+                    HomeGeneratedPlaylistScreen(
+                        similarPlaylist,
+                        emptyList(),
+                        0,
+                        HomeGeneratedPlaylistKind.SimilarFromDaily,
+                        seedTrackId = dailySongs.firstOrNull()?.id,
+                    )
+                )
             },
             onPlaylistClick = { navigator.push(PlaylistDetailScreen(it)) },
             onSongClick = playDailyTrack,
@@ -208,10 +221,26 @@ private fun HomeScreenContent(model: HomeScreenModel) {
                 fmOnRecommendClick = { navigator.push(HomeGeneratedPlaylistScreen(dailyPlaylist, dailySongs)) },
                 fmOnPersonalFmClick = model::playPersonalFm,
                 onIntelligenceClick = {
-                    navigator.push(HomeGeneratedPlaylistScreen(dailyPlaylist, dailySongs, 0, HomeGeneratedPlaylistKind.IntelligenceFromDaily))
+                    navigator.push(
+                        HomeGeneratedPlaylistScreen(
+                            intelligencePlaylist,
+                            emptyList(),
+                            0,
+                            HomeGeneratedPlaylistKind.IntelligenceFromDaily,
+                            seedTrackId = dailySongs.firstOrNull()?.id,
+                        )
+                    )
                 },
                 onSimilarClick = {
-                    navigator.push(HomeGeneratedPlaylistScreen(similarPlaylist, emptyList(), 0, HomeGeneratedPlaylistKind.SimilarFromDaily))
+                    navigator.push(
+                        HomeGeneratedPlaylistScreen(
+                            similarPlaylist,
+                            emptyList(),
+                            0,
+                            HomeGeneratedPlaylistKind.SimilarFromDaily,
+                            seedTrackId = dailySongs.firstOrNull()?.id,
+                        )
+                    )
                 },
                 userPlaylists = userPlaylists,
                 onPlaylistClick = { navigator.push(PlaylistDetailScreen(it)) },
@@ -900,19 +929,21 @@ class HomeGeneratedPlaylistScreen(
     private val initialTracks: List<TrackSummary>,
     private val startIndex: Int = 0,
     private val kind: HomeGeneratedPlaylistKind = HomeGeneratedPlaylistKind.Static,
+    /** 拉取相似 / 心动歌曲的种子曲目 id（这类页面本身不携带曲目，种子必须由调用方传入）。 */
+    private val seedTrackId: String? = null,
 ) : Screen {
     @Composable
     override fun Content() {
         val model = rememberScreenModel { PlaylistDetailScreenModel() }
         val sourceTracks by rememberUpdatedState(initialTracks)
         val navigator = LocalNavigator.currentOrThrow
-        LaunchedEffect(kind, playlist.id, sourceTracks.firstOrNull()?.id) {
+        LaunchedEffect(kind, playlist.id, seedTrackId, sourceTracks.firstOrNull()?.id) {
             when (kind) {
                 HomeGeneratedPlaylistKind.Static -> Unit
                 HomeGeneratedPlaylistKind.SimilarFromDaily -> {
-                    val seed = sourceTracks.firstOrNull() ?: return@LaunchedEffect
+                    val seed = seedTrackId ?: sourceTracks.firstOrNull()?.id ?: return@LaunchedEffect
                     val result = try {
-                        AppModel.musicRepository.getSimilarSongs(seed.id)
+                        AppModel.musicRepository.getSimilarSongs(seed)
                     } catch (e: Exception) {
                         BackendResult.Error(e.message ?: "获取相似歌曲失败", cause = e)
                     }
@@ -920,9 +951,9 @@ class HomeGeneratedPlaylistScreen(
                     navigator.replace(HomeGeneratedPlaylistScreen(playlist, tracks))
                 }
                 HomeGeneratedPlaylistKind.IntelligenceFromDaily -> {
-                    val seed = sourceTracks.firstOrNull() ?: return@LaunchedEffect
+                    val seed = seedTrackId ?: sourceTracks.firstOrNull()?.id ?: return@LaunchedEffect
                     val result = try {
-                        AppModel.musicRepository.getIntelligenceSongs(seed.id)
+                        AppModel.musicRepository.getIntelligenceSongs(seed)
                     } catch (e: Exception) {
                         BackendResult.Error(e.message ?: "获取心动歌曲失败", cause = e)
                     }
@@ -938,7 +969,10 @@ class HomeGeneratedPlaylistScreen(
             onEmbeddedBack = null,
             initialOverrideTracks = initialTracks,
             autoPlayIndex = startIndex,
-            disableRemoteLoad = true,
+            isLocalPlaylist = true,
+            // 相似 / 心动歌曲要先按种子拉取再 replace，拉取期间保持加载态，
+            // 否则会先闪一屏"歌单暂无歌曲"。
+            loadingOverride = kind != HomeGeneratedPlaylistKind.Static,
         )
     }
 }

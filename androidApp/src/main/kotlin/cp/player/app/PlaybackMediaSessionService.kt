@@ -1,6 +1,5 @@
 package cp.player.app
 
-import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import cp.player.kmp.playback.SharedMedia3Player
@@ -11,17 +10,20 @@ import cp.player.kmp.playback.SharedMedia3Player
  * controls while the activity is backgrounded.
  */
 class PlaybackMediaSessionService : MediaSessionService() {
-    private var player: ExoPlayer? = null
+    private var player: ControllerForwardingPlayer? = null
     private var mediaSession: MediaSession? = null
 
     override fun onCreate() {
         (application as? CPPlayerApplication)?.backend
         super.onCreate()
-        val exoPlayer = SharedMedia3Player.get(this)
-        player = exoPlayer
-        // Media3 handles transport commands through the ExoPlayer instance;
-        // the app-level MediaSessionCompat bridge mirrors the shared controller.
-        mediaSession = MediaSession.Builder(this, exoPlayer).build()
+        // 会话的 Player 不是裸 ExoPlayer：切歌/seek 必须转交应用控制器。
+        // 裸 ExoPlayer 只持有单个 media item，队列在控制器里，
+        // 直接用它会导致通知栏/锁屏/耳机切歌无效。
+        val sessionPlayer = ControllerForwardingPlayer(SharedMedia3Player.get(this)) {
+            AppModel.playback
+        }
+        player = sessionPlayer
+        mediaSession = MediaSession.Builder(this, sessionPlayer).build()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession

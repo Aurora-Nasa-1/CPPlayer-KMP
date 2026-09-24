@@ -164,3 +164,9 @@ actual fun setOnMediaPermissionGranted(callback: (() -> Unit)?) {
 actual fun BackHandler(enabled: Boolean, onBack: () -> Unit) {
     androidx.activity.compose.BackHandler(enabled = enabled, onBack = onBack)
 }
+
+@Composable
+actual fun PlatformRenderTuningContent() {
+    // Android 的渲染完全交给系统（SurfaceFlinger / HWUI），没有可切换的 Skiko 后端，
+    // 该设置入口在 Android 上也不会出现在设置列表里（见 SettingsScreen.settingsEntries）。
+}

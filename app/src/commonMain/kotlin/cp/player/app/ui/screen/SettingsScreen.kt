@@ -22,7 +22,9 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.SettingsEthernet
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.MaterialTheme
@@ -72,6 +74,9 @@ private enum class SettingsDetail {
     Playback,
     UiLogic,
     Storage,
+    LocalServer,
+    /** 仅桌面端：Skiko 渲染后端与垂直同步。 */
+    RenderTuning,
     Health,
     ProviderManagement,
     About,
@@ -193,6 +198,8 @@ private fun SettingsDetail.toScreen(): Screen = when (this) {
     SettingsDetail.Playback -> PlaybackSettingsScreen()
     SettingsDetail.UiLogic -> UiLogicSettingsScreen()
     SettingsDetail.Storage -> StorageSettingsScreen()
+    SettingsDetail.LocalServer -> LocalServerSettingsScreen()
+    SettingsDetail.RenderTuning -> RenderTuningSettingsScreen()
     SettingsDetail.Health -> HealthScreen()
     SettingsDetail.ProviderManagement -> ProviderManagementScreen()
     SettingsDetail.About -> AboutScreen()
@@ -240,6 +247,8 @@ private fun DesktopSettingsDetail(detail: SettingsDetail) {
         SettingsDetail.Playback -> PlaybackSettingsScreen().Content()
         SettingsDetail.UiLogic -> UiLogicSettingsScreen().Content()
         SettingsDetail.Storage -> StorageSettingsScreen().Content()
+        SettingsDetail.LocalServer -> LocalServerSettingsScreen().Content()
+        SettingsDetail.RenderTuning -> RenderTuningSettingsScreen().Content()
         SettingsDetail.Health -> HealthScreen().Content()
         SettingsDetail.ProviderManagement -> ProviderManagementScreen().Content()
         SettingsDetail.About -> AboutScreen().Content()
@@ -295,6 +304,15 @@ private fun settingsEntries(): List<SettingsEntry> = listOf(
         screen = { StorageSettingsScreen() },
     ),
     SettingsEntry(
+        icon = Icons.Filled.SettingsEthernet,
+        iconContainerColor = Color(0xFFE0F2F1),
+        iconContentColor = Color(0xFF00695C),
+        title = "本地服务器",
+        subtitle = "把播放流通过 HTTP 对外提供，并开放 REST 控制接口",
+        detail = SettingsDetail.LocalServer,
+        screen = { LocalServerSettingsScreen() },
+    ),
+    SettingsEntry(
         icon = Icons.Filled.BugReport,
         iconContainerColor = Color(0xFFFCE4EC),
         iconContentColor = Color(0xFFC2185B),
@@ -330,7 +348,31 @@ private fun settingsEntries(): List<SettingsEntry> = listOf(
         detail = SettingsDetail.Sponsor,
         screen = { SponsorScreen() },
     ),
-)
+) + renderTuningEntries()
+
+/**
+ * 桌面端独有的设置项。
+ *
+ * 「渲染后端」只对 Compose Desktop 有意义：Skiko 在 Windows 默认走 Direct3D 12，
+ * 其呈现节奏会与 VRR / 系统帧节奏控制互相影响；Android 的渲染完全交给系统，
+ * 没有可切换的后端，因此该入口不在 Android 上出现。
+ */
+private fun renderTuningEntries(): List<SettingsEntry> =
+    if (cp.player.app.platform.isAndroidPlatform()) {
+        emptyList()
+    } else {
+        listOf(
+            SettingsEntry(
+                icon = Icons.Filled.Memory,
+                iconContainerColor = Color(0xFFEDE7F6),
+                iconContentColor = Color(0xFF4527A0),
+                title = "渲染后端",
+                subtitle = "Skiko 渲染 API 与垂直同步（VRR / 刷新率抖动相关）",
+                detail = SettingsDetail.RenderTuning,
+                screen = { RenderTuningSettingsScreen() },
+            ),
+        )
+    }
 
 @Composable
 private fun SettingsRow(

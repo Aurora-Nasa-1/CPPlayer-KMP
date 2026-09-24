@@ -147,7 +147,10 @@ fun PlaylistDetailContent(
     onEmbeddedBack: (() -> Unit)? = null,
     initialOverrideTracks: List<TrackSummary>? = null,
     autoPlayIndex: Int? = null,
-    disableRemoteLoad: Boolean = false,
+    /** 该歌单是首页生成的本地虚拟歌单（id 为负数），没有服务端实体。 */
+    isLocalPlaylist: Boolean = false,
+    /** 调用方仍在拉取曲目：以加载态起步，避免先闪一屏"歌单暂无歌曲"。 */
+    loadingOverride: Boolean = false,
 ) {
     val navigator = LocalNavigator.currentOrThrow
     val state by model.state.collectAsState()
@@ -167,7 +170,19 @@ fun PlaylistDetailContent(
     // 非 owner 歌单的收藏态（Screen 内简化维护）
     var playlistFavorite by remember { mutableStateOf(false) }
 
-    LaunchedEffect(playlist.id) { model.load(playlist) }
+    // 首页生成的虚拟歌单（每日推荐 / 相似歌曲 / 心动模式）id 为负数，服务端并不存在，
+    // 曲目已随导航传入，必须跳过远端加载，否则接口 404 会让详情页只剩空白。
+    LaunchedEffect(playlist.id, isLocalPlaylist) {
+        if (isLocalPlaylist) model.loadLocal(playlist, initialOverrideTracks.orEmpty(), loadingOverride)
+        else model.load(playlist)
+    }
+
+    // 曲目就绪后从 autoPlayIndex 开始播放（沿用重构前"点击即播放"的行为；为 null 时只浏览不播放）
+    LaunchedEffect(autoPlayIndex, state.tracks) {
+        val index = autoPlayIndex ?: return@LaunchedEffect
+        if (state.tracks.isEmpty()) return@LaunchedEffect
+        model.playAt(index.coerceIn(0, state.tracks.lastIndex))
+    }
 
     // 多选模式下返回键退出多选
     BackHandler(enabled = state.selectionMode) { model.exitSelection() }
@@ -175,7 +190,8 @@ fun PlaylistDetailContent(
     val displayTracks = remember(state.tracks, state.sortType) { model.displayTracks() }
     val totalDurationMs = remember(state.tracks) { state.tracks.sumOf { it.durationMs } }
     val summary = state.summary ?: playlist
-    val isOwner = model.isOwner()
+    // 虚拟歌单没有"创建者"概念，一律按非本人处理，避免出现删除 / 添加等必然失败的操作
+    val isOwner = !isLocalPlaylist && model.isOwner()
     val trackCount = if (state.tracks.isNotEmpty()) state.tracks.size
         else (state.summary?.trackCount ?: playlist.trackCount)
     val durationStr = if (state.tracks.isEmpty()) "…" else formatTimeMs(totalDurationMs)
@@ -252,12 +268,13 @@ fun PlaylistDetailContent(
             onDelete = if (isOwner) {
                 { model.deleteOrUnsubscribe { navigator.pop() } }
             } else null,
-            onShare = {
-                shareText("「${summary.name}」 https://music.163.com/#/playlist?id=${playlist.id}")
+            onShare = if (isLocalPlaylist) null else {
+                { shareText("「${summary.name}」 https://music.163.com/#/playlist?id=${playlist.id}") }
             },
             coverUrl = summary.coverUrl,
             isFavorite = playlistFavorite,
-            onToggleFavorite = if (!isOwner) togglePlaylistFavorite else null,
+            // 本地生成的虚拟歌单没有服务端实体，收藏接口对负数 id 无效，故不展示
+            onToggleFavorite = if (!isOwner && !isLocalPlaylist) togglePlaylistFavorite else null,
             currentSort = state.sortType,
             onSortChange = { model.setSort(it) },
         )

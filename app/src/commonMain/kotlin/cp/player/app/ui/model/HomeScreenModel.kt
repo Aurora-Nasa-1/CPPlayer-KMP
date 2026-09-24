@@ -33,26 +33,6 @@ class HomeScreenModel : ScreenModel {
         refresh()
     }
 
-    fun playIntelligence(seed: TrackSummary?) {
-        if (seed == null) { cp.player.app.ui.util.UiEvents.notify("请先等待每日推荐加载"); return }
-        screenModelScope.launch {
-            val songs = runCatching { AppModel.musicRepository.getIntelligenceSongs(seed.id) }.getOrNull()
-            val tracks = (songs as? BackendResult.Success)?.data.orEmpty()
-            if (tracks.isEmpty()) cp.player.app.ui.util.UiEvents.notify("心动模式暂不可用")
-            else AppModel.playback.playQueue(tracks.map { "${AppModel.activeProviderId()}://song/${it.id}" }, 0)
-        }
-    }
-
-    fun playSimilar(seed: TrackSummary?) {
-        if (seed == null) { cp.player.app.ui.util.UiEvents.notify("请先等待每日推荐加载"); return }
-        screenModelScope.launch {
-            val result = runCatching { AppModel.musicRepository.getSimilarSongs(seed.id) }.getOrNull()
-            val tracks = (result as? BackendResult.Success)?.data.orEmpty()
-            if (tracks.isEmpty()) cp.player.app.ui.util.UiEvents.notify("相似歌曲暂不可用")
-            else AppModel.playback.playQueue(tracks.map { "${AppModel.activeProviderId()}://song/${it.id}" }, 0)
-        }
-    }
-
     /** 播放私人 FM：按批次连续拉取，补足一组可听队列。 */
     fun playPersonalFm() {
         screenModelScope.launch {

@@ -4,6 +4,10 @@ import cp.player.kmp.BackendResult
 import cp.player.kmp.BackendState
 import cp.player.kmp.ImportResult
 import cp.player.kmp.MusicBackend
+import cp.player.kmp.control.LocalServerConfig
+import cp.player.kmp.control.LocalServerConfigStore
+import cp.player.kmp.control.LocalServerStatus
+import cp.player.kmp.control.OutputMode
 import cp.player.kmp.monitor.HealthMonitor
 import cp.player.kmp.playback.PlaybackController
 import cp.player.kmp.provider.BackendProvider
@@ -140,6 +144,109 @@ object AppModel {
     /** 启动时把持久化音质同步给播放控制器。 */
     fun syncPlaybackQuality() {
         runCatching { playback.setQuality(playbackQuality()) }
+    }
+
+    // ============ 本地服务器输出 + 外部推送（持久化） ============
+
+    private val _localServerConfig = MutableStateFlow(LocalServerConfigStore.read(settings))
+
+    /** 输出配置流（设置页开关 / 端口 / 接收端地址绑定）。 */
+    val localServerConfigFlow: StateFlow<LocalServerConfig> = _localServerConfig.asStateFlow()
+
+    /** 流输出服务状态（监听地址 / 启动错误），由后端转发。 */
+    val localServerStatus: StateFlow<LocalServerStatus> get() = backend.localServerStatus
+
+    /** 最近一次推送结果（UI 展示成败）。 */
+    val lastPushResult: StateFlow<cp.player.kmp.control.PushResult?> get() = backend.lastPushResult
+
+    /** 当前配置快照。 */
+    fun localServerConfig(): LocalServerConfig = _localServerConfig.value
+
+    /**
+     * 启用/停用本地服务器输出。
+     *
+     * 首次启用时自动生成访问令牌——一旦监听在 `0.0.0.0`，没有令牌等于把
+     * 本机音频流暴露给同网段任何人。
+     */
+    fun setLocalServerEnabled(enabled: Boolean) {
+        val current = _localServerConfig.value
+        val token = if (enabled && current.accessToken.isBlank()) {
+            LocalServerConfigStore.ensureToken(settings)
+        } else {
+            current.accessToken
+        }
+        updateLocalServer(current.copy(enabled = enabled, accessToken = token))
+    }
+
+    /** 设置音频输出目标：本机声卡 / 只做服务器（本机静音）。 */
+    fun setOutputMode(mode: OutputMode) {
+        updateLocalServer(_localServerConfig.value.copy(outputMode = mode))
+    }
+
+    /** 设置流输出绑定地址（[LocalServerConfig.BIND_LOOPBACK] 或 [LocalServerConfig.BIND_ALL]）。 */
+    fun setLocalServerBind(address: String) {
+        if (address !in LocalServerConfig.BIND_OPTIONS) return
+        updateLocalServer(_localServerConfig.value.copy(bindAddress = address))
+    }
+
+    /** 设置流输出端口（非法值回退默认）。 */
+    fun setLocalServerStreamPort(port: Int) {
+        updateLocalServer(
+            _localServerConfig.value.copy(
+                streamPort = LocalServerConfig.normalizePort(port, LocalServerConfig.DEFAULT_STREAM_PORT),
+            )
+        )
+    }
+
+    /** 设置接收端基地址（如 `http://127.0.0.1:8420`）。 */
+    fun setReceiverBaseUrl(url: String) {
+        updateLocalServer(_localServerConfig.value.copy(receiverBaseUrl = url.trim()))
+    }
+
+    /** 曲目变化时是否自动推送到接收端。 */
+    fun setPushEnabled(enabled: Boolean) {
+        updateLocalServer(_localServerConfig.value.copy(pushEnabled = enabled))
+    }
+
+    /** 重新生成访问令牌，返回新值。 */
+    fun regenerateLocalServerToken(): String {
+        val token = LocalServerConfigStore.regenerateToken(settings)
+        updateLocalServer(_localServerConfig.value.copy(accessToken = token))
+        return token
+    }
+
+    /**
+     * 按持久化配置恢复（应用启动时调用，幂等）。
+     *
+     * 关闭状态不做任何事，因此不会占用端口。
+     */
+    fun restoreLocalServer() {
+        val config = _localServerConfig.value
+        if (config.enabled) runCatching { backend.applyOutputConfig(config) }
+    }
+
+    // ---- 推送动作（供设置页手动触发） ----
+
+    /** 探测接收端是否在线。 */
+    fun probeReceiver(onResult: (cp.player.kmp.control.PushResult) -> Unit) {
+        modelScope.launch { onResult(backend.probeReceiver()) }
+    }
+
+    /** 手动推送当前曲目。 */
+    fun pushCurrentTrack(onResult: (cp.player.kmp.control.PushResult) -> Unit) {
+        modelScope.launch { onResult(backend.pushCurrentTrack()) }
+    }
+
+    /** 手动推送当前队列。 */
+    fun pushQueueToReceiver(onResult: (cp.player.kmp.control.PushResult) -> Unit) {
+        modelScope.launch { onResult(backend.pushQueue()) }
+    }
+
+    /** 写盘 + 更新流 + 应用到后端。 */
+    private fun updateLocalServer(config: LocalServerConfig) {
+        LocalServerConfigStore.write(settings, config)
+        _localServerConfig.value = config
+        runCatching { backend.applyOutputConfig(config) }
     }
 
     // ============ 下载与本地媒体（转发后端门面） ============

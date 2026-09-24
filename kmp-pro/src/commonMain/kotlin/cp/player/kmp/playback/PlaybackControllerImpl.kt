@@ -74,6 +74,40 @@ class PlaybackControllerImpl(
     /** 加载世代替换旧任务状态过时写入。 */
     private var loadGeneration = 0
 
+    /**
+     * 「引擎里装的已经是当前曲目」标志。
+     *
+     * `playCurrent` 从发起到 [PlatformPlayer.load] 返回之间有一段不短的窗口：
+     * 解析播放地址（网络）、建连、prepare。**这段时间引擎里还是上一首的媒体**，
+     * 期间用户拖动的 seek 会被 `load(startPositionMs = 0)` 直接覆盖掉——
+     * 表现为「拖了没反应」。因此窗口内的 seek 先记进 [deferredSeek]，
+     * 由 `playCurrent` 作为起始位置一并交给引擎。
+     */
+    @Volatile private var engineReady = false
+
+    /**
+     * 装载窗口内用户发起的 seek：`曲目 mediaId → 目标毫秒`。
+     *
+     * 带上 mediaId 是为了防止串曲：用户在 A 装载期间拖了进度、随即又切到 B，
+     * 这个意图不能落到 B 头上。
+     */
+    @Volatile private var deferredSeek: Pair<String, Long>? = null
+
+    /**
+     * 导航世代：每次开始加载新曲目自增。
+     *
+     * 用于丢弃**过期事件**——典型场景是上一首的 `Ended` 回调姗姗来迟，
+     * 此时用户已经手动切歌，若不丢弃就会把新歌再跳掉一首（"多跳"）。
+     * 同时也用于串行化 [skipNext] / [onTrackEnded] 的并发推进。
+     */
+    @Volatile private var navigationSeq = 0
+
+    /** 队列后台解析任务；换队列时取消，避免把旧队列的元信息写进新队列。 */
+    private var resolveJob: Job? = null
+
+    /** 队列世代：换队列时自增，用于丢弃旧解析任务在途的写入。 */
+    private var queueGeneration = 0
+
     // ============ 收藏状态 ============
 
     private val _likedIds = MutableStateFlow<Set<String>>(emptySet())
@@ -121,10 +155,22 @@ class PlaybackControllerImpl(
             if (!playing) pauseScrobble()
         }.launchIn(scope)
         platform.positionMs.onEach { pos ->
+            // 装载窗口内已有暂存的 seek 时**不要**采信引擎位置：
+            // 此刻引擎上报的还是上一首的位置（新曲目还没 load 进去），
+            // 直接写入会把 requestSeek 刚做的乐观回写冲掉——进度条松手即回弹。
+            // 等 playCurrent 把暂存值作为起始位置交给引擎后，这里自然恢复接管。
+            if (deferredSeek != null) return@onEach
             updateState { it.copy(positionMs = pos, activeLyricIndex = computeLyricIndex(it.lyrics, pos)) }
         }.launchIn(scope)
         platform.durationMs.onEach { dur ->
-            updateState { it.copy(durationMs = dur) }
+            // ⚠️ 只在拿到**有效**时长时覆盖。
+            //
+            // 引擎在装载/缓冲期会上报 0（ExoPlayer 的 TIME_UNSET、rodio 取不到时长时也是 0）。
+            // 旧写法无条件写入，会把 `playCurrent` 里用曲目元信息填好的时长清成 0，
+            // 于是进度条的 `valueRange` 从 `0..durationMs` 塌成 `0..1`：
+            // 用户拖动只会得到 0 或 1 毫秒 —— 也就是「seek 用不了」。
+            // 元信息里的时长总是先到且正确，让它当兜底。
+            if (dur > 0L) updateState { it.copy(durationMs = dur) }
         }.launchIn(scope)
         platform.formatInfo.onEach { info ->
             updateState { it.copy(formatInfo = info) }
@@ -205,6 +251,8 @@ class PlaybackControllerImpl(
                 _index = -1
                 _order = null
                 _orderPos = -1
+                engineReady = false
+                deferredSeek = null
                 platform.stop()
                 clearState()
                 return@withLock
@@ -227,6 +275,12 @@ class PlaybackControllerImpl(
     }
 
     override fun clearQueue() {
+        // 队列即将清空：作废在途的后台解析，避免它继续写已失效的条目。
+        resolveJob?.cancel()
+        queueGeneration++
+        // 引擎即将被停掉：任何在途 seek 都失去意义，立刻失效避免落到下一队列上。
+        engineReady = false
+        deferredSeek = null
         scope.launch {
             navMutex.withLock {
                 _queue.clear()
@@ -289,37 +343,105 @@ class PlaybackControllerImpl(
 
     override fun pause() { platform.pause() }
     override fun resume() { platform.play() }
-    override fun seekTo(positionMs: Long) { platform.seekTo(positionMs) }
+    override fun seekTo(positionMs: Long) { requestSeek(positionMs) }
+
+    /**
+     * 唯一的 seek 入口：内部重播归零（单曲循环、上一首 3 秒规则）与 UI 拖动都走这里，
+     * 保证「装载窗口内暂存、否则直发」的规则只有一处实现。
+     *
+     * 与旧实现的区别：
+     * 1. 队列为空 / 无当前曲目时**直接忽略**，不再把无效目标丢给引擎；
+     * 2. 目标钳制到 `[0, 有效时长]`，避免元信息时长与引擎时长不一致时越界；
+     * 3. 引擎还没装上当前曲目时先暂存，并乐观回写 UI 位置
+     *    （否则滑条松手后会先弹回旧位置——正是「seek 失灵」的观感）。
+     */
+    private fun requestSeek(positionMs: Long) {
+        val mediaId = _queue.getOrNull(_index)?.mediaId ?: return
+        val target = clampSeek(positionMs)
+        if (!engineReady) {
+            deferredSeek = mediaId to target
+            updateState { it.copy(positionMs = target) }
+            return
+        }
+        deferredSeek = null
+        platform.seekTo(target)
+    }
+
+    /** 把目标位置钳制到 `[0, 有效时长]`；时长未知时只保证非负。 */
+    private fun clampSeek(positionMs: Long): Long {
+        val target = positionMs.coerceAtLeast(0L)
+        val duration = effectiveDurationMs()
+        return if (duration > 0L) target.coerceIn(0L, duration) else target
+    }
+
+    /**
+     * 有效时长：优先用引擎上报值，缺失时回落到曲目元信息。
+     *
+     * 进度条刻度与 seek 钳制都依赖它——为 0 时滑条范围会塌成 `0..1`，
+     * 拖动等于没法用。引擎时长在流媒体首包到达前是未知的，元信息则是立刻可得的。
+     */
+    private fun effectiveDurationMs(): Long =
+        _state.value.durationMs.takeIf { it > 0L }
+            ?: _state.value.currentTrack?.durationMs?.takeIf { it > 0L }
+            ?: 0L
+
+    /**
+     * 取出并清空属于 [mediaId] 的暂存 seek；没有则返回 null。
+     *
+     * 不属于本曲的暂存（用户拖完 A 又切到 B）会被一并丢弃，绝不串到新曲目上。
+     */
+    private fun consumeDeferredSeek(mediaId: String): Long? {
+        val pending = deferredSeek
+        deferredSeek = null
+        return pending?.takeIf { it.first == mediaId }?.second
+    }
 
     override fun skipNext() {
+        val seqAtEntry = navigationSeq
         scope.launch {
-            val next = computeNext(autoAdvance = true)
-            if (next == null) {
+            var next: Int? = null
+            var stale = false
+            navMutex.withLock {
+                // 期间若已发生别的导航（如刚自动续播过），本次点击作废，避免连跳两首。
+                if (navigationSeq != seqAtEntry) { stale = true; return@withLock }
+                next = computeNext(autoAdvance = true)
+                next?.let { n -> _index = n; _orderPos = _order?.indexOf(n) ?: n }
+            }
+            if (stale) return@launch
+            val target = next
+            if (target == null) {
+                engineReady = false
+                deferredSeek = null
                 platform.stop()
                 updateState { it.copy(isPlaying = false, positionMs = 0L) }
                 return@launch
             }
-            _index = next
-            _orderPos = _order?.indexOf(next) ?: next
             pushQueueState()
             playCurrent(skipIfSame = false)
         }
     }
 
     override fun skipPrevious() {
+        val seqAtEntry = navigationSeq
         scope.launch {
             // 3 秒内回到上一首；超过 3 秒回退到本曲开头
             if (platform.positionMs.value > 3_000L) {
-                platform.seekTo(0L)
+                requestSeek(0L)
                 return@launch
             }
-            val prev = computePrev()
-            if (prev == null) {
-                platform.seekTo(0L)
+            var prev: Int? = null
+            var stale = false
+            navMutex.withLock {
+                if (navigationSeq != seqAtEntry) { stale = true; return@withLock }
+                prev = computePrev()
+                prev?.let { p -> _index = p; _orderPos = _order?.indexOf(p) ?: p }
+            }
+            if (stale) return@launch
+            val target = prev
+            if (target == null) {
+                requestSeek(0L)
                 return@launch
             }
-            _index = prev
-            _orderPos = _order?.indexOf(prev) ?: prev
             pushQueueState()
             playCurrent(skipIfSame = false)
         }
@@ -509,7 +631,10 @@ class PlaybackControllerImpl(
 
     override fun release() {
         scrobbleTickJob?.cancel(); scrobbleJob?.cancel(); lyricsJob?.cancel(); loadJob?.cancel()
-        sleepTimerJob?.cancel(); favoritesLoadingJob?.cancel()
+        sleepTimerJob?.cancel(); favoritesLoadingJob?.cancel(); resolveJob?.cancel()
+        queueGeneration++
+        engineReady = false
+        deferredSeek = null
         platform.release()
     }
 
@@ -518,6 +643,11 @@ class PlaybackControllerImpl(
     /** 获取 URL 并交给平台播放器播放当前曲目。 */
     private suspend fun playCurrent(skipIfSame: Boolean) {
         val entry = _queue.getOrNull(_index) ?: return
+        // 每次加载新曲目都推进导航世代：在此之前的 Ended / 切歌请求都会因世代不匹配而作废。
+        navigationSeq += 1
+        // 引擎里此刻装的还是上一首：load() 返回之前到达的 seek 必须暂存，
+        // 否则会被 load(startPositionMs = 0) 覆盖掉。
+        engineReady = false
         loadJob?.cancel()
         scrobbleTickJob?.cancel(); scrobbleJob?.cancel()
         scrobbledSeconds = 0
@@ -540,14 +670,23 @@ class PlaybackControllerImpl(
                     isBuffering = summary != null,
                 )
             )
-            if (summary == null) return@launch
+            if (summary == null) {
+                // 加载失败：清掉暂存的 seek。留着会让位置采集器一直屏蔽引擎位置，
+                // 进度条被永久冻在乐观值上。
+                deferredSeek = null
+                return@launch
+            }
             ensureFavoritesLoaded()
+            // 解析失败只影响收藏态展示，绝不能中断加载——否则整首歌都播不出来。
+            val resourceId = runCatching { cp.player.kmp.music.CPMediaId.parse(mediaId).resourceId }.getOrNull()
             emit(_state.value.copy(
-                isFavorite = cp.player.kmp.music.CPMediaId.parse(mediaId).resourceId in _likedIds.value,
+                isFavorite = resourceId != null && resourceId in _likedIds.value,
             ))
             val urlResult = source.getSongUrl(mediaId, level = qualityLevel)
             val songUrl = urlResult.getOrNull()
             if (songUrl == null || songUrl.url.isBlank()) {
+                // 解析不出播放地址：同样清掉暂存 seek，避免位置被永久冻住。
+                deferredSeek = null
                 emit(_state.value.copy(
                     isBuffering = false,
                     error = (urlResult as? cp.player.kmp.BackendResult.Error)?.message ?: "无法获取播放地址"
@@ -560,10 +699,15 @@ class PlaybackControllerImpl(
                     cookieProvider()?.takeIf { it.isNotBlank() }?.let { put("Cookie", it) }
                 }
             }
+            // 装载窗口内用户拖过的进度：作为起始位置一并交给引擎，
+            // 否则这次 seek 会被 load() 的默认 0 直接覆盖掉（「拖了没反应」）。
+            // 注意必须在这里取而不是协程开头——用户的 seek 通常发生在
+            // 「协程已启动、播放地址还没解析出来」这段时间里。
+            val startAt = consumeDeferredSeek(mediaId) ?: 0L
             try {
                 platform.load(
                     songUrl.url,
-                    startPositionMs = 0L,
+                    startPositionMs = startAt,
                     headers = headers,
                     metadata = PlaybackMetadata(
                         id = mediaId,
@@ -572,8 +716,16 @@ class PlaybackControllerImpl(
                         album = summary.album,
                         coverUrl = summary.coverUrl,
                         durationMs = summary.durationMs,
+                        // 磁盘缓存的稳定键：CDN 刷新鉴权 token 会换 URL，
+                        // 用 mediaId@音质当键才能让 seek 回退命中已下载区间。
+                        cacheKey = cacheKeyOf(mediaId, qualityLevel),
                     ),
                 )
+                if (loadGeneration == gen) {
+                    engineReady = true
+                    // load 途中又拖了一次：此时引擎已装上本曲，补发即可生效。
+                    consumeDeferredSeek(mediaId)?.let { platform.seekTo(it) }
+                }
                 platform.play()
                 refreshLyrics()
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -585,10 +737,20 @@ class PlaybackControllerImpl(
                     val retried = retryWithStandardQuality(mediaId)
                     if (retried) return@launch
                 }
+                // 播放彻底失败：清掉暂存 seek，别把进度条冻在乐观值上。
+                deferredSeek = null
                 emit(_state.value.copy(isBuffering = false, error = msg))
             }
         }
     }
+
+    /**
+     * 磁盘流缓存的稳定键：`<mediaId>@<音质>`。
+     *
+     * 不含 URL，因为 CDN 的鉴权参数会过期换新；音质必须进键，
+     * 否则切换音质后会命中另一音质的缓存字节，直接串音。
+     */
+    private fun cacheKeyOf(mediaId: String, level: String): String = "$mediaId@$level"
 
     /** 格式不支持时降级到 standard 音质重试。成功返回 true。 */
     private suspend fun retryWithStandardQuality(mediaId: String): Boolean {
@@ -613,9 +775,13 @@ class PlaybackControllerImpl(
                         album = it.album,
                         coverUrl = it.coverUrl,
                         durationMs = it.durationMs,
+                        // 降级后音质变了，缓存键必须跟着变，否则会命中原音质的缓存字节。
+                        cacheKey = cacheKeyOf(mediaId, "standard"),
                     )
                 },
             )
+            // 降级装载完成：引擎已装上本曲，此后 seek 可以直接下发。
+            engineReady = true
             platform.play()
             refreshLyrics()
             true
@@ -625,7 +791,13 @@ class PlaybackControllerImpl(
     }
 
     private fun onTrackEnded() {
+        val seqAtEnd = navigationSeq
         scope.launch {
+            // 丢弃过期/并发的 Ended：若期间已开始新的加载（用户切歌、换队列、手动重播），
+            // 这个 Ended 已无意义，继续推进会把刚切过去的歌再跳掉一首。
+            // 注意：只按世代判定，不要额外要求平台此刻仍处于 Ended——
+            // 桌面端轮询会在 200ms 内把 Ended 覆写成 Idle，那样会把正常的自动续播也一起丢掉。
+            if (navigationSeq != seqAtEnd) return@launch
             if (sleepAfterTrack) {
                 // 睡眠定时：播完当前后暂停，不再自动续播
                 cancelSleepTimer()
@@ -634,16 +806,22 @@ class PlaybackControllerImpl(
             }
             when (_repeat) {
                 RepeatMode.ONE -> {
-                    platform.seekTo(0L); platform.play()
+                    requestSeek(0L); platform.play()
                 }
                 RepeatMode.ALL, RepeatMode.OFF -> {
-                    val next = computeNext(autoAdvance = true)
-                    if (next == null) {
+                    var next: Int? = null
+                    var stale = false
+                    navMutex.withLock {
+                        if (navigationSeq != seqAtEnd) { stale = true; return@withLock }
+                        next = computeNext(autoAdvance = true)
+                        next?.let { n -> _index = n; _orderPos = _order?.indexOf(n) ?: n }
+                    }
+                    if (stale) return@launch
+                    val target = next
+                    if (target == null) {
                         updateState { it.copy(isPlaying = false, positionMs = 0L) }
                         return@launch
                     }
-                    _index = next
-                    _orderPos = _order?.indexOf(next) ?: next
                     pushQueueState()
                     playCurrent(skipIfSame = false)
                 }
@@ -717,28 +895,36 @@ class PlaybackControllerImpl(
     // ============ 队列解析（懒解析） ============
 
     private fun resolveQueueInBackground(startFrom: Int) {
+        // 取消上一轮解析：换队列后旧任务的下标已失效，继续写会污染新队列。
+        resolveJob?.cancel()
+        val gen = ++queueGeneration
+
         val toResolveIndices = _queue.indices.sortedBy { if (it == startFrom) 0 else 1 + kotlin.math.abs(it - startFrom) }
-        val toResolveEntries = toResolveIndices.filter { _queue[it].summary == null }
+        val toResolveEntries = toResolveIndices.filter { _queue.getOrNull(it)?.summary == null }
         if (toResolveEntries.isEmpty()) return
 
-        scope.launch {
+        resolveJob = scope.launch {
             for (chunk in toResolveEntries.chunked(50)) {
-                val mediaIds = chunk.map { _queue[it].mediaId }
+                if (queueGeneration != gen) return@launch
+                // 用 getOrNull：队列可能在请求途中被删减，直接下标访问会越界崩溃。
+                val mediaIds = chunk.mapNotNull { _queue.getOrNull(it)?.mediaId }
+                if (mediaIds.isEmpty()) continue
                 val result = source.getTrackDetails(mediaIds).getOrNull() ?: emptyList()
                 val map = result.associateBy { it.id }
-                
+                if (queueGeneration != gen) return@launch
+
+                // 按 mediaId 定位而非按下标：删歌/拖拽重排会让下标错位。
                 var changed = false
-                for (i in chunk) {
-                    val entry = _queue.getOrNull(i) ?: continue
+                for ((mediaId, summary) in map) {
+                    val idx = _queue.indexOfFirst { it.mediaId == mediaId }
+                    if (idx < 0) continue
+                    val entry = _queue[idx]
                     if (entry.summary == null) {
-                        val summary = map[entry.mediaId]
-                        if (summary != null) {
-                            entry.summary = summary
-                            if (i == _index) {
-                                updateState { it.copy(currentTrack = summary, currentIndex = _index, durationMs = summary.durationMs.takeIf { d -> d > 0 } ?: it.durationMs) }
-                            }
-                            changed = true
+                        entry.summary = summary
+                        if (idx == _index) {
+                            updateState { it.copy(currentTrack = summary, currentIndex = _index, durationMs = summary.durationMs.takeIf { d -> d > 0 } ?: it.durationMs) }
                         }
+                        changed = true
                     }
                 }
                 if (changed) pushQueueState()
@@ -814,7 +1000,7 @@ class PlaybackControllerImpl(
         val mediaId = _queue.getOrNull(_index)?.mediaId ?: return
         val summary = _queue.getOrNull(_index)?.summary ?: return
         if (scrobbledSeconds <= 0) return
-        val id = cp.player.kmp.music.CPMediaId.parse(mediaId)
+        val id = runCatching { cp.player.kmp.music.CPMediaId.parse(mediaId) }.getOrNull() ?: return
         if (id.providerId == "local") return
         scrobbleJob?.cancel()
         scrobbleJob = scope.launch {

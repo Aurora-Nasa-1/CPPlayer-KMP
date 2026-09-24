@@ -746,16 +746,20 @@ private fun ProgressRow(
     state: cp.player.kmp.playback.PlaybackUiState,
     onSeek: (Long) -> Unit,
 ) {
-    val duration = state.durationMs.coerceAtLeast(0)
+    val duration = state.durationMs.coerceAtLeast(0L)
+    // 时长未知（流媒体元信息还没到、直播流）时滑条范围会塌成 0..1，
+    // 拖出来的值只有 0~1 毫秒——与其让用户拖出一个必然无效的 seek，不如直接禁用。
+    val seekable = duration > 0L
     var seekValue by remember { androidx.compose.runtime.mutableStateOf<Float?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
         androidx.compose.material3.Slider(
-            value = seekValue ?: state.positionMs.toFloat(),
+            value = (seekValue ?: state.positionMs.toFloat()).coerceIn(0f, duration.toFloat()),
             onValueChange = { seekValue = it },
             onValueChangeFinished = {
-                seekValue?.let { onSeek(it.toLong().coerceAtLeast(0L)); seekValue = null }
+                seekValue?.let { onSeek(it.toLong().coerceIn(0L, duration)); seekValue = null }
             },
             valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
+            enabled = seekable,
             modifier = Modifier.fillMaxWidth(),
         )
         Row(

@@ -6,6 +6,17 @@ import cp.player.kmp.cache.ApiCache
 import cp.player.kmp.cache.CacheConfig
 import cp.player.kmp.cache.CachedMusicApiService
 import cp.player.kmp.cache.InMemoryApiCache
+import cp.player.kmp.control.ExternalPusher
+import cp.player.kmp.control.LocalServer
+import cp.player.kmp.control.LocalServerConfig
+import cp.player.kmp.control.LocalServerConfigStore
+import cp.player.kmp.control.LocalServerStatus
+import cp.player.kmp.control.PushResult
+import cp.player.kmp.control.PushTrack
+import cp.player.kmp.control.StreamTarget
+import cp.player.kmp.control.createExternalPusher
+import cp.player.kmp.control.createLocalServer
+import cp.player.kmp.control.resolveAdvertisedHost
 import cp.player.kmp.download.MediaDownloadManager
 import cp.player.kmp.download.MediaDownloadManagerImpl
 import cp.player.kmp.local.LocalMediaSource
@@ -16,6 +27,7 @@ import cp.player.kmp.monitor.HealthMonitor
 import cp.player.kmp.playback.PlaybackController
 import cp.player.kmp.playback.PlaybackControllerImpl
 import cp.player.kmp.playback.PlaybackEngine
+import cp.player.kmp.playback.SilentOutputPlayer
 import cp.player.kmp.playback.createPlatformPlayer
 import cp.player.kmp.provider.BackendProvider
 import cp.player.kmp.provider.ModuleManager
@@ -25,6 +37,7 @@ import cp.player.kmp.util.PlatformContext
 import cp.player.kmp.util.SettingsStorage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
@@ -145,7 +158,8 @@ class MusicBackend private constructor(
 
     // ============ 统一音乐源 (统一 MediaId) ============
 
-    private var _unifiedSource: cp.player.kmp.music.UnifiedMusicSource = cp.player.kmp.music.UnifiedMusicSourceImpl(cachedMusicApi, localMusic)
+    private var _unifiedSource: cp.player.kmp.music.UnifiedMusicSource =
+        cp.player.kmp.music.UnifiedMusicSourceImpl(cachedMusicApi, localMusic)
     
     /**
      * 前端统一数据访问入口。
@@ -227,7 +241,10 @@ class MusicBackend private constructor(
      * 并通过此对象的方法触发播控——禁止直接访问 [playback] / [unifiedSource] 用于播放。
      */
     val playbackController: PlaybackController by lazy {
-        val platform = createPlatformPlayer(context)
+        val platform = SilentOutputPlayer(
+            delegate = createPlatformPlayer(context),
+            muted = activeOutputConfig.silentLocalOutput,
+        ).also { outputGate = it }
         PlaybackControllerImpl(
             platform = platform,
             source = unifiedSource,
@@ -235,6 +252,199 @@ class MusicBackend private constructor(
             cookieProvider = { activeProvider()?.let { p -> providerManager.cookieStorage.getCookie(p.id) } },
             scope = backendScope,
         )
+    }
+
+    // ============ 本地服务器输出 + 外部推送 ============
+
+    /** 最近一次应用的输出配置（推送客户端按需读取）。 */
+    @Volatile
+    private var activeOutputConfig: LocalServerConfig = LocalServerConfig()
+
+    /**
+     * 音频输出静音门（[cp.player.kmp.playback.SilentOutputPlayer]）。
+     *
+     * 在 [playbackController] 首次创建时装配；此后 [applyOutputConfig]
+     * 通过它切换「本机是否出声」，无需重建控制器、不丢队列。
+     */
+    @Volatile
+    private var outputGate: SilentOutputPlayer? = null
+
+    /** 当前输出配置快照。 */
+    val outputConfig: LocalServerConfig get() = activeOutputConfig
+
+    @Volatile
+    private var localServer: LocalServer? = null
+
+    private val _localServerStatus = MutableStateFlow(LocalServerStatus())
+
+    /** 流输出服务状态（UI 展示监听地址与错误）。 */
+    val localServerStatus: StateFlow<LocalServerStatus> = _localServerStatus.asStateFlow()
+
+    private val _lastPushResult = MutableStateFlow<PushResult?>(null)
+
+    /** 最近一次推送结果（UI 展示成败）。 */
+    val lastPushResult: StateFlow<PushResult?> = _lastPushResult.asStateFlow()
+
+    private var localServerStatusJob: Job? = null
+    private var autoPushJob: Job? = null
+
+    /** 接收端推送客户端。地址每次请求时从 [activeOutputConfig] 读取，配置变更无需重建。 */
+    private val pusher: ExternalPusher by lazy { createExternalPusher { activeOutputConfig } }
+
+    /**
+     * 应用输出配置。
+     *
+     * **只在流输出相关字段变化时重建服务**（监听地址在构造期固定，无法热更新）。
+     * 接收端地址、自动推送开关这类纯推送侧改动只影响推送行为，
+     * 因此编辑接收端 URL 不会反复重启监听端口。
+     */
+    fun applyOutputConfig(config: LocalServerConfig) {
+        val previous = activeOutputConfig
+        activeOutputConfig = config
+
+        // 静默输出：本机不出声，音频只从接收端出。可运行时切换，不影响队列。
+        outputGate?.setMuted(config.silentLocalOutput)
+
+        val streamChanged = localServer == null ||
+            previous.enabled != config.enabled ||
+            previous.bindAddress != config.bindAddress ||
+            previous.streamPort != config.streamPort ||
+            previous.accessToken != config.accessToken
+
+        if (streamChanged) {
+            localServerStatusJob?.cancel()
+            localServerStatusJob = null
+            localServer?.stop()
+            localServer = null
+
+            if (config.enabled) {
+                val server = createLocalServer(config, ::resolveStreamTarget)
+                localServer = server
+                localServerStatusJob = backendScope.launch {
+                    server.status.collect { _localServerStatus.value = it }
+                }
+                server.start()
+            } else {
+                _localServerStatus.value = LocalServerStatus(
+                    running = false,
+                    bindAddress = config.bindAddress,
+                    streamPort = config.streamPort,
+                )
+            }
+        }
+
+        if (config.enabled && config.pushEnabled) startAutoPush() else stopAutoPush()
+    }
+
+    /**
+     * 手动推送当前曲目（`POST /api/v1/play-url`）。
+     * 单曲推送会替换接收端队列，适合"随点随放"。
+     */
+    suspend fun pushCurrentTrack(): PushResult {
+        val track = playbackController.state.value.currentTrack
+            ?: return PushResult.Failed("当前没有播放中的曲目")
+        return pushTrack(track).also { _lastPushResult.value = it }
+    }
+
+    /** 手动推送当前队列（`POST /api/v1/queue`），由接收端负责顺序播放。 */
+    suspend fun pushQueue(): PushResult {
+        val queue = playbackController.state.value.queue
+        if (queue.isEmpty()) return PushResult.Failed("队列为空")
+        val tracks = queue.mapNotNull { item ->
+            item.mediaId.takeIf { it.isNotBlank() }?.let { mediaId ->
+                PushTrack(
+                    url = activeOutputConfig.streamUrlFor(mediaId, advertisedHost()),
+                    title = item.title,
+                    artist = item.artist,
+                    durationMs = item.durationMs.takeIf { it > 0 },
+                )
+            }
+        }
+        if (tracks.isEmpty()) return PushResult.Failed("队列中没有可推送的曲目")
+        val index = playbackController.state.value.currentIndex.coerceIn(0, tracks.lastIndex)
+        return pusher.pushQueue(tracks, autoplay = true, startIndex = index)
+            .also { _lastPushResult.value = it }
+    }
+
+    /** 传输控制转发（play / pause / stop / next / previous）。 */
+    suspend fun pushTransport(action: String): PushResult =
+        pusher.transport(action).also { _lastPushResult.value = it }
+
+    /** 探测接收端是否在线（`GET /api/health`）。 */
+    suspend fun probeReceiver(): PushResult =
+        pusher.health().also { _lastPushResult.value = it }
+
+    /** 清空接收端队列。 */
+    suspend fun clearReceiverQueue(): PushResult =
+        pusher.clearQueue().also { _lastPushResult.value = it }
+
+    // ---- 内部 ----
+
+    /** 广播地址：绑定 0.0.0.0 时不能把 0.0.0.0 当目标地址下发。 */
+    private fun advertisedHost(): String = resolveAdvertisedHost(activeOutputConfig.bindAddress)
+
+    private suspend fun pushTrack(track: cp.player.kmp.music.TrackSummary): PushResult =
+        pusher.playUrl(
+            PushTrack(
+                url = activeOutputConfig.streamUrlFor(track.id, advertisedHost()),
+                title = track.name,
+                artist = track.artist,
+                album = track.album,
+                artworkUrl = track.coverUrl,
+                durationMs = track.durationMs.takeIf { it > 0 },
+            )
+        )
+
+    /**
+     * 曲目变化时自动推送，并同步传输状态。
+     *
+     * 只在 [LocalServerConfig.enabled] 且 [LocalServerConfig.pushEnabled] 时生效。
+     * 推送失败不影响本机播放（[ExternalPusher] 不抛异常）。
+     */
+    private fun startAutoPush() {
+        if (autoPushJob?.isActive == true) return
+        autoPushJob = backendScope.launch {
+            var lastPushedId: String? = null
+            var lastPlaying: Boolean? = null
+            playbackController.state.collect { st ->
+                if (!activeOutputConfig.enabled || !activeOutputConfig.pushEnabled) return@collect
+                val track = st.currentTrack
+                if (track != null && st.isPlaying && track.id != lastPushedId) {
+                    lastPushedId = track.id
+                    _lastPushResult.value = pushTrack(track)
+                }
+                // 只在状态真正翻转时下发，避免每帧重复请求
+                val playing = st.isPlaying
+                if (lastPlaying != null && lastPlaying != playing) {
+                    pusher.transport(if (playing) "play" else "pause")
+                }
+                lastPlaying = playing
+            }
+        }
+    }
+
+    private fun stopAutoPush() {
+        autoPushJob?.cancel()
+        autoPushJob = null
+    }
+
+    /**
+     * 流输出服务的目标解析：mediaId → 上游可播放地址。
+     *
+     * mediaId 为空时取当前曲目。音质沿用播放控制器当前等级，
+     * cookie 由服务端注入并**只保留在本机**，不下发给接收端。
+     */
+    private suspend fun resolveStreamTarget(mediaId: String?): StreamTarget? {
+        val targetId = mediaId?.takeIf { it.isNotBlank() }
+            ?: playbackController.state.value.currentTrack?.id
+            ?: return null
+        val level = playbackController.state.value.qualityLevel.ifBlank { "exhigh" }
+        val songUrl = (unifiedSource.getSongUrl(targetId, level) as? BackendResult.Success)?.data
+            ?: return null
+        if (songUrl.url.isBlank()) return null
+        val cookie = songUrl.cookie?.takeIf { it.isNotBlank() }
+            ?: activeProvider()?.let { providerManager.cookieStorage.getCookie(it.id) }
+        return StreamTarget(url = songUrl.url, cookie = cookie)
     }
 
     // ============ Provider 管理（带状态机错误处理与自动激活） ============
@@ -336,6 +546,10 @@ class MusicBackend private constructor(
 
     /** 释放后端单例（主要供测试用）。 */
     fun reset() {
+        runCatching { stopAutoPush() }
+        runCatching { localServerStatusJob?.cancel() }
+        runCatching { localServer?.stop() }
+        localServer = null
         runCatching { activeProvider()?.stopServer() }
         runCatching { playbackController.release() }
         // 仅在已装配时关闭下载引擎（避免 reset 反向触发惰性初始化）
@@ -442,6 +656,8 @@ class MusicBackend private constructor(
                 )
                 // 初始化完成后计算终态
                 backend.stateFromInit()
+                // 读取持久化输出配置：playbackController 首次创建时据此决定是否静默
+                backend.activeOutputConfig = LocalServerConfigStore.read(settings)
                 // 装配本地媒体源与下载管理器（恢复持久化下载任务）
                 backend.bootstrapLocalStack()
                 INSTANCE = backend

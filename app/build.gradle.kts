@@ -69,6 +69,11 @@ kotlin {
                 implementation(libs.ktor.client.okhttp)
             }
         }
+        val desktopTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+            }
+        }
     }
 }
 

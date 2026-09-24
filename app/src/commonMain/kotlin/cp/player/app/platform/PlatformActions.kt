@@ -78,3 +78,15 @@ expect fun setOnMediaPermissionGranted(callback: (() -> Unit)?)
 @Composable
 expect fun BackHandler(enabled: Boolean = true, onBack: () -> Unit)
 
+/**
+ * 「渲染后端」设置页正文。
+ *
+ * 仅桌面端有意义：Compose Desktop 的绘制由 Skiko 承担，而 Skiko 在 Windows 默认走
+ * Direct3D 12，其 `Present` + `DwmFlush` 的出帧节奏会与 VRR / 系统帧节奏控制相互影响
+ * （上游 compose-multiplatform#1648）。Android 端渲染完全由系统负责，故实现为空。
+ *
+ * 宿主见 `cp.player.app.ui.screen.RenderTuningSettingsScreen`，该入口也只在桌面端出现。
+ */
+@Composable
+expect fun PlatformRenderTuningContent()
+

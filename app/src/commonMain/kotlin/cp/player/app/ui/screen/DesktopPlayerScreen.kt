@@ -42,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
@@ -78,7 +79,14 @@ fun DesktopPlayerScreen(
     val track = state.currentTrack ?: return
     val scope = rememberCoroutineScope()
     var selectedTab by remember { mutableIntStateOf(1) }
-    val progress = if (state.durationMs > 0) state.positionMs.toFloat() / state.durationMs else 0f
+    val duration = state.durationMs.coerceAtLeast(0L)
+    // 时长未知（流媒体元信息还没到、直播流）时滑条范围会塌成 0..1，
+    // 拖出来的值只有 0~1 毫秒——与其让用户拖出一个必然无效的 seek，不如直接禁用。
+    val seekable = duration > 0L
+    // 拖动期间用本地值接管进度条，松手才真正 seek。
+    // 旧写法在 onValueChange 里直接 onSeek，等于拖动中每一帧都向引擎发一次 seek；
+    // 桌面端每次 seek 都是一次原生定位，连发会让声音卡顿、松手后落点不准。
+    var seekValue by remember { mutableStateOf<Float?>(null) }
     val background = Brush.radialGradient(
         colors = listOf(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.colorScheme.background),
         radius = 1200f,
@@ -114,10 +122,19 @@ fun DesktopPlayerScreen(
                                     Icon(if (state.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, "收藏", tint = if (state.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
-                            Slider(value = progress.coerceIn(0f, 1f), onValueChange = { onSeek((it * state.durationMs).toLong()) }, modifier = Modifier.fillMaxWidth())
+                            Slider(
+                                value = (seekValue ?: state.positionMs.toFloat()).coerceIn(0f, duration.toFloat()),
+                                onValueChange = { seekValue = it },
+                                onValueChangeFinished = {
+                                    seekValue?.let { onSeek(it.toLong().coerceIn(0L, duration)); seekValue = null }
+                                },
+                                valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
+                                enabled = seekable,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text(formatTimeMs(state.positionMs), style = MaterialTheme.typography.labelSmall)
-                                Text(formatTimeMs(state.durationMs), style = MaterialTheme.typography.labelSmall)
+                                Text(formatTimeMs(duration), style = MaterialTheme.typography.labelSmall)
                             }
                             PlayerControls(state, onTogglePlay, onSkipNext, onSkipPrev, onRepeat, onShuffle)
                         }

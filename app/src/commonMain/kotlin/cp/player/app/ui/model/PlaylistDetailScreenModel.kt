@@ -107,6 +107,28 @@ class PlaylistDetailScreenModel : ScreenModel {
         }
     }
 
+    /**
+     * 用导航传入的曲目直接初始化详情页（首页生成的虚拟歌单：每日推荐 / 相似歌曲 / 心动模式）。
+     *
+     * 这些歌单 id 为负数（-101 每日推荐 / -103 相似歌曲 / -104 心动模式），服务端并不存在，
+     * 走远端接口必然 404 并导致详情页空白，因此这里不发起任何远端请求，
+     * 仅拉取收藏列表用于红心态。
+     *
+     * @param loading 调用方仍在拉取曲目时传 true，让 UI 显示加载态而不是"歌单暂无歌曲"。
+     */
+    fun loadLocal(summary: PlaylistSummary, tracks: List<TrackSummary>, loading: Boolean = false) {
+        fetchingPlaylistId = summary.id
+        val distinct = tracks.distinctBy { it.id }
+        _state.value = PlaylistDetailUiState(
+            summary = summary.copy(trackCount = distinct.size),
+            tracks = distinct,
+            loading = loading,
+            hasMore = false,
+            nextOffset = distinct.size,
+        )
+        loadLiked()
+    }
+
     /** 加载下一页曲目（追加、按 id 去重保序）。 */
     fun loadMore() {
         // 守卫与 fetchingMore 置位合并为一次原子 update，只有抢到置位权的调用继续执行
