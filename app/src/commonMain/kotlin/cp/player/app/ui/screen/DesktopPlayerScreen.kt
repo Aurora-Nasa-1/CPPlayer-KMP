@@ -55,6 +55,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import cp.player.app.ui.component.PlaybackControls
 import cp.player.app.ui.util.formatTimeMs
 import cp.player.app.ui.util.resized
 import cp.player.kmp.playback.PlaybackUiState
@@ -176,9 +177,20 @@ private fun Artwork(url: String?, modifier: Modifier) {
 private fun PlayerControls(state: PlaybackUiState, onTogglePlay: () -> Unit, onNext: () -> Unit, onPrev: () -> Unit, onRepeat: () -> Unit, onShuffle: () -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onShuffle) { Icon(Icons.Filled.Shuffle, "随机播放", tint = if (state.shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
-        IconButton(onClick = onPrev, modifier = Modifier.size(52.dp)) { Icon(Icons.Outlined.SkipPrevious, "上一首", Modifier.size(30.dp)) }
-        IconButton(onClick = onTogglePlay, modifier = Modifier.size(64.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)) { Icon(if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, "播放", Modifier.size(32.dp)) }
-        IconButton(onClick = onNext, modifier = Modifier.size(52.dp)) { Icon(Icons.Outlined.SkipNext, "下一首", Modifier.size(30.dp)) }
+
+        PlaybackControls(
+            isPlaying = state.isPlaying,
+            isBuffering = state.isBuffering,
+            onPlayPause = onTogglePlay,
+            onSkipNext = onNext,
+            onSkipPrevious = onPrev,
+            modifier = Modifier.padding(horizontal = 8.dp),
+            sideButtonModifier = Modifier.size(52.dp),
+            centerButtonModifier = Modifier.size(64.dp),
+            sideIconSize = 30.dp,
+            centerIconSize = 32.dp,
+        )
+
         IconButton(onClick = onRepeat) { Icon(if (state.repeatMode == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat, "循环", tint = if (state.repeatMode == RepeatMode.OFF) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary) }
     }
 }
