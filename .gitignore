@@ -1,14 +1,30 @@
-*.iml
-.gradle
+# --- Build output ---------------------------------------------------------
+.gradle/
 build/
-.idea
-.DS_Store
-*.swp
-local.properties
+.kotlin/
 .cxx/
+.externalNativeBuild/
+/captures
+
+# Verification scratch dirs used to bypass a locked Gradle cache
+.gradle-verify/
+build-verify/
+
+# --- IDE / editor --------------------------------------------------------
+.idea/
+*.iml
+*.swp
+.DS_Store
+
+# --- Local configuration (never shared) ----------------------------------
+local.properties
+
+# --- Build artifacts / diagnostics ---------------------------------------
 *.so
 *.hprof
-/captures
-.externalNativeBuild/
-CPPlayer/
-3rd-rust-server/
+
+# --- Read-only reference checkouts (not part of the Gradle build) --------
+# Legacy Android project: a plain local checkout, excluded on purpose.
+reference/cp-player-legacy/
+# NOTE: reference/netease-module-rust is an unregistered submodule (gitlink
+# in the index, no .gitmodules). It is deliberately NOT ignored here.

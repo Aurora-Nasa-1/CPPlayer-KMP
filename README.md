@@ -1,167 +1,190 @@
-# KMP-PRO
+# CPPlayer
 
-> CP-Player 的 **Provider 插件系统 + API 层** Kotlin Multiplatform 移植版。
+> 跨平台音乐播放器（Kotlin Multiplatform）。Android 与 Desktop（JVM）共用一套
+> 播放内核、音源插件系统与 Compose UI。
 >
-> 从原 Android 项目 `app/src/main/java/cp/player/` 移植，抽象为可在 Android 与
-> Desktop（JVM）复用的库模块。额外封装了带**网络缓存 + 异步加载**与**深度 API
-> 健康监控（错误回退 / 警告 / 错误三级分类）**的 `CachedMusicApiService`。
+> 本仓库是原 Android 项目 `CPPlayer` 的 KMP 移植版。旧项目与第三方音源模块源码
+> 作为**只读参考**保留在 `reference/` 下，不参与构建。
+
+---
+
+## 模块划分
+
+工程由三个 Gradle 模块组成，职责按「后端 / 前端 / 平台入口」划分：
+
+| 模块 | 角色 | 规模 | 说明 |
+|------|------|------|------|
+| `kmp-pro` | **后端** | 94 文件 / 11.4k 行 | 音源插件系统、音乐 API、缓存、播放内核、下载、本地媒体扫描、本地流输出服务。**不含任何 UI 代码** |
+| `app` | **前端** | 88 文件 / 16.6k 行 | Compose Multiplatform UI、Voyager 导航、ScreenModel、更新检查。另有桌面端入口 `Main.kt` |
+| `androidApp` | **安卓入口壳** | 4 文件 / 236 行 | `MainActivity`、`Application`、Media3 `MediaSessionService`、Manifest |
+
+依赖方向是单向的，不允许反向或跨层引用：
+
+```
+androidApp ──▶ app ──▶ kmp-pro
+```
+
+前端访问后端的**唯一入口**是 `cp.player.kmp.MusicBackend`。
+Provider / Module / API 等内部组件不应被前端直接触碰 —— 详见
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)（含当前越界点的清单）。
+
+### 为什么安卓入口是独立模块
+
+这不是历史遗留，而是 **AGP 9 的硬性要求**。自 AGP 9.0 起，Kotlin Multiplatform
+插件**不再兼容** `com.android.application` / `com.android.library`：
+
+> When used along with Android Gradle plugin 9.0 or newer, the Kotlin Multiplatform
+> Gradle plugin stops being compatible with the `com.android.application` and the
+> `com.android.library` plugins.
+> —— [kotlinlang.org · AGP 9 迁移指南](https://kotlinlang.org/docs/multiplatform/multiplatform-project-agp-9-migration.html)
+
+官方给出的迁移动作是「把 Android 入口点抽到独立模块」，推荐结构正是
+**`androidApp`（应用插件）+ 共享模块（Android-KMP library 插件）**。
+本工程已经采用了这套结构（`app` 与 `kmp-pro` 均使用
+`com.android.kotlin.multiplatform.library`）。
+
+**所以 `androidApp` 不能合并进 `app`** —— 在 AGP 10 移除遗留 API 之前，
+唯一能这么做的办法是设置 `android.enableLegacyVariantApi=true`，那只是把问题
+推迟到 2026 下半年。
+
+> ⚠️ 仍待改进的是**命名**：`kmp-pro` 没有表达它的「后端」角色，
+> `androidApp` 也没有表达它是「平台入口点」。迁移方案见
+> [`docs/RESTRUCTURE_PLAN.md`](docs/RESTRUCTURE_PLAN.md)。
 
 ---
 
 ## 目录结构
 
 ```
-KMP-PRO/
-├── settings.gradle.kts            # 独立 Gradle 工程
-├── build.gradle.kts               # 根
-├── gradle.properties             # android.useAndroidX 等
-├── gradle/libs.versions.toml     # 版本目录
-└── kmp-pro/
-    ├── build.gradle.kts          # KMP 模块：androidTarget + jvm("desktop")，共享 jvmMain
-    └── src/
-        ├── commonMain/           # 纯跨平台代码
-        ├── jvmMain/              # JVM 共享（Android + Desktop）：ServerSocket / Zip / ELF / BinaryProvider / HttpClient
-        ├── androidMain/          # Android 独有：Context、SharedPreferences、Build.SUPPORTED_ABIS、JniProvider
-        └── desktopMain/          # Desktop 独有：~/.kmp-pro 持久化、不支持的 JNI 模块
+CPPlayer-KMP/
+├── settings.gradle.kts            # include(":kmp-pro") / (":app") / (":androidApp")
+├── build.gradle.kts               # 根：插件声明（全部 apply false）
+├── gradle.properties              # 版本号唯一来源：app.versionName / versionCode / releaseChannel
+├── gradle/libs.versions.toml      # 版本目录
+├── docs/
+│   ├── ARCHITECTURE.md            # 模块职责与依赖规则
+│   ├── RESTRUCTURE_PLAN.md        # 结构迁移方案
+│   ├── PROVIDER_DEV_GUIDE.md      # Provider 插件开发指南（面向第三方音源作者）
+│   └── RELEASE.md                 # 发布流程
+├── scripts/                       # release.ps1 / fastrelease-install.ps1
+├── native/windows-smtc/           # Windows 系统媒体控制（占位，暂无代码）
+├── reference/                     # 只读参考，不参与构建
+│   ├── cp-player-legacy/          # 原 Android 项目（本地 checkout，已 gitignore）
+│   └── netease-module-rust/       # 第三方音源模块（Rust：api / server / util）
+├── kmp-pro/                       # 后端
+│   └── src/{commonMain,jvmMain,androidMain,desktopMain,desktopTest}
+└── app/                           # 前端
+    └── src/{commonMain,androidMain,desktopMain,desktopTest}
 ```
 
-目标层级：`commonMain → jvmMain → { androidMain, desktopMain }`。
+### 源集分层
 
-## 构建验证
+`kmp-pro` 采用四层源集，`app` 采用三层：
+
+```
+commonMain  ──▶  jvmMain  ──▶  { androidMain, desktopMain }
+```
+
+| 源集 | 放什么 |
+|------|--------|
+| `commonMain` | 纯跨平台代码：模型、Provider 抽象、Ktor 客户端、缓存、播放控制 |
+| `jvmMain` | Android 与 Desktop 共享的 JVM 实现：Socket / Zip / ELF / 二进制 Provider / 本地流输出服务 |
+| `androidMain` | Android 独有：`Context`、`SharedPreferences`、`Build.SUPPORTED_ABIS`、Media3 播放器、JNI Provider |
+| `desktopMain` | Desktop 独有：`~/.kmp-pro` 持久化、rodio 播放器、JMTC 媒体控制、Skiko 渲染调优 |
+
+---
+
+## 构建
 
 ```bash
-cd KMP-PRO
-./gradlew :kmp-pro:compileKotlinDesktop   # JVM 编译
-./gradlew :kmp-pro:compileDebugKotlinAndroid   # Android 编译
-./gradlew :kmp-pro:desktopJar              # Desktop 可执行 jar
-./gradlew :kmp-pro:assembleDebug           # Android AAR
+# 后端（两个平台各编译一次）
+./gradlew :kmp-pro:compileKotlinDesktop
+./gradlew :kmp-pro:compileAndroidMain
+
+# 后端单元测试（回归测试所在）
+./gradlew :kmp-pro:desktopTest
+
+# 前端
+./gradlew :app:compileKotlinDesktop
+./gradlew :app:compileAndroidMain
+./gradlew :app:desktopTest
+
+# 产物
+./gradlew :app:run              # 桌面端直接运行
+./gradlew :app:packageMsi       # Windows 安装包（另有 Dmg / Deb）
+./gradlew :androidApp:assembleDebug
 ```
 
-📗 Gradle 9.4.1 / Kotlin 2.1.0 / AGP 8.7.3 / Ktor 3 / kotlinx-serialization 1.7 / coroutines 1.9 / datetime 0.6
-（wrapper 复用主工程 `gradle/wrapper`）。
+技术栈：Gradle 9.4.1 / Kotlin 2.4.10 / AGP 9.1.1 / Compose Multiplatform 1.11.1 /
+Ktor 3.0.3 / kotlinx-serialization 1.7.3 / coroutines 1.9.0 / datetime 0.6.1 /
+Media3 1.4.1。版本号唯一来源是 `gradle/libs.versions.toml`。
+
+发布流程见 [`docs/RELEASE.md`](docs/RELEASE.md)。
 
 ---
 
-## 模块源码映射（原项目 → KMP-PRO）
+## 核心设计
 
-| 来源（原项目） | KMP-PRO | 说明 |
-|------|---------|------|
-| `model/*`（纯数据） | `commonMain/.../model/*` | @Serializable 化；移除 Compose/Media3 依赖的 `PlayerUiState`（属 UI 层） |
-| `provider/BackendProvider.kt` | `commonMain/.../provider/BackendProvider.kt` | `Context` → `expect class PlatformContext` |
-| `provider/ModuleManifest.kt` | `commonMain/.../provider/ModuleManifest.kt` | Gson → kotlinx-serialization `@Serializable` |
-| `provider/HttpProvider.kt` | `commonMain/.../provider/HttpProvider.kt` | OkHttp → **Ktor**（commonMain） |
-| `provider/BinaryProvider.kt` | `jvmMain/.../provider/BinaryProvider.kt` | ProcessBuilder + Ktor localhost（JVM 共享） |
-| `provider/JniProvider.kt` | `androidMain/.../provider/JniProvider.kt` | `System.load` + `external fun`，仅 Android |
-| `provider/ProviderManager.kt` | `commonMain/.../provider/ProviderManager.kt` | 单例 → 实例化（依赖注入 `SettingsStorage`） |
-| `provider/ModuleManager.kt` | `commonMain/.../provider/ModuleManager.kt` | 文件操作经 `expect object PlatformSupport` |
-| `api/MusicApiMethod.kt` | `commonMain/.../api/MusicApiMethod.kt` | 纯常量，零改动 |
-| `api/MusicApiService.kt` | `commonMain/.../api/MusicApiService.kt` | `JsonObject` → `JsonElement` |
-| `api/MusicApiServiceImpl.kt` | `commonMain/.../api/MusicApiServiceImpl.kt` | Gson 解析 → kotlinxserialization；保留 cookie 注入、validate、`callWithAllProviders` 容灾 |
-| `api/MusicApiServiceFactory.kt` | `commonMain/.../api/MusicApiServiceFactory.kt` | 单例持有 `MusicApiServiceImpl` + `CachedMusicApiService` |
-| `monitor/HealthMonitor.kt` | `commonMain/.../monitor/HealthMonitor.kt` | 新增**三级分类** `HealthLevel { OK, WARNING, ERROR }` |
-| `util/UserPreferences`（cookie/最近 provider） | `commonMain/.../util/SettingsStorage` + 各平台 actual | SharedPreferences(Android) / Properties 文件(Desktop) |
+### 后端统一入口：`MusicBackend`
 
----
+`kmp-pro/src/commonMain/.../MusicBackend.kt` 是前端的唯一依赖类型，负责：
 
-## 核心特性：`CachedMusicApiService`（cache + 异步 + 健康监控）
+1. **生命周期 + 状态机** —— 通过 `stateFlow` 暴露 `BackendState`，自动处理初始化、
+   Provider 激活与错误恢复；
+2. **Provider 管理** —— 导入 / 切换 / 删除音源模块，导入时自动激活首个 Provider；
+3. **音乐数据访问** —— 通过 `musicApi` / `cachedMusicApi` 提供云音乐 API；
+4. **播放控制** —— 队列、seek、切歌、歌词、音质。
 
-`cp.player.kmp.cache.CachedMusicApiService` 在 `MusicApiServiceImpl` 之上**再次封装**，
-对外暴露 `callApiCached(...): Flow<CacheResult<JsonElement>>`，多值发射：
+### 缓存层：`CachedMusicApiService`
 
-### 调用流程
+在 `MusicApiServiceImpl` 之上再封装一层，对外暴露
+`callApiCached(...): Flow<CacheResult<JsonElement>>`，多值发射：
 
 ```
-1) 先返回缓存          → CacheResult.Cached(data, isStale)            （即时）
+1) 先返回缓存          → CacheResult.Cached(data, isStale)        （即时）
 2) 后台拉取网络        → delegate.callApi(...)
-3) 计算新响应指纹     → Fingerprinter.compute(json)                  （"简单数据"比对）
-4) 指纹 == 缓存指纹    → CacheResult.NoChange                         （内容未变，无需替换）
-   指纹 != 缓存指纹    → CacheResult.Fresh(data)                      （"不同的较大数据"异步回传 + 写回缓存）
+3) 计算响应指纹        → Fingerprinter.compute(json)
+4) 指纹相同            → CacheResult.NoChange                     （内容未变）
+   指纹不同            → CacheResult.Fresh(data)                  （异步回传 + 写回缓存）
 5) 响应判为 ERROR      → 多 Provider 容灾 tryFallback(...)
-        容灾成功     → CacheResult.Fresh(source = FALLBACK)
-        容灾失败     → CacheResult.Error(fallback = 缓存数据)
 6) 网络异常            → CacheResult.Error(message, fallback = 缓存)
 ```
 
-- **指纹（`Fingerprinter`）**：从响应抽取 `code` + 顶层数组长度 + 主数据数组的 `id` 列表（前 64 个，去重排序）+ 版本位。
-  增删/重排条目指纹变化；改无关字段不影响。以此廉价判断"是否有不同的较大数据需要回传"。
-- **缓存接口**：`ApiCache`（默认 `InMemoryApiCache` LRU），键 `providerId#method#sortedParams#cookieHash`。
+- **指纹**（`Fingerprinter`）：抽取 `code` + 顶层数组长度 + 主数据数组的 `id` 列表
+  （前 64 个，去重排序）+ 版本位。增删/重排条目指纹变化，改无关字段不影响。
+- **缓存键**：`providerId#method#sortedParams#cookieHash`，默认 `InMemoryApiCache`（LRU）。
 - **写/动作类接口不缓存**（登录、点赞、发评论、打卡等），见 `isCacheable(...)`。
-- **`CacheConfig`**：`freshTtlMs`、`maxEntries`、`enableFallback`、`enableCache`。
 
-### 三级健康分类（`HealthMonitor.HealthLevel`）
+### 三级健康分类
 
 | 级别 | 含义 | 处理 |
 |------|------|------|
 | `OK` | 响应正常 | 直接使用 |
-| `WARNING` | 不符合预期但勉强可用（缺可选字段、慢响应、空数据、异常 code） | 使用但附 `warnings` 告警；记录 |
-| `ERROR` | 不可用（解析失败、Provider 不支持 code=-1、MALFORMED_RESPONSE） | 触发**多 Provider 错误回退**；失败则带缓存降级 |
+| `WARNING` | 不符合预期但勉强可用（缺可选字段、慢响应、空数据、异常 code） | 使用但附 `warnings` 告警 |
+| `ERROR` | 不可用（解析失败、Provider 不支持 code=-1、`MALFORMED_RESPONSE`） | 触发多 Provider 错误回退；失败则带缓存降级 |
 
-分类规则见 `HealthMonitor.classify(ResponseWarning)` 与 `MusicApiServiceImpl.classifyLevel(...)`。
 `overallLevelFlow` 反映最近 100 条记录的综合等级，供 UI 顶部状态指示。
 
----
+### 本地流输出 + 外部推送
 
-## 接入示例
+CPPlayer 可作为**推送方**，把本地转码后的 HTTP 流推给外部接收端（游戏 radio 一类）：
 
-### 1) Android `Application.onCreate()`
+- `8080` 是 CPPlayer 自己开的流输出端口（Ktor CIO，字节直通，透传
+  `Content-Length` / `Content-Range` / `Accept-Ranges`）；
+- `8420` 是**接收端**的端口，通过 `/api/v1/play-url` 等端点接收推送；
+- 输出模式可选「本机声卡」或「只做服务器」（静默模式，本机音量恒定为 0）。
 
-```kotlin
-import cp.player.kmp.util.initKmpAndroidContext
-import cp.player.kmp.util.toPlatformContext
-
-class App : Application() {
-    override fun onCreate() {
-        super.onCreate()
-        // 1. 注入平台 Context（SharedPreferences 工厂需要）
-        initKmpAndroidContext(this)
-        // 2. 初始化整条 API/Provider/模块栈
-        MusicApiServiceFactory.init(
-            context = toPlatformContext(),                 // Android：Context → PlatformContext
-            settings = cp.player.kmp.util.defaultSettingsStorage()
-        )
-    }
-}
-```
-
-### 2) 使用（缓存版）
-
-```kotlin
-val cached = MusicApiServiceFactory.cachedInstance
-
-// Flow：先发缓存，再发 Fresh/NoChange/Error
-cached.callApiCached(MusicApiMethod.PLAYLIST_DETAIL, mapOf("id" to "123"))
-    .collect { result ->
-        when (result) {
-            is CacheResult.Cached -> show(result.data, stale = result.isStale)
-            is CacheResult.Fresh -> show(result.data)
-            is CacheResult.Error -> showError(result.message, fallback = result.fallback)
-            is CacheResult.NoChange -> { /* 与缓存一致，无需更新 UI */ }
-        }
-    }
-
-// 直通版（原始同步接口，cookie 自动注入 + 健康记录）
-val raw = MusicApiServiceFactory.instance
-val json = raw.getPlaylistDetail(123L)
-```
-
-### 3) Desktop
-
-```kotlin
-MusicApiServiceFactory.init(
-    context = cp.player.kmp.util.PlatformContext.EMPTY,
-    settings = cp.player.kmp.util.defaultSettingsStorage()
-)
-```
+配置见 `cp.player.kmp.control.LocalServerConfig`，UI 入口在设置页「本地服务器」。
 
 ---
 
-## 与原项目差异说明
+## 参考代码
 
-- **单例 → 实例化**：`ProviderManager` / `ModuleManager` 改为构造注入依赖的类，便于测试与多实例。
-- **Gson → kotlinx-serialization**：模型 `@Serializable`；`MusicApiService` 返回 `JsonElement`。
-- **OkHttp → Ktor**（OkHttp 引擎在 JVM 实现），HttpProvider 可放 commonMain。
-- **移除 PlayerUiState** 等含 Compose/Media3 依赖的 UI 状态类（不属于 Provider/API 层）。
-- **HealthMonitor** 扩展三级分类与 `overallLevelFlow`。
-- **新增 cache 层**：`CachedMusicApiService` + `Fingerprinter` + `ApiCache`，实现"缓存先返回 + 简单数据比对 + 差异较大数据异步回传"。
+`reference/` 下的两份源码**仅供查阅，不参与构建**，改动它们不会影响产物：
 
-> ⚠️ JNI 模块（`.so`）仅在 Android 端可用；Desktop 上 `createJniProvider` 返回 `null`，对应模块标记不可用。
+- `reference/cp-player-legacy/` —— 原 Android 项目（Kotlin + Media3 + Rust 音频引擎）。
+  移植时的对照基准，尤其用于核对 seek / 切歌 / 本地文件打开等行为差异。
+- `reference/netease-module-rust/` —— 第三方音源模块，`src/api/` 下有 400+ 个
+  网易云 API 实现，`src/server/` 与 `src/util/` 提供本地 HTTP 服务与 JNI 入口。
+
+> 移植过程与差异说明见 `reference/cp-player-legacy/README.md` 及本文件历史版本。
