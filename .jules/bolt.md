@@ -1,0 +1,3 @@
+## 2024-05-18 - API Batch Parsing O(N^2) Bottleneck
+**Learning:** In `UnifiedMusicSourceImpl.kt`, fetching track details in batches of up to 500 created an unexpected O(N^2) performance bottleneck due to a linear `chunk.find` lookup inside the JSON parsing loop. This severely degraded performance for large remote playlists (e.g. 500 * 500 = 250,000 iterations per chunk).
+**Action:** When mapping or merging large datasets (like API response arrays against local chunk batches), always pre-compute an O(1) lookup map (e.g., using `associateBy`) before iterating, rather than using `find` or `firstOrNull` inside the loop.
