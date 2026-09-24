@@ -214,10 +214,10 @@ class PlaybackControllerImpl(
                 ?.let { if (_shuffle) it else null }
             if (wasCurrent) {
                 _index = (_order?.getOrNull(_orderPos) ?: _index).coerceIn(0, _queue.lastIndex)
-                _orderPos = _order?.indexOf(_index) ?: _index.coerceAtLeast(0)
             } else if (_index > index) {
                 _index -= 1
             }
+            _orderPos = _order?.indexOf(_index) ?: _index.coerceAtLeast(0)
         }
         pushQueueState()
         if (_queue.isNotEmpty() && index <= _index && _index >= 0) {
