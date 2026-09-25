@@ -275,7 +275,7 @@ printf '\n# AI-generated repo wiki (local only)\n.qoder/\n' >> .gitignore
 |----|------|------|
 | 后端包名 | `cp.player.kmp` | `cp.player.core` |
 | `core` 的 `namespace` | `cp.player.kmp` | `cp.player.core` |
-| `core/consumer-rules.pro` | `-keep class cp.player.kmp.**` | `-keep class cp.player.core.**` |
+| `core/consumer-rules.pro` | `-keep class cp.player.kmp.**` | `-keep class cp.player.core.**`。⚠️ **但该文件当时并未被任何构建引用**，改它其实没有效果（详见 §7.5） |
 | `applicationId` | `cp.player.app` | `cp.player` |
 | 桌面数据目录 | `~/.kmp-pro` | `~/.cpplayer`（带一次性迁移） |
 
@@ -312,6 +312,37 @@ JNI 按 `Java_<包名下划线化>_<类名>_<方法名>` 查找符号。宿主�
 | `core` 的 `commonMain` 依赖 `composemediaplayer-audio` | 名字带 Compose，易被误认为后端依赖 UI。实际提供的是 rodio 音频播放能力，与 Compose UI 无关。保持现状 |
 | ~~`AboutScreen.kt` 里的可见文案 `KMP-PRO · Compose Multiplatform`~~ | 应用内显示旧项目名。✅ **已改为 `CPPlayer`**（2026-09-25） |
 | ~~`PlatformActions.android.kt` 注释里的旧模块名 `androidApp`~~ | 注释与事实不符。✅ **已改为 `app-android`**（2026-09-25） |
+
+### 7.5 R8 的实际状态（2026-09-25 核实并修正）
+
+**此前把 `core/consumer-rules.pro` 描述成「漏改就会在 release 静默剥掉整个后端」是错的**，
+两层都不成立：
+
+1. **R8 根本没在跑** —— `app-android/build.gradle.kts` 的 release 是
+   `isMinifyEnabled = false`。没有代码剥离，debug 与 release 在这点上没有差别。
+2. **该文件从未被任何构建引用** —— 全仓没有任何 `consumerProguardFiles` 声明。
+   AGP 9 的 KMP library 插件（`com.android.kotlin.multiplatform.library`）**不提供**它；
+   已 `javap` 核实 `KotlinMultiplatformAndroidLibraryExtension` 的全部方法里
+   没有任何 proguard 相关项。consumer keep 规则改由 `KmpOptimization` 提供：
+
+   ```kotlin
+   kotlin {
+       android {
+           optimization {
+               consumerKeepRules.apply {
+                   file(layout.projectDirectory.file("consumer-rules.pro"))
+                   publish = true
+               }
+           }
+       }
+   }
+   ```
+
+   已按此接上（`core/build.gradle.kts`），`consumer-rules.pro` 于是从
+   **死文件**变成「R8 开启时才会被读取的保险」。
+
+**真要开 R8 时要注意**：keep 规则的包名必须与后端包名一致，且**必须实测 release 构建** ——
+debug 无 R8，剥错了完全看不出来。这是少数「debug 通过不能作为证据」的改动类型。
 
 ---
 

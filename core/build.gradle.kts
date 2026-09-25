@@ -14,6 +14,17 @@ kotlin {
         namespace = "cp.player.core"
         compileSdk = 36
         minSdk = 29
+        // AGP 9 的 KMP library 插件**没有** consumerProguardFiles —— consumer keep 规则
+        // 改由 optimization.consumerKeepRules 提供（已 javap 核实 KmpOptimization 的 DSL）。
+        // 此前 core/consumer-rules.pro 从未被任何构建引用（是个死文件），这里接上。
+        // 注意：app-android 的 release 目前 isMinifyEnabled = false，所以这些规则暂时
+        // 不会被读取；一旦开启 R8，这里就是防止 Provider/API 层被剥掉的那道保险。
+        optimization {
+            consumerKeepRules.apply {
+                file(layout.projectDirectory.file("consumer-rules.pro"))
+                publish = true
+            }
+        }
     }
     jvm("desktop") {
         compilerOptions { jvmTarget.set(JvmTarget.JVM_21) }
