@@ -30,7 +30,7 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
-                api(project(":kmp-pro"))
+                api(project(":core"))
                 implementation(libs.composemediaplayer.audio)
                 implementation(compose.runtime)
                 implementation(compose.foundation)

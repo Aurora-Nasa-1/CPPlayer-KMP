@@ -43,7 +43,7 @@ The version source is `gradle.properties` (`app.versionName`, `app.versionCode`,
 .\scripts\fastrelease-install.ps1 -Clean -Launch
 ```
 
-The script runs `:androidApp:assembleFastrelease`, checks for `adb`, verifies an authorized device, and installs with `adb install -r -d`. Enable USB debugging and accept the device authorization prompt first. To install manually, use `androidApp/build/outputs/apk/fastrelease/androidApp-fastrelease.apk`.
+The script runs `:app-android:assembleFastrelease`, checks for `adb`, verifies an authorized device, and installs with `adb install -r -d`. Enable USB debugging and accept the device authorization prompt first. To install manually, use `app-android/build/outputs/apk/fastrelease/app-android-fastrelease.apk`.
 
 ## Manual smoke test
 

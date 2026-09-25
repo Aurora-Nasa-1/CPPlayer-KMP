@@ -3,6 +3,18 @@
 > 本文档记录 CPPlayer-KMP 目录结构与项目规划的重整计划。
 > 诊断于 2026-09-25 完成，基于当时的仓库实际状态。
 
+## 进度
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| Phase 1 | 文档与卫生（零构建风险） | ✅ 2026-09-25 |
+| Phase 2 | 模块改名：`kmp-pro` → `core`、`androidApp` → `app-android`、`rootProject.name` → `CPPlayer` | ✅ 2026-09-25 |
+| Phase 3 | Desktop 入口对称化 | ⏸ 可选，未做 |
+| §7 | 遗留问题（坏 submodule、`.qoder/` 等） | ⏸ 待定 |
+
+> ⚠️ **§0 与 §1 是改名前的诊断快照**，文中出现的 `kmp-pro` / `androidApp` 是当时的
+> 真实名称，保留原文以便对照问题成因。当前名称见 §2。
+
 ---
 
 ## 0. 结论摘要
@@ -83,10 +95,14 @@ CPPlayer-KMP/
 ├── reference/                 只读参考，不参与构建
 │   ├── cp-player-legacy/      原 Android 项目（gitignore）
 │   └── netease-module-rust/   第三方音源模块（Rust）
-├── core/                      ← 后端（原 kmp-pro）
-└── app/                       ← 前端（共享 UI 库）
-    └── androidApp → app-android/   ← Android 入口点（Phase 2）
+├── core/                      后端（11.4k 行）
+├── app/                       前端（共享 UI 库 + 桌面入口）
+└── app-android/               Android 入口点
 ```
+
+包名保持不变：后端仍是 `cp.player.kmp.*`，安卓仍是 `cp.player.app`
+（`namespace` / `applicationId` 与模块名解耦）。改包名会波及 94 个文件与前端全部
+import，且会变更应用标识导致已安装版本无法覆盖升级，**收益低于成本**。
 
 ---
 
@@ -108,53 +124,67 @@ CPPlayer-KMP/
 
 ---
 
-## 4. Phase 2 —— 模块改名（待执行）
+## 4. Phase 2 —— 模块改名 ✅ 已完成（2026-09-25）
 
-**前置条件：当前工作区有 24 个已修改、7 个未跟踪文件尚未提交。必须先提交/固化，
-否则改名会与这些改动冲突。**
+**前置条件已满足**：先把工作区里 24 个已修改 + 7 个未跟踪文件验证编译通过并提交，
+分成两个提交（功能工作 / 结构文档），确保改名 diff 可读。
 
-### 4.1 改动清单
+### 4.1 改动清单（全部已执行）
 
 `kmp-pro` → `core`（后端），`androidApp` → `app-android`（Android 入口点）。
 Gradle 工程路径 `:kmp-pro` → `:core`、`:androidApp` → `:app-android`。
 
-| # | 文件 | 改动 |
-|---|------|------|
-| 1 | `kmp-pro/` → `core/` | `git mv`（目录） |
-| 2 | `androidApp/` → `app-android/` | `git mv`（目录） |
-| 3 | `settings.gradle.kts` | `include(":kmp-pro")` → `include(":core")`；`include(":androidApp")` → `include(":app-android")`；`rootProject.name = "KMP-PRO"` → `"CPPlayer"` |
-| 4 | `app/build.gradle.kts` | `api(project(":kmp-pro"))` → `api(project(":core"))` |
-| 5 | `.github/workflows/debug-release.yml` | `:androidApp:assembleDebug` → `:app-android:assembleDebug` |
-| 6 | `.github/workflows/release.yml` | `:androidApp:assembleRelease` → `:app-android:assembleRelease` |
-| 7 | `.github/workflows/desktop-release.yml` | `:app:${matrix.task}` 不变（`app` 不改名） |
-| 8 | `scripts/fastrelease-install.ps1` | 任务名 + APK 路径 `..\androidApp\build\outputs\...` → `..\app-android\build\outputs\...` |
-| 9 | `scripts/release.ps1` | `:androidApp:assembleDebug/Release` → `:app-android:...` |
-| 10 | `docs/RELEASE.md` | 所有 `androidApp` 路径与任务名 |
-| 11 | `README.md` | 模块表格与目录树 |
-| 12 | `docs/ARCHITECTURE.md` | 全文模块名 |
-| 13 | `docs/PROVIDER_DEV_GUIDE.md` | 4 处 `KMP-PRO` 字样 |
-| 14 | `app/src/commonMain/.../ui/screen/AboutScreen.kt:156` | 用户可见文案 `"KMP-PRO · Compose Multiplatform"` → `"CPPlayer · Compose Multiplatform"`（属产品文案，需你确认） |
+| # | 文件 | 改动 | 状态 |
+|---|------|------|------|
+| 1 | `kmp-pro/` → `core/` | `git mv`（目录） | ✅ |
+| 2 | `androidApp/` → `app-android/` | `git mv`（目录） | ✅ |
+| 3 | `settings.gradle.kts` | `include(":kmp-pro")` → `include(":core")`；`include(":androidApp")` → `include(":app-android")`；`rootProject.name = "KMP-PRO"` → `"CPPlayer"` | ✅ |
+| 4 | `app/build.gradle.kts` | `api(project(":kmp-pro"))` → `api(project(":core"))` | ✅ |
+| 5 | `.github/workflows/debug-release.yml` | 任务名 + APK 路径 | ✅ |
+| 6 | `.github/workflows/release.yml` | 任务名 + APK 路径 | ✅ |
+| 7 | `.github/workflows/desktop-release.yml` | `:app:${matrix.task}` 不变（`app` 不改名） | — |
+| 8 | `scripts/fastrelease-install.ps1` | 任务名 + APK 路径 | ✅ |
+| 9 | `scripts/release.ps1` | 任务名 | ✅ |
+| 10 | `docs/RELEASE.md` | `androidApp` 路径与任务名 | ✅ |
+| 11 | `README.md` | 模块表格、目录树、依赖链、构建命令 | ✅ |
+| 12 | `docs/ARCHITECTURE.md` | 全文模块名 + 边界现状修正 | ✅ |
+| 13 | `docs/PROVIDER_DEV_GUIDE.md` | 4 处 `KMP-PRO` → `CPPlayer` | ✅ |
+| 14 | `app/src/commonMain/.../ui/screen/AboutScreen.kt:156` | 用户可见文案 `"KMP-PRO · Compose Multiplatform"` | ⏸ **未改**，属产品文案，待确认 |
 
-**注意**：`androidApp/build.gradle.kts` 里的 `namespace` / `applicationId`
-（`cp.player.app`）**不要跟着改** —— 包名与模块名解耦，改它会变更应用标识、
-导致已安装版本无法覆盖升级。
+### 4.2 改名时会连带变化的产物路径（实测确认，非推测）
 
-### 4.2 验证
+AGP 的 APK 文件名以 **Gradle 工程名**为准，所以模块改名会让产物文件名一起变。
+这一条最容易漏，因为 CI 和本地脚本里是硬编码路径：
+
+| 构建类型 | 改名前 | 改名后 |
+|----------|--------|--------|
+| debug | `androidApp-debug.apk` | `app-android-debug.apk` |
+| fastrelease | `androidApp-fastrelease.apk` | `app-android-fastrelease.apk` |
+| release | `androidApp-release.apk` | `app-android-release.apk` |
+
+debug 与 fastrelease 两个名字已实际构建确认。
+
+**保持不变的**：`app-android/build.gradle.kts` 里的 `namespace` / `applicationId`
+（`cp.player.app`）—— 包名与模块名解耦，改它会变更应用标识、
+导致已安装版本无法覆盖升级。同理 `~/.kmp-pro` 这个桌面端运行时配置目录也没动。
+
+### 4.3 验证
 
 ```bash
-./gradlew projects                    # 应显示 :core / :app / :app-android
+./gradlew projects                    # Root project 'CPPlayer' + :app / :app-android / :core
 ./gradlew :core:compileKotlinDesktop
 ./gradlew :core:compileAndroidMain
-./gradlew :core:desktopTest           # 21 例回归测试
+./gradlew :core:desktopTest           # 回归测试
 ./gradlew :app:compileKotlinDesktop
 ./gradlew :app:compileAndroidMain
-./gradlew :app:desktopTest            # 27 例渲染调优测试
+./gradlew :app:desktopTest
 ./gradlew :app-android:assembleDebug
 ```
 
 > 环境提示：仓库根 `.gradle/9.4.1/fileHashes/fileHashes.lock` 常被并行会话的
-> Gradle 守护进程占用，可加 `--project-cache-dir=.gradle-verify` 绕开（用完删除）。
-> 看测试结论**直接读** `**/test-results/**/TEST-*.xml`，不要用 `| head` 截 Gradle 输出。
+> Gradle 守护进程占用，可加 `--project-cache-dir=.gradle-verify` 绕开。
+> 看测试结论**直接读** `**/test-results/**/TEST-*.xml`，不要用 `| head` 截 Gradle 输出
+> （会把 `BUILD SUCCESSFUL` 与测试结论一起截掉）。
 
 ---
 
@@ -240,5 +270,5 @@ printf '\n# AI-generated repo wiki (local only)\n.qoder/\n' >> .gitignore
 | `CachedMusicApiService.callApiCached` | 全仓无调用方，缓存层目前是空转 |
 | `PlaybackControllerImpl.playCurrent(skipIfSame)` | 参数从未被使用 |
 | `native/windows-smtc/` | 只有一个 README，无代码 |
-| `kmp-pro` 的 `commonMain` 依赖 `composemediaplayer-audio` | 名字带 Compose，易被误认为后端依赖 UI。实际提供的是 rodio 音频播放能力，与 Compose UI 无关 |
+| `core` 的 `commonMain` 依赖 `composemediaplayer-audio` | 名字带 Compose，易被误认为后端依赖 UI。实际提供的是 rodio 音频播放能力，与 Compose UI 无关 |
 | 包名 `cp.player.kmp` | 与模块名一样不表达角色。改名会波及 94 个文件 + 前端全部 import，收益低于成本，**建议不动** |

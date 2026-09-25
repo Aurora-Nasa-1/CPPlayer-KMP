@@ -40,7 +40,7 @@ jobs:
           echo "code=$((100000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_OUTPUT"
 
       - name: Build debug APK
-        run: ./gradlew :androidApp:assembleDebug --no-daemon -Papp.versionName=${{ steps.meta.outputs.version }} -Papp.versionCode=${{ steps.meta.outputs.code }} -Papp.releaseChannel=debug
+        run: ./gradlew :app-android:assembleDebug --no-daemon -Papp.versionName=${{ steps.meta.outputs.version }} -Papp.versionCode=${{ steps.meta.outputs.code }} -Papp.releaseChannel=debug
 
       - name: Build Windows installer
         run: ./gradlew :app:packageMsi --no-daemon -Papp.versionName=${{ steps.meta.outputs.version }} -Papp.releaseChannel=debug
@@ -48,7 +48,7 @@ jobs:
       - name: Rename assets
         shell: bash
         run: |
-          cp androidApp/build/outputs/apk/debug/androidApp-debug.apk "CPPlayer-${{ steps.meta.outputs.version }}-android-debug.apk"
+          cp app-android/build/outputs/apk/debug/app-android-debug.apk "CPPlayer-${{ steps.meta.outputs.version }}-android-debug.apk"
           cp app/build/compose/binaries/main/msi/CPPlayer-${{ steps.meta.outputs.version }}.msi "CPPlayer-${{ steps.meta.outputs.version }}-windows-debug.msi"
 
       - name: Publish GitHub release

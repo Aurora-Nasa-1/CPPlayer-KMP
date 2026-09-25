@@ -1,4 +1,4 @@
-# KMP-PRO Provider 开发指南
+# CPPlayer Provider 开发指南
 
 > **面向：** 为 CPPlayer 开发音乐数据源（Provider）的第三方开发者
 >
@@ -43,13 +43,13 @@
 
 ## 1. 概述
 
-KMP-PRO 通过 **Provider 插件系统**接入不同的音乐数据源。你只需实现一个能处理
+CPPlayer 通过 **Provider 插件系统**接入不同的音乐数据源。你只需实现一个能处理
 标准化 API 请求的后端服务，编写 `manifest.json`，打包为 `.zip` 即可导入。
 
 ### 架构
 
 ```
-KMP-PRO App
+CPPlayer App
     │
     ├── MusicApiService ──→ ProviderManager ──→ 你的 Provider
     │                    (apiMap 映射)       (HTTP/Binary/JNI)
@@ -2235,7 +2235,7 @@ Java_cp_player_kmp_provider_JniProvider_analyzeAudioFile(
 
 ## 9. 健康监控与兼容性检查
 
-KMP-PRO 内置 API 健康监控系统，自动对每次调用进行兼容性检查。
+CPPlayer 内置 API 健康监控系统，自动对每次调用进行兼容性检查。
 
 ### 检查规则
 

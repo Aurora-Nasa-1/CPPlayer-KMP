@@ -19,8 +19,8 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "KMP-PRO"
+rootProject.name = "CPPlayer"
 
-include(":kmp-pro")
+include(":core")
 include(":app")
-include(":androidApp")
+include(":app-android")

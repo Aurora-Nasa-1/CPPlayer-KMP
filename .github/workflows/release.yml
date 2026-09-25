@@ -41,7 +41,7 @@ jobs:
           KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          ./gradlew :androidApp:assembleRelease --no-daemon \
+          ./gradlew :app-android:assembleRelease --no-daemon \
             -Papp.versionName=${GITHUB_REF_NAME#v} \
             -Papp.versionCode=${GITHUB_RUN_NUMBER} \
             -Papp.releaseChannel=stable
@@ -50,4 +50,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: androidApp/build/outputs/apk/release/androidApp-release.apk
+          files: app-android/build/outputs/apk/release/app-android-release.apk

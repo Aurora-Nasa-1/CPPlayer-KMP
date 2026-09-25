@@ -14,19 +14,19 @@
 
 | 模块 | 角色 | 规模 | 说明 |
 |------|------|------|------|
-| `kmp-pro` | **后端** | 94 文件 / 11.4k 行 | 音源插件系统、音乐 API、缓存、播放内核、下载、本地媒体扫描、本地流输出服务。**不含任何 UI 代码** |
+| `core` | **后端** | 94 文件 / 11.4k 行 | 音源插件系统、音乐 API、缓存、播放内核、下载、本地媒体扫描、本地流输出服务。**不含任何 UI 代码** |
 | `app` | **前端** | 88 文件 / 16.6k 行 | Compose Multiplatform UI、Voyager 导航、ScreenModel、更新检查。另有桌面端入口 `Main.kt` |
-| `androidApp` | **安卓入口壳** | 4 文件 / 236 行 | `MainActivity`、`Application`、Media3 `MediaSessionService`、Manifest |
+| `app-android` | **安卓入口点** | 4 文件 / 236 行 | `MainActivity`、`Application`、Media3 `MediaSessionService`、Manifest |
 
 依赖方向是单向的，不允许反向或跨层引用：
 
 ```
-androidApp ──▶ app ──▶ kmp-pro
+app-android ──▶ app ──▶ core
 ```
 
-前端访问后端的**唯一入口**是 `cp.player.kmp.MusicBackend`。
-Provider / Module / API 等内部组件不应被前端直接触碰 —— 详见
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)（含当前越界点的清单）。
+前端访问后端的**唯一入口**是 `cp.player.kmp.MusicBackend`（包名保持
+`cp.player.kmp` 未变，与模块名解耦）。Provider / Module / API 等内部组件不应被
+前端直接触碰 —— 详见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)（含当前越界点的清单）。
 
 ### 为什么安卓入口是独立模块
 
@@ -39,17 +39,13 @@ Provider / Module / API 等内部组件不应被前端直接触碰 —— 详见
 > —— [kotlinlang.org · AGP 9 迁移指南](https://kotlinlang.org/docs/multiplatform/multiplatform-project-agp-9-migration.html)
 
 官方给出的迁移动作是「把 Android 入口点抽到独立模块」，推荐结构正是
-**`androidApp`（应用插件）+ 共享模块（Android-KMP library 插件）**。
-本工程已经采用了这套结构（`app` 与 `kmp-pro` 均使用
+**独立的应用模块（应用插件）+ 共享模块（Android-KMP library 插件）**。
+本工程已经采用了这套结构（`app` 与 `core` 均使用
 `com.android.kotlin.multiplatform.library`）。
 
-**所以 `androidApp` 不能合并进 `app`** —— 在 AGP 10 移除遗留 API 之前，
+**所以 `app-android` 不能合并进 `app`** —— 在 AGP 10 移除遗留 API 之前，
 唯一能这么做的办法是设置 `android.enableLegacyVariantApi=true`，那只是把问题
 推迟到 2026 下半年。
-
-> ⚠️ 仍待改进的是**命名**：`kmp-pro` 没有表达它的「后端」角色，
-> `androidApp` 也没有表达它是「平台入口点」。迁移方案见
-> [`docs/RESTRUCTURE_PLAN.md`](docs/RESTRUCTURE_PLAN.md)。
 
 ---
 
@@ -57,7 +53,7 @@ Provider / Module / API 等内部组件不应被前端直接触碰 —— 详见
 
 ```
 CPPlayer-KMP/
-├── settings.gradle.kts            # include(":kmp-pro") / (":app") / (":androidApp")
+├── settings.gradle.kts            # include(":core") / (":app") / (":app-android")
 ├── build.gradle.kts               # 根：插件声明（全部 apply false）
 ├── gradle.properties              # 版本号唯一来源：app.versionName / versionCode / releaseChannel
 ├── gradle/libs.versions.toml      # 版本目录
@@ -71,15 +67,17 @@ CPPlayer-KMP/
 ├── reference/                     # 只读参考，不参与构建
 │   ├── cp-player-legacy/          # 原 Android 项目（本地 checkout，已 gitignore）
 │   └── netease-module-rust/       # 第三方音源模块（Rust：api / server / util）
-├── kmp-pro/                       # 后端
+├── core/                          # 后端
 │   └── src/{commonMain,jvmMain,androidMain,desktopMain,desktopTest}
-└── app/                           # 前端
-    └── src/{commonMain,androidMain,desktopMain,desktopTest}
+├── app/                           # 前端（共享 UI 库 + 桌面入口）
+│   └── src/{commonMain,androidMain,desktopMain,desktopTest}
+└── app-android/                   # 安卓入口点
+    └── src/main/{kotlin,res,AndroidManifest.xml}
 ```
 
 ### 源集分层
 
-`kmp-pro` 采用四层源集，`app` 采用三层：
+`core` 采用四层源集，`app` 采用三层：
 
 ```
 commonMain  ──▶  jvmMain  ──▶  { androidMain, desktopMain }
@@ -90,7 +88,7 @@ commonMain  ──▶  jvmMain  ──▶  { androidMain, desktopMain }
 | `commonMain` | 纯跨平台代码：模型、Provider 抽象、Ktor 客户端、缓存、播放控制 |
 | `jvmMain` | Android 与 Desktop 共享的 JVM 实现：Socket / Zip / ELF / 二进制 Provider / 本地流输出服务 |
 | `androidMain` | Android 独有：`Context`、`SharedPreferences`、`Build.SUPPORTED_ABIS`、Media3 播放器、JNI Provider |
-| `desktopMain` | Desktop 独有：`~/.kmp-pro` 持久化、rodio 播放器、JMTC 媒体控制、Skiko 渲染调优 |
+| `desktopMain` | Desktop 独有：`~/.kmp-pro` 持久化（运行时配置目录，路径名沿用旧模块名，改动会丢失用户既有设置）、rodio 播放器、JMTC 媒体控制、Skiko 渲染调优 |
 
 ---
 
@@ -98,11 +96,11 @@ commonMain  ──▶  jvmMain  ──▶  { androidMain, desktopMain }
 
 ```bash
 # 后端（两个平台各编译一次）
-./gradlew :kmp-pro:compileKotlinDesktop
-./gradlew :kmp-pro:compileAndroidMain
+./gradlew :core:compileKotlinDesktop
+./gradlew :core:compileAndroidMain
 
 # 后端单元测试（回归测试所在）
-./gradlew :kmp-pro:desktopTest
+./gradlew :core:desktopTest
 
 # 前端
 ./gradlew :app:compileKotlinDesktop
@@ -112,7 +110,7 @@ commonMain  ──▶  jvmMain  ──▶  { androidMain, desktopMain }
 # 产物
 ./gradlew :app:run              # 桌面端直接运行
 ./gradlew :app:packageMsi       # Windows 安装包（另有 Dmg / Deb）
-./gradlew :androidApp:assembleDebug
+./gradlew :app-android:assembleDebug
 ```
 
 技术栈：Gradle 9.4.1 / Kotlin 2.4.10 / AGP 9.1.1 / Compose Multiplatform 1.11.1 /
@@ -127,7 +125,7 @@ Media3 1.4.1。版本号唯一来源是 `gradle/libs.versions.toml`。
 
 ### 后端统一入口：`MusicBackend`
 
-`kmp-pro/src/commonMain/.../MusicBackend.kt` 是前端的唯一依赖类型，负责：
+`core/src/commonMain/.../MusicBackend.kt` 是前端的唯一依赖类型，负责：
 
 1. **生命周期 + 状态机** —— 通过 `stateFlow` 暴露 `BackendState`，自动处理初始化、
    Provider 激活与错误恢复；

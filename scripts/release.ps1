@@ -31,7 +31,7 @@ if ($LASTEXITCODE -ne 0) {
 # 4. Switch build configuration
 $channel = if ($DebugBuild) { "debug" } else { "stable" }
 $tagPrefix = if ($DebugBuild) { "debug-v" } else { "v" }
-$gradleTask = if ($DebugBuild) { ":androidApp:assembleDebug" } else { ":androidApp:assembleRelease" }
+$gradleTask = if ($DebugBuild) { ":app-android:assembleDebug" } else { ":app-android:assembleRelease" }
 
 $tagName = "$tagPrefix$Version"
 

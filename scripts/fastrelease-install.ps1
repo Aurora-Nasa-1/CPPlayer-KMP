@@ -12,12 +12,12 @@ function Invoke-Checked([string]$File, [string[]]$Arguments) {
     if ($LASTEXITCODE -ne 0) { throw "Command failed ($LASTEXITCODE): $File $($Arguments -join ' ')" }
 }
 
-$gradleArgs = @(":androidApp:assembleFastrelease", "--no-daemon", "--project-prop", "app.versionName=$Version", "--project-prop", "app.versionCode=$VersionCode", "--project-prop", "app.releaseChannel=fastrelease")
+$gradleArgs = @(":app-android:assembleFastrelease", "--no-daemon", "--project-prop", "app.versionName=$Version", "--project-prop", "app.versionCode=$VersionCode", "--project-prop", "app.releaseChannel=fastrelease")
 if ($Clean) { $gradleArgs = @("clean") + $gradleArgs }
 Write-Host "Building fastrelease APK..." -ForegroundColor Cyan
 Invoke-Checked ".\gradlew.bat" $gradleArgs
 
-$apk = Join-Path $PSScriptRoot "..\androidApp\build\outputs\apk\fastrelease\androidApp-fastrelease.apk"
+$apk = Join-Path $PSScriptRoot "..\app-android\build\outputs\apk\fastrelease\app-android-fastrelease.apk"
 if (-not (Test-Path $apk)) { throw "APK not found: $apk" }
 
 $adb = Get-Command adb -ErrorAction SilentlyContinue
