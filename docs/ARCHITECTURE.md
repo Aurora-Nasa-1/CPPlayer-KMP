@@ -177,7 +177,7 @@ commonMain  ──▶  jvmMain  ──▶  { androidMain, desktopMain }
 
 | 问题 | 影响 | 处理 |
 |------|------|------|
-| **JNI 符号名与后端包名硬绑定** —— `JniProvider` 的全限定名决定 native 侧必须导出的符号（`Java_cp_player_core_provider_JniProvider_*`）。改包名会让已编译模块在首次调用时抛 `UnsatisfiedLinkError`，而 `System.load()` 仍然成功，症状伪装成「已加载但一调用就崩」 | 后端包名不可自由重构；第三方模块需随宿主同步重编 | 见 `RESTRUCTURE_PLAN.md` §8（待决策） |
+| **JNI 符号名与后端包名硬绑定** —— `JniProvider` 的全限定名决定 native 侧必须导出的符号（`Java_cp_player_core_provider_JniProvider_*`）。改包名会让已编译模块在首次调用时抛 `UnsatisfiedLinkError`，而 `System.load()` 仍然成功，症状伪装成「已加载但一调用就崩」 | 后端包名不可自由重构；第三方模块需随宿主同步重编 | 已采纳「只更新源码」，`jni.rs` 已改；**但嵌套仓库未提交、父仓库 gitlink 未更新**，见 `RESTRUCTURE_PLAN.md` §8 |
 | 桌面入口在 `app/src/desktopMain/`，安卓入口在 `app-android/` | 两个平台入口不对称，「安卓被剥离」的观感来源。**注意：安卓侧受 AGP 9 约束必须独立，桌面侧不受约束** | 可选对称化，见 `RESTRUCTURE_PLAN.md` Phase 3 |
 | `ui/component/`（21 文件）与 `ui/components/CommonComponents.kt`（1 文件）并存 | 命名易混淆 | 把 `CommonComponents.kt` 并入 `ui/component/` |
 | `PlaybackEngine` / `PlaybackState` / `NoopPlaybackEngine` 全仓无使用 | 与 `PlatformPlayer` / `PlatformPlaybackState` 平行，容易误导 | 待清理 |
