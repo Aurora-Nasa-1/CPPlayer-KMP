@@ -1,4 +1,10 @@
-package cp.player.app.ui.components
+/**
+ * 设置向导用的通用组件（`AppLogo` / `HeroBlock` / `HeadlineSupportingRow`）。
+ *
+ * 原先位于 `ui/components/`，与 `ui/component/`（21 个文件）仅差一个尾字母 `s`，
+ * 猜错目录是很容易发生的事 —— 2026-09-25 合并到 `ui/component/`，目录名统一为单数。
+ */
+package cp.player.app.ui.component
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column

@@ -40,7 +40,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.platform.rememberZipPicker
-import cp.player.app.ui.components.HeroBlock
+import cp.player.app.ui.component.HeroBlock
 import cp.player.core.BackendState
 import cp.player.core.ImportResult
 import cp.player.core.provider.BackendProvider
