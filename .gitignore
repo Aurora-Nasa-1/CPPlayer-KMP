@@ -28,3 +28,12 @@ local.properties
 reference/cp-player-legacy/
 # NOTE: reference/netease-module-rust is an unregistered submodule (gitlink
 # in the index, no .gitmodules). It is deliberately NOT ignored here.
+
+# --- AI tooling output (local only, regenerated on demand) ---------------
+# Qoder's generated repo wiki + one-off git diff dumps. Kept on disk for
+# local use, but they drift out of date with the code and duplicate
+# docs/ARCHITECTURE.md, so they should not be version-controlled.
+.qoder/
+
+# WorkBuddy AI session memory / project notes. Local by nature.
+.workbuddy-ai/
