@@ -290,12 +290,13 @@ JNI 按 `Java_<包名下划线化>_<类名>_<方法名>` 查找符号。宿主�
 「模块显示已加载，一调用就崩」。`JniProvider.isReady()` 只检查文件存在与
 `System.load`，捕获不到这种情况。
 
-受影响的两处：
-1. `reference/netease-module-rust/src/util/jni.rs` —— 三个 `#[no_mangle]` 函数名；
-2. `docs/PROVIDER_DEV_GUIDE.md` §3.3 —— 第三方模块作者的契约（**已同步更新**）。
+受影响的两处（**均已完成**）：
+1. `reference/netease-module-rust/src/util/jni.rs` —— 三个 `#[no_mangle]` 函数名，
+   已改为新前缀并提交（模块仓库 `067c150`）；
+2. `docs/PROVIDER_DEV_GUIDE.md` §3.3 —— 第三方模块作者的契约，已同步更新。
 
-**未处理**：`jni.rs` 仍是旧前缀。是否连带修改参考仓库，取决于是否还有用旧前缀
-编译的模块需要继续兼容 —— 见 §8。
+**尚差最后两步**：模块仓库的提交还没 push 到远端，父仓库 gitlink 也还没跟着更新
+（刻意如此 —— 顺序反了会让克隆失败）。原因与命令见 §8。
 
 ### 7.4 其它
 
@@ -323,15 +324,33 @@ JNI 按 `Java_<包名下划线化>_<类名>_<方法名>` 查找符号。宿主�
 
 **执行状态**：`reference/netease-module-rust/src/util/jni.rs` 的三个 `#[no_mangle]`
 函数名已改为 `Java_cp_player_core_provider_JniProvider_*`，并在文件头补了
-「符号名与宿主类全限定名硬绑定」的说明。
+「符号名与宿主类全限定名硬绑定」的说明。改动已作为提交 `067c150` 落在模块仓库的
+`main` 上（工作区干净）。
 
-> ⚠️ **但这个改动还没生效到仓库层面。** `reference/netease-module-rust` 在父仓库索引里是
-> **gitlink（mode 160000，指向 `2e09a67`）**，它自己是个独立 git 仓库
-> （remote `Aurora-Nasa-1/3rd-CPPlayer-netcloudMusic-Muti`，分支 `main`）。
-> 因此：
-> 1. 改动目前只是**嵌套仓库里的未提交工作区改动**，父仓库 `git log` 看不到；
-> 2. 父仓库的 gitlink 仍指向旧提交 `2e09a67` —— **别人克隆拿到的仍是旧符号**；
-> 3. 要让修复真正生效，需在嵌套仓库 `commit` 后，再在父仓库把 gitlink 更新到新提交
->    （或按 §7.1 方案 B 去 submodule 化，把源码纳入本仓库）。
+> ⚠️ **但父仓库的 gitlink 刻意没有跟着更新。** 原因值得记一笔：
 >
-> 这一步涉及向独立仓库提交，未擅自执行，等用户确认。
+> `reference/netease-module-rust` 在父仓库索引里是 **gitlink（mode 160000）**，
+> 它自己是个独立 git 仓库（remote `Aurora-Nasa-1/3rd-CPPlayer-netcloudMusic-Muti`）。
+> 父仓库 gitlink 当前指向 `2e09a67`，而**这个提交在远端是存在的**
+> （`git ls-remote origin refs/heads/main` → `2e09a67`），所以现状是
+> 「一致但落后」—— 别人克隆父仓库，submodule 能正常拉下来，只是符号是旧的。
+>
+> 如果直接把 gitlink 改成 `067c150`，而 `067c150` **还没 push 到远端**，
+> 那么别人克隆父仓库时 submodule 会指向一个远端不存在的提交，
+> `git submodule update` 直接失败 —— **比现状更糟**。
+>
+> 所以顺序必须是「先 push，后 bump」。剩下两步（需推送到独立仓库，未代为执行）：
+>
+> ```bash
+> # 1) 在模块仓库推送
+> cd reference/netease-module-rust
+> git push origin main                      # 067c150
+>
+> # 2) 回父仓库更新 gitlink
+> cd ../..
+> git add reference/netease-module-rust
+> git commit -m "chore: 更新音源模块 gitlink 至 JNI 符号修复"
+> ```
+>
+> 若不想维护这个独立仓库，可改走 §7.1 方案 B（去 submodule 化），
+> 让 `jni.rs` 直接成为本仓库的一部分 —— 那样就没有「先 push 后 bump」的时序问题了。
