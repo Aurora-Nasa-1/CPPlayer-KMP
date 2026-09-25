@@ -19,10 +19,10 @@ import kotlinx.serialization.json.longOrNull
 fun extractUidFromLoginStatus(status: JsonElement?): Long? {
     if (status == null) return null
     val data = unwrapLoginStatusData(status) ?: return null
-    val account = data["account"] as? JsonObject
+    val account = (data["account"] as? JsonObject) ?: data
     val profile = (data["profile"] as? JsonObject) ?: account
-    val uid = (account?.get("id") as? JsonPrimitive)?.longOrNull
-        ?: (profile?.get("userId") as? JsonPrimitive)?.longOrNull
+    val uid = (account.get("id") as? JsonPrimitive)?.longOrNull
+        ?: (profile.get("userId") as? JsonPrimitive)?.longOrNull
     return uid
 }
 
