@@ -47,7 +47,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.ui.util.resized
-import cp.player.kmp.music.PlaylistSummary
+import cp.player.core.music.PlaylistSummary
 import kotlinx.coroutines.launch
 
 /**

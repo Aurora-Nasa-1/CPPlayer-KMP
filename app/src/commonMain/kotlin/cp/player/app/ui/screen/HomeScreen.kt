@@ -77,9 +77,9 @@ import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.model.HomeScreenModel
 import cp.player.app.ui.model.PlaylistDetailScreenModel
 import cp.player.app.ui.util.resized
-import cp.player.kmp.BackendResult
-import cp.player.kmp.music.PlaylistSummary
-import cp.player.kmp.music.TrackSummary
+import cp.player.core.BackendResult
+import cp.player.core.music.PlaylistSummary
+import cp.player.core.music.TrackSummary
 import kotlinx.coroutines.launch
 import kotlin.math.max
 import kotlin.random.Random
@@ -362,7 +362,7 @@ private fun HomeScreenContent(model: HomeScreenModel) {
 
     selectedTrack?.let { track ->
         // 最近播放记录里保存的是完整 mediaId（如 netease://song/123），收藏集合是裸 id，需解析后再比较
-        val favId = runCatching { cp.player.kmp.music.CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)
+        val favId = runCatching { cp.player.core.music.CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)
         SongOptionsSheet(
             songName = track.name,
             artistName = track.artist,
@@ -1050,7 +1050,7 @@ class RecentPlaysScreen : Screen {
         }
 
         selectedTrack?.let { track ->
-            val favId = runCatching { cp.player.kmp.music.CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)
+            val favId = runCatching { cp.player.core.music.CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)
             SongOptionsSheet(
                 songName = track.name,
                 artistName = track.artist,

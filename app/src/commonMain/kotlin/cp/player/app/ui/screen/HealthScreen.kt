@@ -44,7 +44,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.ui.component.LegacyListItem
 import cp.player.app.ui.component.LegacyPageScaffold
-import cp.player.kmp.monitor.HealthMonitor
+import cp.player.core.monitor.HealthMonitor
 
 class HealthScreen : Screen {
     @OptIn(ExperimentalMaterial3Api::class)

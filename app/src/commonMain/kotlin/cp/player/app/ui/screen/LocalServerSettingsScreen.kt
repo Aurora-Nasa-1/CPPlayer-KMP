@@ -41,10 +41,10 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.ui.component.LegacyListItem
 import cp.player.app.ui.component.LegacyPageScaffold
-import cp.player.kmp.control.LocalServerConfig
-import cp.player.kmp.control.LocalServerStatus
-import cp.player.kmp.control.OutputMode
-import cp.player.kmp.control.PushResult
+import cp.player.core.control.LocalServerConfig
+import cp.player.core.control.LocalServerStatus
+import cp.player.core.control.OutputMode
+import cp.player.core.control.PushResult
 
 /**
  * 「本地服务器输出 + 外部推送」设置页。
@@ -267,7 +267,7 @@ class LocalServerSettingsScreen : Screen {
                     SelectionContainer {
                         Text(
                             text = config.streamUrlWithToken(
-                                cp.player.kmp.control.resolveAdvertisedHost(config.bindAddress)
+                                cp.player.core.control.resolveAdvertisedHost(config.bindAddress)
                             ),
                             style = MaterialTheme.typography.bodySmall,
                             fontFamily = FontFamily.Monospace,

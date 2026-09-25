@@ -3,9 +3,9 @@ package cp.player.app.ui.model
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
-import cp.player.kmp.BackendResult
-import cp.player.kmp.api.MusicApiMethod
-import cp.player.kmp.music.SearchResult
+import cp.player.core.BackendResult
+import cp.player.core.api.MusicApiMethod
+import cp.player.core.music.SearchResult
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow

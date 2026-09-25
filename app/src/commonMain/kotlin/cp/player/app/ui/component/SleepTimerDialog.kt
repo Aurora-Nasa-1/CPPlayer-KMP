@@ -13,7 +13,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import cp.player.kmp.playback.PlaybackController
+import cp.player.core.playback.PlaybackController
 
 /**
  * 睡眠定时对话框：N 分钟后暂停 / 播完当前后暂停 / 取消已有定时。

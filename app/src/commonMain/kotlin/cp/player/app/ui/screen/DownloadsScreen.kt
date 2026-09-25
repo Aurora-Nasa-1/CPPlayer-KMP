@@ -58,11 +58,11 @@ import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.app.ui.model.DownloadsUiState
 import cp.player.app.ui.util.resized
-import cp.player.kmp.media.LocalMediaItem
-import cp.player.kmp.media.LocalMediaOrigin
-import cp.player.kmp.media.MediaType
-import cp.player.kmp.model.DownloadStatus
-import cp.player.kmp.model.DownloadTask
+import cp.player.core.media.LocalMediaItem
+import cp.player.core.media.LocalMediaOrigin
+import cp.player.core.media.MediaType
+import cp.player.core.model.DownloadStatus
+import cp.player.core.model.DownloadTask
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 

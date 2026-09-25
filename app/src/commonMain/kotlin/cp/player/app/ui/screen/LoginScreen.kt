@@ -261,7 +261,7 @@ private fun QrLoginSection(
 }
 
 class LoginScreenModel : ScreenModel {
-    val activeProvider: StateFlow<cp.player.kmp.provider.BackendProvider?> =
+    val activeProvider: StateFlow<cp.player.core.provider.BackendProvider?> =
         AppModel.activeProviderFlow
     val isLoading = MutableStateFlow(false)
     val isLogged = MutableStateFlow(false)

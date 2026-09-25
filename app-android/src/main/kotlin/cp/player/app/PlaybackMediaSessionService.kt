@@ -2,7 +2,7 @@ package cp.player.app
 
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import cp.player.kmp.playback.SharedMedia3Player
+import cp.player.core.playback.SharedMedia3Player
 
 /**
  * Android system media-session host. The shared controller remains the source of

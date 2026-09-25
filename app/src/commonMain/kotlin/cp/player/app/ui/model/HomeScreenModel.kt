@@ -3,9 +3,9 @@ package cp.player.app.ui.model
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
-import cp.player.kmp.BackendResult
-import cp.player.kmp.music.PlaylistSummary
-import cp.player.kmp.music.TrackSummary
+import cp.player.core.BackendResult
+import cp.player.core.music.PlaylistSummary
+import cp.player.core.music.TrackSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

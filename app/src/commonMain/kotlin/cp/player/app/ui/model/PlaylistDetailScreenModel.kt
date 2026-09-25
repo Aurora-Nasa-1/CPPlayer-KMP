@@ -5,10 +5,10 @@ import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
 import cp.player.app.ui.component.PlaylistSortType
 import cp.player.app.ui.util.UiEvents
-import cp.player.kmp.BackendResult
-import cp.player.kmp.music.MusicSourceFromApi
-import cp.player.kmp.music.PlaylistSummary
-import cp.player.kmp.music.TrackSummary
+import cp.player.core.BackendResult
+import cp.player.core.music.MusicSourceFromApi
+import cp.player.core.music.PlaylistSummary
+import cp.player.core.music.TrackSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope

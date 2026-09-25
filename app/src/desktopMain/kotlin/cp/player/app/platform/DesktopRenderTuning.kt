@@ -1,6 +1,7 @@
 package cp.player.app.platform
 
-import cp.player.kmp.util.defaultSettingsStorage
+import cp.player.core.util.DesktopDataDir
+import cp.player.core.util.defaultSettingsStorage
 import java.io.File
 
 /**
@@ -34,7 +35,7 @@ import java.io.File
  *
  * 之所以让 1/2 压过持久化，是为了留一条**自救通道**：万一选到本机跑不起来的后端
  * （表现是启动即崩或窗口不出现，进不了设置页），仍可用 `-Dcp.player.renderApi=AUTO`
- * 启动，或直接删掉 `~/.kmp-pro/cp_player_prefs.properties` 里的对应项。
+ * 启动，或直接删掉 `~/.cpplayer/cp_player_prefs.properties` 里的对应项。
  *
  * ## 安全模式（自动回退）
  *
@@ -53,7 +54,7 @@ import java.io.File
  */
 internal object DesktopRenderTuning {
 
-    /** 持久化键（写入 `~/.kmp-pro/cp_player_prefs.properties`）。 */
+    /** 持久化键（写入 `~/.cpplayer/cp_player_prefs.properties`）。 */
     const val KEY_BACKEND = "desktop_render_api"
     const val KEY_VSYNC = "desktop_vsync_override"
 
@@ -64,7 +65,7 @@ internal object DesktopRenderTuning {
     private const val PROBE_FILE_NAME = "render_tuning_probe"
 
     /**
-     * 探测文件路径的覆写点，**仅供测试隔离**（让测试不碰真实 `~/.kmp-pro/`）。
+     * 探测文件路径的覆写点，**仅供测试隔离**（让测试不碰真实 `~/.cpplayer/`）。
      * 生产环境不需要设置。
      */
     private const val PROP_PROBE_FILE = "cp.player.probeFile"
@@ -190,11 +191,11 @@ internal object DesktopRenderTuning {
      * 探测文件路径。
      *
      * 允许用 `-Dcp.player.probeFile=...` 覆写，**只为给测试提供隔离点**，
-     * 免得测试去动真实 `~/.kmp-pro/`。生产环境不需要设置。
+     * 免得测试去动真实 `~/.cpplayer/`。生产环境不需要设置。
      */
     private fun probeFile(): File =
         System.getProperty(PROP_PROBE_FILE)?.let(::File)
-            ?: File(System.getProperty("user.home"), ".kmp-pro/$PROBE_FILE_NAME")
+            ?: DesktopDataDir.file(PROBE_FILE_NAME)
 
     /**
      * 纯逻辑：由探测文件内容判断「上次启动是不是卡在/崩在某个后端上」。
@@ -320,8 +321,7 @@ internal object DesktopRenderTuning {
     }.getOrDefault("(无法读取)")
 
     /** 持久化文件位置，用于在 UI / 日志里告诉用户「去哪改回来」。 */
-    fun storageHint(): String =
-        "${System.getProperty("user.home")}${java.io.File.separator}.kmp-pro${java.io.File.separator}cp_player_prefs.properties"
+    fun storageHint(): String = DesktopDataDir.file("cp_player_prefs.properties").absolutePath
 
     // ======================== 应用（必须在 Skiko 初始化前） ========================
 

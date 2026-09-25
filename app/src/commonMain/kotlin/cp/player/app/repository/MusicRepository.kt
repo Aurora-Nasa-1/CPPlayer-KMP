@@ -1,15 +1,15 @@
 package cp.player.app.repository
 
 import cp.player.app.extractUidFromLoginStatus
-import cp.player.kmp.BackendResult
-import cp.player.kmp.api.MusicApiService
-import cp.player.kmp.music.MusicResult
-import cp.player.kmp.music.MusicSourceFromApi
-import cp.player.kmp.music.PlaylistDetail
-import cp.player.kmp.music.PlaylistSummary
-import cp.player.kmp.music.PlaylistTracksPage
-import cp.player.kmp.music.SearchResult
-import cp.player.kmp.music.TrackSummary
+import cp.player.core.BackendResult
+import cp.player.core.api.MusicApiService
+import cp.player.core.music.MusicResult
+import cp.player.core.music.MusicSourceFromApi
+import cp.player.core.music.PlaylistDetail
+import cp.player.core.music.PlaylistSummary
+import cp.player.core.music.PlaylistTracksPage
+import cp.player.core.music.SearchResult
+import cp.player.core.music.TrackSummary
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject

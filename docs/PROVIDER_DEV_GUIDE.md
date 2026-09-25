@@ -141,19 +141,31 @@ Content-Type: application/json
 ```c
 // API 调用（核心）
 JNIEXPORT jstring JNICALL
-Java_cp_player_kmp_provider_JniProvider_nativeCallApi(
+Java_cp_player_core_provider_JniProvider_nativeCallApi(
     JNIEnv *env, jobject obj, jstring method, jstring paramsJson);
 
 // 启动本地服务（可选）
 JNIEXPORT void JNICALL
-Java_cp_player_kmp_provider_JniProvider_startNativeServer(
+Java_cp_player_core_provider_JniProvider_startNativeServer(
     JNIEnv *env, jobject obj, jstring host, jint port);
 
 // 音频分析（可选）
 JNIEXPORT jstring JNICALL
-Java_cp_player_kmp_provider_JniProvider_analyzeAudioFile(
+Java_cp_player_core_provider_JniProvider_analyzeAudioFile(
     JNIEnv *env, jobject obj, jstring path);
 ```
+
+> ⚠️ **符号名与 Java 类的全限定名严格绑定。** JNI 按
+> `Java_<包名下划线化>_<类名>_<方法名>` 查找符号，宿主类当前是
+> `cp.player.core.provider.JniProvider`，因此前缀是 `Java_cp_player_core_provider_JniProvider_`。
+>
+> **历史沿革**：`cp.player.provider` → `cp.player.kmp.provider` → `cp.player.core.provider`，
+> 每次后端包名调整都会改变前缀。用旧前缀编译的模块在新版宿主上会在 `System.load()`
+> 之后的首次方法调用时抛 `UnsatisfiedLinkError`（库本身能加载成功，所以症状是
+> 「模块显示已加载但调用即崩」）。升级宿主后需按新前缀重新编译模块。
+>
+> Rust 侧用 `#[no_mangle] pub extern "system" fn ...` 直接写死符号名，
+> 参见 `reference/netease-module-rust/src/util/jni.rs`。
 
 ---
 

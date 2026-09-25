@@ -97,7 +97,7 @@ Manifest 与 `res/xml/`。**不放业务逻辑。**
 ```kotlin
 /** Transitional raw API access for operations not migrated yet. */
 @Deprecated("Use musicRepository or a feature repository")
-val api: cp.player.kmp.api.MusicApiService get() = backend.musicApi
+val api: cp.player.core.api.MusicApiService get() = backend.musicApi
 ```
 
 编译器会为每一处调用报警告，所以「还剩多少没迁移」可以直接从构建日志读出来。
@@ -164,7 +164,7 @@ commonMain  ──▶  jvmMain  ──▶  { androidMain, desktopMain }
 | `commonMain` | 纯跨平台逻辑、`expect` 声明、Ktor 客户端、领域模型 | 任何 `java.*` / `android.*` / 平台 API |
 | `jvmMain` | Android 与 Desktop 共享的 JVM 实现（`ServerSocket`、`Zip`、ELF 解析、Ktor CIO 服务端） | 只有单一平台能用的 API |
 | `androidMain` | `Context`、`SharedPreferences`、`Build.SUPPORTED_ABIS`、Media3、JNI | 桌面也会用到的实现 |
-| `desktopMain` | `~/.kmp-pro` 持久化（运行时配置目录，路径名沿用旧模块名）、rodio 播放器、JMTC、Skiko 调优 | 安卓也会用到的实现 |
+| `desktopMain` | `~/.cpplayer` 持久化（运行时配置目录，旧名 `.kmp-pro` 由 `DesktopDataDir` 一次性迁移）、rodio 播放器、JMTC、Skiko 调优 | 安卓也会用到的实现 |
 
 **踩过的坑**：
 - `expect` 与 `actual` 的可见性必须一致（`internal actual` 配 `public expect` 会编译失败）。
@@ -177,6 +177,7 @@ commonMain  ──▶  jvmMain  ──▶  { androidMain, desktopMain }
 
 | 问题 | 影响 | 处理 |
 |------|------|------|
+| **JNI 符号名与后端包名硬绑定** —— `JniProvider` 的全限定名决定 native 侧必须导出的符号（`Java_cp_player_core_provider_JniProvider_*`）。改包名会让已编译模块在首次调用时抛 `UnsatisfiedLinkError`，而 `System.load()` 仍然成功，症状伪装成「已加载但一调用就崩」 | 后端包名不可自由重构；第三方模块需随宿主同步重编 | 见 `RESTRUCTURE_PLAN.md` §8（待决策） |
 | 桌面入口在 `app/src/desktopMain/`，安卓入口在 `app-android/` | 两个平台入口不对称，「安卓被剥离」的观感来源。**注意：安卓侧受 AGP 9 约束必须独立，桌面侧不受约束** | 可选对称化，见 `RESTRUCTURE_PLAN.md` Phase 3 |
 | `ui/component/`（21 文件）与 `ui/components/CommonComponents.kt`（1 文件）并存 | 命名易混淆 | 把 `CommonComponents.kt` 并入 `ui/component/` |
 | `PlaybackEngine` / `PlaybackState` / `NoopPlaybackEngine` 全仓无使用 | 与 `PlatformPlayer` / `PlatformPlaybackState` 平行，容易误导 | 待清理 |

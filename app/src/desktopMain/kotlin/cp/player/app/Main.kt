@@ -7,9 +7,9 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import cp.player.app.platform.DesktopRenderTuning
 import cp.player.app.version.AppVersion
-import cp.player.kmp.MusicBackend
-import cp.player.kmp.util.PlatformContext
-import cp.player.kmp.util.defaultSettingsStorage
+import cp.player.core.MusicBackend
+import cp.player.core.util.PlatformContext
+import cp.player.core.util.defaultSettingsStorage
 
 fun main() {
     // 必须最先执行：Skiko 在创建渲染器时首次读取 skiko.* 属性并固化，

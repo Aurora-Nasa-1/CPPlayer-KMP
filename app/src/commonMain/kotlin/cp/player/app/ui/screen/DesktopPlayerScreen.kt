@@ -58,8 +58,8 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.ui.util.formatTimeMs
 import cp.player.app.ui.util.resized
-import cp.player.kmp.playback.PlaybackUiState
-import cp.player.kmp.playback.RepeatMode
+import cp.player.core.playback.PlaybackUiState
+import cp.player.core.playback.RepeatMode
 import kotlinx.coroutines.launch
 
 /** Desktop/tablet player: artwork and controls stay balanced while the queue remains visible. */

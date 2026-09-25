@@ -85,11 +85,11 @@ import cp.player.app.ui.model.PlaylistDetailUiState
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.formatTimeMs
 import cp.player.app.ui.util.resized
-import cp.player.kmp.BackendResult
-import cp.player.kmp.music.CPMediaId
-import cp.player.kmp.music.MusicSourceFromApi
-import cp.player.kmp.music.PlaylistSummary
-import cp.player.kmp.music.TrackSummary
+import cp.player.core.BackendResult
+import cp.player.core.music.CPMediaId
+import cp.player.core.music.MusicSourceFromApi
+import cp.player.core.music.PlaylistSummary
+import cp.player.core.music.TrackSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext

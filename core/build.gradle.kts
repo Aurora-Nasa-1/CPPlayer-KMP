@@ -11,7 +11,7 @@ version = "1.0.0"
 
 kotlin {
     android {
-        namespace = "cp.player.kmp"
+        namespace = "cp.player.core"
         compileSdk = 36
         minSdk = 29
     }

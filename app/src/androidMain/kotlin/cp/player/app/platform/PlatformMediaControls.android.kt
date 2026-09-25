@@ -7,8 +7,8 @@ import android.support.v4.media.session.PlaybackStateCompat
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import cp.player.kmp.playback.PlaybackController
-import cp.player.kmp.playback.PlaybackUiState
+import cp.player.core.playback.PlaybackController
+import cp.player.core.playback.PlaybackUiState
 
 private var mediaSession: MediaSessionCompat? = null
 private var sessionController: PlaybackController? = null

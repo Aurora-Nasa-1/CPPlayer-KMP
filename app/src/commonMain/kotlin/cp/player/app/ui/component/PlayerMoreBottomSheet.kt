@@ -37,9 +37,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import cp.player.app.ui.util.resized
-import cp.player.kmp.music.TrackSummary
-import cp.player.kmp.model.LyricsInfo
-import cp.player.kmp.playback.AudioFormatInfo
+import cp.player.core.music.TrackSummary
+import cp.player.core.model.LyricsInfo
+import cp.player.core.playback.AudioFormatInfo
 
 @Composable
 fun PlayerMoreBottomSheet(

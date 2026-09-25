@@ -100,9 +100,9 @@ import cp.player.app.ui.component.PlayerMoreBottomSheet
 import cp.player.app.ui.component.QueueBottomSheet
 import cp.player.app.ui.model.CommentScreenModel
 import cp.player.app.ui.util.formatTimeMs
-import cp.player.kmp.playback.AudioFormatInfo
-import cp.player.kmp.playback.LyricsState
-import cp.player.kmp.playback.RepeatMode
+import cp.player.core.playback.AudioFormatInfo
+import cp.player.core.playback.LyricsState
+import cp.player.core.playback.RepeatMode
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -111,7 +111,7 @@ import kotlin.math.roundToInt
  *
  * 用 KMP 等效写法替换原版仅 Android 才有的 API：
  * - 无 `SharedTransitionScope` / `WindowCompat` / `LocalOnBackPressedDispatcherOwner` → 用普通 fade/offset、systemBars inset、Voyager `pop()`。
- * - 无 `SyncedLyrics` 第三方库 → 用 KMP `cp.player.kmp.playback.SyncedLyricLine`。
+ * - 无 `SyncedLyrics` 第三方库 → 用 KMP `cp.player.core.playback.SyncedLyricLine`。
  * - 无 `WindowWidthSizeClass` → 永远走移动布局（即窄屏样式），desktop 与 mobile 同 UI。
  *
  * 三页 HorizontalPager：歌词 / 播放器 / 评论。播放器页可下拉关闭。
@@ -162,7 +162,7 @@ class PlayerScreen : Screen {
 @OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
-    state: cp.player.kmp.playback.PlaybackUiState,
+    state: cp.player.core.playback.PlaybackUiState,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onBack: () -> Unit,
     onTogglePlay: () -> Unit,
@@ -384,7 +384,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                 },
                                 onShare = {
                                     showMoreMenu = false
-                                    shareText("${track.name} - ${track.artist}\nhttps://music.163.com/song?id=${runCatching { cp.player.kmp.music.CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)}")
+                                    shareText("${track.name} - ${track.artist}\nhttps://music.163.com/song?id=${runCatching { cp.player.core.music.CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)}")
                                 },
                                 onShowInfo = {
                                     showMoreMenu = false
@@ -394,7 +394,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                     showMoreMenu = false
                                     playerScope.launch {
                                         runCatching {
-                                            val rawId = runCatching { cp.player.kmp.music.CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)
+                                            val rawId = runCatching { cp.player.core.music.CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)
                                             AppModel.api.dislikeSong(rawId)
                                         }
                                         cp.player.app.ui.util.UiEvents.notify("已标记不感兴趣")
@@ -453,7 +453,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
 
 @Composable
 private fun LyricsPage(
-    state: cp.player.kmp.playback.PlaybackUiState,
+    state: cp.player.core.playback.PlaybackUiState,
     showTranslation: Boolean,
     onSeek: (Long) -> Unit,
     onRepeat: () -> Unit,
@@ -507,7 +507,7 @@ IconButton(onClick = onRepeat) {
 @OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
-    state: cp.player.kmp.playback.PlaybackUiState,
+    state: cp.player.core.playback.PlaybackUiState,
     animatedVisibilityScope: androidx.compose.animation.AnimatedVisibilityScope,
     onTogglePlay: () -> Unit,
     onSkipNext: () -> Unit,
@@ -698,9 +698,9 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
 
 @Composable
 private fun SongInfoDialog(
-    track: cp.player.kmp.music.TrackSummary,
+    track: cp.player.core.music.TrackSummary,
     formatInfo: AudioFormatInfo?,
-    lyricsInfo: cp.player.kmp.model.LyricsInfo?,
+    lyricsInfo: cp.player.core.model.LyricsInfo?,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
@@ -743,7 +743,7 @@ private fun SongInfoDialog(
 
 @Composable
 private fun ProgressRow(
-    state: cp.player.kmp.playback.PlaybackUiState,
+    state: cp.player.core.playback.PlaybackUiState,
     onSeek: (Long) -> Unit,
 ) {
     val duration = state.durationMs.coerceAtLeast(0L)
@@ -834,7 +834,7 @@ private fun CommentPage(id: String, type: String) {
 
 @Composable
 fun DesktopLyricsContent(
-    state: cp.player.kmp.playback.PlaybackUiState,
+    state: cp.player.core.playback.PlaybackUiState,
     onSeek: (Long) -> Unit,
     onRepeat: () -> Unit,
     onLikeClick: () -> Unit,

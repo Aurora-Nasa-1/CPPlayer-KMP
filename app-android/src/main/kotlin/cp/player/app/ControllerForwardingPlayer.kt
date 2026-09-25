@@ -2,14 +2,14 @@ package cp.player.app
 
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.Player
-import cp.player.kmp.playback.PlaybackController
+import cp.player.core.playback.PlaybackController
 
 /**
  * 把系统媒体会话（通知栏 / 锁屏 / 耳机按键）的传输命令**转交给应用自己的 [PlaybackController]**，
  * 而不是直接落到底层 ExoPlayer。
  *
  * ### 为什么必须这样
- * Media3 的 [androidx.media3.session.MediaSession] 是包在 [cp.player.kmp.playback.SharedMedia3Player]
+ * Media3 的 [androidx.media3.session.MediaSession] 是包在 [cp.player.core.playback.SharedMedia3Player]
  * 的 ExoPlayer 上的，而那个 ExoPlayer **永远只持有一个 media item**——真正的播放队列在
  * [PlaybackController] 里。于是：
  * - ExoPlayer 认为"没有下一首"，`getAvailableCommands()` 里不含 SEEK_TO_NEXT/PREVIOUS，

@@ -20,7 +20,7 @@ private typealias BackendSource = DesktopRenderTuning.BackendSource
  * 所以用测试把顺序钉住。
  *
  * 注意：这些用例**只读写 JVM 系统属性与临时目录**，不碰
- * `~/.kmp-pro/cp_player_prefs.properties`，也不碰真实的探测文件。
+ * `~/.cpplayer/cp_player_prefs.properties`，也不碰真实的探测文件。
  * 做法是每个用例都显式设置 `cp.player.*` 覆盖项，让解析在 `storedBackend()` 之前短路；
  * 唯一走持久化分支的用例只做「不抛异常 + 与实际存储值一致」的性质断言，不写入任何东西。
  */
@@ -40,7 +40,7 @@ class DesktopRenderTuningTest {
      * 清空全部相关属性后执行 [block]，结束后原样恢复。
      *
      * 同时把安全模式的探测文件重定向到临时目录。否则
-     * [DesktopRenderTuning.applyBeforeSkikoInit] 可能往真实 `~/.kmp-pro/` 写探测文件，
+     * [DesktopRenderTuning.applyBeforeSkikoInit] 可能往真实 `~/.cpplayer/` 写探测文件，
      * 而测试里永远等不到出帧去删它 → 用户下次真正启动时会被误判成「后端不可用」、
      * 设置被悄悄回退。测试绝不能有这种副作用。
      */
@@ -285,7 +285,7 @@ class DesktopRenderTuningTest {
 
     @Test
     fun `writing a probe creates missing parent directories`() {
-        // 首次运行时 ~/.kmp-pro 可能还不存在，此时写探测文件不能失败——否则安全网在
+        // 首次运行时 ~/.cpplayer 可能还不存在，此时写探测文件不能失败——否则安全网在
         // 最需要它的新装机上恰好失效。
         val dir = Files.createTempDirectory("cpplayer-probe-mkdir").toFile()
         try {

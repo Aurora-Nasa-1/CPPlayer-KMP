@@ -3,8 +3,8 @@ package cp.player.app.platform
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import cp.player.kmp.playback.PlaybackController
-import cp.player.kmp.playback.PlaybackUiState
+import cp.player.core.playback.PlaybackController
+import cp.player.core.playback.PlaybackUiState
 
 private var jmtc: JmtcMediaControls? = null
 

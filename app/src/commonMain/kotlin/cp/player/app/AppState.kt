@@ -1,6 +1,6 @@
 package cp.player.app
 
-import cp.player.kmp.BackendState
+import cp.player.core.BackendState
 
 sealed interface AppStartDestination {
     data object Loading : AppStartDestination

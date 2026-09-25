@@ -1,7 +1,7 @@
 package cp.player.app.platform
 
-import cp.player.kmp.playback.PlaybackController
-import cp.player.kmp.playback.PlaybackUiState
+import cp.player.core.playback.PlaybackController
+import cp.player.core.playback.PlaybackUiState
 import io.github.selemba1000.JMTC
 import io.github.selemba1000.JMTCEnabledButtons
 import io.github.selemba1000.JMTCMediaType

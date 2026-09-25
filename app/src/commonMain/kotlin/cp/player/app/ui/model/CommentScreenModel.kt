@@ -78,7 +78,7 @@ class CommentScreenModel(val id: String, val type: String) : ScreenModel {
     private val jsonDecoder = Json { ignoreUnknownKeys = true; coerceInputValues = true; isLenient = true }
 
     private fun extractRawId(fullId: String): String {
-        return runCatching { cp.player.kmp.music.CPMediaId.parse(fullId).resourceId }.getOrDefault(fullId)
+        return runCatching { cp.player.core.music.CPMediaId.parse(fullId).resourceId }.getOrDefault(fullId)
     }
 
     fun loadComments() {

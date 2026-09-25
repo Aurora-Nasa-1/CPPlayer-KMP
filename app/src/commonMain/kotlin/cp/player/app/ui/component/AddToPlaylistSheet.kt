@@ -34,7 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
 import cp.player.app.ui.util.UiEvents
-import cp.player.kmp.music.PlaylistSummary
+import cp.player.core.music.PlaylistSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -65,7 +65,7 @@ fun AddToPlaylistSheet(
     }
 
     fun extractRawId(fullId: String): String {
-        return runCatching { cp.player.kmp.music.CPMediaId.parse(fullId).resourceId }.getOrDefault(fullId)
+        return runCatching { cp.player.core.music.CPMediaId.parse(fullId).resourceId }.getOrDefault(fullId)
     }
 
     fun addTo(playlistId: Long) {

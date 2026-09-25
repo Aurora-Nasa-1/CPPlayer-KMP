@@ -6,11 +6,11 @@ import cp.player.app.AppModel
 import cp.player.app.platform.requestMediaScanPermission
 import cp.player.app.platform.setOnMediaPermissionGranted
 import cp.player.app.ui.util.UiEvents
-import cp.player.kmp.local.ScanProgress
-import cp.player.kmp.media.LocalMediaItem
-import cp.player.kmp.media.MediaType
-import cp.player.kmp.model.DownloadStatus
-import cp.player.kmp.model.DownloadTask
+import cp.player.core.local.ScanProgress
+import cp.player.core.media.LocalMediaItem
+import cp.player.core.media.MediaType
+import cp.player.core.model.DownloadStatus
+import cp.player.core.model.DownloadTask
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -51,13 +51,13 @@ data class DownloadsUiState(
     /** 本地库：下载产物分组。 */
     val downloadedItems: List<LocalMediaItem>
         get() = localItems.filter {
-            it.source == cp.player.kmp.media.LocalMediaOrigin.DOWNLOADED
+            it.source == cp.player.core.media.LocalMediaOrigin.DOWNLOADED
         }
 
     /** 本地库：扫描/导入分组。 */
     val importedItems: List<LocalMediaItem>
         get() = localItems.filter {
-            it.source == cp.player.kmp.media.LocalMediaOrigin.IMPORTED
+            it.source == cp.player.core.media.LocalMediaOrigin.IMPORTED
         }
 }
 

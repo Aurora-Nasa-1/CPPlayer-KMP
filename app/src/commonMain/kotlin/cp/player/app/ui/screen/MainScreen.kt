@@ -80,7 +80,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cp.player.app.AppModel
 import cp.player.app.ui.component.MiniPlayer
 import cp.player.app.ui.component.CpSpacing
-import cp.player.kmp.music.PlaylistSummary
+import cp.player.core.music.PlaylistSummary
 
 /** Responsive application shell for the four primary destinations. */
 class MainScreen : Screen {
@@ -273,9 +273,9 @@ class MainScreen : Screen {
                             onRepeat = {
                                 controller.setRepeatMode(
                                     when (playbackState.repeatMode) {
-                                        cp.player.kmp.playback.RepeatMode.OFF -> cp.player.kmp.playback.RepeatMode.ALL
-                                        cp.player.kmp.playback.RepeatMode.ALL -> cp.player.kmp.playback.RepeatMode.ONE
-                                        cp.player.kmp.playback.RepeatMode.ONE -> cp.player.kmp.playback.RepeatMode.OFF
+                                        cp.player.core.playback.RepeatMode.OFF -> cp.player.core.playback.RepeatMode.ALL
+                                        cp.player.core.playback.RepeatMode.ALL -> cp.player.core.playback.RepeatMode.ONE
+                                        cp.player.core.playback.RepeatMode.ONE -> cp.player.core.playback.RepeatMode.OFF
                                     }
                                 )
                             },
@@ -294,9 +294,9 @@ class MainScreen : Screen {
                         onRepeat = {
                             controller.setRepeatMode(
                                 when (playbackState.repeatMode) {
-                                    cp.player.kmp.playback.RepeatMode.OFF -> cp.player.kmp.playback.RepeatMode.ALL
-                                    cp.player.kmp.playback.RepeatMode.ALL -> cp.player.kmp.playback.RepeatMode.ONE
-                                    cp.player.kmp.playback.RepeatMode.ONE -> cp.player.kmp.playback.RepeatMode.OFF
+                                    cp.player.core.playback.RepeatMode.OFF -> cp.player.core.playback.RepeatMode.ALL
+                                    cp.player.core.playback.RepeatMode.ALL -> cp.player.core.playback.RepeatMode.ONE
+                                    cp.player.core.playback.RepeatMode.ONE -> cp.player.core.playback.RepeatMode.OFF
                                 }
                             )
                         },

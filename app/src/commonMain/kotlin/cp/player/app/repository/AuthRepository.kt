@@ -1,6 +1,6 @@
 package cp.player.app.repository
 
-import cp.player.kmp.api.MusicApiService
+import cp.player.core.api.MusicApiService
 import kotlinx.serialization.json.JsonElement
 
 class AuthRepository(private val api: MusicApiService) {

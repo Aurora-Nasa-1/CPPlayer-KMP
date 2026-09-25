@@ -100,9 +100,11 @@ CPPlayer-KMP/
 └── app-android/               Android 入口点
 ```
 
-包名保持不变：后端仍是 `cp.player.kmp.*`，安卓仍是 `cp.player.app`
-（`namespace` / `applicationId` 与模块名解耦）。改包名会波及 94 个文件与前端全部
-import，且会变更应用标识导致已安装版本无法覆盖升级，**收益低于成本**。
+**包名（本节写于改名之前，实际已变更 —— 见 §7.3）**：原计划保持
+`cp.player.kmp.*` / `cp.player.app` 不动，理由是「包名与模块名解耦，改它会变更应用标识
+导致已安装版本无法覆盖升级，收益低于成本」。用户后续决定改，实际执行为
+后端包名 `cp.player.kmp` → `cp.player.core`、`applicationId` `cp.player.app` → `cp.player`。
+`app-android` 的 `namespace` 仍保持 `cp.player.app`。
 
 ---
 
@@ -164,9 +166,11 @@ AGP 的 APK 文件名以 **Gradle 工程名**为准，所以模块改名会让�
 
 debug 与 fastrelease 两个名字已实际构建确认。
 
-**保持不变的**：`app-android/build.gradle.kts` 里的 `namespace` / `applicationId`
-（`cp.player.app`）—— 包名与模块名解耦，改它会变更应用标识、
-导致已安装版本无法覆盖升级。同理 `~/.kmp-pro` 这个桌面端运行时配置目录也没动。
+**已按用户要求变更的**（见 §7）：`applicationId` 由 `cp.player.app` 改为 `cp.player`；
+后端包名由 `cp.player.kmp` 改为 `cp.player.core`；桌面数据目录由 `~/.kmp-pro` 改为 `~/.cpplayer`（带一次性迁移）。
+
+`app-android` 的 `namespace`（`cp.player.app`）保持不动 —— 它只影响 R 类与资源符号，
+改它会连带变更 `BuildConfig` 所在包与资源引用路径，收益为零。
 
 ### 4.3 验证
 
@@ -261,7 +265,39 @@ git rm -r --cached .qoder
 printf '\n# AI-generated repo wiki (local only)\n.qoder/\n' >> .gitignore
 ```
 
-### 7.3 其它
+### 7.3 后端包名已改名（`cp.player.kmp` → `cp.player.core`）
+
+原诊断建议「不动」——理由是包名不表达角色、改名波及面大。用户决定改，故已执行。
+本节的正文（§0–§6）保留原判断，改动记录如下：
+
+| 项 | 改前 | 改后 |
+|----|------|------|
+| 后端包名 | `cp.player.kmp` | `cp.player.core` |
+| `core` 的 `namespace` | `cp.player.kmp` | `cp.player.core` |
+| `core/consumer-rules.pro` | `-keep class cp.player.kmp.**` | `-keep class cp.player.core.**` |
+| `applicationId` | `cp.player.app` | `cp.player` |
+| 桌面数据目录 | `~/.kmp-pro` | `~/.cpplayer`（带一次性迁移） |
+
+#### ⚠️ 连带影响：JNI 符号名变了，已编译的模块需要重新构建
+
+JNI 按 `Java_<包名下划线化>_<类名>_<方法名>` 查找符号。宿主类从
+`cp.player.kmp.provider.JniProvider` 变成 `cp.player.core.provider.JniProvider` 之后，
+导出符号前缀必须跟着从 `Java_cp_player_kmp_provider_JniProvider_` 改为
+`Java_cp_player_core_provider_JniProvider_`。
+
+**症状具有欺骗性**：`.so`/`.dll` 本身仍能被 `System.load()` 成功加载，
+失败发生在**首次方法调用**时（`UnsatisfiedLinkError`），表现为
+「模块显示已加载，一调用就崩」。`JniProvider.isReady()` 只检查文件存在与
+`System.load`，捕获不到这种情况。
+
+受影响的两处：
+1. `reference/netease-module-rust/src/util/jni.rs` —— 三个 `#[no_mangle]` 函数名；
+2. `docs/PROVIDER_DEV_GUIDE.md` §3.3 —— 第三方模块作者的契约（**已同步更新**）。
+
+**未处理**：`jni.rs` 仍是旧前缀。是否连带修改参考仓库，取决于是否还有用旧前缀
+编译的模块需要继续兼容 —— 见 §8。
+
+### 7.4 其它
 
 | 项 | 说明 |
 |----|------|
@@ -271,4 +307,18 @@ printf '\n# AI-generated repo wiki (local only)\n.qoder/\n' >> .gitignore
 | `PlaybackControllerImpl.playCurrent(skipIfSame)` | 参数从未被使用 |
 | `native/windows-smtc/` | 只有一个 README，无代码 |
 | `core` 的 `commonMain` 依赖 `composemediaplayer-audio` | 名字带 Compose，易被误认为后端依赖 UI。实际提供的是 rodio 音频播放能力，与 Compose UI 无关 |
-| 包名 `cp.player.kmp` | 与模块名一样不表达角色。改名会波及 94 个文件 + 前端全部 import，收益低于成本，**建议不动** |
+| `AboutScreen.kt` 里的可见文案 `KMP-PRO · Compose Multiplatform` | 属于产品文案，改名与否由产品决定，未随本次技术改名调整 |
+
+---
+
+## 8. 待决策：JNI 符号兼容策略
+
+后端包名改名（§7.3）破坏了已编译 JNI 模块的符号匹配。三种处理方式：
+
+| 方案 | 做法 | 代价 |
+|------|------|------|
+| A. 只更新源码（推荐） | 同步改 `jni.rs` 的三个符号名，要求模块重新编译后分发 | 用旧前缀编译的模块全部失效，需重新分发 |
+| B. 双符号兼容 | `jni.rs` 里保留旧前缀函数作为转发壳，新旧符号都导出 | 参考仓库里多 3 个转发函数；`JniProvider` 换包时又得再来一次 |
+| C. 固定宿主类名 | 把 `JniProvider` 钉在 `cp.player.kmp.provider` 不动，只改其它类的包名 | 包结构出现一个「例外」，长期维护者容易困惑 |
+
+当前状态：**未处理**，等待决定。在决定之前，`jni.rs` 与宿主代码是不一致的。

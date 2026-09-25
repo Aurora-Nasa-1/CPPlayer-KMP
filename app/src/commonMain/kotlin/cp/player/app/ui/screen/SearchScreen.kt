@@ -54,7 +54,7 @@ import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.PlaylistItem
 import cp.player.app.ui.model.SearchScreenModel
-import cp.player.kmp.api.MusicApiMethod
+import cp.player.core.api.MusicApiMethod
 import kotlinx.coroutines.launch
 
 class SearchScreen(private val initialQuery: String = "") : Screen {
@@ -68,10 +68,10 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
         val navigator = LocalNavigator.currentOrThrow
         val likedIds by AppModel.playback.likedIds.collectAsState()
         var selectedTrack by androidx.compose.runtime.remember {
-            androidx.compose.runtime.mutableStateOf<cp.player.kmp.music.TrackSummary?>(null)
+            androidx.compose.runtime.mutableStateOf<cp.player.core.music.TrackSummary?>(null)
         }
         var addToPlaylistTrack by androidx.compose.runtime.remember {
-            androidx.compose.runtime.mutableStateOf<cp.player.kmp.music.TrackSummary?>(null)
+            androidx.compose.runtime.mutableStateOf<cp.player.core.music.TrackSummary?>(null)
         }
 
         Column(Modifier.fillMaxSize()) {

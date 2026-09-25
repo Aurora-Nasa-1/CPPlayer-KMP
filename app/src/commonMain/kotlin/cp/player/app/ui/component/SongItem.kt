@@ -30,7 +30,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.ui.util.resized
-import cp.player.kmp.music.TrackSummary
+import cp.player.core.music.TrackSummary
 
 /**
  * M3 Expressive 风格歌曲列表项。

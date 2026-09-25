@@ -51,7 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import cp.player.kmp.playback.QueueItem
+import cp.player.core.playback.QueueItem
 import cp.player.app.ui.util.resized
 import kotlinx.coroutines.launch
 
@@ -173,7 +173,7 @@ fun QueueBottomSheet(
                 if (newId != null) {
                     scope.launch(kotlinx.coroutines.Dispatchers.IO) {
                         val ids = queue.mapNotNull {
-                            runCatching { cp.player.kmp.music.CPMediaId.parse(it.mediaId).resourceId }.getOrNull()
+                            runCatching { cp.player.core.music.CPMediaId.parse(it.mediaId).resourceId }.getOrNull()
                         }.filter { it.isNotBlank() }
                         val ok = ids.isNotEmpty() && runCatching {
                             cp.player.app.AppModel.api.addTracksToPlaylist(newId, ids)

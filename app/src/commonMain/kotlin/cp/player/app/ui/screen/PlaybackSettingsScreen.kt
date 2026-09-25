@@ -35,7 +35,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.ui.component.LegacyListItem
 import cp.player.app.ui.component.LegacyPageScaffold
-import cp.player.kmp.playback.PlaybackController
+import cp.player.core.playback.PlaybackController
 
 class PlaybackSettingsScreen : Screen {
     @OptIn(ExperimentalMaterial3Api::class)

@@ -20,7 +20,7 @@ android {
     namespace = "cp.player.app"
     compileSdk = 36
     defaultConfig {
-        applicationId = "cp.player.app"
+        applicationId = "cp.player"
         minSdk = 29
         targetSdk = 35
         versionCode = appVersionCode

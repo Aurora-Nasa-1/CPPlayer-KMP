@@ -63,7 +63,7 @@ import cp.player.app.ui.component.PageHeader
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.model.LibraryScreenModel
 import cp.player.app.ui.model.DownloadsScreenModel
-import cp.player.kmp.music.PlaylistSummary
+import cp.player.core.music.PlaylistSummary
 import kotlinx.coroutines.launch
 
 class LibraryScreen(private val initialPlaylistId: Long? = null) : Screen {
@@ -220,7 +220,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
 
 @Composable
 private fun CloudTab(
-    songs: List<cp.player.kmp.music.TrackSummary>,
+    songs: List<cp.player.core.music.TrackSummary>,
     loading: Boolean,
     error: String?,
     loaded: Boolean,

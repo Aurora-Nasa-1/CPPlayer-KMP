@@ -24,9 +24,13 @@
 app-android ──▶ app ──▶ core
 ```
 
-前端访问后端的**唯一入口**是 `cp.player.kmp.MusicBackend`（包名保持
-`cp.player.kmp` 未变，与模块名解耦）。Provider / Module / API 等内部组件不应被
-前端直接触碰 —— 详见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)（含当前越界点的清单）。
+前端访问后端的**唯一入口**是 `cp.player.core.MusicBackend`。Provider / Module / API
+等内部组件不应被前端直接触碰 —— 详见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+（含当前越界点的清单）。
+
+> **后端包名已从 `cp.player.kmp` 改为 `cp.player.core`**（与模块名对齐）。
+> 这会让 JNI 导出符号前缀同步变化，用旧前缀编译的音源模块需要重新构建 ——
+> 详见 [`docs/RESTRUCTURE_PLAN.md`](docs/RESTRUCTURE_PLAN.md) §7.3。
 
 ### 为什么安卓入口是独立模块
 
@@ -88,7 +92,7 @@ commonMain  ──▶  jvmMain  ──▶  { androidMain, desktopMain }
 | `commonMain` | 纯跨平台代码：模型、Provider 抽象、Ktor 客户端、缓存、播放控制 |
 | `jvmMain` | Android 与 Desktop 共享的 JVM 实现：Socket / Zip / ELF / 二进制 Provider / 本地流输出服务 |
 | `androidMain` | Android 独有：`Context`、`SharedPreferences`、`Build.SUPPORTED_ABIS`、Media3 播放器、JNI Provider |
-| `desktopMain` | Desktop 独有：`~/.kmp-pro` 持久化（运行时配置目录，路径名沿用旧模块名，改动会丢失用户既有设置）、rodio 播放器、JMTC 媒体控制、Skiko 渲染调优 |
+| `desktopMain` | Desktop 独有：`~/.cpplayer` 持久化（运行时配置目录，首次启动自动从旧名 `.kmp-pro` 迁移）、rodio 播放器、JMTC 媒体控制、Skiko 渲染调优 |
 
 ---
 
@@ -172,7 +176,7 @@ CPPlayer 可作为**推送方**，把本地转码后的 HTTP 流推给外部接�
 - `8420` 是**接收端**的端口，通过 `/api/v1/play-url` 等端点接收推送；
 - 输出模式可选「本机声卡」或「只做服务器」（静默模式，本机音量恒定为 0）。
 
-配置见 `cp.player.kmp.control.LocalServerConfig`，UI 入口在设置页「本地服务器」。
+配置见 `cp.player.core.control.LocalServerConfig`，UI 入口在设置页「本地服务器」。
 
 ---
 

@@ -34,6 +34,6 @@ if (-not $devices) { throw "No authorized Android device found. Enable USB debug
 Write-Host "Installing $apk" -ForegroundColor Cyan
 Invoke-Checked $adb.Source @("install", "-r", "-d", $apk)
 if ($Launch) {
-    Invoke-Checked $adb.Source @("shell", "monkey", "-p", "cp.player.app", "1")
+    Invoke-Checked $adb.Source @("shell", "monkey", "-p", "cp.player", "1")
 }
 Write-Host "fastrelease installed successfully." -ForegroundColor Green

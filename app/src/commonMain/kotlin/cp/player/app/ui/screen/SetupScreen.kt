@@ -41,9 +41,9 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.platform.rememberZipPicker
 import cp.player.app.ui.components.HeroBlock
-import cp.player.kmp.BackendState
-import cp.player.kmp.ImportResult
-import cp.player.kmp.provider.BackendProvider
+import cp.player.core.BackendState
+import cp.player.core.ImportResult
+import cp.player.core.provider.BackendProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

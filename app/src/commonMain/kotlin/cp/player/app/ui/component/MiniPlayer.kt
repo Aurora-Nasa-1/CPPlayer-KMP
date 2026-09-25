@@ -37,7 +37,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import cp.player.kmp.playback.PlaybackUiState
+import cp.player.core.playback.PlaybackUiState
 import cp.player.app.ui.theme.CpShapes
 import cp.player.app.ui.util.resized
 

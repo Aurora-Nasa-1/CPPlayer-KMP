@@ -1,18 +1,18 @@
 package cp.player.app
 
-import cp.player.kmp.BackendResult
-import cp.player.kmp.BackendState
-import cp.player.kmp.ImportResult
-import cp.player.kmp.MusicBackend
-import cp.player.kmp.control.LocalServerConfig
-import cp.player.kmp.control.LocalServerConfigStore
-import cp.player.kmp.control.LocalServerStatus
-import cp.player.kmp.control.OutputMode
-import cp.player.kmp.monitor.HealthMonitor
-import cp.player.kmp.playback.PlaybackController
-import cp.player.kmp.provider.BackendProvider
-import cp.player.kmp.provider.ProviderCookieStorage
-import cp.player.kmp.util.SettingsStorage
+import cp.player.core.BackendResult
+import cp.player.core.BackendState
+import cp.player.core.ImportResult
+import cp.player.core.MusicBackend
+import cp.player.core.control.LocalServerConfig
+import cp.player.core.control.LocalServerConfigStore
+import cp.player.core.control.LocalServerStatus
+import cp.player.core.control.OutputMode
+import cp.player.core.monitor.HealthMonitor
+import cp.player.core.playback.PlaybackController
+import cp.player.core.provider.BackendProvider
+import cp.player.core.provider.ProviderCookieStorage
+import cp.player.core.util.SettingsStorage
 import cp.player.app.repository.AuthRepository
 import cp.player.app.repository.MusicRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,7 +53,7 @@ object AppModel {
     val isFirstRun: Boolean get() = backend.getAvailableProviders().isEmpty()
 
     val cookieStorage: ProviderCookieStorage get() = backend.cookieStorage
-    val settings: SettingsStorage get() = cp.player.kmp.util.defaultSettingsStorage()
+    val settings: SettingsStorage get() = cp.player.core.util.defaultSettingsStorage()
 
     /** Application-facing repository; new UI code should use this instead of raw API. */
     val musicRepository: MusicRepository get() = MusicRepository(backend.musicApi)
@@ -62,11 +62,11 @@ object AppModel {
 
     /** Transitional raw API access for operations not migrated yet. */
     @Deprecated("Use musicRepository or a feature repository")
-    val api: cp.player.kmp.api.MusicApiService get() = backend.musicApi
+    val api: cp.player.core.api.MusicApiService get() = backend.musicApi
 
     /** 带缓存的音乐 API（先返回缓存，后台拉取，指纹比对，差异 Fresh）。 */
     @Deprecated("Use a repository method")
-    val cachedApi: cp.player.kmp.cache.CachedMusicApiService get() = backend.cachedApi
+    val cachedApi: cp.player.core.cache.CachedMusicApiService get() = backend.cachedApi
 
     /** 当前活跃 Provider 唯一 ID（无活跃时返回 "default"）。 */
     fun activeProviderId(): String = backend.activeProviderId()
@@ -157,7 +157,7 @@ object AppModel {
     val localServerStatus: StateFlow<LocalServerStatus> get() = backend.localServerStatus
 
     /** 最近一次推送结果（UI 展示成败）。 */
-    val lastPushResult: StateFlow<cp.player.kmp.control.PushResult?> get() = backend.lastPushResult
+    val lastPushResult: StateFlow<cp.player.core.control.PushResult?> get() = backend.lastPushResult
 
     /** 当前配置快照。 */
     fun localServerConfig(): LocalServerConfig = _localServerConfig.value
@@ -228,17 +228,17 @@ object AppModel {
     // ---- 推送动作（供设置页手动触发） ----
 
     /** 探测接收端是否在线。 */
-    fun probeReceiver(onResult: (cp.player.kmp.control.PushResult) -> Unit) {
+    fun probeReceiver(onResult: (cp.player.core.control.PushResult) -> Unit) {
         modelScope.launch { onResult(backend.probeReceiver()) }
     }
 
     /** 手动推送当前曲目。 */
-    fun pushCurrentTrack(onResult: (cp.player.kmp.control.PushResult) -> Unit) {
+    fun pushCurrentTrack(onResult: (cp.player.core.control.PushResult) -> Unit) {
         modelScope.launch { onResult(backend.pushCurrentTrack()) }
     }
 
     /** 手动推送当前队列。 */
-    fun pushQueueToReceiver(onResult: (cp.player.kmp.control.PushResult) -> Unit) {
+    fun pushQueueToReceiver(onResult: (cp.player.core.control.PushResult) -> Unit) {
         modelScope.launch { onResult(backend.pushQueue()) }
     }
 
@@ -259,12 +259,12 @@ object AppModel {
 
     // ============ 下载目录（持久化，key 与 DownloadConfig 保持一致） ============
 
-    /** SettingsStorage key：自定义下载根目录（与 [cp.player.kmp.download.DownloadConfig.KEY_DOWNLOAD_ROOT_DIR] 同值）。 */
-    val KEY_DOWNLOAD_DIR: String = cp.player.kmp.download.DownloadConfig.KEY_DOWNLOAD_ROOT_DIR
+    /** SettingsStorage key：自定义下载根目录（与 [cp.player.core.download.DownloadConfig.KEY_DOWNLOAD_ROOT_DIR] 同值）。 */
+    val KEY_DOWNLOAD_DIR: String = cp.player.core.download.DownloadConfig.KEY_DOWNLOAD_ROOT_DIR
 
     /** 下载管理器的配置实例（优先经 DownloadConfig 读写；装配异常时为 null）。 */
-    private val downloadConfig: cp.player.kmp.download.DownloadConfig?
-        get() = runCatching { downloads as? cp.player.kmp.download.MediaDownloadManagerImpl }
+    private val downloadConfig: cp.player.core.download.DownloadConfig?
+        get() = runCatching { downloads as? cp.player.core.download.MediaDownloadManagerImpl }
             .getOrNull()?.config
 
     private val _downloadDir = MutableStateFlow(downloadDir())
@@ -300,7 +300,7 @@ object AppModel {
     }
 
     /** 下载单首歌曲（解析 mediaId/title/artist/coverUrl，AUDIO 入队）并提示「已加入下载」。 */
-    fun downloadTrack(track: cp.player.kmp.music.TrackSummary, level: String = playbackQuality()) {
+    fun downloadTrack(track: cp.player.core.music.TrackSummary, level: String = playbackQuality()) {
         modelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val ok = runCatching {
                 downloads.enqueue(
@@ -308,7 +308,7 @@ object AppModel {
                     title = track.name,
                     artist = track.artist,
                     coverUrl = track.coverUrl,
-                    mediaType = cp.player.kmp.media.MediaType.AUDIO,
+                    mediaType = cp.player.core.media.MediaType.AUDIO,
                     level = level,
                 )
             }.isSuccess
@@ -319,7 +319,7 @@ object AppModel {
     }
 
     /** 批量入队下载（歌单「全部下载」用），完成后 toast 报告入队数量。 */
-    fun downloadTracks(tracks: List<cp.player.kmp.music.TrackSummary>, level: String = playbackQuality()) {
+    fun downloadTracks(tracks: List<cp.player.core.music.TrackSummary>, level: String = playbackQuality()) {
         if (tracks.isEmpty()) {
             cp.player.app.platform.sendPlatformToast("没有可下载的歌曲")
             return
@@ -333,7 +333,7 @@ object AppModel {
                         title = track.name,
                         artist = track.artist,
                         coverUrl = track.coverUrl,
-                        mediaType = cp.player.kmp.media.MediaType.AUDIO,
+                        mediaType = cp.player.core.media.MediaType.AUDIO,
                         level = level,
                     )
                 }.isSuccess
@@ -400,7 +400,7 @@ object AppModel {
     private val RECENT_LIMIT = 30
 
     private val _recentTracks = MutableStateFlow(loadRecentTracks())
-    val recentTracksFlow: StateFlow<List<cp.player.kmp.music.TrackSummary>> = _recentTracks.asStateFlow()
+    val recentTracksFlow: StateFlow<List<cp.player.core.music.TrackSummary>> = _recentTracks.asStateFlow()
 
     private var historyRecorderStarted = false
 
@@ -420,9 +420,9 @@ object AppModel {
         }
     }
 
-    private fun recordRecentTrack(track: cp.player.kmp.music.TrackSummary) {
+    private fun recordRecentTrack(track: cp.player.core.music.TrackSummary) {
         // update 为原子 CAS，避免与 enrich 回写的读改写窗口互覆
-        var recorded: List<cp.player.kmp.music.TrackSummary>? = null
+        var recorded: List<cp.player.core.music.TrackSummary>? = null
         _recentTracks.update { list ->
             ((listOf(track) + list.filter { it.id != track.id }).take(RECENT_LIMIT)).also {
                 recorded = it
@@ -431,7 +431,7 @@ object AppModel {
         recorded?.let { saveRecentTracks(it) }
     }
 
-    private fun saveRecentTracks(tracks: List<cp.player.kmp.music.TrackSummary>) {
+    private fun saveRecentTracks(tracks: List<cp.player.core.music.TrackSummary>) {
         runCatching {
             val array = kotlinx.serialization.json.buildJsonArray {
                 tracks.forEach { t ->
@@ -449,7 +449,7 @@ object AppModel {
         }
     }
 
-    private fun loadRecentTracks(): List<cp.player.kmp.music.TrackSummary> {
+    private fun loadRecentTracks(): List<cp.player.core.music.TrackSummary> {
         return runCatching {
             val raw = settings.getString(KEY_RECENT_TRACKS) ?: return emptyList()
             val array = kotlinx.serialization.json.Json.parseToJsonElement(raw)
@@ -460,7 +460,7 @@ object AppModel {
                     (obj[key] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: ""
                 val id = str("id")
                 if (id.isBlank()) return@mapNotNull null
-                cp.player.kmp.music.TrackSummary(
+                cp.player.core.music.TrackSummary(
                     id = id,
                     name = str("name"),
                     artist = str("artist"),
@@ -498,7 +498,7 @@ object AppModel {
                 }
                 if (toFetch.isEmpty()) return@runCatching
                 val result = backend.unifiedSource.getTrackDetails(toFetch.map { it.second })
-                val details = (result as? cp.player.kmp.BackendResult.Success)?.data
+                val details = (result as? cp.player.core.BackendResult.Success)?.data
                     ?: return@runCatching
                 if (details.isEmpty()) return@runCatching
                 // mediaId → 详情；同时按裸 id 建索引（新记录条目可能已存完整 mediaId）
@@ -508,7 +508,7 @@ object AppModel {
                 }
                 // 以「最新」列表为基线按 id 合并，仅回填缺失字段，
                 // 保留挂起期间 historyRecorder 新写入的条目与顺序（避免旧快照整体覆盖）
-                var mergedList: List<cp.player.kmp.music.TrackSummary>? = null
+                var mergedList: List<cp.player.core.music.TrackSummary>? = null
                 var changed = false
                 _recentTracks.update { latest ->
                     val merged = latest.map { t ->

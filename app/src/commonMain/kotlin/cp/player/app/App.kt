@@ -28,7 +28,7 @@ import cp.player.app.ui.screen.SetupScreen
 import cp.player.app.ui.screen.StartupScreen
 import cp.player.app.ui.theme.CpTheme
 import cp.player.app.platform.PlatformMediaControlsEffect
-import cp.player.kmp.MusicBackend
+import cp.player.core.MusicBackend
 
 /**
  * 应用根 Composable。
