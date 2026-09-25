@@ -151,7 +151,8 @@ Gradle 工程路径 `:kmp-pro` → `:core`、`:androidApp` → `:app-android`。
 | 11 | `README.md` | 模块表格、目录树、依赖链、构建命令 | ✅ |
 | 12 | `docs/ARCHITECTURE.md` | 全文模块名 + 边界现状修正 | ✅ |
 | 13 | `docs/PROVIDER_DEV_GUIDE.md` | 4 处 `KMP-PRO` → `CPPlayer` | ✅ |
-| 14 | `app/src/commonMain/.../ui/screen/AboutScreen.kt:156` | 用户可见文案 `"KMP-PRO · Compose Multiplatform"` | ⏸ **未改**，属产品文案，待确认 |
+| 14 | `app/src/commonMain/.../ui/screen/AboutScreen.kt:156` | 用户可见文案 `"KMP-PRO · Compose Multiplatform"` | ✅ 2026-09-25 已改为 `CPPlayer`（产品名随 `rootProject.name` / `applicationId` 定案，不再是悬置项） |
+| 15 | `app/src/androidMain/.../platform/PlatformActions.android.kt:137` | 注释里的旧模块名 `androidApp` | ✅ 2026-09-25 改为 `app-android` |
 
 ### 4.2 改名时会连带变化的产物路径（实测确认，非推测）
 
@@ -302,13 +303,15 @@ JNI 按 `Java_<包名下划线化>_<类名>_<方法名>` 查找符号。宿主�
 
 | 项 | 说明 |
 |----|------|
-| `ui/component/`（21 文件）与 `ui/components/CommonComponents.kt`（1 文件） | 命名易混，建议把 `CommonComponents.kt` 并入 `ui/component/` |
-| `PlaybackEngine` / `PlaybackState` / `NoopPlaybackEngine` | 与 `PlatformPlayer` / `PlatformPlaybackState` 平行的另一套抽象，全仓无实际使用 |
-| `CachedMusicApiService.callApiCached` | 全仓无调用方，缓存层目前是空转 |
-| `PlaybackControllerImpl.playCurrent(skipIfSame)` | 参数从未被使用 |
-| `native/windows-smtc/` | 只有一个 README，无代码 |
-| `core` 的 `commonMain` 依赖 `composemediaplayer-audio` | 名字带 Compose，易被误认为后端依赖 UI。实际提供的是 rodio 音频播放能力，与 Compose UI 无关 |
-| `AboutScreen.kt` 里的可见文案 `KMP-PRO · Compose Multiplatform` | 属于产品文案，改名与否由产品决定，未随本次技术改名调整 |
+| ~~`ui/component/`（21 文件）与 `ui/components/CommonComponents.kt`（1 文件）~~ | 命名只差尾字母 `s`。✅ **已合并**（2026-09-25，`2f6d7d3`），目录统一为单数 |
+| ~~`PlaybackEngine` / `PlaybackState` / `EngineType` / `NoopPlaybackEngine`~~ | 与 `PlatformPlayer` 平行的另一套抽象，全仓无实际使用。✅ **已删除**（`f4a5141`）；`PlaybackMetadata` 是活的，已单独成文件保留 |
+| `CachedMusicApiService.callApiCached` | 全仓无调用方，缓存层是空转。**且它一死，整个 `core/cache/` 包（6 文件）跟着死**。⏸ **范围已确认、暂缓**（2026-09-25），属子系统级变更，见 `ARCHITECTURE.md` §5 |
+| ~~`PlaybackControllerImpl.playCurrent(skipIfSame)`~~ | 参数在函数体内从未被读取，8 个调用点全部传 `false`。✅ **已删除参数**（`f4a5141`） |
+| ~~`CommonComponents.kt` 的 `AppLogo` / `HeadlineSupportingRow`~~ | 零引用。✅ **已删除**（`f4a5141`） |
+| ~~`native/windows-smtc/`~~ | 只有一个 README，无代码。**且其描述的手写 C++/WinRT 方案已废弃**（`cp_windows_smtc.dll` / `cp_smtc_*` / `-Dcp.player.smtc.dir` 全仓 grep 不到；SMTC 实际由 JMTC 的 `SMTCAdapter.dll` 提供）。✅ **已改写为决策记录**（2026-09-25） |
+| `core` 的 `commonMain` 依赖 `composemediaplayer-audio` | 名字带 Compose，易被误认为后端依赖 UI。实际提供的是 rodio 音频播放能力，与 Compose UI 无关。保持现状 |
+| ~~`AboutScreen.kt` 里的可见文案 `KMP-PRO · Compose Multiplatform`~~ | 应用内显示旧项目名。✅ **已改为 `CPPlayer`**（2026-09-25） |
+| ~~`PlatformActions.android.kt` 注释里的旧模块名 `androidApp`~~ | 注释与事实不符。✅ **已改为 `app-android`**（2026-09-25） |
 
 ---
 

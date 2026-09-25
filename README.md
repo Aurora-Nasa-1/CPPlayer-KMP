@@ -67,7 +67,7 @@ CPPlayer-KMP/
 │   ├── PROVIDER_DEV_GUIDE.md      # Provider 插件开发指南（面向第三方音源作者）
 │   └── RELEASE.md                 # 发布流程
 ├── scripts/                       # release.ps1 / fastrelease-install.ps1
-├── native/windows-smtc/           # Windows 系统媒体控制（占位，暂无代码）
+├── native/windows-smtc/           # 决策记录：SMTC 已由 JMTC 实现，此处方案已废弃（无代码）
 ├── reference/                     # 只读参考，不参与构建
 │   ├── cp-player-legacy/          # 原 Android 项目（本地 checkout，已 gitignore）
 │   └── netease-module-rust/       # 第三方音源模块（Rust：api / server / util）

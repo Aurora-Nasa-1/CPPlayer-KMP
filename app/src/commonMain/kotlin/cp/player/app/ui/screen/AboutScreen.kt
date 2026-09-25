@@ -153,7 +153,7 @@ class AboutScreen : Screen {
 
                 Spacer(Modifier.height(32.dp))
                 Text(
-                    "KMP-PRO · Compose Multiplatform",
+                    "CPPlayer · Compose Multiplatform",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),

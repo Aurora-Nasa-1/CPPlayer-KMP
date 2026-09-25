@@ -134,7 +134,7 @@ actual fun clearImageCache(): Boolean {
     }
 }
 
-// ============ 媒体扫描运行时权限（app 模块不依赖 androidApp，经回调桥接 MainActivity） ============
+// ============ 媒体扫描运行时权限（app 模块不依赖 app-android，经回调桥接 MainActivity） ============
 
 @Volatile
 private var mediaPermissionRequester: (() -> Unit)? = null

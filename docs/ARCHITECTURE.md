@@ -190,6 +190,6 @@ commonMain  ──▶  jvmMain  ──▶  { androidMain, desktopMain }
 | `CachedMusicApiService.callApiCached` 全仓**唯一引用是它自己的声明**，且它一死，**整个 `core/cache/` 包（6 文件）跟着死** —— `ApiCache` / `CacheConfig` / `CacheEntry` / `CacheResult` / `Fingerprinter` 都只服务于它 | 缓存层的公开入口无任何调用方 ⇒ README 描述的「缓存层」目前**完全空转**。`CachedMusicApiService` 自身仍活着（`UnifiedMusicSourceImpl` 持有它），但只是纯转发壳。另：`AppModel.cachedApi` 与 `MusicApiServiceFactory.cachedInstance` 也都零引用 | **已确认范围，暂缓**（2026-09-25）。彻底清理需删 `core/cache/` 整包 + 收窄 `MusicBackend` / `MusicApiServiceFactory` / `AppModel` 公开面（约 6 删 5 改），属子系统级变更，不塞进卫生提交。**「接入还是删除」仍未决** |
 | `reference/netease-module-rust` 是**未注册的 submodule** | 索引里是 gitlink（mode 160000）但仓库根没有 `.gitmodules`，他人克隆后该目录为空 | 待修，见 `RESTRUCTURE_PLAN.md` §7.1 |
 | ~~`.qoder/` 有 132 个文件已被提交~~ | AI 生成的仓库 wiki + 一次性 diff 转储，会随代码漂移而失效 | ✅ **已移出版本控制**（2026-09-25），文件保留在磁盘上，见 `RESTRUCTURE_PLAN.md` §7.2 |
-| `AboutScreen.kt` 用户可见文案仍是 `"KMP-PRO · Compose Multiplatform"` | 应用内显示旧项目名 | 待确认后改为 `CPPlayer` |
-| `native/windows-smtc/` 只有一个 README | 占位目录，无代码 | 待实现或删除 |
+| ~~`AboutScreen.kt` 用户可见文案 `"KMP-PRO · Compose Multiplatform"`~~ | 应用内显示旧项目名 | ✅ **已改为 `CPPlayer`**（2026-09-25）。同批修掉 `PlatformActions.android.kt` 注释里的旧模块名 `androidApp` |
+| ~~`native/windows-smtc/` 只有一个 README~~ | 占位目录，无代码。**且原 README 描述的手写 C++/WinRT 方案（`cp_windows_smtc.dll` / `cp_smtc_*` / `-Dcp.player.smtc.dir`）是废弃路线** —— 这些符号全仓 grep 不到，SMTC 实际由 JMTC 的 `SMTCAdapter.dll` 提供 | ✅ **已改写为决策记录**（2026-09-25）：写明现状、废弃原因、以及为何不要重写 |
 | ~~`CommonComponents.kt` 的 `AppLogo` / `HeadlineSupportingRow` 无任何使用方~~ | 3 个公开 composable 里 2 个是死的（仅 `HeroBlock` 被 `SetupScreen` 使用） | ✅ **已删除**（2026-09-25，`f4a5141`），现仅剩 `HeroBlock` |

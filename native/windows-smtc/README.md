@@ -1,16 +1,41 @@
 # Windows SMTC bridge
 
-This directory reserves the native Windows SystemMediaTransportControls bridge.
+**Status: superseded — no native code is planned here.**
 
-The desktop Kotlin adapter must load the helper only when `os.name` is Windows.
-The helper should expose a narrow C ABI:
+This directory is kept only as a record of a decision. It contains no code, is not
+referenced by any build script, and nothing loads it at runtime.
+
+## What actually ships
+
+Windows System Media Transport Controls are **already implemented**, via **JMTC**
+(Java Media Transport Controls) in the desktop app:
+
+- Adapter: `app/src/desktopMain/kotlin/cp/player/app/platform/JmtcMediaControls.desktop.kt`
+- It extracts JMTC's bundled `SMTCAdapter.dll` (resource `/win32-x86-64/` or
+  `/win32-x86/`) from the JMTC JAR into a temp directory at startup, points
+  `jna.library.path` at it, and calls in through JNA.
+- The same JMTC dependency also provides MPRIS on Linux.
+- Fail-closed: if the native resource is missing, the adapter logs the failure and
+  continues — normal in-app playback is unaffected.
+
+## The abandoned approach
+
+An earlier plan was to hand-roll a C++/WinRT helper exposing a narrow C ABI as
+`cp_windows_smtc.dll`, discovered via the working directory, the packaged launcher,
+or a `-Dcp.player.smtc.dir=...` override:
 
 - `cp_smtc_start(callbacks)`
 - `cp_smtc_update(title, artist, album, duration_ms, position_ms, playing)`
 - `cp_smtc_stop()`
 
-The implementation belongs in C++/WinRT because SMTC is a WinRT API. The Kotlin
-adapter now looks for `cp_windows_smtc.dll` in the working directory, beside the
-packaged launcher, or under a custom `-Dcp.player.smtc.dir=...` override before
-enabling SMTC. Until the helper DLL is built and packaged, the adapter must fail
-closed and retain normal in-app playback.
+**That plan was dropped in favour of JMTC.** None of those symbols, that DLL name,
+or that system property exist anywhere in the codebase — verified by grep across
+the whole repository. JMTC already ships a working WinRT adapter, so the hand-rolled
+bridge would have been duplicated effort plus a second thing to package and sign.
+
+Do not re-implement it without first confirming JMTC is insufficient.
+
+## Deleting this directory
+
+Nothing breaks — it is an empty placeholder plus this note. The only thing lost is
+the record of why the hand-rolled bridge was never built.
