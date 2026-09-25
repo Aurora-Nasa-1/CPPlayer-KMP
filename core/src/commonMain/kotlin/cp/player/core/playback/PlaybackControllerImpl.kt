@@ -216,7 +216,7 @@ class PlaybackControllerImpl(
         }
         pushQueueState()
         resolveQueueInBackground(startFrom = _index)
-        playCurrent(skipIfSame = false)
+        playCurrent()
     }
 
     override suspend fun setQueue(mediaIds: List<String>, startIndex: Int, sourceId: String?) {
@@ -270,7 +270,7 @@ class PlaybackControllerImpl(
         pushQueueState()
         if (_queue.isNotEmpty() && index <= _index && _index >= 0) {
             // 若移除了当前或之前的，按约定重新播放当前
-            playCurrent(skipIfSame = false)
+            playCurrent()
         }
     }
 
@@ -323,7 +323,7 @@ class PlaybackControllerImpl(
             _index = index
             _orderPos = _order?.indexOf(index) ?: index
         }
-        playCurrent(skipIfSame = false)
+        playCurrent()
     }
 
     // ============ 播控 ============
@@ -333,10 +333,10 @@ class PlaybackControllerImpl(
             PlatformPlaybackState.Playing -> platform.pause()
             PlatformPlaybackState.Paused, PlatformPlaybackState.Ready -> platform.play()
             PlatformPlaybackState.Ended -> {
-                if (_index in _queue.indices) scope.launch { playCurrent(skipIfSame = false) }
+                if (_index in _queue.indices) scope.launch { playCurrent() }
             }
             else -> {
-                if (_index in _queue.indices) scope.launch { playCurrent(skipIfSame = false) }
+                if (_index in _queue.indices) scope.launch { playCurrent() }
             }
         }
     }
@@ -417,7 +417,7 @@ class PlaybackControllerImpl(
                 return@launch
             }
             pushQueueState()
-            playCurrent(skipIfSame = false)
+            playCurrent()
         }
     }
 
@@ -443,7 +443,7 @@ class PlaybackControllerImpl(
                 return@launch
             }
             pushQueueState()
-            playCurrent(skipIfSame = false)
+            playCurrent()
         }
     }
 
@@ -641,7 +641,7 @@ class PlaybackControllerImpl(
     // ============ 内部 ============
 
     /** 获取 URL 并交给平台播放器播放当前曲目。 */
-    private suspend fun playCurrent(skipIfSame: Boolean) {
+    private suspend fun playCurrent() {
         val entry = _queue.getOrNull(_index) ?: return
         // 每次加载新曲目都推进导航世代：在此之前的 Ended / 切歌请求都会因世代不匹配而作废。
         navigationSeq += 1
@@ -823,7 +823,7 @@ class PlaybackControllerImpl(
                         return@launch
                     }
                     pushQueueState()
-                    playCurrent(skipIfSame = false)
+                    playCurrent()
                 }
             }
         }

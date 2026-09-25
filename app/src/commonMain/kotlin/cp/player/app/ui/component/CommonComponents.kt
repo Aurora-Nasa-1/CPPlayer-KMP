@@ -1,54 +1,25 @@
 /**
- * 设置向导用的通用组件（`AppLogo` / `HeroBlock` / `HeadlineSupportingRow`）。
+ * 设置向导用的通用组件（现仅剩 `HeroBlock`，由 `SetupScreen` 使用）。
  *
  * 原先位于 `ui/components/`，与 `ui/component/`（21 个文件）仅差一个尾字母 `s`，
  * 猜错目录是很容易发生的事 —— 2026-09-25 合并到 `ui/component/`，目录名统一为单数。
+ *
+ * 同日一并删除了零引用的 `AppLogo` 与 `HeadlineSupportingRow`。
  */
 package cp.player.app.ui.component
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-
-/** 应用 Logo 占位（无图片资源时） */
-@Composable
-fun AppLogo(modifier: Modifier = Modifier, size: Int = 64, icon: ImageVector = Icons.Filled.MusicNote) {
-    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        androidx.compose.foundation.layout.Box(
-            modifier = Modifier
-                .size(size.dp)
-                .clip(CircleShape)
-                .padding(0.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.size((size * 0.5f).dp).clip(CircleShape),
-            )
-        }
-    }
-}
 
 /** 标题 + 描述 Hero 区域 */
 @Composable
@@ -78,15 +49,5 @@ fun HeroBlock(
             maxLines = 6,
             overflow = TextOverflow.Ellipsis,
         )
-    }
-}
-
-/** 简单的标题 + 副标题行 */
-@Composable
-fun HeadlineSupportingRow(headline: String, supporting: String, modifier: Modifier = Modifier) {
-    Column(modifier) {
-        Text(headline, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-        Spacer(Modifier.height(2.dp))
-        Text(supporting, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

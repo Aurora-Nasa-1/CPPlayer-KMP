@@ -26,7 +26,6 @@ import cp.player.core.media.LocalMediaItem
 import cp.player.core.monitor.HealthMonitor
 import cp.player.core.playback.PlaybackController
 import cp.player.core.playback.PlaybackControllerImpl
-import cp.player.core.playback.PlaybackEngine
 import cp.player.core.playback.SilentOutputPlayer
 import cp.player.core.playback.createPlatformPlayer
 import cp.player.core.provider.BackendProvider
@@ -61,7 +60,7 @@ import kotlinx.coroutines.launch
  *    后续将逐步迁移到更高层的 [MusicSource]（待实现，见 below）。
  * 4. **本地媒体**：通过 [localMedia] 访问平台本地媒体源（扫描 / 导入 / 下载登记），
  *    并经由 [unifiedSource] 参与统一 MediaId 路由（[localMusic] 为兼容别名）。
- * 5. **播放控制**：通过 [playback] 访问播放引擎（当前为占位，后续平台注入 actual）。
+ * 5. **播放控制**：通过 [playbackController] 访问；实际播放由平台 [createPlatformPlayer] 提供。
  * 6. **健康监控**：通过 [health] 访问带 [HealthMonitor.HealthLevel] 三级分类的 API 健康数据。
  * 7. **错误处理**：所有可失败操作返回 [BackendResult]，UI 可穷举 [Success]/[Error]/[Unsupported]。
  * 8. **下载管理**：通过 [downloadManager] 提供媒体下载（入队 / 暂停 / 断点续传 / 重试），
@@ -148,7 +147,7 @@ class MusicBackend private constructor(
      * 并重建 [unifiedSource] 纳入本地源。
      *
      * 守卫：仅允许从 [NoopLocalMusicSource] 迁移一次；二次赋值抛异常，
-     * 防止重建 [unifiedSource] 导致 playback/download 持有旧实例。
+     * 防止重建 [unifiedSource] 导致 playbackController/download 持有旧实例。
      */
     private fun attachLocalMedia(source: LocalMediaSource) {
         check(_localMusic is NoopLocalMusicSource) { "本地媒体源已装配，不允许二次赋值" }
@@ -219,15 +218,6 @@ class MusicBackend private constructor(
         downloadManager
     }
 
-    // ============ 播放引擎（占位，后续平台注入 actual） ============
-
-    /**
-     * 播放引擎。当前为占位（操作无效果）。
-     * 后续 Android 平台将注入 ExoPlayer/FlickPlayer 实现。
-     */
-    var playback: PlaybackEngine = NoopPlaybackEngine
-        internal set
-
     // ============ 播放控制器（前端唯一播放入口） ============
 
     /** 后端生命周期协程域（[PlaybackController] 内部协程都跑在其上）。 */
@@ -238,7 +228,7 @@ class MusicBackend private constructor(
      * [MusicApiServiceImpl] 抓歌词/scrobble + 平台 [PlatformPlayer] 实际播放。
      *
      * 前端只应 `backend.playbackController.state.collectAsState()` 渲染，
-     * 并通过此对象的方法触发播控——禁止直接访问 [playback] / [unifiedSource] 用于播放。
+     * 并通过此对象的方法触发播控——禁止直接访问 [unifiedSource] 用于播放。
      */
     val playbackController: PlaybackController by lazy {
         val platform = SilentOutputPlayer(
@@ -700,17 +690,4 @@ object NoopLocalMusicSource : LocalMediaSource {
     override fun items(): StateFlow<List<LocalMediaItem>> = emptyItems
     override val isScanningFlow: StateFlow<Boolean> = emptyScanning
     override fun addExternalItems(items: List<LocalMediaItem>) {}
-}
-
-/** 空操作播放引擎（所有操作无效果）。 */
-object NoopPlaybackEngine : PlaybackEngine {
-    override val type get() = cp.player.core.playback.EngineType.DESKTOP
-    private val _state = MutableStateFlow<cp.player.core.playback.PlaybackState>(cp.player.core.playback.PlaybackState.Idle)
-    override suspend fun play(url: String, metadata: cp.player.core.playback.PlaybackMetadata?) {}
-    override fun pause() {}
-    override fun resume() {}
-    override fun stop() {}
-    override fun seekTo(positionMs: Long) {}
-    override fun stateFlow() = _state.asStateFlow()
-    override fun setVolume(volume: Float) {}
 }
