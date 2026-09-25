@@ -1,0 +1,4 @@
+💡 What: Memoized `Brush.radialGradient` allocation using `remember` and introduced local state buffering for `Slider` in `DesktopPlayerScreen`.
+🎯 Why: Fast-changing states like playback `positionMs` cause continuous recomposition of `DesktopPlayerScreen`. Heavy graphic object reallocation during recomposition causes enormous GC pressure and CPU spikes. Binding the `Slider` directly to the `onSeek` callback floods the playback engine with continuous commands, leading to severe visual and audio stutter.
+📊 Impact: Eliminates redundant `Brush` allocations during media playback, reducing memory churn and GC pauses significantly. Using local state ensures smooth dragging UX on the slider while dropping excessive engine seeks to exactly one per complete gesture.
+🔬 Measurement: Run the app and play a track on the DesktopPlayerScreen. Observe improved smoothness during both normal playback (no stutter) and seek actions using a profiler or visual inspection.
