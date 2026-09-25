@@ -184,12 +184,12 @@ commonMain  ──▶  jvmMain  ──▶  { androidMain, desktopMain }
 | **JNI 符号名与后端包名硬绑定** —— `JniProvider` 的全限定名决定 native 侧必须导出的符号（`Java_cp_player_core_provider_JniProvider_*`）。改包名会让已编译模块在首次调用时抛 `UnsatisfiedLinkError`，而 `System.load()` 仍然成功，症状伪装成「已加载但一调用就崩」 | 后端包名不可自由重构；第三方模块需随宿主同步重编 | `jni.rs` 已改并提交（模块仓库 `067c150`）；**尚差 push + bump gitlink**，见 `RESTRUCTURE_PLAN.md` §8 |
 | 桌面入口在 `app/src/desktopMain/`，安卓入口在 `app-android/` | 两个平台入口不对称，「安卓被剥离」的观感来源。**注意：安卓侧受 AGP 9 约束必须独立，桌面侧不受约束** | 可选对称化，见 `RESTRUCTURE_PLAN.md` Phase 3 |
 | ~~`ui/component/`（21 文件）与 `ui/components/CommonComponents.kt`（1 文件）并存~~ | 命名只差尾字母 `s`，猜错目录很容易 | ✅ **已合并**（2026-09-25），目录统一为单数 `ui/component/` |
-| `MusicBackend.playback: PlaybackEngine` 默认 `NoopPlaybackEngine`，全仓**从未被赋过真实实现** | 门面上的公开属性，看起来像可插拔播放引擎，实际是空转的平行抽象；真正的播放路径走 `PlaybackController` / `PlatformPlayer` | 待决策：删属性，还是补上真实实现 |
-| `PlaybackEngine` / `PlaybackState` / `NoopPlaybackEngine` | 与 `PlatformPlayer` / `PlatformPlaybackState` 平行的另一套抽象。**注意二者不是重复命名**：`Platform*` 是引擎状态，`Playback*` 是旧引擎接口，后者已无实现方 | 随上一行一起处理 |
-| `CachedMusicApiService.callApiCached` 全仓**唯一引用是它自己的声明** | 缓存层的公开入口，但无任何调用方 —— 即 README 描述的「缓存层」目前是空转 | 待决策：接入还是删除 |
-| `PlaybackControllerImpl.playCurrent(skipIfSame)` 参数**在函数体内从未被读取**，9 个调用点全部传 `false` | 死参数，暗示存在一个并不存在的「相同则跳过」能力 | 可安全删除（`private`，无外部影响） |
+| ~~`MusicBackend.playback: PlaybackEngine` 默认 `NoopPlaybackEngine`，全仓从未被赋过真实实现~~ | 门面上的公开属性，看起来像可插拔播放引擎，实际是空转的平行抽象；真正的播放路径走 `PlaybackController` / `PlatformPlayer` | ✅ **已删除**（2026-09-25，`f4a5141`） |
+| ~~`PlaybackEngine` / `PlaybackState` / `EngineType` / `NoopPlaybackEngine`~~ | 与 `PlatformPlayer` 平行的另一套抽象，只被上面那条死链路引用，自身也无实现方 | ✅ **已删除**（2026-09-25，`f4a5141`）。注意 `PlaybackMetadata` **是活的**（`PlatformPlayer.load` 在用），已单独成文件保留 |
+| ~~`PlaybackControllerImpl.playCurrent(skipIfSame)` 参数在函数体内从未被读取，8 个调用点全部传 `false`~~ | 死参数，暗示存在一个并不存在的「相同则跳过」能力 | ✅ **已删除参数**（2026-09-25，`f4a5141`） |
+| `CachedMusicApiService.callApiCached` 全仓**唯一引用是它自己的声明**，且它一死，**整个 `core/cache/` 包（6 文件）跟着死** —— `ApiCache` / `CacheConfig` / `CacheEntry` / `CacheResult` / `Fingerprinter` 都只服务于它 | 缓存层的公开入口无任何调用方 ⇒ README 描述的「缓存层」目前**完全空转**。`CachedMusicApiService` 自身仍活着（`UnifiedMusicSourceImpl` 持有它），但只是纯转发壳。另：`AppModel.cachedApi` 与 `MusicApiServiceFactory.cachedInstance` 也都零引用 | **已确认范围，暂缓**（2026-09-25）。彻底清理需删 `core/cache/` 整包 + 收窄 `MusicBackend` / `MusicApiServiceFactory` / `AppModel` 公开面（约 6 删 5 改），属子系统级变更，不塞进卫生提交。**「接入还是删除」仍未决** |
 | `reference/netease-module-rust` 是**未注册的 submodule** | 索引里是 gitlink（mode 160000）但仓库根没有 `.gitmodules`，他人克隆后该目录为空 | 待修，见 `RESTRUCTURE_PLAN.md` §7.1 |
 | ~~`.qoder/` 有 132 个文件已被提交~~ | AI 生成的仓库 wiki + 一次性 diff 转储，会随代码漂移而失效 | ✅ **已移出版本控制**（2026-09-25），文件保留在磁盘上，见 `RESTRUCTURE_PLAN.md` §7.2 |
 | `AboutScreen.kt` 用户可见文案仍是 `"KMP-PRO · Compose Multiplatform"` | 应用内显示旧项目名 | 待确认后改为 `CPPlayer` |
 | `native/windows-smtc/` 只有一个 README | 占位目录，无代码 | 待实现或删除 |
-| `CommonComponents.kt` 的 `AppLogo` / `HeadlineSupportingRow` 无任何使用方（仅 `HeroBlock` 被 `SetupScreen` 使用） | 3 个公开 composable 里 2 个是死的 | 待清理 |
+| ~~`CommonComponents.kt` 的 `AppLogo` / `HeadlineSupportingRow` 无任何使用方~~ | 3 个公开 composable 里 2 个是死的（仅 `HeroBlock` 被 `SetupScreen` 使用） | ✅ **已删除**（2026-09-25，`f4a5141`），现仅剩 `HeroBlock` |
