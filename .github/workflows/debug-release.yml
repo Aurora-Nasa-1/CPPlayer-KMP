@@ -13,6 +13,16 @@ env:
   JAVA_VERSION: "21"
 
 jobs:
+  # 只负责 Android 产物。桌面产物（Windows MSI / Linux deb）由 desktop-release.yml 负责 ——
+  # 它同样监听 debug-v* 与 v*，并在对应原生 runner 上构建。这与 release.yml（稳定版只出
+  # Android APK）的分工保持一致。
+  #
+  # 历史坑（2026-09-25 修正）：本 job 曾在 ubuntu-latest 上跑 `:app:packageMsi`。
+  # Compose Desktop 的 TargetFormat.Msi 绑定 OS.Windows，在 Linux 上该任务会被**注册但
+  # disabled**（见 ConfigureJvmApplicationKt：isCompatibleWithCurrentOS() → setEnabled(false)）。
+  # 后果是构建步骤看起来完全成功（任务 SKIPPED，BUILD SUCCESSFUL），随后
+  # `cp .../msi/CPPlayer-<version>.msi` 因文件不存在而失败 —— 失败点出现在一个看起来
+  # 无关的步骤上。同时该 MSI 与 desktop-release.yml 重复，故直接移除。
   debug-release:
     runs-on: ubuntu-latest
     steps:
@@ -42,14 +52,10 @@ jobs:
       - name: Build debug APK
         run: ./gradlew :app-android:assembleDebug --no-daemon -Papp.versionName=${{ steps.meta.outputs.version }} -Papp.versionCode=${{ steps.meta.outputs.code }} -Papp.releaseChannel=debug
 
-      - name: Build Windows installer
-        run: ./gradlew :app:packageMsi --no-daemon -Papp.versionName=${{ steps.meta.outputs.version }} -Papp.releaseChannel=debug
-
-      - name: Rename assets
+      - name: Rename asset
         shell: bash
         run: |
           cp app-android/build/outputs/apk/debug/app-android-debug.apk "CPPlayer-${{ steps.meta.outputs.version }}-android-debug.apk"
-          cp app/build/compose/binaries/main/msi/CPPlayer-${{ steps.meta.outputs.version }}.msi "CPPlayer-${{ steps.meta.outputs.version }}-windows-debug.msi"
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
@@ -58,6 +64,4 @@ jobs:
           name: CPPlayer ${{ steps.meta.outputs.version }} (debug)
           prerelease: true
           generate_release_notes: true
-          files: |
-            CPPlayer-${{ steps.meta.outputs.version }}-android-debug.apk
-            CPPlayer-${{ steps.meta.outputs.version }}-windows-debug.msi
+          files: CPPlayer-${{ steps.meta.outputs.version }}-android-debug.apk
