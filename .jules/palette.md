@@ -1,0 +1,3 @@
+## 2024-05-18 - Ensure Primary UI Language Match for A11y
+**Learning:** Hardcoded accessibility labels (contentDescriptions) were in English (e.g. 'Play', 'Pause', 'Settings') while the primary application UI is localized in Simplified Chinese. This causes screen readers to switch languages or pronounce labels incorrectly in a localized context.
+**Action:** Always localize accessibility labels (`contentDescription`) to match the application's primary UI language (Simplified Chinese in this project) instead of defaulting to English.
