@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
+import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.util.UiEvents
 import cp.player.core.music.PlaylistSummary
 import kotlinx.coroutines.Dispatchers
@@ -153,7 +154,7 @@ fun AddToPlaylistSheet(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                else -> LazyColumn(
+                else -> LazyScrollColumn(
                     Modifier.fillMaxWidth().heightIn(max = 360.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                     contentPadding = PaddingValues(vertical = 4.dp),

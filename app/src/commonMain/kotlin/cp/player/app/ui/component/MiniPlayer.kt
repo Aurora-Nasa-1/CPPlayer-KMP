@@ -1,59 +1,51 @@
 package cp.player.app.ui.component
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import cp.player.core.playback.PlaybackUiState
 import cp.player.app.ui.theme.CpShapes
 import cp.player.app.ui.util.resized
+import cp.player.core.playback.PlaybackUiState
 
 /**
- * 底部 MiniBar（KMP 等效原项目 `BottomPlaybackBar`）。
+ * 底部 MiniBar。
  *
- * 视觉：顶圆角 28dp + 底圆角 12dp 的 Card，surfaceContainerHigh 色，4dp 抬升阴影；
- * 内含 48dp 圆角封面 / 标题 / 歌手 / 上一首+播放暂停(FilledIconButton)+下一首；
- * 下方贴底 3dp LinearProgressIndicator 反映进度。
+ * 视觉：顶圆角 28dp + 底圆角 16dp 的 Card，surfaceContainerHigh 色，2dp 抬升阴影；
+ * 内含 48dp 封面 / 标题 / 歌手 / 上一首 + 播放暂停 + 下一首；下方贴底**波形**进度条。
+ *
+ * Expressive 化的两处：
+ * - 进度条从直角 `LinearProgressIndicator` 换成 [CpWavyProgress]（M3 Expressive 的标志性元素）；
+ * - 播放/暂停换成 [CpPlayPauseButton]，按下时圆角收缩 + 图标回弹。
  *
  * 点击主体区域 → [onClick]（展开全屏播放页）。
  * 仅当 [PlaybackUiState.currentTrack] 非空时渲染。
  */
-@OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-fun androidx.compose.animation.SharedTransitionScope.MiniPlayer(
+fun SharedTransitionScope.MiniPlayer(
     state: PlaybackUiState,
     animatedVisibilityScope: androidx.compose.animation.AnimatedVisibilityScope,
     onClick: () -> Unit,
@@ -66,11 +58,6 @@ fun androidx.compose.animation.SharedTransitionScope.MiniPlayer(
     val progress = if (state.durationMs > 0) {
         (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f)
     } else 0f
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress,
-        animationSpec = tween(200),
-        label = "miniProgress",
-    )
     val press = rememberPressedScale()
 
     Surface(
@@ -95,7 +82,7 @@ fun androidx.compose.animation.SharedTransitionScope.MiniPlayer(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (!track.coverUrl.isNullOrBlank()) {
-                    // [Bolt] Use resized cover (150px) to conserve memory & bandwidth on the mini-player
+                    // 用 150px 缩略图，省内存与带宽。
                     AsyncImage(
                         model = track.coverUrl.resized(150),
                         contentDescription = null,
@@ -148,42 +135,23 @@ fun androidx.compose.animation.SharedTransitionScope.MiniPlayer(
                     IconButton(onClick = onSkipPrev, modifier = Modifier.size(40.dp)) {
                         Icon(Icons.Outlined.SkipPrevious, "Prev", Modifier.size(24.dp))
                     }
-                    FilledIconButton(
+                    CpPlayPauseButton(
+                        isPlaying = state.isPlaying,
                         onClick = onTogglePlay,
-                        modifier = Modifier.size(40.dp),
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                        ),
-                    ) {
-                        if (state.isBuffering) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                strokeWidth = 2.dp,
-                            )
-                        } else {
-                            Icon(
-                                imageVector = if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                contentDescription = if (state.isPlaying) "Pause" else "Play",
-                                modifier = Modifier.size(24.dp),
-                            )
-                        }
-                    }
+                        size = 40.dp,
+                        isLoading = state.isBuffering,
+                    )
                     IconButton(onClick = onSkipNext, modifier = Modifier.size(40.dp)) {
                         Icon(Icons.Outlined.SkipNext, "Next", Modifier.size(24.dp))
                     }
                 }
             }
-            LinearProgressIndicator(
-                progress = { animatedProgress },
-                modifier = Modifier.fillMaxWidth()
-                    .padding(horizontal = 12.dp)
-                    .height(3.dp),
+            // 波形进度条：高度必须给够，压成 3dp 就看不出波形了。
+            CpWavyProgress(
+                progress = progress,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                 color = MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
-                strokeCap = StrokeCap.Round,
-                drawStopIndicator = {},
             )
             val errorText = state.error
             if (!errorText.isNullOrBlank()) {

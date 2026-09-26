@@ -1,6 +1,9 @@
 package cp.player.app.platform
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import java.awt.Desktop
 import java.net.URI
 
@@ -27,7 +30,24 @@ actual fun openUrl(url: String) {
 
 actual fun downloadUpdate(url: String, fileName: String) = openUrl(url)
 
-actual fun clearImageCache(): Boolean = true
+/**
+ * 清空 Coil 的内存 / 磁盘缓存。
+ *
+ * 原先这里是 `= true` 的空实现 —— 设置页点了「清除图片缓存」会显示成功，
+ * 实际什么都没清。加了封面取色之后这个谎言更明显：封面换不掉，主题就跟着换不掉。
+ *
+ * 同时清掉 [cp.player.app.ui.theme.CoverSeedCache]：它按封面 URL 缓存种子色，
+ * 不清的话「清完缓存重新取色」的预期不成立。
+ */
+actual fun clearImageCache(): Boolean {
+    cp.player.app.ui.theme.CoverSeedCache.clear()
+    return runCatching {
+        val loader = coil3.SingletonImageLoader.get(coil3.PlatformContext.INSTANCE)
+        loader.memoryCache?.clear()
+        loader.diskCache?.clear()
+        true
+    }.getOrDefault(false)
+}
 
 actual fun requestMediaScanPermission() {
     // 桌面无需运行时媒体读取权限，空实现
@@ -37,7 +57,18 @@ actual fun setOnMediaPermissionGranted(callback: (() -> Unit)?) {
     // 桌面无授权流程，无需保存回调
 }
 
+/**
+ * 桌面端用 Esc 承担安卓返回键的角色。
+ *
+ * 这里只负责「注册/注销」，真正的派发在窗口级按键回调里（见 `Main.kt`）——
+ * 因为 Compose 的按键回调只能挂在 Window 上，组件内部拿不到全局按键流。
+ */
 @Composable
 actual fun BackHandler(enabled: Boolean, onBack: () -> Unit) {
-    // No-op for Desktop
+    val latest by rememberUpdatedState(onBack)
+    DisposableEffect(enabled) {
+        if (!enabled) return@DisposableEffect onDispose { }
+        val token = DesktopBackDispatcher.register { latest() }
+        onDispose { DesktopBackDispatcher.unregister(token) }
+    }
 }

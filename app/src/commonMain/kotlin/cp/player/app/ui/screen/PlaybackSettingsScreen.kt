@@ -35,6 +35,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.ui.component.LegacyListItem
 import cp.player.app.ui.component.LegacyPageScaffold
+import cp.player.app.ui.component.ScrollColumn
 import cp.player.core.playback.PlaybackController
 
 class PlaybackSettingsScreen : Screen {
@@ -48,8 +49,8 @@ class PlaybackSettingsScreen : Screen {
         var playImmediately by remember { mutableStateOf(playImmediately()) }
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
-            Column(
-                pageModifier.verticalScroll(rememberScrollState()).padding(horizontal = if (expanded) 20.dp else 16.dp, vertical = 12.dp),
+            ScrollColumn(
+                modifier = pageModifier.padding(horizontal = if (expanded) 20.dp else 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 SettingsCard("在线播放") {

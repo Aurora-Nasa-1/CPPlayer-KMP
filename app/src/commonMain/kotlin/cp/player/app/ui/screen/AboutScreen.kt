@@ -49,6 +49,7 @@ import cp.player.app.platform.downloadUpdate
 import cp.player.app.platform.openUrl
 import cp.player.app.ui.component.LegacyListItem
 import cp.player.app.ui.component.LegacyPageScaffold
+import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.update.AppUpdateChecker
 import cp.player.app.version.AppVersion
 import kotlinx.coroutines.launch
@@ -81,8 +82,8 @@ class AboutScreen : Screen {
                 }
             },
         ) { pageModifier ->
-            Column(
-                pageModifier.verticalScroll(rememberScrollState()).padding(16.dp),
+            ScrollColumn(
+                modifier = pageModifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 SectionHeader("版本信息")

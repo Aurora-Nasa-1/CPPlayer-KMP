@@ -58,6 +58,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.ui.component.LegacyPageScaffold
+import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.platform.isPackageInstalled
 import cp.player.app.platform.openTargetApp
 import cp.player.app.platform.saveQrCodeToGallery
@@ -99,8 +100,8 @@ class LoginScreen : Screen {
                 IconButton(onClick = { navigator.pop() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
             },
         ) { pageModifier ->
-            Column(
-                pageModifier.verticalScroll(rememberScrollState()).padding(20.dp),
+            ScrollColumn(
+                modifier = pageModifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 if (activeProvider == null) {
@@ -108,7 +109,7 @@ class LoginScreen : Screen {
                         "当前没有活跃音源，请先在音源管理中导入并选择一个 Provider。",
                         color = MaterialTheme.colorScheme.error,
                     )
-                    return@Column
+                    return@ScrollColumn
                 }
 
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {

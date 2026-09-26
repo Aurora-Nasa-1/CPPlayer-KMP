@@ -60,8 +60,8 @@ class MusicApiServiceImpl(
             val redirectUrlValid = method == MusicApiMethod.SONG_URL_V1_302 &&
                 !extractUrl(json).isNullOrEmpty() && extractUrl(json)!!.startsWith("http")
             val success = redirectUrlValid
-                || code == 200 || code == 0 || code == 201 || code == 301
-                || (isQrCheck && (code == 801 || code == 802 || code == 803))
+                || ApiResponseCodes.isSuccess(code)
+                || (isQrCheck && code != null && code in ApiResponseCodes.QR_PENDING)
             val warnings = issues.map { it.warning }
             val level = classifyLevel(success, warnings)
 
@@ -530,8 +530,9 @@ class MusicApiServiceImpl(
         val code = (codeEl as? JsonPrimitive)?.intOrNull
         if (code == null) {
             issues.add(ValidationIssue(HealthMonitor.ResponseWarning.MISSING_CODE))
-        } else if (code != 200 && code != 0 && code != 201 && code != 301) {
-            val isQrIntermediate = method == MusicApiMethod.AUTH_QR_CHECK && (code == 801 || code == 802 || code == 803)
+        } else if (!ApiResponseCodes.isSuccess(code)) {
+            val isQrIntermediate = method == MusicApiMethod.AUTH_QR_CHECK &&
+                code in ApiResponseCodes.QR_PENDING
             if (!isQrIntermediate) {
                 issues.add(ValidationIssue(
                     if (code == -1) HealthMonitor.ResponseWarning.UNSUPPORTED_BY_PROVIDER

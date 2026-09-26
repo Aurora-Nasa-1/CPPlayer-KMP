@@ -46,6 +46,12 @@ class JniProvider(
         try {
             startNativeServer("127.0.0.1", port)
             log("JNI 服务启动成功: $soPath, port=$port")
+        } catch (e: UnsatisfiedLinkError) {
+            // 库能 load、但方法找不到 —— 几乎总是模块的导出符号前缀与宿主包名不一致。
+            isLoaded = false
+            loadError = "JNI 服务启动崩溃: ${e.message} —— ${symbolMismatchHint("startNativeServer")}"
+            log(loadError!!)
+            throw e
         } catch (e: Throwable) {
             isLoaded = false
             loadError = "JNI 服务启动崩溃: ${e.message}"
@@ -61,10 +67,7 @@ class JniProvider(
     override fun callApi(method: String, params: Map<String, String>): String {
         if (!isLoaded) {
             log("callApi 被调用但 JNI 未加载: method=$method, loadError=$loadError")
-            return buildJsonObject {
-                put("code", JsonPrimitive(500))
-                put("msg", JsonPrimitive("JNI not loaded: ${loadError ?: "unknown"}"))
-            }.toString()
+            return errorJson("JNI not loaded: ${loadError ?: "unknown"}")
         }
         // 用 buildJsonObject 构造参数 JSON，自动转义 cookie 等值中的 " \ 等特殊字符
         val json = buildJsonObject {
@@ -75,25 +78,59 @@ class JniProvider(
             val result = nativeCallApi(method, json)
             log("callApi <- nativeCallApi: method=$method, result=${result.take(200)}")
             result
+        } catch (e: UnsatisfiedLinkError) {
+            isLoaded = false
+            loadError = "JNI 调用崩溃: ${e.message} —— ${symbolMismatchHint("nativeCallApi")}"
+            log(loadError!!)
+            errorJson(loadError!!)
         } catch (e: Throwable) {
             isLoaded = false
             loadError = "JNI 调用崩溃: ${e.message}"
             log("nativeCallApi 崩溃: $method - ${e.message}")
-            """{"code": 500, "msg": "JNI call crashed: ${e.message}"}"""
+            errorJson("JNI call crashed: ${e.message}")
         }
     }
 
     override fun analyzeAudio(path: String): String {
-        if (!isLoaded) return """{"code": 500, "msg": "JNI not loaded: ${loadError ?: "unknown"}"}"""
+        if (!isLoaded) return errorJson("JNI not loaded: ${loadError ?: "unknown"}")
         return try {
             analyzeAudioFile(path)
+        } catch (e: UnsatisfiedLinkError) {
+            isLoaded = false
+            loadError = "JNI 分析崩溃: ${e.message} —— ${symbolMismatchHint("analyzeAudioFile")}"
+            log(loadError!!)
+            errorJson(loadError!!)
         } catch (e: Throwable) {
             isLoaded = false
             loadError = "JNI 分析崩溃: ${e.message}"
             log("analyzeAudioFile 崩溃: ${e.message}")
-            """{"code": 500, "msg": "JNI analyze crashed: ${e.message}"}"""
+            errorJson("JNI analyze crashed: ${e.message}")
         }
     }
+
+    /**
+     * native 导出符号与宿主类的**全限定名**硬绑定：JNI 按
+     * `Java_<包名下划线化>_<类名>_<方法名>` 查找符号。
+     *
+     * 宿主改包名后，用旧前缀编译的模块**仍能被 `System.load()` 成功加载**（它是合法的
+     * PE/ELF），但**首次方法调用**才抛 [UnsatisfiedLinkError] —— 症状是
+     * 「模块显示已加载，一调用就崩」，很容易被误判成模块损坏或网络问题。
+     *
+     * 这里用**运行时的实际类名**推导期望符号，所以包名以后再改，提示也会自动跟着变。
+     */
+    private fun symbolMismatchHint(method: String): String {
+        val expected = "Java_" + javaClass.name.replace('.', '_') + "_" + method
+        return "native 导出符号与宿主包名不匹配：JNI 按 `Java_<包名下划线化>_<类名>_<方法名>` " +
+            "查找符号，当前宿主要求该模块导出 `$expected`（已加载: $soPath）。" +
+            "请用当前宿主包名**重新编译**该模块并重新部署到 modules 目录 —— " +
+            "只改 native 源码不重新构建二进制是不生效的。"
+    }
+
+    /** 统一的错误 JSON。手写字符串模板不会转义 message 里的引号，会让集成方解析失败。 */
+    private fun errorJson(msg: String): String = buildJsonObject {
+        put("code", JsonPrimitive(500))
+        put("msg", JsonPrimitive(msg))
+    }.toString()
 
     private fun loadNativeLibrary() {
         if (isLoaded) return
@@ -127,7 +164,9 @@ class JniProvider(
             loadError = null
             log("JNI 库加载成功: $soPath")
         } catch (e: UnsatisfiedLinkError) {
-            loadError = "JNI 链接失败: ${e.message}"
+            // 注意：这里失败是 System.load 本身失败（缺依赖库 / 架构不匹配），
+            // 与「加载成功但方法找不到」是两种不同的故障，不要混淆。
+            loadError = "JNI 链接失败（缺依赖库或架构不匹配）: ${e.message}"
             log("加载 SO 失败: $soPath - ${e.message}")
         } catch (e: Exception) {
             loadError = "JNI 加载异常: ${e.message}"

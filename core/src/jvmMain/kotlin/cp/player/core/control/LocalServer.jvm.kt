@@ -1,5 +1,12 @@
 package cp.player.core.control
 
+import cp.player.core.integration.ApiErrorCodes
+import cp.player.core.integration.IntegrationGate
+import cp.player.core.integration.IntegrationRouteMount
+import cp.player.core.integration.KtorIntegrationRoutesHandle
+import cp.player.core.integration.decideDataApiGate
+import cp.player.core.integration.parseBearerToken
+import cp.player.core.integration.respondIntegrationError
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -28,8 +35,9 @@ import java.net.HttpURLConnection
  *
  * ### 路由
  * ```
- * GET /health                          健康检查
+ * GET /health                          健康检查（始终可用，探活用）
  * GET /stream?mediaId=…&token=…        把指定曲目（省略 mediaId 时为当前曲目）以 HTTP 流转发
+ * GET /api/v1/...                      数据面；路由定义在 integration 包，经构造参数挂入
  * ```
  *
  * ### 转发策略
@@ -39,10 +47,17 @@ import java.net.HttpURLConnection
  *
  * 上游拉取用 [HttpURLConnection]：这条路径只需要「带自定义头 GET 一个 URL 并回灌字节」，
  * 用 JDK 自带能力即可，避免为服务端再引入一个 Ktor client 引擎。
+ *
+ * ### 开关为什么按请求现读
+ * `exposeStream` / `exposeDataApi` 是路由级开关，改它们**不该**重启监听端口。
+ * 因此判定一律走 [activeConfig]（实时读取器），而不是构造期捕获的 [config]。
+ * [config] 只用于绑定期字段（端口 / 地址 / 令牌）。
  */
 internal class KtorLocalServer(
     private val config: LocalServerConfig,
     private val resolveStreamUrl: suspend (mediaId: String?) -> StreamTarget?,
+    private val integration: IntegrationRouteMount? = null,
+    private val activeConfig: () -> LocalServerConfig = { config },
 ) : LocalServer {
 
     private val _status = MutableStateFlow(
@@ -76,6 +91,16 @@ internal class KtorLocalServer(
                     }
 
                     get("/stream") {
+                        // 媒体面开关：默认开，所以既有接收端行为不变；
+                        // 关掉后返回的是**新**状态码/形态，老接收端从未见过，不构成破坏。
+                        if (!activeConfig().exposeStream) {
+                            call.respondIntegrationError(
+                                HttpStatusCode.Forbidden,
+                                ApiErrorCodes.FACE_DISABLED,
+                                "媒体面未开放（local_server_expose_stream = false）",
+                            )
+                            return@get
+                        }
                         if (!call.ensureAuthorized()) return@get
                         val mediaId = call.request.queryParameters["mediaId"]
                         val target = try {
@@ -91,6 +116,13 @@ internal class KtorLocalServer(
                             return@get
                         }
                         relay(call, target)
+                    }
+
+                    // 数据面：只负责「挂上去 + 提供闸门」，路由定义留在 integration 包。
+                    // 若传入的不是 JVM 实现（理论上不会），这里静默不挂载 ——
+                    // 数据面本就是可选面，缺它不影响媒体面。
+                    (integration as? KtorIntegrationRoutesHandle)?.mountInto(this) { call ->
+                        call.ensureDataFaceAuthorized()
                     }
                 }
             }
@@ -171,6 +203,42 @@ internal class KtorLocalServer(
         }
     }
 
+    // ============ 数据面闸门 ============
+
+    /**
+     * 数据面闸门：按**请求时刻**的配置判定，并在拒绝时自行响应。
+     *
+     * 拒绝走 [respondIntegrationError]，与数据面同一错误形态。
+     * `/stream` 既有的 401 / 404 仍沿用旧形态 `{ "code", "msg" }`，
+     * 避免动到已经对接好的接收端 —— 只有**新增**的拒绝路径用新形态。
+     */
+    private suspend fun ApplicationCall.ensureDataFaceAuthorized(): Boolean {
+        val gate = decideDataApiGate(
+            config = activeConfig(),
+            bearerToken = parseBearerToken(request.headers[HttpHeaders.Authorization]),
+            queryToken = request.queryParameters["token"],
+        )
+        return when (gate) {
+            IntegrationGate.ALLOW -> true
+            IntegrationGate.FACE_DISABLED -> {
+                respondIntegrationError(
+                    HttpStatusCode.Forbidden,
+                    ApiErrorCodes.FACE_DISABLED,
+                    "数据面未开放（local_server_expose_data_api = false）",
+                )
+                false
+            }
+            IntegrationGate.UNAUTHORIZED -> {
+                respondIntegrationError(
+                    HttpStatusCode.Unauthorized,
+                    ApiErrorCodes.UNAUTHORIZED,
+                    "令牌缺失或不匹配",
+                )
+                false
+            }
+        }
+    }
+
     // ============ 工具 ============
 
     private fun jsonError(message: String, code: Int = 500) = buildJsonObject {
@@ -185,10 +253,27 @@ internal class KtorLocalServer(
         respondText(body.toString(), ContentType.Application.Json, status)
     }
 
-    /** 令牌校验。未配置令牌时放行；`/stream` 只接受 `?token=`。 */
+    /**
+     * 媒体面令牌校验（`/stream` 只接受 `?token=`，不接受 `Authorization` 头）。
+     *
+     * 判定委托给 [isTokenSatisfied] —— 与数据面**共用同一条规则**：
+     * - 配置了令牌 → 必须匹配；
+     * - 未配置令牌 + 绑定回环 → 放行（外部根本连不上）；
+     * - 未配置令牌 + 绑定非回环 → **拒绝**。
+     *
+     * 最后一条不是新策略，而是补一个洞：此前这里写的是 `if (!config.requiresToken) return true`，
+     * 于是一旦「绑定 `0.0.0.0`」且「令牌为空」（用户手工清掉令牌键、或配置文件被改），
+     * 同网段任何人都能无限拉流。**这条不可配置关闭** —— 局域网裸奔没有正当场景。
+     *
+     * 用构造期 [config] 而非 [activeConfig]：`bindAddress` 与 `accessToken` 都是
+     * **绑定期字段**，改它们本来就会重建服务（见 `MusicBackend.applyOutputConfig`），
+     * 所以构造期快照在这里永远是最新的。
+     *
+     * 错误形态沿用旧的 `{ "code": 401, "msg": … }`，**不是**数据面的 `{ "error": … }`：
+     * 这是为兼容已对接的接收端刻意保留的（见 `docs/INTEGRATION_API.md` §3.2 的例外说明）。
+     */
     private suspend fun ApplicationCall.ensureAuthorized(): Boolean {
-        if (!config.requiresToken) return true
-        if (request.queryParameters["token"] == config.accessToken) return true
+        if (isTokenSatisfied(config, request.queryParameters["token"])) return true
         respondJson(jsonError("unauthorized", code = 401), HttpStatusCode.Unauthorized)
         return false
     }
@@ -200,8 +285,15 @@ internal class KtorLocalServer(
 
 actual fun createLocalServer(
     config: LocalServerConfig,
+    integration: IntegrationRouteMount?,
+    activeConfig: () -> LocalServerConfig,
     resolveStreamUrl: suspend (mediaId: String?) -> StreamTarget?,
-): LocalServer = KtorLocalServer(config, resolveStreamUrl)
+): LocalServer = KtorLocalServer(
+    config = config,
+    resolveStreamUrl = resolveStreamUrl,
+    integration = integration,
+    activeConfig = activeConfig,
+)
 
 actual fun resolveAdvertisedHost(bindAddress: String): String {
     if (bindAddress != LocalServerConfig.BIND_ALL) return bindAddress

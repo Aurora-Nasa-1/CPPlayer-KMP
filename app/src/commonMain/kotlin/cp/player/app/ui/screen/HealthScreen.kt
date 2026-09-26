@@ -44,6 +44,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.ui.component.LegacyListItem
 import cp.player.app.ui.component.LegacyPageScaffold
+import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.core.monitor.HealthMonitor
 
 class HealthScreen : Screen {
@@ -94,7 +95,7 @@ class HealthScreen : Screen {
                         Text("暂无调用记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
-                    LazyColumn(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    LazyScrollColumn(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         itemsIndexed(filtered) { index, record -> RecordRow(record, index, filtered.size) }
                     }
                 }

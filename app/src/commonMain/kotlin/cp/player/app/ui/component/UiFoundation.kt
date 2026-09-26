@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /** 当前窗口是否处于 Expanded 宽度（≥840dp），由 MainScreen 提供。 */
@@ -44,6 +45,25 @@ object CpSpacing {
     val section = 28.dp
     val item = 12.dp
     val touchTarget = 48.dp
+
+    /**
+     * 桌面端页面的**统一最大内容宽度**。
+     *
+     * 所有桌面页面（首页 / 曲库 / 设置 …）都必须用它收口：不同 Tab 用不同的上限
+     * 会让切换时正文宽度整体跳一下，是「大屏显得乱」最直接的来源。
+     *
+     * 1400dp 是刻意选的：超过这个宽度后，一行能塞下的卡片多到失去视觉分组，
+     * 长文本的阅读测度也会变差；再宽的显示器就把留白放在两侧。
+     */
+    val pageMaxWidth = 1400.dp
+
+    /**
+     * 桌面端栅格列数：按**可用内容宽度**换算，保证每列落在 180–210dp 的舒适区。
+     *
+     * 不要用窗口宽度去算 —— 窗口宽度里含两侧留白与滚动条槽，宽屏下会多算 1–2 列。
+     */
+    fun gridColumns(contentWidth: Dp, target: Dp = 196.dp, min: Int = 3, max: Int = 7): Int =
+        (contentWidth.value / target.value).toInt().coerceIn(min, max)
 }
 
 @Composable

@@ -1,6 +1,7 @@
 package cp.player.core.music
 
 import cp.player.core.BackendResult
+import cp.player.core.api.ApiResponseCodes
 import cp.player.core.api.MusicApiService
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -33,10 +34,8 @@ object MusicSourceFromApi {
         ((json as? JsonObject)?.get("code") as? JsonPrimitive)?.intOrNull
             ?: ((json as? JsonObject)?.get("status") as? JsonPrimitive)?.intOrNull
 
-    private fun isSuccess(json: JsonElement): Boolean {
-        val c = codeOf(json) ?: return false
-        return c == 200 || c == 0 || c == 201 || c == 301
-    }
+    /** 码表统一在 [ApiResponseCodes]，本文件只负责「拿哪个字段当 code」。 */
+    private fun isSuccess(json: JsonElement): Boolean = ApiResponseCodes.isSuccess(codeOf(json))
 
     /**
      * 统一封装：成功 → 解析为 [transform] 结果；
@@ -197,21 +196,7 @@ object MusicSourceFromApi {
         )
     }
 
-    private fun JsonObject.toTrackSummary(): TrackSummary {
-        val artists = (this["ar"] as? JsonArray) ?: (this["artists"] as? JsonArray)
-        val artistNames = artists?.joinToString(" / ") {
-            ((it as? JsonObject)?.get("name") as? JsonPrimitive)?.contentOrNull.orEmpty()
-        } ?: ((this["artist"] as? JsonPrimitive)?.contentOrNull ?: "")
-        val albumObj = (this["al"] as? JsonObject) ?: (this["album"] as? JsonObject)
-        return TrackSummary(
-            id = (this["id"] as? JsonPrimitive)?.contentOrNull ?: (this["songId"] as? JsonPrimitive)?.contentOrNull ?: "",
-            name = (this["name"] as? JsonPrimitive)?.contentOrNull ?: ((this["song"] as? JsonPrimitive)?.contentOrNull ?: ""),
-            artist = artistNames,
-            album = (albumObj?.get("name") as? JsonPrimitive)?.contentOrNull,
-            coverUrl = (albumObj?.get("picUrl") as? JsonPrimitive)?.contentOrNull,
-            durationMs = ((this["dt"] ?: this["duration"]) as? JsonPrimitive)?.longOrNull ?: 0L,
-        )
-    }
+    private fun JsonObject.toTrackSummary(): TrackSummary = trackSummaryOf(this, rawTrackId(this))
 
     private fun JsonObject.toArtistSummary(): ArtistSummary {
         return ArtistSummary(

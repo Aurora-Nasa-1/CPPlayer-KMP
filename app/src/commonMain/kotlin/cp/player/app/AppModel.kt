@@ -15,9 +15,14 @@ import cp.player.core.provider.ProviderCookieStorage
 import cp.player.core.util.SettingsStorage
 import cp.player.app.repository.AuthRepository
 import cp.player.app.repository.MusicRepository
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -60,13 +65,15 @@ object AppModel {
 
     val authRepository: AuthRepository get() = AuthRepository(backend.musicApi)
 
-    /** Transitional raw API access for operations not migrated yet. */
+    /**
+     * Transitional raw API access for operations not migrated yet.
+     *
+     * ⚠️ 这里拿到的其实是**带缓存的实例** —— `MusicBackend.musicApi` 交出的就是
+     * `CachedMusicApiService` 装饰器。"raw" 现在只表示「没经过 repository 封装」，
+     * 不再表示「绕过缓存」。
+     */
     @Deprecated("Use musicRepository or a feature repository")
     val api: cp.player.core.api.MusicApiService get() = backend.musicApi
-
-    /** 带缓存的音乐 API（先返回缓存，后台拉取，指纹比对，差异 Fresh）。 */
-    @Deprecated("Use a repository method")
-    val cachedApi: cp.player.core.cache.CachedMusicApiService get() = backend.cachedApi
 
     /** 当前活跃 Provider 唯一 ID（无活跃时返回 "default"）。 */
     fun activeProviderId(): String = backend.activeProviderId()
@@ -85,15 +92,40 @@ object AppModel {
     // ============ 设置（持久化） ============
 
     private val KEY_THEME_MODE = "theme_mode"
-    private val KEY_DYNAMIC_COLOR = "dynamic_color"
+
+    /**
+     * 旧键：只存「动态取色 开 / 关」。已被 [KEY_COLOR_SOURCE] 取代，
+     * 但仍保留读取，用于一次性迁移（见 [colorSource]）。
+     */
+    private val KEY_DYNAMIC_COLOR_LEGACY = "dynamic_color"
+    private val KEY_COLOR_SOURCE = "color_source"
     private val KEY_PURE_BLACK = "pure_black"
     private val KEY_PLAYBACK_QUALITY = "playback_quality"
 
     private val _themeMode = MutableStateFlow(themeMode())
     val themeModeFlow: StateFlow<cp.player.app.ui.theme.ThemeMode> = _themeMode.asStateFlow()
 
-    private val _dynamicColor = MutableStateFlow(dynamicColor())
-    val dynamicColorFlow: StateFlow<Boolean> = _dynamicColor.asStateFlow()
+    private val _colorSource = MutableStateFlow(colorSource())
+    val colorSourceFlow: StateFlow<cp.player.app.ui.theme.ColorSource> = _colorSource.asStateFlow()
+
+    /**
+     * 当前封面的种子色。null = 未取到（无封面 / 取色中 / 取色失败），
+     * 主题会回退到固定种子色 —— 取色失败绝不该影响可用性。
+     */
+    private val _coverSeed = MutableStateFlow<androidx.compose.ui.graphics.Color?>(null)
+    val coverSeedFlow: StateFlow<androidx.compose.ui.graphics.Color?> = _coverSeed.asStateFlow()
+
+    /**
+     * 系统壁纸的种子色，用于「跟随封面」但**当前没有曲目封面**时的回退。
+     *
+     * 与 [coverSeedFlow] 分开而不是合并成一个流，是因为两者的**生命周期完全不同**：
+     * 封面每首歌都变，壁纸一个进程只解一次。混在一起会让「壁纸没变」也触发主题重算。
+     *
+     * Android 恒为 null —— 那边的壁纸色由 Monet 直接给整套方案，不走「种子色」这条路。
+     */
+    private val _wallpaperSeed = MutableStateFlow<androidx.compose.ui.graphics.Color?>(null)
+    val wallpaperSeedFlow: StateFlow<androidx.compose.ui.graphics.Color?> =
+        _wallpaperSeed.asStateFlow()
 
     private val _pureBlack = MutableStateFlow(pureBlack())
     val pureBlackFlow: StateFlow<Boolean> = _pureBlack.asStateFlow()
@@ -107,16 +139,112 @@ object AppModel {
         _themeMode.value = mode
     }
 
-    fun dynamicColor(): Boolean = settings.getString(KEY_DYNAMIC_COLOR)?.toBooleanStrictOrNull() ?: false
-    fun setDynamicColor(enabled: Boolean) {
-        settings.putString(KEY_DYNAMIC_COLOR, enabled.toString())
-        _dynamicColor.value = enabled
+    /**
+     * 取色来源。
+     *
+     * **默认 FIXED 而不是 PLATFORM**：升级前 `dynamic_color` 默认关（等价于现在的
+     * FIXED），若默认改成 PLATFORM，老用户一升级观感就整体变掉。保持「默认不变、
+     * 用户显式开启」。
+     *
+     * 迁移：老键 `dynamic_color == true` ⇒ 认为用户本来就选了「跟随系统」。
+     */
+    fun colorSource(): cp.player.app.ui.theme.ColorSource {
+        settings.getString(KEY_COLOR_SOURCE)?.let { raw ->
+            runCatching { cp.player.app.ui.theme.ColorSource.valueOf(raw) }.getOrNull()
+                ?.let { return it }
+        }
+        val legacyDynamic =
+            settings.getString(KEY_DYNAMIC_COLOR_LEGACY)?.toBooleanStrictOrNull() ?: false
+        return if (legacyDynamic) cp.player.app.ui.theme.ColorSource.PLATFORM
+        else cp.player.app.ui.theme.ColorSource.FIXED
+    }
+
+    fun setColorSource(source: cp.player.app.ui.theme.ColorSource) {
+        settings.putString(KEY_COLOR_SOURCE, source.name)
+        _colorSource.value = source
     }
 
     fun pureBlack(): Boolean = settings.getString(KEY_PURE_BLACK)?.toBooleanStrictOrNull() ?: false
     fun setPureBlack(enabled: Boolean) {
         settings.putString(KEY_PURE_BLACK, enabled.toString())
         _pureBlack.value = enabled
+    }
+
+    private var coverColorTrackingStarted = false
+
+    /**
+     * 启动封面取色（幂等）：跟随当前曲目的封面变化更新 [coverSeedFlow]。
+     *
+     * 成本控制四层，缺一层都会卡（「压缩不卡顿」的落点）：
+     * - **门控**：只有取色来源是 [cp.player.app.ui.theme.ColorSource.COVER] 时才解码。
+     *   默认来源是 FIXED，若不门控就是「每换一首歌白白解码 + 量化一张封面」。
+     * - **触发**：只在封面 URL **变化**时走一遍，并按 URL 命中
+     *   [cp.player.app.ui.theme.CoverSeedCache]；同一首歌来回切不重算。
+     * - **解码**：Coil 只解 [cp.player.app.ui.theme.CoverSampleSizePx]（112px）的缩略图，
+     *   走它自己的内存 / 磁盘缓存，**不额外下载**。
+     * - **线程**：解码 + 量化全程在 [Dispatchers.Default]（[modelScope]）上，
+     *   绝不占用 `backendScope`（Main / 桌面 EDT）—— 那会直接卡出帧。
+     *
+     * 与 [colorSourceFlow] `combine` 而不是各自 collect：来源从 FIXED 切到 COVER 时
+     * 必须**立刻**按当前曲目补一次取色 —— 此时封面 URL 并没有变化，只监听播放状态收不到事件。
+     *
+     * 同时负责**预热系统壁纸种子**（[wallpaperSeedFlow]）：那是「跟随封面但没在播放」
+     * 的回退色。壁纸要读文件 + 解码（几十到几百毫秒），所以只能在这里的后台协程做，
+     * 绝不能放进 `CpTheme` 的 composition —— 那会直接卡住首帧。
+     */
+    fun startCoverColorTracking() {
+        if (coverColorTrackingStarted) return
+        coverColorTrackingStarted = true
+        modelScope.launch {
+            combine(playback.state, colorSourceFlow) { st, source ->
+                // 非 COVER 来源一律折算成 null ⇒ 不解码，并顺手清掉上一次的种子色。
+                if (source == cp.player.app.ui.theme.ColorSource.COVER) st.currentTrack?.coverUrl
+                else null
+            }
+                .distinctUntilChanged()
+                // collectLatest：切歌时**取消**上一次还在跑的下载/解码。
+                // 原先用 collect 是串行排队的 —— 快速连切 5 首就要等前 4 次解码跑完，
+                // 用户看到的主题色是好几首之前的。dedup 也一并交给 distinctUntilChanged，
+                // 不再需要跨 collect 共享的 `lastUrl` 可变状态。
+                .collectLatest { url ->
+                    if (url.isNullOrBlank()) {
+                        _coverSeed.value = null
+                        return@collectLatest
+                    }
+                    _coverSeed.value = resolveCoverSeed(url)
+                }
+        }
+        modelScope.launch {
+            // 一个进程只尝试一次：壁纸在运行中不会变，失败（没有壁纸 / 是动态壁纸）
+            // 也不该在用户每次切来源时重试一遍解码。
+            var attempted = false
+            colorSourceFlow.collect { source ->
+                if (source != cp.player.app.ui.theme.ColorSource.COVER || attempted) return@collect
+                attempted = true
+                _wallpaperSeed.value =
+                    runCatching { cp.player.app.ui.theme.platformWallpaperSeed() }.getOrNull()
+            }
+        }
+    }
+
+    /** 取封面种子色：先查缓存，未命中才解码 + 量化。任何异常都退化为 null。 */
+    private suspend fun resolveCoverSeed(url: String): androidx.compose.ui.graphics.Color? {
+        cp.player.app.ui.theme.CoverSeedCache.get(url)?.let { return it }
+        val bitmap = runCatching {
+            cp.player.app.ui.theme.loadCoverBitmap(
+                url,
+                cp.player.app.ui.theme.CoverSampleSizePx,
+            )
+        }.getOrNull()
+        // `loadCoverBitmap` 内部的 runCatching 会把 CancellationException 也吞掉
+        // （Coil 被取消时返回 null 而不是抛出）。若本次已被 collectLatest 取消，
+        // 不主动停就会把「上一首的 null」写回 _coverSeed，覆盖掉新曲目的种子色。
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (bitmap == null) return null
+        val seed = runCatching { cp.player.app.ui.theme.extractSeedColor(bitmap) }.getOrNull()
+            ?: return null
+        cp.player.app.ui.theme.CoverSeedCache.put(url, seed)
+        return seed
     }
 
     // ============ 播放音质（持久化） ============
@@ -206,6 +334,38 @@ object AppModel {
     /** 曲目变化时是否自动推送到接收端。 */
     fun setPushEnabled(enabled: Boolean) {
         updateLocalServer(_localServerConfig.value.copy(pushEnabled = enabled))
+    }
+
+    /** 是否开放媒体面（`/stream`）。默认开，关掉后接收端拉流会得到 403。 */
+    fun setExposeStream(enabled: Boolean) {
+        updateLocalServer(_localServerConfig.value.copy(exposeStream = enabled))
+    }
+
+    /**
+     * 是否开放数据面（`/api/v1/...`）。**默认关**，因为它扩大了攻击面。
+     *
+     * 打开时顺带**确保令牌存在**：非回环绑定下没有令牌 = 数据面全部 401，
+     * 而用户看到的只是「明明打开了却连不上」，很难联想到要去重新生成令牌。
+     * 与 [setLocalServerEnabled] 同一处理。
+     */
+    fun setExposeDataApi(enabled: Boolean) {
+        val current = _localServerConfig.value
+        val token = if (enabled && current.accessToken.isBlank()) {
+            LocalServerConfigStore.ensureToken(settings)
+        } else {
+            current.accessToken
+        }
+        updateLocalServer(current.copy(exposeDataApi = enabled, accessToken = token))
+    }
+
+    /**
+     * 是否允许远程播控写操作（`/api/v1/playback/...`）。**默认关**。
+     *
+     * ⚠️ 端点本身尚未实现（Phase 3）。开关先落配置，是为了让「用户可以预先决定
+     * 要不要开放播控」这件事与实现解耦；在端点落地前打开它**不会**有任何效果。
+     */
+    fun setAllowRemoteControl(enabled: Boolean) {
+        updateLocalServer(_localServerConfig.value.copy(allowRemoteControl = enabled))
     }
 
     /** 重新生成访问令牌，返回新值。 */

@@ -49,6 +49,8 @@ import cp.player.app.AppModel
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.PageHeader
+import cp.player.app.ui.component.LazyScrollColumn
+import cp.player.app.ui.component.LazyScrollRow
 import cp.player.app.ui.component.SectionHeader
 import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.StateSurface
@@ -101,7 +103,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
             )
             Spacer(Modifier.height(8.dp))
             if (state.query.isNotBlank() || state.result != null) {
-                androidx.compose.foundation.lazy.LazyRow(
+                LazyScrollRow(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = CpSpacing.pageHorizontal),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
@@ -113,10 +115,12 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                     )
                     items(types.size) { index ->
                         val (type, label) = types[index]
-                        FilterChip(
-                            selected = state.searchType == type,
-                            onClick = { model.selectSearchType(type) },
-                            label = { Text(label) },
+                        // Expressive 切换按钮：选中态由**形状**表达（圆角方形 ↔ 胶囊），
+                        // 而不是只有底色变化 —— 与桌面播放页的三个页签保持同一套语言。
+                        cp.player.app.ui.component.CpToggleChip(
+                            checked = state.searchType == type,
+                            onCheckedChange = { model.selectSearchType(type) },
+                            label = label,
                         )
                     }
                 }
@@ -226,7 +230,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                 modifier = Modifier.padding(top = 32.dp),
                             )
                         } else {
-                            LazyColumn(
+                            LazyScrollColumn(
                                 Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 32.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp),

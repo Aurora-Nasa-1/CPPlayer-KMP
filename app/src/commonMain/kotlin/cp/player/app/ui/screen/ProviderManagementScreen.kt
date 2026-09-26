@@ -43,6 +43,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.platform.rememberZipPicker
+import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.LegacyListItem
 import cp.player.app.ui.component.LegacyPageScaffold
 import cp.player.core.BackendResult
@@ -82,7 +83,7 @@ class ProviderManagementScreen : Screen {
                 if (providers.isEmpty() && !isImporting) {
                     EmptyProviderState(Modifier.align(Alignment.Center))
                 } else {
-                    LazyColumn(
+                    LazyScrollColumn(
                         Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {

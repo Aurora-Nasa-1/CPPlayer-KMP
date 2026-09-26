@@ -26,7 +26,6 @@ import cp.player.app.ui.screen.BackendErrorScreen
 import cp.player.app.ui.screen.MainScreen
 import cp.player.app.ui.screen.SetupScreen
 import cp.player.app.ui.screen.StartupScreen
-import cp.player.app.ui.theme.CpTheme
 import cp.player.app.platform.PlatformMediaControlsEffect
 import cp.player.core.MusicBackend
 
@@ -44,22 +43,20 @@ import cp.player.core.MusicBackend
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun App() {
-    val themeMode by AppModel.themeModeFlow.collectAsState()
-    val dynamic by AppModel.dynamicColorFlow.collectAsState()
-    val pureBlack by AppModel.pureBlackFlow.collectAsState()
-
     PlaybackMediaControlsBridge()
 
     // 启动：应用持久化音质到播放控制器 + 拉取用户资料/收藏 + 启动播放历史记录 + 补齐最近播放缺失字段
+    // + 启动封面取色（「跟随封面」主题用）
     androidx.compose.runtime.LaunchedEffect(Unit) {
         AppModel.syncPlaybackQuality()
         AppModel.restoreLocalServer()
         AppModel.refreshUserProfile()
         AppModel.startHistoryRecorder()
         AppModel.startRecentTracksEnrich()
+        AppModel.startCoverColorTracking()
     }
 
-    CpTheme(themeMode = themeMode, dynamicColor = dynamic, pureBlack = pureBlack) {
+    AppTheme {
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background,
@@ -147,5 +144,31 @@ private fun PlaybackMediaControlsBridge() {
     PlatformMediaControlsEffect(
         controller = AppModel.playback,
         state = playbackState,
+    )
+}
+
+/**
+ * 主题宿主。
+ *
+ * **刻意把主题状态的订阅收在这一层**，理由与 [PlaybackMediaControlsBridge] 完全相同：
+ * `coverSeedFlow` 每换一首歌就变，若 [App] 自己 `collectAsState` 它，[App] 会跟着重组，
+ * 而 [App] 的函数体会连带 Navigator / SlideTransition / SharedTransitionLayout 一起重算。
+ * 隔到这一层后，跟随换色重组的只剩这个极小的 composable；
+ * 真正需要换色的那些 composable 由 `CompositionLocal` 的读取失效单独驱动，不受影响。
+ */
+@Composable
+private fun AppTheme(content: @Composable () -> Unit) {
+    val themeMode by AppModel.themeModeFlow.collectAsState()
+    val colorSource by AppModel.colorSourceFlow.collectAsState()
+    val pureBlack by AppModel.pureBlackFlow.collectAsState()
+    val coverSeed by AppModel.coverSeedFlow.collectAsState()
+    val wallpaperSeed by AppModel.wallpaperSeedFlow.collectAsState()
+    cp.player.app.ui.theme.CpTheme(
+        themeMode = themeMode,
+        colorSource = colorSource,
+        pureBlack = pureBlack,
+        coverSeed = coverSeed,
+        wallpaperSeed = wallpaperSeed,
+        content = content,
     )
 }

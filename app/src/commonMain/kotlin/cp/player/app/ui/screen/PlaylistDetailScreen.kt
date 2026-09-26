@@ -74,6 +74,8 @@ import cp.player.app.platform.shareText
 import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.AddSongsOptionsSheet
 import cp.player.app.ui.component.AppScaffold
+import cp.player.app.ui.component.LazyScrollColumn
+import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.ui.component.PlaylistOptionsSheet
 import cp.player.app.ui.component.PlaylistPickerSheet
 import cp.player.app.ui.component.SongItem
@@ -628,11 +630,10 @@ private fun WideLayout(
 ) {
     Row(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         // 左侧：歌单信息面板
-        Column(
+        ScrollColumn(
             modifier = Modifier
                 .width(320.dp)
                 .fillMaxHeight()
-                .verticalScroll(rememberScrollState())
                 .padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -789,7 +790,7 @@ private fun TrackList(
                 }
             }
         }
-        else -> LazyColumn(
+        else -> LazyScrollColumn(
             modifier = modifier.fillMaxSize(),
             contentPadding = PaddingValues(
                 start = 20.dp,

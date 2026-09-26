@@ -35,9 +35,10 @@
 |----|------|
 | `api/` | 云音乐 API 方法常量与 `MusicApiService` 实现、Provider 容灾 |
 | `provider/` | 音源插件系统：`BackendProvider`、`ModuleManifest`、`ProviderManager`、`ModuleManager`，以及 Http / Binary / JNI 三类 Provider 加载方式 |
-| `cache/` | `CachedMusicApiService` + `Fingerprinter` + `ApiCache` |
+| `cache/` | `CachedMusicApiService`（读透缓存 + 写失效 + 多 Provider 容灾）+ `Fingerprinter` + `ApiCache` + `CacheStats` |
 | `playback/` | `PlaybackController`（队列 / seek / 切歌 / 歌词）、`PlatformPlayer` 抽象、`SeekSettle`、`SilentOutputPlayer` |
 | `control/` | 本地流输出服务与外部推送（`LocalServer`、`ExternalPusher`） |
+| `integration/` | **跨软件集成（inbound）**：把音源数据按 CPPlayer 自己的 `/api/v1/...` 契约提供给第三方软件，并把端点写成 `~/.cpplayer/integration.json` 供**自动发现**。只依赖领域模型（`UnifiedMusicSource` 等），**禁止**依赖 `api/` / `provider/` / `cache/`（由 `IntegrationBoundaryTest` 扫**四个源集**钉住 —— 漏扫一个源集就会「看起来在守着其实没扫到」）。数据面默认关闭，见 `INTEGRATION_PLAN.md` / `INTEGRATION_API.md` |
 | `download/` | `MediaDownloadManager` |
 | `local/` | 本地媒体扫描（`LocalMediaSource`、`ScanProgress`） |
 | `media/` | `LocalMediaItem`、`MediaType` 等媒体描述 |
@@ -75,15 +76,18 @@ Manifest 与 `res/xml/`。**不放业务逻辑。**
 
 ## 2. 唯一入口：`MusicBackend`
 
-`core/src/commonMain/kotlin/cp/player/kmp/MusicBackend.kt`
+`core/src/commonMain/kotlin/cp/player/core/MusicBackend.kt`
 
 > CPPlayer 后端统一入口（KMP 版）。
 > **前端唯一依赖的后端类型。** 所有音乐数据访问、Provider 管理、播放控制
 > 都应通过此对象进行，禁止直接触碰 `ProviderManager` / `ModuleManager` 等内部组件。
 > —— 摘自该文件的 KDoc
 
-它对外提供：`stateFlow` / `init` / `musicApi` / `cachedMusicApi` /
+它对外提供：`stateFlow` / `init` / `musicApi` / `cachedApi` /
 `playback` / `applyOutputConfig` / Provider 导入切换删除 / 推送与本地服务器控制。
+
+> `musicApi` 与 `cachedApi` 交出的是**同一个带缓存实例**（`CachedMusicApiService`），
+> 裸实现不外泄。见 §5 缓存层条目。
 
 ---
 
@@ -187,9 +191,12 @@ commonMain  ──▶  jvmMain  ──▶  { androidMain, desktopMain }
 | ~~`MusicBackend.playback: PlaybackEngine` 默认 `NoopPlaybackEngine`，全仓从未被赋过真实实现~~ | 门面上的公开属性，看起来像可插拔播放引擎，实际是空转的平行抽象；真正的播放路径走 `PlaybackController` / `PlatformPlayer` | ✅ **已删除**（2026-09-25，`f4a5141`） |
 | ~~`PlaybackEngine` / `PlaybackState` / `EngineType` / `NoopPlaybackEngine`~~ | 与 `PlatformPlayer` 平行的另一套抽象，只被上面那条死链路引用，自身也无实现方 | ✅ **已删除**（2026-09-25，`f4a5141`）。注意 `PlaybackMetadata` **是活的**（`PlatformPlayer.load` 在用），已单独成文件保留 |
 | ~~`PlaybackControllerImpl.playCurrent(skipIfSame)` 参数在函数体内从未被读取，8 个调用点全部传 `false`~~ | 死参数，暗示存在一个并不存在的「相同则跳过」能力 | ✅ **已删除参数**（2026-09-25，`f4a5141`） |
-| `CachedMusicApiService.callApiCached` 全仓**唯一引用是它自己的声明**，且它一死，**整个 `core/cache/` 包（6 文件）跟着死** —— `ApiCache` / `CacheConfig` / `CacheEntry` / `CacheResult` / `Fingerprinter` 都只服务于它 | 缓存层的公开入口无任何调用方 ⇒ README 描述的「缓存层」目前**完全空转**。`CachedMusicApiService` 自身仍活着（`UnifiedMusicSourceImpl` 持有它），但只是纯转发壳。另：`AppModel.cachedApi` 与 `MusicApiServiceFactory.cachedInstance` 也都零引用 | **已确认范围，暂缓**（2026-09-25）。彻底清理需删 `core/cache/` 整包 + 收窄 `MusicBackend` / `MusicApiServiceFactory` / `AppModel` 公开面（约 6 删 5 改），属子系统级变更，不塞进卫生提交。**「接入还是删除」仍未决** |
+| ~~`CachedMusicApiService.callApiCached` 全仓无调用方 ⇒ 整个 `core/cache/` 包空转~~ | 缓存层形同不存在：每次请求都打网络。且键里不含账号 cookie（同机多账号互相串数据）、`CacheConfig.maxEntries` 是死参数、`MusicBackend.musicApi` 交出的是裸实现（连装饰器本身都被绕过） | ✅ **已修复**（2026-09-25）：改为**读透缓存** —— 覆写 `isCacheable(...)` 名单内的读类方法（新鲜命中直接返回 / 回源写回 / 失败先多 Provider 容灾再回退旧缓存）；补齐写操作失效（新增 `ApiCache.removeByPrefix`）、cookie 进键（稳定 64 位哈希）、`maxEntries` 生效、`getRecentWarnings` 的 `onlyWarnings` 过滤 bug；`MusicBackend.musicApi` 与 `MusicApiServiceFactory.instance` 交出的都是装饰器。`callApiCached` 作为**流式**入口保留，与读透共用同一份缓存与键。测试：`core/src/desktopTest/.../cache/` |
 | `reference/netease-module-rust` 是**未注册的 submodule** | 索引里是 gitlink（mode 160000）但仓库根没有 `.gitmodules`，他人克隆后该目录为空 | 待修，见 `RESTRUCTURE_PLAN.md` §7.1 |
 | ~~`.qoder/` 有 132 个文件已被提交~~ | AI 生成的仓库 wiki + 一次性 diff 转储，会随代码漂移而失效 | ✅ **已移出版本控制**（2026-09-25），文件保留在磁盘上，见 `RESTRUCTURE_PLAN.md` §7.2 |
 | ~~`AboutScreen.kt` 用户可见文案 `"KMP-PRO · Compose Multiplatform"`~~ | 应用内显示旧项目名 | ✅ **已改为 `CPPlayer`**（2026-09-25）。同批修掉 `PlatformActions.android.kt` 注释里的旧模块名 `androidApp` |
 | ~~`native/windows-smtc/` 只有一个 README~~ | 占位目录，无代码。**且原 README 描述的手写 C++/WinRT 方案（`cp_windows_smtc.dll` / `cp_smtc_*` / `-Dcp.player.smtc.dir`）是废弃路线** —— 这些符号全仓 grep 不到，SMTC 实际由 JMTC 的 `SMTCAdapter.dll` 提供 | ✅ **已改写为决策记录**（2026-09-25）：写明现状、废弃原因、以及为何不要重写 |
 | ~~`CommonComponents.kt` 的 `AppLogo` / `HeadlineSupportingRow` 无任何使用方~~ | 3 个公开 composable 里 2 个是死的（仅 `HeroBlock` 被 `SetupScreen` 使用） | ✅ **已删除**（2026-09-25，`f4a5141`），现仅剩 `HeroBlock` |
+| ~~`MusicApiService.getCommentMethod(type)` 的 `when` 在 KMP 移植时被整段换成恒返回 `COMMENT_NEW`~~ | 所有资源类型的评论请求打**同一个端点**，而 `comment/new` 又不在 `MusicApiServiceImpl` 的响应校验表里 ⇒ 连响应形态都没人校验。纯函数映射，编译期完全看不出问题，只有对着旧项目才看得出来 | ✅ **已按 `reference/cp-player-legacy` 的分支恢复**（2026-09-25），并补 `CommentMethodMappingTest` 钉住。`COMMENT_NEW` 常量保留但已标注「无调用方，切换前须先补校验表」 |
+| **对外能力缺口没有单一清单**：`MusicApiService` → 领域模型的迁移进度只有两个出口 —— `MusicBackend.kt` 的增量迁移 TODO，与 `meta.capabilities` | 集成方按 `capabilities` 分支，而 `capabilities` 靠**人工**追加。漏改的后果是「文档说有、实际 404」（或反之），**编译期与运行期都查不出来** | 见 `INTEGRATION_PLAN.md` §13：每完成一个 Phase 同步追加一项；`INTEGRATION_API.md` §1 的状态表与 `capabilities` 必须同时改。已加测试钉住 capabilities 取值，但「文档 ↔ 代码」的同步仍是纪律而非机制 |
+| ~~媒体面 `/stream` 与数据面**各写了一遍令牌校验**~~ | 两处都是「面开没开 + 令牌对不对」，于是漂移：数据面正确拒绝「非回环 + 无令牌」，媒体面却是 `if (!config.requiresToken) return true` ⇒ **绑定 `0.0.0.0` 且令牌为空时同网段任何人可无限拉流**。这类漂移编译期与运行期都看不出来 —— 两边单独看都「合理」 | ✅ **已抽成 `isTokenSatisfied` 共用**（2026-09-25）：两面委托同一个函数，加测试钉住两面判定一致，并用源码断言禁止媒体面再内联比较。教训：**同一个规则出现在两个调用点时就该抽函数**，而不是各写一遍 |

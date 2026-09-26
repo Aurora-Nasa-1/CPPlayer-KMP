@@ -43,10 +43,27 @@ class PlaybackControllerImpl(
     private val api: MusicApiService,
     private val cookieProvider: () -> String?,
     private val scope: CoroutineScope,
+    /**
+     * 无损档位的「边播边落盘」（见 [StreamLocalizer]）。
+     *
+     * 默认是空实现，桌面由组合根注入 [DesktopStreamLocalizer] —— 桌面引擎（rodio）
+     * 无法定位 FLAC over HTTP，不落盘就只能「能播但不能拖」。
+     * 给默认值是为了让既有测试不必改动。
+     */
+    private val streamLocalizer: StreamLocalizer = NoOpStreamLocalizer,
 ) : PlaybackController {
 
     private val _state = MutableStateFlow(PlaybackUiState())
     override val state: StateFlow<PlaybackUiState> = _state.asStateFlow()
+
+    /**
+     * seek 未能生效的事件（宽限期已过、乐观值已放弃）。
+     *
+     * 直接转发平台层信号：它是**事件**不是状态，用 StateFlow 会在重新订阅时重放，
+     * 还得手工清理。前端收到后提示用户即可。
+     */
+    override val seekFailures: kotlinx.coroutines.flow.SharedFlow<SeekFailure>
+        get() = platform.seekFailures
 
     private val navMutex = Mutex()
 
@@ -92,6 +109,37 @@ class PlaybackControllerImpl(
      * 这个意图不能落到 B 头上。
      */
     @Volatile private var deferredSeek: Pair<String, Long>? = null
+
+    /**
+     * 当前曲目**已就绪的本地副本**：`曲目 mediaId → 本地绝对路径`。
+     *
+     * 无损档位在后台落盘完成后写入。此时引擎还在放流，**不立刻切源**
+     * （换源会有一声咔哒），等用户第一次拖动时才切过去——见 [requestSeek]。
+     * 带上 mediaId 是为了防串曲：A 的副本绝不能落到 B 头上。
+     */
+    @Volatile private var localized: Pair<String, String>? = null
+
+    /**
+     * 引擎当前是否已在播**本地副本**（而非流）。
+     *
+     * 用来保证「拖动时才切换」只发生一次：第二次之后的拖动直接就是普通 seek，
+     * 引擎已经在放可定位的本地文件了。
+     */
+    @Volatile private var playingFromLocal = false
+
+    /**
+     * 后台落盘任务。换曲时取消——否则会白下一首已经切走的歌，白占带宽。
+     */
+    private var localizeJob: Job? = null
+
+    /**
+     * 最近一次 [platform.load] 用的请求头与元信息。
+     *
+     * 切到本地副本时要重新 load 一次，必须复用同一份元信息
+     * （否则 SMTC / 缓存键会退回默认值）。
+     */
+    @Volatile private var lastHeaders: Map<String, String> = emptyMap()
+    @Volatile private var lastMetadata: PlaybackMetadata? = null
 
     /**
      * 导航世代：每次开始加载新曲目自增。
@@ -363,8 +411,84 @@ class PlaybackControllerImpl(
             updateState { it.copy(positionMs = target) }
             return
         }
+        // 无损流：本地副本已就绪、但引擎还在放流 ⇒ 先切到本地文件再 seek。
+        // 桌面引擎定位不了 FLAC over HTTP，只有本地文件拖得动。而「拖动」本来就是一个
+        // 不连续点，所以这次重新 load 带出的一声咔哒在预期之内 —— 用它换来的是
+        // **正常听歌全程零中断**（否则就只能在「下载完成时立刻切」和「等整曲下完再播」之间选）。
+        val local = localized?.takeIf { it.first == mediaId }?.second
+        if (local != null && !playingFromLocal) {
+            // 同步置位：切换要重新 load，这期间的拖动一律暂存，
+            // 否则会被 load 的起始位置覆盖掉（「拖了没反应」的老毛病）。
+            playingFromLocal = true
+            engineReady = false
+            deferredSeek = null
+            // 乐观回写：load 期间引擎位置还是 0，不接管滑条会先弹回再跳过去。
+            updateState { it.copy(positionMs = target) }
+            scope.launch { switchToLocal(mediaId, local, target) }
+            return
+        }
         deferredSeek = null
         platform.seekTo(target)
+    }
+
+    /**
+     * 后台把无损流落盘。**不阻塞播放** —— 调用时引擎已经在放流了。
+     *
+     * 完成后只把路径记进 [localized]，**不立刻切源**（换源会有咔哒声）。
+     * 真正的切换发生在用户第一次拖动时，见 [requestSeek]。
+     */
+    private fun startBackgroundLocalize(
+        mediaId: String,
+        cacheKey: String,
+        url: String,
+        headers: Map<String, String>,
+        gen: Int,
+    ) {
+        localizeJob?.cancel()
+        updateState { it.copy(isLocalizing = true) }
+        localizeJob = scope.launch {
+            val path = streamLocalizer.localize(url, cacheKey, headers)
+            // 期间用户可能已经切歌：结果只能落到它自己那一首头上。
+            if (loadGeneration != gen) return@launch
+            if (path != null) localized = mediaId to path
+            // 成败都要收回提示：失败时本曲就是「能播但不能拖」，不能一直挂着「缓存中」。
+            updateState { it.copy(isLocalizing = false) }
+        }
+    }
+
+    /**
+     * 把引擎从「放流」切到「放本地副本」，并落到 [target]。
+     *
+     * 只在用户第一次拖动无损曲目时调用（见 [requestSeek]）。复用 [lastMetadata] /
+     * [lastHeaders]，让这次重新 load 与首次装载在元信息上完全一致。
+     */
+    private suspend fun switchToLocal(mediaId: String, path: String, target: Long) {
+        val gen = loadGeneration
+        try {
+            platform.load(
+                path,
+                startPositionMs = target,
+                headers = lastHeaders,
+                metadata = lastMetadata,
+            )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+            // 切本地失败（典型：副本刚好被 LRU 淘汰）。
+            // 必须自己兜住 —— 这是挂在 scope 上的独立协程，异常冒出去就是未捕获异常。
+            if (loadGeneration != gen) return
+            // 退回「放流、不可拖」的原状态：让后续 seek 走正常的失败上报（Snackbar），
+            // 而不是反复重试一个已经不存在的文件。
+            playingFromLocal = false
+            localized = null
+            engineReady = true
+            platform.seekTo(target)
+            return
+        }
+        if (loadGeneration != gen) return
+        engineReady = true
+        // 切换途中又拖了一次：此时引擎已装上本地文件，补发即可生效。
+        consumeDeferredSeek(mediaId)?.let { platform.seekTo(it) }
     }
 
     /** 把目标位置钳制到 `[0, 有效时长]`；时长未知时只保证非负。 */
@@ -611,6 +735,11 @@ class PlaybackControllerImpl(
                 val info = extractLyricsInfo(json, lines)
                 val state = if (lines.isEmpty()) LyricsState.NoLyrics else LyricsState.Success(lines)
                 state to info
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // 被新一轮 refreshLyrics / 切歌取消 ⇒ 这是「预期中的结束」，不是失败。
+                // 必须原样抛出：写成 LyricsState.Error 会盖掉新曲目的 Loading，
+                // 表现为切歌瞬间闪一下「歌词获取失败」。
+                throw e
             } catch (e: Throwable) {
                 LyricsState.Error(e.message ?: "歌词获取失败") to null
             }
@@ -668,6 +797,9 @@ class PlaybackControllerImpl(
                     durationMs = summary?.durationMs?.takeIf { d -> d > 0 } ?: 0L,
                     error = if (summary == null) "无法获取曲目信息" else null,
                     isBuffering = summary != null,
+                    // 必须显式复位：从「正在落盘的无损曲」切到「有损曲」时，
+                    // 上一首的 true 会一直挂着，进度条被永久禁用且提示不消失。
+                    isLocalizing = false,
                 )
             )
             if (summary == null) {
@@ -704,22 +836,35 @@ class PlaybackControllerImpl(
             // 注意必须在这里取而不是协程开头——用户的 seek 通常发生在
             // 「协程已启动、播放地址还没解析出来」这段时间里。
             val startAt = consumeDeferredSeek(mediaId) ?: 0L
+            // 无损档位最终必须播**本地文件**，引擎才定位得动（桌面 rodio 无法定位
+            // FLAC over HTTP，见 [StreamLocalizer]）。但**绝不等整曲下完才开播**：
+            // 命中缓存就直接播本地；未命中就先用流立刻开播，落盘丢到后台并行做。
+            val cacheKey = cacheKeyOf(mediaId, qualityLevel)
+            val localizing = streamLocalizer.isLocalizing(qualityLevel)
+            val cachedLocal = if (localizing) streamLocalizer.cachedPath(cacheKey) else null
+            // 换曲即作废上一首的后台落盘与「可切本地」状态，避免串曲。
+            localizeJob?.cancel()
+            localized = cachedLocal?.let { mediaId to it }
+            playingFromLocal = cachedLocal != null
+            val metadata = PlaybackMetadata(
+                id = mediaId,
+                title = summary.name,
+                artist = summary.artist,
+                album = summary.album,
+                coverUrl = summary.coverUrl,
+                durationMs = summary.durationMs,
+                // 磁盘缓存的稳定键：CDN 刷新鉴权 token 会换 URL，
+                // 用 mediaId@音质当键才能让 seek 回退命中已下载区间。
+                cacheKey = cacheKey,
+            )
+            lastHeaders = headers
+            lastMetadata = metadata
             try {
                 platform.load(
-                    songUrl.url,
+                    cachedLocal ?: songUrl.url,
                     startPositionMs = startAt,
                     headers = headers,
-                    metadata = PlaybackMetadata(
-                        id = mediaId,
-                        title = summary.name,
-                        artist = summary.artist,
-                        album = summary.album,
-                        coverUrl = summary.coverUrl,
-                        durationMs = summary.durationMs,
-                        // 磁盘缓存的稳定键：CDN 刷新鉴权 token 会换 URL，
-                        // 用 mediaId@音质当键才能让 seek 回退命中已下载区间。
-                        cacheKey = cacheKeyOf(mediaId, qualityLevel),
-                    ),
+                    metadata = metadata,
                 )
                 if (loadGeneration == gen) {
                     engineReady = true
@@ -727,6 +872,10 @@ class PlaybackControllerImpl(
                     consumeDeferredSeek(mediaId)?.let { platform.seekTo(it) }
                 }
                 platform.play()
+                // 开播之后才起后台落盘：不占首帧出声的时间。
+                if (localizing && cachedLocal == null) {
+                    startBackgroundLocalize(mediaId, cacheKey, songUrl.url, headers, gen)
+                }
                 refreshLyrics()
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e

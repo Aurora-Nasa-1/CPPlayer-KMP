@@ -1,6 +1,7 @@
 package cp.player.core.playback
 
 import cp.player.core.music.TrackSummary
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -16,6 +17,15 @@ import kotlinx.coroutines.flow.StateFlow
 interface PlaybackController {
     /** 完整渲染状态流。前端 collect 后直接渲染。 */
     val state: StateFlow<PlaybackUiState>
+
+    /**
+     * seek 最终没能生效的事件流（宽限期已过、乐观值已放弃）。
+     *
+     * 前端应据此提示用户。**不消费它**的话，一次失败的 seek 只能表现为
+     * 「进度条自己弹回原位」——用户无法区分「我拖错了」和「这个音源不能定位」。
+     * 是事件流不是状态：重新订阅时不该被重放。
+     */
+    val seekFailures: SharedFlow<SeekFailure>
 
     // ============ 单曲/队列 ============
 

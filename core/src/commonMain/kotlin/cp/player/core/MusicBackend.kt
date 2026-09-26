@@ -19,6 +19,12 @@ import cp.player.core.control.createLocalServer
 import cp.player.core.control.resolveAdvertisedHost
 import cp.player.core.download.MediaDownloadManager
 import cp.player.core.download.MediaDownloadManagerImpl
+import cp.player.core.integration.IntegrationDescriptorWriter
+import cp.player.core.integration.IntegrationPlaybackControl
+import cp.player.core.integration.IntegrationProviderInfo
+import cp.player.core.integration.IntegrationService
+import cp.player.core.integration.createIntegrationDescriptorWriter
+import cp.player.core.integration.createIntegrationRoutes
 import cp.player.core.local.LocalMediaSource
 import cp.player.core.local.ScanProgress
 import cp.player.core.local.createLocalMediaSource
@@ -28,12 +34,15 @@ import cp.player.core.playback.PlaybackController
 import cp.player.core.playback.PlaybackControllerImpl
 import cp.player.core.playback.SilentOutputPlayer
 import cp.player.core.playback.createPlatformPlayer
+import cp.player.core.playback.createStreamLocalizer
 import cp.player.core.provider.BackendProvider
 import cp.player.core.provider.ModuleManager
 import cp.player.core.provider.ProviderCookieStorage
 import cp.player.core.provider.ProviderManager
 import cp.player.core.util.PlatformContext
 import cp.player.core.util.SettingsStorage
+import kotlin.coroutines.ContinuationInterceptor
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -123,10 +132,16 @@ class MusicBackend private constructor(
 
     val health: HealthMonitor get() = HealthMonitor
 
-    // ============ 音乐数据访问（云侧，直通原 API） ============
+    // ============ 音乐数据访问（云侧） ============
 
+    /**
+     * 带读透缓存的云音乐 API。
+     *
+     * 交出去的是 [CachedMusicApiService]（装饰器），**裸实现不外泄** ——
+     * 否则调用方绕过装饰器，缓存层形同不存在（历史 bug，见 ARCHITECTURE §5）。
+     */
     @Deprecated("请使用统一访问入口 unifiedSource", ReplaceWith("unifiedSource"))
-    val musicApi: MusicApiService get() = musicApiImpl
+    val musicApi: MusicApiService get() = cachedMusicApi
 
     @Deprecated("请使用统一访问入口 unifiedSource", ReplaceWith("unifiedSource"))
     val cachedApi: CachedMusicApiService get() = cachedMusicApi
@@ -152,13 +167,19 @@ class MusicBackend private constructor(
     private fun attachLocalMedia(source: LocalMediaSource) {
         check(_localMusic is NoopLocalMusicSource) { "本地媒体源已装配，不允许二次赋值" }
         _localMusic = source
-        _unifiedSource = cp.player.core.music.UnifiedMusicSourceImpl(cachedMusicApi, source)
+        _unifiedSource = unifiedSourceFor(source)
     }
+
+    private fun unifiedSourceFor(source: LocalMediaSource) =
+        cp.player.core.music.UnifiedMusicSourceImpl(
+            musicApiService = cachedMusicApi,
+            localMusicSource = source,
+            activeProviderId = { providerManager.getCurrentProviderId() },
+        )
 
     // ============ 统一音乐源 (统一 MediaId) ============
 
-    private var _unifiedSource: cp.player.core.music.UnifiedMusicSource =
-        cp.player.core.music.UnifiedMusicSourceImpl(cachedMusicApi, localMusic)
+    private var _unifiedSource: cp.player.core.music.UnifiedMusicSource = unifiedSourceFor(NoopLocalMusicSource)
     
     /**
      * 前端统一数据访问入口。
@@ -241,7 +262,75 @@ class MusicBackend private constructor(
             api = musicApiImpl,
             cookieProvider = { activeProvider()?.let { p -> providerManager.cookieStorage.getCookie(p.id) } },
             scope = backendScope,
+            // 无损档位「边播边落盘」：桌面引擎无法定位 FLAC over HTTP，安卓是空实现。
+            // 见 StreamLocalizer 的实测矩阵。
+            streamLocalizer = createStreamLocalizer(),
         )
+    }
+
+    // ============ 对外集成契约（数据面） ============
+
+    /**
+     * 控制线程派发器。
+     *
+     * 从 [backendScope] **派生**而不是硬编码 [Dispatchers.Main]：队列与播放状态在
+     * backendScope 上串行读写，写操作必须回到同一个线程，否则会与 UI 抢状态
+     * （症状是偶发跳歌 / 队列错乱且难以复现）。硬编码则让这条规则在
+     * 「core 的 desktopTest 没有 coroutines-swing」时不可测。
+     */
+    private val controlDispatcher: CoroutineDispatcher by lazy {
+        backendScope.coroutineContext[ContinuationInterceptor] as? CoroutineDispatcher
+            ?: Dispatchers.Main
+    }
+
+    /**
+     * 对外播控的**收窄**适配。
+     *
+     * 刻意只映射四个动作：`PlaybackController` 的其它方法（seek / 队列增删改 /
+     * `clearQueue`）都不外露 —— 尤其没有非破坏性的 `stop`，映射 `clearQueue`
+     * 等于一次远程调用静默销毁用户队列，见 `PlaybackAction.DELIBERATELY_ABSENT`。
+     */
+    private val integrationPlaybackControl: IntegrationPlaybackControl =
+        object : IntegrationPlaybackControl {
+            override suspend fun play() = playbackController.resume()
+            override suspend fun pause() = playbackController.pause()
+            override suspend fun next() = playbackController.skipNext()
+            override suspend fun previous() = playbackController.skipPrevious()
+        }
+
+    /**
+     * 对外契约的用例层（组合根：`provider.*` → `integration` 的中性类型映射在这里）。
+     *
+     * 惰性创建：只有真的要起服务（`applyOutputConfig` 且 `enabled`）时才构建，
+     * 避免为了「也许有人会来连」就把播放控制器先实例化出来。
+     */
+    private val integrationService: IntegrationService by lazy {
+        IntegrationService(
+            source = { unifiedSource },
+            playbackState = { playbackController.state },
+            playbackControl = { integrationPlaybackControl },
+            controlDispatcher = controlDispatcher,
+            availableProviders = {
+                providersFlow.value.map {
+                    IntegrationProviderInfo(
+                        id = it.id,
+                        name = it.name,
+                        version = it.version,
+                        type = it.type.name,
+                    )
+                }
+            },
+            activeProviderId = { activeProvider()?.id },
+            loggedIn = {
+                activeProvider()?.let { p -> !cookieStorage.getCookie(p.id).isNullOrBlank() } ?: false
+            },
+            config = { activeOutputConfig },
+        )
+    }
+
+    /** 端点描述符写入器（Android 是**有理由的**空实现，不是「以后再说」）。 */
+    private val integrationDescriptorWriter: IntegrationDescriptorWriter by lazy {
+        createIntegrationDescriptorWriter()
     }
 
     // ============ 本地服务器输出 + 外部推送 ============
@@ -308,13 +397,26 @@ class MusicBackend private constructor(
             localServer = null
 
             if (config.enabled) {
-                val server = createLocalServer(config, ::resolveStreamTarget)
+                // 数据面**始终挂载**、由闸门按请求判定：exposeDataApi 是路由级开关，
+                // 改它不该重启端口 —— 所以这里不能按开关决定是否挂路由。
+                val server = createLocalServer(
+                    config = config,
+                    integration = createIntegrationRoutes(integrationService),
+                    activeConfig = { activeOutputConfig },
+                    resolveStreamUrl = ::resolveStreamTarget,
+                )
                 localServer = server
                 localServerStatusJob = backendScope.launch {
-                    server.status.collect { _localServerStatus.value = it }
+                    server.status.collect { status ->
+                        _localServerStatus.value = status
+                        // 描述符只在**确认在跑之后**才写：start() 把绑定失败吞进
+                        // status.error 而不抛异常，所以「调用过 start()」≠「服务可用」。
+                        if (status.running) publishIntegrationDescriptor()
+                    }
                 }
                 server.start()
             } else {
+                integrationDescriptorWriter.clear()
                 _localServerStatus.value = LocalServerStatus(
                     running = false,
                     bindAddress = config.bindAddress,
@@ -372,6 +474,19 @@ class MusicBackend private constructor(
 
     /** 广播地址：绑定 0.0.0.0 时不能把 0.0.0.0 当目标地址下发。 */
     private fun advertisedHost(): String = resolveAdvertisedHost(activeOutputConfig.bindAddress)
+
+    /**
+     * 写出端点描述符（`~/.cpplayer/integration.json`），让集成方不必手抄地址与令牌。
+     *
+     * 只在**服务确认在跑之后**调用 —— 否则会留下一个指向不存在服务的描述符，
+     * 而集成方只能靠 `pid` 判断进程是否还活着，看到的是一个**活着但没监听**的进程，
+     * 比「没有描述符」更难排查。
+     */
+    private fun publishIntegrationDescriptor() {
+        val cfg = activeOutputConfig
+        // baseUrl 不带路径：集成方要能直接拼出 /api/v1/...，不做字符串截断
+        integrationDescriptorWriter.publish(cfg.baseUrl(advertisedHost()), cfg.accessToken)
+    }
 
     private suspend fun pushTrack(track: cp.player.core.music.TrackSummary): PushResult =
         pusher.playUrl(
@@ -608,18 +723,20 @@ class MusicBackend private constructor(
          *
          * @param context 平台上下文
          * @param settings 设置存储（cookie / 最近 Provider ID 持久化）
-         * @param cache 缓存实现，默认进程内 LRU
+         * @param cache 缓存实现；null 时按 [CacheConfig.maxEntries] 建进程内 LRU
+         *   （曾经在这里写死 `InMemoryApiCache()` 默认值，`CacheConfig.maxEntries` 就成了死参数）
          * @param cacheConfig 缓存配置
          * @return 初始化后的 [MusicBackend] 单例
          */
         fun init(
             context: PlatformContext,
             settings: SettingsStorage,
-            cache: ApiCache = InMemoryApiCache(),
+            cache: ApiCache? = null,
             cacheConfig: CacheConfig = CacheConfig(),
         ): MusicBackend {
             synchronized(COMPA) {
                 INSTANCE?.let { return it }
+                val effectiveCache = cache ?: InMemoryApiCache(cacheConfig.maxEntries)
                 val cookieStorage = ProviderCookieStorage(settings)
                 val providerManager = ProviderManager(settings, cookieStorage)
                 val moduleManager = ModuleManager(
@@ -630,7 +747,7 @@ class MusicBackend private constructor(
                 val impl = MusicApiServiceImpl(providerManager, cookieStorage)
                 val cached = CachedMusicApiService(
                     delegate = impl,
-                    cache = cache,
+                    cache = effectiveCache,
                     providerManager = providerManager,
                     allProviders = { moduleManager.getAvailableProviders() },
                     config = cacheConfig,
@@ -642,7 +759,7 @@ class MusicBackend private constructor(
                     moduleManager = moduleManager,
                     musicApiImpl = impl,
                     cachedMusicApi = cached,
-                    cache = cache,
+                    cache = effectiveCache,
                 )
                 // 初始化完成后计算终态
                 backend.stateFromInit()

@@ -4,7 +4,6 @@ import cp.player.core.MusicBackend
 import cp.player.core.cache.ApiCache
 import cp.player.core.cache.CacheConfig
 import cp.player.core.cache.CachedMusicApiService
-import cp.player.core.cache.InMemoryApiCache
 import cp.player.core.provider.ModuleManager
 import cp.player.core.provider.ProviderManager
 import cp.player.core.util.PlatformContext
@@ -30,9 +29,24 @@ object MusicApiServiceFactory {
     val moduleManager: ModuleManager
         get() = MusicBackend.instance.moduleManagerInternal
 
-    val instance: MusicApiServiceImpl
+    /**
+     * 裸实现（不带缓存）。
+     *
+     * 只在确实需要绕过缓存层时用；常规取数请走 [instance] / [cachedInstance] 或
+     * `unifiedSource`，否则缓存层形同不存在。
+     */
+    val rawInstance: MusicApiServiceImpl
         get() = MusicBackend.instance.apiImplInternal
 
+    /**
+     * 带读透缓存的装饰器 —— 与 `MusicBackend.musicApi` 交出的是同一个实例。
+     *
+     * 历史上这里交出裸实现，连装饰器本身都被绕过（见 ARCHITECTURE §5）。
+     */
+    val instance: MusicApiService
+        get() = MusicBackend.instance.cachedApiInternal
+
+    /** 同 [instance]，类型更具体（需要 `callApiCached` 流式入口时用）。 */
     val cachedInstance: CachedMusicApiService
         get() = MusicBackend.instance.cachedApiInternal
 
@@ -44,7 +58,7 @@ object MusicApiServiceFactory {
     fun init(
         context: PlatformContext,
         settings: cp.player.core.util.SettingsStorage,
-        cache: ApiCache = InMemoryApiCache(),
+        cache: ApiCache? = null,
         cacheConfig: CacheConfig = CacheConfig()
     ) {
         MusicBackend.init(context, settings, cache, cacheConfig)

@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.core.playback.QueueItem
+import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.util.resized
 import kotlinx.coroutines.launch
 
@@ -108,7 +109,7 @@ fun QueueBottomSheet(
 
                 Spacer(Modifier.height(8.dp))
 
-                LazyColumn(
+                LazyScrollColumn(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     state = listState,
                     verticalArrangement = Arrangement.spacedBy(8.dp),

@@ -38,8 +38,12 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.ui.component.LegacyListItem
 import cp.player.app.ui.component.LegacyPageScaffold
+import cp.player.app.ui.component.ScrollColumn
+import cp.player.app.ui.theme.ColorSource
 import cp.player.app.ui.theme.ThemeMode
-import cp.player.app.ui.theme.supportsDynamicColor
+import cp.player.app.ui.theme.description
+import cp.player.app.ui.theme.displayName
+import cp.player.app.ui.theme.isPlatformColorSourceAvailable
 
 class SettingsDetailScreen : Screen {
     @OptIn(ExperimentalMaterial3Api::class)
@@ -47,9 +51,9 @@ class SettingsDetailScreen : Screen {
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         var themeMode by remember { mutableStateOf(AppModel.themeMode()) }
-        var dynamic by remember { mutableStateOf(AppModel.dynamicColor()) }
+        var colorSource by remember { mutableStateOf(AppModel.colorSource()) }
         var pureBlack by remember { mutableStateOf(AppModel.pureBlack()) }
-        val dynAvailable = supportsDynamicColor()
+        val platformAvailable = isPlatformColorSourceAvailable()
 
         LegacyPageScaffold(
             title = "偏好设置",
@@ -59,8 +63,8 @@ class SettingsDetailScreen : Screen {
                 }
             },
         ) { pageModifier ->
-            Column(
-                pageModifier.verticalScroll(rememberScrollState()).padding(16.dp),
+            ScrollColumn(
+                modifier = pageModifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
@@ -96,15 +100,35 @@ class SettingsDetailScreen : Screen {
                 LegacyListItem(
                     index = 1,
                     total = 3,
-                    onClick = { if (dynAvailable) { dynamic = !dynamic; AppModel.setDynamicColor(dynamic) } },
-                    headlineContent = { Text("动态取色") },
-                    supportingContent = { Text(if (dynAvailable) "Android 12+ 取自壁纸" else "当前平台不支持") },
-                    trailingContent = {
-                        Switch(
-                            checked = dynamic && dynAvailable,
-                            enabled = dynAvailable,
-                            onCheckedChange = { dynamic = it; AppModel.setDynamicColor(it) },
-                        )
+                    onClick = null,
+                    headlineContent = { Text("取色来源") },
+                    supportingContent = {
+                        Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                ColorSource.entries.forEach { source ->
+                                    FilterChip(
+                                        selected = colorSource == source,
+                                        // 「系统」在拿不到系统色的平台上不可选：否则用户会选到一个
+                                        // 永远回退、且看不出原因的选项。
+                                        enabled = source != ColorSource.PLATFORM || platformAvailable,
+                                        onClick = {
+                                            colorSource = source
+                                            AppModel.setColorSource(source)
+                                        },
+                                        label = { Text(source.displayName()) },
+                                    )
+                                }
+                            }
+                            Text(
+                                text = colorSource.description(platformAvailable),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
                     },
                 )
                 LegacyListItem(

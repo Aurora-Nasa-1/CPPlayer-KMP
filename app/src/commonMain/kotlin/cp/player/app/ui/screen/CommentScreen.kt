@@ -22,6 +22,7 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpSpacing
+import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.model.Comment
 import cp.player.app.ui.model.CommentScreenModel
 import coil3.compose.AsyncImage
@@ -53,7 +54,7 @@ class CommentScreen(val id: String, val type: String = "music") : Screen {
                         )
                     }
                     else -> {
-                        LazyColumn(
+                        LazyScrollColumn(
                             contentPadding = PaddingValues(16.dp),
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {

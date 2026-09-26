@@ -80,6 +80,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cp.player.app.AppModel
 import cp.player.app.ui.component.MiniPlayer
 import cp.player.app.ui.component.CpSpacing
+import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.core.music.PlaylistSummary
 
 /** Responsive application shell for the four primary destinations. */
@@ -124,6 +125,19 @@ class MainScreen : Screen {
             }
         }
 
+        // seek 没能生效时给出明确反馈。
+        //
+        // 没有这条通道时，失败只能表现为「进度条自己弹回原位」——用户无法区分
+        // 「我拖错了」和「这个音源根本不能定位」，也就是最初的「拖了没反应」。
+        androidx.compose.runtime.LaunchedEffect(controller) {
+            controller.seekFailures.collect { failure ->
+                cp.player.app.ui.util.UiEvents.notify(
+                    "无法定位到 ${cp.player.app.ui.util.formatTimeMs(failure.targetMs)}，" +
+                        "该音源可能不支持拖动进度",
+                )
+            }
+        }
+
         var isPlayerExpanded by rememberSaveable { mutableStateOf(false) }
         val scope = rememberCoroutineScope()
         
@@ -132,9 +146,11 @@ class MainScreen : Screen {
             isPlayerExpanded = false
         }
 
+        // 展开播放页的进度：走主题的 spatial 动效（带回弹），打开/收起时背景会有
+        // 一点「过冲再回落」，比原来的 LinearEasing 匀速有生气得多。
         val expandProgress by animateFloatAsState(
             targetValue = if (isPlayerExpanded) 1f else 0f,
-            animationSpec = tween(400, easing = LinearEasing),
+            animationSpec = cp.player.app.ui.theme.CpMotion.spatialSlow(),
             label = "expandProgress"
         )
 
@@ -466,10 +482,27 @@ private fun AppNavigationBar(tabs: List<TabItem>, selectedIndex: Int, onSelect: 
     NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
         tabs.forEachIndexed { index, tab ->
             val selected = selectedIndex == index
+            // 选中图标「弹」一下 —— M3 Expressive 的导航反馈。
+            // 指示器胶囊本身由 material3 内部驱动，这里只补图标这一层，
+            // 两层叠起来才有「弹」的手感（只靠指示器会显得发闷）。
+            val iconScale by animateFloatAsState(
+                targetValue = if (selected) 1.14f else 1f,
+                animationSpec = cp.player.app.ui.theme.CpMotion.spatialFast(),
+                label = "navIconScale$index",
+            )
             NavigationBarItem(
                 selected = selected,
                 onClick = { onSelect(index) },
-                icon = { Icon(if (selected) tab.selectedIcon else tab.unselectedIcon, tab.label) },
+                icon = {
+                    Icon(
+                        if (selected) tab.selectedIcon else tab.unselectedIcon,
+                        tab.label,
+                        modifier = Modifier.graphicsLayer {
+                            scaleX = iconScale
+                            scaleY = iconScale
+                        },
+                    )
+                },
                 label = { Text(tab.label) },
                 colors = NavigationBarItemDefaults.colors(
                     indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -499,29 +532,42 @@ private fun DesktopSidebar(
             Text("CPPlayer", style = MaterialTheme.typography.titleLarge, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
             Text(profile?.nickname ?: "音乐空间", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             androidx.compose.foundation.layout.Spacer(Modifier.height(22.dp))
-            Text("发现音乐", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
-            tabs.forEachIndexed { index, tab ->
-                val selected = selectedIndex == index
-                androidx.compose.material3.NavigationDrawerItem(
-                    label = { Text(tab.label) },
-                    selected = selected,
-                    onClick = { onSelect(index) },
-                    icon = { Icon(if (selected) tab.selectedIcon else tab.unselectedIcon, tab.label) },
-                    shape = MaterialTheme.shapes.small,
-                    modifier = Modifier.padding(vertical = 2.dp),
-                )
+            // 歌单可能很多、窗口也可能被拖得很矮：中部列表单独滚动（桌面端带滚动条），
+            // 设置入口钉在底部——原先是 Spacer(weight) 撑开，窗口一变矮设置项就被顶出可视区。
+            LazyScrollColumn(Modifier.weight(1f)) {
+                item {
+                    Text("发现音乐", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+                }
+                items(tabs.size) { index ->
+                    val tab = tabs[index]
+                    val selected = selectedIndex == index
+                    androidx.compose.material3.NavigationDrawerItem(
+                        label = { Text(tab.label) },
+                        selected = selected,
+                        onClick = { onSelect(index) },
+                        icon = { Icon(if (selected) tab.selectedIcon else tab.unselectedIcon, tab.label) },
+                        // Expressive 侧边栏用**全圆角胶囊**，而不是 12dp 的方角块。
+                        shape = cp.player.app.ui.theme.CpShapes.full,
+                        modifier = Modifier.padding(vertical = 2.dp),
+                    )
+                }
+                item {
+                    Text("我的音乐", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp,))
+                }
+                item {
+                    SidebarAction(Icons.Filled.FavoriteBorder, "我喜欢的音乐") {
+                        homeState.likedPlaylist?.let(onOpenPlaylist) ?: onSelect(2)
+                    }
+                }
+                item { SidebarAction(Icons.Filled.History, "最近播放") { onSelect(0) } }
+                item { SidebarAction(Icons.Filled.Download, "下载管理") { onSelect(2) } }
+                item { SidebarAction(Icons.Filled.MusicNote, "我的歌单") { onSelect(2) } }
+                val sidebarPlaylists = homeState.userPlaylists.take(8)
+                items(sidebarPlaylists.size) { index ->
+                    val playlist = sidebarPlaylists[index]
+                    SidebarAction(Icons.Filled.MusicNote, playlist.name, selected = selectedPlaylist?.id == playlist.id) { onOpenPlaylist(playlist) }
+                }
             }
-            Text("我的音乐", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp,))
-            SidebarAction(Icons.Filled.FavoriteBorder, "我喜欢的音乐") {
-                homeState.likedPlaylist?.let(onOpenPlaylist) ?: onSelect(2)
-            }
-            SidebarAction(Icons.Filled.History, "最近播放") { onSelect(0) }
-            SidebarAction(Icons.Filled.Download, "下载管理") { onSelect(2) }
-            SidebarAction(Icons.Filled.MusicNote, "我的歌单") { onSelect(2) }
-            homeState.userPlaylists.take(8).forEach { playlist ->
-                SidebarAction(Icons.Filled.MusicNote, playlist.name, selected = selectedPlaylist?.id == playlist.id) { onOpenPlaylist(playlist) }
-            }
-            androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
             SidebarAction(Icons.Filled.Settings, "设置", selected = false, onClick = onOpenSettings)
         }
     }

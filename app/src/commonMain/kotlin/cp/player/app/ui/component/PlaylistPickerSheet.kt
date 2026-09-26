@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.extractUidFromLoginStatus
+import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.resized
 import cp.player.core.BackendResult
@@ -178,7 +179,7 @@ fun PlaylistPickerSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                else -> LazyColumn(
+                else -> LazyScrollColumn(
                     Modifier.fillMaxWidth().heightIn(max = 420.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -351,7 +352,7 @@ fun SourceSongsSelectionSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                else -> LazyColumn(
+                else -> LazyScrollColumn(
                     Modifier.fillMaxWidth().heightIn(max = 420.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),

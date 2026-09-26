@@ -1,8 +1,11 @@
 package cp.player.core.playback
 
 import cp.player.core.util.PlatformContext
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -13,12 +16,38 @@ import kotlinx.coroutines.launch
 import io.github.kdroidfilter.composemediaplayer.audio.AudioPlayer
 import io.github.kdroidfilter.composemediaplayer.audio.AudioPlayerState
 
+/**
+ * 一次 seek 最终没能生效。
+ *
+ * 这是 [PendingSeekTracker.Tick.GaveUp] 的对外形态：宽限期已过、乐观值已放弃、
+ * 进度条已回落到 [actualMs]。它是**失败信号**，前端应据此提示用户——
+ * 否则失败只能表现为「进度条自己弹回原位」，用户无法区分「我拖错了」和
+ * 「这个音源根本不能定位」，也就是最初的「拖了没反应」。
+ */
+data class SeekFailure(val targetMs: Long, val actualMs: Long)
+
+/**
+ * 「无需上报 seek 失败」的实现共用的空流。
+ *
+ * 用单例而不是在默认实现里现场 `MutableSharedFlow()`：后者每次读属性都会新建对象。
+ */
+private val NoSeekFailures: SharedFlow<SeekFailure> = MutableSharedFlow()
+
 interface PlatformPlayer {
     val state: StateFlow<PlatformPlaybackState>
     val positionMs: StateFlow<Long>
     val durationMs: StateFlow<Long>
     val formatInfo: StateFlow<AudioFormatInfo?>
     val supportsExclusiveAudio: Boolean get() = false
+
+    /**
+     * seek 未能生效的事件流。
+     *
+     * 给默认实现，是为了让「无需上报」的实现（静默输出、测试假播放器）不必改动；
+     * 真正的平台播放器应覆盖它，把 [PendingSeekTracker.Tick.GaveUp] 转成事件。
+     * 用 SharedFlow 而非 StateFlow：这是**事件**，重新订阅时不该被重放。
+     */
+    val seekFailures: SharedFlow<SeekFailure> get() = NoSeekFailures
 
     suspend fun load(
         url: String,
@@ -82,24 +111,26 @@ class AudioPlayerImpl : PlatformPlayer {
     private var justLoaded = false
 
     /**
-     * 乐观 seek 目标：底层位置追上目标之前，对外始终汇报该值，
-     * 避免 UI 松手后先回弹到旧位置、再跳到新位置。
-     * 轮询跑在 [Dispatchers.Default] 上，故用 @Volatile 保证跨线程可见。
+     * 待定 seek 的状态机：**桌面与安卓共用 [PendingSeekTracker]**，不再各写一份同构逻辑。
+     *
+     * ⚠️ `enginePositionMs` 必须读**引擎真实位置**。传 `_positionMs.value` 是错的——
+     * 那是乐观值，会让「引擎一步没动就补发」的判定永久失效（详见该类 KDoc）。
+     *
+     * 轮询跑在 [Dispatchers.Default] 上，故 tracker 内部状态均用 @Volatile。
      */
-    @Volatile private var pendingSeekMs: Long? = null
-    @Volatile private var pendingSeekAtMs: Long = 0L
-
-    /** seek 发起时 UI 显示的位置，用于区分「引擎已按 seek 移动」与「引擎还没动」。 */
-    @Volatile private var pendingSeekFromMs: Long = 0L
+    private val pendingSeek = PendingSeekTracker(
+        enginePositionMs = { (player.currentPosition() as? Number)?.toLong() ?: 0L },
+        dispatchSeek = ::applySeekToEngine,
+    )
 
     /**
-     * 已向引擎补发过几次待定 seek。
+     * seek 失败事件：见 [SeekFailure]。
      *
-     * 流媒体首次定位要先建连、拿首包，这期间 rodio 会**拒绝**定位（或静默忽略）。
-     * 因此 [seekTo] 失败不抛给 UI，而是保留乐观值，由轮询在引擎就绪后重发——
-     * 但必须限量，否则每 200ms 重发会一直跟引擎打架。
+     * 用 `tryEmit` 而非 `emit`：轮询协程不能被 UI 消费端拖住（消费端挂起时宁可丢事件，
+     * 也不能让 200ms 的位置轮询卡住）。缓冲 4 条足够——同一时刻只可能有一次待定 seek。
      */
-    @Volatile private var pendingSeekAttempts = 0
+    private val _seekFailures = MutableSharedFlow<SeekFailure>(extraBufferCapacity = 4)
+    override val seekFailures: SharedFlow<SeekFailure> = _seekFailures.asSharedFlow()
 
     /** 最近一次设定的音量；底层 [AudioPlayer.currentVolume] 为空时作为兜底。 */
     private var lastVolume: Float = 1f
@@ -131,31 +162,30 @@ class AudioPlayerImpl : PlatformPlayer {
             var prevPlayerState: AudioPlayerState? = null
             while (isActive) {
                 val currentPlayerState = player.currentPlayerState()
-                val pos = (player.currentPosition() as? Number)?.toLong() ?: 0L
-                val dur = (player.currentDuration() as? Number)?.toLong() ?: 0L
+                val rawPos = player.currentPosition() as? Number
+                val pos = rawPos?.toLong() ?: 0L
+                val rawDur = player.currentDuration()
+                val dur = (rawDur as? Number)?.toLong() ?: 0L
+                // 「引擎是否就绪」的真信号 = **时长已可知**，而不是「RodioPlayer 对象存在」。
+                // 库的 `play(url)` 会同步 `ensurePlayer()` 建出 RodioPlayer，但此时**源还没装载**，
+                // 这个窗口里 seekTo 依旧是静默空操作。只有解析出时长才说明源真的可定位了。
+                // 也绝不能改用「位置有没有动」去反推（见 PendingSeekTracker 的 KDoc）。
+                val engineReady = rawDur != null
                 // 装载/缓冲中：流媒体首包可能还没到，seek 的宽限期要放宽，否则会误判「seek 失效」。
                 val engineLoading = currentPlayerState == AudioPlayerState.BUFFERING ||
                     currentPlayerState == AudioPlayerState.IDLE
-                // 乐观 seek：目标被底层追上（或超时）前，对外汇报目标值，避免进度条回弹。
-                val target = pendingSeekMs
-                if (target != null) {
-                    val settled = SeekSettle.isSettled(
-                        enginePositionMs = pos,
-                        targetMs = target,
-                        fromPositionMs = pendingSeekFromMs,
-                        elapsedMs = System.currentTimeMillis() - pendingSeekAtMs,
-                        engineLoading = engineLoading,
-                    )
-                    if (settled) {
-                        pendingSeekMs = null
-                    } else if (pos == pendingSeekFromMs && pendingSeekAttempts < MAX_SEEK_RETRIES) {
-                        // 引擎**一步没动**：这次定位多半是在建连期被丢掉了，补发一次。
-                        // 若引擎已经在移动（只是还没到目标），补发反而会打断它，所以不补。
-                        pendingSeekAttempts++
-                        applySeekToEngine(target)
-                    }
+                // 推进待定 seek：落定则释放乐观值；刚就绪 / 未就绪 / 就绪后没动 都要补发。
+                val tick = pendingSeek.tick(
+                    enginePositionMs = pos,
+                    engineReady = engineReady,
+                    engineLoading = engineLoading,
+                )
+                // 宽限期过完仍没追上 ⇒ 上报失败，让 UI 能提示用户，
+                // 而不是让进度条静默弹回原位（那正是「拖了没反应」的观感）。
+                if (tick is PendingSeekTracker.Tick.GaveUp) {
+                    _seekFailures.tryEmit(SeekFailure(tick.targetMs, tick.actualMs))
                 }
-                _positionMs.value = pendingSeekMs ?: pos
+                _positionMs.value = pendingSeek.displayMs() ?: pos
                 _durationMs.value = dur
                 // 底层库无"播完"事件。用「意图」消歧：
                 // 见到 PLAYING 说明本曲已真正开始 → 解除抑制，此后转入 IDLE 即为自然播完；
@@ -183,15 +213,16 @@ class AudioPlayerImpl : PlatformPlayer {
      * rodio 对「尚未建连」或「不可定位」的源会拒绝 seek。旧写法直接调
      * `player.seekTo(...)`，异常会沿 `PlaybackController.seekTo` 一路抛进 Compose 的
      * `onValueChangeFinished` 回调里——用户看到的就是拖完毫无反应（甚至崩一下）。
-     * 现在改为：失败只记录，乐观值继续显示，由轮询在引擎就绪后补发（限量）。
+     * 现在改为：失败只记录，乐观值继续显示，由轮询在引擎就绪后补发（直到宽限期）。
+     *
+     * @return 引擎是否接受了这次定位。
      */
-    private fun applySeekToEngine(target: Long) {
-        runCatching { player.seekTo(target) }
-    }
+    private fun applySeekToEngine(target: Long): Boolean =
+        runCatching { player.seekTo(target) }.isSuccess
 
     override suspend fun load(url: String, startPositionMs: Long, headers: Map<String, String>, metadata: PlaybackMetadata?) {
         // 换曲：清掉上一首遗留的待定 seek，避免污染新曲目的位置。
-        pendingSeekMs = null
+        pendingSeek.cancel()
         // 换曲导致的 IDLE 不是"播完"，先抑制，等本曲真正 PLAYING 后自动解除。
         suppressEnded = true
         _state.value = PlatformPlaybackState.Buffering
@@ -201,12 +232,10 @@ class AudioPlayerImpl : PlatformPlayer {
         if (startPositionMs > 0) {
             // 从头播放时把起始位置也纳入乐观值：流媒体建连期间引擎位置还是 0，
             // 若不接管，进度条会先显示 0 再跳到目标。
-            pendingSeekFromMs = 0L
-            pendingSeekMs = startPositionMs
-            pendingSeekAtMs = System.currentTimeMillis()
-            pendingSeekAttempts = 0
+            // 刚发起 load()，rodio 的 player 还没建好 ⇒ engineReady = false，
+            // 这次下发多半是空操作，由轮询在引擎就绪后补发。
+            pendingSeek.request(startPositionMs, engineReady = false)
             _positionMs.value = startPositionMs
-            applySeekToEngine(startPositionMs)
         }
     }
 
@@ -232,25 +261,23 @@ class AudioPlayerImpl : PlatformPlayer {
     override fun seekTo(positionMs: Long) {
         val target = positionMs.coerceAtLeast(0L)
         // 乐观更新：立即把目标位置推给 UI，随后由轮询确认底层是否已追上。
-        pendingSeekFromMs = _positionMs.value
-        pendingSeekMs = target
-        pendingSeekAtMs = System.currentTimeMillis()
-        pendingSeekAttempts = 0
+        // 基线捕获、补发、落定全部交给 [PendingSeekTracker]，本类不再内联这套逻辑。
+        // engineReady 必须是**引擎真值**：未就绪时下发是空操作，需要轮询补发。
+        pendingSeek.request(target, engineReady = player.currentDuration() != null)
         _positionMs.value = target
-        applySeekToEngine(target)
     }
 
     override fun stop() {
         // 主动停止不是"播完"，抑制随后的 IDLE 转换，避免被误判为 Ended 而触发自动续播。
         suppressEnded = true
         // 停止后引擎位置无意义，残留的待定 seek 只会让进度条停在旧目标上。
-        pendingSeekMs = null
+        pendingSeek.cancel()
         player.stop()
     }
 
     override fun release() {
         suppressEnded = true
-        pendingSeekMs = null
+        pendingSeek.cancel()
         player.stop()
         pollJob?.cancel()
     }
@@ -261,11 +288,6 @@ class AudioPlayerImpl : PlatformPlayer {
     }
 
     override fun getVolume(): Float = player.currentVolume() ?: lastVolume
-
-    private companion object {
-        /** 待定 seek 最多向引擎补发几次（每次间隔一个轮询周期）。 */
-        const val MAX_SEEK_RETRIES = 3
-    }
 }
 
 expect fun createPlatformPlayer(context: PlatformContext): PlatformPlayer

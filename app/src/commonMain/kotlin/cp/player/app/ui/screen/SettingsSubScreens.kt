@@ -39,8 +39,12 @@ import cp.player.app.AppModel
 import cp.player.app.platform.openUrl
 import cp.player.app.ui.component.LegacyListItem
 import cp.player.app.ui.component.LegacyPageScaffold
+import cp.player.app.ui.component.ScrollColumn
+import cp.player.app.ui.theme.ColorSource
 import cp.player.app.ui.theme.ThemeMode
-import cp.player.app.ui.theme.supportsDynamicColor
+import cp.player.app.ui.theme.description
+import cp.player.app.ui.theme.displayName
+import cp.player.app.ui.theme.isPlatformColorSourceAvailable
 import cp.player.app.ui.util.UiEvents
 
 class AppearanceSettingsScreen : Screen {
@@ -50,14 +54,13 @@ class AppearanceSettingsScreen : Screen {
         val navigator = LocalNavigator.currentOrThrow
         val expanded = cp.player.app.ui.component.LocalIsExpanded.current
         var themeMode by remember { mutableStateOf(AppModel.themeMode()) }
-        var dynamic by remember { mutableStateOf(AppModel.dynamicColor()) }
+        var colorSource by remember { mutableStateOf(AppModel.colorSource()) }
         var pureBlack by remember { mutableStateOf(AppModel.pureBlack()) }
-        val dynamicColorSupported = supportsDynamicColor()
+        val platformAvailable = isPlatformColorSourceAvailable()
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
-            Column(
+            ScrollColumn(
                 modifier = pageModifier
-                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = if (expanded) 20.dp else 8.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -85,29 +88,33 @@ class AppearanceSettingsScreen : Screen {
                     }
                 }
                 SettingsCard("色彩") {
-                    LegacyListItem(
-                        index = 0,
-                        total = 2,
-                        onClick = if (dynamicColorSupported) ({
-                            dynamic = !dynamic
-                            AppModel.setDynamicColor(dynamic)
-                        }) else null,
-                        headlineContent = { Text("动态取色") },
-                        supportingContent = { Text(if (dynamicColorSupported) "Android 12+ 可从壁纸提取配色" else "当前平台暂不支持") },
-                        trailingContent = {
-                            Switch(
-                                checked = dynamic && dynamicColorSupported,
-                                enabled = dynamicColorSupported,
-                                onCheckedChange = {
-                                    dynamic = it
-                                    AppModel.setDynamicColor(it)
+                    Text("取色来源", style = MaterialTheme.typography.titleMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        ColorSource.entries.forEach { source ->
+                            FilterChip(
+                                selected = colorSource == source,
+                                // 「系统」在拿不到系统色的平台上不可选：否则用户会选到一个
+                                // 永远回退、且看不出原因的选项。
+                                enabled = source != ColorSource.PLATFORM || platformAvailable,
+                                onClick = {
+                                    colorSource = source
+                                    AppModel.setColorSource(source)
                                 },
+                                label = { Text(source.displayName()) },
                             )
-                        },
+                        }
+                    }
+                    Text(
+                        text = colorSource.description(platformAvailable),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     LegacyListItem(
-                        index = 1,
-                        total = 2,
+                        index = 0,
+                        total = 1,
                         onClick = {
                             pureBlack = !pureBlack
                             AppModel.setPureBlack(pureBlack)
@@ -148,9 +155,8 @@ class UiLogicSettingsScreen : Screen {
         var playImmediately by remember { mutableStateOf(playImmediatelySetting()) }
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
-            Column(
+            ScrollColumn(
                 modifier = pageModifier
-                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = if (expanded) 20.dp else 8.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -208,9 +214,8 @@ class StorageSettingsScreen : Screen {
         }
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
-            Column(
+            ScrollColumn(
                 modifier = pageModifier
-                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = if (expanded) 20.dp else 8.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -302,9 +307,8 @@ class SponsorScreen : Screen {
                 }
             },
         ) { pageModifier ->
-            Column(
+            ScrollColumn(
                 modifier = pageModifier
-                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {

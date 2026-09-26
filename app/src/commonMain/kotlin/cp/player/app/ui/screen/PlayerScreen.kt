@@ -5,6 +5,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -96,9 +97,11 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.platform.shareText
+import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.PlayerMoreBottomSheet
 import cp.player.app.ui.component.QueueBottomSheet
 import cp.player.app.ui.model.CommentScreenModel
+import cp.player.app.ui.util.SeekAvailability
 import cp.player.app.ui.util.formatTimeMs
 import cp.player.core.playback.AudioFormatInfo
 import cp.player.core.playback.LyricsState
@@ -208,13 +211,22 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
         if (pagerState.settledPage != 1 && offsetY.value > 0f) offsetY.snapTo(0f)
     }
 
-    // 背景：surfaceVariant→surface 渐变（KMP 无 Palette 提取封面色彩，故用 M3 主题色）
+    // 背景：竖向渐变。
+    //
+    // 两个色都取自 MaterialTheme，所以「跟随封面 / 跟随系统」换色时这里会一起变。
+    // 深色分支原先硬编码 `#1B1B22 → #0A0A0F` —— 那是「KMP 还没有封面取色」时期的替代品，
+    // 副作用是播放页会成为全应用唯一不跟随主题的表面。现在改用主题的容器色，
+    // 深色下依然是「上略亮、下近黑」的走向。
+    //
+    // ⚠️ `remember` 必须把两个颜色本身作为 key：只 key `isDark` 的话，换色时 Brush 不会重建，
+    // 背景会停在旧配色上而其余控件已经换色 —— 看起来就像「主题只换了一半」。
     val isDark = isSystemInDarkTheme()
-    val surfaceTop = MaterialTheme.colorScheme.surfaceVariant
-    val surfaceBottom = MaterialTheme.colorScheme.surface
-    val bgBrush = remember(isDark) {
-        if (isDark) Brush.verticalGradient(listOf(Color(0xFF1B1B22), Color(0xFF0A0A0F)))
-        else Brush.verticalGradient(listOf(surfaceTop, surfaceBottom))
+    val surfaceTop = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh
+    else MaterialTheme.colorScheme.surfaceVariant
+    val surfaceBottom = if (isDark) MaterialTheme.colorScheme.surfaceContainerLowest
+    else MaterialTheme.colorScheme.surface
+    val bgBrush = remember(surfaceTop, surfaceBottom) {
+        Brush.verticalGradient(listOf(surfaceTop, surfaceBottom))
     }
 
     Box(
@@ -533,21 +545,34 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
         verticalArrangement = Arrangement.spacedBy(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // 封面区域
+        // 封面区域。
+        //
+        // Expressive 的「呼吸」感：播放时圆角收紧 + 阴影加深，暂停时松开 —— 都走主题的
+        // spatial 动效（带回弹），所以切播放/暂停时封面会「弹」一下，而不是硬切。
+        val coverCorner by animateDpAsState(
+            targetValue = if (state.isPlaying) 22.dp else 34.dp,
+            animationSpec = cp.player.app.ui.theme.CpMotion.spatialSlow(),
+            label = "coverCorner",
+        )
+        val coverElevation by animateDpAsState(
+            targetValue = if (state.isPlaying) 28.dp else 12.dp,
+            animationSpec = cp.player.app.ui.theme.CpMotion.spatialSlow(),
+            label = "coverElevation",
+        )
         Box(
             Modifier.weight(1.2f).fillMaxWidth(),
             contentAlignment = Alignment.Center,
         ) {
             Surface(
-                shape = RoundedCornerShape(32.dp),
+                shape = RoundedCornerShape(coverCorner),
                 modifier = Modifier.aspectRatio(1f).fillMaxWidth(0.95f)
                     .sharedBounds(
                         sharedContentState = rememberSharedContentState(key = "cover-${track.id}"),
                         animatedVisibilityScope = animatedVisibilityScope
                     )
-                    .clip(RoundedCornerShape(32.dp)),
+                    .clip(RoundedCornerShape(coverCorner)),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                shadowElevation = 16.dp,
+                shadowElevation = coverElevation,
             ) {
                 if (!track.coverUrl.isNullOrBlank()) {
                     AsyncImage(
@@ -747,18 +772,19 @@ private fun ProgressRow(
     onSeek: (Long) -> Unit,
 ) {
     val duration = state.durationMs.coerceAtLeast(0L)
-    // 时长未知（流媒体元信息还没到、直播流）时滑条范围会塌成 0..1，
-    // 拖出来的值只有 0~1 毫秒——与其让用户拖出一个必然无效的 seek，不如直接禁用。
-    val seekable = duration > 0L
-    var seekValue by remember { androidx.compose.runtime.mutableStateOf<Float?>(null) }
+    // 时长未知（流媒体元信息还没到、直播流）时滑条位置无法换算成绝对时间，
+    // 拖出来必然是错的——保持禁用。但**必须说明原因**：静默失效会让用户
+    // 分不清「我拖错了」和「这个音源拖不了」，观感就是「拖了没反应」。
+    // 判定与标签统一走 SeekAvailability，不再各处各写一遍。
+    // 无损曲后台落盘期间同样禁用：此时引擎放的是不可定位的流，拖了也不会动。
+    val seekable = SeekAvailability.isSeekable(duration, state.isLocalizing)
     Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-        androidx.compose.material3.Slider(
-            value = (seekValue ?: state.positionMs.toFloat()).coerceIn(0f, duration.toFloat()),
-            onValueChange = { seekValue = it },
-            onValueChangeFinished = {
-                seekValue?.let { onSeek(it.toLong().coerceIn(0L, duration)); seekValue = null }
-            },
-            valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
+        // 波形进度条（M3 Expressive 的标志性元素）。内部是「波形 + 透明 Slider 叠层」，
+        // 拖动期间由 CpSeekBar 自己接管视觉，松手才回调 onSeek —— 这里不用再管拖拽状态。
+        cp.player.app.ui.component.CpSeekBar(
+            positionMs = state.positionMs,
+            durationMs = duration,
+            onSeek = onSeek,
             enabled = seekable,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -781,9 +807,19 @@ private fun ProgressRow(
                 )
             }
             Text(
-                formatTimeMs(duration),
+                SeekAvailability.durationLabel(duration),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            )
+        }
+        // 禁用滑条必须给出原因：静默失效的观感就是「拖了没反应」。
+        // 两种原因互斥呈现（落盘优先），由 SeekAvailability 统一决定。
+        SeekAvailability.disabledReason(duration, state.isLocalizing)?.let { reason ->
+            Text(
+                reason,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
             )
         }
     }
@@ -818,7 +854,7 @@ private fun CommentPage(id: String, type: String) {
                 Text("暂无评论", Modifier.align(Alignment.Center), style = MaterialTheme.typography.bodyMedium)
             }
             else -> {
-                LazyColumn(
+                LazyScrollColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)

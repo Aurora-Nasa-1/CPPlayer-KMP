@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -125,27 +126,51 @@ fun PlaylistItem(
 }
 
 /**
- * M3 Expressive 歌单卡片（HorizontalPager / LazyRow 使用）。
+ * M3 Expressive 歌单卡片（HorizontalPager / LazyRow / 桌面栅格使用）。
  *
- * 160dp 正方形封面 + 渐变叠加层 + 底部歌单名。
+ * 正方形封面 + 渐变叠加层 + 底部歌单名。
+ *
+ * @param fillWidth 默认 false = 固定 160dp 正方形（横向列表用）；
+ *   true = 铺满调用方给定的宽度并保持正方形 —— 桌面栅格里配合 `Modifier.weight(1f)` 用，
+ *   这样每行卡片能**正好铺满**而不会在右端留一条空隙。
  */
 @Composable
 fun PlaylistCoverCard(
     playlist: PlaylistSummary,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    fillWidth: Boolean = false,
 ) {
+    val overImage = !playlist.coverUrl.isNullOrBlank()
     Column(
-        modifier = modifier.width(160.dp).clickable { onClick() },
+        modifier = modifier
+            .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier.width(160.dp))
+            .clickable { onClick() },
     ) {
-        Box(modifier = Modifier.size(160.dp)) {
-            if (!playlist.coverUrl.isNullOrBlank()) {
+        Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f)) {
+            if (overImage) {
                 // [Bolt] Limit playlist thumbnail downloads to 300px to avoid large memory footprints
                 AsyncImage(
                     model = playlist.coverUrl.resized(300),
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.extraLarge),
                     contentScale = ContentScale.Crop,
+                )
+                // 底部压暗遮罩，只为了让压在图上的白字可读。
+                //
+                // ⚠️ 这里必须用**分数** colorStops，不能写 `startY = 200f`：
+                // 封面边长是 160dp，`startY=200` 已经越过底边，而 `endY` 默认无穷大
+                // 会被 Compose 替换成 size.height ⇒ 渐变方向被翻转、整块被 clamp 到末色，
+                // 结果是「整张封面被均匀压暗 40%」而不是「只有底部变暗」。
+                Box(
+                    modifier = Modifier.fillMaxSize()
+                        .clip(MaterialTheme.shapes.extraLarge)
+                        .background(
+                            Brush.verticalGradient(
+                                0.55f to Color.Transparent,
+                                1f to Color.Black.copy(alpha = 0.55f),
+                            )
+                        ),
                 )
             } else {
                 Box(
@@ -161,23 +186,14 @@ fun PlaylistCoverCard(
                     )
                 }
             }
-            Box(
-                modifier = Modifier.fillMaxSize()
-                    .clip(MaterialTheme.shapes.extraLarge)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.4f)),
-                            startY = 200f,
-                        )
-                    ),
-            )
             Text(
                 text = playlist.name,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Medium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                color = Color.White,
+                // 没有封面时白字落在浅色占位块上几乎不可读，回落到主题色。
+                color = if (overImage) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
             )
         }

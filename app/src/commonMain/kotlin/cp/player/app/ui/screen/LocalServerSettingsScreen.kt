@@ -11,9 +11,11 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Api
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.SettingsEthernet
 import androidx.compose.material.icons.filled.Wifi
@@ -41,19 +43,25 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.ui.component.LegacyListItem
 import cp.player.app.ui.component.LegacyPageScaffold
+import cp.player.app.ui.component.ScrollColumn
 import cp.player.core.control.LocalServerConfig
 import cp.player.core.control.LocalServerStatus
 import cp.player.core.control.OutputMode
 import cp.player.core.control.PushResult
 
 /**
- * 「本地服务器输出 + 外部推送」设置页。
+ * 「本地服务器输出 + 外部推送 + 跨软件集成」设置页。
  *
- * CPPlayer 在这里是**推送方**：
- * 1. 本机把当前曲目以 HTTP 流形式对外提供（`GET /stream`）；
- * 2. 主动把流地址与传输指令推给接收端（默认 `http://127.0.0.1:8420`）。
+ * CPPlayer 在这里同时扮演两个**方向相反**的角色：
  *
- * 接收端只需实现 `/api/v1/...` 那套接口，不必感知 CPPlayer 的内部结构。
+ * 1. **推送方（outbound）**：主动把流地址与传输指令推给接收端（默认 `http://127.0.0.1:8420`）。
+ *    接收端定义接口，CPPlayer 适配它。
+ * 2. **服务方（inbound，跨软件集成）**：按**自己的**契约（`/api/v1/...`）对外提供音源数据，
+ *    供第三方软件拉取。这一面**默认关闭**（[LocalServerConfig.exposeDataApi]），
+ *    因为它扩大了攻击面 —— 所以这个页面的开关是它唯一的入口，没有 UI 就等于不可达。
+ *
+ * 两者共用绑定地址 / 端口 / 令牌，但开关互相独立：关掉数据面不影响接收端拉流。
+ * 契约细节见 `docs/INTEGRATION_API.md`。
  */
 class LocalServerSettingsScreen : Screen {
 
@@ -71,9 +79,8 @@ class LocalServerSettingsScreen : Screen {
         var receiverText by remember { mutableStateOf(config.receiverBaseUrl) }
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
-            Column(
+            ScrollColumn(
                 modifier = pageModifier
-                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = if (expanded) 20.dp else 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -200,6 +207,87 @@ class LocalServerSettingsScreen : Screen {
                             )
                         },
                     )
+                }
+
+                SettingsCard("跨软件集成（数据面）") {
+                    LegacyListItem(
+                        index = 0,
+                        total = 1,
+                        onClick = { AppModel.setExposeDataApi(!config.exposeDataApi) },
+                        leadingContent = { Icon(Icons.Filled.Api, contentDescription = null) },
+                        headlineContent = { Text("开放数据面") },
+                        supportingContent = {
+                            Text("允许第三方软件调用 /api/v1/… 读取音源数据（搜索 / 曲目 / 播放状态）")
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = config.exposeDataApi,
+                                onCheckedChange = { AppModel.setExposeDataApi(it) },
+                            )
+                        },
+                    )
+                    Text(
+                        text = "关闭时数据面整体返回 403，不影响接收端拉流。" +
+                            "开关即时生效，不需要重启服务。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    LegacyListItem(
+                        index = 0,
+                        total = 1,
+                        onClick = { AppModel.setExposeStream(!config.exposeStream) },
+                        leadingContent = { Icon(Icons.Filled.SettingsEthernet, contentDescription = null) },
+                        headlineContent = { Text("开放媒体面") },
+                        supportingContent = { Text("接收端按曲目拉流用的 GET /stream") },
+                        trailingContent = {
+                            Switch(
+                                checked = config.exposeStream,
+                                onCheckedChange = { AppModel.setExposeStream(it) },
+                            )
+                        },
+                    )
+                    LegacyListItem(
+                        index = 0,
+                        total = 1,
+                        onClick = { AppModel.setAllowRemoteControl(!config.allowRemoteControl) },
+                        leadingContent = { Icon(Icons.Filled.Security, contentDescription = null) },
+                        headlineContent = { Text("允许远程播控") },
+                        supportingContent = { Text("允许第三方软件控制播放 / 暂停 / 切歌") },
+                        trailingContent = {
+                            Switch(
+                                checked = config.allowRemoteControl,
+                                onCheckedChange = { AppModel.setAllowRemoteControl(it) },
+                            )
+                        },
+                    )
+                    Text(
+                        text = "远程播控的端点尚未实现，打开它暂时不会产生任何效果。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    SelectionContainer {
+                        Text(
+                            text = "数据面地址：" +
+                                config.baseUrl(cp.player.core.control.resolveAdvertisedHost(config.bindAddress)),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(
+                        text = "第三方软件读 ~/.cpplayer/integration.json 即可拿到地址与令牌，不必手抄。" +
+                            "该文件含明文令牌，请勿外传。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (!config.boundToLoopback && config.accessToken.isBlank()) {
+                        Text(
+                            text = "当前绑定局域网且没有令牌：媒体面与数据面都会拒绝所有请求，" +
+                                "请先重新生成访问令牌。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
 
                 SettingsCard("推送到接收端") {

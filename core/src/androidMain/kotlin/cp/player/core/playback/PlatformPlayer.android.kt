@@ -24,8 +24,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -107,23 +110,19 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
     private var pollJob: Job? = null
 
     /**
-     * 乐观 seek 目标：在引擎位置追上目标之前，对外始终汇报该值，
-     * 避免 UI 松手后先回弹到旧位置、再跳到新位置。
-     */
-    @Volatile private var pendingSeekMs: Long? = null
-    @Volatile private var pendingSeekAtMs: Long = 0L
-
-    /** seek 发起时 UI 显示的位置，用于区分「引擎已按 seek 移动」与「引擎还没动」。 */
-    @Volatile private var pendingSeekFromMs: Long = 0L
-
-    /**
-     * 已向引擎补发过几次待定 seek。
+     * 待定 seek 的状态机：**安卓与桌面共用 [PendingSeekTracker]**，不再各写一份同构逻辑。
      *
-     * ExoPlayer 在 media item 尚未设入、或 seek 目标落在未缓冲的流媒体区间时，
-     * `seekTo` 会先被记成 pending 或直接无效。补发必须限量，否则每 200ms
-     * 重发会一直跟引擎打架。
+     * ⚠️ `enginePositionMs` 必须读**引擎真实位置**。传 `_position.value` 是错的——
+     * 那是乐观值，会让「引擎一步没动就补发」的判定永久失效（详见该类 KDoc）。
      */
-    @Volatile private var pendingSeekAttempts = 0
+    private val pendingSeek = PendingSeekTracker(
+        enginePositionMs = { runCatching { player.currentPosition }.getOrDefault(0L).coerceAtLeast(0L) },
+        dispatchSeek = ::applySeekToEngine,
+    )
+
+    /** seek 失败事件：见 [SeekFailure]。轮询线程 `tryEmit`，缓冲满时丢弃（不阻塞轮询）。 */
+    private val _seekFailures = MutableSharedFlow<SeekFailure>(extraBufferCapacity = 4)
+    override val seekFailures: SharedFlow<SeekFailure> = _seekFailures.asSharedFlow()
 
     /**
      * ExoPlayer **不会**主动推送播放位置（只在状态变化时回调），
@@ -168,7 +167,7 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
 
     override suspend fun load(url: String, startPositionMs: Long, headers: Map<String, String>, metadata: PlaybackMetadata?) {
         // 换曲：清掉上一首遗留的待定 seek，避免污染新曲目的位置。
-        pendingSeekMs = null
+        pendingSeek.cancel()
         val uri = Uri.parse(url)
         val scheme = uri.scheme?.lowercase()
         val isRemote = scheme == "http" || scheme == "https"
@@ -218,13 +217,15 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
         if (startPositionMs > 0) {
             // 起始位置同样纳入乐观值：prepare 尚未完成时引擎位置还是 0，
             // 不接管的话进度条会先显示 0 再跳到目标。
-            pendingSeekFromMs = 0L
-            pendingSeekMs = startPositionMs
-            pendingSeekAtMs = System.currentTimeMillis()
-            pendingSeekAttempts = 0
+            // 刚 setMediaSource + prepare，media item 虽已设入但还没准备好，
+            // 这里按「未就绪」处理，交给轮询补发更稳。
+            pendingSeek.request(startPositionMs, engineReady = false)
             _position.value = startPositionMs
+        } else {
+            // 从头播放不需要乐观值（目标就是引擎当前位置），直接定位即可。
+            // 走 tracker 反而会挂一个「目标 0」的待定 seek，把位置冻在 0 直到宽限期结束。
+            applySeekToEngine(0L)
         }
-        applySeekToEngine(startPositionMs)
         player.play()
     }
 
@@ -234,12 +235,11 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
     override fun seekTo(positionMs: Long) {
         val target = positionMs.coerceAtLeast(0L)
         // 乐观更新：立即把目标位置推给 UI，随后由轮询确认引擎是否已追上。
-        pendingSeekFromMs = _position.value
-        pendingSeekMs = target
-        pendingSeekAtMs = System.currentTimeMillis()
-        pendingSeekAttempts = 0
+        // 基线捕获、补发、落定全部交给 [PendingSeekTracker]，本类不再内联这套逻辑。
+        // engineReady 必须是**引擎真值**：media item 没设入时下发是空操作，需要轮询补发。
+        val engineReady = runCatching { player.mediaItemCount }.getOrDefault(0) > 0
+        pendingSeek.request(target, engineReady = engineReady)
         _position.value = target
-        applySeekToEngine(target)
     }
 
     /**
@@ -250,15 +250,15 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
      *    乐观值会一直挂着直到超时再回弹。直接返回，交由轮询在装载完成后补发；
      * 2. 播放器已释放 —— 读位置/seek 会抛 `IllegalStateException`。
      */
-    private fun applySeekToEngine(target: Long) {
+    private fun applySeekToEngine(target: Long): Boolean {
         val mediaItemCount = runCatching { player.mediaItemCount }.getOrDefault(0)
-        if (mediaItemCount <= 0) return
-        runCatching { player.seekTo(target) }
+        if (mediaItemCount <= 0) return false
+        return runCatching { player.seekTo(target) }.isSuccess
     }
 
     override fun stop() {
         // 停止后引擎位置无意义，残留的待定 seek 只会让进度条停在旧目标上。
-        pendingSeekMs = null
+        pendingSeek.cancel()
         player.stop()
         _state.value = PlatformPlaybackState.Idle
     }
@@ -266,7 +266,7 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
     override fun release() {
         pollJob?.cancel()
         pollJob = null
-        pendingSeekMs = null
+        pendingSeek.cancel()
         runCatching { player.removeListener(listener) }
         // 走单例的统一释放：既释放 ExoPlayer 也清掉缓存句柄，
         // 避免 SharedMedia3Player.instance 指向一个已释放的播放器。
@@ -283,34 +283,28 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
         // 装载/缓冲中：seek 到未缓冲区间要先建连拿首包，宽限期必须放宽，
         // 否则 800ms 一到就把乐观值丢掉，进度条回弹——用户看到的就是「seek 没生效」。
         val engineLoading = playbackState == Player.STATE_BUFFERING || playbackState == Player.STATE_IDLE
-        val target = pendingSeekMs
-        if (target != null) {
-            val settled = SeekSettle.isSettled(
-                enginePositionMs = actual,
-                targetMs = target,
-                fromPositionMs = pendingSeekFromMs,
-                elapsedMs = System.currentTimeMillis() - pendingSeekAtMs,
-                engineLoading = engineLoading,
-            )
-            if (settled) {
-                pendingSeekMs = null
-            } else if (actual == pendingSeekFromMs && pendingSeekAttempts < MAX_SEEK_RETRIES) {
-                // 引擎**一步没动**：这次定位多半是在 prepare/缓冲期被丢掉了，补发一次。
-                // 若引擎已经在移动（只是还没到目标），补发反而会打断它，所以不补。
-                pendingSeekAttempts++
-                applySeekToEngine(target)
-            }
+        // 引擎是否**真的建好了**：media item 已设入才算。
+        // 未设入时 `seekTo` 是空操作（见 applySeekToEngine），必须靠轮询补发。
+        // 不能改用「位置有没有动」去反推——见 PendingSeekTracker 的 KDoc。
+        val engineReady = runCatching { player.mediaItemCount }.getOrDefault(0) > 0
+        // 推进待定 seek：落定则释放乐观值；刚就绪 / 未就绪 / 就绪后没动 都要补发。
+        val tick = pendingSeek.tick(
+            enginePositionMs = actual,
+            engineReady = engineReady,
+            engineLoading = engineLoading,
+        )
+        // 宽限期过完仍没追上 ⇒ 上报失败，让 UI 能提示用户，
+        // 而不是让进度条静默弹回原位（那正是「拖了没反应」的观感）。
+        if (tick is PendingSeekTracker.Tick.GaveUp) {
+            _seekFailures.tryEmit(SeekFailure(tick.targetMs, tick.actualMs))
         }
-        _position.value = pendingSeekMs ?: actual
+        _position.value = pendingSeek.displayMs() ?: actual
         _duration.value = runCatching { player.duration }.getOrNull()?.takeIf { it > 0 } ?: 0L
     }
 
     private companion object {
         /** 位置轮询间隔：ExoPlayer 无位置回调，需自行拉取。 */
         const val POSITION_POLL_MS = 200L
-
-        /** 待定 seek 最多向引擎补发几次（每次间隔一个轮询周期）。 */
-        const val MAX_SEEK_RETRIES = 3
     }
 }
 

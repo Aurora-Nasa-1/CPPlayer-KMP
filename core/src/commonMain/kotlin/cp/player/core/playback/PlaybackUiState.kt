@@ -16,6 +16,14 @@ data class PlaybackUiState(
     val queue: List<QueueItem> = emptyList(),
     val isPlaying: Boolean = false,
     val isBuffering: Boolean = false,
+    /**
+     * 正在后台把无损流落地成本地文件（「边播边落盘」）。
+     *
+     * ⚠️ 这**不代表卡住了** —— 曲子已经在出声（引擎先放流），只是还没落盘，
+     * 所以此刻拖动进度条不可用。UI 据此**禁用滑条并说明原因**（见 `SeekAvailability`），
+     * 否则用户拖动没反应只会以为播放器坏了。
+     */
+    val isLocalizing: Boolean = false,
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
     val repeatMode: RepeatMode = RepeatMode.OFF,

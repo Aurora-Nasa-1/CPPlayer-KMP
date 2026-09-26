@@ -156,9 +156,19 @@ object HealthMonitor {
         }
     }
 
+    /**
+     * 取最近的调用记录（从新到旧，最多 [limit] 条）。
+     *
+     * 所有过滤条件都**在截断之前**生效 —— `limit` 是「过滤后的条数」，
+     * 不是「扫描的条数」。否则像 `getRecentRecords(limit = 1, onlyWarnings = true)`
+     * 这样先截断再按 method 挑的用法会几乎永远挑不中。
+     *
+     * @param method 只看某个 API 方法的记录
+     */
     fun getRecentRecords(
         limit: Int = 100,
         providerId: String? = null,
+        method: String? = null,
         onlyFailures: Boolean = false,
         onlyWarnings: Boolean = false,
         onlyErrors: Boolean = false
@@ -169,6 +179,7 @@ object HealthMonitor {
             if (result.size >= limit) break
             val r = snapshot[i]
             if (providerId != null && r.providerId != providerId) continue
+            if (method != null && r.method != method) continue
             if (onlyFailures && r.success) continue
             if (onlyWarnings && r.level != HealthLevel.WARNING) continue
             if (onlyErrors && r.level != HealthLevel.ERROR) continue

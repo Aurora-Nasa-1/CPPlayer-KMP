@@ -55,6 +55,7 @@ import cafe.adriel.voyager.core.screen.Screen
 import coil3.compose.AsyncImage
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.StateSurface
+import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.app.ui.model.DownloadsUiState
 import cp.player.app.ui.util.resized
@@ -168,7 +169,7 @@ private fun ActiveDownloadsTab(state: DownloadsUiState, model: DownloadsScreenMo
         }
         return
     }
-    LazyColumn(
+    LazyScrollColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -280,7 +281,7 @@ private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScree
         }
         return
     }
-    LazyColumn(
+    LazyScrollColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -388,7 +389,7 @@ private fun LocalLibraryTab(state: DownloadsUiState, model: DownloadsScreenModel
             return@Column
         }
 
-        LazyColumn(
+        LazyScrollColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),

@@ -26,7 +26,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoGraph
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -41,8 +43,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.platform.isAndroidPlatform
@@ -213,6 +217,13 @@ fun QuickAccessSection(
     }
 }
 
+/**
+ * 桌面端快速入口：**整宽等分色带**。
+ *
+ * 刻意不用 `LazyVerticalGrid(Adaptive) + 固定高度`：固定高度在宽列里会留下半行空白
+ * （旧版就多出约 68dp 死区），在窄列里又会把第二行裁掉。这里改成等宽 `Row`，
+ * 高度由内容决定，于是任何列宽下都是一条干净的横向色带，也给页面一个稳定的顶边。
+ */
 @Composable
 private fun DesktopQuickAccessGrid(
     onRecommendClick: () -> Unit,
@@ -222,37 +233,78 @@ private fun DesktopQuickAccessGrid(
     modifier: Modifier = Modifier,
 ) {
     val items = listOf(
-        Triple("每日推荐", "进入今日推荐歌单", onRecommendClick),
-        Triple("私人 FM", "连续获取更多 FM 歌曲", onPersonalFmClick),
-        Triple("心动模式", "围绕当前喜欢的歌延展", onIntelligenceClick),
-        Triple("相似歌曲", "进入相似歌曲列表", onSimilarClick),
+        QuickEntry("每日推荐", "进入今日推荐歌单", Icons.Filled.AutoGraph, onRecommendClick),
+        QuickEntry("私人 FM", "连续获取更多 FM 歌曲", Icons.Filled.Radio, onPersonalFmClick),
+        QuickEntry("心动模式", "围绕当前喜欢的歌延展", Icons.Filled.Favorite, onIntelligenceClick),
+        QuickEntry("相似歌曲", "进入相似歌曲列表", Icons.Filled.MusicNote, onSimilarClick),
     )
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("发现音乐", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
-            columns = androidx.compose.foundation.lazy.grid.GridCells.Adaptive(150.dp),
-            modifier = Modifier.fillMaxWidth().height(190.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            userScrollEnabled = false,
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            items(items.size) { index ->
-                val (label, subtitle, action) = items[index]
-                Surface(
-                    onClick = action,
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier.fillMaxWidth().height(88.dp),
-                ) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.SpaceBetween) {
-                        Icon(Icons.Filled.AutoGraph, null, tint = MaterialTheme.colorScheme.primary)
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(label, fontWeight = FontWeight.SemiBold)
-                            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                        }
-                    }
-                }
+            items.forEach { entry ->
+                QuickEntryCard(entry, Modifier.weight(1f))
             }
+        }
+    }
+}
+
+private data class QuickEntry(
+    val label: String,
+    val subtitle: String,
+    val icon: ImageVector,
+    val onClick: () -> Unit,
+)
+
+@Composable
+private fun QuickEntryCard(entry: QuickEntry, modifier: Modifier = Modifier) {
+    Surface(
+        onClick = entry.onClick,
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = modifier.height(88.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    entry.icon, null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    entry.label,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    entry.subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Icon(
+                Icons.Filled.ChevronRight, null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
         }
     }
 }

@@ -205,10 +205,23 @@ interface MusicApiService {
     // ======================== 社交 Social ========================
 
     /**
-     * 根据类型获取对应的评论 API 方法名
+     * 资源类型 → 评论 API 方法名。
+     *
+     * KMP 移植时这段映射被整段换成了「恒返回 [MusicApiMethod.COMMENT_NEW]」，
+     * 于是 `getComments(id, "playlist")` 与 `getComments(id, "music")` 打的是
+     * **同一个请求**；`comment/new` 又不在响应校验表里，连形态都没人校验。
+     * 现按旧项目 `reference/cp-player-legacy` 的 `when` 分支恢复。
+     *
+     * 大小写敏感、未知类型一律退回 [MusicApiMethod.COMMENT_MUSIC]（保持既有行为）。
      */
-    fun getCommentMethod(type: String): String {
-        return MusicApiMethod.COMMENT_NEW
+    fun getCommentMethod(type: String): String = when (type) {
+        "music" -> MusicApiMethod.COMMENT_MUSIC
+        "playlist" -> MusicApiMethod.COMMENT_PLAYLIST
+        "album" -> MusicApiMethod.COMMENT_ALBUM
+        "mv" -> MusicApiMethod.COMMENT_MV
+        "dj" -> MusicApiMethod.COMMENT_DJ
+        "video" -> MusicApiMethod.COMMENT_VIDEO
+        else -> MusicApiMethod.COMMENT_MUSIC
     }
 
     /**

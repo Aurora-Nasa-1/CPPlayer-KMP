@@ -59,11 +59,21 @@ interface LocalServer {
  * 平台工厂：JVM（Android 与 Desktop 共用的 `jvmMain`）提供 Ktor CIO 实现。
  *
  * @param config 生效配置（端口 / 绑定地址 / 令牌）。
+ * @param integration 数据面挂载点；`null` 表示只提供媒体面。
+ *        由 [cp.player.core.integration.createIntegrationRoutes] 在组合根构造后传入。
+ * @param activeConfig **实时**配置读取器：路由级开关（`exposeStream` / `exposeDataApi` /
+ *        `allowRemoteControl`）必须按请求现读，改它们不该重启端口。
  * @param resolveStreamUrl 把 mediaId 解析为上游可播放地址；传 null 表示「当前曲目」。
  *        由 [cp.player.core.MusicBackend] 用 `UnifiedMusicSource` + 当前 Provider 的 cookie 实现。
+ *
+ * ⚠️ [resolveStreamUrl] 必须留在**参数表最后**：它是主 lambda 型参数。
+ * 在它后面插参数会让既有 `createLocalServer(config) { … }` 静默改绑，
+ * 且报错指向调用点而不是声明处。
  */
 expect fun createLocalServer(
     config: LocalServerConfig,
+    integration: cp.player.core.integration.IntegrationRouteMount? = null,
+    activeConfig: () -> LocalServerConfig = { config },
     resolveStreamUrl: suspend (mediaId: String?) -> StreamTarget?,
 ): LocalServer
 

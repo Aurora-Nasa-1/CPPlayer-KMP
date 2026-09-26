@@ -134,13 +134,24 @@ Media3 1.4.1。版本号唯一来源是 `gradle/libs.versions.toml`。
 1. **生命周期 + 状态机** —— 通过 `stateFlow` 暴露 `BackendState`，自动处理初始化、
    Provider 激活与错误恢复；
 2. **Provider 管理** —— 导入 / 切换 / 删除音源模块，导入时自动激活首个 Provider；
-3. **音乐数据访问** —— 通过 `musicApi` / `cachedMusicApi` 提供云音乐 API；
+3. **音乐数据访问** —— 通过 `musicApi` / `cachedApi` 提供**带缓存**的云音乐 API；
 4. **播放控制** —— 队列、seek、切歌、歌词、音质。
 
 ### 缓存层：`CachedMusicApiService`
 
-在 `MusicApiServiceImpl` 之上再封装一层，对外暴露
-`callApiCached(...): Flow<CacheResult<JsonElement>>`，多值发射：
+在 `MusicApiServiceImpl` 之上再封装一层。它**实现同一个 `MusicApiService` 接口**，
+所以对调用方是透明的 —— `MusicBackend.musicApi` 交出去的就是它，裸实现不外泄。
+
+**主路径：读透（read-through）**，覆写了 `isCacheable(...)` 名单内的读类方法：
+
+```
+1) 命中且未超过 freshTtlMs  → 直接返回缓存，不发网络请求
+2) 未命中 / 已过期          → 回源；成功则写回缓存并返回
+3) 回源抛异常 / 判为 ERROR  → 多 Provider 容灾 → 旧缓存（哪怕过期）→ 原样交出失败响应
+```
+
+**副路径：流式 `callApiCached(...)`**，需要"先渲染缓存、后台刷新"时用，
+返回 `Flow<CacheResult<JsonElement>>`，多值发射：
 
 ```
 1) 先返回缓存          → CacheResult.Cached(data, isStale)        （即时）
@@ -153,9 +164,16 @@ Media3 1.4.1。版本号唯一来源是 `gradle/libs.versions.toml`。
 ```
 
 - **指纹**（`Fingerprinter`）：抽取 `code` + 顶层数组长度 + 主数据数组的 `id` 列表
-  （前 64 个，去重排序）+ 版本位。增删/重排条目指纹变化，改无关字段不影响。
-- **缓存键**：`providerId#method#sortedParams#cookieHash`，默认 `InMemoryApiCache`（LRU）。
+  （前 64 个，去重排序）+ 版本位。增删条目指纹变化、**重排不算变化**，改无关字段不影响。
+- **缓存键**：`providerId#method#sortedParams#cookieHash`，默认 `InMemoryApiCache`
+  （LRU，容量取 `CacheConfig.maxEntries`）。**cookie 参与键** —— 同机多账号必须隔离，
+  否则 B 账号会读到 A 账号的歌单。
 - **写/动作类接口不缓存**（登录、点赞、发评论、打卡等），见 `isCacheable(...)`。
+- **写操作会失效对应读缓存**：`addTracksToPlaylist` → `playlist/track/all` + `playlist/detail`，
+  `likeSong` → `user/like/list`，`postComment` / `likeComment` → 该 `type` 对应的评论端点，
+  `logout` 清全表。新增写接口时要同步补映射。
+- **可观测**：`backend.cachedApi.stats`（hits / misses / stores / staleServed / invalidated）。
+- **关缓存**：`CacheConfig(enableCache = false)`。
 
 ### 三级健康分类
 

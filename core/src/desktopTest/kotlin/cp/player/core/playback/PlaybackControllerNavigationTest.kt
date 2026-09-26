@@ -5,13 +5,13 @@ import cp.player.core.api.MusicApiService
 import cp.player.core.music.SongUrl
 import cp.player.core.music.TrackSummary
 import cp.player.core.music.UnifiedMusicSource
+import cp.player.core.testing.ManualDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
-import kotlin.coroutines.CoroutineContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -89,28 +89,6 @@ class PlaybackControllerNavigationTest {
 
         override suspend fun getUserPlaylists(providerId: String, uid: Long) =
             BackendResult.Error("not used in this test")
-    }
-
-    /**
-     * 手动调度器：`launch` 只入队、不立刻执行，由测试显式 [drain]。
-     *
-     * 这正是 `Dispatchers.Main` 在生产里的行为——单线程、按入队顺序执行，
-     * 因此可以稳定复现「事件回调与用户点击交错」的竞态。
-     */
-    private class ManualDispatcher : CoroutineDispatcher() {
-        private val tasks = ArrayDeque<Runnable>()
-
-        override fun dispatch(context: CoroutineContext, block: Runnable) {
-            tasks.addLast(block)
-        }
-
-        /** 依次执行队列中的任务，直到清空（执行中新增的任务同样会被跑到）。 */
-        fun drain() {
-            while (true) {
-                val task = tasks.removeFirstOrNull() ?: return
-                task.run()
-            }
-        }
     }
 
     /**

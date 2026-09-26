@@ -17,10 +17,32 @@ jlayer = "1.0.1"
 jmtc = "0.0.3"
 accompanist-lyrics-ui = "1.0.19"
 accompanist-lyrics-core = "0.4.5"
+# ⚠️ material-kolor 必须锁 5.0.0：它依赖 compose 1.11.1，与本项目一致。
+# 5.0.1 起依赖 compose 1.12.0，会把整个项目的 Compose 运行时顶上去而插件仍是 1.11.1 ⇒ 版本错配。
+materialkolor = "5.0.0"
+# 取色算法用 Material You 官方的 material-color-utilities（QuantizerCelebi + Score），
+# 与 Android 的 Monet 同源。换成别的量化器（例如 androidx.palette 的 Vibrant 偏好）
+# 取出来的主色**会和系统 / 其他 MD3 应用不一致** —— Win11 默认壁纸上表现为取到花的玫红
+# 而不是大面积底色蓝。它本是 material-kolor 的传递依赖，这里显式声明：
+# 直接调它的 API 就不该依赖别人的依赖图。
+material-color-utilities = "5.0.0"
+# ⚠️ material3 的版本**不由 compose 插件决定**：插件把 `compose.material3` 钉在 1.9.0
+# （见 compose-gradle-plugin 里的 ComposeBuildConfig），而 1.9.0 缺少 M3 Expressive 的
+# 标志性 API —— `MaterialShapes` / `WavyProgressIndicator` / `LoadingIndicator` /
+# `ToggleButton` / `ButtonGroup` / `FloatingToolbar` / `SplitButton` 全都不在。
+# 这里显式声明 1.11.0-alpha07 把它顶上去。方向是安全的：
+#   - 它依赖 compose `1.11.0-beta03` < 本项目的 `1.11.1`（拿到的比它编译时的更新）；
+#   - 它依赖 `androidx.graphics:graphics-shapes`（形状变形的底层实现）；
+#   - 与 `material-kolor` 5.0.0 的编译目标**完全一致**（此前是 1.9.0 跨版本兼容）。
+# 换版本后必须复核 material-kolor 的字节码兼容性（见 TOPICS.md「主题 / 取色」）。
+material3 = "1.11.0-alpha07"
 
 [libraries]
 accompanist-lyrics-ui = { module = "com.mocharealm.accompanist:lyrics-ui", version.ref = "accompanist-lyrics-ui" }
 accompanist-lyrics-core = { module = "com.mocharealm.accompanist:lyrics-core", version.ref = "accompanist-lyrics-core" }
+materialkolor = { module = "com.materialkolor:material-kolor", version.ref = "materialkolor" }
+material-color-utilities = { module = "com.materialkolor:material-color-utilities", version.ref = "material-color-utilities" }
+material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "material3" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }

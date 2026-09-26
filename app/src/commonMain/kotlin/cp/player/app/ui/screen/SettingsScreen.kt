@@ -50,6 +50,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LegacyListItem
 import cp.player.app.ui.component.LocalIsExpanded
+import cp.player.app.ui.component.ScrollColumn
 
 @Composable
 private fun SettingsCategoryRail(onCategorySelected: (Int) -> Unit) {
@@ -97,10 +98,9 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
 
     if (embedded && expanded) {
         Row(Modifier.fillMaxSize()) {
-            Box(
-                Modifier.width(320.dp).fillMaxHeight()
+            ScrollColumn(
+                modifier = Modifier.width(320.dp).fillMaxHeight()
                     .background(MaterialTheme.colorScheme.background)
-                    .verticalScroll(rememberScrollState())
                     .padding(top = 8.dp, bottom = 24.dp),
             ) {
                 SettingsList(
@@ -142,10 +142,9 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
                     else -> SettingsDetail.ProviderManagement
                 } })
                 VerticalDivider(modifier = Modifier.fillMaxHeight(), color = MaterialTheme.colorScheme.outlineVariant)
-                Box(
-                    Modifier.width(320.dp).fillMaxHeight()
+                ScrollColumn(
+                    modifier = Modifier.width(320.dp).fillMaxHeight()
                         .background(MaterialTheme.colorScheme.background)
-                        .verticalScroll(rememberScrollState())
                         .padding(top = 8.dp, bottom = 24.dp),
                 ) {
                     SettingsList(
@@ -174,10 +173,9 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
             }
         } else {
             // Compact：传统列表布局，点击 push 导航
-            Column(
-                Modifier.fillMaxSize()
+            ScrollColumn(
+                modifier = Modifier.fillMaxSize()
                     .padding(padding)
-                    .verticalScroll(rememberScrollState())
                     .padding(
                         start = 8.dp,
                         end = 8.dp,
@@ -256,10 +254,35 @@ private fun DesktopSettingsDetail(detail: SettingsDetail) {
     }
 }
 
+/**
+ * 设置项图标的**强调色角色**。
+ *
+ * 原先这里是 10 组硬编码的浅色值（`Color(0xFFE8F5E9)` 之类），有两个问题：
+ * 1. 它们是**浅色模式专用**的粉彩 —— 深色模式下底色发白、对比度直接崩掉；
+ * 2. 写死的色相不跟随动态取色，用户换了封面配色后，设置页成了唯一「不跟着变」的地方。
+ *
+ * 改成引用主题的 **fixed 角色**：`primaryFixed / secondaryFixed / tertiaryFixed` 在 M3 里
+ * 正是「不随明暗反转、但跟随种子色」的容器色，天然满足「给分类一个稳定身份」的需求。
+ */
+private enum class SettingsAccent { PRIMARY, SECONDARY, TERTIARY }
+
+@Composable
+private fun SettingsAccent.container(): Color = when (this) {
+    SettingsAccent.PRIMARY -> MaterialTheme.colorScheme.primaryFixed
+    SettingsAccent.SECONDARY -> MaterialTheme.colorScheme.secondaryFixed
+    SettingsAccent.TERTIARY -> MaterialTheme.colorScheme.tertiaryFixed
+}
+
+@Composable
+private fun SettingsAccent.content(): Color = when (this) {
+    SettingsAccent.PRIMARY -> MaterialTheme.colorScheme.onPrimaryFixed
+    SettingsAccent.SECONDARY -> MaterialTheme.colorScheme.onSecondaryFixed
+    SettingsAccent.TERTIARY -> MaterialTheme.colorScheme.onTertiaryFixed
+}
+
 private data class SettingsEntry(
     val icon: ImageVector,
-    val iconContainerColor: Color,
-    val iconContentColor: Color,
+    val accent: SettingsAccent,
     val title: String,
     val subtitle: String,
     val detail: SettingsDetail,
@@ -269,17 +292,15 @@ private data class SettingsEntry(
 private fun settingsEntries(): List<SettingsEntry> = listOf(
     SettingsEntry(
         icon = Icons.Filled.Palette,
-        iconContainerColor = Color(0xFFE8F5E9),
-        iconContentColor = Color(0xFF2E7D32),
+        accent = SettingsAccent.PRIMARY,
         title = "外观",
-        subtitle = "主题、动态取色与纯黑模式",
+        subtitle = "主题、取色来源与纯黑模式",
         detail = SettingsDetail.Appearance,
         screen = { AppearanceSettingsScreen() },
     ),
     SettingsEntry(
         icon = Icons.Filled.Bedtime,
-        iconContainerColor = Color(0xFFE3F2FD),
-        iconContentColor = Color(0xFF1565C0),
+        accent = SettingsAccent.SECONDARY,
         title = "播放",
         subtitle = "音质、播放行为与睡眠定时",
         detail = SettingsDetail.Playback,
@@ -287,8 +308,7 @@ private fun settingsEntries(): List<SettingsEntry> = listOf(
     ),
     SettingsEntry(
         icon = Icons.Filled.TouchApp,
-        iconContainerColor = Color(0xFFE8F5E9),
-        iconContentColor = Color(0xFF388E3C),
+        accent = SettingsAccent.TERTIARY,
         title = "交互逻辑",
         subtitle = "播放行为与旧版交互逻辑入口",
         detail = SettingsDetail.UiLogic,
@@ -296,8 +316,7 @@ private fun settingsEntries(): List<SettingsEntry> = listOf(
     ),
     SettingsEntry(
         icon = Icons.Filled.Storage,
-        iconContainerColor = Color(0xFFFFF3E0),
-        iconContentColor = Color(0xFFEF6C00),
+        accent = SettingsAccent.PRIMARY,
         title = "存储与下载",
         subtitle = "缓存、图片清理与下载目录",
         detail = SettingsDetail.Storage,
@@ -305,8 +324,7 @@ private fun settingsEntries(): List<SettingsEntry> = listOf(
     ),
     SettingsEntry(
         icon = Icons.Filled.SettingsEthernet,
-        iconContainerColor = Color(0xFFE0F2F1),
-        iconContentColor = Color(0xFF00695C),
+        accent = SettingsAccent.SECONDARY,
         title = "本地服务器",
         subtitle = "把播放流通过 HTTP 对外提供，并开放 REST 控制接口",
         detail = SettingsDetail.LocalServer,
@@ -314,8 +332,7 @@ private fun settingsEntries(): List<SettingsEntry> = listOf(
     ),
     SettingsEntry(
         icon = Icons.Filled.BugReport,
-        iconContainerColor = Color(0xFFFCE4EC),
-        iconContentColor = Color(0xFFC2185B),
+        accent = SettingsAccent.TERTIARY,
         title = "调试",
         subtitle = "查看调用状态、日志与回退信息",
         detail = SettingsDetail.Health,
@@ -323,8 +340,7 @@ private fun settingsEntries(): List<SettingsEntry> = listOf(
     ),
     SettingsEntry(
         icon = Icons.Filled.Dns,
-        iconContainerColor = Color(0xFFFFFDE7),
-        iconContentColor = Color(0xFFF57F17),
+        accent = SettingsAccent.PRIMARY,
         title = "音源管理",
         subtitle = "导入、切换或移除 Provider",
         detail = SettingsDetail.ProviderManagement,
@@ -332,8 +348,7 @@ private fun settingsEntries(): List<SettingsEntry> = listOf(
     ),
     SettingsEntry(
         icon = Icons.Filled.HelpOutline,
-        iconContainerColor = Color(0xFFEFEBE9),
-        iconContentColor = Color(0xFF4E342E),
+        accent = SettingsAccent.SECONDARY,
         title = "关于",
         subtitle = "版本、更新与项目维护者",
         detail = SettingsDetail.About,
@@ -341,8 +356,7 @@ private fun settingsEntries(): List<SettingsEntry> = listOf(
     ),
     SettingsEntry(
         icon = Icons.Filled.Favorite,
-        iconContainerColor = Color(0xFFFCE4EC),
-        iconContentColor = Color(0xFFE91E63),
+        accent = SettingsAccent.TERTIARY,
         title = "赞助",
         subtitle = "独立赞助页与项目支持入口",
         detail = SettingsDetail.Sponsor,
@@ -364,8 +378,7 @@ private fun renderTuningEntries(): List<SettingsEntry> =
         listOf(
             SettingsEntry(
                 icon = Icons.Filled.Memory,
-                iconContainerColor = Color(0xFFEDE7F6),
-                iconContentColor = Color(0xFF4527A0),
+                accent = SettingsAccent.PRIMARY,
                 title = "渲染后端",
                 subtitle = "Skiko 渲染 API 与垂直同步（VRR / 刷新率抖动相关）",
                 detail = SettingsDetail.RenderTuning,
@@ -399,8 +412,8 @@ private fun SettingsRow(
         leadingContent = {
             MonetIcon(
                 icon = entry.icon,
-                containerColor = entry.iconContainerColor,
-                contentColor = entry.iconContentColor,
+                containerColor = entry.accent.container(),
+                contentColor = entry.accent.content(),
             )
         },
         headlineContent = {

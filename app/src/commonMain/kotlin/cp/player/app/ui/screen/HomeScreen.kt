@@ -6,9 +6,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,9 +24,6 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -67,7 +66,10 @@ import cp.player.app.AppModel
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.ExpressiveListCard
+import cp.player.app.ui.component.LazyScrollColumn
+import cp.player.app.ui.component.LazyScrollRow
 import cp.player.app.ui.component.LocalIsExpanded
+import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.ui.component.PlaylistCoverCard
 import cp.player.app.ui.component.QuickAccessSection
 import cp.player.app.ui.component.SectionHeader
@@ -206,7 +208,7 @@ private fun HomeScreenContent(model: HomeScreenModel) {
             onRecentTrackOptionsClick = { selectedTrack = it },
             onRecentMoreClick = { navigator.push(RecentPlaysScreen()) },
         )
-    } else LazyColumn(
+    } else LazyScrollColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
             top = CpSpacing.pageTop,
@@ -272,7 +274,7 @@ private fun HomeScreenContent(model: HomeScreenModel) {
                 )
             }
             item {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                LazyScrollRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(recommendedPlaylists.take(20)) { playlist ->
                         PlaylistCoverCard(
                             playlist = playlist,
@@ -399,6 +401,17 @@ private fun HomeScreenContent(model: HomeScreenModel) {
     }
 }
 
+/** 桌面首页歌单区行数（推荐 / 热门共用）。两行是「一屏看得完」和「有内容感」的平衡点。 */
+private const val PLAYLIST_ROWS = 2
+
+/**
+ * 桌面首页「最近播放」展示条数。
+ *
+ * 12 条按两列排是 6 行，高度正好和左侧「每日推荐」的 5 行曲目卡齐平 ——
+ * 这两个数字是绑定的，改一个就要回头看另一个，否则底部对齐会重新错开。
+ */
+private const val DESKTOP_RECENT_COUNT = 12
+
 @Composable
 private fun DesktopHomeLayout(
     dailySongs: List<TrackSummary>,
@@ -423,76 +436,71 @@ private fun DesktopHomeLayout(
         modifier = Modifier.fillMaxSize(),
     ) {
         val widthValue = maxWidth.value
-        val horizontalPadding = responsiveDp(widthValue, min = 24f, max = 52f, start = 1200f, end = 2200f)
-        val contentMaxWidth = responsiveDp(widthValue, min = 1480f, max = 1840f, start = 1360f, end = 2200f)
-        val mainWeight = responsiveFloat(widthValue, min = 1.22f, max = 1.52f, start = 1280f, end = 2200f)
-        val sideWeight = responsiveFloat(widthValue, min = 0.94f, max = 1.1f, start = 1280f, end = 2200f)
-        val playlistCardWidth = responsiveDp(widthValue, min = 144f, max = 184f, start = 1280f, end = 2200f)
-        val recentCardWidth = responsiveDp(widthValue, min = 296f, max = 380f, start = 1280f, end = 2200f)
-        val recommendedCapacity = ((contentMaxWidth.value / playlistCardWidth.value) * 2.3f).toInt().coerceIn(12, 21)
-        val recentCapacity = ((maxWidth.value / recentCardWidth.value) * 3.2f).toInt().coerceIn(8, 14)
-        val recommendedItems = recommendedPlaylists.take(recommendedCapacity)
-        val recentItems = recentTracks.take(recentCapacity)
-        val recommendedRows = (((recommendedItems.size * playlistCardWidth.value) / contentMaxWidth.value).toInt() + 1)
-            .coerceIn(2, 4)
-        val recentRows = (((recentItems.size * recentCardWidth.value) / (contentMaxWidth.value * 0.42f)).toInt() + 1)
-            .coerceIn(2, 4)
+        val horizontalPadding = responsiveDp(widthValue, min = 24f, max = 48f, start = 1200f, end = 2200f)
+        // 栅格按**实际内容宽度**换算 —— 窗口宽度里含两侧留白与滚动条槽，
+        // 宽屏下直接拿它去除会多算出 1–2 列，卡片被压窄。
+        val contentWidth = (widthValue - horizontalPadding.value * 2f)
+            .coerceAtMost(CpSpacing.pageMaxWidth.value)
+        val playlistColumns = CpSpacing.gridColumns(contentWidth.dp)
 
-        Column(
-            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                .padding(
-                    start = horizontalPadding,
-                    end = horizontalPadding,
-                    top = 20.dp,
-                    bottom = WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding() + 20.dp,
-                ),
+        val recommendedItems = recommendedPlaylists.take(playlistColumns * PLAYLIST_ROWS)
+        val hotItems = hotPlaylists.take(playlistColumns * PLAYLIST_ROWS)
+        val recentItems = recentTracks.take(DESKTOP_RECENT_COUNT)
+
+        ScrollColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = horizontalPadding,
+                end = horizontalPadding,
+                top = 24.dp,
+                bottom = WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding() + 24.dp,
+            ),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().widthIn(max = contentMaxWidth),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
+                // ⚠️ 顺序不能反：`fillMaxWidth()` 会把 min/max 都钉死成可用宽度，
+                // 之后 `widthIn(max = …)` 拿到的入参约束已经是固定值，clamp 后等于没写
+                // —— 旧版就是 `fillMaxWidth().widthIn(1480…)`，所以正文其实一直铺到边缘，
+                // 大屏上卡片被拉到 200dp 以上、一行塞七八张，是「桌面端难看」的主因。
+                modifier = Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(18.dp),
-                verticalAlignment = Alignment.Top,
-            ) {
-                Column(
-                    modifier = Modifier.weight(mainWeight),
-                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                // ── 发现音乐：整宽色带，给页面一条稳定的顶边 ──
+                QuickAccessSection(
+                    fmOnRecommendClick = onFmRecommendClick,
+                    fmOnPersonalFmClick = onPersonalFmClick,
+                    onIntelligenceClick = onIntelligenceClick,
+                    onSimilarClick = onSimilarClick,
+                    userPlaylists = userPlaylists,
+                    onPlaylistClick = onPlaylistClick,
+                )
+
+                // ── 主体：每日推荐（主内容）+ 最近播放（侧轨）──
+                // `IntrinsicSize.Max` 让两张卡**底部对齐**：以前两列各自按内容长高，
+                // 差出七八十像素的参差边缘，是大屏上最显眼的「没做完」感。
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max),
+                    horizontalArrangement = Arrangement.spacedBy(20.dp),
+                    verticalAlignment = Alignment.Top,
                 ) {
-                    QuickAccessSection(
-                        fmOnRecommendClick = onFmRecommendClick,
-                        fmOnPersonalFmClick = onPersonalFmClick,
-                        onIntelligenceClick = onIntelligenceClick,
-                        onSimilarClick = onSimilarClick,
-                        userPlaylists = userPlaylists,
-                        onPlaylistClick = onPlaylistClick,
-                    )
                     if (dailySongs.isNotEmpty()) {
                         DailyMixCard(
                             songs = dailySongs,
                             onSongClick = onSongClick,
                             onOpenPlaylist = { onFmRecommendClick() },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.weight(1.15f).fillMaxHeight(),
                             compact = true,
                         )
                     }
-                }
-                Column(
-                    modifier = Modifier.weight(sideWeight),
-                    verticalArrangement = Arrangement.spacedBy(18.dp),
-                ) {
                     DenseSongSection(
                         title = "最近播放",
-                        supportingText = "接着上次的节奏继续",
                         tracks = recentItems,
-                        rows = recentRows,
-                        cardWidth = recentCardWidth,
+                        columns = 2,
                         emptyTitle = "还没有最近播放",
                         emptyMessage = "播放歌曲后会显示在这里",
                         onTrackClick = onRecentTrackClick,
                         onTrackOptionsClick = onRecentTrackOptionsClick,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
                         action = {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 TextButton(onClick = onRecentMoreClick) {
@@ -509,43 +517,43 @@ private fun DesktopHomeLayout(
                             }
                         },
                     )
-                    if (error != null) {
-                        StateSurface {
-                            ContentState(
-                                title = "推荐内容未完全加载",
-                                message = error,
-                                error = true,
-                                actionLabel = "重试",
-                                onAction = onRefresh,
-                            )
-                        }
+                }
+
+                if (error != null) {
+                    StateSurface {
+                        ContentState(
+                            title = "推荐内容未完全加载",
+                            message = error,
+                            error = true,
+                            actionLabel = "重试",
+                            onAction = onRefresh,
+                        )
                     }
                 }
-            }
 
-            if (recommendedPlaylists.isNotEmpty()) {
-                DensePlaylistSection(
-                    title = "推荐歌单",
-                    supportingText = "点击歌单进入详情，查看完整曲目后再播放",
-                    playlists = recommendedItems,
-                    rows = recommendedRows,
-                    cardWidth = playlistCardWidth,
-                    onPlaylistClick = onPlaylistClick,
-                )
-            }
+                if (recommendedItems.isNotEmpty()) {
+                    DensePlaylistSection(
+                        title = "推荐歌单",
+                        supportingText = "点击歌单进入详情，查看完整曲目后再播放",
+                        playlists = recommendedItems,
+                        columns = playlistColumns,
+                        rows = PLAYLIST_ROWS,
+                        onPlaylistClick = onPlaylistClick,
+                    )
+                }
 
-                if (hotPlaylists.isNotEmpty()) {
-                 DensePlaylistSection(
-                     title = "热门歌单",
-                     supportingText = "大家正在收藏的歌单",
-                     playlists = hotPlaylists.take(recommendedCapacity),
-                     rows = recommendedRows,
-                     cardWidth = playlistCardWidth,
-                     onPlaylistClick = onPlaylistClick,
-                 )
-             }
+                if (hotItems.isNotEmpty()) {
+                    DensePlaylistSection(
+                        title = "热门歌单",
+                        supportingText = "大家正在收藏的歌单",
+                        playlists = hotItems,
+                        columns = playlistColumns,
+                        rows = PLAYLIST_ROWS,
+                        onPlaylistClick = onPlaylistClick,
+                    )
+                }
 
-                 if (dailySongs.isEmpty() && recommendedPlaylists.isEmpty() && hotPlaylists.isEmpty() && error == null) {
+                if (dailySongs.isEmpty() && recommendedPlaylists.isEmpty() && hotPlaylists.isEmpty() && error == null) {
                     StateSurface {
                         ContentState(
                             title = "还没有个性化推荐",
@@ -567,40 +575,53 @@ private fun DailyMixCard(
     compact: Boolean = false,
 ) {
     val expanded = LocalIsExpanded.current
-    val coverUrl = songs.firstOrNull()?.coverUrl
+    val cover = songs.firstOrNull()?.coverUrl
+    // 有封面 ⇒ 整张卡走「压图上白字」；没有封面 ⇒ 必须换成主题配色。
+    // 旧版无条件铺黑色渐变 + 写死白字：浅色主题下 surfaceContainerLow 几乎是白的，
+    // 标题和曲目直接糊成一片（浅色模式实测完全不可读），是「浅色很难看」的主因。
+    val overImage = !cover.isNullOrBlank()
     val bgHeight = when {
         compact -> 118.dp
         expanded -> 140.dp
         else -> 200.dp
     }
-    val previewTracks = if (compact) songs.take(8) else songs.take(4)
+    val titleColor = if (overImage) Color.White else MaterialTheme.colorScheme.onSurface
+    val subtitleColor =
+        if (overImage) Color.White.copy(alpha = 0.76f) else MaterialTheme.colorScheme.onSurfaceVariant
+    val actionContainer =
+        if (overImage) Color.White.copy(alpha = 0.2f) else MaterialTheme.colorScheme.primaryContainer
+    val actionContent =
+        if (overImage) Color.White else MaterialTheme.colorScheme.onPrimaryContainer
+    // compact（桌面主体左栏）走两列轨道：10 首 = 5 行，正好和右栏「最近播放」6 行等高。
+    val previewTracks = if (compact) songs.take(10) else songs.take(4)
 
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = if (overImage) MaterialTheme.colorScheme.surfaceContainerLow
+        else MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
         Box(Modifier.fillMaxWidth()) {
-            if (!coverUrl.isNullOrBlank()) {
+            if (!cover.isNullOrBlank()) {
                 AsyncImage(
-                    model = coverUrl.resized(600),
+                    model = cover.resized(600),
                     contentDescription = null,
                     modifier = Modifier.fillMaxWidth().height(bgHeight),
                     contentScale = ContentScale.Crop,
                 )
+                Box(
+                    Modifier.fillMaxWidth().height(bgHeight).background(
+                        Brush.verticalGradient(
+                            colorStops = arrayOf(
+                                0.0f to Color.Black.copy(alpha = 0.5f),
+                                0.38f to Color.Black.copy(alpha = 0.18f),
+                                0.72f to MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.45f),
+                                1.0f to MaterialTheme.colorScheme.surfaceContainerLow,
+                            ),
+                        )
+                    ),
+                )
             }
-            Box(
-                Modifier.fillMaxWidth().height(bgHeight).background(
-                    Brush.verticalGradient(
-                        colorStops = arrayOf(
-                            0.0f to Color.Black.copy(alpha = 0.5f),
-                            0.38f to Color.Black.copy(alpha = 0.18f),
-                            0.72f to MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.45f),
-                            1.0f to MaterialTheme.colorScheme.surfaceContainerLow,
-                        ),
-                    )
-                ),
-            )
             Column(Modifier.fillMaxWidth()) {
                 Row(
                     Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 18.dp, bottom = 12.dp),
@@ -612,27 +633,27 @@ private fun DailyMixCard(
                             "每日推荐",
                             style = if (compact) MaterialTheme.typography.titleLarge else if (expanded) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White,
+                            color = titleColor,
                         )
                         Spacer(Modifier.height(2.dp))
                         Text(
                             if (compact) "大屏日推 ${songs.size} 首，优先展示更多可点歌曲" else "${songs.size} 首 · 根据你的口味生成",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.76f),
+                            color = subtitleColor,
                         )
                     }
                     Surface(
                         onClick = onOpenPlaylist,
                         shape = MaterialTheme.shapes.medium,
-                        color = Color.White.copy(alpha = 0.2f),
+                        color = actionContainer,
                     ) {
                         Row(
                             Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            Icon(Icons.Filled.PlayArrow, null, tint = Color.White, modifier = Modifier.size(18.dp))
-                            Text("播放全部", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium, color = Color.White)
+                            Icon(Icons.Filled.PlayArrow, null, tint = actionContent, modifier = Modifier.size(18.dp))
+                            Text("播放全部", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium, color = actionContent)
                         }
                     }
                 }
@@ -640,6 +661,7 @@ private fun DailyMixCard(
                     DailySongRail(
                         songs = previewTracks,
                         onSongClick = onSongClick,
+                        overImage = overImage,
                     )
                 } else {
                     MosaicCoverGrid(
@@ -657,6 +679,7 @@ private fun DailyMixCard(
 private fun DailySongRail(
     songs: List<TrackSummary>,
     onSongClick: (TrackSummary) -> Unit,
+    overImage: Boolean,
 ) {
     Column(
         modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
@@ -673,6 +696,7 @@ private fun DailySongRail(
                         track = track,
                         onClick = { onSongClick(track) },
                         modifier = Modifier.weight(1f),
+                        overImage = overImage,
                     )
                 }
                 repeat(2 - rowTracks.size) {
@@ -683,15 +707,28 @@ private fun DailySongRail(
     }
 }
 
+/**
+ * 桌面歌单栅格：按 [columns] 列切成若干 `Row`，每张卡 `weight(1f)`。
+ *
+ * 不用 `LazyHorizontalGrid` + 固定高度：那个高度只能写成 `rows * (cardWidth + 20)`
+ * 这种猜出来的公式，而卡片真实高度由封面边长决定 —— 于是窄屏会裁掉最后一行，
+ * 宽屏底部留一条空白。改成等分 `Row` 后高度完全由内容决定，而且每行**正好铺满**
+ * 内容宽度，右端不会留下半张卡的缺口。
+ *
+ * 横向滚动也一并去掉了：桌面首页只展示 `columns * rows` 张，
+ * 想看更多应该走「更多」入口，而不是在一个纵向页面里再套一层横向滚动。
+ */
 @Composable
 private fun DensePlaylistSection(
     title: String,
     supportingText: String,
     playlists: List<PlaylistSummary>,
+    columns: Int,
     rows: Int,
-    cardWidth: androidx.compose.ui.unit.Dp,
     onPlaylistClick: (PlaylistSummary) -> Unit,
 ) {
+    val visible = playlists.take((columns * rows).coerceAtLeast(1))
+    if (visible.isEmpty()) return
     ExpressiveListCard(title = title, trailing = null) {
         Column(
             modifier = Modifier.padding(start = 18.dp, end = 18.dp, bottom = 18.dp),
@@ -702,18 +739,25 @@ private fun DensePlaylistSection(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            LazyHorizontalGrid(
-                rows = GridCells.Fixed(rows),
-                modifier = Modifier.fillMaxWidth().height((rows * (cardWidth + 20.dp).value).dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                itemsIndexed(playlists) { _, playlist ->
-                    PlaylistCoverCard(
-                        playlist = playlist,
-                        onClick = { onPlaylistClick(playlist) },
-                        modifier = Modifier.width(cardWidth),
-                    )
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                visible.chunked(columns.coerceAtLeast(1)).forEach { rowItems ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        rowItems.forEach { playlist ->
+                            PlaylistCoverCard(
+                                playlist = playlist,
+                                onClick = { onPlaylistClick(playlist) },
+                                modifier = Modifier.weight(1f),
+                                fillWidth = true,
+                            )
+                        }
+                        // 末行不足一列时补等宽占位，否则剩下的卡片会被拉成两倍宽。
+                        repeat(columns.coerceAtLeast(1) - rowItems.size) {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
                 }
             }
         }
@@ -723,18 +767,18 @@ private fun DensePlaylistSection(
 @Composable
 private fun DenseSongSection(
     title: String,
-    supportingText: String,
     tracks: List<TrackSummary>,
-    rows: Int,
-    cardWidth: androidx.compose.ui.unit.Dp,
+    columns: Int,
     emptyTitle: String,
     emptyMessage: String,
     onTrackClick: (TrackSummary, Int) -> Unit,
     onTrackOptionsClick: (TrackSummary) -> Unit,
+    modifier: Modifier = Modifier,
     action: @Composable (() -> Unit)? = null,
 ) {
     ExpressiveListCard(
         title = title,
+        modifier = modifier,
         trailing = action,
     ) {
         if (tracks.isEmpty()) {
@@ -744,8 +788,10 @@ private fun DenseSongSection(
                 modifier = Modifier.padding(horizontal = 8.dp),
             )
         } else {
-            val columnCount = 2
-            val columns = remember(tracks) {
+            // 按「隔列取样」而不是「连续切块」分列：这样左列永远拿到第 1、3、5… 首，
+            // 曲目顺序是**从左到右再换行**，符合直觉；连续切块会变成先读完整列。
+            val columnCount = columns.coerceAtLeast(1)
+            val distributed = remember(tracks, columnCount) {
                 List(columnCount) { columnIndex ->
                     tracks.filterIndexed { index, _ -> index % columnCount == columnIndex }
                 }
@@ -755,7 +801,7 @@ private fun DenseSongSection(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.Top,
             ) {
-                columns.forEachIndexed { columnIndex, columnTracks ->
+                distributed.forEachIndexed { columnIndex, columnTracks ->
                     Column(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -768,7 +814,7 @@ private fun DenseSongSection(
                                 total = columnTracks.size,
                                 onClick = { onTrackClick(track, originalIndex) },
                                 onOptionsClick = { onTrackOptionsClick(track) },
-                                modifier = Modifier.width(cardWidth),
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
                     }
@@ -778,16 +824,27 @@ private fun DenseSongSection(
     }
 }
 
+/**
+ * 「每日推荐」轨道里的紧凑曲目卡。
+ *
+ * @param overImage 卡片是否压在封面图上。压在图上时用白色半透明叠加（唯一能保证
+ *   在任意封面上都可读的做法）；否则必须回落到主题色 —— 浅色主题下
+ *   `Color.White` 文字放在浅灰容器上等于隐形。
+ */
 @Composable
 private fun CompactTrackCard(
     track: TrackSummary,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    overImage: Boolean = false,
 ) {
+    val titleColor = if (overImage) Color.White else MaterialTheme.colorScheme.onSurface
+    val artistColor =
+        if (overImage) Color.White.copy(alpha = 0.72f) else MaterialTheme.colorScheme.onSurfaceVariant
     Surface(
         modifier = modifier,
         onClick = onClick,
-        color = Color.White.copy(alpha = 0.14f),
+        color = if (overImage) Color.White.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceContainerHighest,
         shape = MaterialTheme.shapes.large,
     ) {
         Row(
@@ -797,7 +854,10 @@ private fun CompactTrackCard(
         ) {
             Box(
                 modifier = Modifier.size(46.dp).clip(RoundedCornerShape(14.dp))
-                    .background(Color.White.copy(alpha = 0.16f)),
+                    .background(
+                        if (overImage) Color.White.copy(alpha = 0.16f)
+                        else MaterialTheme.colorScheme.surfaceVariant
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
                 if (!track.coverUrl.isNullOrBlank()) {
@@ -811,7 +871,7 @@ private fun CompactTrackCard(
                     Icon(
                         Icons.Filled.PlayArrow,
                         contentDescription = null,
-                        tint = Color.White,
+                        tint = if (overImage) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -819,14 +879,14 @@ private fun CompactTrackCard(
                 Text(
                     text = track.name,
                     style = MaterialTheme.typography.titleSmall,
-                    color = Color.White,
+                    color = titleColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = track.artist,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.72f),
+                    color = artistColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -1019,7 +1079,7 @@ class RecentPlaysScreen : Screen {
                     )
                 }
             } else {
-                LazyColumn(
+                LazyScrollColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
                         start = CpSpacing.pageHorizontal,

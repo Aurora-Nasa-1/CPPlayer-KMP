@@ -102,7 +102,8 @@ fun AppScaffold(
         Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             content(PaddingValues(0.dp))
             if (isLoading) {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                // 变形加载指示器（MaterialShapes），不是转圈的 CircularProgressIndicator。
+                CpLoadingIndicator(modifier = Modifier.align(Alignment.Center))
             }
         }
     }
