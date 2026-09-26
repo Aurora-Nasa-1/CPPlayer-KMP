@@ -121,12 +121,16 @@ class UnifiedMusicSourceImpl(
                 try {
                     val json = musicApiService.getSongDetail(chunk.map { it.resourceId })
                     val songs = (json as? JsonObject)?.get("songs")?.jsonArray
-                    songs?.forEach { songJson ->
-                        val trackObj = songJson.jsonObject
-                        val rid = rawTrackId(trackObj).ifEmpty { return@forEach }
-                        val matchedApiId = chunk.find { it.resourceId == rid }
-                        if (matchedApiId != null) {
-                            summaries.add(trackObj.toTrackSummary(matchedApiId.toString()))
+                    if (songs != null) {
+                        // Bolt: Optimize O(N^2) lookup to O(N) by using a hash map
+                        val apiIdMap = chunk.associateBy { it.resourceId }
+                        songs.forEach { songJson ->
+                            val trackObj = songJson.jsonObject
+                            val rid = rawTrackId(trackObj).ifEmpty { return@forEach }
+                            val matchedApiId = apiIdMap[rid]
+                            if (matchedApiId != null) {
+                                summaries.add(trackObj.toTrackSummary(matchedApiId.toString()))
+                            }
                         }
                     }
                 } catch (e: Exception) {
