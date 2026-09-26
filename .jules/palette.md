@@ -1,0 +1,3 @@
+## 2024-09-26 - Localize Hardcoded English Accessibility Strings
+**Learning:** The application's primary UI language is Simplified Chinese. When adding or auditing accessibility `contentDescription` attributes on icons (e.g., Back, Settings), hardcoded English strings cause a mismatch with the rest of the application's localization and negatively impact screen reader announcements for Chinese users.
+**Action:** Always verify that accessibility strings (like `contentDescription`) are localized to the primary language of the application (Simplified Chinese, e.g., using "返回" instead of "Back" and "设置" instead of "Settings") rather than defaulting to English.
