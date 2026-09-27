@@ -133,7 +133,7 @@ fun SharedTransitionScope.MiniPlayer(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onSkipPrev, modifier = Modifier.size(40.dp)) {
-                        Icon(Icons.Outlined.SkipPrevious, "Prev", Modifier.size(24.dp))
+                        Icon(Icons.Outlined.SkipPrevious, "上一首", Modifier.size(24.dp))
                     }
                     CpPlayPauseButton(
                         isPlaying = state.isPlaying,
@@ -142,7 +142,7 @@ fun SharedTransitionScope.MiniPlayer(
                         isLoading = state.isBuffering,
                     )
                     IconButton(onClick = onSkipNext, modifier = Modifier.size(40.dp)) {
-                        Icon(Icons.Outlined.SkipNext, "Next", Modifier.size(24.dp))
+                        Icon(Icons.Outlined.SkipNext, "下一首", Modifier.size(24.dp))
                     }
                 }
             }
