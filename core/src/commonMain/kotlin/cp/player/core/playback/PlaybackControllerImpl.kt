@@ -1064,16 +1064,17 @@ class PlaybackControllerImpl(
 
                 // 按 mediaId 定位而非按下标：删歌/拖拽重排会让下标错位。
                 var changed = false
-                for ((mediaId, summary) in map) {
-                    val idx = _queue.indexOfFirst { it.mediaId == mediaId }
-                    if (idx < 0) continue
+                for (idx in _queue.indices) {
                     val entry = _queue[idx]
                     if (entry.summary == null) {
-                        entry.summary = summary
-                        if (idx == _index) {
-                            updateState { it.copy(currentTrack = summary, currentIndex = _index, durationMs = summary.durationMs.takeIf { d -> d > 0 } ?: it.durationMs) }
+                        val summary = map[entry.mediaId]
+                        if (summary != null) {
+                            entry.summary = summary
+                            if (idx == _index) {
+                                updateState { it.copy(currentTrack = summary, currentIndex = _index, durationMs = summary.durationMs.takeIf { d -> d > 0 } ?: it.durationMs) }
+                            }
+                            changed = true
                         }
-                        changed = true
                     }
                 }
                 if (changed) pushQueueState()
