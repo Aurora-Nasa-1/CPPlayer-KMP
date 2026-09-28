@@ -252,7 +252,8 @@ private fun Artwork(url: String?, modifier: Modifier) {
 @Composable
 private fun PlayerControls(state: PlaybackUiState, onTogglePlay: () -> Unit, onNext: () -> Unit, onPrev: () -> Unit, onRepeat: () -> Unit, onShuffle: () -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onShuffle) { Icon(Icons.Filled.Shuffle, "随机播放", tint = if (state.shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
+        val shuffleLabel = if (state.shuffleEnabled) "取消随机播放" else "随机播放"
+        IconButton(onClick = onShuffle) { Icon(Icons.Filled.Shuffle, shuffleLabel, tint = if (state.shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
         IconButton(onClick = onPrev, modifier = Modifier.size(52.dp)) { Icon(Icons.Outlined.SkipPrevious, "上一首", Modifier.size(30.dp)) }
         CpPlayPauseButton(
             isPlaying = state.isPlaying,
@@ -261,6 +262,12 @@ private fun PlayerControls(state: PlaybackUiState, onTogglePlay: () -> Unit, onN
             isLoading = state.isBuffering,
         )
         IconButton(onClick = onNext, modifier = Modifier.size(52.dp)) { Icon(Icons.Outlined.SkipNext, "下一首", Modifier.size(30.dp)) }
-        IconButton(onClick = onRepeat) { Icon(if (state.repeatMode == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat, "循环", tint = if (state.repeatMode == RepeatMode.OFF) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary) }
+
+        val repeatLabel = when (state.repeatMode) {
+            RepeatMode.ONE -> "单曲循环"
+            RepeatMode.ALL -> "列表循环"
+            else -> "不循环"
+        }
+        IconButton(onClick = onRepeat) { Icon(if (state.repeatMode == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat, repeatLabel, tint = if (state.repeatMode == RepeatMode.OFF) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary) }
     }
 }

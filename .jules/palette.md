@@ -1,0 +1,3 @@
+## 2023-10-24 - Dynamic Accessibility Labels for Multi-state Toggles
+**Learning:** Hardcoded accessibility descriptions on multi-state interactive elements (like shuffle and repeat buttons) fail to convey the current state or the expected action of toggling them, particularly for screen reader users. Also, descriptions must align with the primary UI localization (e.g., using "单曲循环" over "Repeat One" for a Simplified Chinese app).
+**Action:** When implementing or updating toggleable controls with dynamic states, ensure their `contentDescription` reflects the current state properly rather than remaining static.
