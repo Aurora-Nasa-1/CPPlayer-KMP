@@ -1,0 +1,3 @@
+## 2024-11-20 - [Accessibility Label Localization]
+**Learning:** Hardcoded English string values (e.g., 'Back', 'Settings') used for Compose `contentDescription` disrupt the primarily Simplified Chinese screen reader experience in this application.
+**Action:** Always ensure `contentDescription` text targets the primary localization of the app (Simplified Chinese in this project) instead of defaulting to generic English terms to maintain a cohesive and inclusive UX.
