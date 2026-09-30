@@ -10,7 +10,7 @@
 | Phase 1 | 文档与卫生（零构建风险） | ✅ 2026-09-25 |
 | Phase 2 | 模块改名：`kmp-pro` → `core`、`androidApp` → `app-android`、`rootProject.name` → `CPPlayer` | ✅ 2026-09-25 |
 | Phase 3 | Desktop 入口对称化 | ⏸ 可选，未做 |
-| §7 | 遗留问题（坏 submodule、`.qoder/` 等） | ⏸ 待定 |
+| §7 | 遗留问题（坏 submodule、`.qoder/` 等） | ⚠️ `.qoder/` 已于 2026-09-30 **整目录删除**；submodule 处于「gitlink 已 bump、子仓库未 push」的**坏状态**（新克隆会失败），见 §7.3 |
 
 > ⚠️ **§0 与 §1 是改名前的诊断快照**，文中出现的 `kmp-pro` / `androidApp` 是当时的
 > 真实名称，保留原文以便对照问题成因。当前名称见 §2。
@@ -259,12 +259,13 @@ git add reference/netease-module-rust
 ### 7.2 `.qoder/` 有 132 个文件已被提交
 
 AI 生成的仓库 wiki。内容与 `docs/ARCHITECTURE.md` 重叠，且会随代码漂移而失效。
-**建议**（非破坏性，文件保留在磁盘上）：
 
-```bash
-git rm -r --cached .qoder
-printf '\n# AI-generated repo wiki (local only)\n.qoder/\n' >> .gitignore
-```
+**处置结果**：
+- 2026-09-25 已移出版本控制（`git rm -r --cached .qoder` + 写入 `.gitignore`），文件当时保留在磁盘上。
+- 2026-09-30 **整目录删除**（132 文件 / 3.0 MB）。删除依据：全部文件 mtime 停在 2026-08-10，
+  早于本次结构重整；且 **132 个文件里有 100 个仍在引用改名前的旧模块名**
+  （`kmp-pro` / `androidApp` / `cp.player.kmp`）—— 作为 AI 上下文只会误导，不会再被读。
+  备份留在 `.workbuddy-ai/backup-2026-09-30/qoder/`。
 
 ### 7.3 后端包名已改名（`cp.player.kmp` → `cp.player.core`）
 
@@ -296,8 +297,13 @@ JNI 按 `Java_<包名下划线化>_<类名>_<方法名>` 查找符号。宿主�
    已改为新前缀并提交（模块仓库 `067c150`）；
 2. `docs/PROVIDER_DEV_GUIDE.md` §3.3 —— 第三方模块作者的契约，已同步更新。
 
-**尚差最后两步**：模块仓库的提交还没 push 到远端，父仓库 gitlink 也还没跟着更新
-（刻意如此 —— 顺序反了会让克隆失败）。原因与命令见 §8。
+**执行状态（2026-09-30 订正）**：模块仓库的提交 `067c150` **仍未 push 到远端**
+（`git ls-remote origin main` ⇒ 远端 `main` 仍是 `2e09a67`），**但父仓库 gitlink 已经 bump 到
+`067c150`**（提交 `4443d99`）—— **顺序恰好反了**，这正是本方案警告过的那种情况：
+新克隆会因为 gitlink 指向远端不存在的提交而取不到 `reference/` 内容。
+
+修法只有一步：`cd reference/netease-module-rust && git push origin main`。
+（原先记载的「gitlink 也还没跟着更新」已作废 —— 那时问题只是「克隆到旧前缀」，现在是「克隆直接失败」。）
 
 ### 7.4 其它
 
