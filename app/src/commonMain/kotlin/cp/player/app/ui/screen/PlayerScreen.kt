@@ -898,8 +898,9 @@ private fun ProgressRow(
                         tint = MaterialTheme.colorScheme.primary,
                     )
                     Spacer(Modifier.width(4.dp))
+                    val formattedSleepRemaining = remember(sleepRemainingMs / 1000) { formatTimeMs(sleepRemainingMs) }
                     Text(
-                        text = if (sleepRemainingMs > 0) "剩余 ${formatTimeMs(sleepRemainingMs)}"
+                        text = if (sleepRemainingMs > 0) "剩余 $formattedSleepRemaining"
                         else "本曲结束",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
