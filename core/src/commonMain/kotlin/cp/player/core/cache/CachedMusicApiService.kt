@@ -593,7 +593,12 @@ class CachedMusicApiService(
         MusicApiMethod.TOPLIST, MusicApiMethod.TOPLIST_DETAIL, MusicApiMethod.PERSONALIZED,
         MusicApiMethod.PERSONALIZED_NEWSONG, MusicApiMethod.BANNER, MusicApiMethod.SIMI_SONG,
         MusicApiMethod.SIMI_ARTIST, MusicApiMethod.SIMI_PLAYLIST, MusicApiMethod.COMMENT_MUSIC,
-        MusicApiMethod.COMMENT_PLAYLIST, MusicApiMethod.COMMENT_ALBUM -> true
+        MusicApiMethod.COMMENT_PLAYLIST, MusicApiMethod.COMMENT_ALBUM,
+        // 首页发现区的公共内容：新歌速递 / 新碟上架 / 热门歌手 / 精品歌单。
+        // 这几张表按天甚至按周才变一次，不缓存的话每次切回首页都要重打一遍 ——
+        // 首页一屏会并发十几个请求，这几个是纯公共数据、最没必要重复拉的那部分。
+        MusicApiMethod.TOP_SONG, MusicApiMethod.TOP_ALBUM, MusicApiMethod.TOP_ARTISTS,
+        MusicApiMethod.TOP_PLAYLIST_HIGHQUALITY -> true
         else -> false
     }
 }

@@ -28,6 +28,13 @@ import kotlinx.serialization.json.longOrNull
  */
 object MusicSourceFromApi {
 
+    /**
+     * 焦点图里**应用内能落地跳转**的 `targetType`：`1` = 单曲（直接播放），
+     * `1000` = 歌单（进歌单详情）。其余（专辑 / 外链）暂没有对应页面，
+     * 展示出来只会变成点了没反应的死区，因此在解析阶段就过滤掉。
+     */
+    private val BANNER_SUPPORTED_TARGETS = setOf(1, 1000)
+
     // ============ code 判定（跨 Provider） ============
 
     private fun codeOf(json: JsonElement): Int? =
@@ -182,6 +189,117 @@ object MusicSourceFromApi {
         }
     }
 
+    // ============ 首页焦点图 ============
+
+    /**
+     * 解析首页焦点图（`banner`）：`{ banners: [...] }`。
+     *
+     * 上游每张图都带 `targetType`，但**只有单曲(1)与歌单(1000)在应用内有落地点**。
+     * 这里刻意把其余类型过滤掉：留着一张点了没反应的图，比少一张图更糟。
+     * `targetId` 在上游可能是数字也可能是字符串（`encodeId`），两种都取。
+     */
+    fun parseBanners(json: JsonElement): MusicResult<List<BannerItem>> {
+        return json.toMusicResult {
+            val array = (this["banners"] ?: this["data"]) as? JsonArray ?: JsonArray(emptyList())
+            array.mapNotNull { el ->
+                val obj = el as? JsonObject ?: return@mapNotNull null
+                val image = (obj["imageUrl"] as? JsonPrimitive)?.contentOrNull
+                    ?: (obj["picUrl"] as? JsonPrimitive)?.contentOrNull
+                    ?: return@mapNotNull null
+                val targetId = (obj["targetId"] as? JsonPrimitive)?.contentOrNull
+                    ?: (obj["encodeId"] as? JsonPrimitive)?.contentOrNull
+                    ?: return@mapNotNull null
+                BannerItem(
+                    id = (obj["adid"] as? JsonPrimitive)?.contentOrNull ?: targetId,
+                    imageUrl = image,
+                    title = (obj["title"] as? JsonPrimitive)?.contentOrNull
+                        ?: (obj["typeTitle"] as? JsonPrimitive)?.contentOrNull
+                        ?: "",
+                    targetType = (obj["targetType"] as? JsonPrimitive)?.intOrNull ?: 0,
+                    targetId = targetId,
+                )
+            }.filter { it.imageUrl.isNotBlank() && it.targetId.isNotBlank() && it.targetType in BANNER_SUPPORTED_TARGETS }
+        }
+    }
+
+    // ============ 排行榜 ============
+
+    /** 解析榜单列表（`toplist`）：`{ list: [...] }`。 */
+    fun parseRankings(json: JsonElement): MusicResult<List<RankingSummary>> {
+        return json.toMusicResult {
+            val array = (this["list"] ?: this["data"]) as? JsonArray ?: JsonArray(emptyList())
+            array.mapNotNull { el ->
+                val obj = el as? JsonObject ?: return@mapNotNull null
+                val name = (obj["name"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+                val id = (obj["id"] as? JsonPrimitive)?.longOrNull ?: return@mapNotNull null
+                RankingSummary(
+                    id = id,
+                    name = name,
+                    coverUrl = (obj["coverImgUrl"] as? JsonPrimitive)?.contentOrNull
+                        ?: (obj["picUrl"] as? JsonPrimitive)?.contentOrNull,
+                    updateFrequency = (obj["updateFrequency"] as? JsonPrimitive)?.contentOrNull,
+                    trackCount = (obj["trackCount"] as? JsonPrimitive)?.intOrNull ?: 0,
+                )
+            }.filter { it.id != 0L && it.name.isNotBlank() }
+        }
+    }
+
+    // ============ 新碟上架 ============
+
+    /** 解析新碟上架（`album/new`）：`{ albums: [...] }`。曲目数上游叫 `size`。 */
+    fun parseAlbums(json: JsonElement): MusicResult<List<AlbumSummary>> {
+        return json.toMusicResult {
+            val array = (this["albums"] ?: this["data"]) as? JsonArray ?: JsonArray(emptyList())
+            array.mapNotNull { el ->
+                val obj = el as? JsonObject ?: return@mapNotNull null
+                val name = (obj["name"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+                val id = (obj["id"] as? JsonPrimitive)?.longOrNull ?: return@mapNotNull null
+                val artist = obj["artist"] as? JsonObject
+                AlbumSummary(
+                    id = id,
+                    name = name,
+                    coverUrl = (obj["picUrl"] as? JsonPrimitive)?.contentOrNull
+                        ?: (obj["coverImgUrl"] as? JsonPrimitive)?.contentOrNull,
+                    artistName = (artist?.get("name") as? JsonPrimitive)?.contentOrNull
+                        ?: ((obj["artists"] as? JsonArray)?.firstOrNull() as? JsonObject)
+                            ?.let { (it["name"] as? JsonPrimitive)?.contentOrNull },
+                    trackCount = (obj["size"] as? JsonPrimitive)?.intOrNull
+                        ?: (obj["trackCount"] as? JsonPrimitive)?.intOrNull ?: 0,
+                )
+            }.filter { it.id != 0L && it.name.isNotBlank() }
+        }
+    }
+
+    // ============ 新歌速递 / 热门歌手 ============
+
+    /** 解析新歌速递（`top/song`）：曲目直接挂在 `data` 数组下。 */
+    fun parseTopSongs(json: JsonElement): MusicResult<List<TrackSummary>> = parseFmSongs(json)
+
+    /**
+     * 解析热门歌手（`top/artists`）：`{ artists: [...] }`。
+     *
+     * ⚠️ 这里**优先取 `picUrl`**，与 [parseSearchSongs] 走的 `toArtistSummary()` 相反：
+     * 搜索接口的 `img1v1Url` 是歌手真实方图，而热门歌手列表里它常常是上游的默认占位头像，
+     * 取错了整排人会长得一模一样。
+     */
+    fun parseTopArtists(json: JsonElement): MusicResult<List<ArtistSummary>> {
+        return json.toMusicResult {
+            val array = (this["artists"] ?: this["data"]) as? JsonArray ?: JsonArray(emptyList())
+            array.mapNotNull { el ->
+                val obj = el as? JsonObject ?: return@mapNotNull null
+                val name = (obj["name"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+                val id = (obj["id"] as? JsonPrimitive)?.longOrNull ?: return@mapNotNull null
+                ArtistSummary(
+                    id = id,
+                    name = name,
+                    avatarUrl = (obj["picUrl"] as? JsonPrimitive)?.contentOrNull
+                        ?: (obj["img1v1Url"] as? JsonPrimitive)?.contentOrNull
+                        ?: (obj["avatarUrl"] as? JsonPrimitive)?.contentOrNull,
+                )
+            }.filter { it.id != 0L && it.name.isNotBlank() }
+        }
+    }
+
     // ============ 单元解析扩展 ============
 
     private fun JsonObject.toPlaylistSummary(): PlaylistSummary {
@@ -231,4 +349,22 @@ object MusicSourceFromApi {
 
     suspend fun getPersonalFm(api: MusicApiService): MusicResult<List<TrackSummary>> =
         parseFmSongs(api.getPersonalFm())
+
+    suspend fun getBanners(api: MusicApiService): MusicResult<List<BannerItem>> =
+        parseBanners(api.getBanner())
+
+    suspend fun getRankings(api: MusicApiService): MusicResult<List<RankingSummary>> =
+        parseRankings(api.getToplist())
+
+    suspend fun getNewAlbums(api: MusicApiService, area: String = "ALL", limit: Int = 30): MusicResult<List<AlbumSummary>> =
+        parseAlbums(api.getTopAlbums(area = area, limit = limit))
+
+    suspend fun getTopSongs(api: MusicApiService, type: Int = 0): MusicResult<List<TrackSummary>> =
+        parseTopSongs(api.getTopSongs(type = type))
+
+    suspend fun getHotArtists(api: MusicApiService, limit: Int = 30): MusicResult<List<ArtistSummary>> =
+        parseTopArtists(api.getTopArtists(limit = limit))
+
+    suspend fun getHighQualityPlaylists(api: MusicApiService, cat: String = "全部", limit: Int = 30): MusicResult<List<PlaylistSummary>> =
+        parseRecommendedPlaylists(api.getHighqualityPlaylists(cat = cat, limit = limit))
 }

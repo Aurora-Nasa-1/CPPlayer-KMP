@@ -141,3 +141,43 @@ data class ArtistSummary(
     val name: String,
     val avatarUrl: String?,
 )
+
+/**
+ * 首页焦点图（`banner`）。
+ *
+ * [targetType] 是上游给出的跳转语义：`1` = 单曲、`10` = 专辑、`1000` = 歌单、`3000` = 外链。
+ * 调用方**必须按它分支**，不能一律当歌单打开 —— 否则点「新歌首发」会拿到一个空歌单。
+ * 目前可落地跳转的是 `1`（直接播放）与 `1000`（歌单详情），其余由调用方过滤掉，
+ * 宁可少几张图也不要留下点了没反应的死区。
+ */
+data class BannerItem(
+    val id: String,
+    val imageUrl: String,
+    val title: String,
+    val targetType: Int,
+    val targetId: String,
+)
+
+/**
+ * 榜单摘要（`toplist`）。
+ *
+ * 上游榜单本身就是一种特殊歌单，[id] 可直接交给歌单详情接口读取曲目。
+ */
+data class RankingSummary(
+    val id: Long,
+    val name: String,
+    val coverUrl: String?,
+    val updateFrequency: String?,
+    val trackCount: Int,
+)
+
+/**
+ * 专辑摘要（`album/new` 新碟上架）。
+ */
+data class AlbumSummary(
+    val id: Long,
+    val name: String,
+    val coverUrl: String?,
+    val artistName: String?,
+    val trackCount: Int,
+)
