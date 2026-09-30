@@ -877,8 +877,9 @@ private fun ProgressRow(
             // 次级文字就掉到可读性下限以下；② 同一层级的文字在不同页面深浅不一
             // （这里 0.6、顶栏 0.6、歌词页 0.6、评论区 0.7、迷你播放器 0.8），
             // 这正是「浅色主题看着不精致」最主要的来源。
+            val formattedPosition = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
             Text(
-                formatTimeMs(state.positionMs),
+                formattedPosition,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -897,8 +898,9 @@ private fun ProgressRow(
                         tint = MaterialTheme.colorScheme.primary,
                     )
                     Spacer(Modifier.width(4.dp))
+                    val formattedSleepRemaining = remember(sleepRemainingMs / 1000) { formatTimeMs(sleepRemainingMs) }
                     Text(
-                        text = if (sleepRemainingMs > 0) "剩余 ${formatTimeMs(sleepRemainingMs)}"
+                        text = if (sleepRemainingMs > 0) "剩余 $formattedSleepRemaining"
                         else "本曲结束",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
