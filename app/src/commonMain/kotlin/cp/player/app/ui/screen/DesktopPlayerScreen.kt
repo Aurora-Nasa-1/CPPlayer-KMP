@@ -169,8 +169,9 @@ fun DesktopPlayerScreen(
                                 // 与紧凑版播放页的时间行**同款**（labelMedium + onSurfaceVariant）。
                                 // 之前这里是 labelSmall 且没给颜色 ⇒ 继承 onSurface（全亮），
                                 // 同一个「已播 / 总时长」在桌面端比手机端更抢眼、字还更小。
+                                val formattedPosition = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
                                 Text(
-                                    formatTimeMs(state.positionMs),
+                                    formattedPosition,
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
