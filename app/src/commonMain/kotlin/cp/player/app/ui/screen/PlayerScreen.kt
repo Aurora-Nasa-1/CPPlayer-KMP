@@ -3,6 +3,7 @@ package cp.player.app.ui.screen
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -39,11 +40,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.AccessAlarm
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
@@ -51,7 +52,6 @@ import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -182,7 +182,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
     val track = state.currentTrack
     if (track == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
+            cp.player.app.ui.component.CpLoadingIndicator(Modifier.size(40.dp))
         }
         return
     }
@@ -301,7 +301,11 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                         Text(
                                             text = track.artist,
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                            // 次级文字用 onSurfaceVariant，不要 onSurface + 手写 alpha。
+                                            // 手写 alpha 在「跟随封面取色」时不可控：封面色一深，
+                                            // 0.6 的次级文字就掉到对比度下限以下，而同一层级的文字
+                                            // 在别的页面是 onSurfaceVariant —— 同级别、不同深浅。
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
@@ -332,20 +336,29 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                             Icon(
                                                 imageVector = Icons.Filled.Translate,
                                                 contentDescription = "翻译",
+                                                // 「开/关」是状态不是禁用：用 onSurface / onSurfaceVariant 两档，
+                                                // 而不是 onSurface 再压 0.4 透明度 —— 后者在深色主题下几乎看不见。
                                                 tint = if (showTranslation) MaterialTheme.colorScheme.onSurface
-                                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                                                else MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
                                         }
                                     }
                                     else -> {
-                                        IconButton(
+                                        // 与桌面顶栏的账号 / 设置按钮同款（FilledIconButton +
+                                        // surfaceContainerHighest），而不是自己往 IconButton 上贴一层
+                                        // surfaceVariant 20% 的圆形背景 —— 那个「看起来像个按钮的按钮」
+                                        // 是上一轮凑出来的，圆角和内边距都跟别处对不上。
+                                        FilledIconButton(
                                             onClick = { showQueueSheet = true },
-                                            modifier = Modifier.padding(end = 8.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f), CircleShape)
+                                            modifier = Modifier.padding(end = 8.dp),
+                                            colors = IconButtonDefaults.filledIconButtonColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                                contentColor = MaterialTheme.colorScheme.onSurface,
+                                            ),
                                         ) {
                                             Icon(
                                                 imageVector = Icons.AutoMirrored.Filled.QueueMusic,
                                                 contentDescription = "队列",
-                                                tint = MaterialTheme.colorScheme.onSurface,
                                             )
                                         }
                                     }
@@ -358,8 +371,21 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                     )
                 }
             ) { inner ->
-                Box(Modifier.fillMaxSize().padding(inner)) {
-                    HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+                Column(Modifier.fillMaxSize().padding(inner)) {
+                    // 三页（歌词 / 播放器 / 评论）是靠左右滑切换的，可这三页彼此毫无关联——
+                    // 不给任何可见提示的话，用户根本不知道还有评论和歌词，
+                    // 这两个功能等于藏起来了。这里给一条可点的分段指示器：
+                    // 选中段拉长 + 变主题色，跟着 pager 一起走。
+                    PagerIndicator(
+                        pageCount = 3,
+                        currentPage = pagerState.currentPage,
+                        onSelect = { page -> scope.launch { pagerState.animateScrollToPage(page) } },
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                    )
+                    HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                    ) { page ->
                         when (page) {
                             0 -> LyricsPage(
                                 state = state,
@@ -483,32 +509,28 @@ private fun LyricsPage(
                 onSeek = onSeek,
             )
         }
-        Surface(
-            Modifier.fillMaxWidth().padding(top = 4.dp),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceVariant,
+        // 浮动胶囊：**按内容宽度**收口并居中，而不是铺满整宽。
+        // 原先这枚只有两个按钮却长满一行，`SpaceEvenly` 把它们推到 1/4 与 3/4 处，
+        // 中间空出一大块 —— 看起来像「少了两个按钮」。
+        // 换成与播放器页同款的 CpFloatingToolbar 之后，左右滑动换页时底部不再跳。
+        cp.player.app.ui.component.CpFloatingToolbar(
+            modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp),
         ) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-IconButton(onClick = onRepeat) {
-                    val icon = when (state.repeatMode) {
-                        RepeatMode.ONE -> Icons.Filled.RepeatOne
-                        else -> Icons.Filled.Repeat
-                    }
-                    Icon(
-                        icon, "循环", Modifier.size(24.dp),
-                        tint = if (state.repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+            IconButton(onClick = onRepeat) {
+                val icon = when (state.repeatMode) {
+                    RepeatMode.ONE -> Icons.Filled.RepeatOne
+                    else -> Icons.Filled.Repeat
                 }
-                cp.player.app.ui.component.ExpressiveLikeButton(
-                    isFavorite = state.isFavorite,
-                    onClick = onLikeClick,
+                Icon(
+                    icon, "循环", Modifier.size(24.dp),
+                    tint = if (state.repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            cp.player.app.ui.component.ExpressiveLikeButton(
+                isFavorite = state.isFavorite,
+                onClick = onLikeClick,
+            )
         }
         Spacer(Modifier.height(8.dp))
     }
@@ -582,9 +604,14 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.MusicNote, null, Modifier.size(128.dp))
-                    }
+                    // 空封面：与桌面播放页、迷你播放器共用同一套 Expressive 占位
+                    // （primaryContainer→tertiaryContainer 渐变 + 持续变形的形状）。
+                    // 原先这里是一个 128dp 的灰「♪」，桌面版是渐变 + 变形形状 ——
+                    // 同一个「没有封面」在两端是两个应用。
+                    cp.player.app.ui.component.CpCoverPlaceholder(
+                        modifier = Modifier.fillMaxSize(),
+                        corner = coverCorner,
+                    )
                 }
             }
         }
@@ -611,7 +638,9 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                 Text(
                     track.artist,
                     style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    // 同一处曾写 `onSurfaceVariant.copy(alpha = 0.8f)`：那是「比次级再淡一点」的
+                    // 自创层级，M3 里没有这一档，跟顶栏的歌手名（onSurfaceVariant 原样）也不一致。
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.sharedBounds(
@@ -656,64 +685,65 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
             )
         }
 
-        // 底部工具行：repeat / like / more
-        Surface(
-            Modifier.fillMaxWidth().padding(top = 4.dp),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceVariant,
+        // 底部工具行：随机 / 循环 / 睡眠定时 / 更多
+        //
+        // 收藏按钮**刻意不放在这里** —— 它已经在上方歌曲信息行（歌名右侧）出现过一次，
+        // 同一屏放两个红心是纯重复。腾出来的位置给了睡眠定时：这个功能原先只藏在
+        // more 弹层里，开完就没人知道自己开了，而它恰恰是最需要持续可见的倒计时状态。
+        //
+        // 容器用 CpFloatingToolbar（按内容宽度的浮动胶囊），**不再铺满整宽**：
+        // 上面那枚主控件胶囊已经是整宽的了，两枚等宽圆角条上下叠着，读起来像两条工具栏，
+        // 主命令与次级工具的层级全丢。收成浮动胶囊之后「大胶囊=主命令、小胶囊=次级工具」
+        // 一眼可辨，也顺带把两页底部统一成了同一个组件。
+        cp.player.app.ui.component.CpFloatingToolbar(
+            modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp),
         ) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onShuffle) {
+            cp.player.app.ui.component.CpModeToggle(
+                active = state.shuffleEnabled,
+                onClick = onShuffle,
+                icon = Icons.Filled.Shuffle,
+                label = "随机播放",
+            )
+            cp.player.app.ui.component.CpModeToggle(
+                active = state.repeatMode != RepeatMode.OFF,
+                onClick = onRepeat,
+                icon = when (state.repeatMode) {
+                    RepeatMode.ONE -> Icons.Filled.RepeatOne
+                    else -> Icons.Filled.Repeat
+                },
+                label = "循环",
+            )
+            cp.player.app.ui.component.CpModeToggle(
+                active = (state.sleepTimerRemainingMs ?: 0L) > 0 || state.sleepAfterTrack,
+                onClick = onSleepTimer,
+                icon = Icons.Filled.AccessAlarm,
+                label = "睡眠定时",
+                activeTint = MaterialTheme.colorScheme.primary,
+            )
+            Box {
+                IconButton(onClick = onMoreClick) {
                     Icon(
-                        Icons.Filled.Shuffle, "随机播放", Modifier.size(24.dp),
-                        tint = if (state.shuffleEnabled) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        Icons.Filled.MoreVert, "更多",
+                        Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                IconButton(onClick = onRepeat) {
-                    val icon = when (state.repeatMode) {
-                        RepeatMode.ONE -> Icons.Filled.RepeatOne
-                        else -> Icons.Filled.Repeat
-                    }
-                    Icon(
-                        icon, "循环", Modifier.size(24.dp),
-                        tint = if (state.repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                if (showMoreMenu) {
+                    PlayerMoreBottomSheet(
+                        track = track,
+                        isDownloaded = AppModel.isDownloaded(track.id),
+                        formatInfo = state.formatInfo,
+                        lyricsInfo = state.lyricsInfo,
+                        sleepAfterTrack = state.sleepAfterTrack,
+                        sleepTimerRemainingMs = state.sleepTimerRemainingMs,
+                        onDismiss = onDismissMore,
+                        onAddToPlaylist = onAddToPlaylist,
+                        onDownload = onDownload,
+                        onSleepTimer = onSleepTimer,
+                        onShare = onShare,
+                        onShowInfo = onShowInfo,
+                        onDislike = onDislike,
                     )
-                }
-                cp.player.app.ui.component.ExpressiveLikeButton(
-                    isFavorite = state.isFavorite,
-                    onClick = onLikeClick,
-                )
-                Box {
-                    IconButton(onClick = onMoreClick) {
-                        Icon(
-                            Icons.Filled.MoreVert, "更多",
-                            Modifier.size(24.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    if (showMoreMenu) {
-                        PlayerMoreBottomSheet(
-                            track = track,
-                            isDownloaded = AppModel.isDownloaded(track.id),
-                            formatInfo = state.formatInfo,
-                            lyricsInfo = state.lyricsInfo,
-                            sleepAfterTrack = state.sleepAfterTrack,
-                            sleepTimerRemainingMs = state.sleepTimerRemainingMs,
-                            onDismiss = onDismissMore,
-                            onAddToPlaylist = onAddToPlaylist,
-                            onDownload = onDownload,
-                            onSleepTimer = onSleepTimer,
-                            onShare = onShare,
-                            onShowInfo = onShowInfo,
-                            onDislike = onDislike,
-                        )
-                    }
                 }
             }
         }
@@ -767,6 +797,55 @@ private fun SongInfoDialog(
 }
 
 @Composable
+private fun PagerIndicator(
+    pageCount: Int,
+    currentPage: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.padding(top = 2.dp, bottom = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(pageCount) { index ->
+            val selected = index == currentPage
+            // 选中段从 7dp 拉到 22dp：长度是比颜色更强的状态信号，
+            // 而且只有 spatial（带回弹）才有「弹过去」的感觉，用 tween 会像进度条在爬。
+            val width by androidx.compose.animation.core.animateDpAsState(
+                targetValue = if (selected) 22.dp else 7.dp,
+                animationSpec = cp.player.app.ui.theme.CpMotion.spatialFast(),
+                label = "pagerIndicatorWidth$index",
+            )
+            val color by animateColorAsState(
+                targetValue = if (selected) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.30f),
+                // 颜色必须走 **effects** 通道。以前这里是 spatialFast()，那是「位移 / 尺寸」
+                // 的规格、**带回弹** —— 挂在颜色上会让小圆点在到位前先过冲再回落，
+                // 看起来像颜色在抖。长度那一路（下面的 width）继续用 spatialFast，那才是对的。
+                animationSpec = cp.player.app.ui.theme.CpMotion.effectsFast(),
+                label = "pagerIndicatorColor$index",
+            )
+            // 外层是 28×24dp 的可点区域，内层才是 7dp 高的细段 ——
+            // 只让细段可点的话，实际命中区小到几乎点不中。
+            Surface(
+                onClick = { onSelect(index) },
+                shape = CircleShape,
+                color = androidx.compose.ui.graphics.Color.Transparent,
+                modifier = Modifier.width(28.dp).height(24.dp),
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier.width(width).height(7.dp)
+                            .background(color, CircleShape)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ProgressRow(
     state: cp.player.core.playback.PlaybackUiState,
     onSeek: (Long) -> Unit,
@@ -793,23 +872,51 @@ private fun ProgressRow(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // 时间戳用 onSurfaceVariant，不再写 `onSurface.copy(alpha = 0.6f)`。
+            // 手写 alpha 有两个代价：①「跟随封面取色」时对比度不可控 —— 封面色一深，
+            // 次级文字就掉到可读性下限以下；② 同一层级的文字在不同页面深浅不一
+            // （这里 0.6、顶栏 0.6、歌词页 0.6、评论区 0.7、迷你播放器 0.8），
+            // 这正是「浅色主题看着不精致」最主要的来源。
             Text(
                 formatTimeMs(state.positionMs),
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            // 音质 chip
-            state.formatInfo?.let { info ->
-                Text(
-                    "${info.qualityLabel}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                )
+            // 中间槽位：睡眠定时倒计时优先，没开定时时回落到音质标签。
+            // 原先这里只有一条 50% 透明的 labelSmall 音质文字 —— 那个位置等于不存在。
+            // 睡眠定时是**持续状态**（可能跨好几首歌），必须常驻可见，
+            // 否则用户根本想不起来自己设过，只能去 more 弹层里翻。
+            val sleepRemainingMs = state.sleepTimerRemainingMs ?: 0L
+            val sleepActive = sleepRemainingMs > 0 || state.sleepAfterTrack
+            if (sleepActive) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.AccessAlarm,
+                        contentDescription = null,
+                        modifier = Modifier.size(13.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = if (sleepRemainingMs > 0) "剩余 ${formatTimeMs(sleepRemainingMs)}"
+                        else "本曲结束",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            } else {
+                state.formatInfo?.let { info ->
+                    Text(
+                        info.qualityLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             Text(
                 SeekAvailability.durationLabel(duration),
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         // 禁用滑条必须给出原因：静默失效的观感就是「拖了没反应」。
@@ -818,7 +925,7 @@ private fun ProgressRow(
             Text(
                 reason,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
             )
         }
@@ -835,7 +942,9 @@ private fun CommentPage(id: String, type: String) {
     Box(Modifier.fillMaxSize()) {
         when {
             state.loading && state.comments.isEmpty() -> {
-                CircularProgressIndicator(Modifier.align(Alignment.Center))
+                cp.player.app.ui.component.CpLoadingIndicator(
+                    Modifier.align(Alignment.Center).size(40.dp)
+                )
             }
             state.error != null -> {
                 Column(

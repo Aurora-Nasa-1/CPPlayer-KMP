@@ -1,5 +1,10 @@
 # 冗余 / 死代码审计（2026-09-26）
 
+> **订正（2026-09-30）**：Tier 1 第 1 项 `LoginScreen.kt` **已删除**（由 `AccountScreen.kt` +
+> `AccountStore.kt` 取代）；Tier 4 第 10 项（登出不清用户资料）**已修复** ——
+> `AccountScreenModel.logout()` 现在会调 `AppModel.clearUserProfile()`。
+> 两处均已在正文标注，**`clearUserProfile` 因此不再是死代码**。
+
 审计范围：`core/` + `app/` + `app-android/` 共 **244 个 `.kt` 文件、5565 条声明**（`reference/` 只读，不参与）。
 
 方法：① 去注释/去字符串（但**保留 `${...}` 模板表达式**）后建立全仓标识符索引；
@@ -16,7 +21,7 @@
 
 | # | 位置 | 行数 | 证据 | 备注 |
 |---|------|------|------|------|
-| 1 | `app/.../ui/screen/LoginScreen.kt` | 485 | `class LoginScreen` 全仓 **0 引用** | 导航**全是显式** `navigator.push(X())`，无反射注册表（`registry` / `::class` 零命中）。同文件的 `LoginScreen.logout()` 也从未被调用 |
+| 1 | ~~`app/.../ui/screen/LoginScreen.kt`~~ | 485 | ✅ **已删除（2026-09-30）** | 原证据：`class LoginScreen` 全仓 **0 引用**；导航**全是显式** `navigator.push(X())`，无反射注册表（`registry` / `::class` 零命中）。**已由 `AccountScreen.kt` + `AccountStore.kt` 取代**，编译验证无残留引用。⚠️ 其 `logout()` 未清用户资料的缺口已在新实现里修好（见 Tier 4 第 10 项） |
 | 2 | `app/.../ui/screen/SettingsDetailScreen.kt` | 257 | 0 引用 | 已被 `SettingsSubScreens.kt`（`Appearance`/`UiLogic`/`Storage`/`Sponsor` 四个 Screen）+ `SettingsScreen.kt` 的 `SettingsDetail.*` 分支取代 |
 | 3 | `app/.../ui/screen/CommentScreen.kt` | 109 | `class CommentScreen` 0 引用 | 评论 UI 已内联在 `PlayerScreen.kt:832`。⚠️ **`CommentScreenModel` 本身是活的**（`PlayerScreen` 在用），删文件时须保留 |
 | 4 | `core/.../music/MusicSource.kt` 第 **22–63** 行的 `interface MusicSource` | 42 | 0 实现方、0 调用方 | 真正在用的是 `UnifiedMusicSource`（`UnifiedMusicSourceImpl` 实现；被 `DownloadEngine` / `MediaDownloadManager` / `IntegrationService` / `PlaybackControllerImpl` 消费）。⚠️ 同文件的 `PlaylistSummary`/`PlaylistDetail`/`TrackSummary`/`SongUrl`/`SearchResult`/`ArtistSummary` **是活的**，只能删接口本身 |
@@ -73,11 +78,14 @@
 
 ## Tier 4 · 疑似漏接线（可能不是死代码，而是 bug）
 
-10. **登出不清用户资料**：`AppModel.clearUserProfile()` 的 KDoc 写着「登出后调用」，
-    但唯一的登出实现 `LoginScreen.logout()`（`LoginScreen.kt:397`）**没有调用它** ——
-    只调了 `authRepository.logout()` + `cookieStorage.clear()` + `refreshUserProfile()`。
-    于是 `_userProfile` 在登出后不会被置空。（且 `LoginScreen` 本身不可达，现在根本走不到登出。）
-    → 删 `clearUserProfile` 会**固化**这个缺口；更该做的是把它接进登出路径。
+10. ~~**登出不清用户资料**~~ —— ✅ **已修复（2026-09-30）**。
+    原问题：`AppModel.clearUserProfile()` 的 KDoc 写着「登出后调用」，但当时唯一的登出实现
+    `LoginScreen.logout()`（`LoginScreen.kt:397`）**没有调用它**，只调了 `authRepository.logout()` +
+    `cookieStorage.clear()` + `refreshUserProfile()`，于是 `_userProfile` 在登出后不会被置空。
+    现况：`LoginScreen.kt` 已删除，登出改为 `AccountScreenModel.logout()`
+    （`AccountScreen.kt:762`），**已调用 `AppModel.clearUserProfile()`**（`:768`），
+    并补上了 `AccountStore.setActive(providerId, null)` 与 `refreshAccounts()`。
+    ⇒ `clearUserProfile` 现在是**活的**，不要按「死代码」删它。
 
 11. `MusicBackend.updateReadyState` 的重复实现（Tier 2 首条）说明 `BackendState.Ready` 的迁移逻辑
     存在两份，其中一份已死 —— 建议保留内联那份、删掉函数，或反过来抽成单一入口。
@@ -115,11 +123,12 @@
 
 **建议等在途改动落地后再做**（目标文件正被修改）：
 
-- Tier 1 第 1/2/3 项 —— `LoginScreen.kt` / `SettingsDetailScreen.kt` / `CommentScreen.kt` 三个整文件
+- Tier 1 第 1 项 —— ~~`LoginScreen.kt`~~ ✅ **已删除（2026-09-30）**
+- Tier 1 第 2/3 项 —— `SettingsDetailScreen.kt` / `CommentScreen.kt` 两个整文件
 - Tier 2 中位于 `MusicBackend.kt` / `AppModel.kt` / `PlatformPlayer.kt` / `PlaybackControllerImpl.kt` /
   `UiFoundation.kt` / `DownloadsScreen.kt` / `PlaybackSettingsScreen.kt` / `ExpressiveKit.kt` 的声明
 
 **建议单独决策**（涉及产品行为，不宜当清理做）：
 
-- Tier 4 第 10 项 —— 登出路径是否应清空用户资料
+- ~~Tier 4 第 10 项 —— 登出路径是否应清空用户资料~~ ✅ **已定：应清空，且已实现**（见 Tier 4 第 10 项）
 - Tier 2 的 `pushTransport()` / `clearReceiverQueue()` —— 是补接线还是删

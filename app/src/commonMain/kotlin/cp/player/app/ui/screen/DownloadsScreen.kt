@@ -7,9 +7,11 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,7 +29,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.VideoLibrary
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -54,6 +55,7 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
 import coil3.compose.AsyncImage
 import cp.player.app.ui.component.ContentState
+import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.model.DownloadsScreenModel
@@ -75,61 +77,99 @@ class DownloadsScreen : Screen {
     }
 }
 
-private data class DownloadsTab(val label: String, val icon: ImageVector)
+private data class DownloadsTab(val label: String, val icon: ImageVector, val count: Int)
 
 @Composable
 internal fun DownloadsLibraryTab(model: DownloadsScreenModel) {
     DownloadsScreenContent(model)
 }
 
+/**
+ * 宽屏收口：正文用全局统一最大宽度并居中（与首页 / 曲库一致）。
+ *
+ * 不收口的话，2560 宽的显示器上任务卡片会被拉到和窗口一样宽，
+ * 「标题 + 进度 + 大小」三者在一条 2400dp 的线上，扫读非常累。
+ */
+@Composable
+private fun DownloadsPageBox(content: @Composable () -> Unit) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        content()
+    }
+}
+
+/** 与 [DownloadsPageBox] 配套：正文容器，宽度收在 [CpSpacing.pageMaxWidth] 内。 */
+private fun pageContentModifier(): Modifier = Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize()
+
 @Composable
 private fun DownloadsScreenContent(model: DownloadsScreenModel) {
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
 
+    // Tab 上带计数：不切页也能看到「下载中还有几个 / 已完成多少」，
+    // 这是下载管理最常被问的一件事，藏进分页里就得逐个点开数。
     val tabs = listOf(
-        DownloadsTab("下载中", Icons.Filled.Download),
-        DownloadsTab("已完成", Icons.Filled.DownloadDone),
-        DownloadsTab("本地媒体库", Icons.Filled.FolderOpen),
+        DownloadsTab("下载中", Icons.Filled.Download, state.activeTasks.size),
+        DownloadsTab("已完成", Icons.Filled.DownloadDone, state.completedTasks.size),
+        DownloadsTab("本地媒体库", Icons.Filled.FolderOpen, state.localItems.size),
     )
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { tabs.size })
 
     Column(Modifier.fillMaxSize()) {
-        // 顶部 Tab 切换（样式与媒体库页一致）
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            tabs.forEachIndexed { index, tab ->
-                val isSelected = pagerState.currentPage == index
-                Surface(
-                    onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
-                    shape = RoundedCornerShape(percent = 50),
-                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                    else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
-                ) {
-                    Row(
-                        Modifier.padding(
-                            horizontal = if (isSelected) 20.dp else 14.dp,
-                            vertical = 10.dp,
-                        ),
-                        verticalAlignment = Alignment.CenterVertically,
+        // 顶部 Tab 切换（样式与媒体库页一致）。与正文同宽居中 ——
+        // 否则宽屏下正文居中、tab 行贴着窗口最左，两段明显错位。
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+            Row(
+                Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                tabs.forEachIndexed { index, tab ->
+                    val isSelected = pagerState.currentPage == index
+                    Surface(
+                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
+                        shape = RoundedCornerShape(percent = 50),
+                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
                     ) {
-                        Icon(
-                            tab.icon, null,
-                            tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            tab.label,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                        )
+                        Row(
+                            Modifier.padding(
+                                horizontal = if (isSelected) 20.dp else 14.dp,
+                                vertical = 10.dp,
+                            ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                tab.icon, null,
+                                tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                tab.label,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                            )
+                            if (tab.count > 0) {
+                                Spacer(Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(percent = 50),
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                ) {
+                                    Text(
+                                        if (tab.count > 99) "99+" else tab.count.toString(),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -161,24 +201,32 @@ private fun DownloadsScreenContent(model: DownloadsScreenModel) {
 private fun ActiveDownloadsTab(state: DownloadsUiState, model: DownloadsScreenModel) {
     val tasks = state.activeTasks
     if (tasks.isEmpty()) {
-        StateSurface(Modifier.padding(16.dp)) {
-            ContentState(
-                title = "没有进行中的下载",
-                message = "在歌曲更多菜单或歌单页点击「下载」，任务会显示在这里",
-            )
+        DownloadsPageBox {
+            StateSurface(emptyStateModifier()) {
+                ContentState(
+                    title = "没有进行中的下载",
+                    message = "在歌曲更多菜单或歌单页点击「下载」，任务会显示在这里",
+                )
+            }
         }
         return
     }
-    LazyScrollColumn(
-        Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        items(tasks, key = { it.id }) { task ->
-            ActiveTaskCard(task = task, model = model)
+    DownloadsPageBox {
+        LazyScrollColumn(
+            pageContentModifier(),
+            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(tasks, key = { it.id }) { task ->
+                ActiveTaskCard(task = task, model = model)
+            }
         }
     }
 }
+
+/** 空态：与列表同宽居中，否则宽屏下空态卡片会贴着窗口最左、和上面的 Tab 行错开。 */
+private fun emptyStateModifier(): Modifier =
+    Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth().padding(16.dp)
 
 @Composable
 private fun ActiveTaskCard(task: DownloadTask, model: DownloadsScreenModel) {
@@ -273,56 +321,89 @@ private fun TaskActions(task: DownloadTask, model: DownloadsScreenModel) {
 private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScreenModel) {
     val tasks = state.completedTasks
     if (tasks.isEmpty()) {
-        StateSurface(Modifier.padding(16.dp)) {
-            ContentState(
-                title = "还没有下载完成的内容",
-                message = "下载完成的音频与视频会保存在这里",
-            )
+        DownloadsPageBox {
+            StateSurface(emptyStateModifier()) {
+                ContentState(
+                    title = "还没有下载完成的内容",
+                    message = "下载完成的音频与视频会保存在这里",
+                )
+            }
         }
         return
     }
-    LazyScrollColumn(
-        Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        items(tasks, key = { it.id }) { task ->
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TaskCover(task.coverUrl, task.mediaType, Modifier.size(48.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            task.title,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            task.localPath ?: "",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+    // 宽屏两列：卡片内容很短（封面 + 标题 + 一行副标题），拉成整行后右端的删除按钮
+    // 离标题 1000dp 远，视觉上完全脱钩。
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        val columns = if (maxWidth >= 900.dp) 2 else 1
+        val rows = if (columns == 1) tasks.map { listOf(it) } else tasks.chunked(columns)
+        LazyScrollColumn(
+            pageContentModifier(),
+            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(rows, key = { it.first().id }) { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { task ->
+                        CompletedTaskCard(
+                            task = task,
+                            model = model,
+                            modifier = Modifier.weight(1f),
                         )
                     }
-                    // 删除：文件 + 记录
-                    IconButton(onClick = { model.remove(task, deleteFile = true) }) {
-                        Icon(
-                            Icons.Filled.Delete,
-                            contentDescription = "删除文件与记录",
-                            tint = MaterialTheme.colorScheme.error,
-                        )
-                    }
+                    // 最后一行为奇数时补一个等宽空位，否则那条卡片会被拉满整行。
+                    repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompletedTaskCard(
+    task: DownloadTask,
+    model: DownloadsScreenModel,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = modifier,
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TaskCover(task.coverUrl, task.mediaType, Modifier.size(48.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    task.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                // 副标题刻意不显示本地绝对路径：那串字符对用户没有信息量，
+                // 而歌手 + 文件大小是能扫读的。
+                Text(
+                    buildString {
+                        append(task.artist ?: "未知艺术家")
+                        val size = task.totalBytes?.takeIf { it > 0 } ?: task.downloadedBytes
+                        if (size > 0) append(" · ").append(formatBytes(size))
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            // 删除：文件 + 记录
+            IconButton(onClick = { model.remove(task, deleteFile = true) }) {
+                Icon(
+                    Icons.Filled.Delete,
+                    contentDescription = "删除文件与记录",
+                    tint = MaterialTheme.colorScheme.error,
+                )
             }
         }
     }
@@ -336,10 +417,17 @@ private fun LocalLibraryTab(state: DownloadsUiState, model: DownloadsScreenModel
         if (path != null) model.importFolder(path)
     }
 
-    Column(Modifier.fillMaxSize()) {
+    // 宽屏收口：内容居中、宽度封顶（等价另外两个 Tab 的 DownloadsPageBox）。
+    // 这里用 Column 的 horizontalAlignment 而不是再套一层 Box —— 本页顶部还有两个
+    // 常驻按钮，再套一层会让「按钮行 / 列表」两组对齐规则分家。
+    Column(
+        Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         // 顶部操作按钮：扫描设备 / 导入文件夹
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             FilledTonalButton(
@@ -348,7 +436,10 @@ private fun LocalLibraryTab(state: DownloadsUiState, model: DownloadsScreenModel
                 modifier = Modifier.weight(1f),
             ) {
                 if (state.scanning) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    cp.player.app.ui.component.CpLoadingIndicator(
+                        Modifier.size(18.dp),
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
                     Spacer(Modifier.width(8.dp))
                     Text(
                         state.scanProgress?.let { "扫描中 · 已发现 ${it.scanned} 项" } ?: "扫描中…",
@@ -366,7 +457,10 @@ private fun LocalLibraryTab(state: DownloadsUiState, model: DownloadsScreenModel
                 modifier = Modifier.weight(1f),
             ) {
                 if (state.importing) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    cp.player.app.ui.component.CpLoadingIndicator(
+                        Modifier.size(18.dp),
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
                     Spacer(Modifier.width(8.dp))
                     Text("导入中…", maxLines = 1)
                 } else {
@@ -390,7 +484,7 @@ private fun LocalLibraryTab(state: DownloadsUiState, model: DownloadsScreenModel
         }
 
         LazyScrollColumn(
-            Modifier.fillMaxSize(),
+            Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize().weight(1f),
             contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {

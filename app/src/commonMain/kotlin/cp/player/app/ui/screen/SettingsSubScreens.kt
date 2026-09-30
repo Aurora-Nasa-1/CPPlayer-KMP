@@ -1,45 +1,29 @@
 package cp.player.app.ui.screen
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.HighQuality
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
-import cp.player.app.platform.openUrl
-import cp.player.app.ui.component.LegacyListItem
 import cp.player.app.ui.component.LegacyPageScaffold
-import cp.player.app.ui.component.ScrollColumn
+import cp.player.app.ui.component.LocalIsExpanded
+import cp.player.app.ui.component.SettingsButtonItem
+import cp.player.app.ui.component.SettingsClickItem
+import cp.player.app.ui.component.SettingsNote
+import cp.player.app.ui.component.SettingsPage
+import cp.player.app.ui.component.SettingsSection
+import cp.player.app.ui.component.SettingsSegmentedItem
+import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.theme.ColorSource
 import cp.player.app.ui.theme.ThemeMode
 import cp.player.app.ui.theme.description
@@ -47,165 +31,102 @@ import cp.player.app.ui.theme.displayName
 import cp.player.app.ui.theme.isPlatformColorSourceAvailable
 import cp.player.app.ui.util.UiEvents
 
+/**
+ * 外观与主题。
+ *
+ * ### 与重构前的差异
+ *
+ * 1. **状态只从 `AppModel` 的 StateFlow 读。** 旧版写的是
+ *    `var themeMode by remember { mutableStateOf(AppModel.themeMode()) }` ——
+ *    在页面里复制了一份持久值。别处（恢复默认、封面取色）改了它，这份副本不会同步，
+ *    UI 会一直显示陈旧值。
+ * 2. **「主题模式」「取色来源」改用分段控件。** 两者都是 3 选 1，走旧版的
+ *    「下拉行 → 底部弹层」要「点开 + 点选」两次，而且当前值只能从副标题里猜；
+ *    分段控件让三个选项直接可见，一次点击完成。
+ * 3. **不可用的取色来源直接不显示**，而不是置灰。置灰的选项对用户是纯噪声 ——
+ *    他既选不了，也看不出为什么。
+ */
 class AppearanceSettingsScreen : Screen {
-    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
-        val expanded = cp.player.app.ui.component.LocalIsExpanded.current
-        var themeMode by remember { mutableStateOf(AppModel.themeMode()) }
-        var colorSource by remember { mutableStateOf(AppModel.colorSource()) }
-        var pureBlack by remember { mutableStateOf(AppModel.pureBlack()) }
+        val expanded = LocalIsExpanded.current
+        val themeMode by AppModel.themeModeFlow.collectAsState()
+        val colorSource by AppModel.colorSourceFlow.collectAsState()
+        val pureBlack by AppModel.pureBlackFlow.collectAsState()
         val platformAvailable = isPlatformColorSourceAvailable()
 
+        val availableSources = remember(platformAvailable) {
+            ColorSource.entries.filter { it != ColorSource.PLATFORM || platformAvailable }
+        }
+
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
-            ScrollColumn(
-                modifier = pageModifier
-                    .padding(horizontal = if (expanded) 20.dp else 8.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                SettingsCard("主题") {
-                    Text("主题模式", style = MaterialTheme.typography.titleMedium)
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ThemeMode.entries.forEach { mode ->
-                            FilterChip(
-                                selected = themeMode == mode,
-                                onClick = {
-                                    themeMode = mode
-                                    AppModel.setThemeMode(mode)
-                                },
-                                label = {
-                                    Text(
-                                        when (mode) {
-                                            ThemeMode.SYSTEM -> "跟随系统"
-                                            ThemeMode.LIGHT -> "浅色"
-                                            ThemeMode.DARK -> "深色"
-                                        }
-                                    )
-                                },
-                            )
-                        }
-                    }
-                }
-                SettingsCard("色彩") {
-                    Text("取色来源", style = MaterialTheme.typography.titleMedium)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        ColorSource.entries.forEach { source ->
-                            FilterChip(
-                                selected = colorSource == source,
-                                // 「系统」在拿不到系统色的平台上不可选：否则用户会选到一个
-                                // 永远回退、且看不出原因的选项。
-                                enabled = source != ColorSource.PLATFORM || platformAvailable,
-                                onClick = {
-                                    colorSource = source
-                                    AppModel.setColorSource(source)
-                                },
-                                label = { Text(source.displayName()) },
-                            )
-                        }
-                    }
-                    Text(
-                        text = colorSource.description(platformAvailable),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    LegacyListItem(
+            SettingsPage(pageModifier) {
+                SettingsSection("外观") {
+                    SettingsSegmentedItem(
+                        title = "主题模式",
+                        options = ThemeMode.entries.map { it.displayName() },
+                        selectedIndex = ThemeMode.entries.indexOf(themeMode).coerceAtLeast(0),
+                        onSelect = { index ->
+                            ThemeMode.entries.getOrNull(index)?.let(AppModel::setThemeMode)
+                        },
                         index = 0,
-                        total = 1,
-                        onClick = {
-                            pureBlack = !pureBlack
-                            AppModel.setPureBlack(pureBlack)
+                        total = 3,
+                    )
+                    SettingsSegmentedItem(
+                        title = "取色来源",
+                        options = availableSources.map { it.displayName() },
+                        selectedIndex = availableSources.indexOf(colorSource).coerceAtLeast(0),
+                        onSelect = { index ->
+                            availableSources.getOrNull(index)?.let(AppModel::setColorSource)
                         },
-                        headlineContent = { Text("纯黑模式") },
-                        supportingContent = { Text("深色主题下使用纯黑背景，适合 OLED 屏幕") },
-                        trailingContent = {
-                            Switch(
-                                checked = pureBlack,
-                                onCheckedChange = {
-                                    pureBlack = it
-                                    AppModel.setPureBlack(it)
-                                },
-                            )
-                        },
+                        index = 1,
+                        total = 3,
+                    )
+                    SettingsSwitchItem(
+                        title = "纯黑模式",
+                        subtitle = "深色主题下使用纯黑背景，OLED 屏幕更省电",
+                        checked = pureBlack,
+                        onCheckedChange = AppModel::setPureBlack,
+                        index = 2,
+                        total = 3,
                     )
                 }
+                SettingsNote(colorSource.description(platformAvailable))
             }
         }
 
-        if (expanded) body(Modifier.fillMaxWidth()) else LegacyPageScaffold(
-            title = "外观",
-            navigationIcon = {
-                IconButton(onClick = { navigator.pop() }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                }
-            },
-        ) { pageModifier -> body(pageModifier) }
-    }
-}
-
-class UiLogicSettingsScreen : Screen {
-    @OptIn(ExperimentalMaterial3Api::class)
-    @Composable
-    override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
-        val expanded = cp.player.app.ui.component.LocalIsExpanded.current
-        var playImmediately by remember { mutableStateOf(playImmediatelySetting()) }
-
-        val body: @Composable (Modifier) -> Unit = { pageModifier ->
-            ScrollColumn(
-                modifier = pageModifier
-                    .padding(horizontal = if (expanded) 20.dp else 8.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                SettingsCard("播放行为") {
-                    LegacyListItem(
-                        index = 0,
-                        total = 1,
-                        onClick = {
-                            playImmediately = !playImmediately
-                            setPlayImmediatelySetting(playImmediately)
-                        },
-                        leadingContent = { Icon(Icons.Filled.PlayArrow, contentDescription = null) },
-                        headlineContent = { Text("立即播放") },
-                        supportingContent = { Text("点击歌曲后立即开始播放，而不是仅加入队列") },
-                        trailingContent = {
-                            Switch(
-                                checked = playImmediately,
-                                onCheckedChange = {
-                                    playImmediately = it
-                                    setPlayImmediatelySetting(it)
-                                },
-                            )
-                        },
-                    )
-                }
-            }
+        if (expanded) {
+            body(Modifier.fillMaxWidth())
+        } else {
+            LegacyPageScaffold(
+                title = "外观与主题",
+                navigationIcon = {
+                    IconButton(onClick = { navigator.pop() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+            ) { pageModifier -> body(pageModifier) }
         }
-
-        if (expanded) body(Modifier.fillMaxWidth()) else LegacyPageScaffold(
-            title = "交互逻辑",
-            navigationIcon = {
-                IconButton(onClick = { navigator.pop() }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                }
-            },
-        ) { pageModifier -> body(pageModifier) }
     }
 }
 
+/**
+ * 下载与存储。
+ *
+ * ### 与重构前的差异
+ *
+ * 「清理图片缓存」原本铺的是 `errorContainer`（破坏性配色），但它**不是破坏性操作** ——
+ * 只是丢掉可以重新下载的封面缓存。破坏性配色会让用户以为会丢数据，从而不敢点。
+ * 现在用中性配色，并把「不会删除已下载的歌曲」写进副标题。
+ */
 class StorageSettingsScreen : Screen {
-    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
-        val expanded = cp.player.app.ui.component.LocalIsExpanded.current
-        val qualityLevel by AppModel.playbackQualityFlow.collectAsState()
+        val expanded = LocalIsExpanded.current
         val downloadDir by AppModel.downloadDirFlow.collectAsState()
         val isAndroid = cp.player.app.platform.isAndroidPlatform()
-        val qualityLabel = AppModel.qualityOptions.firstOrNull { it.first == qualityLevel }?.second ?: qualityLevel
         val pickDownloadDir = cp.player.app.platform.rememberDirectoryPicker { path ->
             if (!path.isNullOrBlank()) {
                 AppModel.setDownloadDir(path)
@@ -214,168 +135,48 @@ class StorageSettingsScreen : Screen {
         }
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
-            ScrollColumn(
-                modifier = pageModifier
-                    .padding(horizontal = if (expanded) 20.dp else 8.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                SettingsCard("下载与缓存") {
-                    LegacyListItem(
+            SettingsPage(pageModifier) {
+                SettingsSection("下载") {
+                    SettingsClickItem(
+                        title = "下载目录",
+                        subtitle = if (isAndroid) {
+                            "Android 下载固定保存到应用私有目录"
+                        } else {
+                            downloadDir.ifBlank { "默认下载目录" }
+                        },
                         index = 0,
-                        total = 4,
-                        onClick = null,
-                        leadingContent = { Icon(Icons.Filled.HighQuality, contentDescription = null) },
-                        headlineContent = { Text("当前播放音质") },
-                        supportingContent = { Text(qualityLabel) },
-                    )
-                    LegacyListItem(
-                        index = 1,
-                        total = 4,
-                        onClick = null,
-                        headlineContent = { Text("缓存占位") },
-                        supportingContent = { Text("旧版缓存容量与网络策略入口预留，后续补齐") },
-                    )
-                    LegacyListItem(
-                        index = 2,
-                        total = 4,
+                        total = 1,
+                        icon = Icons.Filled.FolderOpen,
                         onClick = if (isAndroid) null else ({ pickDownloadDir() }),
-                        leadingContent = { Icon(Icons.Filled.FolderOpen, contentDescription = null) },
-                        headlineContent = { Text("下载目录") },
-                        supportingContent = {
-                            Column {
-                                if (isAndroid) {
-                                    Text(
-                                        text = "Android 下载固定保存到应用私有目录",
-                                        color = MaterialTheme.colorScheme.primary,
-                                    )
-                                }
-                                Text(downloadDir.ifBlank { "默认下载目录" }, maxLines = 2)
-                                Text(
-                                    text = "仅对后续下载生效",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        },
-                        trailingContent = {
-                            if (!isAndroid) {
-                                Icon(
-                                    Icons.Filled.FolderOpen,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        },
                     )
-                    LegacyListItem(
-                        index = 3,
-                        total = 4,
+                }
+                SettingsSection("缓存") {
+                    SettingsButtonItem(
+                        text = "清理图片缓存",
+                        subtitle = "释放封面等图片占用的空间；已下载的歌曲不受影响",
+                        index = 0,
+                        total = 1,
                         onClick = {
                             val cleared = cp.player.app.platform.clearImageCache()
                             UiEvents.notify(if (cleared) "图片缓存已清理" else "缓存清理失败")
                         },
-                        leadingContent = { Icon(Icons.Filled.CleaningServices, contentDescription = null) },
-                        headlineContent = { Text("清理图片缓存") },
-                        supportingContent = { Text("释放封面等图片占用的缓存空间") },
                     )
                 }
+                SettingsNote("下载目录的改动仅对后续下载生效，已下载的文件不会移动。")
             }
         }
 
-        if (expanded) body(Modifier.fillMaxWidth()) else LegacyPageScaffold(
-            title = "存储与下载",
-            navigationIcon = {
-                IconButton(onClick = { navigator.pop() }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                }
-            },
-        ) { pageModifier -> body(pageModifier) }
-    }
-}
-
-class SponsorScreen : Screen {
-    @OptIn(ExperimentalMaterial3Api::class)
-    @Composable
-    override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
-
-        LegacyPageScaffold(
-            title = "赞助",
-            navigationIcon = {
-                IconButton(onClick = { navigator.pop() }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                }
-            },
-        ) { pageModifier ->
-            ScrollColumn(
-                modifier = pageModifier
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                SettingsSubSectionHeader("支持项目")
-                LegacyListItem(
-                    index = 0,
-                    total = 2,
-                    onClick = { openUrl("https://github.com/Aurora-Nasa-1/CPPlayer-KMP") },
-                    leadingContent = {
-                        Icon(
-                            Icons.Filled.Favorite,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    },
-                    headlineContent = { Text("项目主页") },
-                    supportingContent = { Text("前往 GitHub 查看项目说明与支持方式") },
-                )
-                LegacyListItem(
-                    index = 1,
-                    total = 2,
-                    onClick = { openUrl("https://github.com/Aurora-Nasa-1") },
-                    leadingContent = {
-                        Icon(
-                            Icons.Filled.Info,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    },
-                    headlineContent = { Text("维护者主页") },
-                    supportingContent = { Text("Aurora-Nasa-1 的 GitHub 主页") },
-                )
-            }
+        if (expanded) {
+            body(Modifier.fillMaxWidth())
+        } else {
+            LegacyPageScaffold(
+                title = "下载与存储",
+                navigationIcon = {
+                    IconButton(onClick = { navigator.pop() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+            ) { pageModifier -> body(pageModifier) }
         }
     }
-}
-
-internal const val PLAY_IMMEDIATELY_SETTING_KEY = "play_immediately"
-
-internal fun playImmediatelySetting(): Boolean =
-    AppModel.settings.getString(PLAY_IMMEDIATELY_SETTING_KEY)?.toBooleanStrictOrNull() ?: true
-
-internal fun setPlayImmediatelySetting(enabled: Boolean) {
-    AppModel.settings.putString(PLAY_IMMEDIATELY_SETTING_KEY, enabled.toString())
-}
-
-@Composable
-internal fun SettingsCard(title: String, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            content = content,
-        )
-    }
-}
-
-@Composable
-private fun SettingsSubSectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 8.dp),
-    )
 }

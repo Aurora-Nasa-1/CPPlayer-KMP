@@ -30,7 +30,9 @@ fun SleepTimerDialog(
     onCancelTimer: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val options = listOf(15, 30, 45, 60)
+    // 90 分钟此前只存在于设置页的下拉里，对话框没有 —— 于是「设置页能选的」和
+    // 「播放页能选的」不是同一套。统一到这里，两边共用一份。
+    val options = listOf(15, 30, 45, 60, 90)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("睡眠定时") },
@@ -45,13 +47,18 @@ fun SleepTimerDialog(
                     )
                 }
                 Text("多少分钟后暂停播放？", style = MaterialTheme.typography.bodyMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    options.forEach { minutes ->
-                        FilterChip(
-                            selected = false,
-                            onClick = { onSelect(minutes); onDismiss() },
-                            label = { Text("$minutes 分钟") },
-                        )
+                // 分块换行：5 个 chip 排一行在 360dp 窄屏上会横向溢出。
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    options.chunked(3).forEach { chunk ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            chunk.forEach { minutes ->
+                                FilterChip(
+                                    selected = false,
+                                    onClick = { onSelect(minutes); onDismiss() },
+                                    label = { Text("$minutes 分钟") },
+                                )
+                            }
+                        }
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

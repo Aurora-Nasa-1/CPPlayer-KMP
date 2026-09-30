@@ -46,6 +46,7 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
+import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.PageHeader
@@ -68,6 +69,16 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
         val scope = rememberCoroutineScope()
         val provider = AppModel.activeProviderId()
         val navigator = LocalNavigator.currentOrThrow
+
+        // 桌面标题栏的全局搜索框把关键词投递到这里。它是唯一消费者（MainScreen 只负责切 tab，
+        // 不消费），所以这里喂给 ScreenModel 后立刻置回 null。见 DesktopShell 的 KDoc。
+        val pendingSearchQuery = cp.player.app.ui.util.DesktopShell.pendingSearchQuery
+        androidx.compose.runtime.LaunchedEffect(pendingSearchQuery) {
+            if (!pendingSearchQuery.isNullOrBlank()) {
+                model.search(pendingSearchQuery)
+                cp.player.app.ui.util.DesktopShell.pendingSearchQuery = null
+            }
+        }
         val likedIds by AppModel.playback.likedIds.collectAsState()
         var selectedTrack by androidx.compose.runtime.remember {
             androidx.compose.runtime.mutableStateOf<cp.player.core.music.TrackSummary?>(null)
@@ -246,7 +257,13 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                     MusicApiMethod.SEARCH_TYPE_SONG -> itemsIndexed(result.songs, key = { _, track -> track.id }) { index, track ->
                                         SongItem(
                                             track = track, index = index, total = result.songs.size,
-                                            onClick = { scope.launch { AppModel.playback.playQueue(result.songs.map { "$provider://song/${it.id}" }, index) } },
+                                            // 重新搜索时结果整体换一批：没有 animateItem 的话
+                                            // 每一行都是原地闪现，看起来像「刷新了一下」而不是「换了一批」。
+                                            modifier = Modifier.animateItem(),
+                                            onClick = {
+                                                CoverFlight.play(track.id, track.coverUrl)
+                                                scope.launch { AppModel.playback.playQueue(result.songs.map { "$provider://song/${it.id}" }, index) }
+                                            },
                                             onOptionsClick = { selectedTrack = track },
                                         )
                                     }
@@ -285,6 +302,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                 isDownloaded = AppModel.isDownloaded(track.id),
                 onDismiss = { selectedTrack = null },
                 onPlay = {
+                    CoverFlight.play(track.id, track.coverUrl)
                     scope.launch {
                         AppModel.playback.playQueue(listOf("$provider://song/${track.id}"), startIndex = 0)
                     }

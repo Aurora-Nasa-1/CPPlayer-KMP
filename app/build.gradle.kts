@@ -88,6 +88,9 @@ kotlin {
 compose.desktop {
     application {
         mainClass = "cp.player.app.MainKt"
+        // FFM 直接调 Win32（DWM 圆角，见 WindowsWindowCorners）在 JDK 24+ 需要显式放行原生访问。
+        // 不放行目前只是打警告，但后续 JDK 会直接拒绝，所以现在就加上。
+        jvmArgs += listOf("--enable-native-access=ALL-UNNAMED")
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Deb, TargetFormat.Msi)
             packageName = "CPPlayer"

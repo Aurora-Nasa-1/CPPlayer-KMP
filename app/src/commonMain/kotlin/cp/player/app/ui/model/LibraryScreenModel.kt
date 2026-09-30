@@ -3,6 +3,7 @@ package cp.player.app.ui.model
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
+import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.util.UiEvents
 import cp.player.core.BackendResult
 import cp.player.core.music.MusicSourceFromApi
@@ -91,6 +92,7 @@ class LibraryScreenModel : ScreenModel {
     fun playCloud(index: Int) {
         val songs = _state.value.cloudSongs
         if (songs.isEmpty()) return
+        songs.getOrNull(index)?.let { CoverFlight.play(it.id, it.coverUrl) }
         val provider = AppModel.activeProviderId()
         screenModelScope.launch {
             AppModel.playback.playQueue(songs.map { "$provider://song/${it.id}" }, startIndex = index)

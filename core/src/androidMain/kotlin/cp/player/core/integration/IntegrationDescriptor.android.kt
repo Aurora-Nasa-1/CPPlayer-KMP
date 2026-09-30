@@ -12,7 +12,7 @@ package cp.player.core.integration
  *    这是把「收紧权限」的初衷反过来了，属于净负收益。
  *
  * ### 那 Android 上怎么发现
- * 退化为「用户在设置页读地址与令牌」（见 `LocalServerSettingsScreen`）。
+ * 退化为「用户在设置页读地址与令牌」（见 `StreamOutputSettingsScreen`）。
  * 将来若真要给 Android 上的第三方 App 供数，正确的形态是 **ContentProvider / AIDL
  * 适配层加在 [IntegrationService] 之上**，而不是文件发现 ——
  * 保持「一套用例，多种传输」，别另写一套逻辑。

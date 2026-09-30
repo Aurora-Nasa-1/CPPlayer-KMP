@@ -4,6 +4,7 @@ import androidx.compose.foundation.HorizontalScrollbar
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.ScrollbarStyle
 import androidx.compose.foundation.VerticalScrollbar
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -69,13 +70,23 @@ private fun rememberCpScrollbarStyle(): ScrollbarStyle {
     }
 }
 
+/**
+ * 滚条与窗口边缘之间留出的距离。
+ *
+ * ⚠️ 必须和 `Main.kt` 里 `WindowDecoration.Undecorated(6.dp)` 的抓手厚度一致：
+ * 无边框窗口的缩放抓手（`UndecoratedWindowResizer`）压在最外圈那 6dp 上，滚条又是贴着右边缘摆的
+ * （`Alignment.CenterEnd`）。两者重叠时，**拖滚条会变成缩放窗口**。这里把滚条整体内缩同样的
+ * 距离，让它完全落在抓手带之外。改一边就必须改另一边。
+ */
+private val ScrollbarEdgeInset = 6.dp
+
 @Composable
 actual fun DesktopVerticalScrollbar(state: ScrollState, modifier: Modifier) {
     val adapter = rememberScrollbarAdapter(state)
     if (rememberAlmostFullyVisible(adapter)) return
     VerticalScrollbar(
         adapter = adapter,
-        modifier = modifier,
+        modifier = modifier.padding(end = ScrollbarEdgeInset),
         style = rememberCpScrollbarStyle(),
     )
 }
@@ -86,7 +97,7 @@ actual fun DesktopVerticalScrollbar(state: LazyListState, modifier: Modifier) {
     if (rememberAlmostFullyVisible(adapter)) return
     VerticalScrollbar(
         adapter = adapter,
-        modifier = modifier,
+        modifier = modifier.padding(end = ScrollbarEdgeInset),
         style = rememberCpScrollbarStyle(),
     )
 }

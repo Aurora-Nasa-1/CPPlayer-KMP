@@ -2,17 +2,16 @@ package cp.player.app.ui.component
 
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.outlined.SkipNext
-import androidx.compose.material.icons.outlined.SkipPrevious
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -22,10 +21,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import cp.player.app.ui.anim.CoverFlight
+import cp.player.app.ui.anim.coverFlightTarget
 import cp.player.app.ui.theme.CpShapes
 import cp.player.app.ui.util.resized
 import cp.player.core.playback.PlaybackUiState
@@ -55,6 +57,8 @@ fun SharedTransitionScope.MiniPlayer(
     modifier: Modifier = Modifier,
 ) {
     val track = state.currentTrack ?: return
+    // 封面飞行落点：飞行未落位时把自己的封面藏起来，由飞行器顶替显示。
+    val hideCover = CoverFlight.isFlyingTo(CoverFlight.TARGET_MINI)
     val progress = if (state.durationMs > 0) {
         (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f)
     } else 0f
@@ -81,29 +85,39 @@ fun SharedTransitionScope.MiniPlayer(
                 Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (!track.coverUrl.isNullOrBlank()) {
-                    // 用 150px 缩略图，省内存与带宽。
-                    AsyncImage(
-                        model = track.coverUrl.resized(150),
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp)
-                            .sharedBounds(
-                                sharedContentState = rememberSharedContentState(key = "cover-${track.id}"),
-                                animatedVisibilityScope = animatedVisibilityScope
-                            )
-                            .clip(MaterialTheme.shapes.medium),
-                        contentScale = ContentScale.Crop,
-                    )
-                } else {
-                    Box(
-                        Modifier.size(48.dp).clip(MaterialTheme.shapes.medium)
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Filled.MusicNote, null,
-                            Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                Box(
+                    Modifier.size(48.dp).graphicsLayer { alpha = if (hideCover) 0f else 1f },
+                ) {
+                    if (!track.coverUrl.isNullOrBlank()) {
+                        // 用 150px 缩略图，省内存与带宽。
+                        AsyncImage(
+                            model = track.coverUrl.resized(150),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize()
+                                .coverFlightTarget(CoverFlight.TARGET_MINI, 12.dp)
+                                .sharedBounds(
+                                    sharedContentState = rememberSharedContentState(key = "cover-${track.id}"),
+                                    animatedVisibilityScope = animatedVisibilityScope
+                                )
+                                .clip(MaterialTheme.shapes.medium),
+                            contentScale = ContentScale.Crop,
+                        )
+                    } else {
+                        // 空封面走全应用统一的 Expressive 占位（渐变 + 形状），
+                        // 而不是本地再画一个灰底 MusicNote —— 同一个「没有封面」
+                        // 不该在迷你播放器和播放页长得不一样。
+                        CpCoverPlaceholder(
+                            modifier = Modifier.fillMaxSize(),
+                            corner = 16.dp,
+                            // 48dp 下变形看不出来，关掉省一条常驻动画。
+                            animated = false,
+                        )
+                    }
+                    // 「正在响」标记：与列表项里那颗均衡器**完全同款**。
+                    // 有它在，用户余光扫到底栏就知道还在放，不必去读播放/暂停按钮的图标。
+                    if (state.isPlaying) {
+                        CpPlayingEqualizer(
+                            modifier = Modifier.align(Alignment.BottomStart).padding(3.dp),
                         )
                     }
                 }
@@ -133,7 +147,9 @@ fun SharedTransitionScope.MiniPlayer(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onSkipPrev, modifier = Modifier.size(40.dp)) {
-                        Icon(Icons.Outlined.SkipPrevious, "Prev", Modifier.size(24.dp))
+                        // 与全屏播放页的主控件行同族（Filled）—— 之前这里是 Outlined、
+                        // 全屏页是 Filled，同一个「上一首」在同一个应用里长两个样子。
+                        Icon(Icons.Filled.SkipPrevious, "Prev", Modifier.size(24.dp))
                     }
                     CpPlayPauseButton(
                         isPlaying = state.isPlaying,
@@ -142,7 +158,7 @@ fun SharedTransitionScope.MiniPlayer(
                         isLoading = state.isBuffering,
                     )
                     IconButton(onClick = onSkipNext, modifier = Modifier.size(40.dp)) {
-                        Icon(Icons.Outlined.SkipNext, "Next", Modifier.size(24.dp))
+                        Icon(Icons.Filled.SkipNext, "Next", Modifier.size(24.dp))
                     }
                 }
             }

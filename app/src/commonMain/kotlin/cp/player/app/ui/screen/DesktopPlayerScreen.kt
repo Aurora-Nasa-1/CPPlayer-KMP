@@ -18,14 +18,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material.icons.outlined.SkipNext
-import androidx.compose.material.icons.outlined.SkipPrevious
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import cp.player.app.ui.component.CpModeToggle
 import cp.player.app.ui.component.CpPlayPauseButton
 import cp.player.app.ui.component.CpSeekBar
 import cp.player.app.ui.component.CpToggleChip
@@ -106,12 +107,23 @@ fun DesktopPlayerScreen(
     Box(Modifier.fillMaxSize().background(background).padding(28.dp)) {
         Column(Modifier.fillMaxSize()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Text("×", style = MaterialTheme.typography.headlineMedium) }
+                IconButton(onClick = onBack) { Icon(Icons.Filled.Close, "收起播放页") }
                 Column(Modifier.weight(1f).padding(start = 8.dp)) {
                     Text("正在播放", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                    Text("音乐", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    // 副标题写**专辑**（没有就退到歌手）。原先这里恒为「音乐」——
+                    // 一个对任何曲目都成立、也就等于什么都没说的字符串。
+                    // 同一屏下方已经有大字歌名了，重复它同样没有收益。
+                    Text(
+                        track.album?.takeIf { it.isNotBlank() } ?: track.artist,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
-                IconButton(onClick = { /* reserved for player options */ }) { Icon(Icons.Filled.MoreHoriz, "更多") }
+                // 原先这里还有一个 `onClick = { /* reserved */ }` 的 MoreHoriz 按钮：
+                // 长得像入口、点了什么都不发生 —— 假的可供性比缺一个入口更糟，直接去掉。
+                // 真正的「更多」在紧凑版播放页里已经由底部工具条承担。
             }
             Spacer(Modifier.height(18.dp))
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
@@ -154,8 +166,19 @@ fun DesktopPlayerScreen(
                                 modifier = Modifier.fillMaxWidth(),
                             )
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(formatTimeMs(state.positionMs), style = MaterialTheme.typography.labelSmall)
-                                Text(SeekAvailability.durationLabel(duration), style = MaterialTheme.typography.labelSmall)
+                                // 与紧凑版播放页的时间行**同款**（labelMedium + onSurfaceVariant）。
+                                // 之前这里是 labelSmall 且没给颜色 ⇒ 继承 onSurface（全亮），
+                                // 同一个「已播 / 总时长」在桌面端比手机端更抢眼、字还更小。
+                                Text(
+                                    formatTimeMs(state.positionMs),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    SeekAvailability.durationLabel(duration),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                             // 禁用滑条必须给出原因：静默失效的观感就是「拖了没反应」。
                             // 两种原因互斥呈现（落盘优先），由 SeekAvailability 统一决定。
@@ -251,16 +274,34 @@ private fun Artwork(url: String?, modifier: Modifier) {
 
 @Composable
 private fun PlayerControls(state: PlaybackUiState, onTogglePlay: () -> Unit, onNext: () -> Unit, onPrev: () -> Unit, onRepeat: () -> Unit, onShuffle: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onShuffle) { Icon(Icons.Filled.Shuffle, "随机播放", tint = if (state.shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
-        IconButton(onClick = onPrev, modifier = Modifier.size(52.dp)) { Icon(Icons.Outlined.SkipPrevious, "上一首", Modifier.size(30.dp)) }
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // 随机 / 循环改用 [CpModeToggle]，与紧凑版播放页**同款**：
+        // 选中态由「容器长出来 + 形状从圆角方变正圆」两层表达，而不是只把图标换个颜色
+        // —— 后者和「禁用态」几乎分不清，是这套 UI 里最弱的一种状态表达，
+        // 而桌面端恰恰是这三颗按钮被点得最多的地方。
+        CpModeToggle(
+            active = state.shuffleEnabled,
+            onClick = onShuffle,
+            icon = Icons.Filled.Shuffle,
+            label = "随机播放",
+        )
+        IconButton(onClick = onPrev, modifier = Modifier.size(52.dp)) { Icon(Icons.Filled.SkipPrevious, "上一首", Modifier.size(30.dp)) }
         CpPlayPauseButton(
             isPlaying = state.isPlaying,
             onClick = onTogglePlay,
             size = 64.dp,
             isLoading = state.isBuffering,
         )
-        IconButton(onClick = onNext, modifier = Modifier.size(52.dp)) { Icon(Icons.Outlined.SkipNext, "下一首", Modifier.size(30.dp)) }
-        IconButton(onClick = onRepeat) { Icon(if (state.repeatMode == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat, "循环", tint = if (state.repeatMode == RepeatMode.OFF) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary) }
+        IconButton(onClick = onNext, modifier = Modifier.size(52.dp)) { Icon(Icons.Filled.SkipNext, "下一首", Modifier.size(30.dp)) }
+        CpModeToggle(
+            active = state.repeatMode != RepeatMode.OFF,
+            onClick = onRepeat,
+            icon = if (state.repeatMode == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
+            label = "循环",
+        )
     }
 }

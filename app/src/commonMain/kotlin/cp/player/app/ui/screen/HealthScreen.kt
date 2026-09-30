@@ -63,7 +63,7 @@ class HealthScreen : Screen {
         }
 
         LegacyPageScaffold(
-            title = "API 健康监控",
+            title = "诊断",
             navigationIcon = {
                 IconButton(onClick = { navigator.pop() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
             },

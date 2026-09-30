@@ -37,7 +37,6 @@ import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -57,6 +56,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -71,6 +71,8 @@ import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.platform.BackHandler
 import cp.player.app.platform.shareText
+import cp.player.app.ui.anim.CoverFlight
+import cp.player.app.ui.anim.coverFlightTarget
 import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.AddSongsOptionsSheet
 import cp.player.app.ui.component.AppScaffold
@@ -183,7 +185,8 @@ fun PlaylistDetailContent(
     LaunchedEffect(autoPlayIndex, state.tracks) {
         val index = autoPlayIndex ?: return@LaunchedEffect
         if (state.tracks.isEmpty()) return@LaunchedEffect
-        model.playAt(index.coerceIn(0, state.tracks.lastIndex))
+        // 自动播放不是封面点击，不触发 CoverFlight（避免打断可能仍在飞行的过渡）。
+        model.playAt(index.coerceIn(0, state.tracks.lastIndex), animateCover = false)
     }
 
     // 多选模式下返回键退出多选
@@ -440,7 +443,7 @@ fun PlaylistDetailContent(
                         Modifier.fillMaxWidth().padding(vertical = 16.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        CircularProgressIndicator(Modifier.size(28.dp))
+                        cp.player.app.ui.component.CpLoadingIndicator(Modifier.size(32.dp))
                     }
                 } else {
                     Text(
@@ -547,20 +550,28 @@ private fun NarrowLayout(
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
-                        modifier = Modifier.size(56.dp),
+                        modifier = Modifier.size(56.dp)
+                            .coverFlightTarget(CoverFlight.TARGET_PLAYLIST_HEADER, 12.dp),
                         shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         shadowElevation = 2.dp,
                     ) {
+                        // 封面飞行落点：飞行未落位前先隐藏，落位时由飞行器淡出交还。
+                        val hideCover = CoverFlight.isFlyingTo(CoverFlight.TARGET_PLAYLIST_HEADER)
                         if (!summary.coverUrl.isNullOrBlank()) {
                             AsyncImage(
                                 model = summary.coverUrl.resized(200),
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
+                                modifier = Modifier.fillMaxSize()
+                                    .graphicsLayer { alpha = if (hideCover) 0f else 1f },
                             )
                         } else {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Box(
+                                Modifier.fillMaxSize()
+                                    .graphicsLayer { alpha = if (hideCover) 0f else 1f },
+                                contentAlignment = Alignment.Center,
+                            ) {
                                 Icon(
                                     Icons.Filled.MusicNote,
                                     contentDescription = null,
@@ -639,20 +650,28 @@ private fun WideLayout(
         ) {
             Spacer(Modifier.height(16.dp))
             Surface(
-                modifier = Modifier.size(176.dp),
+                modifier = Modifier.size(176.dp)
+                    .coverFlightTarget(CoverFlight.TARGET_PLAYLIST_HEADER, 24.dp),
                 shape = RoundedCornerShape(24.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 shadowElevation = 8.dp,
             ) {
+                // 封面飞行落点：飞行未落位前先隐藏，落位时由飞行器淡出交还。
+                val hideCover = CoverFlight.isFlyingTo(CoverFlight.TARGET_PLAYLIST_HEADER)
                 if (!summary.coverUrl.isNullOrBlank()) {
                     AsyncImage(
                         model = summary.coverUrl.resized(600),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize()
+                            .graphicsLayer { alpha = if (hideCover) 0f else 1f },
                     )
                 } else {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier.fillMaxSize()
+                            .graphicsLayer { alpha = if (hideCover) 0f else 1f },
+                        contentAlignment = Alignment.Center,
+                    ) {
                         Icon(
                             Icons.Filled.MusicNote,
                             contentDescription = null,
@@ -769,9 +788,9 @@ private fun TrackList(
 ) {
     when {
         state.loading && displayTracks.isEmpty() -> {
-            Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
+              Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                  cp.player.app.ui.component.CpLoadingIndicator(Modifier.size(40.dp))
+              }
         }
         state.error != null && displayTracks.isEmpty() -> {
             Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -823,6 +842,8 @@ private fun TrackList(
                     isCurrentlyPlaying = track.id == currentTrackId,
                     selectionMode = state.selectionMode,
                     isSelected = track.id in state.selectedIds,
+                    // 进入/退出多选、增删歌曲都会改变行的位置，这里给位移动画。
+                    modifier = Modifier.animateItem(),
                     onClick = {
                         if (state.selectionMode) model.toggleSelection(track.id)
                         else model.playAt(index)
@@ -855,7 +876,7 @@ private fun TrackList(
                         Modifier.fillMaxWidth().padding(16.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        CircularProgressIndicator(Modifier.size(32.dp))
+                        cp.player.app.ui.component.CpLoadingIndicator(Modifier.size(32.dp))
                     }
                 }
             } else if (state.loadMoreError != null) {

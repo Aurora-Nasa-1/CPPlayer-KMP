@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -125,6 +126,9 @@ fun QueueBottomSheet(
                                 val target = i + dir
                                 if (target in queue.indices) onMove(i, target)
                             },
+                            // 拖拽重排 / 移除时的位移与淡出。队列是全应用唯一能真正改变
+                            // 顺序的列表，没有这层动画的话每次重排都是一次「集体瞬移」。
+                            modifier = Modifier.animateItem(),
                         )
                     }
                 }
@@ -195,6 +199,7 @@ private fun QueueRow(
     onPlay: () -> Unit,
     onRemove: () -> Unit,
     onDragBy: (Int) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val bg = if (isCurrent) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
@@ -203,7 +208,7 @@ private fun QueueRow(
     var dragAccum by remember { mutableStateOf(0f) }
 
     Surface(
-        Modifier.fillMaxWidth(),
+        modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         color = bg,
     ) {
@@ -237,25 +242,33 @@ private fun QueueRow(
                 Modifier.weight(1f).clickable { onPlay() },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (!item.coverUrl.isNullOrBlank()) {
-                    // [Bolt] Fetch smaller (150px) cover images for the queue list to reduce loading time
-                    AsyncImage(
-                        model = item.coverUrl.resized(150),
-                        contentDescription = "封面",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                    )
-                } else {
-                    Box(
-                        Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Filled.MusicNote, null,
-                            Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                Box(Modifier.size(48.dp)) {
+                    if (!item.coverUrl.isNullOrBlank()) {
+                        // [Bolt] Fetch smaller (150px) cover images for the queue list to reduce loading time
+                        AsyncImage(
+                            model = item.coverUrl.resized(150),
+                            contentDescription = "封面",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                        )
+                    } else {
+                        Box(
+                            Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.Filled.MusicNote, null,
+                                Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    if (isCurrent) {
+                        CpPlayingEqualizer(
+                            modifier = Modifier.align(Alignment.BottomStart).padding(3.dp),
                         )
                     }
                 }

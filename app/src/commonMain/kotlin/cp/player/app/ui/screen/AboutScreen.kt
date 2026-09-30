@@ -21,7 +21,6 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -75,7 +74,7 @@ class AboutScreen : Screen {
         }
 
         LegacyPageScaffold(
-            title = "关于",
+            title = "关于与支持",
             navigationIcon = {
                 IconButton(onClick = { navigator.pop() }) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
@@ -114,7 +113,11 @@ class AboutScreen : Screen {
                         else -> "已是最新版本"
                     },
                     trailing = if (isChecking) {
-                        { CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp) }
+                        {
+                            // 统一走 Expressive 变形加载器：全应用只剩这一种「等待中」的样子。
+                            // 混用转圈的 CircularProgressIndicator 会让「这块是后补的」一眼可见。
+                            cp.player.app.ui.component.CpLoadingIndicator(modifier = Modifier.size(24.dp))
+                        }
                     } else null,
                     enabled = !isChecking,
                     onClick = {
@@ -150,6 +153,20 @@ class AboutScreen : Screen {
                     title = "Aurora-Nasa-1",
                     subtitle = "创建者 & 主要维护者",
                     onClick = { openUrl("https://github.com/Aurora-Nasa-1") },
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                // 原「赞助」是一个独立的一级设置入口，但它的全部内容就是「项目主页 + 维护者主页」
+                // 两个链接 —— 与本页已有的两个条目完全重合。合并进来，设置根页少一个入口。
+                SectionHeader("支持项目")
+                ClickEntry(
+                    index = 0,
+                    total = 1,
+                    icon = Icons.Default.Link,
+                    title = "支持本项目",
+                    subtitle = "在项目主页查看说明与支持方式",
+                    onClick = { openUrl("https://github.com/Aurora-Nasa-1/CPPlayer-KMP") },
                 )
 
                 Spacer(Modifier.height(32.dp))

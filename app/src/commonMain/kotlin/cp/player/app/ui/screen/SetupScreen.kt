@@ -16,7 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -143,7 +142,7 @@ private fun SetupScreenContent(
 
                 if (isImporting) {
                     Spacer(Modifier.height(24.dp))
-                    CircularProgressIndicator(modifier = Modifier.size(40.dp))
+                    cp.player.app.ui.component.CpLoadingIndicator(Modifier.size(40.dp))
                     Spacer(Modifier.height(8.dp))
                     Text("正在导入模块…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                 }

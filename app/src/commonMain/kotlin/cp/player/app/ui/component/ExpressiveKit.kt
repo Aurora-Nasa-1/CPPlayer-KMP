@@ -4,27 +4,39 @@ package cp.player.app.ui.component
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -49,17 +61,35 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.Morph
 import androidx.graphics.shapes.RoundedPolygon
+import cp.player.app.ui.feedback.CpHaptic
 import cp.player.app.ui.theme.CpMotion
+import cp.player.app.ui.util.formatTimeMs
+import kotlin.math.roundToInt
+
+/**
+ * [CpSeekBar] 的总高。
+ *
+ * 拆开看：波形 16dp 居中（上下各留 20dp），顶部那 20dp 就是拖动时时间气泡的活动区，
+ * 气泡高 18dp，与波形上沿留 2dp 缝。**改这个值必须同步改 [CpSeekBubbleHeight]** ——
+ * 两者一变，气泡要么压住波形、要么飘得离波形太远。
+ */
+private val CpSeekBarHeight = 56.dp
+
+/** 拖动时间气泡的高度。见 [CpSeekBarHeight]。 */
+private val CpSeekBubbleHeight = 18.dp
 
 /**
  * M3 Expressive 组件套件。
@@ -145,9 +175,14 @@ fun CpLoadingIndicator(
  * 波形负责**画**（波形本身随位置推进，拖动时波峰就是游标），Slider 只负责**接手势**。
  * 这样既拿到波形观感，又不用自己实现拖拽/无障碍/键盘支持。
  *
- * ⚠️ 两个坑：
+ * 拖动期间顶部会浮出一个**时间气泡**，跟着手指横向移动、显示松手后会跳到的时刻 ——
+ * 这是「我到底拖到了第几秒」的唯一答案，只靠波形边界去数是数不出来的。
+ *
+ * ⚠️ 三个坑：
  * 1. Slider 的触摸目标高 40dp 以上，外层 Box 必须给够高度，否则手势被裁掉；
- * 2. 拖动期间必须把 `animated` 关掉，否则动画在追手，手感发飘。
+ * 2. 拖动期间必须把 `animated` 关掉，否则动画在追手，手感发飘；
+ * 3. 外层高度由 [CpSeekBarHeight] 决定：波形在正中（16dp），顶部 20dp 是气泡的活动区，
+ *    两者之间必须留 2dp 缝隙 —— 气泡压住波形边界就等于把刚拖出来的位置挡住了。
  *
  * @param onSeek 松手时才回调（拖动期间只更新视觉），避免每帧 seek。
  */
@@ -166,9 +201,18 @@ fun CpSeekBar(
     var dragging by remember { mutableStateOf(false) }
     var dragValue by remember { mutableStateOf(0f) }
     val shown = (if (dragging) dragValue else positionMs.toFloat()).coerceIn(0f, duration)
+    val haptics = cp.player.app.ui.feedback.LocalCpHaptics.current
+    // 拖动时每跨过一整秒给一次轻点 —— 这是「我在逐秒定位」的唯一反馈，
+    // 否则手指在波形上滑动完全是盲的。记住上一次打点的秒数，避免每帧触发。
+    var lastTickSecond by remember { mutableStateOf(-1L) }
+
+    // 气泡定位用的像素宽：trackWidth 来自外层，pillWidth 来自气泡自身的 onSizeChanged。
+    // 两者都要 —— 气泡要以拖动点为中心，就必须知道自己的宽度才能把中心对过去。
+    var trackWidthPx by remember { mutableStateOf(0) }
+    var pillWidthPx by remember { mutableStateOf(0) }
 
     Box(
-        modifier = modifier.height(40.dp),
+        modifier = modifier.height(CpSeekBarHeight).onSizeChanged { trackWidthPx = it.width },
         contentAlignment = Alignment.Center,
     ) {
         CpWavyProgress(
@@ -183,9 +227,16 @@ fun CpSeekBar(
             onValueChange = {
                 dragging = true
                 dragValue = it
+                val second = (it / 1000f).toLong()
+                if (second != lastTickSecond) {
+                    lastTickSecond = second
+                    haptics.perform(CpHaptic.Tick)
+                }
             },
             onValueChangeFinished = {
                 dragging = false
+                lastTickSecond = -1L
+                haptics.perform(CpHaptic.Confirm)
                 onSeek(dragValue.toLong().coerceIn(0L, durationMs.coerceAtLeast(0L)))
             },
             valueRange = 0f..duration,
@@ -200,6 +251,36 @@ fun CpSeekBar(
             ),
             modifier = Modifier.fillMaxWidth(),
         )
+
+        // 时间气泡：只在拖动时出现。静止时不出现 —— 那个位置下面的 time 行已经写着了，
+        // 再浮一个只会和它打架。
+        if (dragging && enabled) {
+            Box(
+                Modifier.fillMaxWidth().height(CpSeekBubbleHeight).align(Alignment.TopCenter),
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .onSizeChanged { pillWidthPx = it.width }
+                        .offset {
+                            // 以拖动点为中心：先算出相对容器中心的位移，再夹住不让气泡跑出边界。
+                            val dx = ((shown / duration) - 0.5f) * trackWidthPx
+                            val maxDx = ((trackWidthPx - pillWidthPx) / 2f).coerceAtLeast(0f)
+                            IntOffset(dx.coerceIn(-maxDx, maxDx).roundToInt(), 0)
+                        },
+                ) {
+                    Text(
+                        text = formatTimeMs(shown.toLong()),
+                        modifier = Modifier.padding(horizontal = 7.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -242,6 +323,55 @@ fun MorphingShape(
     }
 }
 
+// ---------------------------------------------------------------- 状态标记
+
+/**
+ * 「正在播放」均衡器 —— 三根循环跳动的短棒。
+ *
+ * 这是音乐播放器里最省空间的状态标记：**一行文字都不用**，也不依赖颜色，
+ * 用户扫一眼就知道哪首在放。放在封面上时自带一层半透明黑底，
+ * 因为封面是任意图片，白棒压在浅色封面上会直接消失。
+ *
+ * 三根棒用不同的时长 + 起始偏移，节奏错开才像在跳；同步起落会像一个整体在缩放。
+ */
+@Composable
+fun CpPlayingEqualizer(
+    modifier: Modifier = Modifier,
+    barColor: Color = Color.White,
+    scrimColor: Color = Color.Black.copy(alpha = 0.55f),
+) {
+    val transition = rememberInfiniteTransition(label = "cpEq")
+    Row(
+        modifier = modifier
+            .background(scrimColor, RoundedCornerShape(4.dp))
+            .padding(horizontal = 3.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(1.5.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        repeat(3) { index ->
+            val barHeight by transition.animateFloat(
+                initialValue = 3f,
+                targetValue = 10f,
+                animationSpec = infiniteRepeatable(
+                    // 时长错开 + 反向播放 + 起始偏移：三根棒三种节奏，
+                    // 这样才像三根独立的棒而不是一个块在伸缩。
+                    animation = tween(
+                        durationMillis = 480 + index * 140,
+                        easing = FastOutSlowInEasing,
+                    ),
+                    repeatMode = RepeatMode.Reverse,
+                    initialStartOffset = StartOffset(index * 160),
+                ),
+                label = "cpEqBar$index",
+            )
+            Box(
+                Modifier.width(2.dp).height(barHeight.dp)
+                    .background(barColor, RoundedCornerShape(1.dp))
+            )
+        }
+    }
+}
+
 // ---------------------------------------------------------------- 播放控制
 
 /**
@@ -265,6 +395,7 @@ fun CpPlayPauseButton(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
+    val haptics = cp.player.app.ui.feedback.LocalCpHaptics.current
 
     val corner by animateDpAsState(
         targetValue = if (pressed) size * 0.30f else size / 2f,
@@ -278,7 +409,12 @@ fun CpPlayPauseButton(
     )
 
     Surface(
-        onClick = onClick,
+        onClick = {
+            // 播放/暂停是整个应用最高频的动作，必须有触感确认 ——
+            // 没有它的话，图标淡入淡出期间用户会怀疑「到底点上没有」而连点两下。
+            haptics.perform(CpHaptic.Confirm)
+            onClick()
+        },
         modifier = modifier.size(size),
         enabled = enabled,
         shape = RoundedCornerShape(corner),
@@ -315,6 +451,91 @@ fun CpPlayPauseButton(
                 }
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------- 占位 / 工具条
+
+/**
+ * 空封面占位 —— 全应用**唯一**的空封面画法。
+ *
+ * `primaryContainer → tertiaryContainer` 斜向渐变 + 持续变形的 MaterialShapes 形状。
+ *
+ * **为什么必须统一**：一块纯 `surfaceVariant` 的灰方块在浅色主题下读起来像
+ * 「图加载失败」，而不是「这张专辑本来就没有封面」；渐变才说明它是**刻意的**占位。
+ * 此前只有桌面播放页这么做，播放页 / 迷你播放器 / 列表项各自写了一个灰底 `MusicNote`
+ * —— 同一个「没有封面」在四处长得不一样，一眼就能看出哪块是后补的。
+ *
+ * @param corner 占位块圆角，应与调用处真实封面的圆角一致
+ * @param animated 形状是否持续变形。**小于约 72dp 时关掉** —— 那个尺寸下变形根本看不出来，
+ *   却要一直跑一条 `Animatable`；小尺寸退化成静态图标反而更清楚。
+ */
+@Composable
+fun CpCoverPlaceholder(
+    modifier: Modifier = Modifier,
+    corner: Dp = 20.dp,
+    animated: Boolean = true,
+) {
+    val ink = MaterialTheme.colorScheme.onPrimaryContainer
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(corner))
+            .background(
+                Brush.linearGradient(
+                    listOf(
+                        MaterialTheme.colorScheme.primaryContainer,
+                        MaterialTheme.colorScheme.tertiaryContainer,
+                    )
+                )
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (animated) {
+            MorphingShape(
+                modifier = Modifier.fillMaxSize(0.42f),
+                color = ink.copy(alpha = 0.45f),
+            )
+        } else {
+            Icon(
+                Icons.Filled.MusicNote,
+                contentDescription = null,
+                tint = ink.copy(alpha = 0.55f),
+                modifier = Modifier.fillMaxSize(0.40f),
+            )
+        }
+    }
+}
+
+/**
+ * Expressive 浮动工具条：**按内容宽度**、居中、带抬升的一枚胶囊。
+ *
+ * 与「整宽 `Surface(CircleShape)`」的差别就是它**不长满一行**。M3 Expressive 里
+ * 次级工具（随机 / 循环 / 睡眠 / 更多）是一枚**浮在内容之上**的胶囊，而不是又一条工具栏。
+ *
+ * 此前播放页有两枚**等宽**全宽胶囊上下叠着（主控件 + 工具行），看起来像两条工具栏，
+ * 层级全丢；而歌词页那枚只有两个按钮却铺满整宽，`SpaceEvenly` 把两者推到 1/4 与 3/4 处，
+ * 中间空出一大块，像「少了两个按钮」。
+ *
+ * 用法：`CpFloatingToolbar(Modifier.align(Alignment.CenterHorizontally)) { … }`
+ */
+@Composable
+fun CpFloatingToolbar(
+    modifier: Modifier = Modifier,
+    content: @Composable RowScope.() -> Unit,
+) {
+    Surface(
+        modifier = modifier,
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 3.dp,
+        shadowElevation = 3.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            content = content,
+        )
     }
 }
 

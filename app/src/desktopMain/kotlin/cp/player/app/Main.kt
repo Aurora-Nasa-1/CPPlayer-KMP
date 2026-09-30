@@ -16,11 +16,18 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowDecoration
 import androidx.compose.ui.window.WindowPosition
+import androidx.compose.ui.window.WindowScope
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import cp.player.app.platform.DesktopBackDispatcher
 import cp.player.app.platform.DesktopRenderTuning
+import cp.player.app.platform.DesktopWindowPlacement
+import cp.player.app.platform.WindowsWindowCorners
+import cp.player.app.ui.component.DesktopTitleBar
+import cp.player.app.ui.screen.AccountScreen
+import cp.player.app.ui.util.DesktopShell
 import cp.player.app.version.AppVersion
 import cp.player.core.MusicBackend
 import cp.player.core.music.TrackSummary
@@ -55,6 +62,18 @@ private const val SeekStepMs = 5_000L
 /** 窗口尺寸落盘前的静默期：拖动过程中尺寸每帧都在变，停稳了再写。 */
 private const val WindowSizeSaveDelayMs = 400L
 
+/**
+ * DWM 圆角的重试次数与间隔。
+ *
+ * 窗口从「创建」到「真正 map 出来、`IsWindowVisible` 为真」之间有一小段窗口期，
+ * 在那之前按进程 ID 找不到任何可见窗口。20 × 100ms 足够覆盖冷启动。
+ */
+private const val WindowCornerAttempts = 20
+private const val WindowCornerRetryDelayMs = 100L
+
+// `WindowDecoration` 目前还是实验 API（要显式 opted-in）。用它的唯一理由是**能指定缩放抓手
+// 厚度**：`undecorated = true` 等价于默认的 8dp，那圈抓手会压住贴着窗口边缘的控件。
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 fun main() {
     // 必须最先执行：Skiko 在创建渲染器时首次读取 skiko.* 属性并固化，
     // 晚于这一步再写就不生效了。见 DesktopRenderTuning 的时序约束说明。
@@ -74,9 +93,29 @@ fun main() {
             state = windowState,
             title = "CPPlayer",
             onKeyEvent = ::handleDesktopShortcut,
+            // 无边框：系统标题栏整体交给 DesktopTitleBar 自绘。
+            //
+            // 拖拽缩放**不需要额外代码**：ComposeWindow 内置 UndecoratedWindowResizer，
+            // 在 isUndecorated() && isResizable() 时自动在窗口四周铺一圈透明抓手并切换光标。
+            // 注意 resizable 默认就是 true，别为了「无边框」把它关掉，否则缩放会一起消失。
+            //
+            // ⚠️ 抓手厚度**刻意指定**而不是用 `undecorated = true`（后者等价于默认 8dp）：
+            // 那圈抓手压在窗口最外圈、会和贴边的控件抢手势 —— 桌面滚条就贴在右边缘
+            // （`Alignment.CenterEnd`），厚 8dp 时「拖滚条」会变成「缩放窗口」。
+            // 这里压到 6dp，滚条那边还额外内缩了同样距离（见 DesktopScrollbars.desktop.kt）。
+            decoration = WindowDecoration.Undecorated(6.dp),
         ) {
             // 最小尺寸只能命令式设置：WindowState 没有 minSize 字段。
             LaunchedEffect(Unit) { window.minimumSize = MinWindowSize }
+            // 无边框窗口在 Win11 上是直角（纯 WS_POPUP 吃不到系统的自动圆角），这里手动 opt-in。
+            // 窗口此刻可能还没真正 map 出来（IsWindowVisible 为假就找不到句柄），所以带重试；
+            // 试满就放弃，圆角只是外观，绝不能因此挡住启动。
+            LaunchedEffect(Unit) {
+                repeat(WindowCornerAttempts) {
+                    if (WindowsWindowCorners.applyRoundCorners()) return@LaunchedEffect
+                    delay(WindowCornerRetryDelayMs)
+                }
+            }
             // 记住窗口尺寸：桌面端换一次显示器/改一次分辨率就丢布局，是很容易被抱怨的细节。
             LaunchedEffect(Unit) {
                 snapshotFlow { windowState.size }
@@ -99,7 +138,26 @@ fun main() {
                     .collect { window.title = it }
             }
             StartupHealthProbe()
-            App()
+            // WindowDraggableArea 是 WindowScope 的扩展，而 WindowScope 不是 CompositionLocal，
+            // 树内深层拿不到；Compose 自带的 LocalWindow 又标了 internal。所以在这里把
+            // FrameWindowScope 捕获成 WindowScope 再传下去，标题栏才能在任意深度拖窗口。
+            val windowScope: WindowScope = this
+            App(
+                titleBar = { navigator ->
+                    DesktopTitleBar(
+                        windowScope = windowScope,
+                        windowState = windowState,
+                        onClose = ::exitApplication,
+                        onOpenAccount = { navigator.push(AccountScreen()) },
+                        // 「设置」在桌面是**右侧内嵌面板**，开关是 MainScreen 的局部状态，
+                        // 标题栏隔着 Navigator 够不到 ⇒ 走 DesktopShell 这条单向指令。
+                        onOpenSettings = { DesktopShell.settingsRequested = true },
+                        // 搜索同样走指令通道：切到搜索 tab 由 MainScreen 做，关键词由
+                        // SearchScreen 消费并喂给它自己的 ScreenModel。
+                        onSearch = { DesktopShell.pendingSearchQuery = it },
+                    )
+                },
+            )
         }
     }
 }
@@ -125,11 +183,16 @@ private fun loadWindowSize(): DpSize {
     val width = parts[0].toFloatOrNull() ?: return DefaultWindowSize
     val height = parts[1].toFloatOrNull() ?: return DefaultWindowSize
     if (width < MinWindowSize.width || height < MinWindowSize.height) return DefaultWindowSize
-    val screen = runCatching { Toolkit.getDefaultToolkit().screenSize }.getOrNull()
+    // ⚠️ 上限取**工作区**，不是 `Toolkit.screenSize`（整屏）。
+    // 存过一个「整屏尺寸」的窗口会在下次启动时直接铺满整个输出 —— 而无边框窗口铺满输出会被
+    // Windows 提升为全屏呈现（Fullscreen Optimizations），在 HDR 显示器上可能连带切显示模式，
+    // 退出后桌面停在坏的色彩状态、SDR 内容闪烁。这类「窗口不该大于工作区」的约束在这里收口，
+    // 比事后补救可靠。详见 DesktopWindowPlacement 的说明。
+    val work = runCatching { DesktopWindowPlacement.primaryWorkArea() }.getOrNull()
         ?: return DpSize(width.dp, height.dp)
     return DpSize(
-        width.coerceAtMost(screen.width.toFloat()).dp,
-        height.coerceAtMost(screen.height.toFloat()).dp,
+        width.coerceAtMost(work.width.toFloat()).dp,
+        height.coerceAtMost(work.height.toFloat()).dp,
     )
 }
 

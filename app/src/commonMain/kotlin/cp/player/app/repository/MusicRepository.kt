@@ -3,11 +3,15 @@ package cp.player.app.repository
 import cp.player.app.extractUidFromLoginStatus
 import cp.player.core.BackendResult
 import cp.player.core.api.MusicApiService
+import cp.player.core.music.AlbumSummary
+import cp.player.core.music.ArtistSummary
+import cp.player.core.music.BannerItem
 import cp.player.core.music.MusicResult
 import cp.player.core.music.MusicSourceFromApi
 import cp.player.core.music.PlaylistDetail
 import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.PlaylistTracksPage
+import cp.player.core.music.RankingSummary
 import cp.player.core.music.SearchResult
 import cp.player.core.music.TrackSummary
 import kotlinx.serialization.json.JsonArray
@@ -67,6 +71,44 @@ class MusicRepository(private val api: MusicApiService) {
 
     suspend fun getPersonalizedNewSongs(limit: Int): MusicResult<List<TrackSummary>> =
         MusicSourceFromApi.parseRecommendedSongs(api.getPersonalizedNewSongs(limit))
+
+    // ======================== 首页发现区 ========================
+    //
+    // 这几项此前只存在于 [MusicApiService]，首页够不到，于是首页只能靠
+    // 「日推 + 两个歌单栅格」撑版面，其余位置用纯入口卡片填空。
+    // 这里把它们按首页真正需要的粒度暴露出来。
+
+    /** 首页焦点图（已过滤掉应用内无法跳转的类型）。 */
+    suspend fun getBanners(): MusicResult<List<BannerItem>> =
+        MusicSourceFromApi.getBanners(api)
+
+    /** 榜单列表（飙升榜 / 新歌榜 / 原创榜 …）。 */
+    suspend fun getRankings(): MusicResult<List<RankingSummary>> =
+        MusicSourceFromApi.getRankings(api)
+
+    /** 新碟上架。 */
+    suspend fun getNewAlbums(limit: Int = 30): MusicResult<List<AlbumSummary>> =
+        MusicSourceFromApi.getNewAlbums(api, limit = limit)
+
+    /**
+     * 新歌速递。
+     * @param type 地区：0=全部, 7=华语, 96=欧美, 8=日本, 16=韩国
+     */
+    suspend fun getNewSongsByRegion(type: Int, limit: Int = 20): MusicResult<List<TrackSummary>> =
+        MusicSourceFromApi.getTopSongs(api, type).let { result ->
+            when (result) {
+                is BackendResult.Success -> BackendResult.Success(result.data.take(limit))
+                else -> result
+            }
+        }
+
+    /** 热门歌手。 */
+    suspend fun getHotArtists(limit: Int = 30): MusicResult<List<ArtistSummary>> =
+        MusicSourceFromApi.getHotArtists(api, limit = limit)
+
+    /** 精品歌单。 */
+    suspend fun getHighQualityPlaylists(limit: Int = 30): MusicResult<List<PlaylistSummary>> =
+        MusicSourceFromApi.getHighQualityPlaylists(api, limit = limit)
 
     suspend fun getPlaylistDetail(id: Long): MusicResult<PlaylistDetail> =
         MusicSourceFromApi.getPlaylistDetail(api, id)

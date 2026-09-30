@@ -42,7 +42,9 @@ class CommentScreen(val id: String, val type: String = "music") : Screen {
             Box(Modifier.fillMaxSize()) {
                 when {
                     state.loading && state.comments.isEmpty() -> {
-                        CircularProgressIndicator(Modifier.align(Alignment.Center))
+                        cp.player.app.ui.component.CpLoadingIndicator(
+                            Modifier.align(Alignment.Center).size(40.dp)
+                        )
                     }
                     state.error != null -> {
                         ContentState(

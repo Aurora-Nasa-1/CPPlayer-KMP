@@ -36,6 +36,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.core.music.PlaylistSummary
+import cp.player.app.ui.anim.CoverFlight
+import cp.player.app.ui.anim.coverFlightSource
 import cp.player.app.ui.util.resized
 
 /**
@@ -54,7 +56,11 @@ fun PlaylistItem(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        onClick = onClick,
+        onClick = {
+            // 在卡片自身触发：无论哪条调用路径（库列表 / 搜索 / 快捷入口）都覆盖。
+            CoverFlight.openPlaylist(playlist.id, playlist.coverUrl)
+            onClick()
+        },
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -65,7 +71,8 @@ fun PlaylistItem(
         ) {
             Box(
                 Modifier.size(60.dp).clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .coverFlightSource(CoverFlight.playlistKey(playlist.id), 14.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 if (!playlist.coverUrl.isNullOrBlank()) {
@@ -145,9 +152,33 @@ fun PlaylistCoverCard(
     Column(
         modifier = modifier
             .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier.width(160.dp))
-            .clickable { onClick() },
+            .clickable {
+                CoverFlight.openPlaylist(playlist.id, playlist.coverUrl)
+                onClick()
+            },
     ) {
-        Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f)) {
+        Box(
+            modifier = Modifier.fillMaxWidth().aspectRatio(1f)
+                .coverFlightSource(CoverFlight.playlistKey(playlist.id), 24.dp),
+        ) {
+            // 占位块**常驻最底层**，而不是「没有封面时才画」。
+            //
+            // 只按「coverUrl 是否非空」决定画不画占位块，会漏掉最常见的一种中间态：
+            // URL 有值、图还在路上（或已经 404）。那时 AsyncImage 什么都没画出来，
+            // 只剩底部那条压暗渐变悬在卡片底色上 —— 整块磁贴看起来像渲染坏了。
+            // 放在底层就三种情况都成立：图到位被盖住，图挂了/没到就露出占位块。
+            Box(
+                Modifier.fillMaxSize()
+                    .clip(MaterialTheme.shapes.extraLarge)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.MusicNote, null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(40.dp),
+                )
+            }
             if (overImage) {
                 // [Bolt] Limit playlist thumbnail downloads to 300px to avoid large memory footprints
                 AsyncImage(
@@ -172,19 +203,6 @@ fun PlaylistCoverCard(
                             )
                         ),
                 )
-            } else {
-                Box(
-                    Modifier.fillMaxSize()
-                        .clip(MaterialTheme.shapes.extraLarge)
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        Icons.Filled.MusicNote, null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(40.dp),
-                    )
-                }
             }
             Text(
                 text = playlist.name,

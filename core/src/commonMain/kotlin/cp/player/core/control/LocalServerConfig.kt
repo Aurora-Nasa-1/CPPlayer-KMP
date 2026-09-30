@@ -30,7 +30,7 @@ enum class OutputMode {
  * @property bindAddress 流输出服务的绑定地址。
  * @property streamPort 流输出服务端口（CPPlayer 自己监听）。
  * @property accessToken 流输出访问令牌；非空时 `/stream` 需携带 `?token=`。
- * @property pushEnabled 曲目变化时是否自动推送到接收端。
+ * @property pushEnabled 曲目变化时是否自动推送到接收端。**默认关闭**（见该字段的说明）。
  * @property receiverBaseUrl 接收端基地址，例如 `http://127.0.0.1:8420`。
  */
 data class LocalServerConfig(
@@ -39,7 +39,18 @@ data class LocalServerConfig(
     val bindAddress: String = BIND_LOOPBACK,
     val streamPort: Int = DEFAULT_STREAM_PORT,
     val accessToken: String = "",
-    val pushEnabled: Boolean = true,
+
+    /**
+     * 曲目变化时是否自动推送到接收端。
+     *
+     * ⚠️ **默认关闭。** 推送是**出站请求**：在用户从未配置过接收端地址的情况下默认开启，
+     * 等于让应用主动往一个用户没设置过的地址发请求。默认值策略是「最小权限 +
+     * 不替用户做决定」—— 涉及对外通信的一律默认关，由用户显式打开。
+     *
+     * 既有用户不受影响：只要在本页动过任一配置，[cp.player.core.control.LocalServerConfigStore.write]
+     * 就会把全部键落盘，所以他们的既有选择仍然是显式读回来的值。
+     */
+    val pushEnabled: Boolean = false,
     val receiverBaseUrl: String = DEFAULT_RECEIVER_BASE_URL,
 
     /**

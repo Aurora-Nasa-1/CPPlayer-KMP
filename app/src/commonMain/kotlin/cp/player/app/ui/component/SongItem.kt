@@ -29,6 +29,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import cp.player.app.ui.anim.CoverFlight
+import cp.player.app.ui.anim.coverFlightSource
 import cp.player.app.ui.util.resized
 import cp.player.core.music.TrackSummary
 
@@ -85,7 +87,8 @@ fun SongItem(
                 }
                 Box(
                     Modifier.size(52.dp).clip(shape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .coverFlightSource(CoverFlight.trackKey(track.id), 12.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     if (!track.coverUrl.isNullOrBlank()) {
@@ -96,7 +99,19 @@ fun SongItem(
                             contentScale = ContentScale.Crop,
                         )
                     } else {
-                        Icon(Icons.Filled.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(
+                            Icons.Filled.MusicNote,
+                            null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    // 正在播放：封面上浮一个跳动的均衡器。它比「标题变主题色 + 加粗」
+                    // 强得多 —— 后者要逐字读文字才知道，前者余光就能扫到。
+                    if (isCurrentlyPlaying) {
+                        CpPlayingEqualizer(
+                            modifier = Modifier.align(Alignment.BottomStart).padding(4.dp),
+                        )
                     }
                 }
                 }

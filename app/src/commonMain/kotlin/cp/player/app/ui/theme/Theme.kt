@@ -22,6 +22,18 @@ import com.materialkolor.rememberDynamicColorScheme
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 /**
+ * 设置页用的短标签。
+ *
+ * 放这里而不是 UI 层：重构前这段 `when` 在「外观」页和已经删掉的「偏好设置」页
+ * 各写了一份，两边措辞已经开始漂移。
+ */
+fun ThemeMode.displayName(): String = when (this) {
+    ThemeMode.SYSTEM -> "跟随系统"
+    ThemeMode.LIGHT -> "浅色"
+    ThemeMode.DARK -> "深色"
+}
+
+/**
  * 换色过渡时长。
  *
  * 600 ms 是权衡结果：再短会显得「跳」，再长则整棵 UI 树要在更久的时间里逐帧重组

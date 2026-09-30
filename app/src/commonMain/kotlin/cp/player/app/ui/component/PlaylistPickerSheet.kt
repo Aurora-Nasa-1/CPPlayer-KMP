@@ -21,7 +21,6 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -168,7 +167,7 @@ fun PlaylistPickerSheet(
                 playlists == null -> Box(
                     Modifier.fillMaxWidth().height(160.dp),
                     contentAlignment = Alignment.Center,
-                ) { CircularProgressIndicator() }
+                ) { CpLoadingIndicator(Modifier.size(40.dp)) }
                 playlists!!.isEmpty() -> Box(
                     Modifier.fillMaxWidth().height(120.dp),
                     contentAlignment = Alignment.Center,
@@ -342,7 +341,7 @@ fun SourceSongsSelectionSheet(
                 isLoading -> Box(
                     Modifier.fillMaxWidth().height(200.dp),
                     contentAlignment = Alignment.Center,
-                ) { CircularProgressIndicator() }
+                ) { CpLoadingIndicator(Modifier.size(40.dp)) }
                 songs.isNullOrEmpty() -> Box(
                     Modifier.fillMaxWidth().height(200.dp),
                     contentAlignment = Alignment.Center,

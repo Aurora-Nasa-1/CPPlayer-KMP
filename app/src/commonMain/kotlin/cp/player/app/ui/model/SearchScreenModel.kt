@@ -7,7 +7,6 @@ import cp.player.core.BackendResult
 import cp.player.core.api.MusicApiMethod
 import cp.player.core.music.SearchResult
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,7 +14,6 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -99,30 +97,12 @@ class SearchScreenModel(private val initialQuery: String = "") : ScreenModel {
             return
         }
         suggestionJob = screenModelScope.launch {
-            delay(250)
             val requestedQuery = query.trim()
-            val response = runCatching { AppModel.musicRepository.getSearchSuggestions(requestedQuery) }.getOrNull()
+            // 解析与防抖走共享实现，与桌面标题栏的全局搜索框同一份 —— 见 SearchSuggestions.kt。
+            val suggestions = loadSearchSuggestions(requestedQuery).orEmpty()
+            // 归属校验：`suggestionJob?.cancel()` 是协作式的，结果回来时关键词可能又变了。
             if (_state.value.query.trim() != requestedQuery) return@launch
-            val suggestions = response?.parseSuggestions().orEmpty()
-                .filterNot { it.equals(requestedQuery, ignoreCase = true) }
-                .distinct()
-                .take(8)
             _state.value = _state.value.copy(suggestions = suggestions)
-        }
-    }
-
-    private fun JsonElement.parseSuggestions(): List<String> {
-        val root = this as? JsonObject ?: return emptyList()
-        val result = root["result"] as? JsonObject ?: root
-        val array = (result["allMatch"] ?: result["suggestions"] ?: result["data"]) as? JsonArray
-            ?: return emptyList()
-        return array.mapNotNull { item ->
-            when (item) {
-                is JsonPrimitive -> item.contentOrNull
-                is JsonObject -> (item["keyword"] ?: item["name"] ?: item["word"])
-                    ?.jsonPrimitive?.contentOrNull
-                else -> null
-            }?.trim()?.takeIf(String::isNotEmpty)
         }
     }
 

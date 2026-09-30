@@ -15,7 +15,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -148,7 +147,7 @@ fun AddToPlaylistSheet(
                     Modifier.fillMaxWidth().height(96.dp),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
-                ) { CircularProgressIndicator() }
+                ) { CpLoadingIndicator(Modifier.size(40.dp)) }
                 playlists!!.isEmpty() -> Text(
                     "还没有歌单，先在上方新建一个吧",
                     style = MaterialTheme.typography.bodyMedium,

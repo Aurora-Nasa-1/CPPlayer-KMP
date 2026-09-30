@@ -3,6 +3,7 @@ package cp.player.app.ui.model
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
+import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.PlaylistSortType
 import cp.player.app.ui.util.UiEvents
 import cp.player.core.BackendResult
@@ -228,22 +229,29 @@ class PlaylistDetailScreenModel : ScreenModel {
         return tracks.map { "$provider://song/${it.id}" }
     }
 
-    /** 按当前排序后的列表，从 [index] 处开始播放（替换队列）。 */
-    fun playAt(index: Int) {
-        val ids = mediaIds(sortedTracks(_state.value.tracks, _state.value.sortType))
+    /** 按当前排序后的列表，从 [index] 处开始播放（替换队列）。[animateCover] 仅用户点击传 true。 */
+    fun playAt(index: Int, animateCover: Boolean = true) {
+        val tracks = sortedTracks(_state.value.tracks, _state.value.sortType)
+        val ids = mediaIds(tracks)
         if (ids.isEmpty()) return
+        if (animateCover) tracks.getOrNull(index)?.let { CoverFlight.play(it.id, it.coverUrl) }
         screenModelScope.launch { AppModel.playback.playQueue(ids, startIndex = index) }
     }
 
     fun playAll() {
-        val ids = mediaIds(sortedTracks(_state.value.tracks, _state.value.sortType))
+        val tracks = sortedTracks(_state.value.tracks, _state.value.sortType)
+        val ids = mediaIds(tracks)
         if (ids.isEmpty()) return
+        tracks.firstOrNull()?.let { CoverFlight.play(it.id, it.coverUrl) }
         screenModelScope.launch { AppModel.playback.playQueue(ids, startIndex = 0) }
     }
 
     fun playShuffle() {
-        val ids = mediaIds(_state.value.tracks).shuffled()
+        // 先洗牌曲目再映射 mediaId，保证 CoverFlight 起点与实际起播的曲目一致。
+        val tracks = _state.value.tracks.shuffled()
+        val ids = mediaIds(tracks)
         if (ids.isEmpty()) return
+        tracks.firstOrNull()?.let { CoverFlight.play(it.id, it.coverUrl) }
         screenModelScope.launch { AppModel.playback.playQueue(ids, startIndex = 0) }
     }
 

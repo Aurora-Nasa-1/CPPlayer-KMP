@@ -58,7 +58,21 @@ object AppModel {
     val isFirstRun: Boolean get() = backend.getAvailableProviders().isEmpty()
 
     val cookieStorage: ProviderCookieStorage get() = backend.cookieStorage
-    val settings: SettingsStorage get() = cp.player.core.util.defaultSettingsStorage()
+    /**
+     * 全局设置存储。
+     *
+     * ⚠️ 必须是**单例**。桌面实现构造时把整个 properties 文件读进内存、每次写入**全量回写**，
+     * 所以同一个 namespace 上的两个实例会互相覆盖：后写者拿自己的陈旧快照盖掉先写者的改动。
+     *
+     * 原先写成 `get() = defaultSettingsStorage()` —— 每次访问都新建实例，于是
+     * `cp_player_prefs` 上同时有三个写者（这里、`MusicBackend` 注入的那个、
+     * `DesktopRenderTuning` 的 lazy 实例），典型症状是
+     * 「改完主题 → 去渲染后端页动一下垂直同步 → 主题被回退」。
+     *
+     * 现在 [cp.player.core.util.defaultSettingsStorage] 自身按 (数据目录, namespace)
+     * 返回共享实例，`by lazy` 只是再省掉一次目录探测。
+     */
+    val settings: SettingsStorage by lazy { cp.player.core.util.defaultSettingsStorage() }
 
     /** Application-facing repository; new UI code should use this instead of raw API. */
     val musicRepository: MusicRepository get() = MusicRepository(backend.musicApi)
@@ -168,6 +182,45 @@ object AppModel {
     fun setPureBlack(enabled: Boolean) {
         settings.putString(KEY_PURE_BLACK, enabled.toString())
         _pureBlack.value = enabled
+    }
+
+    // ============ 首次使用引导（持久化） ============
+
+    private const val KEY_ONBOARDING_DONE = "onboarding_done"
+
+    private val _onboardingDone = MutableStateFlow(
+        settings.getString(KEY_ONBOARDING_DONE)?.toBooleanStrictOrNull() ?: false
+    )
+
+    /** 是否已完成首次使用引导。[App] 用它决定起始页是引导还是主界面。 */
+    val onboardingDoneFlow: StateFlow<Boolean> = _onboardingDone.asStateFlow()
+
+    fun setOnboardingDone(done: Boolean = true) {
+        settings.putString(KEY_ONBOARDING_DONE, done.toString())
+        _onboardingDone.value = done
+    }
+
+    // ============ 音源隔离（持久化） ============
+
+    private const val KEY_ISOLATION_SWITCH_ACCOUNT = "isolation_switch_account"
+
+    private val _isolationSwitchAccount = MutableStateFlow(
+        settings.getString(KEY_ISOLATION_SWITCH_ACCOUNT)?.toBooleanStrictOrNull() ?: true
+    )
+
+    /**
+     * 切换音源时是否**同步切换到该音源自己的账号**（默认开）。
+     *
+     * Cookie 本来就是按音源分开存的（`cookie_<providerId>`），所以「隔离」只需要在
+     * 切换的那一刻把资料重新拉一遍 —— 关掉它则表示切换后保留上一个音源的资料展示。
+     */
+    val isolationSwitchAccountFlow: StateFlow<Boolean> = _isolationSwitchAccount.asStateFlow()
+
+    fun isolationSwitchAccount(): Boolean = _isolationSwitchAccount.value
+
+    fun setIsolationSwitchAccount(enabled: Boolean) {
+        settings.putString(KEY_ISOLATION_SWITCH_ACCOUNT, enabled.toString())
+        _isolationSwitchAccount.value = enabled
     }
 
     private var coverColorTrackingStarted = false
@@ -529,23 +582,34 @@ object AppModel {
     fun refreshUserProfile() {
         profileRefreshJob?.cancel()
         profileRefreshJob = modelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val profile = runCatching {
-                val status = api.getLoginStatus()
-                val root = status as? kotlinx.serialization.json.JsonObject ?: return@runCatching null
-                val uid = extractUidFromLoginStatus(root) ?: return@runCatching null
-                val data = unwrapLoginStatusData(root) ?: return@runCatching null
-                val prof = (data["profile"] as? kotlinx.serialization.json.JsonObject)
-                    ?: (data["account"] as? kotlinx.serialization.json.JsonObject)
-                UserProfile(
-                    uid = uid,
-                    nickname = (prof?.get("nickname") as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "",
-                    avatarUrl = (prof?.get("avatarUrl") as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "",
-                )
-            }.getOrNull()
-            _userProfile.value = profile
-            // 收藏列表与账号绑定，资料刷新后同步刷新
-            runCatching { playback.refreshFavorites() }
+            refreshUserProfileAwait()
         }
+    }
+
+    /**
+     * [refreshUserProfile] 的可挂起版本：登录/登出流程需要**拿到这次拉取的结果**
+     * （多账号管理要把 uid/昵称/头像连同 cookie 一起存起来），所以把「取资料」拆出来。
+     *
+     * 返回 null 表示当前音源没有登录态（或拉取失败）。
+     */
+    suspend fun refreshUserProfileAwait(): UserProfile? {
+        val profile = runCatching {
+            val status = api.getLoginStatus()
+            val root = status as? kotlinx.serialization.json.JsonObject ?: return@runCatching null
+            val uid = extractUidFromLoginStatus(root) ?: return@runCatching null
+            val data = unwrapLoginStatusData(root) ?: return@runCatching null
+            val prof = (data["profile"] as? kotlinx.serialization.json.JsonObject)
+                ?: (data["account"] as? kotlinx.serialization.json.JsonObject)
+            UserProfile(
+                uid = uid,
+                nickname = (prof?.get("nickname") as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "",
+                avatarUrl = (prof?.get("avatarUrl") as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "",
+            )
+        }.getOrNull()
+        _userProfile.value = profile
+        // 收藏列表与账号绑定，资料刷新后同步刷新
+        runCatching { playback.refreshFavorites() }
+        return profile
     }
 
     /** 清空当前用户资料（登出后调用）。 */
@@ -710,6 +774,11 @@ object AppModel {
         val result = backend.switchProvider(provider)
         lastSwitchError = (result as? BackendResult.Error)?.message
             ?: (result as? BackendResult.Unsupported)?.message
+        // 音源隔离：cookie 是按音源存的，切过去之后要按**新音源的 cookie** 重新拉资料，
+        // 否则界面会继续显示上一个音源的账号（用户看到的是「切了源但账号没换」）。
+        if (result.isSuccess && isolationSwitchAccount()) {
+            refreshUserProfile()
+        }
         return result.isSuccess
     }
 

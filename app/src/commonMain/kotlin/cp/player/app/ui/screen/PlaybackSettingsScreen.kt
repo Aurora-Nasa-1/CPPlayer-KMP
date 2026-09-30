@@ -1,26 +1,11 @@
 package cp.player.app.ui.screen
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bedtime
-import androidx.compose.material.icons.filled.HighQuality
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -28,112 +13,102 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
-import cp.player.app.ui.component.LegacyListItem
 import cp.player.app.ui.component.LegacyPageScaffold
-import cp.player.app.ui.component.ScrollColumn
-import cp.player.core.playback.PlaybackController
+import cp.player.app.ui.component.LocalIsExpanded
+import cp.player.app.ui.component.SettingsClickItem
+import cp.player.app.ui.component.SettingsDropdownItem
+import cp.player.app.ui.component.SettingsNote
+import cp.player.app.ui.component.SettingsPage
+import cp.player.app.ui.component.SettingsSection
+import cp.player.app.ui.component.SleepTimerDialog
 
+/**
+ * 播放与音质。
+ *
+ * ### 与重构前的差异
+ *
+ * 1. **删掉了「立即播放」开关。** 它的持久化键 `play_immediately` 全仓库只有本文件与
+ *    已删除的「交互逻辑」页读写 —— **播放链路从不读它**。也就是说这个开关做什么都不影响，
+ *    而它的副标题还描述了一个（未实现的）「只加入队列」行为。留着它比没有更糟：
+ *    用户会以为自己关掉的东西生效了。
+ * 2. **睡眠定时从「一个开关 + 一个下拉」收敛成一个入口行。** 那两者操作的是同一份
+ *    运行时状态（`sleepAfterTrack` 既是开关的值，又是下拉的一个选项），
+ *    而且下拉的「剩余 N 分钟」是算出来的、没法反选回原预设。
+ *    现在点开的是**播放页同一个** [SleepTimerDialog] —— 单一事实源，两边状态一致。
+ * 3. **音质副标题说清了降级行为**，不再只重复标题。
+ */
 class PlaybackSettingsScreen : Screen {
-    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
-        val expanded = cp.player.app.ui.component.LocalIsExpanded.current
+        val expanded = LocalIsExpanded.current
         val quality by AppModel.playbackQualityFlow.collectAsState()
         val playbackState by AppModel.playback.state.collectAsState()
-        var playImmediately by remember { mutableStateOf(playImmediately()) }
+        var showSleepTimer by remember { mutableStateOf(false) }
+
+        val qualityIndex = AppModel.qualityOptions.indexOfFirst { it.first == quality }.coerceAtLeast(0)
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
-            ScrollColumn(
-                modifier = pageModifier.padding(horizontal = if (expanded) 20.dp else 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                SettingsCard("在线播放") {
-                    Text("默认音质", style = MaterialTheme.typography.titleMedium)
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        AppModel.qualityOptions.forEach { (level, label) ->
-                            FilterChip(
-                                selected = quality == level,
-                                onClick = { AppModel.setPlaybackQuality(level) },
-                                label = { Text(label) },
-                            )
-                        }
-                    }
-                }
-                SettingsCard("播放行为") {
-                    LegacyListItem(
+            SettingsPage(pageModifier) {
+                SettingsSection("音质") {
+                    SettingsDropdownItem(
+                        title = "默认音质",
+                        subtitle = "在线播放优先请求的音质；音源不提供时自动降级",
+                        options = AppModel.qualityOptions.map { it.second },
+                        selectedIndex = qualityIndex,
+                        onSelect = { index ->
+                            AppModel.qualityOptions.getOrNull(index)?.let { (level, _) ->
+                                AppModel.setPlaybackQuality(level)
+                            }
+                        },
                         index = 0,
                         total = 1,
-                        onClick = { playImmediately = !playImmediately; setPlayImmediately(playImmediately) },
-                        leadingContent = { Icon(Icons.Default.PlayArrow, null) },
-                        headlineContent = { Text("立即播放") },
-                        supportingContent = { Text("点击歌曲后立即开始播放，而不是只加入队列") },
-                        trailingContent = {
-                            Switch(
-                                checked = playImmediately,
-                                onCheckedChange = { playImmediately = it; setPlayImmediately(it) },
-                            )
-                        },
                     )
                 }
-                SettingsCard("睡眠定时") {
-                    LegacyListItem(
+                SettingsSection("睡眠定时") {
+                    SettingsClickItem(
+                        title = "定时关闭",
+                        subtitle = when {
+                            playbackState.sleepAfterTrack -> "播完当前歌曲后暂停"
+                            playbackState.sleepTimerRemainingMs != null ->
+                                "剩余 ${(playbackState.sleepTimerRemainingMs!! / 60_000L) + 1} 分钟"
+                            else -> "未启用"
+                        },
+                        icon = Icons.Filled.Bedtime,
                         index = 0,
                         total = 1,
-                        onClick = { AppModel.playback.setSleepTimer(PlaybackController.SLEEP_AFTER_TRACK) },
-                        leadingContent = { Icon(Icons.Default.Bedtime, null) },
-                        headlineContent = { Text("播完当前歌曲后暂停") },
-                        supportingContent = { Text(if (playbackState.sleepAfterTrack) "已启用" else "播放完当前歌曲后自动暂停") },
-                        trailingContent = {
-                            Switch(
-                                checked = playbackState.sleepAfterTrack,
-                                onCheckedChange = {
-                                    if (it) AppModel.playback.setSleepTimer(PlaybackController.SLEEP_AFTER_TRACK)
-                                    else AppModel.playback.cancelSleepTimer()
-                                },
-                            )
-                        },
-                    )
-                    Text(
-                        "定时播放时长可在播放页的睡眠定时入口中设置。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        onClick = { showSleepTimer = true },
                     )
                 }
+                SettingsNote("这里与播放页的睡眠定时入口打开的是同一个对话框，状态始终一致。")
             }
         }
 
-        if (expanded) body(Modifier.fillMaxWidth()) else LegacyPageScaffold(
-            title = "播放设置",
-            navigationIcon = {
-                IconButton(onClick = { navigator.pop() }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
-                }
-            },
-        ) { pageModifier -> body(pageModifier) }
+        if (showSleepTimer) {
+            SleepTimerDialog(
+                activeRemainingMs = playbackState.sleepTimerRemainingMs,
+                afterTrackActive = playbackState.sleepAfterTrack,
+                onSelect = AppModel.playback::setSleepTimer,
+                onCancelTimer = AppModel.playback::cancelSleepTimer,
+                onDismiss = { showSleepTimer = false },
+            )
+        }
+
+        if (expanded) {
+            body(Modifier.fillMaxWidth())
+        } else {
+            LegacyPageScaffold(
+                title = "播放与音质",
+                navigationIcon = {
+                    IconButton(onClick = { navigator.pop() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+            ) { pageModifier -> body(pageModifier) }
+        }
     }
-}
-
-internal const val PLAY_IMMEDIATELY_KEY = "play_immediately"
-
-internal fun playImmediately(): Boolean =
-    AppModel.settings.getString(PLAY_IMMEDIATELY_KEY)?.toBooleanStrictOrNull() ?: true
-
-internal fun setPlayImmediately(enabled: Boolean) {
-    AppModel.settings.putString(PLAY_IMMEDIATELY_KEY, enabled.toString())
-}
-
-@Composable
-private fun PlaybackSectionHeader(title: String) {
-    Text(
-        title,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-    )
 }
