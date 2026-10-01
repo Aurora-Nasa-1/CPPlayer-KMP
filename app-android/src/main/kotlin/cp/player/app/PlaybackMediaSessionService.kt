@@ -1,5 +1,6 @@
 package cp.player.app
 
+import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import cp.player.core.playback.SharedMedia3Player
@@ -24,6 +25,15 @@ class PlaybackMediaSessionService : MediaSessionService() {
         }
         player = sessionPlayer
         mediaSession = MediaSession.Builder(this, sessionPlayer).build()
+        // 通知栏那个小图标：media3 默认用它自带的占位图（media3_notification_small_icon），
+        // 在状态栏里和本应用没有任何关系。换成自己的单色播放三角。
+        // ⚠️ 状态栏图标必须是**白色剪影 + 透明底**，系统会统一着色 —— 带颜色的图会被糊成色块。
+        // 资源由 scripts/gen_app_icon.py 生成（drawable-*/ic_stat_playback.png）。
+        setMediaNotificationProvider(
+            DefaultMediaNotificationProvider(this).apply {
+                setSmallIcon(R.drawable.ic_stat_playback)
+            }
+        )
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession

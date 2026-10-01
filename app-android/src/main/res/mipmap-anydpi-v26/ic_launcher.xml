@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  安卓启动图标（自适应图标 / Adaptive Icon，API 26+）。
+
+  为什么必须拆两层：各厂商会用圆形、方圆、圆角方形、泪滴等遮罩去裁启动图标，
+  而且还有视差 / 动效会把两层分开位移。带圆角的整张图被裁一次就会露底色或切出怪形状，
+  所以这里是「满铺背景（被裁的是它）+ 收在安全圈内的前景图形」。
+
+  三层 PNG 全部由 scripts/gen_app_icon.py 生成，**不要手改**：
+    - ic_launcher_background  满铺渐变，无圆角（本项目的主色 #4F55A5 / 辅色 #006A68）
+    - ic_launcher_foreground  透明底白色图形，已缩到中心 66dp 安全圈内
+    - ic_launcher             旧式方形图标（自带圆角），给 OEM / Play / lint 用
+
+  ⚠️ 改配色或改形状：改脚本后重跑一次，不要只替换某一层的 PNG ——
+  三层是从同一套参数渲出来的，只换一层会出现「背景新、前景旧」的错位。
+
+  ⚠️ minSdk 是 29，所以 -v26 这一档永远命中；下面那五档 mipmap-* 只在
+  （少数 OEM 直取位图、Play Console、lint 检查密度）这些场景被用到。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@mipmap/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <!-- Android 13+ 「主题图标（Themed Icons）」：直接复用前景层 ——
+         它本来就是白图形 + 透明底，正好适合由系统按壁纸重新着色。 -->
+    <monochrome android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>

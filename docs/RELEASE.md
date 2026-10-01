@@ -21,6 +21,27 @@ The script builds first, creates an annotated Git tag, pushes the commit and tag
 - `.github/workflows/desktop-release.yml` builds Windows `.msi` and Linux `.deb` packages on native GitHub runners, then attaches them to the same release.
 - Repository Actions must have `Settings -> Actions -> General -> Workflow permissions -> Read and write permissions` enabled.
 
+## Desktop packaging (icons + MSI options)
+
+Icons live in two places and are **generated**, not hand-drawn:
+
+```powershell
+python scripts/gen_app_icon.py                  # 桌面 + 安卓，一次全出
+python scripts/gen_app_icon.py --target android # 只出安卓
+python scripts/gen_app_icon.py --preview        # 只出预览图（含安卓圆形遮罩效果）
+```
+
+- Desktop: `app/desktop-icons/{icon.ico,icon.icns,icon.png}`
+- Android: `app-android/src/main/res/mipmap-*/{ic_launcher_background,ic_launcher_foreground,ic_launcher}.png` plus the handwritten `mipmap-anydpi-v26/ic_launcher.xml`
+
+The generator draws with signed distance fields, so one design stays sharp from 16px to 1024px; the palette follows the app theme (primary `#4F55A5`, secondary `#006A68`). Result files are committed, so CI does not need Python.
+
+Android uses an **adaptive icon**: the background is a full-bleed square (the launcher masks it, so it must not carry its own rounded corners) and the foreground glyph is scaled into the central 66dp safe circle. All three layers come from the same script — never replace just one layer's PNG, or you get a new background under an old glyph.
+
+MSI options are declared in `app/build.gradle.kts` under `nativeDistributions.windows { ... }`: desktop shortcut, Start menu entry, per-user install (no UAC prompt), install-directory chooser, and vendor/description/copyright metadata.
+
+⚠️ **`upgradeUuid` must never change after the first public release.** Windows Installer uses it to recognise a new package as an upgrade of the same product. Change it and installs fail with "another version of this product is already installed", and the old version can no longer be removed cleanly — which also breaks the in-app update chain below (step 4 installs an MSI).
+
 ## In-app update chain
 
 1. The About page calls the GitHub Releases API.
