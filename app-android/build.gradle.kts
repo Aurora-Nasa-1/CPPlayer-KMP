@@ -18,7 +18,9 @@ plugins {
 
 android {
     namespace = "cp.player.app"
-    compileSdk = 36
+    // material-kolor 5.x 的 android 产物要求 compileSdk ≥ 37（AAR metadata 强制），
+    // targetSdk 保持 35（运行时行为不变），minSdk 保持 29。
+    compileSdk = 37
     defaultConfig {
         applicationId = "cp.player"
         minSdk = 29
@@ -28,14 +30,24 @@ android {
         buildConfigField("String", "GIT_SHA", "\"${getGitSha()}\"")
         buildConfigField("String", "RELEASE_CHANNEL", "\"$appReleaseChannel\"")
     }
-signingConfigs {
+    signingConfigs {
         create("release") {
+            // 三个条件缺一就保持未签名（assembleRelease 照样产出 *-unsigned.apk，
+            // 本地验证过）：KEYSTORE_FILE 指向存在且非空的文件，且密码齐全。
+            // 否则一旦把空文件/缺密码配进去，失败的是签名步骤，报错和真正的
+            // 编译问题混在一起极难定位（见 release.yml Decode Keystore 的守卫）。
             val keystorePath = System.getenv("KEYSTORE_FILE")
-            if (keystorePath != null && file(keystorePath).exists()) {
+            val storePassword = System.getenv("KEYSTORE_PASSWORD")
+            val keyAlias = System.getenv("KEY_ALIAS")
+            val keyPassword = System.getenv("KEY_PASSWORD")
+            if (!keystorePath.isNullOrBlank() && !storePassword.isNullOrBlank()
+                && !keyAlias.isNullOrBlank() && !keyPassword.isNullOrBlank()
+                && file(keystorePath).let { it.exists() && it.length() > 0 }
+            ) {
                 storeFile = file(keystorePath)
-                storePassword = System.getenv("KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("KEY_ALIAS")
-                keyPassword = System.getenv("KEY_PASSWORD")
+                this.storePassword = storePassword
+                this.keyAlias = keyAlias
+                this.keyPassword = keyPassword
             }
         }
     }

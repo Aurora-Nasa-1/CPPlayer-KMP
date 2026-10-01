@@ -17,8 +17,10 @@ jlayer = "1.0.1"
 jmtc = "0.0.3"
 accompanist-lyrics-ui = "1.0.19"
 accompanist-lyrics-core = "0.4.5"
-# ⚠️ material-kolor 必须锁 5.0.0：它依赖 compose 1.11.1，与本项目一致。
+# ⚠️ material-kolor 锁 5.0.0：它依赖 compose 1.11.1，与本项目一致，且 5.x 才有 M3 Expressive 配色。
 # 5.0.1 起依赖 compose 1.12.0，会把整个项目的 Compose 运行时顶上去而插件仍是 1.11.1 ⇒ 版本错配。
+# 注意：5.0.0 的 android 产物要求 compileSdk ≥ 37（AGP 9.2.1 构建），三处 android DSL 的
+# compileSdk 已同步提到 37（见 app / core / app-android 的 build.gradle.kts）。
 materialkolor = "5.0.0"
 # 取色算法用 Material You 官方的 material-color-utilities（QuantizerCelebi + Score），
 # 与 Android 的 Monet 同源。换成别的量化器（例如 androidx.palette 的 Vibrant 偏好）

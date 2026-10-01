@@ -35,6 +35,9 @@ jobs:
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
+      - name: Setup Gradle
+        # 与两个 Android 工作流对齐：缓存命中 + 守护进程复用，否则桌面包每次全量冷启动。
+        uses: gradle/actions/setup-gradle@v3
       - name: Resolve version
         id: meta
         shell: bash

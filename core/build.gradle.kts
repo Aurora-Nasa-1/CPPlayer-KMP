@@ -12,7 +12,8 @@ version = "1.0.0"
 kotlin {
     android {
         namespace = "cp.player.core"
-        compileSdk = 36
+        // 与 app-android 对齐：material-kolor 5.x 要求 compileSdk ≥ 37。
+        compileSdk = 37
         minSdk = 29
         // AGP 9 的 KMP library 插件**没有** consumerProguardFiles —— consumer keep 规则
         // 改由 optimization.consumerKeepRules 提供（已 javap 核实 KmpOptimization 的 DSL）。
