@@ -120,6 +120,24 @@ jobs:
         with:
           name: CPPlayer-${{ needs.meta.outputs.version }}-${{ matrix.platform }}
           path: app/build/compose/binaries/main/${{ matrix.asset }}/*
+      # jpackage 失败时只给 exit code，真正原因在 compose 日志里。
+      # 直接 cat 到 job 日志 + 传 artifact，下次失败不用再猜。
+      - name: Dump jpackage logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          ls -R app/build/compose/logs || true
+          for f in app/build/compose/logs/*/*-err.txt app/build/compose/logs/*/*-out.txt; do
+            echo "===== $f ====="
+            cat "$f" || true
+          done
+      - name: Upload jpackage logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CPPlayer-${{ needs.meta.outputs.version }}-${{ matrix.platform }}-logs
+          path: app/build/compose/logs/**/*
+          if-no-files-found: ignore
 
   publish:
     needs: [meta, desktop]

@@ -55,9 +55,12 @@ jobs:
         # material-kolor 5.x 的 android 产物要求 compileSdk ≥ 37（见 app-android 的
         # checkDebugAarMetadata 报错）。ubuntu-latest 预装的 SDK 不保证有 37，
         # 这里显式安装，缺了它构建必挂。
+        # 注意：runner 上 sdkmanager 不在 PATH，必须走 $ANDROID_SDK_ROOT 全路径。
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"; fi
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "platforms;android-37.0" "build-tools;37.0.0"
 
       - name: Resolve version
         id: meta
