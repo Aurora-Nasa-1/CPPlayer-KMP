@@ -101,6 +101,19 @@
 
 ## 6. Compose / UI 规则
 
+- **返回键只认 `CpBackButton`，路由页外壳只认 `CpRouteScaffold`，双栏只认 `CpTwoPane`。**
+  （均在 `app/src/commonMain/.../ui/component/`）
+  - 别再手写 `IconButton { Icon(ArrowBack) }` —— 收敛前仓里同时存在**四套**返回键外观
+    （`AppScaffold` 的填充圆钮 / 10 处裸 `IconButton` / 歌单详情宽屏又抄了一遍填充圆钮 /
+    `HomeScreen` 里私有的 `PageTitleBar`），同一屏就能看出差别。
+  - 别再写 `if (expanded) body(Modifier.fillMaxWidth()) else LegacyPageScaffold(…)`。
+    那个分支的**宽屏侧整页没有返回入口**（桌面默认窗口 1320×860、最小 900×640 都 ≥840 断点），
+    而当时 Esc 也没有任何处理器 —— 从标题栏点「账号」进去之后**退不出来**。
+  - **桌面端（`LocalWindowChromeActive`）返回入口只有窗口标题栏一个**，页面一律不自绘
+    （`AppScaffold` 与 `CpRouteScaffold` 内部已判）。判据用 `LocalWindowChromeActive`
+    （槽位是否被注入）而不是平台，理由见它的 KDoc。
+  - 页面**是不是双栏的右栏**由 `LocalEmbeddedInPane` 声明，**不要**拿 `LocalIsExpanded` 去猜：
+    直接 push 到宽屏时后者同样为真，会把「需要返回键的整页」误判成「右栏」。
 - **不要直接在页面里调 material3 的 Expressive 实验 API**
   （`LinearWavyProgressIndicator` / `LoadingIndicator` / `ToggleButton` / `MaterialShapes` …）：
   一律走 `app/src/commonMain/.../ui/component/ExpressiveKit.kt`。理由：省 opt-in、

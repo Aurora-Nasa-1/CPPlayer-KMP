@@ -68,6 +68,21 @@
 6. **设置搜索 / 分组折叠 / 恢复默认未做**（原 P4）。注册表已经带上了 `keywords` 字段，
    搜索只差一个过滤 UI。
 
+### 0.1.1 追加（2026-10-01）：返回键与双栏的统一
+
+§1.4 的 **D3 已彻底解决**，而且不止于设置页 —— 全应用的路由页外壳都收敛了：
+
+| 旧写法 | 症状 | 现在 |
+|--------|------|------|
+| `LegacyPageScaffold` + 各调用点手写 `navigationIcon` | **四套**返回键外观并存（`AppScaffold` 的填充圆钮 / 10 处裸 `IconButton` / 歌单详情宽屏又抄一遍 / `HomeScreen` 里私有的 `PageTitleBar`） | 只有 `CpBackButton` 一个实现 |
+| `if (expanded) body(fillMaxWidth()) else LegacyPageScaffold(…)` | **宽屏下整页没有返回入口**，且当时 Esc 无处理器 ⇒ 桌面默认窗口下从标题栏点「账号」**退不出来** | `CpRouteScaffold` 三选一（内嵌 / 窗口 chrome / 自绘顶栏），宽窄同一条路径 |
+| `DesktopShell.pageCanGoBack` 只反映「内嵌面板是否打开」 | 所有 push 出去的路由页在标题栏上**没有返回键**，标题还停在旧值 | `Main.kt` 按 `navigator.size` 现算；标题走 `DesktopRouteTitle` 声明栈 |
+| 设置页 / 歌单详情各写一遍 `Row { width(320.dp); … }` | 一个有线一个没线，像两套布局 | `CpTwoPane` + `CpPaneWidth.rail` |
+| 靠 `LocalIsExpanded` 猜「我是不是别人的右栏」 | 直接 push 到宽屏时同样为真 ⇒ 误判成右栏、丢掉返回键 | `LocalEmbeddedInPane` 由容器声明 |
+
+**顺带补上**：桌面端任何 push 出去的路由页现在都能用 **Esc** 返回
+（此前只有播放页展开态与歌单多选注册了 `BackHandler`，其它页面按 Esc 毫无反应）。
+
 ---
 
 ## 1. 现状诊断
