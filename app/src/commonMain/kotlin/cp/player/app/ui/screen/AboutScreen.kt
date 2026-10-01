@@ -1,18 +1,13 @@
 package cp.player.app.ui.screen
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Download
@@ -42,13 +37,32 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.platform.downloadUpdate
 import cp.player.app.platform.openUrl
+import cp.player.app.ui.component.CpIconSize
+import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpRouteScaffold
-import cp.player.app.ui.component.LegacyListItem
-import cp.player.app.ui.component.ScrollColumn
+import cp.player.app.ui.component.SettingsClickItem
+import cp.player.app.ui.component.SettingsNote
+import cp.player.app.ui.component.SettingsPage
+import cp.player.app.ui.component.SettingsSection
 import cp.player.app.update.AppUpdateChecker
 import cp.player.app.version.AppVersion
 import kotlinx.coroutines.launch
 
+/**
+ * 关于与支持。
+ *
+ * ### 与重构前的差异（2026-10-01 统一版式时收敛）
+ *
+ * 1. **删掉了本文件私有的 `SectionHeader` / `ClickEntry`。** 它们是 `SettingsSection` /
+ *    `SettingsClickItem` 的**第二份实现**，而且三处不一致：分组标题内边距是
+ *    `horizontal = 16, vertical = 8`（标准是 `start=16 / top=12 / bottom=8`）、
+ *    页面用 `padding(16.dp)` 四边等距（标准是水平 16 / 垂直 8）、组间距 4dp（标准 12dp）。
+ * 2. **行底色回到 `settingsRowContainer()`。** 私有实现直接用了 `LegacyListItem` 的默认色
+ *    `surfaceContainerHigh` —— 浅色主题下它比其余设置页的 `surfaceContainerLow` 明显更深，
+ *    于是「关于」这一页的行比旁边每一页都"重"。默认值只在没有约定的地方才对。
+ * 3. **正文宽度收进 [SettingsPage]**（720dp）。此前它没有上限，宽屏下与其余设置页不同宽。
+ * 4. **底部署名改用 [SettingsNote]**，不再手写 `bodySmall + onSurfaceVariant + padding`。
+ */
 class AboutScreen : Screen {
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
@@ -73,101 +87,90 @@ class AboutScreen : Screen {
             title = "关于与支持",
             onBack = { navigator.pop() },
         ) { pageModifier ->
-            ScrollColumn(
-                modifier = pageModifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                SectionHeader("版本信息")
+            SettingsPage(pageModifier) {
+                SettingsSection("版本信息") {
+                    SettingsClickItem(
+                        index = 0,
+                        total = 3,
+                        icon = Icons.Default.Info,
+                        title = "当前版本",
+                        subtitle = AppVersion.fullVersion,
+                    )
+                    SettingsClickItem(
+                        index = 1,
+                        total = 3,
+                        icon = Icons.Default.Code,
+                        title = "提交哈希",
+                        subtitle = AppVersion.shortSha,
+                    )
+                    SettingsClickItem(
+                        index = 2,
+                        total = 3,
+                        icon = if (isChecking) null else Icons.Default.SystemUpdate,
+                        title = "检查更新",
+                        subtitle = when {
+                            isChecking -> "正在检查..."
+                            updateResult != null -> "发现新版本: v${updateResult!!.versionName}"
+                            else -> "已是最新版本"
+                        },
+                        enabled = !isChecking,
+                        trailingContent = if (isChecking) {
+                            {
+                                // 统一走 Expressive 变形加载器：全应用只剩这一种「等待中」的样子。
+                                // 混用转圈的 CircularProgressIndicator 会让「这块是后补的」一眼可见。
+                                CpLoadingIndicator(modifier = Modifier.size(CpIconSize.action))
+                            }
+                        } else {
+                            null
+                        },
+                        onClick = {
+                            scope.launch {
+                                isChecking = true
+                                val result = AppUpdateChecker.checkUpdate()
+                                updateResult = result
+                                isChecking = false
+                                if (result != null) showUpdateDialog = true
+                            }
+                        },
+                    )
+                }
 
-                ClickEntry(
-                    index = 0,
-                    total = 3,
-                    icon = Icons.Default.Info,
-                    title = "当前版本",
-                    subtitle = AppVersion.fullVersion,
-                )
-                ClickEntry(
-                    index = 1,
-                    total = 3,
-                    icon = Icons.Default.Code,
-                    title = "提交哈希",
-                    subtitle = AppVersion.shortSha,
-                )
+                SettingsSection("项目信息") {
+                    SettingsClickItem(
+                        index = 0,
+                        total = 1,
+                        icon = Icons.Default.Link,
+                        title = "GitHub 项目",
+                        subtitle = "${AppVersion.REPO_OWNER}/${AppVersion.REPO_NAME}",
+                        onClick = { openUrl(AppVersion.RELEASES_PAGE) },
+                    )
+                }
 
-                ClickEntry(
-                    index = 2,
-                    total = 3,
-                    icon = if (isChecking) null else Icons.Default.SystemUpdate,
-                    title = "检查更新",
-                    subtitle = when {
-                        isChecking -> "正在检查..."
-                        updateResult != null -> "发现新版本: v${updateResult!!.versionName}"
-                        else -> "已是最新版本"
-                    },
-                    trailing = if (isChecking) {
-                        {
-                            // 统一走 Expressive 变形加载器：全应用只剩这一种「等待中」的样子。
-                            // 混用转圈的 CircularProgressIndicator 会让「这块是后补的」一眼可见。
-                            cp.player.app.ui.component.CpLoadingIndicator(modifier = Modifier.size(24.dp))
-                        }
-                    } else null,
-                    enabled = !isChecking,
-                    onClick = {
-                        scope.launch {
-                            isChecking = true
-                            val result = AppUpdateChecker.checkUpdate()
-                            updateResult = result
-                            isChecking = false
-                            if (result != null) showUpdateDialog = true
-                        }
-                    },
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                SectionHeader("项目信息")
-                ClickEntry(
-                    index = 0,
-                    total = 1,
-                    icon = Icons.Default.Link,
-                    title = "GitHub 项目",
-                    subtitle = "${AppVersion.REPO_OWNER}/${AppVersion.REPO_NAME}",
-                    onClick = { openUrl(AppVersion.RELEASES_PAGE) },
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                SectionHeader("维护者")
-                ClickEntry(
-                    index = 0,
-                    total = 1,
-                    icon = Icons.Default.Info,
-                    title = "Aurora-Nasa-1",
-                    subtitle = "创建者 & 主要维护者",
-                    onClick = { openUrl("https://github.com/Aurora-Nasa-1") },
-                )
-
-                Spacer(Modifier.height(8.dp))
+                SettingsSection("维护者") {
+                    SettingsClickItem(
+                        index = 0,
+                        total = 1,
+                        icon = Icons.Default.Info,
+                        title = "Aurora-Nasa-1",
+                        subtitle = "创建者 & 主要维护者",
+                        onClick = { openUrl("https://github.com/Aurora-Nasa-1") },
+                    )
+                }
 
                 // 原「赞助」是一个独立的一级设置入口，但它的全部内容就是「项目主页 + 维护者主页」
                 // 两个链接 —— 与本页已有的两个条目完全重合。合并进来，设置根页少一个入口。
-                SectionHeader("支持项目")
-                ClickEntry(
-                    index = 0,
-                    total = 1,
-                    icon = Icons.Default.Link,
-                    title = "支持本项目",
-                    subtitle = "在项目主页查看说明与支持方式",
-                    onClick = { openUrl("https://github.com/Aurora-Nasa-1/CPPlayer-KMP") },
-                )
+                SettingsSection("支持项目") {
+                    SettingsClickItem(
+                        index = 0,
+                        total = 1,
+                        icon = Icons.Default.Link,
+                        title = "支持本项目",
+                        subtitle = "在项目主页查看说明与支持方式",
+                        onClick = { openUrl("https://github.com/Aurora-Nasa-1/CPPlayer-KMP") },
+                    )
+                }
 
-                Spacer(Modifier.height(32.dp))
-                Text(
-                    "CPPlayer · Compose Multiplatform",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                )
+                SettingsNote("CPPlayer · Compose Multiplatform")
             }
         }
 
@@ -184,38 +187,6 @@ class AboutScreen : Screen {
             )
         }
     }
-}
-
-@Composable
-private fun SectionHeader(title: String) {
-    Text(
-        title,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-    )
-}
-
-@Composable
-private fun ClickEntry(
-    index: Int,
-    total: Int,
-    icon: androidx.compose.ui.graphics.vector.ImageVector?,
-    title: String,
-    subtitle: String,
-    enabled: Boolean = true,
-    trailing: @Composable (() -> Unit)? = null,
-    onClick: (() -> Unit)? = null,
-) {
-    LegacyListItem(
-        index = index,
-        total = total,
-        onClick = if (enabled) onClick else null,
-        headlineContent = { Text(title, fontWeight = FontWeight.Medium) },
-        supportingContent = { Text(subtitle, maxLines = 2) },
-        leadingContent = icon?.let { img -> @Composable { Icon(img, null) } },
-        trailingContent = trailing?.let { content -> { content() } },
-    )
 }
 
 @Composable
@@ -258,7 +229,7 @@ private fun UpdateDialog(
         },
         confirmButton = {
             FilledTonalButton(onClick = onDownload) {
-                Icon(Icons.Default.Download, null, modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.Download, null, modifier = Modifier.size(CpIconSize.inline))
                 Spacer(Modifier.width(6.dp))
                 Text("下载更新")
             }

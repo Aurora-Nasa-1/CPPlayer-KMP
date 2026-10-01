@@ -243,8 +243,14 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                         } else {
                             LazyScrollColumn(
                                 Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 32.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                                // 与上方的搜索框、类型切换行取同一个页面内边距。原先这里是 12dp ——
+                                // 结果列表比搜索框左右各缩进 8dp，同一屏里两套边距。
+                                contentPadding = PaddingValues(
+                                    start = CpSpacing.pageHorizontal,
+                                    end = CpSpacing.pageHorizontal,
+                                    bottom = 32.dp,
+                                ),
+                                verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
                             ) {
                                 item {
                                     SectionHeader(

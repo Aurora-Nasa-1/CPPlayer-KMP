@@ -120,10 +120,34 @@
   统一尺寸约束（波形进度条默认容器高度远大于普通进度条）、观感一处调处处变。
 - **动效不要手写 `spring(...)`**：从 `CpMotion` 取。`spatial`（位移 / 尺寸，可回弹）
   与 `effects`（颜色 / 透明度，**不可回弹**）混用会「看着不对」。
-- **页面宽度只能取 `CpSpacing.pageMaxWidth`**；栅格列数取
-  `CpSpacing.gridColumns(内容宽度)`。
-  ⚠️ 写 `Modifier.fillMaxWidth().widthIn(max = …)` **`widthIn` 是空操作**
-  （约束已被钉死），必须 `widthIn(...).fillMaxWidth()`。
+- **页面宽度与边距只能取 `CpSpacing`**，分两类；两套各自成立，**混用才是错的**：
+
+  | 页面类型 | 宽度上限 | 水平内边距 | 页容器 |
+  |---|---|---|---|
+  | 栅格 / 卡片页（首页、曲库、搜索、下载 …） | `pageMaxWidth` 1400 | `pageHorizontal` 20 | 自己拼 `ScrollColumn` / `LazyScrollColumn` |
+  | 表单页（设置、账号、集成、诊断 …） | `formMaxWidth` 720 | `formHorizontal` 16 | **只认 `SettingsPage` / `SettingsLazyPage`** |
+
+  栅格列数取 `CpSpacing.gridColumns(内容宽度)`。
+  - ⚠️ 写 `Modifier.fillMaxWidth().widthIn(max = …)` **`widthIn` 是空操作**
+    （约束已被钉死），必须 `widthIn(...).fillMaxWidth()`。表单页这条已收进
+    `Modifier.settingsContentWidth()`，页面不要再自己拼。
+  - ⚠️ **懒加载不是「可以另写一套边距」的理由**：长列表用 `SettingsLazyPage`，
+    与 `SettingsPage` 同宽同距。表单行的度量（`formRowMinHeight` / `formRowHorizontal` /
+    `formRowVertical` / `formRowGap`）与组内行距（`listRowGap`）同样只从 `CpSpacing` 取。
+  - 判据：**这个值会不会在第二个页面出现**？会 ⇒ 必须进 `CpSpacing`。
+    组件内部的微调（图标与文字之间 4/6/8dp）允许写裸值。
+  - 历史：重构前 11 个设置页里有 **4 个自己拼容器**（根页没有宽度上限、关于页 16dp 四边等距 +
+    4dp 行距、音源管理 8dp 页边距、诊断页 20/12/48 混着）—— 同一套设置四种边距。
+- **设置页的「当前生效 / 选中」行只认 `SettingsClickItem(selected = true)`**，
+  不要自己传 `containerColor = primaryContainer` —— 收敛前「左栏选中 / 当前账号 / 当前音源」
+  三个地方三种颜色（`surfaceContainerHigh` / alpha 0.5 / alpha 0.45），两个 alpha 纯属巧合。
+  - 行尾有**独立可操作控件**（删除 / 移除图标按钮）时必须 `mergeSemantics = false`：
+    语义合并会把子节点的点击动作并进父节点，读屏用户就再也点不到那个按钮。
+- **设置行的底色只认 `settingsRowContainer()`**（深色 `surfaceContainerHighest` /
+  浅色 `surfaceContainerLow`）。直接吃 `LegacyListItem` 的**默认值**（`surfaceContainerHigh`）
+  会让这一页比其余设置页深一档 —— 关于页 / 音源管理 / 诊断页三处都踩过。
+  `SettingsClickItem` / `SettingsButtonItem` 已代为处理，只有「不是设置项的行」
+  （日志条目、歌曲行）才直接用 `LegacyListItem`，那时**必须显式传底色**。
 - **压在图上的白字必须有 `overImage` 兜底分支**：没有封面时回落到 `onSurface` /
   `onSurfaceVariant` + 浅色容器。浅色主题下 `surfaceContainerLow` 近乎白色，
   写死 `Color.White` 会直接糊掉（本仓库已踩过三次）。

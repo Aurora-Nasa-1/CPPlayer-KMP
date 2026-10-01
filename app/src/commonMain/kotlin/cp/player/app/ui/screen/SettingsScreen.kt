@@ -1,6 +1,5 @@
 package cp.player.app.ui.screen
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -12,16 +11,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpTwoPane
 import cp.player.app.ui.component.LocalEmbeddedInPane
 import cp.player.app.ui.component.LocalIsExpanded
 import cp.player.app.ui.component.MonetIcon
 import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.ui.component.SettingsClickItem
+import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.settingsRowContainer
 
@@ -59,7 +59,14 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
         CpTwoPane(
             rail = { railModifier ->
                 ScrollColumn(
-                    modifier = railModifier.padding(top = 8.dp, bottom = 24.dp),
+                    // 水平内边距取 `formHorizontal`：左栏的行与右栏的行因此**离各自栏边界同远**
+                    // （16dp）。此前左栏是 0 —— 行的圆角贴着窗口左边缘，与右栏一比就看出错位。
+                    modifier = railModifier.padding(
+                        start = CpSpacing.formHorizontal,
+                        end = CpSpacing.formHorizontal,
+                        top = CpSpacing.formVertical,
+                        bottom = CpSpacing.formBottomInset,
+                    ),
                 ) {
                     SettingsGroupedList(
                         entries = entries,
@@ -95,29 +102,18 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
 
     if (embedded) {
         // 宿主（MainScreen 的桌面面板）已经提供了顶栏，这里只出内容。
-        ScrollColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            list()
-        }
+        SettingsPage(Modifier.fillMaxSize()) { list() }
         return
     }
 
+    // ⚠️ 根页也走 `SettingsPage`。此前它自己拼容器、**没有宽度上限** ——
+    // 宽屏下列表横跨整屏，点进任一子页正文又收到 720dp，切换时宽度整体跳一下。
+    // 根页是导航列表不是表单，但它和子页是同一屏的两个状态，必须同宽。
     CpRouteScaffold(
         title = "设置",
         onBack = { navigator?.pop() },
-    ) { _ ->
-        ScrollColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            list()
-        }
+    ) { pageModifier ->
+        SettingsPage(pageModifier) { list() }
     }
 }
 
@@ -149,7 +145,9 @@ private fun SettingsGroupedList(
  * 设置首页的分类行：`SettingsClickItem` + `MonetIcon` 的组合。
  *
  * 整组是一张分段卡片（`index`/`total` 连续），行高下限 68dp，容器色按明暗取
- * [settingsRowContainer]；宽屏左栏里当前选中的行改用 `surfaceContainerHigh` 高亮。
+ * [settingsRowContainer]；宽屏左栏里当前选中的行由 `SettingsClickItem(selected = true)`
+ * 换成统一的「当前项」配色 —— 不要在这里自己传 `containerColor`，
+ * 那正是「左栏选中 / 当前账号 / 当前音源」三个地方三种颜色的来源。
  */
 @Composable
 private fun SettingsRow(
@@ -165,11 +163,7 @@ private fun SettingsRow(
         index = index,
         total = total,
         onClick = onClick,
-        containerColor = if (isSelected) {
-            MaterialTheme.colorScheme.surfaceContainerHigh
-        } else {
-            settingsRowContainer()
-        },
+        selected = isSelected,
         leadingContent = {
             MonetIcon(
                 icon = entry.icon,

@@ -4,23 +4,24 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -33,16 +34,35 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
-import kotlinx.datetime.Instant
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LegacyListItem
-import cp.player.app.ui.component.LazyScrollColumn
+import cp.player.app.ui.component.SettingsFieldGroup
+import cp.player.app.ui.component.SettingsLazyPage
+import cp.player.app.ui.component.TopBarAction
+import cp.player.app.ui.component.settingsRowContainer
 import cp.player.core.monitor.HealthMonitor
+import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 
+/**
+ * 诊断：接口调用记录。
+ *
+ * ### 与重构前的差异（2026-10-01 统一版式时收敛）
+ *
+ * 1. **页边距回到表单页标准。** 原先一个页面里混了三种内边距：概览 20/12、筛选条 16/8、
+ *    空态 48dp、列表自己拼 `LazyScrollColumn(fillMaxWidth)` 完全没有宽度上限 ——
+ *    宽屏下记录列表横跨整屏，和上一屏的设置页完全不同宽。
+ * 2. **筛选条钉在列表上方**（`SettingsLazyPage` 的 `header` 槽位），仍不参与滚动 ——
+ *    记录一多，翻到一半就改不了筛选条件了。表头与列表正文受同一个宽度上限约束。
+ * 3. **行距从 2dp 改到 `CpSpacing.listRowGap`(4dp)。** 2dp 不是刻度上的值，
+ *    而且行按下时圆角会从 4dp 撑到 20dp，2dp 的缝太窄、变形后与邻行粘连。
+ * 4. **行底色回到 `settingsRowContainer()`。** 原先吃 `LegacyListItem` 的默认色
+ *    `surfaceContainerHigh`，浅色主题下比其余设置页的行深一档。
+ */
 class HealthScreen : Screen {
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
@@ -62,36 +82,44 @@ class HealthScreen : Screen {
             title = "诊断",
             onBack = { navigator.pop() },
             topBarActions = listOf(
-                cp.player.app.ui.component.TopBarAction(
+                TopBarAction(
                     icon = { Icon(Icons.Filled.DeleteSweep, "清空") },
-                    onClick = { AppModel.health.clearRecords() }
+                    onClick = { AppModel.health.clearRecords() },
                 )
             ),
         ) { pageModifier ->
-            Column(pageModifier) {
-                OverviewCard(overall, records.size)
-
-                Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = !onlyErrors,
-                        onClick = { onlyErrors = false },
-                        label = { Text("全部 ${records.size}") },
-                    )
-                    FilterChip(
-                        selected = onlyErrors,
-                        onClick = { onlyErrors = true },
-                        label = { Text("仅异常") },
-                    )
-                }
-
+            SettingsLazyPage(
+                pageModifier = pageModifier,
+                header = {
+                    OverviewCard(overall, records.size)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        FilterChip(
+                            selected = !onlyErrors,
+                            onClick = { onlyErrors = false },
+                            label = { Text("全部 ${records.size}") },
+                        )
+                        FilterChip(
+                            selected = onlyErrors,
+                            onClick = { onlyErrors = true },
+                            label = { Text("仅异常") },
+                        )
+                    }
+                },
+            ) {
                 if (filtered.isEmpty()) {
-                    Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
-                        Text("暂无调用记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    item(key = "__empty__") {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("暂无调用记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 } else {
-                    LazyScrollColumn(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        itemsIndexed(filtered) { index, record -> RecordRow(record, index, filtered.size) }
-                    }
+                    itemsIndexed(filtered) { index, record -> RecordRow(record, index, filtered.size) }
                 }
             }
         }
@@ -105,15 +133,22 @@ private fun OverviewCard(overall: HealthMonitor.HealthLevel, total: Int) {
         HealthMonitor.HealthLevel.WARNING -> Triple(MaterialTheme.colorScheme.tertiary, "存在警告", Icons.Filled.Warning)
         HealthMonitor.HealthLevel.ERROR -> Triple(MaterialTheme.colorScheme.error, "存在错误", Icons.Filled.Error)
     }
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Icon(icon, null, tint = color)
-        Column {
-            Text("综合状态：$label", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text("最近 100 条综合判定 · 共 $total 条记录", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // 只读信息一律用 SettingsFieldGroup：圆角、内边距、底色与其他设置页的只读块一致。
+    SettingsFieldGroup {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(CpSpacing.formRowGap),
+        ) {
+            Icon(icon, null, tint = color)
+            Column {
+                Text("综合状态：$label", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "最近 100 条综合判定 · 共 $total 条记录",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -133,10 +168,14 @@ private fun RecordRow(record: HealthMonitor.ApiCallRecord, index: Int, total: In
 
     var showRaw by remember { mutableStateOf(false) }
 
+    // 这一行不是「设置项」而是日志条目：正文是两段文本（时间码 + 可能的错误信息），
+    // 表达不了 `SettingsClickItem` 的单个 subtitle，所以直接用 LegacyListItem ——
+    // 但**底色必须显式给**，不能吃它的默认值（浅色主题下默认值比设置行深一档）。
     LegacyListItem(
         index = index,
         total = total,
         onClick = { if (record.rawResponse != null) showRaw = true },
+        containerColor = settingsRowContainer(),
         leadingContent = { Icon(Icons.Filled.BugReport, null, tint = color) },
         headlineContent = {
             Text("${record.method} · ${record.providerId}", fontWeight = FontWeight.Medium)
@@ -156,23 +195,23 @@ private fun RecordRow(record: HealthMonitor.ApiCallRecord, index: Int, total: In
         },
         modifier = Modifier.fillMaxWidth(),
     )
-    
+
     if (showRaw && record.rawResponse != null) {
-        androidx.compose.material3.AlertDialog(
+        AlertDialog(
             onDismissRequest = { showRaw = false },
             title = { Text("API 原始返回内容") },
             text = {
                 LazyColumn {
                     item {
-                        androidx.compose.foundation.text.selection.SelectionContainer {
+                        SelectionContainer {
                             Text(record.rawResponse.toString(), style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
             },
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = { showRaw = false }) { Text("关闭") }
-            }
+                TextButton(onClick = { showRaw = false }) { Text("关闭") }
+            },
         )
     }
 }

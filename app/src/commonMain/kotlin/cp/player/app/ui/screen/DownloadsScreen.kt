@@ -220,7 +220,12 @@ private fun ActiveDownloadsTab(state: DownloadsUiState, model: DownloadsScreenMo
     DownloadsPageBox {
         LazyScrollColumn(
             pageContentModifier(),
-            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 96.dp),
+            contentPadding = PaddingValues(
+                start = CpSpacing.pageHorizontal,
+                end = CpSpacing.pageHorizontal,
+                top = CpSpacing.formVertical,
+                bottom = 96.dp,
+            ),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(tasks, key = { it.id }) { task ->
@@ -230,9 +235,14 @@ private fun ActiveDownloadsTab(state: DownloadsUiState, model: DownloadsScreenMo
     }
 }
 
-/** 空态：与列表同宽居中，否则宽屏下空态卡片会贴着窗口最左、和上面的 Tab 行错开。 */
+/**
+ * 空态：与列表同宽居中，否则宽屏下空态卡片会贴着窗口最左、和上面的 Tab 行错开。
+ *
+ * ⚠️ 这里原先写 16dp、列表写 12dp —— 注释说的是「与列表同宽」，实际差 4dp。
+ * 两者现在都取 [CpSpacing.pageHorizontal]（栅格页标准），注释才成立。
+ */
 private fun emptyStateModifier(): Modifier =
-    Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth().padding(16.dp)
+    Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth().padding(CpSpacing.pageHorizontal)
 
 @Composable
 private fun ActiveTaskCard(task: DownloadTask, model: DownloadsScreenModel) {
@@ -344,7 +354,12 @@ private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScree
         val rows = if (columns == 1) tasks.map { listOf(it) } else tasks.chunked(columns)
         LazyScrollColumn(
             pageContentModifier(),
-            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 96.dp),
+            contentPadding = PaddingValues(
+                start = CpSpacing.pageHorizontal,
+                end = CpSpacing.pageHorizontal,
+                top = CpSpacing.formVertical,
+                bottom = 96.dp,
+            ),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(rows, key = { it.first().id }) { row ->
@@ -480,7 +495,7 @@ private fun LocalLibraryTab(state: DownloadsUiState, model: DownloadsScreenModel
         val downloaded = state.downloadedItems
         val imported = state.importedItems
         if (downloaded.isEmpty() && imported.isEmpty()) {
-            StateSurface(Modifier.padding(16.dp)) {
+            StateSurface(Modifier.padding(CpSpacing.pageHorizontal)) {
                 ContentState(
                     title = "本地媒体库还是空的",
                     message = "下载歌曲，或扫描设备、导入本地文件夹后会显示在这里",
@@ -491,8 +506,14 @@ private fun LocalLibraryTab(state: DownloadsUiState, model: DownloadsScreenModel
 
         LazyScrollColumn(
             Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize().weight(1f),
-            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 96.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            contentPadding = PaddingValues(
+                start = CpSpacing.pageHorizontal,
+                end = CpSpacing.pageHorizontal,
+                bottom = 96.dp,
+            ),
+            // 行距取刻度值。原先写 2dp —— 不在刻度上，而且行按下时圆角会从 4dp 撑到 20dp，
+            // 2dp 的缝太窄、变形后与邻行粘连（与 SettingsKit 那边同一条理由）。
+            verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
         ) {
             if (downloaded.isNotEmpty()) {
                 item(key = "__group_downloaded__") {

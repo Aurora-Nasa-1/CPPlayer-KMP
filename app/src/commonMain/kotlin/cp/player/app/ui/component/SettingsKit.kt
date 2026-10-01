@@ -8,9 +8,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
@@ -59,6 +62,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cp.player.app.ui.theme.CpText
@@ -69,14 +73,30 @@ import cp.player.app.ui.theme.LocalIsDarkTheme
  *
  * 旧版所有选项行都由同一条链路拼出来：
  * `SettingsSection`（分组标题）→ `Expressive*Item`（Click/Switch/Dropdown/Button）→
- * `UnifiedListItem`（分段圆角）。度量沿用旧版，**不要随手改数字**：
+ * `LegacyListItem`（分段圆角）。
  *
- * - 分组标题：`labelLarge` + Medium + primary，`start=16 / top=12 / bottom=8`，字距 0.5sp
- * - 组内行距：4dp（= `CpSpacing.listRowGap`；行靠 `legacySegmentShape(index, total)`
- *   拼成一张分段卡片，按下时圆角撑到容器圆角 —— 缝宽与形状变形是一对参数，见 [SettingsSection]）
- * - 页面：水平 16dp / 垂直 8dp，组间距 12dp，页尾留白 32dp
- * - 行：`min height 68dp`，标题 16sp Medium，副标题 `bodyMedium / onSurfaceVariant`
- * - 行容器色：深色 `surfaceContainerHighest`，浅色 `surface`
+ * ## 度量：全部来自 `CpSpacing`，本文件不再出现页面级裸值
+ *
+ * | 位置 | 值 | 令牌 |
+ * |------|-----|------|
+ * | 页面宽度上限 | 720dp | `CpSpacing.formMaxWidth` |
+ * | 页面水平内边距 | 16dp | `CpSpacing.formHorizontal` |
+ * | 页面上下内边距 | 8dp | `CpSpacing.formVertical` |
+ * | 区块间距 | 12dp | `CpSpacing.formSectionGap` |
+ * | 页尾留白 | 32dp | `CpSpacing.formBottomInset` |
+ * | 行最小高度 | 68dp | `CpSpacing.formRowMinHeight` |
+ * | 行水平内边距 | 16dp | `CpSpacing.formRowHorizontal` |
+ * | 行垂直内边距 | 10dp | `CpSpacing.formRowVertical` |
+ * | 行内横向间隔 | 14dp | `CpSpacing.formRowGap` |
+ * | 组内行距 | 4dp | `CpSpacing.listRowGap` |
+ *
+ * ⚠️ **页面容器只认 [SettingsPage]（静态）与 [SettingsLazyPage]（长列表）**，
+ * 不要在页面里自己拼 `ScrollColumn { Column(Modifier.widthIn(...).padding(16.dp)) }`
+ * —— 那样宽度上限、页边距、区块间距三样都会各写各的，正是重构前 11 个设置页
+ * 里 4 个与其余 7 个长得不一样的原因。
+ *
+ * ⚠️ 组件**内部**的微调（图标与文字之间 4/6/8dp 这类）允许写裸值：它们不跨页面复用。
+ * 判据是「这个值会不会在第二个页面出现」——会，就必须进 `CpSpacing`。
  *
  * ## 与旧版的三处刻意差异
  *
@@ -100,6 +120,10 @@ import cp.player.app.ui.theme.LocalIsDarkTheme
  *
  * 标题带 `heading()` 语义：设置页有 20+ 个条目，读屏用户需要能**按分组跳转**，
  * 而不是一条条划过去。
+ *
+ * 内边距的三个值都取令牌（`start=16 / top=12 / bottom=8`）：
+ * 左边缘与行内标题、行内控件对齐（都是 16dp），上方留一个区块间距与上一组分开，
+ * 下方只留页面垂直内边距 —— 标题因此**贴着**它自己的那一组，而不是悬在两组中间。
  */
 @Composable
 fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
@@ -111,7 +135,11 @@ fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) 
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier
-                .padding(start = 16.dp, bottom = 8.dp, top = 12.dp)
+                .padding(
+                    start = CpSpacing.formRowHorizontal,
+                    top = CpSpacing.formSectionGap,
+                    bottom = CpSpacing.formVertical,
+                )
                 .semantics { heading() },
             letterSpacing = 0.5.sp,
         )
@@ -156,7 +184,9 @@ fun SettingsNote(
             text = text,
             style = MaterialTheme.typography.bodySmall,
             color = if (color == Color.Unspecified) MaterialTheme.colorScheme.onSurfaceVariant else color,
-            modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(horizontal = CpSpacing.formHorizontal, vertical = 4.dp),
         )
         return
     }
@@ -178,7 +208,7 @@ fun SettingsNote(
         color = container,
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .padding(horizontal = CpSpacing.formHorizontal, vertical = 4.dp)
             .semantics { liveRegion = LiveRegionMode.Polite },
     ) {
         Row(
@@ -189,7 +219,7 @@ fun SettingsNote(
                 imageVector = Icons.Filled.Warning,
                 contentDescription = null,
                 tint = onContainer,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(CpIconSize.inline),
             )
             Text(
                 text = text,
@@ -238,6 +268,27 @@ fun settingsRowContainer(): Color =
     if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainerHighest
     else MaterialTheme.colorScheme.surfaceContainerLow
 
+/**
+ * 「**当前生效 / 当前选中**」的行容器色。
+ *
+ * 全应用唯一一处。收敛前同一个语义有三种写法：`AccountScreen` 里当前账号是
+ * `primaryContainer.copy(alpha = 0.5f)`、`ProviderManagementScreen` 里当前音源是
+ * `primaryContainer.copy(alpha = 0.45f)`、`SettingsScreen` 左栏选中是 `surfaceContainerHigh`
+ * —— 两个 alpha 纯属巧合，第三个更是连色相都不一样。
+ *
+ * 选 `primaryContainer` 而不是 `secondaryContainer`：本应用已经用它表达「正在播放」
+ * （`SongItem`），「当前账号 / 当前音源」是同一类概念，沿用同一个角色色。
+ *
+ * ⚠️ 配 [settingsRowHighlightContent] 使用 —— 底色换成 primaryContainer 之后
+ * 标题再写 `onSurface` 会在浅色主题下掉对比度。
+ */
+@Composable
+fun settingsRowHighlight(): Color = MaterialTheme.colorScheme.primaryContainer
+
+/** 与 [settingsRowHighlight] 配套的内容色。 */
+@Composable
+fun settingsRowHighlightContent(): Color = MaterialTheme.colorScheme.onPrimaryContainer
+
 @Composable
 private fun resolveContainer(containerColor: Color): Color =
     if (containerColor == Color.Unspecified) settingsRowContainer() else containerColor
@@ -278,9 +329,11 @@ private fun SettingsRowContent(
     trailingContent: (@Composable RowScope.() -> Unit)? = null,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = CpSpacing.formRowHorizontal, vertical = CpSpacing.formRowVertical),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(CpSpacing.formRowGap),
     ) {
         leadingContent?.invoke()
         Column(Modifier.weight(1f)) {
@@ -298,7 +351,7 @@ private fun SettingsLeadingIcon(icon: ImageVector, tint: Color) {
         imageVector = icon,
         contentDescription = null,
         tint = tint,
-        modifier = Modifier.size(24.dp),
+        modifier = Modifier.size(CpIconSize.action),
     )
 }
 
@@ -308,7 +361,15 @@ private fun SettingsLeadingIcon(icon: ImageVector, tint: Color) {
  * 可点击的选项行（旧版 `ExpressiveClickItem`）。
  *
  * @param index/total 分段圆角位置；同一组内必须连续且从 0 开始
- * @param containerColor 不传则按明暗主题取 [settingsRowContainer]
+ * @param selected 该行是不是「当前生效 / 当前选中」项（当前账号、当前音源、左栏选中项）。
+ *   底色与内容色一起换成 [settingsRowHighlight] / [settingsRowHighlightContent] ——
+ *   只换底色不换文字色会在浅色主题下掉对比度，所以这一对由组件内部一起处理，
+ *   调用点不要自己传 `containerColor = primaryContainer`。
+ * @param containerColor 不传则按明暗主题取 [settingsRowContainer]；传了则压过 [selected]
+ * @param mergeSemantics 是否把整行合成一个语义节点。**默认 true**（读屏念一遍而不是四遍）。
+ *   仅当 [trailingContent] 里放了**独立可操作**的控件（行尾的「删除」「移除」图标按钮）时
+ *   传 `false` —— 合并会把子节点的点击动作并进父节点，读屏用户就再也点不到那个按钮了。
+ *   这一条是本仓库 2026-10-01 统一版式时补上的：音源管理与账号页的行尾都有删除按钮。
  */
 @Composable
 fun SettingsClickItem(
@@ -321,23 +382,43 @@ fun SettingsClickItem(
     leadingContent: (@Composable () -> Unit)? = null,
     trailingContent: (@Composable RowScope.() -> Unit)? = null,
     enabled: Boolean = true,
+    selected: Boolean = false,
+    mergeSemantics: Boolean = true,
     containerColor: Color = Color.Unspecified,
     onClick: (() -> Unit)? = null,
 ) {
+    val highlight = selected && containerColor == Color.Unspecified
+    val resolvedContainer = if (highlight) settingsRowHighlight() else resolveContainer(containerColor)
+    val titleColor = if (highlight) settingsRowHighlightContent() else MaterialTheme.colorScheme.onSurface
+    val subtitleColor = if (highlight) {
+        settingsRowHighlightContent().copy(alpha = 0.75f)
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val leadingTint = if (highlight) {
+        settingsRowHighlightContent()
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
     LegacyListItem(
         index = index,
         total = total,
         onClick = if (enabled) onClick else null,
         // mergeDescendants：把「图标 / 标题 / 副标题 / 尾部图标」合成一个语义节点，
-        // 读屏念一遍而不是四遍。
-        modifier = modifier.semantics(mergeDescendants = true) {},
-        containerColor = resolveContainer(containerColor),
-        leadingContent = leadingContent ?: icon?.let { img ->
-            { SettingsLeadingIcon(img, MaterialTheme.colorScheme.onSurfaceVariant) }
+        // 读屏念一遍而不是四遍。行尾有独立按钮时由调用点关掉（见 mergeSemantics）。
+        modifier = if (mergeSemantics) {
+            modifier.semantics(mergeDescendants = true) {}
+        } else {
+            modifier
         },
-        headlineContent = { RowTitle(title, MaterialTheme.colorScheme.onSurface) },
+        containerColor = resolvedContainer,
+        leadingContent = leadingContent ?: icon?.let { img ->
+            { SettingsLeadingIcon(img, leadingTint) }
+        },
+        headlineContent = { RowTitle(title, titleColor) },
         supportingContent = subtitle?.let { sub ->
-            { RowSubtitle(sub, MaterialTheme.colorScheme.onSurfaceVariant) }
+            { RowSubtitle(sub, subtitleColor) }
         },
         trailingContent = trailingContent,
     )
@@ -379,7 +460,7 @@ fun SettingsSwitchItem(
         color = resolveContainer(containerColor),
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 68.dp)
+            .heightIn(min = CpSpacing.formRowMinHeight)
             .clip(shape)
             .toggleable(
                 value = checked,
@@ -447,7 +528,7 @@ fun SettingsSegmentedItem(
     Surface(
         shape = legacySegmentShape(index, total),
         color = resolveContainer(containerColor),
-        modifier = modifier.fillMaxWidth().heightIn(min = 68.dp),
+        modifier = modifier.fillMaxWidth().heightIn(min = CpSpacing.formRowMinHeight),
     ) {
         SettingsRowContent(
             leadingContent = icon?.let { img ->
@@ -671,10 +752,15 @@ fun SettingsTextInputItem(
     Surface(
         shape = legacySegmentShape(index, total),
         color = resolveContainer(containerColor),
-        modifier = modifier.fillMaxWidth().heightIn(min = 68.dp),
+        modifier = modifier.fillMaxWidth().heightIn(min = CpSpacing.formRowMinHeight),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            // 12dp = `formRowVertical`(10) + 2：这一行是「标题 + 副标题 + 输入框」三段，
+            // 比普通行高一档，垂直内边距跟着放宽一点，否则输入框会贴着行底。
+            modifier = Modifier.padding(
+                horizontal = CpSpacing.formRowHorizontal,
+                vertical = 12.dp,
+            ),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             RowTitle(title, MaterialTheme.colorScheme.onSurface)
@@ -855,40 +941,114 @@ fun SettingsFieldGroup(
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(
+                horizontal = CpSpacing.formRowHorizontal,
+                vertical = CpSpacing.formRowGap,
+            ),
+            verticalArrangement = Arrangement.spacedBy(CpSpacing.formRowVertical - 2.dp),
             content = content,
         )
     }
 }
 
 /**
- * 设置页正文列：旧版的页面容器（水平 16 / 垂直 8，组间距 12，页尾 32dp 留白）。
+ * 表单页正文列的**唯一**宽度与内边距约束。
  *
- * ⚠️ **内容列宽收敛到 [CpSpacing.formMaxWidth]**。旧版详情面板直接 `fillMaxWidth()`，
- * 2K/4K 屏上一行横跨整屏，标签和控件离得老远。设置页是表单而不是卡片栅格，
- * 不该用 `pageMaxWidth`（1400dp）。
+ * 需要懒加载的页面（长列表）用它 + [LazyScrollColumn] / [SettingsLazyPage]；
+ * 其余页面一律用 [SettingsPage]。
  *
- * ⚠️ `widthIn(...)` 必须写在 `fillMaxWidth()` **之前** —— 反了就是空操作（本仓库踩过）。
+ * ⚠️ `widthIn` 必须写在 `fillMaxWidth()` **之前** —— 反了就是空操作（约束已被钉死，
+ * 本仓库踩过）。这条顺序就是「宽屏下设置页正文宽度跳一下」那个缺陷的根因，
+ * 所以它被收进这个函数，页面不要再自己拼。
+ */
+fun Modifier.settingsContentWidth(): Modifier =
+    widthIn(max = CpSpacing.formMaxWidth)
+        .fillMaxWidth()
+        .padding(horizontal = CpSpacing.formHorizontal)
+
+/**
+ * 设置页正文列（旧版的页面容器）。
+ *
+ * 宽度收敛到 [CpSpacing.formMaxWidth]（720dp）、水平 [CpSpacing.formHorizontal]（16dp）、
+ * 上下 [CpSpacing.formVertical]（8dp）、区块间距 [CpSpacing.formSectionGap]（12dp）、
+ * 页尾 [CpSpacing.formBottomInset]（32dp）。
+ *
+ * ⚠️ **所有设置 / 表单类页面都必须走这里**（长列表走 [SettingsLazyPage]）。
+ * 重构前 11 个设置页里有 4 个自己拼容器：`SettingsScreen` 根页没有宽度上限
+ * （宽屏下列表横跨整屏、点进子页又收到 720dp，正文宽度整体跳一下）、
+ * `AboutScreen` 用 `padding(16.dp)` + 4dp 行距、`ProviderManagementScreen` 用 8dp 页边距、
+ * `HealthScreen` 用 20/12/48 三种混着的内边距 —— 同一套设置，四种边距。
  *
  * @param pageModifier 由 scaffold 传下来的 `fillMaxSize()`/`fillMaxWidth()`
  */
 @Composable
 fun SettingsPage(pageModifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
     ScrollColumn(
-        modifier = pageModifier.padding(vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = pageModifier.padding(vertical = CpSpacing.formVertical),
+        verticalArrangement = Arrangement.spacedBy(CpSpacing.formSectionGap),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Column(
-            modifier = Modifier
-                .widthIn(max = CpSpacing.formMaxWidth)
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.settingsContentWidth(),
+            verticalArrangement = Arrangement.spacedBy(CpSpacing.formSectionGap),
         ) {
             content()
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(CpSpacing.formBottomInset))
+        }
+    }
+}
+
+/**
+ * [SettingsPage] 的**懒加载**版本：宽度、页边距完全一致，只是正文由 `LazyListScope` 提供。
+ *
+ * 给「行数可能到几百条」的表单页用 —— 目前是音源管理（模块列表）与诊断（调用记录，
+ * 上限 300 条）。这两页此前各自拼容器，于是页边距是 8dp / 20+12+48dp 混着来的，
+ * 和旁边 9 个设置页对不齐。**懒加载不构成"可以另写一套边距"的理由。**
+ *
+ * ⚠️ 页面里**不要**再套 [SettingsPage]（会叠加两层宽度与内边距）。
+ *
+ * @param bottomInset 页尾留白。有 FAB 的页面要传得比 FAB 高，否则最后一行会被压住
+ *   （FAB 是 56dp + 16dp 边距 ⇒ 至少 88dp）。
+ * @param itemGap 相邻 item 的间距。默认取组内行距（4dp）—— 这里装的是**行**，
+ *   行要靠 4dp 的细缝拼成一张分段卡片。装分组标题的页面把整个 [SettingsSection]
+ *   放进一个 item 即可：标题自带 12dp 顶部间距，组间距因此是 12 + 4。
+ * @param header 钉在列表上方的表头（不参与滚动）。用于「筛选条」这类需要一直可见的控件；
+ *   它和列表正文受同一个宽度上限约束，不会错开。
+ */
+@Composable
+fun SettingsLazyPage(
+    pageModifier: Modifier,
+    bottomInset: Dp = CpSpacing.formBottomInset,
+    itemGap: Dp = CpSpacing.listRowGap,
+    header: (@Composable ColumnScope.() -> Unit)? = null,
+    content: LazyListScope.() -> Unit,
+) {
+    Column(pageModifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        if (header != null) {
+            Column(
+                modifier = Modifier
+                    .settingsContentWidth()
+                    .padding(top = CpSpacing.formVertical),
+                verticalArrangement = Arrangement.spacedBy(CpSpacing.formSectionGap),
+                content = header,
+            )
+            Spacer(Modifier.height(CpSpacing.formSectionGap))
+        }
+        Box(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            LazyScrollColumn(
+                modifier = Modifier.widthIn(max = CpSpacing.formMaxWidth).fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = CpSpacing.formHorizontal,
+                    end = CpSpacing.formHorizontal,
+                    top = if (header == null) CpSpacing.formVertical else 0.dp,
+                    bottom = bottomInset,
+                ),
+                verticalArrangement = Arrangement.spacedBy(itemGap),
+                content = content,
+            )
         }
     }
 }
