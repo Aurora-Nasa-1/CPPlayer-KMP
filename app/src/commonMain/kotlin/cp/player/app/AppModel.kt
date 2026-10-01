@@ -4,6 +4,8 @@ import cp.player.core.BackendResult
 import cp.player.core.BackendState
 import cp.player.core.ImportResult
 import cp.player.core.MusicBackend
+import cp.player.core.api.extractUidFromLoginStatus
+import cp.player.core.api.unwrapLoginStatusData
 import cp.player.core.control.LocalServerConfig
 import cp.player.core.control.LocalServerConfigStore
 import cp.player.core.control.LocalServerStatus

@@ -1,6 +1,7 @@
 package cp.player.core.playback
 
 import cp.player.core.api.MusicApiService
+import cp.player.core.api.extractUidFromLoginStatus
 import cp.player.core.music.TrackSummary
 import cp.player.core.music.UnifiedMusicSource
 import cp.player.core.model.LyricsInfo
@@ -621,15 +622,9 @@ class PlaybackControllerImpl(
     private suspend fun ensureFavoritesLoadedInternal(force: Boolean = false) {
         if (favoritesLoaded && !force) return
         runCatching {
-            val status = api.getLoginStatus()
-            val root = (status as? kotlinx.serialization.json.JsonObject) ?: return@runCatching
-            val data = (root["data"] as? kotlinx.serialization.json.JsonObject) ?: root
-            val account = (data["account"] as? kotlinx.serialization.json.JsonObject)
-                ?: (data["profile"] as? kotlinx.serialization.json.JsonObject)
-            val uid = account?.let {
-                (it["id"] as? kotlinx.serialization.json.JsonPrimitive)
-                    ?.let { p -> runCatching { p.content.toLong() }.getOrNull() }
-            }
+            // login/status 的解包/取 uid 收敛在 core.api.LoginStatus（唯一入口）——
+            // 这里此前自己抄了一份，且只读 account.id，漏了 profile.userId 的回退。
+            val uid = extractUidFromLoginStatus(api.getLoginStatus())
             if (uid == null) {
                 // 未登录/登出：清空收藏集合
                 _likedIds.value = emptySet()

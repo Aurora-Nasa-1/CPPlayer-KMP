@@ -1,6 +1,6 @@
 package cp.player.app.repository
 
-import cp.player.app.extractUidFromLoginStatus
+import cp.player.core.api.extractUidFromLoginStatus
 import cp.player.core.BackendResult
 import cp.player.core.api.MusicApiService
 import cp.player.core.music.AlbumSummary

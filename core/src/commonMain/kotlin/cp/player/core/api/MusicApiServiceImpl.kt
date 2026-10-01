@@ -53,7 +53,7 @@ class MusicApiServiceImpl(
         return try {
             val json = parseJsonObject(result)
             val issues = validateResponse(method, json, duration)
-            val code = (json["code"] as? JsonPrimitive)?.intOrNull
+            val code = responseCode(method, json)
             val isQrCheck = method == MusicApiMethod.AUTH_QR_CHECK
             // 重定向类端点（song/url/v1/302）按 RFC 7231 形态返回 {cookie, level, redirectUrl}，
             // 无 code/data 字段；只要含有效 http(s) URL 即为成功，不进入 code 判定路径。
@@ -525,9 +525,8 @@ class MusicApiServiceImpl(
             return issues
         }
 
-        // 1. code
-        val codeEl = json["code"]
-        val code = (codeEl as? JsonPrimitive)?.intOrNull
+        // 1. code（login/status 的 code 在 `data` 层，只能走 responseCode 统一解析）
+        val code = responseCode(method, json)
         if (code == null) {
             issues.add(ValidationIssue(HealthMonitor.ResponseWarning.MISSING_CODE))
         } else if (!ApiResponseCodes.isSuccess(code)) {
@@ -577,6 +576,19 @@ class MusicApiServiceImpl(
     }
 
     // ======================== 工具方法 ========================
+
+    /**
+     * 解析响应里的「业务码」。
+     *
+     * 绝大多数端点把 `code` 放在顶层；**`login/status` 是例外** —— NCM 返回
+     * `{"data":{"code":200,...}}`，顶层没有 `code`。若在这里只读顶层，一次成功的
+     * login/status 会被判成失败（健康监控记 ERROR、`MISSING_CODE` 误报），
+     * 并且 `AccountScreen` 会把「已登录」显示成「未登录」。
+     * 该端点的解包细节见 [resolveLoginStatusCode]。
+     */
+    private fun responseCode(method: String, json: JsonObject): Int? =
+        if (method == MusicApiMethod.AUTH_LOGIN_STATUS) resolveLoginStatusCode(json)
+        else (json["code"] as? JsonPrimitive)?.intOrNull
 
     private fun extractUrl(body: JsonElement): String? {
         if (body !is JsonObject) return null

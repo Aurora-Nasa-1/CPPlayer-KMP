@@ -41,7 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
-import cp.player.app.extractUidFromLoginStatus
+import cp.player.core.api.extractUidFromLoginStatus
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.resized

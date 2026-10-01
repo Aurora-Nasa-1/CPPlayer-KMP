@@ -74,6 +74,7 @@ import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.settingsRowHighlightContent
+import cp.player.core.api.isLoggedInStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -704,7 +705,10 @@ class AccountScreenModel : ScreenModel {
             return
         }
         val body = runCatching { AppModel.authRepository.getLoginStatus() }.getOrNull()
-        val ok = body?.asCodeOk() == true
+        // ⚠️ 判据是「有没有 uid」，不是 code：NCM 的 login/status **未登录时也返回 code 200**
+        // （account/profile 为 null），只看 code 会把过期登录态当成已登录。
+        // 而它的 code 又藏在 data 层（顶层没有），所以也不能用 asCodeOk()。
+        val ok = isLoggedInStatus(body)
         isLogged.value = ok
         if (ok) {
             runCatching { AppModel.refreshUserProfileAwait() }

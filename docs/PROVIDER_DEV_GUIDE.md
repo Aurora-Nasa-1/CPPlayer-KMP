@@ -574,23 +574,36 @@ Java_cp_player_core_provider_JniProvider_analyzeAudioFile(
 
 | 方法名 | `login/status` |
 |--------|----------------|
-| 参数 | `cookie?` |
+| 参数 | `cookie?`（只读查询，必须带上已存储的 cookie 才能取回登录态）|
+| 期望字段 | `data` |
 
-**响应：**
+**响应（NCM / NeteaseCloudMusicApi）：**
 ```json
 {
-    "code": 200,
     "data": {
+        "code": 200,
+        "account": { "id": 123456, "type": 1, "status": 0 },
         "profile": {
             "userId": 123456,
             "nickname": "User",
-            "avatarUrl": "https://...",
-            "follows": 100,
-            "followeds": 200
+            "avatarUrl": "https://..."
         }
     }
 }
 ```
+
+⚠️ 这个端点的形状**与其它端点不同**，实现接入时务必注意：
+
+1. **`code` 在 `data` 里，顶层没有 `code`**。按「顶层取 code」的通用规则会把一次成功的
+   查询判为失败（健康监控记 ERROR、`MISSING_CODE` 误报）。
+2. **未登录时同样返回 `code: 200`**，只是 `account` / `profile` 为 `null`。
+   ⇒ **判「是否已登录」要看有没有 uid，不能看 code**。
+3. `account.id` 与 `profile.userId` 是同一个 uid，但**字段名不同**；
+   解析时优先 `account.id`，回退 `profile.userId`。
+
+> 这段解析在 `core` 已收敛为唯一入口 `cp.player.core.api.LoginStatus`
+> （`unwrapLoginStatusData` / `extractUidFromLoginStatus` /
+> `isLoggedInStatus` / `resolveLoginStatusCode`）。**不要在别处再抄一份**。
 
 ---
 
