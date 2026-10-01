@@ -2,14 +2,10 @@ package cp.player.app.ui.component
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +24,30 @@ data class TopBarAction(
     val icon: @Composable () -> Unit,
     val onClick: () -> Unit
 )
+
+/**
+ * 顶栏右侧动作按钮的**统一样式**。
+ *
+ * 抽出来的原因：桌面端页面不自绘顶栏（标题与返回归窗口 chrome），但 `topBarActions`
+ * 得有地方放 —— `CpRouteScaffold` 会在正文顶部渲染同一批按钮。样式若各写一遍，
+ * 「同一个动作在窄屏是填充圆钮、在宽屏变成裸图标」这种漂移迟早出现。
+ */
+@Composable
+fun CpTopBarActionButton(
+    action: TopBarAction,
+    modifier: Modifier = Modifier,
+) {
+    FilledIconButton(
+        onClick = action.onClick,
+        modifier = modifier.padding(end = 4.dp),
+        colors = IconButtonDefaults.filledIconButtonColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+    ) {
+        action.icon()
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -63,31 +83,20 @@ fun AppScaffold(
             LargeTopAppBar(
                 title = title,
                 navigationIcon = navigationIcon ?: {
-                    if (onBackPressed != null) {
-                        FilledIconButton(
+                    // 桌面端（窗口 chrome 接管时）**不自绘返回键**：返回入口统一由自绘标题栏
+                    // 承担（见 `DesktopTitleBar` 与 `DesktopShell`），否则同一屏会出现两个返回键
+                    // —— 一个在 44dp 标题栏里、一个在页面顶栏里，位置和外观都不一样。
+                    // 判据是 `LocalWindowChromeActive`（槽位是否被注入）而不是平台，理由见它的 KDoc。
+                    if (onBackPressed != null && !LocalWindowChromeActive.current) {
+                        CpBackButton(
                             onClick = onBackPressed,
                             modifier = Modifier.padding(start = 4.dp),
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                contentColor = MaterialTheme.colorScheme.onSurface
-                            )
-                        ) {
-                            Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                        }
+                        )
                     }
                 },
                 actions = {
                     topBarActions.forEach { action ->
-                        FilledIconButton(
-                            onClick = action.onClick,
-                            modifier = Modifier.padding(end = 4.dp),
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                contentColor = MaterialTheme.colorScheme.onSurface
-                            )
-                        ) {
-                            action.icon()
-                        }
+                        CpTopBarActionButton(action)
                     }
                 },
                 scrollBehavior = actualScrollBehavior,

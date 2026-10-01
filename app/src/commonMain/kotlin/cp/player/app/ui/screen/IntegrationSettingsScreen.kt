@@ -1,16 +1,12 @@
 package cp.player.app.ui.screen
 
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Api
 import androidx.compose.material.icons.filled.SettingsEthernet
 import androidx.compose.material.icons.filled.Wifi
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,8 +22,7 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
-import cp.player.app.ui.component.LegacyPageScaffold
-import cp.player.app.ui.component.LocalIsExpanded
+import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsFieldGroup
 import cp.player.app.ui.component.SettingsNote
@@ -59,7 +54,6 @@ class IntegrationSettingsScreen : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
-        val expanded = LocalIsExpanded.current
         val config by AppModel.localServerConfigFlow.collectAsState()
         val lastPush by AppModel.lastPushResult.collectAsState()
         var probing by remember { mutableStateOf(false) }
@@ -174,18 +168,10 @@ class IntegrationSettingsScreen : Screen {
             }
         }
 
-        if (expanded) {
-            body(Modifier.fillMaxWidth())
-        } else {
-            LegacyPageScaffold(
-                title = "外部推送与集成",
-                navigationIcon = {
-                    IconButton(onClick = { navigator.pop() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-            ) { pageModifier -> body(pageModifier) }
-        }
+        CpRouteScaffold(
+            title = "外部推送与集成",
+            onBack = { navigator.pop() },
+        ) { pageModifier -> body(pageModifier) }
     }
 }
 

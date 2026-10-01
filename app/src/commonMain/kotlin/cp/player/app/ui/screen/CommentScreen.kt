@@ -5,7 +5,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.*
@@ -34,6 +33,8 @@ class CommentScreen(val id: String, val type: String = "music") : Screen {
         val model = rememberScreenModel { CommentScreenModel(id, type) }
         val state by model.state.collectAsState()
         val navigator = LocalNavigator.current
+        // 桌面自绘标题栏的标题（页内顶栏在桌面端整体让位，见 CpRouteScaffold 的 KDoc）。
+        cp.player.app.ui.util.DesktopRouteTitle("评论")
 
         cp.player.app.ui.component.AppScaffold(
             title = "评论",

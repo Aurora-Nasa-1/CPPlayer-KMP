@@ -42,6 +42,23 @@ import androidx.compose.ui.unit.dp
 val LocalIsExpanded = staticCompositionLocalOf { false }
 
 /**
+ * 当前组合是否正被渲染成**双栏布局的详情栏**（右栏）。
+ *
+ * 由 `SettingsScreen` 的宽屏双栏在详情槽位里 provide：右栏渲染的是**另一个路由页**
+ * （`SettingsEntry.screen()`），那一页自己不知道"我此刻是别人的右栏" —— 它既可能被
+ * 直接 push（`LibraryDashboard` 的「外观 / 存储 / 音源 / 关于」入口），也可能被塞进右栏。
+ *
+ * 两种情况下的外壳要求正好相反：
+ * - 直接 push ⇒ 需要标题与返回键；
+ * - 作为右栏 ⇒ 标题与返回都在**左栏的选中态**里，再画一条顶栏就成了"栏中栏"。
+ *
+ * 收敛前靠各页自己读 `LocalIsExpanded` 来区分，而那个判据是**错的**：直接 push 到宽屏
+ * 时它同样为真，于是「宽屏下从媒体库点『关于』进去，整页没有返回键」。
+ * 由**容器**声明自己是双栏，才是唯一可靠的判据。
+ */
+val LocalEmbeddedInPane = staticCompositionLocalOf { false }
+
+/**
  * 按「本层可用宽度」发布 [LocalIsExpanded]。
  *
  * 必须挂在**根 Navigator 之上**（见 `App.kt`）：`MainScreen` 内部也 provide 了这个 local，

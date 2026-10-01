@@ -56,7 +56,6 @@ import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.platform.WindowMaximizer
 import cp.player.app.ui.theme.CpMotion
-import cp.player.app.ui.util.DesktopShell
 
 /** 自绘标题栏高度。留得下 32dp 以上的点击目标，同时不侵占正文。 */
 internal val TitleBarHeight = 44.dp
@@ -95,9 +94,17 @@ private val DoubleClickIntervalMs: Long =
  * ## 它承担了三件事
  *
  * 1. **窗口操作**：拖拽、双击最大化 / 还原、最小化 / 最大化 / 关闭（系统边框已经没有了）；
- * 2. **页面标题与返回**：`MainScreen` 的 `AppTopBar` 在桌面端整体让位（见 `LocalWindowChromeActive`），
- *    否则窗口顶部会叠两条 chrome（44dp 标题栏 + 64dp 顶栏），而顶栏里其实什么都不剩；
+ * 2. **页面标题与返回**：这是**桌面端唯一的返回入口** —— `MainScreen` 的 `AppTopBar`
+ *    在桌面端整体让位（见 `LocalWindowChromeActive`），`AppScaffold` 与 `CpRouteScaffold`
+ *    也不再自绘返回键。否则窗口顶部会叠两条 chrome（44dp 标题栏 + 64dp 顶栏），
+ *    同一屏还会出现两个位置、外观都不同的返回键；
  * 3. **全局搜索入口**。
+ *
+ * ⚠️ **本组件是纯展示的**：[title] / [canGoBack] / [onBack] 都由 `Main.kt` 从 Navigator
+ * 现算现传（那里同时拿得到 `navigator.size`、`navigator.lastItem` 与 `DesktopShell`）。
+ * 它自己不读 `DesktopShell` —— 曾经读的是 `MainScreen` 发布的 `pageCanGoBack`，
+ * 而那个值只在「桌面内嵌面板打开」时为真，于是**所有 push 出去的路由页在标题栏上都没有返回键**，
+ * 宽窗口下更是一整页没有返回入口（页内顶栏也正好在宽屏分支里被省掉了）。
  *
  * ## 为什么不用系统标题栏
  *
@@ -123,8 +130,6 @@ private val DoubleClickIntervalMs: Long =
  * - 放在 `Navigator` 之下（例如塞进 `MainScreen`）⇒ 一旦 push 到 `AccountScreen` /
  *   `SettingsScreen`，标题栏会被目标页面盖住。窗口已经没有系统边框了，那意味着用户
  *   **既移不动也关不掉窗口**。
- *
- * 标题与返回状态的方向相反（页面 → 标题栏），只能走 [DesktopShell] 这条全局通道。
  *
  * ## 为什么要显式传 [windowScope]
  *
@@ -155,6 +160,9 @@ private val DoubleClickIntervalMs: Long =
 fun DesktopTitleBar(
     windowScope: WindowScope,
     windowState: WindowState,
+    title: String,
+    canGoBack: Boolean,
+    onBack: () -> Unit,
     onClose: () -> Unit,
     onOpenAccount: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -170,10 +178,6 @@ fun DesktopTitleBar(
     val maximized = maximizer.isMaximized
     val toggleMaximize: () -> Unit = { maximizer.toggle() }
 
-    // 页面标题 / 是否可返回由 MainScreen 发布（方向是「下 → 上」，只能走全局通道）。
-    val pageTitle = DesktopShell.pageTitle
-    val canGoBack = DesktopShell.pageCanGoBack
-
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -183,9 +187,12 @@ fun DesktopTitleBar(
     ) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                // 返回键：桌面端只有内嵌面板（「设置」）打开时才出现。必须在拖拽区**外面**。
+                // 返回键：**窗口 chrome 是桌面端唯一的返回入口** —— 页面内一律不自绘
+                // （见 `AppScaffold` / `CpRouteScaffold`）。是否可返回由调用方（`Main.kt`）
+                // 依据 Navigator 栈与内嵌面板状态算好，这里只负责画。
+                // 必须在拖拽区**外面**（见下面的说明）。
                 if (canGoBack) {
-                    ChromeSlot(onClick = { DesktopShell.backRequested = true }) {
+                    ChromeSlot(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "返回",
@@ -208,7 +215,7 @@ fun DesktopTitleBar(
                         .onTitleBarDoubleClick(toggleMaximize),
                 ) {
                     Text(
-                        pageTitle,
+                        title,
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,

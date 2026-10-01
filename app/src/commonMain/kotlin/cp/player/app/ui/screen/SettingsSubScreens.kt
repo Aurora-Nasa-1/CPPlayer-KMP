@@ -1,11 +1,7 @@
 package cp.player.app.ui.screen
 
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -15,8 +11,7 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
-import cp.player.app.ui.component.LegacyPageScaffold
-import cp.player.app.ui.component.LocalIsExpanded
+import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.SettingsButtonItem
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsNote
@@ -50,7 +45,6 @@ class AppearanceSettingsScreen : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
-        val expanded = LocalIsExpanded.current
         val themeMode by AppModel.themeModeFlow.collectAsState()
         val colorSource by AppModel.colorSourceFlow.collectAsState()
         val pureBlack by AppModel.pureBlackFlow.collectAsState()
@@ -96,18 +90,10 @@ class AppearanceSettingsScreen : Screen {
             }
         }
 
-        if (expanded) {
-            body(Modifier.fillMaxWidth())
-        } else {
-            LegacyPageScaffold(
-                title = "外观与主题",
-                navigationIcon = {
-                    IconButton(onClick = { navigator.pop() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-            ) { pageModifier -> body(pageModifier) }
-        }
+        CpRouteScaffold(
+            title = "外观与主题",
+            onBack = { navigator.pop() },
+        ) { pageModifier -> body(pageModifier) }
     }
 }
 
@@ -124,7 +110,6 @@ class StorageSettingsScreen : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
-        val expanded = LocalIsExpanded.current
         val downloadDir by AppModel.downloadDirFlow.collectAsState()
         val isAndroid = cp.player.app.platform.isAndroidPlatform()
         val pickDownloadDir = cp.player.app.platform.rememberDirectoryPicker { path ->
@@ -166,17 +151,9 @@ class StorageSettingsScreen : Screen {
             }
         }
 
-        if (expanded) {
-            body(Modifier.fillMaxWidth())
-        } else {
-            LegacyPageScaffold(
-                title = "下载与存储",
-                navigationIcon = {
-                    IconButton(onClick = { navigator.pop() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-            ) { pageModifier -> body(pageModifier) }
-        }
+        CpRouteScaffold(
+            title = "下载与存储",
+            onBack = { navigator.pop() },
+        ) { pageModifier -> body(pageModifier) }
     }
 }

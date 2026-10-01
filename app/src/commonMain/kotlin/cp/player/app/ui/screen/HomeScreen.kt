@@ -33,7 +33,6 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.AutoGraph
@@ -48,7 +47,6 @@ import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -82,6 +80,7 @@ import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.ContentState
+import cp.player.app.ui.component.CpBackButton
 import cp.player.app.ui.component.CpCoverPlaceholder
 import cp.player.app.ui.component.CpIconSize
 import cp.player.app.ui.component.CpLoadingIndicator
@@ -2112,6 +2111,9 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
         val toMediaId = { id: String -> if (id.contains("://")) id else "$provider://song/$id" }
         val navigator = LocalNavigator.current
         val expanded = LocalIsExpanded.current
+        // 桌面自绘标题栏接管时，返回入口统一在窗口 chrome 上 —— 页内再画一个就重复了。
+        val chromeActive = cp.player.app.ui.component.LocalWindowChromeActive.current
+        if (!embedded) cp.player.app.ui.util.DesktopRouteTitle("最近播放")
 
         Column(Modifier.fillMaxSize()) {
             // 标题与正文同宽、一起居中：宽屏下标题贴着窗口最左而正文居中，两段会明显错位。
@@ -2120,7 +2122,7 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
                     PageTitleBar(
                         title = "最近播放",
                         subtitle = "完整历史列表 · 共 ${recentTracks.size} 首",
-                        onBack = if (embedded) null else { { navigator?.pop() } },
+                        onBack = if (embedded || chromeActive) null else { { navigator?.pop() } },
                         action = {
                             if (recentTracks.isNotEmpty()) {
                                 FilledTonalButton(
@@ -2257,9 +2259,7 @@ private fun PageTitleBar(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (onBack != null) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-            }
+            CpBackButton(onClick = onBack)
         }
         Column(Modifier.weight(1f)) {
             Text(

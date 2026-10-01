@@ -2,15 +2,11 @@ package cp.player.app.ui.screen
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -24,8 +20,7 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
-import cp.player.app.ui.component.LegacyPageScaffold
-import cp.player.app.ui.component.LocalIsExpanded
+import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.SettingsConfirmItem
 import cp.player.app.ui.component.SettingsFieldGroup
 import cp.player.app.ui.component.SettingsNote
@@ -54,7 +49,6 @@ class StreamOutputSettingsScreen : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
-        val expanded = LocalIsExpanded.current
         val config by AppModel.localServerConfigFlow.collectAsState()
         val status by AppModel.localServerStatus.collectAsState()
 
@@ -179,18 +173,10 @@ class StreamOutputSettingsScreen : Screen {
             }
         }
 
-        if (expanded) {
-            body(Modifier.fillMaxWidth())
-        } else {
-            LegacyPageScaffold(
-                title = "本地流输出",
-                navigationIcon = {
-                    IconButton(onClick = { navigator.pop() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-            ) { pageModifier -> body(pageModifier) }
-        }
+        CpRouteScaffold(
+            title = "本地流输出",
+            onBack = { navigator.pop() },
+        ) { pageModifier -> body(pageModifier) }
     }
 }
 

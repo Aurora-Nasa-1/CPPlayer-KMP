@@ -106,6 +106,10 @@ private fun DownloadsScreenContent(model: DownloadsScreenModel) {
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
 
+    // 桌面窗口标题栏的标题。本页没有页内顶栏（无论 push 还是作为桌面面板），
+    // 所以窗口 chrome 是它唯一的标题与返回入口。
+    cp.player.app.ui.util.DesktopRouteTitle("下载管理")
+
     // Tab 上带计数：不切页也能看到「下载中还有几个 / 已完成多少」，
     // 这是下载管理最常被问的一件事，藏进分页里就得逐个点开数。
     val tabs = listOf(

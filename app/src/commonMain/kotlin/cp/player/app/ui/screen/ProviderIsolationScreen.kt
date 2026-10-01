@@ -1,14 +1,10 @@
 package cp.player.app.ui.screen
 
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PrivacyTip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -22,7 +18,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.auth.AccountStore
-import cp.player.app.ui.component.LegacyPageScaffold
+import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.SettingsButtonItem
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsNote
@@ -45,7 +41,6 @@ class ProviderIsolationScreen : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
-        val expanded = cp.player.app.ui.component.LocalIsExpanded.current
         val provider by AppModel.activeProviderFlow.collectAsState()
         val switchAccount by AppModel.isolationSwitchAccountFlow.collectAsState()
         val profile by AppModel.userProfileFlow.collectAsState()
@@ -136,13 +131,9 @@ class ProviderIsolationScreen : Screen {
             }
         }
 
-        if (expanded) body(androidx.compose.ui.Modifier.fillMaxWidth()) else LegacyPageScaffold(
+        CpRouteScaffold(
             title = "音源隔离",
-            navigationIcon = {
-                IconButton(onClick = { navigator.pop() }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                }
-            },
+            onBack = { navigator.pop() },
         ) { pageModifier -> body(pageModifier) }
     }
 }

@@ -1,16 +1,11 @@
 package cp.player.app.ui.screen
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,7 +15,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
-import cp.player.app.ui.component.AppScaffold
+import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.component.CpTwoPane
+import cp.player.app.ui.component.LocalEmbeddedInPane
 import cp.player.app.ui.component.LocalIsExpanded
 import cp.player.app.ui.component.MonetIcon
 import cp.player.app.ui.component.ScrollColumn
@@ -59,33 +56,32 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
 
     if (expanded) {
         var selectedId by remember { mutableStateOf(entries.firstOrNull()?.id) }
-        Row(Modifier.fillMaxSize()) {
-            ScrollColumn(
-                modifier = Modifier
-                    .width(320.dp)
-                    .fillMaxHeight()
-                    .background(MaterialTheme.colorScheme.background)
-                    .padding(top = 8.dp, bottom = 24.dp),
-            ) {
-                SettingsGroupedList(
-                    entries = entries,
-                    selectedId = selectedId,
-                    onSelect = { entry -> selectedId = entry.id },
-                )
-            }
-            VerticalDivider(
-                modifier = Modifier.fillMaxHeight(),
-                color = MaterialTheme.colorScheme.outlineVariant,
-            )
-            Box(Modifier.weight(1f).fillMaxHeight()) {
-                val entry = entries.firstOrNull { it.id == selectedId } ?: entries.firstOrNull()
-                if (entry != null) {
-                    // remember(entry.id)：否则每次重组都新建一个 Screen 实例
-                    val screen = remember(entry.id) { entry.screen() }
-                    screen.Content()
+        CpTwoPane(
+            rail = { railModifier ->
+                ScrollColumn(
+                    modifier = railModifier.padding(top = 8.dp, bottom = 24.dp),
+                ) {
+                    SettingsGroupedList(
+                        entries = entries,
+                        selectedId = selectedId,
+                        onSelect = { entry -> selectedId = entry.id },
+                    )
                 }
-            }
-        }
+            },
+            detail = {
+                // 右栏渲染的是**另一个路由页**（`SettingsEntry.screen()`），它自己分不清
+                // 「被直接 push」和「被塞进右栏」—— 两种情况对外壳的要求正好相反。
+                // 由容器在这里声明，`CpRouteScaffold` 才不会在右栏里再画一条顶栏（栏中栏）。
+                CompositionLocalProvider(LocalEmbeddedInPane provides true) {
+                    val entry = entries.firstOrNull { it.id == selectedId } ?: entries.firstOrNull()
+                    if (entry != null) {
+                        // remember(entry.id)：否则每次重组都新建一个 Screen 实例
+                        val screen = remember(entry.id) { entry.screen() }
+                        screen.Content()
+                    }
+                }
+            },
+        )
         return
     }
 
@@ -110,15 +106,13 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
         return
     }
 
-    AppScaffold(
+    CpRouteScaffold(
         title = "设置",
-        onBackPressed = { navigator?.pop() },
-        containerColor = MaterialTheme.colorScheme.background,
-    ) { padding ->
+        onBack = { navigator?.pop() },
+    ) { _ ->
         ScrollColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {

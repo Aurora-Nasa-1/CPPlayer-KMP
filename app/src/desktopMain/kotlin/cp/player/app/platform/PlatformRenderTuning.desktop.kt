@@ -1,11 +1,7 @@
 package cp.player.app.platform
 
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
@@ -21,8 +17,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
-import cp.player.app.ui.component.LegacyPageScaffold
-import cp.player.app.ui.component.LocalIsExpanded
+import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsFieldGroup
 import cp.player.app.ui.component.SettingsNote
@@ -46,7 +41,6 @@ import cp.player.app.ui.component.SettingsSection
 @Composable
 actual fun PlatformRenderTuningContent() {
     val navigator = LocalNavigator.currentOrThrow
-    val expanded = LocalIsExpanded.current
 
     // 本地态只用于即时反馈；真正的持久化交给 DesktopRenderTuning。
     var backend by remember { mutableStateOf(DesktopRenderTuning.storedBackend()) }
@@ -158,18 +152,10 @@ actual fun PlatformRenderTuningContent() {
         }
     }
 
-    if (expanded) {
-        body(Modifier.fillMaxWidth())
-    } else {
-        LegacyPageScaffold(
-            title = "渲染后端",
-            navigationIcon = {
-                IconButton(onClick = { navigator.pop() }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                }
-            },
-        ) { pageModifier -> body(pageModifier) }
-    }
+    CpRouteScaffold(
+        title = "渲染后端",
+        onBack = { navigator.pop() },
+    ) { pageModifier -> body(pageModifier) }
 }
 
 @Composable

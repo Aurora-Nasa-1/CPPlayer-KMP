@@ -14,7 +14,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
@@ -24,13 +23,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,8 +42,8 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.platform.downloadUpdate
 import cp.player.app.platform.openUrl
+import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.LegacyListItem
-import cp.player.app.ui.component.LegacyPageScaffold
 import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.update.AppUpdateChecker
 import cp.player.app.version.AppVersion
@@ -73,13 +69,9 @@ class AboutScreen : Screen {
             }
         }
 
-        LegacyPageScaffold(
+        CpRouteScaffold(
             title = "关于与支持",
-            navigationIcon = {
-                IconButton(onClick = { navigator.pop() }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
-                }
-            },
+            onBack = { navigator.pop() },
         ) { pageModifier ->
             ScrollColumn(
                 modifier = pageModifier.padding(16.dp),

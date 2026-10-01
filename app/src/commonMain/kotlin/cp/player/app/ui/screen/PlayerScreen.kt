@@ -136,6 +136,10 @@ class PlayerScreen : Screen {
         val scope = rememberCoroutineScope()
         val onRepeat = { controller.setRepeatMode(state.repeatMode.next()) }
 
+        // 桌面窗口标题栏的标题：播放页是全屏沉浸页，窗口 chrome 仍要能显示"现在在哪"。
+        // 本页的「收起」是折叠语义（↓ / ✕），与「返回上一页」不是一回事，所以不参与返回键统一。
+        state.currentTrack?.let { cp.player.app.ui.util.DesktopRouteTitle(it.name) }
+
         // 宽屏 / 窄屏两套播放页的分叉点。
         //
         // ⚠️ 判据必须是**本页自身的可用宽度**，不能读 `LocalIsExpanded` —— 那个 local 只在

@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,7 +23,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -38,10 +36,8 @@ import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -76,6 +72,8 @@ import cp.player.app.ui.anim.coverFlightTarget
 import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.AddSongsOptionsSheet
 import cp.player.app.ui.component.AppScaffold
+import cp.player.app.ui.component.CpBackButton
+import cp.player.app.ui.component.CpTwoPane
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.ui.component.PlaylistOptionsSheet
@@ -225,12 +223,18 @@ fun PlaylistDetailContent(
         }
     }
 
+    // 桌面窗口标题栏的标题（内嵌成双栏详情栏时由宿主发布，见 LocalEmbeddedInPane）。
+    if (!embedded) cp.player.app.ui.util.DesktopRouteTitle(summary.name)
+
     BoxWithConstraints(Modifier.fillMaxSize()) {
         // 走 CpBreakpoints 而不是内联 840：断点只此一份，改一次处处生效。
         // ⚠️ 也不能读 LocalIsExpanded —— 本页是 push 出去的路由页，与提供它的
         // MainScreen 是兄弟节点，读到的永远是默认 false（宽窗口上会错判成窄屏）。
         val isWide = cp.player.app.ui.component.CpBreakpoints.isExpanded(maxWidth)
-        val canShowInlineBack = isWide && !embedded
+        // 桌面端（窗口 chrome 接管）不自绘返回键：返回入口统一在自绘标题栏上，
+        // 否则同一屏会出现两个返回键。判据是 LocalWindowChromeActive 而不是平台，理由见它的 KDoc。
+        val canShowInlineBack = isWide && !embedded &&
+            !cp.player.app.ui.component.LocalWindowChromeActive.current
         if (isWide) {
             WideLayout(
                 model = model,
@@ -645,15 +649,13 @@ private fun WideLayout(
     onAddSelectedToPlaylist: () -> Unit,
     onAddTracks: () -> Unit,
 ) {
-    Row(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        // 左侧：歌单信息面板
-        ScrollColumn(
-            modifier = Modifier
-                .width(320.dp)
-                .fillMaxHeight()
-                .padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
+    CpTwoPane(
+        rail = { railModifier ->
+            // 左侧：歌单信息面板
+            ScrollColumn(
+                modifier = railModifier.padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
             Spacer(Modifier.height(16.dp))
             Surface(
                 modifier = Modifier.size(176.dp)
@@ -711,10 +713,9 @@ private fun WideLayout(
                 onSort = onOpenPlaylistSheet,
                 onDownloadAll = { AppModel.downloadTracks(displayTracks) },
             )
-        }
-
-        // 右侧：歌曲列表
-        Box(Modifier.weight(1f).fillMaxHeight()) {
+            }
+        },
+        detail = {
             val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
             TrackList(
                 model = model,
@@ -734,15 +735,7 @@ private fun WideLayout(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (showBackButton) {
-                        FilledIconButton(
-                            onClick = onBack,
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                contentColor = MaterialTheme.colorScheme.onSurface,
-                            ),
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                        }
+                        CpBackButton(onClick = onBack)
                     }
                     if (state.selectionMode) {
                         if (showBackButton) Spacer(Modifier.width(12.dp))
@@ -774,7 +767,7 @@ private fun WideLayout(
                 }
             }
         }
-    }
+    )
 }
 
 // ============ 歌曲列表 ============

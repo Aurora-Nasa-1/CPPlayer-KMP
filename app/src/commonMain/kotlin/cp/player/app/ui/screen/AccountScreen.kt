@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -63,7 +62,7 @@ import cp.player.app.auth.AccountStore
 import cp.player.app.platform.isPackageInstalled
 import cp.player.app.platform.openTargetApp
 import cp.player.app.platform.saveQrCodeToGallery
-import cp.player.app.ui.component.LegacyPageScaffold
+import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.SettingsButtonItem
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsDropdownItem
@@ -99,7 +98,6 @@ class AccountScreen : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
-        val expanded = cp.player.app.ui.component.LocalIsExpanded.current
         val model = rememberScreenModel { AccountScreenModel() }
         val provider by model.activeProvider.collectAsState()
         val profile by AppModel.userProfileFlow.collectAsState()
@@ -320,13 +318,9 @@ class AccountScreen : Screen {
             }
         }
 
-        if (expanded) body(Modifier.fillMaxWidth()) else LegacyPageScaffold(
+        CpRouteScaffold(
             title = "账号与登录",
-            navigationIcon = {
-                IconButton(onClick = { navigator.pop() }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                }
-            },
+            onBack = { navigator.pop() },
         ) { pageModifier -> body(pageModifier) }
     }
 }

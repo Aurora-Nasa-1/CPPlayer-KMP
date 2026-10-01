@@ -1,11 +1,7 @@
 package cp.player.app.ui.screen
 
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bedtime
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -17,8 +13,7 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
-import cp.player.app.ui.component.LegacyPageScaffold
-import cp.player.app.ui.component.LocalIsExpanded
+import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsDropdownItem
 import cp.player.app.ui.component.SettingsNote
@@ -45,7 +40,6 @@ class PlaybackSettingsScreen : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
-        val expanded = LocalIsExpanded.current
         val quality by AppModel.playbackQualityFlow.collectAsState()
         val playbackState by AppModel.playback.state.collectAsState()
         var showSleepTimer by remember { mutableStateOf(false) }
@@ -98,17 +92,9 @@ class PlaybackSettingsScreen : Screen {
             )
         }
 
-        if (expanded) {
-            body(Modifier.fillMaxWidth())
-        } else {
-            LegacyPageScaffold(
-                title = "播放与音质",
-                navigationIcon = {
-                    IconButton(onClick = { navigator.pop() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-            ) { pageModifier -> body(pageModifier) }
-        }
+        CpRouteScaffold(
+            title = "播放与音质",
+            onBack = { navigator.pop() },
+        ) { pageModifier -> body(pageModifier) }
     }
 }

@@ -114,6 +114,18 @@ fun App(
                     }
                 }
 
+                // Esc（桌面）在没有任何页面注册处理器时，退化为「Navigator 出栈」。
+                //
+                // 必须注册在**最外层**：`DesktopBackDispatcher` 是「后注册优先」，页面自己的
+                // 处理器（播放页展开态、歌单多选）在更深处注册，会先于这条被派发。
+                // 没有它的话，push 出去的路由页（账号 / 关于 / 诊断…）**按 Esc 完全没有反应** ——
+                // 那些页面并不注册 BackHandler。
+                //
+                // 安卓端不注册：Voyager 的 `Navigator` 已经接管了系统返回键，再加一条会双重出栈。
+                if (!cp.player.app.platform.isAndroidPlatform()) {
+                    cp.player.app.platform.BackHandler(enabled = navigator.size > 1) { navigator.pop() }
+                }
+
                 // 把「窗口是否够宽」发布给**整棵 Navigator**。
                 // 必须在这里 provide 一次：MainScreen 内部也 provide 了同一个 local，
                 // 但 push 出去的路由页与 MainScreen 是 Navigator 里的兄弟节点，拿不到它，

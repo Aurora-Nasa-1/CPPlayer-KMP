@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteSweep
@@ -20,11 +19,8 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -42,8 +38,8 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
+import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.LegacyListItem
-import cp.player.app.ui.component.LegacyPageScaffold
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.core.monitor.HealthMonitor
 
@@ -62,11 +58,9 @@ class HealthScreen : Screen {
             if (onlyErrors) recent.filter { it.level != HealthMonitor.HealthLevel.OK } else recent.take(300)
         }
 
-        LegacyPageScaffold(
+        CpRouteScaffold(
             title = "诊断",
-            navigationIcon = {
-                IconButton(onClick = { navigator.pop() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
-            },
+            onBack = { navigator.pop() },
             topBarActions = listOf(
                 cp.player.app.ui.component.TopBarAction(
                     icon = { Icon(Icons.Filled.DeleteSweep, "清空") },

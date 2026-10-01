@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -24,9 +23,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -42,9 +39,9 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.platform.rememberZipPicker
+import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.LegacyListItem
-import cp.player.app.ui.component.LegacyPageScaffold
 import cp.player.core.BackendResult
 import cp.player.core.ImportResult
 import cp.player.core.provider.BackendProvider
@@ -67,11 +64,9 @@ class ProviderManagementScreen : Screen {
         val message by model.message.collectAsState()
         val pick = rememberZipPicker(onPicked = { model.importModule(it) })
 
-        LegacyPageScaffold(
+        CpRouteScaffold(
             title = "音源管理",
-            navigationIcon = {
-                IconButton(onClick = { navigator.pop() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
-            },
+            onBack = { navigator.pop() },
             floatingActionButton = {
                 FloatingActionButton(onClick = { pick() }) {
                     Icon(Icons.Filled.Add, "导入模块")

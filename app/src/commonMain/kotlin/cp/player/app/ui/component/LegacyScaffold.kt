@@ -1,57 +1,25 @@
 package cp.player.app.ui.component
 
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import cp.player.app.ui.theme.CpShapes
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun LegacyPageScaffold(
-    title: String,
-    modifier: Modifier = Modifier,
-    navigationIcon: @Composable (() -> Unit)? = null,
-    topBarActions: List<TopBarAction> = emptyList(),
-    floatingActionButton: @Composable () -> Unit = {},
-    scrollBehavior: TopAppBarScrollBehavior? = null,
-    content: @Composable (Modifier) -> Unit,
-) {
-    AppScaffold(
-        title = title,
-        onBackPressed = null,
-        navigationIcon = navigationIcon,
-        topBarActions = topBarActions,
-        floatingActionButton = floatingActionButton,
-        scrollBehavior = scrollBehavior,
-        containerColor = MaterialTheme.colorScheme.background,
-    ) {
-        content(Modifier.fillMaxSize())
-    }
-}
-
+/**
+ * 底部弹层外壳。
+ *
+ * ⚠️ 这里原本还有一个 `LegacyPageScaffold`（`onBackPressed = null` 写死 + 各调用点自己塞
+ * `navigationIcon`），已于 2026-10-01 删除 —— 路由页外壳统一收敛到 [CpRouteScaffold]，
+ * 返回键统一收敛到 [CpBackButton]。别再把它加回来。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LegacyModalBottomSheet(

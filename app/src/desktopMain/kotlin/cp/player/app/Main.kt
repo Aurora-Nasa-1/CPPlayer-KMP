@@ -147,6 +147,23 @@ fun main() {
                     DesktopTitleBar(
                         windowScope = windowScope,
                         windowState = windowState,
+                        // 标题：当前路由页自己声明的优先（`CpRouteScaffold` / `DesktopRouteTitle`），
+                        // 没有声明时回落到 `MainScreen` 发布的主壳层标题。`MainScreen` 被 push 出去的
+                        // 页面盖住后会离开组合、不再发布，所以没有这一层回落之外的上层来源，
+                        // 窗口标题会停在旧值（从标题栏点账号，标题却还写着「首页」）。
+                        title = DesktopShell.routeTitle ?: DesktopShell.pageTitle,
+                        // 可返回 = 「Navigator 还能出栈」**或**「主壳层开着内嵌面板」。
+                        // 只判后者（曾经如此）会让所有 push 出去的路由页在标题栏上没有返回键。
+                        canGoBack = navigator.size > 1 || DesktopShell.pageCanGoBack,
+                        onBack = {
+                            // 与 Esc 走**同一条链路**：先让页面自己的处理器拿到
+                            // （播放页展开态、歌单多选），没人处理再退化为出栈 / 收起内嵌面板。
+                            // 两处各写一套判据的话，「Esc 能退、点返回键不能退」这类漂移迟早出现。
+                            if (!DesktopBackDispatcher.dispatch()) {
+                                if (navigator.size > 1) navigator.pop()
+                                else DesktopShell.backRequested = true
+                            }
+                        },
                         onClose = ::exitApplication,
                         onOpenAccount = { navigator.push(AccountScreen()) },
                         // 「设置」在桌面是**右侧内嵌面板**，开关是 MainScreen 的局部状态，
