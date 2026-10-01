@@ -121,10 +121,11 @@ class UnifiedMusicSourceImpl(
                 try {
                     val json = musicApiService.getSongDetail(chunk.map { it.resourceId })
                     val songs = (json as? JsonObject)?.get("songs")?.jsonArray
+                    val chunkMap = chunk.associateBy { it.resourceId }
                     songs?.forEach { songJson ->
                         val trackObj = songJson.jsonObject
                         val rid = rawTrackId(trackObj).ifEmpty { return@forEach }
-                        val matchedApiId = chunk.find { it.resourceId == rid }
+                        val matchedApiId = chunkMap[rid]
                         if (matchedApiId != null) {
                             summaries.add(trackObj.toTrackSummary(matchedApiId.toString()))
                         }
