@@ -6,9 +6,16 @@ build/
 .externalNativeBuild/
 /captures
 
-# Verification scratch dirs used to bypass a locked Gradle cache
-.gradle-verify/
-build-verify/
+# Verification scratch dirs used to bypass a locked Gradle cache.
+# The tag suffix is per-session (see AGENTS.md §3): the Groovy init script is
+# cpplayer-verify-<tag>.init.gradle, and it repoints buildDirectory at
+# build-<tag>/ while --project-cache-dir=.gradle-<tag>. All three are
+# scaffolding — delete them after use and never commit them.
+.gradle-verify*/
+.gradle-v*/
+build-verify*/
+build-v*/
+cpplayer-verify*.init.gradle
 
 # --- IDE / editor --------------------------------------------------------
 .idea/
@@ -26,6 +33,9 @@ local.properties
 # --- Read-only reference checkouts (not part of the Gradle build) --------
 # Legacy Android project: a plain local checkout, excluded on purpose.
 reference/cp-player-legacy/
+# Upstream Flutter player used as a visual-design reference. Also a plain
+# local checkout (~59 MB, its own .git) — referenced from docs/ only.
+reference/Kazumi/
 # NOTE: reference/netease-module-rust is an unregistered submodule (gitlink
 # in the index, no .gitmodules). It is deliberately NOT ignored here.
 
