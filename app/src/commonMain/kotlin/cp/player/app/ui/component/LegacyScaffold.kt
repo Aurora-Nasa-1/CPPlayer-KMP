@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
+import cp.player.app.ui.theme.CpShapes
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,7 +62,9 @@ fun LegacyModalBottomSheet(
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
+        // 底部弹窗形状收敛到 `CpShapes.sheet` —— 原先这里、`MoreOptionsSheet`、
+        // `DownloadsScreen` 各写了一遍同样的「上两角 32dp」，改一次要改三处。
+        shape = CpShapes.sheet,
         dragHandle = {
             BottomSheetDefaults.DragHandle(
                 color = MaterialTheme.colorScheme.outlineVariant,

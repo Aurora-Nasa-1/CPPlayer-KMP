@@ -33,9 +33,9 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Album
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoGraph
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
@@ -83,6 +83,7 @@ import cp.player.app.AppModel
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpCoverPlaceholder
+import cp.player.app.ui.component.CpIconSize
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpToggleChip
@@ -256,8 +257,8 @@ private fun HomeScreenContent(model: HomeScreenModel) {
                 HomeGeneratedPlaylistScreen(
                     intelligencePlaylist,
                     emptyList(),
-                    0,
-                    HomeGeneratedPlaylistKind.IntelligenceFromDaily,
+                    // 不传 startIndex：打开心动模式只浏览，点了具体曲目才播。
+                    kind = HomeGeneratedPlaylistKind.IntelligenceFromDaily,
                     seedTrackId = dailySongs.firstOrNull()?.id,
                 )
             )
@@ -267,8 +268,8 @@ private fun HomeScreenContent(model: HomeScreenModel) {
                 HomeGeneratedPlaylistScreen(
                     similarPlaylist,
                     emptyList(),
-                    0,
-                    HomeGeneratedPlaylistKind.SimilarFromDaily,
+                    // 同上：打开相似歌曲只浏览。
+                    kind = HomeGeneratedPlaylistKind.SimilarFromDaily,
                     seedTrackId = dailySongs.firstOrNull()?.id,
                 )
             )
@@ -1086,7 +1087,7 @@ private fun HeroActionRow(
                 Icon(
                     icon, null,
                     tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = contentAlpha),
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.size(CpIconSize.inline),
                 )
             }
             Column(Modifier.weight(1f)) {
@@ -1109,7 +1110,7 @@ private fun HeroActionRow(
             Icon(
                 Icons.Filled.ChevronRight, null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha),
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(CpIconSize.inline),
             )
         }
     }
@@ -1439,6 +1440,14 @@ private fun CoverTile(
     subtitle: String?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * 封面圆角。
+     *
+     * ⚠️ 这里是 `Dp` 而不是 `Shape`，因为同一个值要同时喂给 `AsyncImage` 的
+     * `clip()` 和 [CpCoverPlaceholder] 的 `corner` —— 后者只收 `Dp`。
+     * **取值必须落在形状刻度上**：默认 20dp = `MaterialTheme.shapes.largeIncreased`；
+     * 大卡片传 28dp = `shapes.extraLarge`。不要传 18 / 22 这类非标度值。
+     */
     corner: Dp = 20.dp,
     showSearchHint: Boolean = false,
 ) {
@@ -1484,8 +1493,10 @@ private fun CoverTile(
             ) {
                 Text(
                     title,
+                    // titleSmall 的字重规范就是 Medium(500)，这里原先又写了一遍
+                    // `fontWeight = FontWeight.Medium` —— 与 token 同值，纯噪声。
+                    // 删掉：以后改字阶只需要动 Type.kt 一处。
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium,
                     color = titleColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1542,7 +1553,9 @@ private fun RankingRow(
                     AsyncImage(
                         model = ranking.coverUrl.resized(200),
                         contentDescription = null,
-                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)),
+                        // 缩略图圆角走 token（medium = 12dp），不要再写裸值 ——
+                        // 写裸值的话改刻度时这里会被漏掉，出现「同一页两种圆角」。
+                        modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.medium),
                         contentScale = ContentScale.Crop,
                     )
                 } else {
@@ -1572,7 +1585,7 @@ private fun RankingRow(
             Icon(
                 Icons.AutoMirrored.Filled.TrendingUp, null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(CpIconSize.inline),
             )
         }
     }
@@ -1879,11 +1892,11 @@ private fun DailyMixCard(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            Icon(Icons.Filled.PlayArrow, null, tint = actionContent, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Filled.PlayArrow, null, tint = actionContent, modifier = Modifier.size(CpIconSize.inline))
                             Text(
                                 "播放全部",
+                                // labelLarge 的字重规范就是 Medium(500)，原先是重复声明，已删。
                                 style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Medium,
                                 color = actionContent,
                             )
                         }
@@ -1960,7 +1973,9 @@ private fun CompactTrackCard(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Box(
-                modifier = Modifier.size(46.dp).clip(RoundedCornerShape(14.dp))
+                // 14dp 是历史遗留的**非标度值**（既不是 small/medium 也不是 large）。
+                // 收到 medium（12dp）：这个 46dp 的方形缩略图本来就该跟列表缩略图同一档。
+                modifier = Modifier.size(46.dp).clip(MaterialTheme.shapes.medium)
                     .background(
                         if (overImage) Color.White.copy(alpha = 0.16f)
                         else MaterialTheme.colorScheme.surfaceVariant
@@ -2023,7 +2038,14 @@ enum class HomeGeneratedPlaylistKind {
 class HomeGeneratedPlaylistScreen(
     private val playlist: PlaylistSummary,
     private val initialTracks: List<TrackSummary>,
-    private val startIndex: Int = 0,
+    /**
+     * 进入后自动播放的曲目下标；**null（默认）表示只浏览、不播放**。
+     *
+     * 只有「点击某一首曲目」的入口才传具体下标（`HomeScreen.onPlayDailyTrack`）；
+     * 「打开歌单」的入口一律不传 —— 点开每日推荐就自动出声是打扰，用户此时多半
+     * 只是想看看今天推荐了什么。原先默认值是 `0`，于是「打开日推」等价于「播放第 1 首」。
+     */
+    private val startIndex: Int? = null,
     private val kind: HomeGeneratedPlaylistKind = HomeGeneratedPlaylistKind.Static,
     /** 拉取相似 / 心动歌曲的种子曲目 id（这类页面本身不携带曲目，种子必须由调用方传入）。 */
     private val seedTrackId: String? = null,
@@ -2236,7 +2258,7 @@ private fun PageTitleBar(
     ) {
         if (onBack != null) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
             }
         }
         Column(Modifier.weight(1f)) {

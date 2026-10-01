@@ -318,7 +318,7 @@ class MainScreen : Screen {
             ) { data ->
                 androidx.compose.material3.Snackbar(
                     snackbarData = data,
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.large,
                     containerColor = MaterialTheme.colorScheme.inverseSurface,
                     contentColor = MaterialTheme.colorScheme.inverseOnSurface,
                 )
@@ -796,7 +796,7 @@ private fun SidebarAction(
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
     ) {
         Surface(
-            shape = RoundedCornerShape(10.dp),
+            shape = MaterialTheme.shapes.small,
             color = if (selected) MaterialTheme.colorScheme.primaryContainer
             else MaterialTheme.colorScheme.surfaceContainerHighest,
         ) {
@@ -857,7 +857,7 @@ private fun SidebarPlaylistRow(
         // 占位块常驻最底层、封面叠在上面：写成「有 URL 才画封面」的话，
         // 图没到之前这里会是一块空的方角壳。
         Box(
-            Modifier.size(38.dp).clip(RoundedCornerShape(10.dp))
+            Modifier.size(38.dp).clip(MaterialTheme.shapes.small)
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest),
             contentAlignment = androidx.compose.ui.Alignment.Center,
         ) {

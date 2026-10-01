@@ -23,7 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
-import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -105,7 +105,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                     if (state.query.isNotEmpty()) {
                         IconButton(
                             onClick = model::clear,
-                        ) { Icon(Icons.Rounded.Close, "清空") }
+                        ) { Icon(Icons.Filled.Close, "清空") }
                     } else {
                         IconButton(onClick = { model.search() }) { Icon(Icons.Filled.Search, "搜索") }
                     }
@@ -139,7 +139,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
             if (state.query.isNotBlank() && state.suggestions.isNotEmpty() && state.result == null) {
                 Surface(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = CpSpacing.pageHorizontal),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.large,
                     tonalElevation = 3.dp,
                 ) {
                     Column(Modifier.padding(vertical = 6.dp)) {

@@ -129,7 +129,7 @@ fun DesktopPlayerScreen(
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
                 Surface(
                     Modifier.weight(1.15f).fillMaxHeight(),
-                    shape = RoundedCornerShape(28.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
                 ) {
                     Box(Modifier.fillMaxSize().padding(28.dp), contentAlignment = Alignment.Center) {
@@ -196,7 +196,7 @@ fun DesktopPlayerScreen(
                 }
                 Surface(
                     Modifier.weight(1f).fillMaxHeight(),
-                    shape = RoundedCornerShape(28.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
                 ) {
                     Column(Modifier.fillMaxSize().padding(22.dp)) {
@@ -231,10 +231,10 @@ private fun QueueContent(state: PlaybackUiState, scope: kotlinx.coroutines.Corou
     LazyScrollColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         itemsIndexed(state.queue) { index, item ->
             val selected = index == state.currentIndex
-            Surface(onClick = { scope.launch { onPlayAt(index) } }, shape = RoundedCornerShape(14.dp), color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent) {
+            Surface(onClick = { scope.launch { onPlayAt(index) } }, shape = MaterialTheme.shapes.medium, color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent) {
                 Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("${index + 1}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(24.dp))
-                    Artwork(item.coverUrl, Modifier.size(42.dp).clip(RoundedCornerShape(8.dp)))
+                    Artwork(item.coverUrl, Modifier.size(42.dp).clip(MaterialTheme.shapes.small))
                     Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                         Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
                         Text(item.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

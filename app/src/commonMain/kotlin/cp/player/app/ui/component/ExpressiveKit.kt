@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialShapes
@@ -68,7 +69,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -109,6 +109,42 @@ private val CpSeekBubbleHeight = 18.dp
  */
 
 // ---------------------------------------------------------------- 进度指示
+
+/**
+ * 直线线性进度条（确定值）—— M3 Expressive 的**非波形**形态。
+ *
+ * 与 [CpWavyProgress] 的区别只在「画法」：这条是直的、两端圆头、末端带一颗
+ * Expressive 的 stop indicator（轨道尽头的小圆点，用来指示「进度到此为止」）。
+ * 波形适合**大尺度、可交互**的场景（播放页 seek bar）；但**窄条**上波形会被压扁成
+ * 一团抖动的色块（迷你播放器那一条只有 4dp 高），这时候直线更干净也更易读。
+ *
+ * @param progress 0f..1f。**调用方负责钳制**，这里再钳一次只是兜底。
+ */
+@Composable
+fun CpLinearProgress(
+    progress: Float,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary,
+    trackColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    animated: Boolean = true,
+) {
+    val safe = progress.coerceIn(0f, 1f)
+    val shown by animateFloatAsState(
+        targetValue = safe,
+        // 与 [CpWavyProgress] 同一条规格：主题 spatial，保证两条进度条动起来是"一家人"。
+        animationSpec = if (animated) CpMotion.spatial() else tween(0),
+        label = "cpLinearProgress",
+    )
+    // ⚠️ 必须走 `progress = { }` 这个 lambda 重载：material3 1.11 里传 `Float` 的重载
+    // 已废弃（会走 replaceWith 到 lambda 版），而且只有 lambda 版带 strokeCap
+    // —— 也就是 Expressive 那颗圆头 / stop indicator。
+    LinearProgressIndicator(
+        progress = { shown },
+        modifier = modifier,
+        color = color,
+        trackColor = trackColor,
+    )
+}
 
 /**
  * 波形线性进度条（确定值）。
@@ -343,7 +379,7 @@ fun CpPlayingEqualizer(
     val transition = rememberInfiniteTransition(label = "cpEq")
     Row(
         modifier = modifier
-            .background(scrimColor, RoundedCornerShape(4.dp))
+            .background(scrimColor, MaterialTheme.shapes.extraSmall)
             .padding(horizontal = 3.dp, vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(1.5.dp),
         verticalAlignment = Alignment.Bottom,
@@ -527,8 +563,12 @@ fun CpFloatingToolbar(
         modifier = modifier,
         shape = CircleShape,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        // 层级靠**色阶**（surfaceContainerHigh 比页面背景高一档）表达，不靠阴影。
+        // 此前 tonal + shadow 各 3dp 同时拉满：tonal 把容器提亮、shadow 再压一圈黑边，
+        // 两者叠加的结果是边缘发脏 —— 阴影只在"真的浮在内容之上"时才有意义，
+        // 而工具条本身已经有更高的容器色阶了。
         tonalElevation = 3.dp,
-        shadowElevation = 3.dp,
+        shadowElevation = 0.dp,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -574,59 +614,6 @@ private fun RowScope.ChipContent(icon: ImageVector?, label: String) {
         Spacer(Modifier.width(8.dp))
     }
     Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
-}
-
-// ---------------------------------------------------------------- 标题
-
-/**
- * Expressive 区块标题。
- *
- * 比 `MaterialTheme.typography.titleMedium` 更强调：加粗 + 可选前置图标 + 可点尾部动作。
- * 统一用它，避免各页面自己拼字号字重（此前首页 / 我的 / 设置三处各不相同）。
- */
-@Composable
-fun ExpressiveSectionHeader(
-    title: String,
-    modifier: Modifier = Modifier,
-    subtitle: String? = null,
-    icon: ImageVector? = null,
-    trailing: (@Composable () -> Unit)? = null,
-) {
-    Row(
-        modifier = modifier.fillMaxWidth().padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (icon != null) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp),
-            )
-            Spacer(Modifier.width(8.dp))
-        }
-        Box(Modifier.weight(1f)) {
-            androidx.compose.foundation.layout.Column {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                if (subtitle != null) {
-                    Text(
-                        subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-        if (trailing != null) {
-            Spacer(Modifier.width(8.dp))
-            trailing()
-        }
-    }
 }
 
 // ---------------------------------------------------------------- Modifier

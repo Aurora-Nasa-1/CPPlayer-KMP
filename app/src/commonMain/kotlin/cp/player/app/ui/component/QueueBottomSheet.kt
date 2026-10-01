@@ -142,7 +142,7 @@ fun QueueBottomSheet(
                 ) {
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
-                        shape = RoundedCornerShape(24.dp),
+                        shape = MaterialTheme.shapes.large,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Row(
@@ -209,7 +209,7 @@ private fun QueueRow(
 
     Surface(
         modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
+        shape = MaterialTheme.shapes.large,
         color = bg,
     ) {
         Row(
@@ -250,12 +250,12 @@ private fun QueueRow(
                             contentDescription = "封面",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(MaterialTheme.shapes.medium)
                                 .background(MaterialTheme.colorScheme.surfaceVariant),
                         )
                     } else {
                         Box(
-                            Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp))
+                            Modifier.fillMaxSize().clip(MaterialTheme.shapes.medium)
                                 .background(MaterialTheme.colorScheme.surfaceVariant),
                             contentAlignment = Alignment.Center,
                         ) {

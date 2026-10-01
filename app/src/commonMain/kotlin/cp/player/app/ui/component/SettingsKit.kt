@@ -3,7 +3,7 @@ package cp.player.app.ui.component
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -60,6 +61,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cp.player.app.ui.theme.CpText
+import cp.player.app.ui.theme.LocalIsDarkTheme
 
 /**
  * 设置项组件的**唯一实现层**（旧版 `SettingsSection` / `Expressive*Item` 的移植 + 重构）。
@@ -69,7 +72,8 @@ import androidx.compose.ui.unit.sp
  * `UnifiedListItem`（分段圆角）。度量沿用旧版，**不要随手改数字**：
  *
  * - 分组标题：`labelLarge` + Medium + primary，`start=16 / top=12 / bottom=8`，字距 0.5sp
- * - 组内行距：2dp（行靠 `legacySegmentShape(index, total)` 拼成一张分段卡片）
+ * - 组内行距：4dp（= `CpSpacing.listRowGap`；行靠 `legacySegmentShape(index, total)`
+ *   拼成一张分段卡片，按下时圆角撑到容器圆角 —— 缝宽与形状变形是一对参数，见 [SettingsSection]）
  * - 页面：水平 16dp / 垂直 8dp，组间距 12dp，页尾留白 32dp
  * - 行：`min height 68dp`，标题 16sp Medium，副标题 `bodyMedium / onSurfaceVariant`
  * - 行容器色：深色 `surfaceContainerHighest`，浅色 `surface`
@@ -102,8 +106,9 @@ fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) 
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             text = title,
+            // labelLarge 的字重规范就是 Medium(500)，原先又写了一遍 —— 与 token 同值，纯噪声。
+            // 但下面的 `letterSpacing = 0.5.sp` 是**真覆盖**（labelLarge 规范是 0.1sp），保留。
             style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier
                 .padding(start = 16.dp, bottom = 8.dp, top = 12.dp)
@@ -112,7 +117,12 @@ fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) 
         )
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            // 组内行距。**2026-10-01 从 2dp 改到 4dp（= CpSpacing.listRowGap）**，理由：
+            // 行现在按下时圆角会从 4dp 撑到 20dp，2dp 的缝太窄 —— 变形后的行会与
+            // 邻行视觉粘连，"这一行弹出来了"读不出来。4dp 也是 Kazumi `SplitListRow`
+            // 的缝宽（`reference/Kazumi/lib/bean/widget/split_list_row.dart`）。
+            // ⚠️ 这不是"随手改数字"：缝宽与形状变形是**一对**参数，改一个要回头看另一个。
+            verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
             content = content,
         )
     }
@@ -162,7 +172,9 @@ fun SettingsNote(
         MaterialTheme.colorScheme.onTertiaryContainer
     }
     Surface(
-        shape = RoundedCornerShape(14.dp),
+        // 14dp 是历史遗留的非标度值；收到 `shapes.medium`(12dp)。
+        // 提示条是行内元素，比所在分段卡片（外 20dp）轻一档才对。
+        shape = MaterialTheme.shapes.medium,
         color = container,
         modifier = modifier
             .fillMaxWidth()
@@ -212,13 +224,19 @@ fun MonetIcon(icon: ImageVector, containerColor: Color, contentColor: Color) {
 /**
  * 选项行的默认容器色。
  *
- * 旧版在**每一行**里内联 `if (isSystemInDarkTheme()) surfaceContainerHighest else surface`，
- * 这里收敛成一个函数，保证新旧页面不会各写各的。
+ * ⚠️ **必须读 [LocalIsDarkTheme]，不要读 `isSystemInDarkTheme()`。** 两者在「跟随系统」时
+ * 恰好相等，但本应用允许用户显式指定浅色 / 深色 —— 用户选了深色而系统是浅色时，
+ * `isSystemInDarkTheme()` 返回 false，于是这里会去取**浅色**色板的角色色，
+ * 与页面背景撞色、分组卡片整块糊住。
+ *
+ * ⚠️ 浅色分支**不能返回 `surface`**：设置页背景本身就是 `surface`，
+ * 两者相同 ⇒ 分组卡片完全不可见（离屏取像素实测：行内与页面都是 #FBF8FF）。
+ * 取 `surfaceContainerLow` 才是 M3 里「卡片浮在页面之上」的标准关系。
  */
 @Composable
 fun settingsRowContainer(): Color =
-    if (isSystemInDarkTheme()) MaterialTheme.colorScheme.surfaceContainerHighest
-    else MaterialTheme.colorScheme.surface
+    if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainerHighest
+    else MaterialTheme.colorScheme.surfaceContainerLow
 
 @Composable
 private fun resolveContainer(containerColor: Color): Color =
@@ -351,7 +369,11 @@ fun SettingsSwitchItem(
     containerColor: Color = Color.Unspecified,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val shape = legacySegmentShape(index, total)
+    // 按下时圆角从组内圆角(4dp)撑到容器圆角(20dp) —— 与 `LegacyListItem` 同源。
+    // 开关行是设置页出现频率最高的一类行，之前它只有水波纹、圆角是死的；
+    // 现在按下时会"长出来"，给出「我抓住了这一行」的确认。
+    val pressed by interactionSource.collectIsPressedAsState()
+    val shape = rememberSegmentShape(index, total, pressed = pressed && enabled)
     Surface(
         shape = shape,
         color = resolveContainer(containerColor),
@@ -454,20 +476,29 @@ private fun SegmentedControl(
     enabled: Boolean,
     onSelect: (Int) -> Unit,
 ) {
+    // 圆角同心：**内块圆角 = 外框圆角 − 内边距**。
+    //
+    // 外框取 `shapes.medium`(12dp)、内边距 3dp ⇒ 内块 9dp。
+    // ⚠️ 不要"顺手"把内块改成 `shapes.small`(8dp)：那会破坏同心，内外曲率不平行时
+    // 肉眼能看出内块四角"贴不齐"外框 —— 这正是这里用 9dp 而不是某个 token 的原因。
+    val trackRadius = 12.dp
+    val trackPadding = 3.dp
+    val outerShape = MaterialTheme.shapes.medium
+    val optionShape = RoundedCornerShape(trackRadius - trackPadding)
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 10.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(outerShape)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-            .padding(3.dp)
+            .padding(trackPadding)
             .selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(trackPadding),
     ) {
         options.forEachIndexed { optionIndex, label ->
             val selected = optionIndex == selectedIndex
             val interactionSource = remember { MutableInteractionSource() }
-            val optionShape = RoundedCornerShape(9.dp)
             Surface(
                 shape = optionShape,
                 color = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
@@ -549,8 +580,9 @@ fun SettingsDropdownItem(
         LegacyModalBottomSheet(onDismissRequest = { showSheet = false }) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Medium,
+                // 弹层标题要压过下面的选项，所以取 Emphasized 档而不是裸 titleLarge
+                // （titleLarge 规范是 Regular(400)，直接用会显得"标题没立住"）。
+                style = CpText.titleLargeEmphasized,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
             )
             Spacer(Modifier.height(8.dp))
@@ -560,7 +592,7 @@ fun SettingsDropdownItem(
                 options.forEachIndexed { optionIndex, option ->
                     val isSelected = optionIndex == selectedIndex
                     val interactionSource = remember { MutableInteractionSource() }
-                    val optionShape = RoundedCornerShape(16.dp)
+                    val optionShape = MaterialTheme.shapes.large
                     Surface(
                         shape = optionShape,
                         color = if (isSelected) {
@@ -805,14 +837,20 @@ fun SettingsConfirmItem(
  *
  * **只给只读信息、说明段落用** —— 选项行一律走 [SettingsSection] + `Settings*Item`，
  * 否则分段圆角会被打断。
+ *
+ * ⚠️ 这里必须 opt-in：`Shapes.largeIncreased`（20dp）带
+ * `@ExperimentalMaterial3ExpressiveApi`，而 `large` / `extraLarge` 这些老槽位不带。
+ * 用 20dp 是因为它是 4 档容器里"比行内块大、比卡片小"的那一档 ——
+ * 改成 `shapes.large`(16dp) 会让它和行内块看不出层级。
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SettingsFieldGroup(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Surface(
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.largeIncreased,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = modifier.fillMaxWidth(),
     ) {

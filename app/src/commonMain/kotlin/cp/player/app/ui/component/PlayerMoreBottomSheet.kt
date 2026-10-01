@@ -190,7 +190,7 @@ fun PlayerMoreBottomSheet(
 
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = RoundedCornerShape(24.dp),
+                shape = MaterialTheme.shapes.large,
                 modifier = Modifier.fillMaxWidth().clickable {
                     onShowInfo()
                     onDismiss()
@@ -296,7 +296,7 @@ private fun PlayerPillButton(
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
+        shape = MaterialTheme.shapes.large,
         color = bgColor,
         onClick = onClick,
     ) {

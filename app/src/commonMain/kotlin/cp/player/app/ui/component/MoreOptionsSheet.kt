@@ -357,7 +357,7 @@ private fun ActionTile(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth().height(88.dp),
-        shape = RoundedCornerShape(24.dp),
+        shape = MaterialTheme.shapes.large,
         color = color,
         onClick = onClick,
     ) {

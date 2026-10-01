@@ -29,7 +29,7 @@ import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -185,7 +185,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
                                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                 ),
                             ) {
-                                Icon(Icons.Rounded.Add, "新建歌单")
+                                Icon(Icons.Filled.Add, "新建歌单")
                             }
                         },
                     )

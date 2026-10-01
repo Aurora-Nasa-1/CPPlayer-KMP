@@ -65,7 +65,7 @@ fun PlaylistPickerRow(
 ) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerHighest,
         modifier = modifier.fillMaxWidth(),
     ) {
@@ -74,7 +74,7 @@ fun PlaylistPickerRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(56.dp).clip(RoundedCornerShape(12.dp))
+                Modifier.size(56.dp).clip(MaterialTheme.shapes.medium)
                     .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center,
             ) {

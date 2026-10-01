@@ -255,7 +255,7 @@ private fun UpdateDialog(
                     Spacer(Modifier.height(4.dp))
                     Text("更新日志", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.medium,
                         color = MaterialTheme.colorScheme.surfaceContainerHighest,
                         modifier = Modifier.fillMaxWidth(),
                     ) {

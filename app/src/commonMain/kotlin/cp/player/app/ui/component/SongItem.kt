@@ -1,7 +1,6 @@
 package cp.player.app.ui.component
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -31,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.anim.coverFlightSource
+import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.resized
 import cp.player.core.music.TrackSummary
 
@@ -65,8 +65,11 @@ fun SongItem(
         containerColor = when {
             selectionMode && isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
             isCurrentlyPlaying -> MaterialTheme.colorScheme.primaryContainer
-            else -> if (isSystemInDarkTheme()) MaterialTheme.colorScheme.surfaceContainerHighest
-            else MaterialTheme.colorScheme.surface
+            // ⚠️ 读 LocalIsDarkTheme（已解析的明暗），不要读 isSystemInDarkTheme() ——
+            // 用户显式选深色而系统是浅色时后者会给出错的色板，行与背景撞色。
+            // 浅色分支取 surfaceContainerLow 而非 surface：后者与页面背景同色，整列会糊成一片。
+            else -> if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainerHighest
+            else MaterialTheme.colorScheme.surfaceContainerLow
         },
         leadingContent = {
             if (selectionMode) {

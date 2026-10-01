@@ -552,7 +552,7 @@ private fun NarrowLayout(
                     Surface(
                         modifier = Modifier.size(56.dp)
                             .coverFlightTarget(CoverFlight.TARGET_PLAYLIST_HEADER, 12.dp),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.medium,
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         shadowElevation = 2.dp,
                     ) {
@@ -652,7 +652,7 @@ private fun WideLayout(
             Surface(
                 modifier = Modifier.size(176.dp)
                     .coverFlightTarget(CoverFlight.TARGET_PLAYLIST_HEADER, 24.dp),
-                shape = RoundedCornerShape(24.dp),
+                shape = MaterialTheme.shapes.large,
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 shadowElevation = 8.dp,
             ) {
@@ -886,7 +886,7 @@ private fun TrackList(
                             model.clearLoadMoreError()
                             model.loadMore()
                         },
-                        shape = RoundedCornerShape(16.dp),
+                        shape = MaterialTheme.shapes.large,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                     ) {
@@ -931,7 +931,7 @@ private fun PlaylistHeader(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Surface(
                 onClick = onPlayAll,
-                shape = RoundedCornerShape(18.dp),
+                shape = MaterialTheme.shapes.large,
                 color = MaterialTheme.colorScheme.primaryContainer,
                 modifier = Modifier.weight(1f).height(52.dp),
             ) {
@@ -956,7 +956,7 @@ private fun PlaylistHeader(
             }
             Surface(
                 onClick = onShuffle,
-                shape = RoundedCornerShape(18.dp),
+                shape = MaterialTheme.shapes.large,
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 modifier = Modifier.weight(1f).height(52.dp),
             ) {
@@ -987,7 +987,7 @@ private fun PlaylistHeader(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Surface(
                 onClick = onAdd,
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.large,
                 color = MaterialTheme.colorScheme.surfaceContainerHighest,
                 modifier = Modifier.weight(1.2f).height(46.dp),
             ) {
@@ -1011,7 +1011,7 @@ private fun PlaylistHeader(
             }
             Surface(
                 onClick = onSort,
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.large,
                 color = MaterialTheme.colorScheme.surfaceContainerHighest,
                 modifier = Modifier.weight(1.2f).height(46.dp),
             ) {
@@ -1040,7 +1040,7 @@ private fun PlaylistHeader(
         // 第三行：全部下载
         Surface(
             onClick = onDownloadAll,
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.large,
             color = MaterialTheme.colorScheme.surfaceContainerHighest,
             modifier = Modifier.fillMaxWidth().height(46.dp),
         ) {

@@ -60,6 +60,7 @@ import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.app.ui.model.DownloadsUiState
+import cp.player.app.ui.theme.CpShapes
 import cp.player.app.ui.util.resized
 import cp.player.core.media.LocalMediaItem
 import cp.player.core.media.LocalMediaOrigin
@@ -177,7 +178,8 @@ private fun DownloadsScreenContent(model: DownloadsScreenModel) {
 
         Surface(
             Modifier.fillMaxSize(),
-            shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
+            // 同 LegacyScaffold：底部弹窗形状统一取 `CpShapes.sheet`。
+            shape = CpShapes.sheet,
             color = MaterialTheme.colorScheme.surfaceContainerLow,
         ) {
             HorizontalPager(
@@ -533,7 +535,7 @@ private fun LibraryGroupHeader(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Surface(shape = RoundedCornerShape(8.dp), color = containerColor) {
+        Surface(shape = MaterialTheme.shapes.small, color = containerColor) {
             Icon(
                 icon, null,
                 tint = contentColor,
@@ -558,7 +560,7 @@ private fun LibraryGroupHeader(
 private fun LocalMediaRow(item: LocalMediaItem, model: DownloadsScreenModel) {
     Surface(
         onClick = { model.play(item) },
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -567,13 +569,13 @@ private fun LocalMediaRow(item: LocalMediaItem, model: DownloadsScreenModel) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(40.dp).clip(RoundedCornerShape(10.dp))
+                Modifier.size(40.dp).clip(MaterialTheme.shapes.small)
                     .padding(0.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Surface(
                     Modifier.fillMaxSize(),
-                    shape = RoundedCornerShape(10.dp),
+                    shape = MaterialTheme.shapes.small,
                     color = if (item.mediaType == MediaType.VIDEO)
                         MaterialTheme.colorScheme.secondaryContainer
                     else MaterialTheme.colorScheme.primaryContainer,
@@ -628,12 +630,12 @@ private fun LocalMediaRow(item: LocalMediaItem, model: DownloadsScreenModel) {
 @Composable
 private fun TaskCover(coverUrl: String?, mediaType: MediaType, modifier: Modifier = Modifier) {
     Box(
-        modifier.clip(RoundedCornerShape(12.dp)),
+        modifier.clip(MaterialTheme.shapes.medium),
         contentAlignment = Alignment.Center,
     ) {
         Surface(
             Modifier.fillMaxSize(),
-            shape = RoundedCornerShape(12.dp),
+            shape = MaterialTheme.shapes.medium,
             color = MaterialTheme.colorScheme.surfaceVariant,
         ) {
             if (!coverUrl.isNullOrBlank()) {

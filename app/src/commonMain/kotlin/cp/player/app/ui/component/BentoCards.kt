@@ -49,9 +49,6 @@ import androidx.compose.ui.unit.dp
  * 普通模式下几乎看不见，纯黑模式下正好用来勾出卡片轮廓。
  */
 
-/** Bento 卡片统一圆角。比 `Shapes.extraLarge`(32dp) 收敛 4dp，多卡并排时不至于太「软」。 */
-val BentoShape = RoundedCornerShape(28.dp)
-
 /** 卡片行/列之间的标准间距。 */
 val BentoGap = 12.dp
 
@@ -107,7 +104,7 @@ fun BentoCard(
         Surface(
             onClick = onClick,
             modifier = modifier.then(pressModifier),
-            shape = BentoShape,
+            shape = MaterialTheme.shapes.extraLarge,
             color = containerColor,
             contentColor = contentColor,
             border = border,
@@ -116,7 +113,7 @@ fun BentoCard(
     } else {
         Surface(
             modifier = modifier,
-            shape = BentoShape,
+            shape = MaterialTheme.shapes.extraLarge,
             color = containerColor,
             contentColor = contentColor,
             border = border,
@@ -143,7 +140,7 @@ fun BentoHeroCard(
     Surface(
         onClick = onClick,
         modifier = modifier.then(pressModifier),
-        shape = BentoShape,
+        shape = MaterialTheme.shapes.extraLarge,
         color = containerColor,
         contentColor = contentColor,
         interactionSource = interactionSource,
@@ -154,7 +151,7 @@ fun BentoHeroCard(
                     .align(Alignment.CenterEnd)
                     .padding(end = 20.dp)
                     .size(96.dp)
-                    .clip(RoundedCornerShape(34.dp))
+                    .clip(MaterialTheme.shapes.extraLarge)
                     .background(contentColor.copy(alpha = 0.14f)),
                 contentAlignment = Alignment.Center,
             ) {
@@ -270,7 +267,7 @@ fun BentoStatCard(
     val contentColor = bentoContentColor(containerColor)
     Surface(
         modifier = modifier,
-        shape = BentoShape,
+        shape = MaterialTheme.shapes.extraLarge,
         color = containerColor,
         contentColor = contentColor,
         border = bentoOutline(),

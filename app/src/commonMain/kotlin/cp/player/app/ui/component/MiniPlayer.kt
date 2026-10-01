@@ -36,10 +36,13 @@ import cp.player.core.playback.PlaybackUiState
  * 底部 MiniBar。
  *
  * 视觉：顶圆角 28dp + 底圆角 16dp 的 Card，surfaceContainerHigh 色，2dp 抬升阴影；
- * 内含 48dp 封面 / 标题 / 歌手 / 上一首 + 播放暂停 + 下一首；下方贴底**波形**进度条。
+ * 内含 48dp 封面 / 标题 / 歌手 / 上一首 + 播放暂停 + 下一首；下方贴底一条**直线**进度条。
  *
  * Expressive 化的两处：
- * - 进度条从直角 `LinearProgressIndicator` 换成 [CpWavyProgress]（M3 Expressive 的标志性元素）；
+ * - 进度条用 [CpLinearProgress]（M3 Expressive 的非波形形态：圆头 + 末端 stop indicator）。
+ *   ⚠️ **这里刻意不用 [CpWavyProgress]**：波形要靠"高度"才能看出起伏，压到 4dp 的窄条上
+ *   只剩一团抖动的色块，而迷你播放器是**余光扫一眼**的地方 —— 直线更易读也更安静。
+ *   波形留给播放页那条大尺度、可拖动的 [CpSeekBar]。
  * - 播放/暂停换成 [CpPlayPauseButton]，按下时圆角收缩 + 图标回弹。
  *
  * 点击主体区域 → [onClick]（展开全屏播放页）。
@@ -162,10 +165,13 @@ fun SharedTransitionScope.MiniPlayer(
                     }
                 }
             }
-            // 波形进度条：高度必须给够，压成 3dp 就看不出波形了。
-            CpWavyProgress(
+            // 直线进度条：左右留 12dp 与文字对齐，底部留 8dp 让它"浮"在卡片里而不是贴边。
+            CpLinearProgress(
                 progress = progress,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
+                    .padding(bottom = 8.dp),
                 color = MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
             )

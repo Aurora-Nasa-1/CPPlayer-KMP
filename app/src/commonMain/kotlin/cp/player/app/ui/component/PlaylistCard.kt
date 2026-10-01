@@ -18,7 +18,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.rounded.QueueMusic
+import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -43,10 +44,16 @@ import cp.player.app.ui.util.resized
 /**
  * 媒体库歌单列表项（Library 页面使用）。
  *
- * 1:1 移植旧项目样式：独立 24dp 圆角卡片（surfaceContainerHigh），
- * 封面 56dp（12dp 圆角）+ 歌单名（SemiBold）+ "创建的歌单/收藏 · 创建者 · N 首" 副标题
- * + 右侧 MoreVert 圆形按钮。外层列表负责提供 12dp 水平 / 4dp 垂直间距。
+ * 独立圆角卡片（surfaceContainerHigh），封面 60dp（12dp 圆角）+ 歌单名 +
+ * "创建的歌单/收藏 · 创建者 · N 首" 副标题 + 右侧 MoreVert 圆形按钮。
+ * 外层列表负责提供 12dp 水平 / 4dp 垂直间距。
+ *
+ * ⚠️ 2026-10-01 订正：原文写「独立 24dp 圆角卡片 / 封面 56dp（12dp 圆角）」，
+ * 与当时代码（20dp 卡片 / 60dp 封面 / 14dp 圆角）**早就对不上**了 ——
+ * 这类"顺手写进 KDoc 的数字"最容易漂。现在卡片走 `shapes.largeIncreased`、
+ * 封面圆角走 `thumbCorner` 常量，**不再在注释里写死尺寸**。
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun PlaylistItem(
     playlist: PlaylistSummary,
@@ -55,6 +62,10 @@ fun PlaylistItem(
     onOptionsClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 缩略图圆角。`coverFlightSource` 要的是 **Dp**（不是 Shape），所以这里必须留一个
+    // Dp 常量给两处共用；值等于 `MaterialTheme.shapes.medium`(12dp)，改刻度时一起改。
+    // ⚠️ 两处必须同值 —— 不一致的话封面飞行起止圆角会对不上，飞行途中会看到角"跳"一下。
+    val thumbCorner = 12.dp
     Surface(
         onClick = {
             // 在卡片自身触发：无论哪条调用路径（库列表 / 搜索 / 快捷入口）都覆盖。
@@ -62,7 +73,9 @@ fun PlaylistItem(
             onClick()
         },
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        // 卡片圆角取 `shapes.largeIncreased`(20dp) —— "次级卡片"那一档：
+        // 比列表行（large=16）大、比主卡片（extraLarge=28）小。
+        shape = MaterialTheme.shapes.largeIncreased,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
         Row(
@@ -70,9 +83,9 @@ fun PlaylistItem(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(60.dp).clip(RoundedCornerShape(14.dp))
+                Modifier.size(60.dp).clip(RoundedCornerShape(thumbCorner))
                     .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .coverFlightSource(CoverFlight.playlistKey(playlist.id), 14.dp),
+                    .coverFlightSource(CoverFlight.playlistKey(playlist.id), thumbCorner),
                 contentAlignment = Alignment.Center,
             ) {
                 if (!playlist.coverUrl.isNullOrBlank()) {
@@ -85,7 +98,7 @@ fun PlaylistItem(
                     )
                 } else {
                     Icon(
-                        Icons.Rounded.QueueMusic, null,
+                        Icons.Filled.QueueMusic, null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(28.dp),
                     )
