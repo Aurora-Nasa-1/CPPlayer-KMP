@@ -1,7 +1,24 @@
 name: Debug Release
 
+# 预发布：push `debug-v*` tag，或手动触发。
+#
+# 只负责 Android 产物。桌面产物（Windows MSI / Linux deb）由 desktop-release.yml 负责 ——
+# 它同样监听 debug-v* 与 v*，并在对应原生 runner 上构建。这与 release.yml（稳定版只出
+# Android APK）的分工保持一致。
+#
+# 历史坑（2026-09-25 修正）：本 job 曾在 ubuntu-latest 上跑 `:app:packageMsi`。
+# Compose Desktop 的 TargetFormat.Msi 绑定 OS.Windows，在 Linux 上该任务会被**注册但
+# disabled**（见 ConfigureJvmApplicationKt：isCompatibleWithCurrentOS() → setEnabled(false)）。
+# 后果是构建步骤看起来完全成功（任务 SKIPPED，BUILD SUCCESSFUL），随后
+# `cp .../msi/CPPlayer-<version>.msi` 因文件不存在而失败 —— 失败点出现在一个看起来
+# 无关的步骤上。同时该 MSI 与 desktop-release.yml 重复，故直接移除。
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（semver，例如 1.2.3）。留空则读 gradle.properties 的 app.versionName。"
+        required: false
+        default: ""
   push:
     tags:
       - "debug-v*"
@@ -9,20 +26,14 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
 env:
   JAVA_VERSION: "21"
 
 jobs:
-  # 只负责 Android 产物。桌面产物（Windows MSI / Linux deb）由 desktop-release.yml 负责 ——
-  # 它同样监听 debug-v* 与 v*，并在对应原生 runner 上构建。这与 release.yml（稳定版只出
-  # Android APK）的分工保持一致。
-  #
-  # 历史坑（2026-09-25 修正）：本 job 曾在 ubuntu-latest 上跑 `:app:packageMsi`。
-  # Compose Desktop 的 TargetFormat.Msi 绑定 OS.Windows，在 Linux 上该任务会被**注册但
-  # disabled**（见 ConfigureJvmApplicationKt：isCompatibleWithCurrentOS() → setEnabled(false)）。
-  # 后果是构建步骤看起来完全成功（任务 SKIPPED，BUILD SUCCESSFUL），随后
-  # `cp .../msi/CPPlayer-<version>.msi` 因文件不存在而失败 —— 失败点出现在一个看起来
-  # 无关的步骤上。同时该 MSI 与 desktop-release.yml 重复，故直接移除。
   debug-release:
     runs-on: ubuntu-latest
     steps:
@@ -48,20 +59,34 @@ jobs:
           yes | sdkmanager --licenses > /dev/null || true
           sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
 
-      - name: Resolve release metadata
+      - name: Resolve version
         id: meta
         shell: bash
         run: |
-          tag="${GITHUB_REF_NAME}"
-          version="${tag#debug-v}"
-          if [[ "$tag" == "$GITHUB_SHA" || -z "$version" ]]; then
-            version="0.0.0-debug.${GITHUB_RUN_NUMBER}"
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#debug-v}"
+          else
+            # ⚠️ 手动触发时 GITHUB_REF_NAME 是**分支名**（main），不是 tag、更不是 sha。
+            # 旧实现用 `[[ "$tag" == "$GITHUB_SHA" ]]` 判「非 tag 触发」—— 该条件恒为假，
+            # 于是分支名被原样当成版本号，发布出 "CPPlayer main (debug)"。
+            # 这里用 github.event.inputs（而不是 inputs）：本工作流同时挂了 push，
+            # github.event.inputs 在非 dispatch 事件里稳定为空，不会影响 workflow 解析。
+            version="${{ github.event.inputs.version }}"
+            if [[ -z "$version" ]]; then
+              version="$(grep -E '^app\.versionName=' gradle.properties | head -1 | cut -d= -f2- | tr -d '[:space:]')"
+            fi
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$version' 不是合法的 semver 版本号（期望 X.Y.Z）。手动触发时请在 version 输入框里填一个。"
+            exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "code=$((100000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_OUTPUT"
+          echo "tag=debug-v$version" >> "$GITHUB_OUTPUT"
 
       - name: Build debug APK
-        run: ./gradlew :app-android:assembleDebug --no-daemon -Papp.versionName=${{ steps.meta.outputs.version }} -Papp.versionCode=${{ steps.meta.outputs.code }} -Papp.releaseChannel=debug
+        # versionCode 由 Gradle 从 versionName 派生，这里不再传。
+        run: ./gradlew :app-android:assembleDebug --no-daemon -Papp.versionName="${{ steps.meta.outputs.version }}" -Papp.releaseChannel=debug
 
       - name: Rename asset
         shell: bash
@@ -71,7 +96,7 @@ jobs:
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: debug-v${{ steps.meta.outputs.version }}
+          tag_name: ${{ steps.meta.outputs.tag }}
           name: CPPlayer ${{ steps.meta.outputs.version }} (debug)
           prerelease: true
           generate_release_notes: true

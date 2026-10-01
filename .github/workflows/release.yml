@@ -1,5 +1,8 @@
 name: Release
 
+# 稳定版：push `v*` tag。
+# 本工作流只出 **Android release APK**；桌面的 Windows MSI / Linux deb 由
+# desktop-release.yml 在同一个 tag 上并行构建，并附加到**同一个** GitHub Release。
 on:
   push:
     tags:
@@ -8,11 +11,19 @@ on:
 permissions:
   contents: write
 
+# 与 desktop-release.yml 的 publish job 争用同一个 GitHub Release，串行化。
+# ⚠️ 这是 best effort：GitHub 的 concurrency 组是**仓库级**的，两个工作流用同一个
+# 组名确实会排队，但不要把正确性押在它上面 —— softprops/action-gh-release 本身
+# 对「release 已存在」是幂等的（存在则更新），这才是真正的兜底。
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
 env:
   JAVA_VERSION: "21"
 
 jobs:
-  release:
+  android:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,25 +39,52 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
 
       - name: Install Android SDK 37
-        # 与 debug-release.yml 同理：material-kolor 5.x 要求 compileSdk ≥ 37，
-        # runner 预装 SDK 不保证有 37，显式安装否则 checkReleaseAarMetadata 必挂。
+        # material-kolor 5.x 要求 compileSdk ≥ 37，runner 预装 SDK 不保证有 37，
+        # 显式安装否则 checkReleaseAarMetadata 必挂。
         run: |
           yes | sdkmanager --licenses > /dev/null || true
           sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
 
-      - name: Decode Keystore
-        # fork 构建或 secret 未配时跳过：否则会落下一个 0 字节的 release.jks，
-        # app-android 的签名守卫看到「文件存在」就会尝试用它签名，
-        # 报出来的会是难以定位的 keystore 损坏错，而不是「未签名」。
-        if: ${{ secrets.RELEASE_KEYSTORE_BASE64 != '' }}
+      - name: Resolve version
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 稳定工作流只由 tag 触发，GITHUB_REF_NAME 就是 tag 本身（v1.2.3）。
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::tag '$GITHUB_REF_NAME' 不是合法的 vX.Y.Z —— 版本号解析失败"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Decode keystore
+        # ⚠️ 守卫**必须**写在脚本里，不能写成 `if: ${{ secrets.X != '' }}`：
+        # `secrets` 上下文在 `if` 里不可用，GitHub 会在解析阶段直接判这个 workflow
+        # 非法（Unrecognized named-value: 'secrets'），整个 workflow 一个 job 都跑不起来。
+        # 要按条件跳过就先把 secret 落到 env，再在脚本里判 —— 这里直接判空最省事。
+        #
+        # 未配置时**不**创建 keystore 目录：留下 0 字节的 release.jks 会让
+        # app-android 的签名守卫看到「文件存在」而尝试用它签名，报出来的是难以
+        # 定位的 keystore 损坏错，而不是「未签名」。
         env:
           KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
         run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "RELEASE_KEYSTORE_BASE64 未配置 —— 本次产出未签名的 release APK。"
+            exit 0
+          fi
           mkdir -p keystore
-          echo "$KEYSTORE_BASE64" | base64 --decode > keystore/release.jks
+          # 用 printf 而不是 echo：secret 里若含反斜杠/前导 -，echo 会改写内容。
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > keystore/release.jks
           test -s keystore/release.jks
 
       - name: Build release APK
+        # 只传 versionName / releaseChannel —— **versionCode 由 Gradle 从 versionName
+        # 派生**（根 build.gradle.kts）。以前这里传 GITHUB_RUN_NUMBER，与 tag 无关，
+        # 同一个 tag 重跑一次就换一个码，且和 scripts/release.ps1 算出来的对不上。
         env:
           KEYSTORE_FILE: ${{ github.workspace }}/keystore/release.jks
           KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
@@ -54,12 +92,22 @@ jobs:
           KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
           ./gradlew :app-android:assembleRelease --no-daemon \
-            -Papp.versionName=${GITHUB_REF_NAME#v} \
-            -Papp.versionCode=${GITHUB_RUN_NUMBER} \
+            -Papp.versionName="${{ steps.meta.outputs.version }}" \
             -Papp.releaseChannel=stable
+
+      - name: Rename asset
+        # 与 debug 资产（CPPlayer-<version>-android-debug.apk）保持同一套命名。
+        # 应用内更新只按扩展名挑资产，改名不影响它。
+        shell: bash
+        run: |
+          cp app-android/build/outputs/apk/release/app-android-release.apk \
+             "CPPlayer-${{ steps.meta.outputs.version }}-android.apk"
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: CPPlayer ${{ steps.meta.outputs.version }}
+          prerelease: false
           generate_release_notes: true
-          files: app-android/build/outputs/apk/release/app-android-release.apk
+          files: CPPlayer-${{ steps.meta.outputs.version }}-android.apk

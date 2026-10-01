@@ -1,7 +1,23 @@
 name: Desktop Release
 
+# 桌面产物：Windows `.msi` / Linux `.deb`，在各自原生 runner 上构建。
+# 与 release.yml（稳定版 Android） / debug-release.yml（预发布 Android）共用同一个
+# GitHub Release —— 版本号与 tag 由下面的 `meta` job 统一解析，**不要**在 publish
+# 里用 `github.ref_name` 现推：手动触发时它是分支名（main），会凭空建出 main 这个 tag。
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（semver，例如 1.2.3）。留空则读 gradle.properties 的 app.versionName。"
+        required: false
+        default: ""
+      channel:
+        description: "发布渠道。debug 会发成 prerelease。"
+        type: choice
+        options:
+          - debug
+          - stable
+        default: debug
   push:
     tags:
       - "debug-v*"
@@ -10,11 +26,64 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
 env:
   JAVA_VERSION: "21"
 
 jobs:
+  # 版本号 / tag / 渠道只在这里解析一次。
+  # 放在独立 job 而不是 matrix job 的 outputs：matrix 各腿都会写同名 output，
+  # 合并时取哪一腿是未定义的。
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      channel: ${{ steps.meta.outputs.channel }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 只需要读 gradle.properties 里 app.versionName 作兜底，不需要历史。
+          fetch-depth: 1
+      - name: Resolve version
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            # ⚠️ 旧实现写的是 `if [[ "$tag" == "$GITHUB_SHA" ]]` —— GITHUB_REF_NAME
+            # 永远不等于 SHA，该条件恒为假，于是手动触发时版本号 = 分支名。
+            if [[ "${GITHUB_REF_NAME}" == debug-v* ]]; then
+              channel="debug"
+              version="${GITHUB_REF_NAME#debug-v}"
+            else
+              channel="stable"
+              version="${GITHUB_REF_NAME#v}"
+            fi
+          else
+            # 用 github.event.inputs（而不是 inputs）：本工作流同时挂了 push，
+            # github.event.inputs 在非 dispatch 事件里稳定为空，不影响 workflow 解析。
+            channel="${{ github.event.inputs.channel }}"
+            version="${{ github.event.inputs.version }}"
+            if [[ -z "$version" ]]; then
+              version="$(grep -E '^app\.versionName=' gradle.properties | head -1 | cut -d= -f2- | tr -d '[:space:]')"
+            fi
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$version' 不是合法的 semver 版本号（期望 X.Y.Z）。手动触发时请在 version 输入框里填一个。"
+            exit 1
+          fi
+          tag_prefix=""
+          if [[ "$channel" == "debug" ]]; then tag_prefix="debug-"; fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag_prefix}v$version" >> "$GITHUB_OUTPUT"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
   desktop:
+    needs: meta
     strategy:
       matrix:
         include:
@@ -38,26 +107,22 @@ jobs:
       - name: Setup Gradle
         # 与两个 Android 工作流对齐：缓存命中 + 守护进程复用，否则桌面包每次全量冷启动。
         uses: gradle/actions/setup-gradle@v3
-      - name: Resolve version
-        id: meta
-        shell: bash
-        run: |
-          tag="$GITHUB_REF_NAME"
-          version="${tag#debug-v}"
-          version="${version#v}"
-          if [[ "$tag" == "$GITHUB_SHA" || -z "$version" ]]; then version="0.0.0-debug.${GITHUB_RUN_NUMBER}"; fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Build desktop package
         shell: bash
-        run: ./gradlew :app:${{ matrix.task }} --no-daemon -Papp.versionName=${{ steps.meta.outputs.version }}
+        # versionCode 由 Gradle 从 versionName 派生，不需要传；
+        # releaseChannel 会经 jvmArgs 注入桌面 BuildInfo，供「关于」页与更新检查使用。
+        run: |
+          ./gradlew :app:${{ matrix.task }} --no-daemon \
+            -Papp.versionName="${{ needs.meta.outputs.version }}" \
+            -Papp.releaseChannel="${{ needs.meta.outputs.channel }}"
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
-          name: CPPlayer-${{ steps.meta.outputs.version }}-${{ matrix.platform }}
+          name: CPPlayer-${{ needs.meta.outputs.version }}-${{ matrix.platform }}
           path: app/build/compose/binaries/main/${{ matrix.asset }}/*
 
   publish:
-    needs: desktop
+    needs: [meta, desktop]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -68,6 +133,8 @@ jobs:
       - name: Publish desktop assets
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          prerelease: ${{ startsWith(github.ref_name, 'debug-') }}
+          # 用 meta 解析出来的 tag，不用 github.ref_name（手动触发时那是分支名）。
+          tag_name: ${{ needs.meta.outputs.tag }}
+          name: "CPPlayer ${{ needs.meta.outputs.version }}${{ needs.meta.outputs.channel == 'debug' && ' (debug)' || '' }}"
+          prerelease: ${{ needs.meta.outputs.channel != 'stable' }}
           files: release-assets/**/*
