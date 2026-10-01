@@ -36,8 +36,20 @@ reference/cp-player-legacy/
 # Upstream Flutter player used as a visual-design reference. Also a plain
 # local checkout (~59 MB, its own .git) — referenced from docs/ only.
 reference/Kazumi/
-# NOTE: reference/netease-module-rust is an unregistered submodule (gitlink
-# in the index, no .gitmodules). It is deliberately NOT ignored here.
+# Rust JNI module, also a plain local checkout with its own .git.
+#
+# 它此前是**索引里的一个 gitlink（mode 160000）但没有 .gitmodules** —— 仓库处于
+# 「看起来是子模块、实际不是」的坏状态：裸克隆只会得到一个空目录，而
+# `git submodule status` 直接报
+#   fatal: no submodule mapping found in .gitmodules for path 'reference/netease-module-rust'
+# 已从索引移除（工作区文件原样保留），与上面两个 reference 检出保持一致。
+#
+# ⚠️ 想把它变回**真正的**子模块，先满足这个前提：
+#   该检出领先自己的 origin/main 2 个提交（含被 pin 的 067c150
+#   "fix(jni): 导出符号前缀随宿主包名改为 cp.player.core"），这些提交**还没推上去**。
+#   直接 git submodule add 会得到一个谁都拉不到的 gitlink —— 比现在更糟。
+#   先把那两个提交推到 fork，再 git submodule add。
+reference/netease-module-rust/
 
 # --- AI tooling output (local only, regenerated on demand) ---------------
 # Qoder's generated repo wiki + one-off git diff dumps. Kept on disk for

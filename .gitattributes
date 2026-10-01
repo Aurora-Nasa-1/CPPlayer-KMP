@@ -1,0 +1,37 @@
+# 行尾与二进制标记。
+#
+# 为什么需要这个文件：本机 `core.autocrlf=true`，而仓库里没有 .gitattributes，
+# 于是「工作区是什么行尾」完全取决于每个人本地的 git 配置 —— 曾经出现过
+# 「工作区没改、git 却报 M」的假脏（`gradle.properties` / `gradlew.bat` /
+# 根 `build.gradle.kts` / `app/compose-desktop.pro` /
+# `app/src/androidMain/AndroidManifest.xml` 五个文件常年如此）。
+# 把它写进仓库，行为就不再依赖本地配置。
+#
+# 索引里**一律存 LF**（`text=auto` 会在入库时做规范化）。
+
+* text=auto eol=lf
+
+# Windows 批处理必须是 CRLF：cmd.exe 在带 goto/label 的 .bat 上会把裸 LF 读错。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# gradlew 是 sh 脚本，必须 LF。被转成 CRLF 后 Linux/macOS 上报
+# "bad interpreter: /bin/sh^M: no such file or directory"（\r 混进了 shebang）。
+gradlew text eol=lf
+*.sh    text eol=lf
+
+# 二进制：不做行尾/编码转换，也不参与文本 diff。
+# 图标与字体是**生成物但入库**（见 docs/RELEASE.md），必须是 binary，
+# 否则会被当成文本参与 merge。
+*.jar  binary
+*.ico  binary
+*.icns binary
+*.png  binary
+*.ttf  binary
+*.otf  binary
+*.so   binary
+*.dll  binary
+*.exe  binary
+*.zip  binary
+*.apk  binary
+*.klib binary
