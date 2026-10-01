@@ -60,6 +60,13 @@
   访问 `127.0.0.1` 会拿到 502。本地探针要 `env -u http_proxy -u https_proxy …`；
   测试 JVM 要设 `no_proxy=127.0.0.1,localhost`。
 - 后台起的 HTTP server 会**随父 shell 一起被杀**：server 和客户端放进**同一条命令**。
+- ⚠️ **`nativeDistributions.description` 只能 ASCII**（vendor 同；copyright 里的 `©`
+  没事，它在 cp1252 里且只进 exe 版本资源）。jpackage 把它原样写进 MSI 的
+  `Package/@Description`，而 MSI 数据库 codepage 被 jpackage 内置的
+  `MsiInstallerStrings_en.wxl` 钉死在 1252 ⇒ light.exe 报 **LGHT0311**，
+  jpackage 只甩一句 `exited with 311 code`，**日志里找不到原因**（要 `--verbose` 才看得到）。
+  `app/build.gradle.kts` 里已加 `require` 断言拦一道。打进包的文件名也不能有非 ASCII
+  （同一个坑，见 JDK-8290471）。
 
 ## 4. 文本编码完整性（本仓库有过整文件被毁）
 
@@ -98,6 +105,19 @@
 - Kotlin 嵌套类默认**不是** `inner`。
 - 版本目录里带连字符的别名要把 `-` 换成 `.` 才是访问路径：
   `accompanist-lyrics-ui` ⇒ `libs.accompanist.lyrics.ui`。按原名 grep **永远 0 命中**。
+- **`rememberScreenModel` 是 `Screen` 上的扩展函数，只能在 Screen 子类的成员里调用。**
+  Voyager 1.1.0-beta03 的签名（`javap` 核实）是
+  `rememberScreenModel(Screen, String, Function0<T>, Composer, …)` —— 第一个参数就是接收者。
+  放进顶层的 `private @Composable fun XxxContent(...)` 里会报
+  `Unresolved reference 'rememberScreenModel'`，**并连带把下游几十行都标成 unresolved**
+  （`by` 代理、`state.xxx` 全崩），看起来像「整个文件都坏了」，实际只有一处。
+  正确写法：在 `Screen.Content()` 里 `rememberScreenModel { … }`，把模型**当参数传下去**
+  （`PlaylistDetailScreen` 就是这么写的）。
+- KDoc / 注释里写 `xxx/*`（星号紧跟在斜杠后）会被当成**嵌套块注释**的开头，
+  报 `Syntax error: Unclosed comment.` 且**指向文件最后一行**。
+  本仓库踩过两次：`/api/v1/*`（旧）与 `msg/*`（2026-10-01）。写成 `/api/v1/...` / `msg/...`。
+- `kotlinx.datetime` 的 `toLocalDateTime` / `toLocalDate` 是**扩展函数**：写全限定名
+  `Instant.fromEpochMilliseconds(x).toLocalDateTime(zone)` 仍会解析失败，必须显式 import。
 
 ## 6. Compose / UI 规则
 

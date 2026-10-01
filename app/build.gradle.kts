@@ -19,6 +19,32 @@ val appReleaseChannel: String = rootProject.extra["cpAppReleaseChannel"] as Stri
 val appPackageVersion: String = rootProject.extra["cpAppPackageVersion"] as String
 val gitSha: String = rootProject.extra["cpGitSha"] as String
 
+// ⚠️ 这个字符串只能用 ASCII，**一个中文都不能有**。
+//
+// jpackage 把它原样写进 MSI：main.wxs 里的 `<Package Description="$(var.JpAppDescription)">`
+// 和 `ARPCOMMENTS`。MSI 是一张带 codepage 的数据库，而 jpackage 内置的
+// `MsiInstallerStrings_en.wxl` 把 Codepage 钉死在 **1252**（西欧），于是中文字符在
+// light.exe 阶段直接报 LGHT0311 —— 也就是 CI 上那句不明所以的
+// `Command [light.exe, ...] exited with 311 code`。
+//
+// JDK 侧至今没有 `--win-codepage`（JDK-8290471 未解决）。要保留中文只有一条路：
+// 自己覆盖那份 .wxl 把 Codepage 改成 936，代价（依赖 jpackage 内部资源目录、
+// 且非 1252 的 MSI 在部分环境里兼容性一般）远大于收益。
+//
+// 另：`copyright` 里的 `©`（U+00A9）不受影响 —— 它在 cp1252 里有码位，
+// 而且只进 exe 的版本资源，不进 MSI 数据库。
+val appDescription: String = "Cross-platform music player (Material 3 Expressive)"
+
+// 兜底断言：CI 的 Windows runner 上只会甩出一个 311，从日志根本看不出是文案问题。
+// 在配置期就拦住，省得下次有人把中文改回来又排查一轮。
+// description 是全平台共用的（deb / dmg / msi 同一个字段），MSI 是最严格的那个，
+// 所以这里不区分宿主平台。
+require(appDescription.none { it.code > 0x7F }) {
+    "nativeDistributions.description 含非 ASCII 字符：" +
+        "MSI 数据库 codepage 固定为 1252，light.exe 会报 LGHT0311（退出码 311）。" +
+        "见本文件 appDescription 上方的注释。"
+}
+
 group = "cp.player"
 version = appVersionName
 
@@ -140,7 +166,8 @@ compose.desktop {
             packageVersion = appPackageVersion
             // 「添加/删除程序」里显示的那几行元信息。不填的话 MSI 里厂商是 Unknown、
             // 描述为空，用户在程序列表里认不出这是什么。
-            description = "跨平台音乐播放器（Material 3 Expressive）"
+            // 注意：值来自上面的 appDescription，那里写了为什么必须是 ASCII。
+            description = appDescription
             vendor = "CPPlayer"
             // ⚠️ 不能直接写 `java.time.Year.now()`：Kotlin 默认只导入 java.lang/io/util，
             // 而 `java` 在这个脚本作用域里被 Gradle 的属性遮蔽了，会报

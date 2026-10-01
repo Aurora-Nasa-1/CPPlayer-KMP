@@ -93,6 +93,8 @@ Android uses an **adaptive icon**: the background is a full-bleed square (the la
 
 MSI options are declared in `app/build.gradle.kts` under `nativeDistributions.windows { ... }`: desktop shortcut, Start menu entry, per-user install (no UAC prompt), install-directory chooser, and vendor/description/copyright metadata.
 
+⚠️ **`description` must be ASCII.** jpackage writes it verbatim into the MSI `Package/@Description` (and `ARPCOMMENTS`), while the MSI database codepage is pinned to **1252** by jpackage's bundled `MsiInstallerStrings_en.wxl`. Any CJK character makes `light.exe` fail with **LGHT0311**, which jpackage reports only as `exited with 311 code` — the real message needs `--verbose`. `app/build.gradle.kts` asserts this at configuration time. Keeping Chinese would require overriding that `.wxl` with `Codepage="936"`, which is not exposed by the Compose plugin (`--resource-dir` is internal), so it is not worth it. (`--win-codepage` still does not exist: JDK-8290471.)
+
 ⚠️ **`upgradeUuid` must never change after the first public release.** Windows Installer uses it to recognise a new package as an upgrade of the same product. Change it and installs fail with "another version of this product is already installed", and the old version can no longer be removed cleanly — which also breaks the in-app update chain below (step 4 installs an MSI).
 
 ## In-app update chain
