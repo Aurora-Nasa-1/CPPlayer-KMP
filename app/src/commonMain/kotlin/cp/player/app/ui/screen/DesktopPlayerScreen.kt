@@ -288,7 +288,7 @@ private fun PlayerControls(state: PlaybackUiState, onTogglePlay: () -> Unit, onN
             active = state.shuffleEnabled,
             onClick = onShuffle,
             icon = Icons.Filled.Shuffle,
-            label = "随机播放",
+            label = if (state.shuffleEnabled) "关闭随机播放" else "开启随机播放",
         )
         IconButton(onClick = onPrev, modifier = Modifier.size(52.dp)) { Icon(Icons.Filled.SkipPrevious, "上一首", Modifier.size(30.dp)) }
         CpPlayPauseButton(
@@ -302,7 +302,11 @@ private fun PlayerControls(state: PlaybackUiState, onTogglePlay: () -> Unit, onN
             active = state.repeatMode != RepeatMode.OFF,
             onClick = onRepeat,
             icon = if (state.repeatMode == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
-            label = "循环",
+            label = when (state.repeatMode) {
+                RepeatMode.OFF -> "开启列表循环"
+                RepeatMode.ALL -> "开启单曲循环"
+                RepeatMode.ONE -> "关闭循环"
+            },
         )
     }
 }
