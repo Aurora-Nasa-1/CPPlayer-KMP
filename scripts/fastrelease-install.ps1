@@ -1,5 +1,10 @@
 param(
     [string]$Version = "0.0.0-fastrelease",
+    # Overriding versionCode here is deliberate - the only allowed exception.
+    # The default 900001 sits below the derived 1_000_000 for 1.0.0, so a real
+    # release can always replace a local build, while installing this on top of
+    # a release is permitted by the "-d" flag below. Every other path lets Gradle
+    # derive the code from versionName - see the root build.gradle.kts.
     [int]$VersionCode = 900001,
     [switch]$Clean,
     [switch]$Launch
