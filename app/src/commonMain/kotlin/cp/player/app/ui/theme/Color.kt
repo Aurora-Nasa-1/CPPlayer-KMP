@@ -7,6 +7,14 @@ import androidx.compose.ui.graphics.Color
 
 // Material 3 Expressive 静态回退色板。
 // 使用蓝紫主色、青绿辅助色和珊瑚强调色，让内容层级不依赖单一色相。
+//
+// ⚠️ **角色集合必须与动态取色路径一致**。materialkolor / 平台 Monet 会给出全套 M3 角色
+// （含 surfaceContainerLowest..Highest）；这里若少填，静态回退与动态取色就会"同一套 UI
+// 两种观感"，而且缺失的容器色阶会退到 lightColorScheme() 的默认灰紫。
+//
+// 历史教训：本文件原先**一个 surfaceContainer 角色都没填**，导致浅色下所有容器色阶
+// 对比不足 ⇒ 卡片边界只能靠阴影/描边补，这才是"阴影用得多"和"纯黑模式必须靠
+// bentoOutline() 描边"的同一个根因。层级应当主要靠**色阶**，不是靠描边。
 
 val PrimaryLight = Color(0xFF4F55A5)
 val OnPrimaryLight = Color(0xFFFFFFFF)
@@ -37,6 +45,20 @@ val OnSurfaceVariantLight = Color(0xFF47464F)
 val OutlineLight = Color(0xFF787680)
 val OutlineVariantLight = Color(0xFFC9C5D0)
 
+// —— 容器色阶（浅色）——
+// 与 SurfaceLight(#FCF8FC) / SurfaceVariantLight(#E5E1EC) 同一色相，逐级加深约 4–6 点亮度。
+// 五级阶梯是 M3 层级体系的主力：页面用 surface、卡片用 Low、卡片内嵌用 container、
+// 浮起物用 High、最高对比用 Highest。**不要用阴影代替它。**
+val SurfaceContainerLowestLight = Color(0xFFFFFFFF)
+val SurfaceContainerLowLight = Color(0xFFF7F2FA)
+val SurfaceContainerLight = Color(0xFFF1ECF4)
+val SurfaceContainerHighLight = Color(0xFFEBE6EF)
+val SurfaceContainerHighestLight = Color(0xFFE5E1EC)
+
+val InverseSurfaceLight = Color(0xFF313034)
+val InverseOnSurfaceLight = Color(0xFFF4EFF4)
+val ScrimLight = Color(0xFF000000)
+
 val PrimaryDark = Color(0xFFC1C1FF)
 val OnPrimaryDark = Color(0xFF20216F)
 val PrimaryContainerDark = Color(0xFF383B8C)
@@ -66,6 +88,20 @@ val OnSurfaceVariantDark = Color(0xFFC9C5D0)
 val OutlineDark = Color(0xFF928F99)
 val OutlineVariantDark = Color(0xFF47464F)
 
+// —— 容器色阶（深色）——
+// 与 SurfaceDark(#131318) 同色相，逐级提亮约 4–5 点。
+// ⚠️ 纯黑模式（见 `Theme.withPureBlackSurfaces`）**只压最低的两级**，
+// 保留 Low..Highest 这几档极暗灰 —— 否则卡片与背景同色、层级只剩描边一种手段。
+val SurfaceContainerLowestDark = Color(0xFF0E0E13)
+val SurfaceContainerLowDark = Color(0xFF1B1B21)
+val SurfaceContainerDark = Color(0xFF1F1F25)
+val SurfaceContainerHighDark = Color(0xFF2A2A30)
+val SurfaceContainerHighestDark = Color(0xFF35343B)
+
+val InverseSurfaceDark = Color(0xFFE5E1E9)
+val InverseOnSurfaceDark = Color(0xFF313034)
+val ScrimDark = Color(0xFF000000)
+
 val LightColors: ColorScheme = lightColorScheme(
     primary = PrimaryLight, onPrimary = OnPrimaryLight,
     primaryContainer = PrimaryContainerLight, onPrimaryContainer = OnPrimaryContainerLight,
@@ -79,6 +115,13 @@ val LightColors: ColorScheme = lightColorScheme(
     surface = SurfaceLight, onSurface = OnSurfaceLight,
     surfaceVariant = SurfaceVariantLight, onSurfaceVariant = OnSurfaceVariantLight,
     outline = OutlineLight, outlineVariant = OutlineVariantLight,
+    surfaceContainerLowest = SurfaceContainerLowestLight,
+    surfaceContainerLow = SurfaceContainerLowLight,
+    surfaceContainer = SurfaceContainerLight,
+    surfaceContainerHigh = SurfaceContainerHighLight,
+    surfaceContainerHighest = SurfaceContainerHighestLight,
+    inverseSurface = InverseSurfaceLight, inverseOnSurface = InverseOnSurfaceLight,
+    scrim = ScrimLight,
 )
 
 val DarkColors: ColorScheme = darkColorScheme(
@@ -94,4 +137,11 @@ val DarkColors: ColorScheme = darkColorScheme(
     surface = SurfaceDark, onSurface = OnSurfaceDark,
     surfaceVariant = SurfaceVariantDark, onSurfaceVariant = OnSurfaceVariantDark,
     outline = OutlineDark, outlineVariant = OutlineVariantDark,
+    surfaceContainerLowest = SurfaceContainerLowestDark,
+    surfaceContainerLow = SurfaceContainerLowDark,
+    surfaceContainer = SurfaceContainerDark,
+    surfaceContainerHigh = SurfaceContainerHighDark,
+    surfaceContainerHighest = SurfaceContainerHighestDark,
+    inverseSurface = InverseSurfaceDark, inverseOnSurface = InverseOnSurfaceDark,
+    scrim = ScrimDark,
 )

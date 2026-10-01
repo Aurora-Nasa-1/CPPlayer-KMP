@@ -7,10 +7,12 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -24,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -35,8 +38,29 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-/** 当前窗口是否处于 Expanded 宽度（≥840dp），由 MainScreen 提供。 */
+/** 当前窗口是否处于 Expanded 宽度（≥840dp），由 [ProvideIsExpanded] 在根 Navigator 之上提供。 */
 val LocalIsExpanded = staticCompositionLocalOf { false }
+
+/**
+ * 按「本层可用宽度」发布 [LocalIsExpanded]。
+ *
+ * 必须挂在**根 Navigator 之上**（见 `App.kt`）：`MainScreen` 内部也 provide 了这个 local，
+ * 但 push 出去的路由页与 `MainScreen` 在 Navigator 里是**兄弟节点**，拿不到它 ——
+ * 于是设置 / 账号 / 引导 / 首页生成歌单这些路由页在宽窗口上读到的都是默认 `false`，
+ * 也就是一律走手机布局。两处 provide 的值同源（都是窗口宽度），内层覆盖无害。
+ *
+ * ⚠️ 这**不能**替代"路由页自己判宽屏"：宽度可能因为内嵌面板、`BoxWithConstraints`
+ * 局部约束而与窗口不同，需要按自身可用宽度决策的页面仍应自己读 `maxWidth`。
+ */
+@Composable
+fun ProvideIsExpanded(content: @Composable () -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val expanded = CpBreakpoints.isExpanded(maxWidth)
+        CompositionLocalProvider(LocalIsExpanded provides expanded) {
+            content()
+        }
+    }
+}
 
 object CpSpacing {
     val pageHorizontal = 20.dp
@@ -44,6 +68,49 @@ object CpSpacing {
     val section = 28.dp
     val item = 12.dp
     val touchTarget = 48.dp
+
+    // —— 组件级间距 ——
+    //
+    // 上面那组是「页面级」（页边距、区块间距）；这一组是「组件内」。
+    // 补它们的原因：卡片内边距 / 列表行高 / 堆叠间隔原先散落在各文件里各写各的
+    // （9dp / 14dp / 18dp 这类非标度值都出现过），同一类组件在不同页面观感不一致。
+    //
+    // ⚠️ **全部取 4dp 的倍数**。Kazumi 全站只靠 `cardSpace = 8` / `safeSpace = 12`
+    // 两个基准就撑起了节奏感（见 `reference/Kazumi/lib/utils/constants.dart`）——
+    // 节奏来自「少数几个值被反复使用」，不是来自值的数量多。
+
+    /** 卡片内边距（紧凑型，用于列表内的窄卡片）。 */
+    val cardPaddingCompact = 16.dp
+
+    /** 卡片内边距（默认，主卡片）。 */
+    val cardPadding = 20.dp
+
+    /** 卡片内边距（宽松型，用于大面积英雄卡片）。 */
+    val cardPaddingComfortable = 24.dp
+
+    /** 列表行最小高度（M3 规范值）。 */
+    val listRowMinHeight = 56.dp
+
+    /**
+     * 分组列表的**行间距**。
+     *
+     * 4dp 是 M3 分组列表的规范缝宽 —— 行与行之间留一道细缝，同时每行的圆角
+     * 从「组内圆角」变形成「容器圆角」时才有空间可看（见 `CpGroupedListRow`）。
+     * 缝太宽会散成一张张独立卡片，太窄则看不出分组。
+     */
+    val listRowGap = 4.dp
+
+    /** 纵向堆叠间隔：紧密（图标与文字之间等）。 */
+    val stackGapTight = 4.dp
+
+    /** 纵向堆叠间隔：默认（卡片内元素之间）。 */
+    val stackGap = 8.dp
+
+    /** 纵向堆叠间隔：宽松（卡片之间）。 */
+    val stackGapLoose = 12.dp
+
+    /** 纵向堆叠间隔：区块级（一个 section 内部的大块之间）。 */
+    val stackGapSection = 16.dp
 
     /**
      * 桌面端页面的**统一最大内容宽度**。
@@ -75,6 +142,24 @@ object CpSpacing {
      */
     fun gridColumns(contentWidth: Dp, target: Dp = 196.dp, min: Int = 3, max: Int = 7): Int =
         (contentWidth.value / target.value).toInt().coerceIn(min, max)
+}
+
+/**
+ * 图标尺寸阶梯。
+ *
+ * 收敛前全仓混用 18 / 20 / 24dp，还有零星的 22 / 26 —— 同一行的两个图标偶尔差 2dp，
+ * 肉眼说不出哪里不对，但会觉得"没对齐"。三档够覆盖全部场景：
+ *
+ * | 档位 | 值 | 场景 |
+ * |------|-----|------|
+ * | [inline] | 18dp | 跟在文字旁边的行内图标（如标签、时间码前的小图标） |
+ * | [list] | 20dp | 列表项前导图标、区块标题前置图标 |
+ * | [action] | 24dp | 操作按钮、导航栏、工具条里的独立图标 |
+ */
+object CpIconSize {
+    val inline = 18.dp
+    val list = 20.dp
+    val action = 24.dp
 }
 
 /**

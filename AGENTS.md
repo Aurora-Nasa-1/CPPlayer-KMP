@@ -116,6 +116,34 @@
   写死 `Color.White` 会直接糊掉（本仓库已踩过三次）。
 - **`Brush.verticalGradient(colors, startY = …)` 别用绝对像素**：`startY` 超过元素高度时
   方向翻转、整块被 clamp 成末色。写分数 colorStops。
+- **圆角一律取 `MaterialTheme.shapes.*`，不要写裸 `RoundedCornerShape(24.dp)`**。
+  刻度真值 = `androidx.compose.material3.tokens.ShapeTokens`（1.11 起是 **8 槽**：
+  `4 / 8 / 12 / 16 / 20 / 28 / 32 / 48`）。**改刻度时裸值不会被跟着改**，
+  于是同一屏出现两套圆角 —— 这正是本仓库 2026-10-01 那次视觉改版要修的问题
+  （当时 `AppShapes` 只填了 5 槽、整条刻度 +4dp，25 处消费点集体偏圆）。
+  - ⚠️ `Shapes` 的 **8 参数构造器**、以及 `largeIncreased` / `extraLargeIncreased` /
+    `extraExtraLarge` 三个新槽位**都带 `@ExperimentalMaterial3ExpressiveApi`**
+    （`extraSmall`…`extraLarge` 这五个老槽位**不**带）⇒ 用到就要 `@OptIn`。
+  - ⚠️ 构造器参数顺序是 `extraSmall, small, medium, large, extraLarge, largeIncreased,
+    extraLargeIncreased, extraExtraLarge`（`extraLarge` 在 `largeIncreased` **之前**）。
+    **必须用具名参数** —— 位置参数写错不报错、只静默给错圆角。
+  - 少数确实表达不了的（百分比圆角、单边圆角、需要同时喂给 `Dp` 参数的）
+    才写死，并**在注释里注明它等于哪个槽位**。
+- **需要「当前是不是深色」时读 `LocalIsDarkTheme`，不要读 `isSystemInDarkTheme()`**。
+  应用允许用户显式指定浅色 / 深色（`ThemeMode.LIGHT` / `DARK`），两者**只在「跟随系统」时相等**
+  —— 读错的后果是去取**另一套色板**的角色色，典型症状是「卡片与页面背景同色、整块糊住」。
+  （`SettingsKit.settingsRowContainer()` / `SongItem` / `PlayerScreen` 三处都踩过。）
+  另：**设置行 / 歌曲行的浅色容器色不能是 `surface`** —— 设置页背景本身就是 `surface`，
+  两者相同则分组卡片完全不可见（离屏取像素实测过），要用 `surfaceContainerLow`。
+
+- **Compose 资源（字体 / 图片）要在安卓上生效，`:app` 必须 `androidResources { enable = true }`。**
+  `com.android.kotlin.multiplatform.library` 默认关掉 Android 资源处理，连带 AGP **一个 assets
+  任务都不创建** ⇒ Compose 插件注册的 `copyAndroidMainComposeResourcesToAndroidAssets` 拿不到
+  `outputDirectory`，永远不进任务图。症状极隐蔽：**编译、单测、桌面端全绿，AAR / APK 里却一个
+  资源文件都没有**，只有安卓真机运行时静默回退到系统字体。
+  验收命令：`unzip -l app-android/build/outputs/apk/debug/*.apk | grep composeResources`。
+  ⚠️ 资源在包内的路径由 `compose.resources.packageOfResClass` 决定
+  （本项目 = `cp.player.app.resources`），**改包名必须同步改这条路径的预期**。
 
 ## 7. 后端 / 桌面
 

@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.material3.Typography
 import androidx.compose.ui.graphics.Color
 import com.materialkolor.PaletteStyle
 import com.materialkolor.ktx.animateColorScheme
@@ -58,6 +59,11 @@ private const val ColorTransitionMillis = 600
  *
  * @param themeMode 跟随系统 / 浅色 / 深色
  * @param colorSource 种子色来源（系统 / 封面 / 固定）
+ * @param paletteStyle 种子色展开成整套方案的风格档位。默认 [PaletteStyle.TonalSpot] ——
+ *   这是 Flutter `ColorScheme.fromSeed` / Material Theme Builder 的默认档，也是
+ *   Kazumi 观感的基准；换成 `Vibrant` / `Expressive` 会让配色明显更跳。
+ *   **不要为了"更 Expressive"就把它调高**：M3E 的表达性主要来自形状与动效，
+ *   不是配色饱和度。这一档只在需要时由调用方覆盖。
  * @param pureBlack 深色时把 surface 系列压成纯黑
  * @param coverSeed [ColorSource.COVER] 的当前封面种子色；null 表示当前没有曲目封面
  * @param wallpaperSeed [ColorSource.COVER] 且没有曲目封面时的**系统壁纸**回退种子色；
@@ -68,6 +74,7 @@ private const val ColorTransitionMillis = 600
 fun CpTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
     colorSource: ColorSource = ColorSource.FIXED,
+    paletteStyle: PaletteStyle = PaletteStyle.TonalSpot,
     pureBlack: Boolean = false,
     coverSeed: Color? = null,
     wallpaperSeed: Color? = null,
@@ -107,7 +114,7 @@ fun CpTheme(
             seedColor = seed,
             isDark = dark,
             isAmoled = pureBlack,
-            style = PaletteStyle.TonalSpot,
+            style = paletteStyle,
         )
     } else {
         null
@@ -131,14 +138,24 @@ fun CpTheme(
     // （与 TOPICS.md 里 `ColorScheme` 没重写 `equals` 那个坑同源。）
     val motionScheme = remember { MotionScheme.expressive() }
 
-    CompositionLocalProvider(LocalThemeMode provides themeMode) {
+    // 字阶 + 字体。字体要从 Compose 资源读（`Font(Res.font.*)` 是 @Composable），
+    // 所以只能在主题里装配，不能放进顶层的 `val AppTypography`（见 Type.kt 的说明）。
+    // remember 的 key 是 FontFamily：字体异步加载完成后它会换身份，届时字阶重建一次，
+    // 之后就稳定了 —— 不会跟着上面的配色动画每帧重建。
+    val fontFamily = googleSansFlexFamily()
+    val typography: Typography = remember(fontFamily) { AppTypography.withFontFamily(fontFamily) }
+
+    CompositionLocalProvider(
+        LocalThemeMode provides themeMode,
+        LocalIsDarkTheme provides dark,
+    ) {
         // Expressive 主题：相对普通 `MaterialTheme` 的差别就是注入 `MotionScheme`，
         // 让所有 material3 组件的默认动画从「匀速 tween」变成带回弹的 spring。
         // 这是「一眼看上去像 M3 Expressive」成本最低的一步。
         MaterialExpressiveTheme(
             colorScheme = colorScheme,
             motionScheme = motionScheme,
-            typography = AppTypography,
+            typography = typography,
             shapes = AppShapes,
             content = content,
         )
@@ -146,7 +163,17 @@ fun CpTheme(
 }
 
 /**
- * 把 surface 系列压成纯黑。
+ * 把 surface 系列压到 OLED 友好的极暗色阶。
+ *
+ * **只压「大面积背景」与「最低两级容器」**，保留 `surfaceContainerLow..Highest` 的极暗灰阶梯。
+ *
+ * ⚠️ 这里曾经把 `surfaceVariant` + 六个 surface 角色**全部压成 `#000`**，后果是
+ * 卡片与背景同色、整页糊成一块，只能靠 `bentoOutline()` 描边去补层级
+ * （`LOG.md` 里那条「中性卡片必须带 bentoOutline 描边」正是这个原因）。
+ * 但描边是比色阶**更重**的视觉元素 —— 用描边补层级，整页会显得生硬。
+ *
+ * 保留 4–5 点亮度差的极暗灰（`#0A0A0C` → `#19191D`）既能让 OLED 大面积熄屏，
+ * 又能维持**无描边的层级**：肉眼在纯黑屏上仍能分辨卡片边界。
  *
  * 只覆盖 surface / background 系角色，**不动** primary / secondary 等语义色：
  * 纯黑模式的目的是让 OLED 大面积像素熄灭，把强调色也压黑会让界面彻底失去层级。
@@ -154,12 +181,29 @@ fun CpTheme(
 private fun ColorScheme.withPureBlackSurfaces(): ColorScheme = copy(
     surface = Color.Black,
     background = Color.Black,
-    surfaceVariant = Color.Black,
     surfaceContainerLowest = Color.Black,
-    surfaceContainerLow = Color.Black,
-    surfaceContainer = Color.Black,
-    surfaceContainerHigh = Color.Black,
-    surfaceContainerHighest = Color.Black,
+    // ↓ 下面这几档刻意**不压黑**：它们承担卡片与浮层的层级表达。
+    surfaceVariant = Color(0xFF16161A),
+    surfaceContainerLow = Color(0xFF0A0A0C),
+    surfaceContainer = Color(0xFF0E0E11),
+    surfaceContainerHigh = Color(0xFF131316),
+    surfaceContainerHighest = Color(0xFF19191D),
 )
 
 val LocalThemeMode = staticCompositionLocalOf { ThemeMode.SYSTEM }
+
+/**
+ * **已解析的**明暗状态（把 `ThemeMode.SYSTEM` 换算成实际的 true/false 之后）。
+ *
+ * ⚠️ 需要「当前是不是深色」时**必须读它，不要读 `isSystemInDarkTheme()`**。
+ *
+ * 两者在「主题模式 = 跟随系统」时恰好相等，但本应用允许用户**显式指定**浅色 / 深色
+ * （`ThemeMode.LIGHT` / `DARK`）。用户选了深色而系统是浅色时：
+ * - `isSystemInDarkTheme()` → false
+ * - [LocalIsDarkTheme] → true（这才是对的）
+ *
+ * 读错的那个会去取**另一套**色板的角色色，典型症状是「卡片与页面背景同色、整块糊住」。
+ * 本仓库踩过：`SettingsKit.settingsRowContainer()` / `SongItem` / `PlayerScreen`
+ * 都曾用 `isSystemInDarkTheme()` 当代理，导致「设置页的分组卡片在浅色下不可见」。
+ */
+val LocalIsDarkTheme = staticCompositionLocalOf { false }
