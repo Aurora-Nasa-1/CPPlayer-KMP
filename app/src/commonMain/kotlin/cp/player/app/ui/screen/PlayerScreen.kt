@@ -17,9 +17,9 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -97,12 +97,15 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.platform.shareText
+import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.PlayerMoreBottomSheet
 import cp.player.app.ui.component.QueueBottomSheet
 import cp.player.app.ui.model.CommentScreenModel
 import cp.player.app.ui.util.SeekAvailability
+import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.formatTimeMs
+import cp.player.app.ui.util.next
 import cp.player.core.playback.AudioFormatInfo
 import cp.player.core.playback.LyricsState
 import cp.player.core.playback.RepeatMode
@@ -115,7 +118,9 @@ import kotlin.math.roundToInt
  * 用 KMP 等效写法替换原版仅 Android 才有的 API：
  * - 无 `SharedTransitionScope` / `WindowCompat` / `LocalOnBackPressedDispatcherOwner` → 用普通 fade/offset、systemBars inset、Voyager `pop()`。
  * - 无 `SyncedLyrics` 第三方库 → 用 KMP `cp.player.core.playback.SyncedLyricLine`。
- * - 无 `WindowWidthSizeClass` → 永远走移动布局（即窄屏样式），desktop 与 mobile 同 UI。
+ * - 无 `WindowWidthSizeClass` → 自己用 `BoxWithConstraints` + [CpBreakpoints] 判宽屏：
+ *   宽屏走 `DesktopPlayerScreen`，窄屏走移动布局。**不能**读 `LocalIsExpanded` ——
+ *   它只在 `MainScreen` 内部被 provide，本页作为路由页与之是兄弟节点，永远拿到默认 false。
  *
  * 三页 HorizontalPager：歌词 / 播放器 / 评论。播放器页可下拉关闭。
  * 已接入：收藏（likeSong）、加入歌单、睡眠定时、不感兴趣、随机播放、评论点赞。
@@ -129,32 +134,52 @@ class PlayerScreen : Screen {
         val state by controller.state.collectAsState()
         val navigator = LocalNavigator.current
         val scope = rememberCoroutineScope()
+        val onRepeat = { controller.setRepeatMode(state.repeatMode.next()) }
 
-        androidx.compose.animation.SharedTransitionLayout {
-            androidx.compose.animation.AnimatedVisibility(visible = true) {
-                PlayerScreenContent(
+        // 宽屏 / 窄屏两套播放页的分叉点。
+        //
+        // ⚠️ 判据必须是**本页自身的可用宽度**，不能读 `LocalIsExpanded` —— 那个 local 只在
+        // `MainScreen` 内部被 provide，而本页是 push 出去的路由页、与 `MainScreen` 在
+        // Navigator 里是兄弟节点，读到的永远是默认值 false。后果就是：从「每日推荐」
+        // 这类子页里点 MiniPlayer 进播放页时，宽窗口上照样给手机布局。
+        // 路由页自己占满窗口，按自身 `maxWidth` 判定与按窗口宽度判定等价，
+        // 与 `PlaylistDetailScreen` 里已有的 `isWide` 判据同源。
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            // 桌面播放页开头就 `state.currentTrack ?: return`（无曲目时什么都不画），
+            // 所以这里要显式排除空曲目，否则会先闪一帧空白。
+            if (CpBreakpoints.isExpanded(maxWidth) && state.currentTrack != null) {
+                DesktopPlayerScreen(
                     state = state,
-                    animatedVisibilityScope = this,
                     onBack = { navigator?.pop() },
                     onTogglePlay = controller::togglePlayPause,
                     onSeek = controller::seekTo,
                     onSkipNext = controller::skipNext,
                     onSkipPrev = controller::skipPrevious,
-                    onRepeat = {
-                        controller.setRepeatMode(
-                            when (state.repeatMode) {
-                                RepeatMode.OFF -> RepeatMode.ALL
-                                RepeatMode.ALL -> RepeatMode.ONE
-                                RepeatMode.ONE -> RepeatMode.OFF
-                            }
-                        )
-                    },
+                    onRepeat = onRepeat,
                     onShuffle = controller::toggleShuffle,
-                    onClearQueue = controller::clearQueue,
+                    onLike = { scope.launch { controller.toggleFavorite() } },
                     onPlayAt = { idx -> scope.launch { controller.playAt(idx) } },
-                    onRemoveQueue = { idx -> scope.launch { controller.removeQueueItem(idx) } },
-                    onMoveQueue = { from, to -> scope.launch { controller.moveQueueItem(from, to) } },
                 )
+            } else {
+                androidx.compose.animation.SharedTransitionLayout {
+                    androidx.compose.animation.AnimatedVisibility(visible = true) {
+                        PlayerScreenContent(
+                            state = state,
+                            animatedVisibilityScope = this,
+                            onBack = { navigator?.pop() },
+                            onTogglePlay = controller::togglePlayPause,
+                            onSeek = controller::seekTo,
+                            onSkipNext = controller::skipNext,
+                            onSkipPrev = controller::skipPrevious,
+                            onRepeat = onRepeat,
+                            onShuffle = controller::toggleShuffle,
+                            onClearQueue = controller::clearQueue,
+                            onPlayAt = { idx -> scope.launch { controller.playAt(idx) } },
+                            onRemoveQueue = { idx -> scope.launch { controller.removeQueueItem(idx) } },
+                            onMoveQueue = { from, to -> scope.launch { controller.moveQueueItem(from, to) } },
+                        )
+                    }
+                }
             }
         }
     }
@@ -220,7 +245,9 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
     //
     // ⚠️ `remember` 必须把两个颜色本身作为 key：只 key `isDark` 的话，换色时 Brush 不会重建，
     // 背景会停在旧配色上而其余控件已经换色 —— 看起来就像「主题只换了一半」。
-    val isDark = isSystemInDarkTheme()
+    // ⚠️ 读 LocalIsDarkTheme（已解析的明暗），**不要**读 isSystemInDarkTheme()：
+    // 播放页允许用户显式选浅色/深色，用系统状态会在「应用深色 + 系统浅色」时取错色板。
+    val isDark = LocalIsDarkTheme.current
     val surfaceTop = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh
     else MaterialTheme.colorScheme.surfaceVariant
     val surfaceBottom = if (isDark) MaterialTheme.colorScheme.surfaceContainerLowest

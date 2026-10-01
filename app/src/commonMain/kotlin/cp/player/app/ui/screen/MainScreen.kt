@@ -81,6 +81,7 @@ import cp.player.app.AppModel
 import cp.player.app.ui.component.MiniPlayer
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LazyScrollColumn
+import cp.player.app.ui.util.next
 import cp.player.app.ui.util.resized
 import cp.player.core.music.PlaylistSummary
 
@@ -109,6 +110,9 @@ class MainScreen : Screen {
         }
         val playbackState by AppModel.playback.state.collectAsState()
         val controller = AppModel.playback
+        // 宽屏 / 窄屏两套播放页共用同一个循环切换。原先这段 when 在两处各写了一份，
+        // 现在收敛到 RepeatMode.next()（见 ui/util/RepeatModeCycle.kt）。
+        val cycleRepeat = { controller.setRepeatMode(playbackState.repeatMode.next()) }
         val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
         // 宽屏右侧面板的当前形态。原本是「desktopPlaylist + desktopSettingsOpen」两个
         // 独立状态，再加「下载管理 / 最近播放」两个面板就会变成四份状态彼此清理 ——
@@ -342,15 +346,7 @@ class MainScreen : Screen {
                             onSeek = controller::seekTo,
                             onSkipNext = controller::skipNext,
                             onSkipPrev = controller::skipPrevious,
-                            onRepeat = {
-                                controller.setRepeatMode(
-                                    when (playbackState.repeatMode) {
-                                        cp.player.core.playback.RepeatMode.OFF -> cp.player.core.playback.RepeatMode.ALL
-                                        cp.player.core.playback.RepeatMode.ALL -> cp.player.core.playback.RepeatMode.ONE
-                                        cp.player.core.playback.RepeatMode.ONE -> cp.player.core.playback.RepeatMode.OFF
-                                    }
-                                )
-                            },
+                            onRepeat = cycleRepeat,
                             onShuffle = controller::toggleShuffle,
                             onLike = { scope.launch { controller.toggleFavorite() } },
                             onPlayAt = { idx -> scope.launch { controller.playAt(idx) } },
@@ -363,15 +359,7 @@ class MainScreen : Screen {
                         onSeek = controller::seekTo,
                         onSkipNext = controller::skipNext,
                         onSkipPrev = controller::skipPrevious,
-                        onRepeat = {
-                            controller.setRepeatMode(
-                                when (playbackState.repeatMode) {
-                                    cp.player.core.playback.RepeatMode.OFF -> cp.player.core.playback.RepeatMode.ALL
-                                    cp.player.core.playback.RepeatMode.ALL -> cp.player.core.playback.RepeatMode.ONE
-                                    cp.player.core.playback.RepeatMode.ONE -> cp.player.core.playback.RepeatMode.OFF
-                                }
-                            )
-                        },
+                        onRepeat = cycleRepeat,
                         onShuffle = controller::toggleShuffle,
                         onClearQueue = controller::clearQueue,
                         onPlayAt = { idx -> scope.launch { controller.playAt(idx) } },

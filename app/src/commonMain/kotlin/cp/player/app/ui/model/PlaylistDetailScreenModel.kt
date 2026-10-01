@@ -56,10 +56,34 @@ class PlaylistDetailScreenModel : ScreenModel {
     /** 当前正在加载的歌单 id（切换歌单时丢弃过期结果，防串扰）。 */
     private var fetchingPlaylistId: Long? = null
 
+    /**
+     * 已加载完成的歌单 id。
+     *
+     * 详情页的加载挂在 `LaunchedEffect(playlist.id, ...)` 上，而**从播放页 pop 回来时
+     * 页面会重新进入组合**，LaunchedEffect 随之重跑 —— 不去重的话每次退出大播放器
+     * 都会把歌单重拉一遍：真实歌单是重发网络请求并闪一屏空白，虚拟歌单（每日推荐）
+     * 则是整份 state 被重建，连带丢掉排序 / 多选 / 滚动位置。
+     */
+    private var loadedPlaylistId: Long? = null
+
+    /**
+     * 已消费过自动播放的歌单 id。
+     *
+     * 与 [loadedPlaylistId] 同源的问题：自动播放同样挂在 LaunchedEffect 上，
+     * 重新进入组合就会重放一次 —— 表现为「退出大播放器后播放被重置回第一首」。
+     */
+    private var autoPlayedPlaylistId: Long? = null
+
     // ============ 加载 ============
 
-    /** 加载歌单详情（description / trackCount 修正）与首页曲目（并行），并拉取收藏列表。 */
-    fun load(summary: PlaylistSummary) {
+    /**
+     * 加载歌单详情（description / trackCount 修正）与首页曲目（并行），并拉取收藏列表。
+     *
+     * @param force 为 true 时忽略 [loadedPlaylistId] 守卫（供「重试」按钮使用）。
+     */
+    fun load(summary: PlaylistSummary, force: Boolean = false) {
+        if (!force && loadedPlaylistId == summary.id) return
+        loadedPlaylistId = summary.id
         fetchingPlaylistId = summary.id
         _state.value = PlaylistDetailUiState(summary = summary)
         loadLiked()
@@ -116,8 +140,16 @@ class PlaylistDetailScreenModel : ScreenModel {
      * 仅拉取收藏列表用于红心态。
      *
      * @param loading 调用方仍在拉取曲目时传 true，让 UI 显示加载态而不是"歌单暂无歌曲"。
+     * @param force 为 true 时忽略 [loadedPlaylistId] 守卫。
      */
-    fun loadLocal(summary: PlaylistSummary, tracks: List<TrackSummary>, loading: Boolean = false) {
+    fun loadLocal(
+        summary: PlaylistSummary,
+        tracks: List<TrackSummary>,
+        loading: Boolean = false,
+        force: Boolean = false,
+    ) {
+        if (!force && loadedPlaylistId == summary.id) return
+        loadedPlaylistId = summary.id
         fetchingPlaylistId = summary.id
         val distinct = tracks.distinctBy { it.id }
         _state.value = PlaylistDetailUiState(
@@ -230,6 +262,23 @@ class PlaylistDetailScreenModel : ScreenModel {
     }
 
     /** 按当前排序后的列表，从 [index] 处开始播放（替换队列）。[animateCover] 仅用户点击传 true。 */
+    /**
+     * 曲目就绪后从 [index] 起播 —— **每个歌单只生效一次**。
+     *
+     * ⚠️ 幂等是硬要求：这个调用挂在 `LaunchedEffect(autoPlayIndex, state.tracks)` 上，
+     * 而从播放页 pop 回来时页面会**重新进入组合**，LaunchedEffect 重新执行。
+     * 不去重的话，`playQueue(ids, startIndex = index)` 会重建队列并从起点重放 ——
+     * 症状就是「退出大播放器之后播放被重置」，且只在携带 `autoPlayIndex` 的页面出现
+     * （每日推荐 / 相似歌曲 / 心动模式这类首页虚拟歌单；普通歌单走详情入口时为 null）。
+     */
+    fun autoPlayAt(index: Int, animateCover: Boolean = false) {
+        val id = _state.value.summary?.id ?: return
+        if (autoPlayedPlaylistId == id) return
+        if (_state.value.tracks.isEmpty()) return
+        autoPlayedPlaylistId = id
+        playAt(index.coerceIn(0, _state.value.tracks.lastIndex), animateCover)
+    }
+
     fun playAt(index: Int, animateCover: Boolean = true) {
         val tracks = sortedTracks(_state.value.tracks, _state.value.sortType)
         val ids = mediaIds(tracks)

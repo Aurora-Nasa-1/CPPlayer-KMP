@@ -30,6 +30,7 @@ import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.transitions.ScreenTransition
 import cp.player.app.ui.anim.CoverFlightHost
 import cp.player.app.ui.component.MiniPlayer
+import cp.player.app.ui.component.ProvideIsExpanded
 import cp.player.app.ui.screen.BackendErrorScreen
 import cp.player.app.ui.screen.HomeGeneratedPlaylistScreen
 import cp.player.app.ui.screen.MainScreen
@@ -113,80 +114,86 @@ fun App(
                     }
                 }
 
-                Column(Modifier.fillMaxSize()) {
-                    // 桌面自绘窗口标题栏。必须在 ScreenTransition 之前、且在 Navigator 作用域内：
-                    // 前者保证 push 任何页面都不会盖住它（无边框窗口只能靠它移动 / 关闭），
-                    // 后者让它能拿到 navigator 去跳账号页 / 设置页。详见 App 的 KDoc。
-                    titleBar?.invoke(navigator)
+                // 把「窗口是否够宽」发布给**整棵 Navigator**。
+                // 必须在这里 provide 一次：MainScreen 内部也 provide 了同一个 local，
+                // 但 push 出去的路由页与 MainScreen 是 Navigator 里的兄弟节点，拿不到它，
+                // 于是设置 / 账号 / 引导这些页面在宽窗口上也会读到默认 false（手机布局）。
+                ProvideIsExpanded {
+                    Column(Modifier.fillMaxSize()) {
+                        // 桌面自绘窗口标题栏。必须在 ScreenTransition 之前、且在 Navigator 作用域内：
+                        // 前者保证 push 任何页面都不会盖住它（无边框窗口只能靠它移动 / 关闭），
+                        // 后者让它能拿到 navigator 去跳账号页 / 设置页。详见 App 的 KDoc。
+                        titleBar?.invoke(navigator)
 
-                    // 把「窗口级顶栏是否已接管账号 / 设置入口」告诉下层。
-                    // 判据是**槽位是否被注入**，不是「是不是桌面」—— 展开态分支的条件是宽度，
-                    // 宽屏平板也走同一套顶栏；而且将来若给无边框加「回退到系统标题栏」的开关，
-                    // 那时 isDesktop 仍为 true 但并没有标题栏。理由详见 LocalWindowChromeActive。
-                    androidx.compose.runtime.CompositionLocalProvider(
-                        cp.player.app.ui.component.LocalWindowChromeActive provides (titleBar != null),
-                    ) {
-                        Box(Modifier.fillMaxSize().weight(1f)) {
-                            ScreenTransition(
-                                navigator = navigator,
-                                transition = {
-                                    if (targetState is PlaylistDetailScreen ||
-                                        targetState is HomeGeneratedPlaylistScreen
-                                    ) {
-                                        // 歌单打开：fade 交叉淡入（目标位置静态，飞行器叠加其上，
-                                        // 见 CoverFlight）；返回 tab 时仍走下方 slide，保持「返回」的方向感。
-                                        fadeIn(tween(300)) togetherWith fadeOut(tween(220))
-                                    } else {
-                                        // 复刻 Voyager SlideTransition 默认值：spring + Push/Pop 方向。
-                                        val spec = spring<IntOffset>(
-                                            stiffness = 400f,
-                                            visibilityThreshold = IntOffset.VisibilityThreshold,
-                                        )
-                                        if (navigator.lastEvent == StackEvent.Pop) {
-                                            slideInHorizontally(spec) { -it } togetherWith
-                                                slideOutHorizontally(spec) { it }
+                        // 把「窗口级顶栏是否已接管账号 / 设置入口」告诉下层。
+                        // 判据是**槽位是否被注入**，不是「是不是桌面」—— 展开态分支的条件是宽度，
+                        // 宽屏平板也走同一套顶栏；而且将来若给无边框加「回退到系统标题栏」的开关，
+                        // 那时 isDesktop 仍为 true 但并没有标题栏。理由详见 LocalWindowChromeActive。
+                        androidx.compose.runtime.CompositionLocalProvider(
+                            cp.player.app.ui.component.LocalWindowChromeActive provides (titleBar != null),
+                        ) {
+                            Box(Modifier.fillMaxSize().weight(1f)) {
+                                ScreenTransition(
+                                    navigator = navigator,
+                                    transition = {
+                                        if (targetState is PlaylistDetailScreen ||
+                                            targetState is HomeGeneratedPlaylistScreen
+                                        ) {
+                                            // 歌单打开：fade 交叉淡入（目标位置静态，飞行器叠加其上，
+                                            // 见 CoverFlight）；返回 tab 时仍走下方 slide，保持「返回」的方向感。
+                                            fadeIn(tween(300)) togetherWith fadeOut(tween(220))
                                         } else {
-                                            slideInHorizontally(spec) { it } togetherWith
-                                                slideOutHorizontally(spec) { -it }
-                                        }
-                                    }
-                                },
-                            )
-
-                            // MainScreen already owns this overlay; all other pages get the
-                            // same controller here so playback remains accessible globally.
-                            val showMiniPlayer = startDestination is AppStartDestination.Main &&
-                                navigator.lastItem !is MainScreen &&
-                                navigator.lastItem !is cp.player.app.ui.screen.PlayerScreen
-                            if (showMiniPlayer) {
-                                val playbackState by AppModel.playback.state.collectAsState()
-                                val controller = AppModel.playback
-                                SharedTransitionLayout(Modifier.fillMaxSize()) {
-                                    AnimatedContent(
-                                        targetState = playbackState.currentTrack != null,
-                                        transitionSpec = {
-                                            fadeIn(tween(200)) togetherWith fadeOut(tween(200))
-                                        },
-                                        label = "GlobalMiniPlayer",
-                                        modifier = Modifier.align(Alignment.BottomCenter),
-                                    ) { hasTrack ->
-                                        if (hasTrack) {
-                                            MiniPlayer(
-                                                state = playbackState,
-                                                animatedVisibilityScope = this@AnimatedContent,
-                                                onClick = { navigator.push(cp.player.app.ui.screen.PlayerScreen()) },
-                                                onTogglePlay = controller::togglePlayPause,
-                                                onSkipPrev = controller::skipPrevious,
-                                                onSkipNext = controller::skipNext,
-                                                modifier = Modifier.navigationBarsPadding(),
+                                            // 复刻 Voyager SlideTransition 默认值：spring + Push/Pop 方向。
+                                            val spec = spring<IntOffset>(
+                                                stiffness = 400f,
+                                                visibilityThreshold = IntOffset.VisibilityThreshold,
                                             )
+                                            if (navigator.lastEvent == StackEvent.Pop) {
+                                                slideInHorizontally(spec) { -it } togetherWith
+                                                    slideOutHorizontally(spec) { it }
+                                            } else {
+                                                slideInHorizontally(spec) { it } togetherWith
+                                                    slideOutHorizontally(spec) { -it }
+                                            }
+                                        }
+                                    },
+                                )
+
+                                // MainScreen already owns this overlay; all other pages get the
+                                // same controller here so playback remains accessible globally.
+                                val showMiniPlayer = startDestination is AppStartDestination.Main &&
+                                    navigator.lastItem !is MainScreen &&
+                                    navigator.lastItem !is cp.player.app.ui.screen.PlayerScreen
+                                if (showMiniPlayer) {
+                                    val playbackState by AppModel.playback.state.collectAsState()
+                                    val controller = AppModel.playback
+                                    SharedTransitionLayout(Modifier.fillMaxSize()) {
+                                        AnimatedContent(
+                                            targetState = playbackState.currentTrack != null,
+                                            transitionSpec = {
+                                                fadeIn(tween(200)) togetherWith fadeOut(tween(200))
+                                            },
+                                            label = "GlobalMiniPlayer",
+                                            modifier = Modifier.align(Alignment.BottomCenter),
+                                        ) { hasTrack ->
+                                            if (hasTrack) {
+                                                MiniPlayer(
+                                                    state = playbackState,
+                                                    animatedVisibilityScope = this@AnimatedContent,
+                                                    onClick = { navigator.push(cp.player.app.ui.screen.PlayerScreen()) },
+                                                    onTogglePlay = controller::togglePlayPause,
+                                                    onSkipPrev = controller::skipPrevious,
+                                                    onSkipNext = controller::skipNext,
+                                                    modifier = Modifier.navigationBarsPadding(),
+                                                )
+                                            }
                                         }
                                     }
                                 }
-                            }
 
-                            // 封面飞行器：必须压在所有页面与 MiniPlayer 之上（最后绘制）。
-                            CoverFlightHost()
+                                // 封面飞行器：必须压在所有页面与 MiniPlayer 之上（最后绘制）。
+                                CoverFlightHost()
+                            }
                         }
                     }
                 }

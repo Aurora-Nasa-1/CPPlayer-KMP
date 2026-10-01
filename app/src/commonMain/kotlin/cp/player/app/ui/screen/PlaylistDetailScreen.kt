@@ -182,11 +182,14 @@ fun PlaylistDetailContent(
     }
 
     // 曲目就绪后从 autoPlayIndex 开始播放（沿用重构前"点击即播放"的行为；为 null 时只浏览不播放）
+    //
+    // ⚠️ 走 [PlaylistDetailScreenModel.autoPlayAt] 而不是直接 `playAt`：从播放页 pop 回来
+    // 时本页会重新进入组合，这个 LaunchedEffect 会重新执行，直接 playAt 会重建队列并
+    // 从起点重放 —— 也就是「退出大播放器之后播放被重置」。
     LaunchedEffect(autoPlayIndex, state.tracks) {
         val index = autoPlayIndex ?: return@LaunchedEffect
-        if (state.tracks.isEmpty()) return@LaunchedEffect
         // 自动播放不是封面点击，不触发 CoverFlight（避免打断可能仍在飞行的过渡）。
-        model.playAt(index.coerceIn(0, state.tracks.lastIndex), animateCover = false)
+        model.autoPlayAt(index, animateCover = false)
     }
 
     // 多选模式下返回键退出多选
@@ -223,7 +226,10 @@ fun PlaylistDetailContent(
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val isWide = maxWidth >= 840.dp
+        // 走 CpBreakpoints 而不是内联 840：断点只此一份，改一次处处生效。
+        // ⚠️ 也不能读 LocalIsExpanded —— 本页是 push 出去的路由页，与提供它的
+        // MainScreen 是兄弟节点，读到的永远是默认 false（宽窗口上会错判成窄屏）。
+        val isWide = cp.player.app.ui.component.CpBreakpoints.isExpanded(maxWidth)
         val canShowInlineBack = isWide && !embedded
         if (isWide) {
             WideLayout(
@@ -803,7 +809,8 @@ private fun TrackList(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    TextButton(onClick = { state.summary?.let { model.load(it) } }) {
+                    // force：加载失败时 loadedPlaylistId 已置位，重试必须越过守卫。
+                    TextButton(onClick = { state.summary?.let { model.load(it, force = true) } }) {
                         Text("重试")
                     }
                 }
