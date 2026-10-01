@@ -310,7 +310,7 @@ private fun ensureBackendInitialized() {
             versionCode = BuildInfo.VERSION_CODE,
             gitSha = BuildInfo.GIT_SHA,
             isDesktop = true,
-            releaseChannel = System.getProperty("cp.player.releaseChannel", "stable"),
+            releaseChannel = BuildInfo.RELEASE_CHANNEL,
         )
         backendReady = true
     }

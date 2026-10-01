@@ -1,15 +1,11 @@
-fun getGitSha(): String {
-    return try {
-        ProcessBuilder("git", "rev-parse", "--short", "HEAD")
-            .redirectErrorStream(true)
-            .start()
-            .inputStream.bufferedReader().readText().trim()
-    } catch (_: Exception) { "unknown" }
-}
-
-val appVersionName = providers.gradleProperty("app.versionName").orElse("1.0.0").get()
-val appVersionCode = providers.gradleProperty("app.versionCode").orElse("1").get().toInt()
-val appReleaseChannel = providers.gradleProperty("app.releaseChannel").orElse("stable").get()
+// 版本元数据只有一处实现：根 build.gradle.kts。这里只做取值，**不要再自己算**。
+// 曾经本文件自带一份 `getGitSha()` + `appVersionCode.orElse("1")`，
+// 与 CI 的 `-Papp.versionCode=${GITHUB_RUN_NUMBER}`、`scripts/release.ps1` 的
+// `major*10000+minor*100+patch` 三份并存 —— 同一个 tag 会得到不同的 versionCode。
+val appVersionName: String = rootProject.extra["cpAppVersionName"] as String
+val appVersionCode: Int = rootProject.extra["cpAppVersionCode"] as Int
+val appReleaseChannel: String = rootProject.extra["cpAppReleaseChannel"] as String
+val gitSha: String = rootProject.extra["cpGitSha"] as String
 
 plugins {
     alias(libs.plugins.android.application)
@@ -27,7 +23,7 @@ android {
         targetSdk = 35
         versionCode = appVersionCode
         versionName = appVersionName
-        buildConfigField("String", "GIT_SHA", "\"${getGitSha()}\"")
+        buildConfigField("String", "GIT_SHA", "\"$gitSha\"")
         buildConfigField("String", "RELEASE_CHANNEL", "\"$appReleaseChannel\"")
     }
     signingConfigs {

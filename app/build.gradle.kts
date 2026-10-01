@@ -10,10 +10,17 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+// 版本元数据只有一处实现：根 build.gradle.kts。这里只做取值，**不要再自己算**。
+// （历史：本文件曾各自 orElse("1.0.0")，与 CI 的 -P 覆盖、app-android 的写法
+//   三份并存，同一个 tag 会得到不同的 versionCode。）
+val appVersionName: String = rootProject.extra["cpAppVersionName"] as String
+val appVersionCode: Int = rootProject.extra["cpAppVersionCode"] as Int
+val appReleaseChannel: String = rootProject.extra["cpAppReleaseChannel"] as String
+val appPackageVersion: String = rootProject.extra["cpAppPackageVersion"] as String
+val gitSha: String = rootProject.extra["cpGitSha"] as String
+
 group = "cp.player"
-version = providers.gradleProperty("app.versionName").orElse("1.0.0").get()
-val appVersionName = providers.gradleProperty("app.versionName").orElse("1.0.0").get()
-val appPackageVersion = appVersionName.substringBefore('-').ifBlank { "1.0.0" }
+version = appVersionName
 
 kotlin {
     android {
@@ -114,7 +121,19 @@ compose.desktop {
         mainClass = "cp.player.app.MainKt"
         // FFM 直接调 Win32（DWM 圆角，见 WindowsWindowCorners）在 JDK 24+ 需要显式放行原生访问。
         // 不放行目前只是打警告，但后续 JDK 会直接拒绝，所以现在就加上。
-        jvmArgs += listOf("--enable-native-access=ALL-UNNAMED")
+        //
+        // ⚠️ 后四个 `-Dcp.player.*` 是**桌面端版本元数据的唯一入口**。
+        // `BuildInfo` 就是读这四个系统属性，而 Gradle 属性（`-Papp.versionName=…`）
+        // **不会自动变成 JVM 系统属性** —— 少了这几行，打包出的 MSI/deb 里
+        // 「关于」页永远显示 v1.0.0 (1) / unknown / stable，与 tag 无关。
+        // 它们同时作用于 `run` 任务与 jpackage 生成的启动器（.cfg），两处都需要。
+        jvmArgs += listOf(
+            "--enable-native-access=ALL-UNNAMED",
+            "-Dcp.player.versionName=$appVersionName",
+            "-Dcp.player.versionCode=$appVersionCode",
+            "-Dcp.player.releaseChannel=$appReleaseChannel",
+            "-Dcp.player.gitSha=$gitSha",
+        )
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Deb, TargetFormat.Msi)
             packageName = "CPPlayer"
