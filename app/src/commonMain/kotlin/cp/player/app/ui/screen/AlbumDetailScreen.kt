@@ -269,6 +269,10 @@ private fun AlbumDetailContent(
                                             scope.launch { AppModel.playback.addToQueue("$provider://song/${track.id}") }
                                             UiEvents.notify("已加入播放队列")
                                         },
+                                        onPlayNext = {
+                                            scope.launch { AppModel.playback.addNextToQueue("$provider://song/${track.id}") }
+                                            UiEvents.notify("将在下一首播放")
+                                        },
                                         isDownloaded = AppModel.isDownloaded(track.id),
                                         onDownload = { AppModel.downloadTrack(track) },
                                         onAddToPlaylist = { addToPlaylistTrack = track },
@@ -305,6 +309,10 @@ private fun AlbumDetailContent(
             onAddToQueue = {
                 scope.launch { AppModel.playback.addToQueue("$provider://song/${track.id}") }
                 UiEvents.notify("已加入播放队列")
+            },
+            onPlayNext = {
+                scope.launch { AppModel.playback.addNextToQueue("$provider://song/${track.id}") }
+                UiEvents.notify("将在下一首播放")
             },
             onAddToPlaylist = { addToPlaylistTrack = track },
             onDownload = { AppModel.downloadTrack(track) },

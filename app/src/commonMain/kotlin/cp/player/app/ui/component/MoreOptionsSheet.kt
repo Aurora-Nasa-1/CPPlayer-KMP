@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material3.Icon
@@ -66,6 +67,8 @@ fun SongOptionsSheet(
     onPlay: () -> Unit,
     onToggleFavorite: () -> Unit,
     onAddToQueue: () -> Unit,
+    /** 「下一首播放」：插到当前曲目之后；null 时不出现该入口（与右键菜单一致）。 */
+    onPlayNext: (() -> Unit)? = null,
     onAddToPlaylist: (() -> Unit)? = null,
     onDownload: (() -> Unit)? = null,
     onShowInfo: (() -> Unit)? = null,
@@ -145,13 +148,29 @@ fun SongOptionsSheet(
                     )
                 }
             }
-            ActionPill(
-                label = "添加到队列",
-                icon = Icons.Filled.QueueMusic,
-                color = MaterialTheme.colorScheme.tertiaryContainer,
-                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                onClick = { onAddToQueue(); onDismiss() },
-            )
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                onPlayNext?.let { playNext ->
+                    ActionPill(
+                        label = "下一首播放",
+                        icon = Icons.Filled.SkipNext,
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.weight(1f),
+                        onClick = { playNext(); onDismiss() },
+                    )
+                }
+                ActionPill(
+                    label = "添加到队列",
+                    icon = Icons.Filled.QueueMusic,
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                    modifier = if (onPlayNext != null) Modifier.weight(1f) else Modifier,
+                    onClick = { onAddToQueue(); onDismiss() },
+                )
+            }
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),

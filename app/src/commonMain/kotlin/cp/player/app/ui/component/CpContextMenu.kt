@@ -83,11 +83,21 @@ private fun CpContextMenuItem.isSeparator(): Boolean = this === CpContextMenuSep
  *
  * [items] 为 null（或空）时不弹菜单，行为与没有包裹一致 —— 调用方按
  * "当前上下文有没有可用的动作" 来决定传不传。
+ *
+ * ### 页面包裹用法（[passive] = true）
+ *
+ * 包住**整页**给「空白处右键 → 刷新」这类页面级菜单时必须开 passive：
+ * 此时监听从 Initial 挪到 **Main** 被动等 —— 事件在 Main 是子→父的顺序，
+ * 行内自己的 [CpContextMenu]（Initial 消费）与 clickable（Main 消费 down）都跑在
+ * 前面。子级已消费的右键（歌曲行菜单、卡片上的点击手势）就不再弹页面菜单，
+ * 只有没有任何子级接手的**空白 / 纯文本**区域才弹 —— 默认 Initial 模式会父子
+ * 同时弹出两个菜单。
  */
 @Composable
 fun CpContextMenu(
     items: List<CpContextMenuItem>?,
     modifier: Modifier = Modifier,
+    passive: Boolean = false,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val currentItems by rememberUpdatedState(items)
@@ -103,14 +113,22 @@ fun CpContextMenu(
                 // Press 只记录坐标 + 在 Initial 阶段消费掉（避免行内 combinedClickable
                 // 把右键当成又一次点击 / 长按），等 Release 再弹就干净了。
                 var pressAt: androidx.compose.ui.geometry.Offset? = null
+                // passive：Main 被动等（见 KDoc）；默认 Initial 抢先消费。
+                val pass = if (passive) PointerEventPass.Main else PointerEventPass.Initial
                 while (true) {
-                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    val event = awaitPointerEvent(pass)
                     val change = event.changes.firstOrNull() ?: continue
                     if (change.type != PointerType.Mouse) continue
                     when {
                         event.type == PointerEventType.Press && event.buttons.isSecondaryPressed -> {
-                            pressAt = change.position
-                            event.changes.forEach { it.consume() }
+                            // passive：子级（行菜单 / 点击手势）已消费的右键不抢 —— 只在
+                            // 空白区弹页面级菜单。
+                            if (passive && change.isConsumed) {
+                                pressAt = null
+                            } else {
+                                pressAt = change.position
+                                event.changes.forEach { it.consume() }
+                            }
                         }
                         // pressAt 非空 ⇒ 上一条 Press 是右键（主键按下不会走到这），此时副键
                         // 已松开（isSecondaryPressed 为 false），确认是右键的 Release。

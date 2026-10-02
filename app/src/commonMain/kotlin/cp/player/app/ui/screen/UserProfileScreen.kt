@@ -254,6 +254,10 @@ private fun UserProfileContent(
                                         scope.launch { AppModel.playback.addToQueue("$provider://song/${track.id}") }
                                         UiEvents.notify("已加入播放队列")
                                     },
+                                    onPlayNext = {
+                                        scope.launch { AppModel.playback.addNextToQueue("$provider://song/${track.id}") }
+                                        UiEvents.notify("将在下一首播放")
+                                    },
                                     onShare = { shareText(songShareText(track)) },
                                 )
                             ),

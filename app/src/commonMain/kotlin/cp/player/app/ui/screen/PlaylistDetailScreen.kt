@@ -111,9 +111,7 @@ import cp.player.core.music.TrackSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.datetime.Instant
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
+import cp.player.core.util.localDateTimeOf
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -151,10 +149,17 @@ private data class SongDetailInfo(
     val songId: String,
 )
 
-/** 将发行时间毫秒时间戳格式化为 yyyy-MM-dd（纯 Kotlin 实现，兼容各目标平台）。 */
+/**
+ * 将发行时间毫秒时间戳格式化为 yyyy-MM-dd。
+ *
+ * 走 `cp.player.core.util.localDateTimeOf`（expect/actual，jvm 侧用 java.time），
+ * **不要用 kotlinx-datetime**：运行时类路径上是 0.7.x，`kotlinx.datetime.Instant`
+ * 已变成指向 `kotlin.time.Instant` 的 typealias（无类文件），一碰就是
+ * `NoClassDefFoundError`（2026-10-02 真实崩溃）。
+ */
 private fun formatPublishDate(ms: Long): String {
-    val dt = Instant.fromEpochMilliseconds(ms).toLocalDateTime(TimeZone.currentSystemDefault())
-    return "%04d-%02d-%02d".format(dt.year, dt.monthNumber, dt.dayOfMonth)
+    val dt = localDateTimeOf(ms)
+    return "%04d-%02d-%02d".format(dt.year, dt.month, dt.day)
 }
 
 @Composable
@@ -250,6 +255,12 @@ fun PlaylistDetailContent(
                     scope.launch {
                         AppModel.playback.addToQueue("${AppModel.activeProviderId()}://song/${track.id}")
                         UiEvents.notify("已加入播放队列")
+                    }
+                },
+                onPlayNext = {
+                    scope.launch {
+                        AppModel.playback.addNextToQueue("${AppModel.activeProviderId()}://song/${track.id}")
+                        UiEvents.notify("将在下一首播放")
                     }
                 },
                 isDownloaded = AppModel.isDownloaded(track.id),
@@ -386,6 +397,12 @@ fun PlaylistDetailContent(
                 scope.launch {
                     AppModel.playback.addToQueue("${AppModel.activeProviderId()}://song/${track.id}")
                     UiEvents.notify("已加入播放队列")
+                }
+            },
+            onPlayNext = {
+                scope.launch {
+                    AppModel.playback.addNextToQueue("${AppModel.activeProviderId()}://song/${track.id}")
+                    UiEvents.notify("将在下一首播放")
                 }
             },
             onAddToPlaylist = { addToPlaylistIds = listOf(track.id) },

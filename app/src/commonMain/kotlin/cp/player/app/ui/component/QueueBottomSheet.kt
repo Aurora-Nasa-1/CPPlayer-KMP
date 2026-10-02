@@ -37,10 +37,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -120,12 +122,11 @@ fun QueueBottomSheet(
                         QueueRow(
                             item = item,
                             isCurrent = isCurrent,
+                            index = i,
+                            queueSize = queue.size,
                             onPlay = { onPlayAt(i) },
                             onRemove = { onRemove(i) },
-                            onDragBy = { dir ->
-                                val target = i + dir
-                                if (target in queue.indices) onMove(i, target)
-                            },
+                            onMove = onMove,
                             // 桌面端右键菜单：动作与行内 More 菜单一致并补一个分享入口。
                             contextMenu = buildList {
                                 add(CpContextMenuItem("播放", Icons.Filled.PlayArrow, onClick = { onPlayAt(i) }))
@@ -205,9 +206,11 @@ fun QueueBottomSheet(
 private fun QueueRow(
     item: QueueItem,
     isCurrent: Boolean,
+    index: Int,
+    queueSize: Int,
     onPlay: () -> Unit,
     onRemove: () -> Unit,
-    onDragBy: (Int) -> Unit,
+    onMove: (Int, Int) -> Unit,
     modifier: Modifier = Modifier,
     /** 桌面端右键菜单项；null 时不启用。 */
     contextMenu: List<CpContextMenuItem>? = null,
@@ -217,6 +220,16 @@ private fun QueueRow(
     var showMenu by remember { mutableStateOf(false) }
     val density = LocalDensity.current
     var dragAccum by remember { mutableStateOf(0f) }
+
+    // 拖拽重排用「行自己的当前下标」而不是闭包里的 i：pointerInput(Unit) 的 lambda
+    // 只在首组合捕获一次，行被 key(mediaId) 复用换位后 i 是旧值——继续 onMove(i, i±1)
+    // 会把别的歌换回来，表现为「无论划多远只换一次相邻位置」。
+    // 拖拽期间 pos 由拖拽逻辑本地同步推进（不依赖重组到账），手势结束后与列表对齐。
+    val latestMove by rememberUpdatedState(onMove)
+    val latestQueueSize by rememberUpdatedState(queueSize)
+    var pos by remember { mutableStateOf(index) }
+    var dragging by remember { mutableStateOf(false) }
+    SideEffect { if (!dragging) pos = index }
 
     // 右键菜单包在拖拽手柄所在整行之外：光标落在行上任意位置都能弹出，
     // 不与 DragIndicator 的长按拖拽冲突（那只监听左键长按）。
@@ -238,16 +251,30 @@ private fun QueueRow(
                     .padding(horizontal = 4.dp)
                     .pointerInput(Unit) {
                         detectDragGesturesAfterLongPress(
-                            onDragStart = { dragAccum = 0f },
+                            onDragStart = { dragAccum = 0f; dragging = true },
                             onDrag = { change, dragAmount ->
                                 change.consume()
                                 dragAccum += dragAmount.y
                                 val threshold = with(density) { 72.dp.toPx() }
-                                while (dragAccum > threshold) { onDragBy(1); dragAccum -= threshold }
-                                while (dragAccum < -threshold) { onDragBy(-1); dragAccum += threshold }
+                                // 每跨过一个行距就真实移动一位：pos 本地即时推进，
+                                // 一次手势滑过 N 行就连续 onMove N 次（动画逐格跟手）。
+                                while (dragAccum > threshold) {
+                                    val target = pos + 1
+                                    if (target >= latestQueueSize) { dragAccum = 0f; break }
+                                    latestMove(pos, target)
+                                    pos = target
+                                    dragAccum -= threshold
+                                }
+                                while (dragAccum < -threshold) {
+                                    val target = pos - 1
+                                    if (target < 0) { dragAccum = 0f; break }
+                                    latestMove(pos, target)
+                                    pos = target
+                                    dragAccum += threshold
+                                }
                             },
-                            onDragEnd = { dragAccum = 0f },
-                            onDragCancel = { dragAccum = 0f },
+                            onDragEnd = { dragAccum = 0f; dragging = false },
+                            onDragCancel = { dragAccum = 0f; dragging = false },
                         )
                     },
             )

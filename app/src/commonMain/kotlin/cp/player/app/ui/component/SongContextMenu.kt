@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SkipNext
 import cp.player.core.music.TrackSummary
 
 /**
@@ -25,6 +26,8 @@ data class SongMenuActions(
     val isFavorite: Boolean = false,
     val onToggleFavorite: (() -> Unit)? = null,
     val onAddToQueue: (() -> Unit)? = null,
+    /** 「下一首播放」：插到当前曲目之后（电台/长队列里追加到末尾基本听不到）。 */
+    val onPlayNext: (() -> Unit)? = null,
     val isDownloaded: Boolean = false,
     val onDownload: (() -> Unit)? = null,
     val onAddToPlaylist: (() -> Unit)? = null,
@@ -53,6 +56,9 @@ fun songContextMenuItems(actions: SongMenuActions): List<CpContextMenuItem> = bu
     }
     actions.onAddToQueue?.let {
         add(CpContextMenuItem("加入队列", Icons.Filled.QueueMusic, it))
+    }
+    actions.onPlayNext?.let {
+        add(CpContextMenuItem("下一首播放", Icons.Filled.SkipNext, it))
     }
     if (actions.onDownload != null) {
         add(
