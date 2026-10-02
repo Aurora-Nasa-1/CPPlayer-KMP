@@ -5,6 +5,10 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -12,6 +16,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Message
+import androidx.compose.material.icons.automirrored.outlined.Message
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
@@ -26,6 +31,7 @@ import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -68,6 +74,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.graphicsLayer
@@ -76,12 +83,21 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
+import androidx.compose.animation.core.Animatable
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateMapOf
+import cp.player.app.ui.theme.CpMotion
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import coil3.compose.AsyncImage
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.stack.StackEvent
@@ -105,6 +121,23 @@ import cp.player.core.music.PlaylistSummary
  */
 private const val SIDEBAR_PLAYLIST_LIMIT = 8
 
+/**
+ * 三个主 tab 的 Screen 实例：**会话级稳定，整个 app 生命周期只建一次**。
+ *
+ * ⚠️ 绝不能放回 `MainScreen.Content()` 的 `remember { }`：MainScreen 被根栈 push 覆盖
+ * （手机端进专辑 / 设置 / 账号 …）时整棵组合被丢弃、remember 槽位全丢，返回时会**新建**
+ * Screen 实例。而 `rememberScreenModel` 按**实例**键控模型（ScreenLifecycleStore）——
+ * 实例一换，首页 / 曲库的模型连同数据全部重建：返回瞬间先闪 loading、整页重新发请求，
+ * 等数据回来结构才稳定；这段窗口里 saveable 快照（含各 tab 滚动位置）的恢复时机被打乱，
+ * 数据量一变还会让恢复值落空 —— 「从详情页返回后界面回到顶部」的主因之一。
+ * 实例稳定后，模型与数据跨 push/pop 存活，返回即出内容、结构零翻转，快照精确恢复。
+ */
+private val MAIN_TABS = listOf(
+    TabItem(HomeScreen(), "首页", Icons.Filled.Home, Icons.Outlined.Home),
+    TabItem(SearchScreen(), "搜索", Icons.Filled.Search, Icons.Outlined.Search),
+    TabItem(LibraryScreen(), "我的", Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic),
+)
+
 /** Responsive application shell for the four primary destinations. */
 class MainScreen : Screen {
     @OptIn(ExperimentalSharedTransitionApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -114,15 +147,21 @@ class MainScreen : Screen {
         // 持引用，所以这里留一份实例、再用 `by` 委托出读写别名。
         val selectedIndexState = rememberSaveable { mutableIntStateOf(0) }
         var selectedIndex by selectedIndexState
-        val visitedTabs = remember { mutableStateListOf(selectedIndex) }
+        // ⚠️ 必须是 saveable：MainScreen 被根栈 push 覆盖（手机端进专辑 / 设置 / 账号 …）
+        // 时整棵组合被丢弃，非 saveable 的 remember 会把「访问过哪些 tab」清回只剩当前页 ——
+        // 返回时其他 tab 不再参与组合，它们的滚动状态只能靠 saveable 快照**懒恢复**
+        // （等下次切过去才消费），而 tab 页的模型随实例重建会重载数据，结构一旦翻转
+        // 懒恢复就落空 —— 「从详情页返回、切个 tab 就回到顶部」即由此而来。
+        // 改为 saveable 后，访问过的 tab 在返回的同一帧全部恢复组合，
+        // 与离开时的结构完全一致，快照精确命中。
+        val visitedTabs = rememberSaveable(
+            saver = listSaver(
+                save = { it.toList() },
+                restore = { mutableStateListOf<Int>().apply { addAll(it) } },
+            ),
+        ) { mutableStateListOf(selectedIndex) }
         val navigator = LocalNavigator.current
-        val tabs = remember {
-            listOf(
-                TabItem(HomeScreen(), "首页", Icons.Filled.Home, Icons.Outlined.Home),
-                TabItem(SearchScreen(), "搜索", Icons.Filled.Search, Icons.Outlined.Search),
-                TabItem(LibraryScreen(), "我的", Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic),
-            )
-        }
+        val tabs = MAIN_TABS
         // 内容区的**内嵌 Navigator**（宽屏才有，见展开态分支）：详情页（专辑 / 歌手 / 歌单 /
         // 搜索结果 / 账号 …）都在这条栈里导航，左侧导航栏因此常驻。这里持有引用是为了三件事：
         // ① 发布 pageCanGoBack；② 消费标题栏的返回 / 账号 / 搜索指令；③ 切 tab 时弹回栈根。
@@ -269,11 +308,32 @@ class MainScreen : Screen {
 
         var isPlayerExpanded by rememberSaveable { mutableStateOf(false) }
         val scope = rememberCoroutineScope()
-        
+
         // 捕捉返回键
         cp.player.app.platform.BackHandler(enabled = isPlayerExpanded) {
             isPlayerExpanded = false
         }
+
+        // 窄屏底栏「上滑自动隐藏」：状态（含嵌套滚动观察）与设置项接线。
+        // 宽屏走侧栏没有底栏，connection 不挂也不会有任何行为。
+        val bottomBarAutoHide by AppModel.bottomBarAutoHideFlow.collectAsState()
+        val bottomBarHide = remember { cp.player.app.ui.component.BottomBarHideState(scope) }
+        androidx.compose.runtime.LaunchedEffect(bottomBarAutoHide) {
+            bottomBarHide.enabled = bottomBarAutoHide
+            if (!bottomBarAutoHide) bottomBarHide.reset()
+        }
+
+        // 小播放器的实测高度（px）→ 内容区据此动态预留底部空间：有歌时列表最后一项
+        // 不再被小播放器盖住。预留量 = 卡片实测高度 + 12dp 呼吸缝，随播放状态动画
+        // 进出（无歌归零、出歌恢复）；高度来自 onSizeChanged，卡片改版这里自动跟随。
+        val density = LocalDensity.current
+        var miniPlayerHeightPx by remember { mutableIntStateOf(0) }
+        val miniPlayerReserved by animateDpAsState(
+            targetValue = if (playbackState.currentTrack != null && miniPlayerHeightPx > 0)
+                with(density) { miniPlayerHeightPx.toDp() } + 12.dp else 0.dp,
+            animationSpec = cp.player.app.ui.theme.CpMotion.spatial(),
+            label = "miniPlayerReserved",
+        )
 
         // 展开播放页的进度：走主题的 spatial 动效（带回弹），打开/收起时背景会有
         // 一点「过冲再回落」，比原来的 LinearEasing 匀速有生气得多。
@@ -436,21 +496,45 @@ class MainScreen : Screen {
                     }
                 } else {
                     androidx.compose.material3.Scaffold(
-                        modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
+                        modifier = Modifier.fillMaxSize()
+                            .nestedScroll(scrollBehavior.nestedScrollConnection)
+                            // 底栏自动隐藏：只观察手势增量、不消费，内容滚动不受影响。
+                            .nestedScroll(bottomBarHide),
                         topBar = {
+                            // 手机端「我的」页（index 2）：顶栏标题用账号昵称代替「我的」，
+                            // 账号入口挪到最左（navigationIcon 槽位）。其余 tab 维持原样。
+                            val profile by AppModel.userProfileFlow.collectAsState()
+                            val onLibraryTab = selectedIndex == 2
                             AppTopBar(
-                                title = tabs[selectedIndex].label,
+                                title = if (onLibraryTab) (profile?.nickname ?: "我的")
+                                        else tabs[selectedIndex].label,
                                 navigator = navigator,
                                 scrollBehavior = scrollBehavior,
-                                
+                                accountLeading = onLibraryTab,
                                 onOpenSettings = { navigator?.push(SettingsScreen()) },
                                 onOpenAccount = { navigator?.push(AccountScreen()) },
                             )
                         },
-                        bottomBar = { AppNavigationBar(tabs, selectedIndex, selectTab) },
+                        bottomBar = {
+                            AppNavigationBar(
+                                tabs,
+                                selectedIndex,
+                                selectTab,
+                                hideFraction = bottomBarHide.fraction,
+                                onHeightChanged = { bottomBarHide.barHeightPx = it.toFloat() },
+                            )
+                        },
                         containerColor = Color.Transparent
                     ) { padding ->
-                        TabContent(tabs, visitedTabs, selectedIndex, Modifier.fillMaxSize().padding(padding))
+                        // padding.bottom 已随底栏隐藏比例收缩（AppNavigationBar 上报收缩后的
+                        // 高度）；再叠加小播放器的动态预留 —— 底栏、小播放器、页面内容三块
+                        // 空间全部动态适配，内容永远能完整滚出来。
+                        TabContent(
+                            tabs, visitedTabs, selectedIndex,
+                            Modifier.fillMaxSize()
+                                .padding(padding)
+                                .padding(bottom = miniPlayerReserved),
+                        )
                     }
                 }
             }
@@ -531,10 +615,22 @@ class MainScreen : Screen {
                             label = "miniPlayerAlpha",
                         )
                         if (playbackState.currentTrack != null) {
-                            val bottomPadding = if (expanded) 24.dp else 104.dp // 增加与底栏的间距，提升视觉呼吸感
+                            // 底距动态适配：max(底栏可见高度, 系统导航栏 inset) + 12dp 呼吸缝。
+                            // 底栏收起时 navVisible 逐帧变小，小播放器贴合下移 —— 与底栏由
+                            // 同一个 fraction 驱动，同帧移动；底栏全收后由系统导航栏 inset
+                            // 兜底，不会顶到屏幕边。桌面宽屏没有底栏，维持固定 24dp。
+                            val navVisibleDp = with(density) {
+                                (bottomBarHide.barHeightPx * (1f - bottomBarHide.fraction)).toDp()
+                            }
+                            val navInsetDp = WindowInsets.navigationBars
+                                .asPaddingValues().calculateBottomPadding()
+                            val bottomPadding = if (expanded) 24.dp
+                            else maxOf(navVisibleDp, navInsetDp) + 12.dp
                             Box(
                                 Modifier.align(androidx.compose.ui.Alignment.BottomCenter)
                                     .padding(bottom = bottomPadding)
+                                    // 实测高度回传给内容区的动态预留（见 miniPlayerReserved）。
+                                    .onSizeChanged { miniPlayerHeightPx = it.height }
                                     .graphicsLayer { alpha = miniAlpha },
                             ) {
                                 MiniPlayer(
@@ -564,6 +660,9 @@ private fun AppTopBar(
     scrollBehavior: androidx.compose.material3.TopAppBarScrollBehavior? = null,
     onOpenSettings: () -> Unit = {},
     onOpenAccount: () -> Unit = {},
+    // 手机端「我的」页为 true：账号入口挪到最左 navigationIcon 槽位，
+    // 右侧动作里不再重复出现（见调用处的注释）。
+    accountLeading: Boolean = false,
     showBack: Boolean = false,
     onBack: () -> Unit = {},
     hide: Boolean = false,
@@ -583,6 +682,14 @@ private fun AppTopBar(
     }
     val navigationIcon: @Composable () -> Unit = if (showBack) {
         { CpBackButton(onClick = onBack) }
+    } else if (accountLeading) {
+        {
+            // MD3 规范：顶栏最左是标准 IconButton（48dp 触控目标、无底色）。
+            IconButton(onClick = onOpenAccount) {
+                val profile by AppModel.userProfileFlow.collectAsState()
+                AccountEntryContent(profile?.avatarUrl, "账号")
+            }
+        }
     } else {
         {}
     }
@@ -598,43 +705,33 @@ private fun AppTopBar(
         // 消息入口：桌面端由窗口标题栏承担，这里只在**没有窗口 chrome**（手机 / 平板）时出现。
         // ⚠️ 刻意**不带未读角标**（2026-10-02 与标题栏一并去掉）—— 理由见
         // `DesktopTitleBar.MessageSlot` 的 KDoc。数据链路保留，只是不再显示。
-        androidx.compose.material3.FilledIconButton(
+        // 样式改成 MD3 标准 IconButton（无底色）+ outlined 图标：原来的 filled 圆钮
+        // （surfaceContainerHighest 底）视觉权重远高于同排动作，也不符合 MD3
+        // 「顶栏动作用标准图标按钮」的约定。
+        IconButton(
             onClick = {
                 navigator?.push(MessagesScreen())
                 AppModel.refreshUnreadMessages()
             },
             modifier = Modifier.padding(end = 4.dp),
-            colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                contentColor = MaterialTheme.colorScheme.onSurface
-            )
         ) {
             Icon(
-                Icons.AutoMirrored.Filled.Message,
+                Icons.AutoMirrored.Outlined.Message,
                 contentDescription = "消息",
             )
         }
-        // 账号入口（有头像显示头像）：进「账号与登录」
-        androidx.compose.material3.FilledIconButton(
-            onClick = onOpenAccount,
-            modifier = Modifier.padding(end = 4.dp),
-            colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                contentColor = MaterialTheme.colorScheme.onSurface
-            )
-        ) {
-            if (!avatarUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = avatarUrl,
-                    contentDescription = "账号",
-                    modifier = Modifier.size(24.dp).clip(CircleShape),
-                    contentScale = ContentScale.Crop
+        // 账号入口（有头像显示头像）：进「账号与登录」。
+        // 「我的」tab 的账号入口已在最左 navigationIcon 槽位，这里跳过避免重复。
+        if (!accountLeading) {
+            androidx.compose.material3.FilledIconButton(
+                onClick = onOpenAccount,
+                modifier = Modifier.padding(end = 4.dp),
+                colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    contentColor = MaterialTheme.colorScheme.onSurface
                 )
-            } else {
-                Icon(
-                    Icons.Filled.Person,
-                    contentDescription = "账号",
-                )
+            ) {
+                AccountEntryContent(avatarUrl, "账号")
             }
         }
         androidx.compose.material3.FilledIconButton(
@@ -676,6 +773,24 @@ private fun AppTopBar(
 }
 
 /**
+ * 顶栏账号入口的内容：有头像显示头像（圆形裁切），未登录 / 无头像显示人形占位图标。
+ * 最左 navigationIcon 槽位与右侧动作按钮共用，避免两份逐字重复的样式。
+ */
+@Composable
+private fun AccountEntryContent(avatarUrl: String?, contentDescription: String) {
+    if (!avatarUrl.isNullOrBlank()) {
+        AsyncImage(
+            model = avatarUrl,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(28.dp).clip(CircleShape),
+            contentScale = ContentScale.Crop,
+        )
+    } else {
+        Icon(Icons.Filled.Person, contentDescription = contentDescription)
+    }
+}
+
+/**
  * 「输入黑洞」：挡住穿透到**下方兄弟子树**的点击与滚动。
  *
  * ⚠️ 两个使用铁律（都来自真实翻车，见 2026-10-02 工作日志）：
@@ -693,6 +808,28 @@ private fun Modifier.blockClicksThrough(): Modifier = pointerInput(Unit) {
     detectTapGestures { }
 }
 
+/**
+ * 单个 tab 的切页进出场状态（纯瞬时值，无需 saveable）。
+ *
+ * ⚠️ [alpha] 初值必须是「创建时是否正是选中页」：首屏 tab 不走切换动画
+ * （`selectedIndex == lastSelected` 直接短路），若初值为 0 且无人把它推到 1，
+ * 首页启动就是一片透明（离屏出图核对时抓到过）。
+ */
+private class TabSwitchState(initialAlpha: Float) {
+    val alpha = Animatable(initialAlpha)
+
+    /** 0 = 就位；±1 = 从右/左相邻侧滑入。 */
+    val slide = Animatable(0f)
+}
+
+/**
+ * tab 宿主：所有访问过的 tab **常驻组合**（滚动状态赖以保留），只放置选中的那个。
+ *
+ * 切页动画只动 **placement + graphicsLayer**（旧页原地淡出、新页带方向微滑淡入），
+ * 完全不触碰组合与快照 —— 动画进行中滚动状态照常保存；结束后恢复「仅选中页放置」，
+ * 其余页不参与命中测试，与无动画时的语义一致。规格取 [CpMotion]：
+ * 透明度用 effects（不回弹）、位移用 spatial（允许轻微回弹）。
+ */
 @Composable
 private fun TabContent(
     tabs: List<TabItem>,
@@ -701,24 +838,96 @@ private fun TabContent(
     modifier: Modifier = Modifier,
 ) {
     val retainedIndices = visitedTabs.sorted()
+    val switchStates = remember { mutableStateMapOf<Int, TabSwitchState>() }
+    var lastSelected by remember { mutableStateOf(selectedIndex) }
+    val effectsSpec = CpMotion.effects<Float>()
+    val spatialSpec = CpMotion.spatial<Float>()
+    val slideDistance = with(LocalDensity.current) { 32.dp.toPx() }
+
+    LaunchedEffect(selectedIndex) {
+        if (selectedIndex == lastSelected) return@LaunchedEffect
+        val direction = if (selectedIndex > lastSelected) 1f else -1f
+        val leaving = switchStates[lastSelected]
+        lastSelected = selectedIndex
+        val entering = switchStates.getOrPut(selectedIndex) { TabSwitchState(initialAlpha = 0f) }
+        entering.slide.snapTo(direction)
+        entering.alpha.snapTo(0f)
+        coroutineScope {
+            launch { entering.alpha.animateTo(1f, effectsSpec) }
+            launch { entering.slide.animateTo(0f, spatialSpec) }
+            leaving?.let { launch { it.alpha.animateTo(0f, effectsSpec) } }
+        }
+    }
+
     Layout(
         modifier = modifier.fillMaxSize(),
         content = {
             retainedIndices.forEach { index ->
-                Box(Modifier.fillMaxSize()) { tabs[index].screen.Content() }
+                val state = switchStates.getOrPut(index) {
+                    TabSwitchState(initialAlpha = if (index == selectedIndex) 1f else 0f)
+                }
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .clipToBounds()
+                        .graphicsLayer {
+                            alpha = state.alpha.value
+                            translationX = state.slide.value * slideDistance
+                        },
+                ) { tabs[index].screen.Content() }
             }
         },
     ) { measurables, constraints ->
         val placeables = measurables.map { it.measure(constraints) }
         layout(constraints.maxWidth, constraints.maxHeight) {
-            placeables.getOrNull(retainedIndices.indexOf(selectedIndex))?.placeRelative(0, 0)
+            // placeables 顺序与 retainedIndices 一致。淡出中的旧页垫底，选中页最后放置盖
+            // 在最上层；完全透明的页不放置（不参与命中测试 —— 保持原「仅选中页可交互」语义）。
+            val selectedPos = retainedIndices.indexOf(selectedIndex)
+            val background = retainedIndices.indices.filter { it != selectedPos }
+                .filter { pos -> (switchStates[retainedIndices[pos]]?.alpha?.value ?: 0f) > 0f }
+            (background + if (selectedPos >= 0) listOf(selectedPos) else emptyList())
+                .forEach { pos -> placeables[pos].placeRelative(0, 0) }
         }
     }
 }
 
+/**
+ * 手机端底部导航栏。
+ *
+ * @param hideFraction 自动隐藏比例（0 = 全显，1 = 全收），由 [cp.player.app.ui.component.BottomBarHideState]
+ *   驱动。实现是**收缩布局高度 + 内容上移 + 裁边**三合一的 layout 修饰符：
+ *   高度跟着比例走，Scaffold 给内容区的 bottom padding 因此同步变化（滚动收起时列表
+ *   能一直滚到底），而 NavigationBar 本体保持完整尺寸继续上移出界、由 clip 裁掉。
+ * @param onHeightChanged 回传 NavigationBar 的完整高度（px），给
+ *   [cp.player.app.ui.component.BottomBarHideState] 换算隐藏比例用。
+ */
 @Composable
-private fun AppNavigationBar(tabs: List<TabItem>, selectedIndex: Int, onSelect: (Int) -> Unit) {
-    NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+private fun AppNavigationBar(
+    tabs: List<TabItem>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    hideFraction: Float = 0f,
+    onHeightChanged: (Int) -> Unit = {},
+) {
+    Box(
+        Modifier
+            .layout { measurable, constraints ->
+                val placeable = measurable.measure(constraints)
+                val visible = (placeable.height * (1f - hideFraction.coerceIn(0f, 1f)))
+                    .roundToInt()
+                    .coerceAtLeast(0)
+                layout(placeable.width, visible) {
+                    // 内容锚定底部向上出界：收起时 NavigationBar 从可视区滑走。
+                    placeable.placeRelative(0, visible - placeable.height)
+                }
+            }
+            // 裁掉滑出界外的部分 —— layout 收缩不会自动裁剪，不裁就会盖在内容上。
+            .clipToBounds(),
+    ) {
+        NavigationBar(
+            modifier = Modifier.onSizeChanged { onHeightChanged(it.height) },
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        ) {
         val haptics = cp.player.app.ui.feedback.LocalCpHaptics.current
         tabs.forEachIndexed { index, tab ->
             val selected = selectedIndex == index
@@ -753,6 +962,7 @@ private fun AppNavigationBar(tabs: List<TabItem>, selectedIndex: Int, onSelect: 
                     indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
                 ),
             )
+        }
         }
     }
 }
