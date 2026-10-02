@@ -14,6 +14,9 @@ actual fun desktopPlatform(): String = when {
     else -> "desktop"
 }
 
+/** 桌面端没有「系统圆滑度」一说，跟随字体文件自带的默认实例（ROND = 0，方正）。 */
+actual fun defaultFontRoundness(): Int = 0
+
 actual fun saveQrCodeToGallery(base64Image: String, fileName: String) {}
 
 actual fun openTargetApp(packageName: String) {}

@@ -42,10 +42,19 @@ class PlaybackSettingsScreen : Screen {
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         val quality by AppModel.playbackQualityFlow.collectAsState()
+        val lyricsMode by AppModel.lyricsSourceModeFlow.collectAsState()
         val playbackState by AppModel.playback.state.collectAsState()
         var showSleepTimer by remember { mutableStateOf(false) }
 
         val qualityIndex = AppModel.qualityOptions.indexOfFirst { it.first == quality }.coerceAtLeast(0)
+
+        // 歌词来源三档（对齐旧版 CPPlayer）：key 顺序即下拉顺序
+        val lyricsModeOptions = listOf(
+            cp.player.core.api.LyricsSourceMode.PROVIDER_ONLY to "仅音源 API",
+            cp.player.core.api.LyricsSourceMode.AMLL_FIRST to "AMLL 优先",
+            cp.player.core.api.LyricsSourceMode.AMLL_ONLY to "仅 AMLL",
+        )
+        val lyricsModeIndex = lyricsModeOptions.indexOfFirst { it.first == lyricsMode }.coerceAtLeast(0)
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
             SettingsPage(pageModifier) {
@@ -58,6 +67,21 @@ class PlaybackSettingsScreen : Screen {
                         onSelect = { index ->
                             AppModel.qualityOptions.getOrNull(index)?.let { (level, _) ->
                                 AppModel.setPlaybackQuality(level)
+                            }
+                        },
+                        index = 0,
+                        total = 1,
+                    )
+                }
+                SettingsSection("歌词") {
+                    SettingsDropdownItem(
+                        title = "歌词来源",
+                        subtitle = "AMLL 为逐词歌词库（翻译/罗马音更全）；AMLL 优先时无匹配自动回退音源歌词，对下次刷新生效",
+                        options = lyricsModeOptions.map { it.second },
+                        selectedIndex = lyricsModeIndex,
+                        onSelect = { index ->
+                            lyricsModeOptions.getOrNull(index)?.let { (mode, _) ->
+                                AppModel.setLyricsSourceMode(mode)
                             }
                         },
                         index = 0,

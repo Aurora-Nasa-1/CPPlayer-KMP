@@ -19,6 +19,13 @@ import java.io.FileOutputStream
 actual fun isAndroidPlatform(): Boolean = true
 actual fun desktopPlatform(): String = "android"
 
+/**
+ * Android 16（API 36，`Build.VERSION_CODES.BAKLAVA`）起系统 UI 把 Google Sans
+ * Flexible 的 ROND 轴开到最大。用字面量 36 而不是常量引用：BAKLAVA 要求 compileSdk 36+，
+ * 写字面量让这条判据在低 compileSdk 的分支也能一眼读懂。
+ */
+actual fun defaultFontRoundness(): Int = if (Build.VERSION.SDK_INT >= 36) 100 else 0
+
 actual fun saveQrCodeToGallery(base64Image: String, fileName: String) {
     val ctx = ctxOrNull ?: return
     try {

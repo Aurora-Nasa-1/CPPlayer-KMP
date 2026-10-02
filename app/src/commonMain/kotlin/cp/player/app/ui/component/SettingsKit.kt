@@ -38,6 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -607,6 +608,81 @@ private fun SegmentedControl(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 9.dp),
                 )
             }
+        }
+    }
+}
+
+// ============================================================ 滑杆行
+
+/**
+ * 连续取值的滑杆行：标题 + 副标题 + 行内滑杆，右上角可带当前值标签。
+ *
+ * ### 提交节奏：**拖动只改显示，松手才提交**
+ *
+ * 滑杆一秒能产生几十个中间值。调用方把「写盘」放进 [onValueChangeFinished]，
+ * 「改显示」放进 [onValueChange]（本组件只负责把拖动回调转发出去，不内部缓存状态）。
+ * 理由与 [SettingsTextInputItem] 相同：桌面端设置存储每次写入都是**全量文件回写**，
+ * 边拖边写会把 IO 打爆，而且中间值大多是用户没打算要的值。
+ *
+ * @param value 当前显示值（外部状态）。拖动中调用 [onValueChange]，由调用方更新它
+ * @param steps 滑轨上的离散档数（不含两端）；0 表示连续。想按 5 一格取 0–100 就传 19
+ * @param valueLabel 右上角的当前值标签（如「100」或「100 · 最大」），null 则不显示
+ */
+@Composable
+fun SettingsSliderItem(
+    title: String,
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    onValueChangeFinished: (() -> Unit)?,
+    index: Int,
+    total: Int,
+    modifier: Modifier = Modifier,
+    steps: Int = 0,
+    subtitle: String? = null,
+    valueLabel: String? = null,
+    enabled: Boolean = true,
+    containerColor: Color = Color.Unspecified,
+) {
+    Surface(
+        shape = legacySegmentShape(index, total),
+        color = resolveContainer(containerColor),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(
+                horizontal = CpSpacing.formRowHorizontal,
+                // 滑杆行是「标题 + 副标题 + 滑轨」三段，比普通行高一档，
+                // 垂直内边距与 [SettingsTextInputItem] 同样放宽到 12dp。
+                vertical = 12.dp,
+            ),
+        ) {
+            SettingsRowContent(
+                leadingContent = null,
+                title = title,
+                subtitle = subtitle,
+                titleColor = MaterialTheme.colorScheme.onSurface,
+                subtitleColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                trailingContent = valueLabel?.let { label -> {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                } },
+            )
+            Slider(
+                value = value.coerceIn(valueRange.start, valueRange.endInclusive),
+                onValueChange = onValueChange,
+                onValueChangeFinished = onValueChangeFinished,
+                valueRange = valueRange,
+                steps = steps,
+                enabled = enabled,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp, bottom = 2.dp),
+            )
         }
     }
 }

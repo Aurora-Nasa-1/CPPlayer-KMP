@@ -28,12 +28,12 @@ import org.jetbrains.compose.resources.Font
  * 那会整屏渲染成豆腐块。
  */
 @Composable
-internal fun googleSansFlexFamily(): FontFamily {
-    val light = googleSansFlex(300, FontWeight.Light)
-    val normal = googleSansFlex(400, FontWeight.Normal)
-    val medium = googleSansFlex(500, FontWeight.Medium)
-    val semiBold = googleSansFlex(600, FontWeight.SemiBold)
-    val bold = googleSansFlex(700, FontWeight.Bold)
+internal fun googleSansFlexFamily(roundness: Int?): FontFamily {
+    val light = googleSansFlex(300, FontWeight.Light, roundness)
+    val normal = googleSansFlex(400, FontWeight.Normal, roundness)
+    val medium = googleSansFlex(500, FontWeight.Medium, roundness)
+    val semiBold = googleSansFlex(600, FontWeight.SemiBold, roundness)
+    val bold = googleSansFlex(700, FontWeight.Bold, roundness)
 
     // 必须 remember：桌面端 `Font(资源)` 是**异步**加载的（先返回一个占位 Font，
     // 字节读进来后再换真的）。不 remember 的话每次重组都新建一个 FontFamily，
@@ -47,14 +47,25 @@ internal fun googleSansFlexFamily(): FontFamily {
 /**
  * 取 Google Sans Flex 的一个字重实例。
  *
+ * [roundness] 是可变字体 `ROND` 轴的取值（0 方正 – 100 最圆润）；传 null 或 0 时不附加
+ * 该轴 —— 0 就是 fvar 表里的默认值，写不写渲染结果一样，省一条 variation 指令。
+ *
  * 参数全部按位置传：这个 `Font` 是 `org.jetbrains.compose.resources` 的**平台 actual**
  * 函数（Android / 桌面各一份），具名参数在一端改名就会连编译都过不去。
  */
 @Composable
-private fun googleSansFlex(weight: Int, fontWeight: FontWeight) =
-    Font(
-        Res.font.google_sans_flex,
-        fontWeight,
-        FontStyle.Normal,
-        FontVariation.Settings(FontVariation.weight(weight)),
-    )
+private fun googleSansFlex(weight: Int, fontWeight: FontWeight, roundness: Int?) = Font(
+    Res.font.google_sans_flex,
+    fontWeight,
+    FontStyle.Normal,
+    if (roundness != null && roundness > 0) {
+        FontVariation.Settings(
+            FontVariation.weight(weight),
+            // compose ui-text 1.11 没有 `FontVariation.axis(tag, value)` 辅助函数
+            // （那是 androidx 更高版本才加的），底层构造器就是这个 (tag, value) 对。
+            FontVariation.Setting("ROND", roundness.toFloat()),
+        )
+    } else {
+        FontVariation.Settings(FontVariation.weight(weight))
+    },
+)

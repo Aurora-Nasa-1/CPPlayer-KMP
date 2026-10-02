@@ -6,10 +6,13 @@ import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
@@ -23,6 +26,7 @@ import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSegmentedItem
+import cp.player.app.ui.component.SettingsSliderItem
 import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.model.StorageSettingsModel
 import cp.player.app.ui.model.formatBytes
@@ -56,11 +60,20 @@ class AppearanceSettingsScreen : Screen {
         val themeMode by AppModel.themeModeFlow.collectAsState()
         val colorSource by AppModel.colorSourceFlow.collectAsState()
         val pureBlack by AppModel.pureBlackFlow.collectAsState()
+        val bottomBarAutoHide by AppModel.bottomBarAutoHideFlow.collectAsState()
+        val fontRoundness by AppModel.fontRoundnessFlow.collectAsState()
         val platformAvailable = isPlatformColorSourceAvailable()
+        val defaultRoundness = cp.player.app.platform.defaultFontRoundness()
 
         val availableSources = remember(platformAvailable) {
             ColorSource.entries.filter { it != ColorSource.PLATFORM || platformAvailable }
         }
+
+        // 拖动中的临时值：松手前只改显示，不写盘（桌面设置存储是全量回写，边拖边写打爆 IO）。
+        // -1 表示不在拖动中。
+        var draggingRoundness by remember { mutableIntStateOf(-1) }
+        val displayedRoundness = if (draggingRoundness >= 0) draggingRoundness
+        else fontRoundness ?: defaultRoundness
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
             SettingsPage(pageModifier) {
@@ -91,9 +104,52 @@ class AppearanceSettingsScreen : Screen {
                         checked = pureBlack,
                         onCheckedChange = AppModel::setPureBlack,
                         index = 2,
-                        total = 3,
+                        total = 4,
+                    )
+                    // 窄屏布局才有底栏；桌面宽屏走侧栏，这项开着也无副作用。
+                    SettingsSwitchItem(
+                        title = "自动隐藏底栏",
+                        subtitle = "向上滑动内容时收起底部导航栏，向下滑动重新显示",
+                        checked = bottomBarAutoHide,
+                        onCheckedChange = AppModel::setBottomBarAutoHide,
+                        index = 3,
+                        total = 4,
                     )
                 }
+                SettingsSection("字体") {
+                    SettingsSliderItem(
+                        title = "字体圆滑度",
+                        subtitle = "Google Sans Flex 的 ROND 可变轴：0 方正、100 最圆润。" +
+                            "Android 16 及以上默认 100，其余平台默认 $defaultRoundness",
+                        value = displayedRoundness.toFloat(),
+                        onValueChange = { draggingRoundness = it.toInt() },
+                        valueRange = 0f..100f,
+                        steps = 19,
+                        onValueChangeFinished = {
+                            AppModel.setFontRoundness(displayedRoundness)
+                            draggingRoundness = -1
+                        },
+                        valueLabel = displayedRoundness.toString() +
+                            if (fontRoundness == null && displayedRoundness == defaultRoundness) " · 默认" else "",
+                        index = 0,
+                        total = if (fontRoundness != null) 2 else 1,
+                    )
+                    // 「恢复默认」只在用户自定义过之后出现：默认状态下它是个死按钮。
+                    if (fontRoundness != null) {
+                        SettingsButtonItem(
+                            text = "恢复平台默认",
+                            subtitle = "清除自定义值，回到当前平台的默认圆滑度",
+                            icon = Icons.Filled.RestartAlt,
+                            index = 1,
+                            total = 2,
+                            onClick = { AppModel.setFontRoundness(null) },
+                        )
+                    }
+                }
+                SettingsNote(
+                    "字体圆滑度改动即时生效，会应用到整个界面的拉丁字符；" +
+                        "中文字形来自系统回退字体，不受此设置影响。"
+                )
                 SettingsNote(colorSource.description(platformAvailable))
             }
         }

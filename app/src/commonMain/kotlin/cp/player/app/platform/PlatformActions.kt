@@ -14,6 +14,17 @@ expect fun isAndroidPlatform(): Boolean
 expect fun desktopPlatform(): String
 
 /**
+ * Google Sans Flex `ROND` 轴的**平台默认**圆滑度（0–100）。
+ *
+ * - Android 16（API 36）起系统把 Google Sans Flexible 的圆滑度开到最大（100），
+ *   应用跟随系统观感 ⇒ 默认 100；
+ * - 其余平台（Android 15 及以下 / 桌面）按字体文件自带的默认实例 ⇒ 0（方正）。
+ *
+ * 用户可在「外观与主题 → 字体圆滑度」里覆盖；这里的值只决定**未自定义时**的表现。
+ */
+expect fun defaultFontRoundness(): Int
+
+/**
  * 保存 Base64 编码的图片到系统相册。
  * 仅 Android 端生效，Desktop 端为空操作。
  *

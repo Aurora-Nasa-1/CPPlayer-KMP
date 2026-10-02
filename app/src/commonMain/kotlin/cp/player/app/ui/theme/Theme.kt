@@ -78,6 +78,11 @@ fun CpTheme(
     pureBlack: Boolean = false,
     coverSeed: Color? = null,
     wallpaperSeed: Color? = null,
+    /**
+     * Google Sans Flex 的自定义圆滑度（0–100）；null = 未自定义，跟随平台默认
+     * （[cp.player.app.platform.defaultFontRoundness]，Android 16+ 为 100，其余为 0）。
+     */
+    fontRoundness: Int? = null,
     content: @Composable () -> Unit,
 ) {
     val dark = when (themeMode) {
@@ -142,7 +147,10 @@ fun CpTheme(
     // 所以只能在主题里装配，不能放进顶层的 `val AppTypography`（见 Type.kt 的说明）。
     // remember 的 key 是 FontFamily：字体异步加载完成后它会换身份，届时字阶重建一次，
     // 之后就稳定了 —— 不会跟着上面的配色动画每帧重建。
-    val fontFamily = googleSansFlexFamily()
+    // 圆滑度变化会让五个字重实例全部换身份 ⇒ 字阶重建一次，这是可变字体换轴的固有代价，
+    // 只发生在用户拖设置页滑杆松手的那一次。
+    val effectiveRoundness = fontRoundness ?: cp.player.app.platform.defaultFontRoundness()
+    val fontFamily = googleSansFlexFamily(effectiveRoundness)
     val typography: Typography = remember(fontFamily) { AppTypography.withFontFamily(fontFamily) }
 
     CompositionLocalProvider(
