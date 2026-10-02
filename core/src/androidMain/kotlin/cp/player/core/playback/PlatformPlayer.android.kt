@@ -78,6 +78,10 @@ object SharedMedia3Player {
             true,
         )
         .setHandleAudioBecomingNoisy(true)
+        // 熄屏后仍持有部分唤醒锁（需 manifest 声明 WAKE_LOCK 权限）：
+        // 不设这个，锁屏几分钟后 WiFi 休眠断流，在线播放卡住且不切下一首。
+        // NETWORK 模式同时覆盖解码时钟源与网络拉流；纯本地文件无副作用。
+        .setWakeMode(C.WAKE_MODE_NETWORK)
         .build()
         .also { instance = it }
 
@@ -141,6 +145,18 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            // ⚠️ ExoPlayer 播完时，同一事件批内先回调 onPlaybackStateChanged(STATE_ENDED)
+            // （写入 Ended），紧接着回调 onIsPlayingChanged(false)。这里若无条件覆写，
+            // Ended 会在主线程上被 Paused 同步吞掉 —— 消费端（PlaybackControllerImpl.
+            // observePlatform，同样挂在主线程）恢复执行时两次赋值都已完成，
+            // StateFlow 只能看到 Paused ⇒ onTrackEnded() 永远不触发，播完不切下一首。
+            // 所以 STATE_ENDED 时保持 Ended 不动，等 load() 下一首时状态自然翻转。
+            val ended = runCatching { player.playbackState }
+                .getOrDefault(Player.STATE_IDLE) == Player.STATE_ENDED
+            if (ended) {
+                publishPosition()
+                return
+            }
             _state.value = if (isPlaying) PlatformPlaybackState.Playing else PlatformPlaybackState.Paused
             publishPosition()
         }

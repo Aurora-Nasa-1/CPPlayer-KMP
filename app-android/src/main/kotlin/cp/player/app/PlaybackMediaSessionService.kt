@@ -1,5 +1,7 @@
 package cp.player.app
 
+import android.content.Intent
+import androidx.media3.common.Player
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -37,6 +39,28 @@ class PlaybackMediaSessionService : MediaSessionService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
+
+    /**
+     * 用户从「最近任务」划掉 app 卡片时不自毁。
+     *
+     * media3 1.4.1 的默认实现把「暂停中」也视为可停（只看是否正在播放），
+     * 会在暂停后划卡片时 stopSelf → 通知消失、进程失去前台资格随即被杀，
+     * 恰好抵消 manifest 里 `stopWithTask="false"` 的保活意图。
+     * 这里改为：只要引擎里还有可续播的曲目（READY/BUFFERING，含暂停）就保活；
+     * 真正空闲（IDLE / 已播完）才停掉自己。
+     */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        val p = player
+        val keepAlive = p != null && runCatching {
+            when (p.playbackState) {
+                Player.STATE_READY, Player.STATE_BUFFERING -> true
+                else -> false
+            }
+        }.getOrDefault(false)
+        if (keepAlive) return
+        stopSelf()
+        // 故意不调 super：其默认逻辑与上述意图冲突（见 KDoc）。
+    }
 
     override fun onDestroy() {
         mediaSession?.release()

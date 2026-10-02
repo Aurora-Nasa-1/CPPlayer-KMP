@@ -33,6 +33,10 @@ class MainActivity : ComponentActivity() {
         // 真正的前台提升由 media3 在播放开始时自己完成（其内部 startForeground 会先
         // startForegroundService 再 startForeground，契约自洽），无需应用代劳。
         startService(Intent(this, PlaybackMediaSessionService::class.java))
+        // Android 13+ 媒体通知（含播放控制按钮）受 POST_NOTIFICATIONS 运行时权限约束：
+        // 未授权时通知被系统静默拦截 —— 播放器明明在放，通知栏/锁屏却什么都没有。
+        // 首次启动即申请；用户拒绝也只是收不到通知，不影响会话本身的锁屏/蓝牙控制。
+        requestNotificationPermissionIfNeeded()
 
         runCatching {
             val pkgInfo = packageManager.getPackageInfo(packageName, 0)
@@ -55,6 +59,13 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    /** Android 13+ 申请通知权限（媒体通知需要）；低版本或已授权时为空操作。 */
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < 33) return
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
+        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIFICATIONS)
+    }
+
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<String>,
@@ -69,6 +80,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val REQ_MEDIA_READ = 1001
+        private const val REQ_NOTIFICATIONS = 1002
 
         @Volatile
         private var instance: MainActivity? = null
