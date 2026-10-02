@@ -121,9 +121,21 @@ fun App(
                 // 没有它的话，push 出去的路由页（账号 / 关于 / 诊断…）**按 Esc 完全没有反应** ——
                 // 那些页面并不注册 BackHandler。
                 //
+                // 桌面宽屏的详情页如今在**内容区内嵌 Navigator** 里（`MainScreen`），根栈仍是
+                // 1 —— 所以退栈之外还要把 `DesktopShell.pageCanGoBack`（内嵌栈可退 / 面板可收）
+                // 纳入 enabled 判据，并让兜底动作与标题栏返回键**同链**：内嵌 pop → 根 pop →
+                // 收面板。两处各写一套判据的话，「Esc 能退、点返回键不能退」的漂移迟早出现。
+                //
                 // 安卓端不注册：Voyager 的 `Navigator` 已经接管了系统返回键，再加一条会双重出栈。
                 if (!cp.player.app.platform.isAndroidPlatform()) {
-                    cp.player.app.platform.BackHandler(enabled = navigator.size > 1) { navigator.pop() }
+                    cp.player.app.platform.BackHandler(
+                        enabled = navigator.size > 1 || cp.player.app.ui.util.DesktopShell.pageCanGoBack,
+                    ) {
+                        if (navigator.size > 1) navigator.pop()
+                        else if (cp.player.app.ui.util.DesktopShell.pageCanGoBack) {
+                            cp.player.app.ui.util.DesktopShell.backRequested = true
+                        }
+                    }
                 }
 
                 // 把「窗口是否够宽」发布给**整棵 Navigator**。
@@ -143,6 +155,10 @@ fun App(
                         // 那时 isDesktop 仍为 true 但并没有标题栏。理由详见 LocalWindowChromeActive。
                         androidx.compose.runtime.CompositionLocalProvider(
                             cp.player.app.ui.component.LocalWindowChromeActive provides (titleBar != null),
+                            // 根 Navigator 下发给整棵树：桌面宽屏的内容区里有内嵌 Navigator，
+                            // 页面读 LocalNavigator 拿到的是内嵌那一条；要整窗路由（播放页）
+                            // 的调用点必须显式用这一条。见 LocalRootNavigator 的 KDoc。
+                            cp.player.app.ui.util.LocalRootNavigator provides navigator,
                         ) {
                             Box(Modifier.fillMaxSize().weight(1f)) {
                                 ScreenTransition(

@@ -34,6 +34,31 @@ object DesktopShell {
     var settingsRequested by mutableStateOf(false)
 
     /**
+     * 请求桌面壳层打开「消息」内嵌面板。
+     *
+     * 与 [settingsRequested] **逐字同一个来路与协议**：入口在窗口标题栏上（`Navigator` 之上），
+     * 而面板的开关是 `MainScreen` 的局部状态（`DesktopPane`）。写入方只置 `true`，
+     * `MainScreen` 消费后立刻置回 `false` —— 否则从消息面板切到别的面板时会被残留的
+     * `true` 再弹回去。
+     *
+     * ⚠️ 刻意**不**复用 [settingsRequested]（例如加个枚举参数）：两者的消费动作不同
+     * （一个开设置、一个开消息并刷新未读数），共用一个字段就得在里面塞一个"下一次开哪个"
+     * 的附加状态，那才是真正的复杂来源。
+     */
+    var messagesRequested by mutableStateOf(false)
+
+    /**
+     * 请求主壳层打开「账号」内容页。
+     *
+     * 与 [settingsRequested] / [messagesRequested] 同一条单向指令通道（入口在窗口标题栏上，
+     * 写入方只置 `true`、消费方立刻置回 `false`），但**消费动作不同**：设置 / 消息切换
+     * `MainScreen` 的内嵌面板（`desktopPane`），而「账号」是**内容区路由页** ——
+     * 消费方把 `AccountScreen` push 进内容区的内嵌 Navigator，左侧导航栏保留、
+     * 返回还能回到原处（账号页内部的「我的主页 / 消息 / 切换音源」也继续落在同一条栈上）。
+     */
+    var accountRequested by mutableStateOf(false)
+
+    /**
      * 请求主壳层切到「搜索」tab 并执行这个关键词。
      *
      * 与 [settingsRequested] 同一个来路（标题栏在 `Navigator` 之上），但消费方不同：
@@ -53,7 +78,12 @@ object DesktopShell {
      */
     var pageTitle by mutableStateOf("")
 
-    /** 主壳层当前页面是否有「返回」。桌面端只有内嵌面板（「设置」）打开时为真。 */
+    /**
+     * 主壳层当前页面是否有「返回」。
+     *
+     * 现在有两种真来源，都由 `MainScreen` 发布：内嵌面板开着（可收起），或内容区的
+     * **内嵌 Navigator** 有详情页（可出栈）。标题栏 / Esc 的兜底返回都读它。
+     */
     var pageCanGoBack by mutableStateOf(false)
 
     /** 请求主壳层收起当前内嵌面板（标题栏上的返回键）。与 [settingsRequested] 同一协议。 */
