@@ -121,7 +121,8 @@ commonMain  ──▶  jvmMain  ──▶  { androidMain, desktopMain }
 Ktor 3.0.3 / kotlinx-serialization 1.7.3 / coroutines 1.9.0 / datetime 0.6.1 /
 Media3 1.4.1。版本号唯一来源是 `gradle/libs.versions.toml`。
 
-发布流程见 [`docs/RELEASE.md`](docs/RELEASE.md)。
+发布流程见 [`docs/RELEASE.md`](docs/RELEASE.md)，桌面端打包运行时（JBR）见
+[`docs/JBR_PACKAGING.md`](docs/JBR_PACKAGING.md)。
 
 ---
 

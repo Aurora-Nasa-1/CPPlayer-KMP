@@ -93,6 +93,24 @@ Android uses an **adaptive icon**: the background is a full-bleed square (the la
 
 MSI options are declared in `app/build.gradle.kts` under `nativeDistributions.windows { ... }`: desktop shortcut, Start menu entry, per-user install (no UAC prompt), install-directory chooser, and vendor/description/copyright metadata.
 
+### Bundled runtime: JetBrains Runtime (JBR)
+
+The desktop packages ship **JBR** instead of temurin, so `WindowDraggableArea` uses the native
+`WindowMove` path (edge snapping, drag-out-to-restore, 1:1 cursor tracking) rather than AWT
+software movement. `compose.desktop.application.javaHome` points at a pinned JBR that CI downloads
+and sha256-checks before `gradlew` runs; `actions/setup-java` (temurin) is **still required** — it
+drives the Gradle daemon, compilation and tests, while JBR is only the runtime baked into the
+artifact. Version, source channel, checksums, the two hit-testing risks, and the full acceptance
+checklist live in [`JBR_PACKAGING.md`](JBR_PACKAGING.md).
+
+`-Pcp.jbrHome=<dir>` selects an existing runtime; `-Pcp.jbrDownload=true` downloads it on demand
+(off by default, so a plain local build is unaffected). When neither resolves, the build proceeds
+on the default JDK and says so on stdout — `javaHome` is never set to a bogus path.
+
+> ⚠️ JBR's `.sha256` files are **not published** (cache-redirector returns 403), so the hashes in
+> `app/build.gradle.kts` and the workflow are computed from an actual download and must be
+> recomputed on every version bump.
+
 ⚠️ **`description` must be ASCII.** jpackage writes it verbatim into the MSI `Package/@Description` (and `ARPCOMMENTS`), while the MSI database codepage is pinned to **1252** by jpackage's bundled `MsiInstallerStrings_en.wxl`. Any CJK character makes `light.exe` fail with **LGHT0311**, which jpackage reports only as `exited with 311 code` — the real message needs `--verbose`. `app/build.gradle.kts` asserts this at configuration time. Keeping Chinese would require overriding that `.wxl` with `Codepage="936"`, which is not exposed by the Compose plugin (`--resource-dir` is internal), so it is not worth it. (`--win-codepage` still does not exist: JDK-8290471.)
 
 ⚠️ **`upgradeUuid` must never change after the first public release.** Windows Installer uses it to recognise a new package as an upgrade of the same product. Change it and installs fail with "another version of this product is already installed", and the old version can no longer be removed cleanly — which also breaks the in-app update chain below (step 4 installs an MSI).

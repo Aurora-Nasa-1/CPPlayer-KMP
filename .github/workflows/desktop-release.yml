@@ -32,6 +32,19 @@ concurrency:
 
 env:
   JAVA_VERSION: "21"
+  # JetBrains Runtime —— **打进产物**的运行时（jpackage 的 --runtime-image）。
+  # 目的只有一个：让 WindowDraggableArea 走原生 WindowMove（贴边吸附 / 拖出还原 / 跟手）。
+  # 方案与验收清单见 docs/JBR_PACKAGING.md。
+  #
+  # ⚠️ 三点必须记住：
+  #   1. 来源是 JetBrains 官方 cache-redirector，**不是 GitHub Releases** ——
+  #      JetBrains/JetBrainsRuntime 的 release assets 全是 0（已扫过 3 页 100/页）。
+  #   2. 官方**不提供** .sha256 文件，所以哈希由本仓库记录，且是**实际下载后算的**。
+  #   3. 版本钉 21（不是 25）：desktop 的 jvmTarget 就是 JVM_21，
+  #      「换厂商」与「升主版本」必须分开做。
+  JBR_VERSION: "21.0.8"
+  JBR_BUILD: "b1163.62"
+  JBR_URL_BASE: "https://cache-redirector.jetbrains.com/intellij-jbr"
 
 jobs:
   # 版本号 / tag / 渠道只在这里解析一次。
@@ -91,10 +104,16 @@ jobs:
             platform: windows
             task: packageMsi
             asset: msi
+            # Windows 侧 .zip / .tar.gz 都有，用 .zip。
+            jbrExt: zip
+            jbrSha: 22704601a5fffc9b5f43c2c4e8650d3ae92905139dc11e99c48387e2475be938
           - os: ubuntu-latest
             platform: linux
             task: packageDeb
             asset: deb
+            # ⚠️ Linux 侧 **只有 .tar.gz**：同名的 .zip 是 403。
+            jbrExt: tar.gz
+            jbrSha: 34a7ae7b3b45af5c8a3388a7305ad96712956a03ee8d82c7f928f31e7a79fa8e
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -107,12 +126,59 @@ jobs:
       - name: Setup Gradle
         # 与两个 Android 工作流对齐：缓存命中 + 守护进程复用，否则桌面包每次全量冷启动。
         uses: gradle/actions/setup-gradle@v3
+
+      # ⚠️ 仍然保留 setup-java：Gradle 守护进程 / Kotlin 编译 / 测试都跑在 temurin 上，
+      # JBR 只是**被打进产物**的运行时。两者不是二选一，别顺手删掉上面那个 step。
+      - name: Cache JBR
+        id: jbr-cache
+        uses: actions/cache@v4
+        with:
+          path: .jbr
+          key: jbr-${{ env.JBR_VERSION }}-${{ matrix.platform }}-${{ matrix.jbrExt }}-${{ matrix.jbrSha }}
+
+      - name: Fetch JBR (JetBrains Runtime)
+        if: steps.jbr-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .jbr
+          file="jbr-${JBR_VERSION}-${{ matrix.platform }}-x64-${JBR_BUILD}.${{ matrix.jbrExt }}"
+          url="${JBR_URL_BASE}/${file}"
+          # 先下临时文件、校验通过再落位 —— 中断留下的半截包若直接落位，
+          # 下次会因目录存在被误判成已就绪，打出**损坏的运行时**。
+          out=".jbr/${file}.part"
+          echo "Fetching $url"
+          curl -fsSL --retry 3 --retry-delay 2 -o "$out" "$url"
+          echo "${{ matrix.jbrSha }}  $out" | sha256sum -c - || { rm -f "$out"; exit 1; }
+
+          # 解压 + **剥掉单层目录**：包内是 `jbr-<version>-<platform>-x64-<build>/` 一层，
+          # 留着 javaHome 就指错一层（jpackage 只会报 invalid runtime image）。
+          dest=".jbr/${{ matrix.platform }}-x64"
+          mkdir -p "$dest"
+          if [[ "${{ matrix.jbrExt }}" == "zip" ]]; then
+            unzip -q "$out" -d .jbr/_unpack
+          else
+            mkdir -p .jbr/_unpack
+            tar -xzf "$out" -C .jbr/_unpack
+          fi
+          inner="$(find .jbr/_unpack -mindepth 1 -maxdepth 1 -type d | head -1)"
+          cp -a "$inner/." "$dest/"
+          rm -rf .jbr/_unpack "$out"
+          # 兜底断言：javaHome 必须正好是含 `release` 的那层。
+          test -f "$dest/release" || { echo "::error::JBR 解压布局不对，缺 $dest/release"; exit 1; }
+          "$dest/bin/java" -version 2>&1 | head -3
+
       - name: Build desktop package
         shell: bash
         # versionCode 由 Gradle 从 versionName 派生，不需要传；
         # releaseChannel 会经 jvmArgs 注入桌面 BuildInfo，供「关于」页与更新检查使用。
+        #
+        # -Pcp.jbrHome 让 app/build.gradle.kts 把 javaHome 指向刚下好的 JBR。
+        # ⚠️ 没设这个属性时构建**不会失败**，只是静默用 temurin 打运行时 ——
+        # 那种「看起来成功、其实没换」是最坏的结局，所以这里显式指定 + 上面有断言。
         run: |
           ./gradlew :app:${{ matrix.task }} --no-daemon \
+            -Pcp.jbrHome="$PWD/.jbr/${{ matrix.platform }}-x64" \
             -Papp.versionName="${{ needs.meta.outputs.version }}" \
             -Papp.releaseChannel="${{ needs.meta.outputs.channel }}"
       - name: Upload package

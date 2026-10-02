@@ -15,6 +15,8 @@ mp3spi = "1.9.5.4"
 jflac = "1.5.2"
 jlayer = "1.0.1"
 jmtc = "0.0.3"
+# jna-platform 用于 SMTC 应用身份注册（AUMID / 开始菜单快捷方式），版本对齐 JMTC 传递的 jna。
+jna = "5.19.1"
 accompanist-lyrics-ui = "1.0.19"
 accompanist-lyrics-core = "0.4.5"
 # ⚠️ material-kolor 锁 5.0.0：它依赖 compose 1.11.1，与本项目一致，且 5.x 才有 M3 Expressive 配色。
@@ -76,6 +78,7 @@ mp3spi = { module = "com.googlecode.soundlibs:mp3spi", version.ref = "mp3spi" }
 jflac-codec = { module = "org.jflac:jflac-codec", version.ref = "jflac" }
 jlayer = { module = "javazoom:jlayer", version.ref = "jlayer" }
 jmtc = { module = "io.github.selemba1000:JavaMediaTransportControls", version.ref = "jmtc" }
+jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -26,6 +26,11 @@ cpplayer-verify*.init.gradle
 # --- Local configuration (never shared) ----------------------------------
 local.properties
 
+# --- Pinned JetBrains Runtime (downloaded on demand, ~90MB) --------------
+# 换 JBR 打包用的运行时镜像。由 -Pcp.jbrDownload=true 或 CI 的下载 step 铺好，
+# 不进版本库（体积 + 二进制不入库）。见 docs/JBR_PACKAGING.md。
+.jbr/
+
 # --- Build artifacts / diagnostics ---------------------------------------
 *.so
 *.hprof
