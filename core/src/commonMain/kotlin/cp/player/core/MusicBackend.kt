@@ -1,5 +1,7 @@
 package cp.player.core
 
+import cp.player.core.api.AmllTtmlClient
+import cp.player.core.api.LyricsSourceMode
 import cp.player.core.api.MusicApiService
 import cp.player.core.api.MusicApiServiceImpl
 import cp.player.core.cache.ApiCache
@@ -41,6 +43,7 @@ import cp.player.core.provider.ProviderCookieStorage
 import cp.player.core.provider.ProviderManager
 import cp.player.core.util.PlatformContext
 import cp.player.core.util.SettingsStorage
+import cp.player.core.util.defaultSettingsStorage
 import kotlin.coroutines.ContinuationInterceptor
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -54,6 +57,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
+
+/** AMLL TTML 磁盘缓存的 SettingsStorage namespace（与主设置 / cookie 隔离）。 */
+private const val AMLL_CACHE_NAMESPACE = "amll_ttml_cache"
 
 /**
  * CPPlayer 后端统一入口（KMP 版）。
@@ -83,7 +89,7 @@ import kotlinx.coroutines.launch
  * // UI 观察：
  * val state by backend.stateFlow.collectAsState()
  * when (state) {
- *     is BackendState.NoProvider -> showSetupScreen()
+ *     is BackendState.NoProvider -> showOnboardingScreen()
  *     is BackendState.Ready -> showMainScreen()
  *     ...
  * }
@@ -265,6 +271,13 @@ class MusicBackend private constructor(
             // 无损档位「边播边落盘」：桌面引擎无法定位 FLAC over HTTP，安卓是空实现。
             // 见 StreamLocalizer 的实测矩阵。
             streamLocalizer = createStreamLocalizer(),
+            // AMLL TTML 歌词（官方词库 API）：磁盘缓存走独立 namespace，与主设置隔离。
+            amllClient = AmllTtmlClient(diskCache = defaultSettingsStorage(AMLL_CACHE_NAMESPACE)),
+            lyricsSourceMode = {
+                LyricsSourceMode.fromKey(settings.getString(LyricsSourceMode.SETTINGS_KEY))
+            },
+            // 播放模式（随机 / 循环）持久化：启动恢复、变更落盘。
+            playbackModeSettings = settings,
         )
     }
 

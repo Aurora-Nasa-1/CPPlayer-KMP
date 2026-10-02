@@ -1,10 +1,13 @@
 package cp.player.core.playback
 
+import cp.player.core.api.AmllTtmlClient
+import cp.player.core.api.LyricsSourceMode
 import cp.player.core.api.MusicApiService
 import cp.player.core.api.extractUidFromLoginStatus
 import cp.player.core.music.TrackSummary
 import cp.player.core.music.UnifiedMusicSource
 import cp.player.core.model.LyricsInfo
+import cp.player.core.util.SettingsStorage
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -52,6 +55,26 @@ class PlaybackControllerImpl(
      * 给默认值是为了让既有测试不必改动。
      */
     private val streamLocalizer: StreamLocalizer = NoOpStreamLocalizer,
+    /**
+     * AMLL TTML 歌词客户端（官方词库 API，见 [AmllTtmlClient]）。
+     *
+     * null = 关闭（既有测试与最小装配路径保持零网络行为，走纯音源歌词）。
+     * 组合根（MusicBackend）按设置页的歌词来源模式决定是否注入。
+     */
+    private val amllClient: AmllTtmlClient? = null,
+    /**
+     * 歌词来源模式的读取口（设置页可随时改，每首曲子取词时现读）。
+     * 默认 AMLL 优先；[amllClient] 为 null 时该模式实际不生效。
+     */
+    private val lyricsSourceMode: () -> LyricsSourceMode = { LyricsSourceMode.AMLL_FIRST },
+    /**
+     * 播放模式（随机 / 循环）的持久化存储。null = 不持久化。
+     *
+     * 非空时：构造期读回用户上次的随机开关与循环模式，[setRepeatMode] /
+     * [toggleShuffle] 变更时立即落盘。给默认值是为了让既有测试与最小装配路径
+     * 保持零存储副作用。
+     */
+    private val playbackModeSettings: SettingsStorage? = null,
 ) : PlaybackController {
 
     private val _state = MutableStateFlow(PlaybackUiState())
@@ -176,7 +199,38 @@ class PlaybackControllerImpl(
     private var sleepAfterTrack = false
 
     init {
+        restorePlaybackModes()
         observePlatform()
+    }
+
+    // ============ 播放模式持久化（随机 / 循环） ============
+
+    /** 构造期把持久化的播放模式读回内存与 UI 状态；缺失或非法键保持默认值。 */
+    private fun restorePlaybackModes() {
+        val storage = playbackModeSettings ?: return
+        runCatching {
+            storage.getString(KEY_REPEAT_MODE)
+                ?.let { raw -> RepeatMode.entries.firstOrNull { it.name == raw } }
+                ?.let { repeat ->
+                    _repeat = repeat
+                    updateState { it.copy(repeatMode = repeat) }
+                }
+            storage.getString(KEY_SHUFFLE_ENABLED)
+                ?.toBooleanStrictOrNull()
+                ?.let { shuffle ->
+                    _shuffle = shuffle
+                    updateState { it.copy(shuffleEnabled = shuffle) }
+                }
+        }
+    }
+
+    /** 变更后立即落盘；存储失败静默（持久化不影响播放）。 */
+    private fun persistPlaybackModes() {
+        val storage = playbackModeSettings ?: return
+        runCatching {
+            storage.putString(KEY_REPEAT_MODE, _repeat.name)
+            storage.putString(KEY_SHUFFLE_ENABLED, _shuffle.toString())
+        }
     }
 
     // ============ 平台事件 fold 进 UI 状态 ============
@@ -641,6 +695,7 @@ class PlaybackControllerImpl(
     override fun setRepeatMode(mode: RepeatMode) {
         _repeat = mode
         updateState { it.copy(repeatMode = mode) }
+        persistPlaybackModes()
     }
 
     // ============ 收藏 ============
@@ -769,12 +824,14 @@ class PlaybackControllerImpl(
         // 游标交给 ensureValidOrder 统一算：连带修掉「还没有当前曲目时随机序之首该是谁」这类边界。
         ensureValidOrder()
         updateState { it.copy(shuffleEnabled = _shuffle) }
+        persistPlaybackModes()
     }
 
     // ============ 歌词 ============
 
     override suspend fun refreshLyrics() {
-        val mediaId = _queue.getOrNull(_index)?.mediaId ?: run {
+        val entry = _queue.getOrNull(_index)
+        val mediaId = entry?.mediaId ?: run {
             updateState { it.copy(lyrics = LyricsState.Idle, activeLyricIndex = -1) }
             return
         }
@@ -783,15 +840,7 @@ class PlaybackControllerImpl(
             updateState { it.copy(lyrics = LyricsState.Loading, lyricsInfo = null, activeLyricIndex = -1) }
             val parsed = try {
                 val id = cp.player.core.music.CPMediaId.parse(mediaId)
-                if (id.providerId == "local") {
-                    updateState { it.copy(lyrics = LyricsState.NoLyrics, lyricsInfo = null) }
-                    return@launch
-                }
-                val json = api.getLyric(id.resourceId)
-                val lines = LyricsParser.parse(json)
-                val info = extractLyricsInfo(json, lines)
-                val state = if (lines.isEmpty()) LyricsState.NoLyrics else LyricsState.Success(lines)
-                state to info
+                fetchLyricsFor(id, entry)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // 被新一轮 refreshLyrics / 切歌取消 ⇒ 这是「预期中的结束」，不是失败。
                 // 必须原样抛出：写成 LyricsState.Error 会盖掉新曲目的 Loading，
@@ -809,6 +858,64 @@ class PlaybackControllerImpl(
                 )
             }
         }
+    }
+
+    /**
+     * 歌词获取回退链（对齐旧版 CPPlayer 的三档来源模式）：
+     *
+     * 1. AMLL 平台 ID 精确取（netease→ncmMusicId 等直接映射，不再靠 provider 名称猜）
+     * 2. AMLL 标题/歌手/专辑搜索回退 —— 旧版没有的能力：本地歌曲、无平台 ID 也能命中
+     * 3. 音源 API `getLyric`（原有路径，LRC/YRC 解析）
+     *
+     * 本地歌曲没有音源歌词可回退：AMLL 落空即 [LyricsState.NoLyrics]。
+     */
+    private suspend fun fetchLyricsFor(
+        id: cp.player.core.music.CPMediaId,
+        entry: Entry?,
+    ): Pair<LyricsState, LyricsInfo?> {
+        val mode = lyricsSourceMode()
+        val isLocal = id.providerId == "local"
+        if (mode != LyricsSourceMode.PROVIDER_ONLY && amllClient != null) {
+            val amll = fetchFromAmll(id, entry?.summary, allowPlatformLookup = !isLocal)
+            if (amll != null) return amll
+            if (mode == LyricsSourceMode.AMLL_ONLY) {
+                return LyricsState.NoLyrics to LyricsInfo(source = "AMLL TTML", format = "N/A")
+            }
+            if (isLocal) return LyricsState.NoLyrics to null
+        } else if (isLocal) {
+            return LyricsState.NoLyrics to null
+        }
+        val json = api.getLyric(id.resourceId)
+        val lines = LyricsParser.parse(json)
+        val info = extractLyricsInfo(json, lines)
+        val state = if (lines.isEmpty()) LyricsState.NoLyrics else LyricsState.Success(lines)
+        return state to info
+    }
+
+    /** AMLL 取词 + 解析；拿不到 TTML 或解析不出行返回 null（由调用方回退）。 */
+    private suspend fun fetchFromAmll(
+        id: cp.player.core.music.CPMediaId,
+        summary: TrackSummary?,
+        allowPlatformLookup: Boolean,
+    ): Pair<LyricsState, LyricsInfo>? {
+        val ttml = amllClient?.fetchLyricsTtml(
+            providerId = id.providerId.takeIf { allowPlatformLookup },
+            songId = id.resourceId,
+            name = summary?.name,
+            artist = summary?.artist,
+            album = summary?.album,
+        ) ?: return null
+        val lines = TtmlParser.parse(ttml)
+        if (lines.isEmpty()) return null
+        val hasWords = lines.any { it.words.isNotEmpty() }
+        val info = LyricsInfo(
+            source = "AMLL TTML",
+            format = if (hasWords) "TTML (Karaoke)" else "TTML",
+            hasWordLevel = hasWords,
+            hasTranslation = lines.any { !it.translation.isNullOrBlank() },
+            hasPhonetic = lines.any { !it.romanization.isNullOrBlank() },
+        )
+        return LyricsState.Success(lines) to info
     }
 
     // ============ 音量 / 释放 ============
@@ -1260,6 +1367,12 @@ class PlaybackControllerImpl(
     private companion object {
         /** 每 N 秒上报一次听歌打卡。 */
         const val SCROBBLE_INTERVAL_S = 30
+
+        /** 持久化键：循环模式（[RepeatMode] 枚举名）。 */
+        const val KEY_REPEAT_MODE = "playback_repeat_mode"
+
+        /** 持久化键：随机播放开关。 */
+        const val KEY_SHUFFLE_ENABLED = "playback_shuffle_enabled"
     }
 }
 
