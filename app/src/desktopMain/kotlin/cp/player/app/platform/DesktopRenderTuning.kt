@@ -30,20 +30,21 @@ import java.io.File
  * 1. 直接由 JVM 启动参数 / 环境变量指定（`-Dskiko.renderApi=...`、`SKIKO_RENDER_API`）
  *    ——视为外部显式指定，本模块**不覆盖**，只在日志里说明。
  * 2. `-Dcp.player.renderApi=...` / 环境变量 `CPPLAYER_RENDER_API`（自救通道，见下）。
- * 3. 设置页写入的持久化项。
- * 4. 默认：不写任何属性，完全交给 Skiko 自行选择。
+ * 3. 设置页写入的持久化项（**含显式选择的「自动」**——一旦落盘，平台默认不再生效）。
+ * 4. 平台默认：**Windows 上默认使用 OpenGL**（即上游针对 VRR 闪烁推荐的规避手段，
+ *    用户没做过任何选择时就直接受益），其余平台不写任何属性、交给 Skiko 自行选择。
  *
  * 之所以让 1/2 压过持久化，是为了留一条**自救通道**：万一选到本机跑不起来的后端
  * （表现是启动即崩或窗口不出现，进不了设置页），仍可用 `-Dcp.player.renderApi=AUTO`
- * 启动，或直接删掉 `~/.cpplayer/cp_player_prefs.properties` 里的对应项。
+ * 启动，或直接改掉 `~/.cpplayer/cp_player_prefs.properties` 里的对应项。
  *
  * ## 安全模式（自动回退）
  *
  * 上面那条自救通道要求用户会加 JVM 启动参数或会手改配置文件——而应用**起不来**的时候，
  * 恰恰是普通用户最没法做这两件事的时候。所以再加一层自动兜底：
  *
- * 1. 应用了「设置页选定的非默认后端」时，在其它初始化都跑完之后（[beginStartupProbe]）
- *    写一个探测文件；
+ * 1. 应用了「设置页选定的非默认后端」或「平台默认 OpenGL」时，在其它初始化都跑完之后
+ *    （[beginStartupProbe]）写一个探测文件；
  * 2. 窗口连续出满 [HEALTHY_FRAME_COUNT] 帧后，由 `Main` 调 [markStartupHealthy] 删掉它；
  * 3. 下次启动若探测文件**还在**，说明那个后端没能起来 → 自动改回「自动」并在设置页提示。
  *
@@ -100,12 +101,12 @@ internal object DesktopRenderTuning {
         AUTO(
             "",
             "自动（跟随 Skiko 默认）",
-            "Windows 上即 Direct3D 12。性能最好；与 VRR 冲突时会出现刷新率抖动与闪烁。",
+            "不写 skiko.renderApi，交给 Skiko 决定（Windows 上即 Direct3D 12）。性能最好；与 VRR 冲突时会出现刷新率抖动与闪烁。",
         ),
         OPENGL(
             "OPENGL",
             "OpenGL",
-            "绕开 D3D 呈现路径，上游针对 VRR 问题推荐的规避手段，优先试这个。",
+            "绕开 D3D 呈现路径，上游针对 VRR 问题推荐的规避手段。Windows 上未做选择时的平台默认。",
         ),
         ANGLE(
             "ANGLE",
@@ -141,6 +142,10 @@ internal object DesktopRenderTuning {
      *
      * 之所以要记下来，是因为外部启动参数/环境变量**优先于设置页**：此时用户改设置页是无效的，
      * 若还提示「重启后生效」就是在骗人。见 [isRestartPending]。
+     *
+     * [SETTINGS] 表示持久化文件里**有**用户的选择（包括显式选择的「自动」）；
+     * [DEFAULT] 表示用户从未做过选择，本次取的是平台默认（Windows=OpenGL，其余=Skiko 默认）。
+     * 两者的区别决定要不要立探测字据（见 [shouldArmProbe]）。
      */
     internal enum class BackendSource { EXTERNAL, OVERRIDE, SETTINGS, DEFAULT }
 
@@ -159,10 +164,34 @@ internal object DesktopRenderTuning {
 
     // ======================== 持久化 ========================
 
-    fun storedBackend(): Backend = Backend.fromStorage(prefs.getString(KEY_BACKEND))
+    /** 本进程是否跑在 Windows 上。 */
+    internal val isWindows: Boolean
+        get() = System.getProperty("os.name").orEmpty().lowercase().contains("windows")
+
+    /**
+     * 平台默认后端：**Windows 上默认 OpenGL**（上游针对 VRR 闪烁推荐的规避手段，
+     * 让用户不做任何选择就默认避开 Direct3D 12 的呈现路径问题）；其余平台不干预、
+     * 交给 Skiko 自行选择。
+     */
+    fun platformDefaultBackend(): Backend = if (isWindows) Backend.OPENGL else Backend.AUTO
+
+    /**
+     * 设置页展示 / 生效的后端取值。
+     *
+     * 持久化文件里没有值时返回**平台默认**（[platformDefaultBackend]）。注意这与
+     * 「显式选择自动」不同：显式 AUTO 会以 `"AUTO"` 字符串落盘（见 [storeBackend]），
+     * 从而跳过平台默认、真正交给 Skiko 决定。
+     */
+    fun storedBackend(): Backend {
+        val raw = prefs.getString(KEY_BACKEND) ?: return platformDefaultBackend()
+        return Backend.fromStorage(raw)
+    }
 
     fun storeBackend(backend: Backend) {
-        if (backend == Backend.AUTO) prefs.remove(KEY_BACKEND) else prefs.putString(KEY_BACKEND, backend.name)
+        // 「自动」也要显式落盘而不是删键：删键 == 「从未选择」，会让 Windows 上的
+        // 平台默认（OpenGL）重新生效。显式落盘才能表达「用户就是要 Skiko 默认」，
+        // 安全模式的自动回退也依赖这一点来跳出「默认 → 崩 → 回退 → 又默认」的循环。
+        prefs.putString(KEY_BACKEND, backend.name)
     }
 
     /** `null` 表示不干预垂直同步，保持 Skiko 默认。 */
@@ -233,12 +262,16 @@ internal object DesktopRenderTuning {
     /**
      * 纯逻辑：本次启动该不该为渲染后端「立字据」。
      *
-     * 只有「设置页选定的非默认后端」才该记账：
+     * 「设置页选定的非默认后端」与「平台默认 OpenGL」都该记账——后者在用户没做过
+     * 任何选择时就会生效，一旦在本机跑不起来，同样会陷入「起不来 → 进不去设置页」
+     * 的循环，必须能自动回退（回退会显式落盘 `AUTO`，从而把平台默认一并关掉）。
+     * 不该记账的：
      * - 外部启动参数 / `cp.player.renderApi` 每次都压过设置页，回退持久化值也救不了它，记账只会误报；
      * - `AUTO` 本身没什么可失败的。
      */
     internal fun shouldArmProbe(source: BackendSource?, backend: Backend?): Boolean =
-        source == BackendSource.SETTINGS && backend != null && backend != Backend.AUTO
+        backend != null && backend != Backend.AUTO &&
+            (source == BackendSource.SETTINGS || source == BackendSource.DEFAULT)
 
     /**
      * 立字据：本次以设置页选定的非默认后端启动，需要 [markStartupHealthy] 来销账。
@@ -336,6 +369,7 @@ internal object DesktopRenderTuning {
 
         val externalApi = System.getProperty(PROP_RENDER_API) ?: System.getenv(ENV_SKIKO_RENDER_API)
         val overrideRaw = System.getProperty(OVERRIDE_BACKEND) ?: System.getenv(ENV_BACKEND)
+        val hasStoredChoice = prefs.getString(KEY_BACKEND) != null
         val stored = storedBackend()
 
         val backend = when {
@@ -343,14 +377,15 @@ internal object DesktopRenderTuning {
             externalApi != null -> null
             // 2) 自救通道：启动参数 / 环境变量。
             overrideRaw != null -> resolveByName(overrideRaw)
-            // 3) 设置页持久化项。
+            // 3) 设置页持久化项（无持久化值时 [storedBackend] 已回落到平台默认）。
             else -> stored
         }
         val source = when {
             externalApi != null -> BackendSource.EXTERNAL
             overrideRaw != null -> BackendSource.OVERRIDE
-            stored == Backend.AUTO -> BackendSource.DEFAULT
-            else -> BackendSource.SETTINGS
+            // 持久化文件里有用户的选择（含显式 AUTO）→ 设置页；否则 → 平台默认。
+            hasStoredChoice -> BackendSource.SETTINGS
+            else -> BackendSource.DEFAULT
         }
         appliedSource = source
         appliedBackend = backend
@@ -373,7 +408,7 @@ internal object DesktopRenderTuning {
             BackendSource.EXTERNAL -> "外部启动参数（不干预）"
             BackendSource.OVERRIDE -> "启动参数/环境变量"
             BackendSource.SETTINGS -> "设置页"
-            BackendSource.DEFAULT -> "设置页（未选择）"
+            BackendSource.DEFAULT -> "平台默认（未做过选择）"
         }
         val requestedLabel = when {
             externalApi != null -> "$externalApi（外部指定，本模块未干预）"
@@ -413,6 +448,8 @@ internal object DesktopRenderTuning {
         val abandoned = abandonedBackend(raw)
         if (abandoned != null) {
             // 顺序要紧：先落回退值再写提示。storeBackend 不碰 KEY_LAST_REVERT，二者互不干扰。
+            // 回退值会以 "AUTO" **显式落盘**（storeBackend 不再删键）：这正是关掉平台默认的开关——
+            // 否则 Windows 上删键后下下次启动又会默认 OpenGL，陷入「默认 → 崩 → 回退 → 又默认」的循环。
             storeBackend(Backend.AUTO)
             prefs.putString(KEY_LAST_REVERT, abandoned.name)
             clearProbe()

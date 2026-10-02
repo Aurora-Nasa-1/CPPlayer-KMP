@@ -28,9 +28,10 @@ import cp.player.app.ui.component.SettingsSection
  * 「渲染后端」设置页（仅桌面端）。
  *
  * 用途是给 Windows 上「开 VRR 后刷新率被拉低 / 面板闪烁」这类问题留一个可切换的开关：
- * Compose Desktop 由 Skiko 绘制，Skiko 在 Windows 默认走 Direct3D 12，其
+ * Compose Desktop 由 Skiko 绘制，Skiko 在 Windows 的出厂默认走 Direct3D 12，其
  * `Present(FLIP_DISCARD)` + `DwmFlush` 的出帧节奏会与 DWM 合成节奏（也就是 VRR 与
- * 系统帧节奏控制的作用对象）互相影响。换后端是上游给出的规避手段。
+ * 系统帧节奏控制的作用对象）互相影响。因此本应用在 Windows 上**默认选择 OpenGL**，
+ * 换后端则是上游给出的另一个规避手段。
  *
  * 具体机制、取值来源与优先级见 [DesktopRenderTuning]。
  *
@@ -94,7 +95,7 @@ actual fun PlatformRenderTuningContent() {
                 }
             }
 
-            SettingsNote("默认交给 Skiko 决定。仅在换后端后仍抖动时，才需要动这一项做对照。")
+            SettingsNote("Windows 上默认使用 OpenGL（针对 VRR 闪烁的规避手段）；其余平台交给 Skiko 决定。仅在换后端后仍抖动时，才需要动这一项做对照。")
             SettingsSection("垂直同步") {
                 listOf(
                     Triple("不干预", null as Boolean?, "交给 Skiko 决定"),

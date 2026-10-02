@@ -204,6 +204,18 @@ class DesktopRenderTuningTest {
         }
     }
 
+    // ======================== 平台默认 ========================
+
+    @Test
+    fun `platform default is OPENGL on Windows and AUTO elsewhere`() {
+        val expected = if (DesktopRenderTuning.isWindows) Backend.OPENGL else Backend.AUTO
+        assertEquals(
+            expected,
+            DesktopRenderTuning.platformDefaultBackend(),
+            "Windows 上未做选择时应默认 OpenGL（VRR 闪烁的规避），其余平台交给 Skiko",
+        )
+    }
+
     // ======================== 持久化回落（只读） ========================
 
     @Test
@@ -300,10 +312,14 @@ class DesktopRenderTuningTest {
     // ======================== 安全模式：该不该立字据 ========================
 
     @Test
-    fun `only a settings page choice arms the probe`() {
+    fun `a settings choice or the platform default arms the probe`() {
         assertTrue(
             DesktopRenderTuning.shouldArmProbe(BackendSource.SETTINGS, Backend.OPENGL),
             "设置页选了 OpenGL → 该记账",
+        )
+        assertTrue(
+            DesktopRenderTuning.shouldArmProbe(BackendSource.DEFAULT, Backend.OPENGL),
+            "平台默认 OpenGL 在用户未做选择时就会生效，跑不起来同样要能自动回退",
         )
         assertFalse(
             DesktopRenderTuning.shouldArmProbe(BackendSource.SETTINGS, Backend.AUTO),
