@@ -34,14 +34,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
-import androidx.compose.material.icons.filled.Album
-import androidx.compose.material.icons.filled.AutoGraph
-import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.LibraryMusic
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Equalizer
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Search
@@ -79,7 +77,10 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.ui.anim.CoverFlight
+import cp.player.app.ui.anim.coverFlightSource
+import cp.player.app.ui.component.CpLinearProgress
 import cp.player.app.ui.component.ContentState
+import cp.player.app.ui.component.BentoCard
 import cp.player.app.ui.component.CpBackButton
 import cp.player.app.ui.component.CpCoverPlaceholder
 import cp.player.app.ui.component.CpIconSize
@@ -93,7 +94,11 @@ import cp.player.app.ui.component.PlaylistCoverCard
 import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.ui.component.SectionHeader
 import cp.player.app.ui.component.SongItem
+import cp.player.app.ui.component.SongMenuActions
 import cp.player.app.ui.component.SongOptionsSheet
+import cp.player.app.ui.component.songContextMenuItems
+import cp.player.app.ui.component.songShareText
+import cp.player.app.platform.shareText
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.model.HomeScreenModel
 import cp.player.app.ui.model.HomeUiState
@@ -101,6 +106,7 @@ import cp.player.app.ui.model.NewSongRegion
 import cp.player.app.ui.model.PlaylistDetailScreenModel
 import cp.player.app.ui.model.PlaylistSource
 import cp.player.app.ui.theme.CpMotion
+import cp.player.app.ui.util.formatTimeMs
 import cp.player.app.ui.util.resized
 import cp.player.core.BackendResult
 import cp.player.core.music.AlbumSummary
@@ -109,6 +115,8 @@ import cp.player.core.music.BannerItem
 import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.RankingSummary
 import cp.player.core.music.TrackSummary
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -144,6 +152,21 @@ private fun HomeScreenContent(model: HomeScreenModel) {
     var addToPlaylistTrack by remember { mutableStateOf<TrackSummary?>(null) }
     val likedIds by AppModel.playback.likedIds.collectAsState()
     val recentTracks by AppModel.recentTracksFlow.collectAsState()
+    // ⚠️ 位置**先除到秒**再进快照：引擎每 200ms 推一次位置，照原样收会让首页
+    // 每秒重组 5 次。首页只用它画一条进度条，秒级精度足够。
+    // `distinctUntilChanged` 去掉同一秒内的重复推送 —— 这是省掉绝大部分重组的关键。
+    val nowPlaying by remember {
+        AppModel.playback.state
+            .map { st ->
+                NowPlayingSnapshot(
+                    track = st.currentTrack,
+                    isPlaying = st.isPlaying,
+                    positionMs = st.positionMs / 1000L * 1000L,
+                    durationMs = st.durationMs,
+                )
+            }
+            .distinctUntilChanged()
+    }.collectAsState(initial = NowPlayingSnapshot(track = null, isPlaying = false))
     val scope = rememberCoroutineScope()
     val navigator = LocalNavigator.currentOrThrow
     val provider = AppModel.activeProviderId()
@@ -154,15 +177,6 @@ private fun HomeScreenContent(model: HomeScreenModel) {
         PlaylistSummary(
             id = -101L,
             name = "每日推荐",
-            coverUrl = dailySongs.firstOrNull()?.coverUrl,
-            trackCount = dailySongs.size,
-            creatorName = "CPPlayer",
-        )
-    }
-    val similarPlaylist = remember(dailySongs) {
-        PlaylistSummary(
-            id = -103L,
-            name = "相似歌曲",
             coverUrl = dailySongs.firstOrNull()?.coverUrl,
             trackCount = dailySongs.size,
             creatorName = "CPPlayer",
@@ -190,6 +204,10 @@ private fun HomeScreenContent(model: HomeScreenModel) {
             AppModel.playback.playQueue(tracks.map { toMediaId(it.id) }, startIndex = index)
         }
     }
+
+    // 播放页的全屏入口要用**根** Navigator（见下面 onOpenPlayer 的说明）。
+    // `.current` 是 composable 调用，只能在组合作用域读一次，lambda 里捕获引用。
+    val rootNavigator = cp.player.app.ui.util.LocalRootNavigator.current
 
     val actions = HomeActions(
         onRefresh = model::refresh,
@@ -252,32 +270,48 @@ private fun HomeScreenContent(model: HomeScreenModel) {
         },
         onPlayPersonalFm = model::playPersonalFm,
         onOpenIntelligence = {
+            // 网易云的心动模式语义是「跟随当前播放列表」：`pid` = 队列的来源歌单，
+            // 种子 = 正在播放的那首（eapi `type=fromPlayOne`）。队列没有歌单来源时
+            // 按 收藏夹 → 第一个用户歌单 回退（旧项目同款回退链）。
+            // ⚠️ 日推是**生成队列不是歌单**，它自己给不出合法 pid —— 这正是
+            // 「心动模式恒空」的根因之一，所以 pid 绝不能只依赖入口处的静态数据。
+            val queueSource = AppModel.playback.state.value.sourceId
+                ?.toLongOrNull()?.takeIf { it > 0 }
+            val pid = queueSource
+                ?: state.likedPlaylist?.id
+                ?: state.userPlaylists.firstOrNull()?.id ?: 0L
+            // 种子按 在播曲目 → 红心歌曲 → 日推第一首 回退；在播曲目可能是
+            // 带命名空间的 mediaId，还原成裸资源 id 再交给上游。
+            val playingSeed = nowPlaying.track?.id?.let { id ->
+                runCatching { cp.player.core.music.CPMediaId.parse(id).resourceId }.getOrDefault(id)
+            }
             navigator.push(
                 HomeGeneratedPlaylistScreen(
                     intelligencePlaylist,
                     emptyList(),
                     // 不传 startIndex：打开心动模式只浏览，点了具体曲目才播。
                     kind = HomeGeneratedPlaylistKind.IntelligenceFromDaily,
-                    seedTrackId = dailySongs.firstOrNull()?.id,
+                    seedTrackId = playingSeed
+                        ?: likedIds.firstOrNull()
+                        ?: dailySongs.firstOrNull()?.id,
+                    seedPlaylistId = pid,
                 )
             )
         },
-        onOpenSimilar = {
-            navigator.push(
-                HomeGeneratedPlaylistScreen(
-                    similarPlaylist,
-                    emptyList(),
-                    // 同上：打开相似歌曲只浏览。
-                    kind = HomeGeneratedPlaylistKind.SimilarFromDaily,
-                    seedTrackId = dailySongs.firstOrNull()?.id,
-                )
-            )
-        },
+        // 相似歌曲入口已从首页废弃（2026-10-02）：它现在以**当前在播曲目**为种子，
+        // 归属播放页（桌面「相似」页签 / 窄屏第 4 页，见 SimilarSongsPanel）。
+        // 首页这个位置换成「最近播放」入口 —— 不依赖登录与日推数据，且与
+        // 桌面焦点区有在播时的「继续收听」卡同一语义族。
         onRecentTrackClick = { _, index -> playRecentAt(index) },
         onRecentPlayAll = { playRecentAt(0) },
         onOpenRecentPlays = { navigator.push(RecentPlaysScreen()) },
         onNewSongPlay = playTracks,
         onTrackOptions = { selectedTrack = it },
+        // 播放页是**全屏体验**：必须压过整个窗口（含桌面左侧导航栏），所以显式走
+        // 根 Navigator（LocalRootNavigator，在组合作用域读一次、lambda 里只捕获引用），
+        // 而不是页面就近的 Navigator —— 桌面宽屏上后者是内容区的内嵌栈，
+        // push 进去会把播放页塞进侧栏旁边渲染。
+        onOpenPlayer = { rootNavigator?.push(PlayerScreen()) },
     )
 
     if (loading) {
@@ -299,7 +333,12 @@ private fun HomeScreenContent(model: HomeScreenModel) {
     }
 
     if (LocalIsExpanded.current) {
-        DesktopHomeLayout(state = state, recentTracks = recentTracks, actions = actions)
+        DesktopHomeLayout(
+            state = state,
+            recentTracks = recentTracks,
+            nowPlaying = nowPlaying,
+            actions = actions,
+        )
     } else {
         MobileHomeLayout(state = state, recentTracks = recentTracks, actions = actions)
     }
@@ -354,7 +393,7 @@ private const val BANNER_TARGET_SONG = 1
  * ⚠️ 刻意**不用 `remember` 包**：它捕获了 `dailySongs` / `recentTracks` 这些会变的值，
  * 一旦被记住就会拿着旧快照去播错队列。每次重组重建这个对象是最省心的做法。
  */
-private class HomeActions(
+internal class HomeActions(
     val onRefresh: () -> Unit,
     val onPlaylistSourceChange: (PlaylistSource) -> Unit,
     val onNewSongRegionChange: (NewSongRegion) -> Unit,
@@ -367,12 +406,28 @@ private class HomeActions(
     val onPlayDailyTrack: (TrackSummary) -> Unit,
     val onPlayPersonalFm: () -> Unit,
     val onOpenIntelligence: () -> Unit,
-    val onOpenSimilar: () -> Unit,
     val onRecentTrackClick: (TrackSummary, Int) -> Unit,
     val onRecentPlayAll: () -> Unit,
     val onOpenRecentPlays: () -> Unit,
     val onNewSongPlay: (List<TrackSummary>, Int) -> Unit,
     val onTrackOptions: (TrackSummary) -> Unit,
+    /** 点「继续收听」卡回到播放页（L1）。 */
+    val onOpenPlayer: () -> Unit,
+)
+
+/**
+ * 首页要展示的「正在播放」快照（L1）。
+ *
+ * ⚠️ [positionMs] / [durationMs] 在**外面**就被节流到「秒」粒度了：
+ * 引擎的位置轮询是每 200ms 一次，照原样传进来会让首页每秒重组 5 次。
+ * 首页只用来画一条进度条，秒级精度完全够 —— 见 `HomeScreenContent` 里的
+ * `map { … / 1000 }`。`distinctUntilChanged` 再去掉同秒内的重复。
+ */
+internal data class NowPlayingSnapshot(
+    val track: TrackSummary?,
+    val isPlaying: Boolean,
+    val positionMs: Long = 0L,
+    val durationMs: Long = 0L,
 )
 
 // ============================================================ 桌面
@@ -383,20 +438,36 @@ private class HomeActions(
 private const val PLAYLIST_ROWS = 2
 
 /**
- * 桌面首页「最近播放」展示条数。
+ * 桌面首页「继续收听」横条展示条数。
  *
- * 12 条按两列排是 6 行，高度正好和左侧「每日推荐」的 5 行曲目卡齐平 ——
- * 这两个数字是绑定的，改一个就要回头看另一个，否则底部对齐会重新错开。
+ * ⚠️ 改版说明（2026-10-02）：这个值**曾经**与左侧「每日推荐」的 5 行曲目卡绑定
+ * （12 条按两列 = 6 行，两卡等高）。L2 之后「最近播放」已从并排巨卡变成一条
+ * **横向滚动条**，高度由卡片自身决定、不再参与任何底部对齐，
+ * 因此**这层绑定已解除** —— 但仍然只展示 [DESKTOP_RECENT_COUNT] 条，
+ * 完整列表走「更多」进 `RecentPlaysScreen`。
  */
 private const val DESKTOP_RECENT_COUNT = 12
 
-/** 桌面焦点图高度。按 1400dp 内容宽、hero 占 2/3 算，约 4.2:1，与上游横幅素材比例接近。 */
-private val DesktopBannerHeight = 224.dp
+/** 桌面首页「每日推荐」占整行后的列数。4 列 × 3 行 = 12 首。 */
+private const val DESKTOP_DAILY_COLUMNS = 4
+
+/** 与 [DESKTOP_DAILY_COLUMNS] 配套的展示条数：4 列 × 3 行。 */
+private const val DESKTOP_DAILY_COUNT = 12
+
+/**
+ * 桌面焦点图高度。
+ *
+ * 按 1400dp 内容宽、hero 占 2/3 算约 4.2:1，与上游横幅素材比例接近。
+ * 260dp（原 224dp）：L1 之后右侧面板由「三张固定电台入口」改成「继续收听」，
+ * 需要放下封面 + 曲名 + 进度条三行，224dp 会把进度条挤到贴边。
+ */
+private val DesktopBannerHeight = 260.dp
 
 @Composable
-private fun DesktopHomeLayout(
+internal fun DesktopHomeLayout(
     state: HomeUiState,
     recentTracks: List<TrackSummary>,
+    nowPlaying: NowPlayingSnapshot,
     actions: HomeActions,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -429,69 +500,91 @@ private fun DesktopHomeLayout(
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
                 // ── 焦点区：轮播图 + 快捷电台 ──
-                Row(
-                    modifier = Modifier.fillMaxWidth().height(DesktopBannerHeight),
-                    horizontalArrangement = Arrangement.spacedBy(20.dp),
-                ) {
-                    if (state.banners.isNotEmpty()) {
+                //
+                // 没有焦点图时**不留替代卡**：原先这里塞的是「今日速览」，而它内部两块
+                // 正是下方「每日推荐 / 最近播放」的**计数 + 跳转**，只是把同一目的地
+                // 在首屏最贵的位置（2/3 宽）又说了一遍；真正的列表本来就在同一屏下方。
+                // 无焦点图对应的恰恰是「未登录 / 新用户」——那正是最不需要「我的数据统计」
+                // 的时候（两个计数都会是 0）。移动端（MobileHomeLayout）从一开始就没有
+                // 这张卡，也从未出现版面容不下内容的问题，可见这个位置空着是成立的。
+                // 现在的做法：把「快捷电台」提升成一个常规区块（同 `HomeSectionCard` 规格），
+                // 用**可操作内容**填版面，而不是拿一张信息量为零的统计卡去占坑。
+                if (state.banners.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(DesktopBannerHeight),
+                        horizontalArrangement = Arrangement.spacedBy(20.dp),
+                    ) {
                         BannerCarousel(
                             banners = state.banners,
                             onClick = actions.onBannerClick,
                             modifier = Modifier.weight(2f).fillMaxHeight(),
                             height = DesktopBannerHeight,
                         )
-                    } else {
-                        // 没有焦点图时不留空框：换成一张**有真实数据**的速览卡，
-                        // 而不是把快捷入口摊成一整条等宽卡片去填满版面。
-                        DailySummaryCard(
-                            dailyCount = state.dailySongs.size,
-                            recentCount = recentTracks.size,
-                            onOpenDaily = actions.onOpenDaily,
-                            onOpenRecent = actions.onOpenRecentPlays,
-                            modifier = Modifier.weight(2f).fillMaxHeight(),
+                        HeroQuickPanel(
+                            onPlayPersonalFm = actions.onPlayPersonalFm,
+                            onOpenIntelligence = actions.onOpenIntelligence,
+                            onOpenRecentPlays = actions.onOpenRecentPlays,
+                            recentEnabled = recentItems.isNotEmpty(),
+                            enabled = state.dailySongs.isNotEmpty(),
+                            nowPlaying = nowPlaying.track,
+                            isPlaying = nowPlaying.isPlaying,
+                            positionMs = nowPlaying.positionMs,
+                            durationMs = nowPlaying.durationMs,
+                            onOpenPlayer = actions.onOpenPlayer,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
                         )
                     }
-                    HeroQuickPanel(
-                        onPlayPersonalFm = actions.onPlayPersonalFm,
-                        onOpenIntelligence = actions.onOpenIntelligence,
-                        onOpenSimilar = actions.onOpenSimilar,
-                        enabled = state.dailySongs.isNotEmpty(),
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                } else {
+                    // 无焦点图时快捷电台**包进常规区块容器**，而不是三张裸卡横在页首 ——
+                    // 裸卡会让顶端显得孤立、且与下方「每日推荐」的左边缘对不齐。
+                    HomeSectionCard(
+                        title = "快捷电台",
+                        subtitle = "不用挑歌，直接开听",
+                    ) {
+                        HeroQuickRow(
+                            onPlayPersonalFm = actions.onPlayPersonalFm,
+                            onOpenIntelligence = actions.onOpenIntelligence,
+                            onOpenRecentPlays = actions.onOpenRecentPlays,
+                        )
+                    }
+                }
+
+                // ── 每日推荐（独占整行，主角）──
+                //
+                // 改版前这里是 `Row(每日推荐 weight(1.15) + 最近播放 weight(1))` 的
+                // **等高巨卡**，靠 `IntrinsicSize.Max` 让两者底部对齐。问题不在对齐，
+                // 在**版面分配与使用频率倒挂**：每日推荐是每天都要看一眼的核心内容，
+                // 「最近播放」是低频回溯操作，两者却各拿一半宽。
+                // 更糟的是那个对齐约束反过来压低了日推的信息密度 —— 它被限制在
+                // 「和右栏 6 行列表一样高」，只能放 10 首（两列 5 行）。
+                //
+                // 现在：日推独占整行、四列三行 12 首；最近播放降级为下方一条
+                // **横向滚动**的「继续收听」（见 RecentPlaysRail），
+                // 它本来就只需要"扫一眼、点一个"，不需要 12 行列表那么大的版面。
+                if (state.dailySongs.isNotEmpty()) {
+                    DailyMixCard(
+                        songs = state.dailySongs,
+                        onSongClick = actions.onPlayDailyTrack,
+                        onOpenPlaylist = actions.onOpenDaily,
+                        modifier = Modifier.fillMaxWidth(),
+                        compact = true,
                     )
                 }
 
-                // ── 每日推荐（主）+ 最近播放（侧轨）──
-                // `IntrinsicSize.Max` 让两张卡**底部对齐**：各自按内容长高会差出几十像素的
-                // 参差边缘，是大屏上最显眼的「没做完」感。
-                Row(
-                    modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max),
-                    horizontalArrangement = Arrangement.spacedBy(20.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    if (state.dailySongs.isNotEmpty()) {
-                        DailyMixCard(
-                            songs = state.dailySongs,
-                            onSongClick = actions.onPlayDailyTrack,
-                            onOpenPlaylist = actions.onOpenDaily,
-                            modifier = Modifier.weight(1.15f).fillMaxHeight(),
-                            compact = true,
-                        )
-                    }
-                    RecentPlaysSection(
-                        tracks = recentItems,
-                        columns = 2,
-                        onTrackClick = actions.onRecentTrackClick,
-                        onTrackOptions = actions.onTrackOptions,
-                        onOpenAll = actions.onOpenRecentPlays,
-                        onPlayAll = actions.onRecentPlayAll,
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                    )
-                }
+                // ── 继续收听（横向条，替代原「最近播放」巨卡）──
+                RecentPlaysRail(
+                    tracks = recentItems,
+                    onTrackClick = actions.onRecentTrackClick,
+                    onTrackOptions = actions.onTrackOptions,
+                    onOpenAll = actions.onOpenRecentPlays,
+                    onPlayAll = actions.onRecentPlayAll,
+                )
 
                 if (state.visiblePlaylists.isNotEmpty() || state.playlistSourceLoading) {
                     HomeSectionCard(
                         title = "发现歌单",
                         subtitle = playlistSourceHint(state.playlistSource),
+                        contained = false,
                         trailing = {
                             PlaylistSourceChips(
                                 selected = state.playlistSource,
@@ -525,6 +618,7 @@ private fun DesktopHomeLayout(
                                 title = "排行榜",
                                 subtitle = "点击进入榜单曲目",
                                 modifier = Modifier.weight(1f).fillMaxHeight(),
+                                contained = false,
                                 contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 12.dp),
                             ) {
                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -542,6 +636,7 @@ private fun DesktopHomeLayout(
                                 title = "新碟上架",
                                 subtitle = "点击查看专辑曲目",
                                 modifier = Modifier.weight(1.35f).fillMaxHeight(),
+                                contained = false,
                             ) {
                                 CoverTileGrid(
                                     columns = 3,
@@ -562,6 +657,7 @@ private fun DesktopHomeLayout(
                     HomeSectionCard(
                         title = "热门歌手",
                         subtitle = "点击查看歌手曲目",
+                        contained = false,
                     ) {
                         ArtistGrid(
                             artists = artistItems,
@@ -575,6 +671,7 @@ private fun DesktopHomeLayout(
                     HomeSectionCard(
                         title = "新歌速递",
                         subtitle = "按地区查看最新发布",
+                        contained = false,
                         trailing = {
                             NewSongRegionChips(
                                 selected = state.newSongRegion,
@@ -666,7 +763,7 @@ private fun MobileHomeLayout(
             HeroQuickRow(
                 onPlayPersonalFm = actions.onPlayPersonalFm,
                 onOpenIntelligence = actions.onOpenIntelligence,
-                onOpenSimilar = actions.onOpenSimilar,
+                onOpenRecentPlays = actions.onOpenRecentPlays,
             )
         }
 
@@ -788,6 +885,12 @@ private fun MobileHomeLayout(
                                 total = songs.size,
                                 onClick = { actions.onNewSongPlay(songs, index) },
                                 onOptionsClick = { actions.onTrackOptions(track) },
+                                contextMenu = songContextMenuItems(
+                                    SongMenuActions(
+                                        onPlay = { actions.onNewSongPlay(songs, index) },
+                                        onShare = { shareText(songShareText(track)) },
+                                    )
+                                ),
                             )
                         }
                     }
@@ -815,6 +918,12 @@ private fun MobileHomeLayout(
                             total = recentTracks.take(5).size,
                             onClick = { actions.onRecentTrackClick(track, index) },
                             onOptionsClick = { actions.onTrackOptions(track) },
+                            contextMenu = songContextMenuItems(
+                                SongMenuActions(
+                                    onPlay = { actions.onRecentTrackClick(track, index) },
+                                    onShare = { shareText(songShareText(track)) },
+                                )
+                            ),
                         )
                     }
                 }
@@ -1005,53 +1114,185 @@ private fun BannerDots(
 }
 
 /**
- * 焦点区右侧的快捷电台。
+ * 焦点区右侧面板。
  *
- * 与上一版被删掉的四张等宽入口卡的区别：这里是**一列**紧凑动作行，
- * 每行都有明确副标题说明会发生什么，不再占据一整条横向版面去撑高度。
+ * ### L1 改版（2026-10-02）
+ * 原先这里是**固定**的三行电台入口（私人 FM / 心动模式 / 相似歌曲）。
+ * 那三行是**低频**操作，却占着首屏黄金位置 —— 而它恰恰回答不了
+ * 用户打开首页最想知道的两件事之一：「我在听什么 / 接着听什么」。
+ *
+ * 现在按有没有在播曲目分两态：
+ * - **有**在播 → 显示「继续收听」：封面 + 曲名 + 歌手 + 播放进度，点击回到播放页。
+ * - **没有** → 退回原来的三行电台入口（保持完全一致的旧行为，零功能损失）。
+ *
+ * ⚠️ 为什么不两态并存（上面显示在播、下面仍列三行）：260dp 的高度塞不下
+ * 「封面 + 曲名 + 进度」再叠三行入口，会每一行都被压到勉强放下一行字。
+ * 两态互斥反而让每种状态下的信息量都够。
+ *
+ * ### L2 改版（2026-10-02）
+ * 三行入口里的「相似歌曲」废弃 —— 该功能改以**当前在播曲目**为种子，归属播放页
+ * （桌面「相似」页签 / 窄屏第 4 页）。首页留下的空位换成「最近播放」：
+ * 它不依赖登录与日推数据（原「相似歌曲」在没有日推时是禁用态，等于摆设），
+ * 且与有在播时的「继续收听」卡同属「接着听」语义族。
  */
 @Composable
 private fun HeroQuickPanel(
     onPlayPersonalFm: () -> Unit,
     onOpenIntelligence: () -> Unit,
-    onOpenSimilar: () -> Unit,
+    onOpenRecentPlays: () -> Unit,
+    /** 有没有最近播放记录可用（没有时「最近播放」行禁用，给出说明）。 */
+    recentEnabled: Boolean,
     enabled: Boolean,
+    nowPlaying: TrackSummary?,
+    isPlaying: Boolean,
+    positionMs: Long,
+    durationMs: Long,
+    onOpenPlayer: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
+    // 走 BentoCard 而不是手写 Surface：多拿到两层东西 ——
+    // ① 在播态整卡可点时的**按压微缩**（原先是裸 Modifier.clickable，点下去没有任何反馈）；
+    // ② bentoOutline() 那层极淡描边。
+    //
+    // 两态共用一个 BentoCard，靠 onClick 是否为 null 切换：为 null 时 BentoCard 自己
+    // 退化成静态容器。高度由调用方钉死（modifier 带 fillMaxHeight），所以 fillHeight
+    // 可以取 true —— 在播态的 Spacer(weight(1f)) 需要**有界高度**才能把进度条压到底。
+    BentoCard(
         modifier = modifier,
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        onClick = if (nowPlaying != null) onOpenPlayer else null,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+        fillHeight = true,
     ) {
-        Column(
-            Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+        if (nowPlaying != null) {
+            HeroNowPlaying(
+                track = nowPlaying,
+                isPlaying = isPlaying,
+                positionMs = positionMs,
+                durationMs = durationMs,
+            )
+        } else {
+            // 不套 fillMaxHeight：内容本来就靠上，撑满了反而会被 SpaceBetween 拉散。
+            Column(
+                Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    "快捷电台",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
+                )
+                HeroActionRow(
+                    icon = Icons.Filled.Radio,
+                    title = "私人 FM",
+                    subtitle = "连续播放，不用挑歌",
+                    onClick = onPlayPersonalFm,
+                )
+                HeroActionRow(
+                    icon = Icons.Filled.Favorite,
+                    title = "心动模式",
+                    subtitle = if (enabled) "围绕今日推荐延展" else "需要先有每日推荐",
+                    onClick = onOpenIntelligence,
+                    enabled = enabled,
+                )
+                HeroActionRow(
+                    icon = Icons.Filled.History,
+                    title = "最近播放",
+                    subtitle = if (recentEnabled) "接着上次继续听" else "听过的歌会出现在这里",
+                    onClick = onOpenRecentPlays,
+                    enabled = recentEnabled,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 「继续收听」卡：当前在播曲目的标题 + 歌手 + 进度。
+ *
+ * 进度条走 [CpLinearProgress]（见 `AGENTS.md` §6：不许直接调 material3 的
+ * Expressive 实验 API），与全局观感一致。
+ *
+ * ⚠️ **进度必须由调用方传入，这里不读 `AppModel`**：`AppModel.playback` 的 getter
+ * 会取 `MusicBackend` 单例，未 `init()` 时**直接抛 `IllegalStateException`**
+ * （离屏渲染实测）。而且这里读全局单例会让这个 Composable 无法独立测试。
+ * 调用方（`DesktopHomeLayout`）负责把进度喂进来。
+ *
+ * ⚠️ **本组件只画内容，不负责点击与内边距** —— 那两层由外层 `BentoCard` 提供
+ * （`HeroQuickPanel`）。要复用这块内容到别处时，记得自己补一个可点容器。
+ */
+@Composable
+private fun HeroNowPlaying(
+    track: TrackSummary,
+    isPlaying: Boolean,
+    positionMs: Long,
+    durationMs: Long,
+) {
+    // 进度只在拿到合法区间时才画：durationMs 为 0（流媒体还没探到时长）时
+    // 除法会得到 0/NaN，进度条要么空着要么直接崩。
+    val progress = if (durationMs > 0L) {
+        (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+
+    // 点击与内边距都归外层 BentoCard 管：这里只负责内容。
+    // ⚠️ 必须 fillMaxHeight —— 下面那个 Spacer(weight(1f)) 要靠**有界高度**
+    // 才能把进度条推到卡片底部，否则它会紧贴着歌手名。
+    Column(Modifier.fillMaxHeight()) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
+            Icon(
+                if (isPlaying) Icons.Filled.Equalizer else Icons.Filled.Pause,
+                null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(CpIconSize.inline),
+            )
             Text(
-                "快捷电台",
+                if (isPlaying) "正在播放" else "已暂停",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
             )
-            HeroActionRow(
-                icon = Icons.Filled.Radio,
-                title = "私人 FM",
-                subtitle = "连续播放，不用挑歌",
-                onClick = onPlayPersonalFm,
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            track.name,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            track.artist,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        // 占位把进度条推到卡片底部：上方文字行数变化时进度条不会跟着上下跳。
+        Spacer(Modifier.weight(1f))
+        CpLinearProgress(
+            progress = progress,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(6.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                formatTimeMs(positionMs),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            HeroActionRow(
-                icon = Icons.Filled.Favorite,
-                title = "心动模式",
-                subtitle = if (enabled) "围绕今日推荐延展" else "需要先有每日推荐",
-                onClick = onOpenIntelligence,
-                enabled = enabled,
-            )
-            HeroActionRow(
-                icon = Icons.Filled.MusicNote,
-                title = "相似歌曲",
-                subtitle = if (enabled) "找和今日推荐相近的歌" else "需要先有每日推荐",
-                onClick = onOpenSimilar,
-                enabled = enabled,
+            Text(
+                if (durationMs > 0L) formatTimeMs(durationMs) else "--:--",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -1115,12 +1356,12 @@ private fun HeroActionRow(
     }
 }
 
-/** 移动端快捷电台：三张等宽紧凑卡。 */
+/** 移动端快捷电台：三张等宽紧凑卡。第三张是「最近播放」（原「相似歌曲」，已迁往播放页）。 */
 @Composable
 private fun HeroQuickRow(
     onPlayPersonalFm: () -> Unit,
     onOpenIntelligence: () -> Unit,
-    onOpenSimilar: () -> Unit,
+    onOpenRecentPlays: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1128,7 +1369,7 @@ private fun HeroQuickRow(
     ) {
         HeroQuickTile(Icons.Filled.Radio, "私人 FM", onPlayPersonalFm, Modifier.weight(1f))
         HeroQuickTile(Icons.Filled.Favorite, "心动模式", onOpenIntelligence, Modifier.weight(1f))
-        HeroQuickTile(Icons.Filled.MusicNote, "相似歌曲", onOpenSimilar, Modifier.weight(1f))
+        HeroQuickTile(Icons.Filled.History, "最近播放", onOpenRecentPlays, Modifier.weight(1f))
     }
 }
 
@@ -1166,95 +1407,25 @@ private fun HeroQuickTile(
 }
 
 /**
- * 焦点图缺失时的替代卡片 —— 用真实的日推 / 最近播放数量撑起版面，
- * 而不是把快捷入口摊平成一整条等宽卡去填满空位。
- */
-@Composable
-private fun DailySummaryCard(
-    dailyCount: Int,
-    recentCount: Int,
-    onOpenDaily: () -> Unit,
-    onOpenRecent: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier,
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-    ) {
-        Column(
-            Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 18.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column {
-                Text(
-                    "今日速览",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    if (dailyCount > 0) "已为你准备好今日推荐" else "登录后即可获得每日推荐",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                SummaryAction(
-                    label = "每日推荐",
-                    value = "$dailyCount 首",
-                    onClick = onOpenDaily,
-                    enabled = dailyCount > 0,
-                    modifier = Modifier.weight(1f),
-                )
-                SummaryAction(
-                    label = "最近播放",
-                    value = "$recentCount 首",
-                    onClick = onOpenRecent,
-                    enabled = recentCount > 0,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SummaryAction(
-    label: String,
-    value: String,
-    onClick: () -> Unit,
-    enabled: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier,
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-    ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
-            Text(
-                value,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.45f),
-            )
-            Text(
-                label,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.45f),
-            )
-        }
-    }
-}
-
-/**
- * 首页通用区块卡片：标题 + 可选副标题 + 右侧动作，下面是内容。
+ * 首页通用区块：标题 + 可选副标题 + 右侧动作，下面是内容。
  *
  * 全页统一走它，避免每个区块各自拼 `Surface` + `Row` + 字号 —— 那正是上一版
  * 「推荐歌单」「热门歌单」两块看起来像两个不同页面拼在一起的原因。
+ *
+ * @param contained 是否给整块套一层容器卡。
+ *   - `true`（默认）：容器 + 内边距，用于**需要成组**的内容（排行榜的列表行、
+ *     「快捷电台」的三张入口）——那些子项自身没有轮廓，不套容器会散在地上。
+ *   - `false`：**不套容器**，标题直接落在页面背景上，子项自带封面/头像轮廓。
+ *     用于「发现歌单 / 新碟上架 / 热门歌手」这类栅格区块。
+ *
+ *   ⚠️ 为什么要有这个开关：首页原先 7 个区块全是同一套
+ *   `Surface(extraLarge, surfaceContainerLow)`，纵向排下来是一屏**等宽色带**，
+ *   看不出主次，也读不出区块边界（看起来像一个东西重复了 7 遍）。
+ *   把「子项自带轮廓」的那几个去掉容器后，容器只留给真正需要成组的区块，
+ *   容器本身就从「每条都有的背景色」变成了**有意义的分组信号**。
+ *
+ *   ⚠️ 传 `false` 之前先确认子项自带轮廓（封面 / 头像 / 自带底色的行）。
+ *   子项是纯文字的话，去掉容器后会直接飘在页面背景上，反而更难读。
  *
  * @param contentPadding 内容区左右内边距。默认 18dp；列表类内容（每行自带内边距）
  *   可以调小，否则会出现双重缩进。
@@ -1266,39 +1437,73 @@ private fun HomeSectionCard(
     subtitle: String? = null,
     trailing: (@Composable () -> Unit)? = null,
     contentPadding: PaddingValues = PaddingValues(horizontal = 18.dp),
+    contained: Boolean = true,
     content: @Composable () -> Unit,
 ) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-    ) {
-        Column(Modifier.padding(bottom = 18.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth()
-                    .padding(start = 22.dp, end = 22.dp, top = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    if (!subtitle.isNullOrBlank()) {
-                        Text(
-                            subtitle,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                trailing?.invoke()
-            }
+    if (!contained) {
+        // 无容器形态：**必须用和容器形态相同的标题内边距**（start 22 / top 20），
+        // 否则同一页里两种区块的标题左边缘会差出 22dp，比原来更乱。
+        Column(modifier.fillMaxWidth().padding(bottom = 10.dp)) {
+            SectionTitleRow(
+                title = title,
+                subtitle = subtitle,
+                trailing = trailing,
+                modifier = Modifier.padding(start = 22.dp, end = 22.dp, top = 20.dp),
+            )
             Spacer(Modifier.height(14.dp))
             Box(Modifier.padding(contentPadding)) { content() }
         }
+        return
+    }
+    // 走 BentoCard 而不是手写 Surface：拿到统一的 extraLarge 圆角、语义容器色，
+    // 以及 bentoOutline() 那层极淡描边。
+    // ⚠️ fillHeight 必须为 false：内容高度由区块自己决定，传 true 会让它去撑父容器
+    // 的 maxHeight 并用 SpaceBetween 把标题和正文撕开（见 BentoCard 的 KDoc）。
+    BentoCard(
+        modifier = modifier.fillMaxWidth(),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        contentPadding = PaddingValues(bottom = 18.dp),
+        fillHeight = false,
+    ) {
+        SectionTitleRow(
+            title = title,
+            subtitle = subtitle,
+            trailing = trailing,
+            modifier = Modifier.padding(start = 22.dp, end = 22.dp, top = 20.dp),
+        )
+        Spacer(Modifier.height(14.dp))
+        Box(Modifier.padding(contentPadding)) { content() }
+    }
+}
+
+/** 区块标题行。两种容器形态共用，保证标题的字号与内边距完全一致。 */
+@Composable
+private fun SectionTitleRow(
+    title: String,
+    subtitle: String?,
+    trailing: (@Composable () -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        trailing?.invoke()
     }
 }
 
@@ -1716,6 +1921,12 @@ private fun NewSongGrid(
                         total = songs.size,
                         onClick = { onPlay(songs, originalIndex) },
                         onOptionsClick = { onOptions(track) },
+                        contextMenu = songContextMenuItems(
+                            SongMenuActions(
+                                onPlay = { onPlay(songs, originalIndex) },
+                                onShare = { shareText(songShareText(track)) },
+                            )
+                        ),
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -1725,24 +1936,40 @@ private fun NewSongGrid(
 }
 
 /**
- * 「最近播放」区块（桌面）。空态时给出说明，而不是留一张空卡片。
+ * 「继续收听」横向条（桌面）—— 替代原先的「最近播放」两列 12 行列表。
+ *
+ * ### 为什么改成横条
+ * 「最近播放」是**低频回溯**操作：用户打开首页多半是想看今天推荐了什么，
+ * 而不是翻两周前听过什么。原来它和「每日推荐」并排成两块等高巨卡，
+ * 占掉一半首屏宽度去铺 12 行列表；把它收成一条横向滚动条后，
+ * 首屏腾出来的高度直接还给了「每日推荐」。
+ *
+ * 需要完整列表时走 trailing 的「更多」进 `RecentPlaysScreen()` —— 功能不缩水。
+ *
+ * ### 视觉
+ * 刻意**不做成容器卡**（`contained = false` 的等价形态）：它上方是有封面的
+ * 「每日推荐」大卡，这里再用一层同规格容器会把两个区块糊成一块。
+ * 卡片自带封面轮廓，标题直接落在页面背景上、与其余无容器区块对齐。
  */
 @Composable
-private fun RecentPlaysSection(
+private fun RecentPlaysRail(
     tracks: List<TrackSummary>,
-    columns: Int,
     onTrackClick: (TrackSummary, Int) -> Unit,
     onTrackOptions: (TrackSummary) -> Unit,
     onOpenAll: () -> Unit,
     onPlayAll: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    HomeSectionCard(
-        title = "最近播放",
-        subtitle = if (tracks.isEmpty()) "播放过的歌会出现在这里" else "接着上次继续听",
-        modifier = modifier,
-        trailing = {
-            if (tracks.isNotEmpty()) {
+    // 没有最近播放时**整块不出现**：一条空态的横向条既占高度又没有信息，
+    // 而且它下方紧接着就是「发现歌单」——留着只会把首屏往后推。
+    if (tracks.isEmpty()) return
+
+    Column(Modifier.fillMaxWidth()) {
+        // 标题行与 HomeSectionCard 的无容器形态同规格（start 22 / top 20），
+        // 保证和「发现歌单」「热门歌手」的标题左边缘落在同一条竖线上。
+        SectionTitleRow(
+            title = "继续收听",
+            subtitle = "接着上次继续听",
+            trailing = {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = onOpenAll) { Text("更多") }
                     FilledTonalButton(
@@ -1752,48 +1979,90 @@ private fun RecentPlaysSection(
                         Text("播放", style = MaterialTheme.typography.labelLarge)
                     }
                 }
+            },
+            modifier = Modifier.padding(start = 22.dp, end = 22.dp, top = 20.dp),
+        )
+        Spacer(Modifier.height(14.dp))
+        LazyScrollRow(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 22.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            itemsIndexed(tracks) { index, track ->
+                RecentPlayCard(
+                    track = track,
+                    onClick = { onTrackClick(track, index) },
+                    onOptionsClick = { onTrackOptions(track) },
+                )
             }
-        },
-        contentPadding = PaddingValues(start = 8.dp, end = 8.dp),
+        }
+    }
+}
+
+/**
+ * 「继续收听」里的一张封面卡：1:1 封面 + 曲名 + 歌手。
+ *
+ * 宽度刻意做窄（160dp）：横向条一屏能露出 6–7 张，用户一眼就看出「可以往右滑」；
+ * 卡片再宽就会看起来像「只有 3 张、右边没了」。
+ */
+@Composable
+private fun RecentPlayCard(
+    track: TrackSummary,
+    onClick: () -> Unit,
+    onOptionsClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.width(160.dp).clickable { onClick() },
     ) {
-        if (tracks.isEmpty()) {
-            ContentState(
-                title = "还没有最近播放",
-                message = "播放歌曲后会显示在这里",
-                modifier = Modifier.padding(horizontal = 8.dp),
+        Box(
+            modifier = Modifier.fillMaxWidth().aspectRatio(1f)
+                .coverFlightSource(CoverFlight.trackKey(track.id), 20.dp),
+        ) {
+            // 占位块常驻最底层，与 PlaylistCoverCard 同一套做法：
+            // URL 有值但图还没到时也要有东西可看。
+            CpCoverPlaceholder(
+                modifier = Modifier.fillMaxSize(),
+                corner = 20.dp,
             )
-        } else {
-            val safeColumns = columns.coerceAtLeast(1)
-            val distributed = remember(tracks, safeColumns) {
-                List(safeColumns) { columnIndex ->
-                    tracks.filterIndexed { index, _ -> index % safeColumns == columnIndex }
-                }
+            if (!track.coverUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = track.coverUrl.resized(300),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(20.dp)),
+                    contentScale = ContentScale.Crop,
+                )
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.Top,
+            // 更多按钮压右上角：封面本身就占满整块，不覆盖上去就没有别的位置可放。
+            Surface(
+                onClick = onOptionsClick,
+                shape = CircleShape,
+                color = Color.Black.copy(alpha = 0.34f),
+                modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(28.dp),
             ) {
-                distributed.forEachIndexed { columnIndex, columnTracks ->
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        columnTracks.forEachIndexed { indexInColumn, track ->
-                            val originalIndex = columnIndex + indexInColumn * safeColumns
-                            SongItem(
-                                track = track,
-                                index = indexInColumn,
-                                total = columnTracks.size,
-                                onClick = { onTrackClick(track, originalIndex) },
-                                onOptionsClick = { onTrackOptions(track) },
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                    }
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Filled.MoreVert, "更多",
+                        tint = Color.White,
+                        modifier = Modifier.size(CpIconSize.inline),
+                    )
                 }
             }
         }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            track.name,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            track.artist,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -1826,8 +2095,11 @@ private fun DailyMixCard(
         if (overImage) Color.White.copy(alpha = 0.2f) else MaterialTheme.colorScheme.primaryContainer
     val actionContent =
         if (overImage) Color.White else MaterialTheme.colorScheme.onPrimaryContainer
-    // compact（桌面主体左栏）走两列轨道：10 首 = 5 行，正好和右栏「最近播放」6 行齐平。
-    val previewTracks = if (compact) songs.take(10) else songs.take(4)
+    // compact（桌面独占整行）走**四列轨道**：12 首 = 3 行。
+    // 原先 compact 是两列 10 首，与右栏「最近播放」的 6 行列表刻意保持等高；
+    // 改版后最近播放已挪走（见 L2 的「继续收听」横条），不再有对齐约束，
+    // 于是把列数提上来换更高的信息密度 —— 同样高度下多放 20% 的曲目。
+    val previewTracks = if (compact) songs.take(DESKTOP_DAILY_COUNT) else songs.take(4)
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -1905,7 +2177,8 @@ private fun DailyMixCard(
                     songs = previewTracks,
                     onSongClick = onSongClick,
                     overImage = overImage,
-                    columns = if (compact) 2 else 1,
+                    // 桌面独占整行 ⇒ 4 列；窄屏（移动）仍是单列。
+                    columns = if (compact) DESKTOP_DAILY_COLUMNS else 1,
                 )
             }
         }
@@ -2030,7 +2303,6 @@ private fun responsiveDp(width: Float, min: Float, max: Float, start: Float, end
 
 enum class HomeGeneratedPlaylistKind {
     Static,
-    SimilarFromDaily,
     IntelligenceFromDaily,
 }
 
@@ -2046,35 +2318,41 @@ class HomeGeneratedPlaylistScreen(
      */
     private val startIndex: Int? = null,
     private val kind: HomeGeneratedPlaylistKind = HomeGeneratedPlaylistKind.Static,
-    /** 拉取相似 / 心动歌曲的种子曲目 id（这类页面本身不携带曲目，种子必须由调用方传入）。 */
+    /** 拉取心动歌曲的种子曲目 id（这类页面本身不携带曲目，种子必须由调用方传入）。 */
     private val seedTrackId: String? = null,
+    /**
+     * 心动模式的 `pid`（歌单上下文，约定传「我喜欢的音乐」收藏夹 id）。
+     * 上游把 `pid=0` 当非法请求 —— 没有收藏夹时该入口拿不到推荐，属于正常降级。
+     */
+    private val seedPlaylistId: Long? = null,
 ) : Screen {
     @Composable
     override fun Content() {
         val model = rememberScreenModel { PlaylistDetailScreenModel() }
         val sourceTracks by rememberUpdatedState(initialTracks)
         val navigator = LocalNavigator.currentOrThrow
-        LaunchedEffect(kind, playlist.id, seedTrackId, sourceTracks.firstOrNull()?.id) {
+        LaunchedEffect(kind, playlist.id, seedTrackId, seedPlaylistId, sourceTracks.firstOrNull()?.id) {
             when (kind) {
                 HomeGeneratedPlaylistKind.Static -> Unit
-                HomeGeneratedPlaylistKind.SimilarFromDaily -> {
-                    val seed = seedTrackId ?: sourceTracks.firstOrNull()?.id ?: return@LaunchedEffect
-                    val result = try {
-                        AppModel.musicRepository.getSimilarSongs(seed)
-                    } catch (e: Exception) {
-                        BackendResult.Error(e.message ?: "获取相似歌曲失败", cause = e)
-                    }
-                    val tracks = (result as? BackendResult.Success)?.data.orEmpty()
-                    navigator.replace(HomeGeneratedPlaylistScreen(playlist, tracks))
-                }
                 HomeGeneratedPlaylistKind.IntelligenceFromDaily -> {
                     val seed = seedTrackId ?: sourceTracks.firstOrNull()?.id ?: return@LaunchedEffect
                     val result = try {
-                        AppModel.musicRepository.getIntelligenceSongs(seed)
+                        AppModel.musicRepository.getIntelligenceSongs(seed, seedPlaylistId ?: 0L)
                     } catch (e: Exception) {
                         BackendResult.Error(e.message ?: "获取心动歌曲失败", cause = e)
                     }
                     val tracks = (result as? BackendResult.Success)?.data.orEmpty()
+                    if (tracks.isEmpty()) {
+                        // 空结果必须给出原因：恒空会显得像按钮坏了，而真实原因
+                        // 可能是音源不支持 / 上游报错 / 账号还没有红心歌曲。
+                        cp.player.app.ui.util.UiEvents.notify(
+                            when (result) {
+                                is BackendResult.Unsupported -> "当前音源不支持心动模式"
+                                is BackendResult.Error -> result.message
+                                else -> "心动模式暂无推荐：需要有红心歌曲（登录并收藏过歌曲）"
+                            }
+                        )
+                    }
                     navigator.replace(HomeGeneratedPlaylistScreen(playlist, tracks))
                 }
             }
@@ -2196,6 +2474,24 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
                                             }
                                         },
                                         onOptionsClick = { selectedTrack = track },
+                                        contextMenu = songContextMenuItems(
+                                            SongMenuActions(
+                                                onPlay = {
+                                                    CoverFlight.play(track.id, track.coverUrl)
+                                                    scope.launch {
+                                                        AppModel.playback.playQueue(
+                                                            recentTracks.map { toMediaId(it.id) },
+                                                            startIndex = index,
+                                                        )
+                                                    }
+                                                },
+                                                onAddToQueue = {
+                                                    scope.launch { AppModel.playback.addToQueue(toMediaId(track.id)) }
+                                                    cp.player.app.ui.util.UiEvents.notify("已加入播放队列")
+                                                },
+                                                onShare = { shareText(songShareText(track)) },
+                                            )
+                                        ),
                                         modifier = Modifier.weight(1f),
                                     )
                                 }
