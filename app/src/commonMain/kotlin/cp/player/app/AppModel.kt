@@ -17,6 +17,7 @@ import cp.player.core.provider.ProviderCookieStorage
 import cp.player.core.util.SettingsStorage
 import cp.player.app.repository.AuthRepository
 import cp.player.app.repository.MusicRepository
+import cp.player.app.repository.SocialRepository
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -78,6 +79,14 @@ object AppModel {
 
     /** Application-facing repository; new UI code should use this instead of raw API. */
     val musicRepository: MusicRepository get() = MusicRepository(backend.musicApi)
+
+    /**
+     * 私信 / 联系人门面。
+     *
+     * 与 [musicRepository] 同样每次访问新建 —— 它只是 `MusicApiService` 的一层**无状态**
+     * 解析包装（真正有状态、需要单例的是 [settings] 那一类）。
+     */
+    val socialRepository: SocialRepository get() = SocialRepository(backend.musicApi)
 
     val authRepository: AuthRepository get() = AuthRepository(backend.musicApi)
 
@@ -611,12 +620,34 @@ object AppModel {
         _userProfile.value = profile
         // 收藏列表与账号绑定，资料刷新后同步刷新
         runCatching { playback.refreshFavorites() }
+        // 未读私信数同样绑定账号：登出 / 切号后角标必须跟着变，否则会留着上一个账号的数字。
+        if (profile != null) refreshUnreadMessages() else _unreadMessages.value = 0
         return profile
+    }
+
+    /**
+     * 未读私信数（侧栏 / 顶栏角标）。
+     *
+     * 由 [refreshUnreadMessages] 主动拉取，**不做轮询** —— 这个值只在「应用启动 / 登录成功 /
+     * 打开消息页」这几个时点有意义，后台定时打 `pl/count` 只是白白占连接。
+     */
+    private val _unreadMessages = MutableStateFlow(0)
+    val unreadMessagesFlow: StateFlow<Int> = _unreadMessages.asStateFlow()
+
+    fun refreshUnreadMessages() {
+        modelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _unreadMessages.value = runCatching { socialRepository.getUnreadCount() }.getOrDefault(0)
+        }
+    }
+
+    fun clearUnreadMessages() {
+        _unreadMessages.value = 0
     }
 
     /** 清空当前用户资料（登出后调用）。 */
     fun clearUserProfile() {
         _userProfile.value = null
+        _unreadMessages.value = 0
         modelScope.launch { runCatching { playback.refreshFavorites() } }
     }
 
