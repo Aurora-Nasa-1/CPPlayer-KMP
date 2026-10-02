@@ -6,6 +6,32 @@ import cp.player.core.provider.BackendProvider
 expect fun currentTimeMillis(): Long
 
 /**
+ * 本地时区下的日期时间分量。
+ *
+ * 刻意**不用 kotlinx-datetime 的 `LocalDateTime`** —— 那个库在本工程的运行时类路径上
+ * 会解析成与编译期不匹配的版本（`kotlinx.datetime.Instant` 是 0.6.x 的类，
+ * 而 0.7.x 起它被改成指向 `kotlin.time.Instant` 的 typealias，类文件根本不存在），
+ * 一旦碰到就抛 `NoClassDefFoundError`。同一个坑已经让 [currentTimeMillis] 改成
+ * expect/actual 了，这里沿用同一套做法。
+ */
+data class LocalDateTimeParts(
+    val year: Int,
+    val month: Int,
+    val day: Int,
+    val hour: Int,
+    val minute: Int,
+    val second: Int,
+)
+
+/**
+ * 把 epoch 毫秒换算成**本地时区**的日期时间分量。
+ *
+ * 需要 UTC 语义时请自行换算，不要指望这个函数 —— 它跟随系统时区，
+ * 而「发行年份」这类信息用本地时区与 UTC 会差一天，但不会差一年。
+ */
+expect fun localDateTimeOf(epochMillis: Long): LocalDateTimeParts
+
+/**
  * 平台支持抽象（端口探测 / 文件系统 / ELF 校验 / 入口解析）。
  *
  * commonMain 声明 expect；jvmMain 提供 JVM 共享 actual（Android + Desktop 共用）。
@@ -31,6 +57,13 @@ expect object PlatformSupport {
      * @return true 成功
      */
     fun unzipTo(zipPath: String, destDir: String): Boolean
+
+    /**
+     * 把目录递归打包为 zip 文件（保留相对路径，空目录也进包）。
+     * 目标文件已存在时覆盖；父目录不存在时自动创建。
+     * @return true 成功；失败时不留半个坏包（已尽力删除半成品）
+     */
+    fun zipDirTo(dirPath: String, zipPath: String): Boolean
 
     /** 递归删除目录 */
     fun deleteRecursively(path: String): Boolean

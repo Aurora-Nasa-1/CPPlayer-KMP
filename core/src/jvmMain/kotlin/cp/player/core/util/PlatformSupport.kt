@@ -3,10 +3,30 @@ package cp.player.core.util
 import java.io.File
 import java.io.FileOutputStream
 import java.net.ServerSocket
+import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
 
 /** JVM actual：直接调用 System.currentTimeMillis()。 */
 actual fun currentTimeMillis(): Long = System.currentTimeMillis()
+
+/**
+ * JVM actual：走 `java.time`，与桌面 / Android 的系统时区一致。
+ *
+ * Android 侧要求 minSdk ≥ 26（`java.time` 从 API 26 起可用）—— 本项目已满足。
+ */
+actual fun localDateTimeOf(epochMillis: Long): LocalDateTimeParts {
+    val dt = java.time.Instant.ofEpochMilli(epochMillis)
+        .atZone(java.time.ZoneId.systemDefault())
+    return LocalDateTimeParts(
+        year = dt.year,
+        month = dt.monthValue,
+        day = dt.dayOfMonth,
+        hour = dt.hour,
+        minute = dt.minute,
+        second = dt.second,
+    )
+}
 
 /**
  * JVM 共享平台支持（Android 与 Desktop 共用）。
@@ -63,6 +83,38 @@ actual object PlatformSupport {
     }
 
     actual fun deleteRecursively(path: String): Boolean = File(path).deleteRecursively()
+
+    actual fun zipDirTo(dirPath: String, zipPath: String): Boolean = try {
+        val root = File(dirPath)
+        val dest = File(zipPath)
+        dest.parentFile?.mkdirs()
+        ZipOutputStream(dest.outputStream().buffered()).use { zos ->
+            // entry 名统一 '/' 分隔（zip 规范），根目录本身不写条目；
+            // 目录条目以 '/' 结尾，保证空目录也能进包，unzipTo 端能还原结构。
+            fun add(file: File, rel: String) {
+                if (file.isDirectory) {
+                    if (rel.isNotEmpty()) {
+                        zos.putNextEntry(ZipEntry("$rel/"))
+                        zos.closeEntry()
+                    }
+                    val children = file.listFiles().orEmpty().sortedBy { it.name }
+                    for (child in children) {
+                        add(child, if (rel.isEmpty()) child.name else "$rel/${child.name}")
+                    }
+                } else {
+                    zos.putNextEntry(ZipEntry(rel))
+                    file.inputStream().use { it.copyTo(zos) }
+                    zos.closeEntry()
+                }
+            }
+            add(root, "")
+        }
+        true
+    } catch (e: Exception) {
+        // 别留下半个坏包：调用方按 false 处理时，若目标路径残留空壳会误导后续判断。
+        runCatching { File(zipPath).delete() }
+        false
+    }
 
     actual fun readTextFile(path: String): String? = File(path).takeIf { it.exists() }?.readText()
 
