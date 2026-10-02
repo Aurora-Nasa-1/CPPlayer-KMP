@@ -167,7 +167,7 @@ class IntegrationRoutingTest {
 
     @Test
     fun `路由表与对外文档中的路径一致`() {
-        // 这些字符串是**已发布的契约**（docs/INTEGRATION_API.md）。
+        // 这些字符串是**已发布的契约**（docs/dev/INTEGRATION_API.md）。
         // 改它们等于改对外接口，必须同时改文档 —— 这个测试就是那道提醒。
         assertEquals("/api/v1/meta", IntegrationRoutes.META)
         assertEquals("/api/v1/providers", IntegrationRoutes.PROVIDERS)

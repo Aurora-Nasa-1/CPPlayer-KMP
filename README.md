@@ -6,6 +6,9 @@
 > 本仓库是原 Android 项目 `CPPlayer` 的 KMP 移植版。旧项目与第三方音源模块源码
 > 作为**只读参考**保留在 `reference/` 下，不参与构建。
 
+**文档入口**：[用户使用指南](docs/USER_GUIDE.md)（安装 / 音源 / 账号 / 推送 / FAQ）
+· [开发者文档索引](docs/README.md)（架构 / Provider 开发 / 集成契约 / 发布）
+
 ---
 
 ## 模块划分
@@ -25,12 +28,12 @@ app-android ──▶ app ──▶ core
 ```
 
 前端访问后端的**唯一入口**是 `cp.player.core.MusicBackend`。Provider / Module / API
-等内部组件不应被前端直接触碰 —— 详见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+等内部组件不应被前端直接触碰 —— 详见 [`docs/dev/ARCHITECTURE.md`](docs/dev/ARCHITECTURE.md)
 （含当前越界点的清单）。
 
 > **后端包名已从 `cp.player.kmp` 改为 `cp.player.core`**（与模块名对齐）。
 > 这会让 JNI 导出符号前缀同步变化，用旧前缀编译的音源模块需要重新构建 ——
-> 详见 [`docs/RESTRUCTURE_PLAN.md`](docs/RESTRUCTURE_PLAN.md) §7.3。
+> 详见 [`docs/history/RESTRUCTURE_PLAN.md`](docs/history/RESTRUCTURE_PLAN.md) §7.3。
 
 ### 为什么安卓入口是独立模块
 
@@ -62,10 +65,10 @@ CPPlayer-KMP/
 ├── gradle.properties              # 版本号唯一来源：app.versionName / versionCode / releaseChannel
 ├── gradle/libs.versions.toml      # 版本目录
 ├── docs/
-│   ├── ARCHITECTURE.md            # 模块职责与依赖规则
-│   ├── RESTRUCTURE_PLAN.md        # 结构迁移方案
-│   ├── PROVIDER_DEV_GUIDE.md      # Provider 插件开发指南（面向第三方音源作者）
-│   └── RELEASE.md                 # 发布流程
+│   ├── README.md                  # 文档导航（用户 / 开发者 / 历史归档三档）
+│   ├── USER_GUIDE.md              # 用户使用指南
+│   ├── dev/                       # 开发者文档：架构、Provider 指南、集成契约、发布、JBR 打包
+│   └── history/                   # 历史方案与审计归档（内容以写作时点为基准）
 ├── scripts/                       # release.ps1 / fastrelease-install.ps1
 ├── native/windows-smtc/           # 决策记录：SMTC 已由 JMTC 实现，此处方案已废弃（无代码）
 ├── reference/                     # 只读参考，不参与构建
@@ -121,8 +124,8 @@ commonMain  ──▶  jvmMain  ──▶  { androidMain, desktopMain }
 Ktor 3.0.3 / kotlinx-serialization 1.7.3 / coroutines 1.9.0 / datetime 0.6.1 /
 Media3 1.4.1。版本号唯一来源是 `gradle/libs.versions.toml`。
 
-发布流程见 [`docs/RELEASE.md`](docs/RELEASE.md)，桌面端打包运行时（JBR）见
-[`docs/JBR_PACKAGING.md`](docs/JBR_PACKAGING.md)。
+发布流程见 [`docs/dev/RELEASE.md`](docs/dev/RELEASE.md)，桌面端打包运行时（JBR）见
+[`docs/dev/JBR_PACKAGING.md`](docs/dev/JBR_PACKAGING.md)。
 
 ---
 

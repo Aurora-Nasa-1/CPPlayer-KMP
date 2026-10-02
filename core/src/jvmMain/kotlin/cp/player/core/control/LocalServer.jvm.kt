@@ -270,7 +270,7 @@ internal class KtorLocalServer(
      * 所以构造期快照在这里永远是最新的。
      *
      * 错误形态沿用旧的 `{ "code": 401, "msg": … }`，**不是**数据面的 `{ "error": … }`：
-     * 这是为兼容已对接的接收端刻意保留的（见 `docs/INTEGRATION_API.md` §3.2 的例外说明）。
+     * 这是为兼容已对接的接收端刻意保留的（见 `docs/dev/INTEGRATION_API.md` §3.2 的例外说明）。
      */
     private suspend fun ApplicationCall.ensureAuthorized(): Boolean {
         if (isTokenSatisfied(config, request.queryParameters["token"])) return true

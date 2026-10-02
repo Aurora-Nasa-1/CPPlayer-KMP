@@ -523,7 +523,7 @@ Ktor 的请求处理跑在 **CIO 的线程**上，于是：
 > - `createLocalServer` 新增 `integration` 与 `activeConfig`（实时读取器）
 > - 新增测试 27 个：`IntegrationRoutingTest`(12) / `IntegrationDataApiTest`(9) / `IntegrationBoundaryTest`(1) /
 >   `LocalServerConfigIntegrationKeysTest`(5)；`:core:desktopTest` 共 131 个全绿
-> - 面向集成方的契约手册：`docs/INTEGRATION_API.md`
+> - 面向集成方的契约手册：`docs/dev/INTEGRATION_API.md`
 >
 > **实现期踩到的三个坑（都不是业务问题，但都会静默出错）**
 > 1. 路由表常量对象与挂载句柄接口**不能同名**（都叫 `IntegrationRoutes` → `Redeclaration`）
@@ -717,7 +717,7 @@ Ktor 的请求处理跑在 **CIO 的线程**上，于是：
 | `PROVIDER_DEV_GUIDE.md` | **面向 Provider 作者**（怎么给 CPPlayer 供数据）；本方案是**反向**（怎么把数据给第三方），两者互补 |
 | `RESTRUCTURE_PLAN.md` | 本方案沿用其 Phase 编排与「明确不做」的写法 |
 | `MusicBackend.kt` 增量迁移 TODO | **同一件事的另一面**：那份「增量迁移」的进度就是 `meta.capabilities` 的内容 |
-| `docs/INTEGRATION_API.md` | ✅ **已建**（Phase 0 起；Phase 1 补齐四个只读端点，Phase 2 补描述符与鉴权，Phase 3 补播控与事件流）：面向集成方的**契约手册**（本文件 §8 的展开版，含完整字段表与示例） |
+| `docs/dev/INTEGRATION_API.md` | ✅ **已建**（Phase 0 起；Phase 1 补齐四个只读端点，Phase 2 补描述符与鉴权，Phase 3 补播控与事件流）：面向集成方的**契约手册**（本文件 §8 的展开版，含完整字段表与示例） |
 
 ---
 

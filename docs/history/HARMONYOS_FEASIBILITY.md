@@ -42,7 +42,7 @@
 
 1. `commonMain` 里 **零** `java.*` / `javax.*` / `android.*` 直接 import（已全量 grep 核实）。
 2. 平台能力收口在 **47 个 `expect` 声明**里（core 19 + app 28），没有"到处 `if (isAndroid)`"的散落判断。
-3. `MusicBackend` 是明确的单一后端门面，`docs/ARCHITECTURE.md` §4 已经写死了源集分层规则 —— 移植时不需要重新发现边界。
+3. `MusicBackend` 是明确的单一后端门面，`docs/dev/ARCHITECTURE.md` §4 已经写死了源集分层规则 —— 移植时不需要重新发现边界。
 
 > ⚠️ 但有一个**例外**，见 §3.1：`commonMain` 里存在一处 JVM-only 三方库的类型泄漏，
 > 它使 `:core` 今天**无法编译到任何非 JVM 目标**。
@@ -152,7 +152,7 @@ commonMain ──┬─▶ jvmMain ──▶ { androidMain, desktopMain }
 ```
 
 ⚠️ 这一步会**连带影响**：
-- `docs/ARCHITECTURE.md` §4 的源集规则表要改；
+- `docs/dev/ARCHITECTURE.md` §4 的源集规则表要改；
 - `IntegrationBoundaryTest` 目前**扫四个源集**钉住 `integration/` 包边界（见 ARCHITECTURE §1），
   加了 `ohosMain` 必须同步扩到五个 —— 否则会变成"看起来在守着其实没扫到"。
 
@@ -186,7 +186,7 @@ external fun analyzeAudioFile(path: String): String
 ```
 
 `external fun` 走 JNI，native 侧必须导出 `Java_cp_player_core_provider_JniProvider_*` 符号
-（`docs/ARCHITECTURE.md` §5 已记录这条硬绑定及其"load 成功但一调用就崩"的伪装症状）。
+（`docs/dev/ARCHITECTURE.md` §5 已记录这条硬绑定及其"load 成功但一调用就崩"的伪装症状）。
 
 **鸿蒙上的等价物是 NAPI**，不是 JNI。所以：
 

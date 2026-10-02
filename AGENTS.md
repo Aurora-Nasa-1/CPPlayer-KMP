@@ -2,7 +2,7 @@
 
 > **任何 AI 在本仓库动手前先读这一页。** 这里只写「不遵守就会出事」的规则，以及
 > 「细节去哪找」。架构 / 模块 / 构建命令见 [`README.md`](README.md)；
-> 集成契约、Provider 开发、重构计划见 [`docs/`](docs/)。
+> 集成契约、Provider 开发见 [`docs/dev/`](docs/dev/)，历史方案归档见 [`docs/history/`](docs/history/)。
 >
 > 领域细则（渲染后端 / seek 管线 / 缓存 / JNI / 构建工具链 / 平台集成）见
 > `.workbuddy-ai/memory/TOPICS.md`，决策来历见 `.workbuddy-ai/memory/LOG.md`

@@ -360,7 +360,7 @@ fun rememberPlayerMoreSheetState(): PlayerMoreSheetState = remember { PlayerMore
  *
  * 背景：这套东西原先内联在 `PlayerScreenContent` 的 `PlayerPage` 调用点里，
  * 桌面宽屏（`DesktopPlayerScreen`）作为**桌面默认形态**反而完全够不到这组功能
- * —— 详见 docs/PLAYER_MORE_MENU_PORT.md 缺口 A。收进共享宿主后两套布局
+ * —— 详见 docs/history/PLAYER_MORE_MENU_PORT.md 缺口 A。收进共享宿主后两套布局
  * 复用同一实现，不会再各自长出一份然后漂移。
  *
  * 注意：`PlayerMoreBottomSheet` 内部每个动作按钮都会先回调动作、再自行 `onDismiss`，

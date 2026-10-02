@@ -2,7 +2,7 @@
 
 面向**第三方软件**的契约手册：让别的程序把 CPPlayer 当成一个音源来用。
 
-> 设计动机、边界纪律与分阶段计划见 [`INTEGRATION_PLAN.md`](./INTEGRATION_PLAN.md)。
+> 设计动机、边界纪律与分阶段计划见 [`INTEGRATION_PLAN.md`](../history/INTEGRATION_PLAN.md)。
 > 本文只讲**已经能用**的部分。
 
 ---

@@ -34,7 +34,7 @@ env:
   JAVA_VERSION: "21"
   # JetBrains Runtime —— **打进产物**的运行时（jpackage 的 --runtime-image）。
   # 目的只有一个：让 WindowDraggableArea 走原生 WindowMove（贴边吸附 / 拖出还原 / 跟手）。
-  # 方案与验收清单见 docs/JBR_PACKAGING.md。
+  # 方案与验收清单见 docs/dev/JBR_PACKAGING.md。
   #
   # ⚠️ 三点必须记住：
   #   1. 来源是 JetBrains 官方 cache-redirector，**不是 GitHub Releases** ——

@@ -3,7 +3,7 @@
 > 诊断于 2026-09-30，基于**当时工作区**的实际状态（含并行会话的在途改动）。
 > 本文只描述**目标状态与迁移路径**，不含已落地的代码改动。
 >
-> 关联文档：[`ARCHITECTURE.md`](ARCHITECTURE.md)、[`INTEGRATION_API.md`](INTEGRATION_API.md)、
+> 关联文档：[`ARCHITECTURE.md`](../dev/ARCHITECTURE.md)、[`INTEGRATION_API.md`](../dev/INTEGRATION_API.md)、
 > [`DEAD_CODE_AUDIT.md`](DEAD_CODE_AUDIT.md)。
 
 ---

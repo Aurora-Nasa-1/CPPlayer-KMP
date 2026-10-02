@@ -1,7 +1,7 @@
 package cp.player.core.integration
 
 /**
- * Android 描述符写入器：**空实现**（`docs/INTEGRATION_PLAN.md` §10）。
+ * Android 描述符写入器：**空实现**（`docs/history/INTEGRATION_PLAN.md` §10）。
  *
  * ### 为什么不做
  * 描述符的价值在于「第三方进程能读到它」。Android 上两个选项都不成立：

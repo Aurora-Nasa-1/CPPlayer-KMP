@@ -115,8 +115,8 @@ CPPlayer-KMP/
 | 动作 | 内容 |
 |------|------|
 | 重写 `README.md` | 按「后端 / 前端 / 平台入口」重述模块职责，修正目录树与全部技术栈版本号 |
-| 新增 `docs/ARCHITECTURE.md` | 模块职责表、依赖规则、源集分层、边界越界点清单、结构性债务 |
-| 新增 `docs/RESTRUCTURE_PLAN.md` | 本文件 |
+| 新增 `docs/dev/ARCHITECTURE.md` | 模块职责表、依赖规则、源集分层、边界越界点清单、结构性债务 |
+| 新增 `docs/history/RESTRUCTURE_PLAN.md` | 本文件 |
 | 文档集中 | `PROVIDER_DEV_GUIDE.md` → `docs/`；`RELEASE.md` → `docs/` |
 | 参考目录归位 | `API_MODULE_AND_OLD_PROJECT_REPO/` → `reference/`；`3rd-CPPlayer-netcloudMusic-Muti` → `reference/netease-module-rust`；`CPPlayer` → `reference/cp-player-legacy` |
 | 清理 `.gitignore` | 删除失效规则 `CPPlayer/`、`3rd-rust-server/`；新增 `.kotlin/`、`.gradle-verify/`、`build-verify/`、`reference/cp-player-legacy/` |
@@ -147,10 +147,10 @@ Gradle 工程路径 `:kmp-pro` → `:core`、`:androidApp` → `:app-android`。
 | 7 | `.github/workflows/desktop-release.yml` | `:app:${matrix.task}` 不变（`app` 不改名） | — |
 | 8 | `scripts/fastrelease-install.ps1` | 任务名 + APK 路径 | ✅ |
 | 9 | `scripts/release.ps1` | 任务名 | ✅ |
-| 10 | `docs/RELEASE.md` | `androidApp` 路径与任务名 | ✅ |
+| 10 | `docs/dev/RELEASE.md` | `androidApp` 路径与任务名 | ✅ |
 | 11 | `README.md` | 模块表格、目录树、依赖链、构建命令 | ✅ |
-| 12 | `docs/ARCHITECTURE.md` | 全文模块名 + 边界现状修正 | ✅ |
-| 13 | `docs/PROVIDER_DEV_GUIDE.md` | 4 处 `KMP-PRO` → `CPPlayer` | ✅ |
+| 12 | `docs/dev/ARCHITECTURE.md` | 全文模块名 + 边界现状修正 | ✅ |
+| 13 | `docs/dev/PROVIDER_DEV_GUIDE.md` | 4 处 `KMP-PRO` → `CPPlayer` | ✅ |
 | 14 | `app/src/commonMain/.../ui/screen/AboutScreen.kt:156` | 用户可见文案 `"KMP-PRO · Compose Multiplatform"` | ✅ 2026-09-25 已改为 `CPPlayer`（产品名随 `rootProject.name` / `applicationId` 定案，不再是悬置项） |
 | 15 | `app/src/androidMain/.../platform/PlatformActions.android.kt:137` | 注释里的旧模块名 `androidApp` | ✅ 2026-09-25 改为 `app-android` |
 
@@ -258,7 +258,7 @@ git add reference/netease-module-rust
 
 ### 7.2 `.qoder/` 有 132 个文件已被提交
 
-AI 生成的仓库 wiki。内容与 `docs/ARCHITECTURE.md` 重叠，且会随代码漂移而失效。
+AI 生成的仓库 wiki。内容与 `docs/dev/ARCHITECTURE.md` 重叠，且会随代码漂移而失效。
 
 **处置结果**：
 - 2026-09-25 已移出版本控制（`git rm -r --cached .qoder` + 写入 `.gitignore`），文件当时保留在磁盘上。
@@ -295,7 +295,7 @@ JNI 按 `Java_<包名下划线化>_<类名>_<方法名>` 查找符号。宿主�
 受影响的两处（**均已完成**）：
 1. `reference/netease-module-rust/src/util/jni.rs` —— 三个 `#[no_mangle]` 函数名，
    已改为新前缀并提交（模块仓库 `067c150`）；
-2. `docs/PROVIDER_DEV_GUIDE.md` §3.3 —— 第三方模块作者的契约，已同步更新。
+2. `docs/dev/PROVIDER_DEV_GUIDE.md` §3.3 —— 第三方模块作者的契约，已同步更新。
 
 **执行状态（2026-09-30 订正）**：模块仓库的提交 `067c150` **仍未 push 到远端**
 （`git ls-remote origin main` ⇒ 远端 `main` 仍是 `2e09a67`），**但父仓库 gitlink 已经 bump 到

@@ -236,10 +236,10 @@ JBR 的 `WindowMove` 是**原生**接管，双层事件模型变了之后，
 | `app/build.gradle.kts` | 新增 JBR 解析 / 下载 / 校验 / 解压（含 tar-slip 防护），`compose.desktop.application` 里条件设 `javaHome` 并打状态日志 |
 | `.github/workflows/desktop-release.yml` | `env` 加 JBR 坐标；matrix 加 `jbrExt`/`jbrSha`；新增 `Cache JBR` + `Fetch JBR` step（含 sha256 校验与布局断言）；build step 传 `-Pcp.jbrHome` |
 | `.gitignore` | 忽略 `.jbr/` |
-| `docs/JBR_PACKAGING.md` | 本文件（新建） |
+| `docs/dev/JBR_PACKAGING.md` | 本文件（新建） |
 
 **尚未做**（都是刻意留到换 JBR 之前的独立步骤，见 §5）：
 1. 窗口装饰回退开关（「无边框 / 有边框」或「JBR 移动 / 软件移动」）；
 2. `DesktopTitleBar.kt` 里两处 KDoc 的措辞更新 + 那条 `TODO(下一步)` 的销账
    —— **要等真机验证过 §4.1/4.3 之后**再改，改早了就是把未验证的结论写进注释；
-3. 把 JBR 数字进产物的**体积影响**记进 `docs/RELEASE.md`（MSI 会从 ~60MB 涨到 ~90MB+）。
+3. 把 JBR 数字进产物的**体积影响**记进 `docs/dev/RELEASE.md`（MSI 会从 ~60MB 涨到 ~90MB+）。

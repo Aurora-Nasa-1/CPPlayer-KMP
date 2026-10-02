@@ -20,7 +20,7 @@ import kotlin.test.fail
 /**
  * `UnifiedMusicSource` 的**契约测试**。
  *
- * 钉住四件此前「说的和做的不一致」的事（详见 `docs/INTEGRATION_PLAN.md` §3.1）：
+ * 钉住四件此前「说的和做的不一致」的事（详见 `docs/history/INTEGRATION_PLAN.md` §3.1）：
  *
  * 1. **畸形 mediaId 必须返回 `BackendResult.Error`，不能抛异常。**
  *    原先三处 `CPMediaId.parse()` 都在 `try` 之外，`IllegalArgumentException` 会直接抛给调用方
