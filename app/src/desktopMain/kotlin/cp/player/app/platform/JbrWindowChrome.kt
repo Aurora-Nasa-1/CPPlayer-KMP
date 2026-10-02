@@ -1,0 +1,205 @@
+package cp.player.app.platform
+
+import sun.misc.Unsafe
+import java.awt.Frame
+import java.awt.Window
+import java.lang.reflect.AccessibleObject
+import java.lang.reflect.Method
+
+/**
+ * JBR（JetBrains Runtime）自定义标题栏 API 的反射封装。
+ *
+ * ## 为什么存在这个文件
+ *
+ * Compose 的 `WindowDecoration.Undecorated` 生成的是纯 `WS_POPUP` 窗口（见
+ * [WindowsWindowCorners] 的说明）：没有 DWM 阴影、没有原生缩放边框、没有 Aero Snap、
+ * 最大化不认账 —— 本仓库为这些洞手写了四个补丁。JBR 提供了另一条路：
+ * **窗口在系统层面保持有边框**（`WS_THICKFRAME` 保留），只把客户区向上扩展盖过标题栏，
+ * 于是阴影 / 缩放 / 贴边分屏 / 原生最大化 / Win11 自动圆角全部白拿，
+ * 最小化 / 最大化 / 关闭三个窗口钮由 JBR 画在客户区右上角。
+ *
+ * 这套 API（`WindowDecorations`，JBR b1367.22+ 才有，旧 JBR 17 的
+ * `setCustomDecorationEnabled` 已废弃且不兼容）只随 JBR 分发，普通 JDK 里没有这些类；
+ * 本项目又要保留「探测不到 JBR 就回退自绘无边框」的双轨能力，
+ * 所以**全程反射**：本文件在普通 JDK 上编译运行都不报错，`isSupported` 为 false 而已。
+ *
+ * ## 平台支持
+ *
+ * 官方文档明确：仅 **Windows 与 macOS**。Linux 上 `isSupported` 恒为 false。
+ *
+ * ## 反射为什么能突破模块限制
+ *
+ * `java.awt.Window$WindowDecorations` 与其方法不是 public 的，`java.desktop` 又没有
+ * 对类路径（unnamed module）open `java.awt`，常规 `setAccessible` 会被 Jigsaw 拒绝。
+ * 绕法：`AccessibleObject.override` 是该类的**第一个实例字段**，用同布局的替身类算出偏移，
+ * 再用 `sun.misc.Unsafe.putBooleanVolatile` 直接把它翻成 true —— 访问检查被整体跳过。
+ * `jdk.unsupported` 模块 open 了 `sun.misc`，取 `theUnsafe` 本身不需要任何 hack。
+ * （此手法来自 ButterCam/compose-jetbrains-theme 与 JetBrains 自家的用法，已被广泛验证。）
+ *
+ * ## 版式约束（谁可点、谁可拖）
+ *
+ * JBR 的原生拖拽靠 hit-test：光标落在标题栏高度内时，**上一次** `forceHitTest` 的值
+ * 决定这次按下归谁。Java 侧的约定（官方文档）：除 Exit 与 Wheel 外，每个鼠标事件
+ * 都要回一次 `forceHitTest`。ComposePanel 在整个窗口都挂了监听器 ⇒ 默认整窗被判成
+ * 客户区、原生拖拽失效，所以调用方（`DesktopTitleBar`）必须桥接：
+ * 可交互控件上回 `forceClient(true)`，空白拖拽区回 `forceClient(false)`。
+ */
+object JbrWindowChrome {
+
+    /** 当前运行环境是否具备安装条件（Windows/macOS + JBR 新版 WindowDecorations）。 */
+    val isSupported: Boolean
+        get() = isSupportedOs && api != null
+
+    private val isSupportedOs: Boolean =
+        System.getProperty("os.name").orEmpty().let { it.startsWith("Windows") || it.startsWith("Mac OS") }
+
+    /** `java.awt.Window$WindowDecorations` 的探测与缓存。探测失败不抛出，只置空。 */
+    private val api: WindowDecorationsApi? by lazy {
+        runCatching { WindowDecorationsApi.discover() }
+            .onFailure { println("[JbrWindowChrome] JBR WindowDecorations 探测失败（将回退自绘无边框方案）：$it") }
+            .getOrNull()
+    }
+
+    /**
+     * 给窗口安装自定义标题栏，失败返回 null（调用方自行重试 / 回退）。
+     *
+     * [titleBarHeightPx] 是标题栏高度，**单位是 Swing 像素**（官方文档口径：
+     * 从客户区顶部量起、不含顶部边框），调用方用 Compose density 换算。
+     * 可重复调用（换显示器 / 改缩放后重装一次即可更新高度）。
+     */
+    fun install(window: Window, titleBarHeightPx: Float): Controller? {
+        val a = api ?: return null
+        if (window !is Frame) {
+            println("[JbrWindowChrome] 窗口不是 Frame（${window.javaClass.name}），无法安装")
+            return null
+        }
+        return runCatching {
+            val bar = a.createCustomTitleBar.invoke(a.windowDecorations)
+                ?: return null
+            val setHeight = findMethod(bar.javaClass, "setHeight", paramCount = 1) ?: return null
+            a.setCustomTitleBar.invoke(a.windowDecorations, window, bar)
+            Controller(
+                window = window,
+                api = a,
+                titleBar = bar,
+                setHeight = setHeight,
+                forceHitTest = findMethod(bar.javaClass, "forceHitTest", paramCount = 1),
+                putProperty = findMethod(bar.javaClass, "putProperty", paramCount = 2),
+                getRightInset = findMethod(bar.javaClass, "getRightInset", paramCount = 0),
+            ).also { it.setHeight(titleBarHeightPx) }
+        }.onFailure {
+            println("[JbrWindowChrome] 安装自定义标题栏失败：$it")
+        }.getOrNull()
+    }
+
+    /** 已安装的自定义标题栏句柄。所有方法都吞异常：装饰是外观，绝不能反过来弄崩应用。 */
+    class Controller internal constructor(
+        private val window: Frame,
+        private val api: WindowDecorationsApi,
+        private val titleBar: Any,
+        private val setHeight: Method,
+        private val forceHitTest: Method?,
+        private val putProperty: Method?,
+        private val getRightInset: Method?,
+    ) {
+
+        /** 原生窗口钮区宽度（像素）：JBR 画的最小化 / 最大化 / 关闭占据的右侧空间，布局要给它留位。 */
+        val rightInsetPx: Float
+            get() = getRightInset?.let { m ->
+                runCatching { m.invoke(titleBar) as? Float }.getOrNull()
+            } ?: 0f
+
+        /**
+         * 回应 hit-test：`true` = 这一片是客户区（交互归应用），`false` = 交给原生
+         * （拖拽 / 双击最大化 / 右键系统菜单）。必须在鼠标事件回调里调用（EDT 上），
+         * 且 Exit / Wheel 之外**每个事件都要回**——原生侧用的是「上一次」的值。
+         */
+        fun forceClient(client: Boolean) {
+            val m = forceHitTest ?: return
+            runCatching { m.invoke(titleBar, client) }
+        }
+
+        /** 原生窗口钮的明暗。`dark = true` 是深色主题配色（深底浅色图标），跟随应用主题。 */
+        fun setControlsDark(dark: Boolean) {
+            val m = putProperty ?: return
+            runCatching { m.invoke(titleBar, "controls.dark", dark) }
+        }
+
+        /** 撤销自定义标题栏、恢复系统标题栏（目前只有测试场景用得上）。 */
+        fun uninstall() {
+            runCatching { api.setCustomTitleBar.invoke(api.windowDecorations, window, null) }
+        }
+
+        // install() 装完后立即设一次高度，所以可见性只放到 internal（限本文件/模块内使用）。
+        internal fun setHeight(heightPx: Float) = runCatching { setHeight.invoke(titleBar, heightPx) }
+    }
+
+    /** `WindowDecorations` 单例与其入口方法的反射句柄。 */
+    internal class WindowDecorationsApi internal constructor(
+        val windowDecorations: Any,
+        val createCustomTitleBar: Method,
+        val setCustomTitleBar: Method,
+    ) {
+        companion object {
+            fun discover(): WindowDecorationsApi? {
+                val wdClass = Class.forName("java.awt.Window\$WindowDecorations")
+                // 实现类的构造器不公开，取第一个构造器强开（gist 与 compose-jetbrains-theme 同款做法）。
+                val ctor = wdClass.declaredConstructors.first().also { forceAccessible(it) }
+                val wd = ctor.newInstance()
+                val create = findMethod(wdClass, "createCustomTitleBar", paramCount = 0) ?: return null
+                // 有 Frame / Dialog 两个重载，按第一参数类型挑出 Frame 版。
+                val setBar = wdClass.declaredMethods.firstOrNull {
+                    it.name == "setCustomTitleBar" &&
+                        it.parameterTypes.size == 2 &&
+                        it.parameterTypes[0].isAssignableFrom(Frame::class.java)
+                }?.also { forceAccessible(it) } ?: return null
+                return WindowDecorationsApi(wd, create, setBar)
+            }
+        }
+    }
+
+    /** 沿类层次找方法（实现类可能把 API 方法留在父类上），找到即强开可访问。 */
+    private fun findMethod(start: Class<*>, name: String, paramCount: Int): Method? {
+        var c: Class<*>? = start
+        while (c != null) {
+            val m = c.declaredMethods.firstOrNull {
+                it.name == name && it.parameterTypes.size == paramCount
+            }
+            if (m != null) {
+                forceAccessible(m)
+                return m
+            }
+            c = c.superclass
+        }
+        return null
+    }
+
+    /** 与 `AccessibleObject` 同布局的替身类：布尔在前、对象引用在后。 */
+    private class AccessibleOverrideLayout {
+        var first = false
+
+        @Volatile
+        var second: Any? = null
+    }
+
+    private val theUnsafe: Unsafe? by lazy {
+        runCatching {
+            val field = Unsafe::class.java.getDeclaredField("theUnsafe")
+            field.isAccessible = true
+            field.get(null) as Unsafe
+        }.onFailure {
+            println("[JbrWindowChrome] 取不到 Unsafe，JBR 反射兜底不可用（将回退自绘无边框方案）：$it")
+        }.getOrNull()
+    }
+
+    /**
+     * 无条件把反射成员标成可访问。先走正规途径（public 成员本就不需要 open），
+     * 被拒再翻 `override` 位 —— 偏移按「第一个实例字段」用替身类算出。
+     */
+    private fun forceAccessible(obj: AccessibleObject) {
+        if (obj.trySetAccessible()) return
+        val u = theUnsafe ?: return
+        val offset = u.objectFieldOffset(AccessibleOverrideLayout::class.java.getDeclaredField("first"))
+        u.putBooleanVolatile(obj, offset, true)
+    }
+}

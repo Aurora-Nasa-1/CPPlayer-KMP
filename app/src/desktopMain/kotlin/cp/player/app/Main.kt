@@ -2,7 +2,10 @@ package cp.player.app
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -13,6 +16,7 @@ import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -24,10 +28,12 @@ import androidx.compose.ui.window.rememberWindowState
 import cp.player.app.platform.DesktopBackDispatcher
 import cp.player.app.platform.DesktopRenderTuning
 import cp.player.app.platform.DesktopWindowPlacement
+import cp.player.app.platform.JbrWindowChrome
 import cp.player.app.platform.WindowsWindowCorners
 import cp.player.app.ui.component.DesktopTitleBar
-import cp.player.app.ui.screen.AccountScreen
+import cp.player.app.ui.component.TitleBarHeight
 import cp.player.app.ui.util.DesktopShell
+import cp.player.app.ui.util.popToMainShell
 import cp.player.app.version.AppVersion
 import cp.player.core.MusicBackend
 import cp.player.core.music.TrackSummary
@@ -63,21 +69,42 @@ private const val SeekStepMs = 5_000L
 private const val WindowSizeSaveDelayMs = 400L
 
 /**
- * DWM 圆角的重试次数与间隔。
+ * DWM 圆角与 JBR 自定义标题栏的重试次数与间隔。
  *
  * 窗口从「创建」到「真正 map 出来、`IsWindowVisible` 为真」之间有一小段窗口期，
- * 在那之前按进程 ID 找不到任何可见窗口。20 × 100ms 足够覆盖冷启动。
+ * 在那之前按进程 ID 找不到任何可见窗口（圆角）、peer 也没准备好（JBR 安装）。
+ * 20 × 100ms 足够覆盖冷启动。
  */
-private const val WindowCornerAttempts = 20
-private const val WindowCornerRetryDelayMs = 100L
+private const val WindowRetryAttempts = 20
+private const val WindowRetryDelayMs = 100L
 
-// `WindowDecoration` 目前还是实验 API（要显式 opted-in）。用它的唯一理由是**能指定缩放抓手
-// 厚度**：`undecorated = true` 等价于默认的 8dp，那圈抓手会压住贴着窗口边缘的控件。
+/**
+ * 窗口装饰走哪条路，**必须在建窗之前**决定：`decoration` 参数决定窗口是否带系统边框，
+ * AWT 不允许窗口显示之后再改 `undecorated`，这个选择没法事后补。
+ *
+ * - **JBR 路**（运行在 JBR b1367.22+ 的 Windows/macOS，见 `JbrWindowChrome`）：
+ *   `SystemDefault` 保持窗口有边框，随后把客户区向上扩展盖过标题栏。原生阴影 /
+ *   缩放边框 / Aero Snap / 原生最大化 / Win11 自动圆角全部白拿，**「假全屏」就此根治** ——
+ *   原生最大化尊重任务栏，窗口永远不会铺满整个输出，Windows 也就没有理由把窗口
+ *   提升为全屏呈现并切换显示模式（HDR 屏上退出后桌面 SDR 闪烁的那个坑）。
+ * - **无边框路**（普通 JDK / Linux，或 JBR 太旧）：`Undecorated(6dp)` 纯 `WS_POPUP`，
+ *   一切靠手补（`WindowsWindowCorners` / `WindowMaximizer` / 内置缩放抓手）。
+ *   `Undecorated` 目前还是实验 API（要显式 opted-in）。用它的唯一理由是**能指定缩放
+ *   抓手厚度**：默认等价 8dp，那圈抓手会压住贴着窗口边缘的控件。
+ */
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 fun main() {
     // 必须最先执行：Skiko 在创建渲染器时首次读取 skiko.* 属性并固化，
     // 晚于这一步再写就不生效了。见 DesktopRenderTuning 的时序约束说明。
     DesktopRenderTuning.applyBeforeSkikoInit()
+
+    // 探测本身是纯反射 + 类加载，必须在建窗前完成（见上方 KDoc）。
+    // ⚠️ 只是「跑在 JBR 上」不会让窗口变原生 —— 这条路必须像这样显式 opt-in，
+    // JBR 的 WindowDecorations 完全不碰 `setUndecorated` 的默认行为。
+    val useJbrChrome = JbrWindowChrome.isSupported
+    if (!useJbrChrome) {
+        println("[CPPlayer] 未检测到可用的 JBR 自定义标题栏（需要 JBR b1367.22+ 的 Windows/macOS），窗口走自绘无边框方案")
+    }
 
     application {
         ensureBackendInitialized()
@@ -92,28 +119,61 @@ fun main() {
             onCloseRequest = ::exitApplication,
             state = windowState,
             title = "CPPlayer",
+            icon = AppWindowIcon.painter,
             onKeyEvent = ::handleDesktopShortcut,
-            // 无边框：系统标题栏整体交给 DesktopTitleBar 自绘。
-            //
-            // 拖拽缩放**不需要额外代码**：ComposeWindow 内置 UndecoratedWindowResizer，
-            // 在 isUndecorated() && isResizable() 时自动在窗口四周铺一圈透明抓手并切换光标。
-            // 注意 resizable 默认就是 true，别为了「无边框」把它关掉，否则缩放会一起消失。
-            //
-            // ⚠️ 抓手厚度**刻意指定**而不是用 `undecorated = true`（后者等价于默认 8dp）：
-            // 那圈抓手压在窗口最外圈、会和贴边的控件抢手势 —— 桌面滚条就贴在右边缘
-            // （`Alignment.CenterEnd`），厚 8dp 时「拖滚条」会变成「缩放窗口」。
-            // 这里压到 6dp，滚条那边还额外内缩了同样距离（见 DesktopScrollbars.desktop.kt）。
-            decoration = WindowDecoration.Undecorated(6.dp),
+            // 两条装饰路线的选择，见上方 main() 的 KDoc。
+            decoration = if (useJbrChrome) {
+                WindowDecoration.SystemDefault
+            } else {
+                // 无边框：系统标题栏整体交给 DesktopTitleBar 自绘。
+                //
+                // 拖拽缩放**不需要额外代码**：ComposeWindow 内置 UndecoratedWindowResizer，
+                // 在 isUndecorated() && isResizable() 时自动在窗口四周铺一圈透明抓手并切换光标。
+                // 注意 resizable 默认就是 true，别为了「无边框」把它关掉，否则缩放会一起消失。
+                //
+                // ⚠️ 抓手厚度**刻意指定**而不是用默认 8dp：那圈抓手压在窗口最外圈、会和
+                // 贴边的控件抢手势 —— 桌面滚条就贴在右边缘（`Alignment.CenterEnd`），
+                // 厚 8dp 时「拖滚条」会变成「缩放窗口」。这里压到 6dp，滚条那边还额外
+                // 内缩了同样距离（见 DesktopScrollbars.desktop.kt）。
+                WindowDecoration.Undecorated(6.dp)
+            },
         ) {
+            // JBR 自定义标题栏的安装状态。null = 尚未装上 / 不走 JBR 路；
+            // DesktopTitleBar 据此在「原生窗口钮」与「自绘窗口钮」两套 chrome 间切换。
+            var jbrChrome by remember { mutableStateOf<JbrWindowChrome.Controller?>(null) }
             // 最小尺寸只能命令式设置：WindowState 没有 minSize 字段。
             LaunchedEffect(Unit) { window.minimumSize = MinWindowSize }
-            // 无边框窗口在 Win11 上是直角（纯 WS_POPUP 吃不到系统的自动圆角），这里手动 opt-in。
-            // 窗口此刻可能还没真正 map 出来（IsWindowVisible 为假就找不到句柄），所以带重试；
-            // 试满就放弃，圆角只是外观，绝不能因此挡住启动。
-            LaunchedEffect(Unit) {
-                repeat(WindowCornerAttempts) {
-                    if (WindowsWindowCorners.applyRoundCorners()) return@LaunchedEffect
-                    delay(WindowCornerRetryDelayMs)
+
+            // JBR 路：装自定义标题栏。窗口 peer 可能还没就绪，带重试；试满就放弃，
+            // 放弃后的表现是窗口保留系统标题栏（功能完好，只是丑），绝不能因此挡住启动。
+            // 高度用 Swing 像素（JBR 的口径），由 Compose density 换算 —— 密度变化
+            // （拖去另一块缩放不同的屏幕）会重跑本协程，顺手按新 DPI 重装一次。
+            // ⚠️ `LocalDensity.current` 是组合期读取，必须放在协程外面。
+            val density = LocalDensity.current
+            LaunchedEffect(window, density) {
+                if (!useJbrChrome) return@LaunchedEffect
+                val titleBarHeightPx = with(density) { TitleBarHeight.toPx() }
+                repeat(WindowRetryAttempts) {
+                    val installed = JbrWindowChrome.install(window, titleBarHeightPx)
+                    if (installed != null) {
+                        jbrChrome = installed
+                        return@LaunchedEffect
+                    }
+                    delay(WindowRetryDelayMs)
+                }
+                println("[CPPlayer] JBR 自定义标题栏安装失败，窗口保留系统标题栏")
+            }
+
+            // 无边框路专属：Win11 的 DWM 圆角。纯 WS_POPUP 吃不到系统的自动圆角，
+            // 手动 opt-in。窗口此刻可能还没真正 map 出来（IsWindowVisible 为假就找不到
+            // 句柄），所以带重试；试满就放弃，圆角只是外观。
+            // ⚠️ JBR 路不需要：窗口带边框，Win11 圆角由系统自动给。
+            if (!useJbrChrome) {
+                LaunchedEffect(Unit) {
+                    repeat(WindowRetryAttempts) {
+                        if (WindowsWindowCorners.applyRoundCorners()) return@LaunchedEffect
+                        delay(WindowRetryDelayMs)
+                    }
                 }
             }
             // 记住窗口尺寸：桌面端换一次显示器/改一次分辨率就丢布局，是很容易被抱怨的细节。
@@ -147,6 +207,9 @@ fun main() {
                     DesktopTitleBar(
                         windowScope = windowScope,
                         windowState = windowState,
+                        // 非 null 时 DesktopTitleBar 切到 JBR 模式：不画窗口钮、拖拽 / 双击
+                        // 交给原生 hit-test（见 DesktopTitleBar 的「两种窗口模式」一节）。
+                        jbr = jbrChrome,
                         // 标题：当前路由页自己声明的优先（`CpRouteScaffold` / `DesktopRouteTitle`），
                         // 没有声明时回落到 `MainScreen` 发布的主壳层标题。`MainScreen` 被 push 出去的
                         // 页面盖住后会离开组合、不再发布，所以没有这一层回落之外的上层来源，
@@ -154,24 +217,70 @@ fun main() {
                         title = DesktopShell.routeTitle ?: DesktopShell.pageTitle,
                         // 可返回 = 「Navigator 还能出栈」**或**「主壳层开着内嵌面板」。
                         // 只判后者（曾经如此）会让所有 push 出去的路由页在标题栏上没有返回键。
-                        canGoBack = navigator.size > 1 || DesktopShell.pageCanGoBack,
+                        //
+                        // ⚠️ 只有**真的有事可做**时才为真。三种情况各对应一条真实存在的退路：
+                        //   1. `navigator.size > 1` —— 有 push 出去的路由页可以出栈；
+                        //   2. `DesktopShell.pageCanGoBack` —— 主壳层开着内嵌面板（设置 / 歌单 /…）；
+                        //   3. `DesktopBackDispatcher` —— 有页面注册了处理器（播放页展开态、歌单多选）。
+                        // 漏掉第 3 条会让「播放页展开着但 Navigator 只有一页」时标题栏**没有返回键**
+                        // —— 那时 Esc 能退、标题栏却不能，正是「同一个动作两条链路」的漂移。
+                        // （此处的 `hasHandlers` 是快照读；它是快照状态，注册/注销会触发重组。）
+                        canGoBack = navigator.size > 1 ||
+                            DesktopShell.pageCanGoBack ||
+                            DesktopBackDispatcher.hasHandlers,
                         onBack = {
                             // 与 Esc 走**同一条链路**：先让页面自己的处理器拿到
                             // （播放页展开态、歌单多选），没人处理再退化为出栈 / 收起内嵌面板。
                             // 两处各写一套判据的话，「Esc 能退、点返回键不能退」这类漂移迟早出现。
                             if (!DesktopBackDispatcher.dispatch()) {
                                 if (navigator.size > 1) navigator.pop()
-                                else DesktopShell.backRequested = true
+                                else if (DesktopShell.pageCanGoBack) DesktopShell.backRequested = true
+                                // 走到这里说明上面三条都为假 —— 也就是「没有返回键」的情况。
+                                // 理论上按不到（`canGoBack` 已经拦住了），但保留分支是为了将来的
+                                // 快捷键 / 手势入口：静默什么都不做才是真正的问题。
                             }
                         },
+                        // ⚠️ `onClose` 只有无边框模式的自绘关闭钮在用；JBR 模式的关闭是
+                        // 原生窗口钮 → windowClosing → `onCloseRequest`，不走这里。
                         onClose = ::exitApplication,
-                        onOpenAccount = { navigator.push(AccountScreen()) },
-                        // 「设置」在桌面是**右侧内嵌面板**，开关是 MainScreen 的局部状态，
-                        // 标题栏隔着 Navigator 够不到 ⇒ 走 DesktopShell 这条单向指令。
-                        onOpenSettings = { DesktopShell.settingsRequested = true },
+                        // ⚠️ 下面三个入口**都必须先 `popToMainShell()`**，理由一致，写在
+                        // `Navigation.popToMainShell` 的 KDoc 里，这里只说结论：
+                        //
+                        // 它们都由 `MainScreen` 消费（两个是内嵌面板、一个是内容区路由），
+                        // 消费动作靠 `MainScreen` 里的 `LaunchedEffect` 读取 `DesktopShell`
+                        // 的单向指令。而 `MainScreen` 是根 Navigator 的起点，一旦 push 到
+                        // 别处（播放页 / 引导 …）它就**离开组合了** —— 那时发指令**没人消费**：
+                        //   ① 点击完全没有反应（用户报的「在歌单页点设置没弹出」）；
+                        //   ② 指令残留 true，等退回主壳层时面板又**自己弹出来**。
+                        // 所以先弹回主壳层，再发指令：两步都在同一帧同步发生，
+                        // 重组时 MainScreen 既在栈顶、又读得到这条指令。
+                        //
+                        // 「消息」同样是右侧内嵌面板，与设置走同一条单向指令通道。
+                        onOpenMessages = {
+                            navigator.popToMainShell()
+                            DesktopShell.messagesRequested = true
+                        },
+                        // 「账号」是**内容区路由页**不是全屏面板：MainScreen 把 AccountScreen
+                        // push 进内容区的内嵌 Navigator，左侧导航栏保留、返回还能回到原处。
+                        // 账号页内部的二级跳转（我的主页 / 消息 / 切换音源）也落同一条栈。
+                        onOpenAccount = {
+                            navigator.popToMainShell()
+                            DesktopShell.accountRequested = true
+                        },
+                        // 「设置」在桌面是**右侧内嵌面板**（左导航 + 右界面），开关是
+                        // MainScreen 的局部状态，标题栏隔着 Navigator 够不到 ⇒
+                        // 走 DesktopShell 这条单向指令 + 先弹回主壳层。
+                        onOpenSettings = {
+                            navigator.popToMainShell()
+                            DesktopShell.settingsRequested = true
+                        },
                         // 搜索同样走指令通道：切到搜索 tab 由 MainScreen 做，关键词由
                         // SearchScreen 消费并喂给它自己的 ScreenModel。
-                        onSearch = { DesktopShell.pendingSearchQuery = it },
+                        // 同理必须先回主壳层，否则在别的路由页里搜索也毫无反应。
+                        onSearch = {
+                            navigator.popToMainShell()
+                            DesktopShell.pendingSearchQuery = it
+                        },
                     )
                 },
             )

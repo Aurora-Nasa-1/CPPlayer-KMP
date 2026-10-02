@@ -91,6 +91,9 @@ private val SearchFieldMaxWidth = 420.dp
 internal fun TitleBarSearch(
     onSearch: (String) -> Unit,
     dragArea: @Composable (Modifier) -> Unit,
+    // JBR 模式专用：挂在搜索框锚点容器上，把它登记成「客户区」（原生 hit-test 不抢）。
+    // 无边框模式传空即可 —— 拖拽由 [dragArea] 的 AWT MouseListener 承担，互不相干。
+    fieldModifier: Modifier = Modifier,
     modifier: Modifier = Modifier,
 ) {
     var query by remember { mutableStateOf("") }
@@ -103,7 +106,7 @@ internal fun TitleBarSearch(
 
         // 锚点容器：宽 = min(可用宽度, 420dp)，下拉的宽度与横向位置都对齐到这里。
         // ⚠️ 高度刻意**不写死**（写死 44dp 会把子节点的测量高度一起钉住，见 SuggestionDropdown）。
-        Box(Modifier.widthIn(max = SearchFieldMaxWidth).fillMaxWidth().fillMaxHeight()) {
+        Box(Modifier.widthIn(max = SearchFieldMaxWidth).fillMaxWidth().fillMaxHeight().then(fieldModifier)) {
             SearchField(
                 query = query,
                 onQueryChange = { query = it },
