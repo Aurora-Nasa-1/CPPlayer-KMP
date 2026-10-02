@@ -37,6 +37,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LegacyListItem
 import cp.player.app.ui.component.SettingsFieldGroup
@@ -80,7 +81,7 @@ class HealthScreen : Screen {
 
         CpRouteScaffold(
             title = "诊断",
-            onBack = { navigator.pop() },
+            onBack = { navigator.popOrNotify() },
             topBarActions = listOf(
                 TopBarAction(
                     icon = { Icon(Icons.Filled.DeleteSweep, "清空") },

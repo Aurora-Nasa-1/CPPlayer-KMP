@@ -40,6 +40,7 @@ import cp.player.app.platform.openUrl
 import cp.player.app.ui.component.CpIconSize
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
@@ -85,7 +86,7 @@ class AboutScreen : Screen {
 
         CpRouteScaffold(
             title = "关于与支持",
-            onBack = { navigator.pop() },
+            onBack = { navigator.popOrNotify() },
         ) { pageModifier ->
             SettingsPage(pageModifier) {
                 SettingsSection("版本信息") {

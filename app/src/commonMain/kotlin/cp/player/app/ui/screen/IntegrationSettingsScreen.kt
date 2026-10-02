@@ -23,6 +23,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsFieldGroup
 import cp.player.app.ui.component.SettingsNote
@@ -170,7 +171,7 @@ class IntegrationSettingsScreen : Screen {
 
         CpRouteScaffold(
             title = "外部推送与集成",
-            onBack = { navigator.pop() },
+            onBack = { navigator.popOrNotify() },
         ) { pageModifier -> body(pageModifier) }
     }
 }

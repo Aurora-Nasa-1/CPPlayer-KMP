@@ -19,6 +19,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.auth.AccountStore
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.component.SettingsButtonItem
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsNote
@@ -133,7 +134,7 @@ class ProviderIsolationScreen : Screen {
 
         CpRouteScaffold(
             title = "音源隔离",
-            onBack = { navigator.pop() },
+            onBack = { navigator.popOrNotify() },
         ) { pageModifier -> body(pageModifier) }
     }
 }
