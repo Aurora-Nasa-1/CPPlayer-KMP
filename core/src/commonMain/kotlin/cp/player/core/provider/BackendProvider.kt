@@ -56,6 +56,15 @@ interface BackendProvider {
     val targetAppPackage: String?
 
     /**
+     * 音源声明的登录方式（可选）。
+     *
+     * 取值见 [ModuleManifest.loginMethods]：`qr` / `email` / `sms` / `cookie` /
+     * `captchaImage`。null = 未声明，登录页按网易云系默认展示全部方式。
+     * 内置网易云 Provider 不用声明（走默认分支）；外部模块由 manifest 带入。
+     */
+    val loginMethods: List<String>? get() = null
+
+    /**
      * 启动 Provider 服务。
      *
      * 对于 BinaryProvider，会启动可执行文件；

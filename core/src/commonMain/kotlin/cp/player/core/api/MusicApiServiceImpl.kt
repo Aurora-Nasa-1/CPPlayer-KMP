@@ -112,13 +112,24 @@ class MusicApiServiceImpl(
         if (md5) params["md5_password"] = password else params["password"] = password
         return callApi(MusicApiMethod.AUTH_LOGIN, params)
     }
-    override suspend fun loginWithPhone(phone: String, password: String, captcha: Boolean, md5: Boolean): JsonElement {
+    override suspend fun loginWithPhone(
+        phone: String,
+        password: String,
+        captcha: Boolean,
+        md5: Boolean,
+        imageCaptcha: String?,
+        captchaCookie: String?
+    ): JsonElement {
         val params = mutableMapOf("phone" to phone)
         when { captcha -> params["captcha"] = password; md5 -> params["md5_password"] = password; else -> params["password"] = password }
-        return callApi(MusicApiMethod.AUTH_LOGIN_PHONE, params)
+        if (!imageCaptcha.isNullOrBlank()) params["imageCaptcha"] = imageCaptcha
+        return callApi(MusicApiMethod.AUTH_LOGIN_PHONE, params, cookie = captchaCookie)
     }
-    override suspend fun sendCaptcha(phone: String): JsonElement =
-        callApi(MusicApiMethod.AUTH_CAPTCHA_SENT, mapOf("phone" to phone))
+    override suspend fun sendCaptcha(phone: String, imageCaptcha: String?, captchaCookie: String?): JsonElement {
+        val params = mutableMapOf("phone" to phone)
+        if (!imageCaptcha.isNullOrBlank()) params["imageCaptcha"] = imageCaptcha
+        return callApi(MusicApiMethod.AUTH_CAPTCHA_SENT, params, cookie = captchaCookie)
+    }
     override suspend fun logout(): JsonElement = callApi(MusicApiMethod.AUTH_LOGOUT)
     override suspend fun loginAnonymous(): JsonElement = callApi(MusicApiMethod.AUTH_ANONYMOUS)
     override suspend fun getLoginStatus(cookie: String?): JsonElement =

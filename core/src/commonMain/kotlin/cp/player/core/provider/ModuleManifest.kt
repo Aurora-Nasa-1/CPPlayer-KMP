@@ -27,5 +27,17 @@ data class ModuleManifest(
      * 例如网易云音乐为 "com.netease.cloudmusic"。
      * 仅 Android 端生效，Desktop 端忽略。
      */
-    val targetAppPackage: String? = null
+    val targetAppPackage: String? = null,
+    /**
+     * 音源支持的登录方式声明（可选）。
+     *
+     * 取值：`"qr"`（扫码）、`"email"`（邮箱）、`"sms"`（手机验证码）、
+     * `"cookie"`（粘贴 Cookie）、`"captchaImage"`（图形验证码人机校验）。
+     *
+     * - **null / 缺省**：按旧行为展示全部四种方式（网易云系音源的默认）；
+     * - **声明了列表**：登录页只显示声明的方式（`cookie` 是宿主端能力，
+     *   声明了 sms/qr/email 时仍会强制附加上）；
+     *   `"captchaImage"` 表示登录流程支持图形验证码（见 `captcha/image` 方法）。
+     */
+    val loginMethods: List<String>? = null
 )

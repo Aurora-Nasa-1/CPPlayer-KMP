@@ -29,7 +29,8 @@ class BinaryProvider(
     private val binaryPath: String,
     override val apiMap: Map<String, String>? = null,
     override val updateUrl: String? = null,
-    override val targetAppPackage: String? = null
+    override val targetAppPackage: String? = null,
+    override val loginMethods: List<String>? = null
 ) : BackendProvider {
 
     override val type: ProviderType = ProviderType.BINARY

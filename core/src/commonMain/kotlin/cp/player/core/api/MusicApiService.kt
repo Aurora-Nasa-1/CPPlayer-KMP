@@ -58,11 +58,21 @@ interface MusicApiService {
         phone: String,
         password: String,
         captcha: Boolean = false,
-        md5: Boolean = false
+        md5: Boolean = false,
+        /** 图形验证码答案（音源声明 `captchaImage` 能力时的人机校验，可选） */
+        imageCaptcha: String? = null,
+        /** 图形验证码会话 cookie（`captcha/image` 响应原样带回，可选） */
+        captchaCookie: String? = null
     ): JsonElement
 
     /** 发送验证码 */
-    suspend fun sendCaptcha(phone: String): JsonElement
+    suspend fun sendCaptcha(
+        phone: String,
+        /** 图形验证码答案（风控触发时必填，可选） */
+        imageCaptcha: String? = null,
+        /** 图形验证码会话 cookie（可选） */
+        captchaCookie: String? = null
+    ): JsonElement
 
     /** 登出 */
     suspend fun logout(): JsonElement

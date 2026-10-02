@@ -13,7 +13,8 @@ class JniProvider(
     private val soPath: String,
     override val apiMap: Map<String, String>? = null,
     override val updateUrl: String? = null,
-    override val targetAppPackage: String? = null
+    override val targetAppPackage: String? = null,
+    override val loginMethods: List<String>? = null
 ) : BackendProvider {
 
     override val type: ProviderType = ProviderType.JNI

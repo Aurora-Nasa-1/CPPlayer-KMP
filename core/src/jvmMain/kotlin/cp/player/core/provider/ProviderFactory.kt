@@ -13,12 +13,13 @@ actual object ProviderFactory {
                 baseUrl = manifest.entryPoint,
                 apiMap = manifest.apiMap,
                 updateUrl = manifest.updateUrl,
-                targetAppPackage = manifest.targetAppPackage
+                targetAppPackage = manifest.targetAppPackage,
+                loginMethods = manifest.loginMethods
             )
             "binary" -> {
                 val binPath = PlatformSupport.resolveEntryPoint(moduleDir, manifest.entryPoint, manifest.supportedAbis)
                 if (!PlatformSupport.exists(binPath)) null
-                else BinaryProvider(manifest.id, manifest.name, manifest.version, binPath, manifest.apiMap, manifest.updateUrl, manifest.targetAppPackage)
+                else BinaryProvider(manifest.id, manifest.name, manifest.version, binPath, manifest.apiMap, manifest.updateUrl, manifest.targetAppPackage, manifest.loginMethods)
             }
             "jni" -> {
                 val soPath = PlatformSupport.resolveEntryPoint(moduleDir, manifest.entryPoint, manifest.supportedAbis)
