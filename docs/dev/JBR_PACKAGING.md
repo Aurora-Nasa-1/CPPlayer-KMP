@@ -47,20 +47,33 @@
 
 | 平台 | 文件 | 实测大小 |
 |---|---|---|
-| Windows x64 | `jbr-21.0.8-windows-x64-b1163.62.zip` | 94 137 254 B（≈89.8 MiB） |
-| Linux x64 | `jbr-21.0.8-linux-x64-b1163.62.tar.gz` | 99 098 530 B（≈94.5 MiB） |
+| Windows x64 | `jbrsdk-21.0.8-windows-x64-b1163.62.zip` | ≈270 MB |
+| Linux x64 | `jbrsdk-21.0.8-linux-x64-b1163.62.tar.gz` | ≈240 MB |
 
 > 注意：Linux 侧 **`.zip` 是 403**，只有 `.tar.gz`；Windows 侧两者都有。
 > 校验和文件（`.sha256`）也是 403 —— 官方不提供，所以 sha256 必须**我们自己记**。
-> 另有 `jbrsdk-*`（带 SDK，Windows 270MB / Linux 240MB）—— **不要用**，打包只运行不编译。
+
+### 2.2.0 ⚠️ 必须用 `jbrsdk-` 变体，不能用裸 `jbr-`（踩过一次）
+
+本文件旧版曾写「jbrsdk 不要用，打包只运行不编译」——**这个结论是错的**：
+
+- `compose.desktop.application.javaHome` 不只是 jpackage 的输入，Compose 插件的
+  `checkRuntime` 任务会先校验 javaHome 是**完整 JDK**（要有 `bin/jlink` 和
+  `bin/jpackage`），因为它要**自己跑 `jlink` 从 jmods 裁出运行时镜像**再交给 jpackage。
+- 裸 `jbr-` 包是 JRE（`java -version` 输出里的 `-nomod` 后缀就是「无 jmods」的意思），
+  只有 `bin/java`。CI 上直接失败：
+  `Execution failed for task ':app:checkRuntime' > Failed to check JDK distribution:
+  'jlink', 'jpackage' are missing`。
+- **代价**：SDK 包 ~240–270MB（构建期磁盘），但**打进安装包的是 jlink 裁剪后的产物，
+  体积不变**。
 
 ### 2.2.1 压缩包内部结构（踩过一次）
 
 解出来**不是** `jbr/` 一层，而是**带版本号的目录**：
 
 ```
-jbr-21.0.8-windows-x64-b1163.62/
-  ├── bin/java.exe
+jbrsdk-21.0.8-windows-x64-b1163.62/
+  ├── bin/java.exe      ← SDK 变体里还有 jlink / jpackage / jmods/
   ├── lib/
   └── release            ← javaHome 必须正好指向含这个文件的那层
 ```
@@ -72,15 +85,16 @@ jbr-21.0.8-windows-x64-b1163.62/
 ### 2.3 实测 sha256（本仓库记录值）
 
 ```
-jbr-21.0.8-windows-x64-b1163.62.zip
-  sha256 = 22704601a5fffc9b5f43c2c4e8650d3ae92905139dc11e99c48387e2475be938
+jbrsdk-21.0.8-windows-x64-b1163.62.zip
+  sha256 = 432d0f9bdc687a6c8e2e13e22be83cdb0d9460b6b15752e84bd97165e13e9f5f
 
-jbr-21.0.8-linux-x64-b1163.62.tar.gz
-  sha256 = 34a7ae7b3b45af5c8a3388a7305ad96712956a03ee8d82c7f928f31e7a79fa8e
+jbrsdk-21.0.8-linux-x64-b1163.62.tar.gz
+  sha256 = 482b63da8ac63b8f108878d1bd8a23df15fd78cc9dfd23f3b824fbfe2512c81f
 ```
 
 ⚠️ 这两个值是从 `cache-redirector` **实际下载后 `sha256sum` 算出来的**，
 不是从别处抄的。升级 JBR 版本时**必须重新下载重算**，不能沿用。
+（旧值 `2270…938` / `34a7…fa8e` 对应裸 `jbr-` JRE 包，因 §2.2.0 的原因已弃用。）
 
 ---
 

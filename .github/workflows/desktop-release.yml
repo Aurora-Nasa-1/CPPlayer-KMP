@@ -36,12 +36,15 @@ env:
   # 目的只有一个：让 WindowDraggableArea 走原生 WindowMove（贴边吸附 / 拖出还原 / 跟手）。
   # 方案与验收清单见 docs/dev/JBR_PACKAGING.md。
   #
-  # ⚠️ 三点必须记住：
+  # ⚠️ 四点必须记住：
   #   1. 来源是 JetBrains 官方 cache-redirector，**不是 GitHub Releases** ——
   #      JetBrains/JetBrainsRuntime 的 release assets 全是 0（已扫过 3 页 100/页）。
   #   2. 官方**不提供** .sha256 文件，所以哈希由本仓库记录，且是**实际下载后算的**。
   #   3. 版本钉 21（不是 25）：desktop 的 jvmTarget 就是 JVM_21，
   #      「换厂商」与「升主版本」必须分开做。
+  #   4. 取的是 **`jbrsdk-` 变体**（完整 JDK，含 jlink/jpackage/jmods），不是裸 `jbr-`：
+  #      裸包是 JRE，Compose 的 checkRuntime 会报 "'jlink', 'jpackage' are missing"。
+  #      打进产物的是 jlink 裁剪后的运行时，SDK 包不会让安装包变大。
   JBR_VERSION: "21.0.8"
   JBR_BUILD: "b1163.62"
   JBR_URL_BASE: "https://cache-redirector.jetbrains.com/intellij-jbr"
@@ -106,14 +109,14 @@ jobs:
             asset: msi
             # Windows 侧 .zip / .tar.gz 都有，用 .zip。
             jbrExt: zip
-            jbrSha: 22704601a5fffc9b5f43c2c4e8650d3ae92905139dc11e99c48387e2475be938
+            jbrSha: 432d0f9bdc687a6c8e2e13e22be83cdb0d9460b6b15752e84bd97165e13e9f5f
           - os: ubuntu-latest
             platform: linux
             task: packageDeb
             asset: deb
             # ⚠️ Linux 侧 **只有 .tar.gz**：同名的 .zip 是 403。
             jbrExt: tar.gz
-            jbrSha: 34a7ae7b3b45af5c8a3388a7305ad96712956a03ee8d82c7f928f31e7a79fa8e
+            jbrSha: 482b63da8ac63b8f108878d1bd8a23df15fd78cc9dfd23f3b824fbfe2512c81f
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -142,7 +145,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .jbr
-          file="jbr-${JBR_VERSION}-${{ matrix.platform }}-x64-${JBR_BUILD}.${{ matrix.jbrExt }}"
+          # ⚠️ 必须用 `jbrsdk-` 前缀（完整 JDK，含 jlink / jpackage / jmods），
+          # 不能用裸 `jbr-`（那是 JRE）—— Compose 的 checkRuntime 会在
+          # javaHome 里找 jlink/jpackage，找不到直接失败：
+          # "Failed to check JDK distribution: 'jlink', 'jpackage' are missing"。
+          # 最终打进安装包的是 jlink 的裁剪产物，SDK 包不会让产物变大。
+          file="jbrsdk-${JBR_VERSION}-${{ matrix.platform }}-x64-${JBR_BUILD}.${{ matrix.jbrExt }}"
           url="${JBR_URL_BASE}/${file}"
           # 先下临时文件、校验通过再落位 —— 中断留下的半截包若直接落位，
           # 下次会因目录存在被误判成已就绪，打出**损坏的运行时**。

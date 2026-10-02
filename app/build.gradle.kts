@@ -71,10 +71,17 @@ private val jbrBaseUrl = "https://cache-redirector.jetbrains.com/intellij-jbr"
 // 实测 sha256（`sha256sum` 于 2026-10-02 从 cache-redirector 下载后计算）。
 // 升 JBR 版本时**必须重新下载重算**，不能沿用 —— 沿用一个对不上的哈希
 // 会让构建直接失败（这是好的），但如果改哈希去迁就包，校验就形同虚设了。
+//
+// ⚠️ 必须用 `jbrsdk-` 变体（完整 JDK），不能用裸 `jbr-`（那是 JRE）：
+// Compose 插件的 checkRuntime 要求 javaHome 里有 `jlink` / `jpackage`
+// （它要自己跑 jlink 从 jmods 裁运行时镜像）。裸 `jbr-` 包在 CI 上
+// `:app:checkRuntime` 直接失败："Failed to check JDK distribution:
+// 'jlink', 'jpackage' are missing"。最终打进安装包的是 jlink 的裁剪产物，
+// 所以用 SDK 包**不会**让产物变大（只是构建期多占 ~200MB 磁盘）。
 private val JbrSha256 = mapOf(
-    "windows" to "22704601a5fffc9b5f43c2c4e8650d3ae92905139dc11e99c48387e2475be938",
+    "windows" to "432d0f9bdc687a6c8e2e13e22be83cdb0d9460b6b15752e84bd97165e13e9f5f",
     // ⚠️ Linux 侧只有 `.tar.gz`：`.zip` 是 403。Windows 侧两者都有，用 .zip。
-    "linux" to "34a7ae7b3b45af5c8a3388a7305ad96712956a03ee8d82c7f928f31e7a79fa8e",
+    "linux" to "482b63da8ac63b8f108878d1bd8a23df15fd78cc9dfd23f3b824fbfe2512c81f",
 )
 
 private val hostJbrPlatform: String? = run {
@@ -174,8 +181,8 @@ private fun sha256Of(file: File): String {
 }
 
 /**
- * 把 JBR 铺到 `.jbr/<platform>-x64/`。**幂等**：已有合法运行时就直接返回（CI 每次全量冷跑，
- * 不幂等会白下 ~90MB）。
+ * 把 JBR SDK 铺到 `.jbr/<platform>-x64/`。**幂等**：已有合法运行时就直接返回（CI 每次全量冷跑，
+ * 不幂等会白下 ~240MB）。
  *
  * ⚠️ 顺序是「先下临时文件 → 校验 → 再落位」，不是「直接下到目标目录」：
  * 中断留下的半截包如果已经落在目标位置，下次会因目录存在而被误判成已就绪，
@@ -190,7 +197,10 @@ private fun ensureJbrDownloaded(): File {
     if (targetDir.resolve("release").exists()) return targetDir
 
     val ext = if (platform == "windows") "zip" else "tar.gz"
-    val url = "$jbrBaseUrl/jbr-$jbrVersion-$platform-x64-$jbrBuild.$ext"
+    // ⚠️ 前缀必须是 `jbrsdk-`（完整 JDK，含 jlink/jpackage/jmods）；
+    // 裸 `jbr-` 是 JRE，Compose 的 checkRuntime 会报
+    // "Failed to check JDK distribution: 'jlink', 'jpackage' are missing"。
+    val url = "$jbrBaseUrl/jbrsdk-$jbrVersion-$platform-x64-$jbrBuild.$ext"
     val archive = File(targetDir.parentFile, "jbr-$platform.part.$ext")
     archive.parentFile.mkdirs()
 
@@ -237,7 +247,7 @@ private fun ensureJbrDownloaded(): File {
 // 任务里延迟到执行期** —— 要「先下载再打包」就只有两个选择：
 //   a) 配置期同步下载（下面这条，仅当 -Pcp.jbrDownload=true）；
 //   b) CI 在 gradlew 之前用独立 step 下载好（`.github/workflows/desktop-release.yml` 走这条）。
-// 默认 **off**：本地不带这个开关时构建完全不受影响（不会突然卡 90MB 下载）。
+// 默认 **off**：本地不带这个开关时构建完全不受影响（不会突然卡 ~240MB 下载）。
 private var resolvedJbrHome: File? = resolveJbrHome()
 if (resolvedJbrHome == null && (findProperty("cp.jbrDownload") as String?) == "true") {
     resolvedJbrHome = ensureJbrDownloaded()
