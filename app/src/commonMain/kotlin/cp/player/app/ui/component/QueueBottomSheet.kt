@@ -22,19 +22,20 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.LocationSearching
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,7 +53,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import cp.player.core.music.CPMediaId
 import cp.player.core.playback.QueueItem
+import cp.player.app.platform.shareText
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.util.resized
 import kotlinx.coroutines.launch
@@ -75,16 +78,13 @@ fun QueueBottomSheet(
     onClear: () -> Unit,
     onClose: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // 统一走 LegacyModalBottomSheet 外壳（形状 / 拖拽手柄 / 容器色与其他弹层一致），
+    // 列表型弹层跳过半展开档位。
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var showSaveDialog by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(
-        onDismissRequest = onClose,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
-    ) {
+    LegacyModalBottomSheet(onDismissRequest = onClose, skipPartiallyExpanded = true) {
         Box(Modifier.fillMaxWidth()) {
             Column(Modifier.fillMaxWidth()) {
                 // Header
@@ -125,6 +125,15 @@ fun QueueBottomSheet(
                             onDragBy = { dir ->
                                 val target = i + dir
                                 if (target in queue.indices) onMove(i, target)
+                            },
+                            // 桌面端右键菜单：动作与行内 More 菜单一致并补一个分享入口。
+                            contextMenu = buildList {
+                                add(CpContextMenuItem("播放", Icons.Filled.PlayArrow, onClick = { onPlayAt(i) }))
+                                add(CpContextMenuItem("从队列移除", Icons.Filled.Close, onClick = { onRemove(i) }, danger = true))
+                                add(CpContextMenuItem("分享", Icons.Filled.Share, onClick = {
+                                    val rid = runCatching { CPMediaId.parse(item.mediaId).resourceId }.getOrDefault(item.mediaId)
+                                    shareText("「${item.title}」 https://music.163.com/#/song?id=$rid")
+                                }))
                             },
                             // 拖拽重排 / 移除时的位移与淡出。队列是全应用唯一能真正改变
                             // 顺序的列表，没有这层动画的话每次重排都是一次「集体瞬移」。
@@ -200,6 +209,8 @@ private fun QueueRow(
     onRemove: () -> Unit,
     onDragBy: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    /** 桌面端右键菜单项；null 时不启用。 */
+    contextMenu: List<CpContextMenuItem>? = null,
 ) {
     val bg = if (isCurrent) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
@@ -207,8 +218,11 @@ private fun QueueRow(
     val density = LocalDensity.current
     var dragAccum by remember { mutableStateOf(0f) }
 
+    // 右键菜单包在拖拽手柄所在整行之外：光标落在行上任意位置都能弹出，
+    // 不与 DragIndicator 的长按拖拽冲突（那只监听左键长按）。
+    CpContextMenu(items = contextMenu, modifier = modifier) {
     Surface(
-        modifier.fillMaxWidth(),
+        Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         color = bg,
     ) {
@@ -319,5 +333,6 @@ private fun QueueRow(
                 Spacer(Modifier.width(12.dp))
             }
         }
+    }
     }
 }

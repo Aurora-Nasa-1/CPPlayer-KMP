@@ -20,6 +20,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,14 +58,24 @@ fun SongItem(
     onLongClick: (() -> Unit)? = null,
     selectionMode: Boolean = false,
     isSelected: Boolean = false,
+    /**
+     * 右键菜单项（桌面端）。非空且非多选时，整行包在 [CpContextMenu] 里，
+     * 右键弹出标准动作菜单；构建方法见 [songContextMenuItems]。
+     * 多选模式下忽略（长按已被多选语义占用，右键同时弹菜单会打架）。
+     */
+    contextMenu: List<CpContextMenuItem>? = null,
 ) {
     val shape = MaterialTheme.shapes.medium
-    LegacyListItem(
-        index = index.coerceAtLeast(0),
-        total = total.coerceAtLeast(1),
-        onClick = onClick,
-        onLongClick = onLongClick,
-        modifier = modifier,
+    // 桌面端（窗口 chrome 接管）且传入了菜单项 ⇒ MoreVert 走锚定菜单而不是底部弹层。
+    // 判据用 LocalWindowChromeActive 而不是平台，理由见它的 KDoc。
+    val anchoredMenu = LocalWindowChromeActive.current && !contextMenu.isNullOrEmpty()
+    val row: @Composable (Modifier) -> Unit = { rowModifier ->
+        LegacyListItem(
+            index = index.coerceAtLeast(0),
+            total = total.coerceAtLeast(1),
+            onClick = onClick,
+            onLongClick = onLongClick,
+            modifier = rowModifier,
         containerColor = when {
             selectionMode && isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
             isCurrentlyPlaying -> MaterialTheme.colorScheme.primaryContainer
@@ -146,21 +160,42 @@ fun SongItem(
                 overflow = TextOverflow.Ellipsis,
             )
         },
-        trailingContent = if (!selectionMode && onOptionsClick != null) {{
-            IconButton(
-                onClick = onOptionsClick,
-                colors = androidx.compose.material3.IconButtonDefaults.iconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                ),
-                modifier = Modifier.size(40.dp),
+        trailingContent = if (!selectionMode && (onOptionsClick != null || anchoredMenu)) {{
+            // 桌面端：MoreVert 点击弹出锚定菜单（与右键同一份 items，见 CpAnchoredMenu），
+            // 不再走底部弹层；移动端保持 SongOptionsSheet 动线不变。
+            var menuExpanded by remember { mutableStateOf(false) }
+            CpAnchoredMenu(
+                expanded = menuExpanded,
+                onDismiss = { menuExpanded = false },
+                items = contextMenu,
             ) {
-                Icon(
-                    Icons.Filled.MoreVert,
-                    contentDescription = "更多操作",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
-                )
+                IconButton(
+                    onClick = {
+                        if (anchoredMenu) menuExpanded = true else onOptionsClick?.invoke()
+                    },
+                    colors = androidx.compose.material3.IconButtonDefaults.iconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ),
+                    modifier = Modifier.size(40.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.MoreVert,
+                        contentDescription = "更多操作",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
             }
         }} else null,
-    )
+        )
+    }
+
+    // 桌面右键菜单：非多选且传入了菜单项时才生效（见参数 KDoc）。
+    if (contextMenu != null && !selectionMode) {
+        CpContextMenu(items = contextMenu, modifier = modifier) {
+            row(Modifier)
+        }
+    } else {
+        row(modifier)
+    }
 }
