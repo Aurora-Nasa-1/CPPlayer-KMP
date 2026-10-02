@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -66,6 +67,7 @@ import cp.player.app.platform.openTargetApp
 import cp.player.app.platform.saveQrCodeToGallery
 import cp.player.app.ui.component.CpIconSize
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.component.SettingsButtonItem
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsDropdownItem
@@ -141,6 +143,29 @@ class AccountScreen : Screen {
 
                 // 状态反馈（切号、清除、扫码轮询…）放页面顶部，登录与否都能看见。
                 message?.let { SettingsNote(it, color = MaterialTheme.colorScheme.primary) }
+
+                // 「我的」两个入口。它们以前根本不存在 —— 用户资料与私信端点早就有了，
+                // 但应用里除了这页顶部的头像之外，没有第二个地方能把它们打开。
+                profile?.let { me ->
+                    SettingsSection("我的") {
+                        SettingsClickItem(
+                            title = "我的主页",
+                            subtitle = "歌曲、专辑与歌单，和你在别人主页看到的是同一套",
+                            icon = Icons.Filled.Person,
+                            index = 0,
+                            total = 2,
+                            onClick = { navigator.push(UserProfileScreen(me.uid, me.nickname)) },
+                        )
+                        SettingsClickItem(
+                            title = "消息",
+                            subtitle = "最近联系人与私信",
+                            icon = Icons.AutoMirrored.Filled.Message,
+                            index = 1,
+                            total = 2,
+                            onClick = { navigator.push(MessagesScreen()) },
+                        )
+                    }
+                }
 
                 SettingsSection("当前音源") {
                     SettingsClickItem(
@@ -353,7 +378,7 @@ class AccountScreen : Screen {
 
         CpRouteScaffold(
             title = "账号与登录",
-            onBack = { navigator.pop() },
+            onBack = { navigator.popOrNotify() },
         ) { pageModifier -> body(pageModifier) }
     }
 }
