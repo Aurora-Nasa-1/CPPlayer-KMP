@@ -285,7 +285,18 @@ class PlaybackControllerImpl(
     override suspend fun addToQueue(mediaId: String) {
         navMutex.withLock {
             _queue.add(Entry(mediaId))
-            if (_shuffle) _order = (_order ?: _queue.indices.toList()) + (_queue.lastIndex)
+            if (_shuffle) {
+                // 新曲排在轮播末尾，已有曲目各自的位置不变。
+                //
+                // ⚠️ 基准只能取「除新曲以外的下标」，不能图省事写 `_queue.indices`：
+                //    indices 此刻已经包含刚追加上去的下标，再拼一个 lastIndex 就是同一个槽位两次
+                //    ⇒ 它在随机序里占两个位置，而游标又是按首次匹配定位的
+                //    ⇒ 表现就是「同一首连着放两遍，后面的歌永远排不到」。
+                //    `_shuffle` 为真而 `_order` 为空的情况真实存在（随机开着清空队列后逐曲添加），
+                //    此时必须**补齐**旧下标，不能指望 `_order` 已经在。
+                _order = (_order ?: (0 until _queue.lastIndex).toList()) + _queue.lastIndex
+            }
+            ensureValidOrder()
         }
         pushQueueState()
         scope.launch { resolveEntry(_queue.lastIndex) }
@@ -357,11 +368,21 @@ class PlaybackControllerImpl(
                 in to..<from -> _index + 1
                 else -> _index
             }
-            // shuffle 顺序失效，重建：丢弃旧顺序，按当前 _index 在最前
+            // 队列已经重排，旧的随机序（一串下标）随之失去意义，必须重建。
             if (_shuffle) {
-                _order = listOf(_index) + (_queue.indices.toList() - _index).shuffled(Random(System.nanoTime()))
-                _orderPos = 0
+                val current = _index
+                if (current in _queue.indices) {
+                    // 当前曲目占首位、其余重洗：拖拽后接着播不会跳回原点。
+                    _order = listOf(current) + (_queue.indices.toList() - current)
+                        .shuffled(Random(System.nanoTime()))
+                } else {
+                    // 队列刚搭好、还没有当前曲目（_index == -1）：整队重洗。
+                    // ⚠️ 这里不能沿用 listOf(_index) 的写法 —— 那等于把 -1 塞成顺序里的一个槽位，
+                    //   走到那里会 *没有曲目可播*，同时还会挤掉一首正常曲目。
+                    _order = shuffledOrder(_queue.size)
+                }
             }
+            ensureValidOrder()
         }
         pushQueueState()
     }
@@ -699,13 +720,9 @@ class PlaybackControllerImpl(
 
     override fun toggleShuffle() {
         _shuffle = !_shuffle
-        if (_shuffle) {
-            _order = shuffledOrder(_queue.size)
-            _orderPos = _order?.indexOf(_index) ?: -1
-        } else {
-            _order = null
-            _orderPos = _index
-        }
+        _order = if (_shuffle) shuffledOrder(_queue.size) else null
+        // 游标交给 ensureValidOrder 统一算：连带修掉「还没有当前曲目时随机序之首该是谁」这类边界。
+        ensureValidOrder()
         updateState { it.copy(shuffleEnabled = _shuffle) }
     }
 
@@ -976,6 +993,7 @@ class PlaybackControllerImpl(
     /** 计算下一首索引（不修改状态）。null=到达终点。 */
     private suspend fun computeNext(autoAdvance: Boolean): Int? {
         if (_queue.isEmpty()) return null
+        ensureValidOrder()
         if (_shuffle && _order != null) {
             val order = _order!!
             val nextPos = _orderPos + 1
@@ -993,6 +1011,7 @@ class PlaybackControllerImpl(
 
     private suspend fun computePrev(): Int? {
         if (_queue.isEmpty()) return null
+        ensureValidOrder()
         if (_shuffle && _order != null) {
             val order = _order!!
             val prevPos = _orderPos - 1
@@ -1006,6 +1025,41 @@ class PlaybackControllerImpl(
 
     private fun shuffledOrder(size: Int): List<Int> {
         return (0 until size).shuffled(Random(System.nanoTime()))
+    }
+
+    /** [order] 是否恰好「队里每首各占一个槽位」。为真则它是 `_queue.indices` 的一个置换。 */
+    private fun orderIsValid(order: List<Int>): Boolean {
+        if (order.size != _queue.size) return false
+        val seen = BooleanArray(_queue.size)
+        for (i in order) {
+            if (i !in _queue.indices || seen[i]) return false
+            seen[i] = true
+        }
+        return true
+    }
+
+    /**
+     * 把 `_order` / `_orderPos` 校正到与 `_queue` / `_index` 一致（[orderIsValid] 的意义）。
+     *
+     * 随机序在 `playQueue` / `setQueue` / `addToQueue` / `removeQueueItem` /
+     * `moveQueueItem` / `playAt` 六处各自手工维护，**只要有一处漏算一个下标，它就不再是置换**。
+     * 这类错位的症状是「跳歌 / 同一首反复播」，而 UI 上完全看不出是哪一步写漏的，事后无法回溯，
+     * 所以在每次真正使用随机序之前统一兜一层。
+     *
+     * **必须幂等且廉价**：队列没动过时这里只重算游标，**绝不重洗**
+     * —— 否则用户每按一次「下一首」都在换播放顺序，随机就退化成一团噪声。
+     */
+    private fun ensureValidOrder() {
+        if (!_shuffle || _queue.isEmpty()) {
+            _order = null
+            _orderPos = _index
+            return
+        }
+        val order = _order
+        if (order == null || !orderIsValid(order)) {
+            _order = shuffledOrder(_queue.size)
+        }
+        _orderPos = _order!!.indexOf(_index)
     }
 
     private fun extractLyricsInfo(json: JsonElement, lines: List<SyncedLyricLine>): LyricsInfo {

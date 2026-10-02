@@ -336,6 +336,129 @@ class PlaybackControllerNavigationTest {
         assertTrue(next in 0..2, "跳转后下标应合法，实际=$next")
         assertTrue(next != 1, "随机序下不应停在原曲目，实际=$next")
     }
+
+    // ============ 随机播放：顺序必须始终是队列的一个置换 ============
+
+    /**
+     * 开启列表循环后连按 [steps] 次「下一首」，返回每次落到的曲目下标。
+     *
+     * [PlaybackControllerImpl] 内的随机播放顺序（元素 = 队列下标）必须**恰好是队列的置换**：
+     * 每首歌占一个槽位，不多不少。一轮完整遍历会覆盖每一首恰好一次 ——
+     * 这条不变式比肉眼观察「顺序随机吗」强得多，且不受随机种子影响。
+     */
+    private suspend fun PlaybackControllerImpl.walkNext(steps: Int): List<Int> {
+        val visited = mutableListOf<Int>()
+        repeat(steps) {
+            skipNext()
+            visited += state.value.currentIndex
+        }
+        return visited
+    }
+
+    @Test
+    fun `turning shuffle off resumes the natural order from the current track`() = runBlocking {
+        val c = controller(FakePlatformPlayer(), FakeSource())
+        c.playQueue(listOf(mid(1), mid(2), mid(3), mid(4), mid(5)), startIndex = 0)
+        c.playAt(2)
+
+        c.toggleShuffle()
+        c.toggleShuffle()
+        assertFalse(c.state.value.shuffleEnabled)
+
+        c.skipNext()
+        assertEquals(3, c.state.value.currentIndex, "关闭随机后应从当前曲的自然后继继续")
+    }
+
+    @Test
+    fun `a full round under shuffle visits every queue entry exactly once`() = runBlocking {
+        val c = controller(FakePlatformPlayer(), FakeSource())
+        c.playQueue(listOf(mid(1), mid(2), mid(3), mid(4), mid(5)), startIndex = 3)
+        c.toggleShuffle()
+        c.setRepeatMode(RepeatMode.ALL)
+
+        val visited = c.walkNext(5)
+
+        assertEquals(listOf(0, 1, 2, 3, 4), visited.sorted(), "一轮随机应覆盖全部 5 首各一次")
+    }
+
+    @Test
+    fun `adding to the queue while shuffle is on keeps one slot per track`() = runBlocking {
+        val c = controller(FakePlatformPlayer(), FakeSource())
+        c.playQueue(listOf(mid(1), mid(2), mid(3)), startIndex = 0)
+        c.toggleShuffle()
+        c.setRepeatMode(RepeatMode.ALL)
+
+        c.addToQueue(mid(4))
+
+        val visited = c.walkNext(4)
+        assertEquals(listOf(0, 1, 2, 3), visited.sorted(), "加曲后每首仍应只占一个槽位")
+    }
+
+    @Test
+    fun `removing a track while shuffle is on keeps one slot per track`() = runBlocking {
+        val c = controller(FakePlatformPlayer(), FakeSource())
+        c.playQueue(listOf(mid(1), mid(2), mid(3), mid(4)), startIndex = 0)
+        c.toggleShuffle()
+        c.setRepeatMode(RepeatMode.ALL)
+
+        c.removeQueueItem(2)
+
+        val visited = c.walkNext(3)
+        assertEquals(listOf(0, 1, 2), visited.sorted(), "删曲后剩余 3 首应各占一个槽位")
+    }
+
+    @Test
+    fun `dragging a track while shuffle is on keeps one slot per track`() = runBlocking {
+        val c = controller(FakePlatformPlayer(), FakeSource())
+        c.playQueue(listOf(mid(1), mid(2), mid(3), mid(4)), startIndex = 1)
+        c.toggleShuffle()
+        c.setRepeatMode(RepeatMode.ALL)
+
+        c.moveQueueItem(from = 0, to = 3)
+
+        val visited = c.walkNext(4)
+        assertEquals(listOf(0, 1, 2, 3), visited.sorted(), "拖拽重建顺序后每首应只占一个槽位")
+    }
+
+    /**
+     * 随机**开着**清空队列、再逐曲添加回来 —— 这是最容易踩的路径：
+     * 清队只置空顺序、并不关掉随机开关，此时「补一个槽位」的算错会让新曲占两个位置，
+     * 而游标按首次匹配定位 ⇒ 同一首被反复播放、后面的曲再也轮不到。
+     */
+    @Test
+    fun `queue rebuilt by hand while shuffle is on stays a clean permutation`() = runBlocking {
+        val c = controller(FakePlatformPlayer(), FakeSource())
+        c.playQueue(listOf(mid(1)), startIndex = 0)
+        c.toggleShuffle()
+
+        c.clearQueue()
+        c.addToQueue(mid(2))
+        c.addToQueue(mid(3))
+        c.playAt(0)
+        c.setRepeatMode(RepeatMode.ALL)
+
+        val visited = c.walkNext(2)
+        assertEquals(listOf(0, 1), visited.sorted(), "两首排队应各播一次，实际=$visited")
+    }
+
+    @Test
+    fun `dragging in a not-yet-started queue injects no bogus slot`() = runBlocking {
+        val c = controller(FakePlatformPlayer(), FakeSource())
+        c.playQueue(listOf(mid(1)), startIndex = 0)
+        c.toggleShuffle()
+
+        c.clearQueue()
+        c.addToQueue(mid(2))
+        c.addToQueue(mid(3))
+        c.addToQueue(mid(4))
+        // 尚未起播（没有当前曲目）时拖拽，不能把 -1 当成顺序里的一个槽位。
+        c.moveQueueItem(from = 0, to = 2)
+        c.playAt(1)
+        c.setRepeatMode(RepeatMode.ALL)
+
+        val visited = c.walkNext(3)
+        assertEquals(listOf(0, 1, 2), visited.sorted(), "三首排队应各播一次，实际=$visited")
+    }
 }
 
 private fun mid(n: Int) = "netease://song/$n"
