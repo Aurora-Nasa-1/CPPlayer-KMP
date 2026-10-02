@@ -298,7 +298,7 @@ kotlin {
                 // 版本冲突时 Gradle 取高者，所以这一行足以覆盖插件给的 1.9.0。
                 implementation(libs.material3)
                 implementation(compose.materialIconsExtended)
-                implementation(compose.components.resources)
+                implementation(libs.compose.components.resources)
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.json)
                 implementation(libs.kotlinx.datetime)

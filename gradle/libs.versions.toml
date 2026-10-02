@@ -47,6 +47,10 @@ accompanist-lyrics-core = { module = "com.mocharealm.accompanist:lyrics-core", v
 materialkolor = { module = "com.materialkolor:material-kolor", version.ref = "materialkolor" }
 material-color-utilities = { module = "com.materialkolor:material-color-utilities", version.ref = "material-color-utilities" }
 material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "material3" }
+# compose 插件 1.11.x 起 `compose.components.resources` 访问器已标 deprecated
+# （编译时警告 "'val resources: String' is deprecated. Specify dependency directly."），
+# 显式按坐标声明，版本与插件一致。
+compose-components-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "compose" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }
