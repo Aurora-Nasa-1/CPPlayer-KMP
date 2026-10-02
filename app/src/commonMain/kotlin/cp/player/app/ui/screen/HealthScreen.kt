@@ -45,9 +45,7 @@ import cp.player.app.ui.component.SettingsLazyPage
 import cp.player.app.ui.component.TopBarAction
 import cp.player.app.ui.component.settingsRowContainer
 import cp.player.core.monitor.HealthMonitor
-import kotlinx.datetime.Instant
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
+import cp.player.core.util.localDateTimeOf
 
 /**
  * 诊断：接口调用记录。
@@ -161,10 +159,11 @@ private fun RecordRow(record: HealthMonitor.ApiCallRecord, index: Int, total: In
         HealthMonitor.HealthLevel.WARNING -> MaterialTheme.colorScheme.tertiary
         HealthMonitor.HealthLevel.ERROR -> MaterialTheme.colorScheme.error
     }
+    // 别用 kotlinx-datetime：运行时 0.7.x 无 kotlinx.datetime.Instant 类文件，
+    // 一碰就是 NoClassDefFoundError；统一走 expect/actual 的 localDateTimeOf。
     val time = runCatching {
-        Instant.fromEpochMilliseconds(record.timestamp)
-            .toLocalDateTime(TimeZone.currentSystemDefault())
-            .time.toString().take(8)
+        val t = localDateTimeOf(record.timestamp)
+        "%02d:%02d:%02d".format(t.hour, t.minute, t.second)
     }.getOrDefault("--:--:--")
 
     var showRaw by remember { mutableStateOf(false) }

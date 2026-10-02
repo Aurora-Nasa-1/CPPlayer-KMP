@@ -124,7 +124,9 @@
   专辑发行年份整整一栏就是这么丢的。
   要日期分量走 `cp.player.core.util.localDateTimeOf(ms)`（expect/actual，jvm 侧用 `java.time`），
   与早已存在的 `currentTimeMillis()` 同一套做法（那个的 KDoc 里也写着同一句话）。
-  ⚠️ 例外：`PlaylistDetailScreen.formatPublishDate` 仍在用 kotlinx-datetime，**属未修的同类隐患**。
+  ~~⚠️ 例外：`PlaylistDetailScreen.formatPublishDate` 仍在用 kotlinx-datetime~~
+  （2026-10-02 已修，同批还清掉了 `HealthScreen` 的 runCatching 静默退化隐患；
+  目前 app 源码已无 kotlinx-datetime 运行时引用，新代码别再引入）。
 
 ## 6. Compose / UI 规则
 
