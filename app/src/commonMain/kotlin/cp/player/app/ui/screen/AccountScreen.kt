@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Message
@@ -121,6 +122,12 @@ class AccountScreen : Screen {
         val accounts by model.accounts.collectAsState()
         val method by model.method.collectAsState()
         val showForm by model.showForm.collectAsState()
+        // 登录方式按音源能力动态生成（manifest.loginMethods；未声明 = 网易云系全量）
+        val loginChannels by model.loginChannels.collectAsState()
+        // 图形验证码（音源声明了 captchaImage 能力时才出现的人机校验）
+        val supportsCaptchaImage by model.supportsCaptchaImage.collectAsState()
+        val captchaImage by model.captchaImage.collectAsState()
+        val imageCaptcha by model.imageCaptcha.collectAsState()
         // 原「音源隔离」是一个独立的一级设置入口，但它唯一的真设置项就是这个开关，
         // 其余全是跳转链接。并进本页，设置根页少一个入口、少一圈循环跳转。
         val switchAccount by AppModel.isolationSwitchAccountFlow.collectAsState()
@@ -144,9 +151,122 @@ class AccountScreen : Screen {
                 // 状态反馈（切号、清除、扫码轮询…）放页面顶部，登录与否都能看见。
                 message?.let { SettingsNote(it, color = MaterialTheme.colorScheme.primary) }
 
+                // 登录区（方式选择 + 表单 + 提交按钮）抽成局部块，两个位置复用：
+                // 未登录 → 紧跟 Hero 放在页面**最上面**，手机端第一屏就是二维码/登录表单，
+                // 不用滚过「当前音源 / 音源隔离」才找到登录入口；
+                // 已登录「添加账号」→ 放在账号列表之后（见下方 showForm 分支）。
+                val loginSection: @Composable () -> Unit = {
+                    // 清洗后的 cookie（null = 粘进来的东西里一个 k=v 都没有）。
+                    // 表单与提交按钮都要用它，所以在这一层算一次。
+                    val normalizedCookie = CookieLogin.normalize(cookieText)
+
+                    SettingsSection(if (isLogged) "添加账号" else "登录方式") {
+                        SettingsDropdownItem(
+                            title = "登录方式",
+                            // 只显示当前音源支持的方式（音源未声明时是网易云系全量）
+                            options = loginChannels.map { it.label },
+                            selectedIndex = loginChannels.indexOf(method).coerceAtLeast(0),
+                            onSelect = { model.setChannel(loginChannels[it]) },
+                            index = 0,
+                            total = 1,
+                        )
+                    }
+
+                    SettingsFieldGroup {
+                        when (method) {
+                            LoginChannel.QR -> QrLoginContent(
+                                qrUrl = qrUrl,
+                                qrImgBase64 = qrImgBase64,
+                                isLoading = isLoading,
+                                targetAppName = targetAppName,
+                                targetAppInstalled = targetAppInstalled,
+                                onSaveQr = { model.saveQrCode() },
+                                onOpenTargetApp = { model.openTargetApp() },
+                                onRefresh = { model.fetchQrCode() },
+                            )
+                            LoginChannel.EMAIL -> EmailLoginForm(
+                                email = email,
+                                onEmailChange = { email = it },
+                                password = password,
+                                onPasswordChange = { password = it },
+                            )
+                            LoginChannel.PHONE -> PhoneLoginForm(
+                                phone = phone,
+                                onPhoneChange = { phone = it },
+                                captcha = captcha,
+                                onCaptchaChange = { captcha = it },
+                                isLoading = isLoading,
+                                // 图形验证码：音源声明 captchaImage 能力时才显示
+                                captchaImageUrl = captchaImage.takeIf { supportsCaptchaImage },
+                                imageCaptcha = imageCaptcha,
+                                onImageCaptchaChange = { model.imageCaptcha.value = it },
+                                onRefreshCaptcha = { model.fetchCaptchaImage() },
+                                onSendCaptcha = { model.sendCaptcha(phone) },
+                            )
+                            LoginChannel.COOKIE -> CookieLoginForm(
+                                raw = cookieText,
+                                onRawChange = { cookieText = it },
+                                normalized = normalizedCookie,
+                            )
+                        }
+                    }
+
+                    when (method) {
+                        LoginChannel.EMAIL -> SettingsButtonItem(
+                            text = if (isLoading) "登录中…" else "邮箱登录",
+                            index = 0,
+                            total = 2,
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            enabled = !isLoading && email.isNotBlank() && password.isNotBlank(),
+                            onClick = { model.loginEmail(email, password) },
+                        )
+                        LoginChannel.PHONE -> SettingsButtonItem(
+                            text = if (isLoading) "登录中…" else "手机登录",
+                            index = 0,
+                            total = 2,
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            enabled = !isLoading && phone.isNotBlank(),
+                            onClick = { model.loginPhone(phone, captcha) },
+                        )
+                        LoginChannel.COOKIE -> SettingsButtonItem(
+                            text = if (isLoading) "登录中…" else "Cookie 登录",
+                            index = 0,
+                            total = 2,
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            enabled = !isLoading && normalizedCookie != null,
+                            onClick = { model.loginWithCookie(cookieText) },
+                        )
+                        LoginChannel.QR -> {
+                            // 扫码方式靠轮询自动登录，没有提交按钮；保留旧入口方便切到账密
+                            val fallback = loginChannels.firstOrNull { it != LoginChannel.QR }
+                            if (fallback != null) {
+                                SettingsButtonItem(
+                                    text = "改用${fallback.label}",
+                                    index = 0,
+                                    total = 1,
+                                    onClick = { model.setChannel(fallback) },
+                                )
+                            }
+                        }
+                    }
+                    if (method != LoginChannel.QR) {
+                        SettingsButtonItem(
+                            text = "游客登录 / 跳过",
+                            index = 1,
+                            total = 2,
+                            enabled = !isLoading,
+                            onClick = { model.loginAnonymous() },
+                        )
+                    }
+                }
+
                 // 「我的」两个入口。它们以前根本不存在 —— 用户资料与私信端点早就有了，
                 // 但应用里除了这页顶部的头像之外，没有第二个地方能把它们打开。
-                profile?.let { me ->
+                // （未登录时没有资料可看，整块不渲染。）
+                if (isLogged) profile?.let { me ->
                     SettingsSection("我的") {
                         SettingsClickItem(
                             title = "我的主页",
@@ -166,6 +286,9 @@ class AccountScreen : Screen {
                         )
                     }
                 }
+
+                // 未登录：登录区紧跟 Hero 放在最上面（手机端一进页就能扫码/填表单）。
+                if (!isLogged) loginSection()
 
                 SettingsSection("当前音源") {
                     SettingsClickItem(
@@ -260,104 +383,10 @@ class AccountScreen : Screen {
                             onClick = { model.startAddAccount() },
                         )
                     }
+                    // 已登录「添加账号」：复用同一个登录区，放在账号列表之后。
+                    if (showForm) loginSection()
                 } else {
                     SettingsNote("登录后可同步歌单、红心与播放记录；登录态只保存在当前音源内。")
-                }
-
-                if (!isLogged || showForm) {
-                    // 清洗后的 cookie（null = 粘进来的东西里一个 k=v 都没有）。
-                    // 表单与提交按钮都要用它，所以在这一层算一次。
-                    val normalizedCookie = CookieLogin.normalize(cookieText)
-
-                    SettingsSection(if (isLogged) "添加账号" else "登录方式") {
-                        SettingsDropdownItem(
-                            title = "登录方式",
-                            options = listOf("扫码登录", "邮箱登录", "手机号登录", "Cookie 登录"),
-                            selectedIndex = method,
-                            onSelect = { model.setMethod(it) },
-                            index = 0,
-                            total = 1,
-                        )
-                    }
-
-                    SettingsFieldGroup {
-                        when (method) {
-                            0 -> QrLoginContent(
-                                qrUrl = qrUrl,
-                                qrImgBase64 = qrImgBase64,
-                                isLoading = isLoading,
-                                targetAppName = targetAppName,
-                                targetAppInstalled = targetAppInstalled,
-                                onSaveQr = { model.saveQrCode() },
-                                onOpenTargetApp = { model.openTargetApp() },
-                                onRefresh = { model.fetchQrCode() },
-                            )
-                            1 -> EmailLoginForm(
-                                email = email,
-                                onEmailChange = { email = it },
-                                password = password,
-                                onPasswordChange = { password = it },
-                            )
-                            2 -> PhoneLoginForm(
-                                phone = phone,
-                                onPhoneChange = { phone = it },
-                                captcha = captcha,
-                                onCaptchaChange = { captcha = it },
-                                isLoading = isLoading,
-                                onSendCaptcha = { model.sendCaptcha(phone) },
-                            )
-                            else -> CookieLoginForm(
-                                raw = cookieText,
-                                onRawChange = { cookieText = it },
-                                normalized = normalizedCookie,
-                            )
-                        }
-                    }
-
-                    when (method) {
-                        1 -> SettingsButtonItem(
-                            text = if (isLoading) "登录中…" else "邮箱登录",
-                            index = 0,
-                            total = 2,
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            enabled = !isLoading && email.isNotBlank() && password.isNotBlank(),
-                            onClick = { model.loginEmail(email, password) },
-                        )
-                        2 -> SettingsButtonItem(
-                            text = if (isLoading) "登录中…" else "手机登录",
-                            index = 0,
-                            total = 2,
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            enabled = !isLoading && phone.isNotBlank(),
-                            onClick = { model.loginPhone(phone, captcha) },
-                        )
-                        3 -> SettingsButtonItem(
-                            text = if (isLoading) "登录中…" else "Cookie 登录",
-                            index = 0,
-                            total = 2,
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            enabled = !isLoading && normalizedCookie != null,
-                            onClick = { model.loginWithCookie(cookieText) },
-                        )
-                        else -> SettingsButtonItem(
-                            text = "改用账号密码登录",
-                            index = 0,
-                            total = 1,
-                            onClick = { model.setMethod(1) },
-                        )
-                    }
-                    if (method != 0) {
-                        SettingsButtonItem(
-                            text = "游客登录 / 跳过",
-                            index = 1,
-                            total = 2,
-                            enabled = !isLoading,
-                            onClick = { model.loginAnonymous() },
-                        )
-                    }
                 }
 
                 if (isLogged) {
@@ -552,6 +581,11 @@ private fun PhoneLoginForm(
     captcha: String,
     onCaptchaChange: (String) -> Unit,
     isLoading: Boolean,
+    // 图形验证码（人机校验）：音源声明 captchaImage 能力时提供图片，用户输入答案
+    captchaImageUrl: String? = null,
+    imageCaptcha: String = "",
+    onImageCaptchaChange: (String) -> Unit = {},
+    onRefreshCaptcha: () -> Unit = {},
     onSendCaptcha: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -564,6 +598,37 @@ private fun PhoneLoginForm(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
             singleLine = true,
         )
+        if (captchaImageUrl != null) {
+            OutlinedTextField(
+                value = imageCaptcha,
+                onValueChange = onImageCaptchaChange,
+                label = { Text("图形验证码") },
+                supportingText = { Text("音源要求人机校验；看不清点「换一张」") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    modifier = Modifier.width(148.dp).height(48.dp).clip(RoundedCornerShape(8.dp)),
+                ) {
+                    AsyncImage(
+                        model = captchaImageUrl,
+                        contentDescription = "图形验证码",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                OutlinedButton(onClick = onRefreshCaptcha, enabled = !isLoading) {
+                    Text("换一张")
+                }
+            }
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -650,8 +715,28 @@ class AccountScreenModel : ScreenModel {
     val targetAppName = MutableStateFlow<String?>(null)
     val targetAppInstalled = MutableStateFlow(false)
     val accounts = MutableStateFlow<List<AccountStore.SavedAccount>>(emptyList())
-    val method = MutableStateFlow(0)
+    val method = MutableStateFlow(LoginChannel.QR)
     val showForm = MutableStateFlow(false)
+
+    /**
+     * 当前音源可用的登录方式。
+     *
+     * 由音源 manifest 的 `loginMethods` 声明决定（`qr` / `email` / `sms`）；
+     * **未声明 = 网易云系默认全量**（旧行为）；`cookie` 是宿主端能力，永远保留。
+     */
+    val loginChannels = MutableStateFlow(LoginChannel.DEFAULT)
+
+    /** 音源是否声明了图形验证码能力（`captchaImage`）。 */
+    val supportsCaptchaImage = MutableStateFlow(false)
+
+    /** 图形验证码图片（data-url 形态，AsyncImage 直接可显示）；null = 还没取。 */
+    val captchaImage = MutableStateFlow<String?>(null)
+
+    /** 用户输入的图形验证码答案。 */
+    val imageCaptcha = MutableStateFlow("")
+
+    /** 图形验证码会话 cookie（`captcha/image` 响应带回，发送/登录时原样传回）。 */
+    private var captchaSessionCookie: String? = null
 
     /**
      * 当前在跑的二维码任务（取 key → 出图 → 轮询**全在这一个 Job 里**）。
@@ -677,13 +762,32 @@ class AccountScreenModel : ScreenModel {
                     targetAppName.value = null
                     targetAppInstalled.value = false
                 }
+                // 登录方式按音源声明过滤（见 LoginChannel 注释）；当前选中的方式
+                // 若被新音源砍掉，回落到第一个可用方式，别停在不可用的表单上。
+                val declared = provider?.loginMethods
+                    ?.map { it.trim().lowercase() }
+                    ?.filter { it.isNotEmpty() }
+                loginChannels.value = if (declared.isNullOrEmpty()) {
+                    LoginChannel.DEFAULT
+                } else {
+                    buildList {
+                        if ("qr" in declared) add(LoginChannel.QR)
+                        if ("email" in declared) add(LoginChannel.EMAIL)
+                        if ("sms" in declared || "phone" in declared) add(LoginChannel.PHONE)
+                        add(LoginChannel.COOKIE)
+                    }
+                }
+                supportsCaptchaImage.value = declared?.contains("captchaimage") == true
+                if (method.value !in loginChannels.value) {
+                    setChannel(loginChannels.value.first())
+                }
                 // 登录态与 cookie 都是**按音源隔离**的（存储键里带 providerId），
                 // 所以音源一变就得重新查一次。原先只刷账号列表 ⇒ 切换音源后本页
                 // 仍停在上一个音源的登录态上。
                 checkLoginStatus()
                 if (first) {
                     first = false
-                    if (!isLogged.value) fetchQrCode()
+                    if (!isLogged.value && LoginChannel.QR in loginChannels.value) fetchQrCode()
                 }
             }
         }
@@ -691,11 +795,31 @@ class AccountScreenModel : ScreenModel {
 
     fun providerId(): String = AppModel.activeProviderId()
 
-    fun setMethod(index: Int) {
-        method.value = index.coerceIn(0, 3)
+    fun setChannel(channel: LoginChannel) {
+        method.value = channel
         showForm.value = true
         // 离开扫码方式就停掉轮询，否则它在后台继续请求、继续改 message。
-        if (index == 0) fetchQrCode() else cancelQrPolling()
+        if (channel == LoginChannel.QR) fetchQrCode() else cancelQrPolling()
+        // 切到手机号登录时预取一次图形验证码（音源声明了该能力才有）。
+        if (channel == LoginChannel.PHONE && supportsCaptchaImage.value) fetchCaptchaImage()
+    }
+
+    /** 取图形验证码；拿到后记住会话 cookie，发送验证码 / 登录时原样带回。 */
+    fun fetchCaptchaImage() {
+        if (!supportsCaptchaImage.value) return
+        screenModelScope.launch {
+            val body = runCatching { AppModel.authRepository.getCaptchaImage() }.getOrNull()
+            val obj = body?.asObject()
+            val img = (obj?.get("captchaImage") as? JsonPrimitive)?.contentOrNull
+            if (obj != null && obj.asCodeOk() && !img.isNullOrBlank()) {
+                captchaImage.value = img
+                captchaSessionCookie = (obj["cookie"] as? JsonPrimitive)?.contentOrNull
+            } else {
+                captchaImage.value = null
+                captchaSessionCookie = null
+                message.value = "图形验证码获取失败，可留空直接发送短信验证码"
+            }
+        }
     }
 
     fun startAddAccount() {
@@ -857,8 +981,19 @@ class AccountScreenModel : ScreenModel {
         screenModelScope.launch {
             isLoading.value = true
             try {
-                val body = AppModel.authRepository.loginWithPhone(phone, codeOrPass)
-                onLoginSucceeded(body.uniCookie(), body.asCodeOk())
+                val body = AppModel.authRepository.loginWithPhone(
+                    phone,
+                    codeOrPass,
+                    imageCaptcha.value.ifBlank { null },
+                    captchaSessionCookie,
+                )
+                if (!body.asCodeOk()) {
+                    // 登录失败多半是图形验证码不对/过期 —— 立即换一张再让用户输
+                    message.value = "登录失败: ${(body.asObject()?.get("msg") as? JsonPrimitive)?.contentOrNull ?: "请重试"}"
+                    fetchCaptchaImage()
+                    return@launch
+                }
+                onLoginSucceeded(body.uniCookie(), ok = true)
             } catch (e: Exception) {
                 message.value = "登录失败: ${e.message}"
             } finally {
@@ -916,8 +1051,22 @@ class AccountScreenModel : ScreenModel {
 
     fun sendCaptcha(phone: String) {
         screenModelScope.launch {
-            runCatching { AppModel.authRepository.sendCaptcha(phone) }
-                .onSuccess { message.value = "验证码已发送（如支持）" }
+            runCatching {
+                AppModel.authRepository.sendCaptcha(
+                    phone,
+                    imageCaptcha.value.ifBlank { null },
+                    captchaSessionCookie,
+                )
+            }
+                .onSuccess { body ->
+                    if (body.asCodeOk()) {
+                        message.value = "验证码已发送"
+                    } else {
+                        // 失败时换一张图 —— 咪咕的验证码一次一换，旧图已作废
+                        message.value = "验证码发送失败: ${(body.asObject()?.get("msg") as? JsonPrimitive)?.contentOrNull ?: "请重试"}"
+                        fetchCaptchaImage()
+                    }
+                }
                 .onFailure { message.value = "验证码发送失败: ${it.message}" }
         }
     }
@@ -1050,6 +1199,27 @@ private enum class QrPollResult {
 
     /** 超时 / 连续请求失败 / 登录态已被别的入口改掉 —— 都不再自动重来。 */
     STOPPED,
+}
+
+/**
+ * 登录方式。显示与可用性由**当前音源**的能力声明决定
+ * （manifest `loginMethods`：`qr` / `email` / `sms` / `cookie` / `captchaImage`）。
+ *
+ * `cookie` 是宿主端能力（粘贴即可，不依赖音源实现登录接口），只要音源声明了
+ * 其它方式就一并保留；音源**什么都没声明**时按旧行为展示全量（网易云系音源
+ * 不用改 manifest 就有全部方式）。
+ */
+enum class LoginChannel(val label: String) {
+    QR("扫码登录"),
+    EMAIL("邮箱登录"),
+    PHONE("手机号登录"),
+    COOKIE("Cookie 登录"),
+    ;
+
+    companion object {
+        /** 未声明 loginMethods 时的默认全集（网易云系行为，向后兼容）。 */
+        val DEFAULT = listOf(QR, EMAIL, PHONE, COOKIE)
+    }
 }
 
 /** 轮询间隔 2 秒，与二维码服务端的过期节奏对齐。 */
