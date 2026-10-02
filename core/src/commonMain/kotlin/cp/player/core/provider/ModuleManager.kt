@@ -30,6 +30,10 @@ class ModuleManager(
     var lastLoadError: String? = null
         private set
 
+    /** 最近一次导出失败的错误信息（供 UI 展示） */
+    var lastExportError: String? = null
+        private set
+
     private fun updateProvidersFlow() { _providersFlow.value = providers.values.toList() }
 
     /**
@@ -54,7 +58,15 @@ class ModuleManager(
     }
 
     /** 导入 zip 模块包。 */
-    fun importModule(zipPath: String): Boolean {
+    fun importModule(zipPath: String): Boolean = importZip(zipPath, expectedId = null)
+
+    /**
+     * 用 zip 模块包**更新**已有模块：包内 manifest.id 必须与 [targetId] 一致，
+     * 否则拒绝 —— 防止把 A 模块的包覆盖到 B 的目录上。
+     */
+    fun updateModule(zipPath: String, targetId: String): Boolean = importZip(zipPath, expectedId = targetId)
+
+    private fun importZip(zipPath: String, expectedId: String?): Boolean {
         lastLoadError = null
         return try {
             val tempDir = "$modulesDir/temp_${System.currentTimeMillis()}"
@@ -70,8 +82,19 @@ class ModuleManager(
             }
             val manifestText = PlatformSupport.readTextFile(manifestPath) ?: ""
             val manifest = json.decodeFromString(ModuleManifest.serializer(), manifestText)
+            if (expectedId != null && manifest.id != expectedId) {
+                PlatformSupport.deleteRecursively(tempDir)
+                lastLoadError = "模块包不匹配：包内 id 为 ${manifest.id}，无法更新 $expectedId"
+                return false
+            }
             val targetDir = "$modulesDir/${manifest.id}"
-            if (PlatformSupport.exists(targetDir)) PlatformSupport.deleteRecursively(targetDir)
+            // 旧目录清理失败（典型：Windows 上活跃 jni 模块的 dll 被占用）必须中止，
+            // 否则 moveDir 语义未定义、旧文件半新半旧。
+            if (PlatformSupport.exists(targetDir) && !PlatformSupport.deleteRecursively(targetDir)) {
+                PlatformSupport.deleteRecursively(tempDir)
+                lastLoadError = "无法清理旧版本目录（模块文件可能正被占用）"
+                return false
+            }
             if (!PlatformSupport.moveDir(tempDir, targetDir)) {
                 lastLoadError = "移动临时目录失败"
                 return false
@@ -133,5 +156,23 @@ class ModuleManager(
         val ok = PlatformSupport.deleteRecursively(dir)
         if (ok) { providers.remove(id); updateProvidersFlow() }
         return ok
+    }
+
+    /**
+     * 把已安装模块 [id] 的目录打包为 zip 写入 [zipPath]（已存在则覆盖）。
+     * 失败原因见 [lastExportError]。
+     */
+    fun exportModule(id: String, zipPath: String): Boolean {
+        lastExportError = null
+        val dir = getModuleDir(id)
+        if (!PlatformSupport.exists(dir)) {
+            lastExportError = "模块目录不存在: $id"
+            return false
+        }
+        return if (PlatformSupport.zipDirTo(dir, zipPath)) true
+        else {
+            lastExportError = "打包 zip 失败: $id"
+            false
+        }
     }
 }

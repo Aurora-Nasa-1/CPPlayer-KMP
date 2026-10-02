@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +38,40 @@ actual fun rememberZipPicker(onPicked: (zipPath: String?) -> Unit): () -> Unit {
     }
 
     return { launcher.launch("application/zip") }
+}
+
+@Composable
+actual fun rememberZipSaver(fileName: String, onWriteTo: (destPath: String?) -> Boolean): () -> Unit {
+    val context = LocalContext.current
+    val currentOnWriteTo = rememberUpdatedState(onWriteTo)
+    val scope = rememberCoroutineScope()
+
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri == null) {
+            currentOnWriteTo.value(null)
+            return@rememberLauncherForActivityResult
+        }
+        scope.launch {
+            // 先在 cache 里让回调把 zip 写进临时文件（同步、已在 IO 线程），
+            // 写成功后拷贝到 SAF 选定的目标 —— zip 写盘只能走文件路径，content:// 不通。
+            withContext(Dispatchers.IO) {
+                val temp = File(context.cacheDir, "export_${System.currentTimeMillis()}.zip")
+                try {
+                    val written = runCatching { currentOnWriteTo.value(temp.absolutePath) }.getOrDefault(false)
+                    if (written) {
+                        context.contentResolver.openOutputStream(uri)?.use { out ->
+                            temp.inputStream().use { it.copyTo(out) }
+                        } ?: error("无法写入所选位置")
+                    }
+                    written
+                } finally {
+                    temp.delete()
+                }
+            }
+        }
+    }
+
+    return { launcher.launch(fileName) }
 }
 
 @Composable

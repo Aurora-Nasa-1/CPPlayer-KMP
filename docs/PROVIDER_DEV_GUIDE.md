@@ -167,6 +167,33 @@ Java_cp_player_core_provider_JniProvider_analyzeAudioFile(
 > Rust 侧用 `#[no_mangle] pub extern "system" fn ...` 直接写死符号名，
 > 参见 `reference/netease-module-rust/src/util/jni.rs`。
 
+### 3.4 Internal Provider（内置音源）
+
+| 属性 | 说明 |
+|------|------|
+| `type` | `"internal"`（兼容别名 `"kotlin"` / `"builtin"`） |
+| `entryPoint` | 不解析，随便填个占位值如 `"builtin://<id>"` |
+| 实现位置 | 宿主 App 内（`core/.../provider/`），当前唯一实现见 `MiguProvider.kt` |
+| 通信方式 | 无进程 / 无网络跳板，Provider 直接向上游发 HTTP |
+
+**为什么要有这种类型：** `binary` / `jni` 必须为每个平台 ABI 各产出一份二进制
+（Android 还额外需要 NDK 交叉编译，运行时还要 `exec` 应用私有目录下的可执行文件）。
+而一个纯 Kotlin 的内置 Provider 随 APK / 桌面包分发，
+
+- Android：`armeabi-v7a`(armv7) / `arm64-v8a`(armv8) / `x86_64`
+- Linux：`amd64`(x86_64) / `arm64` / `armv7`
+- Windows：`amd64` / `arm64`
+
+**一次实现全覆盖**，没有「架构不匹配」这个失败面，也不增加包体积。
+
+新增内置音源的步骤：
+
+1. 在 `core/src/commonMain/kotlin/cp/player/core/provider/` 下实现 `BackendProvider`
+   （`type = ProviderType.INTERNAL`），直接消费 §6/§7 的标准方法名，一般不需要 `apiMap`；
+2. 在 `core/src/jvmMain/.../provider/ProviderFactory.kt` 的 `createInternalProvider`
+   里按 `manifest.id` 加一个分支；
+3. 发布一个只含 `manifest.json` 的 zip（见 §10），用户导入即启用。
+
 ---
 
 ## 4. manifest.json 规范
@@ -177,8 +204,8 @@ Java_cp_player_core_provider_JniProvider_analyzeAudioFile(
     "id": "my-provider",            // 唯一标识，小写字母+连字符
     "name": "My Music Provider",    // 显示名称
     "version": "1.0.0",            // 语义化版本
-    "type": "http",                // "http" | "binary" | "jni"
-    "entryPoint": "http://...",    // URL、文件名或 .so 名
+    "type": "http",                // "http" | "binary" | "jni" | "internal"
+    "entryPoint": "http://...",    // URL、文件名、.so 名（internal 时为占位值）
 
     // === 可选字段 ===
     "apiMap": {
@@ -200,8 +227,8 @@ Java_cp_player_core_provider_JniProvider_analyzeAudioFile(
 | `id` | 是 | 唯一标识，小写字母 + 连字符 |
 | `name` | 是 | 显示名称 |
 | `version` | 是 | 语义化版本 |
-| `type` | 是 | Provider 类型：`"http"` / `"binary"` / `"jni"` |
-| `entryPoint` | 是 | URL、文件名或 .so 名 |
+| `type` | 是 | Provider 类型：`"http"` / `"binary"` / `"jni"` / `"internal"` |
+| `entryPoint` | 是 | URL、文件名或 .so 名（`internal` 不解析，仍需给值） |
 | `apiMap` | 否 | API 方法名映射表 |
 | `updateUrl` | 否 | 检查更新 URL，指向返回最新版本信息的 JSON 端点 |
 | `supportedAbis` | 否 | 支持的 CPU 架构列表，如 `["arm64-v8a", "armeabi-v7a"]` |
