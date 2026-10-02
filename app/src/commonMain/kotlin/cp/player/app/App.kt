@@ -3,6 +3,7 @@ package cp.player.app
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -12,6 +13,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -36,7 +38,7 @@ import cp.player.app.ui.screen.HomeGeneratedPlaylistScreen
 import cp.player.app.ui.screen.MainScreen
 import cp.player.app.ui.screen.OnboardingScreen
 import cp.player.app.ui.screen.PlaylistDetailScreen
-import cp.player.app.ui.screen.SetupScreen
+import cp.player.app.ui.screen.PlayerScreen
 import cp.player.app.ui.screen.StartupScreen
 import cp.player.app.platform.PlatformMediaControlsEffect
 import cp.player.core.MusicBackend
@@ -46,8 +48,9 @@ import cp.player.core.MusicBackend
  *
  * 假定平台入口已在调用前完成 [MusicBackend.init]（由 androidMain/desktopMain 执行）。
  * 负责主题应用与 Voyager 根 Navigator 的初始路由判定：
- * - [BackendState.NoProvider]（含未初始化/错误回退）→ [SetupScreen]
- * - [BackendState.Ready] → [MainScreen]
+ * - [BackendState.NoProvider] 或 Ready 且 `onboarding_done` 未置位 → [OnboardingScreen]
+ *   （无音源与首启引导已合并为同一条流程，不再单设 Setup 欢迎页）
+ * - 其余 Ready → [MainScreen]
  *
  * 通过观察 [MusicBackend.stateFlow] 响应 Provider 增删导致的瞬态切换，
  * 根 Navigator 起点由首次组合决定；后续 Ready 状态变化通过 LaunchedEffect 自动导航。
@@ -92,7 +95,6 @@ fun App(
             val start = remember(startDestination) {
                 when (startDestination) {
                     AppStartDestination.Loading -> StartupScreen("正在初始化后端…")
-                    AppStartDestination.Setup -> SetupScreen()
                     AppStartDestination.Onboarding -> OnboardingScreen()
                     AppStartDestination.Main -> MainScreen()
                     is AppStartDestination.Error -> BackendErrorScreen(startDestination.message)
@@ -103,7 +105,6 @@ fun App(
                 LaunchedEffect(startDestination) {
                     val target = when (startDestination) {
                         AppStartDestination.Loading -> StartupScreen("正在初始化后端…")
-                        AppStartDestination.Setup -> SetupScreen()
                         AppStartDestination.Onboarding -> OnboardingScreen()
                         AppStartDestination.Main -> MainScreen()
                         is AppStartDestination.Error -> BackendErrorScreen(startDestination.message)
@@ -161,61 +162,69 @@ fun App(
                             cp.player.app.ui.util.LocalRootNavigator provides navigator,
                         ) {
                             Box(Modifier.fillMaxSize().weight(1f)) {
-                                ScreenTransition(
-                                    navigator = navigator,
-                                    transition = {
-                                        if (targetState is PlaylistDetailScreen ||
-                                            targetState is HomeGeneratedPlaylistScreen
-                                        ) {
-                                            // 歌单打开：fade 交叉淡入（目标位置静态，飞行器叠加其上，
-                                            // 见 CoverFlight）；返回 tab 时仍走下方 slide，保持「返回」的方向感。
-                                            fadeIn(tween(300)) togetherWith fadeOut(tween(220))
-                                        } else {
-                                            // 复刻 Voyager SlideTransition 默认值：spring + Push/Pop 方向。
-                                            val spec = spring<IntOffset>(
-                                                stiffness = 400f,
-                                                visibilityThreshold = IntOffset.VisibilityThreshold,
-                                            )
-                                            if (navigator.lastEvent == StackEvent.Pop) {
-                                                slideInHorizontally(spec) { -it } togetherWith
-                                                    slideOutHorizontally(spec) { it }
-                                            } else {
-                                                slideInHorizontally(spec) { it } togetherWith
-                                                    slideOutHorizontally(spec) { -it }
-                                            }
-                                        }
-                                    },
-                                )
-
-                                // MainScreen already owns this overlay; all other pages get the
-                                // same controller here so playback remains accessible globally.
-                                val showMiniPlayer = startDestination is AppStartDestination.Main &&
-                                    navigator.lastItem !is MainScreen &&
-                                    navigator.lastItem !is cp.player.app.ui.screen.PlayerScreen
-                                if (showMiniPlayer) {
-                                    val playbackState by AppModel.playback.state.collectAsState()
-                                    val controller = AppModel.playback
-                                    SharedTransitionLayout(Modifier.fillMaxSize()) {
-                                        AnimatedContent(
-                                            targetState = playbackState.currentTrack != null,
-                                            transitionSpec = {
-                                                fadeIn(tween(200)) togetherWith fadeOut(tween(200))
+                                // ⚠️ 整个根 Navigator 只此一个 SharedTransitionLayout，且必须同时
+                                // 罩住「页面转场」与「全局 MiniPlayer」两端：共享元素只有在
+                                // **同一个** SharedTransitionScope 里才能配对。此前 MiniPlayer
+                                // 自带一个独立的 SharedTransitionLayout、而路由版 PlayerScreen
+                                // 又自建一个 —— 三方互不相识，从歌单等其它页面点 MiniPlayer
+                                // 展开播放页时配不上对，展开动画直接消失（tab 页里正常，
+                                // 因为那一对走的是 MainScreen 自己的 scope）。
+                                SharedTransitionLayout(Modifier.fillMaxSize()) {
+                                    CompositionLocalProvider(
+                                        cp.player.app.ui.anim.LocalSharedTransitionScope provides this,
+                                    ) {
+                                        ScreenTransition(
+                                            navigator = navigator,
+                                            transition = {
+                                                // 播放页路由（从全局 MiniPlayer 展开）：fade，
+                                                // 让 sharedBounds 的「小卡片长成全屏」形变唱主角 ——
+                                                // 叠一层 slide 会和形变抢戏。
+                                                if (targetState is PlayerScreen ||
+                                                    initialState is PlayerScreen
+                                                ) {
+                                                    fadeIn(tween(300)) togetherWith fadeOut(tween(300))
+                                                } else if (targetState is PlaylistDetailScreen ||
+                                                    targetState is HomeGeneratedPlaylistScreen
+                                                ) {
+                                                    // 歌单打开：fade 交叉淡入（目标位置静态，飞行器叠加其上，
+                                                    // 见 CoverFlight）；返回 tab 时仍走下方 slide，保持「返回」的方向感。
+                                                    fadeIn(tween(300)) togetherWith fadeOut(tween(220))
+                                                } else {
+                                                    // 复刻 Voyager SlideTransition 默认值：spring + Push/Pop 方向。
+                                                    val spec = spring<IntOffset>(
+                                                        stiffness = 400f,
+                                                        visibilityThreshold = IntOffset.VisibilityThreshold,
+                                                    )
+                                                    if (navigator.lastEvent == StackEvent.Pop) {
+                                                        slideInHorizontally(spec) { -it } togetherWith
+                                                            slideOutHorizontally(spec) { it }
+                                                    } else {
+                                                        slideInHorizontally(spec) { it } togetherWith
+                                                            slideOutHorizontally(spec) { -it }
+                                                    }
+                                                }
                                             },
-                                            label = "GlobalMiniPlayer",
+                                            // 每个页面（进 / 退场双方）各自拿到本次转场的
+                                            // AnimatedVisibilityScope —— 路由页的 sharedBounds
+                                            // 靠它挂到同一条转场时间线上。
+                                            content = { screen ->
+                                                CompositionLocalProvider(
+                                                    cp.player.app.ui.anim.LocalNavAnimatedVisibilityScope provides this,
+                                                ) {
+                                                    screen.Content()
+                                                }
+                                            },
+                                        )
+
+                                        // MainScreen already owns this overlay; all other pages get the
+                                        // same controller here so playback remains accessible globally.
+                                        GlobalMiniPlayerHost(
+                                            show = startDestination is AppStartDestination.Main &&
+                                                navigator.lastItem !is MainScreen &&
+                                                navigator.lastItem !is PlayerScreen,
+                                            onClick = { navigator.push(PlayerScreen()) },
                                             modifier = Modifier.align(Alignment.BottomCenter),
-                                        ) { hasTrack ->
-                                            if (hasTrack) {
-                                                MiniPlayer(
-                                                    state = playbackState,
-                                                    animatedVisibilityScope = this@AnimatedContent,
-                                                    onClick = { navigator.push(cp.player.app.ui.screen.PlayerScreen()) },
-                                                    onTogglePlay = controller::togglePlayPause,
-                                                    onSkipPrev = controller::skipPrevious,
-                                                    onSkipNext = controller::skipNext,
-                                                    modifier = Modifier.navigationBarsPadding(),
-                                                )
-                                            }
-                                        }
+                                        )
                                     }
                                 }
 
@@ -225,6 +234,53 @@ fun App(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * 全局 MiniPlayer 宿主（根 Navigator 上的路由页通用底栏；MainScreen 自己有一份）。
+ *
+ * ⚠️ 播放状态的订阅必须隔离在这个小 composable 里：播放中 `playback.state` 每 200ms
+ * 换一个新对象（位置轮询），collect 在 [App] 外层会连带 Navigator / ScreenTransition
+ * 一起重组 —— 与 [PlaybackMediaControlsBridge] 的 KDoc 同一理由。
+ *
+ * ⚠️ `show` 翻转必须走 [AnimatedContent] 的 target，**不能**用外层 `if` 摘除整个块：
+ * 从 MiniPlayer 打开播放页（push `PlayerScreen`）时，sharedBounds 需要退场方
+ * （MiniPlayer）在转场期间保持组合才能和进场方配对 —— 外层 `if` 会把它连同
+ * scope 一起瞬时移除，配对失败，展开动画随之消失。
+ */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+private fun SharedTransitionScope.GlobalMiniPlayerHost(
+    show: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val playbackState by AppModel.playback.state.collectAsState()
+    AnimatedContent(
+        targetState = show && playbackState.currentTrack != null,
+        transitionSpec = {
+            fadeIn(tween(300)) togetherWith fadeOut(tween(300))
+        },
+        label = "GlobalMiniPlayer",
+        modifier = modifier,
+    ) { visible ->
+        if (visible) {
+            // this（AnimatedContentScope）要在 with(this@…) 进到 SharedTransitionScope
+            // 之前捕获 —— with 块里 `this` 已经换人了。
+            val animScope = this
+            with(this@GlobalMiniPlayerHost) {
+                MiniPlayer(
+                    state = playbackState,
+                    animatedVisibilityScope = animScope,
+                    onClick = onClick,
+                    onTogglePlay = AppModel.playback::togglePlayPause,
+                    onSkipPrev = AppModel.playback::skipPrevious,
+                    onSkipNext = AppModel.playback::skipNext,
+                    modifier = Modifier.navigationBarsPadding(),
+                )
             }
         }
     }
@@ -264,12 +320,14 @@ private fun AppTheme(content: @Composable () -> Unit) {
     val pureBlack by AppModel.pureBlackFlow.collectAsState()
     val coverSeed by AppModel.coverSeedFlow.collectAsState()
     val wallpaperSeed by AppModel.wallpaperSeedFlow.collectAsState()
+    val fontRoundness by AppModel.fontRoundnessFlow.collectAsState()
     cp.player.app.ui.theme.CpTheme(
         themeMode = themeMode,
         colorSource = colorSource,
         pureBlack = pureBlack,
         coverSeed = coverSeed,
         wallpaperSeed = wallpaperSeed,
+        fontRoundness = fontRoundness,
         // 触觉执行器必须在内容**之前**提供：它依赖 LocalView，而 LocalView 要在
         // setContent 的组合树里才拿得到宿主 View。放在主题内层可以保证
         // Navigator / 各 Screen 都在作用域内。

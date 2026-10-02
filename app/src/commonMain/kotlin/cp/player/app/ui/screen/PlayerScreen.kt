@@ -94,6 +94,8 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
+import cp.player.app.ui.anim.LocalNavAnimatedVisibilityScope
+import cp.player.app.ui.anim.LocalSharedTransitionScope
 import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.desktopPagerMouseControl
@@ -165,12 +167,27 @@ class PlayerScreen : Screen {
                     onPlayAt = { idx -> scope.launch { controller.playAt(idx) } },
                 )
             } else {
-                androidx.compose.animation.SharedTransitionLayout {
-                    androidx.compose.animation.AnimatedVisibility(visible = true) {
+                // 共享转场走**复用**而不是自建：App 根部有一个罩住整棵根 Navigator 的
+                // SharedTransitionLayout（含全局 MiniPlayer），经两个 local 下发 scope 与
+                // 本次页面转场的 AnimatedVisibilityScope。本页的 sharedBounds
+                // （player-container / cover / title / artist）只有挂到那对 scope 上，
+                // 才能和 MiniPlayer 的同名 sharedBounds 配对 —— 此前本页自建
+                // SharedTransitionLayout，两个 scope 永远配不上对，「从歌单等其它页面
+                // 点 MiniPlayer 展开播放页没有动画」就是它造成的。
+                // 回退分支：脱离 App 树使用（读不到 local）时才自建一对自洽的 scope。
+                val sharedScope = LocalSharedTransitionScope.current
+                val navAnimScope = LocalNavAnimatedVisibilityScope.current
+                // 显式标注 Unit：否则 val 推断成 (…) -> Job/Boolean，与参数类型不符。
+                val onBack: () -> Unit = { navigator.popOrNotify() }
+                val onPlayAt: (Int) -> Unit = { idx -> scope.launch { controller.playAt(idx) } }
+                val onRemoveQueue: (Int) -> Unit = { idx -> scope.launch { controller.removeQueueItem(idx) } }
+                val onMoveQueue: (Int, Int) -> Unit = { from, to -> scope.launch { controller.moveQueueItem(from, to) } }
+                if (sharedScope != null && navAnimScope != null) {
+                    with(sharedScope) {
                         PlayerScreenContent(
                             state = state,
-                            animatedVisibilityScope = this,
-                            onBack = { navigator.popOrNotify() },
+                            animatedVisibilityScope = navAnimScope,
+                            onBack = onBack,
                             onTogglePlay = controller::togglePlayPause,
                             onSeek = controller::seekTo,
                             onSkipNext = controller::skipNext,
@@ -178,10 +195,30 @@ class PlayerScreen : Screen {
                             onRepeat = onRepeat,
                             onShuffle = controller::toggleShuffle,
                             onClearQueue = controller::clearQueue,
-                            onPlayAt = { idx -> scope.launch { controller.playAt(idx) } },
-                            onRemoveQueue = { idx -> scope.launch { controller.removeQueueItem(idx) } },
-                            onMoveQueue = { from, to -> scope.launch { controller.moveQueueItem(from, to) } },
+                            onPlayAt = onPlayAt,
+                            onRemoveQueue = onRemoveQueue,
+                            onMoveQueue = onMoveQueue,
                         )
+                    }
+                } else {
+                    androidx.compose.animation.SharedTransitionLayout {
+                        androidx.compose.animation.AnimatedVisibility(visible = true) {
+                            PlayerScreenContent(
+                                state = state,
+                                animatedVisibilityScope = this,
+                                onBack = onBack,
+                                onTogglePlay = controller::togglePlayPause,
+                                onSeek = controller::seekTo,
+                                onSkipNext = controller::skipNext,
+                                onSkipPrev = controller::skipPrevious,
+                                onRepeat = onRepeat,
+                                onShuffle = controller::toggleShuffle,
+                                onClearQueue = controller::clearQueue,
+                                onPlayAt = onPlayAt,
+                                onRemoveQueue = onRemoveQueue,
+                                onMoveQueue = onMoveQueue,
+                            )
+                        }
                     }
                 }
             }
