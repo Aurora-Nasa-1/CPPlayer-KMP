@@ -596,6 +596,37 @@ class MusicBackend private constructor(
     }
 
     /**
+     * 用 zip 模块包**更新**已安装模块（包内 manifest.id 必须与 [targetId] 一致）。
+     *
+     * 与 [importModule] 的差异：只接受 id 匹配的包，且更新的是**活跃** Provider 时
+     * 会自动重新激活新实例（旧引用已被替换，不重开的话播放会继续打到旧对象上）。
+     */
+    fun updateModule(zipPath: String, targetId: String): ImportResult {
+        val ok = moduleManager.updateModule(zipPath, targetId)
+        if (!ok) return ImportResult.Failed(moduleManager.lastLoadError ?: "更新失败")
+        val provider = moduleManager.getProvider(targetId)
+            ?: return ImportResult.Failed("更新成功但未找到 Provider（异常）")
+        val active = activeProvider()
+        return if (active == null || active.id == targetId || !active.isReady()) {
+            when (val result = switchProviderInternal(provider, save = true)) {
+                is BackendResult.Success -> ImportResult.Activated(provider)
+                is BackendResult.Error -> ImportResult.Failed(result.message)
+                is BackendResult.Unsupported -> ImportResult.Failed(result.message)
+            }
+        } else {
+            ImportResult.Loaded(provider)
+        }
+    }
+
+    /**
+     * 把已安装模块目录打包为 zip 写入 [zipPath]（导出）。失败时错误信息取自
+     * [ModuleManager.lastExportError]。
+     */
+    fun exportModule(providerId: String, zipPath: String): BackendResult<Unit> =
+        if (moduleManager.exportModule(providerId, zipPath)) BackendResult.Success(Unit)
+        else BackendResult.Error(moduleManager.lastExportError ?: "导出失败: $providerId")
+
+    /**
      * 切换活跃 Provider。
      *
      * @param provider 目标 Provider
