@@ -702,7 +702,7 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                 active = state.shuffleEnabled,
                 onClick = onShuffle,
                 icon = Icons.Filled.Shuffle,
-                label = "随机播放",
+                label = if (state.shuffleEnabled) "关闭随机播放" else "开启随机播放",
             )
             cp.player.app.ui.component.CpModeToggle(
                 active = state.repeatMode != RepeatMode.OFF,
@@ -711,13 +711,17 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                     RepeatMode.ONE -> Icons.Filled.RepeatOne
                     else -> Icons.Filled.Repeat
                 },
-                label = "循环",
+                label = when (state.repeatMode) {
+                    RepeatMode.OFF -> "开启列表循环"
+                    RepeatMode.ALL -> "开启单曲循环"
+                    RepeatMode.ONE -> "关闭循环"
+                },
             )
             cp.player.app.ui.component.CpModeToggle(
                 active = (state.sleepTimerRemainingMs ?: 0L) > 0 || state.sleepAfterTrack,
                 onClick = onSleepTimer,
                 icon = Icons.Filled.AccessAlarm,
-                label = "睡眠定时",
+                label = if ((state.sleepTimerRemainingMs ?: 0L) > 0 || state.sleepAfterTrack) "取消睡眠定时" else "设置睡眠定时",
                 activeTint = MaterialTheme.colorScheme.primary,
             )
             // 「更多」只负责入口：弹层本体（PlayerMoreBottomSheet）与二级弹窗
