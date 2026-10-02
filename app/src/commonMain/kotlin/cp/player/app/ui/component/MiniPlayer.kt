@@ -42,7 +42,8 @@ import cp.player.core.playback.PlaybackUiState
  * - 进度条用 [CpLinearProgress]（M3 Expressive 的非波形形态：圆头 + 末端 stop indicator）。
  *   ⚠️ **这里刻意不用 [CpWavyProgress]**：波形要靠"高度"才能看出起伏，压到 4dp 的窄条上
  *   只剩一团抖动的色块，而迷你播放器是**余光扫一眼**的地方 —— 直线更易读也更安静。
- *   波形留给播放页那条大尺度、可拖动的 [CpSeekBar]。
+ *   波形留给桌面播放页那条大尺度、可拖动的 [CpSeekBar]
+ *   （移动端播放页已改用旧版同款直线进度条 [CpPlainSeekBar]）。
  * - 播放/暂停换成 [CpPlayPauseButton]，按下时圆角收缩 + 图标回弹。
  *
  * 点击主体区域 → [onClick]（展开全屏播放页）。

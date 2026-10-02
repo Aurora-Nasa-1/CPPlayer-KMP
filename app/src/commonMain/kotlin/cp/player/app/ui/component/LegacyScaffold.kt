@@ -25,10 +25,15 @@ import cp.player.app.ui.theme.CpShapes
 fun LegacyModalBottomSheet(
     onDismissRequest: () -> Unit,
     bottomPadding: androidx.compose.ui.unit.Dp = 32.dp,
+    /** 列表型弹层（队列等）传 true，跳过半展开档位；表单/动作型保持默认。 */
+    skipPartiallyExpanded: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
+        sheetState = androidx.compose.material3.rememberModalBottomSheetState(
+            skipPartiallyExpanded = skipPartiallyExpanded,
+        ),
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         // 底部弹窗形状收敛到 `CpShapes.sheet` —— 原先这里、`MoreOptionsSheet`、
         // `DownloadsScreen` 各写了一遍同样的「上两角 32dp」，改一次要改三处。

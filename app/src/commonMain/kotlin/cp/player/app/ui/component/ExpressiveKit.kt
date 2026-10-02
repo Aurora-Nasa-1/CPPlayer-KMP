@@ -52,6 +52,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
+import androidx.compose.material3.WavyProgressIndicatorDefaults
 import androidx.compose.material3.toPath
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -66,6 +67,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
@@ -132,6 +134,8 @@ fun CpLinearProgress(
     val shown by animateFloatAsState(
         targetValue = safe,
         // 与 [CpWavyProgress] 同一条规格：主题 spatial，保证两条进度条动起来是"一家人"。
+        // 这条例是**普通** `LinearProgressIndicator`：它内部没有自驱动动画，
+        // `progress` 不变就不重绘 —— 与波形条的性能差别见 [CpWavyProgress]。
         animationSpec = if (animated) CpMotion.spatial() else tween(0),
         label = "cpLinearProgress",
     )
@@ -149,9 +153,29 @@ fun CpLinearProgress(
 /**
  * 波形线性进度条（确定值）。
  *
- * 这是 M3 Expressive 在「音乐播放器」里最具辨识度的元素，替代原来的直角 `Slider` 轨道。
+ * 这是 M3 Expressive 在「音乐播放器」里最具辨识度的元素。
+ *
+ * ⚠️ **性能纪律 —— 波纹流动（[waveFlowing]）只允许在「正在播放」的场景开启**。
+ * `LinearWavyProgressIndicator` 的 `waveSpeed` 非 0 时，内部起一条无限协程逐帧把
+ * `waveOffset` 写进 `MutableFloatState`，而这个状态在**绘制阶段**被读取。于是只要
+ * 这条进度条在树上，**它所在的那一层合成每帧都会重绘，并把整棵歌词子树一起拖进
+ * 逐帧重绘**。
+ *
+ * 实测（离屏 `ImageComposeScene` 帧钟，60 帧窗口）：
+ * - 静止页面 + 流动波形 ⇒ **60/60 帧重绘**
+ * - 静止页面 + 静止波形（waveSpeed = 0） ⇒ **0/60 帧重绘**
+ *
+ * 因此这里**默认静止**（0，`updateOffsetAnimation()` 走 else 分支、不起协程）；
+ * 调用方只有在「位置本来就在推进」的场景才传 `waveFlowing = true` —— 播放中进度
+ * 每 200ms 推进、歌词逐字动画本来就在逐帧跑，流动的成本被吸收；而暂停 / 静止页面
+ * 开流动，等于把整个窗口钉在 60fps 空转。历史教训：播放页曾因常驻流动波形整体帧率
+ * 被拉低、逐字动画一格一格跳。
+ *
+ * 流动速度取 M3 规格：`waveSpeed = wavelength`，即**每秒流过一个波长**
+ * （`LinearWavyProgressIndicator` 的默认行为，见其文档），与库默认观感一致。
  *
  * @param progress 0f..1f。**调用方负责钳制** —— 波形指示器不钳制越界值，传 1.4f 会画出界。
+ * @param waveFlowing 波纹是否横向流动。只在「正在播放」时传 true（见性能纪律）。
  */
 @Composable
 fun CpWavyProgress(
@@ -160,12 +184,16 @@ fun CpWavyProgress(
     color: Color = MaterialTheme.colorScheme.primary,
     trackColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
     animated: Boolean = true,
+    waveFlowing: Boolean = false,
 ) {
     val safe = progress.coerceIn(0f, 1f)
     val shown by animateFloatAsState(
         targetValue = safe,
-        // 用主题的 spatial 规格而不是 WavyProgressIndicatorDefaults.progressAnimationSpec：
-        // 后者在 material3 1.11 里没有对 Kotlin 公开（javap 可见、源码不可见）。
+        // M3 自己的 `WavyProgressIndicatorDefaults.progressAnimationSpec` 是
+        // `tween(500, LinearCubicBezier)` —— 语义上比主题的 spatial 弹簧更贴（有限时长、
+        // 不来回弹）。但主题 spatial 与 [CpLinearProgress] 一致，两条进度条动起来是"一家人"，
+        // 这里两种都只是数值收敛，**不是**帧率问题的来源（自驱动的是波形偏移，
+        // 不是这个 targetValue 动画）。保持主题规格以求观感统一。
         animationSpec = if (animated) CpMotion.spatial() else tween(0),
         label = "cpWavyProgress",
     )
@@ -174,8 +202,22 @@ fun CpWavyProgress(
         modifier = modifier.height(16.dp),
         color = color,
         trackColor = trackColor,
+        waveSpeed = if (waveFlowing) CpWaveFlowSpeed else CpWaveStaticSpeed,
     )
 }
+
+/**
+ * 波纹静止速度。`waveSpeed = 0` 时库内**不起**偏移动画协程（见 [CpWavyProgress] 性能纪律）。
+ *
+ * 抽成常量而不是散写 `0.dp`：静止是默认态，得有一个能被搜索到的名字。
+ */
+private val CpWaveStaticSpeed = 0.dp
+
+/**
+ * 波纹流动速度：M3 规格 —— `waveSpeed = wavelength`（每秒流过一个波长），与
+ * `LinearWavyProgressIndicator` 默认值同源。流动**只在播放中**开启（见 [CpWavyProgress]）。
+ */
+private val CpWaveFlowSpeed = WavyProgressIndicatorDefaults.LinearDeterminateWavelength
 
 /** 波形线性进度条（不确定值 / 缓冲中）。 */
 @Composable
@@ -188,6 +230,8 @@ fun CpWavyProgressIndeterminate(
         modifier = modifier.height(16.dp),
         color = color,
         trackColor = trackColor,
+        // ⚠️ 这里**不**传 0：不确定态本来就没有进度可推进，波纹流动是它**唯一**的状态信号。
+        // 而且它只在「缓冲中」这一小段窗口挂载，不是一个常驻的逐帧重绘源。
     )
 }
 
@@ -221,6 +265,9 @@ fun CpLoadingIndicator(
  *    两者之间必须留 2dp 缝隙 —— 气泡压住波形边界就等于把刚拖出来的位置挡住了。
  *
  * @param onSeek 松手时才回调（拖动期间只更新视觉），避免每帧 seek。
+ * @param waveFlowing 波纹是否横向流动。**只在播放中传 true**（桌面播放页传 `state.isPlaying`）：
+ *     暂停时波形静止，既是「画面随声音停住」的状态语义，也是性能纪律
+ *     —— 流动波形会把所在层拖进逐帧重绘（见 [CpWavyProgress]）。
  */
 @Composable
 fun CpSeekBar(
@@ -229,6 +276,7 @@ fun CpSeekBar(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    waveFlowing: Boolean = true,
     color: Color = MaterialTheme.colorScheme.primary,
     trackColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
     thumbColor: Color = MaterialTheme.colorScheme.primary,
@@ -257,6 +305,7 @@ fun CpSeekBar(
             color = if (enabled) color else MaterialTheme.colorScheme.onSurfaceVariant,
             trackColor = trackColor,
             animated = !dragging,
+            waveFlowing = waveFlowing,
         )
         Slider(
             value = shown,
@@ -320,6 +369,50 @@ fun CpSeekBar(
     }
 }
 
+/**
+ * 旧版同款**直线**进度条 —— 1:1 移植自 `reference/cp-player-legacy` 的
+ * `ui/component/ProgressSection.kt`（移动端播放页用，桌面播放页保留 [CpSeekBar] 波形）。
+ *
+ * 视觉完全交给 M3 `Slider` 的默认 Expressive 观感（粗轨道 + 竖向拇指 + 末端留白），
+ * **不传 `colors`** —— 「符合 M3」最直接的做法就是用库默认值，而不是自己调色。
+ * 时间行（已播 / 剩余）由调用方按旧版 ProgressSection 的布局自行摆放。
+ *
+ * 与旧版**唯一**的行为差异：seek 在**松手时**回调，而不是旧版那样在拖动中每帧回调。
+ * 旧版 `onValueChange` 里直接 `onSeek`，对网络流等于拖一次发一串 range 请求；
+ * KMP 端 `PlaybackController.seekTo` 的既有约定就是松手才 seek（[CpSeekBar] 同）。
+ * 代价是需要本地 dragValue 在拖动期间顶住视觉 —— 引擎位置每 200ms 推进，
+ * 不顶住的话滑条会被拽回去。
+ *
+ * 旧版没有的东西也不加：无拖动时间气泡、无逐秒触感打点 —— 「旧版同款」按字面执行。
+ */
+@Composable
+fun CpPlainSeekBar(
+    positionMs: Long,
+    durationMs: Long,
+    onSeek: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val duration = durationMs.coerceAtLeast(1L).toFloat()
+    var dragging by remember { mutableStateOf(false) }
+    var dragValue by remember { mutableStateOf(0f) }
+    val shown = (if (dragging) dragValue else positionMs.toFloat()).coerceIn(0f, duration)
+    Slider(
+        value = shown,
+        onValueChange = {
+            dragging = true
+            dragValue = it
+        },
+        onValueChangeFinished = {
+            dragging = false
+            onSeek(dragValue.toLong().coerceIn(0L, durationMs.coerceAtLeast(0L)))
+        },
+        valueRange = 0f..duration,
+        enabled = enabled,
+        modifier = modifier,
+    )
+}
+
 // ---------------------------------------------------------------- 形状
 
 /**
@@ -369,6 +462,14 @@ fun MorphingShape(
  * 因为封面是任意图片，白棒压在浅色封面上会直接消失。
  *
  * 三根棒用不同的时长 + 起始偏移，节奏错开才像在跳；同步起落会像一个整体在缩放。
+ *
+ * ⚠️ 性能：这是全应用**调用点最多**的常驻无限动画（迷你播放器 + 每个列表行 +
+ * 队列弹层都可能同时挂着一份）。两条纪律：
+ * 1. **动画值只写进 `graphicsLayer`，不写进 `height`**。旧写法把每帧变化的
+ *    `barHeight.dp` 直接喂给 `Modifier.height(...)`，等于每帧触发一次**重新测量
+ *    + 重新布局**；而换算到 `scaleY` 后每帧只重绘，布局完全不动。
+ * 2. 只有真的在播放时才挂载（调用方负责，见 MiniPlayer / SongItem），
+ *    暂停时整条 `rememberInfiniteTransition` 应当被卸载而不是空转。
  */
 @Composable
 fun CpPlayingEqualizer(
@@ -385,9 +486,9 @@ fun CpPlayingEqualizer(
         verticalAlignment = Alignment.Bottom,
     ) {
         repeat(3) { index ->
-            val barHeight by transition.animateFloat(
-                initialValue = 3f,
-                targetValue = 10f,
+            val scale by transition.animateFloat(
+                initialValue = CpEqualizerBarLowFraction,
+                targetValue = 1f,
                 animationSpec = infiniteRepeatable(
                     // 时长错开 + 反向播放 + 起始偏移：三根棒三种节奏，
                     // 这样才像三根独立的棒而不是一个块在伸缩。
@@ -401,12 +502,27 @@ fun CpPlayingEqualizer(
                 label = "cpEqBar$index",
             )
             Box(
-                Modifier.width(2.dp).height(barHeight.dp)
+                Modifier
+                    .width(2.dp)
+                    // 布局尺寸恒定在**最大**高度（10dp），动画只缩不涨 ——
+                    // 这样 Row 的高度在播放期间是个常量，不会每帧重新测量。
+                    .height(CpEqualizerBarMaxHeight)
+                    .graphicsLayer {
+                        scaleY = scale
+                        transformOrigin = TransformOrigin(0.5f, 1f)
+                    }
                     .background(barColor, RoundedCornerShape(1.dp))
             )
         }
     }
 }
+
+/** 均衡器单根棒的**布局**高度（dp）。动画只在它之上做 `scaleY` 缩放，不改布局。 */
+private val CpEqualizerBarMaxHeight = 10.dp
+
+/** 均衡器最短态占最长态的比例（3dp / 10dp），保持与原观感一致。 */
+private const val CpEqualizerBarLowFraction = 3f / 10f
+
 
 // ---------------------------------------------------------------- 播放控制
 
@@ -513,17 +629,18 @@ fun CpCoverPlaceholder(
     animated: Boolean = true,
 ) {
     val ink = MaterialTheme.colorScheme.onPrimaryContainer
+    // ⚠️ Brush 必须 remember：占位块常出现在**每 200ms 重组一次**的列表行 / 迷你播放器里
+    // （它们订阅整个 `PlaybackUiState`）。不 remember 就是每次重组重建一次渐变对象。
+    // 颜色是唯一输入，以颜色为 key。
+    val gradientTop = MaterialTheme.colorScheme.primaryContainer
+    val gradientBottom = MaterialTheme.colorScheme.tertiaryContainer
+    val backgroundBrush = remember(gradientTop, gradientBottom) {
+        Brush.linearGradient(listOf(gradientTop, gradientBottom))
+    }
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(corner))
-            .background(
-                Brush.linearGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.primaryContainer,
-                        MaterialTheme.colorScheme.tertiaryContainer,
-                    )
-                )
-            ),
+            .background(backgroundBrush),
         contentAlignment = Alignment.Center,
     ) {
         if (animated) {

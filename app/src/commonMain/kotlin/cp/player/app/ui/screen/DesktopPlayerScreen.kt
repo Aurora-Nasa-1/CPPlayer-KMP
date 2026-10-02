@@ -21,19 +21,23 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -53,6 +57,9 @@ import cp.player.app.ui.component.CpSeekBar
 import cp.player.app.ui.component.CpToggleChip
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.MorphingShape
+import cp.player.app.ui.component.SimilarSongsPanel
+import cp.player.app.ui.component.PlayerMoreSheets
+import cp.player.app.ui.component.rememberPlayerMoreSheetState
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.util.SeekAvailability
 import cp.player.app.ui.util.formatTimeMs
@@ -62,13 +69,16 @@ import cp.player.core.playback.RepeatMode
 import kotlinx.coroutines.launch
 
 /**
- * 桌面 / 平板播放页：左侧封面 + 控件，右侧队列 / 歌词 / 评论。
+ * 桌面 / 平板播放页：左侧封面 + 控件，右侧队列 / 歌词 / 评论 / 相似歌曲。
  *
  * Expressive 化的四处：
- * 1. 进度条换成 [CpSeekBar]（波形）；
+ * 1. 进度条换成 [CpSeekBar]（波形；波纹随 `state.isPlaying` 流动 / 静止）；
  * 2. 播放按钮换成 [CpPlayPauseButton]（按下时圆角收缩 + 图标回弹 + 缓冲态用变形加载器）；
- * 3. 右侧三个页签从 `TabRow` 换成 [CpToggleChip]（选中时**形状**变化，而不是只有下划线）；
+ * 3. 右侧页签从 `TabRow` 换成 [CpToggleChip]（选中时**形状**变化，而不是只有下划线）；
  * 4. 封面圆角随播放状态「呼吸」，走主题 spatial 动效。
+ *
+ * 「更多」入口在顶栏右侧（`MoreVert`）；弹层与动作实现由
+ * [cp.player.app.ui.component.PlayerMoreSheets] 与窄屏播放页共享，本页只持开关状态。
  */
 @Composable
 fun DesktopPlayerScreen(
@@ -85,6 +95,9 @@ fun DesktopPlayerScreen(
 ) {
     val track = state.currentTrack ?: return
     val scope = rememberCoroutineScope()
+    // 「更多」弹层的开关状态 + 共享宿主（动作实现唯一一份，见 PlayerMoreSheets）。
+    // 本页与窄屏布局互斥切换，各持一份状态。
+    val moreSheets = rememberPlayerMoreSheetState()
     var selectedTab by remember { mutableIntStateOf(1) }
     val duration = state.durationMs.coerceAtLeast(0L)
     // 时长未知（流媒体元信息还没到、直播流）时滑条位置无法换算成绝对时间，
@@ -93,10 +106,18 @@ fun DesktopPlayerScreen(
     // 判定与标签统一走 SeekAvailability，不再各处各写一遍。
     // 无损曲后台落盘期间同样禁用：此时引擎放的是不可定位的流，拖了也不会动。
     val seekable = SeekAvailability.isSeekable(duration, state.isLocalizing)
-    val background = Brush.radialGradient(
-        colors = listOf(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.colorScheme.background),
-        radius = 1200f,
-    )
+    // ⚠️ 必须 remember：本页订阅的是整个 `PlaybackUiState`，位置每 200ms 更新一次
+    // ⇒ 本函数每 200ms 重组一次。Gradient/RadialGradient 的构造不算便宜（要算色标、
+    // 建对象），不 remember 就是每秒 5 次无谓分配 + 一次背景重绘。颜色是唯一变量，
+    // 故以颜色为 key —— 主题切换时才重建。
+    val surfaceHigh = MaterialTheme.colorScheme.surfaceContainerHigh
+    val background0 = MaterialTheme.colorScheme.background
+    val background = remember(surfaceHigh, background0) {
+        Brush.radialGradient(
+            colors = listOf(surfaceHigh, background0),
+            radius = 1200f,
+        )
+    }
     // 封面「呼吸」：播放时收紧圆角，暂停时松开。
     val artCorner by animateDpAsState(
         targetValue = if (state.isPlaying) 18.dp else 26.dp,
@@ -121,9 +142,22 @@ fun DesktopPlayerScreen(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                // 原先这里还有一个 `onClick = { /* reserved */ }` 的 MoreHoriz 按钮：
-                // 长得像入口、点了什么都不发生 —— 假的可供性比缺一个入口更糟，直接去掉。
-                // 真正的「更多」在紧凑版播放页里已经由底部工具条承担。
+                // 此前这里只有一个 `onClick = { /* reserved */ }` 的假按钮，被以
+                // 「假可供性比缺入口更糟」为由删掉 —— 删得对，但连带把「更多」这组功能
+                // （加入歌单 / 下载 / 睡眠定时 / 不感兴趣 / 分享 / 歌曲信息）从宽屏整个
+                // 取消了，而宽屏是桌面默认形态（1320×860 ≥ 840 断点）。
+                // 现在补回**真**入口：弹层宿主是共享组件 PlayerMoreSheets（本页末尾挂载），
+                // 与窄屏布局复用同一份动作实现。外观与窄屏顶栏的「队列」按钮同款
+                // （FilledIconButton + surfaceContainerHighest），不另造一套。
+                FilledIconButton(
+                    onClick = { moreSheets.showMoreMenu = true },
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    ),
+                ) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "更多")
+                }
             }
             Spacer(Modifier.height(18.dp))
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
@@ -158,11 +192,14 @@ fun DesktopPlayerScreen(
                                 }
                             }
                             // 波形进度条（内部叠了透明 Slider 接手势，松手才 seek）。
+                            // 波纹流动跟随播放状态：播放中以 M3 规格流动（每秒一个波长），
+                            // 暂停时静止 —— 「画面随声音停住」，暂停态也回到零逐帧重绘。
                             CpSeekBar(
                                 positionMs = state.positionMs,
                                 durationMs = duration,
                                 onSeek = onSeek,
                                 enabled = seekable,
+                                waveFlowing = state.isPlaying,
                                 modifier = Modifier.fillMaxWidth(),
                             )
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -203,8 +240,10 @@ fun DesktopPlayerScreen(
                         // 用 Expressive 的 ToggleButton 代替 TabRow：选中态由**形状**表达
                         // （圆角方形 ↔ 胶囊），而不是一条下划线 —— 这是 M3 Expressive 与
                         // M3 基础版在「分段选择」上最直观的差别。
+                        // 四个页签（队列 / 歌词 / 评论 / 相似）。相似歌曲以**当前在播曲目**
+                        // 为种子，种子变化由 SimilarSongsPanel 内部处理（切歌自动重新拉取）。
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf("队列", "歌词", "评论").forEachIndexed { index, title ->
+                            listOf("队列", "歌词", "评论", "相似").forEachIndexed { index, title ->
                                 CpToggleChip(
                                     checked = selectedTab == index,
                                     onCheckedChange = { selectedTab = index },
@@ -217,13 +256,17 @@ fun DesktopPlayerScreen(
                         when (selectedTab) {
                             0 -> QueueContent(state, scope, onPlayAt)
                             1 -> DesktopLyricsContent(state, onSeek, onRepeat, onLike)
-                            else -> DesktopCommentContent(track.id)
+                            2 -> DesktopCommentContent(track.id)
+                            else -> SimilarSongsPanel(track.id)
                         }
                     }
                 }
             }
         }
     }
+
+    // 「更多」弹层 + 二级弹窗宿主：与窄屏播放页共用同一组件（PlayerMoreSheets）。
+    PlayerMoreSheets(state = state, sheets = moreSheets)
 }
 
 @Composable

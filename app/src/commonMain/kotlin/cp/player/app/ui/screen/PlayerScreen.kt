@@ -50,7 +50,6 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.Translate
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
@@ -61,7 +60,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -96,17 +94,19 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
-import cp.player.app.platform.shareText
 import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.LazyScrollColumn
-import cp.player.app.ui.component.PlayerMoreBottomSheet
+import cp.player.app.ui.component.desktopPagerMouseControl
+import cp.player.app.ui.component.PlayerMoreSheets
 import cp.player.app.ui.component.QueueBottomSheet
+import cp.player.app.ui.component.SimilarSongsPanel
+import cp.player.app.ui.component.rememberPlayerMoreSheetState
 import cp.player.app.ui.model.CommentScreenModel
 import cp.player.app.ui.util.SeekAvailability
 import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.formatTimeMs
 import cp.player.app.ui.util.next
-import cp.player.core.playback.AudioFormatInfo
+import cp.player.app.ui.util.popOrNotify
 import cp.player.core.playback.LyricsState
 import cp.player.core.playback.RepeatMode
 import kotlinx.coroutines.launch
@@ -122,7 +122,7 @@ import kotlin.math.roundToInt
  *   宽屏走 `DesktopPlayerScreen`，窄屏走移动布局。**不能**读 `LocalIsExpanded` ——
  *   它只在 `MainScreen` 内部被 provide，本页作为路由页与之是兄弟节点，永远拿到默认 false。
  *
- * 三页 HorizontalPager：歌词 / 播放器 / 评论。播放器页可下拉关闭。
+ * 四页 HorizontalPager：歌词 / 播放器 / 评论 / 相似歌曲。播放器页可下拉关闭。
  * 已接入：收藏（likeSong）、加入歌单、睡眠定时、不感兴趣、随机播放、评论点赞。
  */
 class PlayerScreen : Screen {
@@ -154,7 +154,7 @@ class PlayerScreen : Screen {
             if (CpBreakpoints.isExpanded(maxWidth) && state.currentTrack != null) {
                 DesktopPlayerScreen(
                     state = state,
-                    onBack = { navigator?.pop() },
+                    onBack = { navigator.popOrNotify() },
                     onTogglePlay = controller::togglePlayPause,
                     onSeek = controller::seekTo,
                     onSkipNext = controller::skipNext,
@@ -170,7 +170,7 @@ class PlayerScreen : Screen {
                         PlayerScreenContent(
                             state = state,
                             animatedVisibilityScope = this,
-                            onBack = { navigator?.pop() },
+                            onBack = { navigator.popOrNotify() },
                             onTogglePlay = controller::togglePlayPause,
                             onSeek = controller::seekTo,
                             onSkipNext = controller::skipNext,
@@ -216,18 +216,17 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
         return
     }
 
-    // 状态：sheet / 弹窗
+    // 状态：sheet / 弹窗。「更多」弹层的开关状态收在 PlayerMoreSheetState 里，
+    // 宿主与动作实现是共享组件 PlayerMoreSheets（本页末尾挂载；桌面播放页
+    // DesktopPlayerScreen 同款复用）—— 两套布局互斥切换，各持一份状态。
     var showQueueSheet by remember { mutableStateOf(false) }
-    var showMoreMenu by remember { mutableStateOf(false) }
-    var showAddToPlaylist by remember { mutableStateOf(false) }
-    var showSleepTimer by remember { mutableStateOf(false) }
-    var showSongInfo by remember { mutableStateOf(false) }
     var showTranslation by remember { mutableStateOf(true) }
+    val moreSheets = rememberPlayerMoreSheetState()
     val playerScope = rememberCoroutineScope()
     val controller = AppModel.playback
 
-    // Pager 三页：0=歌词，1=播放器，2=评论
-    val pagerState = rememberPagerState(initialPage = 1) { 3 }
+    // Pager 四页：0=歌词，1=播放器，2=评论，3=相似歌曲
+    val pagerState = rememberPagerState(initialPage = 1) { 4 }
     val scope = rememberCoroutineScope()
 
     // 下拉关闭手势（仅播放器页启用）
@@ -408,14 +407,35 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                     // 这两个功能等于藏起来了。这里给一条可点的分段指示器：
                     // 选中段拉长 + 变主题色，跟着 pager 一起走。
                     PagerIndicator(
-                        pageCount = 3,
+                        pageCount = 4,
                         currentPage = pagerState.currentPage,
                         onSelect = { page -> scope.launch { pagerState.animateScrollToPage(page) } },
                         modifier = Modifier.align(Alignment.CenterHorizontally),
                     )
                     HorizontalPager(
                         state = pagerState,
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            // 鼠标滚轮翻页：歌词 ↔ 播放器 ↔ 评论 三页在桌面端此前**只能用
+                            // 触控板横向滑动**切（而台式机没有），用户看到的就是「滚轮没反应」。
+                            // 桌面 actual 把垂直滚轮映射成翻页，安卓 actual 为空实现。
+                            .desktopPagerMouseControl(
+                                onScrollLeft = {
+                                    val target = (pagerState.currentPage - 1).coerceAtLeast(0)
+                                    if (target != pagerState.currentPage) {
+                                        scope.launch { pagerState.animateScrollToPage(target) }
+                                    }
+                                },
+                                onScrollRight = {
+                                    val last = pagerState.pageCount - 1
+                                    val target = (pagerState.currentPage + 1).coerceAtMost(last)
+                                    if (target != pagerState.currentPage) {
+                                        scope.launch { pagerState.animateScrollToPage(target) }
+                                    }
+                                },
+                                pageCount = pagerState.pageCount,
+                            ),
                     ) { page ->
                         when (page) {
                             0 -> LyricsPage(
@@ -436,42 +456,20 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                 onRepeat = onRepeat,
                                 onShuffle = onShuffle,
                                 onLikeClick = { playerScope.launch { controller.toggleFavorite() } },
-                                onMoreClick = { showMoreMenu = true },
-                                showMoreMenu = showMoreMenu,
-                                onDismissMore = { showMoreMenu = false },
-                                onAddToPlaylist = {
-                                    showMoreMenu = false
-                                    showAddToPlaylist = true
-                                },
-                                onDownload = {
-                                    showMoreMenu = false
-                                    AppModel.downloadTrack(track)
-                                },
+                                // 弹层本体与全部动作实现已收进共享宿主 PlayerMoreSheets
+                                // （本页末尾调用），这里只传两个入口回调。
+                                onMoreClick = { moreSheets.showMoreMenu = true },
                                 onSleepTimer = {
-                                    showMoreMenu = false
-                                    showSleepTimer = true
-                                },
-                                onShare = {
-                                    showMoreMenu = false
-                                    shareText("${track.name} - ${track.artist}\nhttps://music.163.com/song?id=${runCatching { cp.player.core.music.CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)}")
-                                },
-                                onShowInfo = {
-                                    showMoreMenu = false
-                                    showSongInfo = true
-                                },
-                                onDislike = {
-                                    showMoreMenu = false
-                                    playerScope.launch {
-                                        runCatching {
-                                            val rawId = runCatching { cp.player.core.music.CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)
-                                            AppModel.api.dislikeSong(rawId)
-                                        }
-                                        cp.player.app.ui.util.UiEvents.notify("已标记不感兴趣")
-                                        controller.skipNext()
-                                    }
+                                    moreSheets.showMoreMenu = false
+                                    moreSheets.showSleepTimer = true
                                 },
                             )
                             2 -> CommentPage(track.id, "music")
+                            // 相似歌曲以当前在播曲目为种子；种子变化由面板内部处理。
+                            3 -> SimilarSongsPanel(
+                                seedTrackId = track.id,
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            )
                         }
                     }
                 }
@@ -491,31 +489,9 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
         )
     }
 
-    if (showAddToPlaylist) {
-        cp.player.app.ui.component.AddToPlaylistSheet(
-            trackId = track.id,
-            onDismiss = { showAddToPlaylist = false },
-        )
-    }
-
-    if (showSleepTimer) {
-        cp.player.app.ui.component.SleepTimerDialog(
-            activeRemainingMs = state.sleepTimerRemainingMs,
-            afterTrackActive = state.sleepAfterTrack,
-            onSelect = controller::setSleepTimer,
-            onCancelTimer = controller::cancelSleepTimer,
-            onDismiss = { showSleepTimer = false },
-        )
-    }
-
-    if (showSongInfo) {
-        SongInfoDialog(
-            track = track,
-            formatInfo = state.formatInfo,
-            lyricsInfo = state.lyricsInfo,
-            onDismiss = { showSongInfo = false },
-        )
-    }
+    // 「更多」弹层 + 二级弹窗：宿主与动作实现全在共享组件 PlayerMoreSheets 里，
+    // 桌面播放页（DesktopPlayerScreen）以同一组件、各自的状态复用同一套行为。
+    PlayerMoreSheets(state = state, sheets = moreSheets)
 }
 
 // ============================== 歌词页 ==============================
@@ -582,14 +558,7 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
     onShuffle: () -> Unit,
     onLikeClick: () -> Unit,
     onMoreClick: () -> Unit,
-    showMoreMenu: Boolean,
-    onDismissMore: () -> Unit,
-    onAddToPlaylist: () -> Unit,
-    onDownload: () -> Unit,
     onSleepTimer: () -> Unit,
-    onShare: () -> Unit,
-    onShowInfo: () -> Unit,
-    onDislike: () -> Unit,
 ) {
     val track = state.currentTrack ?: return
 
@@ -751,81 +720,23 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                 label = "睡眠定时",
                 activeTint = MaterialTheme.colorScheme.primary,
             )
-            Box {
-                IconButton(onClick = onMoreClick) {
-                    Icon(
-                        Icons.Filled.MoreVert, "更多",
-                        Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (showMoreMenu) {
-                    PlayerMoreBottomSheet(
-                        track = track,
-                        isDownloaded = AppModel.isDownloaded(track.id),
-                        formatInfo = state.formatInfo,
-                        lyricsInfo = state.lyricsInfo,
-                        sleepAfterTrack = state.sleepAfterTrack,
-                        sleepTimerRemainingMs = state.sleepTimerRemainingMs,
-                        onDismiss = onDismissMore,
-                        onAddToPlaylist = onAddToPlaylist,
-                        onDownload = onDownload,
-                        onSleepTimer = onSleepTimer,
-                        onShare = onShare,
-                        onShowInfo = onShowInfo,
-                        onDislike = onDislike,
-                    )
-                }
+            // 「更多」只负责入口：弹层本体（PlayerMoreBottomSheet）与二级弹窗
+            // 已收进共享宿主 PlayerMoreSheets，由 PlayerScreenContent 末尾统一挂载。
+            IconButton(onClick = onMoreClick) {
+                Icon(
+                    Icons.Filled.MoreVert, "更多",
+                    Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
         Spacer(Modifier.height(8.dp))
     }
 }
 
-@Composable
-private fun SongInfoDialog(
-    track: cp.player.core.music.TrackSummary,
-    formatInfo: AudioFormatInfo?,
-    lyricsInfo: cp.player.core.model.LyricsInfo?,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("歌曲信息", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        text = {
-            val info = formatInfo
-            Text(
-                buildString {
-                    append("歌曲：").append(track.name)
-                    append("\n歌手：").append(track.artist)
-                    append("\n专辑：").append(track.album ?: "未知专辑")
-                    append("\n时长：").append(formatTimeMs(track.durationMs))
-                    append("\n歌曲 ID：").append(track.id)
-                    lyricsInfo?.let { lyric ->
-                        append("\n\n歌词信息")
-                        append("\n来源：").append(lyric.source)
-                        append("\n格式：").append(lyric.format)
-                        append("\n逐字歌词：").append(if (lyric.hasWordLevel) "支持" else "不支持")
-                        if (lyric.hasTranslation) append("\n翻译：有")
-                        if (lyric.hasPhonetic) append("\n音译：有")
-                    }
-                    if (info != null) {
-                        append("\n\n音频格式")
-                        info.codecName?.takeIf(String::isNotBlank)?.let { append("\n编码：").append(it) }
-                        info.sampleRate?.takeIf { it > 0 }?.let { append("\n采样率：").append(it).append(" Hz") }
-                        info.bitDepth?.takeIf { it > 0 }?.let { append("\n位深：").append(it).append(" bit") }
-                        info.bitrate?.takeIf { it > 0 }?.let { append("\n码率：").append(it / 1000).append(" kbps") }
-                        info.channels?.takeIf { it > 0 }?.let { append("\n声道：").append(it) }
-                        info.mimeType?.takeIf(String::isNotBlank)?.let { append("\nMIME：").append(it) }
-                    }
-                }
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("关闭") }
-        },
-    )
-}
+// SongInfoDialog 已随「更多」弹层宿主（PlayerMoreSheets）迁往
+// ui/component/PlayerMoreBottomSheet.kt —— 桌面播放页（DesktopPlayerScreen）与
+// 窄屏布局共用同一宿主，SongInfoDialog 作为其二级弹窗必须同处一处。
 
 @Composable
 private fun PagerIndicator(
@@ -889,9 +800,10 @@ private fun ProgressRow(
     // 无损曲后台落盘期间同样禁用：此时引擎放的是不可定位的流，拖了也不会动。
     val seekable = SeekAvailability.isSeekable(duration, state.isLocalizing)
     Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-        // 波形进度条（M3 Expressive 的标志性元素）。内部是「波形 + 透明 Slider 叠层」，
-        // 拖动期间由 CpSeekBar 自己接管视觉，松手才回调 onSeek —— 这里不用再管拖拽状态。
-        cp.player.app.ui.component.CpSeekBar(
+        // 旧版同款**直线**进度条 —— 1:1 移植自 reference/cp-player-legacy 的 ProgressSection
+        // （移动端不用波形；波形留给桌面播放页的 CpSeekBar）。视觉就是 M3 Slider 的
+        // 默认 Expressive 观感。拖动期间由 CpPlainSeekBar 自己接管视觉，松手才回调 onSeek。
+        cp.player.app.ui.component.CpPlainSeekBar(
             positionMs = state.positionMs,
             durationMs = duration,
             onSeek = onSeek,
