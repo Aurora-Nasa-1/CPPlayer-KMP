@@ -5,7 +5,6 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.content.Intent
-import androidx.core.content.ContextCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -25,10 +24,15 @@ class MainActivity : ComponentActivity() {
         setMediaPermissionRequester { requestMediaReadPermission() }
         (application as CPPlayerApplication).backend
         AppModel.markInitialized()
-        ContextCompat.startForegroundService(
-            this,
-            Intent(this, PlaybackMediaSessionService::class.java),
-        )
+        // 让媒体会话服务随应用启动而创建，通知栏/锁屏/耳机控制才有宿主。
+        // ⚠️ 这里必须用 startService 而不是 startForegroundService：
+        // media3（1.4.1）的 MediaSessionService 只在「有播放任务」时才调 startForeground()
+        // —— MediaNotificationManager.shouldShowNotification 对 idle / 空队列直接返回 false，
+        // 空闲时既不 startForeground 也不 stopSelf。用 startForegroundService 在空闲时
+        // 拉起它，5 秒契约超时必崩：ForegroundServiceDidNotStartInTimeException。
+        // 真正的前台提升由 media3 在播放开始时自己完成（其内部 startForeground 会先
+        // startForegroundService 再 startForeground，契约自洽），无需应用代劳。
+        startService(Intent(this, PlaybackMediaSessionService::class.java))
 
         runCatching {
             val pkgInfo = packageManager.getPackageInfo(packageName, 0)
