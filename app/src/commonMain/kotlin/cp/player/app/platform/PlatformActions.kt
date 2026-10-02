@@ -56,6 +56,22 @@ expect fun downloadUpdate(url: String, fileName: String)
 expect fun clearImageCache(): Boolean
 
 /**
+ * 读取图片磁盘缓存的当前占用字节数。
+ *
+ * 用于存储管理页展示缓存体量、清理前后对比。
+ *
+ * @return 当前占用字节数；-1 表示不可用（缓存未启用或读取失败）
+ */
+expect fun imageCacheSizeBytes(): Long
+
+/**
+ * 在系统文件管理器中打开目录（桌面端资源管理器 / Finder）。
+ *
+ * @return 是否成功发起打开
+ */
+expect fun openInFileManager(path: String): Boolean
+
+/**
  * 申请本地媒体扫描所需的运行时读取权限。
  * Android 端触发系统授权弹窗（READ_MEDIA_AUDIO/VIDEO 或 READ_EXTERNAL_STORAGE），
  * Desktop 端无需权限，为空操作。

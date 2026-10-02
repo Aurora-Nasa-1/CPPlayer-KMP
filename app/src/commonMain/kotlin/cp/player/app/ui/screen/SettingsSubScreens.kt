@@ -1,12 +1,17 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
@@ -19,12 +24,15 @@ import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSegmentedItem
 import cp.player.app.ui.component.SettingsSwitchItem
+import cp.player.app.ui.model.StorageSettingsModel
+import cp.player.app.ui.model.formatBytes
 import cp.player.app.ui.theme.ColorSource
 import cp.player.app.ui.theme.ThemeMode
 import cp.player.app.ui.theme.description
 import cp.player.app.ui.theme.displayName
 import cp.player.app.ui.theme.isPlatformColorSourceAvailable
 import cp.player.app.ui.util.UiEvents
+import cp.player.app.ui.util.popOrNotify
 
 /**
  * 外观与主题。
@@ -92,68 +100,137 @@ class AppearanceSettingsScreen : Screen {
 
         CpRouteScaffold(
             title = "外观与主题",
-            onBack = { navigator.pop() },
+            onBack = { navigator.popOrNotify() },
         ) { pageModifier -> body(pageModifier) }
     }
 }
 
 /**
- * 下载与存储。
+ * 下载与存储（存储管理页）。
  *
- * ### 与重构前的差异
+ * ### 与初版的差异
  *
- * 「清理图片缓存」原本铺的是 `errorContainer`（破坏性配色），但它**不是破坏性操作** ——
- * 只是丢掉可以重新下载的封面缓存。破坏性配色会让用户以为会丢数据，从而不敢点。
- * 现在用中性配色，并把「不会删除已下载的歌曲」写进副标题。
+ * 初版只有「改下载目录 + 清缓存」两个动作，用户看不到任何数字 —— 「存储管理」名不副实。
+ * 现在补上：
+ *
+ * 1. **下载区给出体量与条数**：已下载音乐一行显示「N 首 · 共 X」，点进去是下载管理页
+ *    （那里能删文件）；占用数字取媒体库登记值，不做全盘扫描。
+ * 2. **缓存区先给数字再给动作**：图片缓存行显示 Coil 磁盘缓存实时占用，清理按钮的反馈
+ *    带「释放了多少」（清理前后各读一次）。
+ * 3. **桌面端可直达目录**：更改目录保留；新增「打开目录」（资源管理器），
+ *    用户能直接核对 / 备份下载的文件。
+ * 4. **失败不再谎报成功**：打开目录失败、缓存清理失败都有对应提示。
  */
 class StorageSettingsScreen : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
-        val downloadDir by AppModel.downloadDirFlow.collectAsState()
-        val isAndroid = cp.player.app.platform.isAndroidPlatform()
-        val pickDownloadDir = cp.player.app.platform.rememberDirectoryPicker { path ->
-            if (!path.isNullOrBlank()) {
-                AppModel.setDownloadDir(path)
-                UiEvents.notify("下载目录已更新，仅对后续下载生效")
-            }
-        }
-
-        val body: @Composable (Modifier) -> Unit = { pageModifier ->
-            SettingsPage(pageModifier) {
-                SettingsSection("下载") {
-                    SettingsClickItem(
-                        title = "下载目录",
-                        subtitle = if (isAndroid) {
-                            "Android 下载固定保存到应用私有目录"
-                        } else {
-                            downloadDir.ifBlank { "默认下载目录" }
-                        },
-                        index = 0,
-                        total = 1,
-                        icon = Icons.Filled.FolderOpen,
-                        onClick = if (isAndroid) null else ({ pickDownloadDir() }),
-                    )
-                }
-                SettingsSection("缓存") {
-                    SettingsButtonItem(
-                        text = "清理图片缓存",
-                        subtitle = "释放封面等图片占用的空间；已下载的歌曲不受影响",
-                        index = 0,
-                        total = 1,
-                        onClick = {
-                            val cleared = cp.player.app.platform.clearImageCache()
-                            UiEvents.notify(if (cleared) "图片缓存已清理" else "缓存清理失败")
-                        },
-                    )
-                }
-                SettingsNote("下载目录的改动仅对后续下载生效，已下载的文件不会移动。")
-            }
-        }
-
-        CpRouteScaffold(
-            title = "下载与存储",
-            onBack = { navigator.pop() },
-        ) { pageModifier -> body(pageModifier) }
+        // rememberScreenModel 是 Screen 的扩展函数，只能在 Content() 里调用（见 AGENTS.md）。
+        val model = rememberScreenModel { StorageSettingsModel() }
+        StorageSettingsContent(
+            model = model,
+            onBack = { navigator.popOrNotify() },
+            onOpenDownloads = { navigator.push(DownloadsScreen()) },
+        )
     }
+}
+
+@Composable
+private fun StorageSettingsContent(
+    model: StorageSettingsModel,
+    onBack: () -> Unit,
+    onOpenDownloads: () -> Unit,
+) {
+    val state by model.state.collectAsState()
+    val downloadDir by AppModel.downloadDirFlow.collectAsState()
+    val isAndroid = cp.player.app.platform.isAndroidPlatform()
+    val pickDownloadDir = cp.player.app.platform.rememberDirectoryPicker { path ->
+        if (!path.isNullOrBlank()) {
+            AppModel.setDownloadDir(path)
+            UiEvents.notify("下载目录已更新，仅对后续下载生效")
+        }
+    }
+
+    val body: @Composable (Modifier) -> Unit = { pageModifier ->
+        SettingsPage(pageModifier) {
+            // ---- 下载区：桌面 3 行（下载音乐 / 目录 / 打开目录），Android 2 行 ----
+            val downloadRows = if (isAndroid) 2 else 3
+            SettingsSection("下载") {
+                SettingsClickItem(
+                    title = "已下载音乐",
+                    subtitle = when {
+                        state.downloadedCount == 0 -> "还没有下载内容，点右上角新建或搜索页下载"
+                        else -> "${state.downloadedCount} 首 · 共 ${formatBytes(state.downloadedBytes)}"
+                    },
+                    index = 0,
+                    total = downloadRows,
+                    icon = Icons.Filled.MusicNote,
+                    onClick = onOpenDownloads,
+                )
+                SettingsClickItem(
+                    title = "下载目录",
+                    subtitle = if (isAndroid) {
+                        "Android 下载固定保存到应用私有目录"
+                    } else {
+                        downloadDir.ifBlank { "默认下载目录" }
+                    },
+                    index = 1,
+                    total = downloadRows,
+                    icon = Icons.Filled.FolderOpen,
+                    onClick = if (isAndroid) null else ({ pickDownloadDir() }),
+                )
+                if (!isAndroid) {
+                    SettingsClickItem(
+                        title = "打开目录",
+                        subtitle = "在文件管理器中查看已下载的文件",
+                        index = 2,
+                        total = downloadRows,
+                        icon = Icons.AutoMirrored.Filled.OpenInNew,
+                        onClick = {
+                            val target = downloadDir
+                            val ok = target.isNotBlank() &&
+                                cp.player.app.platform.openInFileManager(target)
+                            if (!ok) UiEvents.notify("打开目录失败：${target.ifBlank { "尚未设置下载目录" }}")
+                        },
+                    )
+                }
+            }
+
+            // ---- 缓存区：体量展示 + 清理动作 ----
+            SettingsSection("缓存") {
+                SettingsClickItem(
+                    title = "图片缓存",
+                    subtitle = when {
+                        state.imageCacheBytes < 0 -> "统计中…"
+                        else -> "占用 ${formatBytes(state.imageCacheBytes)}"
+                    },
+                    index = 0,
+                    total = 2,
+                    icon = Icons.Filled.PhotoLibrary,
+                    onClick = null,
+                )
+                SettingsButtonItem(
+                    text = "清理图片缓存",
+                    subtitle = "释放封面等图片占用的空间；已下载的歌曲不受影响",
+                    index = 1,
+                    total = 2,
+                    icon = Icons.Filled.CleaningServices,
+                    onClick = { model.clearImageCache() },
+                )
+            }
+
+            SettingsNote(
+                if (isAndroid) {
+                    "下载目录的改动仅对后续下载生效，已下载的文件不会移动。"
+                } else {
+                    "下载目录的改动仅对后续下载生效，已下载的文件不会移动；如需迁移，可在打开目录后手动移动文件。"
+                }
+            )
+        }
+    }
+
+    CpRouteScaffold(
+        title = "下载与存储",
+        onBack = onBack,
+    ) { pageModifier -> body(pageModifier) }
 }

@@ -49,6 +49,21 @@ actual fun clearImageCache(): Boolean {
     }.getOrDefault(false)
 }
 
+actual fun imageCacheSizeBytes(): Long = runCatching {
+    coil3.SingletonImageLoader.get(coil3.PlatformContext.INSTANCE).diskCache?.size ?: -1L
+}.getOrDefault(-1L)
+
+actual fun openInFileManager(path: String): Boolean = runCatching {
+    val dir = java.io.File(path)
+    if (!dir.isDirectory) return@runCatching false
+    if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
+        Desktop.getDesktop().open(dir)
+        true
+    } else {
+        false
+    }
+}.getOrDefault(false)
+
 actual fun requestMediaScanPermission() {
     // 桌面无需运行时媒体读取权限，空实现
 }

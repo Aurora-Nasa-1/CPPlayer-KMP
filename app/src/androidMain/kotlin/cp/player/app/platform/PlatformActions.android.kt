@@ -134,6 +134,17 @@ actual fun clearImageCache(): Boolean {
     }
 }
 
+actual fun imageCacheSizeBytes(): Long {
+    val ctx = ctxOrNull ?: return -1L
+    return try {
+        coil3.SingletonImageLoader.get(ctx).diskCache?.size ?: -1L
+    } catch (_: Exception) {
+        -1L
+    }
+}
+
+actual fun openInFileManager(path: String): Boolean = false
+
 // ============ 媒体扫描运行时权限（app 模块不依赖 app-android，经回调桥接 MainActivity） ============
 
 @Volatile

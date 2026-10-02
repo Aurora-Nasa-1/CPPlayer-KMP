@@ -1,5 +1,6 @@
 package cp.player.app.ui.screen
 
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -13,17 +14,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
+import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpTwoPane
 import cp.player.app.ui.component.LocalEmbeddedInPane
-import cp.player.app.ui.component.LocalIsExpanded
 import cp.player.app.ui.component.MonetIcon
 import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.settingsRowContainer
+import cp.player.app.ui.util.popOrNotify
 
 /**
  * 设置根页。
@@ -50,70 +52,88 @@ class SettingsScreen(private val embedded: Boolean = false) : Screen {
 
 @Composable
 private fun SettingsScreenContent(embedded: Boolean = false) {
-    val expanded = LocalIsExpanded.current
     val navigator = LocalNavigator.current
     val entries = remember { settingsEntries() }
 
-    if (expanded) {
-        var selectedId by remember { mutableStateOf(entries.firstOrNull()?.id) }
-        CpTwoPane(
-            rail = { railModifier ->
-                ScrollColumn(
-                    // 水平内边距取 `formHorizontal`：左栏的行与右栏的行因此**离各自栏边界同远**
-                    // （16dp）。此前左栏是 0 —— 行的圆角贴着窗口左边缘，与右栏一比就看出错位。
-                    modifier = railModifier.padding(
-                        start = CpSpacing.formHorizontal,
-                        end = CpSpacing.formHorizontal,
-                        top = CpSpacing.formVertical,
-                        bottom = CpSpacing.formBottomInset,
-                    ),
-                ) {
-                    SettingsGroupedList(
-                        entries = entries,
-                        selectedId = selectedId,
-                        onSelect = { entry -> selectedId = entry.id },
-                    )
-                }
-            },
-            detail = {
-                // 右栏渲染的是**另一个路由页**（`SettingsEntry.screen()`），它自己分不清
-                // 「被直接 push」和「被塞进右栏」—— 两种情况对外壳的要求正好相反。
-                // 由容器在这里声明，`CpRouteScaffold` 才不会在右栏里再画一条顶栏（栏中栏）。
-                CompositionLocalProvider(LocalEmbeddedInPane provides true) {
-                    val entry = entries.firstOrNull { it.id == selectedId } ?: entries.firstOrNull()
-                    if (entry != null) {
-                        // remember(entry.id)：否则每次重组都新建一个 Screen 实例
-                        val screen = remember(entry.id) { entry.screen() }
-                        screen.Content()
+    // ⚠️ **宽度判据必须用「自己拿到的宽度」，不能用 `LocalIsExpanded`**。
+    //
+    // `LocalIsExpanded` 是 `MainScreen` 在**窗口层**算的（`BoxWithConstraints(Modifier.fillMaxSize())`
+    // 的 `maxWidth`，还减掉了桌面侧栏）。而本页作为桌面内嵌面板时，可用宽度已经比窗口窄了
+    // 一截 —— 用窗口的宽度判据决定「要不要摆双栏」，等于拿别人的尺子量自己。
+    //
+    // 更关键的是：`embedded = true` 时宿主（`MainScreen` 的面板区）**已经画好了顶栏与导航**，
+    // 本页只该出「左栏 + 右栏」这一层内容；一旦判错就会在面板里再套一层外壳（栏中栏）。
+    //
+    // 正确姿势与 `PlaylistDetailScreen` 宽屏分支完全一致：
+    // 自己 `BoxWithConstraints` 量自己的可用宽度，判 `CpBreakpoints.isExpanded`。
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // 走 CpBreakpoints 而不是内联 840：断点只此一份，改一次处处生效。
+        val expanded = CpBreakpoints.isExpanded(maxWidth)
+
+        if (expanded) {
+            // 宽屏：左栏 = 分类导航，右栏 = 选中项的详情。
+            // 这正是设置页的设计意图 —— 左侧导航、右侧界面，一眼看全、不必来回 push。
+            var selectedId by remember { mutableStateOf(entries.firstOrNull()?.id) }
+            CpTwoPane(
+                rail = { railModifier ->
+                    ScrollColumn(
+                        // 水平内边距取 `formHorizontal`：左栏的行与右栏的行因此**离各自栏边界同远**
+                        // （16dp）。此前左栏是 0 —— 行的圆角贴着窗口左边缘，与右栏一比就看出错位。
+                        modifier = railModifier.padding(
+                            start = CpSpacing.formHorizontal,
+                            end = CpSpacing.formHorizontal,
+                            top = CpSpacing.formVertical,
+                            bottom = CpSpacing.formBottomInset,
+                        ),
+                    ) {
+                        SettingsGroupedList(
+                            entries = entries,
+                            selectedId = selectedId,
+                            onSelect = { entry -> selectedId = entry.id },
+                        )
                     }
-                }
-            },
-        )
-        return
-    }
+                },
+                detail = {
+                    // 右栏渲染的是**另一个路由页**（`SettingsEntry.screen()`），它自己分不清
+                    // 「被直接 push」和「被塞进右栏」—— 两种情况对外壳的要求正好相反。
+                    // 由容器在这里声明，`CpRouteScaffold` 才不会在右栏里再画一条顶栏（栏中栏）。
+                    CompositionLocalProvider(LocalEmbeddedInPane provides true) {
+                        val entry = entries.firstOrNull { it.id == selectedId } ?: entries.firstOrNull()
+                        if (entry != null) {
+                            // remember(entry.id)：否则每次重组都新建一个 Screen 实例
+                            val screen = remember(entry.id) { entry.screen() }
+                            screen.Content()
+                        }
+                    }
+                },
+            )
+            return@BoxWithConstraints
+        }
 
-    val list: @Composable () -> Unit = {
-        SettingsGroupedList(
-            entries = entries,
-            selectedId = null,
-            onSelect = { entry -> navigator?.push(entry.screen()) },
-        )
-    }
+        // 窄屏：push 到子页（原设计如此，手机 / 平板上的行为）。
+        val list: @Composable () -> Unit = {
+            SettingsGroupedList(
+                entries = entries,
+                selectedId = null,
+                onSelect = { entry -> navigator?.push(entry.screen()) },
+            )
+        }
 
-    if (embedded) {
-        // 宿主（MainScreen 的桌面面板）已经提供了顶栏，这里只出内容。
-        SettingsPage(Modifier.fillMaxSize()) { list() }
-        return
-    }
+        if (embedded) {
+            // 宿主已经提供了顶栏，这里只出内容，让它自己的滚动容器生效。
+            SettingsPage(Modifier.fillMaxSize()) { list() }
+            return@BoxWithConstraints
+        }
 
-    // ⚠️ 根页也走 `SettingsPage`。此前它自己拼容器、**没有宽度上限** ——
-    // 宽屏下列表横跨整屏，点进任一子页正文又收到 720dp，切换时宽度整体跳一下。
-    // 根页是导航列表不是表单，但它和子页是同一屏的两个状态，必须同宽。
-    CpRouteScaffold(
-        title = "设置",
-        onBack = { navigator?.pop() },
-    ) { pageModifier ->
-        SettingsPage(pageModifier) { list() }
+        // ⚠️ 根页也走 `SettingsPage`。此前它自己拼容器、**没有宽度上限** ——
+        // 宽屏下列表横跨整屏，点进任一子页正文又收到 720dp，切换时宽度整体跳一下。
+        // 根页是导航列表不是表单，但它和子页是同一屏的两个状态，必须同宽。
+        CpRouteScaffold(
+            title = "设置",
+            onBack = { navigator.popOrNotify() },
+        ) { pageModifier ->
+            SettingsPage(pageModifier) { list() }
+        }
     }
 }
 

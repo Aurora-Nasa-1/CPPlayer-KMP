@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.WavingHand
 import androidx.compose.ui.graphics.vector.ImageVector
 import cafe.adriel.voyager.core.screen.Screen
 import cp.player.app.platform.isAndroidPlatform
+import cp.player.app.version.AppVersion
 
 /**
  * 设置树的**唯一声明**。
@@ -47,7 +48,7 @@ enum class SettingsGroup(val title: String) {
     /** 和本机之外的软件打交道。 */
     CONNECTIVITY("连接与集成"),
 
-    /** 低频 + 开发者向。放最末，但不隐藏 —— 本项目面向开发者，藏起来只会增加排查成本。 */
+    /** 低频 + 开发者向。放最末；其中排查/开发专用的入口只在 debug 构建展示（`debugOnly`）。 */
     OTHER("其他"),
 }
 
@@ -70,6 +71,8 @@ enum class SettingsAccent { PRIMARY, SECONDARY, TERTIARY }
  * @param keywords 搜索同义词（「纯黑」→ oled / 省电 / amoled）
  * @param desktopOnly 仅桌面端出现。例：渲染后端对 Android 无意义 —— Android 的渲染
  *   完全交给系统，没有可切换的后端
+ * @param debugOnly 仅 debug 构建出现（[cp.player.app.version.AppVersion.isDebugBuild]，
+ *   即非 stable 渠道）。用于开发者向、或尚未打算对正式版用户开放的入口
  */
 data class SettingsEntry(
     val id: String,
@@ -80,6 +83,7 @@ data class SettingsEntry(
     val accent: SettingsAccent,
     val keywords: List<String> = emptyList(),
     val desktopOnly: Boolean = false,
+    val debugOnly: Boolean = false,
     val screen: () -> Screen,
 )
 
@@ -93,7 +97,10 @@ fun settingsEntries(): List<SettingsEntry> = buildList {
     addAll(accountEntries())
     addAll(connectivityEntries())
     addAll(otherEntries())
-}.filter { !it.desktopOnly || !isAndroidPlatform() }
+}.filter { entry ->
+    (!entry.desktopOnly || !isAndroidPlatform()) &&
+        (!entry.debugOnly || AppVersion.isDebugBuild)
+}
 
 private fun generalEntries(): List<SettingsEntry> = listOf(
     SettingsEntry(
@@ -214,6 +221,9 @@ private fun otherEntries(): List<SettingsEntry> = listOf(
         accent = SettingsAccent.PRIMARY,
         keywords = listOf("渲染", "后端", "垂直同步", "vsync", "撕裂", "卡顿", "显卡", "render", "gpu"),
         desktopOnly = true,
+        // 排查向功能：给遇到 VRR 闪烁等问题的开发者留的对照开关，
+        // 不希望普通用户误入后把渲染后端改乱，故仅 debug 构建展示。
+        debugOnly = true,
         screen = { RenderTuningSettingsScreen() },
     ),
     SettingsEntry(
@@ -224,6 +234,8 @@ private fun otherEntries(): List<SettingsEntry> = listOf(
         icon = Icons.Filled.WavingHand,
         accent = SettingsAccent.SECONDARY,
         keywords = listOf("引导", "教程", "新手", "onboarding", "tutorial"),
+        // 主要用于开发期验证引导流程的改动；正式版用户没有重看的场景。
+        debugOnly = true,
         screen = { OnboardingScreen(replay = true) },
     ),
 )
