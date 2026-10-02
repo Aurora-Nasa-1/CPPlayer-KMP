@@ -85,6 +85,7 @@ import cp.player.app.ui.component.CpBackButton
 import cp.player.app.ui.component.CpCoverPlaceholder
 import cp.player.app.ui.component.CpIconSize
 import cp.player.app.ui.component.CpLoadingIndicator
+import cp.player.app.ui.component.CpRefreshablePage
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpToggleChip
 import cp.player.app.ui.component.LazyScrollColumn
@@ -169,7 +170,10 @@ private fun HomeScreenContent(model: HomeScreenModel) {
     }.collectAsState(initial = NowPlayingSnapshot(track = null, isPlaying = false))
     val scope = rememberCoroutineScope()
     val navigator = LocalNavigator.currentOrThrow
-    val provider = AppModel.activeProviderId()
+    // 响应式读当前音源：切源后这里先重组，保证随后的播放请求打上新源的 mediaId 前缀
+    // （数据刷新由 HomeScreenModel 订阅 sourceGeneration 负责，这里只管「接下来播谁」）。
+    val activeProvider by AppModel.activeProviderFlow.collectAsState()
+    val provider = activeProvider?.id ?: AppModel.activeProviderId()
     val toMediaId = { id: String -> if (id.contains("://")) id else "$provider://song/$id" }
 
     val dailySongs = state.dailySongs
@@ -210,7 +214,7 @@ private fun HomeScreenContent(model: HomeScreenModel) {
     val rootNavigator = cp.player.app.ui.util.LocalRootNavigator.current
 
     val actions = HomeActions(
-        onRefresh = model::refresh,
+        onRefresh = { model.refresh() },
         onPlaylistSourceChange = model::selectPlaylistSource,
         onNewSongRegionChange = model::selectNewSongRegion,
         onBannerClick = { banner ->
@@ -332,15 +336,24 @@ private fun HomeScreenContent(model: HomeScreenModel) {
         return
     }
 
-    if (LocalIsExpanded.current) {
-        DesktopHomeLayout(
-            state = state,
-            recentTracks = recentTracks,
-            nowPlaying = nowPlaying,
-            actions = actions,
-        )
-    } else {
-        MobileHomeLayout(state = state, recentTracks = recentTracks, actions = actions)
+    // 页面级刷新入口：桌面 = 空白处右键「刷新」；Android = 下拉刷新。
+    // isRefreshing 用模型单独的 refreshing 标记 —— 静默刷新时 loading 保持 false，
+    // 旧内容不会被全屏加载态顶掉。
+    val refreshing by model.refreshing.collectAsState()
+    CpRefreshablePage(
+        isRefreshing = refreshing,
+        onRefresh = { model.refresh(force = true) },
+    ) {
+        if (LocalIsExpanded.current) {
+            DesktopHomeLayout(
+                state = state,
+                recentTracks = recentTracks,
+                nowPlaying = nowPlaying,
+                actions = actions,
+            )
+        } else {
+            MobileHomeLayout(state = state, recentTracks = recentTracks, actions = actions)
+        }
     }
 
     selectedTrack?.let { track ->
@@ -369,6 +382,10 @@ private fun HomeScreenContent(model: HomeScreenModel) {
             onAddToQueue = {
                 scope.launch { AppModel.playback.addToQueue(toMediaId(track.id)) }
                 cp.player.app.ui.util.UiEvents.notify("已加入播放队列")
+            },
+            onPlayNext = {
+                scope.launch { AppModel.playback.addNextToQueue(toMediaId(track.id)) }
+                cp.player.app.ui.util.UiEvents.notify("将在下一首播放")
             },
             onAddToPlaylist = { addToPlaylistTrack = track },
             onDownload = { AppModel.downloadTrack(track) },
@@ -2489,6 +2506,10 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
                                                     scope.launch { AppModel.playback.addToQueue(toMediaId(track.id)) }
                                                     cp.player.app.ui.util.UiEvents.notify("已加入播放队列")
                                                 },
+                                                onPlayNext = {
+                                                    scope.launch { AppModel.playback.addNextToQueue(toMediaId(track.id)) }
+                                                    cp.player.app.ui.util.UiEvents.notify("将在下一首播放")
+                                                },
                                                 onShare = { shareText(songShareText(track)) },
                                             )
                                         ),
@@ -2529,6 +2550,10 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
                 onAddToQueue = {
                     scope.launch { AppModel.playback.addToQueue(toMediaId(track.id)) }
                     cp.player.app.ui.util.UiEvents.notify("已加入播放队列")
+                },
+                onPlayNext = {
+                    scope.launch { AppModel.playback.addNextToQueue(toMediaId(track.id)) }
+                    cp.player.app.ui.util.UiEvents.notify("将在下一首播放")
                 },
                 onAddToPlaylist = {},
                 onDownload = { AppModel.downloadTrack(track) },

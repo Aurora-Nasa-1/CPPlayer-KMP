@@ -54,6 +54,20 @@ object AppModel {
     /** 当前活跃 Provider 流（顶部标题/登录页等）。 */
     val activeProviderFlow: StateFlow<BackendProvider?> get() = backend.activeProviderFlow
 
+    /**
+     * 「音源代际」：每次**用户主动**切换音源成功后 +1。
+     *
+     * 为什么不用 [activeProviderFlow] 当刷新信号：应用启动时后端会自动恢复上次的
+     * Provider（null → 实例），它也会发一次 —— 按它刷新会让每个页面的 ScreenModel
+     * 在启动时白拉一遍数据。代际计数只由真正的用户动作（[switchOrReport] /
+     * 导入自动激活 / 更新自动激活）驱动，`drop(1)` 之后收到的必然是「用户切了源」，
+     * 页面据此作废自己的按音源缓存并重新拉取。
+     */
+    private val _sourceGeneration = MutableStateFlow(0)
+    val sourceGeneration: StateFlow<Int> = _sourceGeneration.asStateFlow()
+
+    private fun bumpSourceGeneration() { _sourceGeneration.value += 1 }
+
     /** 当前状态快照。 */
     val state: BackendState get() = backend.state
 
@@ -193,6 +207,58 @@ object AppModel {
     fun setPureBlack(enabled: Boolean) {
         settings.putString(KEY_PURE_BLACK, enabled.toString())
         _pureBlack.value = enabled
+    }
+
+    // ============ 字体圆滑度（持久化，Google Sans Flex 的 ROND 轴） ============
+
+    private const val KEY_FONT_ROUNDNESS = "font_roundness"
+
+    private val _fontRoundness = MutableStateFlow(fontRoundness())
+
+    /**
+     * 用户自定义的字体圆滑度（0–100）。
+     *
+     * **null 表示「未自定义」**，渲染时回退到 [cp.player.app.platform.defaultFontRoundness]
+     * （Android 16+ = 100，其余平台 = 0）。存 null 而不是把平台默认值写死进盘：
+     * 平台默认是系统观感的一部分，将来调整判据时老用户应当自动跟上。
+     */
+    val fontRoundnessFlow: StateFlow<Int?> = _fontRoundness.asStateFlow()
+
+    fun fontRoundness(): Int? =
+        settings.getString(KEY_FONT_ROUNDNESS)?.toIntOrNull()?.coerceIn(0, 100)
+
+    /** 当前**生效**的圆滑度：自定义值优先，未自定义时取平台默认。 */
+    fun effectiveFontRoundness(): Int = fontRoundness() ?: cp.player.app.platform.defaultFontRoundness()
+
+    /** 设置字体圆滑度；传 null 恢复「跟随平台默认」。 */
+    fun setFontRoundness(value: Int?) {
+        if (value == null) {
+            settings.remove(KEY_FONT_ROUNDNESS)
+        } else {
+            settings.putString(KEY_FONT_ROUNDNESS, value.coerceIn(0, 100).toString())
+        }
+        _fontRoundness.value = value
+    }
+
+    // ============ 底部导航栏（持久化） ============
+
+    private const val KEY_BOTTOM_BAR_AUTO_HIDE = "bottom_bar_auto_hide"
+
+    private val _bottomBarAutoHide = MutableStateFlow(
+        settings.getString(KEY_BOTTOM_BAR_AUTO_HIDE)?.toBooleanStrictOrNull() ?: true
+    )
+
+    /**
+     * 窄屏（手机）底部导航栏是否**随内容上滑自动隐藏**（默认开）。
+     *
+     * 生效范围是整个窄屏布局的底栏（Android 手机 / 窄窗口）；桌面宽屏有侧栏，
+     * 本来就没有底栏。实现见 [cp.player.app.ui.component.BottomBarHideState]。
+     */
+    val bottomBarAutoHideFlow: StateFlow<Boolean> = _bottomBarAutoHide.asStateFlow()
+
+    fun setBottomBarAutoHide(enabled: Boolean) {
+        settings.putString(KEY_BOTTOM_BAR_AUTO_HIDE, enabled.toString())
+        _bottomBarAutoHide.value = enabled
     }
 
     // ============ 首次使用引导（持久化） ============
@@ -336,6 +402,21 @@ object AppModel {
     /** 启动时把持久化音质同步给播放控制器。 */
     fun syncPlaybackQuality() {
         runCatching { playback.setQuality(playbackQuality()) }
+    }
+
+    // ============ 歌词来源（持久化，对齐旧版三档模式） ============
+
+    private val _lyricsSourceMode =
+        MutableStateFlow(cp.player.core.api.LyricsSourceMode.fromKey(settings.getString(cp.player.core.api.LyricsSourceMode.SETTINGS_KEY)))
+    val lyricsSourceModeFlow: StateFlow<cp.player.core.api.LyricsSourceMode> = _lyricsSourceMode.asStateFlow()
+
+    fun lyricsSourceMode(): cp.player.core.api.LyricsSourceMode =
+        cp.player.core.api.LyricsSourceMode.fromKey(settings.getString(cp.player.core.api.LyricsSourceMode.SETTINGS_KEY))
+
+    /** 修改歌词来源模式。取词时现读，对下一次刷新歌词生效。 */
+    fun setLyricsSourceMode(mode: cp.player.core.api.LyricsSourceMode) {
+        settings.putString(cp.player.core.api.LyricsSourceMode.SETTINGS_KEY, mode.key)
+        _lyricsSourceMode.value = mode
     }
 
     // ============ 本地服务器输出 + 外部推送（持久化） ============
@@ -797,7 +878,11 @@ object AppModel {
 
     fun activeProvider(): BackendProvider? = backend.activeProvider()
 
-    fun switchProvider(provider: BackendProvider): BackendResult<Unit> = backend.switchProvider(provider)
+    fun switchProvider(provider: BackendProvider): BackendResult<Unit> {
+        val result = backend.switchProvider(provider)
+        if (result is BackendResult.Success) bumpSourceGeneration()
+        return result
+    }
 
     /** 切换 Provider，返回是否成功（便捷版，错误信息存入 [lastSwitchError]）。 */
     var lastSwitchError: String? = null
@@ -807,22 +892,34 @@ object AppModel {
         val result = backend.switchProvider(provider)
         lastSwitchError = (result as? BackendResult.Error)?.message
             ?: (result as? BackendResult.Unsupported)?.message
-        // 音源隔离：cookie 是按音源存的，切过去之后要按**新音源的 cookie** 重新拉资料，
-        // 否则界面会继续显示上一个音源的账号（用户看到的是「切了源但账号没换」）。
-        if (result.isSuccess && isolationSwitchAccount()) {
-            refreshUserProfile()
+        if (result.isSuccess) {
+            bumpSourceGeneration()
+            // 音源隔离：cookie 是按音源存的，切过去之后要按**新音源的 cookie** 重新拉资料，
+            // 否则界面会继续显示上一个音源的账号（用户看到的是「切了源但账号没换」）。
+            if (isolationSwitchAccount()) {
+                refreshUserProfile()
+            }
         }
         return result.isSuccess
     }
 
     /** 导入模块，自动激活（此前无活跃时），返回 [ImportResult]。 */
-    fun importModule(zipPath: String): ImportResult = backend.importModule(zipPath)
+    fun importModule(zipPath: String): ImportResult {
+        val result = backend.importModule(zipPath)
+        // 导入自动激活等价于一次用户切换：页面数据要跟着换源刷新。
+        if (result is ImportResult.Activated) bumpSourceGeneration()
+        return result
+    }
 
     /**
      * 用 zip 包更新已安装模块（包内 manifest.id 必须与 [targetId] 一致），
      * 更新活跃 Provider 时自动重新激活新实例，返回 [ImportResult]。
      */
-    fun updateModule(zipPath: String, targetId: String): ImportResult = backend.updateModule(zipPath, targetId)
+    fun updateModule(zipPath: String, targetId: String): ImportResult {
+        val result = backend.updateModule(zipPath, targetId)
+        if (result is ImportResult.Activated) bumpSourceGeneration()
+        return result
+    }
 
     /** 导出模块目录为 zip 文件（用于分享 / 备份音源模块），返回 [BackendResult]。 */
     fun exportModule(providerId: String, zipPath: String): BackendResult<Unit> =

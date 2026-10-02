@@ -134,6 +134,13 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
         if (state.selectedTab == 1) model.loadCloud()
     }
 
+    // 页面级刷新入口：桌面 = 空白处右键「刷新」；Android = 下拉刷新。
+    // 静默刷新（已有歌单时不置 loading）走模型单独的 refreshing 标记驱动指示器。
+    val refreshing by model.refreshing.collectAsState()
+    cp.player.app.ui.component.CpRefreshablePage(
+        isRefreshing = refreshing,
+        onRefresh = { model.refresh() },
+    ) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyScrollColumn(
             // 用全局统一的内容宽度：以前这里写死 1360、首页写死 1480–1840，
@@ -224,6 +231,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
             }
         }
     }
+    } // CpRefreshablePage
 
     selectedPlaylist?.let { playlist ->
         PlaylistOptionsSheet(
@@ -317,7 +325,8 @@ private fun LibraryDashboard(
                 BentoStatCard("聆听统计", stats, Modifier.weight(2f).fillMaxHeight())
             }
         } else {
-            LibraryGreeting(title, subtitle, Modifier.fillMaxWidth())
+            // 手机端：顶栏标题已是账号昵称，问候区不再重复大名字，只留统计副标题。
+            LibraryGreeting(title, subtitle, Modifier.fillMaxWidth(), showTitle = false)
             BentoStatCard("聆听统计", stats, Modifier.fillMaxWidth().height(112.dp))
         }
 
@@ -471,16 +480,27 @@ private fun LibraryDashboard(
 }
 
 @Composable
-private fun LibraryGreeting(title: String, subtitle: String, modifier: Modifier = Modifier) {
+private fun LibraryGreeting(
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+    // 手机端顶栏已显示账号昵称（MainScreen.AppTopBar accountLeading 分支），
+    // 问候区再放一遍大名字是重复的，传 false 只留统计副标题。
+    showTitle: Boolean = true,
+) {
     Column(modifier) {
-        Text(
-            title,
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.height(6.dp))
+        if (showTitle) {
+            Text(
+                title,
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (showTitle) {
+            Spacer(Modifier.height(6.dp))
+        }
         Text(
             subtitle,
             style = MaterialTheme.typography.bodyMedium,

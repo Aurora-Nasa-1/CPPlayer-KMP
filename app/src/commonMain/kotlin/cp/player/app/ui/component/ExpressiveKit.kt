@@ -23,6 +23,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -39,6 +40,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -762,3 +765,46 @@ fun Modifier.cpPressScale(
 @Composable
 fun Modifier.cpExpressiveClip(radius: Dp = 28.dp): Modifier =
     this.clip(RoundedCornerShape(radius))
+
+// ---------------------------------------------------------------- 页面刷新
+
+/**
+ * 页面级「刷新」容器 —— 首页 / 媒体库等主 tab 的统一刷新入口。
+ *
+ * 按平台分流：
+ * - **桌面**：包一层 [CpContextMenu]（passive = true）—— 空白处右键弹「刷新」。
+ *   passive 让歌曲行自己的右键菜单与卡片点击手势优先，页面菜单只在没有任何
+ *   子级接手的区域弹出。
+ * - **Android（触屏）**：material3 的 [PullToRefreshBox] 下拉刷新。桌面不开下拉：
+ *   鼠标滚轮在列表顶部继续上滚的 overscroll 也会被下拉刷新的 nested scroll 吃掉，
+ *   「想在顶部再滚一下」会莫名其妙拽出刷新指示器 —— 桌面的刷新入口是右键菜单。
+ *
+ * material3 的实验 API 在这里收口（与 [CpLoadingIndicator] 等同一约定），
+ * 页面不要直接 import `pulltorefresh`。
+ *
+ * @param isRefreshing 刷新在途标记（来自 ScreenModel，**不是**页面的全屏加载态）。
+ * @param onRefresh 用户触发刷新（下拉到位释放 / 点右键菜单「刷新」）。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CpRefreshablePage(
+    isRefreshing: Boolean,
+    onRefresh: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    val menuItems = remember(onRefresh) {
+        listOf(CpContextMenuItem("刷新", Icons.Filled.Refresh, onClick = onRefresh))
+    }
+    if (cp.player.app.platform.isAndroidPlatform()) {
+        androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = onRefresh,
+            modifier = modifier,
+        ) {
+            content()
+        }
+    } else {
+        CpContextMenu(items = menuItems, modifier = modifier, passive = true, content = content)
+    }
+}

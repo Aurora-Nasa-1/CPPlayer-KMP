@@ -17,6 +17,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -99,6 +100,25 @@ data class HomeUiState(
             hotArtists.isEmpty() &&
             newSongs.isEmpty() &&
             visiblePlaylists.isEmpty()
+
+    /**
+     * 是否已经拿到过**任何**内容（不看 [error]）。
+     *
+     * 刷新分流用：有内容 ⇒ 静默刷新（不置 [loading]，旧内容留在原地）；
+     * 没内容 ⇒ 首屏加载（全屏加载态）。侧栏实例（loadDiscovery=false）只有
+     * 用户歌单一栏，[userPlaylists] 也算在内。
+     */
+    val hasAnyContent: Boolean
+        get() = dailySongs.isNotEmpty() ||
+            banners.isNotEmpty() ||
+            rankings.isNotEmpty() ||
+            newAlbums.isNotEmpty() ||
+            hotArtists.isNotEmpty() ||
+            newSongs.isNotEmpty() ||
+            recommendedPlaylists.isNotEmpty() ||
+            hotPlaylists.isNotEmpty() ||
+            premiumPlaylists.isNotEmpty() ||
+            userPlaylists.isNotEmpty()
 }
 
 /**
@@ -141,6 +161,14 @@ class HomeScreenModel(
     val state: StateFlow<HomeUiState> = _state.asStateFlow()
 
     /**
+     * 是否有刷新请求在途（与 [HomeUiState.loading] 分开：后者为 true 时整页会被
+     * 全屏加载态顶掉，只在首屏无内容时才置位；这里驱动的是下拉刷新指示器，
+     * 已有内容的刷新是**静默**的 —— 旧内容留在原地，拉完一次性替换）。
+     */
+    private val _refreshing = MutableStateFlow(false)
+    val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
+
+    /**
      * 地区 → 已拉取的新歌速递。来回切地区时直接复用，避免每切一次都闪一遍加载态。
      * 只在主线程读写（[screenModelScope] 与 `MusicBackend.backendScope` 同为 Main），
      * 因此不需要额外同步。
@@ -149,6 +177,17 @@ class HomeScreenModel(
 
     init {
         refresh()
+        // 音源切换后首页所有数据（日推 / 榜单 / 歌单 …）都属于旧音源：作废按音源
+        // 的内存缓存并强制重拉。侧栏那个 loadDiscovery=false 的实例同样走这里，
+        // 用户歌单（侧栏「我的歌单」）因此自动跟着换源刷新。
+        // 订阅的是 sourceGeneration 而不是 activeProviderFlow：后者在启动恢复 Provider
+        // 时也会发射，会造成启动时白拉一遍（见 AppModel.sourceGeneration 的 KDoc）。
+        screenModelScope.launch {
+            AppModel.sourceGeneration.drop(1).collect {
+                newSongsByRegion.clear()
+                refresh(force = true)
+            }
+        }
     }
 
     /** 播放私人 FM：按批次连续拉取，补足一组可听队列。 */
@@ -167,19 +206,35 @@ class HomeScreenModel(
         }
     }
 
-    fun refresh() {
+    /**
+     * 拉取首页数据。
+     *
+     * @param force 强制刷新（音源切换 / 用户显式刷新）：绕过「加载中」去重守卫，
+     *   且无视按地区的内存缓存。
+     *
+     * 已有内容时是**静默**刷新：不置 [HomeUiState.loading]（否则整页被全屏加载态顶掉、
+     * 滚动位置丢失），旧内容留在原地，拉完一次性替换 —— 下拉刷新的进度反馈由
+     * [refreshing] 驱动。全屏加载态只留给首屏（页面还没有任何内容可显示）。
+     */
+    fun refresh(force: Boolean = false) {
         // 已有内容时不做「刷新即清空」：切回首页不该先闪一屏骨架。
-        if (_state.value.loading && _state.value.dailySongs.isNotEmpty()) return
+        if (!force && _state.value.loading && _state.value.dailySongs.isNotEmpty()) return
+        val silent = _state.value.hasAnyContent
         screenModelScope.launch {
-            _state.value = _state.value.copy(loading = true, error = null)
-            val next = withContext(Dispatchers.IO) {
-                if (loadDiscovery) loadDiscoveryHome() else loadUserLibraryOnly()
+            _refreshing.value = true
+            try {
+                if (!silent) _state.value = _state.value.copy(loading = true, error = null)
+                val next = withContext(Dispatchers.IO) {
+                    if (loadDiscovery) loadDiscoveryHome() else loadUserLibraryOnly()
+                }
+                // 首屏拿到的「全部」新歌速递顺手进缓存：这样用户点开地区筛选再切回「全部」
+                // 时不会重新请求、也不会闪一遍加载态。写在这里而不是 loadDiscoveryHome 内部，
+                // 是因为那边跑在 IO 线程，而这张表只在主线程读写。
+                if (next.newSongs.isNotEmpty()) newSongsByRegion[NewSongRegion.All] = next.newSongs
+                _state.value = next.copy(loading = false)
+            } finally {
+                _refreshing.value = false
             }
-            // 首屏拿到的「全部」新歌速递顺手进缓存：这样用户点开地区筛选再切回「全部」
-            // 时不会重新请求、也不会闪一遍加载态。写在这里而不是 loadDiscoveryHome 内部，
-            // 是因为那边跑在 IO 线程，而这张表只在主线程读写。
-            if (next.newSongs.isNotEmpty()) newSongsByRegion[NewSongRegion.All] = next.newSongs
-            _state.value = next.copy(loading = false)
         }
     }
 

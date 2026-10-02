@@ -35,6 +35,10 @@ class LibraryScreenModel : ScreenModel {
     fun selectTab(index: Int) { _state.value = _state.value.copy(selectedTab = index) }
     val state: StateFlow<LibraryUiState> = _state.asStateFlow()
 
+    /** 刷新请求在途标记（驱动下拉刷新指示器；与 [LibraryUiState.loading] 分开）。 */
+    private val _refreshing = MutableStateFlow(false)
+    val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
+
     init {
         refresh()
         // 订阅登录态变化（登录成功/登出后 userProfile 更新），自动刷新媒体库；
@@ -43,21 +47,50 @@ class LibraryScreenModel : ScreenModel {
         screenModelScope.launch {
             AppModel.userProfileFlow.drop(1).collect { refresh() }
         }
+        // 音源切换后歌单列表（以及云盘）都属于旧音源：作废云盘缓存并重新拉取。
+        // 订阅 sourceGeneration 而不是 activeProviderFlow：后者在启动恢复 Provider 时
+        // 也会发射，会造成启动时白拉一遍（见 AppModel.sourceGeneration 的 KDoc）。
+        screenModelScope.launch {
+            AppModel.sourceGeneration.drop(1).collect {
+                _state.value = _state.value.copy(cloudSongs = emptyList(), cloudLoaded = false)
+                refresh()
+            }
+        }
     }
 
+    /**
+     * 拉取用户歌单列表。
+     *
+     * 已有歌单时是**静默**刷新：不置 [LibraryUiState.loading]（那会把歌单栅格整个
+     * 顶成一行加载态），旧列表留在原地，拉完一次性替换；进度反馈由 [refreshing] 驱动。
+     */
     fun refresh() {
         screenModelScope.launch {
-            _state.value = _state.value.copy(loading = true, error = null)
-            _state.value = withContext(Dispatchers.IO) {
-                runCatching {
-                    when (val result = AppModel.musicRepository.getCurrentUserPlaylists()) {
-                        is BackendResult.Success -> _state.value.copy(playlists = result.data, loading = false)
-                        is BackendResult.Error -> _state.value.copy(loading = false, error = result.message)
-                        is BackendResult.Unsupported -> _state.value.copy(loading = false, error = result.message)
+            val silent = _state.value.playlists.isNotEmpty()
+            if (!silent) _state.value = _state.value.copy(loading = true, error = null)
+            _refreshing.value = true
+            try {
+                _state.value = withContext(Dispatchers.IO) {
+                    runCatching {
+                        when (val result = AppModel.musicRepository.getCurrentUserPlaylists()) {
+                            is BackendResult.Success -> {
+                                if (silent && result.data == _state.value.playlists) {
+                                    // 内容没变就保留旧列表实例：观察者（如歌单详情页的
+                                    // LaunchedEffect）以列表实例为 key，换了实例会白触发一轮。
+                                    _state.value.copy(loading = false)
+                                } else {
+                                    _state.value.copy(playlists = result.data, loading = false)
+                                }
+                            }
+                            is BackendResult.Error -> _state.value.copy(loading = false, error = result.message)
+                            is BackendResult.Unsupported -> _state.value.copy(loading = false, error = result.message)
+                        }
+                    }.getOrElse {
+                        _state.value.copy(loading = false, error = it.message ?: "媒体库加载失败")
                     }
-                }.getOrElse {
-                    _state.value.copy(loading = false, error = it.message ?: "媒体库加载失败")
                 }
+            } finally {
+                _refreshing.value = false
             }
         }
     }
