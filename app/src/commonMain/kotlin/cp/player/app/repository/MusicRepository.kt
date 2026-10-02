@@ -52,11 +52,13 @@ class MusicRepository(private val api: MusicApiService) {
 
     suspend fun getPersonalFmBatch(targetSize: Int = 18, maxRequests: Int = 8): MusicResult<List<TrackSummary>> {
         val merged = mutableListOf<TrackSummary>()
+        val mergedIds = mutableSetOf<String>()
         repeat(maxRequests.coerceAtLeast(1)) {
             when (val page = getPersonalFm()) {
                 is BackendResult.Success -> {
-                    val newItems = page.data.filter { candidate -> merged.none { it.id == candidate.id } }
+                    val newItems = page.data.filter { candidate -> !mergedIds.contains(candidate.id) }
                     merged += newItems
+                    mergedIds.addAll(newItems.map { it.id })
                     if (merged.size >= targetSize) return BackendResult.Success(merged.take(targetSize))
                     if (page.data.isEmpty()) return BackendResult.Success(merged)
                 }
