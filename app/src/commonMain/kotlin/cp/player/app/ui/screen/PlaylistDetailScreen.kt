@@ -1111,7 +1111,7 @@ private fun PlaylistHeader(
                 ) {
                     Icon(
                         Icons.Filled.PlayArrow,
-                        contentDescription = "播放",
+                        contentDescription = null,
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                     Spacer(Modifier.width(8.dp))
@@ -1136,7 +1136,7 @@ private fun PlaylistHeader(
                 ) {
                     Icon(
                         Icons.Filled.Shuffle,
-                        contentDescription = "随机",
+                        contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.width(8.dp))
@@ -1167,7 +1167,7 @@ private fun PlaylistHeader(
                 ) {
                     Icon(
                         Icons.Filled.PlaylistAdd,
-                        contentDescription = "添加",
+                        contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
                     Spacer(Modifier.width(8.dp))
@@ -1205,7 +1205,7 @@ private fun PlaylistHeader(
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.Sort,
-                            contentDescription = "排序",
+                            contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(Modifier.width(8.dp))
@@ -1235,7 +1235,7 @@ private fun PlaylistHeader(
             ) {
                 Icon(
                     Icons.Filled.Download,
-                    contentDescription = "全部下载",
+                    contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(Modifier.width(8.dp))
