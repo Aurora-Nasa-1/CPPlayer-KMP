@@ -126,11 +126,19 @@ data class SongUrl(
 
 /**
  * 搜索结果。
+ *
+ * ⚠️ **专辑与歌手是两个不同的字段**，不能共用 [playlists]。
+ *
+ * 收敛前这里只有 `songs` / `playlists` / `artists` 三个字段，而搜索界面在「专辑」页签下
+ * 直接把 `playlists` 当专辑渲染 —— 上游 `cloudsearch?type=10` 返回的其实是 `result.albums`，
+ * 而 `result.playlists` 在专辑搜索里**根本不存在**，于是「专辑」页签永远空白。
+ * 「歌手」页签勉强能出人名，但头像、点击进详情都没有。
  */
 data class SearchResult(
     val songs: List<TrackSummary>,
     val playlists: List<PlaylistSummary>,
     val artists: List<ArtistSummary>,
+    val albums: List<AlbumSummary> = emptyList(),
 )
 
 /**
@@ -172,7 +180,7 @@ data class RankingSummary(
 )
 
 /**
- * 专辑摘要（`album/new` 新碟上架）。
+ * 专辑摘要（`album/new` 新碟上架 / 搜索专辑 / 歌手专辑）。
  */
 data class AlbumSummary(
     val id: Long,
@@ -180,4 +188,66 @@ data class AlbumSummary(
     val coverUrl: String?,
     val artistName: String?,
     val trackCount: Int,
+    /** 发行时间（毫秒）。上游字段名 `publishTime`，缺失时为 null。 */
+    val publishTimeMs: Long? = null,
+    /** 专辑艺术家 id，用于从专辑反跳歌手。上游可能在 `artist.id` / `artists[0].id`。 */
+    val artistId: Long? = null,
+)
+
+/**
+ * 专辑详情（`album`）。
+ *
+ * [tracks] 是专辑的完整曲目；`songs` 既可能挂在 `album.songs` 下，
+ * 也可能与 `album` 平级，解析层两种都取。
+ */
+data class AlbumDetail(
+    val id: Long,
+    val name: String,
+    val coverUrl: String?,
+    val artistName: String?,
+    val artistId: Long?,
+    val publishTimeMs: Long?,
+    val company: String?,
+    val description: String?,
+    val tracks: List<TrackSummary>,
+)
+
+/**
+ * 歌手资料（`artist/detail` 的 `data.artist`）。
+ *
+ * [followeds] 取自 `data.user.followeds`（歌手的粉丝数），歌手对象本身没有这个字段。
+ */
+data class ArtistProfile(
+    val id: Long,
+    val name: String,
+    val avatarUrl: String?,
+    val briefDesc: String?,
+    val alias: List<String>,
+    val albumSize: Int,
+    val musicSize: Int,
+    val followeds: Int,
+)
+
+/**
+ * 用户主页 / 歌手主页的**统一**数据包。
+ *
+ * 上游 `user/detail` 与 `artist/detail` 用的是同一段数字 id 空间，但指向不同实体，
+ * 且**同一个 id 在两边都可能返回数据**。因此调用方只能「先试歌手、拿到 `data.artist`
+ * 才认」，否则按普通用户处理 —— 这也是旧项目 `fetchOtherUserProfile` 的做法。
+ */
+data class ProfileBundle(
+    val uid: Long,
+    val isArtist: Boolean,
+    val nickname: String,
+    val avatarUrl: String?,
+    val signature: String?,
+    /** 歌手：专辑数；用户：歌单数。 */
+    val primaryCount: Int,
+    /** 关注数（歌手恒为 0）。 */
+    val follows: Int,
+    /** 粉丝数。 */
+    val followeds: Int,
+    val playlists: List<PlaylistSummary> = emptyList(),
+    val albums: List<AlbumSummary> = emptyList(),
+    val songs: List<TrackSummary> = emptyList(),
 )

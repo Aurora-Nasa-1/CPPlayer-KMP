@@ -91,17 +91,29 @@ object MusicSourceFromApi {
 
     // ============ 搜索 ============
 
-    /** 从 `result` 子对象解析搜索结果（单曲类型 type=1）。 */
+    /**
+     * 从 `result` 子对象解析搜索结果。
+     *
+     * 四个数组**按类型各自解析**：`type=10`（专辑）只填 `result.albums`，
+     * `type=100`（歌手）只填 `result.artists`，其余为空。
+     * 调用方必须按 `result` 里**对应的那个数组**渲染，不能拿别的数组顶替 ——
+     * 收敛前「专辑」页签就是拿 `playlists` 渲染的，而专辑搜索里没有这个数组，页面恒空。
+     */
     fun parseSearchSongs(json: JsonElement, type: Int = 1): MusicResult<SearchResult> {
         return json.toMusicResult {
             val result = this["result"] as? JsonObject ?: this
             val songs = (result["songs"] as? JsonArray ?: JsonArray(emptyList()))
-                .map { it.jsonObject.toTrackSummary() }
+                .mapNotNull { (it as? JsonObject)?.toTrackSummary()?.takeIf { t -> t.id.isNotBlank() } }
             val playlists = (result["playlists"] as? JsonArray ?: JsonArray(emptyList()))
                 .map { it.jsonObject.toPlaylistSummary() }
+                .filter { it.id != 0L }
             val artists = (result["artists"] as? JsonArray ?: JsonArray(emptyList()))
                 .map { it.jsonObject.toArtistSummary() }
-            SearchResult(songs = songs, playlists = playlists, artists = artists)
+                .filter { it.id != 0L }
+            // 专辑搜索的关键修复点：上游字段是 `albums`。旧实现只认 `playlists`，
+            // 于是「专辑」页签永远拿到 0 条。
+            val albums = parseAlbumArray(result, "albums")
+            SearchResult(songs = songs, playlists = playlists, artists = artists, albums = albums)
         }
     }
 
@@ -175,16 +187,26 @@ object MusicSourceFromApi {
         }
     }
 
-    // ============ 私人 FM ============
+    // ============ 私人 FM / 心动模式 ============
 
-    /** 解析私人 FM 歌曲列表（personal/fm）：`{ data: [...track...] }`。 */
+    /**
+     * 解析私人 FM（`personal_fm`）与心动模式（`playmode/intelligence/list`）的歌曲列表。
+     *
+     * 兼容三种条目形态（与旧项目 `JsonUtils.parseSong` 对齐）：
+     * - 心动模式：`{ data: [{ alg: "...", songInfo: { id, name, ... } }] }` —— **必须解包
+     *   `songInfo`**，否则每个条目都取不到曲目字段，整页永远是「歌单暂无歌曲」；
+     * - 私人 FM / 新歌速递：`{ data: [{ id, name, ar, al, dt }] }` —— 条目本身就是曲目；
+     * - 部分音源：`{ songs: [...] }`。
+     */
     fun parseFmSongs(json: JsonElement): MusicResult<List<TrackSummary>> {
         return json.toMusicResult {
             val array = (this["data"] as? JsonArray)
                 ?: (this["songs"] as? JsonArray)
                 ?: JsonArray(emptyList())
             array.mapNotNull { el ->
-                (el as? JsonObject)?.toTrackSummary()?.takeIf { it.id.isNotBlank() }
+                val obj = (el as? JsonObject)?.let { (it["songInfo"] as? JsonObject) ?: it }
+                    ?: return@mapNotNull null
+                obj.toTrackSummary().takeIf { it.id.isNotBlank() && it.name.isNotBlank() }
             }
         }
     }
@@ -244,27 +266,214 @@ object MusicSourceFromApi {
         }
     }
 
-    // ============ 新碟上架 ============
+    // ============ 新碟上架 / 歌手专辑 / 搜索专辑 ============
 
-    /** 解析新碟上架（`album/new`）：`{ albums: [...] }`。曲目数上游叫 `size`。 */
+    /**
+     * 解析新碟上架（`album/new`）：`{ albums: [...] }`。曲目数上游叫 `size`。
+     */
     fun parseAlbums(json: JsonElement): MusicResult<List<AlbumSummary>> {
+        return json.toMusicResult { parseAlbumArray(this, "albums", "data") }
+    }
+
+    /**
+     * 解析歌手专辑（`artist/album`）：`{ hotAlbums: [...] }`。
+     *
+     * 与 [parseAlbums] 走**同一份**字段映射 —— 上游三处（新碟 / 搜索 / 歌手专辑）
+     * 的专辑对象形状相同，各写一份迟早分叉。
+     */
+    fun parseArtistAlbums(json: JsonElement): MusicResult<List<AlbumSummary>> {
+        return json.toMusicResult { parseAlbumArray(this, "hotAlbums") }
+    }
+
+    /**
+     * 从 [root] 里按候选键取专辑数组并映射。
+     *
+     * 键名按出现频率排列，全部命不中时返回空列表（而不是报错）：专辑列表为空
+     * 是「这位歌手没有专辑」的正常状态，不该让整页变成错误态。
+     */
+    private fun parseAlbumArray(root: JsonObject, vararg keys: String): List<AlbumSummary> {
+        val array = keys.firstNotNullOfOrNull { root[it] as? JsonArray } ?: return emptyList()
+        return array.mapNotNull { el ->
+            val obj = el as? JsonObject ?: return@mapNotNull null
+            val name = (obj["name"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+            val id = (obj["id"] as? JsonPrimitive)?.longOrNull ?: return@mapNotNull null
+            // `artist` 是单对象（新碟 / 歌手专辑），`artists` 是数组（专辑详情 / 部分搜索返回）。
+            val artist = obj["artist"] as? JsonObject
+            val firstArtist = (obj["artists"] as? JsonArray)?.firstOrNull() as? JsonObject
+            AlbumSummary(
+                id = id,
+                name = name,
+                coverUrl = (obj["picUrl"] as? JsonPrimitive)?.contentOrNull
+                    ?: (obj["coverImgUrl"] as? JsonPrimitive)?.contentOrNull,
+                artistName = (artist?.get("name") as? JsonPrimitive)?.contentOrNull
+                    ?: (firstArtist?.get("name") as? JsonPrimitive)?.contentOrNull,
+                trackCount = (obj["size"] as? JsonPrimitive)?.intOrNull
+                    ?: (obj["trackCount"] as? JsonPrimitive)?.intOrNull ?: 0,
+                publishTimeMs = (obj["publishTime"] as? JsonPrimitive)?.longOrNull,
+                artistId = (artist?.get("id") as? JsonPrimitive)?.longOrNull
+                    ?: (firstArtist?.get("id") as? JsonPrimitive)?.longOrNull,
+            )
+        }.filter { it.id != 0L && it.name.isNotBlank() }
+    }
+
+    // ============ 专辑详情 ============
+
+    /**
+     * 解析专辑详情（`album`）：`{ album: { ... songs: [...] } }`。
+     *
+     * 曲目数组优先取 `album.songs`，回退到与 `album` 平级的 `songs`
+     * （部分 Provider 会把歌曲提到顶层）。
+     */
+    fun parseAlbumDetail(json: JsonElement): MusicResult<AlbumDetail> {
         return json.toMusicResult {
-            val array = (this["albums"] ?: this["data"]) as? JsonArray ?: JsonArray(emptyList())
+            val album = this["album"] as? JsonObject ?: this["data"] as? JsonObject ?: this
+            val artist = album["artist"] as? JsonObject
+            val rawTracks = (album["songs"] as? JsonArray) ?: (this["songs"] as? JsonArray)
+            val tracks = (rawTracks ?: JsonArray(emptyList()))
+                .mapNotNull { (it as? JsonObject)?.toTrackSummary()?.takeIf { t -> t.id.isNotBlank() } }
+            AlbumDetail(
+                id = (album["id"] as? JsonPrimitive)?.longOrNull ?: 0L,
+                name = (album["name"] as? JsonPrimitive)?.contentOrNull ?: "",
+                coverUrl = (album["picUrl"] as? JsonPrimitive)?.contentOrNull
+                    ?: (album["blurPicUrl"] as? JsonPrimitive)?.contentOrNull,
+                artistName = (artist?.get("name") as? JsonPrimitive)?.contentOrNull,
+                artistId = (artist?.get("id") as? JsonPrimitive)?.longOrNull,
+                publishTimeMs = (album["publishTime"] as? JsonPrimitive)?.longOrNull,
+                company = (album["company"] as? JsonPrimitive)?.contentOrNull,
+                description = (album["description"] as? JsonPrimitive)?.contentOrNull
+                    ?: (album["briefDesc"] as? JsonPrimitive)?.contentOrNull,
+                tracks = tracks,
+            )
+        }
+    }
+
+    // ============ 歌手资料 ============
+
+    /**
+     * 解析歌手资料（`artist/detail` 的 `data.artist`）。
+     *
+     * **返回 null 表示「这个 id 不是歌手」**，调用方据此回落到普通用户。
+     * 刻意不用 [MusicResult]：`code=200` 但 `data.artist` 缺失是**正常分支**，
+     * 不是错误 —— 把正常分支塞进 Error 会让「用户主页」永远显示成加载失败。
+     */
+    fun parseArtistProfile(json: JsonElement): ArtistProfile? {
+        val root = json as? JsonObject ?: return null
+        val data = (root["data"] as? JsonObject) ?: root
+        val artist = data["artist"] as? JsonObject ?: return null
+        val id = (artist["id"] as? JsonPrimitive)?.longOrNull ?: return null
+        val name = (artist["name"] as? JsonPrimitive)?.contentOrNull ?: return null
+        val alias = (artist["alias"] as? JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+            .orEmpty()
+        val user = data["user"] as? JsonObject
+        return ArtistProfile(
+            id = id,
+            name = name,
+            avatarUrl = (artist["cover"] as? JsonPrimitive)?.contentOrNull
+                ?: (artist["avatar"] as? JsonPrimitive)?.contentOrNull
+                ?: (artist["picUrl"] as? JsonPrimitive)?.contentOrNull
+                ?: (artist["img1v1Url"] as? JsonPrimitive)?.contentOrNull,
+            briefDesc = (artist["briefDesc"] as? JsonPrimitive)?.contentOrNull
+                ?.takeIf { it.isNotBlank() },
+            alias = alias,
+            albumSize = (artist["albumSize"] as? JsonPrimitive)?.intOrNull ?: 0,
+            musicSize = (artist["musicSize"] as? JsonPrimitive)?.intOrNull ?: 0,
+            followeds = (user?.get("followeds") as? JsonPrimitive)?.intOrNull
+                ?: (user?.get("followedUsers") as? JsonPrimitive)?.intOrNull ?: 0,
+        )
+    }
+
+    /**
+     * 解析歌手全部歌曲 / 热门 50 首（`artist/songs`、`artist/top/song`）：根键 `songs`。
+     *
+     * 复用 [parsePlaylistTracks] 的曲目映射 —— 上游这三个端点的曲目对象形状一致，
+     * 再写一份 `songs.map { toTrackSummary() }` 只会多一份会分叉的代码。
+     */
+    fun parseArtistSongs(json: JsonElement): MusicResult<List<TrackSummary>> =
+        when (val page: MusicResult<PlaylistTracksPage> = parsePlaylistTracks(json)) {
+            is BackendResult.Success -> BackendResult.Success(page.data.tracks)
+            is BackendResult.Error -> BackendResult.Error(page.message)
+            is BackendResult.Unsupported -> BackendResult.Unsupported(page.message)
+        }
+
+    // ============ 用户资料 ============
+
+    /**
+     * 解析用户资料（`user/detail`）：根键 `profile`。
+     *
+     * 返回 null 表示响应里没有 `profile`（未登录 / id 无效）。
+     */
+    fun parseUserDetail(json: JsonElement): cp.player.core.model.UserProfile? {
+        val root = json as? JsonObject ?: return null
+        val profile = (root["profile"] as? JsonObject)
+            ?: (root["data"] as? JsonObject)?.get("profile") as? JsonObject
+            ?: return null
+        val uid = (profile["userId"] as? JsonPrimitive)?.longOrNull
+            ?: (profile["id"] as? JsonPrimitive)?.longOrNull
+            ?: return null
+        return cp.player.core.model.UserProfile(
+            userId = uid,
+            nickname = (profile["nickname"] as? JsonPrimitive)?.contentOrNull ?: "",
+            avatarUrl = (profile["avatarUrl"] as? JsonPrimitive)?.contentOrNull ?: "",
+            signature = (profile["signature"] as? JsonPrimitive)?.contentOrNull,
+            gender = (profile["gender"] as? JsonPrimitive)?.intOrNull ?: 0,
+            province = (profile["province"] as? JsonPrimitive)?.intOrNull ?: 0,
+            city = (profile["city"] as? JsonPrimitive)?.intOrNull ?: 0,
+            birthday = (profile["birthday"] as? JsonPrimitive)?.longOrNull ?: 0L,
+            followed = (profile["followed"] as? JsonPrimitive)?.booleanOrNull ?: false,
+            follows = (profile["follows"] as? JsonPrimitive)?.intOrNull ?: 0,
+            followeds = (profile["followeds"] as? JsonPrimitive)?.intOrNull ?: 0,
+            eventCount = (profile["eventCount"] as? JsonPrimitive)?.intOrNull ?: 0,
+            playlistCount = (profile["playlistCount"] as? JsonPrimitive)?.intOrNull ?: 0,
+        )
+    }
+
+    /**
+     * 解析用户听歌排行（`user/record`）。
+     *
+     * 条目形如 `{ playCount, score, song: { ... } }` —— **歌曲本体在 `song` 里**，
+     * 直接按曲目对象解析会得到一个 id 为空的空壳。
+     * `type=0` 用 `allData`，`type=1` 用 `weekData`，两个键都认。
+     */
+    fun parseUserRecords(json: JsonElement): MusicResult<List<TrackSummary>> {
+        return json.toMusicResult {
+            val array = (this["allData"] as? JsonArray)
+                ?: (this["weekData"] as? JsonArray)
+                ?: JsonArray(emptyList())
             array.mapNotNull { el ->
                 val obj = el as? JsonObject ?: return@mapNotNull null
-                val name = (obj["name"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
-                val id = (obj["id"] as? JsonPrimitive)?.longOrNull ?: return@mapNotNull null
-                val artist = obj["artist"] as? JsonObject
-                AlbumSummary(
+                val song = (obj["song"] as? JsonObject) ?: return@mapNotNull null
+                song.toTrackSummary().takeIf { it.id.isNotBlank() }
+            }
+        }
+    }
+
+    /**
+     * 解析关注 / 粉丝列表（`user/follows`、`user/followeds`）。
+     *
+     * 返回 [ArtistSummary] 而不是新建模型：这两处渲染的就是「圆头像 + 昵称」，
+     * 与歌手列表项完全同构（`id` 装 `userId`）。
+     */
+    fun parseUserList(json: JsonElement): MusicResult<List<ArtistSummary>> {
+        return json.toMusicResult {
+            val array = (this["follow"] as? JsonArray)
+                ?: (this["followeds"] as? JsonArray)
+                ?: (this["data"] as? JsonArray)
+                ?: JsonArray(emptyList())
+            array.mapNotNull { el ->
+                val obj = el as? JsonObject ?: return@mapNotNull null
+                // 上游在这两个端点用 `userId`；某些 Provider 会退化成 `id`。
+                val id = (obj["userId"] as? JsonPrimitive)?.longOrNull
+                    ?: (obj["id"] as? JsonPrimitive)?.longOrNull
+                    ?: return@mapNotNull null
+                val name = (obj["nickname"] as? JsonPrimitive)?.contentOrNull
+                    ?: (obj["name"] as? JsonPrimitive)?.contentOrNull
+                    ?: return@mapNotNull null
+                ArtistSummary(
                     id = id,
                     name = name,
-                    coverUrl = (obj["picUrl"] as? JsonPrimitive)?.contentOrNull
-                        ?: (obj["coverImgUrl"] as? JsonPrimitive)?.contentOrNull,
-                    artistName = (artist?.get("name") as? JsonPrimitive)?.contentOrNull
-                        ?: ((obj["artists"] as? JsonArray)?.firstOrNull() as? JsonObject)
-                            ?.let { (it["name"] as? JsonPrimitive)?.contentOrNull },
-                    trackCount = (obj["size"] as? JsonPrimitive)?.intOrNull
-                        ?: (obj["trackCount"] as? JsonPrimitive)?.intOrNull ?: 0,
+                    avatarUrl = (obj["avatarUrl"] as? JsonPrimitive)?.contentOrNull
+                        ?: (obj["picUrl"] as? JsonPrimitive)?.contentOrNull,
                 )
             }.filter { it.id != 0L && it.name.isNotBlank() }
         }
@@ -364,6 +573,22 @@ object MusicSourceFromApi {
 
     suspend fun getHotArtists(api: MusicApiService, limit: Int = 30): MusicResult<List<ArtistSummary>> =
         parseTopArtists(api.getTopArtists(limit = limit))
+
+    /** 专辑详情。 */
+    suspend fun getAlbumDetail(api: MusicApiService, id: Long): MusicResult<AlbumDetail> =
+        parseAlbumDetail(api.getAlbumDetail(id))
+
+    /** 歌手热门歌曲（`artist/top/song`，恒返回最多 50 首）。 */
+    suspend fun getArtistTopSongs(api: MusicApiService, id: Long): MusicResult<List<TrackSummary>> =
+        parseArtistSongs(api.getArtistTopSong(id))
+
+    /** 歌手歌曲全量（按热度，`artist/songs`）。 */
+    suspend fun getArtistSongs(api: MusicApiService, id: Long, limit: Int = 100): MusicResult<List<TrackSummary>> =
+        parseArtistSongs(api.getArtistSongs(id, limit))
+
+    /** 歌手专辑。 */
+    suspend fun getArtistAlbums(api: MusicApiService, id: Long, limit: Int = 50): MusicResult<List<AlbumSummary>> =
+        parseArtistAlbums(api.getArtistAlbums(id, limit))
 
     suspend fun getHighQualityPlaylists(api: MusicApiService, cat: String = "全部", limit: Int = 30): MusicResult<List<PlaylistSummary>> =
         parseRecommendedPlaylists(api.getHighqualityPlaylists(cat = cat, limit = limit))
