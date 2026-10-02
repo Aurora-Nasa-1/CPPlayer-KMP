@@ -77,7 +77,7 @@ object AppUpdateChecker {
      */
     private fun GitHubRelease.isCandidate(): Boolean {
         if (draft) return false
-        val isDebugChannel = AppVersion.releaseChannel != "stable"
+        val isDebugChannel = AppVersion.isDebugBuild
         return when {
             stableTag.matches(tagName) -> !prerelease || isDebugChannel
             debugTag.matches(tagName) -> isDebugChannel

@@ -2,7 +2,7 @@ package cp.player.app.version
 
 object AppVersion {
     const val REPO_OWNER = "Aurora-Nasa-1"
-    const val REPO_NAME = "CPPlayer"
+    const val REPO_NAME = "CPPlayer-KMP"
     const val RELEASES_API = "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases"
     const val RELEASES_PAGE = "https://github.com/$REPO_OWNER/$REPO_NAME/releases"
 
@@ -30,6 +30,17 @@ object AppVersion {
         this.isDesktop = isDesktop
         this.releaseChannel = releaseChannel
     }
+
+    /**
+     * 是否为 debug 构建。
+     *
+     * 本项目没有传统意义的 buildType 开关（桌面端 run 与打包共用同一份 jvmArgs），
+     * 「debug 构建」以**发布渠道**界定：只有 `stable` 是面向普通用户的正式渠道；
+     * CI 的 `debug-v*` 预发布（`-Papp.releaseChannel=debug`）以及本地以 debug 渠道
+     * 运行的构建都算 debug。开发者功能（渲染后端调优、重看新手引导等设置入口）
+     * 据此决定是否展示。
+     */
+    val isDebugBuild: Boolean get() = releaseChannel != "stable"
 
     val fullVersion: String get() = "v$versionName ($versionCode)"
 
