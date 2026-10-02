@@ -116,8 +116,15 @@
 - KDoc / 注释里写 `xxx/*`（星号紧跟在斜杠后）会被当成**嵌套块注释**的开头，
   报 `Syntax error: Unclosed comment.` 且**指向文件最后一行**。
   本仓库踩过两次：`/api/v1/*`（旧）与 `msg/*`（2026-10-01）。写成 `/api/v1/...` / `msg/...`。
-- `kotlinx.datetime` 的 `toLocalDateTime` / `toLocalDate` 是**扩展函数**：写全限定名
-  `Instant.fromEpochMilliseconds(x).toLocalDateTime(zone)` 仍会解析失败，必须显式 import。
+- **别用 `kotlinx.datetime` 做运行时日期换算** —— 它在 desktop 运行时类路径上解析到的是
+  **0.7.x**（`java.class.path` 里是 `kotlinx-datetime-jvm-0.7.1.jar`），而编译期是 0.6.x。
+  0.7 起 `kotlinx.datetime.Instant` 已改成指向 `kotlin.time.Instant` 的 **typealias**
+  （不再生成类文件）⇒ 运行到那一行就是 `NoClassDefFoundError: kotlinx/datetime/Instant`。
+  包在 `runCatching` 里的写法会**静默退化成 null / 空串**，看起来像「数据本来就没有」——
+  专辑发行年份整整一栏就是这么丢的。
+  要日期分量走 `cp.player.core.util.localDateTimeOf(ms)`（expect/actual，jvm 侧用 `java.time`），
+  与早已存在的 `currentTimeMillis()` 同一套做法（那个的 KDoc 里也写着同一句话）。
+  ⚠️ 例外：`PlaylistDetailScreen.formatPublishDate` 仍在用 kotlinx-datetime，**属未修的同类隐患**。
 
 ## 6. Compose / UI 规则
 

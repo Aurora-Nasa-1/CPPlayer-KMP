@@ -71,11 +71,17 @@ class CommentScreenModel(val id: String, val type: String) : ScreenModel {
     private val _state = MutableStateFlow(CommentUiState(id, type))
     val state: StateFlow<CommentUiState> = _state.asStateFlow()
 
+    // ⚠️ jsonDecoder 必须声明在 init **之前**：Kotlin 属性按声明顺序初始化，而 init 里的
+    // loadComments() 经 screenModelScope（Dispatchers.Main.immediate）启动，协程体会在
+    // UI 线程上**同步**开跑；CachedMusicApiService 缓存命中时是纯内存读取、零挂起，
+    // decodeFromJsonElement 会在构造函数结束前执行。若此时 jsonDecoder 尚未赋值，
+    // 内联扩展函数的接收者为 null，报 `$this#decodeFromJsonElement$lv is null`，
+    // 且缓存 TTL 内每次重试都命中缓存 ⇒ 必现。
+    private val jsonDecoder = Json { ignoreUnknownKeys = true; coerceInputValues = true; isLenient = true }
+
     init {
         loadComments()
     }
-
-    private val jsonDecoder = Json { ignoreUnknownKeys = true; coerceInputValues = true; isLenient = true }
 
     private fun extractRawId(fullId: String): String {
         return runCatching { cp.player.core.music.CPMediaId.parse(fullId).resourceId }.getOrDefault(fullId)
@@ -113,7 +119,11 @@ class CommentScreenModel(val id: String, val type: String) : ScreenModel {
                 
                 _state.value = _state.value.copy(comments = commentList, loading = false)
             }.onFailure {
-                _state.value = _state.value.copy(error = it.message, loading = false)
+                // message 可能为 null（如无消息的 NPE），直接透出会在界面上显示 "null"
+                _state.value = _state.value.copy(
+                    error = it.message ?: "加载评论失败（${it::class.simpleName ?: "UnknownError"}）",
+                    loading = false
+                )
             }
         }
     }

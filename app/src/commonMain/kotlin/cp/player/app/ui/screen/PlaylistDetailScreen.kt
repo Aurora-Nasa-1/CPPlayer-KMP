@@ -23,17 +23,23 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.BookmarkAdd
+import androidx.compose.material.icons.filled.BookmarkRemove
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -72,20 +78,30 @@ import cp.player.app.ui.anim.coverFlightTarget
 import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.AddSongsOptionsSheet
 import cp.player.app.ui.component.AppScaffold
+import cp.player.app.ui.component.CpAnchoredMenu
 import cp.player.app.ui.component.CpBackButton
+import cp.player.app.ui.component.CpContextMenu
+import cp.player.app.ui.component.CpContextMenuItem
+import cp.player.app.ui.component.CpContextMenuSeparator
 import cp.player.app.ui.component.CpTwoPane
+import cp.player.app.ui.component.PlaylistSortType
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.ui.component.PlaylistOptionsSheet
 import cp.player.app.ui.component.PlaylistPickerSheet
 import cp.player.app.ui.component.SongItem
+import cp.player.app.ui.component.SongMenuActions
 import cp.player.app.ui.component.SongOptionsSheet
 import cp.player.app.ui.component.SourceSongsSelectionSheet
 import cp.player.app.ui.component.TopBarAction
+import cp.player.app.ui.component.playlistShareText
+import cp.player.app.ui.component.songContextMenuItems
+import cp.player.app.ui.component.songShareText
 import cp.player.app.ui.model.PlaylistDetailScreenModel
 import cp.player.app.ui.model.PlaylistDetailUiState
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.formatTimeMs
+import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.util.resized
 import cp.player.core.BackendResult
 import cp.player.core.music.CPMediaId
@@ -223,6 +239,60 @@ fun PlaylistDetailContent(
         }
     }
 
+    // 桌面端右键菜单：歌曲行动作集合与 SongOptionsSheet 完全对齐（一处动线两处入口）。
+    val buildSongMenu: (TrackSummary, Int) -> List<CpContextMenuItem> = { track, index ->
+        songContextMenuItems(
+            SongMenuActions(
+                onPlay = { model.playAt(index) },
+                isFavorite = model.isLiked(track.id),
+                onToggleFavorite = { model.toggleLike(track) },
+                onAddToQueue = {
+                    scope.launch {
+                        AppModel.playback.addToQueue("${AppModel.activeProviderId()}://song/${track.id}")
+                        UiEvents.notify("已加入播放队列")
+                    }
+                },
+                isDownloaded = AppModel.isDownloaded(track.id),
+                onDownload = { AppModel.downloadTrack(track) },
+                onAddToPlaylist = { addToPlaylistIds = listOf(track.id) },
+                onShare = { shareText(songShareText(track)) },
+                onShowInfo = { showInfoTarget = track },
+            )
+        )
+    }
+
+    // 桌面端歌单动作菜单：右键信息面板 + 宽屏左栏「更多」按钮共用同一份。
+    // 本地虚拟歌单没有服务端实体，分享 / 收藏 / 删除链接与接口都无效，不出菜单。
+    val playlistMenu: List<CpContextMenuItem>? = if (isLocalPlaylist) null else buildList {
+        add(CpContextMenuItem("播放全部", Icons.Filled.PlayArrow, onClick = { model.playAll() }))
+        add(CpContextMenuItem("加入队列", Icons.Filled.QueueMusic, onClick = { model.queueAll() }))
+        add(CpContextMenuItem("全部下载", Icons.Filled.Download, onClick = { AppModel.downloadTracks(displayTracks) }))
+        add(CpContextMenuSeparator)
+        add(CpContextMenuItem("分享歌单", Icons.Filled.Share, onClick = {
+            shareText(playlistShareText(playlist.id, summary.name))
+        }))
+        // 与 PlaylistOptionsSheet 的收藏 / 删除可见性规则保持一致：
+        // 非 owner 才有收藏，owner 才有删除。
+        if (!isOwner) {
+            add(
+                CpContextMenuItem(
+                    if (playlistFavorite) "取消收藏" else "收藏歌单",
+                    if (playlistFavorite) Icons.Filled.BookmarkRemove else Icons.Filled.BookmarkAdd,
+                    onClick = togglePlaylistFavorite,
+                )
+            )
+        }
+        if (isOwner) {
+            add(
+                CpContextMenuItem(
+                    "删除歌单", Icons.Filled.Delete,
+                    onClick = { model.deleteOrUnsubscribe { navigator.popOrNotify() } },
+                    danger = true,
+                )
+            )
+        }
+    }
+
     // 桌面窗口标题栏的标题（内嵌成双栏详情栏时由宿主发布，见 LocalEmbeddedInPane）。
     if (!embedded) cp.player.app.ui.util.DesktopRouteTitle(summary.name)
 
@@ -247,11 +317,13 @@ fun PlaylistDetailContent(
                 currentTrackId = currentTrackId,
                 isOwner = isOwner,
                 showBackButton = canShowInlineBack,
-                onBack = { if (embedded) onEmbeddedBack?.invoke() else navigator.pop() },
+                onBack = { if (embedded) onEmbeddedBack?.invoke() else navigator.popOrNotify() },
                 onSongOptions = { optionsTarget = it },
                 onOpenPlaylistSheet = { showPlaylistSheet = true },
                 onAddSelectedToPlaylist = { addToPlaylistIds = state.selectedIds.toList() },
                 onAddTracks = openAddSongs,
+                playlistMenu = playlistMenu,
+                buildSongMenu = buildSongMenu,
             )
         } else {
             NarrowLayout(
@@ -263,11 +335,12 @@ fun PlaylistDetailContent(
                 durationStr = durationStr,
                 currentTrackId = currentTrackId,
                 isOwner = isOwner,
-                onBack = { if (embedded) onEmbeddedBack?.invoke() else navigator.pop() },
+                onBack = { if (embedded) onEmbeddedBack?.invoke() else navigator.popOrNotify() },
                 onSongOptions = { optionsTarget = it },
                 onOpenPlaylistSheet = { showPlaylistSheet = true },
                 onAddSelectedToPlaylist = { addToPlaylistIds = state.selectedIds.toList() },
                 onAddTracks = openAddSongs,
+                buildSongMenu = buildSongMenu,
             )
         }
     }
@@ -281,7 +354,7 @@ fun PlaylistDetailContent(
             onPlay = { model.playAll() },
             onAddToQueue = { model.queueAll() },
             onDelete = if (isOwner) {
-                { model.deleteOrUnsubscribe { navigator.pop() } }
+                { model.deleteOrUnsubscribe { navigator.popOrNotify() } }
             } else null,
             onShare = if (isLocalPlaylist) null else {
                 { shareText("「${summary.name}」 https://music.163.com/#/playlist?id=${playlist.id}") }
@@ -507,6 +580,7 @@ private fun NarrowLayout(
     onOpenPlaylistSheet: () -> Unit,
     onAddSelectedToPlaylist: () -> Unit,
     onAddTracks: () -> Unit,
+    buildSongMenu: (TrackSummary, Int) -> List<CpContextMenuItem>,
 ) {
     if (state.selectionMode) {
         AppScaffold(
@@ -553,6 +627,7 @@ private fun NarrowLayout(
                 onSongOptions = onSongOptions,
                 onSortClick = onOpenPlaylistSheet,
                 onAddTracks = onAddTracks,
+                buildSongMenu = buildSongMenu,
             )
         }
     } else {
@@ -624,6 +699,7 @@ private fun NarrowLayout(
                 onSongOptions = onSongOptions,
                 onSortClick = onOpenPlaylistSheet,
                 onAddTracks = onAddTracks,
+                buildSongMenu = buildSongMenu,
             )
         }
     }
@@ -648,12 +724,35 @@ private fun WideLayout(
     onOpenPlaylistSheet: () -> Unit,
     onAddSelectedToPlaylist: () -> Unit,
     onAddTracks: () -> Unit,
+    /** 左栏信息面板的右键菜单（桌面端）；null 时不启用。 */
+    playlistMenu: List<CpContextMenuItem>?,
+    buildSongMenu: (TrackSummary, Int) -> List<CpContextMenuItem>,
 ) {
+    // 宽屏左栏的排序锚定菜单：排序方式只在这里切换，不再借道底部弹层；
+    // 「更多」按钮承载歌单级动作（分享 / 收藏 / 删除），两者职责分离不再冲突。
+    val sortMenuItems = listOf(
+        CpContextMenuItem(
+            "默认顺序", Icons.AutoMirrored.Filled.List,
+            onClick = { model.setSort(PlaylistSortType.DEFAULT) },
+            isSelected = state.sortType == PlaylistSortType.DEFAULT,
+        ),
+        CpContextMenuItem(
+            "按名称", Icons.Filled.SortByAlpha,
+            onClick = { model.setSort(PlaylistSortType.NAME) },
+            isSelected = state.sortType == PlaylistSortType.NAME,
+        ),
+        CpContextMenuItem(
+            "按歌手", Icons.Filled.Person,
+            onClick = { model.setSort(PlaylistSortType.ARTIST) },
+            isSelected = state.sortType == PlaylistSortType.ARTIST,
+        ),
+    )
     CpTwoPane(
         rail = { railModifier ->
-            // 左侧：歌单信息面板
+            // 左侧：歌单信息面板（整块右键可弹歌单菜单，见 playlistMenu）
+            CpContextMenu(items = playlistMenu, modifier = railModifier) {
             ScrollColumn(
-                modifier = railModifier.padding(20.dp),
+                modifier = Modifier.padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
             Spacer(Modifier.height(16.dp))
@@ -711,8 +810,52 @@ private fun WideLayout(
                 onShuffle = { model.playShuffle() },
                 onAdd = onAddTracks,
                 onSort = onOpenPlaylistSheet,
+                sortMenuItems = sortMenuItems,
                 onDownloadAll = { AppModel.downloadTracks(displayTracks) },
             )
+            // 宽屏没有顶栏「更多」按钮（那套 Scaffold 只在窄屏布局里）。
+            // 桌面端点击弹出歌单动作锚定菜单（与右键同一份 items）；非桌面（平板宽屏）
+            // 回落到底部弹层。排序按钮已经分流了排序职责，这里不再与它重复。
+            var moreMenuExpanded by remember { mutableStateOf(false) }
+            val windowChromeActive = cp.player.app.ui.component.LocalWindowChromeActive.current
+            Spacer(Modifier.height(10.dp))
+            CpAnchoredMenu(
+                expanded = moreMenuExpanded,
+                onDismiss = { moreMenuExpanded = false },
+                items = playlistMenu,
+            ) {
+                Surface(
+                    onClick = {
+                        if (!playlistMenu.isNullOrEmpty() && windowChromeActive) {
+                            moreMenuExpanded = true
+                        } else {
+                            onOpenPlaylistSheet()
+                        }
+                    },
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                ) {
+                    Row(
+                        Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Filled.MoreVert,
+                            contentDescription = "更多选项",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "更多",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
+            }
+            }
             }
         },
         detail = {
@@ -726,6 +869,7 @@ private fun WideLayout(
                 onSongOptions = onSongOptions,
                 onSortClick = onOpenPlaylistSheet,
                 onAddTracks = onAddTracks,
+                buildSongMenu = buildSongMenu,
                 modifier = Modifier.widthIn(max = 980.dp).align(Alignment.TopCenter),
                 topContentPadding = if (showBackButton || state.selectionMode) topInset + 56.dp else 0.dp,
             )
@@ -782,6 +926,7 @@ private fun TrackList(
     onSongOptions: (TrackSummary) -> Unit,
     onSortClick: () -> Unit,
     onAddTracks: () -> Unit,
+    buildSongMenu: (TrackSummary, Int) -> List<CpContextMenuItem>,
     modifier: Modifier = Modifier,
     topContentPadding: Dp = 0.dp,
 ) {
@@ -842,6 +987,8 @@ private fun TrackList(
                     isCurrentlyPlaying = track.id == currentTrackId,
                     selectionMode = state.selectionMode,
                     isSelected = track.id in state.selectedIds,
+                    // 桌面端右键菜单；多选模式下 SongItem 内部会忽略（长按语义冲突）。
+                    contextMenu = if (!state.selectionMode) buildSongMenu(track, index) else null,
                     // 进入/退出多选、增删歌曲都会改变行的位置，这里给位移动画。
                     modifier = Modifier.animateItem(),
                     onClick = {
@@ -922,6 +1069,11 @@ private fun PlaylistHeader(
     onAdd: () -> Unit,
     onSort: () -> Unit,
     onDownloadAll: () -> Unit,
+    /**
+     * 排序锚定菜单项（桌面端）。非空时排序按钮点击直接在按钮下弹出排序菜单；
+     * 为 null（窄屏布局）时保持原行为：打开歌单选项弹层。
+     */
+    sortMenuItems: List<CpContextMenuItem>? = null,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 0.dp, vertical = 8.dp),
@@ -1009,28 +1161,43 @@ private fun PlaylistHeader(
                     )
                 }
             }
-            Surface(
-                onClick = onSort,
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                modifier = Modifier.weight(1.2f).height(46.dp),
+            var sortMenuExpanded by remember { mutableStateOf(false) }
+            val windowChromeActive = cp.player.app.ui.component.LocalWindowChromeActive.current
+            CpAnchoredMenu(
+                expanded = sortMenuExpanded,
+                onDismiss = { sortMenuExpanded = false },
+                items = sortMenuItems,
+                modifier = Modifier.weight(1.2f),
             ) {
-                Row(
-                    Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
+                Surface(
+                    onClick = {
+                        if (!sortMenuItems.isNullOrEmpty() && windowChromeActive) {
+                            sortMenuExpanded = true
+                        } else {
+                            onSort()
+                        }
+                    },
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    modifier = Modifier.fillMaxWidth().height(46.dp),
                 ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.Sort,
-                        contentDescription = "排序",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "排序",
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.Medium,
-                    )
+                    Row(
+                        Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Sort,
+                            contentDescription = "排序",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "排序",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
                 }
             }
         }

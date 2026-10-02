@@ -58,6 +58,7 @@ import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.LazyScrollColumn
+import cp.player.app.ui.component.desktopPagerMouseControl
 import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.app.ui.model.DownloadsUiState
 import cp.player.app.ui.theme.CpShapes
@@ -188,7 +189,25 @@ private fun DownloadsScreenContent(model: DownloadsScreenModel) {
         ) {
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    // 鼠标滚轮翻页（见 desktopPagerMouseControl 的 KDoc）。
+                    // 三个页签在桌面端此前只能点顶部的胶囊按钮切 —— 滚轮落在页面上毫无反应。
+                    .desktopPagerMouseControl(
+                        onScrollLeft = {
+                            val target = (pagerState.currentPage - 1).coerceAtLeast(0)
+                            if (target != pagerState.currentPage) {
+                                scope.launch { pagerState.animateScrollToPage(target) }
+                            }
+                        },
+                        onScrollRight = {
+                            val target = (pagerState.currentPage + 1).coerceAtMost(tabs.lastIndex)
+                            if (target != pagerState.currentPage) {
+                                scope.launch { pagerState.animateScrollToPage(target) }
+                            }
+                        },
+                        pageCount = pagerState.pageCount,
+                    ),
                 beyondViewportPageCount = 1,
             ) { page ->
                 when (page) {

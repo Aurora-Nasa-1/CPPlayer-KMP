@@ -43,6 +43,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.ui.component.LocalIsExpanded
+import cp.player.app.ui.component.desktopPagerMouseControl
 import kotlinx.coroutines.launch
 
 /**
@@ -85,7 +86,26 @@ class OnboardingScreen(private val replay: Boolean = false) : Screen {
 
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    // 鼠标滚轮翻页：引导页在桌面端此前只能用底部圆点跳，
+                    // 而滚轮落在页面上完全没反应 —— 用户会以为引导卡住了。
+                    .desktopPagerMouseControl(
+                        onScrollLeft = {
+                            val target = (pagerState.currentPage - 1).coerceAtLeast(0)
+                            if (target != pagerState.currentPage) {
+                                coroutineScope.launch { pagerState.animateScrollToPage(target) }
+                            }
+                        },
+                        onScrollRight = {
+                            val target = (pagerState.currentPage + 1).coerceAtMost(pages.lastIndex)
+                            if (target != pagerState.currentPage) {
+                                coroutineScope.launch { pagerState.animateScrollToPage(target) }
+                            }
+                        },
+                        pageCount = pagerState.pageCount,
+                    ),
             ) { page ->
                 OnboardingPageContent(
                     page = pages[page],

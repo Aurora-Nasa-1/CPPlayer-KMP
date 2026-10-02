@@ -11,7 +11,7 @@ actual fun shareText(text: String) {
         SwingUtilities.invokeLater {
             try {
                 Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null)
-                UiEvents.notify("已复制到剪贴板")
+                UiEvents.notify("链接已复制到剪贴板，粘贴给朋友即可分享")
             } catch (_: Exception) {
                 UiEvents.notify("复制失败")
             }

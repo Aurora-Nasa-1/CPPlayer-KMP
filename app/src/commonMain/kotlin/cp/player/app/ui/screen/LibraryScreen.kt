@@ -58,6 +58,7 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
+import cp.player.app.platform.shareText
 import cp.player.app.ui.component.BentoActionCard
 import cp.player.app.ui.component.BentoCard
 import cp.player.app.ui.component.BentoGap
@@ -73,7 +74,10 @@ import cp.player.app.ui.component.PlaylistItem
 import cp.player.app.ui.component.PlaylistOptionsSheet
 import cp.player.app.ui.component.SectionHeader
 import cp.player.app.ui.component.SongItem
+import cp.player.app.ui.component.SongMenuActions
 import cp.player.app.ui.component.StateSurface
+import cp.player.app.ui.component.songContextMenuItems
+import cp.player.app.ui.component.songShareText
 import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.app.ui.model.DownloadsUiState
 import cp.player.app.ui.model.LibraryScreenModel
@@ -631,6 +635,14 @@ private fun LazyListScope.cloudSection(
                 index = index,
                 total = songs.size,
                 onClick = { onSongClick(index) },
+                // 桌面端右键菜单。云盘歌曲的 id 不是标准网易云歌曲 id，
+                // 加入队列的 mediaId 拼法不通用，这里只提供播放与分享两个安全动作。
+                contextMenu = songContextMenuItems(
+                    SongMenuActions(
+                        onPlay = { onSongClick(index) },
+                        onShare = { shareText(songShareText(songs[index])) },
+                    )
+                ),
             )
         }
     }
