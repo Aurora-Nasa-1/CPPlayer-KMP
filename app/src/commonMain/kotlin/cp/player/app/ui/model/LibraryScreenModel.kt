@@ -131,7 +131,12 @@ class LibraryScreenModel : ScreenModel {
                 ids.forEach { AppModel.playback.addToQueue(it) }
                 UiEvents.notify("已加入播放队列")
             } else {
-                AppModel.playback.playQueue(ids, startIndex = 0)
+                // 带上来源歌单：心动模式等「跟随播放列表」的功能要拿它当歌单上下文。
+                AppModel.playback.playQueue(
+                    ids,
+                    startIndex = 0,
+                    sourceId = playlist.id.takeIf { it > 0 }?.toString(),
+                )
             }
         }
     }

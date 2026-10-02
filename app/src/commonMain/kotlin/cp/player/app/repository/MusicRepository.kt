@@ -3,7 +3,9 @@ package cp.player.app.repository
 import cp.player.core.api.extractUidFromLoginStatus
 import cp.player.core.BackendResult
 import cp.player.core.api.MusicApiService
+import cp.player.core.music.AlbumDetail
 import cp.player.core.music.AlbumSummary
+import cp.player.core.music.ArtistProfile
 import cp.player.core.music.ArtistSummary
 import cp.player.core.music.BannerItem
 import cp.player.core.music.MusicResult
@@ -11,6 +13,7 @@ import cp.player.core.music.MusicSourceFromApi
 import cp.player.core.music.PlaylistDetail
 import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.PlaylistTracksPage
+import cp.player.core.music.ProfileBundle
 import cp.player.core.music.RankingSummary
 import cp.player.core.music.SearchResult
 import cp.player.core.music.TrackSummary
@@ -31,8 +34,15 @@ class MusicRepository(private val api: MusicApiService) {
     suspend fun search(keyword: String, type: Int): MusicResult<SearchResult> =
         MusicSourceFromApi.search(api, keyword, type)
 
-    suspend fun getIntelligenceSongs(seedId: String): MusicResult<List<TrackSummary>> =
-        MusicSourceFromApi.parseFmSongs(api.getIntelligenceList(seedId, 0L))
+    /**
+     * 心动模式/智能播放列表。
+     *
+     * ⚠️ `playlistId` 是**必填**：上游 `playmode/intelligence/list` 要求 `pid` 指向一个
+     * 真实歌单（约定用「我喜欢的音乐」收藏夹），传 `0` 会直接报错或返回空 ——
+     * 与旧项目 `PlaybackRepository.getHeartbeatSongs(songId, playlistId)` 的行为一致。
+     */
+    suspend fun getIntelligenceSongs(songId: String, playlistId: Long): MusicResult<List<TrackSummary>> =
+        MusicSourceFromApi.parseFmSongs(api.getIntelligenceList(songId, playlistId))
 
     suspend fun getSimilarSongs(seedId: String): MusicResult<List<TrackSummary>> =
         MusicSourceFromApi.parseFmSongs(api.getSimilarSongs(seedId))
@@ -112,6 +122,93 @@ class MusicRepository(private val api: MusicApiService) {
 
     suspend fun getPlaylistDetail(id: Long): MusicResult<PlaylistDetail> =
         MusicSourceFromApi.getPlaylistDetail(api, id)
+
+    // ======================== 专辑 / 歌手 / 用户主页 ========================
+    //
+    // 这三组此前只存在于 [MusicApiService]（原始 JsonElement），UI 够不到 ——
+    // 于是首页把「点专辑 / 点歌手」一律退化成「按名字再搜一次」，
+    // 搜索结果里的专辑页签也因为拿不到 `result.albums` 而恒空。
+    // 这里按页面真正需要的粒度暴露解析后的模型。
+
+    /** 专辑详情（含曲目）。 */
+    suspend fun getAlbumDetail(id: Long): MusicResult<AlbumDetail> =
+        MusicSourceFromApi.getAlbumDetail(api, id)
+
+    /** 歌手介绍/资料；返回 null 表示这个 id 不是歌手。 */
+    suspend fun getArtistProfile(id: Long): ArtistProfile? =
+        runCatching { MusicSourceFromApi.parseArtistProfile(api.getArtistDetail(id)) }.getOrNull()
+
+    /** 歌手热门歌曲（最多 50 首）。 */
+    suspend fun getArtistTopSongs(id: Long): MusicResult<List<TrackSummary>> =
+        MusicSourceFromApi.getArtistTopSongs(api, id)
+
+    /** 歌手专辑。 */
+    suspend fun getArtistAlbums(id: Long, limit: Int = 50): MusicResult<List<AlbumSummary>> =
+        MusicSourceFromApi.getArtistAlbums(api, id, limit)
+
+    /**
+     * 拉取「他人主页」的完整数据包（歌手优先，否则按普通用户）。
+     *
+     * 逻辑逐条对照旧项目 `UserViewModel.fetchOtherUserProfile`：
+     * `artist/detail` 与 `user/detail` 用**同一段 id 空间**，同一个 id 在两边都可能返回数据，
+     * 所以只能「先试歌手、拿到 `data.artist` 才认」，否则按普通用户处理。
+     *
+     * 歌手分支额外拉「热门歌曲」与「专辑」；用户分支拉「歌单」。
+     * 这些子请求**失败不致命** —— 资料本身能显示就先显示，空的区块由页面自己收敛。
+     */
+    suspend fun getProfileBundle(uid: Long): MusicResult<ProfileBundle> {
+        val artist = getArtistProfile(uid)
+        if (artist != null) {
+            val songs = (getArtistTopSongs(uid) as? BackendResult.Success)?.data.orEmpty()
+            val albums = (getArtistAlbums(uid) as? BackendResult.Success)?.data.orEmpty()
+            return BackendResult.Success(
+                ProfileBundle(
+                    uid = uid,
+                    isArtist = true,
+                    nickname = artist.name,
+                    avatarUrl = artist.avatarUrl,
+                    signature = artist.briefDesc ?: artist.alias.joinToString(" / ").ifBlank { null },
+                    primaryCount = if (artist.albumSize > 0) artist.albumSize else albums.size,
+                    follows = 0,
+                    followeds = artist.followeds,
+                    albums = albums,
+                    songs = songs,
+                ),
+            )
+        }
+
+        val profile = runCatching { MusicSourceFromApi.parseUserDetail(api.getUserDetail(uid)) }.getOrNull()
+            ?: return BackendResult.Error("没有找到该用户")
+        val playlists = (getUserPlaylistsOf(uid) as? BackendResult.Success)?.data.orEmpty()
+        return BackendResult.Success(
+            ProfileBundle(
+                uid = uid,
+                isArtist = false,
+                nickname = profile.nickname,
+                avatarUrl = profile.avatarUrl,
+                signature = profile.signature,
+                primaryCount = profile.playlistCount,
+                follows = profile.follows,
+                followeds = profile.followeds,
+                playlists = playlists,
+            ),
+        )
+    }
+
+    /** 他人歌单列表（不含「我喜欢的音乐」这类只属于本人的条目）。 */
+    suspend fun getUserPlaylistsOf(uid: Long): MusicResult<List<PlaylistSummary>> =
+        MusicSourceFromApi.getUserPlaylists(api, uid)
+
+    /** 用户听歌排行；`type` 0=所有时间, 1=最近一周。 */
+    suspend fun getUserRecords(uid: Long, type: Int = 0): MusicResult<List<TrackSummary>> =
+        MusicSourceFromApi.parseUserRecords(api.getUserRecord(uid, type))
+
+    /** 关注 / 粉丝列表。 */
+    suspend fun getFollows(uid: Long, limit: Int = 50): MusicResult<List<ArtistSummary>> =
+        MusicSourceFromApi.parseUserList(api.getUserFollows(uid, limit = limit))
+
+    suspend fun getFolloweds(uid: Long, limit: Int = 50): MusicResult<List<ArtistSummary>> =
+        MusicSourceFromApi.parseUserList(api.getUserFolloweds(uid, limit = limit))
 
     suspend fun getPlaylistTracks(id: Long, limit: Int = 300, offset: Int = 0): MusicResult<PlaylistTracksPage> =
         MusicSourceFromApi.getPlaylistTracks(api, id, limit, offset)

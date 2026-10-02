@@ -261,6 +261,14 @@ class PlaylistDetailScreenModel : ScreenModel {
         return tracks.map { "$provider://song/${it.id}" }
     }
 
+    /**
+     * 队列来源歌单 id（仅真实服务端歌单）。首页虚拟歌单（每日推荐 / 心动模式 /
+     * 相似歌曲）的 id 是负数、服务端不存在，不能上报 —— 上游拿它当 `pid` 会拒绝。
+     * 心动模式（playmode/intelligence/list）依赖这个来源做歌单上下文。
+     */
+    private fun sourceIdOrNull(): String? =
+        _state.value.summary?.id?.takeIf { it > 0 }?.toString()
+
     /** 按当前排序后的列表，从 [index] 处开始播放（替换队列）。[animateCover] 仅用户点击传 true。 */
     /**
      * 曲目就绪后从 [index] 起播 —— **每个歌单只生效一次**。
@@ -284,7 +292,7 @@ class PlaylistDetailScreenModel : ScreenModel {
         val ids = mediaIds(tracks)
         if (ids.isEmpty()) return
         if (animateCover) tracks.getOrNull(index)?.let { CoverFlight.play(it.id, it.coverUrl) }
-        screenModelScope.launch { AppModel.playback.playQueue(ids, startIndex = index) }
+        screenModelScope.launch { AppModel.playback.playQueue(ids, startIndex = index, sourceId = sourceIdOrNull()) }
     }
 
     fun playAll() {
@@ -292,7 +300,7 @@ class PlaylistDetailScreenModel : ScreenModel {
         val ids = mediaIds(tracks)
         if (ids.isEmpty()) return
         tracks.firstOrNull()?.let { CoverFlight.play(it.id, it.coverUrl) }
-        screenModelScope.launch { AppModel.playback.playQueue(ids, startIndex = 0) }
+        screenModelScope.launch { AppModel.playback.playQueue(ids, startIndex = 0, sourceId = sourceIdOrNull()) }
     }
 
     fun playShuffle() {
@@ -301,7 +309,7 @@ class PlaylistDetailScreenModel : ScreenModel {
         val ids = mediaIds(tracks)
         if (ids.isEmpty()) return
         tracks.firstOrNull()?.let { CoverFlight.play(it.id, it.coverUrl) }
-        screenModelScope.launch { AppModel.playback.playQueue(ids, startIndex = 0) }
+        screenModelScope.launch { AppModel.playback.playQueue(ids, startIndex = 0, sourceId = sourceIdOrNull()) }
     }
 
     fun queueAll() {

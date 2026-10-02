@@ -47,6 +47,8 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.ui.anim.CoverFlight
+import cp.player.app.ui.component.AlbumItem
+import cp.player.app.ui.component.ArtistItem
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.PageHeader
@@ -54,8 +56,12 @@ import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.LazyScrollRow
 import cp.player.app.ui.component.SectionHeader
 import cp.player.app.ui.component.SongItem
+import cp.player.app.ui.component.SongMenuActions
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.PlaylistItem
+import cp.player.app.ui.component.songContextMenuItems
+import cp.player.app.ui.component.songShareText
+import cp.player.app.platform.shareText
 import cp.player.app.ui.model.SearchScreenModel
 import cp.player.core.api.MusicApiMethod
 import kotlinx.coroutines.launch
@@ -229,9 +235,14 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                     state.result == null -> Unit
                     else -> {
                         val result = state.result!!
+                        // ⚠️ 每个页签只能数**它自己那个数组**。
+                        // 收敛前这里是 `ALBUM, PLAYLIST -> result.playlists.size`，
+                        // 而专辑搜索返回的是 `result.albums` —— 计数恒为 0，
+                        // 于是专辑页签永远显示「没有找到结果」，即使服务端返回了 30 张专辑。
                         val count = when (state.searchType) {
                             MusicApiMethod.SEARCH_TYPE_SONG -> result.songs.size
-                            MusicApiMethod.SEARCH_TYPE_ALBUM, MusicApiMethod.SEARCH_TYPE_PLAYLIST -> result.playlists.size
+                            MusicApiMethod.SEARCH_TYPE_ALBUM -> result.albums.size
+                            MusicApiMethod.SEARCH_TYPE_PLAYLIST -> result.playlists.size
                             else -> result.artists.size
                         }
                         if (count == 0) {
@@ -271,9 +282,42 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                                 scope.launch { AppModel.playback.playQueue(result.songs.map { "$provider://song/${it.id}" }, index) }
                                             },
                                             onOptionsClick = { selectedTrack = track },
+                                            // 桌面端右键菜单：动作集合与 SongOptionsSheet 对齐
+                                            contextMenu = songContextMenuItems(
+                                                SongMenuActions(
+                                                    onPlay = {
+                                                        CoverFlight.play(track.id, track.coverUrl)
+                                                        scope.launch { AppModel.playback.playQueue(result.songs.map { "$provider://song/${it.id}" }, index) }
+                                                    },
+                                                    isFavorite = track.id in likedIds,
+                                                    onToggleFavorite = {
+                                                        scope.launch {
+                                                            val target = track.id !in likedIds
+                                                            AppModel.playback.toggleFavoriteFor("$provider://song/${track.id}")
+                                                            cp.player.app.ui.util.UiEvents.notify(if (target) "已收藏" else "已取消收藏")
+                                                        }
+                                                    },
+                                                    onAddToQueue = {
+                                                        scope.launch { AppModel.playback.addToQueue("$provider://song/${track.id}") }
+                                                        cp.player.app.ui.util.UiEvents.notify("已加入播放队列")
+                                                    },
+                                                    isDownloaded = AppModel.isDownloaded(track.id),
+                                                    onDownload = { AppModel.downloadTrack(track) },
+                                                    onAddToPlaylist = { addToPlaylistTrack = track },
+                                                    onShare = { shareText(songShareText(track)) },
+                                                )
+                                            ),
                                         )
                                     }
-                                    MusicApiMethod.SEARCH_TYPE_ALBUM, MusicApiMethod.SEARCH_TYPE_PLAYLIST -> itemsIndexed(result.playlists, key = { _, playlist -> playlist.id }) { _, playlist ->
+                                    MusicApiMethod.SEARCH_TYPE_ALBUM -> itemsIndexed(result.albums, key = { _, album -> "album-${album.id}" }) { _, album ->
+                                        AlbumItem(
+                                            album = album,
+                                            modifier = Modifier.animateItem(),
+                                            // 进得去真正的专辑详情页 —— 这一条以前是**打不开任何东西**的。
+                                            onClick = { navigator.push(AlbumDetailScreen(album.id, album)) },
+                                        )
+                                    }
+                                    MusicApiMethod.SEARCH_TYPE_PLAYLIST -> itemsIndexed(result.playlists, key = { _, playlist -> "playlist-${playlist.id}" }) { _, playlist ->
                                         PlaylistItem(
                                             playlist = playlist,
                                             isOwner = false,
@@ -281,15 +325,13 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                             onOptionsClick = {},
                                         )
                                     }
-                                    MusicApiMethod.SEARCH_TYPE_ARTIST -> itemsIndexed(result.artists, key = { _, artist -> artist.id }) { _, artist ->
-                                        Row(
-                                            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.primary)
-                                            Spacer(Modifier.width(12.dp))
-                                            Text(artist.name, style = MaterialTheme.typography.titleMedium)
-                                        }
+                                    MusicApiMethod.SEARCH_TYPE_ARTIST -> itemsIndexed(result.artists, key = { _, artist -> "artist-${artist.id}" }) { _, artist ->
+                                        ArtistItem(
+                                            artist = artist,
+                                            subtitle = "歌手",
+                                            modifier = Modifier.animateItem(),
+                                            onClick = { navigator.push(UserProfileScreen(artist.id, artist.name)) },
+                                        )
                                     }
                                 }
                             }
