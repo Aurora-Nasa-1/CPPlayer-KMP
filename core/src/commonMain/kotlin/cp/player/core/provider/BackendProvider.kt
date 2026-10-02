@@ -106,12 +106,5 @@ enum class ProviderType {
     /** WebSocket 通信（预留） */
     WEBSOCKET,
     /** HTTP API 服务（如 NeteaseCloudMusicApi） */
-    HTTP,
-    /**
-     * 内置 Provider：实现写在 App 里（如 [MiguProvider]），随 APK / 桌面包分发。
-     *
-     * 没有 .so / 可执行文件要挑 ABI，因此 Android(armv7/armv8)、
-     * Linux、Windows(amd64) 一个包全覆盖，不存在「架构不匹配加载失败」。
-     */
-    INTERNAL
+    HTTP
 }
