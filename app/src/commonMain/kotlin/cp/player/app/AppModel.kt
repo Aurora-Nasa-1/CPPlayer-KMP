@@ -818,6 +818,16 @@ object AppModel {
     /** 导入模块，自动激活（此前无活跃时），返回 [ImportResult]。 */
     fun importModule(zipPath: String): ImportResult = backend.importModule(zipPath)
 
+    /**
+     * 用 zip 包更新已安装模块（包内 manifest.id 必须与 [targetId] 一致），
+     * 更新活跃 Provider 时自动重新激活新实例，返回 [ImportResult]。
+     */
+    fun updateModule(zipPath: String, targetId: String): ImportResult = backend.updateModule(zipPath, targetId)
+
+    /** 导出模块目录为 zip 文件（用于分享 / 备份音源模块），返回 [BackendResult]。 */
+    fun exportModule(providerId: String, zipPath: String): BackendResult<Unit> =
+        backend.exportModule(providerId, zipPath)
+
     /** 删除模块，返回 [BackendResult]。 */
     fun deleteProvider(id: String): BackendResult<Unit> = backend.deleteModule(id)
 
