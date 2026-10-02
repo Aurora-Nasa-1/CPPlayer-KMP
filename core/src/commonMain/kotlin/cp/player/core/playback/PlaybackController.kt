@@ -40,8 +40,24 @@ interface PlaybackController {
     /** 设置队列但不立即播放。 */
     suspend fun setQueue(mediaIds: List<String>, startIndex: Int = 0, sourceId: String? = null)
 
-    /** 在当前队列尾部追加。 */
+    /**
+     * 在当前队列尾部追加。
+     *
+     * 队列条目按 `mediaId` **唯一**（队列弹层用它做 LazyColumn 的 key）：
+     * 已在队列里的同一首不会再追加。
+     */
     suspend fun addToQueue(mediaId: String)
+
+    /**
+     * 「下一首播放」：插到**当前曲目之后**，本曲播完立刻轮到它。
+     *
+     * 随机模式下同样插在当前曲的下一个播放位（不是队列末尾 —— 电台/长队列里
+     * 追加到末尾意味着几小时后才轮到，等于没加）。该曲已在队列其他位置时，
+     * 等价于把它**移到**下一首，而不是重复添加。没有在播曲目时退化为普通追加。
+     */
+    suspend fun addNextToQueue(mediaId: String) {
+        addToQueue(mediaId)
+    }
 
     /** 从队列中移除指定索引；若移除的是当前曲目，按规则跳到下一首。 */
     suspend fun removeQueueItem(index: Int)

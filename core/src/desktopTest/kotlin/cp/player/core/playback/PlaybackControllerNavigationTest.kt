@@ -459,6 +459,99 @@ class PlaybackControllerNavigationTest {
         val visited = c.walkNext(3)
         assertEquals(listOf(0, 1, 2), visited.sorted(), "三首排队应各播一次，实际=$visited")
     }
+
+    // ============ 加曲与队列去重 ============
+
+    /**
+     * 队列条目按 mediaId 唯一（队列弹层以它做 LazyColumn 的 key）。
+     * 私人FM 的整批热门歌与用户搜索高度重叠：重复添加会直接炸掉队列 UI，
+     * 也会让同一首连播两遍。
+     */
+    @Test
+    fun `addToQueue skips a track that is already queued`() = runBlocking {
+        val c = controller(FakePlatformPlayer(), FakeSource())
+        c.playQueue(listOf(mid(1), mid(2)), startIndex = 0)
+
+        c.addToQueue(mid(2))
+        c.addToQueue(mid(3))
+
+        assertEquals(
+            listOf(mid(1), mid(2), mid(3)),
+            c.state.value.queue.map { it.mediaId },
+            "已在队列里的歌不应被再次追加",
+        )
+    }
+
+    /** 电台/长队列场景：加进来的歌必须本曲播完就轮到，而不是排在几十首之后。 */
+    @Test
+    fun `addNextToQueue inserts right after the current track`() = runBlocking {
+        val platform = FakePlatformPlayer()
+        val c = controller(platform, FakeSource())
+        c.playQueue(listOf(mid(1), mid(2), mid(3), mid(4)), startIndex = 0)
+
+        c.addNextToQueue(mid(9))
+
+        assertEquals(
+            listOf(mid(1), mid(9), mid(2), mid(3), mid(4)),
+            c.state.value.queue.map { it.mediaId },
+        )
+        platform.emitEnded()
+        assertEquals(1, c.state.value.currentIndex, "本曲播完应立刻轮到插播的歌")
+        assertEquals(mid(9), c.state.value.currentTrack?.id)
+    }
+
+    /** 随机模式下「下一首播放」同样要插在当前曲的下一个播放位。 */
+    @Test
+    fun `addNextToQueue under shuffle still plays the added song next`() = runBlocking {
+        val platform = FakePlatformPlayer()
+        val c = controller(platform, FakeSource())
+        c.playQueue(listOf(mid(1), mid(2), mid(3), mid(4), mid(5)), startIndex = 0)
+        c.toggleShuffle()
+        // 列表循环：随机序可能恰好把当前曲排在末尾，不循环的话 walk 会在队尾停住。
+        c.setRepeatMode(RepeatMode.ALL)
+
+        c.addNextToQueue(mid(9))
+
+        platform.emitEnded()
+        assertEquals(mid(9), c.state.value.currentTrack?.id, "随机序下插播歌也应紧随当前曲")
+
+        // 随机序仍然必须是队列的置换：新曲占一个槽位，其余曲各轮到一次。
+        val visited = c.walkNext(6)
+        assertEquals((0..5).toList(), visited.sorted(), "加曲后随机序应覆盖全部 6 首各一次")
+    }
+
+    /** 歌已在队列里（哪怕是 FM 队列靠后的位置）时，「下一首播放」应把它移上来。 */
+    @Test
+    fun `addNextToQueue moves an already queued track to next`() = runBlocking {
+        val platform = FakePlatformPlayer()
+        val c = controller(platform, FakeSource())
+        c.playQueue(listOf(mid(1), mid(2), mid(3)), startIndex = 0)
+
+        c.addNextToQueue(mid(3))
+
+        assertEquals(
+            listOf(mid(1), mid(3), mid(2)),
+            c.state.value.queue.map { it.mediaId },
+            "已在队列的歌应被移到当前曲之后，而不是重复添加",
+        )
+        platform.emitEnded()
+        assertEquals(1, c.state.value.currentIndex)
+        assertEquals(mid(3), c.state.value.currentTrack?.id)
+    }
+
+    /** 队列里没有这首时「下一首播放」不能把别的歌挤掉或弄出空槽。 */
+    @Test
+    fun `addNextToQueue with shuffle on keeps a clean permutation`() = runBlocking {
+        val c = controller(FakePlatformPlayer(), FakeSource())
+        c.playQueue(listOf(mid(1), mid(2), mid(3)), startIndex = 0)
+        c.toggleShuffle()
+        c.setRepeatMode(RepeatMode.ALL)
+
+        c.addNextToQueue(mid(9))
+
+        val visited = c.walkNext(4)
+        assertEquals(listOf(0, 1, 2, 3), visited.sorted(), "插播后每首应各占一个槽位，实际=$visited")
+    }
 }
 
 private fun mid(n: Int) = "netease://song/$n"

@@ -284,6 +284,11 @@ class PlaybackControllerImpl(
 
     override suspend fun addToQueue(mediaId: String) {
         navMutex.withLock {
+            // 队列条目按 mediaId 唯一 —— 队列弹层用它做 LazyColumn 的 key，重复条目会
+            // 直接把队列 UI 炸掉（IllegalArgumentException: key was already used），
+            // 同一曲也会连播两遍。私人FM 的整批热门歌与用户搜索高度重叠，最容易撞上。
+            // 已在队列里就不重复追加。
+            if (_queue.any { it.mediaId == mediaId }) return
             _queue.add(Entry(mediaId))
             if (_shuffle) {
                 // 新曲排在轮播末尾，已有曲目各自的位置不变。
@@ -300,6 +305,46 @@ class PlaybackControllerImpl(
         }
         pushQueueState()
         scope.launch { resolveEntry(_queue.lastIndex) }
+    }
+
+    override suspend fun addNextToQueue(mediaId: String) {
+        val insertedAt = navMutex.withLock {
+            // 当前曲目本身就是它：已经在播，谈不上「下一首」。
+            if (_index in _queue.indices && _queue[_index].mediaId == mediaId) return
+            // 已在队列其他位置 → 先按 [removeQueueItem] 的下标语义摘下来，
+            // 等价于「移到下一首」而不是「什么都不发生」。
+            val existing = _queue.indexOfFirst { it.mediaId == mediaId }
+            if (existing >= 0) {
+                _queue.removeAt(existing)
+                _order = _order?.filter { it != existing }?.map { if (it > existing) it - 1 else it }
+                if (_index > existing) _index -= 1
+                // 被移除项在随机序里可能排在当前曲之前：摘掉它会让当前曲的序位前移，
+                // 不重算的话下面的「插到当前曲下一位」就会插错位置。
+                if (_shuffle && _order != null) _orderPos = _order!!.indexOf(_index).coerceAtLeast(0)
+            }
+            val insertAt = if (_index in _queue.indices) _index + 1 else _queue.size
+            _queue.add(insertAt, Entry(mediaId))
+            if (_shuffle) {
+                val base = _order
+                if (base != null) {
+                    // 插入点之后的旧下标整体 +1，再把新曲插到随机序里「当前曲」的下一位。
+                    val shifted = base.map { if (it >= insertAt) it + 1 else it }
+                    _order = shifted.take(_orderPos + 1) + insertAt + shifted.drop(_orderPos + 1)
+                } else {
+                    // 随机开着但顺序还没建（清队后逐曲添加这类退化态）：当前曲置首、新曲紧随。
+                    // ⚠️ 没有 _index（-1）时绝不能把它塞进顺序 —— 那是个没有曲目的槽位。
+                    _order = if (_index in _queue.indices) {
+                        listOf(_index, insertAt) + (_queue.indices.toList() - _index - insertAt)
+                    } else {
+                        shuffledOrder(_queue.size)
+                    }
+                }
+            }
+            ensureValidOrder()
+            insertAt
+        }
+        pushQueueState()
+        scope.launch { resolveEntry(insertedAt) }
     }
 
     override suspend fun removeQueueItem(index: Int) {
