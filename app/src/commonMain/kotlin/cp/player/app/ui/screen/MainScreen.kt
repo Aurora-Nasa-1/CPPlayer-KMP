@@ -109,6 +109,7 @@ import cp.player.app.ui.component.MiniPlayer
 import cp.player.app.ui.component.CpBackButton
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LazyScrollColumn
+import cp.player.app.ui.component.observeBottomBarDrag
 import cp.player.app.ui.util.next
 import cp.player.app.ui.util.resized
 import cp.player.core.music.PlaylistSummary
@@ -319,10 +320,21 @@ class MainScreen : Screen {
             isPlayerExpanded = false
         }
 
-        // 窄屏底栏「上滑自动隐藏」：状态（含嵌套滚动观察）与设置项接线。
-        // 宽屏走侧栏没有底栏，connection 不挂也不会有任何行为。
+        // 窄屏底栏「上滑自动隐藏」：状态 + 设置项接线。手势由内容区上的
+        // `observeBottomBarDrag` 直接喂进来 —— **不走嵌套滚动**（理由见
+        // `BottomBarHideState` 的 KDoc：安卓端那条链会被下拉刷新 / 顶栏 scrollBehavior 截断）。
+        // 宽屏走侧栏没有底栏，观察器不挂也不会有任何行为。
         val bottomBarAutoHide by AppModel.bottomBarAutoHideFlow.collectAsState()
-        val bottomBarHide = remember { cp.player.app.ui.component.BottomBarHideState(scope) }
+        // 兜底高度：NavigationBar 实测高度回传前先用它。「测不到高度就不动」会让整个
+        // 特性退化成「怎么滑都不收」。密度在这里先读出来 —— `remember` 的 lambda 不是
+        // @Composable，不能在它里面读 CompositionLocal。
+        val bottomBarFallbackHeightPx = with(LocalDensity.current) { 80.dp.toPx() }
+        val bottomBarHide = remember {
+            cp.player.app.ui.component.BottomBarHideState(
+                scope = scope,
+                fallbackHeightPx = bottomBarFallbackHeightPx,
+            )
+        }
         androidx.compose.runtime.LaunchedEffect(bottomBarAutoHide) {
             bottomBarHide.enabled = bottomBarAutoHide
             if (!bottomBarAutoHide) bottomBarHide.reset()
@@ -507,15 +519,9 @@ class MainScreen : Screen {
                 } else {
                     androidx.compose.material3.Scaffold(
                         modifier = Modifier.fillMaxSize()
-                            // ⚠️ 这两个 nestedScroll 的**顺序有意义**，别随手调换：
-                            // pre-scroll 是**从外到内**派发的（NestedScrollNode.onPreScroll
-                            // 先调 parent、再调自己），而 `exitUntilCollapsedScrollBehavior`
-                            // 会把「顶栏从大标题收成 64dp」那一段增量**吃掉**。底栏连接若挂在
-                            // 它内侧，就只能拿到**剩余**增量 —— 短促上滑时剩余量不过半，
-                            // 每次都被吸附弹回，表现就是「怎么滑底栏都不收」（离屏对照可复现，
-                            // 见 BottomBarAutoHideOrderTest）。放外层先拿原始手势：它只观察
-                            // 不消费（返回 Zero），顶栏照旧拿得到完整增量。
-                            .nestedScroll(bottomBarHide)
+                            // 只挂顶栏的 scrollBehavior（大标题 → 64dp 靠它）。
+                            // 底栏自动隐藏**不**走嵌套滚动 —— 它读内容区上的手指位移，
+                            // 理由见 `BottomBarHideState` 的 KDoc。
                             .nestedScroll(scrollBehavior.nestedScrollConnection),
                         topBar = {
                             // 三个 tab 的顶栏完全一致：标题 = tab 名，动作一律在右侧。
@@ -546,7 +552,10 @@ class MainScreen : Screen {
                             tabs, visitedTabs, selectedIndex,
                             Modifier.fillMaxSize()
                                 .padding(padding)
-                                .padding(bottom = miniPlayerReserved),
+                                .padding(bottom = miniPlayerReserved)
+                                // 底栏自动隐藏的手势来源：只读观察内容区上的纵向位移，
+                                // 不消费事件（内容照常滚动）—— 理由见 BottomBarHideState。
+                                .observeBottomBarDrag(bottomBarHide),
                         )
                     }
                 }
@@ -692,24 +701,36 @@ private fun AppTopBar(
 
     val isDesktopExpanded = cp.player.app.ui.component.LocalIsExpanded.current
     val topBarInsets = if (isDesktopExpanded) WindowInsets.statusBars else TopAppBarDefaults.windowInsets
+    // 账号信息在这里读一次：最左的账号入口要用它（右侧动作不再需要）。
+    val profile by AppModel.userProfileFlow.collectAsState()
     val titleBar: @Composable () -> Unit = {
         Text(title, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
+    // 最左槽位：路由页放返回键，三个 tab 放**账号入口** —— 任何页面这个位置都是同一颗
+    // 填充圆钮（与 `CpBackButton` / `CpTopBarActionButton` 同族），位置与样式不再跟着
+    // tab 变。账号入口原先在右侧、且只有「我的」页被挪到最左（还是无底色的裸
+    // `IconButton`），现在统一到最左、统一形态。
     val navigationIcon: @Composable () -> Unit = if (showBack) {
         { CpBackButton(onClick = onBack) }
     } else {
-        {}
+        {
+            cp.player.app.ui.component.CpTopBarActionButton(
+                cp.player.app.ui.component.TopBarAction(
+                    icon = { AccountEntryContent(profile?.avatarUrl, "账号") },
+                    onClick = onOpenAccount,
+                ),
+                modifier = Modifier.padding(start = 4.dp),
+            )
+        }
     }
-    // 三个入口（消息 / 账号 / 设置）统一走 CpTopBarActionButton —— 与路由页的
-    // topBarActions、以及 CpBackButton 同一族（填充圆钮）。此前是「消息 = 裸 IconButton、
-    // 账号 / 设置 = FilledIconButton」两种外观并排；「我的」tab 还把账号入口单独挪到了
-    // 最左的 navigationIcon 槽位、标题换成昵称 —— 同一排按钮的位置与样式跟着 tab 变。
-    // 现在三个 tab 完全一致：标题是 tab 名，动作一律在右侧、同一套外观。
+    // 右侧动作固定两个：消息 / 设置，一律走 CpTopBarActionButton（与最左的账号入口、
+    // 路由页的 topBarActions、CpBackButton 同一族）。此前同一个 tab 里「消息」是裸
+    // `IconButton`、账号 / 设置是 `FilledIconButton`，两种外观并排；三个 tab 的按钮位置
+    // 也各不相同。现在壳层顶栏全平台一致：**左 = 账号**，**右 = 消息 + 设置**。
     val actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
         // 这里刻意**不再**判 LocalWindowChromeActive：桌面端整条 AppTopBar 已经在函数开头
         // 提前 return 了（窗口 chrome 接管了标题与这三个入口），能走到这里就说明没有 chrome。
         // 两处都判会留下一条永远走不到的分支。
-        val profile by AppModel.userProfileFlow.collectAsState()
         // 消息入口：桌面端由窗口标题栏承担，这里只在**没有窗口 chrome**（手机 / 平板）时出现。
         // ⚠️ 刻意**不带未读角标**（2026-10-02 与标题栏一并去掉）—— 理由见
         // `DesktopTitleBar.MessageSlot` 的 KDoc。数据链路保留，只是不再显示。
@@ -720,13 +741,6 @@ private fun AppTopBar(
                     navigator?.push(MessagesScreen())
                     AppModel.refreshUnreadMessages()
                 },
-            )
-        )
-        // 账号入口（有头像显示头像）：进「账号与登录」。
-        cp.player.app.ui.component.CpTopBarActionButton(
-            cp.player.app.ui.component.TopBarAction(
-                icon = { AccountEntryContent(profile?.avatarUrl, "账号") },
-                onClick = onOpenAccount,
             )
         )
         cp.player.app.ui.component.CpTopBarActionButton(
@@ -762,7 +776,8 @@ private fun AppTopBar(
 
 /**
  * 顶栏账号入口的内容：有头像显示头像（圆形裁切），未登录 / 无头像显示人形占位图标。
- * 只作为 `CpTopBarActionButton` 的图标用 —— 账号入口在三个 tab 的顶栏位置一致。
+ * 只作为 `CpTopBarActionButton` 的图标用 —— 账号入口固定在三个 tab 顶栏的**最左**
+ * （路由页那个位置是返回键），位置与形态全平台一致。
  */
 @Composable
 private fun AccountEntryContent(avatarUrl: String?, contentDescription: String) {
