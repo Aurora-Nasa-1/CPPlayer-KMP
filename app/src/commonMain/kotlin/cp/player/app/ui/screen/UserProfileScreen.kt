@@ -1,6 +1,7 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -53,6 +54,7 @@ import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.SongMenuActions
 import cp.player.app.ui.component.songContextMenuItems
 import cp.player.app.ui.component.songShareText
+import cp.player.app.ui.component.playlistShareText
 import cp.player.app.platform.shareText
 import cp.player.app.ui.util.UiEvents
 import cp.player.core.BackendResult
@@ -158,6 +160,16 @@ private fun UserProfileContent(
     val likedIds by AppModel.playback.likedIds.collectAsState()
     val scope = rememberCoroutineScope()
     val provider = AppModel.activeProviderId()
+
+    // 歌单列表每行右侧的「更多」动作来源。本页不是有自己 ScreenModel 的复杂页面，
+    // 借 HomeScreenModel 现成的歌单动作（播放 / 队列 / 下载 / 分享 / 删除或取消收藏）：
+    // 与侧栏、歌单详情页共用「先取详情再拿曲目」的那条取数路径。
+    // ⚠️ 用 `remember` 而不是 `rememberScreenModel`：后者按类型键控、会与本页的
+    // UserProfileModel 抢槽位（Voyager 一个 Screen 只保留一个同名模型）。
+    val playlistActions = remember { cp.player.app.ui.model.HomeScreenModel(loadDiscovery = false) }
+    var playlistOptionsTarget by remember {
+        mutableStateOf<cp.player.core.music.PlaylistSummary?>(null)
+    }
 
     LaunchedEffect(uid) { model.load(uid, displayName) }
 
@@ -313,7 +325,10 @@ private fun UserProfileContent(
                             isOwner = isMe,
                             modifier = Modifier.animateItem(),
                             onClick = { navigator.push(PlaylistDetailScreen(playlist)) },
-                            onOptionsClick = {},
+                            // 点击弹歌单动作菜单（原先传的是空 lambda，按钮画得出来、
+                            // 点下去毫无反应）。isOwner 跟着 isMe 走：在自己主页上才有
+                            // 「删除歌单」，看别人的主页只有「取消收藏」。
+                            onOptionsClick = { playlistOptionsTarget = playlist },
                         )
                     }
                 }
@@ -335,6 +350,82 @@ private fun UserProfileContent(
                     }
                 }
             }
+        }
+    }
+
+    // 歌单「更多」：桌面端弹锚定菜单（与右键、侧栏、歌单详情页同一份 items），
+    // 非桌面（触屏 / 无窗口 chrome 的宽屏平板）回落到底部弹层 —— 与搜索页一致。
+    playlistOptionsTarget?.let { playlist ->
+        val owner = playlistActions.isPlaylistOwner(playlist)
+        val menuItems = if (playlistActions.isServerPlaylist(playlist)) {
+            cp.player.app.ui.component.playlistContextMenuItems(
+                cp.player.app.ui.component.PlaylistMenuActions(
+                    isOwner = owner,
+                    onPlay = {
+                        playlistActions.playPlaylist(playlist)
+                        playlistOptionsTarget = null
+                    },
+                    onAddToQueue = {
+                        playlistActions.queuePlaylist(playlist)
+                        playlistOptionsTarget = null
+                    },
+                    onDownload = {
+                        playlistActions.downloadPlaylist(playlist)
+                        playlistOptionsTarget = null
+                    },
+                    onShare = { shareText(playlistShareText(playlist.id, playlist.name)) },
+                    // 收藏状态不在这里查（要额外一次请求），所以菜单不提供「收藏歌单」；
+                    // 取消收藏走 [onDelete] 那一支的「删除歌单 / 取消收藏」——
+                    // 与侧栏同一条规则：owner 删除、非 owner 取消收藏。
+                    onDelete = {
+                        playlistActions.deleteOrUnsubscribePlaylist(playlist)
+                        playlistOptionsTarget = null
+                    },
+                )
+            )
+        } else {
+            emptyList()
+        }
+        val windowChromeActive = cp.player.app.ui.component.LocalWindowChromeActive.current
+        if (windowChromeActive && menuItems.isNotEmpty()) {
+            Box(Modifier.fillMaxSize()) {
+                androidx.compose.material3.DropdownMenu(
+                    expanded = true,
+                    onDismissRequest = { playlistOptionsTarget = null },
+                ) {
+                    menuItems.forEach { item ->
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text(item.label) },
+                            onClick = {
+                                playlistOptionsTarget = null
+                                item.onClick()
+                            },
+                        )
+                    }
+                }
+            }
+        } else {
+            cp.player.app.ui.component.PlaylistOptionsSheet(
+                playlistName = playlist.name,
+                isOwner = owner,
+                onDismiss = { playlistOptionsTarget = null },
+                onPlay = {
+                    playlistActions.playPlaylist(playlist)
+                    playlistOptionsTarget = null
+                },
+                onAddToQueue = {
+                    playlistActions.queuePlaylist(playlist)
+                    playlistOptionsTarget = null
+                },
+                onDelete = if (owner) {
+                    {
+                        playlistActions.deleteOrUnsubscribePlaylist(playlist)
+                        playlistOptionsTarget = null
+                    }
+                } else null,
+                onShare = { shareText(playlistShareText(playlist.id, playlist.name)) },
+                coverUrl = playlist.coverUrl,
+            )
         }
     }
 }

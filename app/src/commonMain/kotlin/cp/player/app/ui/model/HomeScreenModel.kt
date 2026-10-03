@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -197,6 +198,10 @@ class HomeScreenModel(
         screenModelScope.launch {
             AppModel.sourceGeneration.drop(1).collect {
                 newSongsByRegion.clear()
+                // 按音源缓存的新歌速递整批作废，否则切源后再切回旧地区候选会拿到上个
+                // 音源的 `newSongRegion` 值 —— 新状态体里留着全空的新歌列表，
+                // 「新歌速递」区块就一直是空的，直到用户手动再点一次那个地区。
+                _state.update { it.copy(newSongRegion = NewSongRegion.All) }
                 refresh(force = true)
             }
         }
@@ -209,6 +214,7 @@ class HomeScreenModel(
         screenModelScope.launch {
             AppModel.accountGeneration.drop(1).collect {
                 newSongsByRegion.clear()
+                _state.update { it.copy(newSongRegion = NewSongRegion.All) }
                 refresh(force = true)
             }
         }
@@ -230,12 +236,27 @@ class HomeScreenModel(
         }
     }
 
-    // ======================== 侧栏歌单操作 ========================
+    // ======================== 歌单操作 ========================
     //
-    // 桌面侧栏不是 Screen，没有属于自己的 ScreenModel —— 右键菜单的动作就落在侧栏
-    // 自己那个实例（`DesktopSidebar` 里的 `remember { HomeScreenModel(loadDiscovery = false) }`）上。
-    // 放进这里而不是新开一个模型，还有一个实际好处：删除 / 取消收藏之后
-    // 直接 [refresh] 就能让**侧栏自己**跟着更新（这正是「操作完列表要对」的诉求）。
+    // 三处消费者：
+    //  ① 桌面侧栏 —— 它不是 Screen，没有属于自己的 ScreenModel，动作就落在侧栏
+    //     自己那个实例（`DesktopSidebar` 里的 `remember { HomeScreenModel(loadDiscovery = false) }`）上。
+    //     放进这里而不是新开一个模型，还有一个实际好处：删除 / 取消收藏之后
+    //     直接 [refresh] 就能让**侧栏自己**跟着更新（这正是「操作完列表要对」的诉求）。
+    //  ② 「我喜欢的音乐」入口（MainScreen 的 likedPlaylist 面板）。
+    //  ③ 本轮修复的**搜索页 / 用户主页**歌单列表 —— 它们此前 `onOptionsClick = {}`，
+    //     更多按钮点了没反应；两页都没有自己的 ScreenModel，各自 `remember` 一个本模型
+    //     即可拿到同一套动作，不必再抄一遍取数 / 提示 / 刷新逻辑。
+
+    /**
+     * 该歌单能不能走服务端动作（播放 / 队列 / 下载 / 分享 / 收藏 / 删除）。
+     *
+     * 本地虚拟歌单（如「下载的歌」「本地歌曲」）是客户端拼出来的，id ≤ 0：
+     * 其 id 交给上游只会拿到空结果或报错。侧栏、歌单详情页、「我喜欢的音乐」
+     * 与搜索 / 主页的更多菜单**都**按这条判据决定要不要出菜单 —— 判据写在这里
+     * 而不是各页各写一个 `isLocalPlaylist`，就是为了别再漂。
+     */
+    fun isServerPlaylist(playlist: PlaylistSummary): Boolean = playlist.id > 0
 
     /** 当前账号是否拥有该歌单 —— 决定菜单里是「删除歌单」还是「取消收藏」。 */
     fun isPlaylistOwner(playlist: PlaylistSummary): Boolean {
@@ -254,7 +275,8 @@ class HomeScreenModel(
         playlist: PlaylistSummary,
         block: suspend (List<TrackSummary>) -> Unit,
     ) {
-        if (playlist.id <= 0) return
+        // `isServerPlaylist` 而不是内联 `id <= 0`：判据与「要不要出菜单」共用一条。
+        if (!isServerPlaylist(playlist)) return
         screenModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 safe { AppModel.musicRepository.getPlaylistDetail(playlist.id) }

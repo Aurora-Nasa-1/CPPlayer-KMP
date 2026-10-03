@@ -62,6 +62,7 @@ import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.PlaylistItem
 import cp.player.app.ui.component.songContextMenuItems
 import cp.player.app.ui.component.songShareText
+import cp.player.app.ui.component.playlistShareText
 import cp.player.app.platform.shareText
 import cp.player.app.ui.model.SearchScreenModel
 import cp.player.core.api.MusicApiMethod
@@ -76,6 +77,19 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
         val scope = rememberCoroutineScope()
         val provider = AppModel.activeProviderId()
         val navigator = LocalNavigator.currentOrThrow
+
+        // 歌单搜索结果那一行右侧的「更多」需要一个动作来源：本页没有自己的
+        // ScreenModel，就借 HomeScreenModel 现成的那几个歌单动作（播放 / 队列 /
+        // 下载 / 分享 / 删除或取消收藏）—— 与侧栏、歌单详情页共用同一套实现，
+        // 不必在这里再抄一遍「先取详情再拿曲目」的取数逻辑。
+        // ⚠️ 必须用 `remember`：写成 `rememberScreenModel { … }` 也行（本页是 Screen），
+        // 但 SearchScreenModel 已经占了那个槽，两个模型指同一个 key 只会互相顶掉。
+        val playlistActions = androidx.compose.runtime.remember {
+            cp.player.app.ui.model.HomeScreenModel(loadDiscovery = false)
+        }
+        var playlistOptionsTarget by androidx.compose.runtime.remember {
+            androidx.compose.runtime.mutableStateOf<cp.player.core.music.PlaylistSummary?>(null)
+        }
 
         // 本页有**两种角色**：
         //  (a) 「搜索」tab 的根内容 —— 由 TabContent 渲染，外壳已经画了顶栏（标题=tab 名），
@@ -337,7 +351,10 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                             playlist = playlist,
                                             isOwner = false,
                                             onClick = { navigator.push(PlaylistDetailScreen(playlist)) },
-                                            onOptionsClick = {},
+                                            // 点击弹歌单动作菜单（原先传的是空 lambda，
+                                            // 按钮画得出来、点下去毫无反应）。
+                                            // 搜索结果里的歌单都来自上游，isOwner 恒 false。
+                                            onOptionsClick = { playlistOptionsTarget = playlist },
                                         )
                                     }
                                     MusicApiMethod.SEARCH_TYPE_ARTIST -> itemsIndexed(result.artists, key = { _, artist -> "artist-${artist.id}" }) { _, artist ->
@@ -408,6 +425,76 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                 trackId = track.id,
                 onDismiss = { addToPlaylistTrack = null },
             )
+        }
+
+        // 歌单「更多」：桌面端弹锚定菜单（与右键、歌单详情页左栏同一份 items），
+        // 非桌面（触屏 / 无窗口 chrome 的宽屏平板）回落到底部弹层。
+        // PlaylistItem 的更多按钮位置不固定（列表很长时会滚到屏外），
+        // 所以菜单/弹层挂在**页面级**状态上，而不是行内联一个 CpAnchoredMenu。
+        playlistOptionsTarget?.let { playlist ->
+            // 本地虚拟歌单（id ≤ 0）没有服务端实体，搜索页理论上拿不到，
+            // 但判据与侧栏 / 详情页共用一条，避免哪天上游塞进来一个负数 id。
+            val menuItems = if (playlistActions.isServerPlaylist(playlist)) {
+                cp.player.app.ui.component.playlistContextMenuItems(
+                    cp.player.app.ui.component.PlaylistMenuActions(
+                        // 搜索结果里的歌单不可能是「我建的」，删除入口因此不会出现。
+                        isOwner = false,
+                        onPlay = {
+                            playlistActions.playPlaylist(playlist)
+                            playlistOptionsTarget = null
+                        },
+                        onAddToQueue = {
+                            playlistActions.queuePlaylist(playlist)
+                            playlistOptionsTarget = null
+                        },
+                        onDownload = {
+                            playlistActions.downloadPlaylist(playlist)
+                            playlistOptionsTarget = null
+                        },
+                        onShare = { shareText(playlistShareText(playlist.id, playlist.name)) },
+                    )
+                )
+            } else {
+                emptyList()
+            }
+            val windowChromeActive = cp.player.app.ui.component.LocalWindowChromeActive.current
+            if (windowChromeActive && menuItems.isNotEmpty()) {
+                // 桌面端没有可锚定的按钮（列表项可能已经滚出可视区），
+                // 用一层全屏透明点击层把菜单挂在页面中心偏上 —— 点空白处即收起。
+                Box(Modifier.fillMaxSize()) {
+                    androidx.compose.material3.DropdownMenu(
+                        expanded = true,
+                        onDismissRequest = { playlistOptionsTarget = null },
+                    ) {
+                        menuItems.forEach { item ->
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text(item.label) },
+                                onClick = {
+                                    // 与 CpContextMenuPanel 同一顺序：先收面板再执行动作。
+                                    playlistOptionsTarget = null
+                                    item.onClick()
+                                },
+                            )
+                        }
+                    }
+                }
+            } else {
+                cp.player.app.ui.component.PlaylistOptionsSheet(
+                    playlistName = playlist.name,
+                    isOwner = false,
+                    onDismiss = { playlistOptionsTarget = null },
+                    onPlay = {
+                        playlistActions.playPlaylist(playlist)
+                        playlistOptionsTarget = null
+                    },
+                    onAddToQueue = {
+                        playlistActions.queuePlaylist(playlist)
+                        playlistOptionsTarget = null
+                    },
+                    onShare = { shareText(playlistShareText(playlist.id, playlist.name)) },
+                    coverUrl = playlist.coverUrl,
+                )
+            }
         }
     }
 }
