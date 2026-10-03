@@ -1,5 +1,6 @@
 package cp.player.app
 
+import android.app.PendingIntent
 import android.content.Intent
 import androidx.media3.common.Player
 import androidx.media3.session.DefaultMediaNotificationProvider
@@ -26,8 +27,6 @@ class PlaybackMediaSessionService : MediaSessionService() {
             AppModel.playback
         }
         player = sessionPlayer
-        val session = MediaSession.Builder(this, sessionPlayer).build()
-        mediaSession = session
         // 通知栏那个小图标：media3 默认用它自带的占位图（media3_notification_small_icon），
         // 在状态栏里和本应用没有任何关系。换成自己的单色播放三角。
         // ⚠️ 状态栏图标必须是**白色剪影 + 透明底**，系统会统一着色 —— 带颜色的图会被糊成色块。
@@ -39,31 +38,54 @@ class PlaybackMediaSessionService : MediaSessionService() {
                 setSmallIcon(R.drawable.ic_stat_playback)
             }
         )
+        val session = MediaSession.Builder(this, sessionPlayer)
+            // 点通知 / 锁屏卡片回到播放界面。
+            // ⚠️ 这不是「锦上添花」：DefaultMediaNotificationProvider 用
+            // session.getSessionActivity() 建通知的 contentIntent，为 null 时通知**不可点**。
+            .setSessionActivity(
+                PendingIntent.getActivity(
+                    this,
+                    0,
+                    Intent(this, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    },
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
+            )
+            .build()
+        mediaSession = session
         // ⚠️⚠️ 这一步才是「有 MediaSession」的关键，缺了它前面全是死代码。
         //
         // MediaSession.Builder(this, player).build() **只**把会话登记进 MediaSession
-        // 自己的静态表（SESSION_ID_TO_SESSION_MAP），**完全不碰 MediaSessionService**。
-        // 1.4.1 里服务侧真正的挂载点只有一个 —— 本方法：
-        //
-        //     MediaSessionService.addSession(session)
-        //       → notificationManager.addSession(session)   // 建一条服务内部 MediaController
-        //       → session.setListener(MediaSessionListener())// 服务开始监听会话
-        //
-        // 而系统自带的登记路径只有三条：`onBind(MediaBrowserServiceCompat)`、
-        // `onStartCommand(媒体按键 action)`、**某个 MediaController 经 Binder 连上来**
-        // （MediaSessionServiceStub.connect）。本应用三条一条都不走：
-        // MainActivity 用 `startService(普通 Intent)`（无 action ⇒ onStartCommand 直接
-        // `return START_STICKY`，无任何副作用），且从不连接任何 MediaController。
-        // 结果 `MediaNotificationManager` 连实例都没被创建，内部 controllerMap 恒空 ⇒
-        // `shouldShowNotification()` 里的 `controller != null` 永远为假 ⇒
-        // 通知栏 / 锁屏 / 蓝牙 永远没有任何播放控制 —— 正是「改了很久还是没有
-        // MediaSession」的根因，且与该不该 startForeground、要不要 POST_NOTIFICATIONS
-        // 全都无关（那两条只是它的下游症状）。
+        // 自己的静态表（SESSION_ID_TO_SESSION_MAP），**完全不碰 MediaSessionService**
+        // （javap 核实 1.4.1：MediaSession / MediaSession.Builder 的字节码里
+        // `MediaSessionService` 出现 **0 次**）。1.4.1 里服务侧真正的挂载点只有一个 ——
+        // 本方法：notificationManager.addSession(session) 建一条**服务内部 MediaController**，
+        // 再 session.setListener(MediaSessionListener()) 让服务开始监听会话。
         //
         // javap 核实（1.4.1）：`public final void addSession(MediaSession)` 是公开 API，
         // 官方注释说「多数应用不需要手动调用」——那是以「应用自己用 MediaController 播」
         // 为前提；本应用直接驱动同一个 ExoPlayer 且不建控制器，所以必须显式登记。
         addSession(session)
+        // ⚠️⚠️⚠️ addSession 只是**必要条件**，不是充分条件 —— 别以为加完这行就有通知了。
+        //
+        // 通知的生成判据是 MediaNotificationManager.shouldShowNotification()（javap 1.4.1）：
+        //     val c = controllerMap[session]
+        //     return c != null
+        //         && !c.currentTimeline.isEmpty()      // ← 时间线必须非空
+        //         && c.playbackState != STATE_IDLE     // ← 状态必须非 IDLE
+        // 这条内部控制器读的是 session.getPlayer()（= 上面那个 ControllerForwardingPlayer
+        // → SharedMedia3Player 的 ExoPlayer）。启动时它没有 media item、状态是 IDLE
+        // ⇒ 两条同时为假 ⇒ shouldShowNotification() 恒 false。
+        //
+        // 这是 media3 的**设计前提**（假定会话一建立 Player 里就有待播内容），不是 bug：
+        // 真正的通知要等**第一次 load() 之后**（时间线非空、状态变 READY/BUFFERING），
+        // onEvents 才驱动 updateNotification → createNotification → startForeground。
+        // ⇒ 从点第一首歌到 load 完成之间没有通知，属预期行为。
+        //
+        // 另有一处**同样致命**、且不在本文件：MainActivity 必须 bindService 把本服务
+        // 绑上（见那里的长注释）—— 只 startService 的话系统侧永远不知道这条会话存在。
+        // 本次「改了很多次仍然没有 MediaSession」的真根因就在那里。
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
