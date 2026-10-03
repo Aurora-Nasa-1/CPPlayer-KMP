@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Message
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.outlined.Message
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -26,6 +27,9 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
@@ -105,11 +109,16 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.transitions.ScreenTransition
 import cp.player.app.AppModel
+import cp.player.app.platform.shareText
 import cp.player.app.ui.component.MiniPlayer
 import cp.player.app.ui.component.CpBackButton
+import cp.player.app.ui.component.CpContextMenu
+import cp.player.app.ui.component.CpContextMenuItem
+import cp.player.app.ui.component.CpContextMenuSeparator
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.observeBottomBarDrag
+import cp.player.app.ui.component.playlistShareText
 import cp.player.app.ui.util.next
 import cp.player.app.ui.util.resized
 import cp.player.core.music.PlaylistSummary
@@ -395,6 +404,15 @@ class MainScreen : Screen {
                                 AppModel.refreshUnreadMessages()
                             },
                             onOpenAllPlaylists = { selectTab(2) },
+                            // 侧栏那份歌单列表换了内容（换账号 / 切音源 / 删除）之后，
+                            // 右侧面板若还挂着其中一个已经消失的歌单就收掉它 ——
+                            // 否则会出现「左边列表里已经没有这个歌单了，右边还开着」。
+                            onSidebarPlaylistsChanged = { ids ->
+                                val pane = desktopPane
+                                if (pane is DesktopPane.Playlist && pane.playlist.id !in ids) {
+                                    desktopPane = DesktopPane.Tabs
+                                }
+                            },
                         )
                         androidx.compose.material3.Scaffold(
                             modifier = Modifier.weight(1f).nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -988,6 +1006,11 @@ private fun DesktopSidebar(
     onOpenRecentPlays: () -> Unit,
     onOpenMessages: () -> Unit,
     onOpenAllPlaylists: () -> Unit,
+    /**
+     * 上报侧栏当前认得哪些歌单（含收藏夹）。右侧面板正开着的不在这批 id 里时，
+     * 宿主应当把它收掉 —— 换账号 / 删除后那份歌单已经不存在了。
+     */
+    onSidebarPlaylistsChanged: (Set<Long>) -> Unit = {},
 ) {
     val profile by AppModel.userProfileFlow.collectAsState()
     // 侧栏只用到 likedPlaylist / userPlaylists，关掉发现内容的加载：
@@ -1014,6 +1037,55 @@ private fun DesktopSidebar(
     val allPlaylists = homeState.sidebarPlaylists
     val shownPlaylists = allPlaylists.take(SIDEBAR_PLAYLIST_LIMIT)
     val selectedPlaylistId = (selectedPane as? DesktopPane.Playlist)?.playlist?.id
+
+    // 侧栏歌单右键菜单。动作集合与歌单详情页左栏的 `playlistMenu` 同一族
+    // （播放 / 加入队列 / 全部下载 / 分享 / 删除或取消收藏），只是这里手上只有
+    // [PlaylistSummary]，曲目要靠 HomeScreenModel 先拉一次详情。
+    // 删掉 / 换账号之后该歌单可能已经不在列表里，那时由 MainScreen 收起对应面板
+    // （见 onSidebarPlaylistsChanged），否则右栏会一直挂着一个已经不存在的歌单。
+    val playlistMenu: (PlaylistSummary) -> List<CpContextMenuItem> = { playlist ->
+        val owner = homeModel.isPlaylistOwner(playlist)
+        buildList {
+            add(CpContextMenuItem("播放", Icons.Filled.PlayArrow, onClick = { homeModel.playPlaylist(playlist) }))
+            add(
+                CpContextMenuItem(
+                    "加入队列", Icons.AutoMirrored.Filled.QueueMusic,
+                    onClick = { homeModel.queuePlaylist(playlist) },
+                )
+            )
+            add(
+                CpContextMenuItem(
+                    "全部下载", Icons.Filled.Download,
+                    onClick = { homeModel.downloadPlaylist(playlist) },
+                )
+            )
+            add(CpContextMenuSeparator)
+            add(
+                CpContextMenuItem(
+                    "分享歌单", Icons.Filled.Share,
+                    onClick = { shareText(playlistShareText(playlist.id, playlist.name)) },
+                )
+            )
+            // 与歌单详情页同一条可见性规则：owner 才谈得上「删除」，收藏来的只能「取消收藏」。
+            add(
+                CpContextMenuItem(
+                    if (owner) "删除歌单" else "取消收藏",
+                    Icons.Filled.Delete,
+                    onClick = { homeModel.deleteOrUnsubscribePlaylist(playlist) },
+                    danger = true,
+                )
+            )
+        }
+    }
+
+    // 把「侧栏当前认得哪些歌单」报上去：右侧面板若正开着一个已经不在列表里的歌单
+    // （切了账号 / 删掉了），MainScreen 据此把它收掉。
+    // 收藏夹也算在内 —— 它虽然不在 [HomeUiState.sidebarPlaylists] 里，但有独立入口。
+    val visiblePlaylistIds = allPlaylists.mapTo(mutableSetOf()) { it.id }
+        .apply { homeState.likedPlaylist?.let { add(it.id) } }
+    androidx.compose.runtime.LaunchedEffect(visiblePlaylistIds) {
+        onSidebarPlaylistsChanged(visiblePlaylistIds)
+    }
 
     Surface(
         modifier = Modifier.width(248.dp).fillMaxSize(),
@@ -1096,11 +1168,15 @@ private fun DesktopSidebar(
                     item { SidebarSection("我的歌单") }
                     items(shownPlaylists.size) { index ->
                         val playlist = shownPlaylists[index]
-                        SidebarPlaylistRow(
-                            playlist = playlist,
-                            selected = selectedPlaylistId == playlist.id,
-                            onClick = { onOpenPlaylist(playlist) },
-                        )
+                        // 右键菜单包在行**外面**（不是改 SidebarPlaylistRow 自己的签名）：
+                        // 行本身保持纯粹，`SidebarRowsPreview` 那条离屏预览也就不用跟着改。
+                        CpContextMenu(items = playlistMenu(playlist)) {
+                            SidebarPlaylistRow(
+                                playlist = playlist,
+                                selected = selectedPlaylistId == playlist.id,
+                                onClick = { onOpenPlaylist(playlist) },
+                            )
+                        }
                     }
                 }
                 // 只在真的还有更多歌单时才给「查看全部」：总共 3 个歌单还挂一条

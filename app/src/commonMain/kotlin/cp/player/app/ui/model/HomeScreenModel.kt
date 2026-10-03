@@ -179,9 +179,10 @@ class HomeScreenModel(
     /**
      * 在途的刷新协程与刷新世代。
      *
-     * 刷新有三个来路：首屏 [init]、下拉刷新、切源的 [AppModel.sourceGeneration]。
-     * 三者可能并发，而 `_state.value = next` 是「谁后到谁覆盖」—— 不取消旧协程就会
-     * 出现「切源后旧音源的慢请求把新结果盖回去」。世代号负责丢弃过期结果。
+     * 刷新有四个来路：首屏 [init]、下拉刷新、切源的 [AppModel.sourceGeneration]、
+     * 换账号的 [AppModel.accountGeneration]。它们可能并发，而 `_state.value = next`
+     * 是「谁后到谁覆盖」—— 不取消旧协程就会出现「切源 / 切号后旧请求的慢响应
+     * 把新结果盖回去」。世代号负责丢弃过期结果。
      */
     private var refreshJob: Job? = null
     private var refreshGen = 0
@@ -195,6 +196,18 @@ class HomeScreenModel(
         // 时也会发射，会造成启动时白拉一遍（见 AppModel.sourceGeneration 的 KDoc）。
         screenModelScope.launch {
             AppModel.sourceGeneration.drop(1).collect {
+                newSongsByRegion.clear()
+                refresh(force = true)
+            }
+        }
+        // 账号代际（登录 / 登出 / 切号）：日推是账号个性化的，用户歌单（侧栏「我的歌单」）
+        // 更是直接按账号取 —— 同一个音源下换个账号不刷新的话，侧栏会一直挂着上一个账号
+        // 的歌单，点「我喜欢的音乐」还会进到别人的收藏夹。
+        // ⚠️ 订阅的是 accountGeneration 而不是 userProfileFlow：后者在**启动时恢复资料**
+        // 也会发一次（null → 资料），按它刷新就是每个页面首屏白拉一遍；账号代际只由
+        // 真正的账号变化驱动，理由见 AppModel.accountGeneration 的 KDoc。
+        screenModelScope.launch {
+            AppModel.accountGeneration.drop(1).collect {
                 newSongsByRegion.clear()
                 refresh(force = true)
             }
@@ -214,6 +227,90 @@ class HomeScreenModel(
             }
             val provider = AppModel.activeProviderId()
             AppModel.playback.playQueue(songs.map { "$provider://song/${it.id}" }, startIndex = 0)
+        }
+    }
+
+    // ======================== 侧栏歌单操作 ========================
+    //
+    // 桌面侧栏不是 Screen，没有属于自己的 ScreenModel —— 右键菜单的动作就落在侧栏
+    // 自己那个实例（`DesktopSidebar` 里的 `remember { HomeScreenModel(loadDiscovery = false) }`）上。
+    // 放进这里而不是新开一个模型，还有一个实际好处：删除 / 取消收藏之后
+    // 直接 [refresh] 就能让**侧栏自己**跟着更新（这正是「操作完列表要对」的诉求）。
+
+    /** 当前账号是否拥有该歌单 —— 决定菜单里是「删除歌单」还是「取消收藏」。 */
+    fun isPlaylistOwner(playlist: PlaylistSummary): Boolean {
+        val nickname = AppModel.userProfileFlow.value?.nickname
+        return !nickname.isNullOrBlank() && playlist.creatorName == nickname
+    }
+
+    /**
+     * 取一次歌单详情再把曲目交给 [block]。
+     *
+     * 侧栏只有 [PlaylistSummary]（id / 名称 / 封面 / 曲目数），而播放、加队列、下载
+     * 都要媒体 id —— 三个动作共用这一条取数路径与同一套失败提示。
+     * 拿不到曲目时**不调** [block]，[block] 里因此不必再判空。
+     */
+    private fun withPlaylistTracks(
+        playlist: PlaylistSummary,
+        block: suspend (List<TrackSummary>) -> Unit,
+    ) {
+        if (playlist.id <= 0) return
+        screenModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                safe { AppModel.musicRepository.getPlaylistDetail(playlist.id) }
+            }
+            val detail = (result as? BackendResult.Success)?.data
+            val tracks = detail?.tracks.orEmpty()
+            if (tracks.isEmpty()) {
+                cp.player.app.ui.util.UiEvents.notify(
+                    if (detail != null) "「${playlist.name}」里还没有歌" else "歌单加载失败"
+                )
+                return@launch
+            }
+            block(tracks)
+        }
+    }
+
+    /** 播放整个歌单（从第一首起）。 */
+    fun playPlaylist(playlist: PlaylistSummary) = withPlaylistTracks(playlist) { tracks ->
+        val provider = AppModel.activeProviderId()
+        AppModel.playback.playQueue(
+            tracks.map { "$provider://song/${it.id}" },
+            startIndex = 0,
+            sourceId = playlist.id.toString(),
+        )
+    }
+
+    /** 把整个歌单追加到播放队列尾部（不动当前播放）。 */
+    fun queuePlaylist(playlist: PlaylistSummary) = withPlaylistTracks(playlist) { tracks ->
+        val provider = AppModel.activeProviderId()
+        tracks.forEach { AppModel.playback.addToQueue("$provider://song/${it.id}") }
+        cp.player.app.ui.util.UiEvents.notify("已把「${playlist.name}」加入播放队列")
+    }
+
+    /** 下载整个歌单（复用 [AppModel.downloadTracks] 的批量入队与提示）。 */
+    fun downloadPlaylist(playlist: PlaylistSummary) = withPlaylistTracks(playlist) { tracks ->
+        AppModel.downloadTracks(tracks)
+    }
+
+    /**
+     * 自己建的 ⇒ 删除歌单；收藏来的 ⇒ 取消收藏。成功后刷新列表
+     * （侧栏「我的歌单」与「查看全部 N 个歌单」的计数都要跟着变）。
+     */
+    fun deleteOrUnsubscribePlaylist(playlist: PlaylistSummary) {
+        val owner = isPlaylistOwner(playlist)
+        screenModelScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    if (owner) AppModel.musicRepository.deletePlaylist(playlist.id)
+                    else AppModel.musicRepository.unsubscribePlaylist(playlist.id)
+                }.getOrDefault(false)
+            }
+            cp.player.app.ui.util.UiEvents.notify(
+                if (ok) (if (owner) "已删除「${playlist.name}」" else "已取消收藏「${playlist.name}」")
+                else "操作失败"
+            )
+            if (ok) refresh(force = true)
         }
     }
 

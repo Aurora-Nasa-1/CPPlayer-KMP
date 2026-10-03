@@ -68,6 +68,33 @@ object AppModel {
 
     private fun bumpSourceGeneration() { _sourceGeneration.value += 1 }
 
+    /**
+     * 「账号代际」：当前登录账号（uid）**实际发生变化**时 +1 —— 覆盖登录 / 登出 / 多账号切换。
+     *
+     * 与 [sourceGeneration] 是同一种信号，只是驱动源不同：那个管「换了音源」，
+     * 这个管「换了人」。绑定账号的数据（首页日推、侧栏「我的歌单」、收藏夹 …）要
+     * 同时订阅两者 —— 只订 [sourceGeneration] 的话，同一个音源下换个账号，
+     * 这些数据会继续显示上一个账号的内容。
+     *
+     * ⚠️ **启动时的那次资料恢复（null → uid）不算变化**。它是进程启动的一部分，
+     * 各页面首屏本来就会用正确的 cookie 拉到正确账号的数据；再发一次信号等于让每个
+     * 页面白拉一遍（与 [sourceGeneration] 刻意不用 [activeProviderFlow] 是同一个理由）。
+     * 靠 [profileResolvedOnce] 把「首次恢复」与「之后真的登录了」区分开：
+     * 首次恢复之后才比较 uid。
+     */
+    private val _accountGeneration = MutableStateFlow(0)
+    val accountGeneration: StateFlow<Int> = _accountGeneration.asStateFlow()
+
+    private fun bumpAccountGeneration() { _accountGeneration.value += 1 }
+
+    /**
+     * 首次资料恢复是否已经跑完（见 [accountGeneration]）。
+     * 只在 Main 之外的 IO 上写，读也只在同一条 IO 链里 —— 加 `@Volatile` 只是为了让
+     * 读取方看到最新值，不做复合原子性假设。
+     */
+    @Volatile
+    private var profileResolvedOnce = false
+
     /** 当前状态快照。 */
     val state: BackendState get() = backend.state
 
@@ -733,7 +760,12 @@ object AppModel {
                 avatarUrl = (prof?.get("avatarUrl") as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "",
             )
         }.getOrNull()
+        val previousUid = _userProfile.value?.uid
         _userProfile.value = profile
+        // 换人了 ⇒ 发一次账号代际（见 [accountGeneration]）。首次恢复不算：
+        // 那一刻各页面首屏还在用同一份 cookie 拉数据，多发一次就是白拉一遍。
+        if (profileResolvedOnce && previousUid != profile?.uid) bumpAccountGeneration()
+        profileResolvedOnce = true
         // 收藏列表与账号绑定，资料刷新后同步刷新
         runCatching { playback.refreshFavorites() }
         // 未读私信数同样绑定账号：登出 / 切号后角标必须跟着变，否则会留着上一个账号的数字。
@@ -762,7 +794,11 @@ object AppModel {
 
     /** 清空当前用户资料（登出后调用）。 */
     fun clearUserProfile() {
+        val wasLoggedIn = _userProfile.value != null
         _userProfile.value = null
+        // 从「有账号」变成「没账号」同样是一次账号代际：绑定账号的数据必须清掉重拉，
+        // 否则侧栏会留着上一个账号的歌单（见 [accountGeneration]）。
+        if (profileResolvedOnce && wasLoggedIn) bumpAccountGeneration()
         _unreadMessages.value = 0
         modelScope.launch { runCatching { playback.refreshFavorites() } }
     }
