@@ -67,8 +67,11 @@ private const val DISMISS_MS = 180L
  *    （播放要先解析曲目、页面要先入场），再用带回弹的 spring 飞向目标，落位后
  *    先让目标显形（飞行器正好叠在它上方），最后淡出交还。
  *
- * 平台差异由 `isAndroidPlatform()` 决定：Android 走 fast spatial + 上拱弧线，
- * 桌面走常规 spatial 直线（窗口指针交互不需要夸张的弧线）。
+ * 平台差异由 `isAndroidPlatform()` 决定：Android 走 slow spatial + 上拱弧线
+ * （触摸端要看得见起落、有"扔出去"的弧感），桌面走常规 spatial 直线
+ * （窗口指针交互不需要夸张的弧线，节奏也不用那么拖）。
+ *
+ * 整条动画可在「设置 > 外观与主题 > 封面飞行动画」关掉（见 [CoverFlight.start]）。
  */
 object CoverFlight {
 
@@ -123,6 +126,10 @@ object CoverFlight {
 
     private fun start(targetKey: String, coverUrl: String?, sourceKey: String) {
         if (coverUrl.isNullOrBlank()) return
+        // 「封面飞行动画」开关（设置 > 外观与主题，默认开）。在**起飞点**判一次：
+        // 关掉时连 Flight 都不建，目标端（MiniPlayer / 详情页头部）也就不会被
+        // 隐藏（见 isFlyingTo），页面按自身转场正常显示，不会留下空洞。
+        if (!cp.player.app.AppModel.coverFlightAnimation()) return
         val spot = freshest(sources, sourceKey) ?: return
         _active.value = Flight(++idCounter, targetKey, coverUrl, spot.rect, spot.corner)
     }
@@ -232,8 +239,15 @@ fun CoverFlightHost() {
 private fun CoverFlightRenderer(flight: CoverFlight.Flight) {
     val android = isAndroidPlatform()
     val density = LocalDensity.current
+    // 飞行时长：一次飞行要跨越大半个屏幕，属于「大面积元素位移」，取的是偏慢的一档，
+    // 而不是小控件即时反馈用的 fast。
+    //
+    // ⚠️ Android 这里曾取 `spatialFast()`（≈350ms）—— 跨越整屏距离下"一闪而过"，
+    // 既看不清起落，也和同一动作在桌面用 `spatial()` 的节奏对不上。改用
+    // `spatialSlow()`（≈900ms，CpMotion 里正是「整页级转场 / 大面积元素」那一档）。
+    // 桌面保持 `spatial()`：指针交互不需要更拖的节奏。
     val flySpec: FiniteAnimationSpec<Float> =
-        if (android) CpMotion.spatialFast() else CpMotion.spatial()
+        if (android) CpMotion.spatialSlow() else CpMotion.spatial()
     val arcPx = with(density) { (if (android) 48.dp else 0.dp).toPx() }
 
     var target by remember(flight.id) { mutableStateOf<CoverFlight.Spot?>(null) }

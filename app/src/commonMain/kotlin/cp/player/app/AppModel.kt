@@ -261,6 +261,41 @@ object AppModel {
         _bottomBarAutoHide.value = enabled
     }
 
+    // ============ 封面飞行动画（持久化） ============
+
+    private const val KEY_COVER_FLIGHT_ANIMATION = "cover_flight_animation"
+
+    private val _coverFlightAnimation = MutableStateFlow(
+        settings.getString(KEY_COVER_FLIGHT_ANIMATION)?.toBooleanStrictOrNull() ?: true
+    )
+
+    /**
+     * 点击封面时是否播放「封面飞行」共享元素动画（默认开）。
+     *
+     * 这条动画把被点的封面从列表位**飞向**落点：歌曲 → MiniPlayer 封面，
+     * 歌单 → 详情页头部。它是跨越大半个屏幕的大面积位移，也是「点击后画面自己动起来」
+     * 这一类动效里最显眼的一个；关掉后点击只保留页面自身的转场。
+     *
+     * 默认**开**：与加入开关之前的行为一致，老用户升级后观感不变。
+     *
+     * 消费点在 [cp.player.app.ui.anim.CoverFlight.start] —— 它在**每次起飞前**读一次
+     * （经 [coverFlightAnimation]，读的是内存态不是磁盘），所以切换即时生效、不用重启。
+     */
+    val coverFlightAnimationFlow: StateFlow<Boolean> = _coverFlightAnimation.asStateFlow()
+
+    /**
+     * 当前是否启用封面飞行动画。
+     *
+     * 给非 Compose 侧（[cp.player.app.ui.anim.CoverFlight] 的点击回调）同步读取用；
+     * UI 侧一律 collect [coverFlightAnimationFlow]。
+     */
+    fun coverFlightAnimation(): Boolean = _coverFlightAnimation.value
+
+    fun setCoverFlightAnimation(enabled: Boolean) {
+        settings.putString(KEY_COVER_FLIGHT_ANIMATION, enabled.toString())
+        _coverFlightAnimation.value = enabled
+    }
+
     // ============ 首次使用引导（持久化） ============
 
     private const val KEY_ONBOARDING_DONE = "onboarding_done"
