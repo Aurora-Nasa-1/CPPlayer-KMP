@@ -6,6 +6,7 @@ import cp.player.core.api.MusicApiService
 import cp.player.core.api.MusicApiServiceImpl
 import cp.player.core.cache.ApiCache
 import cp.player.core.cache.CacheConfig
+import cp.player.core.cache.CacheStats
 import cp.player.core.cache.CachedMusicApiService
 import cp.player.core.cache.InMemoryApiCache
 import cp.player.core.control.ExternalPusher
@@ -35,6 +36,7 @@ import cp.player.core.monitor.HealthMonitor
 import cp.player.core.playback.PlaybackController
 import cp.player.core.playback.PlaybackControllerImpl
 import cp.player.core.playback.SilentOutputPlayer
+import cp.player.core.playback.StreamLocalizer
 import cp.player.core.playback.createPlatformPlayer
 import cp.player.core.playback.createStreamLocalizer
 import cp.player.core.provider.BackendProvider
@@ -245,6 +247,36 @@ class MusicBackend private constructor(
         downloadManager
     }
 
+    // ============ 缓存管理（存储管理页） ============
+
+    /**
+     * 无损档位的落盘缓存句柄（桌面为真实下载，安卓为空实现）。
+     *
+     * **由 [MusicBackend] 持有、注入播放控制器**，而不是在 [playbackController] 的
+     * lazy 块里现建：管理页要按**同一个实例**读占用、删条目；各建一个的话，
+     * 管理页删的与播放器用的会是两份互不知情的缓存。
+     *
+     * 同样走 lazy：桌面实现构造期会创建 `~/.cpplayer/stream-cache/`，
+     * 不在 [init] 里提前落地 —— 测试与「从没放过歌」的会话不该平白多一个目录。
+     */
+    private val streamLocalizerLazy = lazy { createStreamLocalizer() }
+
+    /** 歌曲缓存（无损流落盘）的管理句柄：占用概览 + 条目列表 + 删除 / 清理。 */
+    val songCache: StreamLocalizer by streamLocalizerLazy
+
+    /** 接口缓存的可观测计数（命中 / 未命中 / 降级返回旧缓存 …），管理页据此显示命中率。 */
+    val apiCacheStats: StateFlow<CacheStats> get() = cachedMusicApi.stats
+
+    /** 当前接口缓存条目数。 */
+    fun apiCacheSize(): Int = cache.size()
+
+    /** 清空接口缓存，返回删除的条目数。 */
+    fun clearApiCache(): Int {
+        val removed = cache.size()
+        if (removed > 0) cache.clear()
+        return removed
+    }
+
     // ============ 播放控制器（前端唯一播放入口） ============
 
     /** 后端生命周期协程域（[PlaybackController] 内部协程都跑在其上）。 */
@@ -269,8 +301,8 @@ class MusicBackend private constructor(
             cookieProvider = { activeProvider()?.let { p -> providerManager.cookieStorage.getCookie(p.id) } },
             scope = backendScope,
             // 无损档位「边播边落盘」：桌面引擎无法定位 FLAC over HTTP，安卓是空实现。
-            // 见 StreamLocalizer 的实测矩阵。
-            streamLocalizer = createStreamLocalizer(),
+            // 见 StreamLocalizer 的实测矩阵。实例由本类持有（见 songCache），管理页共用同一个。
+            streamLocalizer = streamLocalizerLazy.value,
             // AMLL TTML 歌词（官方词库 API）：磁盘缓存走独立 namespace，与主设置隔离。
             amllClient = AmllTtmlClient(diskCache = defaultSettingsStorage(AMLL_CACHE_NAMESPACE)),
             lyricsSourceMode = {

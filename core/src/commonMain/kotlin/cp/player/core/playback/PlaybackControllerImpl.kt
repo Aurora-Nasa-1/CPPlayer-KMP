@@ -564,11 +564,13 @@ class PlaybackControllerImpl(
         url: String,
         headers: Map<String, String>,
         gen: Int,
+        /** 曲目信息，落盘成功时随缓存一起登记，供管理页显示歌名 / 歌手。 */
+        meta: SongCacheMeta?,
     ) {
         localizeJob?.cancel()
         updateState { it.copy(isLocalizing = true) }
         localizeJob = scope.launch {
-            val path = streamLocalizer.localize(url, cacheKey, headers)
+            val path = streamLocalizer.localize(url, cacheKey, headers, meta)
             // 期间用户可能已经切歌：结果只能落到它自己那一首头上。
             if (loadGeneration != gen) return@launch
             if (path != null) localized = mediaId to path
@@ -1038,7 +1040,15 @@ class PlaybackControllerImpl(
                 platform.play()
                 // 开播之后才起后台落盘：不占首帧出声的时间。
                 if (localizing && cachedLocal == null) {
-                    startBackgroundLocalize(mediaId, cacheKey, songUrl.url, headers, gen)
+                    startBackgroundLocalize(
+                        mediaId = mediaId,
+                        cacheKey = cacheKey,
+                        url = songUrl.url,
+                        headers = headers,
+                        gen = gen,
+                        // 管理页要显示的是「哪首歌占了磁盘」，这里正好握着 TrackSummary。
+                        meta = SongCacheMeta(title = summary.name, artist = summary.artist),
+                    )
                 }
                 refreshLyrics()
             } catch (e: kotlinx.coroutines.CancellationException) {

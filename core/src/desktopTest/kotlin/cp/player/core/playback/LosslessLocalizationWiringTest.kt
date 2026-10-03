@@ -92,6 +92,9 @@ class LosslessLocalizationWiringTest {
         val calls = mutableListOf<Triple<String, String, Map<String, String>>>()
         val cacheQueries = mutableListOf<String>()
 
+        /** 每次 [localize] 收到的曲目信息（管理页显示歌名用），与 [calls] 一一对应。 */
+        val metas = mutableListOf<SongCacheMeta?>()
+
         override fun cachedPath(cacheKey: String): String? {
             cacheQueries += cacheKey
             return cached
@@ -101,8 +104,10 @@ class LosslessLocalizationWiringTest {
             url: String,
             cacheKey: String,
             headers: Map<String, String>,
+            meta: SongCacheMeta?,
         ): String? {
             calls += Triple(url, cacheKey, headers)
+            metas += meta
             gate?.await()
             return result
         }
