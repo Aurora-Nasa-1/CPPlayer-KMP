@@ -913,19 +913,25 @@ private fun AppNavigationBar(
     onHeightChanged: (Int) -> Unit = {},
 ) {
     Box(
+        // ⚠️ 顺序不能反：`clipToBounds()` 必须在 `layout{}` **外侧**。
+        // `layout{}` 会把它的整个子树（含内侧的裁切节点）一起平移，裁切框跟着内容走
+        // 就永远裁不到东西 —— 表现为「上报给 Scaffold 的高度已经是收缩后的 0，画面上
+        // 却照画、点击也照命中」（端上症状：逻辑隐藏了，但还显示、还能触摸）。
+        // 放外侧后裁切框固定在本节点左上角、尺寸取内侧量出的 `visible`，
+        // 越过下界的部分才会真的被裁掉。
         Modifier
+            .clipToBounds()
             .layout { measurable, constraints ->
                 val placeable = measurable.measure(constraints)
                 val visible = (placeable.height * (1f - hideFraction.coerceIn(0f, 1f)))
                     .roundToInt()
                     .coerceAtLeast(0)
+                // 槽位高度 = 可视高度；NavigationBar 顶对齐，多出来的部分往下越界被裁掉
+                // ⇒ 收起时整条底栏向下「沉」出屏幕，而不是被压扁。
                 layout(placeable.width, visible) {
-                    // 内容锚定底部向上出界：收起时 NavigationBar 从可视区滑走。
-                    placeable.placeRelative(0, visible - placeable.height)
+                    placeable.placeRelative(0, 0)
                 }
-            }
-            // 裁掉滑出界外的部分 —— layout 收缩不会自动裁剪，不裁就会盖在内容上。
-            .clipToBounds(),
+            },
     ) {
         NavigationBar(
             modifier = Modifier.onSizeChanged { onHeightChanged(it.height) },
