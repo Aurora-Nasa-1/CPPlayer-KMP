@@ -2,6 +2,8 @@ package cp.player.app.platform
 
 import java.io.File
 import java.io.RandomAccessFile
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 
 /**
@@ -26,6 +28,9 @@ internal object LocalArtwork {
     private const val MAX_MOOV_BYTES = 32L * 1024 * 1024
     private const val MAX_COVER_BYTES = 10L * 1024 * 1024
 
+    /** 封面缓存目录的条目上限（与远程封面共用同一目录，一并按 LRU 回收）。 */
+    private const val MAX_CACHE_FILES = 64
+
     /**
      * 提取曲目 [trackId]（`local://audio/<绝对路径>` 格式）对应的内嵌封面，
      * 落盘到 [cacheDir] 并返回；无封面 / 不支持 / 失败一律返回 null。
@@ -43,9 +48,35 @@ internal object LocalArtwork {
         if (bytes.isEmpty() || bytes.size > MAX_COVER_BYTES) return null
         val target = File(cacheDir, "$key.$ext")
         return runCatching {
-            target.writeBytes(bytes)
+            // 先写 .part 再原子替换：SMTC 线程 / UI 线程可能并发读同一张封面，
+            // 直接 writeBytes 会让它们读到半张图（系统媒体面板显示破损图片）。
+            val tmp = File(cacheDir, "$key.$ext.part")
+            tmp.writeBytes(bytes)
+            val tmpPath = tmp.toPath()
+            val targetPath = target.toPath()
+            runCatching {
+                Files.move(tmpPath, targetPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+            }.onFailure {
+                // 某些文件系统不支持 ATOMIC_MOVE —— 退化为普通替换。
+                Files.move(tmpPath, targetPath, StandardCopyOption.REPLACE_EXISTING)
+            }
+            pruneCache(cacheDir)
             target
         }.getOrNull()
+    }
+
+    /**
+     * 按最后修改时间回收旧条目。
+     *
+     * 缓存目录挂在系统临时目录下：进程被强杀时不会走 [JmtcMediaControls.stop] 的清理，
+     * 长会话中又只增不减 —— 不设上限就会一直占磁盘。
+     */
+    private fun pruneCache(cacheDir: File) {
+        val files = cacheDir.listFiles()?.filter { it.isFile } ?: return
+        if (files.size <= MAX_CACHE_FILES) return
+        files.sortedBy { it.lastModified() }
+            .take(files.size - MAX_CACHE_FILES)
+            .forEach { runCatching { it.delete() } }
     }
 
     /** 只认桌面端本地文件路径；`content://`（Android）与其余 provider 一律返回 null。 */

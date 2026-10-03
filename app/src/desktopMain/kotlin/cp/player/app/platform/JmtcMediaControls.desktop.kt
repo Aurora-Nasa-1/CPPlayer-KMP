@@ -34,6 +34,17 @@ internal class JmtcMediaControls private constructor(
     /** SMTC 线程上写、Compose 线程上读，必须有可见性保证。 */
     @Volatile
     private var started = false
+
+    /**
+     * `stop()` 是否已被请求。
+     *
+     * 封堵「start 的初始化任务已排进 [smtcExecutor]、但还没执行就来了 stop()」的竞态：
+     * 任务在真正 enable 之前必须回头看这个标志，否则会留下一个**已 stop 却仍 enabled**
+     * 的媒体会话，而 executor 已经 shutdown，再无机会关掉它。Compose 侧快速进出播放
+     * 相关页面（例如进设置子页再立刻返回）就能命中这个窗口。
+     */
+    @Volatile
+    private var stopRequested = false
     private var nativeDirectory: File? = null
 
     /**
@@ -86,8 +97,13 @@ internal class JmtcMediaControls private constructor(
 
     fun start() {
         if (started || !isSupportedHost()) return
+        // 同一实例在 stop() 之后被复用：executor 已关闭，再排队会抛 RejectedExecutionException。
+        if (smtcExecutor.isShutdown) return
+        stopRequested = false
         smtcExecutor.execute {
             if (started) return@execute
+            // 本任务入队之后、执行之前被 stop() —— 绝不能把 JMTC 打开（见 stopRequested KDoc）。
+            if (stopRequested) return@execute
             if (isWindows()) {
                 loadWindowsNativeBridge()
                 // 身份注册（来源应用名字 + 图标）必须发生在 JMTC init 之前，
@@ -200,13 +216,14 @@ internal class JmtcMediaControls private constructor(
     }
 
     fun stop() {
-        if (!started && jmtc == null) {
-            coverScope.cancel()
-            return
-        }
+        // 先置停止意图：封堵在途的 start 任务（它们会据此提前返回，不再 enable）。
+        stopRequested = true
         started = false
         coverScope.cancel()
         runCatching {
+            // 清理任务必须**排在 shutdown 之前**：shutdown 之后再 execute 会被拒绝。
+            // 原来这里有个早退分支（`!started && jmtc == null` 就直接 return），
+            // 恰好就是「start 已排队但尚未执行」那个窗口 —— 线程池永远不会被关闭。
             smtcExecutor.execute {
                 jmtc?.let { media ->
                     runCatching {
@@ -222,8 +239,9 @@ internal class JmtcMediaControls private constructor(
                 coverCacheDir = null
                 nativeDirectory = null
             }
-            smtcExecutor.shutdown()
         }
+        // 无条件关闭（重复调用安全）：保证任何路径下线程池都会被回收。
+        smtcExecutor.shutdown()
     }
 
     /** 组装系统媒体面板的曲目元数据。 */
