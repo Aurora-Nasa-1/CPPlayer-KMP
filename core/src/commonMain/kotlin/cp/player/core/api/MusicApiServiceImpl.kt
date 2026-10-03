@@ -550,13 +550,11 @@ class MusicApiServiceImpl(
                 ))
             }
         }
-        // 2. 数据字段
-        val expected = EXPECTED_FIELDS[method]
-        if (expected != null && json[expected] == null) {
-            val found = FALLBACK_FIELDS.firstOrNull { it != expected && json[it] != null }
-            if (found == null) {
-                issues.add(ValidationIssue(HealthMonitor.ResponseWarning.MISSING_DATA_FIELD, expected = expected))
-            }
+        // 2. 数据字段（表与形状兼容规则见 ApiFieldContract —— pl/count 的 `msg`、
+        //    login/status 的平铺形状都在那边收敛，这里只做判定不再内联字段名）
+        val expected = ApiFieldContract.expectedFieldOf(method)
+        if (expected != null && !ApiFieldContract.isExpectedFieldSatisfied(method, json)) {
+            issues.add(ValidationIssue(HealthMonitor.ResponseWarning.MISSING_DATA_FIELD, expected = expected))
         }
         // 2b. 空数组/对象
         json[expected]?.let { field ->
@@ -646,142 +644,6 @@ class MusicApiServiceImpl(
         private val parser = Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
 
         private val URL_KEYS = arrayOf("url", "picUrl", "coverImgUrl", "avatarUrl")
-
-        private val FALLBACK_FIELDS = listOf("data", "result", "playlist", "songs", "albums", "artists", "comments", "msgs", "hotData", "list")
-
-        private val EXPECTED_FIELDS = mapOf(
-            MusicApiMethod.SEARCH_CLOUD to "result",
-            MusicApiMethod.AUTH_QR_KEY to "data",
-            MusicApiMethod.AUTH_QR_CREATE to "data",
-            MusicApiMethod.AUTH_QR_CHECK to "data",
-            MusicApiMethod.AUTH_LOGIN to "profile",
-            MusicApiMethod.AUTH_LOGIN_PHONE to "profile",
-            MusicApiMethod.AUTH_CAPTCHA_SENT to "data",
-            MusicApiMethod.AUTH_LOGOUT to "code",
-            MusicApiMethod.AUTH_ANONYMOUS to "code",
-            MusicApiMethod.AUTH_LOGIN_STATUS to "data",
-            MusicApiMethod.USER_LIKE to "songs",
-            MusicApiMethod.USER_DISLIKE_SONG to "data",
-            MusicApiMethod.PLAYLIST_TRACKS to "body",
-            MusicApiMethod.PLAYLIST_CREATE to "playlist",
-            MusicApiMethod.PLAYLIST_DELETE to "code",
-            MusicApiMethod.PLAYLIST_SUBSCRIBE to "code",
-            MusicApiMethod.SEARCH_HOT_DETAIL to "data",
-            MusicApiMethod.SEARCH_SUGGEST to "result",
-            MusicApiMethod.PERSONAL_FM to "data",
-            MusicApiMethod.INTELLIGENCE_LIST to "data",
-            MusicApiMethod.SCROBBLE to "data",
-            MusicApiMethod.COMMENT_MV to "comments",
-            MusicApiMethod.COMMENT_DJ to "comments",
-            MusicApiMethod.COMMENT_VIDEO to "comments",
-            MusicApiMethod.COMMENT_LIKE to "data",
-            MusicApiMethod.COMMENT_POST to "comment",
-            MusicApiMethod.COMMENT_NEW to "data",
-            MusicApiMethod.MESSAGE_UNREAD_COUNT to "data",
-            MusicApiMethod.MESSAGE_MARK_READ to "data",
-            MusicApiMethod.MESSAGE_SEND_TEXT to "msg",
-            MusicApiMethod.HISTORY_RECOMMEND_SONGS to "data",
-            MusicApiMethod.HISTORY_RECOMMEND_SONGS_DETAIL to "data",
-            MusicApiMethod.MV_SUB to "data",
-            MusicApiMethod.DJ_SUB to "data",
-            MusicApiMethod.ALBUM_SUB to "data",
-            MusicApiMethod.ARTIST_SUB to "data",
-            MusicApiMethod.ARTIST_FOLLOW_COUNT to "data",
-            MusicApiMethod.USER_UPDATE to "data",
-            MusicApiMethod.PLAYLIST_UPDATE to "data",
-            MusicApiMethod.PLAYLIST_TAGS_UPDATE to "data",
-            MusicApiMethod.PLAYLIST_DESC_UPDATE to "data",
-            MusicApiMethod.PLAYLIST_NAME_UPDATE to "data",
-            MusicApiMethod.USER_CLOUD_DEL to "data",
-            MusicApiMethod.CLOUD_IMPORT to "data",
-            MusicApiMethod.CLOUD_MATCH to "data",
-            MusicApiMethod.DAILY_SIGNIN to "data",
-            MusicApiMethod.CHECK_MUSIC to "success",
-            MusicApiMethod.BATCH to "data",
-            MusicApiMethod.API to "data",
-            MusicApiMethod.EVENT_DEL to "data",
-            MusicApiMethod.EVENT_FORWARD to "data",
-            MusicApiMethod.SHARE_RESOURCE to "data",
-            MusicApiMethod.DJ_SUBLIST_FULL to "djRadios",
-            MusicApiMethod.DJ_PROGRAM_DETAIL to "program",
-
-            MusicApiMethod.USER_PLAYLIST to "playlist",
-            MusicApiMethod.USER_PLAYLIST_CREATE to "playlist",
-            MusicApiMethod.USER_PLAYLIST_COLLECT to "playlist",
-            MusicApiMethod.USER_DETAIL to "profile",
-            MusicApiMethod.USER_CLOUD to "data",
-            MusicApiMethod.USER_LIKE_LIST to "ids",
-            MusicApiMethod.USER_RECOMMEND_SONGS to "data",
-            MusicApiMethod.USER_RECOMMEND_RESOURCE to "recommend",
-            MusicApiMethod.PLAYLIST_DETAIL to "playlist",
-            MusicApiMethod.PLAYLIST_TRACK_ALL to "songs",
-            MusicApiMethod.ALBUM_DETAIL to "album",
-            MusicApiMethod.ARTIST_DETAIL to "data",
-            MusicApiMethod.ARTIST_SONGS to "songs",
-            MusicApiMethod.ARTIST_ALBUM to "hotAlbums",
-            MusicApiMethod.SONG_DETAIL to "songs",
-            MusicApiMethod.LYRIC_NEW to "lrc",
-            MusicApiMethod.COMMENT_MUSIC to "comments",
-            MusicApiMethod.COMMENT_PLAYLIST to "comments",
-            MusicApiMethod.COMMENT_ALBUM to "comments",
-            MusicApiMethod.COMMENT_FLOOR to "comments",
-            MusicApiMethod.MESSAGE_PRIVATE to "msgs",
-            MusicApiMethod.MESSAGE_PRIVATE_HISTORY to "msgs",
-            MusicApiMethod.MESSAGE_RECENT_CONTACT to "data",
-            MusicApiMethod.SONG_URL_V1 to "data",
-            MusicApiMethod.SONG_URL_V1_302 to "data",
-            MusicApiMethod.SONG_DOWNLOAD_URL to "data",
-            MusicApiMethod.TOPLIST to "list",
-            MusicApiMethod.TOPLIST_DETAIL to "list",
-            MusicApiMethod.TOP_SONG to "data",
-            MusicApiMethod.TOP_ALBUM to "albums",
-            MusicApiMethod.TOP_ARTISTS to "artists",
-            MusicApiMethod.TOP_PLAYLIST to "playlists",
-            MusicApiMethod.TOP_PLAYLIST_HIGHQUALITY to "playlists",
-            MusicApiMethod.PERSONALIZED to "result",
-            MusicApiMethod.PERSONALIZED_NEWSONG to "result",
-            MusicApiMethod.BANNER to "banners",
-            MusicApiMethod.SIMI_SONG to "songs",
-            MusicApiMethod.SIMI_ARTIST to "artists",
-            MusicApiMethod.SIMI_PLAYLIST to "playlists",
-            MusicApiMethod.MV_DETAIL to "data",
-            MusicApiMethod.MV_URL to "data",
-            MusicApiMethod.MV_ALL to "data",
-            MusicApiMethod.MV_FIRST to "data",
-            MusicApiMethod.MV_SUBLIST to "data",
-            MusicApiMethod.VIDEO_DETAIL to "data",
-            MusicApiMethod.VIDEO_URL to "urls",
-            MusicApiMethod.VIDEO_GROUP to "data",
-            MusicApiMethod.VIDEO_TIMELINE_ALL to "datas",
-            MusicApiMethod.DJ_DETAIL to "data",
-            MusicApiMethod.DJ_PROGRAM to "programs",
-            MusicApiMethod.DJ_HOT to "djRadios",
-            MusicApiMethod.DJ_TOPLIST to "toplist",
-            MusicApiMethod.DJ_RECOMMEND to "djRadios",
-            MusicApiMethod.DJ_SUBLIST to "djRadios",
-            MusicApiMethod.PROGRAM_RECOMMEND to "programs",
-            MusicApiMethod.ALBUM_LIST to "products",
-            MusicApiMethod.ALBUM_NEW to "albums",
-            MusicApiMethod.ALBUM_NEWEST to "albums",
-            MusicApiMethod.ALBUM_SUBLIST to "data",
-            MusicApiMethod.ARTIST_TOP_SONG to "songs",
-            MusicApiMethod.ARTIST_SUBLIST to "data",
-            MusicApiMethod.ARTIST_MV to "mvs",
-            MusicApiMethod.ARTIST_LIST to "artists",
-            MusicApiMethod.USER_RECORD to "allData",
-            MusicApiMethod.USER_FOLLOWS to "follow",
-            MusicApiMethod.USER_FOLLOWEDS to "followeds",
-            MusicApiMethod.USER_EVENT to "events",
-            MusicApiMethod.USER_ACCOUNT to "profile",
-            MusicApiMethod.USER_DJ to "data",
-            MusicApiMethod.PLAYLIST_CATLIST to "categories",
-            MusicApiMethod.PLAYLIST_HOT to "tags",
-            MusicApiMethod.PLAYLIST_SUBSCRIBERS to "subscribers",
-            MusicApiMethod.PLAYLIST_HIGHQUALITY_TAGS to "tags",
-            MusicApiMethod.CALENDAR to "data",
-            MusicApiMethod.EVENT to "events",
-            MusicApiMethod.RECORD_RECENT_SONG to "data"
-        )
     }
 }
 

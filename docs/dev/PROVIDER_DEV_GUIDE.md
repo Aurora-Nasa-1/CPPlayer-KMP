@@ -603,16 +603,28 @@ Java_cp_player_core_provider_JniProvider_analyzeAudioFile(
 
 ⚠️ 这个端点的形状**与其它端点不同**，实现接入时务必注意：
 
-1. **`code` 在 `data` 里，顶层没有 `code`**。按「顶层取 code」的通用规则会把一次成功的
-   查询判为失败（健康监控记 ERROR、`MISSING_CODE` 误报）。
+1. **`code` 在 `data` 里，顶层没有 `code`**（NeteaseCloudMusicApi(Node) 的包装形状）。
+   按「顶层取 code」的通用规则会把一次成功的查询判为失败
+   （健康监控记 ERROR、`MISSING_CODE` 误报）。
+   上游原始接口 `/api/w/nuser/account/get` 返回的是**平铺**形状
+   （`{"code":200,"account":…,"profile":…}`，本仓库的 `netease-module-rust` 原样透传），
+   所以业务码解析必须**先顶层、再下沉 `data`** 两层都看。
 2. **未登录时同样返回 `code: 200`**，只是 `account` / `profile` 为 `null`。
    ⇒ **判「是否已登录」要看有没有 uid，不能看 code**。
 3. `account.id` 与 `profile.userId` 是同一个 uid，但**字段名不同**；
    解析时优先 `account.id`，回退 `profile.userId`。
 
+期望字段两侧按同一原则兼容（见 `ApiFieldContract`）：
+
+| 形状 | 期望字段 |
+|------|---------|
+| 包一层 `data`（NCM Node） | `data` |
+| 平铺（透传上游 body） | `profile` / `account` |
+
 > 这段解析在 `core` 已收敛为唯一入口 `cp.player.core.api.LoginStatus`
 > （`unwrapLoginStatusData` / `extractUidFromLoginStatus` /
-> `isLoggedInStatus` / `resolveLoginStatusCode`）。**不要在别处再抄一份**。
+> `isLoggedInStatus` / `resolveLoginStatusCode`），期望字段则在
+> `cp.player.core.api.ApiFieldContract`。**不要在别处再抄一份**。
 
 ---
 
@@ -1844,13 +1856,18 @@ Java_cp_player_core_provider_JniProvider_analyzeAudioFile(
 | 方法名 | `pl/count` |
 |--------|------------|
 | 参数 | `cookie` |
+| 期望字段 | `msg`（包一层 `data` 的 Provider 认 `data.msg`） |
 
 **响应：**
 ```json
 {"code": 200, "msg": 5}
 ```
 
-> `msg` 字段为未读数量（整数）
+> `msg` 字段为未读数量（整数）。
+> ⚠️ 这个端点的载荷是**扁平的**：计数直接在根层 `msg`，**没有 `data` 包裹**
+> （`netease-module-rust` 原样透传 `/api/pl/count` 的 body）。
+> 把期望字段写成 `data` 会让诊断页对这种合法响应刷出
+> 「期望字段: data, 实际字段: [code, msg]」的误报。
 
 #### `msg/recentcontact` — 最近联系人
 
@@ -2304,6 +2321,8 @@ CPPlayer 内置 API 健康监控系统，自动对每次调用进行兼容性检
 | `lyric/new` | `lrc` → `.lyric` |
 | `comment/*` | `comments` |
 | `msg/private`, `msg/private/history` | `msgs` |
+| `pl/count` | `msg` |
+| `login/status` | `data`（平铺形状为 `profile` / `account`） |
 | `mv/detail`, `mv/url` | `data` |
 | `dj/program` | `programs` |
 | `dj/hot`, `dj/recommend` | `djRadios` |
