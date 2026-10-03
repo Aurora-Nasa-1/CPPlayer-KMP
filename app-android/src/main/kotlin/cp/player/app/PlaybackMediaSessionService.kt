@@ -112,6 +112,42 @@ class PlaybackMediaSessionService : MediaSessionService() {
         // 故意不调 super：其默认逻辑与上述意图冲突（见 KDoc）。
     }
 
+    /**
+     * ⚠️⚠️ 熄屏后台被杀（进程秒死）的修复点 —— 拦下 media3 的「非播放中即降前台」。
+     *
+     * media3 1.4.1 的 MediaNotificationManager（javap 核实）：
+     * - `shouldRunInForeground(session, periodic)` 判据是
+     *   `playWhenReady && (playbackState == READY || BUFFERING)`；
+     * - 每次通知更新（含暂停、以及**一首播完到下一首 load 完成之间的 STATE_ENDED 间隙**）
+     *   都会走 `updateNotificationInternal(runInForeground=false)` →
+     *   `maybeStopForegroundService(false)` → **`stopForeground(DETACH)`**——
+     *   通知还挂在通知栏，但服务的**前台资格已被摘掉**。
+     *
+     * 前台资格一旦没了，熄屏状态下进程只剩「started service」优先级，
+     * 厂商 ROM（MIUI/HyperOS、HarmonyOS、ColorOS…）的电池策略几秒内就把进程杀掉 ——
+     * 用户看到的就是「熄屏后台秒杀」。播放中看似安全（READY+playing 时是前台），
+     * 但**每次切歌都会短暂降级**：只要有一次降级发生在熄屏后，进程就没了。
+     *
+     * 想覆写 `Service.stopForeground` 拦截？**不行** —— 它在 `android.app.Service` 上是
+     * final（编译实锤）。可用的公开钩子是本方法：`onUpdateNotificationInternal`
+     * 把算好的 `runInForeground` 传进来，再转给默认实现去走 startForeground /
+     * stopForeground。这里只要引擎里还有可续播内容（时间线非空且非 IDLE），就强制按
+     * 「保持前台」处理（走 media3 自己的 startForeground 路径，状态一致、无副作用）；
+     * 真正空闲（IDLE / 清空队列）时透传原值，通知照常可清、服务照常降级。
+     * 强制保前台时若系统拒绝（ForegroundServiceStartNotAllowedException），
+     * media3 的 onUpdateNotificationInternal 已有 try/catch 兜底，不会崩。
+     */
+    override fun onUpdateNotification(session: MediaSession, runInForeground: Boolean) {
+        super.onUpdateNotification(session, runInForeground || hasResumablePlayback())
+    }
+
+    /** 引擎里是否还有可续播内容（有 media item 且不是 IDLE）。读失败按「无」处理。 */
+    private fun hasResumablePlayback(): Boolean {
+        val p = player ?: return false
+        return runCatching { p.mediaItemCount > 0 && p.playbackState != Player.STATE_IDLE }
+            .getOrDefault(false)
+    }
+
     override fun onDestroy() {
         mediaSession?.release()
         mediaSession = null

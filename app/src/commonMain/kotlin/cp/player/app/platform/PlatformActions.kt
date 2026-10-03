@@ -96,6 +96,23 @@ expect fun requestMediaScanPermission()
 expect fun setOnMediaPermissionGranted(callback: (() -> Unit)?)
 
 /**
+ * 当前应用是否已在系统电池优化白名单里。
+ *
+ * Android：读 `PowerManager.isIgnoringBatteryOptimizations`；
+ * Desktop：无电池策略概念，恒 true。
+ */
+expect fun isIgnoringBatteryOptimizations(): Boolean
+
+/**
+ * 发起「忽略电池优化」的系统授权弹窗（Android）。
+ *
+ * 用户在弹窗里点「允许」后，熄屏后台播放才受系统电池策略的完整保护；
+ * 部分厂商 ROM（MIUI/HyperOS、HarmonyOS、ColorOS…）即使白名单后仍有
+ * 自启动管理，需引导用户另行设置。Desktop 端为空操作。
+ */
+expect fun requestIgnoreBatteryOptimizations()
+
+/**
  * 处理返回键事件。
  * Android 端使用 BackHandler，Desktop 端为空操作。
  *

@@ -2,17 +2,22 @@ package cp.player.app.ui.screen
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
+import cp.player.app.platform.isAndroidPlatform
+import cp.player.app.platform.isIgnoringBatteryOptimizations
+import cp.player.app.platform.requestIgnoreBatteryOptimizations
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.component.SettingsClickItem
@@ -21,6 +26,8 @@ import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SleepTimerDialog
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * 播放与音质。
@@ -101,6 +108,41 @@ class PlaybackSettingsScreen : Screen {
                         index = 0,
                         total = 1,
                         onClick = { showSleepTimer = true },
+                    )
+                }
+                // 熄屏后台保活的用户侧开关：媒体前台服务（Service 层已做）只解决
+                // 「应用自愿降级」，电池优化白名单解决「系统/厂商主动杀」。
+                if (isAndroidPlatform()) {
+                    SettingsSection("后台播放") {
+                        val scope = rememberCoroutineScope()
+                        var batteryIgnored by remember {
+                            mutableStateOf(isIgnoringBatteryOptimizations())
+                        }
+                        SettingsClickItem(
+                            title = "电池优化白名单",
+                            subtitle = if (batteryIgnored) {
+                                "已加入白名单，熄屏后台播放受系统保护"
+                            } else {
+                                "未开启 —— 熄屏后系统可能很快杀掉后台播放，点击申请"
+                            },
+                            icon = Icons.Filled.Lock,
+                            index = 0,
+                            total = 1,
+                            onClick = {
+                                batteryIgnored = isIgnoringBatteryOptimizations()
+                                requestIgnoreBatteryOptimizations()
+                                // 系统授权弹窗没有返回回调：延迟一轮重读状态，
+                                // 覆盖用户在弹窗里做出选择后回到页面的时机。
+                                scope.launch {
+                                    delay(2_000)
+                                    batteryIgnored = isIgnoringBatteryOptimizations()
+                                }
+                            },
+                        )
+                    }
+                    SettingsNote(
+                        "部分厂商系统（MIUI/HyperOS、HarmonyOS、ColorOS 等）还需在" +
+                            "「自启动管理」里允许 CPPlayer 自启动与后台运行。"
                     )
                 }
                 SettingsNote("这里与播放页的睡眠定时入口打开的是同一个对话框，状态始终一致。")

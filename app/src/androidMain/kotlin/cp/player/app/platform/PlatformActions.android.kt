@@ -178,6 +178,41 @@ actual fun setOnMediaPermissionGranted(callback: (() -> Unit)?) {
     mediaPermissionGrantedCallback = callback
 }
 
+// ============ 电池优化白名单（熄屏后台保活的系统层前提） ============
+
+actual fun isIgnoringBatteryOptimizations(): Boolean {
+    val ctx = ctxOrNull ?: return true
+    if (Build.VERSION.SDK_INT < 23) return true
+    return try {
+        val pm = ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        pm.isIgnoringBatteryOptimizations(ctx.packageName)
+    } catch (_: Exception) {
+        // 拿不到判据时按「已忽略」处理，避免设置页把用户往无效方向引导。
+        true
+    }
+}
+
+actual fun requestIgnoreBatteryOptimizations() {
+    val ctx = ctxOrNull ?: return
+    if (isIgnoringBatteryOptimizations()) return
+    try {
+        val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+            .setData(Uri.parse("package:${ctx.packageName}"))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        ctx.startActivity(intent)
+    } catch (_: Exception) {
+        // 部分 ROM 阉割了直达入口，退回电池优化总列表。
+        try {
+            ctx.startActivity(
+                Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (e: Exception) {
+            sendPlatformToast("请到系统设置的电池页面关闭 CPPlayer 的电池优化")
+        }
+    }
+}
+
 @Composable
 actual fun BackHandler(enabled: Boolean, onBack: () -> Unit) {
     androidx.activity.compose.BackHandler(enabled = enabled, onBack = onBack)

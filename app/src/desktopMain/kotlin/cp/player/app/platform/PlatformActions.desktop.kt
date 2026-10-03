@@ -75,6 +75,13 @@ actual fun setOnMediaPermissionGranted(callback: (() -> Unit)?) {
     // 桌面无授权流程，无需保存回调
 }
 
+/** 桌面无电池优化策略，按「已忽略」处理，设置页不引导。 */
+actual fun isIgnoringBatteryOptimizations(): Boolean = true
+
+actual fun requestIgnoreBatteryOptimizations() {
+    // 桌面空操作
+}
+
 /**
  * 桌面端用 Esc 承担安卓返回键的角色。
  *
