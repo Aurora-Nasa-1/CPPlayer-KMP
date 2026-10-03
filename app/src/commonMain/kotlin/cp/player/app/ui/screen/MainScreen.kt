@@ -100,6 +100,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 import coil3.compose.AsyncImage
@@ -349,9 +350,14 @@ class MainScreen : Screen {
             if (!bottomBarAutoHide) bottomBarHide.reset()
         }
 
-        // 小播放器的实测高度（px）→ 内容区据此动态预留底部空间：有歌时列表最后一项
-        // 不再被小播放器盖住。预留量 = 卡片实测高度 + 12dp 呼吸缝，随播放状态动画
+        // 小播放器的实测高度（px）→ 内容区末尾据此动态留白：有歌时列表最后一项
+        // 不再被小播放器盖住。留白量 = 卡片实测高度 + 12dp 呼吸缝，随播放状态动画
         // 进出（无歌归零、出歌恢复）；高度来自 onSizeChanged，卡片改版这里自动跟随。
+        //
+        // ⚠️ 它只能加在**滚动内容的末尾**（经 `LocalMiniPlayerTailSpace` 下发给
+        // `LazyScrollColumn` / `ScrollColumn` 的 contentPadding），**不能**给内容区挂
+        // `padding(bottom = …)` —— 那是把内容区裁短，屏幕底部会空出一条，而小播放器
+        // 恰好坐在那条空白里，看起来像它自带了背景。理由详见 LocalMiniPlayerTailSpace。
         val density = LocalDensity.current
         var miniPlayerHeightPx by remember { mutableIntStateOf(0) }
         val miniPlayerReserved by animateDpAsState(
@@ -564,17 +570,27 @@ class MainScreen : Screen {
                         containerColor = Color.Transparent
                     ) { padding ->
                         // padding.bottom 已随底栏隐藏比例收缩（AppNavigationBar 上报收缩后的
-                        // 高度）；再叠加小播放器的动态预留 —— 底栏、小播放器、页面内容三块
-                        // 空间全部动态适配，内容永远能完整滚出来。
-                        TabContent(
-                            tabs, visitedTabs, selectedIndex,
-                            Modifier.fillMaxSize()
-                                .padding(padding)
-                                .padding(bottom = miniPlayerReserved)
-                                // 底栏自动隐藏的手势来源：只读观察内容区上的纵向位移，
-                                // 不消费事件（内容照常滚动）—— 理由见 BottomBarHideState。
-                                .observeBottomBarDrag(bottomBarHide),
-                        )
+                        // 高度）；小播放器的留白**不下发成内容区的 padding**，而是经
+                        // `LocalMiniPlayerTailSpace` 交给各页滚动容器的 contentPadding
+                        // —— 内容一直铺到屏幕底，小播放器浮在它上面（浮层观感）。
+                        //
+                        // 判据与下面真正渲染小播放器的那一处**完全一致**（会话里没开对话），
+                        // 否则会出现「内容让了位、小播放器却没出现」的空白。
+                        androidx.compose.runtime.CompositionLocalProvider(
+                            cp.player.app.ui.component.LocalMiniPlayerTailSpace provides
+                                if (playbackState.currentTrack != null && !messagesChatOpen) {
+                                    miniPlayerReserved
+                                } else 0.dp,
+                        ) {
+                            TabContent(
+                                tabs, visitedTabs, selectedIndex,
+                                Modifier.fillMaxSize()
+                                    .padding(padding)
+                                    // 底栏自动隐藏的手势来源：只读观察内容区上的纵向位移，
+                                    // 不消费事件（内容照常滚动）—— 理由见 BottomBarHideState。
+                                    .observeBottomBarDrag(bottomBarHide),
+                            )
+                        }
                     }
                 }
             }
@@ -1096,7 +1112,16 @@ private fun DesktopSidebar(
             androidx.compose.foundation.layout.Spacer(Modifier.height(18.dp))
             // 歌单可能很多、窗口也可能被拖得很矮：中部列表单独滚动（桌面端带滚动条），
             // 设置入口钉在底部——原先是 Spacer(weight) 撑开，窗口一变矮设置项就被顶出可视区。
-            LazyScrollColumn(Modifier.weight(1f)) {
+            //
+            // 尾留白：宽屏没有底栏，小播放器改由**本列表末尾**让位 —— 它浮在这条侧栏上。
+            // 留白必须走 contentPadding 而不是外层裁短，否则侧栏底部会空出一条，
+            // 小播放器坐进去就像自带了背景（同 LocalMiniPlayerTailSpace 的 KDoc）。
+            LazyScrollColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(
+                    bottom = cp.player.app.ui.component.LocalMiniPlayerTailSpace.current,
+                ),
+            ) {
                 item { SidebarSection("发现音乐") }
                 items(tabs.size) { index ->
                     val tab = tabs[index]

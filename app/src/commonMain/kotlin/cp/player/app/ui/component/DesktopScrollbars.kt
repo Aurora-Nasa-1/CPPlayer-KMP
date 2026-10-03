@@ -19,6 +19,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
@@ -59,6 +61,22 @@ expect fun DesktopVerticalScrollbar(state: LazyListState, modifier: Modifier = M
 expect fun DesktopHorizontalScrollbar(state: LazyListState, modifier: Modifier = Modifier)
 
 /**
+ * 壳层下发的**小播放器尾留白**（默认 0）。
+ *
+ * 底栏小播放器是**浮层**，浮在内容之上 —— 所以内容必须能在它下面继续铺一段，
+ * 用户滚到底时最后一项才不会被压住。这段留白只能加在**滚动内容的末尾**
+ * （`LazyColumn.contentPadding` / `verticalScroll` 内容后面的 padding）。
+ *
+ * ⚠️ **不能**改成给内容区挂 `Modifier.padding(bottom = 预留)`：那会把内容区**裁短**，
+ * 于是「屏幕底部到内容区底边」之间永远空着一条 —— 小播放器正好坐在那条空白里，
+ * 看起来就像它自带了背景（也真的会挡住页面背景/壁纸）。这正是本 local 存在的原因。
+ *
+ * 由 `MainScreen` / `App` 在渲染小播放器的那一层 provide；三者（当前位置、预留量、
+ * 小播放器自身）必须来自**同一个**状态源，否则内容会让位而小播放器不动（或反过来）。
+ */
+val LocalMiniPlayerTailSpace = compositionLocalOf { 0.dp }
+
+/**
  * 等价于 `Column(modifier.verticalScroll(state))`，但右侧叠加桌面滚动条。
  *
  * 注意 `modifier` 作用在外层容器（滚动视口）上，`contentPadding` 作用在滚动内容上
@@ -71,15 +89,23 @@ fun ScrollColumn(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     verticalArrangement: Arrangement.Vertical = Arrangement.Top,
     horizontalAlignment: Alignment.Horizontal = Alignment.Start,
+    // 与 [LazyScrollColumn] 对齐：壳层的「小播放器尾留白」要通过这两个 local 下发，
+    // 而窄屏的首页 / 搜索 / 曲库走的就是这一条（`verticalScroll`）。
+    // 缺了它们，窄屏的列表末尾就差一条留白 —— 最后一项被小播放器压住。
+    userScrollEnabled: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    // 尾留白由**壳层**下发：`contentPadding.bottom` 对静态内容意味着「往下多铺一条」，
+    // 而不是「把视口裁短」—— 后者会让浮在上面的小播放器坐进一条空白带里，
+    // 看起来像它自带了背景。详见 MiniPlayerTailSpace。
+    val shellTail = LocalMiniPlayerTailSpace.current
     Box(modifier) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(end = desktopScrollbarGutter)
-                .verticalScroll(state)
-                .padding(contentPadding),
+                .verticalScroll(state, enabled = userScrollEnabled)
+                .padding(contentPadding + PaddingValues(bottom = shellTail)),
             verticalArrangement = verticalArrangement,
             horizontalAlignment = horizontalAlignment,
             content = content,
@@ -111,7 +137,8 @@ fun LazyScrollColumn(
         LazyColumn(
             modifier = Modifier.fillMaxWidth().padding(end = desktopScrollbarGutter),
             state = state,
-            contentPadding = contentPadding,
+            // 同上：尾留白走 contentPadding（内容一直铺到底），不是裁短视口。
+            contentPadding = contentPadding + PaddingValues(bottom = LocalMiniPlayerTailSpace.current),
             verticalArrangement = verticalArrangement,
             horizontalAlignment = horizontalAlignment,
             userScrollEnabled = userScrollEnabled,

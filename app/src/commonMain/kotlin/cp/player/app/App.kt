@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.VisibilityThreshold
@@ -17,7 +18,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,7 +30,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.stack.StackEvent
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.transitions.ScreenTransition
@@ -265,28 +271,47 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
     modifier: Modifier = Modifier,
 ) {
     val playbackState by AppModel.playback.state.collectAsState()
-    AnimatedContent(
-        targetState = show && playbackState.currentTrack != null,
-        transitionSpec = {
-            fadeIn(tween(300)) togetherWith fadeOut(tween(300))
-        },
-        label = "GlobalMiniPlayer",
-        modifier = modifier,
-    ) { visible ->
-        if (visible) {
-            // this（AnimatedContentScope）要在 with(this@…) 进到 SharedTransitionScope
-            // 之前捕获 —— with 块里 `this` 已经换人了。
-            val animScope = this
-            with(this@GlobalMiniPlayerHost) {
-                MiniPlayer(
-                    state = playbackState,
-                    animatedVisibilityScope = animScope,
-                    onClick = onClick,
-                    onTogglePlay = AppModel.playback::togglePlayPause,
-                    onSkipPrev = AppModel.playback::skipPrevious,
-                    onSkipNext = AppModel.playback::skipNext,
-                    modifier = Modifier.navigationBarsPadding(),
-                )
+    // 内容要让位的量：实测高度 + 12dp 呼吸缝，与 `MainScreen` 那一份同源同算法
+    // （见 LocalMiniPlayerTailSpace）。路由页（歌单详情 / 专辑 / 歌手 / 消息 …）
+    // 的列表末尾靠它留白，小播放器浮在内容之上而不是坐进一条空白带里。
+    val density = LocalDensity.current
+    var barHeightPx by remember { mutableIntStateOf(0) }
+    val tailSpace by animateDpAsState(
+        targetValue = if (show && playbackState.currentTrack != null && barHeightPx > 0) {
+            with(density) { barHeightPx.toDp() } + 12.dp
+        } else 0.dp,
+        animationSpec = cp.player.app.ui.theme.CpMotion.spatial(),
+        label = "globalMiniPlayerTail",
+    )
+    CompositionLocalProvider(
+        cp.player.app.ui.component.LocalMiniPlayerTailSpace provides tailSpace,
+    ) {
+        AnimatedContent(
+            targetState = show && playbackState.currentTrack != null,
+            transitionSpec = {
+                fadeIn(tween(300)) togetherWith fadeOut(tween(300))
+            },
+            label = "GlobalMiniPlayer",
+            modifier = modifier,
+        ) { visible ->
+            if (visible) {
+                // this（AnimatedContentScope）要在 with(this@…) 进到 SharedTransitionScope
+                // 之前捕获 —— with 块里 `this` 已经换人了。
+                val animScope = this
+                with(this@GlobalMiniPlayerHost) {
+                    MiniPlayer(
+                        state = playbackState,
+                        animatedVisibilityScope = animScope,
+                        onClick = onClick,
+                        onTogglePlay = AppModel.playback::togglePlayPause,
+                        onSkipPrev = AppModel.playback::skipPrevious,
+                        onSkipNext = AppModel.playback::skipNext,
+                        modifier = Modifier
+                            .navigationBarsPadding()
+                            // 实测高度回传给上面的尾留白（只量浮层自身，不含底部 inset）。
+                            .onSizeChanged { barHeightPx = it.height },
+                    )
+                }
             }
         }
     }
