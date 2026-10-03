@@ -103,6 +103,9 @@ class ProviderManagementScreen : Screen {
         // 行菜单「更新」与 FAB「导入」共用同一个 zip 选择器：更新时先记下目标行，
         // 回调里按是否记录了目标分流 —— 免得每行都挂一个文件选择器。
         var updateTarget by remember { mutableStateOf<BackendProvider?>(null) }
+        // 「删除模块」的二次确认：删掉的是模块本体（含它的登录态与本地数据目录），
+        // 且它在行菜单里紧挨着「导出 / 更新」，误触代价高。
+        val confirm = cp.player.app.ui.component.rememberConfirmState()
         val pickZip = rememberZipPicker(onPicked = { zipPath ->
             val target = updateTarget
             updateTarget = null
@@ -161,7 +164,21 @@ class ProviderManagementScreen : Screen {
                                 total = providers.size,
                                 isActive = provider.id == active?.id,
                                 onActivate = { model.activate(provider) },
-                                onDelete = { model.delete(provider.id) },
+                                onDelete = {
+                                    confirm.request(
+                                        title = "删除音源模块",
+                                        message = buildString {
+                                            append("确定删除「").append(provider.name)
+                                            append("」（").append(provider.id).append("）吗？\n")
+                                            append("模块文件与该音源下的登录态会被移除，需要重新导入才能使用。")
+                                            if (provider.id == active?.id) {
+                                                append("\n它正是当前音源，删除后会自动切换到其他可用音源。")
+                                            }
+                                        },
+                                        confirmLabel = "删除",
+                                        onConfirm = { model.delete(provider.id) },
+                                    )
+                                },
                                 onExport = { dest -> model.exportModuleTo(provider, dest) },
                                 onUpdate = {
                                     updateTarget = provider
@@ -182,6 +199,8 @@ class ProviderManagementScreen : Screen {
                 }
             }
         }
+
+        cp.player.app.ui.component.CpConfirmHost(confirm)
     }
 }
 

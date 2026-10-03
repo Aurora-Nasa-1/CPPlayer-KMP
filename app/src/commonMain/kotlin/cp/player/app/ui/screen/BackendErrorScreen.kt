@@ -70,6 +70,11 @@ class BackendErrorScreen(private val message: String) : Screen {
         val actionMessage by model.actionMessage.collectAsState()
 
         val pickZip = rememberZipPicker(onPicked = { model.importModule(it) })
+        val active by AppModel.activeProviderFlow.collectAsState()
+        // 「删除音源」的二次确认：删掉的是模块本体（含它的登录态与本地目录），
+        // 这一步不可撤回。确认框挂在 Screen.Content 这一层 —— 内部的
+        // [BackendErrorContent] 是离屏渲染测试在用的纯 composable，签名不动。
+        val confirm = cp.player.app.ui.component.rememberConfirmState()
 
         BackendErrorContent(
             message = message,
@@ -78,8 +83,24 @@ class BackendErrorScreen(private val message: String) : Screen {
             actionMessage = actionMessage,
             onRetry = { AppModel.retryBackendBootstrap() },
             onImport = { pickZip() },
-            onDelete = { model.delete(it) },
+            onDelete = { id ->
+                val target = providers.firstOrNull { it.id == id }
+                confirm.request(
+                    title = "删除音源",
+                    message = buildString {
+                        append("确定删除「").append(target?.name ?: id).append("」吗？\n")
+                        append("模块文件与该音源下的登录态会被移除，需要重新导入才能使用。")
+                        if (id == active?.id) {
+                            append("\n它正是当前音源，删除后不会再有可用音源，需要重新导入。")
+                        }
+                    },
+                    confirmLabel = "删除",
+                    onConfirm = { model.delete(id) },
+                )
+            },
         )
+
+        cp.player.app.ui.component.CpConfirmHost(confirm)
     }
 }
 

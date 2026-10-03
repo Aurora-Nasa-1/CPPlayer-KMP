@@ -85,6 +85,9 @@ fun QueueBottomSheet(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var showSaveDialog by remember { mutableStateOf(false) }
+    // 「清空队列」的二次确认：一键即生效的话，误触在底部工具行里太容易发生，
+    // 而重建一份刚才的队列没有任何后悔药。
+    val confirm = rememberConfirmState()
 
     LegacyModalBottomSheet(onDismissRequest = onClose, skipPartiallyExpanded = true) {
         Box(Modifier.fillMaxWidth()) {
@@ -170,7 +173,15 @@ fun QueueBottomSheet(
                             IconButton(onClick = { showSaveDialog = true }) {
                                 Icon(Icons.AutoMirrored.Filled.PlaylistAdd, "保存为歌单")
                             }
-                            IconButton(onClick = onClear) {
+                            IconButton(onClick = {
+                                if (queue.isEmpty()) return@IconButton
+                                confirm.request(
+                                    title = "清空播放队列",
+                                    message = "确定清空全部 ${queue.size} 首队列歌曲吗？",
+                                    confirmLabel = "清空",
+                                    onConfirm = onClear,
+                                )
+                            }) {
                                 Icon(Icons.Filled.DeleteSweep, "清空队列")
                             }
                         }
@@ -200,6 +211,8 @@ fun QueueBottomSheet(
             },
         )
     }
+
+    CpConfirmHost(confirm)
 }
 
 @Composable

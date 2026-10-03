@@ -71,6 +71,8 @@ class HealthScreen : Screen {
         val overall by AppModel.health.overallLevelFlow.collectAsState()
 
         var onlyErrors by remember { mutableStateOf(false) }
+        // 「清空诊断记录」的二次确认：顶栏按钮离列表很近，一键即生效太容易误触。
+        val confirm = cp.player.app.ui.component.rememberConfirmState()
 
         val filtered = remember(records, onlyErrors) {
             val recent = records.reversed()
@@ -83,7 +85,17 @@ class HealthScreen : Screen {
             topBarActions = listOf(
                 TopBarAction(
                     icon = { Icon(Icons.Filled.DeleteSweep, "清空") },
-                    onClick = { AppModel.health.clearRecords() },
+                    onClick = {
+                        // 空列表不用弹框：没有东西可清，直接让按钮无副作用。
+                        if (records.isNotEmpty()) {
+                            confirm.request(
+                                title = "清空诊断记录",
+                                message = "确定清空全部 ${records.size} 条调用记录吗？",
+                                confirmLabel = "清空",
+                                onConfirm = { AppModel.health.clearRecords() },
+                            )
+                        }
+                    },
                 )
             ),
         ) { pageModifier ->
@@ -122,6 +134,8 @@ class HealthScreen : Screen {
                 }
             }
         }
+
+        cp.player.app.ui.component.CpConfirmHost(confirm)
     }
 }
 

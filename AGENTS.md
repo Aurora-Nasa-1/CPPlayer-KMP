@@ -42,6 +42,14 @@
   把 `layout.buildDirectory` 换到 `build-verify-<后缀>/<module>`。
   ⚠️ **必须 Groovy**（`.kts` 里 `allprojects { p -> … }` 会挑错重载）；
   ⚠️ 光加 `--project-cache-dir` **不够**；⚠️ 共享的 verify 目录**本身也会被占**。
+- ⚠️ **有应用正在 `desktopRun` 时，别对 app / core 跑标准编译**：run 任务把
+  `app/build/classes/kotlin/desktop/main`、`core/build/classes/...` **直接挂在运行时
+  classpath 上**（不是快照 jar），任何会话一编译，这些目录就被整个重写；运行中的 JVM
+  之后**懒加载**任意一个还没用过的类（点开某列表才走到的 lambda 类、轮询第一次进入某
+  分支用到的状态类）⇒ `NoClassDefFoundError`，Compose 组合崩掉，窗口 dispose 时再连锁
+  报 `layout state is not idle`。判据：类在源码与当前产物里都在 + 崩溃栈行号超出当前源
+  文件行数（说明跑的是旧字节码）+ 类文件时间戳与崩溃时刻吻合 ⇒ **构建竞态**，重启应用
+  即可，别去改代码（verify 构建重定向了 buildDirectory，不受此影响）。
 - ⚠️ **别 `rm -rf` 构建目录**：会撞上安全删除闸（>50 文件被拦），命令静默失败。
   要强制重编译用 `./gradlew <task> --rerun`。
 - ⚠️ **用完删掉脚手架**（`build-verify*/`、`.gradle-verify*/`、init script）——
@@ -143,6 +151,15 @@
     （槽位是否被注入）而不是平台，理由见它的 KDoc。
   - 页面**是不是双栏的右栏**由 `LocalEmbeddedInPane` 声明，**不要**拿 `LocalIsExpanded` 去猜：
     直接 push 到宽屏时后者同样为真，会把「需要返回键的整页」误判成「右栏」。
+- **破坏性操作（删除歌单 / 删除音源 / 移除账号 / 清空队列 / 清空历史 …）必须先二次确认，
+  确认框只认 `CpConfirmHost`（配 `rememberConfirmState()`）。**
+  （`app/src/commonMain/.../ui/component/CpConfirmDialog.kt`）
+  - 一个页面常有**多个**删除入口（右键菜单 / 选项弹层 / 多选工具条）：全部接到同一个
+    `CpConfirmState` 上，别各写各的布尔量 + `AlertDialog` —— 文案会漂、还可能叠两个框。
+  - 宿主把 `CpConfirmHost(confirm)` 放在页面组合末尾（与其余弹层同级）；执行动作由
+    `state.confirm()` 先关窗再跑，避免重组期间弹窗还挂在树上。
+  - 取消收藏 / 清缓存这类**可恢复**操作传 `destructive = false`（确认键不走 error 色）；
+    不可逆删除才用默认的 `destructive = true`。
 - **不要直接在页面里调 material3 的 Expressive 实验 API**
   （`LinearWavyProgressIndicator` / `LoadingIndicator` / `ToggleButton` / `MaterialShapes` …）：
   一律走 `app/src/commonMain/.../ui/component/ExpressiveKit.kt`。理由：省 opt-in、

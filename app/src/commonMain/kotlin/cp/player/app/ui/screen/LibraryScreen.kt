@@ -3,6 +3,7 @@ package cp.player.app.ui.screen
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,7 +17,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
@@ -44,6 +47,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,7 +62,6 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
-import cp.player.app.platform.shareText
 import cp.player.app.ui.component.BentoActionCard
 import cp.player.app.ui.component.BentoCard
 import cp.player.app.ui.component.BentoGap
@@ -67,22 +70,21 @@ import cp.player.app.ui.component.BentoMiniTile
 import cp.player.app.ui.component.BentoPill
 import cp.player.app.ui.component.BentoStatCard
 import cp.player.app.ui.component.ContentState
+import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.LocalIsExpanded
+import cp.player.app.ui.component.PlaylistCoverCard
 import cp.player.app.ui.component.PlaylistItem
 import cp.player.app.ui.component.PlaylistOptionsSheet
 import cp.player.app.ui.component.SectionHeader
-import cp.player.app.ui.component.SongItem
-import cp.player.app.ui.component.SongMenuActions
 import cp.player.app.ui.component.StateSurface
-import cp.player.app.ui.component.songContextMenuItems
-import cp.player.app.ui.component.songShareText
 import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.app.ui.model.DownloadsUiState
 import cp.player.app.ui.model.LibraryScreenModel
 import cp.player.app.ui.model.LibraryUiState
 import cp.player.core.music.PlaylistSummary
+import kotlinx.coroutines.launch
 
 /**
  * 「我的」页：Material 3 Expressive 仪表盘 + 曲库列表。
@@ -90,8 +92,15 @@ import cp.player.core.music.PlaylistSummary
  * 版面自上而下：
  * 1. **Bento 仪表盘** —— 问候区 / 聆听统计 / 主行动卡 / 快捷入口 / 偏好设置 / 关于。
  *    Expanded（≥840dp）走 2:1:1 的四列栅格，与设计稿一致；窄屏折叠成单列 + 两列并排。
- * 2. **曲库** —— 分段控件切歌单 / 云盘 / 下载，列表直接铺在同一个滚动容器里
+ * 2. **我的歌单（快速查看）** —— 歌单封面卡片栅格，紧跟仪表盘。歌单是这个页面上
+ *    被查看频率最高的内容，不能要求用户先滚过整面仪表盘再开一个分段才能看到。
+ *    完整清单（含增删改）仍在下方「曲库 → 歌单」。
+ * 3. **曲库** —— 分段控件切歌单 / 下载，列表直接铺在同一个滚动容器里
  *    （不再用 HorizontalPager，否则仪表盘只能单独占一个滚动视口）。
+ *
+ * 云盘不再属于这里的分段：它有几十上百首、加载态与空态都和歌单完全不同源，
+ * 挤在同一个滚动容器里只会互相干扰（滚动位置共享、入口点了没反应）。
+ * 现在云盘是独立路由页 [CloudDriveScreen]，仪表盘上的「云盘」卡直接跳转。
  */
 class LibraryScreen(private val initialPlaylistId: Long? = null) : Screen {
     @Composable
@@ -108,7 +117,6 @@ private data class FilterTab(val label: String, val icon: ImageVector)
 
 private val LibraryFilters = listOf(
     FilterTab("歌单", Icons.AutoMirrored.Filled.QueueMusic),
-    FilterTab("云盘", Icons.Filled.CloudQueue),
     FilterTab("下载", Icons.Filled.Download),
 )
 
@@ -116,7 +124,9 @@ private val LibraryFilters = listOf(
 private fun LibraryScreenContent(model: LibraryScreenModel) {
     val state by model.state.collectAsState()
     var selectedPlaylist by remember { mutableStateOf<PlaylistSummary?>(null) }
-    var confirmDelete by remember { mutableStateOf<PlaylistSummary?>(null) }
+    // 「删除歌单 / 取消收藏」的二次确认。此前本页自己写了一份 AlertDialog，
+    // 现在收敛到全应用统一的 [CpConfirmHost] —— 与歌单详情页、侧栏、用户主页同一份文案。
+    val confirm = cp.player.app.ui.component.rememberConfirmState()
     var showCreateDialog by remember { mutableStateOf(false) }
     val navigator = LocalNavigator.currentOrThrow
     val downloadsModel = remember { DownloadsScreenModel() }
@@ -125,13 +135,18 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
     val profile by AppModel.userProfileFlow.collectAsState()
     val expanded = LocalIsExpanded.current
 
+    // 滚动状态要自己持有：仪表盘上的入口（原「我的歌单」卡、快速区的「查看全部」）
+    // 点击后必须**滚动**到曲库区。此前它们只做 `selectTab(0)` —— 而 tab 默认就是 0，
+    // 曲库又在仪表盘之下约 500dp，点了之后屏幕上什么都不发生，看起来像坏掉。
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val scrollToLibrary: () -> Unit = {
+        scope.launch { listState.animateScrollToItem(LIBRARY_SECTION_INDEX) }
+    }
+
     LaunchedEffect(state.selectedPlaylistId, state.playlists) {
         val target = state.selectedPlaylistId ?: return@LaunchedEffect
         state.playlists.firstOrNull { it.id == target }?.let { navigator.push(PlaylistDetailScreen(it)) }
-    }
-    // 云盘是懒加载的：切到该分段才拉一次（loadCloud 自带去重，重复调用无副作用）。
-    LaunchedEffect(state.selectedTab) {
-        if (state.selectedTab == 1) model.loadCloud()
     }
 
     // 页面级刷新入口：桌面 = 空白处右键「刷新」；Android = 下拉刷新。
@@ -143,6 +158,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
     ) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyScrollColumn(
+            state = listState,
             // 用全局统一的内容宽度：以前这里写死 1360、首页写死 1480–1840，
             // 于是切 Tab 时正文宽度会整体跳一下 —— 大屏上非常刺眼。
             modifier = Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxHeight(),
@@ -164,17 +180,31 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
                         likedIds.size.toString() to "收藏",
                         downloadsState.downloadedItems.size.toString() to "下载",
                     ),
-                    playlistCount = state.playlists.size,
                     onCreatePlaylist = { showCreateDialog = true },
                     onRecentPlays = { navigator.push(RecentPlaysScreen()) },
                     onDownloads = { navigator.push(DownloadsScreen()) },
-                    onPlaylists = { model.selectTab(0) },
-                    onCloud = { model.selectTab(1) },
+                    onCloud = { navigator.push(CloudDriveScreen()) },
                     onStorage = { navigator.push(StorageSettingsScreen()) },
                     onAppearance = { navigator.push(AppearanceSettingsScreen()) },
                     onPlayback = { navigator.push(PlaybackSettingsScreen()) },
                     onProviders = { navigator.push(ProviderManagementScreen()) },
                     onAbout = { navigator.push(AboutScreen()) },
+                )
+            }
+
+            // 「我的歌单」快速查看区：歌单是这个页面被查看频率最高的内容，
+            // 给它一个仪表盘之后立刻可见的封面卡片栅格（手机 2 列 / 宽屏按内容宽度换算）。
+            // 点「查看全部」滚动到曲库区 —— 不是切一个看不见的分段。
+            item {
+                PlaylistQuickGrid(
+                    playlists = state.playlists,
+                    loading = state.loading,
+                    error = state.error,
+                    onPlaylistClick = { navigator.push(PlaylistDetailScreen(it)) },
+                    onSeeAll = {
+                        model.selectTab(0)
+                        scrollToLibrary()
+                    },
                 )
             }
 
@@ -184,7 +214,6 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
                         title = "曲库",
                         supportingText = when (state.selectedTab) {
                             0 -> "${state.playlists.size} 个歌单"
-                            1 -> "${state.cloudSongs.size} 首云盘歌曲"
                             else -> "离线与本地内容"
                         },
                         action = {
@@ -203,7 +232,9 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
                     Spacer(Modifier.height(12.dp))
                     LibrarySegmentedTabs(
                         filters = LibraryFilters,
-                        selectedIndex = state.selectedTab,
+                        // 兜底 coerce：云端曾存过 selectedTab=1（旧版云盘档），
+                        // 恢复出的越界值不能再喂给两档分段控件。
+                        selectedIndex = state.selectedTab.coerceIn(0, LibraryFilters.lastIndex),
                         onSelect = model::selectTab,
                     )
                 }
@@ -216,11 +247,6 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
                     isOwner = model::isOwner,
                     onPlaylistClick = { navigator.push(PlaylistDetailScreen(it)) },
                     onPlaylistOptions = { selectedPlaylist = it },
-                )
-                1 -> cloudSection(
-                    state = state,
-                    onRetry = { model.loadCloud(force = true) },
-                    onSongClick = model::playCloud,
                 )
                 else -> item {
                     DownloadsSection(
@@ -240,38 +266,15 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
             onDismiss = { selectedPlaylist = null },
             onPlay = { model.play(playlist) },
             onAddToQueue = { model.play(playlist, addOnly = true) },
-            onDelete = { confirmDelete = playlist },
+            onDelete = { askDeleteOrUnsubscribe(playlist, model, confirm) },
             coverUrl = playlist.coverUrl,
-            // 媒体库中的歌单均为已收藏/自建；非 owner 时复用 confirmDelete 确认弹窗（文案按 owner 区分）
+            // 媒体库中的歌单均为已收藏/自建；非 owner 时复用同一个确认弹窗（文案按 owner 区分）
             isFavorite = true,
-            onToggleFavorite = { confirmDelete = playlist },
+            onToggleFavorite = { askDeleteOrUnsubscribe(playlist, model, confirm) },
         )
     }
 
-    confirmDelete?.let { playlist ->
-        val owner = model.isOwner(playlist)
-        AlertDialog(
-            onDismissRequest = { confirmDelete = null },
-            title = { Text(if (owner) "删除歌单" else "取消收藏") },
-            text = {
-                Text(
-                    if (owner) "确定删除「${playlist.name}」吗？此操作不可恢复。"
-                    else "确定取消收藏「${playlist.name}」吗？"
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        model.deleteOrUnsubscribe(playlist)
-                        confirmDelete = null
-                    },
-                ) { Text("确定", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = null }) { Text("取消") }
-            },
-        )
-    }
+    cp.player.app.ui.component.CpConfirmHost(confirm)
 
     if (showCreateDialog) {
         cp.player.app.ui.component.CreatePlaylistDialog(
@@ -284,6 +287,31 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
     }
 }
 
+/**
+ * 发起「删除歌单 / 取消收藏」的二次确认。
+ *
+ * 抽出来是因为同一个确认框被两个入口触发（owner 的「删除歌单」、非 owner 的
+ * 「取消收藏」）—— 文案只写一处，两边不会漂。
+ */
+private fun askDeleteOrUnsubscribe(
+    playlist: PlaylistSummary,
+    model: LibraryScreenModel,
+    confirm: cp.player.app.ui.component.CpConfirmState,
+) {
+    val owner = model.isOwner(playlist)
+    confirm.request(
+        title = if (owner) "删除歌单" else "取消收藏",
+        message = if (owner) {
+            "确定删除「${playlist.name}」吗？删除后无法恢复。"
+        } else {
+            "确定取消收藏「${playlist.name}」吗？之后仍可重新收藏。"
+        },
+        confirmLabel = if (owner) "删除" else "取消收藏",
+        destructive = owner,
+        onConfirm = { model.deleteOrUnsubscribe(playlist) },
+    )
+}
+
 // ============================================================
 // 仪表盘
 // ============================================================
@@ -293,6 +321,9 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
  *
  * Expanded 下每行是 `2 : 1 : 1` 的四列栅格（主卡占半宽，右侧两张窄卡各占 1/4），
  * 与设计稿一致；窄屏把同一组卡片折叠成「整宽 → 两列并排 → 整宽」的纵向节奏。
+ *
+ * 「我的歌单」卡已移除：歌单封面栅格就铺在仪表盘正下方（[PlaylistQuickGrid]），
+ * 再放一张只做跳转的卡是同一个目的占两个版面坑位。
  */
 @Composable
 private fun LibraryDashboard(
@@ -300,11 +331,9 @@ private fun LibraryDashboard(
     title: String,
     subtitle: String,
     stats: List<Pair<String, String>>,
-    playlistCount: Int,
     onCreatePlaylist: () -> Unit,
     onRecentPlays: () -> Unit,
     onDownloads: () -> Unit,
-    onPlaylists: () -> Unit,
     onCloud: () -> Unit,
     onStorage: () -> Unit,
     onAppearance: () -> Unit,
@@ -391,9 +420,11 @@ private fun LibraryDashboard(
             }
         }
 
-        // ── 行 3：偏好设置 + 曲库/云盘入口 ──
+        // ── 行 3：偏好设置 + 云盘 + 存储管理 ──
         // 高度和行 2 对齐（168dp）：以前写的是 176 / 180，肉眼分不出差别，
         // 却让两行卡片的下边缘差 4dp —— 正是这种「说不清哪里歪」的错位在拖观感。
+        // 云盘卡 = 真跳转（push [CloudDriveScreen]）——旧版只做 selectTab，而曲库在
+        // 仪表盘之下，点完屏幕上什么也不变，等于一张假按钮。
         if (expanded) {
             Row(
                 Modifier.fillMaxWidth().height(168.dp),
@@ -406,21 +437,18 @@ private fun LibraryDashboard(
                     modifier = Modifier.weight(2f).fillMaxHeight(),
                 )
                 BentoActionCard(
-                    title = "我的歌单",
-                    subtitle = "$playlistCount 个歌单",
-                    icon = Icons.AutoMirrored.Filled.QueueMusic,
-                    onClick = onPlaylists,
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    containerColor = neutral,
-                )
-                // 「存储管理」下沉到页脚胶囊行，这一列换成「云盘」——
-                // 桌面端原本**完全没有**云盘入口（onCloud 传进来却没用），
-                // 是窄屏有、宽屏反而没有的功能缺口。
-                BentoActionCard(
                     title = "云盘",
                     subtitle = "在线曲库",
                     icon = Icons.Filled.CloudQueue,
                     onClick = onCloud,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    containerColor = neutral,
+                )
+                BentoActionCard(
+                    title = "存储管理",
+                    subtitle = "缓存与日志",
+                    icon = Icons.Filled.Storage,
+                    onClick = onStorage,
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                     containerColor = neutral,
                 )
@@ -437,14 +465,6 @@ private fun LibraryDashboard(
                 horizontalArrangement = Arrangement.spacedBy(BentoGap),
             ) {
                 BentoActionCard(
-                    title = "我的歌单",
-                    subtitle = "$playlistCount 个歌单",
-                    icon = Icons.AutoMirrored.Filled.QueueMusic,
-                    onClick = onPlaylists,
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    containerColor = neutral,
-                )
-                BentoActionCard(
                     title = "云盘",
                     subtitle = "在线曲库",
                     icon = Icons.Filled.CloudQueue,
@@ -452,29 +472,22 @@ private fun LibraryDashboard(
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                     containerColor = neutral,
                 )
+                BentoActionCard(
+                    title = "存储管理",
+                    subtitle = "缓存与日志",
+                    icon = Icons.Filled.Storage,
+                    onClick = onStorage,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    containerColor = neutral,
+                )
             }
-            BentoActionCard(
-                title = "存储管理",
-                subtitle = "缓存与日志",
-                icon = Icons.Filled.Storage,
-                onClick = onStorage,
-                // 整宽窄卡：96dp 装不下「图标行 + 标题 + 副标题」三行，会把副标题裁掉。
-                modifier = Modifier.fillMaxWidth().height(116.dp),
-                containerColor = neutral,
-            )
         }
 
         // ── 行 4：页脚胶囊行（低权重工具入口）──
-        // 一枚孤零零的「关于」飘在版面下方，看起来像忘了排版；和「存储管理」并成一条
-        // 居中页脚行，版面才算真正收住。
+        // 「存储管理」已回到行 3（桌面端它原先只出现在页脚 pill，窄屏反而占一整行
+        // 116dp —— 同一功能两种待遇），页脚只留「关于」。
         Box(Modifier.fillMaxWidth().padding(top = 4.dp), contentAlignment = Alignment.Center) {
-            Row(horizontalArrangement = Arrangement.spacedBy(BentoGap)) {
-                // 窄屏把「存储管理」留在栅格里当整宽卡，桌面端才下沉到这里。
-                if (expanded) {
-                    BentoPill("存储管理", Icons.Filled.Storage, onStorage)
-                }
-                BentoPill("关于 CPPlayer", Icons.Filled.Info, onAbout)
-            }
+            BentoPill("关于 CPPlayer", Icons.Filled.Info, onAbout)
         }
     }
 }
@@ -619,50 +632,88 @@ private fun LazyListScope.playlistsSection(
     }
 }
 
-private fun LazyListScope.cloudSection(
-    state: LibraryUiState,
-    onRetry: () -> Unit,
-    onSongClick: (Int) -> Unit,
+/** [LazyScrollColumn] 里「曲库」区块的 item 序号：0=仪表盘、1=歌单快速区、2=曲库标题。 */
+private const val LIBRARY_SECTION_INDEX = 2
+
+/** 歌单快速区展示的**行数**（列数随宽度变化，总个数 = 列数 × 行数）。 */
+private const val QUICK_GRID_ROWS = 2
+
+/**
+ * 「我的歌单」快速查看区 —— 仪表盘正下方的歌单封面卡片栅格。
+ *
+ * 推定依据：进入「我的」页的用户大概率想快速查看歌单，而旧版面里歌单列表埋在
+ * 整面仪表盘 + 分段控件之下（首屏外 600dp 开外）。这里用与首页一致的
+ * [PlaylistCoverCard] 栅格把歌单提前到第二屏；手机 2 列起，宽屏按内容宽度
+ * 走 [CpSpacing.gridColumns] 换算。完整清单（含增删改与更多菜单）仍在
+ * 「曲库 → 歌单」，由「查看全部」滚动可达。
+ *
+ * ⚠️ 快速区**刻意不带**右键/更多菜单 —— 它是预览不是管理界面，动作入口
+ * （播放整单 / 加入队列 / 下载 / 分享）都在歌单详情页与曲库列表行上，
+ * 两处菜单并存反而让「同一张卡片在不同位置行为不同」。
+ */
+@Composable
+private fun PlaylistQuickGrid(
+    playlists: List<PlaylistSummary>,
+    loading: Boolean,
+    error: String?,
+    onPlaylistClick: (PlaylistSummary) -> Unit,
+    onSeeAll: () -> Unit,
 ) {
-    val songs = state.cloudSongs
-    when {
-        state.cloudLoading -> item {
-            StateSurface { ContentState(title = "正在加载云盘", message = "正在同步云盘歌曲", loading = true) }
-        }
-        state.cloudError != null -> item {
-            StateSurface {
-                ContentState(
-                    title = "云盘加载失败",
-                    message = state.cloudError,
-                    error = true,
-                    actionLabel = "重试",
-                    onAction = onRetry,
-                )
+    Column(Modifier.fillMaxWidth()) {
+        SectionHeader(
+            title = "我的歌单",
+            supportingText = when {
+                loading && playlists.isEmpty() -> "正在同步媒体库"
+                else -> "${playlists.size} 个歌单"
+            },
+            modifier = Modifier.padding(top = 8.dp),
+            action = {
+                if (playlists.isNotEmpty()) {
+                    TextButton(onClick = onSeeAll) { Text("查看全部") }
+                }
+            },
+        )
+        Spacer(Modifier.height(12.dp))
+        when {
+            loading && playlists.isEmpty() -> StateSurface {
+                ContentState(title = "正在同步媒体库", message = "正在加载你的歌单", loading = true)
             }
-        }
-        songs.isEmpty() -> item {
-            StateSurface {
-                ContentState(
-                    title = "云盘空空如也",
-                    message = if (state.cloudLoaded) "把歌曲上传到云盘后会显示在这里" else "登录后可查看云盘歌曲",
-                )
+            error != null && playlists.isEmpty() -> StateSurface {
+                ContentState(title = "媒体库加载失败", message = error, error = true)
             }
-        }
-        else -> items(songs.size) { index ->
-            SongItem(
-                track = songs[index],
-                index = index,
-                total = songs.size,
-                onClick = { onSongClick(index) },
-                // 桌面端右键菜单。云盘歌曲的 id 不是标准网易云歌曲 id，
-                // 加入队列的 mediaId 拼法不通用，这里只提供播放与分享两个安全动作。
-                contextMenu = songContextMenuItems(
-                    SongMenuActions(
-                        onPlay = { onSongClick(index) },
-                        onShare = { shareText(songShareText(songs[index])) },
-                    )
-                ),
-            )
+            playlists.isEmpty() -> StateSurface {
+                ContentState(title = "这里还没有歌单", message = "登录账号后即可同步收藏与创建的歌单")
+            }
+            else -> BoxWithConstraints(Modifier.fillMaxWidth()) {
+                // 窄屏固定 2 列（单列封面浪费、3 列在 360dp 手机上封面只有 ~100dp）；
+                // 宽屏按**本容器实际宽度**换算 —— 窗口宽度含两侧留白与滚动条槽，
+                // 直接拿去算会多出 1–2 列把卡片压窄。
+                val columns = if (maxWidth >= CpBreakpoints.medium) {
+                    CpSpacing.gridColumns(maxWidth)
+                } else {
+                    2
+                }
+                val shown = playlists.take(columns * QUICK_GRID_ROWS)
+                Column(verticalArrangement = Arrangement.spacedBy(BentoGap)) {
+                    shown.chunked(columns).forEach { row ->
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(BentoGap),
+                        ) {
+                            row.forEach { playlist ->
+                                PlaylistCoverCard(
+                                    playlist = playlist,
+                                    onClick = { onPlaylistClick(playlist) },
+                                    fillWidth = true,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            // 尾行不满时补空位：weight 相同才能保持列宽一致。
+                            repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+                }
+            }
         }
     }
 }

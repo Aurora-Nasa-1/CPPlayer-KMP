@@ -41,7 +41,10 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -372,6 +375,9 @@ private fun TaskActions(task: DownloadTask, model: DownloadsScreenModel) {
 @Composable
 private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScreenModel) {
     val tasks = state.completedTasks
+    // 「删除文件与记录」的二次确认：删掉的是已下载的本体文件，重新下要花流量与时间。
+    // 挂起态放在 tab 层而不是每张卡片一份 —— 卡片可能有几十张。
+    var confirmDeleteTarget by remember { mutableStateOf<DownloadTask?>(null) }
     if (tasks.isEmpty()) {
         DownloadsPageBox {
             StateSurface(emptyStateModifier()) {
@@ -405,6 +411,7 @@ private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScree
                             task = task,
                             model = model,
                             modifier = Modifier.weight(1f),
+                            onDelete = { confirmDeleteTarget = task },
                         )
                     }
                     // 最后一行为奇数时补一个等宽空位，否则那条卡片会被拉满整行。
@@ -413,6 +420,16 @@ private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScree
             }
         }
     }
+
+    confirmDeleteTarget?.let { task ->
+        cp.player.app.ui.component.CpConfirmDialog(
+            title = "删除下载",
+            message = "确定删除「${task.title}」吗？已下载的文件与记录会被一并移除。",
+            confirmLabel = "删除",
+            onConfirm = { model.remove(task, deleteFile = true) },
+            onDismiss = { confirmDeleteTarget = null },
+        )
+    }
 }
 
 @Composable
@@ -420,6 +437,8 @@ private fun CompletedTaskCard(
     task: DownloadTask,
     model: DownloadsScreenModel,
     modifier: Modifier = Modifier,
+    /** 请求删除（文件 + 记录）；由宿主弹二次确认后再真正执行。 */
+    onDelete: () -> Unit = { model.remove(task, deleteFile = true) },
 ) {
     Surface(
         shape = RoundedCornerShape(20.dp),
@@ -454,8 +473,8 @@ private fun CompletedTaskCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            // 删除：文件 + 记录
-            IconButton(onClick = { model.remove(task, deleteFile = true) }) {
+            // 删除：文件 + 记录（先经宿主的二次确认）
+            IconButton(onClick = onDelete) {
                 Icon(
                     Icons.Filled.Delete,
                     contentDescription = "删除文件与记录",

@@ -138,6 +138,8 @@ class AccountScreen : Screen {
         var captcha by remember { mutableStateOf("") }
         // Cookie 登录：原文可能是一整行请求头，交给 CookieLogin 清洗后再提交。
         var cookieText by remember { mutableStateOf("") }
+        // 「移除账号」的二次确认：删掉的是已保存的登录凭据，移除后必须重新登录。
+        val confirm = cp.player.app.ui.component.rememberConfirmState()
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
             SettingsPage(pageModifier) {
@@ -361,7 +363,19 @@ class AccountScreen : Screen {
                                                 modifier = Modifier.size(CpIconSize.list),
                                             )
                                         }
-                                        IconButton(onClick = { model.removeAccount(account) }) {
+                                        IconButton(onClick = {
+                                            confirm.request(
+                                                title = "移除账号",
+                                                message = "确定移除「${account.nickname}」吗？" +
+                                                    if (AccountStore.activeUid(model.providerId()) == account.uid) {
+                                                        "\n它正是当前账号，移除后将退出登录，需要重新登录。"
+                                                    } else {
+                                                        "\n已保存的登录凭据会被删除，之后需要重新登录。"
+                                                    },
+                                                confirmLabel = "移除",
+                                                onConfirm = { model.removeAccount(account) },
+                                            )
+                                        }) {
                                             Icon(
                                                 Icons.Filled.Close,
                                                 contentDescription = "移除账号",
@@ -409,6 +423,8 @@ class AccountScreen : Screen {
             title = "账号与登录",
             onBack = { navigator.popOrNotify() },
         ) { pageModifier -> body(pageModifier) }
+
+        cp.player.app.ui.component.CpConfirmHost(confirm)
     }
 }
 

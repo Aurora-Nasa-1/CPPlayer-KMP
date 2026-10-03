@@ -3,12 +3,10 @@ package cp.player.app.ui.model
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
-import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.util.UiEvents
 import cp.player.core.BackendResult
 import cp.player.core.music.MusicSourceFromApi
 import cp.player.core.music.PlaylistSummary
-import cp.player.core.music.TrackSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,10 +21,6 @@ data class LibraryUiState(
     val playlists: List<PlaylistSummary> = emptyList(),
     val loading: Boolean = true,
     val error: String? = null,
-    val cloudSongs: List<TrackSummary> = emptyList(),
-    val cloudLoading: Boolean = false,
-    val cloudError: String? = null,
-    val cloudLoaded: Boolean = false,
     val selectedPlaylistId: Long? = null,
     val selectedTab: Int = 0,
 )
@@ -53,14 +47,12 @@ class LibraryScreenModel : ScreenModel {
         screenModelScope.launch {
             AppModel.userProfileFlow.drop(1).collect { refresh() }
         }
-        // 音源切换后歌单列表（以及云盘）都属于旧音源：作废云盘缓存并重新拉取。
+        // 音源切换后歌单列表属于旧音源：重新拉取。
         // 订阅 sourceGeneration 而不是 activeProviderFlow：后者在启动恢复 Provider 时
         // 也会发射，会造成启动时白拉一遍（见 AppModel.sourceGeneration 的 KDoc）。
+        // （云盘数据已随独立页迁往 CloudDriveScreenModel，这里不再管它。）
         screenModelScope.launch {
-            AppModel.sourceGeneration.drop(1).collect {
-                _state.value = _state.value.copy(cloudSongs = emptyList(), cloudLoaded = false)
-                refresh()
-            }
+            AppModel.sourceGeneration.drop(1).collect { refresh() }
         }
     }
 
@@ -102,43 +94,6 @@ class LibraryScreenModel : ScreenModel {
             } finally {
                 if (gen == refreshGen) _refreshing.value = false
             }
-        }
-    }
-
-    // ============ 云盘 ============
-
-    fun loadCloud(force: Boolean = false) {
-        if (_state.value.cloudLoading) return
-        if (_state.value.cloudLoaded && !force) return
-        screenModelScope.launch {
-            _state.value = _state.value.copy(cloudLoading = true, cloudError = null)
-            val result = withContext(Dispatchers.IO) {
-                runCatching { AppModel.musicRepository.getUserCloud() }.getOrNull()
-            }
-            when (result) {
-                is BackendResult.Success -> _state.value = _state.value.copy(
-                    cloudSongs = result.data, cloudLoading = false, cloudLoaded = true,
-                )
-                is BackendResult.Error -> _state.value = _state.value.copy(
-                    cloudLoading = false, cloudError = result.message,
-                )
-                is BackendResult.Unsupported -> _state.value = _state.value.copy(
-                    cloudLoading = false, cloudError = result.message,
-                )
-                null -> _state.value = _state.value.copy(
-                    cloudLoading = false, cloudError = "云盘加载失败",
-                )
-            }
-        }
-    }
-
-    fun playCloud(index: Int) {
-        val songs = _state.value.cloudSongs
-        if (songs.isEmpty()) return
-        songs.getOrNull(index)?.let { CoverFlight.play(it.id, it.coverUrl) }
-        val provider = AppModel.activeProviderId()
-        screenModelScope.launch {
-            AppModel.playback.playQueue(songs.map { "$provider://song/${it.id}" }, startIndex = index)
         }
     }
 

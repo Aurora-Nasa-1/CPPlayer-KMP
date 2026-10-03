@@ -170,6 +170,8 @@ private fun UserProfileContent(
     var playlistOptionsTarget by remember {
         mutableStateOf<cp.player.core.music.PlaylistSummary?>(null)
     }
+    // 「删除歌单 / 取消收藏」的二次确认：锚定菜单与底部弹层两个入口共用一份。
+    val confirm = cp.player.app.ui.component.rememberConfirmState()
 
     LaunchedEffect(uid) { model.load(uid, displayName) }
 
@@ -357,6 +359,20 @@ private fun UserProfileContent(
     // 非桌面（触屏 / 无窗口 chrome 的宽屏平板）回落到底部弹层 —— 与搜索页一致。
     playlistOptionsTarget?.let { playlist ->
         val owner = playlistActions.isPlaylistOwner(playlist)
+        // 两个入口（锚定菜单 / 底部弹层）共用同一个确认请求，文案只写一处。
+        val askDelete: () -> Unit = {
+            confirm.request(
+                title = if (owner) "删除歌单" else "取消收藏",
+                message = if (owner) {
+                    "确定删除「${playlist.name}」吗？删除后无法恢复。"
+                } else {
+                    "确定取消收藏「${playlist.name}」吗？之后仍可重新收藏。"
+                },
+                confirmLabel = if (owner) "删除" else "取消收藏",
+                destructive = owner,
+                onConfirm = { playlistActions.deleteOrUnsubscribePlaylist(playlist) },
+            )
+        }
         val menuItems = if (playlistActions.isServerPlaylist(playlist)) {
             cp.player.app.ui.component.playlistContextMenuItems(
                 cp.player.app.ui.component.PlaylistMenuActions(
@@ -377,10 +393,8 @@ private fun UserProfileContent(
                     // 收藏状态不在这里查（要额外一次请求），所以菜单不提供「收藏歌单」；
                     // 取消收藏走 [onDelete] 那一支的「删除歌单 / 取消收藏」——
                     // 与侧栏同一条规则：owner 删除、非 owner 取消收藏。
-                    onDelete = {
-                        playlistActions.deleteOrUnsubscribePlaylist(playlist)
-                        playlistOptionsTarget = null
-                    },
+                    // 两者都先弹确认：删掉自己建的歌单不可恢复。
+                    onDelete = askDelete,
                 )
             )
         } else {
@@ -417,17 +431,14 @@ private fun UserProfileContent(
                     playlistActions.queuePlaylist(playlist)
                     playlistOptionsTarget = null
                 },
-                onDelete = if (owner) {
-                    {
-                        playlistActions.deleteOrUnsubscribePlaylist(playlist)
-                        playlistOptionsTarget = null
-                    }
-                } else null,
+                onDelete = if (owner) askDelete else null,
                 onShare = { shareText(playlistShareText(playlist.id, playlist.name)) },
                 coverUrl = playlist.coverUrl,
             )
         }
     }
+
+    cp.player.app.ui.component.CpConfirmHost(confirm)
 }
 
 /** 头部：大头像 + 昵称 + 签名 + 统计 + 私信入口。 */

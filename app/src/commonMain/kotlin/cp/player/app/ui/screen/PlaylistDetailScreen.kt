@@ -192,6 +192,10 @@ fun PlaylistDetailContent(
     var showQueueSelection by remember { mutableStateOf(false) }
     // 非 owner 歌单的收藏态（Screen 内简化维护）
     var playlistFavorite by remember { mutableStateOf(false) }
+    // 破坏性操作（删除歌单 / 取消收藏 / 移除曲目）的二次确认。
+    // 本页面有三个入口能触发删除（右键菜单、选项弹层、多选工具条），
+    // 用一个挂起态保证它们共用同一份文案、且不会同时弹两个框。
+    val confirm = cp.player.app.ui.component.rememberConfirmState()
 
     // 首页生成的虚拟歌单（每日推荐 / 相似歌曲 / 心动模式）id 为负数，服务端并不存在，
     // 曲目已随导航传入，必须跳过远端加载，否则接口 404 会让详情页只剩空白。
@@ -242,6 +246,25 @@ fun PlaylistDetailContent(
                 UiEvents.notify("操作失败")
             }
         }
+    }
+
+    // 「删除歌单 / 取消收藏」的统一确认入口。
+    //
+    // 两个入口（右键菜单、选项弹层）此前都是**一键即生效**：删掉自己建的歌单
+    // 是不可恢复的服务端写操作，而菜单里它紧挨着「分享歌单」，一次误触就全没了。
+    // 取消收藏可再次收藏，故按非破坏性呈现（确认键不用 error 色）。
+    val confirmDeletePlaylist: () -> Unit = {
+        confirm.request(
+            title = if (isOwner) "删除歌单" else "取消收藏",
+            message = if (isOwner) {
+                "确定删除「${summary.name}」吗？删除后无法恢复。"
+            } else {
+                "确定取消收藏「${summary.name}」吗？之后仍可重新收藏。"
+            },
+            confirmLabel = if (isOwner) "删除" else "取消收藏",
+            destructive = isOwner,
+            onConfirm = { model.deleteOrUnsubscribe { navigator.popOrNotify() } },
+        )
     }
 
     // 桌面端右键菜单：歌曲行动作集合与 SongOptionsSheet 完全对齐（一处动线两处入口）。
@@ -297,9 +320,21 @@ fun PlaylistDetailContent(
             add(
                 CpContextMenuItem(
                     "删除歌单", Icons.Filled.Delete,
-                    onClick = { model.deleteOrUnsubscribe { navigator.popOrNotify() } },
+                    onClick = confirmDeletePlaylist,
                     danger = true,
                 )
+            )
+        }
+    }
+
+    // 多选工具条的「从歌单移除」：同样是服务端写操作，移出去就得重新搜回来，先确认。
+    val confirmRemoveTracks: (List<String>) -> Unit = { ids ->
+        if (ids.isNotEmpty()) {
+            confirm.request(
+                title = "从歌单移除",
+                message = "确定从「${summary.name}」移除选中的 ${ids.size} 首歌曲吗？",
+                confirmLabel = "移除",
+                onConfirm = { model.removeTracks(ids) },
             )
         }
     }
@@ -333,6 +368,7 @@ fun PlaylistDetailContent(
                 onOpenPlaylistSheet = { showPlaylistSheet = true },
                 onAddSelectedToPlaylist = { addToPlaylistIds = state.selectedIds.toList() },
                 onAddTracks = openAddSongs,
+                onRemoveSelected = confirmRemoveTracks,
                 playlistMenu = playlistMenu,
                 buildSongMenu = buildSongMenu,
             )
@@ -351,6 +387,7 @@ fun PlaylistDetailContent(
                 onOpenPlaylistSheet = { showPlaylistSheet = true },
                 onAddSelectedToPlaylist = { addToPlaylistIds = state.selectedIds.toList() },
                 onAddTracks = openAddSongs,
+                onRemoveSelected = confirmRemoveTracks,
                 buildSongMenu = buildSongMenu,
             )
         }
@@ -364,9 +401,7 @@ fun PlaylistDetailContent(
             onDismiss = { showPlaylistSheet = false },
             onPlay = { model.playAll() },
             onAddToQueue = { model.queueAll() },
-            onDelete = if (isOwner) {
-                { model.deleteOrUnsubscribe { navigator.popOrNotify() } }
-            } else null,
+            onDelete = if (isOwner) confirmDeletePlaylist else null,
             onShare = if (isLocalPlaylist) null else {
                 { shareText("「${summary.name}」 https://music.163.com/#/playlist?id=${playlist.id}") }
             },
@@ -577,6 +612,9 @@ fun PlaylistDetailContent(
             },
         )
     }
+
+    // 二次确认框：与其余弹层同级，放在最后，避免被选项弹层盖住。
+    cp.player.app.ui.component.CpConfirmHost(confirm)
 }
 
 // ============ 窄屏布局 ============
@@ -597,6 +635,8 @@ private fun NarrowLayout(
     onOpenPlaylistSheet: () -> Unit,
     onAddSelectedToPlaylist: () -> Unit,
     onAddTracks: () -> Unit,
+    /** 移除选中曲目；由宿主包一层二次确认后再落到 [model]。 */
+    onRemoveSelected: (List<String>) -> Unit,
     buildSongMenu: (TrackSummary, Int) -> List<CpContextMenuItem>,
 ) {
     if (state.selectionMode) {
@@ -629,7 +669,7 @@ private fun NarrowLayout(
                     add(
                         TopBarAction(
                             icon = { Icon(Icons.Filled.Delete, contentDescription = "从歌单移除") },
-                            onClick = { model.removeTracks(state.selectedIds.toList()) },
+                            onClick = { onRemoveSelected(state.selectedIds.toList()) },
                         )
                     )
                 }
@@ -741,6 +781,8 @@ private fun WideLayout(
     onOpenPlaylistSheet: () -> Unit,
     onAddSelectedToPlaylist: () -> Unit,
     onAddTracks: () -> Unit,
+    /** 移除选中曲目；由宿主包一层二次确认后再落到 [model]。 */
+    onRemoveSelected: (List<String>) -> Unit,
     /** 左栏信息面板的右键菜单（桌面端）；null 时不启用。 */
     playlistMenu: List<CpContextMenuItem>?,
     buildSongMenu: (TrackSummary, Int) -> List<CpContextMenuItem>,
@@ -920,7 +962,7 @@ private fun WideLayout(
                             Icon(Icons.Filled.PlaylistAdd, contentDescription = "加入歌单")
                         }
                         if (isOwner) {
-                            IconButton(onClick = { model.removeTracks(state.selectedIds.toList()) }) {
+                            IconButton(onClick = { onRemoveSelected(state.selectedIds.toList()) }) {
                                 Icon(Icons.Filled.Delete, contentDescription = "从歌单移除")
                             }
                         }

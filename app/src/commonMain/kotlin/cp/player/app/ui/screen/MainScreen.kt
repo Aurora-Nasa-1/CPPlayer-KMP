@@ -1054,6 +1054,10 @@ private fun DesktopSidebar(
     val shownPlaylists = allPlaylists.take(SIDEBAR_PLAYLIST_LIMIT)
     val selectedPlaylistId = (selectedPane as? DesktopPane.Playlist)?.playlist?.id
 
+    // 侧栏歌单「删除 / 取消收藏」的二次确认：删掉自己建的歌单不可恢复，
+    // 而它在右键菜单里紧挨着「分享歌单」，一次误触就全没了。
+    val confirm = cp.player.app.ui.component.rememberConfirmState()
+
     // 侧栏歌单右键菜单。动作集合与歌单详情页左栏的 `playlistMenu` 同一族
     // （播放 / 加入队列 / 全部下载 / 分享 / 删除或取消收藏），只是这里手上只有
     // [PlaylistSummary]，曲目要靠 HomeScreenModel 先拉一次详情。
@@ -1087,7 +1091,19 @@ private fun DesktopSidebar(
                 CpContextMenuItem(
                     if (owner) "删除歌单" else "取消收藏",
                     Icons.Filled.Delete,
-                    onClick = { homeModel.deleteOrUnsubscribePlaylist(playlist) },
+                    onClick = {
+                        confirm.request(
+                            title = if (owner) "删除歌单" else "取消收藏",
+                            message = if (owner) {
+                                "确定删除「${playlist.name}」吗？删除后无法恢复。"
+                            } else {
+                                "确定取消收藏「${playlist.name}」吗？之后仍可重新收藏。"
+                            },
+                            confirmLabel = if (owner) "删除" else "取消收藏",
+                            destructive = owner,
+                            onConfirm = { homeModel.deleteOrUnsubscribePlaylist(playlist) },
+                        )
+                    },
                     danger = true,
                 )
             )
@@ -1228,6 +1244,8 @@ private fun DesktopSidebar(
                 )
             }
         }
+        // 二次确认框挂在侧栏表面之上，否则会被侧栏自己的背景盖住。
+        cp.player.app.ui.component.CpConfirmHost(confirm)
     }
 }
 

@@ -125,6 +125,8 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
         var addToPlaylistTrack by androidx.compose.runtime.remember {
             androidx.compose.runtime.mutableStateOf<cp.player.core.music.TrackSummary?>(null)
         }
+        // 「清空搜索历史」的二次确认：一键即生效会把积累的搜索痕迹一次抹掉。
+        val confirm = cp.player.app.ui.component.rememberConfirmState()
 
         // 搜索框焦点：既是建议下拉的显示判据（失焦即收起），也是本页「点别处关闭下拉」的
         // 唯一手段 —— 下拉是浮层，只能靠焦点语义判断「用户已经去干别的了」。
@@ -246,7 +248,14 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     SectionHeader(title = "最近搜索")
-                                    TextButton(onClick = model::clearHistory) { Text("清空") }
+                                    TextButton(onClick = {
+                                        confirm.request(
+                                            title = "清空搜索历史",
+                                            message = "确定清空全部 ${state.searchHistory.size} 条搜索记录吗？",
+                                            confirmLabel = "清空",
+                                            onConfirm = model::clearHistory,
+                                        )
+                                    }) { Text("清空") }
                                 }
                                 state.searchHistory.forEach { keyword ->
                                     Row(
@@ -530,5 +539,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                 )
             }
         }
+
+        cp.player.app.ui.component.CpConfirmHost(confirm)
     }
 }
