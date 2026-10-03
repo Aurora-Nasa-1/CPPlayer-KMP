@@ -8,14 +8,15 @@ build/
 
 # Verification scratch dirs used to bypass a locked Gradle cache.
 # The tag suffix is per-session (see AGENTS.md §3): the Groovy init script is
-# cpplayer-verify-<tag>.init.gradle, and it repoints buildDirectory at
-# build-<tag>/ while --project-cache-dir=.gradle-<tag>. All three are
-# scaffolding — delete them after use and never commit them.
-.gradle-verify*/
-.gradle-v*/
-build-verify*/
-build-v*/
-cpplayer-verify*.init.gradle
+# <tag>.init.gradle, and it repoints buildDirectory at build-<tag>/ while
+# --project-cache-dir=.gradle-<tag>. All three are scaffolding — delete them
+# after use and never commit them.
+# ⚠️ 三者都按**前缀/后缀**通配，而不是逐个列 tag 名 —— 各会话自取的 tag 五花八门
+# （verify / v1 / authuiverify / bentohome / preview-xxx / settings …），列名字必然漏。
+# 三条模式都不含中间斜杠 ⇒ 在任意目录层级都生效（build-foo/ 与 app/build-foo/ 都被忽略）。
+.gradle-*/
+build-*/
+*.init.gradle
 
 # --- IDE / editor --------------------------------------------------------
 .idea/
@@ -64,3 +65,9 @@ reference/netease-module-rust/
 
 # WorkBuddy AI session memory / project notes. Local by nature.
 .workbuddy-ai/
+
+# 新版 WorkBuddy 工作目录（记忆 / 离屏渲染出图 / 临时件）。与 .workbuddy-ai 同理：
+# 全是本机会话产物，不进版本库。
+# ⚠️ 若将来这里出现需要共享的**项目级 skill**（.workbuddy/skills/），
+# 要给它单独加一条 `!` 反规则放行，别整目录提交。
+.workbuddy/
