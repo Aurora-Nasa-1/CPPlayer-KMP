@@ -88,6 +88,18 @@ class UnifiedMusicSourceContractTest {
         assertEquals(0, empty.getOrNull()?.size)
     }
 
+    @Test
+    fun `批量取详情只跳过个别畸形 id，其余照常解析`() = runBlocking {
+        // 队列里混入一个旧数据 / 本地路径形态的坏 id 时，不能把整批（整个队列）的元信息
+        // 一起丢掉 —— 那会让队列全部停在「加载中…」且没有任何错误提示。
+        val s = source(api = detailApi(SONG_DETAIL_JSON))
+
+        val mixed = s.getTrackDetails(listOf("bad-one", "netease://song/999"))
+        assertTrue(mixed is BackendResult.Success, "个别畸形项不应让整批失败，实际=$mixed")
+        assertEquals(1, mixed.getOrNull()?.size, "合法项应被正常解析")
+        assertEquals("netease://song/999", mixed.getOrNull()?.first()?.id)
+    }
+
     // ============ 2. providers / providerId 不再被静默忽略 ============
 
     @Test

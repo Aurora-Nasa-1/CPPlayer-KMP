@@ -6,6 +6,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -142,7 +143,7 @@ class AmllTtmlClient(
         if (platform != null && !songId.isNullOrBlank()) {
             val key = "p:${platform.name}:$songId"
             cachedTtml(key)?.let { return@withContext it }
-            if (key in notFound) return@withContext searchFallback(platform, songId, name, artist, album)
+            if (isNotFound(key)) return@withContext searchFallback(platform, songId, name, artist, album)
             getByPlatform(platform, songId)?.let { item ->
                 val ttml = item.lyrics?.takeIf { it.isNotBlank() }
                 if (ttml != null) {
@@ -169,7 +170,9 @@ class AmllTtmlClient(
         album: String?,
     ): String? {
         if (name.isNullOrBlank()) return null
-        val searchKey = "s:$platform:$songId:${name.lowercase()}"
+        // ⚠️ 搜索键必须带歌手：本地曲目 platform / songId 都是 null，只按歌名会撞车 ——
+        // 不同歌手的同名曲共用同一 key，会把**错误的歌词**当作正确结果缓存并落盘。
+        val searchKey = "s:$platform:$songId:${name.lowercase()}:${artist.orEmpty().lowercase()}"
         cachedTtml(searchKey)?.let { return it }
 
         val params = buildList {
@@ -238,6 +241,11 @@ class AmllTtmlClient(
                 }
                 code = resp.status.value
                 body = resp.bodyAsText()
+            } catch (e: CancellationException) {
+                // ⚠️ 必须先于 Exception 捕获：切歌 / 退出页面会取消歌词协程，
+                // 若把取消当「网络失败」吞掉，调用方会当成拿不到歌词而**再发一次**搜索请求
+                // —— 取消被延迟，且已取消的协程继续联网。取消必须原样上抛。
+                throw e
             } catch (_: Exception) {
                 return null
             }
@@ -271,6 +279,9 @@ class AmllTtmlClient(
         }
     }
 
+    /** 负缓存查询也必须加锁：写入在别的歌词协程里，裸读会有集合并发问题。 */
+    private fun isNotFound(key: String): Boolean = synchronized(notFound) { key in notFound }
+
     /**
      * 磁盘持久缓存（只存「内容永久不变」的键）。
      *
@@ -279,18 +290,23 @@ class AmllTtmlClient(
      */
     private fun diskPut(key: String, ttml: String) {
         val disk = diskCache ?: return
-        val dataKey = diskKey(key)
-        val indexRaw = disk.getString(INDEX_KEY) ?: ""
-        val index = indexRaw.split('\n').filter { it.isNotBlank() }.toMutableList()
-        if (disk.getString(dataKey) == null) {
-            index.add(key)
+        // ⚠️ 「读索引 → 改 → 写回」不是原子操作。本函数可能被多个歌词协程并发调用
+        // （多首预取 / 快速切歌），不加锁会互相覆盖索引 ⇒ 条目丢失、数据键成为孤儿
+        // （占空间且永远回收不到）。整个读改写必须串行。
+        synchronized(this) {
+            val dataKey = diskKey(key)
+            val indexRaw = disk.getString(INDEX_KEY) ?: ""
+            val index = indexRaw.split('\n').filter { it.isNotBlank() }.toMutableList()
+            if (disk.getString(dataKey) == null) {
+                index.add(key)
+            }
+            while (index.size > MAX_DISK_ENTRIES) {
+                val evicted = index.removeAt(0)
+                disk.remove(diskKey(evicted))
+            }
+            disk.putString(dataKey, ttml)
+            disk.putString(INDEX_KEY, index.joinToString("\n"))
         }
-        while (index.size > MAX_DISK_ENTRIES) {
-            val evicted = index.removeAt(0)
-            disk.remove(diskKey(evicted))
-        }
-        disk.putString(dataKey, ttml)
-        disk.putString(INDEX_KEY, index.joinToString("\n"))
     }
 
     private fun diskKey(key: String): String = "ttml:$key"
@@ -299,6 +315,15 @@ class AmllTtmlClient(
     fun clearMemo() {
         synchronized(memo) { memo.clear() }
         synchronized(notFound) { notFound.clear() }
+    }
+
+    /**
+     * 释放底层 HTTP 客户端（连接池 + 线程）。
+     *
+     * 持有方（`MusicBackend`）应在重建 / 退出时调用，否则每次重建都会残留一套连接池与线程。
+     */
+    fun close() {
+        runCatching { client.close() }
     }
 
     companion object {

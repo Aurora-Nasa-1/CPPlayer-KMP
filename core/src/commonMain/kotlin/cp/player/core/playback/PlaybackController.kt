@@ -54,10 +54,12 @@ interface PlaybackController {
      * 随机模式下同样插在当前曲的下一个播放位（不是队列末尾 —— 电台/长队列里
      * 追加到末尾意味着几小时后才轮到，等于没加）。该曲已在队列其他位置时，
      * 等价于把它**移到**下一首，而不是重复添加。没有在播曲目时退化为普通追加。
+     *
+     * ⚠️ 刻意**不给默认实现**：默认成 `addToQueue` 会与本条语义完全相反，任何未覆写的
+     * 实现 / 测试替身都会把「下一首播放」静默做成「追加队尾」。抽象化让编译器强制实现方
+     * 表态（本仓唯一实现 [PlaybackControllerImpl] 已覆写）。
      */
-    suspend fun addNextToQueue(mediaId: String) {
-        addToQueue(mediaId)
-    }
+    suspend fun addNextToQueue(mediaId: String)
 
     /** 从队列中移除指定索引；若移除的是当前曲目，按规则跳到下一首。 */
     suspend fun removeQueueItem(index: Int)

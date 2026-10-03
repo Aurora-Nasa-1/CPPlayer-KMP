@@ -3,6 +3,7 @@ package cp.player.core.music
 import cp.player.core.BackendResult
 import cp.player.core.api.MusicApiService
 import cp.player.core.local.LocalMediaSource
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -92,7 +93,15 @@ class UnifiedMusicSourceImpl(
 
     override suspend fun getTrackDetails(mediaIds: List<String>): MusicResult<List<TrackSummary>> {
         val summaries = mutableListOf<TrackSummary>()
-        val parsedIds = mediaIds.map { parseId(it) ?: return BackendResult.Error("Invalid mediaId in batch") }
+        // ⚠️ 单个畸形 mediaId（旧数据 / 本地路径 / provider 前缀变体）不该让**整批**失败：
+        // 原先 `map { parseId(it) ?: return Error(...) }` 会连带把队列里其它歌的元信息也丢掉，
+        // 表现为整队列停在「加载中…」。跳过畸形项，其余的照常返回。
+        val parsedIds = mediaIds.mapNotNull { parseId(it) }
+        // 但「输入非空且**全部**非法」仍按既有契约返回 Error（有测试钉住），
+        // 它表达的是「这批 id 根本不是本应用的 mediaId」，与「个别坏项」是两回事。
+        if (parsedIds.isEmpty() && mediaIds.isNotEmpty()) {
+            return BackendResult.Error("Invalid mediaId in batch")
+        }
 
         val localIds = parsedIds.filter { it.providerId == "local" }
         if (localIds.isNotEmpty()) {
@@ -116,8 +125,11 @@ class UnifiedMusicSourceImpl(
         
         val apiIds = parsedIds.filter { it.providerId != "local" }
         if (apiIds.isNotEmpty()) {
+            var totalChunks = 0
+            var failedChunks = 0
             // 分批请求以避免 URI 过长
             for (chunk in apiIds.chunked(500)) {
+                totalChunks++
                 try {
                     val json = musicApiService.getSongDetail(chunk.map { it.resourceId })
                     val songs = (json as? JsonObject)?.get("songs")?.jsonArray
@@ -131,12 +143,23 @@ class UnifiedMusicSourceImpl(
                             summaries.add(trackObj.toTrackSummary(matchedApiId.toString()))
                         }
                     }
+                } catch (e: CancellationException) {
+                    // 取消必须原样上抛，不能当「这一批失败」吞掉（会破坏结构化并发，
+                    // 让已取消的队列解析继续跑）。
+                    throw e
                 } catch (e: Exception) {
-                    // 忽略或记录错误
+                    // 单批失败不中断其它批；失败批数在下面统一判定。
+                    failedChunks++
                 }
             }
+            // 所有批次都失败且一条也没解析出来 ⇒ 明确报错。
+            // 返回空 Success 会把「网络/服务全挂」伪装成「这些歌没有元信息」，
+            // 调用方（`resolveQueueInBackground`）拿到空列表后只能让队列停在加载态。
+            if (summaries.isEmpty() && failedChunks == totalChunks) {
+                return BackendResult.Error("批量获取歌曲详情失败")
+            }
         }
-        
+
         return BackendResult.Success(summaries)
     }
 
