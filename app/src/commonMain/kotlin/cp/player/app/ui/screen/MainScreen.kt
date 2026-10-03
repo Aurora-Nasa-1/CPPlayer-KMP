@@ -183,6 +183,11 @@ class MainScreen : Screen {
         // 注意「面板」与「内容区路由」是两层：desktopPane 只管盖在内容层上的**面板**；
         // 详情页路由走内嵌 Navigator，不经过这里。
         var desktopPane by remember { mutableStateOf<DesktopPane>(DesktopPane.Tabs) }
+        // 消息面板右栏是否已经打开了某个会话（= 屏幕底部多了一条固定输入栏）。
+        // 由 `MessagesPane` 上报：小播放器与输入栏抢同一块底部空间时让位给输入栏 ——
+        // 与窄屏 `ChatScreen` 同一条规则（那条在 `App.kt` 的全局宿主里判
+        // `navigator.lastItem`，桌面宽屏的对话在面板右栏里，只有这里知道）。
+        var messagesChatOpen by remember { mutableStateOf(false) }
         val selectTab: (Int) -> Unit = { index ->
             desktopPane = DesktopPane.Tabs
             // 内容区若有内嵌详情页（专辑 / 搜索结果 …），切 tab 前先弹回栈根 ——
@@ -481,11 +486,16 @@ class MainScreen : Screen {
                                                         onEmbeddedBack = closeDesktopOverlay,
                                                     ).Content()
                                                 DesktopPane.Downloads ->
-                                                    DownloadsScreen().Content()
+                                                    // embedded：标题与返回由外壳提供（窗口 chrome，
+                                                    // 或宽屏平板自己那条顶栏）—— 页内不再自绘，
+                                                    // 否则同一屏会出现两条顶栏。
+                                                    DownloadsScreen(embedded = true).Content()
                                                 DesktopPane.RecentPlays ->
                                                     RecentPlaysScreen(embedded = true).Content()
                                                 DesktopPane.Messages ->
-                                                    MessagesPane()
+                                                    MessagesPane(
+                                                        onChatOpenChanged = { messagesChatOpen = it },
+                                                    )
                                                 DesktopPane.Tabs -> Unit
                                             }
                                         }
@@ -497,20 +507,23 @@ class MainScreen : Screen {
                 } else {
                     androidx.compose.material3.Scaffold(
                         modifier = Modifier.fillMaxSize()
-                            .nestedScroll(scrollBehavior.nestedScrollConnection)
-                            // 底栏自动隐藏：只观察手势增量、不消费，内容滚动不受影响。
-                            .nestedScroll(bottomBarHide),
+                            // ⚠️ 这两个 nestedScroll 的**顺序有意义**，别随手调换：
+                            // pre-scroll 是**从外到内**派发的（NestedScrollNode.onPreScroll
+                            // 先调 parent、再调自己），而 `exitUntilCollapsedScrollBehavior`
+                            // 会把「顶栏从大标题收成 64dp」那一段增量**吃掉**。底栏连接若挂在
+                            // 它内侧，就只能拿到**剩余**增量 —— 短促上滑时剩余量不过半，
+                            // 每次都被吸附弹回，表现就是「怎么滑底栏都不收」（离屏对照可复现，
+                            // 见 BottomBarAutoHideOrderTest）。放外层先拿原始手势：它只观察
+                            // 不消费（返回 Zero），顶栏照旧拿得到完整增量。
+                            .nestedScroll(bottomBarHide)
+                            .nestedScroll(scrollBehavior.nestedScrollConnection),
                         topBar = {
-                            // 手机端「我的」页（index 2）：顶栏标题用账号昵称代替「我的」，
-                            // 账号入口挪到最左（navigationIcon 槽位）。其余 tab 维持原样。
-                            val profile by AppModel.userProfileFlow.collectAsState()
-                            val onLibraryTab = selectedIndex == 2
+                            // 三个 tab 的顶栏完全一致：标题 = tab 名，动作一律在右侧。
+                            // 「我的」页不再特殊化（昵称由页内问候区承担，见 LibraryScreen）。
                             AppTopBar(
-                                title = if (onLibraryTab) (profile?.nickname ?: "我的")
-                                        else tabs[selectedIndex].label,
+                                title = tabs[selectedIndex].label,
                                 navigator = navigator,
                                 scrollBehavior = scrollBehavior,
-                                accountLeading = onLibraryTab,
                                 onOpenSettings = { navigator?.push(SettingsScreen()) },
                                 onOpenAccount = { navigator?.push(AccountScreen()) },
                             )
@@ -614,7 +627,12 @@ class MainScreen : Screen {
                             animationSpec = cp.player.app.ui.theme.CpMotion.effectsFast(),
                             label = "miniPlayerAlpha",
                         )
-                        if (playbackState.currentTrack != null) {
+                        // 消息面板右栏开着对话时不画小播放器：它会盖住对话输入栏，
+                        // 其 Surface 还会把输入栏的点击一起吞掉。窄屏那一屏由 `App.kt` 的全局宿主
+                        // 按 `lastItem !is ChatScreen` 让位；桌面宽屏的对话在面板右栏里，
+                        // 只有这里知道 —— 判据是 `MessagesPane` 上报的 messagesChatOpen，
+                        // 而它只可能为真于展开态（消息面板只在展开态渲染），所以无需再判 expanded。
+                        if (playbackState.currentTrack != null && !messagesChatOpen) {
                             // 底距动态适配：max(底栏可见高度, 系统导航栏 inset) + 12dp 呼吸缝。
                             // 底栏收起时 navVisible 逐帧变小，小播放器贴合下移 —— 与底栏由
                             // 同一个 fraction 驱动，同帧移动；底栏全收后由系统导航栏 inset
@@ -660,9 +678,6 @@ private fun AppTopBar(
     scrollBehavior: androidx.compose.material3.TopAppBarScrollBehavior? = null,
     onOpenSettings: () -> Unit = {},
     onOpenAccount: () -> Unit = {},
-    // 手机端「我的」页为 true：账号入口挪到最左 navigationIcon 槽位，
-    // 右侧动作里不再重复出现（见调用处的注释）。
-    accountLeading: Boolean = false,
     showBack: Boolean = false,
     onBack: () -> Unit = {},
     hide: Boolean = false,
@@ -682,71 +697,44 @@ private fun AppTopBar(
     }
     val navigationIcon: @Composable () -> Unit = if (showBack) {
         { CpBackButton(onClick = onBack) }
-    } else if (accountLeading) {
-        {
-            // MD3 规范：顶栏最左是标准 IconButton（48dp 触控目标、无底色）。
-            IconButton(onClick = onOpenAccount) {
-                val profile by AppModel.userProfileFlow.collectAsState()
-                AccountEntryContent(profile?.avatarUrl, "账号")
-            }
-        }
     } else {
         {}
     }
-    // 账号 / 设置两个入口在桌面与手机两套 TopAppBar 里原本是**逐字重复的两份**（约 100 行）。
-    // 两套唯一的真实差别只有「普通 TopAppBar vs LargeTopAppBar」，所以这里把它抽成一份，
-    // 否则改一次按钮样式要记得改两处，迟早只改到一处。
+    // 三个入口（消息 / 账号 / 设置）统一走 CpTopBarActionButton —— 与路由页的
+    // topBarActions、以及 CpBackButton 同一族（填充圆钮）。此前是「消息 = 裸 IconButton、
+    // 账号 / 设置 = FilledIconButton」两种外观并排；「我的」tab 还把账号入口单独挪到了
+    // 最左的 navigationIcon 槽位、标题换成昵称 —— 同一排按钮的位置与样式跟着 tab 变。
+    // 现在三个 tab 完全一致：标题是 tab 名，动作一律在右侧、同一套外观。
     val actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
         // 这里刻意**不再**判 LocalWindowChromeActive：桌面端整条 AppTopBar 已经在函数开头
-        // 提前 return 了（窗口 chrome 接管了标题与这两个入口），能走到这里就说明没有 chrome。
+        // 提前 return 了（窗口 chrome 接管了标题与这三个入口），能走到这里就说明没有 chrome。
         // 两处都判会留下一条永远走不到的分支。
         val profile by AppModel.userProfileFlow.collectAsState()
-        val avatarUrl = profile?.avatarUrl
         // 消息入口：桌面端由窗口标题栏承担，这里只在**没有窗口 chrome**（手机 / 平板）时出现。
         // ⚠️ 刻意**不带未读角标**（2026-10-02 与标题栏一并去掉）—— 理由见
         // `DesktopTitleBar.MessageSlot` 的 KDoc。数据链路保留，只是不再显示。
-        // 样式改成 MD3 标准 IconButton（无底色）+ outlined 图标：原来的 filled 圆钮
-        // （surfaceContainerHighest 底）视觉权重远高于同排动作，也不符合 MD3
-        // 「顶栏动作用标准图标按钮」的约定。
-        IconButton(
-            onClick = {
-                navigator?.push(MessagesScreen())
-                AppModel.refreshUnreadMessages()
-            },
-            modifier = Modifier.padding(end = 4.dp),
-        ) {
-            Icon(
-                Icons.AutoMirrored.Outlined.Message,
-                contentDescription = "消息",
+        cp.player.app.ui.component.CpTopBarActionButton(
+            cp.player.app.ui.component.TopBarAction(
+                icon = { Icon(Icons.AutoMirrored.Outlined.Message, contentDescription = "消息") },
+                onClick = {
+                    navigator?.push(MessagesScreen())
+                    AppModel.refreshUnreadMessages()
+                },
             )
-        }
+        )
         // 账号入口（有头像显示头像）：进「账号与登录」。
-        // 「我的」tab 的账号入口已在最左 navigationIcon 槽位，这里跳过避免重复。
-        if (!accountLeading) {
-            androidx.compose.material3.FilledIconButton(
+        cp.player.app.ui.component.CpTopBarActionButton(
+            cp.player.app.ui.component.TopBarAction(
+                icon = { AccountEntryContent(profile?.avatarUrl, "账号") },
                 onClick = onOpenAccount,
-                modifier = Modifier.padding(end = 4.dp),
-                colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    contentColor = MaterialTheme.colorScheme.onSurface
-                )
-            ) {
-                AccountEntryContent(avatarUrl, "账号")
-            }
-        }
-        androidx.compose.material3.FilledIconButton(
-            onClick = onOpenSettings,
-            modifier = Modifier.padding(end = 4.dp),
-            colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                contentColor = MaterialTheme.colorScheme.onSurface
             )
-        ) {
-            Icon(
-                Icons.Filled.Settings,
-                contentDescription = "设置",
+        )
+        cp.player.app.ui.component.CpTopBarActionButton(
+            cp.player.app.ui.component.TopBarAction(
+                icon = { Icon(Icons.Filled.Settings, contentDescription = "设置") },
+                onClick = onOpenSettings,
             )
-        }
+        )
     }
     val colors = TopAppBarDefaults.topAppBarColors(
         containerColor = Color.Transparent,
@@ -774,7 +762,7 @@ private fun AppTopBar(
 
 /**
  * 顶栏账号入口的内容：有头像显示头像（圆形裁切），未登录 / 无头像显示人形占位图标。
- * 最左 navigationIcon 槽位与右侧动作按钮共用，避免两份逐字重复的样式。
+ * 只作为 `CpTopBarActionButton` 的图标用 —— 账号入口在三个 tab 的顶栏位置一致。
  */
 @Composable
 private fun AccountEntryContent(avatarUrl: String?, contentDescription: String) {

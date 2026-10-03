@@ -53,8 +53,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
+import cafe.adriel.voyager.navigator.LocalNavigator
 import coil3.compose.AsyncImage
 import cp.player.app.ui.component.ContentState
+import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.LazyScrollColumn
@@ -62,6 +64,7 @@ import cp.player.app.ui.component.desktopPagerMouseControl
 import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.app.ui.model.DownloadsUiState
 import cp.player.app.ui.theme.CpShapes
+import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.util.resized
 import cp.player.core.media.LocalMediaItem
 import cp.player.core.media.LocalMediaOrigin
@@ -71,11 +74,29 @@ import cp.player.core.model.DownloadTask
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-/** 下载管理页（主导航第 4 Tab，也可经设置页 push 进入）。 */
-class DownloadsScreen : Screen {
+/**
+ * 下载管理页。两种宿主形态，外壳判据沿用 [CpRouteScaffold] 那一套：
+ *
+ * - **路由页**（默认）：从「我的」页的下载入口，或设置 → 存储 push 出来。窄屏（安卓手机）
+ *   必须自绘顶栏 —— 那里没有窗口 chrome，页内再不自绘就是**整页既没有标题也没有返回键**
+ *   （此前本页确实如此：`DownloadsScreenContent` 只发布 `DesktopRouteTitle` 就直接出正文，
+ *   而 `DesktopRouteTitle` 只有桌面窗口标题栏会读）。
+ * - **桌面面板**：[embedded] 为真，由 `MainScreen` 的 `DesktopPane.Downloads` 盖在内容层上。
+ *   标题与返回归外壳（窗口 chrome，或宽屏平板壳层自己的顶栏），页内再画一条就是双顶栏。
+ */
+class DownloadsScreen(private val embedded: Boolean = false) : Screen {
     @Composable
     override fun Content() {
-        DownloadsScreenContent(rememberScreenModel { DownloadsScreenModel() })
+        val navigator = LocalNavigator.current
+        // rememberScreenModel 是 Screen 的扩展函数，只能在 Content() 里调用（见 AGENTS.md）。
+        val model = rememberScreenModel { DownloadsScreenModel() }
+        CpRouteScaffold(
+            title = "下载管理",
+            onBack = { navigator?.popOrNotify() },
+            embedded = embedded,
+        ) { pageModifier ->
+            DownloadsScreenContent(model, pageModifier)
+        }
     }
 }
 
@@ -103,13 +124,9 @@ private fun DownloadsPageBox(content: @Composable () -> Unit) {
 private fun pageContentModifier(): Modifier = Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize()
 
 @Composable
-private fun DownloadsScreenContent(model: DownloadsScreenModel) {
+private fun DownloadsScreenContent(model: DownloadsScreenModel, modifier: Modifier = Modifier) {
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
-
-    // 桌面窗口标题栏的标题。本页没有页内顶栏（无论 push 还是作为桌面面板），
-    // 所以窗口 chrome 是它唯一的标题与返回入口。
-    cp.player.app.ui.util.DesktopRouteTitle("下载管理")
 
     // Tab 上带计数：不切页也能看到「下载中还有几个 / 已完成多少」，
     // 这是下载管理最常被问的一件事，藏进分页里就得逐个点开数。
@@ -120,7 +137,7 @@ private fun DownloadsScreenContent(model: DownloadsScreenModel) {
     )
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { tabs.size })
 
-    Column(Modifier.fillMaxSize()) {
+    Column(modifier.fillMaxSize()) {
         // 顶部 Tab 切换（样式与媒体库页一致）。与正文同宽居中 ——
         // 否则宽屏下正文居中、tab 行贴着窗口最左，两段明显错位。
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {

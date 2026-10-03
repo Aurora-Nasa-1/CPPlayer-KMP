@@ -50,6 +50,7 @@ import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.AlbumItem
 import cp.player.app.ui.component.ArtistItem
 import cp.player.app.ui.component.ContentState
+import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.PageHeader
 import cp.player.app.ui.component.LazyScrollColumn
@@ -76,6 +77,14 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
         val provider = AppModel.activeProviderId()
         val navigator = LocalNavigator.currentOrThrow
 
+        // 本页有**两种角色**：
+        //  (a) 「搜索」tab 的根内容 —— 由 TabContent 渲染，外壳已经画了顶栏（标题=tab 名），
+        //      这里再套一层路由外壳就是**双顶栏**，所以必须原样输出正文；
+        //  (b) 被首页 push 出来的路由页 —— 需要自己的标题与返回键（否则宽屏平板无顶栏、
+        //      无返回，桌面窗口标题也会停在「首页」）。
+        // 判据用「本实例是不是导航栈顶」：tab 形态下栈顶是 tab 宿主，不是本页。
+        val isRoutePage = navigator.lastItem === this
+
         // 桌面标题栏的全局搜索框把关键词投递到这里。它是唯一消费者（MainScreen 只负责切 tab，
         // 不消费），所以这里喂给 ScreenModel 后立刻置回 null。见 DesktopShell 的 KDoc。
         val pendingSearchQuery = cp.player.app.ui.util.DesktopShell.pendingSearchQuery
@@ -93,7 +102,9 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
             androidx.compose.runtime.mutableStateOf<cp.player.core.music.TrackSummary?>(null)
         }
 
-        Column(Modifier.fillMaxSize()) {
+        // 正文整体收进一个 lambda，便于按上面两种角色决定是否套 CpRouteScaffold。
+        val routeBody: @Composable (Modifier) -> Unit = { contentModifier ->
+        Column(contentModifier.fillMaxSize()) {
             OutlinedTextField(
                 value = state.query,
                 onValueChange = model::setQuery,
@@ -343,6 +354,19 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                     }
                 }
             }
+        }
+        }
+
+        if (isRoutePage) {
+            // 路由页形态：标题与返回交给唯一外壳（桌面窗口 chrome / 窄屏自绘顶栏，
+            // 双栏右栏则由容器接管）。
+            CpRouteScaffold(
+                title = "搜索",
+                onBack = if (navigator.size > 1) ({ navigator.pop() }) else null,
+            ) { routeBody(it) }
+        } else {
+            // tab 形态：正文原样输出，顶栏由外壳承担。
+            routeBody(Modifier)
         }
 
         selectedTrack?.let { track ->

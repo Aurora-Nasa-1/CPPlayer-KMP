@@ -34,6 +34,7 @@ import cp.player.app.ui.anim.CoverFlightHost
 import cp.player.app.ui.component.MiniPlayer
 import cp.player.app.ui.component.ProvideIsExpanded
 import cp.player.app.ui.screen.BackendErrorScreen
+import cp.player.app.ui.screen.ChatScreen
 import cp.player.app.ui.screen.HomeGeneratedPlaylistScreen
 import cp.player.app.ui.screen.MainScreen
 import cp.player.app.ui.screen.OnboardingScreen
@@ -219,9 +220,14 @@ fun App(
                                         // MainScreen already owns this overlay; all other pages get the
                                         // same controller here so playback remains accessible globally.
                                         GlobalMiniPlayerHost(
+                                            // 聊天页（窄屏整页）也让位：那一页底部是固定输入栏，
+                                            // 小播放器浮层会把它盖住并吞掉点击。
+                                            // 桌面宽屏的对话在 `MessagesPane` 右栏里、不在这条根栈上，
+                                            // 由 `MainScreen` 自己那份宿主处理。
                                             show = startDestination is AppStartDestination.Main &&
                                                 navigator.lastItem !is MainScreen &&
-                                                navigator.lastItem !is PlayerScreen,
+                                                navigator.lastItem !is PlayerScreen &&
+                                                navigator.lastItem !is ChatScreen,
                                             onClick = { navigator.push(PlayerScreen()) },
                                             modifier = Modifier.align(Alignment.BottomCenter),
                                         )

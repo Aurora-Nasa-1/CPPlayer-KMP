@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -48,9 +49,15 @@ import kotlinx.coroutines.launch
  *
  * 面板被挤到 < 840dp（用户把窗口拖小）时不再硬撑双栏 —— 320dp 的左栏加一个右栏
  * 会互相压住。此时回落成**单栏**：只出列表，点会话 push [ChatScreen] 整页。
+ *
+ * @param onChatOpenChanged 右栏是否已经打开了一个对话（= 屏幕底部多了一条固定输入栏）。
+ *   宿主（`MainScreen`）据此让小播放器让位给输入栏 —— 桌面宽屏的对话在面板右栏里，
+ *   `App.kt` 那个全局小播放器宿主看不到它。离开组合时会复位为 false。
  */
 @Composable
-fun MessagesPane() {
+fun MessagesPane(
+    onChatOpenChanged: (Boolean) -> Unit = {},
+) {
     val navigator = LocalNavigator.current
     val model = remember { MessagesModel() }
     val chatModel = remember { ChatModel() }
@@ -62,6 +69,12 @@ fun MessagesPane() {
     // 当前选中的会话。刻意**不自动选第一个**：进消息面板先看到一句「选择左侧会话」，
     // 比替用户决定看谁的私信更合适（也和设置页宽屏一致）。
     var selected by remember { mutableStateOf<Contact?>(null) }
+
+    // 右栏一旦有对话就给宿主发「让位」信号（见 onChatOpenChanged 的 KDoc）。
+    LaunchedEffect(selected) { onChatOpenChanged(selected != null) }
+    // 面板被收起 / 切到别的 tab / 窗口缩窄时这个组合位置会消失，信号必须跟着复位 ——
+    // 否则离开消息面板之后小播放器会一直不出现。
+    DisposableEffect(Unit) { onDispose { onChatOpenChanged(false) } }
 
     LaunchedEffect(loggedIn) {
         if (loggedIn) {

@@ -325,8 +325,8 @@ private fun LibraryDashboard(
                 BentoStatCard("聆听统计", stats, Modifier.weight(2f).fillMaxHeight())
             }
         } else {
-            // 手机端：顶栏标题已是账号昵称，问候区不再重复大名字，只留统计副标题。
-            LibraryGreeting(title, subtitle, Modifier.fillMaxWidth(), showTitle = false)
+            // 手机端：顶栏标题已是 tab 名（「我的」），昵称由这里的问候区承担 —— 不重复。
+            LibraryGreeting(title, subtitle, Modifier.fillMaxWidth())
             BentoStatCard("聆听统计", stats, Modifier.fillMaxWidth().height(112.dp))
         }
 
@@ -484,8 +484,7 @@ private fun LibraryGreeting(
     title: String,
     subtitle: String,
     modifier: Modifier = Modifier,
-    // 手机端顶栏已显示账号昵称（MainScreen.AppTopBar accountLeading 分支），
-    // 问候区再放一遍大名字是重复的，传 false 只留统计副标题。
+    // 顶栏标题是 tab 名（「我的」），昵称靠这里露出，因此默认显示大标题。
     showTitle: Boolean = true,
 ) {
     Column(modifier) {
