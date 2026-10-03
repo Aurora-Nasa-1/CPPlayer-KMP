@@ -7,6 +7,8 @@ import cp.player.core.monitor.HealthMonitor
 import cp.player.core.provider.ProviderManager
 import cp.player.core.util.currentTimeMillis
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -489,7 +491,12 @@ class CachedMusicApiService(
             if (mapped.isEmpty() || mapped.equals("unsupported", ignoreCase = true)) continue
             val start = currentTimeMillis()
             try {
-                val raw = provider.callApi(mapped, params)
+                // ⚠️ provider.callApi 是**同步阻塞**契约：HttpProvider / BinaryProvider 内部
+                // 用 runBlocking 转发 Ktor 请求（超时 60s），JniProvider 直接阻塞在 native 调用。
+                // 本函数跑在调用方协程所用的调度器上，而调用方常见于 `screenModelScope`
+                // （Dispatchers.Main.immediate）⇒ 不切 IO 会把 UI 线程阻塞到 HTTP 超时（ANR）。
+                // 唯一会切 IO 的 ProviderManager.callApi 在这里被绕过了，所以必须显式切。
+                val raw = withContext(Dispatchers.IO) { provider.callApi(mapped, params) }
                 val parsed = parseOrNull(raw) ?: continue
                 val code = codeOf(parsed)
                 val ok = ApiResponseCodes.isSuccess(code)
