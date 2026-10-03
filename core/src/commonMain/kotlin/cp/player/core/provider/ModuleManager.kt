@@ -36,6 +36,17 @@ class ModuleManager(
 
     private fun updateProvidersFlow() { _providersFlow.value = providers.values.toList() }
 
+    private companion object {
+        /** 导入时的暂存目录前缀；扫描模块目录时据此跳过并清理失败残留。 */
+        const val TEMP_PREFIX = "temp_"
+
+        /** 取路径最后一段（兼容 `/` 与 `\` 两种分隔符）。 */
+        fun lastPathSegment(path: String): String {
+            val cut = maxOf(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+            return if (cut >= 0) path.substring(cut + 1) else path
+        }
+    }
+
     /**
      * 扫描 modulesDir，加载所有子目录模块，并按 [providerManager] 恢复/自动选择活跃 Provider。
      */
@@ -54,7 +65,17 @@ class ModuleManager(
     private fun scanAndLoadAll() {
         // 列出子目录：jvm 桥；此处通过一个轻量 expect 列目录。
         val dirs = PlatformSupport.listChildDirectories(modulesDir)
-        for (dir in dirs) loadModuleIfExists(dir)
+        for (dir in dirs) {
+            // ⚠️ 跳过导入中途失败残留的暂存目录：它可能已解压出 manifest.json，
+            // 被当作真实模块加载会以**相同的 id** 覆盖真模块（providers[id] = provider），
+            // 而 getModuleDir(id) 返回的却是正式目录 —— 表现为「幽灵音源」且删不掉。
+            // 顺手清掉，避免无限累积。
+            if (lastPathSegment(dir).startsWith(TEMP_PREFIX)) {
+                PlatformSupport.deleteRecursively(dir)
+                continue
+            }
+            loadModuleIfExists(dir)
+        }
     }
 
     /** 导入 zip 模块包。 */
@@ -68,9 +89,12 @@ class ModuleManager(
 
     private fun importZip(zipPath: String, expectedId: String?): Boolean {
         lastLoadError = null
+        // tempDir 提到 try 外：catch 分支必须能清理它 —— 解压中途失败（zip-slip / 磁盘满）
+        // 会留下「已解压出 manifest.json」的半成品目录，被下次 scanAndLoadAll 当成真实模块。
+        val tempDir = "$modulesDir/$TEMP_PREFIX${System.currentTimeMillis()}"
         return try {
-            val tempDir = "$modulesDir/temp_${System.currentTimeMillis()}"
             if (!PlatformSupport.unzipTo(zipPath, tempDir)) {
+                PlatformSupport.deleteRecursively(tempDir)
                 lastLoadError = "解压失败"
                 return false
             }
@@ -96,6 +120,7 @@ class ModuleManager(
                 return false
             }
             if (!PlatformSupport.moveDir(tempDir, targetDir)) {
+                PlatformSupport.deleteRecursively(tempDir)
                 lastLoadError = "移动临时目录失败"
                 return false
             }
@@ -103,6 +128,8 @@ class ModuleManager(
             if (ok) updateProvidersFlow() else PlatformSupport.deleteRecursively(targetDir)
             ok
         } catch (e: Exception) {
+            // 任何异常都不能把半成品暂存目录留在 modules 目录里（同上）。
+            PlatformSupport.deleteRecursively(tempDir)
             lastLoadError = "导入失败: ${e.message}"
             false
         }

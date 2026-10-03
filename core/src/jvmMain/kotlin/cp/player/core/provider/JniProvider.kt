@@ -74,10 +74,11 @@ class JniProvider(
         val json = buildJsonObject {
             params.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
         }.toString()
-        log("callApi -> nativeCallApi: method=$method, json=$json")
+        log("callApi -> nativeCallApi: method=$method, params={${maskParamsForLog(params)}}")
         return try {
             val result = nativeCallApi(method, json)
-            log("callApi <- nativeCallApi: method=$method, result=${result.take(200)}")
+            // 只记长度：响应体可能含账号资料 / 私信片段，不适合整段落日志。
+            log("callApi <- nativeCallApi: method=$method, resultLen=${result.length}")
             result
         } catch (e: UnsatisfiedLinkError) {
             isLoaded = false
@@ -177,5 +178,25 @@ class JniProvider(
 
     private fun log(msg: String) {
         println("[JniProvider] $msg")
+    }
+
+    /**
+     * 打日志前对参数做**脱敏**。
+     *
+     * `MusicApiServiceImpl` 会把会话 cookie 注入 params（等价于账号密码），而 Android 上
+     * `println` 直接进 logcat、桌面上进 stdout —— 原样打印等于把登录态写进日志，任何
+     * 日志抓取工具 / 崩溃上报 / `adb logcat` 都能读到。这里只保留键名，敏感键的值换成
+     * 长度占位符，既堵住泄露又不损失定位故障所需的信息量。
+     */
+    private fun maskParamsForLog(params: Map<String, String>): String =
+        params.entries.joinToString(", ") { (k, v) ->
+            if (k.lowercase() in SENSITIVE_PARAM_KEYS) "$k=***(${v.length})" else "$k=$v"
+        }
+
+    private companion object {
+        /** 值等价于凭据的参数键，绝不落日志。 */
+        val SENSITIVE_PARAM_KEYS = setOf(
+            "cookie", "token", "password", "md5_password", "access_token", "refresh_token",
+        )
     }
 }

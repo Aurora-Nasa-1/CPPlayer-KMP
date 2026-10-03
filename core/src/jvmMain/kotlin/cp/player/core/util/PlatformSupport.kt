@@ -28,6 +28,10 @@ actual fun localDateTimeOf(epochMillis: Long): LocalDateTimeParts {
     )
 }
 
+/** 单个 zip 包解压上限：条目数与累计字节数（防 zip bomb / 损坏包写满磁盘）。 */
+private const val MAX_ZIP_ENTRIES = 20_000
+private const val MAX_ZIP_TOTAL_BYTES = 512L * 1024 * 1024
+
 /**
  * JVM 共享平台支持（Android 与 Desktop 共用）。
  *
@@ -35,7 +39,6 @@ actual fun localDateTimeOf(epochMillis: Long): LocalDateTimeParts {
  * 仅 ABI 列表与模块根目录差异由 [PlatformInfo] 提供。
  */
 actual object PlatformSupport {
-
     actual fun isPortAvailable(port: Int): Boolean = try {
         ServerSocket(port).use { true }
     } catch (e: Exception) {
@@ -62,6 +65,8 @@ actual object PlatformSupport {
         return try {
             ZipInputStream(File(zipPath).inputStream()).use { zis ->
                 var entry = zis.nextEntry
+                var entryCount = 0
+                var totalBytes = 0L
                 while (entry != null) {
                     val newFile = File(dest, entry.name)
                     if (!newFile.canonicalPath.startsWith(dest.canonicalPath + File.separator)) {
@@ -70,8 +75,24 @@ actual object PlatformSupport {
                     if (entry.isDirectory) {
                         newFile.mkdirs()
                     } else {
+                        // 防 zip bomb：条目数 + **实际写入字节数**双重上限。
+                        // 不信任 entry.size（可以撒谎），所以按真实读到的字节累计。
+                        if (++entryCount > MAX_ZIP_ENTRIES) {
+                            throw SecurityException("zip 条目数超过上限 $MAX_ZIP_ENTRIES")
+                        }
                         newFile.parentFile?.mkdirs()
-                        FileOutputStream(newFile).use { fos -> zis.copyTo(fos) }
+                        FileOutputStream(newFile).use { fos ->
+                            val buf = ByteArray(64 * 1024)
+                            while (true) {
+                                val n = zis.read(buf)
+                                if (n < 0) break
+                                totalBytes += n
+                                if (totalBytes > MAX_ZIP_TOTAL_BYTES) {
+                                    throw SecurityException("zip 解压总量超过上限 $MAX_ZIP_TOTAL_BYTES 字节")
+                                }
+                                fos.write(buf, 0, n)
+                            }
+                        }
                     }
                     entry = zis.nextEntry
                 }

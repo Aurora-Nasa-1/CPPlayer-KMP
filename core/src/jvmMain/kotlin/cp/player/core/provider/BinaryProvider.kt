@@ -73,6 +73,7 @@ class BinaryProvider(
                 .directory(file.parentFile)
                 .redirectErrorStream(true)
                 .start()
+            drainProcessOutput(process!!)
             println("[BinaryProvider] Started $binaryPath on port $port")
         } catch (e: Exception) {
             loadError = "Binary 启动失败: ${e.message}"
@@ -84,6 +85,26 @@ class BinaryProvider(
     override fun stopServer() {
         process?.destroy()
         process = null
+    }
+
+    /**
+     * 持续排空子进程输出。
+     *
+     * `redirectErrorStream(true)` 把 stderr 并进 stdout，而子进程一旦写入量超过 OS 管道
+     * 缓冲就会阻塞在 `write` —— 没人读进程输出时，Provider 会「假死」、`callApi` 一直超时。
+     * 守护线程读到 EOF 自然结束，[stopServer] 销毁进程时随之退出。
+     */
+    private fun drainProcessOutput(proc: Process) {
+        Thread({
+            // 整体兜底：排空线程自身的异常不该影响主流程。
+            runCatching {
+                val input = proc.inputStream
+                val buf = ByteArray(8192)
+                while (input.read(buf) >= 0) {
+                    // 丢弃输出；需要排查模块问题时改成写入受限日志。
+                }
+            }
+        }, "binary-provider-drain").apply { isDaemon = true }.start()
     }
 
     override fun callApi(method: String, params: Map<String, String>): String {
