@@ -50,6 +50,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import cafe.adriel.voyager.navigator.LocalNavigator
 import coil3.compose.AsyncImage
 import cp.player.app.ui.component.CpModeToggle
 import cp.player.app.ui.component.CpPlayPauseButton
@@ -58,11 +59,13 @@ import cp.player.app.ui.component.CpToggleChip
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.MorphingShape
 import cp.player.app.ui.component.SimilarSongsPanel
+import cp.player.app.ui.component.TrackArtistText
 import cp.player.app.ui.component.PlayerMoreSheets
 import cp.player.app.ui.component.rememberPlayerMoreSheetState
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.util.SeekAvailability
 import cp.player.app.ui.util.formatTimeMs
+import cp.player.app.ui.util.pushOrNotify
 import cp.player.app.ui.util.resized
 import cp.player.core.playback.PlaybackUiState
 import cp.player.core.playback.RepeatMode
@@ -95,6 +98,15 @@ fun DesktopPlayerScreen(
 ) {
     val track = state.currentTrack ?: return
     val scope = rememberCoroutineScope()
+    // 点歌手 → 歌手主页。多歌手各自分段可点（见 TrackArtistText 的 KDoc）。
+    // ⚠️ 拿不到 Navigator 时**不挂点击区**（传 null 走纯文本分支）：与其点了只弹一句
+    // 「打不开」，不如一开始就不长得像能点。
+    val navigator = LocalNavigator.current
+    val onArtistClick: ((cp.player.core.music.ArtistSummary) -> Unit)? = remember(navigator) {
+        navigator?.let { nav ->
+            { artist -> nav.pushOrNotify(UserProfileScreen(artist.id, artist.name)) }
+        }
+    }
     // 「更多」弹层的开关状态 + 共享宿主（动作实现唯一一份，见 PlayerMoreSheets）。
     // 本页与窄屏布局互斥切换，各持一份状态。
     val moreSheets = rememberPlayerMoreSheetState()
@@ -185,7 +197,13 @@ fun DesktopPlayerScreen(
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
                                     Text(track.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(track.artist, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    TrackArtistText(
+                                        track = track,
+                                        onArtistClick = onArtistClick,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                    )
                                 }
                                 IconButton(onClick = onLike) {
                                     Icon(if (state.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, "收藏", tint = if (state.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)

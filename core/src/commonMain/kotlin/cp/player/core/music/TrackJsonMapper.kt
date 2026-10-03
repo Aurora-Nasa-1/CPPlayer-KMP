@@ -1,6 +1,7 @@
 package cp.player.core.music
 
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -21,10 +22,13 @@ import kotlinx.serialization.json.longOrNull
  *   统一音源用调用方给的带命名空间 mediaId，搜索路径用上游返回的裸 id（见 [rawTrackId]）。
  */
 internal fun trackSummaryOf(json: JsonObject, id: String): TrackSummary {
-    val artists = (json["ar"] as? JsonArray) ?: (json["artists"] as? JsonArray)
-    val artistNames = artists?.joinToString(" / ") {
-        ((it as? JsonObject)?.get("name") as? JsonPrimitive)?.contentOrNull.orEmpty()
-    } ?: ((json["artist"] as? JsonPrimitive)?.contentOrNull ?: "")
+    // 歌手：数组（`ar` / `artists`）优先，其次单对象 `artist`，最后才是 `artist` 字符串。
+    // 前两种能拿到 id（可跳主页），最后一种只有名字 —— 见 [TrackSummary.artists]。
+    val artistArray = (json["ar"] as? JsonArray) ?: (json["artists"] as? JsonArray)
+    val fromArray = artistArray?.mapNotNull(::artistOf).orEmpty()
+    val artists = fromArray.ifEmpty { listOfNotNull((json["artist"] as? JsonObject)?.let(::artistOf)) }
+    val artistNames = artists.joinToString(" / ") { it.name }
+        .ifEmpty { (json["artist"] as? JsonPrimitive)?.contentOrNull ?: "" }
     val albumObj = (json["al"] as? JsonObject) ?: (json["album"] as? JsonObject)
     return TrackSummary(
         id = id,
@@ -34,6 +38,24 @@ internal fun trackSummaryOf(json: JsonObject, id: String): TrackSummary {
         album = (albumObj?.get("name") as? JsonPrimitive)?.contentOrNull,
         coverUrl = (albumObj?.get("picUrl") as? JsonPrimitive)?.contentOrNull,
         durationMs = ((json["dt"] ?: json["duration"]) as? JsonPrimitive)?.longOrNull ?: 0L,
+        artists = artists,
+    )
+}
+
+/**
+ * 单个歌手条目 → [ArtistSummary]。
+ *
+ * 名字为空的条目整条丢弃（拼进 `artist` 只会留下空的 " / "）。
+ * **缺 id 的条目保留**：名字仍要出现在歌手串里，只是 `id` 置 `0L` —— 调用方据此
+ * 把它渲染成不可点，而不是跳到一个错的人主页（这一点比「少一个名字」重要）。
+ */
+private fun artistOf(element: JsonElement): ArtistSummary? {
+    val obj = element as? JsonObject ?: return null
+    val name = (obj["name"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: return null
+    return ArtistSummary(
+        id = (obj["id"] as? JsonPrimitive)?.longOrNull?.takeIf { it > 0L } ?: 0L,
+        name = name,
+        avatarUrl = null,
     )
 }
 

@@ -103,6 +103,16 @@ data class PlaylistTracksPage(
 
 /**
  * 歌曲摘要（列表/队列用）。
+ *
+ * [artists] 是**逐个拆开的**歌手，与 [artist]（拼好的一整串）并存：
+ * 合唱曲目点歌手要能进到「对的那个人」的主页，只有一串 "A / B" 是做不到的 ——
+ * 整串只能「点哪都进第一个人」，或者干脆整行不可点。
+ *
+ * 上游只在 `ar` / `artists` **数组**里给 id，所以：
+ * - 数组存在 ⇒ [artists] 与 [artist] 同源同序，可逐个跳转；
+ * - 数组不存在（上游只给了 `artist` 字符串）⇒ [artists] 为空，调用方退回 [artist] 纯文本；
+ * - 数组里某一条**缺 id** ⇒ 该条 `id` 为 `0L`（名字照常参与 [artist] 拼接），
+ *   调用方应当把它渲染成**不可点**，而不是塞一个错误的 id 进去。
  */
 data class TrackSummary(
     val id: String,
@@ -111,6 +121,7 @@ data class TrackSummary(
     val album: String?,
     val coverUrl: String?,
     val durationMs: Long,
+    val artists: List<ArtistSummary> = emptyList(),
 )
 
 /**

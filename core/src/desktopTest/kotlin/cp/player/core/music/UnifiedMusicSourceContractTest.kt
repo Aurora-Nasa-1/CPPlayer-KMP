@@ -171,6 +171,9 @@ class UnifiedMusicSourceContractTest {
         assertEquals(viaSearch.album, viaUnified.album)
         assertEquals(viaSearch.coverUrl, viaUnified.coverUrl)
         assertEquals(viaSearch.durationMs, viaUnified.durationMs)
+        // 歌手条目同样必须一致：播放页「点歌手进主页」依赖它，两条路径分叉就会
+        // 出现「从搜索点进去能跳、从详情点进去不能跳」。
+        assertEquals(viaSearch.artists, viaUnified.artists)
     }
 
     @Test
@@ -183,6 +186,29 @@ class UnifiedMusicSourceContractTest {
         assertEquals("甲 / 乙", track.artist, "artists 数组应拼成 ' / ' 分隔")
         assertEquals("回退专辑", track.album)
         assertEquals(123_000L, track.durationMs, "duration 应作为 dt 的回退")
+    }
+
+    @Test
+    fun `多歌手逐条带 id，缺 id 的那位照常出名字但不给 id`() = runBlocking {
+        val s = source(api = detailApi(MULTI_ARTIST_JSON))
+
+        val track = s.getTrackDetail("netease://song/100").getOrNull()
+            ?: fail("应能解析多歌手曲目")
+        assertEquals("周杰伦 / 杨瑞代 / 无名", track.artist, "歌手串仍是**全部**名字，缺 id 的不丢")
+        assertEquals(listOf("周杰伦", "杨瑞代", "无名"), track.artists.map { it.name })
+        // 0L = 「上游没给 id」的哨兵：播放页据此把这一位渲染成不可点，
+        // 而不是塞一个错的人的主页进去。
+        assertEquals(listOf(6452L, 12345L, 0L), track.artists.map { it.id })
+    }
+
+    @Test
+    fun `上游只给 artist 字符串时没有可跳转的歌手条目`() = runBlocking {
+        val s = source(api = detailApi(ARTIST_STRING_JSON))
+
+        val track = s.getTrackDetail("netease://song/1").getOrNull()
+            ?: fail("应能解析 artist 字符串")
+        assertEquals("甲", track.artist)
+        assertTrue(track.artists.isEmpty(), "没有 id 就没有可跳转条目，实际=${track.artists}")
     }
 
     @Test
@@ -261,6 +287,27 @@ class UnifiedMusicSourceContractTest {
         /** 只给 `songId` / `song`：检验 id 与 name 的回退。 */
         val SONG_ID_FALLBACK_JSON: JsonElement = Json.parseToJsonElement(
             """{"code":200,"songs":[{"songId":"777","song":"回退曲名","artists":[{"name":"丙"}]}]}"""
+        )
+
+        /** 多歌手（合唱）：第三位缺 id —— 名字要留在歌手串里，但不得带出可跳转的 id。 */
+        val MULTI_ARTIST_JSON: JsonElement = Json.parseToJsonElement(
+            """
+            {"code":200,"songs":[{
+              "id": 100,
+              "name": "合唱",
+              "ar": [
+                {"id": 6452, "name": "周杰伦"},
+                {"id": 12345, "name": "杨瑞代"},
+                {"name": "无名"}
+              ],
+              "dt": 200000
+            }]}
+            """
+        )
+
+        /** 只有 `artist` 字符串、没有任何数组 ⇒ 拿不到 id，不应伪造歌手条目。 */
+        val ARTIST_STRING_JSON: JsonElement = Json.parseToJsonElement(
+            """{"code":200,"songs":[{"id":1,"name":"独唱","artist":"甲"}]}"""
         )
 
         fun detailApi(json: JsonElement) = object : MusicApiService by throwingApi() {

@@ -109,6 +109,7 @@ import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.formatTimeMs
 import cp.player.app.ui.util.next
 import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.util.pushOrNotify
 import cp.player.core.playback.LyricsState
 import cp.player.core.playback.RepeatMode
 import kotlinx.coroutines.launch
@@ -262,6 +263,16 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
     val playerScope = rememberCoroutineScope()
     val controller = AppModel.playback
 
+    // 点歌手 → 歌手主页。多歌手逐个分段可点（见 TrackArtistText 的 KDoc）。
+    // ⚠️ 拿不到 Navigator 时**不挂点击区**（传 null 走纯文本分支）：与其点了只弹一句
+    // 「打不开」，不如一开始就不长得像能点。
+    val navigator = LocalNavigator.current
+    val onArtistClick: ((cp.player.core.music.ArtistSummary) -> Unit)? = remember(navigator) {
+        navigator?.let { nav ->
+            { artist -> nav.pushOrNotify(UserProfileScreen(artist.id, artist.name)) }
+        }
+    }
+
     // Pager 四页：0=歌词，1=播放器，2=评论，3=相似歌曲
     val pagerState = rememberPagerState(initialPage = 1) { 4 }
     val scope = rememberCoroutineScope()
@@ -365,16 +376,18 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
-                                        Text(
-                                            text = track.artist,
+                                        // 歌手可点（多歌手各自分段）：顶栏这行是 bodySmall，
+                                        // 与下方大字歌手行共用同一个组件、同一份跳转。
+                                        // 次级文字用 onSurfaceVariant，不要 onSurface + 手写 alpha。
+                                        // 手写 alpha 在「跟随封面取色」时不可控：封面色一深，
+                                        // 0.6 的次级文字就掉到对比度下限以下，而同一层级的文字
+                                        // 在别的页面是 onSurfaceVariant —— 同级别、不同深浅。
+                                        cp.player.app.ui.component.TrackArtistText(
+                                            track = track,
+                                            onArtistClick = onArtistClick,
                                             style = MaterialTheme.typography.bodySmall,
-                                            // 次级文字用 onSurfaceVariant，不要 onSurface + 手写 alpha。
-                                            // 手写 alpha 在「跟随封面取色」时不可控：封面色一深，
-                                            // 0.6 的次级文字就掉到对比度下限以下，而同一层级的文字
-                                            // 在别的页面是 onSurfaceVariant —— 同级别、不同深浅。
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
@@ -493,6 +506,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                 onRepeat = onRepeat,
                                 onShuffle = onShuffle,
                                 onLikeClick = { playerScope.launch { controller.toggleFavorite() } },
+                                onArtistClick = onArtistClick,
                                 // 弹层本体与全部动作实现已收进共享宿主 PlayerMoreSheets
                                 // （本页末尾调用），这里只传两个入口回调。
                                 onMoreClick = { moreSheets.showMoreMenu = true },
@@ -594,6 +608,7 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
     onRepeat: () -> Unit,
     onShuffle: () -> Unit,
     onLikeClick: () -> Unit,
+    onArtistClick: ((cp.player.core.music.ArtistSummary) -> Unit)?,
     onMoreClick: () -> Unit,
     onSleepTimer: () -> Unit,
 ) {
@@ -672,14 +687,14 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                     )
                 )
                 Spacer(Modifier.height(2.dp))
-                Text(
-                    track.artist,
+                cp.player.app.ui.component.TrackArtistText(
+                    track = track,
+                    onArtistClick = onArtistClick,
                     style = MaterialTheme.typography.titleMedium,
                     // 同一处曾写 `onSurfaceVariant.copy(alpha = 0.8f)`：那是「比次级再淡一点」的
                     // 自创层级，M3 里没有这一档，跟顶栏的歌手名（onSurfaceVariant 原样）也不一致。
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.sharedBounds(
                         sharedContentState = rememberSharedContentState(key = "artist-${track.id}"),
                         animatedVisibilityScope = animatedVisibilityScope,
