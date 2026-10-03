@@ -16,6 +16,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -74,6 +75,39 @@ class PlaylistDetailScreenModel : ScreenModel {
      */
     private var autoPlayedPlaylistId: Long? = null
 
+    /**
+     * 当前 [PlaylistDetailUiState.tracks] 里那些**裸 id** 属于哪个音源。
+     *
+     * `TrackSummary.id` 是音源侧的裸 id，只有配上 provider 才能拼成 mediaId。
+     * 播放时若现取 `activeProviderId()`，切源后旧 id 会被新 Provider 当作自己的 id 解释
+     * （id 空间撞车 ⇒ 播成无关歌曲，或整列解析失败）。所以在这里**随曲目一起记下**。
+     */
+    private var tracksProviderId: String? = null
+
+    /**
+     * 加载世代：每次发起加载自增，写回前校验。
+     *
+     * 切源时 `sourceGeneration` 会触发重拉，若旧的 in-flight 请求后到，仅靠
+     * `fetchingPlaylistId` 拦不住（同一歌单 id，守卫照样通过）⇒ 旧音源内容覆盖新结果。
+     */
+    private var loadGen = 0
+
+    init {
+        // 音源切换后，本页曲目属于旧音源：作废加载标记并（真实歌单）按当前音源重拉。
+        // 与 HomeScreenModel / LibraryScreenModel 同一套处理。
+        screenModelScope.launch {
+            AppModel.sourceGeneration.drop(1).collect {
+                val summary = _state.value.summary ?: return@collect
+                loadedPlaylistId = null
+                autoPlayedPlaylistId = null
+                tracksProviderId = null
+                // 虚拟歌单（每日推荐 / 相似歌曲 / 心动模式，id < 0）的曲目来自上一级，
+                // 本模型拿不到新音源的等价数据，只作废标记让宿主重喂。
+                if (summary.id > 0) load(summary, force = true)
+            }
+        }
+    }
+
     // ============ 加载 ============
 
     /**
@@ -83,6 +117,9 @@ class PlaylistDetailScreenModel : ScreenModel {
      */
     fun load(summary: PlaylistSummary, force: Boolean = false) {
         if (!force && loadedPlaylistId == summary.id) return
+        val gen = ++loadGen
+        // 记下发请求这一刻的音源：曲目就绪后 mediaIds 用它拼，避免切源后被新 Provider 解释。
+        val requestProvider = AppModel.activeProviderId()
         loadedPlaylistId = summary.id
         fetchingPlaylistId = summary.id
         _state.value = PlaylistDetailUiState(summary = summary)
@@ -99,8 +136,8 @@ class PlaylistDetailScreenModel : ScreenModel {
                     }
                 }.getOrNull()
             }
-            // 歌单已切换，丢弃过期结果
-            if (fetchingPlaylistId != summary.id) return@launch
+            // 歌单已切换，或有更新的一次加载（切源重拉）已在途 —— 丢弃过期结果
+            if (fetchingPlaylistId != summary.id || gen != loadGen) return@launch
             if (results == null) {
                 _state.update { it.copy(loading = false, error = "歌单详情加载失败") }
                 return@launch
@@ -116,6 +153,8 @@ class PlaylistDetailScreenModel : ScreenModel {
             when (tracksResult) {
                 is BackendResult.Success -> {
                     val page = tracksResult.data
+                    // 曲目与「它是哪个音源的」一起落库，二者永远配对。
+                    tracksProviderId = requestProvider
                     next = next.copy(
                         tracks = page.tracks.distinctBy { it.id },
                         hasMore = page.hasMore || page.tracks.size >= PAGE_SIZE,
@@ -149,8 +188,12 @@ class PlaylistDetailScreenModel : ScreenModel {
         force: Boolean = false,
     ) {
         if (!force && loadedPlaylistId == summary.id) return
+        // 让在途的 load() 结果作废（本方法直接整份替换曲目）。
+        loadGen++
         loadedPlaylistId = summary.id
         fetchingPlaylistId = summary.id
+        // 这些曲目由宿主按当前音源喂入，记下对应音源供 mediaIds 使用。
+        tracksProviderId = AppModel.activeProviderId()
         val distinct = tracks.distinctBy { it.id }
         _state.value = PlaylistDetailUiState(
             summary = summary.copy(trackCount = distinct.size),
@@ -257,7 +300,9 @@ class PlaylistDetailScreenModel : ScreenModel {
     // ============ 播放 / 队列 ============
 
     private fun mediaIds(tracks: List<TrackSummary>): List<String> {
-        val provider = AppModel.activeProviderId()
+        // 用**曲目加载时**的音源，而不是当前活跃音源：否则切源后旧 id 会被新 Provider
+        // 解释成别的歌。tracksProviderId 为空（尚未加载完）时才回落到当前活跃音源。
+        val provider = tracksProviderId ?: AppModel.activeProviderId()
         return tracks.map { "$provider://song/${it.id}" }
     }
 

@@ -12,6 +12,7 @@ import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.RankingSummary
 import cp.player.core.music.TrackSummary
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -175,6 +176,16 @@ class HomeScreenModel(
      */
     private val newSongsByRegion = mutableMapOf<NewSongRegion, List<TrackSummary>>()
 
+    /**
+     * 在途的刷新协程与刷新世代。
+     *
+     * 刷新有三个来路：首屏 [init]、下拉刷新、切源的 [AppModel.sourceGeneration]。
+     * 三者可能并发，而 `_state.value = next` 是「谁后到谁覆盖」—— 不取消旧协程就会
+     * 出现「切源后旧音源的慢请求把新结果盖回去」。世代号负责丢弃过期结果。
+     */
+    private var refreshJob: Job? = null
+    private var refreshGen = 0
+
     init {
         refresh()
         // 音源切换后首页所有数据（日推 / 榜单 / 歌单 …）都属于旧音源：作废按音源
@@ -219,21 +230,27 @@ class HomeScreenModel(
     fun refresh(force: Boolean = false) {
         // 已有内容时不做「刷新即清空」：切回首页不该先闪一屏骨架。
         if (!force && _state.value.loading && _state.value.dailySongs.isNotEmpty()) return
+        // 取消上一轮在途刷新并领到新的世代号：后到的旧音源结果不会覆盖新结果。
+        refreshJob?.cancel()
+        val gen = ++refreshGen
         val silent = _state.value.hasAnyContent
-        screenModelScope.launch {
+        refreshJob = screenModelScope.launch {
             _refreshing.value = true
             try {
                 if (!silent) _state.value = _state.value.copy(loading = true, error = null)
                 val next = withContext(Dispatchers.IO) {
                     if (loadDiscovery) loadDiscoveryHome() else loadUserLibraryOnly()
                 }
+                // 已被更新的刷新取代（或本协程刚被取消）—— 丢弃过期结果，别覆盖新数据。
+                if (gen != refreshGen) return@launch
                 // 首屏拿到的「全部」新歌速递顺手进缓存：这样用户点开地区筛选再切回「全部」
                 // 时不会重新请求、也不会闪一遍加载态。写在这里而不是 loadDiscoveryHome 内部，
                 // 是因为那边跑在 IO 线程，而这张表只在主线程读写。
                 if (next.newSongs.isNotEmpty()) newSongsByRegion[NewSongRegion.All] = next.newSongs
                 _state.value = next.copy(loading = false)
             } finally {
-                _refreshing.value = false
+                // 只有仍是最新一轮才复位指示器，否则会把新一轮刚打开的 refreshing 提前关掉。
+                if (gen == refreshGen) _refreshing.value = false
             }
         }
     }
@@ -252,6 +269,7 @@ class HomeScreenModel(
         if (alreadyLoaded) return
 
         screenModelScope.launch {
+            val gen = refreshGen
             _state.value = _state.value.copy(playlistSourceLoading = true)
             val result = withContext(Dispatchers.IO) {
                 safe {
@@ -264,6 +282,8 @@ class HomeScreenModel(
                 }
             }
             val items = (result as? BackendResult.Success)?.data.orEmpty()
+            // 切源会经 refresh() 递增世代号 —— 命中说明这批结果属于旧音源，丢弃。
+            if (gen != refreshGen) return@launch
             // 切换可能发生在请求在途期间：按当前 state 合并，别用发起时的快照覆盖回去。
             _state.value = _state.value.copy(
                 playlistSourceLoading = false,
@@ -282,12 +302,15 @@ class HomeScreenModel(
             return
         }
         screenModelScope.launch {
+            val gen = refreshGen
             _state.value = _state.value.copy(newSongsLoading = true)
             val result = withContext(Dispatchers.IO) {
                 safe { AppModel.musicRepository.getNewSongsByRegion(region.type, limit = 20) }
             }
             val items = (result as? BackendResult.Success)?.data.orEmpty()
             if (items.isNotEmpty()) newSongsByRegion[region] = items
+            // 切源会经 refresh() 递增世代号 —— 命中说明这批结果属于旧音源，丢弃。
+            if (gen != refreshGen) return@launch
             // 用户在请求在途期间又切了地区：结果只写回对应的那个地区，且仅在仍选中它时上屏。
             _state.value = if (_state.value.newSongRegion == region) {
                 _state.value.copy(newSongs = items, newSongsLoading = false)

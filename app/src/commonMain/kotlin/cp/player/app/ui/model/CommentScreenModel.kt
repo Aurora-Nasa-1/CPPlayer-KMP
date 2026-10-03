@@ -3,6 +3,7 @@ package cp.player.app.ui.model
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -79,6 +80,9 @@ class CommentScreenModel(val id: String, val type: String) : ScreenModel {
     // 且缓存 TTL 内每次重试都命中缓存 ⇒ 必现。
     private val jsonDecoder = Json { ignoreUnknownKeys = true; coerceInputValues = true; isLenient = true }
 
+    /** 在途的加载协程：用它去重，而不是「loading 且有内容」这种会被空列表绕过的守卫。 */
+    private var loadJob: Job? = null
+
     init {
         loadComments()
     }
@@ -88,10 +92,12 @@ class CommentScreenModel(val id: String, val type: String) : ScreenModel {
     }
 
     fun loadComments() {
-        if (_state.value.loading && _state.value.comments.isNotEmpty()) return
-        
+        // 已有请求在途就别再发（原来的守卫是「loading && comments 非空」，
+        // comments 为空时会被绕过 ⇒ 重复并发加载）。
+        if (loadJob?.isActive == true) return
+
         _state.value = _state.value.copy(loading = true, error = null)
-        screenModelScope.launch {
+        loadJob = screenModelScope.launch {
             runCatching {
                 val rawJsonElement = AppModel.api.getComments(extractRawId(id), type)
                 
@@ -130,14 +136,17 @@ class CommentScreenModel(val id: String, val type: String) : ScreenModel {
 
     /** 点赞/取消点赞评论（乐观更新，失败回滚）。 */
     fun toggleLike(comment: Comment) {
-        val target = !comment.liked
-        updateComment(comment.copy(liked = target, likedCount = comment.likedCount + if (target) 1 else -1))
+        // ⚠️ 以**当前 state** 里的这条评论为准，而非调用方传入的快照：快速连点或列表刷新后，
+        // 传入对象可能已过时，基于它翻转会算错计数，失败回滚也会把过时状态写回去。
+        val current = _state.value.comments.firstOrNull { it.id == comment.id } ?: comment
+        val target = !current.liked
+        updateComment(current.copy(liked = target, likedCount = current.likedCount + if (target) 1 else -1))
         screenModelScope.launch {
             val ok = runCatching {
                 AppModel.api.likeComment(extractRawId(id), comment.id, type, target)
                 true
             }.getOrDefault(false)
-            if (!ok) updateComment(comment)
+            if (!ok) updateComment(current)
         }
     }
 
