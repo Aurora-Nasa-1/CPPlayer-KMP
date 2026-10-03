@@ -13,34 +13,32 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.LocalNavigator
@@ -51,6 +49,9 @@ import cp.player.app.ui.component.AlbumItem
 import cp.player.app.ui.component.ArtistItem
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.component.CpSearchField
+import cp.player.app.ui.component.CpSearchFieldHeight
+import cp.player.app.ui.component.CpSearchSuggestionPanel
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.PageHeader
 import cp.player.app.ui.component.LazyScrollColumn
@@ -63,10 +64,19 @@ import cp.player.app.ui.component.PlaylistItem
 import cp.player.app.ui.component.songContextMenuItems
 import cp.player.app.ui.component.songShareText
 import cp.player.app.ui.component.playlistShareText
+import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.shareText
 import cp.player.app.ui.model.SearchScreenModel
 import cp.player.core.api.MusicApiMethod
 import kotlinx.coroutines.launch
+
+/**
+ * 搜索框与它上方那条边的距离。
+ *
+ * 12dp 而不是区块间距（[CpSpacing.section] 28dp）：搜索框、类型切换行、结果列表是**同一组
+ * 控件**，内部的节奏要紧；区块间距留给「最近搜索」↔「热门搜索」那种真正的分组。
+ */
+private val SearchFieldTopPadding = 12.dp
 
 class SearchScreen(private val initialQuery: String = "") : Screen {
     @OptIn(ExperimentalLayoutApi::class)
@@ -116,37 +126,72 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
             androidx.compose.runtime.mutableStateOf<cp.player.core.music.TrackSummary?>(null)
         }
 
+        // 搜索框焦点：既是建议下拉的显示判据（失焦即收起），也是本页「点别处关闭下拉」的
+        // 唯一手段 —— 下拉是浮层，只能靠焦点语义判断「用户已经去干别的了」。
+        val searchFocusRequester = remember { FocusRequester() }
+        val focusManager = LocalFocusManager.current
+        var fieldFocused by remember { mutableStateOf(false) }
+        // 桌面 / 宽屏平板进到搜索这一页就应当能直接打字（否则还得先在输入框里点一下）。
+        // ⚠️ 触屏不自动聚焦：进页面就弹软键盘，会把「最近搜索 / 热门搜索」整块顶掉一半。
+        LaunchedEffect(Unit) {
+            if (!isAndroidPlatform()) searchFocusRequester.requestFocus()
+        }
+
         // 正文整体收进一个 lambda，便于按上面两种角色决定是否套 CpRouteScaffold。
         val routeBody: @Composable (Modifier) -> Unit = { contentModifier ->
         Column(contentModifier.fillMaxSize()) {
-            OutlinedTextField(
-                value = state.query,
-                onValueChange = model::setQuery,
-                modifier = Modifier.fillMaxWidth().padding(
-                    start = CpSpacing.pageHorizontal,
-                    end = CpSpacing.pageHorizontal,
-                    top = 12.dp,
-                ),
-                placeholder = { Text("搜索歌曲、歌手或专辑") },
-                leadingIcon = { Icon(Icons.Filled.Search, null) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { model.search() }),
-                trailingIcon = {
-                    if (state.query.isNotEmpty()) {
-                        IconButton(
-                            onClick = model::clear,
-                        ) { Icon(Icons.Filled.Close, "清空") }
-                    } else {
-                        IconButton(onClick = { model.search() }) { Icon(Icons.Filled.Search, "搜索") }
-                    }
-                },
-                shape = RoundedCornerShape(percent = 50),
-            )
+            // 搜索框与建议下拉共用一层容器，宽度按 [CpSpacing.pageMaxWidth] 收口、居中 ——
+            // ⚠️ `widthIn` 必须写在 `fillMaxWidth` **之前**，否则后者先把约束钉死、前者是空操作。
+            //
+            // ⚠️ 这一层 Box 的高度**钉死**在搜索框高度上：建议下拉必须是**浮层**，超出这层
+            // 容器的部分不参与外层 Column 的布局（靠组件自带的 `wrapContentHeight(unbounded)`）。
+            // 收敛前建议列表是内联的一段 Surface —— 它一出现，整页内容就往下跳一次。
+            Box(
+                Modifier
+                    // 浮层要盖住下方所有兄弟（类型切换行、结果列表）—— 本 Box 是 Column 的
+                    // 第一个孩子，**绘制顺序在后续兄弟之前**，不加 zIndex 的话「热门搜索 /
+                    // 搜索结果」的文字会画在下拉上面（离屏渲染抓出来的）。zIndex 不影响布局。
+                    .zIndex(1f)
+                    .widthIn(max = CpSpacing.pageMaxWidth)
+                    .fillMaxWidth()
+                    .height(CpSearchFieldHeight)
+                    .align(Alignment.CenterHorizontally)
+                    .padding(
+                        start = CpSpacing.pageHorizontal,
+                        end = CpSpacing.pageHorizontal,
+                        top = SearchFieldTopPadding,
+                    ),
+            ) {
+                CpSearchField(
+                    query = state.query,
+                    onQueryChange = model::setQuery,
+                    onSubmit = { model.search() },
+                    onFocusChange = { fieldFocused = it },
+                    focusRequester = searchFocusRequester,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (fieldFocused && state.query.isNotBlank() && state.suggestions.isNotEmpty() && state.result == null) {
+                    CpSearchSuggestionPanel(
+                        suggestions = state.suggestions,
+                        onPick = { picked ->
+                            // 先收焦点再搜索：下拉的显示判据就是「输入框有焦点」，
+                            // 不收的话它会一直浮在结果列表上面。
+                            focusManager.clearFocus()
+                            model.search(picked)
+                        },
+                        // 从搜索框下沿再往下浮 6dp —— 不贴着框底，才看得出是两个层次。
+                        modifier = Modifier.fillMaxWidth().offset(y = CpSearchFieldHeight + 6.dp),
+                    )
+                }
+            }
             Spacer(Modifier.height(8.dp))
             if (state.query.isNotBlank() || state.result != null) {
                 LazyScrollRow(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = CpSpacing.pageHorizontal),
+                    modifier = Modifier
+                        .widthIn(max = CpSpacing.pageMaxWidth)
+                        .fillMaxWidth()
+                        .align(Alignment.CenterHorizontally)
+                        .padding(horizontal = CpSpacing.pageHorizontal),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     val types = listOf(
@@ -167,33 +212,17 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                     }
                 }
             }
-            if (state.query.isNotBlank() && state.suggestions.isNotEmpty() && state.result == null) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = CpSpacing.pageHorizontal),
-                    shape = MaterialTheme.shapes.large,
-                    tonalElevation = 3.dp,
-                ) {
-                    Column(Modifier.padding(vertical = 6.dp)) {
-                        state.suggestions.forEach { suggestion ->
-                            Row(
-                                Modifier.fillMaxWidth().clickable { model.search(suggestion) }.padding(horizontal = 16.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(Modifier.width(12.dp))
-                                Text(suggestion)
-                            }
-                        }
-                    }
-                }
-            }
-
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                 when {
-                    state.loading -> StateSurface(Modifier.padding(20.dp)) {
+                    // 加载 / 错误这两张卡也按页面宽度收口，否则宽屏上它们比搜索框宽一圈。
+                    state.loading -> StateSurface(
+                        Modifier.widthIn(max = CpSpacing.pageMaxWidth).padding(20.dp),
+                    ) {
                         ContentState(title = "正在搜索", message = "正在从当前音源查找内容", loading = true)
                     }
-                    state.error != null -> StateSurface(Modifier.padding(20.dp)) {
+                    state.error != null -> StateSurface(
+                        Modifier.widthIn(max = CpSpacing.pageMaxWidth).padding(20.dp),
+                    ) {
                         ContentState(
                             title = "没有完成搜索",
                             message = state.error,
@@ -204,7 +233,10 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                     }
                     state.result == null -> {
                         Column(
-                            Modifier.fillMaxSize().padding(horizontal = CpSpacing.pageHorizontal),
+                            Modifier
+                                .widthIn(max = CpSpacing.pageMaxWidth)
+                                .fillMaxSize()
+                                .padding(horizontal = CpSpacing.pageHorizontal),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             if (state.query.isBlank() && state.searchHistory.isNotEmpty()) {
@@ -278,7 +310,9 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                             )
                         } else {
                             LazyScrollColumn(
-                                Modifier.fillMaxSize(),
+                                // ⚠️ `widthIn` 必须写在 `fillMaxSize` **之前**。宽屏上不收口的话，
+                                // 结果列表会比上面的搜索框 / 类型切换行宽出一圈（两侧常留白不同）。
+                                Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize(),
                                 // 与上方的搜索框、类型切换行取同一个页面内边距。原先这里是 12dp ——
                                 // 结果列表比搜索框左右各缩进 8dp，同一屏里两套边距。
                                 contentPadding = PaddingValues(

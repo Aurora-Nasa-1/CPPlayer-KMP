@@ -1,36 +1,12 @@
 package cp.player.app.ui.component
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.hoverable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,16 +15,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cp.player.app.ui.model.loadSearchSuggestions
-import cp.player.app.ui.theme.CpShapes
 import kotlinx.coroutines.ensureActive
 import kotlin.coroutines.coroutineContext
 
@@ -86,6 +54,12 @@ private val SearchFieldMaxWidth = 420.dp
  * 改为依赖 Compose 的焦点语义：**建议行刻意不用 `clickable`**（它会把焦点从输入框抢走），
  * 只用 `pointerInput`，因此点建议行不会导致失焦；而点击页面上任何可聚焦控件时输入框会失焦
  * ⇒ 下拉自动收起。
+ *
+ * ## 输入框与下拉都借用页面那一份
+ *
+ * [CpSearchField] / [CpSearchSuggestionPanel] 是全应用唯一的搜索输入框，搜索页也用它。
+ * 这里只传「紧凑档」的高度与更高的容器色：标题栏比页面正文高一档色阶，
+ * 沿用页面那套「未聚焦低一档、聚焦提亮」会让这条在标题栏上时明时暗。
  */
 @Composable
 internal fun TitleBarSearch(
@@ -105,17 +79,22 @@ internal fun TitleBarSearch(
         dragArea(Modifier.weight(1f).fillMaxHeight())
 
         // 锚点容器：宽 = min(可用宽度, 420dp)，下拉的宽度与横向位置都对齐到这里。
-        // ⚠️ 高度刻意**不写死**（写死 44dp 会把子节点的测量高度一起钉住，见 SuggestionDropdown）。
+        // ⚠️ 高度刻意**不写死**（写死 44dp 会把子节点的测量高度一起钉住，见 [CpSearchSuggestionPanel]）。
         Box(Modifier.widthIn(max = SearchFieldMaxWidth).fillMaxWidth().fillMaxHeight().then(fieldModifier)) {
-            SearchField(
+            CpSearchField(
                 query = query,
                 onQueryChange = { query = it },
                 onSubmit = { if (query.isNotBlank()) onSearch(query.trim()) },
                 onFocusChange = { focused = it },
-                modifier = Modifier.fillMaxWidth().height(SearchFieldHeight).align(Alignment.Center),
+                // 32dp 高的紧凑档：字形与图标都比页面里那一版小一档（由 [CpSearchField] 自行切换）。
+                textStyle = MaterialTheme.typography.bodyMedium,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                height = SearchFieldHeight,
+                modifier = Modifier.fillMaxWidth().align(Alignment.Center),
             )
             if (expanded) {
-                SuggestionDropdown(
+                CpSearchSuggestionPanel(
                     suggestions = suggestions,
                     onPick = { picked ->
                         query = picked
@@ -153,142 +132,4 @@ private fun rememberSearchSuggestions(query: String): List<String> {
         suggestions = loaded
     }
     return suggestions
-}
-
-@Composable
-private fun SearchField(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    onSubmit: () -> Unit,
-    onFocusChange: (Boolean) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    BasicTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        modifier = modifier.onFocusChanged { onFocusChange(it.isFocused) },
-        singleLine = true,
-        textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
-        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
-        decorationBox = { innerTextField ->
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(CpShapes.full)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                    .padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    Icons.Filled.Search,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-                Box(Modifier.weight(1f)) {
-                    if (query.isEmpty()) {
-                        Text(
-                            "搜索歌曲、歌手或专辑",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                        )
-                    }
-                    innerTextField()
-                }
-                if (query.isNotEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .size(20.dp)
-                            .clip(CpShapes.full)
-                            .clickable { onQueryChange("") },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Rounded.Close,
-                            contentDescription = "清空",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(14.dp),
-                        )
-                    }
-                }
-            }
-        },
-    )
-}
-
-/**
- * 建议下拉。
- *
- * ⚠️ **`wrapContentHeight(unbounded = true)` 是这个组件必须自己带的契约，不能交给调用方**：
- * 它被挂在标题栏里，而标题栏（以及锚点容器）的高度固定 44dp —— 父节点传给子节点的**测量约束**
- * 也被钉在 44dp，多行列表会被量成「一行高」，症状就是「下拉只显示一行」。
- * `unbounded` 让 Surface 拿到无上限的高度约束、按内容自然撑开。
- *
- * ⚠️ `align = Alignment.Top` 不能省：容器向上回报的高度仍然被夹回 44dp，用默认的**居中**对齐
- * 会把这块比容器高的内容往上顶 `(内容高 - 44) / 2`，直接盖住标题栏本身。
- */
-@Composable
-private fun SuggestionDropdown(
-    suggestions: List<String>,
-    onPick: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier.wrapContentHeight(align = Alignment.Top, unbounded = true),
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 3.dp,
-        shadowElevation = 8.dp,
-    ) {
-        Column(Modifier.padding(vertical = 6.dp)) {
-            suggestions.forEach { suggestion ->
-                SuggestionRow(suggestion = suggestion, onPick = onPick)
-            }
-        }
-    }
-}
-
-@Composable
-private fun SuggestionRow(suggestion: String, onPick: (String) -> Unit) {
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                if (hovered) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent,
-            )
-            .hoverable(interaction)
-            // ⚠️ 刻意用 `pointerInput` 而不是 `clickable`：后者会把焦点从输入框抢走，
-            //    于是 `focused` 变 false ⇒ 下拉在 onClick 触发之前就被收起，点不中。
-            //    这里也不等抬起就选中 —— 建议列表按「按下即选」是常见且更跟手的行为。
-            .pointerInput(suggestion) {
-                detectTapGestures(
-                    onPress = {
-                        onPick(suggestion)
-                        tryAwaitRelease()
-                    },
-                )
-            }
-            .padding(horizontal = 14.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            Icons.Filled.Search,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(14.dp),
-        )
-        Spacer(Modifier.width(10.dp))
-        Text(
-            suggestion,
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
 }
