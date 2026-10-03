@@ -2347,12 +2347,20 @@ class HomeGeneratedPlaylistScreen(
     override fun Content() {
         val model = rememberScreenModel { PlaylistDetailScreenModel() }
         val sourceTracks by rememberUpdatedState(initialTracks)
-        val navigator = LocalNavigator.currentOrThrow
         LaunchedEffect(kind, playlist.id, seedTrackId, seedPlaylistId, sourceTracks.firstOrNull()?.id) {
             when (kind) {
                 HomeGeneratedPlaylistKind.Static -> Unit
                 HomeGeneratedPlaylistKind.IntelligenceFromDaily -> {
-                    val seed = seedTrackId ?: sourceTracks.firstOrNull()?.id ?: return@LaunchedEffect
+                    val seed = seedTrackId ?: sourceTracks.firstOrNull()?.id
+                    if (seed == null) {
+                        // 没有种子就没有请求可发：必须退出加载态并说明原因，
+                        // 否则页面永远停在转圈（loadingOverride 只在首次 loadLocal 生效）。
+                        cp.player.app.ui.util.UiEvents.notify(
+                            "心动模式暂无推荐：需要有红心歌曲（登录并收藏过歌曲）"
+                        )
+                        model.loadLocal(playlist, emptyList(), loading = false, force = true)
+                        return@LaunchedEffect
+                    }
                     val result = try {
                         AppModel.musicRepository.getIntelligenceSongs(seed, seedPlaylistId ?: 0L)
                     } catch (e: Exception) {
@@ -2370,7 +2378,12 @@ class HomeGeneratedPlaylistScreen(
                             }
                         )
                     }
-                    navigator.replace(HomeGeneratedPlaylistScreen(playlist, tracks))
+                    // 拉完**原地**换数据，不再 navigator.replace 到新实例：
+                    // Voyager 默认 Screen.key 是「类名」（getUniqueScreenKey，javap 核实），
+                    // 与实例无关 ⇒ replace 出的新实例 key 相同，会**复用同一个**
+                    // PlaylistDetailScreenModel；loadLocal 的 loadedPlaylistId 守卫
+                    // 直接拦下更新，state 停在 tracks=[] + loading=true ⇒ 永久转圈。
+                    model.loadLocal(playlist, tracks, loading = false, force = true)
                 }
             }
         }
@@ -2382,7 +2395,7 @@ class HomeGeneratedPlaylistScreen(
             initialOverrideTracks = initialTracks,
             autoPlayIndex = startIndex,
             isLocalPlaylist = true,
-            // 相似 / 心动歌曲要先按种子拉取再 replace，拉取期间保持加载态，
+            // 心动模式要先按种子拉取再填充，拉取期间保持加载态，
             // 否则会先闪一屏「歌单暂无歌曲」。
             loadingOverride = kind != HomeGeneratedPlaylistKind.Static,
         )
