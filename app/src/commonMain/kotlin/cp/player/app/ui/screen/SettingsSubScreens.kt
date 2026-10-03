@@ -2,12 +2,16 @@ package cp.player.app.ui.screen
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Cached
 import androidx.compose.material.icons.filled.CleaningServices
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -22,14 +26,17 @@ import cp.player.app.AppModel
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.SettingsButtonItem
 import cp.player.app.ui.component.SettingsClickItem
+import cp.player.app.ui.component.SettingsConfirmItem
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSegmentedItem
 import cp.player.app.ui.component.SettingsSliderItem
 import cp.player.app.ui.component.SettingsSwitchItem
+import cp.player.app.ui.model.SONG_CACHE_CAPACITY_OPTIONS
 import cp.player.app.ui.model.StorageSettingsModel
 import cp.player.app.ui.model.formatBytes
+import cp.player.app.ui.model.songCacheCapacityIndex
 import cp.player.app.ui.theme.ColorSource
 import cp.player.app.ui.theme.ThemeMode
 import cp.player.app.ui.theme.description
@@ -37,6 +44,7 @@ import cp.player.app.ui.theme.displayName
 import cp.player.app.ui.theme.isPlatformColorSourceAvailable
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.popOrNotify
+import kotlin.math.roundToInt
 
 /**
  * 外观与主题。
@@ -61,6 +69,7 @@ class AppearanceSettingsScreen : Screen {
         val colorSource by AppModel.colorSourceFlow.collectAsState()
         val pureBlack by AppModel.pureBlackFlow.collectAsState()
         val bottomBarAutoHide by AppModel.bottomBarAutoHideFlow.collectAsState()
+        val coverFlightAnimation by AppModel.coverFlightAnimationFlow.collectAsState()
         val fontRoundness by AppModel.fontRoundnessFlow.collectAsState()
         val platformAvailable = isPlatformColorSourceAvailable()
         val defaultRoundness = cp.player.app.platform.defaultFontRoundness()
@@ -77,6 +86,9 @@ class AppearanceSettingsScreen : Screen {
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
             SettingsPage(pageModifier) {
+                // ⚠️ 本组所有行的 `total` 必须**同为组内行数**（分段圆角按 index/total
+                // 算首/中/末段）。此处曾出现 segmented 行写 `total = 3`、开关行写 `total = 4`
+                // 的分叉 —— 加/减行时会错出圆角。增删行时一起改。
                 SettingsSection("外观") {
                     SettingsSegmentedItem(
                         title = "主题模式",
@@ -86,7 +98,7 @@ class AppearanceSettingsScreen : Screen {
                             ThemeMode.entries.getOrNull(index)?.let(AppModel::setThemeMode)
                         },
                         index = 0,
-                        total = 3,
+                        total = 5,
                     )
                     SettingsSegmentedItem(
                         title = "取色来源",
@@ -96,7 +108,7 @@ class AppearanceSettingsScreen : Screen {
                             availableSources.getOrNull(index)?.let(AppModel::setColorSource)
                         },
                         index = 1,
-                        total = 3,
+                        total = 5,
                     )
                     SettingsSwitchItem(
                         title = "纯黑模式",
@@ -104,7 +116,7 @@ class AppearanceSettingsScreen : Screen {
                         checked = pureBlack,
                         onCheckedChange = AppModel::setPureBlack,
                         index = 2,
-                        total = 4,
+                        total = 5,
                     )
                     // 窄屏布局才有底栏；桌面宽屏走侧栏，这项开着也无副作用。
                     SettingsSwitchItem(
@@ -113,7 +125,16 @@ class AppearanceSettingsScreen : Screen {
                         checked = bottomBarAutoHide,
                         onCheckedChange = AppModel::setBottomBarAutoHide,
                         index = 3,
-                        total = 4,
+                        total = 5,
+                    )
+                    SettingsSwitchItem(
+                        title = "封面飞行动画",
+                        subtitle = "点击歌曲 / 歌单封面时，播放封面飞向播放器或详情页的过渡动画；" +
+                            "关闭后点击更干脆利落",
+                        checked = coverFlightAnimation,
+                        onCheckedChange = AppModel::setCoverFlightAnimation,
+                        index = 4,
+                        total = 5,
                     )
                 }
                 SettingsSection("字体") {
@@ -171,11 +192,21 @@ class AppearanceSettingsScreen : Screen {
  *
  * 1. **下载区给出体量与条数**：已下载音乐一行显示「N 首 · 共 X」，点进去是下载管理页
  *    （那里能删文件）；占用数字取媒体库登记值，不做全盘扫描。
- * 2. **缓存区先给数字再给动作**：图片缓存行显示 Coil 磁盘缓存实时占用，清理按钮的反馈
- *    带「释放了多少」（清理前后各读一次）。
- * 3. **桌面端可直达目录**：更改目录保留；新增「打开目录」（资源管理器），
- *    用户能直接核对 / 备份下载的文件。
- * 4. **失败不再谎报成功**：打开目录失败、缓存清理失败都有对应提示。
+ * 2. **歌曲缓存区（桌面）**：无损流落盘是**磁盘占用最大的一块**（上限 2 GiB），
+ *    此前既看不到也删不掉。现在给出「N 首 · 共 X / 上限 Y」，并区分三档清理力度 ——
+ *    进明细页逐首删、清 30 天未播放、清空全部。后两者都要二次确认。
+ * 3. **接口缓存区**：元数据的读透缓存，此前只有登出会清。补上条数与本次会话命中率，
+ *    以及清理入口。命中率是这一层唯一能被用户看见的健康指标（它要么白占内存、
+ *    要么令人「数据不更新」，两种毛病都只能靠计数发现）。
+ * 4. **图片缓存区先给数字再给动作**：清理按钮的反馈带「释放了多少」（清理前后各读一次）。
+ * 5. **桌面端可直达目录**：下载目录与缓存目录都能一键在文件管理器中打开。
+ * 6. **失败不再谎报成功**：打开目录失败、删除失败、缓存清理失败都有对应提示。
+ *
+ * ### 一条贯穿全页的原则
+ *
+ * **「清理缓存」绝不删「已下载的音乐」**：前者是播放的副作用、可被 LRU 淘汰，
+ * 后者是用户显式下载的资产。两者都是磁盘上的音频文件，用户极易混淆，
+ * 因此每个清理动作的副标题与确认文案里都写死了这一句。
  */
 class StorageSettingsScreen : Screen {
     @Composable
@@ -187,6 +218,7 @@ class StorageSettingsScreen : Screen {
             model = model,
             onBack = { navigator.popOrNotify() },
             onOpenDownloads = { navigator.push(DownloadsScreen()) },
+            onOpenSongCache = { navigator.push(SongCacheScreen()) },
         )
     }
 }
@@ -196,6 +228,7 @@ private fun StorageSettingsContent(
     model: StorageSettingsModel,
     onBack: () -> Unit,
     onOpenDownloads: () -> Unit,
+    onOpenSongCache: () -> Unit,
 ) {
     val state by model.state.collectAsState()
     val downloadDir by AppModel.downloadDirFlow.collectAsState()
@@ -206,6 +239,9 @@ private fun StorageSettingsContent(
             UiEvents.notify("下载目录已更新，仅对后续下载生效")
         }
     }
+    // 从歌曲缓存明细页删完条目回来时，本页的数字必须是新的 ——
+    // 回到这一页会重新进入组合，这个 effect 因此会重跑。
+    LaunchedEffect(Unit) { model.refreshSongCache() }
 
     val body: @Composable (Modifier) -> Unit = { pageModifier ->
         SettingsPage(pageModifier) {
@@ -252,8 +288,120 @@ private fun StorageSettingsContent(
                 }
             }
 
-            // ---- 缓存区：体量展示 + 清理动作 ----
-            SettingsSection("缓存") {
+            // ---- 歌曲缓存区：无损流落盘（桌面才有） ----
+            //
+            // 整块按 `songCacheSupported` 显隐，而不是显示「0 首 / 共 0 B」：
+            // 安卓端 ExoPlayer 能定位 HTTP FLAC、根本不落盘，摆一排恒为 0 的数字
+            // 只会被当成 bug 报上来。判据来自 core（capacityBytes = 0 即不支持），
+            // 不在这里重写一遍平台判断 —— 将来安卓真加了实现，这页自动就对了。
+            if (state.songCacheSupported) {
+                // 行数是**算出来的**而不是写死的：清空之后两个清理动作会消失，
+                // 写死会让分段卡片的末段圆角落到一个不存在的行上（首/末段判据按
+                // index/total 算，见 LegacyListItem.segmentCorners）。
+                val hasSongCache = state.songCacheEntries > 0
+                val songCacheRows = 2 + (if (hasSongCache) 2 else 0) + (if (isAndroid) 0 else 1)
+                SettingsSection("歌曲缓存") {
+                    SettingsClickItem(
+                        title = "已缓存歌曲",
+                        subtitle = when {
+                            !hasSongCache -> "暂无缓存；播放无损音质的歌曲时会自动缓存"
+                            else -> "${state.songCacheEntries} 首 · 共 ${formatBytes(state.songCacheBytes)} / 上限 ${
+                                formatBytes(state.songCacheCapacityBytes)
+                            }"
+                        },
+                        index = 0,
+                        total = songCacheRows,
+                        icon = Icons.Filled.MusicNote,
+                        onClick = onOpenSongCache,
+                    )
+                    // 离散档位而不是滑条：容量是个「够用就好」的粗粒度决定，
+                    // 滑条会让人以为要精确到 MB，还得解释「无损一首多大」。
+                    SettingsSegmentedItem(
+                        title = "容量上限",
+                        subtitle = "上限调小后会立刻按最久未播放清理到位",
+                        options = SONG_CACHE_CAPACITY_OPTIONS.map { it.second },
+                        selectedIndex = songCacheCapacityIndex(state.songCacheCapacityBytes),
+                        onSelect = { i ->
+                            SONG_CACHE_CAPACITY_OPTIONS.getOrNull(i)?.let { model.setSongCacheCapacity(it.first) }
+                        },
+                        index = 1,
+                        total = songCacheRows,
+                        icon = Icons.Filled.Storage,
+                    )
+                    // 没有缓存时**不渲染**这两个动作：`SettingsConfirmItem` 即使在
+                    // enabled=false 时也仍然铺着 errorContainer，一行「看起来能点、
+                    // 点了没反应」的红色按钮比没有这一行更糟。
+                    if (hasSongCache) {
+                        SettingsButtonItem(
+                            text = "清理 30 天未播放的缓存",
+                            subtitle = "只删长期不听的，最近在听的不受影响",
+                            index = 2,
+                            total = songCacheRows,
+                            icon = Icons.Filled.CleaningServices,
+                            onClick = { model.clearSongCacheOlderThan(30) },
+                        )
+                        SettingsConfirmItem(
+                            title = "清空歌曲缓存",
+                            subtitle = "删除全部本地副本，已下载的音乐不受影响",
+                            confirmTitle = "清空歌曲缓存？",
+                            confirmMessage = "将删除 ${state.songCacheEntries} 首缓存（约 ${
+                                formatBytes(state.songCacheBytes)
+                            }）。已下载的音乐不受影响；这些无损歌曲下次播放时会重新缓存。",
+                            onConfirm = { model.clearSongCache() },
+                            index = 3,
+                            total = songCacheRows,
+                            icon = Icons.Filled.DeleteSweep,
+                        )
+                    }
+                    if (!isAndroid) {
+                        SettingsClickItem(
+                            title = "打开缓存目录",
+                            subtitle = "在文件管理器中核对 / 备份缓存文件",
+                            index = songCacheRows - 1,
+                            total = songCacheRows,
+                            icon = Icons.AutoMirrored.Filled.OpenInNew,
+                            onClick = {
+                                val target = AppModel.backend.songCache.cacheDirPath()
+                                val ok = !target.isNullOrBlank() &&
+                                    cp.player.app.platform.openInFileManager(target)
+                                if (!ok) UiEvents.notify("打开缓存目录失败")
+                            },
+                        )
+                    }
+                }
+            }
+
+            // ---- 接口缓存区：歌曲 / 歌单等元数据的读透缓存 ----
+            SettingsSection("接口缓存") {
+                SettingsClickItem(
+                    title = "缓存条目",
+                    subtitle = buildString {
+                        append(if (state.apiCacheEntries == 0) "暂无缓存" else "${state.apiCacheEntries} 条")
+                        state.apiCacheHitRate?.let { rate ->
+                            append(" · 本次会话命中率 ${(rate * 100).roundToInt()}%")
+                        }
+                    },
+                    index = 0,
+                    total = 2,
+                    icon = Icons.Filled.Cached,
+                    // 只读统计行：它没有「点进去看」的下一页。
+                    onClick = null,
+                )
+                SettingsButtonItem(
+                    text = "清理接口缓存",
+                    subtitle = "歌曲、歌单等信息的读取缓存；清理后下次会重新向音源请求",
+                    index = 1,
+                    total = 2,
+                    icon = Icons.Filled.CleaningServices,
+                    // 刻意**不**按「有没有条目」禁用：这是非破坏性动作，
+                    // 空缓存时点一下得到一句「本来就是空的」比一个点了没反应的
+                    // 灰行更有交代。
+                    onClick = { model.clearApiCache() },
+                )
+            }
+
+            // ---- 图片缓存区 ----
+            SettingsSection("图片缓存") {
                 SettingsClickItem(
                     title = "图片缓存",
                     subtitle = when {
@@ -277,9 +425,9 @@ private fun StorageSettingsContent(
 
             SettingsNote(
                 if (isAndroid) {
-                    "下载目录的改动仅对后续下载生效，已下载的文件不会移动。"
+                    "下载目录的改动仅对后续下载生效，已下载的文件不会移动。清理各类缓存都不会删除已下载的音乐。"
                 } else {
-                    "下载目录的改动仅对后续下载生效，已下载的文件不会移动；如需迁移，可在打开目录后手动移动文件。"
+                    "下载目录的改动仅对后续下载生效，已下载的文件不会移动；如需迁移，可在打开目录后手动移动文件。清理各类缓存都不会删除已下载的音乐。"
                 }
             )
         }

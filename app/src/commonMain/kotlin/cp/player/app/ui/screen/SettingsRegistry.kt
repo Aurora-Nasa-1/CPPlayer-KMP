@@ -127,10 +127,14 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
         id = "storage",
         group = SettingsGroup.GENERAL,
         title = "下载与存储",
-        subtitle = "下载目录与图片缓存",
+        subtitle = "下载目录、歌曲缓存与图片缓存",
         icon = Icons.Filled.Storage,
         accent = SettingsAccent.PRIMARY,
-        keywords = listOf("下载", "目录", "缓存", "清理", "空间", "存储", "cache", "download"),
+        keywords = listOf(
+            "下载", "目录", "缓存", "清理", "空间", "存储", "cache", "download",
+            // 无损流落盘是磁盘占用最大的一块，用户找它时用的多半是这几个词。
+            "歌曲缓存", "无损", "离线", "接口缓存", "命中率",
+        ),
         screen = { StorageSettingsScreen() },
     ),
 )
