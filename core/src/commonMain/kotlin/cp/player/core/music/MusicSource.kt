@@ -79,7 +79,7 @@ data class PlaylistSummary(
     val coverUrl: String?,
     val trackCount: Int,
     val creatorName: String?,
-)
+) : cp.player.core.util.JavaSerializable
 
 /**
  * 歌单详情（含完整曲目）。
@@ -88,7 +88,7 @@ data class PlaylistDetail(
     val summary: PlaylistSummary,
     val tracks: List<TrackSummary>,
     val description: String?,
-)
+) : cp.player.core.util.JavaSerializable
 
 /**
  * 歌单曲目分页结果。
@@ -122,7 +122,7 @@ data class TrackSummary(
     val coverUrl: String?,
     val durationMs: Long,
     val artists: List<ArtistSummary> = emptyList(),
-)
+) : cp.player.core.util.JavaSerializable
 
 /**
  * 歌曲播放地址。
@@ -159,7 +159,7 @@ data class ArtistSummary(
     val id: Long,
     val name: String,
     val avatarUrl: String?,
-)
+) : cp.player.core.util.JavaSerializable
 
 /**
  * 首页焦点图（`banner`）。
@@ -203,7 +203,7 @@ data class AlbumSummary(
     val publishTimeMs: Long? = null,
     /** 专辑艺术家 id，用于从专辑反跳歌手。上游可能在 `artist.id` / `artists[0].id`。 */
     val artistId: Long? = null,
-)
+) : cp.player.core.util.JavaSerializable
 
 /**
  * 专辑详情（`album`）。
@@ -221,7 +221,7 @@ data class AlbumDetail(
     val company: String?,
     val description: String?,
     val tracks: List<TrackSummary>,
-)
+) : cp.player.core.util.JavaSerializable
 
 /**
  * 歌手资料（`artist/detail` 的 `data.artist`）。
@@ -237,7 +237,7 @@ data class ArtistProfile(
     val albumSize: Int,
     val musicSize: Int,
     val followeds: Int,
-)
+) : cp.player.core.util.JavaSerializable
 
 /**
  * 用户主页 / 歌手主页的**统一**数据包。
@@ -261,4 +261,4 @@ data class ProfileBundle(
     val playlists: List<PlaylistSummary> = emptyList(),
     val albums: List<AlbumSummary> = emptyList(),
     val songs: List<TrackSummary> = emptyList(),
-)
+) : cp.player.core.util.JavaSerializable
