@@ -76,4 +76,40 @@ class DesktopShellCommandGuardTest {
             "Main.kt 用了 popToMainShell 却没有 import —— 依赖 IDE 自动导入会在别人的机器上编译失败",
         )
     }
+
+    /**
+     * 同一条纪律的**另一半**：指令的**消费方**也必须先弹回主壳层。
+     *
+     * 「打开设置」还有第二个入口 —— 全局快捷键（默认 `Ctrl + ,`）。它由 `Main.kt` 的**顶层**
+     * 按键回调触发，那里根本拿不到 Navigator，所以「先弹回主壳层」只能由消费者做：
+     * 写 `DesktopShell.openSettingsFromShortcut`，由 `App.kt` 的根 Navigator 作用域
+     * `popToMainShell()` 之后再把 `settingsRequested` 置起来。
+     *
+     * 一旦有人把这两步拆到不同的地方（比如在快捷键回调里直接置 `settingsRequested`），
+     * 症状与上面那条一模一样：**在歌单详情页按快捷键完全没反应，退回主壳层时设置面板自己弹出来**。
+     */
+    @Test
+    fun `the app-level consumer pops back before sending the settings command`() {
+        val appFile = File("src/commonMain/kotlin/cp/player/app/App.kt")
+        assertTrue(appFile.exists(), "找不到 ${appFile.path}（测试的工作目录应为 :app 模块根）")
+        val text = appFile.readText()
+
+        val writes = Regex("DesktopShell\\.settingsRequested\\s*=").findAll(text).toList()
+        assertTrue(
+            writes.isNotEmpty(),
+            "App.kt 里找不到 `DesktopShell.settingsRequested = ` 的写入点 —— " +
+                "快捷键「打开设置」的消费点应当在这里（若入口已移除，请一并删掉本用例）",
+        )
+        writes.forEach { match ->
+            val windowStart = (match.range.first - 400).coerceAtLeast(0)
+            val preceding = text.substring(windowStart, match.range.first)
+            assertTrue(
+                preceding.contains("popToMainShell"),
+                "在 App.kt 里写 `DesktopShell.settingsRequested = ` 之前必须先调用 popToMainShell()。\n" +
+                    "原因：MainScreen 被 push 出去的页面盖住后已离开组合，这条指令没人消费 ⇒ " +
+                    "快捷键静默失效，且残留 true 会让面板在退回主壳层时自己弹出来。\n" +
+                    "出错位置附近：\n${preceding.takeLast(200)}",
+            )
+        }
+    }
 }

@@ -34,6 +34,21 @@ object DesktopShell {
     var settingsRequested by mutableStateOf(false)
 
     /**
+     * 请求：「**先弹回主壳层**，再打开设置面板」——供桌面全局快捷键（默认 `Ctrl + ,`）用。
+     *
+     * 与 [settingsRequested] 只差一件事，但这件事**必须**有：快捷键可以从**任意**页面按下，
+     * 包括盖住 `MainScreen` 的路由页（歌单详情 / 账号 / 关于…）。那时
+     * [settingsRequested] 的消费者（`MainScreen`）已经离开组合 ⇒ 指令没人消费，
+     * 而且会**残留成 `true`**，等用户自己退回主壳层时面板莫名其妙自己弹出来
+     * （这正是 `Navigation.popToMainShell` 的 KDoc 里记的那两次事故）。
+     *
+     * 两个动作（弹回主壳层 + 发指令）由 `App.kt` 的根 Navigator 作用域**按顺序**执行，
+     * 因为按键回调（`Main.kt` 的顶层函数）拿不到 Navigator。协议与其它指令一致：
+     * 写入方只置 `true`，消费方执行完立刻置回 `false`。
+     */
+    var openSettingsFromShortcut by mutableStateOf(false)
+
+    /**
      * 请求桌面壳层打开「消息」内嵌面板。
      *
      * 与 [settingsRequested] **逐字同一个来路与协议**：入口在窗口标题栏上（`Navigator` 之上），

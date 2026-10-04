@@ -772,9 +772,10 @@ fun Modifier.cpExpressiveClip(radius: Dp = 28.dp): Modifier =
  * 页面级「刷新」容器 —— 首页 / 媒体库等主 tab 的统一刷新入口。
  *
  * 按平台分流：
- * - **桌面**：包一层 [CpContextMenu]（passive = true）—— 空白处右键弹「刷新」。
+ * - **桌面**：包一层 [CpContextMenu]（passive = true）—— 空白处右键弹「返回上一级 / 刷新」。
  *   passive 让歌曲行自己的右键菜单与卡片点击手势优先，页面菜单只在没有任何
- *   子级接手的区域弹出。
+ *   子级接手的区域弹出。「返回上一级」由 [rememberBackContextMenuItem] 提供，
+ *   退无可退时**不出现**（不会摆一个点了没反应的灰项）。
  * - **Android（触屏）**：material3 的 [PullToRefreshBox] 下拉刷新。桌面不开下拉：
  *   鼠标滚轮在列表顶部继续上滚的 overscroll 也会被下拉刷新的 nested scroll 吃掉，
  *   「想在顶部再滚一下」会莫名其妙拽出刷新指示器 —— 桌面的刷新入口是右键菜单。
@@ -793,9 +794,6 @@ fun CpRefreshablePage(
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val menuItems = remember(onRefresh) {
-        listOf(CpContextMenuItem("刷新", Icons.Filled.Refresh, onClick = onRefresh))
-    }
     if (cp.player.app.platform.isAndroidPlatform()) {
         androidx.compose.material3.pulltorefresh.PullToRefreshBox(
             isRefreshing = isRefreshing,
@@ -805,6 +803,16 @@ fun CpRefreshablePage(
             content()
         }
     } else {
+        // ⚠️ 返回项必须在这里（而不是在页面外面再包一层菜单）：
+        // 本容器自己已经在处理空白处的右键，外面再包一层会被这里的 `passive` 抢先消费掉
+        // （子级先于父级收到 Main 阶段的 Press），外层菜单**永远弹不出来**。
+        val backItem = rememberBackContextMenuItem()
+        val menuItems = remember(onRefresh, backItem) {
+            buildList {
+                if (backItem != null) add(backItem)
+                add(CpContextMenuItem("刷新", Icons.Filled.Refresh, onClick = onRefresh))
+            }
+        }
         CpContextMenu(items = menuItems, modifier = modifier, passive = true, content = content)
     }
 }

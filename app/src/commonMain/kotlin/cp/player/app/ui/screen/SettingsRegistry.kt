@@ -6,6 +6,7 @@ import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
@@ -143,6 +144,21 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
         ),
         screen = { StorageSettingsScreen() },
     ),
+    SettingsEntry(
+        id = "shortcuts",
+        group = SettingsGroup.GENERAL,
+        title = "快捷键",
+        subtitle = "查看与自定义桌面快捷键",
+        icon = Icons.Filled.Keyboard,
+        accent = SettingsAccent.SECONDARY,
+        keywords = listOf(
+            "快捷键", "键盘", "热键", "组合键", "键位", "shortcut", "hotkey", "keyboard",
+        ),
+        // 快捷键本身只由桌面端的窗口按键回调消费（`desktopMain/Main.kt`），
+        // Android 没有物理键盘语义（系统返回键 / 音量键不可拦），放上去是个空页。
+        desktopOnly = true,
+        screen = { ShortcutSettingsScreen() },
+    ),
 )
 
 private fun accountEntries(): List<SettingsEntry> = listOf(
@@ -207,10 +223,9 @@ private fun connectivityEntries(): List<SettingsEntry> = listOf(
         icon = Icons.Filled.Wifi,
         accent = SettingsAccent.TERTIARY,
         keywords = listOf(
-            "保活", "后台", "常驻", "熄屏", "锁屏", "掉线", "搜不到", "设备发现",
-            "wifi", "组播", "standby", "background", "keepalive",
+            "设备", "同步", "保活", "后台", "常驻", "熄屏", "锁屏", "掉线", "搜不到",
+            "设备发现", "局域网", "听歌记录", "wifi", "组播", "standby", "sync", "keepalive",
         ),
-        androidOnly = true,
         screen = { StandbySettingsScreen() },
     ),
 )

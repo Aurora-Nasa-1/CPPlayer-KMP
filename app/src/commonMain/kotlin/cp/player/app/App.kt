@@ -48,6 +48,7 @@ import cp.player.app.ui.screen.PlaylistDetailScreen
 import cp.player.app.ui.screen.PlayerScreen
 import cp.player.app.ui.screen.StartupScreen
 import cp.player.app.platform.PlatformMediaControlsEffect
+import cp.player.app.ui.util.popToMainShell
 import cp.player.core.MusicBackend
 
 /**
@@ -157,6 +158,23 @@ fun App(
                     }
                 }
 
+                // 桌面全局快捷键「打开设置」（默认 Ctrl + ,）。
+                //
+                // 必须在这里消费，不能在按键回调里直接置 `settingsRequested` —— 后者在
+                // `MainScreen` 离开组合时没人接（见 `DesktopShell.openSettingsFromShortcut` 的
+                // KDoc）。先 `popToMainShell()` 把 `MainScreen` 拉回栈顶，它随后的组合里
+                // `LaunchedEffect(settingsRequested)` 就会读到刚置上的 `true` 并打开面板。
+                // 顺序不能反：先置标志，`MainScreen` 那时还没回到栈顶，指令又会悬空。
+                val openSettingsFromShortcut =
+                    cp.player.app.ui.util.DesktopShell.openSettingsFromShortcut
+                LaunchedEffect(openSettingsFromShortcut) {
+                    if (openSettingsFromShortcut) {
+                        cp.player.app.ui.util.DesktopShell.openSettingsFromShortcut = false
+                        navigator.popToMainShell()
+                        cp.player.app.ui.util.DesktopShell.settingsRequested = true
+                    }
+                }
+
                 // 把「窗口是否够宽」发布给**整棵 Navigator**。
                 // 必须在这里 provide 一次：MainScreen 内部也 provide 了同一个 local，
                 // 但 push 出去的路由页与 MainScreen 是 Navigator 里的兄弟节点，拿不到它，
@@ -179,7 +197,29 @@ fun App(
                             // 的调用点必须显式用这一条。见 LocalRootNavigator 的 KDoc。
                             cp.player.app.ui.util.LocalRootNavigator provides navigator,
                         ) {
-                            Box(Modifier.fillMaxSize().weight(1f)) {
+                            // 整窗「空白处右键 → 返回上一级」兜底。
+                            //
+                            // 为什么不放在各页面里：桌面的返回有**四条**来源（根栈出栈 /
+                            // 内容区内嵌栈出栈 / 收起内嵌面板 / 页面自己的处理器），
+                            // 而设置面板、歌单面板、播放页这些页面**看不到全部四条**，
+                            // 页面自己判就只能判到一部分 —— 用户遇到的就是「在设置页 /
+                            // 歌单页右键，菜单里没有返回」。判据与动作由
+                            // `rememberBackContextMenuItem` 与标题栏返回键逐字同链。
+                            //
+                            // `passive = true`：页面里自己的右键菜单（歌曲行 / 卡片 /
+                            // 页面级「刷新」）都是**后代**节点，先于这里收到 Main 阶段的 Press
+                            // ⇒ 只有它们都没接手的空白 / 纯文本区域才弹这一层
+                            // （默认的 Initial 模式会让父子同时弹两个菜单）。
+                            //
+                            // ⚠️ 已经自带空白处右键容器的页面（`CpRefreshablePage`）
+                            // 不会被这里覆盖 —— 它的菜单在内层先消费，且它自己也并进了
+                            // 同一个「返回上一级」项，不会出现两种菜单。
+                            val backItem = cp.player.app.ui.component.rememberBackContextMenuItem()
+                            cp.player.app.ui.component.CpContextMenu(
+                                items = backItem?.let { listOf(it) },
+                                modifier = Modifier.fillMaxSize().weight(1f),
+                                passive = true,
+                            ) {
                                 // ⚠️ 整个根 Navigator 只此一个 SharedTransitionLayout，且必须同时
                                 // 罩住「页面转场」与「全局 MiniPlayer」两端：共享元素只有在
                                 // **同一个** SharedTransitionScope 里才能配对。此前 MiniPlayer

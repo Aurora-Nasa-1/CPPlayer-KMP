@@ -57,23 +57,31 @@ class CpContextMenuRightClickTest {
     }
 
     @Composable
-    private fun Content() {
+    private fun Content(passive: Boolean = false) {
         Box(
             Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerLow),
             contentAlignment = Alignment.TopStart,
         ) {
-            CpContextMenu(items = menuItems()) {
-                Box(Modifier.width(248.dp).padding(12.dp)) {
-                    Text("在此处右键", style = MaterialTheme.typography.bodyMedium)
+            if (passive) {
+                // 桌面端「整窗兜底菜单」的形态：包住**整页**、没有任何子级接手时才弹
+                // （`passive = true`）。设置面板 / 歌单面板的「返回上一级」全靠这条路径。
+                CpContextMenu(items = menuItems(), passive = true) {
+                    Box(Modifier.fillMaxSize())
+                }
+            } else {
+                CpContextMenu(items = menuItems()) {
+                    Box(Modifier.width(248.dp).padding(12.dp)) {
+                        Text("在此处右键", style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
             }
         }
     }
 
     /** 副键按下 → （按 [release] 决定是否松开）→ 返回「相对初始画面变化了多少像素」。 */
-    private fun changedPixels(release: Boolean, dark: Boolean = false): Int {
+    private fun changedPixels(release: Boolean, dark: Boolean = false, passive: Boolean = false): Int {
         val scene = ImageComposeScene(width = 420, height = 420, density = Density(1f)) {
-            CpTheme(themeMode = if (dark) ThemeMode.DARK else ThemeMode.LIGHT) { Content() }
+            CpTheme(themeMode = if (dark) ThemeMode.DARK else ThemeMode.LIGHT) { Content(passive) }
         }
         try {
             var t = 0L
@@ -120,6 +128,19 @@ class CpContextMenuRightClickTest {
         val changed = changedPixels(release = true, dark = true)
         println("[context-menu] 深色下右键后变化像素 = $changed")
         assertTrue(changed > 3000, "深色主题下右键没弹出菜单（只变了 $changed 个像素）")
+    }
+
+    /**
+     * `passive = true`（桌面端整窗兜底菜单的形态）在**没有任何子级接手**的空白处同样要弹。
+     *
+     * 这一条坏了，症状就是「某些页面右键没反应」—— 设置面板、歌单面板这些没有自己的
+     * 空白处容器的页面全靠它。与上面三条的区别是它走的是 **Main** 被动等而不是 Initial 抢先消费。
+     */
+    @Test
+    fun `passive 模式在无人接手的空白处仍然弹出`() {
+        val changed = changedPixels(release = true, passive = true)
+        println("[context-menu] passive 右键后变化像素 = $changed")
+        assertTrue(changed > 3000, "passive 菜单在空白处没弹出（只变了 $changed 个像素）")
     }
 }
 

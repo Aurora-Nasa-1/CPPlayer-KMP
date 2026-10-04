@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -74,7 +76,31 @@ fun CpRouteScaffold(
                         topBarActions.forEach { CpTopBarActionButton(it) }
                     }
                 }
-                content(Modifier.weight(1f))
+                // 桌面端整页空白处右键 → 「返回上一级」。
+                //
+                // 用 `passive = true`：页面里自己的右键菜单（歌曲行、卡片）与点击手势
+                // 优先，只有**没有任何子级接手**的空白 / 纯文本区域才弹这一层
+                // （默认的 Initial 模式会让父子同时弹出两个菜单）。
+                //
+                // `onBack` 为 null（根页被复用时）就完全不包一层 —— 不摆一个点了没反应的菜单。
+                val backItem = onBack
+                if (backItem == null) {
+                    content(Modifier.weight(1f))
+                } else {
+                    CpContextMenu(
+                        items = listOf(
+                            CpContextMenuItem(
+                                label = "返回上一级",
+                                icon = Icons.AutoMirrored.Filled.ArrowBack,
+                                onClick = backItem,
+                            ),
+                        ),
+                        modifier = Modifier.weight(1f),
+                        passive = true,
+                    ) {
+                        content(Modifier.fillMaxSize())
+                    }
+                }
             }
             // `floatingActionButton` 为空 lambda 时这里不产生任何绘制，无需判空
             // （`@Composable () -> Unit` 没法判空）。

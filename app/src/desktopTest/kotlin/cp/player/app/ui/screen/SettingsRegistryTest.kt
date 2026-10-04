@@ -89,7 +89,7 @@ class SettingsRegistryTest {
         withReleaseChannel("debug") {
             val byGroup = settingsEntries().groupBy { it.group }
             assertEquals(
-                listOf("appearance", "playback", "storage"),
+                listOf("appearance", "playback", "storage", "shortcuts"),
                 byGroup[SettingsGroup.GENERAL]?.map { it.id },
                 "「通用」组的内容或顺序变了",
             )

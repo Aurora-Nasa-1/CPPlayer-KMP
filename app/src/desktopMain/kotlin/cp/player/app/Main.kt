@@ -9,12 +9,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.isCtrlPressed
-import androidx.compose.ui.input.key.isShiftPressed
-import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.DpSize
@@ -29,10 +25,12 @@ import cp.player.app.platform.DesktopBackDispatcher
 import cp.player.app.platform.DesktopRenderTuning
 import cp.player.app.platform.DesktopWindowPlacement
 import cp.player.app.platform.JbrWindowChrome
+import cp.player.app.platform.WindowDecorChoice
 import cp.player.app.platform.WindowsWindowCorners
 import cp.player.app.ui.component.DesktopTitleBar
 import cp.player.app.ui.component.TitleBarHeight
 import cp.player.app.ui.util.DesktopShell
+import cp.player.app.ui.util.next
 import cp.player.app.ui.util.popToMainShell
 import cp.player.app.version.AppVersion
 import cp.player.core.MusicBackend
@@ -40,9 +38,14 @@ import cp.player.core.music.TrackSummary
 import cp.player.core.playback.PlaybackController
 import cp.player.core.playback.PlaybackUiState
 import cp.player.app.ui.util.SeekAvailability
+import cp.player.app.shortcut.ShortcutAction
 import cp.player.core.util.PlatformContext
 import cp.player.core.util.defaultSettingsStorage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -82,7 +85,7 @@ private const val WindowRetryDelayMs = 100L
  * 窗口装饰走哪条路，**必须在建窗之前**决定：`decoration` 参数决定窗口是否带系统边框，
  * AWT 不允许窗口显示之后再改 `undecorated`，这个选择没法事后补。
  *
- * - **JBR 路**（运行在 JBR b1367.22+ 的 Windows/macOS，见 `JbrWindowChrome`）：
+ * - **JBR 路**（运行在 JBR 且 `JbrWindowChrome.isSupported`，见 `JbrWindowChrome`）：
  *   `SystemDefault` 保持窗口有边框，随后把客户区向上扩展盖过标题栏。原生阴影 /
  *   缩放边框 / Aero Snap / 原生最大化 / Win11 自动圆角全部白拿，**「假全屏」就此根治** ——
  *   原生最大化尊重任务栏，窗口永远不会铺满整个输出，Windows 也就没有理由把窗口
@@ -101,9 +104,23 @@ fun main() {
     // 探测本身是纯反射 + 类加载，必须在建窗前完成（见上方 KDoc）。
     // ⚠️ 只是「跑在 JBR 上」不会让窗口变原生 —— 这条路必须像这样显式 opt-in，
     // JBR 的 WindowDecorations 完全不碰 `setUndecorated` 的默认行为。
-    val useJbrChrome = JbrWindowChrome.isSupported
-    if (!useJbrChrome) {
-        println("[CPPlayer] 未检测到可用的 JBR 自定义标题栏（需要 JBR b1367.22+ 的 Windows/macOS），窗口走自绘无边框方案")
+    // 另：`javaHome` 只喂给 jpackage（打包产物）；run 家族的 launcher 由
+    // `app/build.gradle.kts` 的 afterEvaluate 指到 `.jbr`（desktopRun 原生指守护进程 JDK）。
+    //
+    // 三态开关见 [WindowDecorChoice]：auto / jbr / undecorated —— 给想要无边框外观、
+    // 或 JBR 标题栏在某台机器上装不上（那时窗口会保留系统标题栏）的用户留自救通道。
+    val decorMode = WindowDecorChoice.resolve()
+    val useJbrChrome = when (decorMode) {
+        WindowDecorChoice.Mode.UNDECORATED -> false
+        WindowDecorChoice.Mode.JBR -> JbrWindowChrome.isSupported
+        WindowDecorChoice.Mode.AUTO -> JbrWindowChrome.isSupported
+    }
+    println("[CPPlayer] 窗口装饰 = $decorMode（来源：${WindowDecorChoice.lastSource}）→ " +
+        if (useJbrChrome) "JBR 路（系统边框 + 自定义标题栏，原生贴边吸附）" else "无边框自绘路")
+    if (decorMode == WindowDecorChoice.Mode.JBR && !JbrWindowChrome.isSupported) {
+        println("[CPPlayer] 显式指定了 JBR 路，但当前运行时不支持（需跑在 JBR 上，Windows/macOS），回退无边框方案")
+    } else if (!useJbrChrome) {
+        println("[CPPlayer] 未走 JBR 自定义标题栏，窗口走自绘无边框方案")
     }
 
     application {
@@ -340,33 +357,71 @@ private fun windowTitleOf(track: TrackSummary?): String {
 /**
  * 桌面全局快捷键。
  *
- * 只处理**没有被下层消费**的按键：Compose 的 Main 派发阶段是子节点先收，
- * 所以输入框里的空格、滑条/按钮上的方向键都不会被这里抢走。
+ * 键位**不在这里写死** —— 全部来自 `AppModel`（声明见 `cp.player.app.shortcut.ShortcutAction`，
+ * 用户可在「设置 → 快捷键」里改 / 解绑）。这里只负责「事件 → 动作 → 执行」这一层。
+ *
+ * 只处理**没有被下层消费**的按键：Compose 的主派发阶段是子节点先收，
+ * 所以输入框里的字母、滑条 / 按钮上的方向键都不会被这里抢走。
+ * 快捷键的「录制」弹窗是独立窗口，它的按键根本到不了这条回调 —— 天然不会自己触发自己。
  */
 private fun handleDesktopShortcut(event: KeyEvent): Boolean {
     if (event.type != KeyEventType.KeyDown) return false
+    val action = AppModel.matchShortcut(event) ?: return false
 
-    // Esc 等价于安卓返回键，由各页面通过 BackHandler 注册处理器
-    if (event.key == Key.Escape) return DesktopBackDispatcher.dispatch()
+    // 返回键（默认 Esc）等价于安卓返回键，由各页面通过 BackHandler 注册处理器。
+    // 它刻意**不**依赖后端是否就绪：启动过程中按 Esc 也应该能退。
+    if (action == ShortcutAction.BACK) return DesktopBackDispatcher.dispatch()
 
     if (!AppModel.initialized.value) return false
     val controller = AppModel.playback
-    val state = controller.state.value
-
-    return when {
-        // 切歌要排在 seek 前面：Ctrl+Shift+← 同时满足 Ctrl+←
-        event.isCtrlPressed && event.isShiftPressed && event.key == Key.DirectionLeft -> {
-            controller.skipPrevious(); true
-        }
-        event.isCtrlPressed && event.isShiftPressed && event.key == Key.DirectionRight -> {
-            controller.skipNext(); true
-        }
-        event.isCtrlPressed && event.key == Key.DirectionLeft -> seekBy(controller, state, -SeekStepMs)
-        event.isCtrlPressed && event.key == Key.DirectionRight -> seekBy(controller, state, SeekStepMs)
-        event.key == Key.Spacebar -> { controller.togglePlayPause(); true }
-        else -> false
-    }
+    return performShortcutAction(action, controller, controller.state.value)
 }
+
+/**
+ * 执行一个快捷键动作。
+ *
+ * @return 是否消费这次按键。**没有可做的事就返回 false**（例如没在播放「收藏」），
+ *   把事件让给系统的其它处理器 —— 静默吞掉会让用户以为快捷键坏了。
+ */
+private fun performShortcutAction(
+    action: ShortcutAction,
+    controller: PlaybackController,
+    state: PlaybackUiState,
+): Boolean = when (action) {
+    ShortcutAction.PLAY_PAUSE -> { controller.togglePlayPause(); true }
+    ShortcutAction.PREV_TRACK -> { controller.skipPrevious(); true }
+    ShortcutAction.NEXT_TRACK -> { controller.skipNext(); true }
+    ShortcutAction.SEEK_BACKWARD -> seekBy(controller, state, -SeekStepMs)
+    ShortcutAction.SEEK_FORWARD -> seekBy(controller, state, SeekStepMs)
+    ShortcutAction.TOGGLE_SHUFFLE -> { controller.toggleShuffle(); true }
+    ShortcutAction.CYCLE_REPEAT -> { controller.setRepeatMode(state.repeatMode.next()); true }
+    ShortcutAction.TOGGLE_FAVORITE -> if (state.currentTrack == null) {
+        false
+    } else {
+        // `toggleFavorite()` 是 suspend（乐观更新 + 失败回滚），按键回调是同步的，
+        // 所以丢给 [shortcutScope]。作用域挂在桌面 UI 线程（`Dispatchers.Main` = Swing EDT），
+        // 与 `MusicBackend.backendScope` 同一口径，播放状态的读写天然串行。
+        shortcutScope.launch { runCatching { controller.toggleFavorite() } }
+        true
+    }
+    ShortcutAction.OPEN_SETTINGS -> {
+        // ⚠️ 不能直接置 `settingsRequested`：`MainScreen` 被 push 出去的路由页盖住后已经
+        // 离开组合，指令没人消费、还会残留成 true。走这条「先弹回主壳层」的指令，
+        // 由 `App.kt` 的根 Navigator 按顺序执行（理由见 `DesktopShell.openSettingsFromShortcut`）。
+        cp.player.app.ui.util.DesktopShell.openSettingsFromShortcut = true
+        true
+    }
+    // BACK 在上面就分流了；补这条只是为了让 `when` 穷尽，将来加动作时编译器能提醒。
+    ShortcutAction.BACK -> DesktopBackDispatcher.dispatch()
+}
+
+/**
+ * 快捷键里 suspend 动作（收藏）用的作用域。
+ *
+ * 刻意不用 `GlobalScope`：需要一个能被整体取消的父作用域，避免进程退出时还挂着回调。
+ * `Dispatchers.Main` 在桌面就是 Swing EDT，与播放状态的写入方同一条线程。
+ */
+private val shortcutScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
 /**
  * 相对当前位置 seek。
