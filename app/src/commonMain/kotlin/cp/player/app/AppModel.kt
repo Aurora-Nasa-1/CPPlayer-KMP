@@ -1,5 +1,6 @@
 package cp.player.app
 
+import androidx.compose.ui.input.key.KeyEvent
 import cp.player.core.BackendResult
 import cp.player.core.BackendState
 import cp.player.core.ImportResult
@@ -18,6 +19,9 @@ import cp.player.core.util.SettingsStorage
 import cp.player.app.repository.AuthRepository
 import cp.player.app.repository.MusicRepository
 import cp.player.app.repository.SocialRepository
+import cp.player.app.shortcut.ShortcutAction
+import cp.player.app.shortcut.ShortcutBinding
+import cp.player.app.shortcut.UNBOUND_SHORTCUT_MARKER
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,6 +32,15 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+/**
+ * 诊断页只读视图类型（转发 [HealthMonitor] 的嵌套类型）。
+ *
+ * UI 一律 import 这两个别名，不直接 import `core.monitor.*`——
+ * 边界规则见 docs/dev/ARCHITECTURE.md §3.2。
+ */
+typealias HealthLevel = HealthMonitor.HealthLevel
+typealias ApiCallRecord = HealthMonitor.ApiCallRecord
 
 /**
  * 应用顶层服务定位器。
@@ -132,14 +145,12 @@ object AppModel {
     val authRepository: AuthRepository get() = AuthRepository(backend.musicApi)
 
     /**
-     * Transitional raw API access for operations not migrated yet.
+     * 睡眠定时「播完当前曲目后暂停」的哨兵值。
      *
-     * ⚠️ 这里拿到的其实是**带缓存的实例** —— `MusicBackend.musicApi` 交出的就是
-     * `CachedMusicApiService` 装饰器。"raw" 现在只表示「没经过 repository 封装」，
-     * 不再表示「绕过缓存」。
+     * 转发 [PlaybackController.SLEEP_AFTER_TRACK]：UI（SleepTimerDialog）不直接
+     * import `core.playback.PlaybackController`，经这里取（ARCHITECTURE.md §3.2）。
      */
-    @Deprecated("Use musicRepository or a feature repository")
-    val api: cp.player.core.api.MusicApiService get() = backend.musicApi
+    val sleepAfterTrack: Int get() = PlaybackController.SLEEP_AFTER_TRACK
 
     /** 当前活跃 Provider 唯一 ID（无活跃时返回 "default"）。 */
     fun activeProviderId(): String = backend.activeProviderId()
@@ -148,6 +159,53 @@ object AppModel {
 
     /** 播放控制器（前端唯一播放入口；UI 只 collect 其 state）。 */
     val playback: PlaybackController get() = backend.playbackController
+
+    /**
+     * 一起听（房间生命周期 + 邀请闭环 + 心跳）。
+     *
+     * ### 为什么挂在应用级而不是页面的 ScreenModel
+     * 「在房」是**跨页面**状态：用户进房后会去听歌、翻歌单，房间页早就出栈了，
+     * 但心跳必须继续 —— 否则会被判定离开。挂在 ScreenModel 上会随页面销毁停掉，
+     * 症状是「一离开房间页就掉线」。这里复用 [modelScope]（应用级协程域）。
+     *
+     * ### 心跳上报的是「裸 id」而不是 mediaId
+     * 房间协议里的 `songId` 是**音源内的资源 id**。把 `netease://song/123` 原样上报，
+     * 对端 [cp.player.core.music.CPMediaId.parse] 解析出来的 providerId 会是它自己的，
+     * 直接错位。所以这里拆出 `resourceId`，并在**音源不一致时干脆不发** ——
+     * 宁可不上报，也不要往房间里塞一个别人解析不了的 id。
+     */
+    val listenTogether: cp.player.core.listentogether.ListenTogetherEngine by lazy {
+        cp.player.core.listentogether.ListenTogetherEngine(
+            backend = cp.player.core.listentogether.NeteaseListenTogetherBackend(backend.musicApi),
+            scope = modelScope,
+            myUserId = { userProfileFlow.value?.uid ?: 0L },
+            heartbeatInfo = {
+                val snapshot = playback.state.value
+                val track = snapshot.currentTrack
+                val parsed = track?.let {
+                    runCatching { cp.player.core.music.CPMediaId.parse(it.id) }.getOrNull()
+                }
+                val current = backend.activeProviderId()
+                if (parsed == null || parsed.providerId != current) {
+                    null
+                } else {
+                    cp.player.core.listentogether.HeartbeatInfo(
+                        songId = parsed.resourceId,
+                        isPlaying = snapshot.isPlaying,
+                        progressMs = snapshot.positionMs,
+                    )
+                }
+            },
+        )
+            // **自动启动**：引擎挂在应用级 scope 上，「在房」才能跨页面存活
+            // （用户不可能一直停在房间页）。第一个读到本状态的组合点就会把它拉起来 ——
+            // 实际是任意页面小播放器里那条 `ListenTogetherStrip`，
+            // 所以「不在房间页也能一起听」不依赖用户手动进过房间页。
+            .also { it.start() }
+    }
+
+    val listenTogetherState: StateFlow<cp.player.core.listentogether.ListenTogetherState>
+        get() = listenTogether.state
 
     fun markInitialized() { _initialized.value = true }
 
@@ -520,6 +578,72 @@ object AppModel {
         _lyricsSourceMode.value = mode
     }
 
+    // ============ 桌面快捷键（持久化，桌面端消费） ============
+    //
+    // 动作清单与默认键位全部声明在 `cp.player.app.shortcut.ShortcutAction`，这里只管三件事：
+    // ① 把用户改过的绑定落盘（键名 `shortcut_<actionId>`）；
+    // ② 把「生效绑定」暴露成流，供设置页渲染；
+    // ③ 给窗口级按键回调做一次「事件 → 动作」匹配。
+    //
+    // 三种存储状态必须分清（理由见 `UNBOUND_SHORTCUT_MARKER` 的 KDoc）：
+    // - 没有记录   → 走 `defaultBinding`（将来调默认键位，这类用户跟着变）；
+    // - `unbound`  → 用户明确解绑，**不再**回落到默认；
+    // - 其它字符串 → 解析出的自定义绑定，解析失败才回落到默认。
+
+    private const val KEY_SHORTCUT_PREFIX = "shortcut_"
+
+    /** 生效绑定（action id → 绑定；值为 null 表示该动作已解绑）。 */
+    private val _shortcutBindings = MutableStateFlow(resolveShortcutBindings())
+    val shortcutBindingsFlow: StateFlow<Map<String, ShortcutBinding?>> = _shortcutBindings.asStateFlow()
+
+    private fun resolveShortcutBindings(): Map<String, ShortcutBinding?> =
+        ShortcutAction.entries.associate { action -> action.id to shortcutBinding(action) }
+
+    /** 某个动作当前生效的绑定；null 表示未绑定。 */
+    fun shortcutBinding(action: ShortcutAction): ShortcutBinding? {
+        val raw = settings.getString(KEY_SHORTCUT_PREFIX + action.id)
+            ?: return action.defaultBinding
+        if (raw == UNBOUND_SHORTCUT_MARKER) return null
+        return ShortcutBinding.parse(raw) ?: action.defaultBinding
+    }
+
+    fun setShortcutBinding(action: ShortcutAction, binding: ShortcutBinding) {
+        settings.putString(KEY_SHORTCUT_PREFIX + action.id, binding.serialize())
+        _shortcutBindings.value = resolveShortcutBindings()
+    }
+
+    /** 解绑（**不是**恢复默认：用户按「清除绑定」是想关掉它，不该把它又变回来）。 */
+    fun unbindShortcut(action: ShortcutAction) {
+        settings.putString(KEY_SHORTCUT_PREFIX + action.id, UNBOUND_SHORTCUT_MARKER)
+        _shortcutBindings.value = resolveShortcutBindings()
+    }
+
+    /** 单个动作恢复默认键位。 */
+    fun resetShortcut(action: ShortcutAction) {
+        settings.remove(KEY_SHORTCUT_PREFIX + action.id)
+        _shortcutBindings.value = resolveShortcutBindings()
+    }
+
+    /** 全部动作恢复默认键位。 */
+    fun resetAllShortcuts() {
+        ShortcutAction.entries.forEach { settings.remove(KEY_SHORTCUT_PREFIX + it.id) }
+        _shortcutBindings.value = resolveShortcutBindings()
+    }
+
+    /**
+     * 把一次按键事件匹配成动作；无命中返回 null。
+     *
+     * 全等匹配（见 [ShortcutBinding.matches]）⇒ 不需要像旧的硬编码 `when` 那样
+     * 靠「把更长的组合排在前面」来防止 `Ctrl+Shift+←` 被 `Ctrl+←` 抢走。
+     * 多个动作绑到同一个组合时取**声明顺序靠前**的那个（设置页会把冲突标出来）。
+     */
+    fun matchShortcut(event: KeyEvent): ShortcutAction? {
+        val bindings = _shortcutBindings.value
+        return ShortcutAction.entries.firstOrNull { action ->
+            bindings[action.id]?.matches(event) == true
+        }
+    }
+
     // ============ 本地服务器输出 + 外部推送（持久化） ============
 
     private val _localServerConfig = MutableStateFlow(LocalServerConfigStore.read(settings))
@@ -787,7 +911,7 @@ object AppModel {
      */
     suspend fun refreshUserProfileAwait(): UserProfile? {
         val profile = runCatching {
-            val status = api.getLoginStatus()
+            val status = backend.musicApi.getLoginStatus()
             val root = status as? kotlinx.serialization.json.JsonObject ?: return@runCatching null
             val uid = extractUidFromLoginStatus(root) ?: return@runCatching null
             val data = unwrapLoginStatusData(root) ?: return@runCatching null

@@ -4,7 +4,7 @@ import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
 import cp.player.core.BackendResult
-import cp.player.core.api.MusicApiMethod
+import cp.player.app.repository.SearchType
 import cp.player.core.music.SearchResult
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,7 +27,7 @@ data class HotSearch(
 
 data class SearchUiState(
     val query: String = "",
-    val searchType: Int = MusicApiMethod.SEARCH_TYPE_SONG,
+    val searchType: Int = SearchType.SONG,
     val result: SearchResult? = null,
     val loading: Boolean = false,
     val error: String? = null,

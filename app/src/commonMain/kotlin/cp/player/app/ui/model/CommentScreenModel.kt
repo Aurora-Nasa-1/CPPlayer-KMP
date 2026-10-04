@@ -3,28 +3,13 @@ package cp.player.app.ui.model
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
+import cp.player.core.BackendResult
+import cp.player.core.music.Comment
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.decodeFromJsonElement
-
-data class Comment(
-    val id: Long,
-    val content: String,
-    val user: String,
-    val avatar: String,
-    val time: String,
-    val likedCount: Int,
-    val liked: Boolean,
-    val replyCount: Int = 0,
-    val beReplied: List<Reply>? = null
-) {
-    data class Reply(val userId: Long, val nickname: String, val content: String)
-}
 
 data class CommentUiState(
     val id: String,
@@ -34,51 +19,9 @@ data class CommentUiState(
     val error: String? = null
 )
 
-// ========= 自动解析所需的 DTO 结构 (替代 Gson) =========
-@Serializable
-data class CommentResponseDto(
-    val data: CommentDataDto? = null,
-    val comments: List<CommentDto>? = null,
-    val hotComments: List<CommentDto>? = null
-)
-
-@Serializable
-data class CommentDataDto(
-    val comments: List<CommentDto>? = null,
-    val hotComments: List<CommentDto>? = null
-)
-
-@Serializable
-data class CommentDto(
-    val commentId: Long? = null,
-    val id: Long? = null,
-    val content: String? = null,
-    val timeStr: String? = null,
-    val time: Long? = null,
-    val likedCount: Int? = null,
-    val liked: Boolean? = null,
-    val user: CommentUserDto? = null,
-    val author: CommentUserDto? = null
-)
-
-@Serializable
-data class CommentUserDto(
-    val nickname: String? = null,
-    val avatarUrl: String? = null
-)
-// ===================================================
-
 class CommentScreenModel(val id: String, val type: String) : ScreenModel {
     private val _state = MutableStateFlow(CommentUiState(id, type))
     val state: StateFlow<CommentUiState> = _state.asStateFlow()
-
-    // ⚠️ jsonDecoder 必须声明在 init **之前**：Kotlin 属性按声明顺序初始化，而 init 里的
-    // loadComments() 经 screenModelScope（Dispatchers.Main.immediate）启动，协程体会在
-    // UI 线程上**同步**开跑；CachedMusicApiService 缓存命中时是纯内存读取、零挂起，
-    // decodeFromJsonElement 会在构造函数结束前执行。若此时 jsonDecoder 尚未赋值，
-    // 内联扩展函数的接收者为 null，报 `$this#decodeFromJsonElement$lv is null`，
-    // 且缓存 TTL 内每次重试都命中缓存 ⇒ 必现。
-    private val jsonDecoder = Json { ignoreUnknownKeys = true; coerceInputValues = true; isLenient = true }
 
     /** 在途的加载协程：用它去重，而不是「loading 且有内容」这种会被空列表绕过的守卫。 */
     private var loadJob: Job? = null
@@ -98,37 +41,18 @@ class CommentScreenModel(val id: String, val type: String) : ScreenModel {
 
         _state.value = _state.value.copy(loading = true, error = null)
         loadJob = screenModelScope.launch {
-            runCatching {
-                val rawJsonElement = AppModel.api.getComments(extractRawId(id), type)
-                
-                // 使用 kotlinx.serialization 自动解析为对象，就和 Gson 的 fromJson 一样
-                val response = jsonDecoder.decodeFromJsonElement<CommentResponseDto>(rawJsonElement)
-                
-                val dtos = response.data?.comments 
-                    ?: response.comments 
-                    ?: response.data?.hotComments 
-                    ?: response.hotComments 
-                    ?: emptyList()
-                    
-                val commentList = dtos.map { dto ->
-                    val userDto = dto.user ?: dto.author
-                    Comment(
-                        id = dto.commentId ?: dto.id ?: 0L,
-                        content = dto.content ?: "",
-                        user = userDto?.nickname ?: "Unknown",
-                        avatar = userDto?.avatarUrl ?: "",
-                        time = dto.timeStr ?: dto.time?.toString() ?: "",
-                        likedCount = dto.likedCount ?: 0,
-                        liked = dto.liked ?: false
-                    )
-                }
-                
-                _state.value = _state.value.copy(comments = commentList, loading = false)
-            }.onFailure {
-                // message 可能为 null（如无消息的 NPE），直接透出会在界面上显示 "null"
-                _state.value = _state.value.copy(
-                    error = it.message ?: "加载评论失败（${it::class.simpleName ?: "UnknownError"}）",
-                    loading = false
+            when (val result = AppModel.musicRepository.getComments(extractRawId(id), type)) {
+                is BackendResult.Success -> _state.value = _state.value.copy(
+                    comments = result.data,
+                    loading = false,
+                )
+                is BackendResult.Error -> _state.value = _state.value.copy(
+                    error = result.message,
+                    loading = false,
+                )
+                is BackendResult.Unsupported -> _state.value = _state.value.copy(
+                    error = result.message,
+                    loading = false,
                 )
             }
         }
@@ -143,8 +67,7 @@ class CommentScreenModel(val id: String, val type: String) : ScreenModel {
         updateComment(current.copy(liked = target, likedCount = current.likedCount + if (target) 1 else -1))
         screenModelScope.launch {
             val ok = runCatching {
-                AppModel.api.likeComment(extractRawId(id), comment.id, type, target)
-                true
+                AppModel.musicRepository.likeComment(extractRawId(id), comment.id, type, target)
             }.getOrDefault(false)
             if (!ok) updateComment(current)
         }

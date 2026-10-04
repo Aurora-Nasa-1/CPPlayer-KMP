@@ -93,10 +93,10 @@ Manifest 与 `res/xml/`。**不放业务逻辑。**
 
 ## 3. 边界现状（**需要收敛的部分**）
 
-门面存在，但边界目前靠约定而非结构约束。实测 `app` 直接 import 了
-**35 个不同的后端符号**，其中 `MusicBackend` 只出现在 3 个文件里。
+~~门面存在，但边界目前靠约定而非结构约束。实测 `app` 直接 import 了
+**35 个不同的后端符号**，其中 `MusicBackend` 只出现在 3 个文件里。~~
 
-**边界收敛已经开工**：`AppModel` 里留了一个明确标注为过渡用的逃生通道 ——
+~~**边界收敛已经开工**：`AppModel` 里留了一个明确标注为过渡用的逃生通道 ——~~
 
 ```kotlin
 /** Transitional raw API access for operations not migrated yet. */
@@ -104,7 +104,9 @@ Manifest 与 `res/xml/`。**不放业务逻辑。**
 val api: cp.player.core.api.MusicApiService get() = backend.musicApi
 ```
 
-编译器会为每一处调用报警告，所以「还剩多少没迁移」可以直接从构建日志读出来。
+✅ **逃生通道已删除**（2026-10-04，见 §3.2 A）。UI 访问后端数据一律走
+`AppModel.musicRepository` / `AppModel.socialRepository` / `AppModel.authRepository`；
+组合根仍直接依赖后端类型（见 §3.1，那是设计意图）。
 
 ### 3.1 有正当理由的越界（保持现状）
 
@@ -116,41 +118,46 @@ val api: cp.player.core.api.MusicApiService get() = backend.musicApi
 | `repository/AuthRepository.kt`、`repository/MusicRepository.kt` | `api.MusicApiService` | **数据访问层正是 API 的落点**，这两个仓库就是 `@Deprecated` 提示里说的 `musicRepository`。它们直接持用 `MusicApiService` 是设计意图，不是越界 |
 | 全体 | `music.*` / `model.*` / `media.*` | 领域模型是前后端共享的数据契约，**本就该直接引用** |
 
-### 3.2 应当收敛的越界（待办）
+### 3.2 ~~应当收敛的越界（待办）~~ ✅ **已收敛**（2026-10-04）
 
-**A. UI 层仍在用已废弃的 `AppModel.api` 逃生通道**（7 个文件，12 处调用）
+**A. ~~UI 层仍在用已废弃的 `AppModel.api` 逃生通道~~** ✅ **已全部迁移并删除该属性**
+（批次 1 `a37fc77`：歌单操作 7 文件 10 处；批次 2：评论域上收 core —— `music.Comment`
+模型 + `MusicSourceFromApi.parseComments` + `MusicRepository.getComments/likeComment`，
+`CommentScreenModel` 改走 repository）。
 
-| 文件 | 调用点 | 涉及的 API |
-|------|--------|-----------|
-| `ui/component/AddToPlaylistSheet.kt` | 77、97 | `addTracksToPlaylist`、`createPlaylist` |
-| `ui/component/CreatePlaylistDialog.kt` | 62 | `createPlaylist` |
-| `ui/component/PlaylistPickerSheet.kt` | 125、130 | `getLoginStatus`、`getUserPlaylists` |
-| `ui/component/QueueBottomSheet.kt` | 179 | `addTracksToPlaylist` |
-| `ui/model/CommentScreenModel.kt` | 90、127 | `getComments`、`likeComment` |
-| `ui/screen/PlayerScreen.kt` | 398 | `dislikeSong` |
-| `ui/screen/PlaylistDetailScreen.kt` | 209、**352**、393 | `subscribePlaylist`、`getSongDetail`，以及把 `AppModel.api` **当参数传给** `MusicSourceFromApi.getPlaylistTracks` |
-
-> ⚠️ 统计时别只搜 `AppModel.api.`（带点）—— 第 352 行是把 `AppModel.api`
-> 作为参数传出去的，`AppModel.api.` 这种模式匹配不到它。
-> 用 `grep -rn 'AppModel\.api\b'` 才不会漏。
+> ⚠️ 统计时别只搜 `AppModel.api.`（带点）—— 把 `AppModel.api` **作为参数传出去**的
+> 调用点（曾存在于 `PlaylistDetailScreen` 传给 `MusicSourceFromApi.getPlaylistTracks`）
+> 用 `AppModel.api.` 匹配不到，要 `grep -rn 'AppModel\.api\b'` 才不会漏。
 
 迁移方向：把这些操作补进 `MusicRepository`（或按功能建 feature repository），
-然后删掉 `AppModel.api`。**建议逐个提交，每迁一个就少一批编译警告**，
-`AppModel.api` 本身可作为进度指标 —— 它删掉的那天就是边界收敛完成。
+然后删掉 `AppModel.api`。~~**建议逐个提交，每迁一个就少一批编译警告**，~~
+`AppModel.api` ~~本身可作为进度指标 —— 它删掉的那天就是边界收敛完成。~~
+（已完成：现在的规则是 **UI 层不存在 `MusicApiService` 的直接引用**，数据访问只认
+`repository/`；新增能力先补 repository 方法再接 UI。）
 
-**B. UI 层直接 import 后端内部类型**
+**B. ~~UI 层直接 import 后端内部类型~~** ✅ **已收敛**
 
-| 文件 | 问题 | 建议 |
-|------|------|------|
-| `ui/model/SearchScreenModel.kt` | import `api.MusicApiMethod`（API 方法常量泄漏到 UI 层） | 由 `repository/` 暴露语义化方法 |
-| `ui/screen/SearchScreen.kt` | 同上 | 同上 |
-| `ui/screen/HealthScreen.kt` | 直接 import `monitor.HealthMonitor` | 经 `AppModel` 暴露的只读状态 |
-| `ui/component/SleepTimerDialog.kt` | 直接 import `playback.PlaybackController` | 经 `AppModel` 暴露 |
-| `ui/screen/PlaybackSettingsScreen.kt` | 同上 | 同上 |
+| 文件 | ~~问题~~ 现状 |
+|------|------|
+| `ui/model/SearchScreenModel.kt` | ✅ 改用 `repository.SearchType`（语义化常量，2026-10-04），不再 import `api.MusicApiMethod` |
+| `ui/screen/SearchScreen.kt` | ✅ 同上 |
+| `ui/screen/HealthScreen.kt` | ✅ 改用 `AppModel` 侧 typealias（`HealthLevel` / `ApiCallRecord`，2026-10-04），不再 import `monitor.HealthMonitor` |
+| `ui/component/SleepTimerDialog.kt` | ✅ 哨兵值经 `AppModel.sleepAfterTrack` 取（2026-10-04），不再 import `playback.PlaybackController` |
+| ~~`ui/screen/PlaybackSettingsScreen.kt`~~ | ✅ 已不 import（文档此前滞后） |
 
 **判定标准**：如果一个 `ui/` 文件需要 import
 `api.` / `provider.` / `monitor.` / `control.` 下的类型，那多半是缺了一个
 由 `AppModel`（或 `MusicBackend`）暴露的语义化接口。
+
+> ⚠️ **清单之外仍有零星 import**（上表所列 5 处已清，但全仓扫描还发现这些，
+> 属配置/数据契约类，是否收敛待另行评估）：
+> `AccountScreen`（`api.isLoggedInStatus`）、`BackendErrorScreen` 与
+> `ProviderManagementScreen`（`provider.BackendProvider`）、
+> `IntegrationSettingsScreen` / `StreamOutputSettingsScreen`（`control.LocalServerConfig`
+> / `OutputMode` / `LocalServerStatus` / `PushResult` / `resolveAdvertisedHost`）。
+> 这些类型本质是**跨端配置与状态的数据契约**（类比 §3.1 的 `music.*` 共享模型），
+> 但按 §3.1「领域模型本就该直接引用」的口径它们又不够格 —— 后续要么升格为
+> 共享契约写进 §3.1，要么同样经 `AppModel` 收敛。
 
 ### 3.3 后端侧的依赖泄漏
 

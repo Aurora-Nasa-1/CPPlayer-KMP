@@ -13,7 +13,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import cp.player.core.playback.PlaybackController
+import cp.player.app.AppModel
 
 /**
  * 睡眠定时对话框：N 分钟后暂停 / 播完当前后暂停 / 取消已有定时。
@@ -64,7 +64,7 @@ fun SleepTimerDialog(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = afterTrackActive,
-                        onClick = { onSelect(PlaybackController.SLEEP_AFTER_TRACK); onDismiss() },
+                        onClick = { onSelect(AppModel.sleepAfterTrack); onDismiss() },
                         label = { Text("播完本曲") },
                     )
                 }

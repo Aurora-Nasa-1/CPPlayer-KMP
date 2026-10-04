@@ -3,12 +3,15 @@ package cp.player.core.music
 import cp.player.core.BackendResult
 import cp.player.core.api.ApiResponseCodes
 import cp.player.core.api.MusicApiService
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -64,6 +67,45 @@ object MusicSourceFromApi {
         }
         return runCatching { BackendResult.Success(transform()) }
             .getOrElse { BackendResult.Error("数据解析失败: ${it.message}", cause = it) }
+    }
+
+    // ============ 评论 ============
+
+    private val commentJsonDecoder = Json {
+        ignoreUnknownKeys = true
+        coerceInputValues = true
+        isLenient = true
+    }
+
+    /**
+     * 解析评论响应为 [Comment] 列表。
+     *
+     * 上游形状：`{comments, hotComments}` 或包一层 `{data: {comments, hotComments}}`；
+     * 评论区优先取 `comments`，为空再取 `hotComments`。评论接口不在读透缓存名单内，
+     * 调用即直连网络（与旧行为一致）。
+     */
+    fun parseComments(json: JsonElement): MusicResult<List<Comment>> {
+        if (json !is JsonObject) return BackendResult.Error("响应格式异常（非 JsonObject）")
+        return runCatching {
+            val dto = commentJsonDecoder.decodeFromJsonElement<CommentResponseDto>(json)
+            val dtos = dto.data?.comments
+                ?: dto.comments
+                ?: dto.data?.hotComments
+                ?: dto.hotComments
+                ?: emptyList()
+            BackendResult.Success(dtos.map { d ->
+                val userDto = d.user ?: d.author
+                Comment(
+                    id = d.commentId ?: d.id ?: 0L,
+                    content = d.content ?: "",
+                    user = userDto?.nickname ?: "Unknown",
+                    avatar = userDto?.avatarUrl ?: "",
+                    time = d.timeStr ?: d.time?.toString() ?: "",
+                    likedCount = d.likedCount ?: 0,
+                    liked = d.liked ?: false,
+                )
+            })
+        }.getOrElse { BackendResult.Error("评论解析失败: ${it.message}", cause = it) }
     }
 
     // ============ 推荐歌单 ============
@@ -643,3 +685,37 @@ object MusicSourceFromApi {
     suspend fun getHighQualityPlaylists(api: MusicApiService, cat: String = "全部", limit: Int = 30): MusicResult<List<PlaylistSummary>> =
         parseRecommendedPlaylists(api.getHighqualityPlaylists(cat = cat, limit = limit))
 }
+
+// ============ 评论 DTO（仅供 [MusicSourceFromApi.parseComments] 使用） ============
+
+@Serializable
+private data class CommentResponseDto(
+    val data: CommentDataDto? = null,
+    val comments: List<CommentDto>? = null,
+    val hotComments: List<CommentDto>? = null,
+)
+
+@Serializable
+private data class CommentDataDto(
+    val comments: List<CommentDto>? = null,
+    val hotComments: List<CommentDto>? = null,
+)
+
+@Serializable
+private data class CommentDto(
+    val commentId: Long? = null,
+    val id: Long? = null,
+    val content: String? = null,
+    val timeStr: String? = null,
+    val time: Long? = null,
+    val likedCount: Int? = null,
+    val liked: Boolean? = null,
+    val user: CommentUserDto? = null,
+    val author: CommentUserDto? = null,
+)
+
+@Serializable
+private data class CommentUserDto(
+    val nickname: String? = null,
+    val avatarUrl: String? = null,
+)

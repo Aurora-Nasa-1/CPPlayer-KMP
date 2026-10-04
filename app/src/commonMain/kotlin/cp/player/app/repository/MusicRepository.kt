@@ -8,6 +8,7 @@ import cp.player.core.music.AlbumSummary
 import cp.player.core.music.ArtistProfile
 import cp.player.core.music.ArtistSummary
 import cp.player.core.music.BannerItem
+import cp.player.core.music.Comment
 import cp.player.core.music.MusicResult
 import cp.player.core.music.MusicSourceFromApi
 import cp.player.core.music.PlaylistDetail
@@ -264,6 +265,19 @@ class MusicRepository(private val api: MusicApiService) {
     suspend fun getSongDetailInfo(songId: String, fallback: SongDetailInfo? = null): MusicResult<SongDetailInfo> =
         MusicSourceFromApi.parseSongDetailInfo(api.getSongDetail(listOf(songId)), fallback)
 
+    /**
+     * 评论列表。
+     *
+     * ⚠️ 评论接口不在读透缓存名单内（comment 直通网络），每次调用都打网络 ——
+     * 与旧行为一致，别按「有缓存」来设计刷新节奏。
+     */
+    suspend fun getComments(rawId: String, type: String): MusicResult<List<Comment>> =
+        MusicSourceFromApi.parseComments(api.getComments(rawId, type))
+
+    /** 点赞 / 取消点赞评论。 */
+    suspend fun likeComment(rawId: String, commentId: Long, type: String, like: Boolean): Boolean =
+        isApiSuccess(api.likeComment(rawId, commentId, type, like))
+
     /** 从云盘删除歌曲（上游 `user/cloud/del`）。 */
     suspend fun deleteUserCloud(songId: String): Boolean =
         isApiSuccess(api.deleteUserCloud(listOf(songId)))
@@ -278,4 +292,17 @@ class MusicRepository(private val api: MusicApiService) {
             ?: ((json as? JsonObject)?.get("status") as? JsonPrimitive)?.intOrNull
         return code == null || code == 200 || code == 0 || code == 201 || code == 301
     }
+}
+
+/**
+ * 搜索类型（UI 侧语义化常量）。
+ *
+ * 与上游 `cloudsearch` 的 `type` 取值一致，但 UI 只认这里，不直接 import
+ * `core.api.MusicApiMethod`（边界规则见 docs/dev/ARCHITECTURE.md §3.2）。
+ */
+object SearchType {
+    const val SONG = 1
+    const val ALBUM = 10
+    const val ARTIST = 100
+    const val PLAYLIST = 1000
 }

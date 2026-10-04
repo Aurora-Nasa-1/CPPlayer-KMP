@@ -23,7 +23,7 @@ import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LazyScrollColumn
-import cp.player.app.ui.model.Comment
+import cp.player.core.music.Comment
 import cp.player.app.ui.model.CommentScreenModel
 import cp.player.app.ui.util.popOrNotify
 import coil3.compose.AsyncImage

@@ -67,7 +67,7 @@ import cp.player.app.ui.component.playlistShareText
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.shareText
 import cp.player.app.ui.model.SearchScreenModel
-import cp.player.core.api.MusicApiMethod
+import cp.player.app.repository.SearchType
 import kotlinx.coroutines.launch
 
 /**
@@ -197,10 +197,10 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     val types = listOf(
-                        MusicApiMethod.SEARCH_TYPE_SONG to "歌曲",
-                        MusicApiMethod.SEARCH_TYPE_ALBUM to "专辑",
-                        MusicApiMethod.SEARCH_TYPE_ARTIST to "歌手",
-                        MusicApiMethod.SEARCH_TYPE_PLAYLIST to "歌单",
+                        SearchType.SONG to "歌曲",
+                        SearchType.ALBUM to "专辑",
+                        SearchType.ARTIST to "歌手",
+                        SearchType.PLAYLIST to "歌单",
                     )
                     items(types.size) { index ->
                         val (type, label) = types[index]
@@ -306,9 +306,9 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                         // 而专辑搜索返回的是 `result.albums` —— 计数恒为 0，
                         // 于是专辑页签永远显示「没有找到结果」，即使服务端返回了 30 张专辑。
                         val count = when (state.searchType) {
-                            MusicApiMethod.SEARCH_TYPE_SONG -> result.songs.size
-                            MusicApiMethod.SEARCH_TYPE_ALBUM -> result.albums.size
-                            MusicApiMethod.SEARCH_TYPE_PLAYLIST -> result.playlists.size
+                            SearchType.SONG -> result.songs.size
+                            SearchType.ALBUM -> result.albums.size
+                            SearchType.PLAYLIST -> result.playlists.size
                             else -> result.artists.size
                         }
                         if (count == 0) {
@@ -339,7 +339,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                     )
                                 }
                                 when (state.searchType) {
-                                    MusicApiMethod.SEARCH_TYPE_SONG -> itemsIndexed(result.songs, key = { _, track -> track.id }) { index, track ->
+                                    SearchType.SONG -> itemsIndexed(result.songs, key = { _, track -> track.id }) { index, track ->
                                         SongItem(
                                             track = track, index = index, total = result.songs.size,
                                             // 重新搜索时结果整体换一批：没有 animateItem 的话
@@ -381,7 +381,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                             ),
                                         )
                                     }
-                                    MusicApiMethod.SEARCH_TYPE_ALBUM -> itemsIndexed(result.albums, key = { _, album -> "album-${album.id}" }) { _, album ->
+                                    SearchType.ALBUM -> itemsIndexed(result.albums, key = { _, album -> "album-${album.id}" }) { _, album ->
                                         AlbumItem(
                                             album = album,
                                             modifier = Modifier.animateItem(),
@@ -389,7 +389,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                             onClick = { navigator.push(AlbumDetailScreen(album.id, album)) },
                                         )
                                     }
-                                    MusicApiMethod.SEARCH_TYPE_PLAYLIST -> itemsIndexed(result.playlists, key = { _, playlist -> "playlist-${playlist.id}" }) { _, playlist ->
+                                    SearchType.PLAYLIST -> itemsIndexed(result.playlists, key = { _, playlist -> "playlist-${playlist.id}" }) { _, playlist ->
                                         PlaylistItem(
                                             playlist = playlist,
                                             isOwner = false,
@@ -400,7 +400,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                             onOptionsClick = { playlistOptionsTarget = playlist },
                                         )
                                     }
-                                    MusicApiMethod.SEARCH_TYPE_ARTIST -> itemsIndexed(result.artists, key = { _, artist -> "artist-${artist.id}" }) { _, artist ->
+                                    SearchType.ARTIST -> itemsIndexed(result.artists, key = { _, artist -> "artist-${artist.id}" }) { _, artist ->
                                         ArtistItem(
                                             artist = artist,
                                             subtitle = "歌手",

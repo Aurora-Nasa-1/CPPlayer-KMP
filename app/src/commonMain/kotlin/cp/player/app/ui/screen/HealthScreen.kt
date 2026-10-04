@@ -44,7 +44,8 @@ import cp.player.app.ui.component.SettingsFieldGroup
 import cp.player.app.ui.component.SettingsLazyPage
 import cp.player.app.ui.component.TopBarAction
 import cp.player.app.ui.component.settingsRowContainer
-import cp.player.core.monitor.HealthMonitor
+import cp.player.app.ApiCallRecord
+import cp.player.app.HealthLevel
 import cp.player.core.util.localDateTimeOf
 
 /**
@@ -76,7 +77,7 @@ class HealthScreen : Screen {
 
         val filtered = remember(records, onlyErrors) {
             val recent = records.reversed()
-            if (onlyErrors) recent.filter { it.level != HealthMonitor.HealthLevel.OK } else recent.take(300)
+            if (onlyErrors) recent.filter { it.level != HealthLevel.OK } else recent.take(300)
         }
 
         CpRouteScaffold(
@@ -140,11 +141,11 @@ class HealthScreen : Screen {
 }
 
 @Composable
-private fun OverviewCard(overall: HealthMonitor.HealthLevel, total: Int) {
+private fun OverviewCard(overall: HealthLevel, total: Int) {
     val (color, label, icon) = when (overall) {
-        HealthMonitor.HealthLevel.OK -> Triple(MaterialTheme.colorScheme.primary, "健康", Icons.Filled.CheckCircle)
-        HealthMonitor.HealthLevel.WARNING -> Triple(MaterialTheme.colorScheme.tertiary, "存在警告", Icons.Filled.Warning)
-        HealthMonitor.HealthLevel.ERROR -> Triple(MaterialTheme.colorScheme.error, "存在错误", Icons.Filled.Error)
+        HealthLevel.OK -> Triple(MaterialTheme.colorScheme.primary, "健康", Icons.Filled.CheckCircle)
+        HealthLevel.WARNING -> Triple(MaterialTheme.colorScheme.tertiary, "存在警告", Icons.Filled.Warning)
+        HealthLevel.ERROR -> Triple(MaterialTheme.colorScheme.error, "存在错误", Icons.Filled.Error)
     }
     // 只读信息一律用 SettingsFieldGroup：圆角、内边距、底色与其他设置页的只读块一致。
     SettingsFieldGroup {
@@ -167,11 +168,11 @@ private fun OverviewCard(overall: HealthMonitor.HealthLevel, total: Int) {
 }
 
 @Composable
-private fun RecordRow(record: HealthMonitor.ApiCallRecord, index: Int, total: Int) {
+private fun RecordRow(record: ApiCallRecord, index: Int, total: Int) {
     val color = when (record.level) {
-        HealthMonitor.HealthLevel.OK -> MaterialTheme.colorScheme.primary
-        HealthMonitor.HealthLevel.WARNING -> MaterialTheme.colorScheme.tertiary
-        HealthMonitor.HealthLevel.ERROR -> MaterialTheme.colorScheme.error
+        HealthLevel.OK -> MaterialTheme.colorScheme.primary
+        HealthLevel.WARNING -> MaterialTheme.colorScheme.tertiary
+        HealthLevel.ERROR -> MaterialTheme.colorScheme.error
     }
     // 别用 kotlinx-datetime：运行时 0.7.x 无 kotlinx.datetime.Instant 类文件，
     // 一碰就是 NoClassDefFoundError；统一走 expect/actual 的 localDateTimeOf。
@@ -230,8 +231,8 @@ private fun RecordRow(record: HealthMonitor.ApiCallRecord, index: Int, total: In
     }
 }
 
-private fun levelText(level: HealthMonitor.HealthLevel) = when (level) {
-    HealthMonitor.HealthLevel.OK -> "OK"
-    HealthMonitor.HealthLevel.WARNING -> "WARN"
-    HealthMonitor.HealthLevel.ERROR -> "ERROR"
+private fun levelText(level: HealthLevel) = when (level) {
+    HealthLevel.OK -> "OK"
+    HealthLevel.WARNING -> "WARN"
+    HealthLevel.ERROR -> "ERROR"
 }

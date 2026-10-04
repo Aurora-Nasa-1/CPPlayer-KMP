@@ -110,6 +110,7 @@ import cp.player.app.ui.util.formatTimeMs
 import cp.player.app.ui.util.next
 import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.util.pushOrNotify
+import cp.player.core.music.Comment
 import cp.player.core.playback.LyricsState
 import cp.player.core.playback.RepeatMode
 import kotlinx.coroutines.launch
@@ -997,7 +998,7 @@ fun DesktopCommentContent(trackId: String) {
 }
 
 @Composable
-private fun CommentItem(comment: cp.player.app.ui.model.Comment, onLike: () -> Unit) {
+private fun CommentItem(comment: Comment, onLike: () -> Unit) {
     Row(Modifier.fillMaxWidth()) {
         AsyncImage(
             model = comment.avatar,
