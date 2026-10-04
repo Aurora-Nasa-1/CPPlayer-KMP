@@ -455,4 +455,61 @@ object MusicApiMethod {
 
     /** 获取电台节目详情 */
     const val DJ_PROGRAM_DETAIL = "dj/program/detail"
+
+    // ======================== 一起听 Listen Together ========================
+    //
+    // ⚠️ 这里的取值**不是**上游 HTTP 路径，而是 JNI 分发器的查找键。
+    //
+    // 分发器由 `build.rs` 从 `src/api/mod.rs` 的模块名生成：把模块名里的 `_` **全部**
+    // 替换成 `/`。所以 `listentogether_accept` 的键是 `listentogether/accept`，
+    // **不是**它在 Rust 源码里写的上游路径 `/api/listen/together/play/invitation/accept`。
+    //
+    // 实测：传直觉路径 `listentogether/play/invitation/accept` 会得到
+    // `{"code":500,"msg":"Method not found: ..."}`，看起来像「模块太旧没这个接口」，
+    // 实际只是键写错了。**换模块版本时不要照文档改这里，照模块名推。**
+
+    /** 创建房间。响应含完整 `roomInfo`。 */
+    const val LISTEN_TOGETHER_ROOM_CREATE = "listentogether/room/create"
+
+    /**
+     * 房间可加入性探测。
+     *
+     * ⚠️ **这不是房间详情**。实测只返回
+     * `{copywriting, joinable, status, type}` 四个字段，**没有成员、没有播放状态**。
+     * 房间详情只能从 [LISTEN_TOGETHER_STATUS] 拿。
+     * （npm 文档把它描述成「含在线用户与房间状态」，是错的。）
+     */
+    const val LISTEN_TOGETHER_ROOM_CHECK = "listentogether/room/check"
+
+    /** 接受邀请。需要成对的 `roomId` + `inviterId`。 */
+    const val LISTEN_TOGETHER_ACCEPT = "listentogether/accept"
+
+    /** 在房状态 + 房间详情（只读，唯一的房间详情来源）。⚠️ 走 weapi，与其余 8 个不同。 */
+    const val LISTEN_TOGETHER_STATUS = "listentogether/status"
+
+    /**
+     * 心跳。
+     *
+     * ⚠️ `heatbeat` 是上游的拼写错误（少一个 r），模块名与分发键都沿用了它。
+     * 改成 `heartbeat` 会 `Method not found`。
+     *
+     * 服务端响应 `timeSpan` 给出期望间隔，实测 **30 秒**。
+     */
+    const val LISTEN_TOGETHER_HEARTBEAT = "listentogether/heatbeat"
+
+    /** 上报播放指令（PLAY / PAUSE / PROGRESS / GOTO）。实测可被 `sync/playlist/get` 读回。 */
+    const val LISTEN_TOGETHER_PLAY_COMMAND = "listentogether/play/command"
+
+    /** 上报同步队列。 */
+    const val LISTEN_TOGETHER_SYNC_LIST = "listentogether/sync/list/command"
+
+    /**
+     * 读回房间快照：**同时**返回 `playCommand`（指令 + 进度 + 序号）与 `playlist`。
+     *
+     * 这是本方案里**唯一的读侧通道** —— 网易云不推送，远端指令全靠轮询这里拿。
+     */
+    const val LISTEN_TOGETHER_SYNC_PLAYLIST = "listentogether/sync/playlist/get"
+
+    /** 结束房间。只能关不能复活；一个账号同时只能在一个房间。 */
+    const val LISTEN_TOGETHER_END = "listentogether/end"
 }
