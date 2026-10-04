@@ -161,18 +161,24 @@ object AppModel {
     val playback: PlaybackController get() = backend.playbackController
 
     /**
-     * 一起听（房间生命周期 + 邀请闭环 + 心跳）。
+     * 一起听（房间生命周期 + 邀请闭环 + 心跳 + **指令同步**）。
      *
      * ### 为什么挂在应用级而不是页面的 ScreenModel
      * 「在房」是**跨页面**状态：用户进房后会去听歌、翻歌单，房间页早就出栈了，
      * 但心跳必须继续 —— 否则会被判定离开。挂在 ScreenModel 上会随页面销毁停掉，
      * 症状是「一离开房间页就掉线」。这里复用 [modelScope]（应用级协程域）。
      *
-     * ### 心跳上报的是「裸 id」而不是 mediaId
+     * ### 心跳/指令上报的是「裸 id」而不是 mediaId
      * 房间协议里的 `songId` 是**音源内的资源 id**。把 `netease://song/123` 原样上报，
      * 对端 [cp.player.core.music.CPMediaId.parse] 解析出来的 providerId 会是它自己的，
      * 直接错位。所以这里拆出 `resourceId`，并在**音源不一致时干脆不发** ——
      * 宁可不上报，也不要往房间里塞一个别人解析不了的 id。
+     *
+     * ### 指令同步的接线（切歌 / 播放态 / 进度）
+     * 引擎拿到 [playback] 后自己观察状态、自己应用远端指令（切歌 / seek / 暂停），
+     * AppModel 只负责两件它才知道的事：mediaId ↔ 裸 songId 的互转。
+     * `bareSongIdOf` 在 providerId 或 resourceType 对不上时返回 null ——
+     * 引擎据此对「不属于当前音源的内容」整体静默（见引擎侧 KDoc）。
      */
     val listenTogether: cp.player.core.listentogether.ListenTogetherEngine by lazy {
         cp.player.core.listentogether.ListenTogetherEngine(
@@ -196,6 +202,16 @@ object AppModel {
                     )
                 }
             },
+            playback = backend.playbackController,
+            bareSongIdOf = { mediaId ->
+                runCatching { cp.player.core.music.CPMediaId.parse(mediaId) }.getOrNull()
+                    ?.takeIf {
+                        it.providerId == backend.activeProviderId() &&
+                            it.resourceType == "song"
+                    }
+                    ?.resourceId
+            },
+            mediaIdForSong = { songId -> "${backend.activeProviderId()}://song/$songId" },
         )
             // **自动启动**：引擎挂在应用级 scope 上，「在房」才能跨页面存活
             // （用户不可能一直停在房间页）。第一个读到本状态的组合点就会把它拉起来 ——
