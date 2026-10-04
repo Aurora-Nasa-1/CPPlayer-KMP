@@ -85,6 +85,12 @@ fun SharedTransitionScope.MiniPlayer(
         shadowElevation = 2.dp,
     ) {
         Column {
+            // 「一起听」条：只在已经在房间里时绘制（见 ListenTogetherStrip 的 KDoc）。
+            // 放在小播放器**内部**而不是宿主上：两个宿主共用本组件，一处改动即覆盖
+            // 三个 tab 与所有路由页；而且尾留白量的是本组件的实测高度，加在这里
+            // 留白会自动跟着变，不会出现「条把列表最后一行压住」。
+            ListenTogetherStrip()
+
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,

@@ -40,7 +40,6 @@ import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.popOrNotify
 import cp.player.core.listentogether.ListenTogetherEngine
 import cp.player.core.listentogether.ListenTogetherState
-import cp.player.core.util.currentTimeMillis
 import kotlinx.coroutines.launch
 
 /**
@@ -309,15 +308,15 @@ private fun ColumnScope.roomContent(
 }
 
 /**
- * 剩余有效期。
+ * 剩余有效期（房间页文案）。
  *
- * 房间是**服务端**限时的（实测 `effectiveDurationMs` = 30 分钟），到点即失效。
- * **必须提前告诉用户**，否则表现为「听着听着突然掉线」且不知道原因。
+ * 时间算法在 [cp.player.app.ui.component.ltTtl] 里**只有一份** —— 这里只负责措辞，
+ * 免得两处界面各自算一遍、结果对不上。
  */
-private fun remainingText(createdAtMs: Long?, durationMs: Long?): String {
-    if (createdAtMs == null || durationMs == null || durationMs <= 0L) return ""
-    val left = createdAtMs + durationMs - currentTimeMillis()
-    if (left <= 0L) return " · 已到有效期，建议重新创建"
-    val minutes = left / 60_000L
-    return if (minutes >= 1) " · 剩余约 $minutes 分钟" else " · 即将到期"
-}
+private fun remainingText(createdAtMs: Long?, durationMs: Long?): String =
+    when (val ttl = cp.player.app.ui.component.ltTtl(createdAtMs, durationMs)) {
+        cp.player.app.ui.component.LtTtl.Unknown -> ""
+        cp.player.app.ui.component.LtTtl.Expired -> " · 已到有效期，建议重新创建"
+        cp.player.app.ui.component.LtTtl.Imminent -> " · 即将到期"
+        is cp.player.app.ui.component.LtTtl.Left -> " · 剩余约 ${ttl.minutes} 分钟"
+    }
