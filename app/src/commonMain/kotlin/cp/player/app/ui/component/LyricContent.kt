@@ -19,6 +19,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToLong
 import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
@@ -195,22 +196,41 @@ fun LyricContent(
  * 这是一个**纯计算**的位置源：不持有 Compose 状态、不触发重组。库每帧调用
  * [currentMs] 时，它用「最新权威采样值 + 自该采样起经过的墙钟时间」现算。
  *
+ * ## 为什么重锚点不能「硬跳」（本次修复的核心）
+ *
+ * 旧实现每次收到新采样就把锚点硬重置到采样值。但采样值是引擎在**轮询时刻**测的，
+ * 锚点却要到「跨线程分发 → UI 重组」之后（晚 4~20 ms 且抖动）才生效——
+ * 新锚点通常落后于已外推的值几~十几毫秒。[currentMs] 的单调不减约束把这回拉
+ * 变成**停顿**：逐帧重绘没问题，但位置值每 200 ms 顿一下，逐字高亮「一格一格」。
+ *
+ * 现在的接法（音视频时钟同步的标准做法——**误差渐消**）：
+ * - 锚点照常更新，但把「旧时间线此刻应有的值 − 新锚点」记为补偿量叠加在输出上，
+ *   按指数衰减（时间常数 [DecayTauMs]）在 ~1 s 内归零。输出曲线**连续**
+ *   （值与速率都连续，锚点生效的那一帧输出与不更新锚点时一致），
+ *   代价只是速率在周期内波动 < ±10 %，肉眼无感；
+ * - 偏差超过 [HardJumpThresholdMs]（seek / 换曲 / 长卡顿）仍立即跟随，
+ *   恢复播放、首次采样同样立即跟随。
+ *
+ * ## 其余设计要点
+ *
+ * - **暂停即停**：`isPlaying = false` 时不外推，位置钉在权威值上。
+ * - **单调不减**：外推值永不小于已返回过的值；权威值回退（seek）才允许跟随下降。
+ * - 外推上限 [MaxExtrapolationMs]：引擎卡顿迟迟没有新采样时宁可短暂停住，
+ *   也不让歌词跑在声音前面太多。
+ * - 时间基准用单调钟（[nowNanos]，默认 [System.nanoTime]），不受系统时钟调整影响；
+ *   可注入假时钟以便测试。
+ *
  * 为什么**外推本身**必须是纯计算（而不是「一边外推一边把结果写回自己」）：
  * 1. 若让 Composable 直接读外推状态，整个歌词子树会**每帧重组**；而歌词本来只需要重绘。
  *    （所以 `LyricContent` 里是把外推结果**发布**到一个 State，且**只**在 provider 的
  *    lambda 里读它 —— 那是在绘制阶段执行，于是每帧只重绘、不重组。）
- * 2. 若外推值与「权威值定时回写」**竞争同一个状态**，轮询边界上会先写权威值、下一帧
- *    又从新锚点外推，等于每 200 ms 位置倒退一次再前进 —— 观感是周期性顿挫，
- *    比完全不外推还差。这里外推是**单向**的：只由 [update] 收权威值、只由 [currentMs]
- *    出外推值，两者不互写，就没有这个竞争。
- *
- * 设计要点：
- * - **单调不减**：外推值永远不小于已返回过的值，杜绝任何向后的抖动。权威值若回退
- *   （seek / 换曲）才允许跟随下降，并立即重新锚定。
- * - **暂停即停**：`isPlaying = false` 时不外推，位置钉在权威值上。
- * - 时间基准用 [System.nanoTime]（单调钟），不受系统时钟调整影响。
+ * 2. 外推是**单向**的：只由 [update] 收权威值、只由 [currentMs] 出外推值，
+ *    两者不互写，就没有「轮询边界上位置倒退再前进」的竞争。
  */
-internal class SmoothPositionSource {
+internal class SmoothPositionSource(
+    /** 单调时钟读数（纳秒）。测试注入假时钟；生产用 [System.nanoTime]。 */
+    private val nowNanos: () -> Long = System::nanoTime,
+) {
 
     /** 最近一次权威采样值（毫秒）。 */
     private var authoritativeMs: Long = 0L
@@ -225,40 +245,82 @@ internal class SmoothPositionSource {
     private var lastReturnedMs: Long = Long.MIN_VALUE
 
     /**
+     * 渐消补偿（毫秒，Double 以免每帧取整产生台阶）：叠加在「锚点外推值」上，
+     * 按指数衰减到 0。收敛性：每个采样周期（~200 ms）误差衰减 e^(-200/300) ≈ 0.51，
+     * 稳态误差 ≈ 2× 单周期链路抖动（~±10 ms），不发散。
+     */
+    private var correctionMs: Double = 0.0
+
+    /**
      * 收录一次权威采样。由 Composable 在每次收到新 state 时调用。
      *
      * 同一个值重复调用（重组但位置没变）不会重置时间基准 —— 否则外推会被
      * 频繁的重组不断「归零」，进度条就永远走不动。
      */
     fun update(positionMs: Long, isPlaying: Boolean) {
-        val changed = positionMs != authoritativeMs || !playing && isPlaying
-        authoritativeMs = positionMs
-        playing = isPlaying
-        if (changed || sampledAtNanos == 0L) {
-            sampledAtNanos = System.nanoTime()
+        val positionChanged = positionMs != authoritativeMs
+        val resuming = isPlaying && !playing
+        if (sampledAtNanos != 0L && !positionChanged && !resuming && playing == isPlaying) return
+
+        // 与「当前应输出的值」比较（含补偿），才是与输出连续性一致的语义。
+        val bigJump = sampledAtNanos != 0L && positionChanged &&
+            kotlin.math.abs(positionMs - rawExtrapolatedMs()) > HardJumpThresholdMs
+
+        if (resuming || bigJump || sampledAtNanos == 0L) {
+            // 恢复播放 / 大偏差（seek、换曲、长卡顿）/ 首次采样：立即跟随。
+            correctionMs = 0.0
+            authoritativeMs = positionMs
+            sampledAtNanos = nowNanos()
             // 权威值回退（seek / 换曲）时放弃单调约束，允许跟随下降。
             if (positionMs < lastReturnedMs) lastReturnedMs = Long.MIN_VALUE
+        } else if (positionChanged) {
+            if (playing) {
+                // 播放中的常规小步进：让输出**连续**地滑向新锚点。
+                // 补偿 = 「旧时间线此刻应有的值」− 新锚点（含自上帧起的推进量）。
+                // ⚠️ 不能用上一帧的输出当基准：update 与下一次读取几乎同刻发生
+                // （elapsed≈0），那会让输出恰好停在上一帧的值上 —— 每 200ms 停一帧。
+                // 用 rawExtrapolatedMs() 后，本帧（elapsed≈0）的输出与不更新锚点时
+                // 完全一致，值与速率都连续，误差交给指数衰减去消。
+                // clamp 只是防御；正常误差 ≤ 阈值才走到这里。
+                correctionMs = (rawExtrapolatedMs() - positionMs)
+                    .coerceIn(-HardJumpThresholdMs, HardJumpThresholdMs)
+            }
+            authoritativeMs = positionMs
+            sampledAtNanos = nowNanos()
         }
+        playing = isPlaying
     }
 
     /** 当前平滑位置（毫秒）。库每帧调用。 */
     fun currentMs(): Long {
-        val base =
-            if (!playing || sampledAtNanos == 0L) {
-                authoritativeMs
-            } else {
-                val elapsedMs = (System.nanoTime() - sampledAtNanos) / 1_000_000L
-                // 外推上限：一个轮询周期（200ms）+ 余量。若引擎卡顿导致迟迟没有新采样，
-                // 外推值会越跑越远；钳住它，宁可短暂停住也不让歌词跑在声音前面太多。
-                authoritativeMs + elapsedMs.coerceIn(0L, MaxExtrapolationMs)
-            }
-        val monotonic = base.coerceAtLeast(lastReturnedMs)
-        lastReturnedMs = monotonic
-        return monotonic
+        val smooth = rawExtrapolatedMs().roundToLong().coerceAtLeast(lastReturnedMs)
+        lastReturnedMs = smooth
+        return smooth
+    }
+
+    /**
+     * 当前外推值（未取整、未做单调钳制）：
+     * 暂停/未采样时钉在「max(权威值, 已返回值)」上；播放中为
+     * `权威值 + 经过时间(钳到 [MaxExtrapolationMs]) + 渐消补偿`。
+     */
+    private fun rawExtrapolatedMs(): Double {
+        if (!playing || sampledAtNanos == 0L) {
+            return maxOf(authoritativeMs, lastReturnedMs).toDouble()
+        }
+        val elapsedMs = (nowNanos() - sampledAtNanos) / 1_000_000.0
+        val clamped = elapsedMs.coerceIn(0.0, MaxExtrapolationMs.toDouble())
+        val correction = correctionMs * kotlin.math.exp(-clamped / DecayTauMs)
+        return authoritativeMs + clamped + correction
     }
 
     private companion object {
         /** 外推上限：200ms 轮询周期 + 100ms 余量。 */
         const val MaxExtrapolationMs = 300L
+
+        /** 超过该偏差视为 seek / 换曲级跳变，立即跟随、不做渐消。 */
+        const val HardJumpThresholdMs = 250.0
+
+        /** 渐消时间常数：每 200ms 采样周期误差衰减约一半。 */
+        const val DecayTauMs = 300.0
     }
 }
