@@ -16,12 +16,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import cp.player.app.AppModel
 import cp.player.app.ui.util.UiEvents
+import cp.player.core.BackendResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.longOrNull
 
 /**
  * 新建歌单对话框。
@@ -58,12 +56,9 @@ fun CreatePlaylistDialog(
                     val playlistName = name.trim()
                     busy = true
                     scope.launch(Dispatchers.IO) {
-                        val newId = runCatching {
-                            val json = AppModel.api.createPlaylist(playlistName)
-                            val root = json as? JsonObject
-                            ((root?.get("id") ?: (root?.get("playlist") as? JsonObject)?.get("id"))
-                                    as? JsonPrimitive)?.longOrNull
-                        }.getOrNull()
+                        val newId = (runCatching {
+                            AppModel.musicRepository.createPlaylist(playlistName)
+                        }.getOrNull() as? BackendResult.Success)?.data
                         withContext(Dispatchers.Main) {
                             busy = false
                             if (newId != null) {

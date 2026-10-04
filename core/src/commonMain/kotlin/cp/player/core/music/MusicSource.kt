@@ -240,6 +240,26 @@ data class ArtistProfile(
 ) : cp.player.core.util.JavaSerializable
 
 /**
+ * 歌曲详情信息弹窗（`song/detail` 顶层 `songs[0]` + `privileges[0]`）。
+ *
+ * [publishTimeMs] / [commentCount] / [mvId] / [maxBitrate] / [fee] 是**可选**字段：
+ * 上游缺失（或为 0/负值）时为 null，调用方不显示对应行，而不是显示 0。
+ * [fee] 的取值语义：0=免费, 1=VIP, 4=购买专辑, 8=低音质免费。
+ */
+data class SongDetailInfo(
+    val songId: String,
+    val name: String,
+    val artist: String,
+    val album: String,
+    val durationMs: Long,
+    val publishTimeMs: Long? = null,
+    val commentCount: Long? = null,
+    val mvId: Long? = null,
+    val maxBitrate: Int? = null,
+    val fee: Int? = null,
+)
+
+/**
  * 用户主页 / 歌手主页的**统一**数据包。
  *
  * 上游 `user/detail` 与 `artist/detail` 用的是同一段数字 id 空间，但指向不同实体，

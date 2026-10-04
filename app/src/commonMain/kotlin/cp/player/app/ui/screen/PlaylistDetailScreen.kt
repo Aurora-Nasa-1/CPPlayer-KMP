@@ -105,19 +105,14 @@ import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.util.resized
 import cp.player.core.BackendResult
 import cp.player.core.music.CPMediaId
-import cp.player.core.music.MusicSourceFromApi
+import cp.player.core.music.PlaylistTracksPage
+import cp.player.core.music.SongDetailInfo
 import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.TrackSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import cp.player.core.util.localDateTimeOf
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.longOrNull
 
 class PlaylistDetailScreen(
     val playlist: PlaylistSummary,
@@ -134,20 +129,6 @@ class PlaylistDetailScreen(
         )
     }
 }
-
-/** INFO 弹窗解析结果（来自 getSongDetail 顶层 songs[0] 与 privileges[0]；字段缺失时为 null，弹窗不显示该行）。 */
-private data class SongDetailInfo(
-    val name: String,
-    val artist: String,
-    val album: String,
-    val durationMs: Long,
-    val publishTimeMs: Long? = null,
-    val commentCount: Long? = null,
-    val mvId: Long? = null,
-    val maxBitrate: Int? = null,
-    val fee: Int? = null,
-    val songId: String,
-)
 
 /**
  * 将发行时间毫秒时间戳格式化为 yyyy-MM-dd。
@@ -237,7 +218,7 @@ fun PlaylistDetailContent(
         val target = !playlistFavorite
         scope.launch {
             val ok = withContext(Dispatchers.IO) {
-                runCatching { AppModel.api.subscribePlaylist(playlist.id, if (target) 1 else 2) }.isSuccess
+                runCatching { AppModel.musicRepository.subscribePlaylist(playlist.id, target) }.getOrDefault(false)
             }
             if (ok) {
                 playlistFavorite = target
@@ -489,7 +470,7 @@ fun PlaylistDetailContent(
             sourceName = source.name,
             fetchSongs = {
                 withContext(Dispatchers.IO) {
-                    val page = MusicSourceFromApi.getPlaylistTracks(AppModel.api, source.id, limit = 300, offset = 0)
+                    val page = AppModel.musicRepository.getPlaylistTracks(source.id, limit = 300, offset = 0)
                     (page as? BackendResult.Success)?.data?.tracks.orEmpty()
                 }
             },
@@ -524,44 +505,20 @@ fun PlaylistDetailContent(
         )
     }
 
-    // INFO 弹窗（getSongDetail 内联解析）
+    // INFO 弹窗（解析收敛在 MusicRepository.getSongDetailInfo，UI 只拿强类型结果）
     showInfoTarget?.let { track ->
         var info by remember(track.id) { mutableStateOf<SongDetailInfo?>(null) }
         LaunchedEffect(track.id) {
             info = withContext(Dispatchers.IO) {
-                runCatching {
-                    val root = AppModel.api.getSongDetail(listOf(track.id))
-                    val songs = (root as? JsonObject)?.get("songs") as? JsonArray
-                    val first = songs?.firstOrNull() as? JsonObject ?: return@runCatching null
-                    val name = (first["name"] as? JsonPrimitive)?.contentOrNull ?: track.name
-                    val artist = (first["ar"] as? JsonArray)
-                        ?.mapNotNull {
-                            ((it as? JsonObject)?.get("name") as? JsonPrimitive)
-                                ?.contentOrNull?.takeIf(String::isNotBlank)
-                        }
-                        ?.joinToString("/") ?: track.artist
-                    val album = ((first["al"] as? JsonObject)?.get("name") as? JsonPrimitive)?.contentOrNull ?: ""
-                    val dt = (first["dt"] as? JsonPrimitive)?.longOrNull ?: track.durationMs
-                    // 可选字段：缺失时为 null，弹窗不显示对应行
-                    val publishTime = (first["publishTime"] as? JsonPrimitive)?.longOrNull?.takeIf { it > 0 }
-                    val commentCount = (first["commentCount"] as? JsonPrimitive)?.longOrNull?.takeIf { it > 0 }
-                    val mvId = (first["mv"] as? JsonPrimitive)?.longOrNull?.takeIf { it > 0 }
-                    val privilege = ((root as JsonObject)["privileges"] as? JsonArray)?.firstOrNull() as? JsonObject
-                    val maxbr = (privilege?.get("maxbr") as? JsonPrimitive)?.intOrNull?.takeIf { it > 0 }
-                    val fee = (privilege?.get("fee") as? JsonPrimitive)?.intOrNull
-                    SongDetailInfo(
-                        name = name,
-                        artist = artist,
-                        album = album,
-                        durationMs = dt,
-                        publishTimeMs = publishTime,
-                        commentCount = commentCount,
-                        mvId = mvId,
-                        maxBitrate = maxbr,
-                        fee = fee,
-                        songId = track.id,
-                    )
-                }.getOrNull()
+                val fallback = SongDetailInfo(
+                    songId = track.id,
+                    name = track.name,
+                    artist = track.artist,
+                    album = track.album ?: "",
+                    durationMs = track.durationMs,
+                )
+                (runCatching { AppModel.musicRepository.getSongDetailInfo(track.id, fallback) }.getOrNull()
+                        as? BackendResult.Success)?.data
             }
             if (info == null) {
                 UiEvents.notify("获取歌曲信息失败")
@@ -808,8 +765,16 @@ private fun WideLayout(
     )
     CpTwoPane(
         rail = { railModifier ->
-            // 左侧：歌单信息面板（整块右键可弹歌单菜单，见 playlistMenu）
-            CpContextMenu(items = playlistMenu, modifier = railModifier) {
+            // 左侧：歌单信息面板（整块右键可弹歌单菜单，见 playlistMenu）。
+            //
+            // 「返回上一级」只并进**右键**菜单，不进右边那个锚定的「更多」菜单 ——
+            // 后者是歌单动作（分享 / 收藏 / 删除），混一个导航项进去会让人找不到重点。
+            // 判据与动作与标题栏返回键同链，见 rememberBackContextMenuItem。
+            val backItem = cp.player.app.ui.component.rememberBackContextMenuItem()
+            val railMenu = playlistMenu?.let { items ->
+                if (backItem == null) items else listOf(backItem) + items
+            }
+            CpContextMenu(items = railMenu, modifier = railModifier) {
             ScrollColumn(
                 modifier = Modifier.padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,

@@ -34,13 +34,11 @@ import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.util.UiEvents
+import cp.player.core.BackendResult
 import cp.player.core.music.PlaylistSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.longOrNull
 
 /**
  * "添加到歌单"底部弹层（1:1 移植旧项目 `AddToPlaylistBottomSheet` 界面）。
@@ -74,8 +72,8 @@ fun AddToPlaylistSheet(
         val ids = trackIds.map(::extractRawId)
         scope.launch(Dispatchers.IO) {
             val ok = runCatching {
-                AppModel.api.addTracksToPlaylist(playlistId, ids)
-            }.isSuccess
+                AppModel.musicRepository.addTracksToPlaylist(playlistId, ids)
+            }.getOrDefault(false)
             withContext(Dispatchers.Main) {
                 busy = false
                 if (ok) {
@@ -93,12 +91,9 @@ fun AddToPlaylistSheet(
         if (name.isEmpty() || busy) return
         busy = true
         scope.launch(Dispatchers.IO) {
-            val newId = runCatching {
-                val json = AppModel.api.createPlaylist(name)
-                val root = json as? JsonObject
-                ((root?.get("id") ?: (root?.get("playlist") as? JsonObject)?.get("id"))
-                        as? JsonPrimitive)?.longOrNull
-            }.getOrNull()
+            val newId = (runCatching {
+                AppModel.musicRepository.createPlaylist(name)
+            }.getOrNull() as? BackendResult.Success)?.data
             withContext(Dispatchers.Main) {
                 busy = false
                 if (newId != null) {

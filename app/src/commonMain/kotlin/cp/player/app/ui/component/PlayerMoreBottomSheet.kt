@@ -429,10 +429,8 @@ fun PlayerMoreSheets(
             },
             onDislike = {
                 scope.launch {
-                    runCatching {
-                        val rawId = runCatching { CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)
-                        AppModel.api.dislikeSong(rawId)
-                    }
+                    val rawId = runCatching { CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)
+                    runCatching { AppModel.musicRepository.dislikeSong(rawId) }
                     UiEvents.notify("已标记不感兴趣")
                     controller.skipNext()
                 }

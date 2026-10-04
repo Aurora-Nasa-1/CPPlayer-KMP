@@ -202,8 +202,8 @@ fun QueueBottomSheet(
                             runCatching { cp.player.core.music.CPMediaId.parse(it.mediaId).resourceId }.getOrNull()
                         }.filter { it.isNotBlank() }
                         val ok = ids.isNotEmpty() && runCatching {
-                            cp.player.app.AppModel.api.addTracksToPlaylist(newId, ids)
-                        }.isSuccess
+                            cp.player.app.AppModel.musicRepository.addTracksToPlaylist(newId, ids)
+                        }.getOrDefault(false)
                         if (ok) cp.player.app.ui.util.UiEvents.notify("队列已保存为歌单")
                         else cp.player.app.ui.util.UiEvents.notify("保存歌单失败")
                     }

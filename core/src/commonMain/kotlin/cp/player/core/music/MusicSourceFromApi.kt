@@ -164,6 +164,56 @@ object MusicSourceFromApi {
         }
     }
 
+    // ============ 歌单写操作 ============
+
+    /**
+     * 从 `playlist/create` 响应中提取新歌单 id。
+     *
+     * 上游有两种形状：id 直接在根层（`{code, id}`），或包在 `playlist` 对象里
+     * （`{code, playlist: {id, ...}}`），两种都取。
+     */
+    fun parseCreatePlaylist(json: JsonElement): MusicResult<Long> {
+        return json.toMusicResult {
+            ((this["id"] ?: (this["playlist"] as? JsonObject)?.get("id")) as? JsonPrimitive)?.longOrNull
+                ?: error("响应中没有新歌单 id")
+        }
+    }
+
+    // ============ 歌曲详情（信息弹窗） ============
+
+    /**
+     * 解析 `song/detail` 的 `songs[0]` + `privileges[0]` 为 [SongDetailInfo]。
+     *
+     * `name` / `artist` / `album` / `durationMs` 缺失时回退到调用方已知的
+     * [fallback] 字段（列表里通常已经有这份信息）；可选字段缺失时为 null。
+     */
+    fun parseSongDetailInfo(json: JsonElement, fallback: SongDetailInfo? = null): MusicResult<SongDetailInfo> {
+        return json.toMusicResult {
+            val songs = this["songs"] as? JsonArray
+            val first = songs?.firstOrNull() as? JsonObject
+                ?: error("响应中没有 songs[0]")
+            val privilege = (this["privileges"] as? JsonArray)?.firstOrNull() as? JsonObject
+            SongDetailInfo(
+                songId = fallback?.songId ?: "",
+                name = (first["name"] as? JsonPrimitive)?.contentOrNull ?: fallback?.name ?: "",
+                artist = (first["ar"] as? JsonArray)
+                    ?.mapNotNull {
+                        ((it as? JsonObject)?.get("name") as? JsonPrimitive)
+                            ?.contentOrNull?.takeIf(String::isNotBlank)
+                    }
+                    ?.joinToString("/") ?: fallback?.artist ?: "",
+                album = ((first["al"] as? JsonObject)?.get("name") as? JsonPrimitive)?.contentOrNull
+                    ?: fallback?.album ?: "",
+                durationMs = (first["dt"] as? JsonPrimitive)?.longOrNull ?: fallback?.durationMs ?: 0L,
+                publishTimeMs = (first["publishTime"] as? JsonPrimitive)?.longOrNull?.takeIf { it > 0 },
+                commentCount = (first["commentCount"] as? JsonPrimitive)?.longOrNull?.takeIf { it > 0 },
+                mvId = (first["mv"] as? JsonPrimitive)?.longOrNull?.takeIf { it > 0 },
+                maxBitrate = (privilege?.get("maxbr") as? JsonPrimitive)?.intOrNull?.takeIf { it > 0 },
+                fee = (privilege?.get("fee") as? JsonPrimitive)?.intOrNull,
+            )
+        }
+    }
+
     // ============ 云盘歌曲 ============
     /**
      * 解析云盘歌曲列表（user/cloud）。

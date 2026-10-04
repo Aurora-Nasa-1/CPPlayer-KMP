@@ -41,12 +41,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
-import cp.player.core.api.extractUidFromLoginStatus
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.resized
 import cp.player.core.BackendResult
-import cp.player.core.music.MusicSourceFromApi
 import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.TrackSummary
 import kotlinx.coroutines.Dispatchers
@@ -122,13 +120,11 @@ fun PlaylistPickerRow(
 
 /** 拉取当前用户"自己创建"的歌单（对应旧项目 `!subscribed` 过滤）。 */
 internal suspend fun fetchOwnedPlaylists(): List<PlaylistSummary> {
-    val uid = extractUidFromLoginStatus(AppModel.api.getLoginStatus())
-    if (uid == null) {
-        withContext(Dispatchers.Main) { UiEvents.notify("未登录或登录已过期") }
-        return emptyList()
+    val result = runCatching { AppModel.musicRepository.getCurrentUserPlaylists() }.getOrNull()
+    if (result is BackendResult.Error) {
+        withContext(Dispatchers.Main) { UiEvents.notify(result.message) }
     }
-    val all = (MusicSourceFromApi.parseUserPlaylists(AppModel.api.getUserPlaylists(uid))
-            as? BackendResult.Success)?.data.orEmpty()
+    val all = (result as? BackendResult.Success)?.data.orEmpty()
     val nickname = AppModel.userProfileFlow.value?.nickname
     return all.filter { nickname != null && it.creatorName == nickname }
 }

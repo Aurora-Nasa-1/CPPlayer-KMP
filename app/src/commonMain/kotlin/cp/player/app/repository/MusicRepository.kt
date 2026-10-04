@@ -16,6 +16,7 @@ import cp.player.core.music.PlaylistTracksPage
 import cp.player.core.music.ProfileBundle
 import cp.player.core.music.RankingSummary
 import cp.player.core.music.SearchResult
+import cp.player.core.music.SongDetailInfo
 import cp.player.core.music.TrackSummary
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -236,6 +237,10 @@ class MusicRepository(private val api: MusicApiService) {
 
     suspend fun unsubscribePlaylist(id: Long): Boolean = isApiSuccess(api.subscribePlaylist(id, t = 2))
 
+    /** 收藏 / 取消收藏歌单。 */
+    suspend fun subscribePlaylist(id: Long, subscribe: Boolean): Boolean =
+        isApiSuccess(api.subscribePlaylist(id, t = if (subscribe) 1 else 2))
+
     suspend fun addTracksToPlaylist(playlistId: Long, ids: List<String>): Boolean =
         isApiSuccess(api.addTracksToPlaylist(playlistId, ids))
 
@@ -243,6 +248,21 @@ class MusicRepository(private val api: MusicApiService) {
         isApiSuccess(api.removeTracksFromPlaylist(playlistId, ids))
 
     suspend fun likeSong(songId: String, like: Boolean): Boolean = isApiSuccess(api.likeSong(songId, like))
+
+    /** 标记「不感兴趣」（推荐流去重）。 */
+    suspend fun dislikeSong(songId: String): Boolean = isApiSuccess(api.dislikeSong(songId))
+
+    /**
+     * 新建歌单，返回新歌单 id。
+     *
+     * ⚠️ 这是**写操作**，不在缓存名单内——每次都直连网络，不存在「建完马上查不到」的缓存窗口。
+     */
+    suspend fun createPlaylist(name: String): MusicResult<Long> =
+        MusicSourceFromApi.parseCreatePlaylist(api.createPlaylist(name))
+
+    /** 歌曲详情信息（信息弹窗用）；[fallback] 提供列表里已知的回退字段。 */
+    suspend fun getSongDetailInfo(songId: String, fallback: SongDetailInfo? = null): MusicResult<SongDetailInfo> =
+        MusicSourceFromApi.parseSongDetailInfo(api.getSongDetail(listOf(songId)), fallback)
 
     /** 从云盘删除歌曲（上游 `user/cloud/del`）。 */
     suspend fun deleteUserCloud(songId: String): Boolean =
