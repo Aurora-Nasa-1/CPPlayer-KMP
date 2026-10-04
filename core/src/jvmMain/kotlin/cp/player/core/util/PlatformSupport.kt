@@ -168,6 +168,25 @@ actual object PlatformSupport {
         false
     }
 
+    /**
+     * 追加一行。
+     *
+     * ⚠️ 必须用 `appendText`（真正的 append 模式），不要图省事写成
+     * `file.writeText(file.readText() + line)` —— 追加型日志（听歌记录）那样是 O(N²)
+     * 的写入量，见 expect 声明里的说明。
+     *
+     * `appendText` 自 1.4 起有 `createNew` 参数语义的默认行为：文件不存在时创建、
+     * 存在时续写，父目录仍需自己建。
+     */
+    actual fun appendTextFile(path: String, line: String): Boolean = try {
+        val file = File(path)
+        file.parentFile?.mkdirs()
+        file.appendText(line + "\n")
+        true
+    } catch (e: Exception) {
+        false
+    }
+
     actual fun resolveEntryPoint(moduleDir: String, entryPoint: String, supportedAbis: List<String>?): String {
         val dir = File(moduleDir)
         // 多 ABI 格式：按平台 ABI 顺序查找
@@ -228,6 +247,14 @@ actual object PlatformSupport {
         val d = File(dir)
         if (!d.exists() || !d.isDirectory) return emptyList()
         return d.listFiles { f -> f.isDirectory }?.map { it.absolutePath } ?: emptyList()
+    }
+
+    actual fun listChildFiles(dir: String): List<String> {
+        val d = File(dir)
+        if (!d.exists() || !d.isDirectory) return emptyList()
+        // 排序后再返回：调用方（日志分片加载）依赖稳定顺序，列目录的返回顺序在
+        // 不同文件系统上并不保证。
+        return d.listFiles { f -> f.isFile }?.map { it.absolutePath }?.sorted() ?: emptyList()
     }
 
     actual fun moveDir(src: String, dest: String): Boolean {

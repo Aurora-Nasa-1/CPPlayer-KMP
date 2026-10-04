@@ -129,6 +129,17 @@ class MusicBackend private constructor(
      * Cookie 存储（按 Provider 隔离账号）。前端登录/登出时直接使用。
      */
     val cookieStorage: ProviderCookieStorage get() = providerManager.cookieStorage
+
+    /**
+     * 平台上下文（Android: `Context`；Desktop: 占位对象）。
+     *
+     * 刻意暴露给应用层：需要在应用数据目录下落盘的模块（听歌记录、
+     * 将来的设备同步日志）必须能拿到它去解析目录，否则每个模块都要自己
+     * 想办法搞一个 Context —— 那才是「同一个东西三种获取方式」的来源。
+     *
+     * 只读：上下文在 [Companion.init] 时固定，换掉它等于整个后端失效。
+     */
+    val platformContext: PlatformContext get() = context
     /** 后端状态流（UI 可观察，初始 [BackendState.Uninitialized]）。 */
     private val _stateFlow = MutableStateFlow<BackendState>(BackendState.Uninitialized)
     val stateFlow: StateFlow<BackendState> = _stateFlow.asStateFlow()

@@ -1,6 +1,7 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -182,7 +183,9 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
                         downloadsState.downloadedItems.size.toString() to "下载",
                     ),
                     onCreatePlaylist = { showCreateDialog = true },
-                    onRecentPlays = { navigator.push(RecentPlaysScreen()) },
+                    onRecentPlays = { navigator.push(InsightsScreen(InsightsScreen.TAB_RECENT)) },
+                    // 宽屏仪表盘上的「聆听统计」卡：进报告页的概览（日历墙那一屏）。
+                    onOpenInsights = { navigator.push(InsightsScreen(InsightsScreen.TAB_OVERVIEW)) },
                     onDownloads = { navigator.push(DownloadsScreen()) },
                     onCloud = { navigator.push(CloudDriveScreen()) },
                     onStorage = { navigator.push(StorageSettingsScreen()) },
@@ -348,6 +351,7 @@ private fun LibraryDashboard(
     stats: List<Pair<String, String>>,
     onCreatePlaylist: () -> Unit,
     onRecentPlays: () -> Unit,
+    onOpenInsights: () -> Unit,
     onDownloads: () -> Unit,
     onCloud: () -> Unit,
     onStorage: () -> Unit,
@@ -366,7 +370,16 @@ private fun LibraryDashboard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 LibraryGreeting(title, subtitle, Modifier.weight(2f))
-                BentoStatCard("聆听统计", stats, Modifier.weight(2f).fillMaxHeight())
+                BentoStatCard(
+                    "聆听统计", stats,
+                    // 原先这两行数字是**死的** —— 看得到「歌单 12 / 收藏 80」却点不进去。
+                    // 现在整张卡可点，进「听歌报告 → 概览」。
+                    Modifier
+                        .weight(2f)
+                        .fillMaxHeight()
+                        .clip(MaterialTheme.shapes.extraLarge)
+                        .clickable { onOpenInsights() },
+                )
             }
         } else {
             // 手机端：顶栏标题已是 tab 名（「我的」），这里承担昵称露出 + 统计一句话。

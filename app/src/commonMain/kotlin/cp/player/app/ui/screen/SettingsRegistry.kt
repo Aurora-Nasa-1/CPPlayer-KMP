@@ -2,6 +2,7 @@ package cp.player.app.ui.screen
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Api
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Info
@@ -71,6 +72,9 @@ enum class SettingsAccent { PRIMARY, SECONDARY, TERTIARY }
  * @param keywords 搜索同义词（「纯黑」→ oled / 省电 / amoled）
  * @param desktopOnly 仅桌面端出现。例：渲染后端对 Android 无意义 —— Android 的渲染
  *   完全交给系统，没有可切换的后端
+ * @param androidOnly 仅 Android 出现。例：激进保活（Wi-Fi 高性能锁 / 组播锁）是
+ *   Android 后台限制的产物，桌面既不需要也没有对应能力 —— 放上去只会让用户
+ *   看到一个永远「未生效」的开关（见 `StandbySettingsScreen`）
  * @param debugOnly 仅 debug 构建出现（[cp.player.app.version.AppVersion.isDebugBuild]，
  *   即非 stable 渠道）。用于开发者向、或尚未打算对正式版用户开放的入口
  */
@@ -83,6 +87,7 @@ data class SettingsEntry(
     val accent: SettingsAccent,
     val keywords: List<String> = emptyList(),
     val desktopOnly: Boolean = false,
+    val androidOnly: Boolean = false,
     val debugOnly: Boolean = false,
     val screen: () -> Screen,
 )
@@ -99,6 +104,7 @@ fun settingsEntries(): List<SettingsEntry> = buildList {
     addAll(otherEntries())
 }.filter { entry ->
     (!entry.desktopOnly || !isAndroidPlatform()) &&
+        (!entry.androidOnly || isAndroidPlatform()) &&
         (!entry.debugOnly || AppVersion.isDebugBuild)
 }
 
@@ -192,6 +198,20 @@ private fun connectivityEntries(): List<SettingsEntry> = listOf(
         accent = SettingsAccent.SECONDARY,
         keywords = listOf("推送", "接收端", "接口", "第三方", "集成", "api", "push", "receiver"),
         screen = { IntegrationSettingsScreen() },
+    ),
+    SettingsEntry(
+        id = "standby",
+        group = SettingsGroup.CONNECTIVITY,
+        title = "激进保活",
+        subtitle = "熄屏后维持在线，让设备发现与换设备播放仍可能命中",
+        icon = Icons.Filled.Wifi,
+        accent = SettingsAccent.TERTIARY,
+        keywords = listOf(
+            "保活", "后台", "常驻", "熄屏", "锁屏", "掉线", "搜不到", "设备发现",
+            "wifi", "组播", "standby", "background", "keepalive",
+        ),
+        androidOnly = true,
+        screen = { StandbySettingsScreen() },
     ),
 )
 

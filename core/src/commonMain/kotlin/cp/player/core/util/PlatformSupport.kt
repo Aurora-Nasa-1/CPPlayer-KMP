@@ -90,6 +90,18 @@ expect object PlatformSupport {
     fun writeTextFile(path: String, content: String): Boolean
 
     /**
+     * 向文本文件**追加**一行（自动创建父目录与文件）；返回是否成功。
+     *
+     * ⚠️ 必须与 [writeTextFile] 分开：追加写用「读全文 + 拼接 + 全量回写」模拟时，
+     * 每追加一条都要重写整个文件 ⇒ 追加 N 条是 O(N²) 的写入量。
+     * 听歌记录是典型的追加型日志（一首歌一条、长期累积），那个写法会把闪存打爆。
+     * 实现应当用真正的 append 模式（`File.appendText` / `FileOutputStream(append=true)`）。
+     *
+     * @param line 一行内容；实现负责补换行（调用方不要自己带 `\n`）。
+     */
+    fun appendTextFile(path: String, line: String): Boolean
+
+    /**
      * 按平台 ABI 顺序解析模块入口文件路径。
      *
      * @param moduleDir 模块根目录
@@ -107,6 +119,15 @@ expect object PlatformSupport {
 
     /** 列出目录下的子目录绝对路径（不含文件）。目录不存在时返回空列表。 */
     fun listChildDirectories(dir: String): List<String>
+
+    /**
+     * 列出目录下的**文件**绝对路径（不含子目录）。目录不存在时返回空列表。
+     *
+     * 与 [listChildDirectories] 成对存在：追加型日志按月分片（`plays-2026-10.jsonl`），
+     * 读取时必须能枚举出到底有哪几个分片 —— 靠一个「月份索引文件」记录会与真实文件脱节
+     * （用户手工删了文件、或写入失败留下半行），直接列目录才是唯一与事实一致的做法。
+     */
+    fun listChildFiles(dir: String): List<String>
 
     /** 重命名/移动目录（src → dest）。dest 必须不存在或可覆盖。 */
     fun moveDir(src: String, dest: String): Boolean

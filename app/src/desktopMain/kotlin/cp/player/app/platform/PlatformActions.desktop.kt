@@ -91,6 +91,19 @@ actual fun requestIgnoreBatteryOptimizations() {
 }
 
 /**
+ * 桌面端的「激进保活」是空操作。
+ *
+ * 桌面没有 Wi-Fi 省电丢组播包、也没有 LMK 按 `oomAdj` 杀后台进程这两件事 ——
+ * 「待机」在桌面上是托盘常驻的问题（进程本来就活着），不需要持锁。
+ * 恒返回 false 让设置页如实显示「本平台不适用」，而不是假装已生效。
+ */
+actual fun applyAggressiveStandby(enabled: Boolean) {
+    // 桌面空操作
+}
+
+actual fun isAggressiveStandbyActive(): Boolean = false
+
+/**
  * 桌面端用 Esc 承担安卓返回键的角色。
  *
  * 这里只负责「注册/注销」，真正的派发在窗口级按键回调里（见 `Main.kt`）——

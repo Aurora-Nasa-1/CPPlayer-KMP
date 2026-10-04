@@ -268,3 +268,68 @@ actual fun PlatformRenderTuningContent() {
     // Android 的渲染完全交给系统（SurfaceFlinger / HWUI），没有可切换的 Skiko 后端，
     // 该设置入口在 Android 上也不会出现在设置列表里（见 SettingsScreen.settingsEntries）。
 }
+
+// ============ 激进保活（Wi-Fi 高性能锁 + 组播锁） ============
+
+/**
+ * 持锁状态收在模块级：`applyAggressiveStandby` 会在「启动恢复」「用户切换开关」两处被调用，
+ * 每次新建锁对象会让上一把锁永久泄漏（系统侧一直认为有应用在抓着 Wi-Fi）。
+ */
+@Volatile
+private var standbyWifiLock: android.net.wifi.WifiManager.WifiLock? = null
+
+@Volatile
+private var standbyMulticastLock: android.net.wifi.WifiManager.MulticastLock? = null
+
+private fun wifiManagerOrNull(): android.net.wifi.WifiManager? =
+    ctxOrNull?.applicationContext?.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+
+actual fun applyAggressiveStandby(enabled: Boolean) {
+    val wm = wifiManagerOrNull()
+    if (wm == null) {
+        // 取不到系统服务（部分 ROM 阉割 / 权限被拒）时如实清空状态，
+        // 让 isAggressiveStandbyActive() 返回 false —— 不假装成功。
+        releaseStandbyLocks()
+        return
+    }
+    if (enabled) {
+        if (standbyWifiLock == null) {
+            standbyWifiLock = runCatching {
+                @Suppress("DEPRECATION")
+                val mode = if (Build.VERSION.SDK_INT >= 29) {
+                    // 低延迟模式是 API 29+ 为「实时音视频 / 流媒体」保留的档位：
+                    // 既保 Wi-Fi 常开，又不会像 HIGH_PERF 那样被新版本当作已废弃行为。
+                    android.net.wifi.WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                } else {
+                    android.net.wifi.WifiManager.WIFI_MODE_FULL
+                }
+                wm.createWifiLock(mode, "cpplayer-standby").apply {
+                    // 非引用计数：重复 enable/disable 时不会因为计数不平衡而把锁漏在那里。
+                    setReferenceCounted(false)
+                    acquire()
+                }
+            }.getOrNull()
+        }
+        if (standbyMulticastLock == null) {
+            standbyMulticastLock = runCatching {
+                wm.createMulticastLock("cpplayer-multicast").apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+            }.getOrNull()
+        }
+    } else {
+        releaseStandbyLocks()
+    }
+}
+
+private fun releaseStandbyLocks() {
+    // 逐项 runCatching：一把锁释放失败不该阻止另一把被释放。
+    runCatching { standbyMulticastLock?.takeIf { it.isHeld }?.release() }
+    runCatching { standbyWifiLock?.takeIf { it.isHeld }?.release() }
+    standbyMulticastLock = null
+    standbyWifiLock = null
+}
+
+actual fun isAggressiveStandbyActive(): Boolean =
+    standbyWifiLock?.isHeld == true || standbyMulticastLock?.isHeld == true

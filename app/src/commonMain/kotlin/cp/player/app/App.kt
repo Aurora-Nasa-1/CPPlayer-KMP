@@ -80,8 +80,10 @@ fun App(
     androidx.compose.runtime.LaunchedEffect(Unit) {
         AppModel.syncPlaybackQuality()
         AppModel.restoreLocalServer()
+        AppModel.restoreAggressiveStandby()
         AppModel.refreshUserProfile()
         AppModel.startHistoryRecorder()
+        AppModel.startListeningRecorder()
         AppModel.startRecentTracksEnrich()
         AppModel.startCoverColorTracking()
     }

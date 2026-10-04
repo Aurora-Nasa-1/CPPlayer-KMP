@@ -3,6 +3,11 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 激进保活（设置 → 连接与集成 → 激进保活）需要：持 Wi-Fi 高性能锁，熄屏后不让 Wi-Fi
+         进入省电模式（否则组播发现包会被丢弃 ⇒「手机在旁边却搜不到」）。
+         两条都是 normal 权限，系统自动授予，不会弹窗。 -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <!-- 熄屏后持 CPU/WiFi 唤醒锁，防止在线流断流（配合 ExoPlayer.setWakeMode 使用） -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

@@ -982,6 +982,267 @@ object AppModel {
         }
     }
 
+    // ============ 听歌习惯（本地采集 + 聚合） ============
+    //
+    // 与上面的「最近播放」是**两套并行**的记录，刻意不合并：
+    // - 最近播放只关心「听过哪些曲目」，一条曲目一条、需要按曲目去重前移；
+    // - 听歌习惯要的是**时长与完成度**，同一曲目播 N 次就是 N 条。
+    // 把两者塞进一个采集器必然互相带偏（去重逻辑会把时长记录吃掉）。
+
+    /** 记录落盘目录来自后端持有的平台上下文（Android: filesDir；桌面: ~/.cpplayer）。 */
+    private val insightsStore: cp.player.core.insights.InsightsStore by lazy {
+        cp.player.core.insights.InsightsStore(
+            cp.player.core.insights.InsightsStore.directoryUnder(
+                cp.player.core.util.PlatformSupport.dataDir(backend.platformContext),
+            ),
+        )
+    }
+
+    private val _listeningRecords = MutableStateFlow<List<cp.player.core.insights.PlayRecord>>(emptyList())
+
+    /** 全部原始听歌记录（升序）。习惯页的「最近」明细与日聚合都由它派生。 */
+    val listeningRecordsFlow: StateFlow<List<cp.player.core.insights.PlayRecord>> =
+        _listeningRecords.asStateFlow()
+
+    private val _insightsSummary = MutableStateFlow(cp.player.core.insights.InsightsSummary())
+
+    /** 概览 / 习惯两个 tab 的全部派生指标。 */
+    val insightsSummaryFlow: StateFlow<cp.player.core.insights.InsightsSummary> =
+        _insightsSummary.asStateFlow()
+
+    private val _dailyInsights = MutableStateFlow<List<cp.player.core.insights.DailyAgg>>(emptyList())
+
+    /** 日历墙的日聚合（升序）。 */
+    val dailyInsightsFlow: StateFlow<List<cp.player.core.insights.DailyAgg>> = _dailyInsights.asStateFlow()
+
+    private var listeningRecorderStarted = false
+
+    /** 单次状态回调最多计入的时长。进程被挂起（Android Doze）后恢复时，两次回调可能隔很久。 */
+    private val maxTickMs = 2_000L
+
+    private const val KEY_DEVICE_ID = "device_id"
+    private const val KEY_AGGRESSIVE_STANDBY = "standby_aggressive"
+    private const val KEY_HEATMAP_GREEN = "insights_heatmap_green"
+
+    /**
+     * 一次「在途」收听会话。
+     *
+     * 可变字段刻意都收在这里而不是散在上面的采集协程里：会话只有
+     * 「开一条 / 累加 / 关一条」三个动作，状态散落会让「暂停不关会话」这条规则
+     * 在三个分支里各写一遍。
+     */
+    private class ListeningSession(
+        val mediaId: String,
+        val name: String,
+        val artist: String,
+        val provider: String,
+        val startedAt: Long,
+        var durationMs: Long,
+    ) {
+        var playedMs: Long = 0L
+
+        /** 上次累加墙钟增量时的时刻。 */
+        var lastTick: Long = startedAt
+
+        /** 引擎报告过的最新位置，用于判定「是否播到尾部」。 */
+        var lastPositionMs: Long = 0L
+    }
+
+    /** 「今天」的日期键（本地时区）。UI 与聚合共用，避免两处各取一次时钟导致跨零点不一致。 */
+    fun todayKey(): String = cp.player.core.insights.Insights.dateKeyOf(
+        cp.player.core.util.currentTimeMillis(),
+    )
+
+    /**
+     * 启动听歌采集（幂等）。
+     *
+     * 会话判定（何时关一条记录）只有三种：**换曲 / 队列清空 / 进程退出**。
+     * 暂停**不关**会话 —— 用户暂停后接着听同一首是常态，关掉会记成两条并把完成度算错。
+     */
+    fun startListeningRecorder() {
+        if (listeningRecorderStarted) return
+        listeningRecorderStarted = true
+        modelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            // 先把历史读进内存，让习惯页首帧就有数（否则要先播一首才看得到东西）。
+            runCatching { insightsStore.loadAll() }
+                .onSuccess { _listeningRecords.value = it.records }
+            recomputeInsights()
+
+            var session: ListeningSession? = null
+            try {
+                playback.state.collect { st ->
+                    session = advanceSession(session, st)
+                }
+            } finally {
+                // 进程退出（组合被 dispose ⇒ 协程取消）前尽力把在途会话落盘，
+                // 否则「听到一半关掉应用」这一次会完全丢失。
+                session?.let { closeSession(it) }
+            }
+        }
+    }
+
+    /**
+     * 推进会话状态机（纯状态变换，不碰 IO）。
+     *
+     * ⚠️ 时长用**墙钟增量**累加，不用 `positionMs` 差：`seekTo` 会让 position 跳变，
+     * 用差值会把一次拖动算成几十分钟收听。
+     */
+    private fun advanceSession(
+        current: ListeningSession?,
+        st: cp.player.core.playback.PlaybackUiState,
+    ): ListeningSession? {
+        val track = st.currentTrack
+        val now = cp.player.core.util.currentTimeMillis()
+
+        if (track == null) {
+            current?.let { closeSession(it) }
+            return null
+        }
+
+        var session = current
+        if (session == null || session.mediaId != track.id) {
+            current?.let { closeSession(it, reachedTailOf(st)) }
+            session = ListeningSession(
+                mediaId = track.id,
+                name = track.name,
+                artist = track.artist,
+                provider = providerIdOf(track.id),
+                startedAt = now,
+                durationMs = track.durationMs.takeIf { it > 0 } ?: st.durationMs,
+            )
+        }
+
+        if (st.isPlaying) {
+            // clamp：进程被挂起后恢复时，两次回调的间隔可能是分钟级，
+            // 不夹住会把「应用在后台睡了 10 分钟」算成 10 分钟收听。
+            session.playedMs += (now - session.lastTick).coerceIn(0L, maxTickMs)
+        }
+        session.lastTick = now
+        if (st.positionMs > 0) session.lastPositionMs = st.positionMs
+        if (st.durationMs > 0) session.durationMs = st.durationMs
+        return session
+    }
+
+    /** 曲目已播到尾部（引擎自然结束）的判据：位置到达时长末尾 1 秒内。 */
+    private fun reachedTailOf(st: cp.player.core.playback.PlaybackUiState): Boolean =
+        st.durationMs > 0 && st.positionMs >= st.durationMs - 1_000L
+
+    private fun providerIdOf(mediaId: String): String =
+        runCatching { cp.player.core.music.CPMediaId.parse(mediaId).providerId }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() }
+            ?: activeProviderId().orEmpty()
+
+    /** 关闭会话并落盘。多条路径都可能关同一个会话（换曲 / 清空 / 取消），本方法只被调用一次。 */
+    private fun closeSession(session: ListeningSession, reachedTail: Boolean = false) {
+        // 一秒以下不收：误触播放、拖动进度条时的瞬间起播不该污染统计与「连续天数」。
+        if (session.playedMs < 1_000L) return
+
+        val (completed, skipped) = cp.player.core.insights.Insights.classify(
+            playedMs = session.playedMs,
+            durationMs = session.durationMs,
+            reachedTail = reachedTail,
+        )
+        val record = cp.player.core.insights.PlayRecord(
+            id = newRecordId(session.startedAt),
+            mediaId = session.mediaId,
+            name = session.name,
+            artist = session.artist,
+            provider = session.provider,
+            startedAt = session.startedAt,
+            playedMs = session.playedMs,
+            durationMs = session.durationMs,
+            completed = completed,
+            skipped = skipped,
+            deviceId = deviceId(),
+        )
+        val written = runCatching { insightsStore.append(record) }.getOrDefault(false)
+        _insightsWriteError.value = if (written) null else "听歌记录写入失败，这次收听可能没有计入统计"
+        _listeningRecords.value = _listeningRecords.value + record
+        recomputeInsights()
+    }
+
+    /**
+     * 记录 id。
+     *
+     * 只用「开始时刻 + 随机数」而不是 UUID：两者碰撞概率都可忽略，而这一个不需要
+     * 引入实验性的 `kotlin.uuid`，也不需要追加依赖。同步阶段它是去重主键，仅此而已。
+     */
+    private fun newRecordId(startedAt: Long): String =
+        "$startedAt-${kotlin.random.Random.nextInt(0, Int.MAX_VALUE)}"
+
+    /** 本机设备标识。设备同步接入前用固定串，接入后改为持久化的真实 deviceId。 */
+    private fun deviceId(): String =
+        settings.getString(KEY_DEVICE_ID)?.takeIf { it.isNotBlank() } ?: "local"
+
+    private fun recomputeInsights() {
+        val records = _listeningRecords.value
+        val today = todayKey()
+        _dailyInsights.value = cp.player.core.insights.Insights.aggregate(records)
+        _insightsSummary.value = cp.player.core.insights.Insights.summarize(records, today)
+    }
+
+    /** 清空全部听歌记录（不可逆）。UI 必须先经二次确认。 */
+    fun clearListeningRecords(): Boolean {
+        _listeningRecords.value = emptyList()
+        recomputeInsights()
+        return runCatching { insightsStore.clear() }.getOrDefault(false)
+    }
+
+    private val _insightsWriteError = MutableStateFlow<String?>(null)
+
+    /**
+     * 最近一次听歌记录写入失败的原因；null 表示正常。
+     *
+     * 写盘失败**不能**打断播放（收尾路径上抛异常会把播放流程带崩），但也不能静默 ——
+     * 静默吞掉的表现是「统计数字莫名其妙不涨」，用户只会以为功能坏了。
+     * 由习惯页读它显示一条提示。
+     */
+    val insightsWriteErrorFlow: StateFlow<String?> = _insightsWriteError.asStateFlow()
+
+    // ============ 激进保活（Android） ============
+
+    private val _aggressiveStandby = MutableStateFlow(
+        settings.getString(KEY_AGGRESSIVE_STANDBY)?.toBooleanStrictOrNull() ?: false,
+    )
+
+    /**
+     * 是否启用激进保活。
+     *
+     * 默认关。开启后由平台侧持有 Wi-Fi / 组播锁，并在退到后台后维持一段在线窗口，
+     * 让设备发现（换设备播放）在本机不处于前台时仍可能命中。
+     * **代价是耗电**，所以必须由用户显式开启，且设置页要如实写明代价。
+     */
+    val aggressiveStandbyFlow: StateFlow<Boolean> = _aggressiveStandby.asStateFlow()
+
+    fun setAggressiveStandby(enabled: Boolean) {
+        settings.putString(KEY_AGGRESSIVE_STANDBY, enabled.toString())
+        _aggressiveStandby.value = enabled
+        cp.player.app.platform.applyAggressiveStandby(enabled)
+    }
+
+    /** 恢复持久化的保活设置（启动时调用一次）。 */
+    fun restoreAggressiveStandby() = cp.player.app.platform.applyAggressiveStandby(_aggressiveStandby.value)
+
+    // ============ 日历墙配色 ============
+
+    private val _heatmapGreen = MutableStateFlow(
+        settings.getString(KEY_HEATMAP_GREEN)?.toBooleanStrictOrNull() ?: false,
+    )
+
+    /**
+     * 日历墙是否使用 GitHub 经典绿。
+     *
+     * 默认 false —— 跟随主题取色。默认成绿会让日历墙成为全应用唯一
+     * 「不跟着封面取色变」的地方（设置页图标曾因同类问题改过一轮）。
+     */
+    val heatmapGreenFlow: StateFlow<Boolean> = _heatmapGreen.asStateFlow()
+
+    fun setHeatmapGreen(enabled: Boolean) {
+        settings.putString(KEY_HEATMAP_GREEN, enabled.toString())
+        _heatmapGreen.value = enabled
+    }
+
     // ============ Provider 管理（封装 [MusicBackend] 并返回类型安全结果） ============
 
     fun availableProviders(): List<BackendProvider> = backend.getAvailableProviders()
