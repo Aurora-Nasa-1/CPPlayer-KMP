@@ -40,22 +40,17 @@ class MainActivity : ComponentActivity() {
         startService(Intent(this, PlaybackMediaSessionService::class.java))
         // ⚠️⚠️ 只 startService **不够** —— 这是「改了多次仍然没有 MediaSession」的最后一块。
         //
-        // startService(无 action) 进 MediaSessionService.onStartCommand 后两个分支全不命中
-        // （javap 核实 1.4.1：`isMediaAction` 只认 android.intent.action.MEDIA_BUTTON，
-        // `isCustomAction` 只认 androidx.media3.session.CUSTOM_NOTIFICATION_ACTION），
-        // 直接 `return START_STICKY`，**零副作用**。会话虽然在 onCreate 里 addSession 了，
+        // startService(无 action) 进 MediaSessionService.onStartCommand 后两个分支
+        // （`isMediaAction` / `isCustomAction`）全不命中，直接 `return START_STICKY`、
+        // **零副作用**（1.11.1 复核：分支里多了 super 调用与 isCustomAction 判断，
+        // 但「无 action 的 intent」仍然全不命中）。会话虽然在 onCreate 里 addSession 了，
         // 但系统侧（MediaSessionManager 的活跃会话表、锁屏卡片、耳机按键路由）
         // 与服务的**连接**始终没有建立。
         //
-        // 旧项目（reference/cp-player-legacy）能显示控制，靠的正是它**连了一条真控制器**
-        // （PlaybackViewModel.initController → `MediaController.Builder(context, SessionToken(...))`）。
-        // 本应用从头到尾没有任何 MediaController，等于把那条链路整根砍掉了。
-        //
-        // bindService 是**唯一不引入控制通路**的补齐方式：它走
-        // `onBind("androidx.media3.session.MediaSessionService")` → 返回服务的
-        // MediaSessionServiceStub binder，媒体浏览器/系统据此看到会话；
-        // 而我们**不创建 MediaController 去连接**那条 binder，因此播放仍由应用自己的
-        // PlaybackController 单点驱动，不会出现「两个播放器抢同一个 ExoPlayer」。
+        // bindService 是**唯一不引入控制通路**的补齐方式：走 onBind 拿到
+        // MediaSessionServiceStub binder，系统据此看到会话；而我们**不创建 MediaController**
+        // 去连那条 binder，所以播放仍由应用自己的 PlaybackController 单点驱动，
+        // 不会出现「两个播放器抢同一个 ExoPlayer」。
         bindService(
             Intent(MediaSessionService.SERVICE_INTERFACE)
                 .setComponent(ComponentName(this, PlaybackMediaSessionService::class.java)),

@@ -1,16 +1,42 @@
 [versions]
 agp = "9.1.1"
 kotlin = "2.4.10"
-coroutines = "1.9.0"
+coroutines = "1.11.0"
 serialization = "1.7.3"
-ktor = "3.0.3"
+ktor = "3.6.0"
 datetime = "0.6.1"
-compose = "1.11.1"
-voyager = "1.1.0-beta03"
+# 1.12.1 = 当前 stable 线最新。这一行同时**决定 skiko 版本**（1.11.1→0.144.6，1.12.1→0.150.1），
+# 而 skiko 又是 Coil 选型的分水岭（见下面 coil 的注释）：两边一致时 compose 插件才不会报
+# "Skiko dependencies' versions are incompatible"。
+compose = "1.12.1"
+# 2.2.21-1.10.3 是「Kotlin 2.2.21 + Compose 1.10.3」的兼容性标记，不是语义版本。
+# 升它之前担心的「跨大版本破坏」经 javap 逐类核对**不成立**：61 个公共类一个没删，
+# 全部差异只是接口默认实现的 JVM 呈现方式变了 —— 旧的 `-Xjvm-default=disable`
+# （`Screen$DefaultImpls` 承载默认实现）换成了 `all`（真 default 方法 + `access$…$jd` 桥接）。
+# 字节码等价，尤其 `Screen.getKey()` 前后都在调同一个 `ScreenKt.commonKeyGeneration`，
+# 所以「同类 Screen 共享 ScreenModel」那条结论不受影响（见 MEMORY「关键坑」）。
+voyager = "2.2.21-1.10.3"
 androidx-activity = "1.9.3"
-qrose = "1.0.1"
-media3 = "1.4.1"
-coil = "3.3.0"
+qrose = "1.3.0"
+# 1.11.1：从 1.4.1 跨了 7 个 minor，但逐类 javap 核对后**项目用到的 API 全部保留** ——
+# `COMMAND_SEEK_*` 13 个常量一字未变、`onUpdateNotification(MediaSession, boolean)` 签名相同、
+# `addSession` / `removeSession` / `SERVICE_INTERFACE` / `DefaultMediaNotificationProvider.setSmallIcon`
+# 都在；ExoPlayer / datasource / cache / database 那批**只有新增、没有删除**（删掉的
+# `legacy.*` / `video.CompositingVideoSinkProvider` / `AudioFocusManager` 等本仓都没用）。
+# ⚠️ 唯一的**结构性变化**：`MediaSessionService` 的基类由 `android.app.Service` 变成
+# `androidx.lifecycle.LifecycleService`（media3-session 的 POM 已带 `lifecycle-service:2.8.0`，
+# 会自动传递引入，不必显式声明）。
+# 💡 1.11.x 新增了 `setShowNotificationForIdlePlayer(...)` 与 `setForegroundServiceTimeoutMs(...)`
+# —— 前者正对应「启动时时间线为空 ⇒ 恒不显示通知」那条旧结论，将来可用它取代现在对
+# media3 内部行为的依赖（见 PlaybackMediaSessionService 的长注释）。
+media3 = "1.11.1"
+# 锁 3.6.3，与 compose 1.12.1 严格对齐：coil-compose-core 要求 compose foundation 1.12.0，
+# 它声明的 skiko 0.150.1 正好等于 compose 1.12.1 的 skiko ⇒ 不再触发兼容性警告。
+# ⚠️ 这一行与 compose 是**联动**的，别单独动：
+#   compose 1.11.1 ↔ coil 3.5.0（skiko 0.144.6）
+#   compose 1.12.x  ↔ coil 3.6.x（skiko 0.150.1）
+# 3.3.0（skiko 0.9.4.2）/ 3.4.0（skiko 0.9.22.2）都落在两档之外，必然报警。
+coil = "3.6.3"
 mp3spi = "1.9.5.4"
 jflac = "1.5.2"
 jlayer = "1.0.1"
@@ -18,28 +44,31 @@ jmtc = "0.0.3"
 # jna-platform 用于 SMTC 应用身份注册（AUMID / 开始菜单快捷方式），版本对齐 JMTC 传递的 jna。
 jna = "5.19.1"
 accompanist-lyrics-ui = "1.0.19"
-accompanist-lyrics-core = "0.4.5"
-# ⚠️ material-kolor 锁 5.0.0：它依赖 compose 1.11.1，与本项目一致，且 5.x 才有 M3 Expressive 配色。
-# 5.0.1 起依赖 compose 1.12.0，会把整个项目的 Compose 运行时顶上去而插件仍是 1.11.1 ⇒ 版本错配。
-# 注意：5.0.0 的 android 产物要求 compileSdk ≥ 37（AGP 9.2.1 构建），三处 android DSL 的
+accompanist-lyrics-core = "0.4.7"
+# ⚠️ material-kolor 必须与上面的 compose 行保持一致：5.0.0 依赖 compose 1.11.1，
+# 5.0.1 依赖 compose 1.12.0 + material3 1.12.0-alpha03。一旦错配，它会把整个项目的
+# Compose 运行时顶上去而 **compose 插件版本不会跟着变** ⇒ 编译期与运行期版本不一致。
+# 注意：5.x 的 android 产物要求 compileSdk ≥ 37（AGP 9.2.1 构建），三处 android DSL 的
 # compileSdk 已同步提到 37（见 app / core / app-android 的 build.gradle.kts）。
-materialkolor = "5.0.0"
+materialkolor = "5.0.1"
 # 取色算法用 Material You 官方的 material-color-utilities（QuantizerCelebi + Score），
 # 与 Android 的 Monet 同源。换成别的量化器（例如 androidx.palette 的 Vibrant 偏好）
 # 取出来的主色**会和系统 / 其他 MD3 应用不一致** —— Win11 默认壁纸上表现为取到花的玫红
 # 而不是大面积底色蓝。它本是 material-kolor 的传递依赖，这里显式声明：
 # 直接调它的 API 就不该依赖别人的依赖图。
-material-color-utilities = "5.0.0"
+material-color-utilities = "5.0.1"
 # ⚠️ material3 的版本**不由 compose 插件决定**：插件把 `compose.material3` 钉在 1.9.0
 # （见 compose-gradle-plugin 里的 ComposeBuildConfig），而 1.9.0 缺少 M3 Expressive 的
 # 标志性 API —— `MaterialShapes` / `WavyProgressIndicator` / `LoadingIndicator` /
 # `ToggleButton` / `ButtonGroup` / `FloatingToolbar` / `SplitButton` 全都不在。
-# 这里显式声明 1.11.0-alpha07 把它顶上去。方向是安全的：
-#   - 它依赖 compose `1.11.0-beta03` < 本项目的 `1.11.1`（拿到的比它编译时的更新）；
+# 这里显式声明 1.12.0-alpha03 把它顶上去。注意**这条线只有 alpha、没有 stable**
+# （1.12.0 从未发正式版，再往上就是 1.13.0-alpha01）——要用 Expressive API 就只能吃实验版。
+# 方向是安全的：
+#   - 它依赖 compose `1.12.0-beta01` < 本项目的 `1.12.1`（拿到的比它编译时的更新）；
 #   - 它依赖 `androidx.graphics:graphics-shapes`（形状变形的底层实现）；
-#   - 与 `material-kolor` 5.0.0 的编译目标**完全一致**（此前是 1.9.0 跨版本兼容）。
+#   - 与 `material-kolor` 5.0.1 的编译目标**完全一致**（5.0.1 自己就依赖这个精确版本）。
 # 换版本后必须复核 material-kolor 的字节码兼容性（见 TOPICS.md「主题 / 取色」）。
-material3 = "1.11.0-alpha07"
+material3 = "1.12.0-alpha03"
 
 [libraries]
 accompanist-lyrics-ui = { module = "com.mocharealm.accompanist:lyrics-ui", version.ref = "accompanist-lyrics-ui" }
@@ -75,7 +104,7 @@ androidx-media3-datasource = { group = "androidx.media3", name = "media3-datasou
 androidx-media3-datasource-okhttp = { group = "androidx.media3", name = "media3-datasource-okhttp", version.ref = "media3" }
 androidx-media3-database = { group = "androidx.media3", name = "media3-database", version.ref = "media3" }
 androidx-media-compat = { module = "androidx.media:media", version = "1.7.0" }
-composemediaplayer-audio = { module = "io.github.kdroidfilter:composemediaplayer-audio", version = "0.11.3" }
+composemediaplayer-audio = { module = "io.github.kdroidfilter:composemediaplayer-audio", version = "0.11.4" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
 mp3spi = { module = "com.googlecode.soundlibs:mp3spi", version.ref = "mp3spi" }

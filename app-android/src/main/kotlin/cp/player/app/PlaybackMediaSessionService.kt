@@ -67,25 +67,19 @@ class PlaybackMediaSessionService : MediaSessionService() {
         // 官方注释说「多数应用不需要手动调用」——那是以「应用自己用 MediaController 播」
         // 为前提；本应用直接驱动同一个 ExoPlayer 且不建控制器，所以必须显式登记。
         addSession(session)
-        // ⚠️⚠️⚠️ addSession 只是**必要条件**，不是充分条件 —— 别以为加完这行就有通知了。
+        // ⚠️⚠️ addSession 只是**必要条件**：启动时 Player 里没有 media item、状态是 IDLE，
+        // 通知判据 `shouldShowNotification()`（时间线非空 且 非 IDLE）不成立 ⇒ 第一首歌
+        // load 完成之前没有通知，属预期行为（不是 bug，别再往这里找根因）。
         //
-        // 通知的生成判据是 MediaNotificationManager.shouldShowNotification()（javap 1.4.1）：
-        //     val c = controllerMap[session]
-        //     return c != null
-        //         && !c.currentTimeline.isEmpty()      // ← 时间线必须非空
-        //         && c.playbackState != STATE_IDLE     // ← 状态必须非 IDLE
-        // 这条内部控制器读的是 session.getPlayer()（= 上面那个 ControllerForwardingPlayer
-        // → SharedMedia3Player 的 ExoPlayer）。启动时它没有 media item、状态是 IDLE
-        // ⇒ 两条同时为假 ⇒ shouldShowNotification() 恒 false。
+        // 1.11.1 复核：判据前半句（时间线非空）不变；**IDLE 分支改为由
+        // `setShowNotificationForIdlePlayer(...)` 决定**，默认 = `AFTER_STOP_OR_ERROR`
+        // —— 即「播放过之后再停止/出错」通知**会保留**（1.4.1 是不保留）。这是升级带来的
+        // 唯一用户可见行为变化；若要恢复旧观感，在上面的 setMediaNotificationProvider
+        // 旁加一行：
+        //     setShowNotificationForIdlePlayer(SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER)
         //
-        // 这是 media3 的**设计前提**（假定会话一建立 Player 里就有待播内容），不是 bug：
-        // 真正的通知要等**第一次 load() 之后**（时间线非空、状态变 READY/BUFFERING），
-        // onEvents 才驱动 updateNotification → createNotification → startForeground。
-        // ⇒ 从点第一首歌到 load 完成之间没有通知，属预期行为。
-        //
-        // 另有一处**同样致命**、且不在本文件：MainActivity 必须 bindService 把本服务
-        // 绑上（见那里的长注释）—— 只 startService 的话系统侧永远不知道这条会话存在。
-        // 本次「改了很多次仍然没有 MediaSession」的真根因就在那里。
+        // 另有一处同样致命、且不在本文件：MainActivity 必须 bindService 把本服务绑上
+        // —— 只 startService 的话系统侧永远不知道这条会话存在（见那里的注释）。
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
@@ -93,11 +87,12 @@ class PlaybackMediaSessionService : MediaSessionService() {
     /**
      * 用户从「最近任务」划掉 app 卡片时不自毁。
      *
-     * media3 1.4.1 的默认实现把「暂停中」也视为可停（只看是否正在播放），
-     * 会在暂停后划卡片时 stopSelf → 通知消失、进程失去前台资格随即被杀，
-     * 恰好抵消 manifest 里 `stopWithTask="false"` 的保活意图。
+     * 默认实现在「暂停中」也会收摊，且 **1.11.1 起从 `stopSelf()` 升级为
+     * `pauseAllPlayersAndStopSelf()`（会连带暂停播放）** —— 暂停后划卡片即停播、
+     * 通知消失、进程随即失去前台资格，恰好抵消 manifest 里 `stopWithTask="false"`
+     * 的保活意图。
      * 这里改为：只要引擎里还有可续播的曲目（READY/BUFFERING，含暂停）就保活；
-     * 真正空闲（IDLE / 已播完）才停掉自己。
+     * 真正空闲（IDLE / 已播完）才停掉自己。**1.11.1 复核后仍必须覆写**（默认更激进了）。
      */
     override fun onTaskRemoved(rootIntent: Intent?) {
         val p = player
@@ -115,27 +110,24 @@ class PlaybackMediaSessionService : MediaSessionService() {
     /**
      * ⚠️⚠️ 熄屏后台被杀（进程秒死）的修复点 —— 拦下 media3 的「非播放中即降前台」。
      *
-     * media3 1.4.1 的 MediaNotificationManager（javap 核实）：
-     * - `shouldRunInForeground(session, periodic)` 判据是
-     *   `playWhenReady && (playbackState == READY || BUFFERING)`；
-     * - 每次通知更新（含暂停、以及**一首播完到下一首 load 完成之间的 STATE_ENDED 间隙**）
-     *   都会走 `updateNotificationInternal(runInForeground=false)` →
-     *   `maybeStopForegroundService(false)` → **`stopForeground(DETACH)`**——
-     *   通知还挂在通知栏，但服务的**前台资格已被摘掉**。
-     *
-     * 前台资格一旦没了，熄屏状态下进程只剩「started service」优先级，
-     * 厂商 ROM（MIUI/HyperOS、HarmonyOS、ColorOS…）的电池策略几秒内就把进程杀掉 ——
-     * 用户看到的就是「熄屏后台秒杀」。播放中看似安全（READY+playing 时是前台），
-     * 但**每次切歌都会短暂降级**：只要有一次降级发生在熄屏后，进程就没了。
+     * 通知更新（含暂停、以及**一首播完到下一首 load 完成之间的 STATE_ENDED 间隙**）
+     * 会走 `updateNotificationInternal(runInForeground=false)` →
+     * `maybeStopForegroundService(false)` → **`stopForeground(DETACH)`**：通知还挂在
+     * 通知栏，但服务的**前台资格已被摘掉**。熄屏下进程只剩「started service」优先级，
+     * 厂商 ROM（MIUI/HyperOS、HarmonyOS、ColorOS…）几秒内就把它杀掉。
+     * 播放中看似安全，但**每次切歌都会短暂降级** —— 只要有一次发生在熄屏后，进程就没了。
      *
      * 想覆写 `Service.stopForeground` 拦截？**不行** —— 它在 `android.app.Service` 上是
-     * final（编译实锤）。可用的公开钩子是本方法：`onUpdateNotificationInternal`
-     * 把算好的 `runInForeground` 传进来，再转给默认实现去走 startForeground /
-     * stopForeground。这里只要引擎里还有可续播内容（时间线非空且非 IDLE），就强制按
-     * 「保持前台」处理（走 media3 自己的 startForeground 路径，状态一致、无副作用）；
-     * 真正空闲（IDLE / 清空队列）时透传原值，通知照常可清、服务照常降级。
-     * 强制保前台时若系统拒绝（ForegroundServiceStartNotAllowedException），
-     * media3 的 onUpdateNotificationInternal 已有 try/catch 兜底，不会崩。
+     * final（编译实锤）。可用的公开钩子就是本方法：这里只要引擎里还有可续播内容
+     * （时间线非空且非 IDLE）就强制按「保持前台」处理；真正空闲（IDLE / 清空队列）时
+     * 透传原值，通知照常可清、服务照常降级。系统拒绝时
+     * （ForegroundServiceStartNotAllowedException）media3 内部有兜底，不会崩。
+     *
+     * 1.11.1 复核：判据 `shouldRunInForeground` 被重写（签名 `(MediaSession, boolean)`
+     * → `(boolean)`，并叠加了默认 **10 分钟**的 user-engaged 超时窗口），但逐字节码追到
+     * `isAnySessionUserEngaged(boolean)` 后确认**老判据逐字保留**（只是从「单 session」
+     * 改成「遍历所有 session」）⇒ 本覆写仍有效；且超时窗口只有 10 分钟、覆盖不了
+     * 「暂停很久仍要保活」这个意图，所以**仍然必要**。
      */
     override fun onUpdateNotification(session: MediaSession, runInForeground: Boolean) {
         super.onUpdateNotification(session, runInForeground || hasResumablePlayback())
