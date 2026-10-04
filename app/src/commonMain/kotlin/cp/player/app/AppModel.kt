@@ -1243,6 +1243,63 @@ object AppModel {
         _heatmapGreen.value = enabled
     }
 
+    // ============ 局域网设备发现 ============
+
+    private const val KEY_DEVICE_NAME = "device_name"
+
+    /**
+     * 本机设备身份（首次访问时生成并**立即落盘**）。
+     *
+     * ⚠️ deviceId 必须在首次生成时就写入：它是设备表的去重键、将来的同步游标键 ——
+     * 每次启动都重新生成的话，对端会把同一台机器当成不断出现的新设备。
+     */
+    private val _deviceIdentity: cp.player.core.sync.DeviceIdentity by lazy {
+        val deviceId = settings.getString(KEY_DEVICE_ID)?.takeIf { it.isNotBlank() }
+            ?: cp.player.core.sync.newDeviceId().also { settings.putString(KEY_DEVICE_ID, it) }
+        val name = settings.getString(KEY_DEVICE_NAME)?.takeIf { it.isNotBlank() }
+            ?: cp.player.core.sync.defaultDeviceName()
+                .also { settings.putString(KEY_DEVICE_NAME, it) }
+
+        cp.player.core.sync.DeviceIdentity(
+            deviceId = deviceId,
+            name = name,
+            platform = cp.player.core.sync.currentPlatformLabel(),
+            appVersion = cp.player.app.version.AppVersion.fullVersion,
+        )
+    }
+
+    /** 本机设备身份（名称、平台、版本）。设备页展示与信标广播都用它。 */
+    val deviceIdentity: cp.player.core.sync.DeviceIdentity get() = _deviceIdentity
+
+    private val _deviceDiscovery: cp.player.core.sync.SyncDiscovery by lazy {
+        cp.player.core.sync.createSyncDiscovery(
+            identity = _deviceIdentity,
+            // 信标广播的端口 = 对端将来访问本机同步接口用的端口（复用 LocalServer 的端口）。
+            resolveStreamPort = { localServerConfig().streamPort },
+        )
+    }
+
+    /** 已发现的局域网设备（最新出现的排最前；含刚掉线的，按 lastSeenAt 现算在线与否）。 */
+    val discoveredPeersFlow: StateFlow<List<cp.player.core.sync.PeerState>> get() = _deviceDiscovery.peers
+
+    /** 发现层是否正在监听。 */
+    val deviceDiscoveryRunningFlow: StateFlow<Boolean> get() = _deviceDiscovery.running
+
+    /** 发现层启动失败原因；null 表示正常。 */
+    val deviceDiscoveryErrorFlow: StateFlow<String?> get() = _deviceDiscovery.lastError
+
+    /**
+     * 开始设备发现（幂等）。
+     *
+     * ⚠️ 刻意**不在应用启动时自动开启**：在配对与同步协议落地之前，
+     * 持续广播信标没有任何收益，却增加耗电与网络暴露面 —— 这与「外部推送」
+     * 默认关闭是同一条原则（最小权限 + 不替用户做决定）。
+     * 当前由设备页在进入时开启；等配对/转移落地后再评估默认策略（方案 §8.5）。
+     */
+    fun startDeviceDiscovery() { _deviceDiscovery.start() }
+
+    fun stopDeviceDiscovery() { _deviceDiscovery.stop() }
+
     // ============ Provider 管理（封装 [MusicBackend] 并返回类型安全结果） ============
 
     fun availableProviders(): List<BackendProvider> = backend.getAvailableProviders()
