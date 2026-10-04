@@ -60,12 +60,20 @@ actual fun createSyncDiscovery(
 ): SyncDiscovery = MulticastSyncDiscovery(identity, resolveStreamPort, resolveFingerprint)
 
 /**
- * 基于 UDP 组播的信标发现。
+ * 基于 UDP 组播 + 广播兜底的信标发现。
  *
  * ### 为什么是组播而不是 mDNS
  * mDNS 在 JVM 侧要引 `jmdns`、在 Android 侧是 `NsdManager`，两套 API 不对称，
  * 于是「同一份逻辑」要写两遍、测两遍。而组播用 `java.net.MulticastSocket` 就够了，
  * 两端共用一份实现与同一组地址/端口。
+ *
+ * ### 为什么还要叠加一条广播通道
+ * 组播的送达依赖路径上**每一台**设备正确处理 IGMP：家用路由器的 snooping
+ * 实现不把组播从有线口桥到 Wi-Fi 口（或反之）是「同一网段却互相看不见」的
+ * 高频原因，而用户无法从设备列表里区分「对方没在发」和「包被路由器吃了」。
+ * 广播不需要任何组表项，穿这类路由器的成功率高得多。因此每个周期同时向
+ * 组播组与受限广播地址各发一份；绑定端口的 socket 天然收得到广播，接收侧
+ * 不需要任何额外处理。多出来的流量是每个周期两个 ~200 字节的包，可忽略。
  *
  * ### 几个必须这么写的点
  * 1. **`MulticastSocket(null)` + 先 `reuseAddress` 再 `bind`**：同一台机器上跑两个
@@ -96,6 +104,9 @@ internal class MulticastSyncDiscovery(
     private val _lastError = MutableStateFlow<String?>(null)
     override val lastError: StateFlow<String?> = _lastError.asStateFlow()
 
+    private val _stats = MutableStateFlow(DiscoveryStats())
+    override val stats: StateFlow<DiscoveryStats> = _stats.asStateFlow()
+
     private var job: Job? = null
 
     override fun start() {
@@ -116,6 +127,7 @@ internal class MulticastSyncDiscovery(
         val interfaces = multicastInterfaces()
         try {
             val group = InetAddress.getByName(SYNC_BEACON_GROUP)
+            val broadcast = InetAddress.getByName(SYNC_BROADCAST_ADDRESS)
             val groupAddress: SocketAddress = InetSocketAddress(group, SYNC_BEACON_PORT)
 
             socket = MulticastSocket(null as SocketAddress?).apply {
@@ -146,7 +158,7 @@ internal class MulticastSyncDiscovery(
             while (currentCoroutineContext().isActive) {
                 val now = currentTimeMillis()
                 if (now - lastSendAt >= BEACON_INTERVAL_MS) {
-                    sendBeacon(bound, group, interfaces)
+                    sendBeacon(bound, group, broadcast, interfaces)
                     lastSendAt = now
                 }
 
@@ -168,7 +180,12 @@ internal class MulticastSyncDiscovery(
         }
     }
 
-    private fun sendBeacon(socket: MulticastSocket, group: InetAddress, interfaces: List<NetworkInterface>) {
+    private fun sendBeacon(
+        socket: MulticastSocket,
+        group: InetAddress,
+        broadcast: InetAddress,
+        interfaces: List<NetworkInterface>,
+    ) {
         val beacon = SyncBeacon(
             deviceId = identity.deviceId,
             name = identity.name,
@@ -179,24 +196,41 @@ internal class MulticastSyncDiscovery(
             sentAt = currentTimeMillis(),
         )
         val bytes = Beacons.encode(beacon).toByteArray(Charsets.UTF_8)
+        var sent = false
 
-        // 逐网卡发送：不指定出口网卡时，多网卡机器可能从错误的网卡发出去。
-        // 一块网卡失败不影响其余（虚拟网卡/VPN 失败是常态）。
-        if (interfaces.isEmpty()) {
-            runCatching { socket.send(DatagramPacket(bytes, bytes.size, group, SYNC_BEACON_PORT)) }
-            return
-        }
-        interfaces.forEach { nif ->
+        fun deliver(target: InetAddress) {
             runCatching {
-                socket.networkInterface = nif
-                socket.send(DatagramPacket(bytes, bytes.size, group, SYNC_BEACON_PORT))
+                socket.send(DatagramPacket(bytes, bytes.size, target, SYNC_BEACON_PORT))
+                sent = true
             }
         }
+
+        if (interfaces.isEmpty()) {
+            deliver(group)
+            deliver(broadcast)
+        } else {
+            interfaces.forEach { nif ->
+                runCatching { socket.networkInterface = nif }
+                deliver(group)
+                deliver(broadcast)
+            }
+        }
+        // 按周期计一次而不是按包计 —— 用户关心的是「发了几轮」，不是网卡数 × 2。
+        if (sent) _stats.value = _stats.value.copy(sent = _stats.value.sent + 1)
     }
 
     private fun handlePacket(packet: DatagramPacket) {
+        _stats.value = _stats.value.copy(
+            received = _stats.value.received + 1,
+            lastRecvAt = currentTimeMillis(),
+        )
         val text = String(packet.data, packet.offset, packet.length, Charsets.UTF_8)
-        val beacon = Beacons.decode(text) ?: return
+        val beacon = Beacons.decode(text)
+        if (beacon == null) {
+            // 收到了但不是本应用 / 版本不符 / 纯垃圾 —— 这正是「搜不到人但不是防火墙」的信号。
+            _stats.value = _stats.value.copy(invalid = _stats.value.invalid + 1)
+            return
+        }
         // 过滤自己：组播默认会把本机发的包回环回来（这一点对开发时「一台机器跑两个实例」
         // 的验证是好事，所以不关掉 loopback，改为按 deviceId 过滤）。
         if (beacon.deviceId == identity.deviceId) return

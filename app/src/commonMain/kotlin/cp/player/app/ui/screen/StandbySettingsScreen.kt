@@ -48,10 +48,10 @@ import kotlinx.coroutines.isActive
  * 而开关就在这一页上 —— 用户「搜不到设备」时不需要被引导到别处找开关。
  *
  * ### 设备发现的启停策略
- * **进入本页才开启，离开即关闭**（`DisposableEffect`）。不是常驻：
- * 在配对与同步协议落地之前，持续广播信标没有任何收益，却增加耗电与网络暴露面。
- * 这也意味着设备列表只在「两台设备都打开这一页」时才会出现 —— 这正是
- * 当前阶段验证「互相能发现」的预期用法，而不是产品形态（见方案 §8.5）。
+ * 由「在局域网中可见」开关驱动（默认开）：应用启动即开始发现并广播信标
+ * （`AppModel.restoreLanVisibility`），关闭开关才真正停掉。进入/离开本页的
+ * `DisposableEffect` 只是兜底 —— 可见性关闭时本页临时拉起发现，离开即还。
+ * 设备列表因此不再要求「两台设备都停留在这页」，只要求两端都在运行 CPPlayer。
  */
 class StandbySettingsScreen : Screen {
 
@@ -65,6 +65,8 @@ class StandbySettingsScreen : Screen {
         val peers by AppModel.discoveredPeersFlow.collectAsState()
         val running by AppModel.deviceDiscoveryRunningFlow.collectAsState()
         val discoveryError by AppModel.deviceDiscoveryErrorFlow.collectAsState()
+        val stats by AppModel.deviceDiscoveryStatsFlow.collectAsState()
+        val lanVisible by AppModel.lanVisibleFlow.collectAsState()
         val lanSyncEnabled by AppModel.lanSyncEnabledFlow.collectAsState()
         val lanSyncState by AppModel.lanSyncStateFlow.collectAsState()
         val handoffMessage by AppModel.handoffMessageFlow.collectAsState()
@@ -83,7 +85,8 @@ class StandbySettingsScreen : Screen {
             }
         }
 
-        // 进入页面才开发现、离开即关 —— 见类 KDoc 的启停策略。
+        // 兜底：可见性被用户关掉时，进入本页仍临时拉起发现，离开即还
+        // （可见性开着时 start/stop 都会因 AppModel 里的幂等与 no-op 语义而无事发生）。
         DisposableEffect(Unit) {
             AppModel.startDeviceDiscovery()
             onDispose { AppModel.stopDeviceDiscovery() }
@@ -116,6 +119,34 @@ class StandbySettingsScreen : Screen {
                             highlight = discoveryError == null && running,
                         )
                     }
+                }
+
+                SettingsSection("在局域网中可见") {
+                    SettingsSwitchItem(
+                        title = "在局域网中可见",
+                        subtitle = "应用运行期间持续广播本机信标并监听其他设备 —— 无感同步与转移的前提；关闭后本机在局域网里隐身",
+                        checked = lanVisible,
+                        onCheckedChange = { AppModel.setLanVisible(it) },
+                        index = 0,
+                        total = 1,
+                    )
+                }
+
+                // 诊断计数：把「搜不到设备」的三种真因区分开 ——
+                // 收到=0 → 本机收不到包（防火墙/对端没在发）；
+                // 收到>0 且无效在涨 → 收到了但不认识（协议不符/别的程序占端口）；
+                // 收到>0 且无效=0 → 只收到自己的回环。
+                SettingsFieldGroup {
+                    InfoRow("信标已发送", "${stats.sent} 轮")
+                    InfoRow("已收到信标", "${stats.received}")
+                    if (stats.invalid > 0) InfoRow("无法识别的信标", "${stats.invalid}", highlight = true)
+                    InfoRow(
+                        "最近收到",
+                        stats.lastRecvAt?.let {
+                            java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault())
+                                .toLocalTime().toString()
+                        } ?: "—",
+                    )
                 }
 
                 if (discoveryError != null) {
@@ -201,7 +232,8 @@ class StandbySettingsScreen : Screen {
                         // 组内塞非分段文本会打断分段圆角，这里用说明行承载空态。
                         Text(
                             text = if (running) {
-                                "正在监听，还没有发现其他设备。两台设备都要打开 CPPlayer 并停留在这一页。"
+                                "正在监听，还没有发现其他设备。只要对方也在运行 CPPlayer（不必停留在任何页面），" +
+                                    "最多半分钟就会出现在这里。"
                             } else {
                                 "设备发现未启动。"
                             },
@@ -254,10 +286,13 @@ class StandbySettingsScreen : Screen {
                 }
 
                 SettingsNote(
-                    "搜不到设备时按顺序检查：① 两台设备都打开 CPPlayer 并停留在这一页；" +
-                        "② 同一局域网（注意访客网络会把设备互相隔离）；" +
-                        "③ Windows 首次监听会弹防火墙授权，拒绝过就再也收不到信标；" +
-                        "④ 多网卡机器（VPN、虚拟机网卡）可能需要多试几次。",
+                    "搜不到设备时按顺序检查：① 两台设备都要在运行较新版本的 CPPlayer" +
+                        "（旧版本没有设备发现，对方发了信标这边也认不出）；" +
+                        "② 「在局域网中可见」都开着，且上面的「已收到信标」在增长 —— 若一直是 0，" +
+                        "是本机收不到包：查防火墙入站规则（Windows 首次监听会弹授权，拒绝过就再也收不到）；" +
+                        "③ 同一路由器下的同一网段（访客网络 / AP 隔离会把设备互相隔离）；" +
+                        "④ 若「已收到信标」> 0 但列表仍为空且「无法识别的信标」在涨，说明对端不是同版本的应用；" +
+                        "⑤ 多网卡机器（VPN、虚拟机网卡）可能需要多试几次。",
                 )
 
                 if (handoffMessage != null) {

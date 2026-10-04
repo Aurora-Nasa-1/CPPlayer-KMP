@@ -3,6 +3,25 @@ package cp.player.core.sync
 import kotlinx.coroutines.flow.StateFlow
 
 /**
+ * 发现层的诊断计数。
+ *
+ * 「搜不到设备」的三个真凶（防火墙拦包 / 组播被路由器滤掉 / 版本不符）
+ * 在列表上都表现为**同一个空白**，用户无从区分 —— 这组数字就是为此存在的：
+ * - `received == 0` 且发送在涨 ⇒ 本机**收不到任何包**：查防火墙入站规则、
+ *   或对端根本没在发（老版本 / 发现层没跑）；
+ * - `received > 0 && peers 为空 && invalid 在涨` ⇒ **收到了包但不认识**：
+ *   对端是别的程序占了端口，或两边的协议版本不一致；
+ * - `received > 0 && peers 为空 && invalid == 0` ⇒ 收到的全是自己的回环
+ *   （组播 loopback 是开着的，靠 deviceId 过滤自己）—— 单实例部署下不该出现。
+ */
+data class DiscoveryStats(
+    val sent: Long = 0,
+    val received: Long = 0,
+    val invalid: Long = 0,
+    val lastRecvAt: Long? = null,
+)
+
+/**
  * 局域设备发现。
  *
  * ### 职责边界
@@ -29,6 +48,9 @@ interface SyncDiscovery {
 
     /** 最近一次启动失败的原因；null 表示正常。 */
     val lastError: StateFlow<String?>
+
+    /** 诊断计数（见 [DiscoveryStats] 的 KDoc —— 那里写了每一种组合该怎么读）。 */
+    val stats: StateFlow<DiscoveryStats>
 
     /** 幂等：已在运行则什么都不做。 */
     fun start()

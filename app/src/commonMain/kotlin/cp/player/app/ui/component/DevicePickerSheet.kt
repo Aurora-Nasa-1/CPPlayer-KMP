@@ -37,10 +37,11 @@ import kotlinx.coroutines.isActive
 /**
  * 「转移到其他设备」选择弹层（播放器「更多」菜单的二级弹层）。
  *
- * ### 生命周期跟随弹层，而不是页面
- * 设备发现是「进入即开、离开即关」的（见 [cp.player.app.ui.screen.StandbySettingsScreen]），
- * 弹层同理：打开时开启发现、关闭即停 —— 播放页常驻但弹层不常驻，
- * 用户不点「转移」就没有任何广播发生，与「最小暴露面」同一条原则。
+ * ### 生命周期跟随弹层，只是兜底
+ * 发现层由「在局域网中可见」开关驱动（默认开，应用启动即运行）；
+ * 弹层的 `DisposableEffect` 只在可见性被关闭时临时拉起发现，关闭弹层即还。
+ * [cp.player.app.AppModel.stopDeviceDiscovery] 在可见性开着时是空操作，
+ * 所以这里的启停不会干扰常驻的发现循环。
  *
  * ### 为什么判据是「对端开着自动同步」
  * 转移复用同步的传输面（同一端口、同一服务）：目标端必须开着「自动同步」
@@ -66,7 +67,7 @@ fun DevicePickerSheet(
         }
     }
 
-    // 弹层打开期间保持发现层运行；关闭（含转移完成）即停。
+    // 兜底：可见性关闭时弹层期间临时拉起发现，关闭即还；可见性开着时两者都是空操作。
     DisposableEffect(Unit) {
         AppModel.startDeviceDiscovery()
         onDispose { AppModel.stopDeviceDiscovery() }
@@ -96,7 +97,8 @@ fun DevicePickerSheet(
                 discoveryError != null -> SheetHint("设备发现启动失败：$discoveryError")
                 online.isEmpty() -> SheetHint(
                     if (running) {
-                        "正在搜索局域网内的设备…\n对方需要打开 CPPlayer 并开启「设置 → 局域网设备」里的自动同步。"
+                        "正在搜索局域网内的设备…\n对方在运行较新版本的 CPPlayer 就会出现；" +
+                            "但转移要求对方开着「自动同步」（设置 → 局域网设备），否则接不住。"
                     } else {
                         "设备发现未启动。"
                     },

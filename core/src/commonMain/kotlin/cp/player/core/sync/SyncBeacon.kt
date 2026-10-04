@@ -26,6 +26,17 @@ const val SYNC_PROTOCOL_VERSION = 1
 const val SYNC_BEACON_GROUP = "239.255.72.80"
 const val SYNC_BEACON_PORT = 38085
 
+/**
+ * 受限广播地址（fallback 通道）。
+ *
+ * ⚠️ 与组播**并用**而不是替代：不少家用路由器的 IGMP snooping 实现
+ * 不会把组播从有线口桥到 Wi-Fi 口（或反之），症状恰恰是「两台设备明明
+ * 在同一网段却互相看不见」。广播不需要任何组表项，穿过这类路由器的
+ * 成功率高得多；代价只是每个周期多几个小包。绑定端口的 socket 同时
+ * 收得到广播 —— 接收侧无需任何改动。
+ */
+const val SYNC_BROADCAST_ADDRESS = "255.255.255.255"
+
 /** 信标广播间隔。3 秒是「发现够快」与「不刷屏」之间的折中。 */
 const val BEACON_INTERVAL_MS = 3_000L
 

@@ -1419,16 +1419,63 @@ object AppModel {
     val deviceDiscoveryErrorFlow: StateFlow<String?> get() = _deviceDiscovery.lastError
 
     /**
-     * 开始设备发现（幂等）。
-     *
-     * ⚠️ 刻意**不在应用启动时自动开启**：在配对与同步协议落地之前，
-     * 持续广播信标没有任何收益，却增加耗电与网络暴露面 —— 这与「外部推送」
-     * 默认关闭是同一条原则（最小权限 + 不替用户做决定）。
-     * 当前由设备页在进入时开启；等配对/转移落地后再评估默认策略（方案 §8.5）。
+     * 发现层诊断计数。「搜不到设备」的三种真因（本机收不到任何包 / 收到了
+     * 但不是 CPPlayer 的包 / 只收到自己的回环）在设备列表上都表现为同一个
+     * 空白 —— 这组数字就是用来把它们区分开的，读法见 [DiscoveryStats]。
      */
+    val deviceDiscoveryStatsFlow: StateFlow<cp.player.core.sync.DiscoveryStats>
+        get() = _deviceDiscovery.stats
+
+    // ---- 在局域网中可见 ----
+
+    private const val KEY_LAN_VISIBLE = "lan_visible"
+
+    private val _lanVisible = MutableStateFlow(
+        settings.getString(KEY_LAN_VISIBLE)?.toBooleanStrictOrNull() ?: true,
+    )
+
+    /**
+     * 是否在局域网中可见（持续广播信标并监听同网段的信标）。
+     *
+     * 默认**开**。曾按「最小暴露面」默认关，但实测暴露了一个更伤可用性的问题：
+     * 「应用开着」和「停留在设备页」被当成了两件事 —— 用户手机明明一直开着
+     * CPPlayer，电脑那边却永远搜不到，只能得到一个空白列表和一句「去打开设置页」。
+     * 发现信标只有 ~200 字节、3 秒一发，耗电与暴露面都可忽略；而「可见」是
+     * 无感同步与转移的**前提** —— 两台设备互相看不见，后面所有功能都不存在。
+     */
+    val lanVisibleFlow: StateFlow<Boolean> = _lanVisible.asStateFlow()
+
+    fun setLanVisible(visible: Boolean) {
+        settings.putString(KEY_LAN_VISIBLE, visible.toString())
+        _lanVisible.value = visible
+        if (visible) startDeviceDiscovery() else _deviceDiscovery.stop()
+    }
+
+    /**
+     * 恢复局域网可见性（启动时调用）。
+     *
+     * 默认开 ⇒ 应用一启动就在局域网中可见、可被发现 —— 这就是「入口不明确」
+     * 的最终答案：**没有入口**。用户不需要先翻到某个页面，两台设备只要都在
+     * 运行 CPPlayer 就能互相看见。
+     */
+    fun restoreLanVisibility() {
+        if (_lanVisible.value) startDeviceDiscovery()
+    }
+
+    /** 开始设备发现（幂等）。正常路径由 [restoreLanVisibility] / [setLanVisible] 驱动。 */
     fun startDeviceDiscovery() { _deviceDiscovery.start() }
 
-    fun stopDeviceDiscovery() { _deviceDiscovery.stop() }
+    /**
+     * 停止设备发现。
+     *
+     * ⚠️ 「在局域网中可见」开着时这里是**空操作**：自动同步与转移都依赖
+     * 发现层持续在线 —— 关闭设备页不等于用户想让本机从局域网里消失
+     * （页面关闭即停的旧策略正是「手机开着、电脑搜不到」的直接原因）。
+     * 真正下线的路径是 [setLanVisible]（false），那会直接停掉发现层。
+     */
+    fun stopDeviceDiscovery() {
+        if (!_lanVisible.value) _deviceDiscovery.stop()
+    }
     // ============ 局域网同步（听歌记录） ============
 
     private const val KEY_LAN_SYNC = "lan_sync_enabled"

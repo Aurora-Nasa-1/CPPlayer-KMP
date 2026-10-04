@@ -83,6 +83,7 @@ fun App(
         AppModel.restoreLocalServer()
         AppModel.restoreAggressiveStandby()
         AppModel.restoreLanSync()
+        AppModel.restoreLanVisibility()
         AppModel.refreshUserProfile()
         AppModel.startHistoryRecorder()
         AppModel.startListeningRecorder()
