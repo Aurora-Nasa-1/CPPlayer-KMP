@@ -2193,7 +2193,6 @@ private fun DailyMixCard(
                 DailySongRail(
                     songs = previewTracks,
                     onSongClick = onSongClick,
-                    overImage = overImage,
                     // 桌面独占整行 ⇒ 4 列；窄屏（移动）仍是单列。
                     columns = if (compact) DESKTOP_DAILY_COLUMNS else 1,
                 )
@@ -2206,7 +2205,6 @@ private fun DailyMixCard(
 private fun DailySongRail(
     songs: List<TrackSummary>,
     onSongClick: (TrackSummary) -> Unit,
-    overImage: Boolean,
     columns: Int,
 ) {
     val safeColumns = columns.coerceAtLeast(1)
@@ -2224,7 +2222,6 @@ private fun DailySongRail(
                         track = track,
                         onClick = { onSongClick(track) },
                         modifier = Modifier.weight(1f),
-                        overImage = overImage,
                     )
                 }
                 repeat(safeColumns - rowTracks.size) { Spacer(Modifier.weight(1f)) }
@@ -2236,24 +2233,23 @@ private fun DailySongRail(
 /**
  * 「每日推荐」轨道里的紧凑曲目卡。
  *
- * @param overImage 卡片是否压在封面图上。压在图上时用白色半透明叠加（唯一能保证
- *   在任意封面上都可读的做法）；否则必须回落到主题色 —— 浅色主题下
- *   `Color.White` 文字放在浅灰容器上等于隐形。
+ * ⚠️ 一律用主题色，**不要**按「是否压在封面上」切白字：卡片的 Surface 底是自己的
+ * （不透明），而它只有第一行上半截真正压在照片上、其余部分都落在渐变到浅色的
+ * scrim / 卡片底色上 —— 浅色主题下白字放上去等于隐形（2026-10-04 实锤）。
+ * 压图的那一小条由不透明卡片底自己遮住，不依赖文字配色。
  */
 @Composable
 private fun CompactTrackCard(
     track: TrackSummary,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    overImage: Boolean = false,
 ) {
-    val titleColor = if (overImage) Color.White else MaterialTheme.colorScheme.onSurface
-    val artistColor =
-        if (overImage) Color.White.copy(alpha = 0.72f) else MaterialTheme.colorScheme.onSurfaceVariant
+    val titleColor = MaterialTheme.colorScheme.onSurface
+    val artistColor = MaterialTheme.colorScheme.onSurfaceVariant
     Surface(
         modifier = modifier,
         onClick = onClick,
-        color = if (overImage) Color.White.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceContainerHighest,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
         shape = MaterialTheme.shapes.large,
     ) {
         Row(
@@ -2265,10 +2261,7 @@ private fun CompactTrackCard(
                 // 14dp 是历史遗留的**非标度值**（既不是 small/medium 也不是 large）。
                 // 收到 medium（12dp）：这个 46dp 的方形缩略图本来就该跟列表缩略图同一档。
                 modifier = Modifier.size(46.dp).clip(MaterialTheme.shapes.medium)
-                    .background(
-                        if (overImage) Color.White.copy(alpha = 0.16f)
-                        else MaterialTheme.colorScheme.surfaceVariant
-                    ),
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center,
             ) {
                 if (!track.coverUrl.isNullOrBlank()) {
@@ -2282,7 +2275,7 @@ private fun CompactTrackCard(
                     Icon(
                         Icons.Filled.PlayArrow,
                         contentDescription = null,
-                        tint = if (overImage) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
