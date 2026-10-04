@@ -11,6 +11,31 @@ import java.util.zip.ZipOutputStream
 actual fun currentTimeMillis(): Long = System.currentTimeMillis()
 
 /**
+ * 探测 `(host, port)` 当前能否被监听成功。
+ *
+ * ### 语义必须与 Ktor CIO 的绑定一致
+ * ktor-network 的 `tcp().bind()` 默认 `reuseAddress = false`（3.6.0 字节码核对过），
+ * 所以这里也**不开** SO_REUSEADDR —— 探测通过 ⇔ CIO 随后真正 bind 也能通过。
+ * 返回 false 仅表示「端口上已有活动监听 / 无权限」，TIME_WAIT 之外的行为两端一致。
+ *
+ * ### 为什么绑定前必须先探测
+ * CIO 的端口绑定发生在引擎内部的 accept 协程里（`httpServer$acceptJob`），
+ * `start(wait = false)` 外面的 try/catch **接不住** —— 异常会直达全局未捕获处理器，
+ * 在 Android 上直接 FATAL 杀进程（实锤：`BindException` 崩溃）。
+ * 所以「先探测、占不上就不启动」是唯一能把绑定失败降级为状态报错的位置，
+ * 调用方：[cp.player.core.control.KtorLocalServer.start] 与
+ * [cp.player.core.sync.SyncTransport.Server.start]。
+ */
+internal fun isTcpPortBindable(host: String, port: Int): Boolean = try {
+    ServerSocket().use { socket ->
+        socket.bind(java.net.InetSocketAddress(host, port))
+    }
+    true
+} catch (_: Exception) {
+    false
+}
+
+/**
  * JVM actual：走 `java.time`，与桌面 / Android 的系统时区一致。
  *
  * Android 侧要求 minSdk ≥ 26（`java.time` 从 API 26 起可用）—— 本项目已满足。

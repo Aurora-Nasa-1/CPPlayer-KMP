@@ -604,9 +604,13 @@ class MainScreen : Screen {
                         // 判据与下面真正渲染小播放器的那一处**完全一致**（会话里没开对话），
                         // 否则会出现「内容让了位、小播放器却没出现」的空白。
                         androidx.compose.runtime.CompositionLocalProvider(
+                            // ⚠️ 钳非负：miniPlayerReserved 是 spring 动画值，小播放器消失
+                            // 回落 0 时下冲穿负，负值进下游 PaddingValues 直接崩
+                            // （「Padding must be non-negative」，Android 实锤）。
+                            // 与 App.GlobalMiniPlayerHost 同一处修复。
                             cp.player.app.ui.component.LocalMiniPlayerTailSpace provides
                                 if (playbackState.currentTrack != null && !messagesChatOpen) {
-                                    miniPlayerReserved
+                                    miniPlayerReserved.coerceAtLeast(0.dp)
                                 } else 0.dp,
                         ) {
                             TabContent(

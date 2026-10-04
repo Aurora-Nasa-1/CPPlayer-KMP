@@ -1,6 +1,7 @@
 package cp.player.core.sync
 
 import cp.player.core.util.currentTimeMillis
+import cp.player.core.util.isTcpPortBindable
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.EmbeddedServer
@@ -51,6 +52,12 @@ object SyncTransport {
      * 关闭开关即整个服务停掉、端口释放。
      */
     class Server(
+        /**
+         * 监听地址 / 端口。生产用默认值；桌面单测注入 `127.0.0.1` + 临时端口，
+         * 既能确定性复现「端口被占」，又不碰真实端口段。
+         */
+        private val bindHost: String = "0.0.0.0",
+        private val bindPort: Int = SYNC_HTTP_PORT,
         private val snapshotProvider: () -> SyncSnapshot,
         private val onIncoming: (SyncSnapshot) -> Int,
         private val onStateChanged: (Boolean, String?) -> Unit,
@@ -66,8 +73,19 @@ object SyncTransport {
 
         fun start() {
             if (server != null) return
+            // ⚠️ 必须先探测：CIO 的绑定发生在引擎内部 accept 协程里，
+            // `start(wait = false)` 的 try/catch 接不住 BindException（会直达全局
+            // 未捕获处理器，Android 上直接杀进程）。占不上就降级为状态报错，
+            // 用户感知是「同步不可用」，而不是整个 App 闪退。见 isTcpPortBindable。
+            if (!isTcpPortBindable(bindHost, bindPort)) {
+                onStateChanged(
+                    false,
+                    "同步服务端口 $bindPort 被占用（可能有另一个 CPPlayer 实例正在运行）",
+                )
+                return
+            }
             try {
-                val s = embeddedServer(CIO, port = SYNC_HTTP_PORT, host = "0.0.0.0") {
+                val s = embeddedServer(CIO, port = bindPort, host = bindHost) {
                     routing {
                         get(SYNC_ROUTE_RECORDS) {
                             call.respondJson(json.encodeToString(snapshotProvider()))

@@ -105,7 +105,9 @@ fun ScrollColumn(
                 .fillMaxSize()
                 .padding(end = desktopScrollbarGutter)
                 .verticalScroll(state, enabled = userScrollEnabled)
-                .padding(contentPadding + PaddingValues(bottom = shellTail)),
+                // ⚠️ 钳非负：壳层下发的尾留白是 spring 动画值（回落 0 时下冲穿负），
+                // 负 Dp 进 PaddingValues 直接抛「Padding must be non-negative」。
+                .padding(contentPadding + PaddingValues(bottom = shellTail.coerceAtLeast(0.dp))),
             verticalArrangement = verticalArrangement,
             horizontalAlignment = horizontalAlignment,
             content = content,
@@ -138,7 +140,8 @@ fun LazyScrollColumn(
             modifier = Modifier.fillMaxWidth().padding(end = desktopScrollbarGutter),
             state = state,
             // 同上：尾留白走 contentPadding（内容一直铺到底），不是裁短视口。
-            contentPadding = contentPadding + PaddingValues(bottom = LocalMiniPlayerTailSpace.current),
+            // ⚠️ 钳非负：留白是 spring 动画值，回落 0 时下冲穿负会直接崩（同 ScrollColumn）。
+            contentPadding = contentPadding + PaddingValues(bottom = LocalMiniPlayerTailSpace.current.coerceAtLeast(0.dp)),
             verticalArrangement = verticalArrangement,
             horizontalAlignment = horizontalAlignment,
             userScrollEnabled = userScrollEnabled,

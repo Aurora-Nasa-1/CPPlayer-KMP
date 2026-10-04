@@ -7,6 +7,7 @@ import cp.player.core.integration.KtorIntegrationRoutesHandle
 import cp.player.core.integration.decideDataApiGate
 import cp.player.core.integration.parseBearerToken
 import cp.player.core.integration.respondIntegrationError
+import cp.player.core.util.isTcpPortBindable
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -73,6 +74,17 @@ internal class KtorLocalServer(
 
     override fun start() {
         if (engine != null) return
+        // ⚠️ 必须先探测：Ktor CIO 的端口绑定发生在引擎内部 accept 协程里，
+        // 这里的 try/catch 接不住 BindException —— 异常直达全局未捕获处理器，
+        // Android 上直接杀进程（实锤过的概率崩溃）。占不上就降级为状态报错。
+        // 语义与 CIO 的 bind 一致（reuseAddress 同为关），见 isTcpPortBindable。
+        if (!isTcpPortBindable(config.bindAddress, config.streamPort)) {
+            _status.value = _status.value.copy(
+                running = false,
+                error = "流输出端口 ${config.streamPort} 启动失败：端口被占用（可能有另一个 CPPlayer 实例正在运行）",
+            )
+            return
+        }
         try {
             val server = embeddedServer(
                 CIO,

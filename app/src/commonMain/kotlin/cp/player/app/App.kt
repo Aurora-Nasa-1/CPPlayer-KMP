@@ -358,7 +358,11 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
         label = "globalMiniPlayerTail",
     )
     CompositionLocalProvider(
-        cp.player.app.ui.component.LocalMiniPlayerTailSpace provides tailSpace,
+        // ⚠️ 必须钳到非负：tailSpace 由 spring 动画驱动（CpMotion.spatial 是回弹
+        // spring），小播放器消失时从高值回落到 0 会**下冲穿负**，负 Dp 进
+        // PaddingValues 直接抛「Padding must be non-negative」—— Android 实锤过
+        // 的概率崩溃。钳在这里（提供方）+ DesktopScrollbars（消费方）双保险。
+        cp.player.app.ui.component.LocalMiniPlayerTailSpace provides tailSpace.coerceAtLeast(0.dp),
     ) {
         Box(Modifier.fillMaxSize()) {
             pageContent()
