@@ -38,9 +38,11 @@ import kotlinx.coroutines.isActive
 /**
  * 「激进保活」与局域网设备（仅 Android 出现入口，见 `SettingsRegistry.androidOnly`）。
  *
- * ### 这一页现在承担两件事
- * 1. **激进保活开关** —— 持 Wi-Fi 高性能锁 + 组播锁，让熄屏后组播包不被系统丢弃；
- * 2. **局域网设备列表** —— 实时展示发现层看到了哪些设备。
+ * ### 这一页现在承担三件事
+ * 1. **局域网设备列表** —— 实时展示发现层看到了哪些设备（桌面与 Android 都在这）；
+ * 2. **自动同步开关** —— 开启后两台设备自动交换听歌记录，无需任何手动操作；
+ * 3. **激进保活开关**（仅 Android 有意义）—— 持 Wi-Fi 高性能锁 + 组播锁，
+ *    让熄屏后组播包不被系统丢弃。
  *
  * 两者放同一页是刻意的：设备发现失败最常见的原因就是 Wi-Fi 省电丢包，
  * 而开关就在这一页上 —— 用户「搜不到设备」时不需要被引导到别处找开关。
@@ -63,6 +65,8 @@ class StandbySettingsScreen : Screen {
         val peers by AppModel.discoveredPeersFlow.collectAsState()
         val running by AppModel.deviceDiscoveryRunningFlow.collectAsState()
         val discoveryError by AppModel.deviceDiscoveryErrorFlow.collectAsState()
+        val lanSyncEnabled by AppModel.lanSyncEnabledFlow.collectAsState()
+        val lanSyncState by AppModel.lanSyncStateFlow.collectAsState()
 
         // 「在线与否」是时间的函数（PeerState 只存 lastSeenAt），
         // 而 peers 流只在收到信标 / 遗忘设备时才变 —— 对端静默退出时列表不会自己变。
@@ -88,7 +92,7 @@ class StandbySettingsScreen : Screen {
         val offline = peers.filterNot { it.isOnline(nowMs) }
 
         CpRouteScaffold(
-            title = "激进保活",
+            title = "局域网设备",
             onBack = { navigator.popOrNotify() },
         ) { pageModifier ->
             SettingsPage(pageModifier) {
@@ -117,25 +121,76 @@ class StandbySettingsScreen : Screen {
                     )
                 }
 
-                SettingsSection("后台在线") {
+                SettingsSection("自动同步（局域网）") {
                     SettingsSwitchItem(
-                        title = "激进保活",
-                        subtitle = "熄屏后维持 Wi-Fi 在线，让设备发现与换设备播放仍可能命中",
-                        checked = enabled,
-                        onCheckedChange = { AppModel.setAggressiveStandby(it) },
+                        title = "自动同步听歌记录",
+                        subtitle = "两台设备互相交换听歌历史；开启后自动进行，无需任何手动操作",
+                        checked = lanSyncEnabled,
+                        onCheckedChange = { AppModel.setLanSyncEnabled(it) },
                         index = 0,
-                        total = 1,
+                        total = 2,
+                    )
+                    SettingsClickItem(
+                        title = "立即同步",
+                        subtitle = lanSyncState.lastSyncSummary.ifBlank { "尚未同步" },
+                        index = 1,
+                        total = 2,
+                        onClick = { AppModel.syncNow() },
+                    )
+                }
+
+                SettingsFieldGroup {
+                    InfoRow(
+                        "同步服务",
+                        when {
+                            lanSyncState.error != null -> "启动失败"
+                            lanSyncState.serverRunning -> "监听中（端口 38086）"
+                            else -> "未启动"
+                        },
+                        highlight = lanSyncState.error == null && lanSyncState.serverRunning,
+                    )
+                    InfoRow(
+                        "上次同步",
+                        lanSyncState.lastSyncAt?.let {
+                            java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault())
+                                .toLocalTime().toString()
+                        } ?: "—",
                     )
                 }
 
                 SettingsNote(
-                    text = when {
-                        !enabled -> "未启用"
-                        active -> "已生效"
-                        else -> "未生效（可能被系统拒绝）"
-                    } + if (enabled && active) "" else "。没有它，熄屏后系统可能丢弃组播包。",
-                    emphasis = if (enabled && !active) SettingsNoteEmphasis.WARNING else SettingsNoteEmphasis.INFO,
+                    text = if (lanSyncEnabled) {
+                        "⚠️ 开启后，同一局域网内的任何设备都能读取与写入本机的**听歌记录**。" +
+                            "能同步的仅此一项 —— 不含账号、凭据、歌单、收藏。" +
+                            "在办公室等非私人网络请关闭。设备配对鉴权是下一步的工作。"
+                    } else {
+                        "默认关闭。开启后无需任何手动操作：两台设备只要都在同一网络并打开 CPPlayer，" +
+                            "听歌记录就会自动双向合并 —— 不分谁新谁旧，也不在乎交替使用。"
+                    },
+                    emphasis = if (lanSyncEnabled) SettingsNoteEmphasis.WARNING else SettingsNoteEmphasis.INFO,
                 )
+
+                if (cp.player.app.platform.isAndroidPlatform()) {
+                    SettingsSection("后台在线") {
+                        SettingsSwitchItem(
+                            title = "激进保活",
+                            subtitle = "熄屏后维持 Wi-Fi 在线，让设备发现与换设备播放仍可能命中",
+                            checked = enabled,
+                            onCheckedChange = { AppModel.setAggressiveStandby(it) },
+                            index = 0,
+                            total = 1,
+                        )
+                    }
+
+                    SettingsNote(
+                        text = when {
+                            !enabled -> "未启用"
+                            active -> "已生效"
+                            else -> "未生效（可能被系统拒绝）"
+                        } + if (enabled && active) "" else "。没有它，熄屏后系统可能丢弃组播包。",
+                        emphasis = if (enabled && !active) SettingsNoteEmphasis.WARNING else SettingsNoteEmphasis.INFO,
+                    )
+                }
 
                 SettingsSection("局域网设备") {
                     if (online.isEmpty()) {

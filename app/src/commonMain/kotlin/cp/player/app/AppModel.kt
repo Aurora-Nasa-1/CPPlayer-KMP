@@ -1299,6 +1299,182 @@ object AppModel {
     fun startDeviceDiscovery() { _deviceDiscovery.start() }
 
     fun stopDeviceDiscovery() { _deviceDiscovery.stop() }
+    // ============ 局域网同步（听歌记录） ============
+
+    private const val KEY_LAN_SYNC = "lan_sync_enabled"
+
+    /** 自动同步的节奏。60s：对个人设备而言开销可忽略，且能让「刚打开另一台」很快被感知。 */
+    private const val SYNC_INTERVAL_MS = 60_000L
+
+    /** 单次同步最多接收的记录数。同步面未认证，这是防灌水的第二道闸（第一道是字段校验）。 */
+    private const val SYNC_MAX_INGEST = 5_000
+
+    /** 局域网同步的运行状态（给设备页展示）。 */
+    data class LanSyncState(
+        val serverRunning: Boolean = false,
+        val error: String? = null,
+        val lastSyncAt: Long? = null,
+        val lastSyncSummary: String = "",
+    )
+
+    private val _lanSyncEnabled = MutableStateFlow(
+        settings.getString(KEY_LAN_SYNC)?.toBooleanStrictOrNull() ?: false,
+    )
+
+    /**
+     * 是否开启局域网同步。
+     *
+     * ⚠️ **默认关，且必须如实告知代价**：开启后本机会在局域网监听一个未认证的
+     * 同步端口，同网段任何设备都能读写本机的**听歌记录**（能读写的仅此一项 ——
+     * 不含账号、凭据、歌单、收藏）。之所以仍按用户要求做成「无感」，
+     * 是因为逐台输配对码就是把「入口不明确」换成另一种摩擦；配对（方案 §3.3）
+     * 落地后应替换成令牌鉴权。
+     */
+    val lanSyncEnabledFlow: StateFlow<Boolean> = _lanSyncEnabled.asStateFlow()
+
+    private val _lanSyncState = MutableStateFlow(LanSyncState())
+
+    /** 同步服务与最近一次交换的结果。 */
+    val lanSyncStateFlow: StateFlow<LanSyncState> = _lanSyncState.asStateFlow()
+
+    private var syncServer: cp.player.core.sync.SyncTransport.Server? = null
+    private var syncLoopJob: kotlinx.coroutines.Job? = null
+
+    fun setLanSyncEnabled(enabled: Boolean) {
+        settings.putString(KEY_LAN_SYNC, enabled.toString())
+        _lanSyncEnabled.value = enabled
+        if (enabled) startLanSync() else stopLanSync()
+    }
+
+    /**
+     * 恢复持久化的同步开关（启动时调用）。
+     *
+     * **开启时这里就是「启动时自动尝试同步」的入口**：服务端开始监听、
+     * 发现层开始跑、同步循环先立刻交换一次再进入定时轮询。
+     */
+    fun restoreLanSync() {
+        if (_lanSyncEnabled.value) startLanSync()
+    }
+
+    private fun startLanSync() {
+        if (syncServer == null) {
+            val server = cp.player.core.sync.SyncTransport.Server(
+                snapshotProvider = {
+                    cp.player.core.sync.SyncSnapshot(
+                        deviceId = deviceIdentity.deviceId,
+                        name = deviceIdentity.name,
+                        records = _listeningRecords.value,
+                    )
+                },
+                onIncoming = { snapshot -> ingestRemote(snapshot) },
+                onStateChanged = { running, err ->
+                    _lanSyncState.value = _lanSyncState.value.copy(serverRunning = running, error = err)
+                },
+            )
+            server.start()
+            syncServer = server
+        }
+        // 没有发现层就拿不到对端 IP —— 同步依赖它，这里顺手确保它在跑。
+        startDeviceDiscovery()
+        if (syncLoopJob == null) {
+            syncLoopJob = modelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                // 先立刻交换一次：这就是「启动时自动尝试同步」。
+                syncWithOnlinePeers()
+                while (true) {
+                    kotlinx.coroutines.delay(SYNC_INTERVAL_MS)
+                    syncWithOnlinePeers()
+                }
+            }
+        }
+    }
+
+    private fun stopLanSync() {
+        syncLoopJob?.cancel()
+        syncLoopJob = null
+        syncServer?.stop()
+        syncServer = null
+        _lanSyncState.value = _lanSyncState.value.copy(serverRunning = false)
+    }
+
+    /** 与当前所有在线设备各交换一次（双向：先拉并合并，再把并集推回去）。 */
+    fun syncNow() {
+        modelScope.launch(kotlinx.coroutines.Dispatchers.IO) { syncWithOnlinePeers() }
+    }
+
+    private suspend fun syncWithOnlinePeers() {
+        val now = cp.player.core.util.currentTimeMillis()
+        val online = cp.player.core.sync.Peers.online(_deviceDiscovery.peers.value, now)
+        if (online.isEmpty()) {
+            _lanSyncState.value = _lanSyncState.value
+                .copy(lastSyncAt = now, lastSyncSummary = "没有在线设备")
+            return
+        }
+
+        var contacted = 0
+        var received = 0
+        var pushed = 0
+        val collected = ArrayList<cp.player.core.insights.PlayRecord>()
+
+        online.forEach { peer ->
+            val snapshot = cp.player.core.sync.SyncTransport.pull(peer.address) ?: return@forEach
+            contacted++
+            val mine = _listeningRecords.value
+            val theirs = cp.player.core.sync.SyncMerge.sanitize(snapshot.records, now)
+            // 推**并集**而不是只推自己的新增：对端按 id 去重后，缺的正好是它没有的
+            // —— 一来一回两边都齐，这才是「无论谁新谁旧、交替使用」都成立的合并。
+            val union = cp.player.core.sync.SyncMerge.merge(mine, theirs)
+            pushed += cp.player.core.sync.SyncTransport.push(
+                peer.address,
+                cp.player.core.sync.SyncSnapshot(
+                    deviceId = deviceIdentity.deviceId,
+                    name = deviceIdentity.name,
+                    records = union,
+                ),
+            )
+            collected.addAll(cp.player.core.sync.SyncMerge.missing(mine, union))
+        }
+
+        val incoming = collected.take(SYNC_MAX_INGEST)
+        if (incoming.isNotEmpty()) {
+            var ok = 0
+            incoming.forEach { r ->
+                if (runCatching { insightsStore.append(r) }.getOrDefault(false)) ok++
+            }
+            received = ok
+            _listeningRecords.value = _listeningRecords.value + incoming
+            recomputeInsights()
+        }
+
+        _lanSyncState.value = _lanSyncState.value.copy(
+            lastSyncAt = now,
+            lastSyncSummary = "联系 $contacted 台 · 收到 $received 条 · 推送 $pushed 条",
+        )
+    }
+
+    /**
+     * 收下对端推来的记录：校验 → 去重 → 只把**本机没有的**落盘。
+     *
+     * 返回实际接受的条数（给应答里的 `accepted`，让对端能判断交换是否真的发生了）。
+     * 落盘失败的那几条**仍然计入内存与统计** —— 磁盘问题不该让这次同步白做，
+     * 但 [insightsWriteErrorFlow] 会亮出来。
+     */
+    private fun ingestRemote(snapshot: cp.player.core.sync.SyncSnapshot): Int {
+        val now = cp.player.core.util.currentTimeMillis()
+        val valid = cp.player.core.sync.SyncMerge.sanitize(snapshot.records, now)
+        val missing = cp.player.core.sync.SyncMerge.missing(_listeningRecords.value, valid)
+            .take(SYNC_MAX_INGEST)
+        if (missing.isEmpty()) return 0
+
+        var accepted = 0
+        missing.forEach { r ->
+            if (runCatching { insightsStore.append(r) }.getOrDefault(false)) accepted++
+        }
+        _insightsWriteError.value = if (accepted == missing.size) null else "部分听歌记录写入失败"
+        _listeningRecords.value = _listeningRecords.value + missing
+        recomputeInsights()
+        return accepted
+    }
+
 
     // ============ Provider 管理（封装 [MusicBackend] 并返回类型安全结果） ============
 

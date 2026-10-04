@@ -81,6 +81,7 @@ fun App(
         AppModel.syncPlaybackQuality()
         AppModel.restoreLocalServer()
         AppModel.restoreAggressiveStandby()
+        AppModel.restoreLanSync()
         AppModel.refreshUserProfile()
         AppModel.startHistoryRecorder()
         AppModel.startListeningRecorder()

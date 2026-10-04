@@ -202,8 +202,8 @@ private fun connectivityEntries(): List<SettingsEntry> = listOf(
     SettingsEntry(
         id = "standby",
         group = SettingsGroup.CONNECTIVITY,
-        title = "激进保活",
-        subtitle = "熄屏后维持在线，让设备发现与换设备播放仍可能命中",
+        title = "局域网设备",
+        subtitle = "同一网络里的其他 CPPlayer：互相发现与自动同步听歌记录",
         icon = Icons.Filled.Wifi,
         accent = SettingsAccent.TERTIARY,
         keywords = listOf(
