@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Headphones
@@ -74,6 +75,7 @@ fun PlayerMoreBottomSheet(
     onShowInfo: () -> Unit,
     onDislike: () -> Unit,
     onListenTogether: () -> Unit,
+    onHandoff: () -> Unit,
 ) {
     LegacyModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -205,8 +207,8 @@ fun PlayerMoreBottomSheet(
                     )
                 }
 
-                // 「一起听」单独占一行：它是**社交入口**，与上面两行的「本曲操作」不同类，
-                // 挤进 2×2 网格会变成第 5 个格子，既破格又和「分享」混淆。
+                // 这一行是「设备间」类操作（与上面 2×2 的「本曲操作」不同类）：
+                // 一起听 = 社交入口；转移到设备 = 把播放交给局域网里的另一台本应用。
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -219,6 +221,17 @@ fun PlayerMoreBottomSheet(
                         textColor = MaterialTheme.colorScheme.onPrimaryContainer,
                         onClick = {
                             onListenTogether()
+                            onDismiss()
+                        },
+                    )
+                    PlayerPillButton(
+                        modifier = Modifier.weight(1f),
+                        text = "转移到设备",
+                        icon = Icons.Filled.Cast,
+                        bgColor = MaterialTheme.colorScheme.secondaryContainer,
+                        textColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        onClick = {
+                            onHandoff()
                             onDismiss()
                         },
                     )
@@ -371,6 +384,7 @@ class PlayerMoreSheetState {
     var showAddToPlaylist by mutableStateOf(false)
     var showSleepTimer by mutableStateOf(false)
     var showSongInfo by mutableStateOf(false)
+    var showDevicePicker by mutableStateOf(false)
 }
 
 @Composable
@@ -427,6 +441,7 @@ fun PlayerMoreSheets(
             onListenTogether = {
                 rootNavigator.pushOrNotify(cp.player.app.ui.screen.ListenTogetherScreen())
             },
+            onHandoff = { sheets.showDevicePicker = true },
             onDislike = {
                 scope.launch {
                     val rawId = runCatching { CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)
@@ -442,6 +457,12 @@ fun PlayerMoreSheets(
         AddToPlaylistSheet(
             trackId = track.id,
             onDismiss = { sheets.showAddToPlaylist = false },
+        )
+    }
+
+    if (sheets.showDevicePicker) {
+        DevicePickerSheet(
+            onDismiss = { sheets.showDevicePicker = false },
         )
     }
 

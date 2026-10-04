@@ -98,11 +98,25 @@ object SyncMerge {
 }
 
 /**
+ * 队列里的一首（转移用的瘦身版，与 `playback.QueueItem` 字段对齐但独立定义 ——
+ * QueueItem 不是 @Serializable，且同步协议不该依赖播放器内部类型）。
+ */
+@Serializable
+data class HandoffTrack(
+    val mediaId: String,
+    val title: String = "",
+    val artist: String = "",
+    val album: String? = null,
+    val coverUrl: String? = null,
+    val durationMs: Long = 0L,
+)
+
+/**
  * 无缝转移播放的请求。
  *
- * ⚠️ 载荷刻意**极简**：只有「放哪首、从哪秒开始」。不带队列、不带音量、
- * 不带账号——队列转移涉及「对端要不要原样重建整个列表」的产品决策（方案 §4.5），
- * v1 只转移当前曲目；账号凭据**永远**不进网卡（方案红线）。
+ * ⚠️ 载荷刻意**极简**：只有「放哪首、从哪秒开始」+ 可选的整条队列。
+ * 不带音量、不带账号 —— 队列只给 mediaId 列表与当前下标，目标端用
+ * `playQueue` 原地重建（后台解析 URL，不阻塞应答）；账号凭据**永远**不进网卡。
  *
  * ### 时序纪律（这是本功能唯一一条铁律）
  * 源端发出请求后**继续播放**，直到收到 `accepted=true` 才暂停自己；
@@ -123,6 +137,13 @@ data class HandoffRequest(
     /** 源端当时是否在播 —— 决定目标端接手后是播还是停在那个位置。 */
     val wasPlaying: Boolean = true,
     val sentAt: Long = 0L,
+    /**
+     * 整条播放队列（含当前这首）；空 = 只转移当前一首。
+     * 队列转移是体验主线（「下一首」在目标端还能用），单首是降级路径。
+     */
+    val queue: List<HandoffTrack> = emptyList(),
+    /** 当前曲目在 [queue] 里的下标；-1 = 无效（目标端忽略队列）。 */
+    val queueIndex: Int = -1,
 )
 
 /** 转移请求的应答。`accepted=true` 的唯一含义是「目标端已经在放了」。 */
@@ -143,12 +164,26 @@ object HandoffGuard {
     /**
      * 校验并规整请求；不合格返回 null（调用方应回 400）。
      * 合格的返回**规整后**的副本：进度被 clamp 进合法区间，其余原样。
+     *
+     * 队列的校验策略与单字段不同：**坏条目剔除、整条超限降级为单首**，
+     * 而不是整个请求拒绝 —— 队列是体验增强，不该因为一条脏数据让转移整个失败。
      */
     fun sanitized(request: HandoffRequest): HandoffRequest? {
         if (request.mediaId.isBlank() || request.mediaId.length > MAX_MEDIA_ID) return null
         if (request.fromDeviceId.isBlank() || request.fromDeviceId.length > MAX_DEVICE_ID) return null
         if (request.trackName.length > MAX_TEXT || request.artist.length > MAX_TEXT) return null
-        return request.copy(positionMs = request.positionMs.coerceIn(0L, MAX_POSITION_MS))
+        val queue = request.queue.asSequence()
+            .filter { it.mediaId.isNotBlank() && it.mediaId.length <= MAX_MEDIA_ID }
+            .take(MAX_QUEUE)
+            .toList()
+        // 下标**按当前曲目的 mediaId 重查**，而不是沿用源端的数字 ——
+        // 剔除脏条目后原下标会指向别的歌；mediaId 是唯一可靠的身份。
+        val index = queue.indexOfFirst { it.mediaId == request.mediaId }.takeIf { it >= 0 } ?: -1
+        return request.copy(
+            positionMs = request.positionMs.coerceIn(0L, MAX_POSITION_MS),
+            queue = queue,
+            queueIndex = index,
+        )
     }
 
     private const val MAX_MEDIA_ID = 256
@@ -157,4 +192,7 @@ object HandoffGuard {
 
     /** 单首曲目不可能有两小时；越界只可能是构造出来的。 */
     private const val MAX_POSITION_MS = 2L * 3_600_000
+
+    /** 队列上限。个人播放器的队列到不了这个量级；超出按截断处理。 */
+    private const val MAX_QUEUE = 500
 }

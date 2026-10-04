@@ -1382,6 +1382,21 @@ object AppModel {
         }
         val wasPlaying = st.isPlaying
         val positionMs = st.positionMs
+        // 队列一起带走：目标端重建后「下一首/上一首」在那边照样能用。
+        // currentIndex 越界（乱序/随机模式下的边缘态）时按单首转移降级。
+        val queue = st.queue.map {
+            cp.player.core.sync.HandoffTrack(
+                mediaId = it.mediaId,
+                title = it.title,
+                artist = it.artist,
+                album = it.album,
+                coverUrl = it.coverUrl,
+                durationMs = it.durationMs,
+            )
+        }
+        val queueIndex = st.currentIndex
+            .takeIf { queue.isNotEmpty() && it in queue.indices && queue[it].mediaId == track.id }
+            ?: -1
         modelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             _handoffMessage.value = "正在转移到 $deviceName …"
             val result = cp.player.core.sync.SyncTransport.handoff(
@@ -1395,6 +1410,8 @@ object AppModel {
                     positionMs = positionMs,
                     wasPlaying = wasPlaying,
                     sentAt = cp.player.core.util.currentTimeMillis(),
+                    queue = queue,
+                    queueIndex = queueIndex,
                 ),
             )
             if (result?.accepted == true) {
@@ -1421,15 +1438,24 @@ object AppModel {
     private suspend fun receiveHandoff(req: cp.player.core.sync.HandoffRequest): cp.player.core.sync.HandoffResult {
         val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
             kotlinx.coroutines.withTimeoutOrNull(HANDOFF_START_TIMEOUT_MS) {
-                playback.play(req.mediaId)
+                // 有合法队列 → 用 playQueue 重建整条（当前曲目在下标处开始播，
+                // URL 后台解析不阻塞），「下一首/上一首」在目标端照常可用；
+                // 没有队列（旧对端 / 随机模式边缘态 / 校验降级）→ 单首路径。
+                val wantId = if (req.queue.isNotEmpty() && req.queueIndex >= 0) {
+                    playback.playQueue(req.queue.map { it.mediaId }, startIndex = req.queueIndex)
+                    req.queue[req.queueIndex].mediaId
+                } else {
+                    playback.play(req.mediaId)
+                    req.mediaId
+                }
                 // 等播放引擎真的换上这首（起流失败 / 音源未登录时永远不会换上）
                 val deadline = cp.player.core.util.currentTimeMillis() + HANDOFF_START_TIMEOUT_MS - 500
                 while (cp.player.core.util.currentTimeMillis() < deadline) {
-                    if (playback.state.value.currentTrack?.id == req.mediaId) break
+                    if (playback.state.value.currentTrack?.id == wantId) break
                     kotlinx.coroutines.delay(150)
                 }
                 val st = playback.state.value
-                if (st.currentTrack?.id != req.mediaId) {
+                if (st.currentTrack?.id != wantId) {
                     return@withTimeoutOrNull cp.player.core.sync.HandoffResult(
                         accepted = false,
                         message = "本机无法播放该曲目（音源未登录或曲目不存在）",

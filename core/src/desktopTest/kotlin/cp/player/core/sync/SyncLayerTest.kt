@@ -253,4 +253,66 @@ class SyncLayerTest {
         )
         assertEquals("ncm://song/2", back.mediaId)
     }
+
+    // ============ 队列转移（HandoffTrack + 队列校验） ============
+
+    private fun queueReq(
+        queue: List<HandoffTrack>,
+        queueIndex: Int,
+    ) = handoffReq().copy(queue = queue, queueIndex = queueIndex)
+
+    private fun track(mediaId: String) = HandoffTrack(
+        mediaId = mediaId,
+        title = "t-$mediaId",
+        artist = "a",
+        durationMs = 180_000,
+    )
+
+    @Test
+    fun `合法队列原样通过且下标保留`() {
+        val q = (1..3).map { track("ncm://song/$it") }
+        val req = queueReq(q, 1).copy(mediaId = "ncm://song/2")
+        val s = HandoffGuard.sanitized(req)!!
+        assertEquals(3, s.queue.size)
+        assertEquals(1, s.queueIndex)
+        assertEquals("ncm://song/2", s.queue[1].mediaId)
+    }
+
+    @Test
+    fun `队列里的脏条目被剔除且下标按mediaId重查`() {
+        // 位置 1 是脏的：剔除后「当前曲目 c」从 2 号位掉到 1 号位。
+        // 下标若沿用源端的数字 2，目标端就会从错误的曲目开始播 —— 按 mediaId 重查才对。
+        val q = listOf(track("a"), track("  "), track("c"), track("d"))
+        val req = queueReq(q, 2).copy(mediaId = "c")
+        val s = HandoffGuard.sanitized(req)!!
+        assertEquals(listOf("a", "c", "d"), s.queue.map { it.mediaId })
+        assertEquals(1, s.queueIndex)
+    }
+
+    @Test
+    fun `队列超限截断且当前曲不在队首段时降级为单首`() {
+        val q = (0 until 600).map { track("ncm://song/$it") }
+        val s = HandoffGuard.sanitized(queueReq(q, 0).copy(mediaId = "ncm://song/0"))!!
+        assertEquals(500, s.queue.size)
+        assertEquals(0, s.queueIndex)
+        // 当前曲目被截掉（550 >= 500）→ -1，目标端走单首路径
+        val s2 = HandoffGuard.sanitized(queueReq(q, 550).copy(mediaId = "ncm://song/550"))!!
+        assertEquals(-1, s2.queueIndex)
+    }
+
+    @Test
+    fun `空队列与不在队里的当前曲都归一到单首路径`() {
+        val s = HandoffGuard.sanitized(queueReq(emptyList(), 0))!!
+        assertEquals(-1, s.queueIndex)
+        // 当前曲不在队列里（数据不一致）→ -1
+        val s2 = HandoffGuard.sanitized(queueReq(listOf(track("a")), -3))!!
+        assertEquals(-1, s2.queueIndex)
+    }
+
+    @Test
+    fun `队列JSON往返保真`() {
+        val req = queueReq(listOf(track("a"), track("b")), 1)
+        val json = Json.encodeToString(HandoffRequest.serializer(), req)
+        assertEquals(req, Json.decodeFromString(HandoffRequest.serializer(), json))
+    }
 }
