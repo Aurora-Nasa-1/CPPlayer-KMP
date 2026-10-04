@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Share
@@ -48,6 +49,7 @@ import cp.player.app.AppModel
 import cp.player.app.platform.shareText
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.formatTimeMs
+import cp.player.app.ui.util.pushOrNotify
 import cp.player.app.ui.util.resized
 import cp.player.core.music.CPMediaId
 import cp.player.core.music.TrackSummary
@@ -71,6 +73,7 @@ fun PlayerMoreBottomSheet(
     onShare: () -> Unit,
     onShowInfo: () -> Unit,
     onDislike: () -> Unit,
+    onListenTogether: () -> Unit,
 ) {
     LegacyModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -197,6 +200,25 @@ fun PlayerMoreBottomSheet(
                         textColor = MaterialTheme.colorScheme.onErrorContainer,
                         onClick = {
                             onDislike()
+                            onDismiss()
+                        },
+                    )
+                }
+
+                // 「一起听」单独占一行：它是**社交入口**，与上面两行的「本曲操作」不同类，
+                // 挤进 2×2 网格会变成第 5 个格子，既破格又和「分享」混淆。
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    PlayerPillButton(
+                        modifier = Modifier.weight(1f),
+                        text = "一起听",
+                        icon = Icons.Filled.Headphones,
+                        bgColor = MaterialTheme.colorScheme.primaryContainer,
+                        textColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        onClick = {
+                            onListenTogether()
                             onDismiss()
                         },
                     )
@@ -381,6 +403,9 @@ fun PlayerMoreSheets(
 
     if (sheets.showMoreMenu) {
         val controller = AppModel.playback
+        // CompositionLocal 只能在 @Composable 上下文里读，而 onClick 回调不是组合上下文。
+        // 所以在这里（组合期）取出根 Navigator，回调里用捕获的引用。
+        val rootNavigator = cp.player.app.ui.util.LocalRootNavigator.current
         PlayerMoreBottomSheet(
             track = track,
             isDownloaded = AppModel.isDownloaded(track.id),
@@ -396,6 +421,12 @@ fun PlayerMoreSheets(
                 shareText("${track.name} - ${track.artist}\nhttps://music.163.com/song?id=${runCatching { CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)}")
             },
             onShowInfo = { sheets.showSongInfo = true },
+            // 一起听是**整页**体验（要盖住窗口含侧栏），所以显式 push 到**根** Navigator，
+            // 而不是 LocalNavigator —— 后者在桌面宽屏拿到的是内容区的内嵌 Navigator，
+            // 会把整页塞进内容区、贴着侧栏渲染（见 LocalRootNavigator 的 KDoc）。
+            onListenTogether = {
+                rootNavigator.pushOrNotify(cp.player.app.ui.screen.ListenTogetherScreen())
+            },
             onDislike = {
                 scope.launch {
                     runCatching {
