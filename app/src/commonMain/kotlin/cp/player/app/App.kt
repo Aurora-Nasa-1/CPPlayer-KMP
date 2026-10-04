@@ -50,6 +50,8 @@ import cp.player.app.ui.screen.StartupScreen
 import cp.player.app.platform.PlatformMediaControlsEffect
 import cp.player.app.ui.util.popToMainShell
 import cp.player.core.MusicBackend
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 /**
  * 应用根 Composable。
@@ -232,51 +234,15 @@ fun App(
                                     CompositionLocalProvider(
                                         cp.player.app.ui.anim.LocalSharedTransitionScope provides this,
                                     ) {
-                                        ScreenTransition(
-                                            navigator = navigator,
-                                            transition = {
-                                                // 播放页路由（从全局 MiniPlayer 展开）：fade，
-                                                // 让 sharedBounds 的「小卡片长成全屏」形变唱主角 ——
-                                                // 叠一层 slide 会和形变抢戏。
-                                                if (targetState is PlayerScreen ||
-                                                    initialState is PlayerScreen
-                                                ) {
-                                                    fadeIn(tween(300)) togetherWith fadeOut(tween(300))
-                                                } else if (targetState is PlaylistDetailScreen ||
-                                                    targetState is HomeGeneratedPlaylistScreen
-                                                ) {
-                                                    // 歌单打开：fade 交叉淡入（目标位置静态，飞行器叠加其上，
-                                                    // 见 CoverFlight）；返回 tab 时仍走下方 slide，保持「返回」的方向感。
-                                                    fadeIn(tween(300)) togetherWith fadeOut(tween(220))
-                                                } else {
-                                                    // 复刻 Voyager SlideTransition 默认值：spring + Push/Pop 方向。
-                                                    val spec = spring<IntOffset>(
-                                                        stiffness = 400f,
-                                                        visibilityThreshold = IntOffset.VisibilityThreshold,
-                                                    )
-                                                    if (navigator.lastEvent == StackEvent.Pop) {
-                                                        slideInHorizontally(spec) { -it } togetherWith
-                                                            slideOutHorizontally(spec) { it }
-                                                    } else {
-                                                        slideInHorizontally(spec) { it } togetherWith
-                                                            slideOutHorizontally(spec) { -it }
-                                                    }
-                                                }
-                                            },
-                                            // 每个页面（进 / 退场双方）各自拿到本次转场的
-                                            // AnimatedVisibilityScope —— 路由页的 sharedBounds
-                                            // 靠它挂到同一条转场时间线上。
-                                            content = { screen ->
-                                                CompositionLocalProvider(
-                                                    cp.player.app.ui.anim.LocalNavAnimatedVisibilityScope provides this,
-                                                ) {
-                                                    screen.Content()
-                                                }
-                                            },
-                                        )
-
                                         // MainScreen already owns this overlay; all other pages get the
                                         // same controller here so playback remains accessible globally.
+                                        //
+                                        // ⚠️ 页面（ScreenTransition）必须留在宿主**里面**（pageContent）：
+                                        // 小播放器的尾留白（LocalMiniPlayerTailSpace）由宿主 provide，
+                                        // 各页滚动容器的 contentPadding 读的就是它 —— 页面若在 provider
+                                        // 外面（曾经的写法），读到的永远是默认 0，整页路由（一起听 /
+                                        // 歌单详情 / 账号 / 设置 …）的列表末尾就会被浮层小播放器压住。
+                                        // 安卓上所有非 tab 页面都推在这条根栈上，症状最明显。
                                         GlobalMiniPlayerHost(
                                             // 聊天页（窄屏整页）也让位：那一页底部是固定输入栏，
                                             // 小播放器浮层会把它盖住并吞掉点击。
@@ -287,8 +253,50 @@ fun App(
                                                 navigator.lastItem !is PlayerScreen &&
                                                 navigator.lastItem !is ChatScreen,
                                             onClick = { navigator.push(PlayerScreen()) },
-                                            modifier = Modifier.align(Alignment.BottomCenter),
-                                        )
+                                        ) {
+                                            ScreenTransition(
+                                                navigator = navigator,
+                                                transition = {
+                                                    // 播放页路由（从全局 MiniPlayer 展开）：fade，
+                                                    // 让 sharedBounds 的「小卡片长成全屏」形变唱主角 ——
+                                                    // 叠一层 slide 会和形变抢戏。
+                                                    if (targetState is PlayerScreen ||
+                                                        initialState is PlayerScreen
+                                                    ) {
+                                                        fadeIn(tween(300)) togetherWith fadeOut(tween(300))
+                                                    } else if (targetState is PlaylistDetailScreen ||
+                                                        targetState is HomeGeneratedPlaylistScreen
+                                                    ) {
+                                                        // 歌单打开：fade 交叉淡入（目标位置静态，飞行器叠加其上，
+                                                        // 见 CoverFlight）；返回 tab 时仍走下方 slide，保持「返回」的方向感。
+                                                        fadeIn(tween(300)) togetherWith fadeOut(tween(220))
+                                                    } else {
+                                                        // 复刻 Voyager SlideTransition 默认值：spring + Push/Pop 方向。
+                                                        val spec = spring<IntOffset>(
+                                                            stiffness = 400f,
+                                                            visibilityThreshold = IntOffset.VisibilityThreshold,
+                                                        )
+                                                        if (navigator.lastEvent == StackEvent.Pop) {
+                                                            slideInHorizontally(spec) { -it } togetherWith
+                                                                slideOutHorizontally(spec) { it }
+                                                        } else {
+                                                            slideInHorizontally(spec) { it } togetherWith
+                                                                slideOutHorizontally(spec) { -it }
+                                                        }
+                                                    }
+                                                },
+                                                // 每个页面（进 / 退场双方）各自拿到本次转场的
+                                                // AnimatedVisibilityScope —— 路由页的 sharedBounds
+                                                // 靠它挂到同一条转场时间线上。
+                                                content = { screen ->
+                                                    CompositionLocalProvider(
+                                                        cp.player.app.ui.anim.LocalNavAnimatedVisibilityScope provides this,
+                                                    ) {
+                                                        screen.Content()
+                                                    }
+                                                },
+                                            )
+                                        }
                                     }
                                 }
 
@@ -306,9 +314,16 @@ fun App(
 /**
  * 全局 MiniPlayer 宿主（根 Navigator 上的路由页通用底栏；MainScreen 自己有一份）。
  *
- * ⚠️ 播放状态的订阅必须隔离在这个小 composable 里：播放中 `playback.state` 每 200ms
- * 换一个新对象（位置轮询），collect 在 [App] 外层会连带 Navigator / ScreenTransition
- * 一起重组 —— 与 [PlaybackMediaControlsBridge] 的 KDoc 同一理由。
+ * 结构是「**页面内容进宿主**」：[pageContent]（根 Navigator 渲染的整页路由）与
+ * 小播放器同被 `LocalMiniPlayerTailSpace` 的 provider 罩住 —— 尾留白必须同时管住
+ * 两端：各页滚动容器读它给列表末尾让位，浮层与预留量出自**同一个**状态源。
+ * 页面若在 provider 外面（曾经的写法），读到的永远是默认 0，整页路由的列表末尾
+ * 就会被小播放器压住。
+ *
+ * ⚠️ 完整播放状态的订阅隔离在最内层的 [GlobalMiniPlayerBar]：播放中
+ * `playback.state` 每 200ms 换一个新对象（位置轮询），collect 在宿主这一层会连带
+ * [pageContent]（整棵页面树）每 200ms 重组 —— 与 [PlaybackMediaControlsBridge]
+ * 的 KDoc 同一理由。宿主自己只订一个**起/停歌才翻转**的布尔（尾留白的判据）。
  *
  * ⚠️ `show` 翻转必须走 [AnimatedContent] 的 target，**不能**用外层 `if` 摘除整个块：
  * 从 MiniPlayer 打开播放页（push `PlayerScreen`）时，sharedBounds 需要退场方
@@ -320,16 +335,23 @@ fun App(
 private fun SharedTransitionScope.GlobalMiniPlayerHost(
     show: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
+    pageContent: @Composable () -> Unit,
 ) {
-    val playbackState by AppModel.playback.state.collectAsState()
+    // 尾留白的判据只依赖「有没有当前曲目」—— 起/停歌才翻转。派生成独立布尔流，
+    // 不订阅 200ms 的完整状态（理由见 KDoc）。remember 以 flow 实例为 key：
+    // playbackController 是 `by lazy` 单例，key 平时稳定；换后端时自动重派生。
+    val hasTrack by remember(AppModel.playback.state) {
+        AppModel.playback.state
+            .map { it.currentTrack != null }
+            .distinctUntilChanged()
+    }.collectAsState(initial = false)
     // 内容要让位的量：实测高度 + 12dp 呼吸缝，与 `MainScreen` 那一份同源同算法
-    // （见 LocalMiniPlayerTailSpace）。路由页（歌单详情 / 专辑 / 歌手 / 消息 …）
+    // （见 LocalMiniPlayerTailSpace）。路由页（歌单详情 / 专辑 / 歌手 / 一起听 …）
     // 的列表末尾靠它留白，小播放器浮在内容之上而不是坐进一条空白带里。
     val density = LocalDensity.current
     var barHeightPx by remember { mutableIntStateOf(0) }
     val tailSpace by animateDpAsState(
-        targetValue = if (show && playbackState.currentTrack != null && barHeightPx > 0) {
+        targetValue = if (show && hasTrack && barHeightPx > 0) {
             with(density) { barHeightPx.toDp() } + 12.dp
         } else 0.dp,
         animationSpec = cp.player.app.ui.theme.CpMotion.spatial(),
@@ -338,32 +360,58 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
     CompositionLocalProvider(
         cp.player.app.ui.component.LocalMiniPlayerTailSpace provides tailSpace,
     ) {
-        AnimatedContent(
-            targetState = show && playbackState.currentTrack != null,
-            transitionSpec = {
-                fadeIn(tween(300)) togetherWith fadeOut(tween(300))
-            },
-            label = "GlobalMiniPlayer",
-            modifier = modifier,
-        ) { visible ->
-            if (visible) {
-                // this（AnimatedContentScope）要在 with(this@…) 进到 SharedTransitionScope
-                // 之前捕获 —— with 块里 `this` 已经换人了。
-                val animScope = this
-                with(this@GlobalMiniPlayerHost) {
-                    MiniPlayer(
-                        state = playbackState,
-                        animatedVisibilityScope = animScope,
-                        onClick = onClick,
-                        onTogglePlay = AppModel.playback::togglePlayPause,
-                        onSkipPrev = AppModel.playback::skipPrevious,
-                        onSkipNext = AppModel.playback::skipNext,
-                        modifier = Modifier
-                            .navigationBarsPadding()
-                            // 实测高度回传给上面的尾留白（只量浮层自身，不含底部 inset）。
-                            .onSizeChanged { barHeightPx = it.height },
-                    )
-                }
+        Box(Modifier.fillMaxSize()) {
+            pageContent()
+            GlobalMiniPlayerBar(
+                show = show,
+                onClick = onClick,
+                onBarHeight = { barHeightPx = it },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+    }
+}
+
+/**
+ * 小播放器浮层本体 —— **完整播放状态的唯一订阅点**（见 [GlobalMiniPlayerHost]）。
+ *
+ * 播放中它随位置轮询每 200ms 重组一次，但重组范围只有这一小块：
+ * 页面（[GlobalMiniPlayerHost] 的 `pageContent`）与宿主 Box 都不在它的作用域内。
+ */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+private fun SharedTransitionScope.GlobalMiniPlayerBar(
+    show: Boolean,
+    onClick: () -> Unit,
+    onBarHeight: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val playbackState by AppModel.playback.state.collectAsState()
+    AnimatedContent(
+        targetState = show && playbackState.currentTrack != null,
+        transitionSpec = {
+            fadeIn(tween(300)) togetherWith fadeOut(tween(300))
+        },
+        label = "GlobalMiniPlayer",
+        modifier = modifier,
+    ) { visible ->
+        if (visible) {
+            // this（AnimatedContentScope）要在 with(this@…) 进到 SharedTransitionScope
+            // 之前捕获 —— with 块里 `this` 已经换人了。
+            val animScope = this
+            with(this@GlobalMiniPlayerBar) {
+                MiniPlayer(
+                    state = playbackState,
+                    animatedVisibilityScope = animScope,
+                    onClick = onClick,
+                    onTogglePlay = AppModel.playback::togglePlayPause,
+                    onSkipPrev = AppModel.playback::skipPrevious,
+                    onSkipNext = AppModel.playback::skipNext,
+                    modifier = Modifier
+                        .navigationBarsPadding()
+                        // 实测高度回传给宿主的尾留白（只量浮层自身，不含底部 inset）。
+                        .onSizeChanged { onBarHeight(it.height) },
+                )
             }
         }
     }
