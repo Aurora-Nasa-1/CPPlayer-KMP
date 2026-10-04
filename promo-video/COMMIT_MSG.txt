@@ -1,0 +1,6 @@
+promo-video: Remotion 产品宣传片工程（Linux 极客 / Windows 实用派 / Android 实用派 三支）
+
+- 手工脚手架（create-video 因 git 检测失败）；remotion 4.0.532 + @remotion/transitions
+- npm install 需 --ignore-scripts（沙箱内 esbuild postinstall spawnSync EBUSY）
+- 三个主合成：LinuxGeek 60s/1920x1080、WindowsPractical 50s/1920x1080、AndroidPractical 50s/1080x1920 竖屏
+- 场景全部注册为 connected compositions，可在 Studio 单独编辑

@@ -1,0 +1,23 @@
+{
+  "name": "cpplayer-promo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CPPlayer product promo videos (Remotion)",
+  "scripts": {
+    "studio": "remotion studio",
+    "render:linux": "remotion render LinuxGeek out/cpplayer-promo-linux-geek.mp4",
+    "render:windows": "remotion render WindowsPractical out/cpplayer-promo-windows.mp4",
+    "render:android": "remotion render AndroidPractical out/cpplayer-promo-android.mp4"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.532",
+    "@remotion/transitions": "4.0.532",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "remotion": "4.0.532"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "typescript": "^5.8.2"
+  }
+}
