@@ -244,6 +244,10 @@ class MusicRepository(private val api: MusicApiService) {
 
     suspend fun likeSong(songId: String, like: Boolean): Boolean = isApiSuccess(api.likeSong(songId, like))
 
+    /** 从云盘删除歌曲（上游 `user/cloud/del`）。 */
+    suspend fun deleteUserCloud(songId: String): Boolean =
+        isApiSuccess(api.deleteUserCloud(listOf(songId)))
+
     suspend fun getLoginStatus(): JsonElement = api.getLoginStatus()
 
     /** Transitional escape hatch for operations not yet migrated to typed repositories. */

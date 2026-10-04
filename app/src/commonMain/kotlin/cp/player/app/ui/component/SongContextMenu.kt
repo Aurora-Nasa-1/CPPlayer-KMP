@@ -38,6 +38,8 @@ data class SongMenuActions(
     val onShowInfo: (() -> Unit)? = null,
     /** 从队列移除（仅队列场景）。 */
     val onRemoveFromQueue: (() -> Unit)? = null,
+    /** 从云盘删除（仅云盘场景）。破坏性动作，调用方负责先走 CpConfirmHost 二次确认。 */
+    val onDelete: (() -> Unit)? = null,
 )
 
 /** 按 [SongOptionsSheet] 的动线顺序构建右键菜单项；没有可用动作时返回空列表。 */
@@ -81,6 +83,9 @@ fun songContextMenuItems(actions: SongMenuActions): List<CpContextMenuItem> = bu
     }
     actions.onShowInfo?.let {
         add(CpContextMenuItem("歌曲信息", Icons.Filled.Info, it))
+    }
+    actions.onDelete?.let {
+        add(CpContextMenuItem("从云盘删除", Icons.Filled.Delete, it, danger = true))
     }
 }
 
