@@ -27,6 +27,7 @@ import cp.player.app.platform.DesktopWindowPlacement
 import cp.player.app.platform.JbrWindowChrome
 import cp.player.app.platform.WindowDecorChoice
 import cp.player.app.platform.WindowsWindowCorners
+import cp.player.app.platform.installDesktopImageCacheLimit
 import cp.player.app.ui.component.DesktopTitleBar
 import cp.player.app.ui.component.TitleBarHeight
 import cp.player.app.ui.util.DesktopShell
@@ -100,6 +101,10 @@ fun main() {
     // 必须最先执行：Skiko 在创建渲染器时首次读取 skiko.* 属性并固化，
     // 晚于这一步再写就不生效了。见 DesktopRenderTuning 的时序约束说明。
     DesktopRenderTuning.applyBeforeSkikoInit()
+
+    // Coil 内存缓存上限必须在任何图片请求之前装上（SingletonImageLoader 首次
+    // get() 后 factory 固化，晚了 setSafe 直接抛），见 DesktopImageCacheTuning 的说明。
+    installDesktopImageCacheLimit()
 
     // 探测本身是纯反射 + 类加载，必须在建窗前完成（见上方 KDoc）。
     // ⚠️ 只是「跑在 JBR 上」不会让窗口变原生 —— 这条路必须像这样显式 opt-in，
