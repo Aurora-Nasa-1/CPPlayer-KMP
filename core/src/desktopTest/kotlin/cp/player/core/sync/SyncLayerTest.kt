@@ -3,8 +3,13 @@ package cp.player.core.sync
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.assertFailsWith
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 /**
  * 设备发现层的**协议契约**测试。
@@ -177,5 +182,75 @@ class SyncLayerTest {
         assertTrue(Peers.online(emptyList(), now = 0).isEmpty())
         assertTrue(Peers.remove(emptyList(), "x").isEmpty())
         assertNotEquals(0, Peers.upsert(emptyList(), beacon(), "1.1.1.1", 100).size)
+    }
+
+    // ============ 无缝转移（HandoffGuard + JSON 往返） ============
+
+    private fun handoffReq(
+        mediaId: String = "ncm://song/1",
+        fromDeviceId: String = "dev-1234",
+        positionMs: Long = 65_000,
+        trackName: String = "歌名",
+        artist: String = "歌手",
+    ) = HandoffRequest(
+        fromDeviceId = fromDeviceId,
+        fromName = "我的手机",
+        mediaId = mediaId,
+        trackName = trackName,
+        artist = artist,
+        positionMs = positionMs,
+        wasPlaying = true,
+        sentAt = 1_000_000L,
+    )
+
+    @Test
+    fun `转移请求合法时原样通过且进度被保留`() {
+        val s = HandoffGuard.sanitized(handoffReq())
+        assertNotNull(s)
+        assertEquals(65_000L, s.positionMs)
+        assertEquals("ncm://song/1", s.mediaId)
+    }
+
+    @Test
+    fun `转移请求媒体id为空或超长时拒绝`() {
+        assertNull(HandoffGuard.sanitized(handoffReq(mediaId = "")))
+        assertNull(HandoffGuard.sanitized(handoffReq(mediaId = " ".repeat(8))))
+        assertNull(HandoffGuard.sanitized(handoffReq(mediaId = "x".repeat(300))))
+        assertNull(HandoffGuard.sanitized(handoffReq(fromDeviceId = "")))
+    }
+
+    @Test
+    fun `转移请求进度越界被clamp而不是拒绝`() {
+        // 用户把进度条拖到头是正常操作，负数/超大值 clamp 回区间即可，
+        // 拒绝会让合法的「从头听」转移莫名失败。
+        assertEquals(0L, HandoffGuard.sanitized(handoffReq(positionMs = -5))!!.positionMs)
+        assertEquals(
+            2L * 3_600_000,
+            HandoffGuard.sanitized(handoffReq(positionMs = Long.MAX_VALUE))!!.positionMs,
+        )
+    }
+
+    @Test
+    fun `转移请求JSON往返保真`() {
+        val json = Json.encodeToString(HandoffRequest.serializer(), handoffReq())
+        val back = Json.decodeFromString(HandoffRequest.serializer(), json)
+        assertEquals(handoffReq(), back)
+        // 应答的默认值也要能编码（对端旧版本不认识新字段时 ignoreUnknownKeys 兜底）
+        val ok = Json.encodeToString(HandoffResult.serializer(), HandoffResult(accepted = true))
+        assertTrue(Json.decodeFromString(HandoffResult.serializer(), ok).accepted)
+    }
+
+    @Test
+    fun `转移请求垃圾JSON与多余字段安全处理`() {
+        assertFailsWith<SerializationException> {
+            Json.decodeFromString(HandoffRequest.serializer(), "not json at all")
+        }
+        // ignoreUnknownKeys：新协议字段在旧对端上不炸
+        val lenient = Json { ignoreUnknownKeys = true }
+        val back = lenient.decodeFromString(
+            HandoffRequest.serializer(),
+            """{"fromDeviceId":"d1","mediaId":"ncm://song/2","futureField":123}""",
+        )
+        assertEquals("ncm://song/2", back.mediaId)
     }
 }

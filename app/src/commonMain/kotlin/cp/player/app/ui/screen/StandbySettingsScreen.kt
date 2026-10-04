@@ -67,6 +67,10 @@ class StandbySettingsScreen : Screen {
         val discoveryError by AppModel.deviceDiscoveryErrorFlow.collectAsState()
         val lanSyncEnabled by AppModel.lanSyncEnabledFlow.collectAsState()
         val lanSyncState by AppModel.lanSyncStateFlow.collectAsState()
+        val handoffMessage by AppModel.handoffMessageFlow.collectAsState()
+        // 转移按钮的可点判据：本机真的在放一首曲子 —— 没在放就没有「转移」可言。
+        val playbackState by AppModel.playback.state.collectAsState()
+        val nowPlayingName = playbackState.currentTrack?.name
 
         // 「在线与否」是时间的函数（PeerState 只存 lastSeenAt），
         // 而 peers 流只在收到信标 / 遗忘设备时才变 —— 对端静默退出时列表不会自己变。
@@ -219,17 +223,17 @@ class StandbySettingsScreen : Screen {
                 }
 
                 if (online.isNotEmpty()) {
-                    SettingsSection("在线") {
+                    SettingsSection("在线 —— 点击把当前播放转移过去") {
                         online.forEachIndexed { index, peer ->
                             SettingsClickItem(
                                 title = peer.displayName,
                                 subtitle = "${peer.address}:${peer.streamPort} · ${peer.platform}" +
-                                    (peer.appVersion.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
+                                    (peer.appVersion.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "") +
+                                    if (nowPlayingName == null) " · 本机未在播放" else "",
                                 index = index,
                                 total = online.size,
-                                // 配对与转移尚未实现：现在点了也没有可做的事，
-                                // 与其给出一个「点了没反应」的可点行，不如明确不可点。
-                                enabled = false,
+                                enabled = nowPlayingName != null,
+                                onClick = { AppModel.handoffTo(peer.address, peer.displayName) },
                             )
                         }
                     }
@@ -256,9 +260,27 @@ class StandbySettingsScreen : Screen {
                         "④ 多网卡机器（VPN、虚拟机网卡）可能需要多试几次。",
                 )
 
+                if (handoffMessage != null) {
+                    SettingsNote(
+                        text = handoffMessage.orEmpty(),
+                        emphasis = if (handoffMessage.orEmpty().startsWith("转移失败")) {
+                            SettingsNoteEmphasis.WARNING
+                        } else {
+                            SettingsNoteEmphasis.INFO
+                        },
+                    )
+                }
+
                 SettingsNote(
-                    "需要说明的是：本页的设备列表只回答「互相能发现」，" +
-                        "配对、数据同步与换设备播放都还没有实现 —— 那是接下来的工作。",
+                    "无缝转移的前提：对方也开着「自动同步」（同步服务在监听），" +
+                        "并且已登录**同一音源** —— 转移的只是「放哪首、从哪秒开始」，" +
+                        "两端各自从自己的音源取播放地址。任一条件不满足会得到明确的失败提示，" +
+                        "本机继续播放、不会静音。",
+                )
+
+                SettingsNote(
+                    "仍需配对鉴权：转移与同步目前都未认证，端口只应出现在私人网络。" +
+                        "配对（PIN / 二维码）是下一步的工作。",
                 )
 
                 SettingsNote(

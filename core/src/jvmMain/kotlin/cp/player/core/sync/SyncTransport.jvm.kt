@@ -54,6 +54,13 @@ object SyncTransport {
         private val snapshotProvider: () -> SyncSnapshot,
         private val onIncoming: (SyncSnapshot) -> Int,
         private val onStateChanged: (Boolean, String?) -> Unit,
+        /**
+         * 收到转移请求时的处理方（suspend —— 目标端要**等真的出声了**才应答）。
+         * 默认实现回答「不支持」，让旧调用方不传也能跑。
+         */
+        private val onHandoff: suspend (HandoffRequest) -> HandoffResult = {
+            HandoffResult(accepted = false, message = "对端不支持转移播放")
+        },
     ) {
         private var server: EmbeddedServer<*, *>? = null
 
@@ -86,6 +93,22 @@ object SyncTransport {
                             }
                             val accepted = onIncoming(snapshot)
                             call.respondJson(json.encodeToString(SyncAck(accepted = accepted)))
+                        }
+                        post(SYNC_ROUTE_HANDOFF) {
+                            val body = call.receiveText()
+                            val raw = runCatching {
+                                json.decodeFromString(HandoffRequest.serializer(), body)
+                            }.getOrNull()
+                            val req = raw?.let { HandoffGuard.sanitized(it) }
+                            if (req == null) {
+                                call.respondJson(
+                                    json.encodeToString(HandoffResult(accepted = false, message = "请求无效")),
+                                    HttpStatusCode.BadRequest,
+                                )
+                                return@post
+                            }
+                            val result = onHandoff(req)
+                            call.respondJson(json.encodeToString(result))
                         }
                     }
                 }
@@ -135,11 +158,29 @@ object SyncTransport {
         }.getOrDefault(0)
     }
 
-    private fun request(method: String, url: String, body: String?): String? = runCatching {
+    /**
+     * 发起无缝转移。
+     *
+     * ⚠️ **调用方在收到 `accepted=true` 之前绝不能停本机播放** —— 目标端是
+     * 「真的出声了」才应答的，所以这个调用的返回就是 READY 信号本身。
+     * 读超时给了 10s：目标端要等播放真正启动（起流 + 解码首帧），比普通请求慢。
+     * 返回 null = 设备无响应/超时 —— 调用方应保持本机播放不动并如实提示。
+     */
+    fun handoff(address: String, request: HandoffRequest): HandoffResult? {
+        val body = request(
+            "POST",
+            "http://$address:$SYNC_HTTP_PORT$SYNC_ROUTE_HANDOFF",
+            json.encodeToString(request),
+            readTimeoutMs = 10_000,
+        ) ?: return null
+        return runCatching { json.decodeFromString(HandoffResult.serializer(), body) }.getOrNull()
+    }
+
+    private fun request(method: String, url: String, body: String?, readTimeoutMs: Int = 8_000): String? = runCatching {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = 3_000
-            readTimeout = 8_000
+            readTimeout = readTimeoutMs
             instanceFollowRedirects = true
             if (body != null) {
                 doOutput = true

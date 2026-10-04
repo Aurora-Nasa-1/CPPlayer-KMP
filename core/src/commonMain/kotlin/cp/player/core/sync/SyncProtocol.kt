@@ -29,6 +29,9 @@ const val SYNC_HTTP_PREFIX = "/api/v1/sync"
 /** 拉取对端全部听歌记录。 */
 const val SYNC_ROUTE_RECORDS = "$SYNC_HTTP_PREFIX/records"
 
+/** 无缝转移播放：把「正在播什么、播到哪了」推给目标设备，由它接手。 */
+const val SYNC_ROUTE_HANDOFF = "$SYNC_HTTP_PREFIX/handoff"
+
 /** 单次交换的记录数上限。超限的**丢弃并少收**，而不是撑爆内存 —— 这是对畸形/恶意请求的唯一防线。 */
 const val SYNC_MAX_RECORDS = 20_000
 
@@ -92,4 +95,66 @@ object SyncMerge {
 
     private const val TEN_YEARS_MS = 10L * 365 * 24 * 3_600_000
     private const val ONE_DAY_MS = 24L * 3_600_000
+}
+
+/**
+ * 无缝转移播放的请求。
+ *
+ * ⚠️ 载荷刻意**极简**：只有「放哪首、从哪秒开始」。不带队列、不带音量、
+ * 不带账号——队列转移涉及「对端要不要原样重建整个列表」的产品决策（方案 §4.5），
+ * v1 只转移当前曲目；账号凭据**永远**不进网卡（方案红线）。
+ *
+ * ### 时序纪律（这是本功能唯一一条铁律）
+ * 源端发出请求后**继续播放**，直到收到 `accepted=true` 才暂停自己；
+ * 目标端把「真的出声了」作为应答的前提 —— 先停再起会留下一段谁都不响的空窗，
+ * 那 0.5 秒的静音就是「无缝」与「卡了一下」的全部区别。
+ */
+@Serializable
+data class HandoffRequest(
+    /** 发起方的设备 id（仅用于目标端展示「谁推过来的」，不作鉴权）。 */
+    val fromDeviceId: String,
+    val fromName: String = "",
+    /** 目标端要播的曲目 id（含音源 scheme，如 `ncm://song/123`）。 */
+    val mediaId: String,
+    val trackName: String = "",
+    val artist: String = "",
+    /** 源端捕获请求时的进度。目标端接手后会有一点回退（握手耗时内源端还在走），v1 接受 ≤2s。 */
+    val positionMs: Long = 0L,
+    /** 源端当时是否在播 —— 决定目标端接手后是播还是停在那个位置。 */
+    val wasPlaying: Boolean = true,
+    val sentAt: Long = 0L,
+)
+
+/** 转移请求的应答。`accepted=true` 的唯一含义是「目标端已经在放了」。 */
+@Serializable
+data class HandoffResult(
+    val accepted: Boolean = false,
+    val message: String? = null,
+)
+
+/**
+ * 转移请求的入参校验（纯函数，可单测）。
+ *
+ * 与 [SyncMerge.sanitize] 同一立场：同步面未认证，这里就是防线 ——
+ * 畸形请求拒绝掉，而不是让 `play("")` 之类的值一路打进播放引擎。
+ */
+object HandoffGuard {
+
+    /**
+     * 校验并规整请求；不合格返回 null（调用方应回 400）。
+     * 合格的返回**规整后**的副本：进度被 clamp 进合法区间，其余原样。
+     */
+    fun sanitized(request: HandoffRequest): HandoffRequest? {
+        if (request.mediaId.isBlank() || request.mediaId.length > MAX_MEDIA_ID) return null
+        if (request.fromDeviceId.isBlank() || request.fromDeviceId.length > MAX_DEVICE_ID) return null
+        if (request.trackName.length > MAX_TEXT || request.artist.length > MAX_TEXT) return null
+        return request.copy(positionMs = request.positionMs.coerceIn(0L, MAX_POSITION_MS))
+    }
+
+    private const val MAX_MEDIA_ID = 256
+    private const val MAX_DEVICE_ID = 64
+    private const val MAX_TEXT = 256
+
+    /** 单首曲目不可能有两小时；越界只可能是构造出来的。 */
+    private const val MAX_POSITION_MS = 2L * 3_600_000
 }

@@ -1356,6 +1356,105 @@ object AppModel {
         if (_lanSyncEnabled.value) startLanSync()
     }
 
+    // ============ 无缝转移播放 ============
+
+    /** 最近一次转移的状态文案（成功 / 失败 / 接管提示），给设备页展示。 */
+    private val _handoffMessage = MutableStateFlow<String?>(null)
+    val handoffMessageFlow: StateFlow<String?> = _handoffMessage.asStateFlow()
+
+    /**
+     * 把本机当前播放**无缝转移**到目标设备。
+     *
+     * ### 铁律：收到 READY（`accepted=true`）之前绝不动本机播放
+     * 目标端是「真的出声了」才应答的 —— 先停再起会留下一段谁都不响的空窗。
+     * 超时 / 拒绝 / 无响应时本机**什么都不做**，只提示失败；用户听感零损失。
+     * 成功后本机只是**暂停**（保留进度与队列），随时可以一键接着放。
+     *
+     * ⚠️ 目标端必须开着「自动同步」（同步服务在监听）且已登录同一音源，
+     * 否则它无法解析曲目 —— 这会表现为明确的失败提示，而不是静音。
+     */
+    fun handoffTo(address: String, deviceName: String) {
+        val st = playback.state.value
+        val track = st.currentTrack
+        if (track == null) {
+            _handoffMessage.value = "当前没有正在播放的曲目，无法转移"
+            return
+        }
+        val wasPlaying = st.isPlaying
+        val positionMs = st.positionMs
+        modelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _handoffMessage.value = "正在转移到 $deviceName …"
+            val result = cp.player.core.sync.SyncTransport.handoff(
+                address,
+                cp.player.core.sync.HandoffRequest(
+                    fromDeviceId = deviceIdentity.deviceId,
+                    fromName = deviceIdentity.name,
+                    mediaId = track.id,
+                    trackName = track.name,
+                    artist = track.artist,
+                    positionMs = positionMs,
+                    wasPlaying = wasPlaying,
+                    sentAt = cp.player.core.util.currentTimeMillis(),
+                ),
+            )
+            if (result?.accepted == true) {
+                if (wasPlaying) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        playback.pause()
+                    }
+                }
+                _handoffMessage.value = "已转移到 $deviceName（本机已暂停，进度保留）"
+            } else {
+                _handoffMessage.value = "转移失败：${result?.message ?: "设备无响应"} —— 本机继续播放"
+            }
+        }
+    }
+
+    /**
+     * 接管对端推来的播放（目标端，suspend —— 应答前要等真的出声）。
+     *
+     * 播控线程约定与 `IntegrationService` 相同：写操作必须回
+     * `Dispatchers.Main`（Android 主线程 / 桌面 EDT）。
+     * 「READY」的判据是 `currentTrack` 变成请求的那首 —— 起流、URL 解析失败
+     * 都过不了这一关，源端就会收到明确的失败并继续播放。
+     */
+    private suspend fun receiveHandoff(req: cp.player.core.sync.HandoffRequest): cp.player.core.sync.HandoffResult {
+        val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+            kotlinx.coroutines.withTimeoutOrNull(HANDOFF_START_TIMEOUT_MS) {
+                playback.play(req.mediaId)
+                // 等播放引擎真的换上这首（起流失败 / 音源未登录时永远不会换上）
+                val deadline = cp.player.core.util.currentTimeMillis() + HANDOFF_START_TIMEOUT_MS - 500
+                while (cp.player.core.util.currentTimeMillis() < deadline) {
+                    if (playback.state.value.currentTrack?.id == req.mediaId) break
+                    kotlinx.coroutines.delay(150)
+                }
+                val st = playback.state.value
+                if (st.currentTrack?.id != req.mediaId) {
+                    return@withTimeoutOrNull cp.player.core.sync.HandoffResult(
+                        accepted = false,
+                        message = "本机无法播放该曲目（音源未登录或曲目不存在）",
+                    )
+                }
+                if (req.positionMs > 1_500L) playback.seekTo(req.positionMs)
+                if (!req.wasPlaying) playback.pause()
+                cp.player.core.sync.HandoffResult(accepted = true)
+            } ?: cp.player.core.sync.HandoffResult(
+                accepted = false,
+                message = "本机播放未能在时限内启动",
+            )
+        }
+        val from = req.fromName.ifBlank { req.fromDeviceId.take(8) }
+        _handoffMessage.value = if (result.accepted) {
+            "已接管 $from 的播放：${req.trackName}"
+        } else {
+            "${req.fromName.ifBlank { "对端" }} 想转移播放，但接管失败：${result.message}"
+        }
+        return result
+    }
+
+    /** 目标端等待「真的出声」的上限；必须小于客户端读超时（10s），给应答留出余量。 */
+    private const val HANDOFF_START_TIMEOUT_MS = 7_000L
+
     private fun startLanSync() {
         if (syncServer == null) {
             val server = cp.player.core.sync.SyncTransport.Server(
@@ -1367,6 +1466,7 @@ object AppModel {
                     )
                 },
                 onIncoming = { snapshot -> ingestRemote(snapshot) },
+                onHandoff = { req -> receiveHandoff(req) },
                 onStateChanged = { running, err ->
                     _lanSyncState.value = _lanSyncState.value.copy(serverRunning = running, error = err)
                 },
