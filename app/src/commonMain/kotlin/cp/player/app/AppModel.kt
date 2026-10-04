@@ -887,6 +887,9 @@ object AppModel {
 
     private var profileRefreshJob: kotlinx.coroutines.Job? = null
 
+    /** 在途的未读数刷新（见 [refreshUnreadMessages]）。 */
+    private var unreadRefreshJob: kotlinx.coroutines.Job? = null
+
     /** AppModel 内部协程域（资料/收藏刷新等后台任务）。 */
     private val modelScope = kotlinx.coroutines.CoroutineScope(
         kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default
@@ -946,7 +949,10 @@ object AppModel {
     val unreadMessagesFlow: StateFlow<Int> = _unreadMessages.asStateFlow()
 
     fun refreshUnreadMessages() {
-        modelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        // 取消在途的旧请求：切号/登出瞬间，上一个账号的慢响应不能覆盖新状态
+        // （与 refreshUserProfile 的 profileRefreshJob 同一模式）。
+        unreadRefreshJob?.cancel()
+        unreadRefreshJob = modelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             _unreadMessages.value = runCatching { socialRepository.getUnreadCount() }.getOrDefault(0)
         }
     }

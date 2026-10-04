@@ -139,6 +139,21 @@ actual object PlatformSupport {
 
     actual fun readTextFile(path: String): String? = File(path).takeIf { it.exists() }?.readText()
 
+    actual fun sha256Hex(path: String): String? = runCatching {
+        val file = File(path)
+        if (!file.exists()) return@runCatching null
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buf = ByteArray(64 * 1024)
+            while (true) {
+                val n = input.read(buf)
+                if (n <= 0) break
+                md.update(buf, 0, n)
+            }
+        }
+        md.digest().joinToString("") { b -> (b.toInt() and 0xFF).toString(16).padStart(2, '0') }
+    }.getOrNull()
+
     actual fun exists(path: String): Boolean = File(path).exists()
 
     actual fun fileSize(path: String): Long = File(path).takeIf { it.exists() }?.length() ?: 0L
@@ -260,7 +275,42 @@ actual object PlatformSupport {
     actual fun moveDir(src: String, dest: String): Boolean {
         val srcFile = File(src)
         if (!srcFile.exists()) return false
-        if (PlatformSupport.exists(dest)) PlatformSupport.deleteRecursively(dest)
-        return srcFile.renameTo(File(dest))
+        val destFile = File(dest)
+        // 同卷**原子**重命名：成功后旧目录「原地变成」新目录，整个操作没有
+        // 「旧目录已删、新目录还没到」的窗口 —— 这是模块安装最不能出的状态。
+        // 先试原子路径（目标通常已被调用方清理，故会成功）。
+        try {
+            java.nio.file.Files.move(
+                srcFile.toPath(), destFile.toPath(),
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+            )
+            return true
+        } catch (e: Exception) {
+            // 跨卷 / 目标被占用（Windows 上活跃 jni 模块的 dll 常被锁）⇒ 落到可回滚路径。
+        }
+        // 目标已存在时**先挪成 .bak 备份，而不是直接删**：替换失败还能把旧目录挪回来，
+        // 绝不出现「旧模块被删掉、新模块又没装上」的空窗。
+        val backup = File("$dest.bak-${System.currentTimeMillis()}")
+        var destBackedUp = false
+        if (destFile.exists()) {
+            if (!destFile.renameTo(backup)) return false // 连备份都做不到：保留旧目录，直接失败
+            destBackedUp = true
+        }
+        val moved = try {
+            java.nio.file.Files.move(
+                srcFile.toPath(), destFile.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+            )
+            true
+        } catch (e: Exception) {
+            srcFile.renameTo(destFile)
+        }
+        return if (moved) {
+            if (destBackedUp) runCatching { backup.deleteRecursively() }
+            true
+        } else {
+            if (destBackedUp) backup.renameTo(destFile) // 回滚：至少留一个可用模块
+            false
+        }
     }
 }

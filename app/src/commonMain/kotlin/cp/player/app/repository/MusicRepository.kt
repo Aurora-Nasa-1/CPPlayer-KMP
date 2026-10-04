@@ -19,6 +19,7 @@ import cp.player.core.music.RankingSummary
 import cp.player.core.music.SearchResult
 import cp.player.core.music.SongDetailInfo
 import cp.player.core.music.TrackSummary
+import cp.player.core.util.runCatchingExceptCancellation
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -136,9 +137,9 @@ class MusicRepository(private val api: MusicApiService) {
     suspend fun getAlbumDetail(id: Long): MusicResult<AlbumDetail> =
         MusicSourceFromApi.getAlbumDetail(api, id)
 
-    /** 歌手介绍/资料；返回 null 表示这个 id 不是歌手。 */
+    /** 歌手介绍/资料；返回 null 表示这个 id 不是歌手。取消（如快速离开页面）会正常上抛。 */
     suspend fun getArtistProfile(id: Long): ArtistProfile? =
-        runCatching { MusicSourceFromApi.parseArtistProfile(api.getArtistDetail(id)) }.getOrNull()
+        runCatchingExceptCancellation { MusicSourceFromApi.parseArtistProfile(api.getArtistDetail(id)) }.getOrNull()
 
     /** 歌手热门歌曲（最多 50 首）。 */
     suspend fun getArtistTopSongs(id: Long): MusicResult<List<TrackSummary>> =

@@ -106,6 +106,17 @@ class ModuleManager(
             }
             val manifestText = PlatformSupport.readTextFile(manifestPath) ?: ""
             val manifest = json.decodeFromString(ModuleManifest.serializer(), manifestText)
+            // 完整性校验（CODE_REVIEW K5）：manifest 声明了 sha256 时，对原始 zip 字节
+            // 重算比对。jni/binary 模块会执行原生代码，损坏/被篡改的包不能静默加载。
+            // 字段缺省 = 旧格式包，跳过校验（向后兼容）。
+            manifest.sha256?.let { expected ->
+                val actual = PlatformSupport.sha256Hex(zipPath)
+                if (actual == null || !actual.equals(expected, ignoreCase = true)) {
+                    PlatformSupport.deleteRecursively(tempDir)
+                    lastLoadError = if (actual == null) "无法读取模块包以校验完整性" else "模块包完整性校验失败（sha256 不匹配）"
+                    return false
+                }
+            }
             if (expectedId != null && manifest.id != expectedId) {
                 PlatformSupport.deleteRecursively(tempDir)
                 lastLoadError = "模块包不匹配：包内 id 为 ${manifest.id}，无法更新 $expectedId"

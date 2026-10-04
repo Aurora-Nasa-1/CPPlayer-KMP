@@ -127,8 +127,12 @@ object TtmlParser {
         var text = lineText.toString().replace(WHITESPACE_REGEX, " ").trim()
         var lineWords: List<SyncedLyricLine.SyncedWord> = words
         if (lineWords.size == 1) {
-            // 整行只有一个「词」且时间覆盖整行 ⇒ 这是行级 span，不是逐字歌词
-            lineWords = emptyList()
+            // 整行只有一个「词」**且其时间恰好覆盖整行** ⇒ 这是行级 span（整行高亮），不是逐字歌词。
+            // ⚠️ 不能只看数量：真实卡拉 OK 里只有一个词的短行/尾音行，span 时间往往只是
+            // 行区间的子区间 —— 那种行必须保留词级时间，否则逐词高亮退化成整行高亮
+            // （CODE_REVIEW B6：旧实现不比较时间，一律丢弃）。
+            val w = lineWords.single()
+            if (w.beginTime == lineBegin && w.endTime == lineEnd) lineWords = emptyList()
         }
         if (text.isEmpty() && lineWords.isEmpty()) return null
         // 无词级时间的纯文本行：文本不该带多余空格

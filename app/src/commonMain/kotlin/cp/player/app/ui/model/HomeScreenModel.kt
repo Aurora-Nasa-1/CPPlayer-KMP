@@ -4,6 +4,7 @@ import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
 import cp.player.core.BackendResult
+import cp.player.core.util.runCatchingExceptCancellation
 import cp.player.core.music.AlbumSummary
 import cp.player.core.music.ArtistSummary
 import cp.player.core.music.BannerItem
@@ -513,7 +514,7 @@ class HomeScreenModel(
      * 所以每个分支都必须自己兜住异常。
      */
     private suspend fun <T> safe(block: suspend () -> MusicResult<T>): MusicResult<T> =
-        runCatching { block() }.getOrElse { BackendResult.Error(it.message ?: "加载失败", cause = it) }
+        runCatchingExceptCancellation { block() }.getOrElse { BackendResult.Error(it.message ?: "加载失败", cause = it) }
 
     private fun <T> MusicResult<List<T>>.dataOrEmpty(): List<T> =
         (this as? BackendResult.Success)?.data.orEmpty()

@@ -72,4 +72,17 @@ internal class ControllerForwardingPlayer(
         val c = controller()
         if (c != null) c.seekTo(target) else super.seekTo(target)
     }
+
+    /**
+     * **释放权显式归属：本类不释放任何东西。**
+     *
+     * `ForwardingPlayer.release()` 默认转发给被包装的播放器 —— 而这里包的是
+     * [cp.player.core.playback.SharedMedia3Player] 的**单例** ExoPlayer。
+     * 一旦有人对本对象调 `release()`（典型：service `onDestroy` 顺手释放自己 new 的
+     * 转发壳），就会误释放会话正握着的单例 ⇒ 会话脱钩、通知恒 IDLE（CODE_REVIEW K10）。
+     * 事实核查（media3 1.4.1 / 1.11.1 字节码）：`MediaSession.release()` 本身**不**释放
+     * Player，当前无人调到这里 —— no-op 把这条隐患路径封死，真实释放只属于
+     * [cp.player.core.playback.SharedMedia3Player.release]。
+     */
+    override fun release() = Unit
 }

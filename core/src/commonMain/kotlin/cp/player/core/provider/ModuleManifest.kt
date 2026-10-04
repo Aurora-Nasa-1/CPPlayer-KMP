@@ -39,5 +39,14 @@ data class ModuleManifest(
      *   声明了 sms/qr/email 时仍会强制附加上）；
      *   `"captchaImage"` 表示登录流程支持图形验证码（见 `captcha/image` 方法）。
      */
-    val loginMethods: List<String>? = null
+    val loginMethods: List<String>? = null,
+    /**
+     * 整个模块 zip 包的 SHA-256（十六进制，大小写不敏感，可选）。
+     *
+     * 导入 / 更新时宿主会对**原始 zip 字节**重新计算并与本字段比对，不匹配即拒绝安装
+     * （损坏或被篡改的包——尤其 jni/binary 类型会执行原生代码——不再被静默加载）。
+     * **null / 缺省 = 跳过校验**（向后兼容旧格式模块包；CODE_REVIEW K5）。
+     * 生成方式：`sha256sum xxx.zip`，把结果填进 manifest.json 后重新打包。
+     */
+    val sha256: String? = null
 )

@@ -64,6 +64,30 @@ class TtmlParserTest {
     }
 
     @Test
+    fun singleWordSpanCoveringWholeLineIsLineLevel() {
+        // 唯一「词」的时间恰好覆盖整行 ⇒ 行级 span（整行高亮），词级时间应丢弃
+        val raw = """
+            <tt><body><div><p begin="1.000" end="2.000"><span begin="1.000" end="2.000">whole</span></p></div></body></tt>
+        """.trimIndent()
+        val line = TtmlParser.parse(raw).single()
+        assertTrue(line.words.isEmpty())
+        assertEquals("whole", line.text)
+    }
+
+    @Test
+    fun singleWordSpanWithSubintervalStaysWordLevel() {
+        // B6 回归：唯一「词」的时间只是行区间的子区间（短行/尾音行）⇒ 仍是逐字行，
+        // 不得退化成整行高亮。旧行为不看时间一律丢弃 words。
+        val raw = """
+            <tt><body><div><p begin="1.000" end="4.000"><span begin="1.000" end="2.500">tail</span></p></div></body></tt>
+        """.trimIndent()
+        val line = TtmlParser.parse(raw).single()
+        assertEquals(1, line.words.size)
+        assertEquals(1_000L, line.words[0].beginTime)
+        assertEquals(2_500L, line.words[0].endTime)
+    }
+
+    @Test
     fun missingEndTimeFilledByNextLine() {
         val raw = """
             <tt><body><div><p begin="1.000"><span begin="1.000">a</span></p><p begin="4.000" end="5.000"><span begin="4.000">b</span></p></div></body></tt>

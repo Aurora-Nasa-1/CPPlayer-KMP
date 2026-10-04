@@ -71,6 +71,12 @@ expect object PlatformSupport {
     /** 读取文本文件 */
     fun readTextFile(path: String): String?
 
+    /**
+     * 计算文件的 SHA-256（十六进制小写）。
+     * @return 哈希串；文件不存在 / 读取失败时返回 null（调用方按「校验不过」处理）
+     */
+    fun sha256Hex(path: String): String?
+
     /** 判断文件/目录是否存在 */
     fun exists(path: String): Boolean
 
