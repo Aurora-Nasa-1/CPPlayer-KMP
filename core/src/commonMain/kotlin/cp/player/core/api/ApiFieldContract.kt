@@ -1,5 +1,6 @@
 package cp.player.core.api
 
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -203,13 +204,28 @@ internal object ApiFieldContract {
      * - 未声明期望字段的方法一律返回 true（例如 `logout` 这类只管 code 的）——
      *   调用方**必须**先看 [expectedFieldOf]，本函数的 true 不代表「有字段」。
      * - 命中顺序：主字段 → [ALIASES] → [FALLBACK_FIELDS]，任一存在即 true。
-     * - 键存在但值是 JSON `null`（未登录的 `login/status` 就是这样）同样算命中：
-     *   那是**合法业务响应**，不是缺字段。
+     * - **主字段 / [ALIASES]**：键存在但值是 JSON `null`（未登录的 `login/status` 就是这样）
+     *   同样算命中 —— 那是**合法业务响应**，不是缺字段。
+     * - **[FALLBACK_FIELDS]**：值必须不是 JSON `null`。`JsonNull` 是非空对象，
+     *   不收紧就会有 `{"code":200,"data":null}` 把**任何**端点洗白（详见函数内注释）。
      */
     fun isExpectedFieldSatisfied(method: String, json: JsonObject): Boolean {
         val expected = EXPECTED_FIELDS[method] ?: return true
+        // 主字段 / ALIASES：**键存在即可**，值允许是 JSON `null` —— 未登录的
+        // `login/status` 返回 `{"code":200,"account":null,"profile":null}` 是合法业务响应
+        // （见 ApiFieldContractTest 的同名用例），判成缺字段就是误报。
         if (json[expected] != null) return true
-        return (ALIASES[method].orEmpty() + FALLBACK_FIELDS)
-            .any { it != expected && json[it] != null }
+        if (ALIASES[method].orEmpty().any { json[it] != null }) return true
+        // 全局回退表：**要求值非 JSON null**。kotlinx.serialization 的 JsonNull 是**非空对象**，
+        // `json["data"] != null` 对 `"data": null` 同样为真 —— 不收紧的话，
+        // `{"code":200,"data":null}` 会满足 FALLBACK 表里的每一个键，把**任何**端点的
+        // 「缺字段」告警都洗白，诊断页就此失去意义。
+        return FALLBACK_FIELDS.any { it != expected && isPresentNonNull(json, it) }
+    }
+
+    /** 键存在，且值不是 JSON `null`。 */
+    private fun isPresentNonNull(json: JsonObject, key: String): Boolean {
+        val element = json[key] ?: return false
+        return element !is JsonNull
     }
 }

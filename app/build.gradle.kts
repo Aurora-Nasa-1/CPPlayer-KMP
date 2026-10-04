@@ -3,6 +3,10 @@ import java.time.Year
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import org.gradle.api.tasks.JavaExec
+import org.gradle.api.file.RegularFile
+import org.gradle.jvm.toolchain.JavaInstallationMetadata
+import org.gradle.jvm.toolchain.JavaLanguageVersion
+import org.gradle.jvm.toolchain.JavaLauncher
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -464,14 +468,34 @@ compose.desktop {
 // run 任务的 jvmArgs（探针验证过），脚本期直接 append 会被冲掉；本 afterEvaluate
 // 注册在插件之后、回调也更晚执行，追加才能留在最终值里。
 afterEvaluate {
-    listOf(
+    // 让本地 run 家族与打包产物跑在**同一个运行时**（JBR）上。
+    //
+    // 为什么必须改（2026-10-04 只读探针实测，:app:help + init 脚本打印任务属性）：
+    // - `:app:run`（compose 插件的任务）：javaLauncher 已被插件指到
+    //   `compose.desktop.application.javaHome`（.jbr）——不用管；
+    // - `:app:desktopRun`（**Kotlin KMP 的 KotlinJvmRun**，不是 compose 的任务）：
+    //   javaLauncher 默认 = Gradle 守护进程的 JDK（本机 Zulu 25）。
+    //   而 JBR 的 `WindowDecorations`（自定义标题栏 / 原生贴边吸附的前提）只在 JBR 里有，
+    //   于是 desktopRun 下 `JbrWindowChrome.isSupported` 恒为 false，窗口永远走
+    //   `Undecorated` 模拟路 —— 「跑了 JBR 还是没吸附」就是这么来的。
+    //
+    // KotlinJvmRun 继承 JavaExec：javaLauncher 非 null 时**优先于** executable，
+    // 所以必须先把它清空再设 executable，否则赋值被无声忽略。
+    val runOnJbrJava = resolvedJbrHome
+        ?.let { File(it, if (hostJbrPlatform == "windows") "bin/java.exe" else "bin/java") }
+        ?.takeIf { it.isFile }
+    if (resolvedJbrHome != null && runOnJbrJava == null) {
+        logger.warn("CPPlayer: JBR 目录里找不到 bin/java，desktopRun 家族将退回守护进程 JDK（窗口走自绘无边框模拟路）")
+    }
+    val runFamilyTaskNames = listOf(
         "run",
         "runRelease",
         "desktopRun",
         "desktopRunHot", // hotRunDesktop 的废弃别名，留着以防旧脚本/IDE 配置还在用
         "hotRunDesktop",
         "hotRunDesktopAsync",
-    ).forEach { taskName ->
+    )
+    runFamilyTaskNames.forEach { taskName ->
         tasks.matching { it.name == taskName }.configureEach {
             if (this is JavaExec) {
                 jvmArgs("-Dcp.player.releaseChannel=debug")
@@ -479,5 +503,48 @@ afterEvaluate {
                 logger.warn("CPPlayer: 任务 $taskName 不是 JavaExec，无法注入 debug 渠道标记")
             }
         }
+    }
+    if (runOnJbrJava != null) {
+        val applyJbrRuntime: (JavaExec) -> Unit = { task ->
+            runCatching {
+                // ⚠️ 不能写 `executable = …`：JavaExec 的 setter 是 setExecutable(Object)，
+                // 与 String getter 不配对，Kotlin 不会合成属性，赋值会编译失败/错绑。
+                //
+                // KGP（registerMainRunTask，KotlinJvmRun.kt:121）在**任务创建时**给
+                // javaLauncher 设 convention = toolchain launcher（= 守护进程 JDK）。
+                // JavaExec 规则：javaLauncher 在场时优先于 executable —— 所以唯一稳妥的
+                // 做法是把 **value** 设成指向 JBR 的自定义 JavaLauncher：
+                //   - value 永远压过 convention，与本动作和 KGP 注册动作谁先谁后无关；
+                //   - 不要去 set(null)/convention(null)：在 Gradle 9 上会与 KGP 的
+                //     convention() 撞出 "property is final"（已实测，堆栈落在
+                //     KotlinJvmRunKt$registerKotlinJvmRun$1.execute）。
+                val jbrLauncher = object : JavaLauncher {
+                    override fun getExecutablePath(): RegularFile =
+                        objects.fileProperty().also { it.set(runOnJbrJava) }.get()
+
+                    // JavaExec 只消费 executablePath；metadata 只是个描述，全部给占位值。
+                    override fun getMetadata(): JavaInstallationMetadata =
+                        object : JavaInstallationMetadata {
+                            override fun getLanguageVersion() = JavaLanguageVersion.of(21)
+                            override fun getJavaRuntimeVersion() = "21"
+                            override fun getJvmVersion() = "21"
+                            override fun getVendor() = "JetBrains s.r.o."
+                            override fun getInstallationPath() =
+                                layout.projectDirectory.dir(runOnJbrJava.parentFile.parentFile.path)
+                            override fun isCurrentJvm() = false
+                        }
+                }
+                task.javaLauncher.value(jbrLauncher)
+                task.setExecutable(runOnJbrJava.absolutePath)
+            }.onFailure {
+                // hotRunDesktop 的 javaLauncher 被热重载插件 final 化，改不动；跳过即可。
+                logger.warn("CPPlayer: 未能把 ${task.name} 指到 JBR（${it.message}）")
+            }
+        }
+        // configureEach：对现在与将来注册的同名任务都生效（desktopRun 由 KGP
+        // 惰性注册，注册动作晚于本 afterEvaluate，靠这条兜住）。
+        tasks.withType(JavaExec::class.java)
+            .matching { it.name in runFamilyTaskNames }
+            .configureEach(applyJbrRuntime)
     }
 }

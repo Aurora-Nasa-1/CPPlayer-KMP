@@ -45,6 +45,13 @@ class ApiFieldContractTest {
         assertFalse(satisfied(MusicApiMethod.MESSAGE_UNREAD_COUNT, """{"code":200}"""))
     }
 
+    @Test
+    fun `pl_count 的 data 为 JSON null 不再被全局回退表洗白`() {
+        // JsonNull 是**非空对象** ⇒ 旧实现里 {"code":200,"data":null} 会命中 FALLBACK 的 data，
+        // 把「缺字段」误判成正常响应。收紧后（回退表要求值非 null）必须判为缺字段。
+        assertFalse(satisfied(MusicApiMethod.MESSAGE_UNREAD_COUNT, """{"code":200,"data":null}"""))
+    }
+
     // ---------- login/status ----------
 
     @Test

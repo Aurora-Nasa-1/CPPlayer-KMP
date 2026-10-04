@@ -58,4 +58,9 @@ class HttpProvider(
     }
 
     override fun analyzeAudio(path: String): String = """{"code": 500, "msg": "Not supported"}"""
+
+    /** 释放 Ktor 客户端（连接池 + 后台线程）；Provider 重载 / 后端 reset 时不释放会持续泄漏。 */
+    override fun close() {
+        client.close()
+    }
 }

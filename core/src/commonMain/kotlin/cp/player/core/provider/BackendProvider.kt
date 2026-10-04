@@ -102,6 +102,15 @@ interface BackendProvider {
      * 默认返回 true（BinaryProvider、HttpProvider 始终就绪）。
      */
     fun isReady(): Boolean = true
+
+    /**
+     * 释放该 Provider 持有的资源（HTTP 连接池、子进程等）。
+     *
+     * 默认空实现 —— 无状态实现（内置内嵌单例等）不需要释放，靠默认值自动继承。
+     * 有持有资源的实现（[HttpProvider] 的 Ktor 客户端、[BinaryProvider] 的子进程 + 客户端）
+     * 必须覆写，否则 Provider 重载 / [cp.player.core.MusicBackend.reset] 会泄漏连接池与线程。
+     */
+    fun close() {}
 }
 
 /**

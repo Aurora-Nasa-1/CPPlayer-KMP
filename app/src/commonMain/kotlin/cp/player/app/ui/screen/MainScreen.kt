@@ -35,7 +35,6 @@ import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -83,7 +82,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
@@ -199,6 +197,12 @@ class MainScreen : Screen {
         // 与窄屏 `ChatScreen` 同一条规则（那条在 `App.kt` 的全局宿主里判
         // `navigator.lastItem`，桌面宽屏的对话在面板右栏里，只有这里知道）。
         var messagesChatOpen by remember { mutableStateOf(false) }
+        // 面板一旦切走就**立刻**复位「对话已打开」信号（小播放器让位）——
+        // MessagesPane 自己的 DisposableEffect 要等 AnimatedContent 淡出（160ms）才 onDispose，
+        // 那期间小播放器缺席、表现为收起消息面板后的一次闪动。这里在 desktopPane 变化的同一帧复位。
+        androidx.compose.runtime.LaunchedEffect(desktopPane) {
+            if (desktopPane != DesktopPane.Messages) messagesChatOpen = false
+        }
         val selectTab: (Int) -> Unit = { index ->
             desktopPane = DesktopPane.Tabs
             // 内容区若有内嵌详情页（专辑 / 搜索结果 …），切 tab 前先弹回栈根 ——
@@ -325,10 +329,10 @@ class MainScreen : Screen {
         var isPlayerExpanded by rememberSaveable { mutableStateOf(false) }
         val scope = rememberCoroutineScope()
 
-        // 捕捉返回键
-        cp.player.app.platform.BackHandler(enabled = isPlayerExpanded) {
-            isPlayerExpanded = false
-        }
+        // 播放页展开态的返回处理器**刻意不在这里注册**：桌面 `DesktopBackDispatcher` 是
+        // 「后注册优先」，放在 Content 顶部会排到最底层 —— 宽屏同时开着面板 / 内嵌详情页
+        // 并展开播放页时，Esc 会先退**被播放页盖住**的层级，与视觉层级相反。
+        // 它注册在播放页覆盖层自己那一段（见下方 SharedTransitionLayout 之前）。
 
         // 窄屏底栏「上滑自动隐藏」：状态 + 设置项接线。手势由内容区上的
         // `observeBottomBarDrag` 直接喂进来 —— **不走嵌套滚动**（理由见
@@ -397,6 +401,7 @@ class MainScreen : Screen {
                             tabs = tabs,
                             selectedIndex = selectedIndex,
                             selectedPane = desktopPane,
+                            contentNavSize = contentNavSize,
                             onSelect = selectTab,
                             onOpenSettings = { desktopPane = DesktopPane.Settings },
                             onOpenPlaylist = {
@@ -431,6 +436,13 @@ class MainScreen : Screen {
                                  showBack = desktopPane != DesktopPane.Tabs,
                                   onBack = closeDesktopOverlay,
                                   onOpenSettings = { desktopPane = DesktopPane.Settings },
+                                  // 宽屏平板的「消息」与侧栏同一落点：**开面板**（保留侧栏）。
+                                  // 旧行为整页 push 会把 MainScreen 整个覆盖、侧栏消失，与宽屏
+                                  // 「保留左侧导航」的设计相反，也正是 N5 的「同名两落点」。
+                                  onOpenMessages = {
+                                      desktopPane = DesktopPane.Messages
+                                      AppModel.refreshUnreadMessages()
+                                  },
                                   // 宽屏平板（无窗口 chrome）的账号入口与桌面标题栏语义一致：
                                   // 走内容区路由，侧栏保留。桌面 chrome 接管时整条顶栏不可见，
                                   // 这条分支只有平板用得上。
@@ -457,8 +469,18 @@ class MainScreen : Screen {
                             Box(Modifier.fillMaxSize().padding(padding)) {
                                 Navigator(contentRootScreen) { nav ->
                                     // 捕获内嵌 Navigator 引用（见上）—— 供返回链 / 指令消费 /
-                                    // pageCanGoBack 发布使用。Navigator 常驻组合，此引用全程新鲜。
-                                    androidx.compose.runtime.SideEffect { contentNavigator = nav }
+                                    // pageCanGoBack 发布使用。
+                                    //
+                                    // ⚠️ 必须用 DisposableEffect，不能是 SideEffect：内嵌 Navigator
+                                    // 只在 **expanded（≥840dp）** 分支装配，窗口拖窄到 <840dp 时
+                                    // 整支被 dispose，而 SideEffect 不会把引用置回 null ⇒ 悬空到
+                                    // 已销毁的栈。此后窄分支点底栏切 tab（selectTab 的 popUntilRoot）
+                                    // 或点标题栏返回，都在操作一个已 dispose 的 Navigator（幽灵返回键 /
+                                    // 最坏抛异常）。onDispose 只在仍是自己时置回，避免与后来者互踩。
+                                    androidx.compose.runtime.DisposableEffect(nav) {
+                                        contentNavigator = nav
+                                        onDispose { if (contentNavigator === nav) contentNavigator = null }
+                                    }
                                     ScreenTransition(
                                         navigator = nav,
                                         transition = {
@@ -556,6 +578,11 @@ class MainScreen : Screen {
                                 scrollBehavior = scrollBehavior,
                                 onOpenSettings = { navigator?.push(SettingsScreen()) },
                                 onOpenAccount = { navigator?.push(AccountScreen()) },
+                                // 窄屏没有内嵌 Navigator、也没有面板，消息走整页 push（原行为）。
+                                onOpenMessages = {
+                                    navigator?.push(MessagesScreen())
+                                    AppModel.refreshUnreadMessages()
+                                },
                             )
                         },
                         bottomBar = {
@@ -621,6 +648,13 @@ class MainScreen : Screen {
                     containerColor = MaterialTheme.colorScheme.inverseSurface,
                     contentColor = MaterialTheme.colorScheme.inverseOnSurface,
                 )
+            }
+
+            // 播放页展开态的返回处理器：注册在**内容层 / 面板层之后**，因此最后注册、
+            // 最先被派发（DesktopBackDispatcher 后注册优先）—— 与「播放页盖在最上层」的
+            // 视觉层级一致。放在 Content 顶部就会被下面的面板 / 内嵌路由页抢走（N4）。
+            cp.player.app.platform.BackHandler(enabled = isPlayerExpanded) {
+                isPlayerExpanded = false
             }
 
             SharedTransitionLayout(Modifier.fillMaxSize()) {
@@ -719,6 +753,7 @@ private fun AppTopBar(
     title: String,
     navigator: cafe.adriel.voyager.navigator.Navigator?,
     scrollBehavior: androidx.compose.material3.TopAppBarScrollBehavior? = null,
+    onOpenMessages: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onOpenAccount: () -> Unit = {},
     showBack: Boolean = false,
@@ -771,10 +806,9 @@ private fun AppTopBar(
         cp.player.app.ui.component.CpTopBarActionButton(
             cp.player.app.ui.component.TopBarAction(
                 icon = { Icon(Icons.AutoMirrored.Outlined.Message, contentDescription = "消息") },
-                onClick = {
-                    navigator?.push(MessagesScreen())
-                    AppModel.refreshUnreadMessages()
-                },
+                // 落点由调用点决定：宽屏平板 = 开面板（保留侧栏），窄屏 = 整页 push。
+                // 两处各写一套（旧行为）会出现同名入口两个落点（N5）。
+                onClick = onOpenMessages,
             )
         )
         cp.player.app.ui.component.CpTopBarActionButton(
@@ -915,7 +949,16 @@ private fun TabContent(
             }
         },
     ) { measurables, constraints ->
-        val placeables = measurables.map { it.measure(constraints) }
+        // 只对「选中页 + 仍在淡出的页」用真实约束测量，其余保留组合（滚动状态在）但用
+        // **零尺寸约束** —— 否则切页期间会对每个访问过的 tab 各做一次完整测量，长列表下
+        // 就是 3 倍开销（N6）。零约束下的测量几乎不做事，而这些页本就不放置（见下方 place 逻辑）。
+        val zeroConstraints = androidx.compose.ui.unit.Constraints.fixed(0, 0)
+        val placeables = measurables.mapIndexed { i, m ->
+            val index = retainedIndices[i]
+            val alpha = switchStates[index]?.alpha?.value ?: 0f
+            if (index == selectedIndex || alpha > 0f) m.measure(constraints)
+            else m.measure(zeroConstraints)
+        }
         layout(constraints.maxWidth, constraints.maxHeight) {
             // placeables 顺序与 retainedIndices 一致。淡出中的旧页垫底，选中页最后放置盖
             // 在最上层；完全透明的页不放置（不参与命中测试 —— 保持原「仅选中页可交互」语义）。
@@ -1015,6 +1058,8 @@ private fun DesktopSidebar(
     tabs: List<TabItem>,
     selectedIndex: Int,
     selectedPane: DesktopPane,
+    /** 内容区内嵌 Navigator 的栈深度：壳层顶栏是否可见取决于它（见 showMessagesEntry）。 */
+    contentNavSize: Int,
     onSelect: (Int) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenPlaylist: (PlaylistSummary) -> Unit,
@@ -1047,8 +1092,12 @@ private fun DesktopSidebar(
     // content builder 不是 @Composable 作用域 —— 直接写在里面编译不过
     // （`@Composable invocations can only happen from the context of a @Composable`）。
     val chromeActive = cp.player.app.ui.component.LocalWindowChromeActive.current
-    val showMessagesEntry = !chromeActive
-    val showSettingsEntry = !chromeActive
+    // 「消息 / 设置」入口只在**顶栏与窗口标题栏都不可见**时由侧栏承担，避免同一屏出现两套
+    // 同名入口（N5）：桌面 → 标题栏有（chromeActive 为真），宽屏平板根页 → 顶栏有
+    // （contentNavSize == 1、顶栏未 hide），此时侧栏都不该再画。只有宽屏平板进了内嵌详情页
+    // （顶栏 hide）时才轮到侧栏。
+    val showMessagesEntry = !chromeActive && contentNavSize > 1
+    val showSettingsEntry = !chromeActive && contentNavSize > 1
     // 收藏夹（「xx喜欢的音乐」）已经有独立入口，不再以歌单身份重复出现。
     val allPlaylists = homeState.sidebarPlaylists
     val shownPlaylists = allPlaylists.take(SIDEBAR_PLAYLIST_LIMIT)

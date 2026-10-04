@@ -317,3 +317,61 @@
 N1（`contentNavigator` 悬空，`MainScreen.kt`）、N4/N5/N6/N7（同在 `MainScreen.kt`）、
 K1 的另一半（`MusicApiServiceImpl.callWithAllProviders`）、K4（`ApiFieldContract.kt` 为他人未跟踪文件）、
 K11（`close()` 接入 `MusicBackend.reset()`）。这些文件落定后可按上文方案直接照做。
+
+---
+
+## 7. 第二轮修复进展（2026-10-04）
+
+上一轮「因并行会话在途占用而未修」的项，本轮在文件落定后**按 §5 的原方案补齐**。
+
+验证：`:core:compileKotlinDesktop` ✅、`:app:compileKotlinDesktop` ✅（首次编译成功）、
+`ApiFieldContractTest`（11 用例，`skipped="0"`，`failures="0"`）✅。
+
+| 编号 | 状态 | 落点 |
+|---|---|---|
+| N1（内嵌 Navigator 悬空） | ✅ 已修 | `MainScreen` 捕获引用由 `SideEffect` 改 `DisposableEffect`，`onDispose` 仅在仍是自己时置回 `null` |
+| N4（播放页返回优先级最低） | ✅ 已修 | 播放页 `BackHandler` 从 `Content` 顶部移到覆盖层内（`SharedTransitionLayout` 之前）⇒ 后注册优先 |
+| N5（宽屏平板入口重复） | ✅ 已修 | 侧栏「消息/设置」判据加 `contentNavSize > 1` 门控；`AppTopBar` 增 `onOpenMessages` 回调统一落点 |
+| N6（每帧测量所有已访问 tab） | ✅ 已修 | `TabContent` 的 `Layout` 只对「选中页 + 仍在淡出页」用真实约束，其余改零尺寸约束测量 |
+| N7（小播放器让位复位滞后） | ✅ 已修 | `desktopPane` 变化时在**同一帧**复位 `messagesChatOpen`（不再等 `AnimatedContent` 淡出 160ms） |
+| K1 另一半（`callWithAllProviders`） | ✅ 已修 | `provider.callApi` 包 `withContext(Dispatchers.IO)`；并前置 `catch (CancellationException) { throw }` |
+| K4（契约全局回退表洗白） | ✅ 已加固 | `FALLBACK_FIELDS` 命中要求值非 `JsonNull`；主字段 / `ALIASES` 保留 null 容错（`login/status` 合法）；补用例 |
+| K6（`moveDir` 非原子） | ✅ 已修 | 先试同卷 `ATOMIC_MOVE`；失败回退「先备份 `.bak` → 替换 → 失败回滚」，不再「先删后移」 |
+| K11（HTTP 客户端从不关闭） | ✅ 已修 | `BackendProvider.close()` 默认空实现；`HttpProvider` / `BinaryProvider` 覆写（后者并 destroy 子进程）；`MusicBackend.reset()` 遍历关闭全部 Provider + 关 `amllClient`（已提为 `amllClientLazy` 字段） |
+
+**N5 属产品行为微调**：宽屏平板**根页**不再从侧栏进「消息 / 设置」（由顶栏承担，落点统一为「开面板」）；
+只有进入内嵌详情页（顶栏 `hide`）时才轮到侧栏。如需回退，把 `DesktopSidebar` 的
+`showMessagesEntry` / `showSettingsEntry` 判据还原为 `!chromeActive` 即可。
+
+**仍未修**：N9（未使用 import）、K9（误报，保留原行为）、K11 之外的 P3 清理项。
+
+**回归测试**：`:app:desktopTest` **123 用例**、`:core:desktopTest` **337 用例**，
+均 `skipped="0"`、`failures="0"`（含主壳层 `MainTabScrollRestore` / `TabHostScrollRestore` /
+`ScrollStateRestore` / `SidebarPreview` 回归）。
+
+> 过程中一度被**另一会话的在途改动**挡住：`AppModel.kt` 新增 `ListeningSession` 等 + 未跟踪的
+> `core/.../insights/` 包，令 `:app:compileKotlinDesktop` 报一串 unresolved。判据是
+> `git grep ListeningSession HEAD` 零命中 ⇒ 在途 WIP、与本轮改动无关。其落地后重跑即通过。
+
+---
+
+## 8. 第三轮修复进展（2026-10-04 下午）
+
+把前两轮之后**仍开着的条目**全部处理。验证：`:core`/`:app:compileKotlinDesktop` ✅、
+`:core:compileAndroidMain` + `:app:compileAndroidMain` + `:app-android:compileDebugKotlin` ✅、
+`TtmlParserTest` **11 用例**（含 2 个新增 B6 回归）`skipped="0" failures="0"` ✅。
+
+| 编号 | 状态 | 落点 |
+|---|---|---|
+| N9（未使用 import） | ✅ 已修 | `MainScreen.kt` 删 `IconButton` / `LinearEasing`（该文件含 §7 在途改动，随其提交） |
+| B12（未读数刷新无取消） | ✅ 已修 | `AppModel.refreshUnreadMessages` 加 `unreadRefreshJob?.cancel()`，同 `profileRefreshJob` 模式 |
+| B5 尾巴（runCatching 吞取消） | ✅ 已修 | 新增 `core/util/Catching.kt` 的 `runCatchingExceptCancellation`；`MusicRepository.getArtistProfile` 与 `HomeScreenModel.safe` 两处点名位置改用 |
+| B6（TTML 单词行误判） | ✅ 已修 | `TtmlParser` 仅当唯一 span 时间**恰好覆盖整行**才判行级；补两个回归用例（整行覆盖 / 子区间） |
+| K5（模块无完整性校验） | ✅ 已修 | `ModuleManifest` 增可空 `sha256` 字段（缺省跳过 = 向后兼容旧包）；`importZip` 对原始 zip 字节重算比对，不匹配拒绝并清理；`PlatformSupport` 增 `sha256Hex`（expect + jvm actual，MessageDigest 流式） |
+| K10（Media3 release 归属） | ✅ 已修 | `ControllerForwardingPlayer.release()` no-op（封死误释放单例 ExoPlayer 的路径，注释含 media3 1.4.1/1.11.1 字节码依据）；`MusicBackend.reset()` 加「会话存活勿调」警告 |
+| N8（pop 过渡期旧标题） | ⏸ **评估后暂缓** | 影响仅数百毫秒的过渡期标题；修复需在返回链**全部入口**（标题栏 / Esc / 右键 / 页面内 pop）同步 popTopClaim，返回链是本仓踩坑重灾区，回归风险大于收益。如要修：在 `dispatchPageBack` 消费处统一同步移除 `routeTitleClaims` 栈顶（`onDispose` 的 remove 引用相等、幂等，可安全重复） |
+| K9 | ❌ 维持误报结论 | 桌面 Windows 模块是 `.exe`，拒绝非 ELF 会打断二进制模块 |
+
+**提交说明**：本轮代码以独立提交落地（纯净子集）；`MainScreen.kt` / `MusicBackend.kt` /
+本文档混有 §7 会话的未提交在途改动（K11 的 `amllClientLazy`、N4/N7 等），按「不动他人在途」约定
+**不随本轮提交**——本轮落在其中的三个小改动（2 个 import 删除、1 段注释）暂留工作区，随 §7 会话一并提交即可。

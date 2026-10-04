@@ -272,6 +272,17 @@ class MusicBackend private constructor(
      */
     private val streamLocalizerLazy = lazy { createStreamLocalizer() }
 
+    /**
+     * AMLL TTML 歌词客户端（惰性创建）。
+     *
+     * ⚠️ 必须是本类持有的字段，不能内联进 [playbackController] 的构造参数 ——
+     * 内联时 [reset] 拿不到引用，它的 Ktor 连接池 / 线程每次重建都泄漏一套。
+     * 与 K11 同一类：清理要先被引用到，才谈得上「接入 reset」。
+     */
+    private val amllClientLazy = lazy {
+        AmllTtmlClient(diskCache = defaultSettingsStorage(AMLL_CACHE_NAMESPACE))
+    }
+
     /** 歌曲缓存（无损流落盘）的管理句柄：占用概览 + 条目列表 + 删除 / 清理。 */
     val songCache: StreamLocalizer by streamLocalizerLazy
 
@@ -315,7 +326,8 @@ class MusicBackend private constructor(
             // 见 StreamLocalizer 的实测矩阵。实例由本类持有（见 songCache），管理页共用同一个。
             streamLocalizer = streamLocalizerLazy.value,
             // AMLL TTML 歌词（官方词库 API）：磁盘缓存走独立 namespace，与主设置隔离。
-            amllClient = AmllTtmlClient(diskCache = defaultSettingsStorage(AMLL_CACHE_NAMESPACE)),
+            // 实例由本类持有（见 amllClientLazy），[reset] 才能关掉它的连接池。
+            amllClient = amllClientLazy.value,
             lyricsSourceMode = {
                 LyricsSourceMode.fromKey(settings.getString(LyricsSourceMode.SETTINGS_KEY))
             },
@@ -743,7 +755,20 @@ class MusicBackend private constructor(
         runCatching { localServer?.stop() }
         localServer = null
         runCatching { activeProvider()?.stopServer() }
+        // 释放各 Provider 持有的资源（HttpProvider / BinaryProvider 各自持有一个 Ktor 客户端）。
+        // Provider 重载或后端重建时不关就是连接池 / 线程泄漏；BackendProvider.close() 默认空实现，
+        // 无状态 Provider 自动免疫。
+        runCatching {
+            moduleManager.getAvailableProviders().forEach { p -> runCatching { p.close() } }
+        }
+        // ⚠️ Android 侧注意（CODE_REVIEW K10）：这会经 PlatformPlayer.release() 释放
+        // SharedMedia3Player 的**单例** ExoPlayer —— 若 MediaSessionService 仍存活，
+        // 会话将脱钩、通知恒 IDLE。当前 reset() 只在测试路径触发；生产代码不要在
+        // 服务存活时调用本方法（桌面无单例问题，不受此限）。
         runCatching { playbackController.release() }
+        // AMLL 歌词客户端同样持有 Ktor 客户端。仅当真装配过时才关 —— 否则 reset 会反向触发
+        // 它的惰性创建（平白多一个请求 + 多一个连接池）。
+        if (amllClientLazy.isInitialized()) runCatching { amllClientLazy.value.close() }
         // 仅在已装配时关闭下载引擎（避免 reset 反向触发惰性初始化）
         if (downloadManagerLazy.isInitialized()) {
             runCatching { downloadManager.shutdown() }

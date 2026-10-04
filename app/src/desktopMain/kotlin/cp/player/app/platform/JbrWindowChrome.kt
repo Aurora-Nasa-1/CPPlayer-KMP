@@ -18,8 +18,8 @@ import java.lang.reflect.Method
  * 于是阴影 / 缩放 / 贴边分屏 / 原生最大化 / Win11 自动圆角全部白拿，
  * 最小化 / 最大化 / 关闭三个窗口钮由 JBR 画在客户区右上角。
  *
- * 这套 API（`WindowDecorations`，JBR b1367.22+ 才有，旧 JBR 17 的
- * `setCustomDecorationEnabled` 已废弃且不兼容）只随 JBR 分发，普通 JDK 里没有这些类；
+ * 这套 API（`WindowDecorations`，随 JBR 分发；仓库内钉死的 JBR 21.0.8-b1163.62
+ * 已用探针实测含 `java.awt.Window$WindowDecorations`，普通 JDK（如 Zulu）里没有这些类；
  * 本项目又要保留「探测不到 JBR 就回退自绘无边框」的双轨能力，
  * 所以**全程反射**：本文件在普通 JDK 上编译运行都不报错，`isSupported` 为 false 而已。
  *

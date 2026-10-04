@@ -126,4 +126,10 @@ class BinaryProvider(
     }
 
     override fun analyzeAudio(path: String): String = """{"code": 500}"""
+
+    /** 停掉子进程并释放 Ktor 客户端（连接池 + 后台线程）。 */
+    override fun close() {
+        stopServer()
+        client.close()
+    }
 }

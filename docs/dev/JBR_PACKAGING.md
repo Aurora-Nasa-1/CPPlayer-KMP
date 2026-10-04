@@ -243,6 +243,56 @@ JBR 的 `WindowMove` 是**原生**接管，双层事件模型变了之后，
 
 ---
 
+## 8. `desktopRun` 的运行时陷阱（2026-10-04 实锤）
+
+**现象**：装了 JBR，`desktopRun` 下窗口照样没有贴边吸附 / Snap Layouts，
+`JbrWindowChrome.isSupported` 为 false（启动日志打「未检测到可用的 JBR 自定义标题栏」）。
+
+**根因（只读探针实测，`gradlew :app:help` + init 脚本打印任务属性）**：
+
+| 任务 | 类型 | 运行时 |
+|---|---|---|
+| `:app:run` | `JavaExec`（compose 插件） | ✅ JBR —— 插件把 `javaLauncher` 指到 `compose.desktop.application.javaHome` |
+| `:app:desktopRun` | **`KotlinJvmRun`（KGP 的任务，不是 compose 的）** | ❌ 守护进程 JDK —— `javaLauncher.convention(launcherFor(toolchain))`（`KotlinJvmRun.kt:121`，javap 实锤） |
+| `:app:runDistributable` | `AbstractRunDistributableTask` | ✅ 打包产物自带运行时 |
+
+`WindowDecorations` 只在 JBR 里 ⇒ `desktopRun` 下永远走 `Undecorated` 无边框模拟路。
+
+**修法**（已落在 `app/build.gradle.kts` 的 afterEvaluate）：把 `javaLauncher` 的
+**value** 设成自定义 `JavaLauncher`（`executablePath` 指向 `.jbr` 的 `bin/java`）。
+三个必须知道的坑：
+
+1. **不能 `setExecutable` 完事**：launcher 在场时 JavaExec 优先用它，executable 被忽略；
+2. **不能 `set(null)` / `convention(null)` 清 launcher**：Gradle 9 上与 KGP 创建任务时的
+   `convention()` 撞出 `property 'javaLauncher' is final`（堆栈落在
+   `KotlinJvmRunKt$registerKotlinJvmRun$1.execute`）—— value 方案不碰 convention，
+   与 KGP 谁先谁后都安全（value 永远压过 convention）；
+3. **不能写 `executable = …`（Kotlin 属性赋值）**：JavaExec 的 setter 是
+   `setExecutable(Object)`，与 String getter 不配对，Kotlin 不合成属性，必须
+   `setExecutable(...)`。同理 `JavaLauncher` 在 `org.gradle.jvm.toolchain` 包。
+
+`hotRunDesktop` 的 launcher 被热重载插件 final 化，改不动——`runCatching` 跳过并 warn。
+验证判据：`.jbr` 存在时，`desktopRun` 启动控制台**不再出现**「未检测到可用的 JBR」；
+拖动标题栏贴屏幕边缘有吸附、最大化钮悬停出 Snap Layouts。
+
+### 8.1 三态回退开关（§5 遗留项，已补）
+
+⚠️ **代价先说**：`desktopRun` 上 JBR 后窗口走 `SystemDefault`（保留系统边框），
+不再是 `Undecorated(6dp)` 自绘无边框 —— 两套外观只能选一套。所以有
+`WindowDecorChoice`（`platform/WindowDecorChoice.kt`）：
+
+- **来源优先级**：`-Dcp.player.windowDecor=` > 环境变量 `CPPLAYER_WINDOW_DECOR` >
+  `~/.cpplayer/cp_player_prefs.properties` 的 `window_decor` > auto；
+- 取值 `auto` / `jbr`（别名 system/native）/ `undecorated`（别名 borderless/off）；
+- **auto** = JBR 可用则走 JBR 路，否则无边框路（原有行为）；
+- 判路结果打印在启动日志：`[CPPlayer] 窗口装饰 = …（来源：…）→ …`。
+
+想把外观永久切回无边框：往 `cp_player_prefs.properties` 加一行
+`window_decor=undecorated`（写入时**先关掉正在运行的 CPPlayer**，
+否则退出时的持久化可能把手工加的行冲掉）；想回 JBR/吸附路就删掉这行或写 `jbr`。
+
+---
+
 ## 附：本次实际改动的文件
 
 | 文件 | 改了什么 |

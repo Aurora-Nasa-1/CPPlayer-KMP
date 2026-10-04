@@ -3,7 +3,10 @@ package cp.player.core.api
 import cp.player.core.monitor.HealthMonitor
 import cp.player.core.provider.ProviderCookieStorage
 import cp.player.core.provider.ProviderManager
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -461,7 +464,12 @@ class MusicApiServiceImpl(
                     val actual = if (attempt == 1) MusicApiMethod.SONG_URL_V1_302 else method
                     val mapped = provider.apiMap?.get(actual) ?: actual
                     if (mapped.isEmpty() || mapped.equals("unsupported", ignoreCase = true)) continue
-                    val result = provider.callApi(mapped, params)
+                    // ⚠️ 必须切 IO：provider.callApi 是**同步阻塞**契约（HttpProvider / BinaryProvider
+                    // 内部 runBlocking，JNI 直接阻塞原生调用），而本函数的调用方中就有
+                    // screenModelScope（Dispatchers.Main.immediate）。直连会在 UI 线程同步阻塞
+                    // 最长一次 HTTP 超时（60s）⇒ ANR。容灾本身就是「主 Provider 失败后逐个重试」
+                    // 的慢路径，更不能占着主线程。此前的 K1「已修」只覆盖了 tryFallback，漏了这里。
+                    val result = withContext(Dispatchers.IO) { provider.callApi(mapped, params) }
                     val body = parseJsonObject(result)
                     val value = predicate(body)
                     if (value != null) {
@@ -474,6 +482,11 @@ class MusicApiServiceImpl(
                         ))
                         return value
                     }
+                } catch (e: CancellationException) {
+                    // 协程取消必须**上抛**：吞掉的话既破坏结构化并发，又会让被取消的那次
+                    // 调用被当成「Provider 失败」去换下一个 Provider 重试 —— 把取消信号
+                    // 拖成更多网络请求（与 B5 同一类问题）。
+                    throw e
                 } catch (e: Exception) {
                     HealthMonitor.recordCall(HealthMonitor.ApiCallRecord(
                         timestamp = startTime, providerId = provider.id, method = method,
