@@ -169,7 +169,7 @@ fun SimilarSongsPanel(
                         Surface(
                             onClick = {
                                 CoverFlight.play(item.id, item.coverUrl)
-                                scope.launch {
+                                AppModel.playTrackClicked(toMediaId(item.id)) {
                                     AppModel.playback.playQueue(
                                         tracks.map { toMediaId(it.id) },
                                         startIndex = index,

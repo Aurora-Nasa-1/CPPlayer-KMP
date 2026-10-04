@@ -223,6 +223,31 @@ object AppModel {
     val listenTogetherState: StateFlow<cp.player.core.listentogether.ListenTogetherState>
         get() = listenTogether.state
 
+    /**
+     * 单曲点击的统一门面：**一起听进行中时，点歌 = 「下一首播放」**（不打断房间
+     * 正在播的歌，通过队列同步广播给所有成员）；否则执行默认动作 [defaultPlay]。
+     *
+     * ### 为什么拦在这里而不是改每个播放引擎调用
+     * 房间里点歌的语义从「立即大家一起听这首」变成「把这首排进共享队列」——
+     * 立即播放 = GOTO 广播 = 打断所有成员正在听的歌；而队列追加经队列同步
+     * REPLACE 广播，轮到它时自然 GOTO。「立即播放」类入口（队列弹层跳播、
+     * 播放页控制）不走这里，保持原语义。
+     *
+     * @param mediaId 点击曲目的 mediaId（调用方已构造好）
+     * @param defaultPlay 非一起听时的默认动作（通常是 `playQueue(ids, startIndex)`）
+     */
+    fun playTrackClicked(mediaId: String, defaultPlay: suspend () -> Unit) {
+        val lt = listenTogetherState.value
+        if (lt.inRoom && listenTogether.followEnabled) {
+            modelScope.launch {
+                runCatching { playback.addNextToQueue(mediaId) }
+                cp.player.app.ui.util.UiEvents.notify("一起听中：已添加到下一首播放")
+            }
+        } else {
+            modelScope.launch { defaultPlay() }
+        }
+    }
+
     fun markInitialized() { _initialized.value = true }
 
     fun retryBackendBootstrap() {

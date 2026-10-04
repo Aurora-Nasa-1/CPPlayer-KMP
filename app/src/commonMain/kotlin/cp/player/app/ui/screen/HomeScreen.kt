@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
@@ -94,6 +95,7 @@ import cp.player.app.ui.component.LocalIsExpanded
 import cp.player.app.ui.component.PlaylistCoverCard
 import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.ui.component.SectionHeader
+import cp.player.app.ui.component.CpContextMenuItem
 import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.SongMenuActions
 import cp.player.app.ui.component.SongOptionsSheet
@@ -196,16 +198,26 @@ private fun HomeScreenContent(model: HomeScreenModel) {
         )
     }
 
+    // 点歌统一走 [AppModel.playTrackClicked]：一起听进行中 = 「下一首播放」，
+    // 否则原样立即播放（下同，不再逐处注释）。
     val playRecentAt: (Int) -> Unit = { index ->
         recentTracks.getOrNull(index)?.let { CoverFlight.play(it.id, it.coverUrl) }
-        scope.launch {
-            AppModel.playback.playQueue(recentTracks.map { toMediaId(it.id) }, startIndex = index)
+        val ids = recentTracks.map { toMediaId(it.id) }
+        val clicked = ids.getOrNull(index)
+        if (clicked != null) {
+            AppModel.playTrackClicked(clicked) {
+                AppModel.playback.playQueue(ids, startIndex = index)
+            }
         }
     }
     val playTracks: (List<TrackSummary>, Int) -> Unit = { tracks, index ->
         tracks.getOrNull(index)?.let { CoverFlight.play(it.id, it.coverUrl) }
-        scope.launch {
-            AppModel.playback.playQueue(tracks.map { toMediaId(it.id) }, startIndex = index)
+        val ids = tracks.map { toMediaId(it.id) }
+        val clicked = ids.getOrNull(index)
+        if (clicked != null) {
+            AppModel.playTrackClicked(clicked) {
+                AppModel.playback.playQueue(ids, startIndex = index)
+            }
         }
     }
 
@@ -2396,10 +2408,58 @@ class HomeGeneratedPlaylistScreen(
 }
 
 /**
+ * 最近播放的**行**，铺进调用方的 [LazyListScope]。
+ *
+ * ### 为什么不直接把 [RecentPlaysScreen] 整个塞进别的列表
+ * 本页正文自带一个 `LazyColumn` + `fillMaxSize`（它要能当独立整页用）。把它当
+ * `item { RecentPlaysScreen(embedded = true).Content() }` 塞进「听歌报告」的列表里会崩：
+ * `LazyColumn` 的 item 高度约束是**无界的**，内层滚动容器拿到 `maxHeight = Infinity`
+ * ⇒ Compose 直接抛
+ * `IllegalStateException: Vertically scrollable component was measured with an
+ * infinity maximum height constraints`（离屏探针实测，桌面与安卓同一份代码）。
+ *
+ * ### 为什么 [columns] 由调用方算好传进来
+ * `LazyScrollColumn` 的 content lambda 是 `LazyListScope.() -> Unit`、**不是** `@Composable`，
+ * 所以这个扩展里读不了任何 composable 状态（`LocalIsExpanded` 也不行）。
+ * 列数判据（`BoxWithConstraints` 里的 `maxWidth >= 900.dp`）必须留在 `@Composable` 那一层。
+ */
+fun LazyListScope.recentPlaysRows(
+    tracks: List<TrackSummary>,
+    columns: Int,
+    onPlay: (Int) -> Unit,
+    onOptions: (TrackSummary) -> Unit,
+    contextMenu: @Composable (TrackSummary) -> List<CpContextMenuItem>,
+) {
+    require(columns >= 1) { "columns 必须 ≥ 1，实际 $columns" }
+    // 宽屏两列：一整行只放一首歌时，「歌名」和右端的「更多」按钮相隔上千 dp，
+    // 视线要来回跳；两列之后每列 ≈700dp，与歌单详情页的曲目宽度相近。
+    val rows = if (columns == 1) tracks.map { listOf(it) } else tracks.chunked(columns)
+    itemsIndexed(rows) { rowIndex, row ->
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            row.forEachIndexed { columnIndex, track ->
+                val index = rowIndex * columns + columnIndex
+                SongItem(
+                    track = track,
+                    index = index,
+                    total = tracks.size,
+                    onClick = { onPlay(index) },
+                    onOptionsClick = { onOptions(track) },
+                    contextMenu = contextMenu(track),
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            // 末尾一行是奇数时补等宽空位，否则最后一条会被单独拉满整行。
+            repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+        }
+    }
+}
+
+/**
  * 最近播放完整列表。
  *
- * @param embedded 是否内嵌在桌面右侧面板里。为真时不画页内返回键 ——
- *   那种形态下标题与返回都由窗口标题栏提供，而且 `pop()` 会退出 [MainScreen] 本身。
+ * @param embedded 是否内嵌在桌面右侧面板里，或作为 tab 段落被别的页面收纳。
+ *   为真时不画页内返回键 —— 那种形态下标题与返回都由窗口标题栏 / 宿主提供，
+ *   而且 `pop()` 会退出 [MainScreen] 本身。
  */
 class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
     @Composable
@@ -2462,12 +2522,9 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
                     modifier = Modifier.fillMaxSize().weight(1f),
                     contentAlignment = Alignment.TopCenter,
                 ) {
+                    // 列数只能在这一层算：`LazyScrollColumn` 的 content lambda 不是
+                    // @Composable，里面的扩展函数读不到 `LocalIsExpanded`。
                     val columns = if (maxWidth >= 900.dp) 2 else 1
-                    val rows = if (columns == 1) {
-                        recentTracks.map { listOf(it) }
-                    } else {
-                        recentTracks.chunked(columns)
-                    }
                     LazyScrollColumn(
                         modifier = Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize(),
                         contentPadding = PaddingValues(
@@ -2479,93 +2536,106 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
                         ),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        itemsIndexed(rows) { rowIndex, row ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                row.forEachIndexed { columnIndex, track ->
-                                    val index = rowIndex * columns + columnIndex
-                                    SongItem(
-                                        track = track,
-                                        index = index,
-                                        total = recentTracks.size,
-                                        onClick = {
+                        recentPlaysRows(
+                            tracks = recentTracks,
+                            columns = columns,
+                            onPlay = { index ->
+                                val track = recentTracks[index]
+                                CoverFlight.play(track.id, track.coverUrl)
+                                AppModel.playTrackClicked(toMediaId(track.id)) {
+                                    AppModel.playback.playQueue(
+                                        recentTracks.map { toMediaId(it.id) },
+                                        startIndex = index,
+                                    )
+                                }
+                            },
+                            onOptions = { selectedTrack = it },
+                            contextMenu = { track ->
+                                songContextMenuItems(
+                                    SongMenuActions(
+                                        onPlay = {
                                             CoverFlight.play(track.id, track.coverUrl)
                                             scope.launch {
                                                 AppModel.playback.playQueue(
                                                     recentTracks.map { toMediaId(it.id) },
-                                                    startIndex = index,
+                                                    startIndex = recentTracks.indexOf(track),
                                                 )
                                             }
                                         },
-                                        onOptionsClick = { selectedTrack = track },
-                                        contextMenu = songContextMenuItems(
-                                            SongMenuActions(
-                                                onPlay = {
-                                                    CoverFlight.play(track.id, track.coverUrl)
-                                                    scope.launch {
-                                                        AppModel.playback.playQueue(
-                                                            recentTracks.map { toMediaId(it.id) },
-                                                            startIndex = index,
-                                                        )
-                                                    }
-                                                },
-                                                onAddToQueue = {
-                                                    scope.launch { AppModel.playback.addToQueue(toMediaId(track.id)) }
-                                                    cp.player.app.ui.util.UiEvents.notify("已加入播放队列")
-                                                },
-                                                onPlayNext = {
-                                                    scope.launch { AppModel.playback.addNextToQueue(toMediaId(track.id)) }
-                                                    cp.player.app.ui.util.UiEvents.notify("将在下一首播放")
-                                                },
-                                                onShare = { shareText(songShareText(track)) },
-                                            )
-                                        ),
-                                        modifier = Modifier.weight(1f),
+                                        onAddToQueue = {
+                                            scope.launch { AppModel.playback.addToQueue(toMediaId(track.id)) }
+                                            cp.player.app.ui.util.UiEvents.notify("已加入播放队列")
+                                        },
+                                        onPlayNext = {
+                                            scope.launch { AppModel.playback.addNextToQueue(toMediaId(track.id)) }
+                                            cp.player.app.ui.util.UiEvents.notify("将在下一首播放")
+                                        },
+                                        onShare = { shareText(songShareText(track)) },
                                     )
-                                }
-                                // 末尾一行是奇数时补等宽空位，否则最后一条会被单独拉满整行。
-                                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
-                            }
-                        }
+                                )
+                            },
+                        )
                     }
                 }
             }
         }
 
         selectedTrack?.let { track ->
-            val favId = runCatching { cp.player.core.music.CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)
-            SongOptionsSheet(
-                songName = track.name,
-                artistName = track.artist,
-                coverUrl = track.coverUrl,
-                isFavorite = favId in likedIds,
-                isDownloaded = AppModel.isDownloaded(track.id),
-                onDismiss = { selectedTrack = null },
-                onPlay = {
-                    CoverFlight.play(track.id, track.coverUrl)
-                    scope.launch {
-                        AppModel.playback.playQueue(listOf(toMediaId(track.id)), startIndex = 0)
-                    }
-                },
-                onToggleFavorite = {
-                    scope.launch {
-                        val target = favId !in likedIds
-                        AppModel.playback.toggleFavoriteFor(toMediaId(track.id))
-                        cp.player.app.ui.util.UiEvents.notify(if (target) "已收藏" else "已取消收藏")
-                    }
-                },
-                onAddToQueue = {
-                    scope.launch { AppModel.playback.addToQueue(toMediaId(track.id)) }
-                    cp.player.app.ui.util.UiEvents.notify("已加入播放队列")
-                },
-                onPlayNext = {
-                    scope.launch { AppModel.playback.addNextToQueue(toMediaId(track.id)) }
-                    cp.player.app.ui.util.UiEvents.notify("将在下一首播放")
-                },
-                onAddToPlaylist = {},
-                onDownload = { AppModel.downloadTrack(track) },
-            )
+            RecentPlaysOptionsHost(track = track, onDismiss = { selectedTrack = null })
         }
     }
+}
+
+/**
+ * 「最近播放」行的选项弹层宿主。
+ *
+ * 独立整页与听歌报告的「最近」tab 共用同一份 —— 两处各写一遍的话，
+ * 收藏判定与文案迟早会漂。
+ */
+@Composable
+fun RecentPlaysOptionsHost(
+    track: cp.player.core.music.TrackSummary?,
+    onDismiss: () -> Unit,
+) {
+    if (track == null) return
+    val scope = rememberCoroutineScope()
+    val provider = AppModel.activeProviderId()
+    val likedIds by AppModel.playback.likedIds.collectAsState()
+    val toMediaId = { id: String -> if (id.contains("://")) id else "$provider://song/$id" }
+    val favId = remember(track.id) {
+        runCatching { cp.player.core.music.CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)
+    }
+    SongOptionsSheet(
+        songName = track.name,
+        artistName = track.artist,
+        coverUrl = track.coverUrl,
+        isFavorite = favId in likedIds,
+        isDownloaded = AppModel.isDownloaded(track.id),
+        onDismiss = onDismiss,
+        onPlay = {
+            CoverFlight.play(track.id, track.coverUrl)
+            scope.launch {
+                AppModel.playback.playQueue(listOf(toMediaId(track.id)), startIndex = 0)
+            }
+        },
+        onToggleFavorite = {
+            scope.launch {
+                val target = favId !in likedIds
+                AppModel.playback.toggleFavoriteFor(toMediaId(track.id))
+                cp.player.app.ui.util.UiEvents.notify(if (target) "已收藏" else "已取消收藏")
+            }
+        },
+        onAddToQueue = {
+            scope.launch { AppModel.playback.addToQueue(toMediaId(track.id)) }
+            cp.player.app.ui.util.UiEvents.notify("已加入播放队列")
+        },
+        onPlayNext = {
+            scope.launch { AppModel.playback.addNextToQueue(toMediaId(track.id)) }
+            cp.player.app.ui.util.UiEvents.notify("将在下一首播放")
+        },
+        onAddToPlaylist = {},
+        onDownload = { AppModel.downloadTrack(track) },
+    )
 }
 
 @Composable

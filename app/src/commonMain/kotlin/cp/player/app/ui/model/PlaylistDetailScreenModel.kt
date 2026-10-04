@@ -337,7 +337,18 @@ class PlaylistDetailScreenModel : ScreenModel {
         val ids = mediaIds(tracks)
         if (ids.isEmpty()) return
         if (animateCover) tracks.getOrNull(index)?.let { CoverFlight.play(it.id, it.coverUrl) }
-        screenModelScope.launch { AppModel.playback.playQueue(ids, startIndex = index, sourceId = sourceIdOrNull()) }
+        val clicked = ids.getOrNull(index) ?: return
+        screenModelScope.launch {
+            // 一起听进行中点歌 = 「下一首播放」；只拦用户点击（animateCover=true），
+            // autoPlayAt 的自动续播保持原语义。
+            if (animateCover) {
+                AppModel.playTrackClicked(clicked) {
+                    AppModel.playback.playQueue(ids, startIndex = index, sourceId = sourceIdOrNull())
+                }
+            } else {
+                AppModel.playback.playQueue(ids, startIndex = index, sourceId = sourceIdOrNull())
+            }
+        }
     }
 
     fun playAll() {

@@ -236,9 +236,9 @@ private fun UserProfileContent(
                             modifier = Modifier.animateItem(),
                             onClick = {
                                 CoverFlight.play(track.id, track.coverUrl)
-                                scope.launch {
-                                    // 点第 N 首时把**完整**列表交给播放器：否则播完折叠出来的
-                                    // 10 首队列就断了，用户会以为「这个歌手的歌只有 10 首」。
+                                // 点第 N 首时把**完整**列表交给播放器：否则播完折叠出来的
+                                // 10 首队列就断了，用户会以为「这个歌手的歌只有 10 首」。
+                                AppModel.playTrackClicked("$provider://song/${track.id}") {
                                     AppModel.playback.playQueue(mediaIds, index)
                                 }
                             },

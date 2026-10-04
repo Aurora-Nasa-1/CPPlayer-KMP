@@ -171,7 +171,12 @@ private fun AlbumDetailContent(
 
     val playAt: (Int) -> Unit = { index ->
         tracks.getOrNull(index)?.let { CoverFlight.play(it.id, it.coverUrl) }
-        scope.launch { AppModel.playback.playQueue(mediaIds, index.coerceAtLeast(0)) }
+        val clicked = mediaIds.getOrNull(index)
+        if (clicked != null) {
+            AppModel.playTrackClicked(clicked) {
+                AppModel.playback.playQueue(mediaIds, index.coerceAtLeast(0))
+            }
+        }
     }
     val shufflePlay: () -> Unit = {
         scope.launch {

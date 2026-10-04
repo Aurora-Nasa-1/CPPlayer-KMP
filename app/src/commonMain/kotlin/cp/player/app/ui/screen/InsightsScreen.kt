@@ -26,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,18 +44,25 @@ import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.LazyScrollColumn
+import cp.player.app.ui.component.LocalIsExpanded
 import cp.player.app.ui.component.ListeningCalendar
 import cp.player.app.ui.component.ListeningCalendarLegend
 import cp.player.app.ui.component.MonthListeningCalendar
 import cp.player.app.ui.component.SectionHeader
+import cp.player.app.ui.component.SongMenuActions
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.formatDurationCompact
 import cp.player.app.ui.component.formatDurationShort
 import cp.player.app.ui.component.rememberConfirmState
+import cp.player.app.ui.component.songContextMenuItems
+import cp.player.app.ui.component.songShareText
+import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.util.popOrNotify
+import cp.player.app.platform.shareText
 import cp.player.core.insights.Insights
 import cp.player.core.insights.RankItem
 import cp.player.core.util.localDateTimeOf
+import kotlinx.coroutines.launch
 
 /**
  * 听歌习惯页（「听歌报告」）。
@@ -97,6 +105,17 @@ private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
     val records by AppModel.listeningRecordsFlow.collectAsState()
     val writeError by AppModel.insightsWriteErrorFlow.collectAsState()
     val green by AppModel.heatmapGreenFlow.collectAsState()
+    // 「最近」tab 的状态在这里收集，而不是在 `recentTab` 内部 —— 后者是
+    // `LazyListScope` 扩展（非 @Composable），在里面读 collectAsState 编译不过。
+    val recentTracks by AppModel.recentTracksFlow.collectAsState()
+    val recentScope = rememberCoroutineScope()
+    val recentProvider = AppModel.activeProviderId()
+    // 与独立整页同一套口径（HomeScreen 里是 maxWidth >= 900.dp）。
+    // 列数在 `recentTab` 里没法自己算（LazyListScope 扩展不是 @Composable），从外面传。
+    val recentColumns = if (LocalIsExpanded.current) 2 else 1
+    val recentToMediaId: (String) -> String = { id ->
+        if (id.contains("://")) id else "$recentProvider://song/$id"
+    }
 
     // 「今天」只取一次：日历墙与聚合必须用同一个判据，否则跨零点时
     // 会出现「墙上有今天这一格、但今日时长显示为 0」这种自相矛盾的画面。
@@ -105,6 +124,7 @@ private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
 
     var tab by remember { mutableIntStateOf(initialTab.coerceIn(0, TAB_LABELS.lastIndex)) }
     var selectedDay by remember { mutableStateOf<String?>(null) }
+    var recentSelection by remember { mutableStateOf<cp.player.core.music.TrackSummary?>(null) }
     val confirm = rememberConfirmState()
 
     CpRouteScaffold(title = "听歌报告", onBack = onBack) { pageModifier ->
@@ -159,12 +179,114 @@ private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
                     )
 
                     InsightsScreen.TAB_HABITS -> habitsTab(summary)
-                    else -> item { RecentPlaysScreen(embedded = true).Content() }
+                    else -> recentTab(
+                        recentTracks = recentTracks,
+                        columns = recentColumns,
+                        scope = recentScope,
+                        toMediaId = recentToMediaId,
+                        onSelectionChange = { recentSelection = it },
+                    )
                 }
             }
         }
     }
     CpConfirmHost(confirm)
+    RecentPlaysOptionsHost(
+        track = recentSelection,
+        onDismiss = { recentSelection = null },
+    )
+}
+
+/**
+ * 「最近」tab。
+ *
+ * ⚠️ 这里**只铺行、列表由本页的 `LazyScrollColumn` 承载**，绝不能
+ * `item { RecentPlaysScreen(embedded = true).Content() }` 那样嵌一整页 ——
+ * `LazyColumn` 的 item 高度无界，内层滚动容器拿到 `maxHeight = Infinity` 会直接抛
+ * `IllegalStateException`（离屏探针实测）。行本身复用 [recentPlaysRows]，
+ * 与独立整页共用同一份渲染逻辑。
+ *
+ * 状态（列表 / scope / provider）由 [InsightsContent] 这个 `@Composable` 收集后当参数传进来：
+ * `LazyListScope` 的扩展函数不是 `@Composable`，在里面读 `collectAsState` 编译不过。
+ */
+private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
+    recentTracks: List<cp.player.core.music.TrackSummary>,
+    columns: Int,
+    scope: kotlinx.coroutines.CoroutineScope,
+    toMediaId: (String) -> String,
+    onSelectionChange: (cp.player.core.music.TrackSummary?) -> Unit,
+) {
+    if (recentTracks.isEmpty()) {
+        item {
+            StateSurface {
+                ContentState(
+                    title = "还没有最近播放",
+                    message = "播放歌曲后会显示在这里",
+                )
+            }
+        }
+        return
+    }
+
+    item {
+        Row(
+            Modifier.fillMaxWidth().padding(bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SectionHeader(
+                title = "最近播放",
+                supportingText = "完整历史列表 · 共 ${recentTracks.size} 首",
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(
+                onClick = {
+                    recentTracks.firstOrNull()?.let { CoverFlight.play(it.id, it.coverUrl) }
+                    scope.launch {
+                        AppModel.playback.playQueue(recentTracks.map { toMediaId(it.id) }, startIndex = 0)
+                    }
+                },
+            ) {
+                Text("播放全部")
+            }
+        }
+    }
+
+    recentPlaysRows(
+        tracks = recentTracks,
+        columns = columns,
+        onPlay = { index ->
+            val track = recentTracks[index]
+            CoverFlight.play(track.id, track.coverUrl)
+            AppModel.playTrackClicked(toMediaId(track.id)) {
+                AppModel.playback.playQueue(recentTracks.map { toMediaId(it.id) }, startIndex = index)
+            }
+        },
+        onOptions = onSelectionChange,
+        contextMenu = { track ->
+            songContextMenuItems(
+                SongMenuActions(
+                    onPlay = {
+                        CoverFlight.play(track.id, track.coverUrl)
+                        scope.launch {
+                            AppModel.playback.playQueue(
+                                recentTracks.map { toMediaId(it.id) },
+                                startIndex = recentTracks.indexOf(track),
+                            )
+                        }
+                    },
+                    onAddToQueue = {
+                        scope.launch { AppModel.playback.addToQueue(toMediaId(track.id)) }
+                        cp.player.app.ui.util.UiEvents.notify("已加入播放队列")
+                    },
+                    onPlayNext = {
+                        scope.launch { AppModel.playback.addNextToQueue(toMediaId(track.id)) }
+                        cp.player.app.ui.util.UiEvents.notify("将在下一首播放")
+                    },
+                    onShare = { shareText(songShareText(track)) },
+                )
+            )
+        },
+    )
 }
 
 // ============================================================

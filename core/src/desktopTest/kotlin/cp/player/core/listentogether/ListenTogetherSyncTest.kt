@@ -132,7 +132,16 @@ class ListenTogetherSyncTest {
         override suspend fun setQueue(
             mediaIds: List<String>, startIndex: Int, sourceId: String?,
         ) {
-            calls += "setQueue"
+            calls += "setQueue:${mediaIds.joinToString(",")}@$startIndex"
+            // 模拟真实语义：替换队列并定位（不播放；当前歌若仍是同一首则保持 currentTrack）
+            val cur = stateFlow.value.currentTrack
+            val newId = mediaIds.getOrNull(startIndex)
+            val sameSong = cur != null && newId != null && bareIdOf(newId) == bareIdOf(cur.id)
+            stateFlow.value = stateFlow.value.copy(
+                queue = mediaIds.map { QueueItem(it, "", "", null, null, 0L) },
+                currentIndex = startIndex,
+                currentTrack = if (sameSong) cur else null,
+            )
         }
 
         override suspend fun addToQueue(mediaId: String) {
@@ -473,6 +482,191 @@ class ListenTogetherSyncTest {
         e.onPlaybackObserved(pb.stateFlow.value)
 
         assertEquals(null, e.lastReportEnqueued, "跨音源内容塞进房间会毒害对端")
+    }
+
+    // ======================== 队列同步（P3） ========================
+
+    @Test
+    fun `本机加歌触发队列REPLACE上报且版本自增`() = runBlocking {
+        val backend = FakeSyncBackend()
+        val pb = FakePlayback()
+        pb.stateFlow.value = PlaybackUiState(
+            currentTrack = track("111"),
+            isPlaying = true,
+            queue = listOf(QueueItem("p://song/111", "", "", null, null, 0L)),
+        )
+        val e = engine(backend, pb)
+        forceInRoom(e, backend)
+
+        // 首次观察：初始化房间队列基准（REPLACE 一次）
+        e.onPlaybackObserved(pb.stateFlow.value)
+        val v0 = e.lastPlaylistEnqueued?.version
+        assertTrue(v0 != null && v0 > 0L, "首次观察应广播初始队列")
+
+        // 本机加一首 → 队列变化 → 再次 REPLACE，版本 +1
+        pb.stateFlow.value = pb.stateFlow.value.copy(
+            queue = pb.stateFlow.value.queue + QueueItem("p://song/222", "", "", null, null, 0L),
+        )
+        e.onPlaybackObserved(pb.stateFlow.value)
+
+        val r = e.lastPlaylistEnqueued ?: error("加歌后应上报 REPLACE")
+        assertEquals(listOf("111", "222"), r.songIds)
+        assertEquals((v0 ?: 0L) + 1L, r.version, "版本必须自增")
+    }
+
+    @Test
+    fun `队列没变时不重复上报`() = runBlocking {
+        val backend = FakeSyncBackend()
+        val pb = FakePlayback()
+        pb.stateFlow.value = PlaybackUiState(
+            currentTrack = track("111"),
+            isPlaying = true,
+            queue = listOf(QueueItem("p://song/111", "", "", null, null, 0L)),
+        )
+        val e = engine(backend, pb)
+        forceInRoom(e, backend)
+        e.onPlaybackObserved(pb.stateFlow.value)
+        val afterFirst = e.lastPlaylistEnqueued
+
+        // 同一队列再观察 N 次（positionMs 在变）→ 不再上报
+        e.onPlaybackObserved(pb.stateFlow.value.copy(positionMs = 5_000L))
+        e.onPlaybackObserved(pb.stateFlow.value.copy(positionMs = 6_000L))
+
+        assertEquals(afterFirst, e.lastPlaylistEnqueued, "队列无变化不应重复上报")
+    }
+
+    @Test
+    fun `远端REPLACE且当前歌在队列里时setQueue定位到当前歌`() = runBlocking {
+        val backend = FakeSyncBackend()
+        val pb = FakePlayback()
+        pb.stateFlow.value = PlaybackUiState(currentTrack = track("111"), isPlaying = true)
+        val e = engine(backend, pb)
+        forceInRoom(e, backend)
+        e.onPlaybackObserved(pb.stateFlow.value) // 建立房间基准（=[111]）
+
+        // 对方把队列改成 [111, 222, 333]（版本表变化）
+        e.applySnapshot(
+            RoomSnapshot(
+                null,
+                RoomPlaylist(
+                    songIds = listOf("111", "222", "333"),
+                    replace = true,
+                    versions = mapOf(99L to 1L),
+                ),
+            ),
+        )
+
+        assertTrue(
+            pb.calls.any { it.startsWith("setQueue:p://song/111,p://song/222,p://song/333@0") },
+            "应整表应用且定位到当前歌：${pb.calls}",
+        )
+        assertEquals("setQueue:p://song/111,p://song/222,p://song/333@0", pb.calls.last())
+    }
+
+    @Test
+    fun `远端REPLACE但当前歌不在队列时只更新认知不打断播放`() = runBlocking {
+        val backend = FakeSyncBackend()
+        val pb = FakePlayback()
+        pb.stateFlow.value = PlaybackUiState(currentTrack = track("999"), isPlaying = true)
+        val e = engine(backend, pb)
+        forceInRoom(e, backend)
+        e.onPlaybackObserved(pb.stateFlow.value)
+
+        e.applySnapshot(
+            RoomSnapshot(
+                null,
+                RoomPlaylist(
+                    songIds = listOf("111", "222"),
+                    replace = true,
+                    versions = mapOf(99L to 1L),
+                ),
+            ),
+        )
+
+        assertTrue(pb.calls.none { it.startsWith("setQueue") }, "不该打断正在听的歌：${pb.calls}")
+    }
+
+    @Test
+    fun `自己上报的REPLACE被快照回读时不重复应用`() = runBlocking {
+        val backend = FakeSyncBackend()
+        val pb = FakePlayback()
+        pb.stateFlow.value = PlaybackUiState(
+            currentTrack = track("111"),
+            isPlaying = true,
+            queue = listOf(QueueItem("p://song/111", "", "", null, null, 0L)),
+        )
+        val e = engine(backend, pb)
+        forceInRoom(e, backend)
+        e.onPlaybackObserved(pb.stateFlow.value)
+        val sent = e.lastPlaylistEnqueued ?: error("前置：应已上报")
+
+        // 快照回读自己发的列表（versions 含自己刚发的版本）→ 不应再 setQueue
+        e.applySnapshot(
+            RoomSnapshot(
+                null,
+                RoomPlaylist(
+                    songIds = sent.songIds,
+                    replace = true,
+                    versions = mapOf(42L to sent.version),
+                ),
+            ),
+        )
+
+        assertTrue(pb.calls.none { it.startsWith("setQueue") }, "自己的回声不该驱动本机：${pb.calls}")
+    }
+
+    @Test
+    fun `GOTO的歌在房间队列里时playQueue整条应用保住队列`() = runBlocking {
+        val backend = FakeSyncBackend()
+        val pb = FakePlayback()
+        pb.stateFlow.value = PlaybackUiState(currentTrack = track("111"), isPlaying = true)
+        val e = engine(backend, pb)
+        forceInRoom(e, backend)
+        e.onPlaybackObserved(pb.stateFlow.value) // roomQueue = [111]
+
+        // 先让房间队列变成 [111, 222]
+        e.applySnapshot(
+            RoomSnapshot(
+                null,
+                RoomPlaylist(
+                    songIds = listOf("111", "222"),
+                    replace = true,
+                    versions = mapOf(99L to 1L),
+                ),
+            ),
+        )
+        // 对方切到 222 → 222 在房间队列里 → 整条 playQueue 定位
+        e.applySnapshot(
+            RoomSnapshot(command(target = "222", serverSeq = 9_000L), null),
+        )
+
+        assertTrue(
+            pb.calls.any { it.startsWith("playQueue:p://song/111,p://song/222@1") },
+            "应带完整房间队列切歌：${pb.calls}",
+        )
+    }
+
+    @Test
+    fun `退房后队列状态被清理`() = runBlocking {
+        val backend = FakeSyncBackend()
+        val pb = FakePlayback()
+        pb.stateFlow.value = PlaybackUiState(
+            currentTrack = track("111"),
+            isPlaying = true,
+            queue = listOf(QueueItem("p://song/111", "", "", null, null, 0L)),
+        )
+        val e = engine(backend, pb)
+        forceInRoom(e, backend)
+        e.onPlaybackObserved(pb.stateFlow.value)
+        assertTrue(e.lastPlaylistEnqueued != null, "前置：在房时应有过队列上报")
+
+        e.endRoom()
+        pb.stateFlow.value = pb.stateFlow.value.copy(
+            queue = pb.stateFlow.value.queue + QueueItem("p://song/222", "", "", null, null, 0L),
+        )
+        e.onPlaybackObserved(pb.stateFlow.value)
+
+        assertEquals(null, e.lastPlaylistEnqueued, "退房后队列变化不得再上报")
     }
 
     // ======================== 清理 ========================

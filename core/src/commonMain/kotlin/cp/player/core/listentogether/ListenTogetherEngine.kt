@@ -3,6 +3,7 @@ package cp.player.core.listentogether
 import cp.player.core.BackendResult
 import cp.player.core.playback.PlaybackController
 import cp.player.core.playback.PlaybackUiState
+import cp.player.core.playback.QueueItem
 import cp.player.core.util.currentTimeMillis
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -109,6 +110,7 @@ class ListenTogetherEngine(
     private var loop: Job? = null
     private var observerJob: Job? = null
     private var reportJob: Job? = null
+    private var playlistJob: Job? = null
 
     /**
      * 跟随模式。进房即开：本机操作广播给房间，远端指令驱动本机。
@@ -156,6 +158,34 @@ class ListenTogetherEngine(
     /** 上报队列：CONFLATED —— 快速连续操作只报最新一条，网络不排队。 */
     private val reportChannel = Channel<ReportCmd>(Channel.CONFLATED)
 
+    /** 队列上报通道：与指令通道分开 —— 两者的节律、合并语义、回声判据都不同。 */
+    private val playlistChannel = Channel<PlaylistCmd>(Channel.CONFLATED)
+
+    /**
+     * 房间队列认知（P3 队列同步的枢纽）：songIds 是**裸 songId 列表**（displayList），
+     * versions 是服务端维护的「谁把队列改到第几版」（userId → version）。
+     *
+     * 判定纪律：**版本表没变 = 没人动过队列**（自己的 REPLACE 也会乐观写回这里，
+     * 所以快照回读自己发的列表时版本表相同 → 跳过）；列表比较只用于**本机操作判定**。
+     */
+    @Volatile private var roomQueue: RoomQueueState? = null
+
+    /** 本机下一次上报队列用的版本号（从快照里自己上次的上报续接）。 */
+    @Volatile private var myQueueVersion: Long = 0L
+
+    private data class RoomQueueState(
+        val songIds: List<String>,
+        val versions: Map<Long, Long>,
+    )
+
+    // internal：lastPlaylistEnqueued（同步可见的诊断点）要把它暴露给测试断言。
+    internal data class PlaylistCmd(val songIds: List<String>, val version: Long)
+
+    /**
+     * 最近一条进入发送队列的**队列**上报。同步可见的断言/诊断点，同 [lastReportEnqueued]。
+     */
+    @Volatile internal var lastPlaylistEnqueued: PlaylistCmd? = null
+
     private data class RoomSync(
         val songId: String,
         val isPlaying: Boolean,
@@ -173,6 +203,8 @@ class ListenTogetherEngine(
         val positionMs: Long,
         val wallMs: Long,
         val isBuffering: Boolean,
+        /** 本次观察的队列（裸 id 子序列）。队列上报只在**这个列表变化**时考虑 —— 见 observe。 */
+        val queueIds: List<String>,
     )
 
     private data class PendingSeek(val songId: String, val progressMs: Long)
@@ -242,12 +274,22 @@ class ListenTogetherEngine(
                 }
             }
         }
+        if (playlistJob?.isActive != true) {
+            playlistJob = scope.launch {
+                for (c in playlistChannel) {
+                    val roomId = _state.value.room?.roomId ?: continue
+                    val uid = myUserId()
+                    backend.reportPlaylist(roomId, uid, c.version, c.songIds)
+                }
+            }
+        }
     }
 
     fun stop() {
         loop?.cancel(); loop = null
         observerJob?.cancel(); observerJob = null
         reportJob?.cancel(); reportJob = null
+        playlistJob?.cancel(); playlistJob = null
     }
 
     /** 手动刷新（进入房间页时调用，让页面立刻有数据而不是等一个轮询周期）。 */
@@ -498,6 +540,8 @@ class ListenTogetherEngine(
         // 纵深防御：生产路径（轮询循环 / join）都在房时才调这里，但退房与快照之间存在
         // 竞态窗口 —— 退房后到达的快照绝不允许再驱动本机播放。
         if (!_state.value.inRoom) return
+        // **先队列后指令**：切歌分支要用 roomQueue 构造 playQueue，必须先就位。
+        snap.playlist?.let { applyRemotePlaylist(it) }
         val cmd = snap.command ?: return
         val uid = myUserId()
         if (uid != 0L && cmd.userId == uid && cmd.clientSeq in 1..lastSentClientSeq) {
@@ -507,6 +551,51 @@ class ListenTogetherEngine(
         if (cmd.serverSeq <= lastSeenServerSeq) return
         lastSeenServerSeq = cmd.serverSeq
         applyCommand(cmd)
+    }
+
+    /**
+     * 应用远端队列（P3）。**回声判据是版本表**：自己的 REPLACE 会乐观写进
+     * [roomQueue]，快照回读时版本表相同 → 跳过 —— 不需要 clientSeq（协议里队列没有它）。
+     */
+    private suspend fun applyRemotePlaylist(pl: RoomPlaylist) {
+        val mine = myUserId()
+        // 快照里自己上次会话的上报版本是本机版本的基线，续接递增而不是从 0 重来
+        pl.versions[mine]?.let { if (it > myQueueVersion) myQueueVersion = it }
+
+        val known = roomQueue
+        if (known != null) {
+            if (pl.versions == known.versions) return
+            // 服务端还没存下本机**最新**的 REPLACE（上报在途 / 轮询先到）：
+            // 按旧版本表回滚认知会让 observe 把本地队列再 REPLACE 一轮 —— 直接等下轮。
+            if ((pl.versions[mine] ?: 0L) < (known.versions[mine] ?: 0L)) return
+        }
+        if (pl.songIds.isEmpty()) return // 空列表=房间还没有人上报过队列，无可应用
+
+        roomQueue = RoomQueueState(pl.songIds, pl.versions)
+
+        val pb = playback ?: return
+        val st = pb.state.value
+        if (queueBareIds(st.queue) == pl.songIds) return // 本地已一致（自己刚上报的落地）
+
+        // 只有「当前歌在房间队列里」才立即替换本地队列：setQueue 定位到当前歌，
+        // currentTrack / isPlaying / position 全部不动，播放零打断。
+        // 当前歌不在（本地音乐混播、刚进房兜底单曲）时**只更新认知不上本地**——
+        // 强行替换会打断正在听的歌；等下次切歌时 playQueue 一并带过来。
+        val cur = localSongId(st)
+        val idx = cur?.let { pl.songIds.indexOf(it) } ?: -1
+        val media = mediaIdForSong ?: return
+        if (idx >= 0) {
+            pb.setQueue(pl.songIds.map(media), startIndex = idx)
+            applyGuardUntilMs = currentTimeMillis() + APPLY_GUARD_MS
+            lastObserved = null
+        } else {
+            // 认知与本地队列刻意不一致：预置观察基准（队列=本地现状），
+            // 否则下一次 observe 会把这份「历史遗留差异」当成用户操作 REPLACE 回房间
+            lastObserved = Observed(
+                cur.orEmpty(), st.isPlaying, st.positionMs,
+                currentTimeMillis(), st.isBuffering, queueBareIds(st.queue),
+            )
+        }
     }
 
     /** 把一条远端指令落成本机播放动作。 */
@@ -520,16 +609,32 @@ class ListenTogetherEngine(
         val targetSong = cmd.targetSongId
 
         if (targetSong != null && targetSong != localSongId(pb.state.value)) {
-            // 远端切歌：优先在本地队列里定位（保留队列上下文与顺序），
-            // 找不到再单曲替换队列 —— 新进房者没有房主的队列，这是唯一的兜底播放路径。
-            val idx = pb.state.value.queue.indexOfFirst { bareSongIdOf?.invoke(it.mediaId) == targetSong }
-            val mediaId = mediaIdForSong?.invoke(targetSong)
-            if (idx >= 0) {
-                pb.playAt(idx)
-            } else if (mediaId != null) {
-                pb.play(mediaId)
+            // 远端切歌的三级定位：
+            // ① 房间队列已知且包含 target → playQueue 整条房间队列 + 定位 ——
+            //    新进房者的队列从残缺态一步到位，也杜绝「单曲 play 替换队列 →
+            //    残缺队列被当成用户操作 REPLACE 回房间」的覆盖事故；
+            // ② 本地队列里有 → playAt（保留本地上下文，队列未同步时的过渡路径）；
+            // ③ 单曲 play 替换队列（最后兜底：房间队列未知，如快照还没到）。
+            val rq = roomQueue
+            val roomIdx = rq?.songIds?.indexOf(targetSong) ?: -1
+            val media = mediaIdForSong
+            if (rq != null && roomIdx >= 0 && media != null) {
+                pb.playQueue(rq.songIds.map(media), startIndex = roomIdx)
             } else {
-                return // 连 mediaId 都构造不出来（音源未接线），不动本机
+                val localIdx = pb.state.value.queue.indexOfFirst { bareSongIdOf?.invoke(it.mediaId) == targetSong }
+                if (localIdx >= 0) {
+                    pb.playAt(localIdx)
+                } else if (media != null) {
+                    pb.play(media.invoke(targetSong))
+                    // 单曲替换队列会把本地队列塌缩成 [target]。预置观察基准 —— 否则
+                    // 塌缩后的队列在下一次 observe 会被当成用户操作 REPLACE 回房间，
+                    // 把对方的完整队列清成一首（新进房者必须走 ① 的 playQueue 才安全）。
+                    lastObserved = Observed(
+                        targetSong, targetPlaying, 0L, now, true, listOf(targetSong),
+                    )
+                } else {
+                    return // 连 mediaId 都构造不出来（音源未接线），不动本机
+                }
             }
             roomSync = RoomSync(targetSong, targetPlaying, cmd.progressMs, now)
             lastObserved = null
@@ -597,7 +702,8 @@ class ListenTogetherEngine(
         }
         val now = currentTimeMillis()
         val last = lastObserved
-        lastObserved = Observed(mySong, st.isPlaying, st.positionMs, now, st.isBuffering)
+        val localQueue = queueBareIds(st.queue)
+        lastObserved = Observed(mySong, st.isPlaying, st.positionMs, now, st.isBuffering, localQueue)
 
         // 远端切歌的进度落地：加载完成、本机曲目刚到位时立刻补 seek，不等 5s 的漂移校正
         pendingSeek?.let { p ->
@@ -607,6 +713,29 @@ class ListenTogetherEngine(
                     roomSync = roomSync?.copy(progressMs = p.progressMs, anchorWallMs = now)
                     pb.seekTo(p.progressMs)
                 }
+            }
+        }
+
+        // ===== 队列同步（P3）：只在**队列相对上次观察发生变化**时考虑上报 =====
+        // 基准是 lastObserved.queueIds 而不是 roomQueue：后者与本地不一致还可能是
+        // 「远端改动尚未应用（当前歌不在房间队列）」的历史遗留 —— 那不是本机操作，
+        // 每次 tick 重报会把房间队列来回覆盖。真正的本机操作必然表现为队列变化。
+        if (last == null || last.queueIds != localQueue) {
+            val rq = roomQueue
+            if (rq == null) {
+                // 房间还没有已知队列：把本机队列作为初始 REPLACE 广播（建房者在听歌场景）
+                if (localQueue.isNotEmpty()) {
+                    myQueueVersion += 1
+                    roomQueue = RoomQueueState(
+                        localQueue, mapOf(myUserId() to myQueueVersion),
+                    )
+                    enqueuePlaylistReport(localQueue)
+                }
+            } else if (localQueue != rq.songIds) {
+                // 本机改了队列（添加/删除/重排/点击播放）→ 整表 REPLACE；版本自增
+                myQueueVersion += 1
+                roomQueue = RoomQueueState(localQueue, rq.versions + (myUserId() to myQueueVersion))
+                enqueuePlaylistReport(localQueue)
             }
         }
 
@@ -679,11 +808,29 @@ class ListenTogetherEngine(
         applyGuardUntilMs = 0L
         lastReportEnqueued = null
         reportChannel.tryReceive() // CONFLATED 只有一条在途：清掉，退房后不能再发指令
+        roomQueue = null
+        myQueueVersion = 0L
+        lastPlaylistEnqueued = null
+        playlistChannel.tryReceive()
         followEnabled = true
     }
 
     private fun localSongId(st: PlaybackUiState): String? =
         st.currentTrack?.let { t -> bareSongIdOf?.invoke(t.id) }
+
+    /**
+     * 本机队列的可同步子序列：队列里可能混着别的音源 / 本地文件（解析不出裸 id），
+     * 房间协议只认当前音源的 songId —— **不上报解析不出的条目**（塞给对端就是毒数据）；
+     * 应用远端队列是整表替换，混播条目会被挤掉 —— 一起听场景下房间队列是唯一事实。
+     */
+    private fun queueBareIds(queue: List<QueueItem>): List<String> =
+        queue.mapNotNull { q -> bareSongIdOf?.invoke(q.mediaId) }
+
+    private fun enqueuePlaylistReport(songIds: List<String>) {
+        val cmd = PlaylistCmd(songIds, myQueueVersion)
+        lastPlaylistEnqueued = cmd
+        playlistChannel.trySend(cmd)
+    }
 
     private fun enqueueReport(
         commandType: String,

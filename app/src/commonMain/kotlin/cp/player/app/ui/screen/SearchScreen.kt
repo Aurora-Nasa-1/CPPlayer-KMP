@@ -347,7 +347,9 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                             modifier = Modifier.animateItem(),
                                             onClick = {
                                                 CoverFlight.play(track.id, track.coverUrl)
-                                                scope.launch { AppModel.playback.playQueue(result.songs.map { "$provider://song/${it.id}" }, index) }
+                                                AppModel.playTrackClicked("$provider://song/${track.id}") {
+                                                    AppModel.playback.playQueue(result.songs.map { "$provider://song/${it.id}" }, index)
+                                                }
                                             },
                                             onOptionsClick = { selectedTrack = track },
                                             // 桌面端右键菜单：动作集合与 SongOptionsSheet 对齐
