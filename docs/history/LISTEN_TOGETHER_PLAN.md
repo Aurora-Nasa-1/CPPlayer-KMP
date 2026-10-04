@@ -101,7 +101,21 @@ grep -a -c "cloudsearch"                                                # 8（�
 |---|---|---|
 | **① 分享链接 / 二维码 / 房号** | ✅ 确定 | 官方格式：`https://st.music.163.com/listen-together/share/?songId=…&roomId=…&inviterId=…`<br>**纯本地拼接，不碰接口**。二维码用已有 `QrCodeGen.kt` |
 | **② 私信投递** | ✅ 确定 | `send_text`（POST `/api/msg/private/send`，`type:"text"`）发链接 |
-| **③ 直打 `invitation/send`** | ❌ 未证实 | 全 GitHub 只在**一处**出现，且写法是 4 payload × 2 路径的**穷举盲试**，无成功证据 |
+| **③ 直打 `invitation/send`** | ❌ **已实测证实【不存在】** | 正反对照钉死：已知路径 `200`、明确不存在的路径 `404`、三个候选路径（`send` / `send/v2` / `create`）**全 `404`**。上游 `404` 即「路径不存在」 |
+
+**为什么「发出邀请」在 HTTP 侧根本不存在（实测 + 机制解释）**
+
+`accept` 的上游路径是 `/api/listen/together/play/invitation/**accept**` —— 服务端**有**邀请概念，
+只是「把它发出去」那一步不在这里。房间响应里有 `chatRoomId`（云信聊天室 id），
+说明官方 App 的房间内交互走**云信 IM 长连接**。所以邀请是**一条 IM 富文本消息（卡片）**，
+由客户端经 IM 通道发出 —— **HTTP API 侧没有对应端点，是因为这条消息根本不走 HTTP**。
+
+旁证：`/api/msg/private/send` 存在且接受 `type=text`（返回 `200`），
+但 `type` 试 `listentogether` / `together_invite` / `invite` 全部得到
+`{"code":500,"msg":"Invalid parameter"}`（**不是 404** ⇒ 端点存在、只是取值不被接受）。
+即便真存在某个结构化 type，也无法靠猜穷举，且每次尝试都是一次真实发信。
+
+**结论**：邀请只能走「链接 / 房号 → 对方调 `accept`」这条确定路径。
 
 唯一不可复刻的是官方 App「朋友动态页点在线好友一键邀请」—— 那依赖客户端 IM 在线态。
 
@@ -130,8 +144,8 @@ v2 依据「端点名是 `report` 不是 `push`」+「HyPlayer 只写不读」�
 | # | 项 | 状态 |
 |---|---|---|
 | ① | 读侧给什么 | ✅ **已完成** → §9 |
-| ② | 分享链接能否被官方 App 接受 | ⬜ **待测（需你确认：会在你账号上产生一次真实邀请）** |
-| ③ | `invitation/send` 是否存在 | ⬜ **未测（同上，会真发消息给他人）** |
+| ② | 分享链接能否被官方 App 接受 | 🟡 **部分验证**：链接 HTTP `200` 可达、`accept` 参数契约成立；**端到端进房仍需第二个账号** |
+| ③ | `invitation/send` 是否存在 | ✅ **已完成：确认不存在**（正反对照，三个候选路径全 `404`） |
 | ④ | 枚举复核 | ✅ 已完成：**原样回读、大小写不敏感**，建议用大写 |
 
 ②③ 都涉及**对其他真实用户的外部动作**，不在未授权时执行。
@@ -257,7 +271,7 @@ listentogether/
 | **P1 生命周期 + 邀请闭环** | create / check / status / end + 30s 心跳；建房 → 拼分享链接 → 二维码/复制 → 对方 `accept` | 两台设备进同一房间、成员可见、能退房 |
 | **P2 指令同步** | 轮询 `sync/playlist/get` 读 `playCommand` → 应用；本机操作 → `play/command` 上报；`serverSeq` + `clientSeq` 抑制；进度外推 | 两端切歌/暂停/seek 收敛，**无抖动** |
 | **P3 队列同步** | `sync/list/command` + 读回 `playlist.displayList` | 一端改队列，另一端一致且不错误重排 |
-| **P4 邀请增强** | 试 `invitation/send`（需授权）；失败则保持分享 + 私信 | 可选 |
+| ~~P4 邀请增强~~ | ❌ **已实测排除**：`invitation/send` 确认不存在（§9.5），无需再试 | 关闭 |
 | **P5 能力抽象** | `ListenTogetherBackend` + manifest 能力声明；其他音源 `Unsupported` | 切到 migu 时入口置灰而非报错 |
 | **P6 打磨** | 断线重连、Android 保活、UI 精修 | 锁屏 30 分钟回来仍同步 |
 
@@ -333,7 +347,7 @@ A 用网易云建房、B 在咪咕 → B 无法解析房间里的曲目。
 - 不改 `PlaybackController` 接口语义；
 - 不把一起听塞进 `IntegrationService`；
 - 不在 `IntegrationRoutes` 加一起听端点（对外契约方向相反）；
-- 不依赖 `invitation/send`（未证实）作为主路径。
+- 不依赖 `invitation/send`（**已实测证实不存在**，§9.5）—— 邀请只走「链接 / 房号 → 对方 `accept`」。
 
 ---
 
@@ -423,9 +437,53 @@ sync/playlist/get →
 - `room/check` 全文仅 `{"copywriting":null,"joinable":true,"status":"AVAILABLE","type":"NORMAL"}`。
 - `end` 的响应里有 `shareInfo` 字段（本次为 null）—— **可能是官方邀请链接的载体，值得后续验证**。
 
-### 9.5 未测项（需授权）
+### 9.5 第二轮实测：邀请与消息通道（2026-10-04 09:25，已授权）
 
-- 分享链接在官方 App 的接受情况（§2 ②）；
-- `invitation/send` 是否真实存在（§2 ③）。
+**新增两个透传口（测未封装端点必须知道）**
 
-两项都会**对你的账号产生真实的对外动作**（可能触达他人），故未执行。
+| 口 | 用法 | 实测结论 |
+|---|---|---|
+| `batch` | 参数名以 `/api/` 开头即透传 | ⚠️ **只能调「无参数路径」**。同一条 `status/get`：空值 → `200`；**任何非空值 → `400`**。<br>根因：模块把参数塞成 JSON **字符串**，而上游 `/api/batch` 期望**对象**（模块侧 bug） |
+| `api` | `uri` + `data`（JSON 体）+ `crypto` | ✅ **真正的任意路径透传口**，可带参数与加密方式 |
+
+> ⚠️ 用 `batch` 测未封装端点只会拿到 **batch 自己的 `400`**，不是目标端点的响应 ——
+> 极易误判成「端点不存在」。第一轮那三条 `400` 其实是**无结论**，不是否定。
+
+**`invitation/send` 确认不存在（正反对照）**
+
+| 路径 | 结果 |
+|---|---|
+| `/api/listen/together/status/get` | `200` ✅ 已知存在 |
+| `/api/listen/together/play/invitation/accept` | `200` ✅ 已知存在 |
+| `/api/listen/together/room/check` | `200` ✅ 已知存在 |
+| `/api/listen/together/play/invitation/nonexistent_zz` | `404` ← 对照组 |
+| `/api/listen/together/bogus/endpoint` | `404` ← 对照组 |
+| **`.../play/invitation/send`** | **`404`** |
+| **`.../play/invitation/send/v2`** | **`404`** |
+| **`.../play/invitation/create`** | **`404`** |
+
+⇒ 上游 `404` = 路径不存在。**邀请发送端点确实不存在**（ShinawaseLoader 那处是盲试，从未成功）。
+
+**`accept` 的两个行为怪癖（直接影响加入流程实现）**
+
+1. **已在房间时无条件返回 `200`** —— 连乱造的 `roomId`（`deadbeef_1`）和错误的 `inviterId`（`1`）
+   都返回 `200` + `hintText:"当前正在一起听"`；它不校验参数，直接回你当前房间。
+   ⇒ **加入流程必须先查 `status`**：已在房间时提示「需先退出」，别指望 `accept` 报错。
+2. **不在房间时一律 `488`** —— 乱造的 roomId 与「格式正确但房间已销毁」的 roomId 返回**完全相同**的
+   `{"code":500,"msg":"API error (code=488): Unknown error"}`。
+   ⇒ **无法区分「房间不存在」与「邀请不是给你的」**；UI 只能说「邀请无效或已过期」，
+   **不要编造更具体的原因**。
+
+**分享链接可达性**：`https://st.music.163.com/listen-together/share/?roomId=…&inviterId=…`
+→ **HTTP 200**（无跳转）。格式正确、页面存在。
+
+**消息 `type` 试探**：`/api/msg/private/send` 用 `type=text` 返回 `200`（透传可用）；
+换 `listentogether` / `together_invite` / `invite` 全部 `{"code":500,"msg":"Invalid parameter"}`
+（**不是 404** ⇒ 端点存在、只是取值不被接受）。结构化 type 无法靠猜穷举。
+
+**仍未验证（单账号限制）**
+
+- `send_text` 发给自己返回 `200`，但**自己跟自己不产生会话**（`msg/private/history` 为空）
+  ⇒ **投递效果无法用单账号验证**，需第二个账号真实收一次。
+- 因此「对方点链接能否真的进房」**尚未端到端验证**；已验证的只是参数契约
+  （`accept` 路径 `200`，且链接携带的正是它需要的两个参数）。
