@@ -9,12 +9,13 @@ import {
   LinuxStream,
   LinuxDiag,
   LinuxKmp,
+  LinuxReal,
   LinuxEnd,
 } from './scenes';
 
 const TR = 18;
 
-/** CPPlayer · Linux 极客版（60s / 1920x1080 / 30fps） */
+/** CPPlayer · Linux 极客版（67.4s / 1920x1080 / 30fps） */
 export const LinuxGeek: React.FC = () => (
   <TransitionSeries>
     <TransitionSeries.Sequence name="01 终端安装" durationInFrames={300} premountFor={30}>
@@ -66,7 +67,14 @@ export const LinuxGeek: React.FC = () => (
       presentation={fade()}
       timing={linearTiming({durationInFrames: TR})}
     />
-    <TransitionSeries.Sequence name="08 收尾" durationInFrames={90} premountFor={30}>
+    <TransitionSeries.Sequence name="08 真软件实拍" durationInFrames={240} premountFor={30}>
+      <LinuxReal />
+    </TransitionSeries.Sequence>
+    <TransitionSeries.Transition
+      presentation={fade()}
+      timing={linearTiming({durationInFrames: TR})}
+    />
+    <TransitionSeries.Sequence name="09 收尾" durationInFrames={90} premountFor={30}>
       <LinuxEnd />
     </TransitionSeries.Sequence>
   </TransitionSeries>

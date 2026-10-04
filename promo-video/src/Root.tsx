@@ -9,6 +9,7 @@ import {
   LinuxStream,
   LinuxDiag,
   LinuxKmp,
+  LinuxReal,
   LinuxEnd,
 } from './videos/linux/scenes';
 import {WindowsPractical} from './videos/windows/WindowsPractical';
@@ -53,7 +54,7 @@ export const RemotionRoot: React.FC = () => {
           width={HD.width}
           height={HD.height}
           fps={HD.fps}
-          durationInFrames={1800}
+          durationInFrames={2022}
         />
         {scene('LinuxHook', LinuxHook, 300, HD)}
         {scene('LinuxArch', LinuxArch, 300, HD)}
@@ -62,6 +63,7 @@ export const RemotionRoot: React.FC = () => {
         {scene('LinuxStream', LinuxStream, 300, HD)}
         {scene('LinuxDiag', LinuxDiag, 216, HD)}
         {scene('LinuxKmp', LinuxKmp, 180, HD)}
+        {scene('LinuxReal', LinuxReal, 240, HD)}
         {scene('LinuxEnd', LinuxEnd, 90, HD)}
       </Folder>
 

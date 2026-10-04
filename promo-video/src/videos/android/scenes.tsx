@@ -1,11 +1,12 @@
 import React from 'react';
-import {AbsoluteFill, useCurrentFrame} from 'remotion';
+import {AbsoluteFill, interpolate, useCurrentFrame} from 'remotion';
 import {C, FONT, MONO} from '../../theme';
-import {enter} from '../../lib/anim';
+import {EASE, enter} from '../../lib/anim';
 import {Backdrop} from '../../components/Backdrop';
 import {Bullet, Chip, Grad, Headline, Panel, Sub} from '../../components/Bits';
 import {LogoMark} from '../../components/LogoMark';
 import {PhoneFrame} from '../../components/PhoneFrame';
+import {RealShot} from '../../components/RealShot';
 import {EndCard} from '../../components/EndCard';
 
 /* ---------- 竖屏通用小件 ---------- */
@@ -72,141 +73,15 @@ export const AndroidHook: React.FC = () => {
           width={560}
           style={{marginTop: 56, opacity: p, translate: `0px ${(1 - p) * 70}px`}}
         >
-          <div style={{position: 'absolute', inset: 0, padding: '34px 26px 0'}}>
-            <div style={{display: 'flex', justifyContent: 'space-between', fontFamily: MONO, fontSize: 24, color: C.sub}}>
-              <span>21:32</span>
-              <span>▾ ▮</span>
-            </div>
-            <div style={{display: 'flex', alignItems: 'center', gap: 14, marginTop: 26}}>
-              <LogoMark size={44} glow={false} />
-              <span style={{fontFamily: FONT, fontSize: 32, fontWeight: 700, color: C.text}}>CPPlayer</span>
-            </div>
-            <div style={{fontFamily: FONT, fontSize: 40, fontWeight: 700, color: C.text, marginTop: 34, opacity: enter(frame, 30)}}>
-              晚上好
-            </div>
-            <div style={{fontFamily: FONT, fontSize: 26, color: C.sub, marginTop: 8, opacity: enter(frame, 38)}}>
-              10月4日 · 周日
-            </div>
-
-            <div
-              style={{
-                marginTop: 30,
-                borderRadius: 24,
-                background: 'linear-gradient(135deg,#4A6CF7 0%,#8B5CF6 100%)',
-                padding: '30px 30px',
-                display: 'flex',
-                alignItems: 'center',
-                opacity: enter(frame, 52),
-                translate: `0px ${(1 - enter(frame, 52)) * 26}px`,
-              }}
-            >
-              <div style={{flex: 1}}>
-                <div style={{fontFamily: FONT, fontSize: 28, color: 'rgba(255,255,255,0.85)'}}>今日推荐</div>
-                <div style={{fontFamily: FONT, fontSize: 38, fontWeight: 700, color: '#fff', marginTop: 8}}>
-                  Daily Mix · 30 首
-                </div>
-              </div>
-              <div
-                style={{
-                  width: 74,
-                  height: 74,
-                  borderRadius: 999,
-                  background: 'rgba(255,255,255,0.2)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <PlayTri size={26} />
-              </div>
-            </div>
-
-            <div style={{display: 'flex', gap: 18, marginTop: 20}}>
-              {['曲库', '搜索'].map((t, i) => (
-                <div
-                  key={t}
-                  style={{
-                    flex: 1,
-                    borderRadius: 20,
-                    border: `1px solid ${C.border}`,
-                    background: 'rgba(255,255,255,0.05)',
-                    padding: '26px 26px',
-                    fontFamily: FONT,
-                    fontSize: 30,
-                    fontWeight: 600,
-                    color: C.text,
-                    opacity: enter(frame, 74 + i * 12),
-                    translate: `0px ${(1 - enter(frame, 74 + i * 12)) * 20}px`,
-                  }}
-                >
-                  {t}
-                </div>
-              ))}
-            </div>
-
-            <div style={{fontFamily: FONT, fontSize: 28, color: C.sub, marginTop: 34, opacity: enter(frame, 104)}}>
-              最近播放
-            </div>
-            <div style={{display: 'flex', gap: 16, marginTop: 16}}>
-              {[
-                'linear-gradient(135deg,#4A6CF7,#22D3EE)',
-                'linear-gradient(135deg,#8B5CF6,#EC4899)',
-                'linear-gradient(135deg,#34D399,#4A6CF7)',
-              ].map((hue, i) => (
-                <div key={i} style={{opacity: enter(frame, 116 + i * 10)}}>
-                  <Cover size={138} radius={18} hue={hue} />
-                </div>
-              ))}
-            </div>
-
-            <div style={{display: 'flex', gap: 18, marginTop: 22}}>
-              {['专辑', '歌手', '歌单'].map((t, i) => (
-                <div
-                  key={t}
-                  style={{
-                    flex: 1,
-                    borderRadius: 18,
-                    border: `1px solid ${C.border}`,
-                    background: 'rgba(255,255,255,0.05)',
-                    padding: '20px 22px',
-                    fontFamily: FONT,
-                    fontSize: 26,
-                    fontWeight: 600,
-                    color: C.text,
-                    opacity: enter(frame, 140 + i * 10),
-                    translate: `0px ${(1 - enter(frame, 140 + i * 10)) * 18}px`,
-                  }}
-                >
-                  {t}
-                </div>
-              ))}
-            </div>
-
-            <div
-              style={{
-                position: 'absolute',
-                left: 20,
-                right: 20,
-                bottom: 30,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 16,
-                borderRadius: 999,
-                background: 'rgba(255,255,255,0.08)',
-                border: `1px solid ${C.border}`,
-                padding: '14px 22px',
-                opacity: enter(frame, 150),
-                translate: `0px ${(1 - enter(frame, 150)) * 24}px`,
-              }}
-            >
-              <Cover size={56} radius={12} />
-              <div style={{flex: 1}}>
-                <div style={{fontFamily: FONT, fontSize: 26, color: C.text, fontWeight: 600}}>Night Drive</div>
-                <div style={{fontFamily: FONT, fontSize: 21, color: C.sub}}>Aurora Keys</div>
-              </div>
-              <PlayTri size={18} color={C.sub} />
-            </div>
-          </div>
+          {/* 真机截图：实际运行中的 CPPlayer 首页 */}
+          <RealShot
+            src="shots/shot-android-home.jpg"
+            style={{position: 'absolute', inset: 0}}
+            imgStyle={{
+              objectPosition: '50% 0%',
+              scale: `${1.06 - 0.06 * Math.min(1, frame / 220)}`,
+            }}
+          />
         </PhoneFrame>
       </AbsoluteFill>
     </AbsoluteFill>
@@ -391,25 +266,12 @@ export const AndroidBack: React.FC = () => {
               translate: `0px ${shrink * -14}px`,
             }}
           >
-            <div style={{padding: '28px 26px'}}>
-              <div style={{display: 'flex', alignItems: 'center', gap: 14}}>
-                <LogoMark size={38} glow={false} />
-                <span style={{fontFamily: FONT, fontSize: 26, fontWeight: 700, color: C.text}}>CPPlayer</span>
-              </div>
-              <div style={{display: 'flex', gap: 14, marginTop: 26}}>
-                <Cover size={110} radius={16} />
-                <div style={{flex: 1, display: 'flex', flexDirection: 'column', gap: 14, justifyContent: 'center'}}>
-                  <div style={{height: 16, width: '80%', borderRadius: 8, background: 'rgba(255,255,255,0.1)'}} />
-                  <div style={{height: 16, width: '55%', borderRadius: 8, background: 'rgba(255,255,255,0.07)'}} />
-                  <div style={{height: 16, width: '68%', borderRadius: 8, background: 'rgba(255,255,255,0.07)'}} />
-                </div>
-              </div>
-              <div style={{display: 'flex', gap: 12, marginTop: 26}}>
-                {[0, 1, 2].map((i) => (
-                  <div key={i} style={{flex: 1, height: 90, borderRadius: 16, background: 'rgba(255,255,255,0.05)'}} />
-                ))}
-              </div>
-            </div>
+            {/* 真机截图：歌单详情页（缩进卡片里的就是真实 UI） */}
+            <RealShot
+              src="shots/shot-android-playlist.jpg"
+              style={{position: 'absolute', inset: 0}}
+              imgStyle={{objectPosition: '50% 0%'}}
+            />
           </div>
 
           {/* 桌面时的小字 */}
@@ -585,11 +447,14 @@ export const AndroidOffline: React.FC = () => {
 
 /* ---------- 06 · 播放页（240f） ---------- */
 
-const LYRICS = ['穿过晚高峰的灯河', '耳机里的城市慢慢降落', '这一站，刚好到我家'];
-
 export const AndroidPlayer: React.FC = () => {
   const frame = useCurrentFrame();
-  const activeIdx = frame < 80 ? 0 : frame < 150 ? 1 : 2;
+  // 模拟真实 app 播放页 ↔ 歌词页的横滑 pager
+  const pager = interpolate(frame, [100, 134], [0, 1], {
+    easing: EASE,
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
   return (
     <AbsoluteFill style={{overflow: 'hidden'}}>
       <Backdrop />
@@ -602,79 +467,29 @@ export const AndroidPlayer: React.FC = () => {
         </Sub>
 
         <PhoneFrame width={560} style={{marginTop: 48}}>
-          <div style={{position: 'absolute', inset: 0, padding: '40px 30px 0'}}>
-            <div style={{display: 'flex', justifyContent: 'space-between', fontFamily: FONT, fontSize: 24, color: C.sub}}>
-              <span>‹ 返回</span>
-              <span>更多</span>
-            </div>
-            <div style={{display: 'flex', justifyContent: 'center', marginTop: 34, opacity: enter(frame, 12)}}>
-              <Cover size={300} radius={28} />
-            </div>
-            <div style={{textAlign: 'center', marginTop: 30, opacity: enter(frame, 26)}}>
-              <div style={{fontFamily: FONT, fontSize: 38, fontWeight: 700, color: C.text}}>Night Drive</div>
-              <div style={{fontFamily: FONT, fontSize: 26, color: C.sub, marginTop: 8}}>Aurora Keys · 无损</div>
-            </div>
-            <div style={{height: 8, borderRadius: 4, background: 'rgba(255,255,255,0.12)', marginTop: 26, opacity: enter(frame, 34)}}>
-              <div style={{width: `${30 + (frame % 100) * 0.6}%`, height: '100%', borderRadius: 4, background: 'linear-gradient(90deg,#4A6CF7,#8B5CF6)'}} />
-            </div>
-            <div style={{display: 'flex', justifyContent: 'center', gap: 40, marginTop: 26, alignItems: 'center', opacity: enter(frame, 40)}}>
-              <span style={{transform: 'scaleX(-1)', display: 'block'}}>
-                <PlayTri size={20} color={C.text} />
-              </span>
-              <div
-                style={{
-                  width: 78,
-                  height: 78,
-                  borderRadius: 999,
-                  background: 'linear-gradient(135deg,#4A6CF7,#8B5CF6)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <PlayTri size={24} />
-              </div>
-              <PlayTri size={20} color={C.text} />
-            </div>
-
-            <div
+          <div style={{position: 'absolute', inset: 0, background: '#0B0F1C'}}>
+            {/* 播放页（真机截图） */}
+            <RealShot
+              src="shots/shot-android-player.jpg"
               style={{
-                marginTop: 34,
-                borderRadius: 20,
-                background: 'rgba(255,255,255,0.05)',
-                border: `1px solid ${C.border}`,
-                padding: '24px 26px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 16,
-                opacity: enter(frame, 54),
+                position: 'absolute',
+                inset: 0,
+                opacity: enter(frame, 12),
+                translate: `${pager * -16}% 0px`,
               }}
-            >
-              {LYRICS.map((line, i) => {
-                const active = i === activeIdx;
-                return (
-                  <div
-                    key={line}
-                    style={{
-                      fontFamily: FONT,
-                      fontSize: active ? 32 : 27,
-                      fontWeight: active ? 700 : 400,
-                      color: active ? C.text : C.faint,
-                      translate: `0px ${active ? -2 : 0}px`,
-                      transition: 'none',
-                    }}
-                  >
-                    {line}
-                  </div>
-                );
-              })}
-            </div>
-
-            <div style={{display: 'flex', gap: 14, justifyContent: 'center', marginTop: 30}}>
-              {['无损', '队列 12', '评论 2.1k'].map((t, i) => (
-                <Chip key={t} size={26} style={{opacity: enter(frame, 80 + i * 10)}}>{t}</Chip>
-              ))}
-            </div>
+              imgStyle={{objectPosition: '50% 0%'}}
+            />
+            {/* 歌词页（真机截图，从右滑入） */}
+            <RealShot
+              src="shots/shot-android-lyrics.jpg"
+              style={{
+                position: 'absolute',
+                inset: 0,
+                translate: `${(1 - pager) * 100}% 0px`,
+                boxShadow: '-26px 0 60px rgba(0,0,0,0.55)',
+              }}
+              imgStyle={{objectPosition: '50% 0%'}}
+            />
           </div>
         </PhoneFrame>
       </AbsoluteFill>

@@ -7,6 +7,8 @@ import {Bullet, Chip, Grad, Headline, Panel, Sub} from '../../components/Bits';
 import {LogoMark} from '../../components/LogoMark';
 import {Terminal} from '../../components/Terminal';
 import {Typewriter} from '../../components/Typewriter';
+import {PhoneFrame} from '../../components/PhoneFrame';
+import {RealShot} from '../../components/RealShot';
 import {EndCard} from '../../components/EndCard';
 
 /* ---------- 01 · Hook：终端安装（300f） ---------- */
@@ -370,15 +372,43 @@ export const LinuxFailover: React.FC = () => {
           ) : null}
         </div>
 
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            marginTop: 88,
-          }}
-        >
-          <Panel style={{padding: '26px 46px', opacity: enter(frame, 176), translate: `0px ${(1 - enter(frame, 176)) * 24}px`}}>
-            <span style={{fontFamily: FONT, fontSize: 38, color: C.text}}>
+        <div style={{display: 'flex', gap: 40, alignItems: 'stretch', marginTop: 64}}>
+          {/* 真实界面：设置 → 音源管理 */}
+          <div style={{flexShrink: 0, opacity: enter(frame, 160), translate: `0px ${(1 - enter(frame, 160)) * 24}px`}}>
+            <RealShot
+              src="shots/shot-desktop-sources.png"
+              width={620}
+              height={300}
+              radius={14}
+              style={{border: `1px solid ${C.border}`, background: '#0D1322', boxShadow: '0 24px 60px rgba(0,0,0,0.35)'}}
+            />
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                marginTop: 14,
+                fontFamily: FONT,
+                fontSize: 24,
+                color: C.faint,
+                opacity: enter(frame, 190),
+              }}
+            >
+              <span
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: 999,
+                  background: C.green,
+                  boxShadow: `0 0 12px ${C.green}`,
+                }}
+              />
+              真实界面 · 音源 A 已激活 / 音源 B 待命警告
+            </div>
+          </div>
+
+          <Panel style={{flex: 1, padding: '26px 46px', display: 'flex', alignItems: 'center', opacity: enter(frame, 176), translate: `0px ${(1 - enter(frame, 176)) * 24}px`}}>
+            <span style={{fontFamily: FONT, fontSize: 36, color: C.text, lineHeight: 1.6}}>
               回退顺序：<span style={{color: C.cyan}}>其他 Provider</span> →{' '}
               <span style={{color: C.amber}}>过期缓存兜底</span> → 界面照样有内容
             </span>
@@ -571,40 +601,83 @@ export const LinuxDiag: React.FC = () => {
           三级健康分类 · 最近 100 条请求一览 · 顶部状态指示常驻
         </Sub>
 
-        <Panel style={{marginTop: 66, padding: '44px 52px'}}>
-          <div style={{display: 'flex', gap: 70, alignItems: 'center'}}>
-            {[
-              {label: 'OK', color: C.green, value: 96, start: 14},
-              {label: 'WARNING', color: C.amber, value: 3, start: 26},
-              {label: 'ERROR', color: C.red, value: 1, start: 38},
-            ].map((l) => (
-              <div key={l.label} style={{display: 'flex', alignItems: 'center', gap: 16, opacity: enter(frame, l.start)}}>
-                <span style={{width: 18, height: 18, borderRadius: 999, background: l.color, boxShadow: `0 0 18px ${l.color}`}} />
-                <span style={{fontFamily: MONO, fontSize: 34, color: C.text, fontWeight: 700}}>
-                  {l.label} {Math.round(enter(frame, l.start, 30) * l.value)}
-                </span>
-              </div>
-            ))}
-            <span style={{fontFamily: MONO, fontSize: 28, color: C.faint, marginLeft: 'auto'}}>
-              recent 100 requests
-            </span>
-          </div>
-          <div style={{display: 'flex', gap: 10, alignItems: 'flex-end', height: 190, marginTop: 44}}>
-            {DIAG_BARS.map((b, i) => (
-              <div
-                key={i}
+        <div style={{display: 'flex', gap: 40, marginTop: 66, alignItems: 'stretch'}}>
+          <Panel style={{flex: 1, padding: '44px 52px'}}>
+            <div style={{display: 'flex', gap: 70, alignItems: 'center'}}>
+              {[
+                {label: 'OK', color: C.green, value: 96, start: 14},
+                {label: 'WARNING', color: C.amber, value: 3, start: 26},
+                {label: 'ERROR', color: C.red, value: 1, start: 38},
+              ].map((l) => (
+                <div key={l.label} style={{display: 'flex', alignItems: 'center', gap: 16, opacity: enter(frame, l.start)}}>
+                  <span style={{width: 18, height: 18, borderRadius: 999, background: l.color, boxShadow: `0 0 18px ${l.color}`}} />
+                  <span style={{fontFamily: MONO, fontSize: 34, color: C.text, fontWeight: 700}}>
+                    {l.label} {Math.round(enter(frame, l.start, 30) * l.value)}
+                  </span>
+                </div>
+              ))}
+              <span style={{fontFamily: MONO, fontSize: 28, color: C.faint, marginLeft: 'auto'}}>
+                recent 100 requests
+              </span>
+            </div>
+            <div style={{display: 'flex', gap: 10, alignItems: 'flex-end', height: 190, marginTop: 44}}>
+              {DIAG_BARS.map((b, i) => (
+                <div
+                  key={i}
+                  style={{
+                    flex: 1,
+                    height: b.h * enter(frame, 40 + i * 3, 14),
+                    minHeight: 4,
+                    borderRadius: 5,
+                    background: b.color,
+                    opacity: 0.85,
+                  }}
+                />
+              ))}
+            </div>
+          </Panel>
+
+          {/* 真实界面：设置 → 诊断 */}
+          <Panel
+            style={{
+              width: 620,
+              flexShrink: 0,
+              padding: '26px 28px',
+              opacity: enter(frame, 60),
+              translate: `0px ${(1 - enter(frame, 60)) * 24}px`,
+            }}
+          >
+            <RealShot
+              src="shots/shot-desktop-diagnostics.png"
+              width={564}
+              height={386}
+              radius={12}
+              style={{background: '#0D1322'}}
+            />
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                marginTop: 16,
+                fontFamily: FONT,
+                fontSize: 24,
+                color: C.faint,
+              }}
+            >
+              <span
                 style={{
-                  flex: 1,
-                  height: b.h * enter(frame, 40 + i * 3, 14),
-                  minHeight: 4,
-                  borderRadius: 5,
-                  background: b.color,
-                  opacity: 0.85,
+                  width: 10,
+                  height: 10,
+                  borderRadius: 999,
+                  background: C.green,
+                  boxShadow: `0 0 12px ${C.green}`,
                 }}
               />
-            ))}
-          </div>
-        </Panel>
+              真实界面 · 最近 100 条请求一览
+            </div>
+          </Panel>
+        </div>
 
         <div style={{display: 'flex', gap: 60, justifyContent: 'center', marginTop: 56}}>
           <Bullet start={128} accent={C.green}>OK / WARNING / ERROR 三级分级</Bullet>
@@ -684,7 +757,53 @@ export const LinuxKmp: React.FC = () => {
   );
 };
 
-/* ---------- 08 · 收尾（90f） ---------- */
+/* ---------- 08 · 真软件实拍（240f） ---------- */
+
+export const LinuxReal: React.FC = () => {
+  const frame = useCurrentFrame();
+  return (
+    <AbsoluteFill style={{overflow: 'hidden'}}>
+      <Backdrop />
+      <AbsoluteFill style={{padding: '104px 120px 0', alignItems: 'center'}}>
+        <Headline size={100} start={0} align="center">
+          不是 PPT，<Grad>是真软件</Grad>
+        </Headline>
+        <Sub size={40} start={14} align="center" style={{marginTop: 14}}>
+          桌面端与 Android 端 · 实际运行界面截图
+        </Sub>
+
+        <div style={{display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: 80, marginTop: 56}}>
+          <div style={{opacity: enter(frame, 24), translate: `0px ${(1 - enter(frame, 24)) * 40}px`}}>
+            <RealShot
+              src="shots/shot-desktop-library.png"
+              width={860}
+              height={602}
+              radius={14}
+              style={{border: `1px solid ${C.border}`, background: '#0D1322', boxShadow: '0 36px 90px rgba(0,0,0,0.55)'}}
+            />
+            <div style={{display: 'flex', justifyContent: 'center', marginTop: 18}}>
+              <Chip size={28} accent="rgba(122,146,255,0.12)">桌面端 · Windows / macOS / Linux</Chip>
+            </div>
+          </div>
+          <div style={{opacity: enter(frame, 44), translate: `0px ${(1 - enter(frame, 44)) * 40}px`}}>
+            <PhoneFrame width={286}>
+              <RealShot
+                src="shots/shot-android-home.jpg"
+                style={{position: 'absolute', inset: 0}}
+                imgStyle={{objectPosition: '50% 0%'}}
+              />
+            </PhoneFrame>
+            <div style={{display: 'flex', justifyContent: 'center', marginTop: 18}}>
+              <Chip size={28} accent="rgba(34,211,238,0.1)">Android 端 · 同一套内核</Chip>
+            </div>
+          </div>
+        </div>
+      </AbsoluteFill>
+    </AbsoluteFill>
+  );
+};
+
+/* ---------- 09 · 收尾（90f） ---------- */
 
 export const LinuxEnd: React.FC = () => (
   <EndCard

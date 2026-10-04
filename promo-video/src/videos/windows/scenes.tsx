@@ -6,6 +6,7 @@ import {Backdrop} from '../../components/Backdrop';
 import {Bullet, Chip, Grad, Headline, Panel, Sub} from '../../components/Bits';
 import {LogoMark} from '../../components/LogoMark';
 import {DesktopWindow} from '../../components/DesktopWindow';
+import {RealShot} from '../../components/RealShot';
 import {EndCard} from '../../components/EndCard';
 
 /* ---------- 01 · Hook：MSI 安装（288f） ---------- */
@@ -104,16 +105,14 @@ export const WinHook: React.FC = () => {
 
 /* ---------- 02 · 原生窗口（312f） ---------- */
 
-const SKELETON_ROWS = [72, 55, 88, 40, 66, 78, 48, 62];
-
 export const WinWindow: React.FC = () => {
   const frame = useCurrentFrame();
   // 0-30 出现居中；60-100 吸附到左半屏
   const snap = enter(frame, 60, 40);
-  const left = 400 + (48 - 400) * snap;
-  const top = 170 + (118 - 170) * snap;
+  const left = 410 + (48 - 410) * snap;
+  const top = 96 + (118 - 96) * snap;
   const width = 1100 + (912 - 1100) * snap;
-  const height = 600 + (846 - 600) * snap;
+  const height = 770 + (846 - 770) * snap;
   const guide = frame >= 92 && frame <= 140 ? (Math.floor(frame / 6) % 2 === 0 ? 0.8 : 0.25) : 0;
   const ghost = enter(frame, 150, 26);
   return (
@@ -131,50 +130,22 @@ export const WinWindow: React.FC = () => {
           opacity: guide,
         }}
       />
-      <DesktopWindow
-        title="CPPlayer"
-        style={{position: 'absolute', left, top, width, height}}
-      >
-        <div style={{display: 'flex', height: '100%'}}>
-          <div style={{width: 210, background: 'rgba(255,255,255,0.04)', borderRight: `1px solid ${C.border}`, padding: '26px 22px', display: 'flex', flexDirection: 'column', gap: 18}}>
-            {['首页', '曲库', '搜索', '下载', '设置'].map((s, i) => (
-              <div
-                key={s}
-                style={{
-                  fontFamily: FONT,
-                  fontSize: 26,
-                  color: i === 0 ? C.text : C.faint,
-                  background: i === 0 ? 'rgba(122,146,255,0.18)' : 'transparent',
-                  borderRadius: 10,
-                  padding: '10px 16px',
-                  opacity: enter(frame, 20 + i * 6),
-                }}
-              >
-                {s}
-              </div>
-            ))}
-          </div>
-          <div style={{flex: 1, padding: '28px 34px'}}>
-            <div style={{fontFamily: FONT, fontSize: 34, fontWeight: 700, color: C.text, opacity: enter(frame, 26)}}>
-              今天想听点什么？
-            </div>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 16, marginTop: 30}}>
-              {SKELETON_ROWS.map((w, i) => (
-                <div
-                  key={i}
-                  style={{
-                    height: 22,
-                    width: `${w}%`,
-                    borderRadius: 8,
-                    background: 'rgba(255,255,255,0.08)',
-                    opacity: enter(frame, 36 + i * 7),
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
-      </DesktopWindow>
+      {/* 真实窗口截图：桌面端「我的」页（自带标题栏，圆角 + 原生阴影） */}
+      <RealShot
+        src="shots/shot-desktop-library.png"
+        width={width}
+        height={height}
+        radius={14}
+        style={{
+          position: 'absolute',
+          left,
+          top,
+          border: `1px solid ${C.border}`,
+          background: '#0D1322',
+          boxShadow: '0 36px 90px rgba(0,0,0,0.55)',
+        }}
+        imgStyle={{objectPosition: 'left top'}}
+      />
 
       {/* 右半屏的「别的应用」幽灵窗 */}
       <div
@@ -438,18 +409,6 @@ export const WinMedia: React.FC = () => {
 
 /* ---------- 04 · 音源管理（288f） ---------- */
 
-const SOURCE_ROWS: ReadonlyArray<{
-  readonly name: string;
-  readonly state: string;
-  readonly color: string;
-  readonly dot: string;
-  readonly start: number;
-}> = [
-  {name: '音源 A', state: '✓ 已激活', color: C.green, dot: C.green, start: 78},
-  {name: '音源 B', state: 'WARNING · 限流', color: C.amber, dot: C.amber, start: 118},
-  {name: '音源 C', state: '待命', color: C.faint, dot: C.faint, start: 158},
-];
-
 export const WinSource: React.FC = () => {
   const frame = useCurrentFrame();
   const fly = enter(frame, 30, 26);
@@ -489,30 +448,36 @@ export const WinSource: React.FC = () => {
             >
               ⬆ package.cpm · 拖入导入
             </div>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 16, marginTop: 28}}>
-              {SOURCE_ROWS.map((row) => {
-                const p = enter(frame, row.start);
-                return (
-                  <div
-                    key={row.name}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 18,
-                      padding: '22px 28px',
-                      borderRadius: 14,
-                      background: 'rgba(255,255,255,0.05)',
-                      border: `1px solid ${C.border}`,
-                      opacity: p,
-                      translate: `0px ${(1 - p) * 20}px`,
-                    }}
-                  >
-                    <span style={{width: 14, height: 14, borderRadius: 999, background: row.dot, boxShadow: `0 0 14px ${row.dot}`}} />
-                    <span style={{fontFamily: FONT, fontSize: 34, color: C.text, fontWeight: 600}}>{row.name}</span>
-                    <span style={{fontFamily: MONO, fontSize: 26, color: row.color, marginLeft: 'auto'}}>{row.state}</span>
-                  </div>
-                );
-              })}
+            {/* 真实界面：设置 → 音源管理（716×346，按原比例展示） */}
+            <RealShot
+              src="shots/shot-desktop-sources.png"
+              width={732}
+              height={354}
+              radius={14}
+              style={{marginTop: 28, border: `1px solid ${C.border}`, background: '#0D1322'}}
+            />
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                marginTop: 16,
+                fontFamily: FONT,
+                fontSize: 24,
+                color: C.faint,
+                opacity: enter(frame, 150),
+              }}
+            >
+              <span
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: 999,
+                  background: C.green,
+                  boxShadow: `0 0 12px ${C.green}`,
+                }}
+              />
+              真实界面 · 已导入音源的健康度一眼可见
             </div>
           </Panel>
 
