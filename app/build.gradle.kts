@@ -43,6 +43,13 @@ val gitSha: String = rootProject.extra["cpGitSha"] as String
 // 而且只进 exe 的版本资源，不进 MSI 数据库。
 val appDescription: String = "Cross-platform music player (Material 3 Expressive)"
 
+/**
+ * jpackage 的应用名：应用镜像目录名（`binaries/main/app/CPPlayer`）、启动器名
+ * （`bin/CPPlayer`）、Windows 快捷方式目录等共用。`packageLinuxTarGz` 与
+ * AUR PKGBUILD（packaging/aur/cpplayer-bin）都依赖这个名字，改这里必须连带核对。
+ */
+val cpPackageName = "CPPlayer"
+
 // ---------------------------------------------------------------------------
 // JetBrains Runtime (JBR) —— 换运行时的唯一目的是**原生窗口拖动**。
 //
@@ -424,7 +431,7 @@ compose.desktop {
         )
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Deb, TargetFormat.Msi)
-            packageName = "CPPlayer"
+            packageName = cpPackageName
             packageVersion = appPackageVersion
             // 「添加/删除程序」里显示的那几行元信息。不填的话 MSI 里厂商是 Unknown、
             // 描述为空，用户在程序列表里认不出这是什么。
@@ -467,6 +474,64 @@ compose.desktop {
                 // ⚠️ 别在这儿填 debMaintainer：deb 的 Maintainer 字段必须是
                 // "Name <email>" 形式，填错 dpkg-deb 直接失败；不填 jpackage 有默认值。
             }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 通用 Linux 分发包（tar.gz）：把 createDistributable 的 Linux 应用镜像直接打包，
+// 「解压即用」。面向不用 deb / AUR 的发行版，同时是 AUR cpplayer-bin 的源包。
+//
+// 为什么不加 TargetFormat.AppImage：那是 AppImageKit 的自挂载格式（还要额外下载
+// appimagetool），行为与普通目录不同；要的就是 jpackage 的 app-image 本身 ——
+// 自带 jlink 裁剪好的 JBR 运行时与 bin/CPPlayer 启动器。
+//
+// 路径依据（compose 插件 1.12.1 源码逐行核对，改插件版本后如断言报错按此更新）：
+//   - configureJvmApplication.kt：createDistributable = AbstractJPackageTask(
+//       args = listOf(TargetFormat.AppImage))
+//   - AbstractJPackageTask.kt：jpackage `--type <AppImage.id> --dest <destinationDir>`
+//   - destinationDir = outputBaseDir / "main" / format.outputDirName
+//     （TargetFormat.kt：AppImage.outputDirName = "app"；outputBaseDir 默认
+//      build/compose/binaries —— CI 对 binaries/main/msi 的既有 glob 是同一套约定）
+//   ⇒ 应用镜像目录 = build/compose/binaries/main/app/CPPlayer/
+//
+// ⚠️ 只能在 Linux 宿主上构建：createDistributable 产出**当前宿主平台**的应用镜像
+// （Windows 上是 .exe 启动器 + Windows JBR），拿去打 tar.gz 是错的。因此：
+//   - 非 Linux 宿主上**不挂 dependsOn**（不会先白打一遍 jpackage 再报错）；
+//   - doFirst 再拦一道直接报清晰错误。刻意不用 onlyIf —— SKIPPED + BUILD
+//     SUCCESSFUL 的「假成功」正是本仓库明令禁止的失败模式。
+//
+// ⚠️ 不要显式设 fileMode / dirMode：CopySpec 默认（null）在 POSIX 文件系统上
+// **原样保留** jpackage 产出的权限位（启动器与运行时二进制是 755、jspawnhelper 755）；
+// 显式设档位反而会掩盖 Windows 上「文件系统根本没有执行位」的事实。
+// 这也是禁止在非 Linux 宿主运行的第二个理由。
+val packageLinuxTarGz = tasks.register<Tar>("packageLinuxTarGz") {
+    group = "compose desktop"
+    description =
+        "把 createDistributable 的 Linux 应用镜像打成 tar.gz（通用 Linux 分发，解压即用）。仅限 Linux 宿主。"
+    val onLinux = System.getProperty("os.name").lowercase().contains("linux")
+    if (onLinux) {
+        dependsOn(tasks.named("createDistributable"))
+    }
+    // `from(<app镜像目录>)` 会把目录内容拷到顶层 —— 用嵌套 into() 垫回 CPPlayer/ 前缀，
+    // tar 顶层才是 CPPlayer/（与 /opt/CPPlayer 的安装布局、PKGBUILD 的假设一致）。
+    from(layout.buildDirectory.dir("compose/binaries/main/app/$cpPackageName")) {
+        into(cpPackageName)
+    }
+    // 文件名用 versionName（可带预发布后缀）；AUR 侧 pkgver 由 CI 剥后缀。
+    archiveFileName.set("$cpPackageName-$appVersionName-linux-x64.tar.gz")
+    destinationDirectory.set(layout.buildDirectory.dir("compose/binaries/main/targz"))
+    compression = Compression.GZIP
+    doFirst {
+        check(onLinux) {
+            "packageLinuxTarGz 只能在 Linux 宿主上运行：createDistributable 产出的是" +
+                "**当前宿主平台**的应用镜像（Windows 上是 .exe + Windows JBR），" +
+                "打成 Linux tar.gz 是错的。请在 Linux 上或 CI 的 ubuntu runner 构建。"
+        }
+        val appDir = layout.buildDirectory.dir("compose/binaries/main/app/$cpPackageName").get().asFile
+        check(appDir.resolve("bin").isDirectory && appDir.resolve("lib/runtime").isDirectory) {
+            "createDistributable 产物布局不符合预期（缺 bin/ 或 lib/runtime/）：${appDir.absolutePath}\n" +
+                "若 compose 插件改了输出目录，请按本任务上方注释里的出处同步更新路径。"
         }
     }
 }

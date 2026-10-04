@@ -1,6 +1,7 @@
 name: Desktop Release
 
-# 桌面产物：Windows `.msi` / Linux `.deb`，在各自原生 runner 上构建。
+# 桌面产物：Windows `.msi` / Linux `.deb` + 通用 `.tar.gz`，在各自原生 runner 上构建。
+# stable 渠道还会把 tar.gz 发布到 AUR（cpplayer-bin）—— 配置步骤见 docs/dev/LINUX_PACKAGING.md。
 # 与 release.yml（稳定版 Android） / debug-release.yml（预发布 Android）共用同一个
 # GitHub Release —— 版本号与 tag 由下面的 `meta` job 统一解析，**不要**在 publish
 # 里用 `github.ref_name` 现推：手动触发时它是分支名（main），会凭空建出 main 这个 tag。
@@ -105,15 +106,19 @@ jobs:
         include:
           - os: windows-latest
             platform: windows
-            task: packageMsi
-            asset: msi
+            # 空格分隔的多任务列表；Linux 腿同时打 deb 与通用 tar.gz。
+            gradleTasks: ":app:packageMsi"
+            assetPaths: |
+              app/build/compose/binaries/main/msi/*
             # Windows 侧 .zip / .tar.gz 都有，用 .zip。
             jbrExt: zip
             jbrSha: 432d0f9bdc687a6c8e2e13e22be83cdb0d9460b6b15752e84bd97165e13e9f5f
           - os: ubuntu-latest
             platform: linux
-            task: packageDeb
-            asset: deb
+            gradleTasks: ":app:packageDeb :app:packageLinuxTarGz"
+            assetPaths: |
+              app/build/compose/binaries/main/deb/*
+              app/build/compose/binaries/main/targz/*
             # ⚠️ Linux 侧 **只有 .tar.gz**：同名的 .zip 是 403。
             jbrExt: tar.gz
             jbrSha: 482b63da8ac63b8f108878d1bd8a23df15fd78cc9dfd23f3b824fbfe2512c81f
@@ -185,15 +190,30 @@ jobs:
         # ⚠️ 没设这个属性时构建**不会失败**，只是静默用 temurin 打运行时 ——
         # 那种「看起来成功、其实没换」是最坏的结局，所以这里显式指定 + 上面有断言。
         run: |
-          ./gradlew :app:${{ matrix.task }} --no-daemon \
+          ./gradlew ${{ matrix.gradleTasks }} --no-daemon \
             -Pcp.jbrHome="$PWD/.jbr/${{ matrix.platform }}-x64" \
             -Papp.versionName="${{ needs.meta.outputs.version }}" \
             -Papp.releaseChannel="${{ needs.meta.outputs.channel }}"
+      # tar.gz 的执行位全靠打包时原样保留，这里只做布局断言（缺关键文件立刻失败，
+      # 别等到用户解压才发现）。执行位无法从 tar 列表读出，AUR 的 package() 里有
+      # chmod 兜底（见 packaging/aur/cpplayer-bin/PKGBUILD）。
+      - name: Verify tar.gz layout
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          f="$(ls app/build/compose/binaries/main/targz/CPPlayer-*-linux-x64.tar.gz)"
+          echo "tar.gz: $f"
+          tar -tzf "$f" | grep -qx 'CPPlayer/bin/CPPlayer' \
+            || { echo "::error::tar.gz 里缺 CPPlayer/bin/CPPlayer（启动器）"; exit 1; }
+          tar -tzf "$f" | grep -qx 'CPPlayer/lib/runtime/bin/java' \
+            || { echo "::error::tar.gz 里缺 CPPlayer/lib/runtime/bin/java（内置运行时）"; exit 1; }
+          echo "tar.gz 布局 OK"
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
           name: CPPlayer-${{ needs.meta.outputs.version }}-${{ matrix.platform }}
-          path: app/build/compose/binaries/main/${{ matrix.asset }}/*
+          path: ${{ matrix.assetPaths }}
       # jpackage 失败时只给 exit code，真正原因在 compose 日志里。
       # 直接 cat 到 job 日志 + 传 artifact，下次失败不用再猜。
       - name: Dump jpackage logs on failure
@@ -230,3 +250,101 @@ jobs:
           name: "CPPlayer ${{ needs.meta.outputs.version }}${{ needs.meta.outputs.channel == 'debug' && ' (debug)' || '' }}"
           prerelease: ${{ needs.meta.outputs.channel != 'stable' }}
           files: release-assets/**/*
+
+  # ---------------------------------------------------------------------------
+  # AUR 自动发布（cpplayer-bin）：仅 stable 渠道。
+  #
+  # 为什么跑在 archlinux:base-devel 容器里：更新 .SRCINFO 需要 makepkg
+  # （--printsrcinfo），ubuntu runner 上没有 pacman/makepkg，Arch 官方镜像开箱即有。
+  # 需要 secret：AUR_SSH_PRIVATE_KEY（配套公钥填在 AUR 账号 My Account 里），
+  # 配置步骤见 docs/dev/LINUX_PACKAGING.md；未配置时本 job 打 notice 后直接跳过，
+  # 不影响 release 本身。
+  # ---------------------------------------------------------------------------
+  aur:
+    needs: [meta, publish]
+    if: needs.meta.outputs.channel == 'stable'
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    env:
+      AUR_PACKAGE: cpplayer-bin
+    steps:
+      # checkout 依赖 git，所以 pacman 必须在 checkout 之前。
+      - name: Install git / openssh / curl
+        run: pacman -Syu --noconfirm git openssh curl
+      - uses: actions/checkout@v4
+
+      - name: Check AUR key configured
+        id: guard
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -z "${AUR_SSH_KEY:-}" ]; then
+            echo "::notice::AUR_SSH_PRIVATE_KEY 未配置 —— 跳过 AUR 发布（配置步骤见 docs/dev/LINUX_PACKAGING.md）"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure SSH key for AUR
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          # AUR 要求以 aur 用户登录该主机（Arch Wiki「AUR submission guidelines」）。
+          printf 'Host aur.archlinux.org\n  User aur\n  IdentityFile ~/.ssh/aur\n' > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+          # 非交互环境下固定 AUR 的 host key，避免首次连接的确认提示卡住。
+          ssh-keyscan -t rsa,ed25519 -H aur.archlinux.org >> ~/.ssh/known_hosts
+
+      - name: Hash release asset
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          TAG: ${{ needs.meta.outputs.tag }}
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          # publish job 已完成（needs 链），资产已存在；流式计算哈希不落盘。
+          ASSET_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/CPPlayer-${VERSION}-linux-x64.tar.gz"
+          SHA256="$(curl -fsSL "$ASSET_URL" | sha256sum | cut -d' ' -f1)"
+          # AUR 的 pkgver 只允许 [A-Za-z0-9._]：剥掉预发布后缀（-beta.1 / +build.7）。
+          # 稳定 tag（vX.Y.Z）下两者本来就相等。
+          PKGVER="$(printf '%s' "$VERSION" | sed -E 's/[-+].*//')"
+          {
+            echo "asset_url=${ASSET_URL}"
+            echo "sha256=${SHA256}"
+            echo "pkgver=${PKGVER}"
+          } >> "$GITHUB_ENV"
+
+      - name: Update AUR package
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          # AUR 允许 clone 尚不存在的包名（得到空仓库）—— 首次发布也是全自动的。
+          # ⚠️ AUR 只接受 master 分支（Arch Wiki），统一显式 push HEAD:master。
+          git -c init.defaultBranch=master clone "ssh://aur@aur.archlinux.org/${AUR_PACKAGE}.git" aur
+          cp packaging/aur/cpplayer-bin/PKGBUILD aur/PKGBUILD
+          cd aur
+          # 只重写五行元数据；PKGBUILD 其余内容以本仓库模板为准原样带上去。
+          sed -i \
+            -e "s/^pkgver=.*/pkgver=${pkgver}/" \
+            -e "s/^pkgrel=.*/pkgrel=1/" \
+            -e "s#^url=.*#url=\"https://github.com/${GITHUB_REPOSITORY}\"#" \
+            -e "s#^source=.*#source=(\"CPPlayer-\${pkgver}-linux-x64.tar.gz::${asset_url}\")#" \
+            -e "s/^sha256sums=.*/sha256sums=('${sha256}')/" \
+            PKGBUILD
+          makepkg --printsrcinfo > .SRCINFO
+          # AUR 提交以这里的身份落库（Arch Wiki 建议按包配置，别动容器全局）。
+          git config user.name  "CPPlayer Release Bot"
+          git config user.email "cpplayer-bot@users.noreply.github.com"
+          git add PKGBUILD .SRCINFO
+          if git diff --cached --quiet; then
+            echo "::notice::AUR 元数据无变化，跳过 push"
+          else
+            git commit -m "Update to ${pkgver}"
+            git push origin HEAD:master
+          fi

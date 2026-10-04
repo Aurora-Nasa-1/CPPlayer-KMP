@@ -18,6 +18,7 @@
 | [dev/INTEGRATION_API.md](dev/INTEGRATION_API.md) | 对外集成契约（v1）：让第三方软件把 CPPlayer 当音源用 | 对接 CPPlayer 的 `/api/v1/...` 端点 |
 | [dev/RELEASE.md](dev/RELEASE.md) | 发布流程 | 发版 |
 | [dev/JBR_PACKAGING.md](dev/JBR_PACKAGING.md) | 桌面端 JBR（JetBrains Runtime）打包方案 | 动桌面端打包 / 窗口 chrome |
+| [dev/LINUX_PACKAGING.md](dev/LINUX_PACKAGING.md) | Linux 通用 tar.gz 分发包 + AUR（cpplayer-bin）自动发布与 GitHub 配置 | 动 Linux 打包 / AUR |
 
 ## 历史归档（[`history/`](history/)）
 
