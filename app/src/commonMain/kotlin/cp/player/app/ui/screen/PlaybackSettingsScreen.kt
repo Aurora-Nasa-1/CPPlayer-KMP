@@ -49,11 +49,16 @@ class PlaybackSettingsScreen : Screen {
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         val quality by AppModel.playbackQualityFlow.collectAsState()
+        val meteredQuality by AppModel.meteredPlaybackQualityFlow.collectAsState()
         val lyricsMode by AppModel.lyricsSourceModeFlow.collectAsState()
         val playbackState by AppModel.playback.state.collectAsState()
         var showSleepTimer by remember { mutableStateOf(false) }
 
         val qualityIndex = AppModel.qualityOptions.indexOfFirst { it.first == quality }.coerceAtLeast(0)
+        val meteredQualityIndex =
+            AppModel.qualityOptions.indexOfFirst { it.first == meteredQuality }.coerceAtLeast(0)
+        // 移动数据音质只在 Android 有意义：桌面端没有计费网络概念，恒走默认音质。
+        val showMeteredQuality = isAndroidPlatform()
 
         // 歌词来源三档（对齐旧版 CPPlayer）：key 顺序即下拉顺序
         val lyricsModeOptions = listOf(
@@ -68,7 +73,7 @@ class PlaybackSettingsScreen : Screen {
                 SettingsSection("音质") {
                     SettingsDropdownItem(
                         title = "默认音质",
-                        subtitle = "在线播放优先请求的音质；音源不提供时自动降级",
+                        subtitle = "WiFi / 非计费网络下在线播放优先请求的音质；音源不提供时自动降级",
                         options = AppModel.qualityOptions.map { it.second },
                         selectedIndex = qualityIndex,
                         onSelect = { index ->
@@ -77,8 +82,23 @@ class PlaybackSettingsScreen : Screen {
                             }
                         },
                         index = 0,
-                        total = 1,
+                        total = if (showMeteredQuality) 2 else 1,
                     )
+                    if (showMeteredQuality) {
+                        SettingsDropdownItem(
+                            title = "移动数据音质",
+                            subtitle = "蜂窝数据 / 热点下生效；切换网络后对下一首播放的曲目生效",
+                            options = AppModel.qualityOptions.map { it.second },
+                            selectedIndex = meteredQualityIndex,
+                            onSelect = { index ->
+                                AppModel.qualityOptions.getOrNull(index)?.let { (level, _) ->
+                                    AppModel.setMeteredPlaybackQuality(level)
+                                }
+                            },
+                            index = 1,
+                            total = 2,
+                        )
+                    }
                 }
                 SettingsSection("歌词") {
                     SettingsDropdownItem(

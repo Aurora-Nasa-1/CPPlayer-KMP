@@ -5,12 +5,18 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Base64
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -18,6 +24,45 @@ import java.io.FileOutputStream
 
 actual fun isAndroidPlatform(): Boolean = true
 actual fun desktopPlatform(): String = "android"
+
+/** 当前活动网络是否计费（蜂窝 / 计费热点）。读不到系统服务时按非计费处理。 */
+actual fun isNetworkMetered(): Boolean = runCatching {
+    connectivityManagerOrNull()?.isActiveNetworkMetered ?: false
+}.getOrDefault(false)
+
+/**
+ * 网络计费状态流：`registerDefaultNetworkCallback` 监听系统网络回调。
+ *
+ * - `onCapabilitiesChanged` 会**周期性重发**同一状态（系统设计如此），
+ *   用 `distinctUntilChanged` 收敛成「变化才发」；
+ * - WiFi 断开瞬间 `onCapabilitiesChanged` 可能不发，`onAvailable` / `onLost`
+ *   兜底再读一次 `isActiveNetworkMetered`；
+ * - 收集开始时先发当前值（订阅方由此拿到初始状态），取消收集即注销回调。
+ */
+actual fun networkMeteredChanges(): Flow<Boolean> = callbackFlow {
+    trySend(isNetworkMetered())
+    val callback = object : ConnectivityManager.NetworkCallback() {
+        override fun onCapabilitiesChanged(
+            network: android.net.Network,
+            networkCapabilities: android.net.NetworkCapabilities,
+        ) {
+            trySend(!networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED))
+        }
+
+        override fun onAvailable(network: android.net.Network) {
+            trySend(isNetworkMetered())
+        }
+
+        override fun onLost(network: android.net.Network) {
+            trySend(isNetworkMetered())
+        }
+    }
+    runCatching { connectivityManagerOrNull()?.registerDefaultNetworkCallback(callback) }
+    awaitClose { runCatching { connectivityManagerOrNull()?.unregisterNetworkCallback(callback) } }
+}.distinctUntilChanged()
+
+private fun connectivityManagerOrNull(): ConnectivityManager? =
+    ctxOrNull?.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
 
 /**
  * Android 16（API 36，`Build.VERSION_CODES.BAKLAVA`）起系统 UI 把 Google Sans

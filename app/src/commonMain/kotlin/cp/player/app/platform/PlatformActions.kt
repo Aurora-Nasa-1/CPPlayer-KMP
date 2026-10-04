@@ -1,6 +1,7 @@
 package cp.player.app.platform
 
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.flow.Flow
 
 /**
  * 当前是否运行在 Android 平台。
@@ -111,6 +112,22 @@ expect fun isIgnoringBatteryOptimizations(): Boolean
  * 自启动管理，需引导用户另行设置。Desktop 端为空操作。
  */
 expect fun requestIgnoreBatteryOptimizations()
+
+/**
+ * 当前活动网络是否按「计费网络」处理（蜂窝数据 / 计费热点）。
+ *
+ * 用于「移动数据音质」：计费网络下在线播放改用单独设置的音质档位。
+ * Desktop 无计费网络概念，恒为 false。
+ */
+expect fun isNetworkMetered(): Boolean
+
+/**
+ * 网络计费状态流：收集时先发射**当前**状态，之后每次变化（WiFi ↔ 蜂窝）各发射一次。
+ *
+ * 订阅方自行去重（实现侧只保证「变化才发」或「重发同值」，两种都合法）。
+ * 流随收集器生命周期：取消收集即注销平台回调。Desktop 恒发射 false 后不再发射。
+ */
+expect fun networkMeteredChanges(): Flow<Boolean>
 
 /**
  * 处理返回键事件。

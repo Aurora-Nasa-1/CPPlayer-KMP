@@ -4,6 +4,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import java.awt.Desktop
 import java.net.URI
 
@@ -13,6 +15,12 @@ actual fun desktopPlatform(): String = when {
     System.getProperty("os.name", "").contains("linux", ignoreCase = true) -> "linux"
     else -> "desktop"
 }
+
+/** 桌面端无「计费网络」概念，恒按非计费（WiFi）处理。 */
+actual fun isNetworkMetered(): Boolean = false
+
+/** 桌面端网络不变化，先发一次 false 后不再发射。 */
+actual fun networkMeteredChanges(): Flow<Boolean> = flowOf(false)
 
 /** 桌面端没有「系统圆滑度」一说，跟随字体文件自带的默认实例（ROND = 0，方正）。 */
 actual fun defaultFontRoundness(): Int = 0

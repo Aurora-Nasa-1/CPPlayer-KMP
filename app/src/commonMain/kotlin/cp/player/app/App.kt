@@ -86,6 +86,14 @@ fun App(
         AppModel.startCoverColorTracking()
     }
 
+    // 网络类型变化（WiFi ↔ 蜂窝/热点）：按当前网络重选音质档位并同步给播放控制器。
+    // 与上面的启动块分开一个 LaunchedEffect：这条流要持续收集整个会话，
+    // Android 侧首发射会纠正初始 metered 状态（冷启动就在蜂窝上的情形）。
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        cp.player.app.platform.networkMeteredChanges()
+            .collect { AppModel.onNetworkMeteredChanged(it) }
+    }
+
     AppTheme {
         Surface(
             modifier = Modifier.fillMaxSize(),

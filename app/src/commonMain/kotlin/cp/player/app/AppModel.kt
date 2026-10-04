@@ -167,6 +167,7 @@ object AppModel {
     private val KEY_COLOR_SOURCE = "color_source"
     private val KEY_PURE_BLACK = "pure_black"
     private val KEY_PLAYBACK_QUALITY = "playback_quality"
+    private val KEY_METERED_PLAYBACK_QUALITY = "playback_quality_metered"
 
     private val _themeMode = MutableStateFlow(themeMode())
     val themeModeFlow: StateFlow<cp.player.app.ui.theme.ThemeMode> = _themeMode.asStateFlow()
@@ -440,6 +441,13 @@ object AppModel {
     }
 
     // ============ 播放音质（持久化） ============
+    //
+    // 两套档位，按当前网络二选一生效：
+    // - 默认音质（WiFi / 非计费网络）—— `playbackQuality()`；
+    // - 移动数据音质（蜂窝 / 计费热点，仅 Android 有意义）—— `meteredPlaybackQuality()`。
+    // 生效值由 `effectivePlaybackQuality()` 解析；网络类型变化时
+    // App.kt 订阅 `networkMeteredChanges()` 调 `onNetworkMeteredChanged()` 重同步。
+    // `setQuality` 只作用于**后续加载**的曲目，切换网络不打断正在播的歌。
 
     /** 可选在线音质等级（level → 展示名）。 */
     val qualityOptions: List<Pair<String, String>> = listOf(
@@ -458,12 +466,43 @@ object AppModel {
     fun setPlaybackQuality(level: String) {
         settings.putString(KEY_PLAYBACK_QUALITY, level)
         _playbackQuality.value = level
-        runCatching { playback.setQuality(level) }
+        runCatching { playback.setQuality(effectivePlaybackQuality()) }
+    }
+
+    private val _meteredPlaybackQuality = MutableStateFlow(meteredPlaybackQuality())
+    val meteredPlaybackQualityFlow: StateFlow<String> = _meteredPlaybackQuality.asStateFlow()
+
+    /** 移动数据（计费网络：蜂窝 / 热点）下的音质档位。默认「标准」省流量。 */
+    fun meteredPlaybackQuality(): String =
+        settings.getString(KEY_METERED_PLAYBACK_QUALITY) ?: "standard"
+
+    /** 设置移动数据音质；若当前正在计费网络，立即同步到播放控制器。 */
+    fun setMeteredPlaybackQuality(level: String) {
+        settings.putString(KEY_METERED_PLAYBACK_QUALITY, level)
+        _meteredPlaybackQuality.value = level
+        runCatching { playback.setQuality(effectivePlaybackQuality()) }
+    }
+
+    /**
+     * 当前网络是否按计费网络处理（蜂窝 / 热点）。
+     * 初始值由 App.kt 订阅 `networkMeteredChanges()` 的首发射纠正。
+     */
+    private val _networkMetered = MutableStateFlow(false)
+
+    /** 按当前网络类型解析生效音质：计费网络用移动数据音质，其余用默认音质。 */
+    fun effectivePlaybackQuality(): String =
+        if (_networkMetered.value) meteredPlaybackQuality() else playbackQuality()
+
+    /** 网络计费状态变化回调：更新内部状态，并把生效音质同步给播放控制器。 */
+    fun onNetworkMeteredChanged(metered: Boolean) {
+        if (_networkMetered.value == metered) return
+        _networkMetered.value = metered
+        syncPlaybackQuality()
     }
 
     /** 启动时把持久化音质同步给播放控制器。 */
     fun syncPlaybackQuality() {
-        runCatching { playback.setQuality(playbackQuality()) }
+        runCatching { playback.setQuality(effectivePlaybackQuality()) }
     }
 
     // ============ 歌词来源（持久化，对齐旧版三档模式） ============
