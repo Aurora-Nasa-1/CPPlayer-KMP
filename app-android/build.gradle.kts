@@ -50,14 +50,27 @@ android {
 
     buildTypes {
         getByName("release") {
-            isMinifyEnabled = false
+            // R8（2026-10-04 开启，此前 isMinifyEnabled = false）：
+            // 收益 = DEX 里删掉未用类/方法 + 资源收缩，包体与运行时类元数据
+            // （Metaspace 的安卓对应物）都显著变小。规则见 proguard-rules.pro，
+            // 那里逐条注释了为什么 keep（JNI 符号绑定 / getMethod 反射 /
+            // kotlinx.serialization / Voyager 的 Java 序列化返回栈）。
+            //
+            // ⚠️ Compose 资源（字体）打进 **assets**，resource shrinker 不碰 assets，
+            // shrinkResources 对它们是安全的。
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             // 绑定签名配置
             val releaseSigning = signingConfigs.getByName("release")
             if (releaseSigning.storeFile != null) {
                 signingConfig = releaseSigning
             }
         }
-        
+
         create("fastrelease") {
             initWith(getByName("release"))
             matchingFallbacks += listOf("release")

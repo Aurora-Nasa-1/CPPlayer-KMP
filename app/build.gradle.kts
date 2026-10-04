@@ -394,8 +394,29 @@ compose.desktop {
         // **不会自动变成 JVM 系统属性** —— 少了这几行，打包出的 MSI/deb 里
         // 「关于」页永远显示 v1.0.0 (1) / unknown / stable，与 tag 无关。
         // 它们同时作用于 `run` 任务与 jpackage 生成的启动器（.cfg），两处都需要。
+        //
+        // ⚠️ 内存参数（2026-10-04）：release 包此前没有设任何堆参数，JVM 默认
+        // 最大堆 = 物理内存的 1/4、**初始堆 = 物理内存的 1/64**（32GB 机器上启动即
+        // 提交 512MB），G1 又几乎从不把涨上去的堆还给 OS ⇒ 空闲占用 780MB。
+        // 这一组对「音乐播放器」这种长驻 GUI 应用是稳态组合：
+        //   -Xms128m / -Xmx512m —— 初始堆压小；上限 512m 对 UI + 列表 + 封面绰绰有余。
+        //   -XX:SoftMaxHeapSize=256m —— 常态软顶：G1 会尽量把堆压在 256m 内，
+        //     只有连续压力才越线（软顶不是硬顶，OOM 仍由 -Xmx 兜底）。
+        //   -XX:MinHeapFreeRatio=10 / MaxHeapFreeRatio=30 —— 空闲比例从默认(20/45? /40/70)
+        //     收紧：并发周期/Full GC 结束后按比例**收缩已提交堆**，把内存还给 OS。
+        //   -XX:G1PeriodicGCInterval=180000 —— 空闲 3 分钟触发一次并发周期，
+        //     配合上面两个 ratio 让「放歌暂停后内存缓慢回落」成立（G1 没有它就不收缩）。
+        //   -XX:+UseStringDeduplication —— G1 免费午餐：歌单里海量重复字符串
+        //     （歌手名 / 来源 / URL 前缀）共享同一份 char[]，省堆且几乎零成本。
         jvmArgs += listOf(
             "--enable-native-access=ALL-UNNAMED",
+            "-Xms128m",
+            "-Xmx512m",
+            "-XX:SoftMaxHeapSize=256m",
+            "-XX:MinHeapFreeRatio=10",
+            "-XX:MaxHeapFreeRatio=30",
+            "-XX:G1PeriodicGCInterval=180000",
+            "-XX:+UseStringDeduplication",
             "-Dcp.player.versionName=$appVersionName",
             "-Dcp.player.versionCode=$appVersionCode",
             "-Dcp.player.releaseChannel=$appReleaseChannel",
