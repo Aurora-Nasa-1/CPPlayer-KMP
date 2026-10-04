@@ -173,7 +173,8 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
             item {
                 LibraryDashboard(
                     expanded = expanded,
-                    title = if (expanded) "我的音乐" else (profile?.nickname ?: "我的音乐"),
+                    title = if (expanded) "我的音乐"
+                    else profile?.nickname?.let { "你好，$it" } ?: "我的音乐",
                     subtitle = "共 ${state.playlists.size} 个歌单 · 收藏 ${likedIds.size} 首",
                     stats = listOf(
                         state.playlists.size.toString() to "歌单",
@@ -324,6 +325,20 @@ private fun askDeleteOrUnsubscribe(
  *
  * 「我的歌单」卡已移除：歌单封面栅格就铺在仪表盘正下方（[PlaylistQuickGrid]），
  * 再放一张只做跳转的卡是同一个目的占两个版面坑位。
+ *
+ * ## 窄屏（手机）2026-10-04 重排：首屏即内容
+ *
+ * 旧的窄屏分支照搬桌面 bento（统计大卡 / 创建歌单 hero / 偏好设置 / 云盘+存储 /
+ * 关于 pill），整面仪表盘约 5 屏高，歌单内容全在首屏之外；且「创建歌单」与曲库区
+ * 的 `[+]` 重复、「离线下载」与曲库「下载」分段重复、偏好/存储/关于属于设置类入口
+ * （顶栏已有）。现在窄屏只有两块：
+ *
+ * 1. **轻量问候行**（昵称 + 一句话统计，删掉「聆听统计」大卡 —— 那三个数字
+ *    问候语里本来就有）；
+ * 2. **一排快捷圆形入口**：最近播放 / 云盘 / 下载（三个高频跳转，一排放得下）。
+ *
+ * 「创建歌单」hero 删除 —— 曲库标题行右侧的 `[+]` 就是这个动作；
+ * 偏好/存储/关于删除 —— 全部在顶栏设置可达。桌面 expanded 保持 bento 不动。
  */
 @Composable
 private fun LibraryDashboard(
@@ -354,9 +369,9 @@ private fun LibraryDashboard(
                 BentoStatCard("聆听统计", stats, Modifier.weight(2f).fillMaxHeight())
             }
         } else {
-            // 手机端：顶栏标题已是 tab 名（「我的」），昵称由这里的问候区承担 —— 不重复。
+            // 手机端：顶栏标题已是 tab 名（「我的」），这里承担昵称露出 + 统计一句话。
+            // 「聆听统计」大卡删除 —— 那三个数字问候语的 subtitle 里本来就有。
             LibraryGreeting(title, subtitle, Modifier.fillMaxWidth())
-            BentoStatCard("聆听统计", stats, Modifier.fillMaxWidth().height(112.dp))
         }
 
         // ── 行 2：主行动卡 + 两个高频入口 ──
@@ -390,41 +405,24 @@ private fun LibraryDashboard(
                 )
             }
         } else {
-            BentoHeroCard(
-                title = "创建歌单",
-                subtitle = "把喜欢的音乐整理成册",
-                icon = Icons.Filled.LibraryAdd,
-                onClick = onCreatePlaylist,
-                modifier = Modifier.fillMaxWidth().height(152.dp),
-            )
+            // 手机端：一排快捷圆形入口（最近播放 / 云盘 / 下载）。
+            // 「创建歌单」hero 不再保留 —— 曲库标题行的 [+] 就是这个动作，窄屏不再重复占 152dp。
             Row(
-                Modifier.fillMaxWidth().height(124.dp),
+                Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(BentoGap),
             ) {
-                BentoActionCard(
-                    title = "最近播放",
-                    subtitle = "接着上次的节奏",
-                    icon = Icons.Filled.History,
-                    onClick = onRecentPlays,
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                )
-                BentoActionCard(
-                    title = "离线下载",
-                    subtitle = "管理离线内容",
-                    icon = Icons.Filled.Download,
-                    onClick = onDownloads,
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                )
+                LibraryQuickEntry("最近播放", Icons.Filled.History, onRecentPlays, Modifier.weight(1f))
+                LibraryQuickEntry("云盘", Icons.Filled.CloudQueue, onCloud, Modifier.weight(1f))
+                LibraryQuickEntry("下载", Icons.Filled.Download, onDownloads, Modifier.weight(1f))
             }
         }
 
-        // ── 行 3：偏好设置 + 云盘 + 存储管理 ──
+        // ── 行 3：偏好设置 + 云盘 + 存储管理（仅 Expanded）──
         // 高度和行 2 对齐（168dp）：以前写的是 176 / 180，肉眼分不出差别，
         // 却让两行卡片的下边缘差 4dp —— 正是这种「说不清哪里歪」的错位在拖观感。
         // 云盘卡 = 真跳转（push [CloudDriveScreen]）——旧版只做 selectTab，而曲库在
         // 仪表盘之下，点完屏幕上什么也不变，等于一张假按钮。
+        // 窄屏已整行移除：偏好/存储属于设置类入口（顶栏可达），云盘进了快捷入口行。
         if (expanded) {
             Row(
                 Modifier.fillMaxWidth().height(168.dp),
@@ -453,41 +451,14 @@ private fun LibraryDashboard(
                     containerColor = neutral,
                 )
             }
-        } else {
-            LibraryPreferenceCard(
-                onAppearance = onAppearance,
-                onPlayback = onPlayback,
-                onProviders = onProviders,
-                modifier = Modifier.fillMaxWidth().height(164.dp),
-            )
-            Row(
-                Modifier.fillMaxWidth().height(124.dp),
-                horizontalArrangement = Arrangement.spacedBy(BentoGap),
-            ) {
-                BentoActionCard(
-                    title = "云盘",
-                    subtitle = "在线曲库",
-                    icon = Icons.Filled.CloudQueue,
-                    onClick = onCloud,
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    containerColor = neutral,
-                )
-                BentoActionCard(
-                    title = "存储管理",
-                    subtitle = "缓存与日志",
-                    icon = Icons.Filled.Storage,
-                    onClick = onStorage,
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    containerColor = neutral,
-                )
-            }
         }
 
-        // ── 行 4：页脚胶囊行（低权重工具入口）──
-        // 「存储管理」已回到行 3（桌面端它原先只出现在页脚 pill，窄屏反而占一整行
-        // 116dp —— 同一功能两种待遇），页脚只留「关于」。
-        Box(Modifier.fillMaxWidth().padding(top = 4.dp), contentAlignment = Alignment.Center) {
-            BentoPill("关于 CPPlayer", Icons.Filled.Info, onAbout)
+        // ── 行 4：页脚胶囊行（低权重工具入口，仅 Expanded）──
+        // 「存储管理」已回到行 3；窄屏连「关于」也一并移除（关于页从设置可达）。
+        if (expanded) {
+            Box(Modifier.fillMaxWidth().padding(top = 4.dp), contentAlignment = Alignment.Center) {
+                BentoPill("关于 CPPlayer", Icons.Filled.Info, onAbout)
+            }
         }
     }
 }
@@ -519,6 +490,40 @@ private fun LibraryGreeting(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** 手机端快捷圆形入口：圆底图标 + 标签，一行放三个高频跳转（最近播放 / 云盘 / 下载）。 */
+@Composable
+private fun LibraryQuickEntry(
+    label: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Surface(
+            onClick = onClick,
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            modifier = Modifier.size(56.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    icon,
+                    contentDescription = label,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            modifier = Modifier.padding(top = 6.dp),
         )
     }
 }
