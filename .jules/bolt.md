@@ -8,3 +8,7 @@
 
 - **Bottleneck**: In `UnifiedMusicSourceImpl.kt`, `getTrackDetails` uses `apiIds.chunked(500)` to fetch details in batches. Inside the loop processing the response, it iterates over `songs?.forEach` and for each song, it used `chunk.find { it.resourceId == rid }`. Since `chunk` can be up to 500 items, and `songs` can be up to 500, this resulted in an O(N^2) lookup within the loop.
 - **Optimization**: Converted the `chunk` list to a hash map using `val chunkMap = chunk.associateBy { it.resourceId }` prior to the `songs?.forEach` loop. The inner lookup was changed to `val matchedApiId = chunkMap[rid]`, changing the time complexity from O(N^2) to O(N) for that batch processing step.
+
+## 2024-10-05 - Avoid O(N^2) list membership checks when appending to collections
+**Learning:** Using `list.none { ... }` or `list.contains` to filter out duplicates when appending new items to a growing collection (like `merged.none { it.id == candidate.id }` in `getPersonalFmBatch`) causes an O(N^2) bottleneck as the collection grows.
+**Action:** Pre-allocate a `mutableSetOf` to keep track of seen identifiers, allowing for O(1) membership checks via `seen.add(it.id)` when filtering new items.
