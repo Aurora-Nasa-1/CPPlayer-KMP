@@ -271,6 +271,29 @@ jobs:
               exit 1
             }
           done
+          # 运行时模块清单断言（2026-10-05）：`nativeDistributions.modules(...)` 里少一个模块
+          # **本地永远看不出来** —— `desktopRun` 跑在完整的 JBR SDK 上，模块一个不缺；
+          # 只有 jpackage 出的安装包才按这份清单裁剪。而它在用户机器上的表现是启动器只打一句
+          # `Failed to launch JVM`：缺类若发生在**类初始化期**，栈里连模块名都不出现。
+          # 1.4.3 就是这么死的 —— 缺 `jdk.unsupported` ⇒ `JbrWindowChrome.<clinit>` 抛
+          # `NoClassDefFoundError: sun/misc/Unsafe` ⇒ `main()` 直接退出。
+          # 真值在 jlink 写出的 `release` 里，直接读它，别去猜插件会带哪些模块
+          # （`suggestModules` 只打日志、不参与打包，见 app/build.gradle.kts 的说明）。
+          # ⚠️ 增删依赖后重跑 `./gradlew :app:suggestModules`，把输出同步进
+          # app/build.gradle.kts 的 `nativeDistributions.modules(...)` 与下面这行。
+          release="$(tar -xzf "$f" -O 'CPPlayer/lib/runtime/release')"
+          modules="$(sed -n 's/^MODULES="\(.*\)"$/\1/p' <<<"$release" | tr ' ' '\n')"
+          for m in jdk.unsupported java.instrument java.management jdk.security.auth
+          do
+            # ⚠️ 用 `grep -x` 精确整行比对，不用 `-w`：`-w` 会把 `java.management.rmi`
+            # 里的 `java.management` 也算命中，真缺了反而放行。
+            grep -qx "$m" <<<"$modules" || {
+              echo "::error::运行时镜像缺模块 $m —— 见 app/build.gradle.kts 的 nativeDistributions.modules"
+              echo "--- 实际 MODULES ---"
+              grep '^MODULES=' <<<"$release" || true
+              exit 1
+            }
+          done
           echo "tar.gz 布局 OK"
       - name: Upload package
         uses: actions/upload-artifact@v4
