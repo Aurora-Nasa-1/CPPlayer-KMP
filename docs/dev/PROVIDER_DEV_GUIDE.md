@@ -1908,6 +1908,25 @@ Java_cp_player_core_provider_JniProvider_analyzeAudioFile(
 |--------|--------------------------|
 | 参数 | `uid`, `cookie` |
 
+> ⚠️ **网易云系音源请把这一项声明为不支持。** 上游**没有**对应的 HTTP 端点
+> （2026-10-05 实测：`/api/msg/private/markread` 在 `weapi` / `eapi` 下均返回 **404**；
+> 官方 `NeteaseCloudMusicApi` 的 `module/` 里也没有任何 mark-read 模块）。
+> 官方客户端标记私信已读走的是**云信 IM 长连接**，不经 HTTP API。
+>
+> 声明方式 —— 在模块 `manifest.json` 的 `apiMap` 里写：
+>
+> ```json
+> "apiMap": { "msg/private/mark/read": "unsupported" }
+> ```
+>
+> 声明后 `ProviderManager` 会**直接短路**（返回 `code = -1`，不发请求），
+> 宿主把这种失败判为 **WARNING 而不是 ERROR**（能力缺失 ≠ 音源故障），
+> 诊断页不再被一个从未被支持的端点拖成红色。
+> **不声明**的后果：每次打开会话都会产生一条 `{"code":500,"msg":"API error (code=404)"}`。
+>
+> 私信页的「已读」在 UI 上是**本地**标记的（`markReadLocally` + `pl/count` 刷新），
+> 不依赖这个端点。
+
 #### `send/text` — 发送消息
 
 | 方法名 | `send/text` |

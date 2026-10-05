@@ -591,10 +591,27 @@ class MusicApiServiceImpl(
     }
 
     private fun classifyLevel(success: Boolean, warnings: List<HealthMonitor.ResponseWarning>): HealthMonitor.HealthLevel {
+        // ⚠️ 「音源明确声明不支持此方法」**不是健康问题**，必须在 `!success` 之前拦一道。
+        //
+        // 判据：失败且**唯一**的问题是 UNSUPPORTED_BY_PROVIDER。
+        // 来源是 `ProviderManager.callApi`：manifest 的 `apiMap` 把某方法标成 `"unsupported"`
+        // 时它直接短路成 `{"code":-1}`，**根本不发请求**。既然请求都没发，
+        // 这就不该记成「音源故障」—— 否则诊断页会被一个从未被支持的端点拖成红色。
+        // （实测症状：cp_api 未声明前，每打开一次会话就多一条
+        //   `msg/private/mark/read` 的 ERROR，音源整体等级恒为 ERROR。）
+        //
+        // 降为 WARNING 而不是完全丢弃：记录仍在、`warningTypes` 里查得到「某音源缺哪些能力」，
+        // 只是不参与 `ProviderHealthStats` 的健康分与 overallLevel。
+        val errorWarnings = warnings.filter { HealthMonitor.classify(it) == HealthMonitor.HealthLevel.ERROR }
+        if (!success && errorWarnings.isNotEmpty() &&
+            errorWarnings.all { it == HealthMonitor.ResponseWarning.UNSUPPORTED_BY_PROVIDER }
+        ) {
+            return HealthMonitor.HealthLevel.WARNING
+        }
         if (!success) return HealthMonitor.HealthLevel.ERROR
         if (warnings.isEmpty()) return HealthMonitor.HealthLevel.OK
-        return if (warnings.any { HealthMonitor.classify(it) == HealthMonitor.HealthLevel.ERROR })
-            HealthMonitor.HealthLevel.ERROR else HealthMonitor.HealthLevel.WARNING
+        return if (errorWarnings.isNotEmpty()) HealthMonitor.HealthLevel.ERROR
+        else HealthMonitor.HealthLevel.WARNING
     }
 
     // ======================== 工具方法 ========================
