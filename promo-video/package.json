@@ -1,13 +1,14 @@
 {
   "name": "cpplayer-promo",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "CPPlayer product promo videos (Remotion)",
+  "description": "CPPlayer 产品宣传片（Remotion · Material 3 Expressive）",
   "scripts": {
     "studio": "remotion studio",
-    "render:linux": "remotion render LinuxGeek out/cpplayer-promo-linux-geek.mp4",
-    "render:windows": "remotion render WindowsPractical out/cpplayer-promo-windows.mp4",
-    "render:android": "remotion render AndroidPractical out/cpplayer-promo-android.mp4"
+    "typecheck": "tsc --noEmit",
+    "render": "remotion render CPPlayerPromo out/cpplayer-promo.mp4",
+    "render:scene": "remotion render",
+    "still": "remotion still"
   },
   "dependencies": {
     "@remotion/cli": "4.0.532",

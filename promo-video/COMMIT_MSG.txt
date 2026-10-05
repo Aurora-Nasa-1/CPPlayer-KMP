@@ -1,6 +1,14 @@
-promo-video: Remotion 产品宣传片工程（Linux 极客 / Windows 实用派 / Android 实用派 三支）
+promo-video: 全片重做为「自定义音源 + M3E 设计」宣发片（Remotion）
 
-- 手工脚手架（create-video 因 git 检测失败）；remotion 4.0.532 + @remotion/transitions
-- npm install 需 --ignore-scripts（沙箱内 esbuild postinstall spawnSync EBUSY）
-- 三个主合成：LinuxGeek 60s/1920x1080、WindowsPractical 50s/1920x1080、AndroidPractical 50s/1080x1920 竖屏
-- 场景全部注册为 connected compositions，可在 Studio 单独编辑
+- 废弃旧的三支（Linux 极客 / Windows 实用派 / Android 实用派）及其自绘假 mock UI
+- 配色改为取自 app Color.kt 的真实 M3E 色板 + 图标实测品牌渐变
+- 全部改用仓库内真机截图（public/shots/）
+- 形变动画：极坐标形状插值（cookie/flower/sunny/burst/clover 之间真形变）
+- 2.5D：透视相机 + 视差层 + 贯穿全片的动态背景
+- 编排：形变开场 → 音源四拍（导入 / 热插拔 / 容灾 / 缓存隔离）→ M3E 界面巡游
+  → 一套内核多端 → 特色能力 → 结尾卡
+- CPPlayerPromo 2352 帧 / 1920x1080 / 30fps；另有 10 个单幕 composition 便于逐幕调
+- 工程约定：remotion 4.0.532 + @remotion/transitions；npm install 需 --ignore-scripts
+  （沙箱内 esbuild postinstall spawnSync EBUSY）
+
+验证：npx tsc --noEmit 通过；逐幕出图核对；npx remotion render CPPlayerPromo
