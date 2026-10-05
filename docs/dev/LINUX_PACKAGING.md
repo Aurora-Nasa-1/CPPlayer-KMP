@@ -113,8 +113,29 @@ meta → desktop(Linux 腿: deb + tar.gz) → publish(挂到 GitHub Release)
 
 ```bash
 ssh -i ~/.ssh/aur aur@aur.archlinux.org
-# 首次连接确认 host key；成功标志是 AUR 的问候横幅而不是 permission denied
+# 成功标志是 AUR 的问候横幅；`Permission denied (publickey)` = 公钥没挂上（回 3.1 第 3 步）
 ```
+
+⚠️ **`Permission denied (publickey)` 是最容易漏的一步**：`3.2` 的 secret 配好了、
+CI 也不再报 host key 问题，但只要 `3.1` 第 3 步没做（公钥没填进 AUR 账号），
+连接照样被拒。CI 的 `Probe AUR connection` 步骤专门把这两种失败**分开报**：
+
+| CI 报错 | 含义 | 谁来修 |
+|---------|------|--------|
+| `AUR host key 校验失败` | workflow 里的 known_hosts 逻辑坏了 | 改 workflow |
+| `AUR 拒绝了这把 key` | 公钥没注册到 AUR 账号 | 人去 aur.archlinux.org 补（3.1 第 3 步） |
+
+### 3.3.1 为什么 CI 里**不能**用 `~`
+
+容器 job 里 runner 把 `HOME` 覆盖成 `/github/home`（actions/runner#863、#1146），
+而 ssh 展开 `~` 走的是 passwd 库（root ⇒ `/root`），**不认 `$HOME`** ——
+`ssh-keyscan` 把 host key 写进 `$HOME/.ssh/known_hosts`，ssh 却去读空的
+`/root/.ssh/known_hosts` ⇒ `Host key verification failed.`
+
+所以 workflow 里一律用 `"$HOME"` 绝对路径，并用 `GIT_SSH_COMMAND` 把 `-i` /
+`UserKnownHostsFile` 显式传给 ssh（连 `~/.ssh/config` 都不写）。
+**别改回 `~`** —— 这个坑 2026-10-05 v1.4.3 第一次真跑 `aur` job 时就踩了，
+而且之前一直被 tar.gz 断言挡在前面，job 从没执行过，所以一直没暴露。
 
 ### 3.4 发一次版走全流程
 

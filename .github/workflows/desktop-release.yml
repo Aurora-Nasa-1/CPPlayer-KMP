@@ -355,14 +355,53 @@ jobs:
           AUR_SSH_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur
-          chmod 600 ~/.ssh/aur
-          # AUR 要求以 aur 用户登录该主机（Arch Wiki「AUR submission guidelines」）。
-          printf 'Host aur.archlinux.org\n  User aur\n  IdentityFile ~/.ssh/aur\n' > ~/.ssh/config
-          chmod 600 ~/.ssh/config
-          # 非交互环境下固定 AUR 的 host key，避免首次连接的确认提示卡住。
-          ssh-keyscan -t rsa,ed25519 -H aur.archlinux.org >> ~/.ssh/known_hosts
+          # ⚠️ 全程用 "$HOME" 绝对路径，**不要写 `~`**。
+          # 容器 job 里 runner 把 HOME 覆盖成 /github/home（actions/runner#863、#1146），
+          # 而 ssh 展开 `~` 走的是 passwd 库（root ⇒ /root），**不认 $HOME**
+          # （本机实测：HOME 指到临时目录，ssh 仍去读真实用户目录）。
+          # 两者不一致 ⇒ ssh-keyscan 把 host key 写进 $HOME/.ssh/known_hosts，
+          # ssh 却去读空的 /root/.ssh/known_hosts ⇒ `Host key verification failed.`
+          # —— 2026-10-05 v1.4.3 首次跑这个 job 就是这么挂的（之前一直被 tar.gz
+          # 断言挡在前面，这个 job 从没真正跑过）。
+          mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$AUR_SSH_KEY" > "$HOME/.ssh/aur"
+          chmod 600 "$HOME/.ssh/aur"
+
+          # AUR 的 host key 取回后直接落盘。**不写 ~/.ssh/config** —— User 由 URL 里的
+          # `aur@` 给出，identity 与 known_hosts 在下面用 GIT_SSH_COMMAND 显式指定，
+          # ssh 因此完全不需要解析 `~`，HOME 被怎么覆盖都不影响。
+          ssh-keyscan -t rsa,ed25519 aur.archlinux.org > "$HOME/.ssh/known_hosts" 2>/dev/null
+          test -s "$HOME/.ssh/known_hosts" \
+            || { echo "::error::ssh-keyscan 没拿到 aur.archlinux.org 的 host key"; exit 1; }
+          echo "AUR host key 指纹（可与 Arch Wiki 公布的值核对）："
+          ssh-keygen -lf "$HOME/.ssh/known_hosts"
+
+          {
+            echo "GIT_SSH_COMMAND=ssh -i $HOME/.ssh/aur -o IdentitiesOnly=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
+          } >> "$GITHUB_ENV"
+
+      # 先探一次连接，把失败原因分开 —— git 只会甩一句
+      # "Could not read from remote repository"，看不出是 host key 不认（代码问题）
+      # 还是 key 没在 AUR 注册（配置问题，只能人去 aur.archlinux.org 补）。
+      - name: Probe AUR connection
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          probe="$(mktemp)"
+          # 必须用**与 git 完全相同**的那组 ssh 选项去探（GIT_SSH_COMMAND 是上一步写进
+          # GITHUB_ENV 的）—— 直接写裸 `ssh` 会退回 ssh 自己的 `~` 解析，走的是另一条
+          # 路径，等于没探（本步骤第一版就是这么写的，探针会自己先红）。
+          # ⚠️ $GIT_SSH_COMMAND 是「命令 + 参数」的整串，**不能加引号**展开。
+          # shellcheck disable=SC2086
+          $GIT_SSH_COMMAND -o BatchMode=yes -o ConnectTimeout=20 -T aur@aur.archlinux.org >"$probe" 2>&1 || true
+          cat "$probe"
+          if grep -q 'Host key verification failed' "$probe"; then
+            echo "::error::AUR host key 校验失败 —— known_hosts 没被 ssh 读到"; exit 1
+          fi
+          if grep -q 'Permission denied' "$probe"; then
+            echo "::error::AUR 拒绝了这把 key：公钥还没填进 AUR 账号的 SSH Public Key（步骤见 docs/dev/LINUX_PACKAGING.md §3.1）"; exit 1
+          fi
+          echo "AUR 连接自检通过"
 
       - name: Hash release asset
         if: steps.guard.outputs.skip != 'true'
