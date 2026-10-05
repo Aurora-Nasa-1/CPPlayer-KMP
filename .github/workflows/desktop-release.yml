@@ -198,7 +198,12 @@ jobs:
           set -euo pipefail
           dotnet tool install --tool-path .tools vpk
           test -f .tools/vpk.exe || { echo "::error::vpk 没装成（.tools/vpk.exe 不存在）"; exit 1; }
-          .tools/vpk.exe --version
+          # ⚠️ **不能写 `vpk --version`**：vpk 用 Oakton 解析参数，没有 `--version` 这个
+          # 选项，会报 "Required command was not provided. Unrecognized command or
+          # argument '--version'" 并以非零退出 —— 这一步就把 job 弄红了。
+          # `vpk pack -H` 打印扩展帮助（含全部参数与默认值），既能验证二进制可执行，
+          # 也是核对命令行参数的唯一权威来源。
+          .tools/vpk.exe pack -H | head -40
 
       - name: Build desktop package
         shell: bash
@@ -209,11 +214,14 @@ jobs:
         # ⚠️ 没设这个属性时构建**不会失败**，只是静默用 temurin 打运行时 ——
         # 那种「看起来成功、其实没换」是最坏的结局，所以这里显式指定 + 上面有断言。
         run: |
-          # ⚠️ `-Pcp.vpkPath` 用 `${{ github.workspace }}`（Windows 风格 `D:\a\...`），
-          # 不能写 `$PWD/.tools/vpk.exe`：Git Bash 的 `$PWD` 是 `/d/a/...`，Java 在
-          # Windows 上**解析不了**这种路径，vpk 会「找不到」而不是报路径错。
+          # ⚠️ **两个路径属性都必须用 Windows 风格的 `${{ github.workspace }}`**，
+          # 不能写 `$PWD/...`：Git Bash 的 `$PWD` 是 `/d/a/...`，Java 在 Windows 上
+          # **解析不了**这种路径 —— jbrHome 解析不了会静默回落到 temurin 打运行时
+          # （构建照样"成功"，但 WindowDraggableArea 失去原生 WindowMove、贴边吸附全废），
+          # vpkPath 解析不了则报「找不到 vpk」。GitHub 原生 runner 两种风格都接受，
+          # 但混用是最隐蔽的坑：同一行里一个对一个错。
           ./gradlew ${{ matrix.gradleTasks }} --no-daemon \
-            -Pcp.jbrHome="$PWD/.jbr/${{ matrix.platform }}-x64" \
+            -Pcp.jbrHome="${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64" \
             -Pcp.vpkPath="${{ github.workspace }}/.tools/vpk.exe" \
             -Papp.versionName="${{ needs.meta.outputs.version }}" \
             -Papp.releaseChannel="${{ needs.meta.outputs.channel }}"

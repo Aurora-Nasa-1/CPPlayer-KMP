@@ -75,6 +75,11 @@ dotnet tool install --tool-path .tools vpk
 ./gradlew :app:packageWindowsVelopack -Pcp.vpkPath=".tools/vpk.exe"
 ```
 
+> ⚠️ **验证状态**（2026-10-05）：参数签名已逐条核对 `vpk pack -H`（1.2.161），
+> Gradle 配置与三道拦截已验证（`./gradlew :app:tasks` 通过、`-Pcp.vpkPath` 指向
+> 不存在文件时报错清晰）。但**端到端打包尚未在本地跑通**——开发机只有 .NET runtime
+> 没有 SDK。首次真实验证会发生在 CI 的 windows runner 上。
+
 CI 的 windows runner 自带 SDK，工作流里已经装好并把绝对路径传进来：
 
 ```yaml
@@ -83,6 +88,7 @@ CI 的 windows runner 自带 SDK，工作流里已经装好并把绝对路径传
 
 ⚠️ 这里**必须**用 `${{ github.workspace }}`（`D:\a\...`），不能写 `$PWD/.tools/vpk.exe`：
 Git Bash 的 `$PWD` 是 `/d/a/...`，Java 在 Windows 上解析不了这种路径。
+`-Pcp.jbrHome` 同理（见 §5.5，那里踩过一次）。
 
 任务内部做了三道拦截，都不会「静默成功」：
 
@@ -92,13 +98,38 @@ Git Bash 的 `$PWD` 是 `/d/a/...`，Java 在 Windows 上解析不了这种路�
 
 打包完还会校验 `Setup.exe` 与 `RELEASES` 确实产出了。
 
-`vpk pack` 的关键参数（为什么这么传，见 `app/build.gradle.kts` 里的注释）：
+`vpk pack` 的关键参数（**全部核对自 `vpk pack -H`**，即 vpk 1.2.x 的实际签名）：
 
 | 参数 | 值 | 理由 |
 |------|----|----|
-| `--shortcuts` | `Desktop,StartMenu` | 开始菜单快捷方式放进 `CPPlayer\` 子目录，与 `WindowsSmtcIdentity` 自己写的 `Programs\CPPlayer.lnk` **错开**——同名文件互相覆盖会丢 AUMID，SMTC 面板会退回「未知应用」 |
+| `--shortcuts` | `Desktop,StartMenuRoot` | 合法值只有 `Desktop` / `StartMenuRoot` / `StartMenu` / `Startup` / `None`。`StartMenu` 是 `StartMenuRoot` 里的**子文件夹**且官方要求同时给 `--packAuthors`；用根层才能与 `WindowsSmtcIdentity` 自建的 `Programs\CPPlayer.lnk` 落在同一层 |
+| `--aumid` | `cp.player.CPPlayer` | 见下方「AUMID 那一节」——**这是两套快捷方式不打架的关键** |
 | `--skipVeloAppCheck` | — | Velopack 默认要求应用在启动早期调用自家的 `VelopackApp` builder（安装/更新回调）。JVM 侧不引它的 SDK，更新由 `Update.exe` 命令行驱动，不跳过会直接报错 |
-| `--mainExe` | `CPPlayer.exe` | jpackage app-image 里的启动器名（**只要文件名，不要路径**） |
+| `--mainExe` | `CPPlayer.exe` | jpackage app-image 里的启动器名。官方原话「The file name (**not path**)」——给路径会挂 |
+| `--yes` | — | vpk 走 Oakton 参数解析器，部分非交互场景会**提问等输入**；CI 无 TTY 会挂到超时。显式答「是」消掉 |
+| `--outputDir` | 绝对路径 | 不给的话默认 `Releases`（**相对当前工作目录**），Gradle 每次从仓库根解析，产物散落 |
+
+### AUMID 那一节
+
+`WindowsSmtcIdentity`（`app/src/desktopMain/.../WindowsSmtcIdentity.desktop.kt`）靠
+「设显式 AUMID + 在开始菜单放一个带该 AUMID 属性的 `.lnk`」拿 SMTC 面板的
+「来源应用」名字与图标，否则系统显示「未知应用」+ 空白图标。
+
+安装器生成的 `.lnk` 默认**不带** AUMID 属性 ⇒ 进程和快捷方式对不上号。
+所以 `--aumid cp.player.CPPlayer` 必须传，且**与代码里的 `WindowsSmtcIdentity.APP_ID` 一致**；
+改代码里那个常量时这里要同步，否则 SMTC 身份静默失效。
+
+> ⚠️ 别用「换成 StartMenu 子目录来错开」这种解法：那只让两个同名入口互相看不见，
+> AUMID 仍然对不上，等于把「图标空白」换成「两个入口行为不一致」。
+
+### app-image 可重定位（已验证）
+
+jpackage 生成的 `CPPlayer.cfg` 里 classpath / 资源路径全是 `$APPDIR\...` 相对写法，
+**没有绝对路径** ⇒ 镜像可以被搬到任意目录。Velopack 装到
+`%LOCALAPPDATA%\CPPlayer\app-<version>\`（与构建时的 `app/build/...` 完全不同）不会破。
+
+> 对比：如果 `.cfg` 里烤死了绝对路径（部分自建 `--java-options` 会引入），
+> Velopack 一装就启动失败。改 `jvmArgs` 时留意这一点。
 
 ---
 
@@ -131,7 +162,19 @@ Git Bash 的 `$PWD` 是 `/d/a/...`，Java 在 Windows 上解析不了这种路�
    Velopack 有 `--signParams` / `--azureTrustedSignFile`，有证书时可随时接上。
 4. **`description` 的 ASCII 硬约束已降级为警告** —— 它原本只为 MSI 存在，现在只剩
    deb/dmg 消费它。
-5. **待核实**：CI 里 `-Pcp.jbrHome="$PWD/.jbr/windows-x64"` 传的是 Git Bash 的 MSYS 路径
-   （`/d/a/...`），Java 在 Windows 上未必解析得了 —— 若解析失败会**静默用 temurin 打运行时**。
-   判据是 CI 日志里有没有 `CPPlayer: JBR runtime = ...` 那一行（没有就是没换上）。
-   与本次改动无关，但值得单独查一次。
+5. **CI 的 MSYS 路径坑已修**（2026-10-05）。原先同一条 Gradle 命令里
+   `-Pcp.jbrHome` 用 `$PWD`（Git Bash 的 `/d/a/...`）而 `-Pcp.vpkPath` 用
+   `${{ github.workspace }}`（`D:\a\...`）—— 一个对一个错。Java 在 Windows 上解析不了
+   MSYS 路径，`jbrHome` 解析失败会**静默用 temurin 打运行时**（构建照样"成功"，但
+   `WindowDraggableArea` 失去原生 WindowMove、贴边吸附全废，JBR 白打）。两个属性现在
+   都用 `${{ github.workspace }}`。判据仍是 CI 日志里有没有 `CPPlayer: JBR runtime = ...`。
+6. **`vpk --version` 不存在**（2026-10-05）。vpk 走 Oakton 参数解析器，跑
+   `vpk --version` 会报
+   `Required command was not provided. Unrecognized command or argument '--version'`
+   并以非零退出。要验证二进制可执行用 `vpk pack -H`（打印全部参数与默认值，
+   顺便是核对命令行的权威来源）。CI 里原先就有这一行，已改。
+7. **本机可能只有 .NET runtime 没有 SDK** —— `dotnet tool install` 会报
+   `No .NET SDKs were found`，装不了 vpk。这种情况下**参数无法本地端到端验证**，
+   只能靠 CI 的 windows runner 首次真实打包来验。vpk 也不一定在
+   `~/.dotnet/tools`（GitHub runner 不保证该目录在 PATH 上），所以一律用
+   `--tool-path .tools` + 显式传 `cp.vpkPath`，不赌 PATH。

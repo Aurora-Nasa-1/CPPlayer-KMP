@@ -577,9 +577,19 @@ val packageLinuxTarGz = tasks.register<Tar>("packageLinuxTarGz") {
 // builder（安装/更新后的回调钩子）。JVM 侧不引它的 SDK，更新改由 `Update.exe`
 // 命令行驱动，所以必须跳过这项校验，否则 vpk 直接报错退出。
 //
-// ⚠️ `--shortcuts Desktop,StartMenu`：开始菜单快捷方式放进「CPPlayer」子目录，与
-// WindowsSmtcIdentity 自己写的 `Programs\CPPlayer.lnk` 错开 —— 同名文件互相覆盖会
-// 丢掉 AUMID，SMTC 面板的「来源应用」会退回「未知应用」。
+// ⚠️ `--shortcuts Desktop,StartMenuRoot`：合法值只有 `Desktop` / `StartMenuRoot` /
+// `StartMenu` / `Startup` / `None`。**`StartMenu` 是 StartMenuRoot 里的子文件夹**，
+// 且官方文档明写它「必须同时指定 --packAuthors」——用它会在开始菜单多出一层目录。
+// 这里用 `StartMenuRoot`：快捷方式直接落在开始菜单根，与 WindowsSmtcIdentity 自建的那个
+// `Programs\CPPlayer.lnk` 同一层。
+//
+// ⚠️ `--aumid cp.player.CPPlayer`：**这才是让两套快捷方式不打架的关键**。
+// WindowsSmtcIdentity（`WindowsSmtcIdentity.desktop.kt`）靠「设显式 AUMID + 开始菜单里
+// 放一个带该 AUMID 属性的 .lnk」拿 SMTC 面板的「来源应用」名字与图标，否则系统显示
+// 「未知应用」。安装器生成的 .lnk 不带 AUMID 属性 → 两处入口各说各话。`--aumid`
+// 让 Velopack 写进自己的快捷方式，值必须与代码里的 `WindowsSmtcIdentity.APP_ID` 一致；
+// 改代码里的 APP_ID 时这里要同步（两处不一致 = SMTC 身份失效）。
+// ⚠️ 别改成 StartMenu 子目录「错开」——那只是让两个同名入口互相看不见，AUMID 仍然对不上。
 val packageWindowsVelopack = tasks.register<Exec>("packageWindowsVelopack") {
     group = "compose desktop"
     description =
@@ -595,17 +605,33 @@ val packageWindowsVelopack = tasks.register<Exec>("packageWindowsVelopack") {
     val icoFile = project.file("desktop-icons/icon.ico")
 
     // commandLine 必须在配置期定下来；平台不对 / vpk 缺失由下面的 doFirst 报清晰错误。
+    //
+    // 参数名与取值全部核对自 vpk 1.2.x 的 `vpk pack -H`（Oakton 参数解析器）——
+    // vpk **不认 `--version`**，也**没有 `--msi`** 这类旧参数，凭记忆写必错。
+    // 每个参数的用途见上方注释。
     commandLine(
+        // ⚠️ `--yes`：vpk 在部分非交互场景会提问等输入（Oakton 的 confirm prompt），
+        // CI 无 TTY ⇒ 任务永久挂住直到超时。显式答「是」把它消掉。
         vpkOverride ?: "vpk", "pack",
+        "--yes",
         "--packId", cpPackageName,
+        // ⚠️ 必须是**合法 SemVer**。appPackageVersion 已剥掉预发布后缀
+        // （`1.2.3-beta.1` → `1.2.3`），否则 vpk 解析失败。
         "--packVersion", appPackageVersion,
+        // 快捷方式显示名 & 默认文件夹名都取自 packTitle。
         "--packTitle", cpPackageName,
+        // StartMenu（子目录形式）要求这个字段；给了它以后将来切过去也不用补参数。
         "--packAuthors", "CPPlayer",
         "--packDir", appImageDir.get().asFile.absolutePath,
+        // 只给**文件名**，不给路径（官方原话 "The file name (not path)"）。
         "--mainExe", "$cpPackageName.exe",
         "--icon", icoFile.absolutePath,
         "--outputDir", outputDir.get().asFile.absolutePath,
-        "--shortcuts", "Desktop,StartMenu",
+        // 无参数时 vpk 默认 `Releases`（相对 CWD）⇒ Gradle 每次都从仓库根解析，产物散落。
+        // 显式给绝对路径才是我们要的 app/build/compose/binaries/main/velopack。
+        "--shortcuts", "Desktop,StartMenuRoot",
+        // 必须与 WindowsSmtcIdentity.APP_ID 一致，见上方注释。
+        "--aumid", "cp.player.CPPlayer",
         "--skipVeloAppCheck",
     )
     // 声明输出目录让 Gradle 认得这是有产物的任务；doFirst 里清空则是为了不让
