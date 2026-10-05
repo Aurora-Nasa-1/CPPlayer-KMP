@@ -235,9 +235,18 @@ jobs:
           set -euo pipefail
           f="$(ls app/build/compose/binaries/main/targz/CPPlayer-*-linux-x64.tar.gz)"
           echo "tar.gz: $f"
-          tar -tzf "$f" | grep -qx 'CPPlayer/bin/CPPlayer' \
+          # ⚠️ **不能**写成 `tar -tzf "$f" | grep -qx '...'`：`grep -q` 命中即退出、
+          # 关掉管道读端，而内置 JBR 运行时的清单（几千条）远超 64 KiB 管道缓冲，此刻
+          # tar 还在写 ⇒ 被 SIGPIPE 杀死（实测 `PIPESTATUS=141 0`；部分 tar 版本改报
+          # `tar: stdout: write error` 后以 2 退出）。`set -o pipefail` 会把这个**假的**
+          # 非零当成断言失败 —— 于是**文件在不在都红**，报的却是「缺启动器」，把排查
+          # 方向全带偏（2026-10-05 首次发布就是这么挂的）。
+          # 先把清单整个读进变量（tar 真正跑完、退出码可判；损坏包也会在此 `set -e` 中止），
+          # 再对变量做 grep —— 断言该有的牙口一点没少。
+          listing="$(tar -tzf "$f")"
+          grep -qx 'CPPlayer/bin/CPPlayer' <<<"$listing" \
             || { echo "::error::tar.gz 里缺 CPPlayer/bin/CPPlayer（启动器）"; exit 1; }
-          tar -tzf "$f" | grep -qx 'CPPlayer/lib/runtime/bin/java' \
+          grep -qx 'CPPlayer/lib/runtime/bin/java' <<<"$listing" \
             || { echo "::error::tar.gz 里缺 CPPlayer/lib/runtime/bin/java（内置运行时）"; exit 1; }
           echo "tar.gz 布局 OK"
       - name: Upload package

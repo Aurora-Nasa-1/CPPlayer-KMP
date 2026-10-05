@@ -122,3 +122,8 @@ git tag v1.2.3 && git push origin v1.2.3
   空仓库（首次建包无需手工操作）；push 只认 `master`；`PKGBUILD` 与 `.SRCINFO`
   必须同 commit；提交身份来自 git config。
 - Windows 本地任务守卫已实测：`BUILD FAILED` + 清晰错误信息，jpackage 未执行。
+- 布局断言的写法（2026-10-05 修正）：**不能**写成 `tar -tzf "$f" | grep -qx ...` ——
+  `set -o pipefail` 下 `grep -q` 命中即退出、关掉管道读端，而 tar 的清单有 265 KiB+
+  （内置 JBR 几千条，远超 64 KiB 管道缓冲）⇒ tar 被 SIGPIPE 杀死（`PIPESTATUS=141`），
+  流水线被判失败 ⇒ **文件在不在都红**，报的却是「缺启动器」。现在先把清单读进变量再
+  grep。改这一步时**别再改回管道**。
