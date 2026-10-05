@@ -43,11 +43,21 @@ class SettingsRegistryTest {
     }
 
     @Test
-    fun `every entry has a title and a subtitle`() {
+    fun `every entry is searchable`() {
+        //
+        // 这里原来是「缺标题 / 缺副标题」检查。**已删除，不要加回来**：
+        // `titleOf` / `subtitleOf` 指向 [CpStrings] 的成员，而两份实现都实现同一个接口 ——
+        // 漏一条、《英文》那份就编译不过。已经是编译期保证的事，不用再买运行时保险。
+        //
+        // 保留的是**编译期兜不住**的那一项：`keywords` 是手写的 list，漏写不会报错、
+        // 只会让设置页搜索在这个入口上永远搜不到。
+        //
         withReleaseChannel("debug") {
             settingsEntries().forEach { entry ->
-                assertTrue(entry.title.isNotBlank(), "id=${entry.id} 缺标题")
-                assertTrue(entry.subtitle.isNotBlank(), "id=${entry.id} 缺副标题")
+                assertTrue(
+                    entry.keywords.isNotEmpty(),
+                    "id=${entry.id} 缺搜索关键词 —— 设置页搜索在这个入口上永远搜不到",
+                )
             }
         }
     }
@@ -62,7 +72,7 @@ class SettingsRegistryTest {
                 if (entry.group != previous) {
                     assertTrue(
                         seen.add(entry.group),
-                        "分组 ${entry.group} 被拆成了不连续的两段 —— 会渲染出两个「${entry.group.title}」标题",
+                        "分组 ${entry.group} 被拆成了不连续的两段 —— 会渲染出两个同名分组标题",
                     )
                     previous = entry.group
                 }
@@ -89,7 +99,9 @@ class SettingsRegistryTest {
         withReleaseChannel("debug") {
             val byGroup = settingsEntries().groupBy { it.group }
             assertEquals(
-                listOf("appearance", "playback", "storage", "shortcuts"),
+                // 「语言」排第一：它是唯一一个「改变整棵树读到的东西」的设置，
+                // 也常常是用户在看不懂界面时要找的第一个入口。
+                listOf("language", "appearance", "playback", "storage", "shortcuts"),
                 byGroup[SettingsGroup.GENERAL]?.map { it.id },
                 "「通用」组的内容或顺序变了",
             )
@@ -99,7 +111,9 @@ class SettingsRegistryTest {
                 "「账号与音源」组的内容或顺序变了",
             )
             assertEquals(
-                listOf("stream_output", "integration"),
+                // ⚠️ `standby`（局域网设备）是后来加的入口，这一行当时没跟着更新，
+                // 于是快照测试一直挂在红灯上 —— 本次迁移顺手补回来。
+                listOf("stream_output", "integration", "standby"),
                 byGroup[SettingsGroup.CONNECTIVITY]?.map { it.id },
                 "「连接与集成」组的内容或顺序变了",
             )

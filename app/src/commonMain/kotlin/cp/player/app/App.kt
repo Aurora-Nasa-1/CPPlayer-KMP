@@ -456,6 +456,10 @@ private fun AppTheme(content: @Composable () -> Unit) {
     val coverSeed by AppModel.coverSeedFlow.collectAsState()
     val wallpaperSeed by AppModel.wallpaperSeedFlow.collectAsState()
     val fontRoundness by AppModel.fontRoundnessFlow.collectAsState()
+    // 语言必须在这里订阅一次：`ProvideCpStrings` 要覆盖整棵树（含 Navigator 与
+    // 桌面的自绘标题栏），而 AppTheme 是全树唯一的主题宿主 —— 挂在这里才能保证
+    // 「切换语言后立即生效」不需要重启，也不会漏掉任何分支。
+    val appLanguage by AppModel.appLanguageFlow.collectAsState()
     cp.player.app.ui.theme.CpTheme(
         themeMode = themeMode,
         colorSource = colorSource,
@@ -471,7 +475,9 @@ private fun AppTheme(content: @Composable () -> Unit) {
                 cp.player.app.ui.feedback.LocalCpHaptics provides
                     cp.player.app.ui.feedback.rememberPlatformHaptics()
             ) {
-                content()
+                cp.player.app.i18n.ProvideCpStrings(appLanguage) {
+                    content()
+                }
             }
         },
     )

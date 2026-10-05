@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
@@ -129,7 +130,7 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
         // 宽屏下列表横跨整屏，点进任一子页正文又收到 720dp，切换时宽度整体跳一下。
         // 根页是导航列表不是表单，但它和子页是同一屏的两个状态，必须同宽。
         CpRouteScaffold(
-            title = "设置",
+            title = cpStrings().settings.screenTitle,
             onBack = { navigator.popOrNotify() },
         ) { pageModifier ->
             SettingsPage(pageModifier) { list() }
@@ -147,7 +148,9 @@ private fun SettingsGroupedList(
     SettingsGroup.entries.forEach { group ->
         val groupEntries = entries.filter { it.group == group }
         if (groupEntries.isEmpty()) return@forEach
-        SettingsSection(group.title) {
+        // 组标题在这里才求值：Registry 里存的是取值函数而不是现成的字符串
+        // （那里既读不到 CompositionLocal，也不该依赖组合作用域）。
+        SettingsSection(cpStrings().let(group.titleOf)) {
             groupEntries.forEachIndexed { index, entry ->
                 SettingsRow(
                     entry = entry,
@@ -177,9 +180,10 @@ private fun SettingsRow(
     isSelected: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val strings = cpStrings()
     SettingsClickItem(
-        title = entry.title,
-        subtitle = entry.subtitle,
+        title = entry.titleOf(strings),
+        subtitle = entry.subtitleOf(strings),
         index = index,
         total = total,
         onClick = onClick,

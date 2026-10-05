@@ -7,6 +7,7 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
@@ -16,6 +17,7 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.WavingHand
 import androidx.compose.ui.graphics.vector.ImageVector
 import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.i18n.CpStrings
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.version.AppVersion
 
@@ -40,18 +42,28 @@ import cp.player.app.version.AppVersion
  *
  * 按「用户想干什么」划分，不按代码模块划分；日常在前，开发者项收在 [SettingsGroup.OTHER]。
  */
-enum class SettingsGroup(val title: String) {
+/**
+ * 设置分组。
+ *
+ * ⚠️ 标题是 `(CpStrings) -> String`（取值函数）而不是 `String`（值）：本 Registry 的列表
+ * 由**非 Composable 的顶层函数**构造，那里读不到 CompositionLocal，也没有 Compose 作用域。
+ * 存取值函数、在渲染处代入，是这个问题唯一干净的解法 ——
+ * 顺带换来「切换语言时列表自动跟着变」而不用重建列表、也不用把手伸进组合。
+ *
+ * 多语言改动须知见 `docs/dev/I18N.md`。
+ */
+enum class SettingsGroup(val titleOf: (CpStrings) -> String) {
     /** 跟内容本身无关的偏好：长什么样、怎么播、存哪。 */
-    GENERAL("通用"),
+    GENERAL({ it.settings.groupGeneral }),
 
     /** 我是谁、我从哪个音源拿内容。 */
-    ACCOUNT_AND_PROVIDER("账号与音源"),
+    ACCOUNT_AND_PROVIDER({ it.settings.groupAccountProvider }),
 
     /** 和本机之外的软件打交道。 */
-    CONNECTIVITY("连接与集成"),
+    CONNECTIVITY({ it.settings.groupConnectivity }),
 
     /** 低频 + 开发者向。放最末；其中排查/开发专用的入口只在 debug 构建展示（`debugOnly`）。 */
-    OTHER("其他"),
+    OTHER({ it.settings.groupOther }),
 }
 
 /**
@@ -70,7 +82,12 @@ enum class SettingsAccent { PRIMARY, SECONDARY, TERTIARY }
  * 一个设置入口。
  *
  * @param id 稳定标识：桌面左栏选中态、将来的深链与搜索都用它，**不要用标题当 key**
- * @param keywords 搜索同义词（「纯黑」→ oled / 省电 / amoled）
+ * @param keywords 搜索同义词（「纯黑」→ oled / 省电 / amoled）。
+ *   ⚠️ **同一个列表里同时放中英两套词**，不要做成随语言切换的资源：
+ *   搜索的输入是用户此刻敲的东西 —— 中文用户在英文界面下照样会敲「纯黑」，
+ *   反之亦然。按语言换词只会让「换个界面语言就搜不到」。
+ * @param titleOf 入口标题的取值函数（`(CpStrings) -> String`，不是值）。理由见 [SettingsGroup] 的 KDoc
+ * @param subtitleOf 入口副标题的取值函数
  * @param desktopOnly 仅桌面端出现。例：渲染后端对 Android 无意义 —— Android 的渲染
  *   完全交给系统，没有可切换的后端
  * @param androidOnly 仅 Android 出现。例：激进保活（Wi-Fi 高性能锁 / 组播锁）是
@@ -82,8 +99,8 @@ enum class SettingsAccent { PRIMARY, SECONDARY, TERTIARY }
 data class SettingsEntry(
     val id: String,
     val group: SettingsGroup,
-    val title: String,
-    val subtitle: String,
+    val titleOf: (CpStrings) -> String,
+    val subtitleOf: (CpStrings) -> String,
     val icon: ImageVector,
     val accent: SettingsAccent,
     val keywords: List<String> = emptyList(),
@@ -111,10 +128,24 @@ fun settingsEntries(): List<SettingsEntry> = buildList {
 
 private fun generalEntries(): List<SettingsEntry> = listOf(
     SettingsEntry(
+        id = "language",
+        group = SettingsGroup.GENERAL,
+        titleOf = { it.settings.itemLanguage.title },
+        subtitleOf = { it.settings.itemLanguage.subtitle },
+        icon = Icons.Filled.Language,
+        accent = SettingsAccent.PRIMARY,
+        // 中英两套词都留着（理由见 SettingsEntry.keywords 的 KDoc）。
+        keywords = listOf(
+            "语言", "中文", "英文", "简体", "繁体", "汉化", "翻译", "界面语言",
+            "language", "locale", "chinese", "english", "i18n", "translation", "localization",
+        ),
+        screen = { LanguageSettingsScreen() },
+    ),
+    SettingsEntry(
         id = "appearance",
         group = SettingsGroup.GENERAL,
-        title = "外观与主题",
-        subtitle = "主题模式、取色来源与纯黑背景",
+        titleOf = { it.settings.itemAppearance.title },
+        subtitleOf = { it.settings.itemAppearance.subtitle },
         icon = Icons.Filled.Palette,
         accent = SettingsAccent.PRIMARY,
         keywords = listOf("主题", "深色", "浅色", "暗黑", "取色", "配色", "纯黑", "oled", "省电", "theme", "dark"),
@@ -123,8 +154,8 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
     SettingsEntry(
         id = "playback",
         group = SettingsGroup.GENERAL,
-        title = "播放与音质",
-        subtitle = "默认音质与睡眠定时",
+        titleOf = { it.settings.itemPlayback.title },
+        subtitleOf = { it.settings.itemPlayback.subtitle },
         icon = Icons.Filled.PlayArrow,
         accent = SettingsAccent.SECONDARY,
         keywords = listOf("音质", "无损", "hires", "定时", "睡眠", "关闭", "quality", "sleep"),
@@ -133,8 +164,8 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
     SettingsEntry(
         id = "storage",
         group = SettingsGroup.GENERAL,
-        title = "下载与存储",
-        subtitle = "下载目录、歌曲缓存与图片缓存",
+        titleOf = { it.settings.itemStorage.title },
+        subtitleOf = { it.settings.itemStorage.subtitle },
         icon = Icons.Filled.Storage,
         accent = SettingsAccent.PRIMARY,
         keywords = listOf(
@@ -147,8 +178,8 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
     SettingsEntry(
         id = "shortcuts",
         group = SettingsGroup.GENERAL,
-        title = "快捷键",
-        subtitle = "查看与自定义桌面快捷键",
+        titleOf = { it.settings.itemShortcuts.title },
+        subtitleOf = { it.settings.itemShortcuts.subtitle },
         icon = Icons.Filled.Keyboard,
         accent = SettingsAccent.SECONDARY,
         keywords = listOf(
@@ -165,8 +196,8 @@ private fun accountEntries(): List<SettingsEntry> = listOf(
     SettingsEntry(
         id = "account",
         group = SettingsGroup.ACCOUNT_AND_PROVIDER,
-        title = "账号与登录",
-        subtitle = "登录音源账号、切换与管理已保存的账号",
+        titleOf = { it.settings.itemAccount.title },
+        subtitleOf = { it.settings.itemAccount.subtitle },
         icon = Icons.Filled.Person,
         accent = SettingsAccent.PRIMARY,
         keywords = listOf("账号", "登录", "退出", "扫码", "邮箱", "手机", "多账号", "隔离", "account", "login"),
@@ -175,8 +206,8 @@ private fun accountEntries(): List<SettingsEntry> = listOf(
     SettingsEntry(
         id = "providers",
         group = SettingsGroup.ACCOUNT_AND_PROVIDER,
-        title = "音源管理",
-        subtitle = "导入、切换或移除音源模块",
+        titleOf = { it.settings.itemProviders.title },
+        subtitleOf = { it.settings.itemProviders.subtitle },
         icon = Icons.Filled.Dns,
         accent = SettingsAccent.PRIMARY,
         keywords = listOf("音源", "导入", "模块", "切换", "provider", "module"),
@@ -198,8 +229,8 @@ private fun connectivityEntries(): List<SettingsEntry> = listOf(
     SettingsEntry(
         id = "stream_output",
         group = SettingsGroup.CONNECTIVITY,
-        title = "本地流输出",
-        subtitle = "把音频流通过 HTTP 对外提供",
+        titleOf = { it.settings.itemStreamOutput.title },
+        subtitleOf = { it.settings.itemStreamOutput.subtitle },
         icon = Icons.Filled.SettingsEthernet,
         accent = SettingsAccent.SECONDARY,
         keywords = listOf("服务器", "端口", "绑定", "局域网", "令牌", "token", "端口占用", "stream", "server", "port"),
@@ -208,8 +239,8 @@ private fun connectivityEntries(): List<SettingsEntry> = listOf(
     SettingsEntry(
         id = "integration",
         group = SettingsGroup.CONNECTIVITY,
-        title = "外部推送与集成",
-        subtitle = "推送到接收端、开放第三方接口",
+        titleOf = { it.settings.itemIntegration.title },
+        subtitleOf = { it.settings.itemIntegration.subtitle },
         icon = Icons.Filled.Api,
         accent = SettingsAccent.SECONDARY,
         keywords = listOf("推送", "接收端", "接口", "第三方", "集成", "api", "push", "receiver"),
@@ -218,8 +249,8 @@ private fun connectivityEntries(): List<SettingsEntry> = listOf(
     SettingsEntry(
         id = "standby",
         group = SettingsGroup.CONNECTIVITY,
-        title = "局域网设备",
-        subtitle = "同一网络里的其他 CPPlayer：互相发现与自动同步听歌记录",
+        titleOf = { it.settings.itemStandby.title },
+        subtitleOf = { it.settings.itemStandby.subtitle },
         icon = Icons.Filled.Wifi,
         accent = SettingsAccent.TERTIARY,
         keywords = listOf(
@@ -234,8 +265,8 @@ private fun otherEntries(): List<SettingsEntry> = listOf(
     SettingsEntry(
         id = "about",
         group = SettingsGroup.OTHER,
-        title = "关于与支持",
-        subtitle = "版本、更新与项目支持",
+        titleOf = { it.settings.itemAbout.title },
+        subtitleOf = { it.settings.itemAbout.subtitle },
         icon = Icons.Filled.Info,
         accent = SettingsAccent.SECONDARY,
         keywords = listOf("版本", "更新", "项目", "主页", "赞助", "支持", "about", "version", "update"),
@@ -244,8 +275,8 @@ private fun otherEntries(): List<SettingsEntry> = listOf(
     SettingsEntry(
         id = "diagnostics",
         group = SettingsGroup.OTHER,
-        title = "诊断",
-        subtitle = "查看接口调用状态、日志与回退信息",
+        titleOf = { it.settings.itemDiagnostics.title },
+        subtitleOf = { it.settings.itemDiagnostics.subtitle },
         icon = Icons.Filled.BugReport,
         accent = SettingsAccent.TERTIARY,
         keywords = listOf("调试", "健康", "日志", "接口", "错误", "health", "debug", "log"),
@@ -254,8 +285,8 @@ private fun otherEntries(): List<SettingsEntry> = listOf(
     SettingsEntry(
         id = "render_tuning",
         group = SettingsGroup.OTHER,
-        title = "渲染后端",
-        subtitle = "显示后端与垂直同步；画面撕裂或卡顿时可调整",
+        titleOf = { it.settings.itemRenderTuning.title },
+        subtitleOf = { it.settings.itemRenderTuning.subtitle },
         icon = Icons.Filled.Memory,
         accent = SettingsAccent.PRIMARY,
         keywords = listOf("渲染", "后端", "垂直同步", "vsync", "撕裂", "卡顿", "显卡", "render", "gpu"),
@@ -268,8 +299,8 @@ private fun otherEntries(): List<SettingsEntry> = listOf(
     SettingsEntry(
         id = "onboarding",
         group = SettingsGroup.OTHER,
-        title = "重看新手引导",
-        subtitle = "重新走一遍首次使用引导",
+        titleOf = { it.settings.itemOnboarding.title },
+        subtitleOf = { it.settings.itemOnboarding.subtitle },
         icon = Icons.Filled.WavingHand,
         accent = SettingsAccent.SECONDARY,
         keywords = listOf("引导", "教程", "新手", "onboarding", "tutorial"),

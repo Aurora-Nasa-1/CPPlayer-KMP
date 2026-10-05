@@ -257,6 +257,7 @@ object AppModel {
     // ============ 设置（持久化） ============
 
     private val KEY_THEME_MODE = "theme_mode"
+    private val KEY_APP_LANGUAGE = "app_language"
 
     /**
      * 旧键：只存「动态取色 开 / 关」。已被 [KEY_COLOR_SOURCE] 取代，
@@ -270,6 +271,35 @@ object AppModel {
 
     private val _themeMode = MutableStateFlow(themeMode())
     val themeModeFlow: StateFlow<cp.player.app.ui.theme.ThemeMode> = _themeMode.asStateFlow()
+
+    /**
+     * 应用显示语言。
+     *
+     * ⚠️ 切换语言**不需要重启**：`ProvideCpStrings` 把它写进 `LocalCpStrings`，
+     * 而读它的 composable 会被 CompositionLocal 失效驱动重组合。
+     * 真正做不到即时切换的是那些**在组合之外就把文案固化进状态**的调用点
+     * （例如已经 push 进返回栈的 `StartupScreen("…")`）—— 那种地方要存取值函数 /
+     * 枚举，别存现成的字符串。非组合侧需要文案时用 [strings]。
+     */
+    private val _appLanguage = MutableStateFlow(appLanguage())
+    val appLanguageFlow: StateFlow<cp.player.app.i18n.AppLanguage> = _appLanguage.asStateFlow()
+
+    fun appLanguage(): cp.player.app.i18n.AppLanguage =
+        cp.player.app.i18n.AppLanguage.ofStorageKey(settings.getString(KEY_APP_LANGUAGE))
+
+    fun setAppLanguage(language: cp.player.app.i18n.AppLanguage) {
+        settings.putString(KEY_APP_LANGUAGE, language.storageKey)
+        _appLanguage.value = language
+    }
+
+    /**
+     * **非组合上下文**取文案的唯一入口。
+     *
+     * 用于 `UiEvents.notify(...)`、MediaSession / 通知文案这类「没有 Composable 作用域、
+     * 但必须给用户看一句人话」的地方。每次调用现解析，成本只是一个属性读取，
+     * 没必要缓存 —— 缓存反而会在切换语言后返回旧语言的文案。
+     */
+    fun strings(): cp.player.app.i18n.CpStrings = cp.player.app.i18n.CpStrings.of(appLanguage())
 
     private val _colorSource = MutableStateFlow(colorSource())
     val colorSourceFlow: StateFlow<cp.player.app.ui.theme.ColorSource> = _colorSource.asStateFlow()
