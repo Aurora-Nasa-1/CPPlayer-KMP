@@ -71,3 +71,7 @@ reference/netease-module-rust/
 # ⚠️ 若将来这里出现需要共享的**项目级 skill**（.workbuddy/skills/），
 # 要给它单独加一条 `!` 反规则放行，别整目录提交。
 .workbuddy/
+
+# JVM 崩溃日志（hs_err_pid<pid>.log）：本机运行时产物，不进版本库。
+hs_err_pid*.log
+replay_pid*.log
