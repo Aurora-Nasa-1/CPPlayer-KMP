@@ -11,7 +11,8 @@ CPPlayer 是一款跨平台音乐播放器（Kotlin Multiplatform），Android �
 
 ### 桌面端
 
-- **Windows**：下载 MSI 安装包（`packageMsi` 产物），双击安装。
+- **Windows**：下载 `CPPlayer-<版本>-win-Setup.exe`，双击即装完并自动启动（无需选目录、
+  不弹 UAC）；不想安装也有解压即用的 `CPPlayer-<版本>-win-portable.zip`。
 - **macOS / Linux**：分别提供 Dmg / Deb 安装包。
 - 应用内置**更新检查**，新版本发布后会提示升级。
 
@@ -114,7 +115,7 @@ CPPlayer 可以作为**推送方**，把正在播放的音频以 HTTP 流推给�
 确认切换已生效（登出→登录）；若仍复现，属缓存 bug，请在诊断页清缓存后反馈。
 
 **Q：桌面端窗口贴边吸附 / 拖动不跟手？**
-需要使用带 JBR 运行时的安装包（MSI / Dmg / Deb 均内置）；绿色版
+需要使用带 JBR 运行时的安装包（Windows 的 Setup.exe / Dmg / Deb 均内置）；绿色版
 （不带运行时）使用系统 JRE 时会回退为自绘窗口。
 
 **Q：外部软件怎么把 CPPlayer 当音源用？**

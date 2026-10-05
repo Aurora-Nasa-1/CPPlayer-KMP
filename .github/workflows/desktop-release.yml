@@ -1,6 +1,7 @@
 name: Desktop Release
 
-# 桌面产物：Windows `.msi` / Linux `.deb` + 通用 `.tar.gz`，在各自原生 runner 上构建。
+# 桌面产物：Windows `.exe`（Velopack，由 jpackage 的 app-image 打）/ Linux `.deb`
+# + 通用 `.tar.gz`，在各自原生 runner 上构建。
 # stable 渠道还会把 tar.gz 发布到 AUR（cpplayer-bin）—— 配置步骤见 docs/dev/LINUX_PACKAGING.md。
 # 与 release.yml（稳定版 Android） / debug-release.yml（预发布 Android）共用同一个
 # GitHub Release —— 版本号与 tag 由下面的 `meta` job 统一解析，**不要**在 publish
@@ -107,9 +108,14 @@ jobs:
           - os: windows-latest
             platform: windows
             # 空格分隔的多任务列表；Linux 腿同时打 deb 与通用 tar.gz。
-            gradleTasks: ":app:packageMsi"
+            #
+            # Windows **不再出 MSI**（jpackage 的 WiX 模板直出：升级不继承上次安装目录、
+            # 目录选择框是老式对话框、向导步骤多，而 `--resource-dir` 不暴露 ⇒ 改不动）。
+            # 改由 Velopack 从 jpackage 的 app-image 打：
+            # `Setup.exe` + 更新源（`*.nupkg` / `RELEASES`）+ 便携 zip。
+            gradleTasks: ":app:packageWindowsVelopack"
             assetPaths: |
-              app/build/compose/binaries/main/msi/*
+              app/build/compose/binaries/main/velopack/*
             # Windows 侧 .zip / .tar.gz 都有，用 .zip。
             jbrExt: zip
             jbrSha: 432d0f9bdc687a6c8e2e13e22be83cdb0d9460b6b15752e84bd97165e13e9f5f
@@ -181,6 +187,19 @@ jobs:
           test -f "$dest/release" || { echo "::error::JBR 解压布局不对，缺 $dest/release"; exit 1; }
           "$dest/bin/java" -version 2>&1 | head -3
 
+      # Velopack 的 CLI 是 .NET global tool。装到工作区内的 `.tools/` 而不是默认的
+      # `~/.dotnet/tools` —— 后者**不保证在 runner 的 PATH 上**，而 Gradle 侧只认
+      # `-Pcp.vpkPath` 给的绝对路径（见 app/build.gradle.kts 的 packageWindowsVelopack）。
+      # windows runner 自带 .NET SDK，不需要额外 setup-dotnet。
+      - name: Install Velopack CLI (vpk)
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet tool install --tool-path .tools vpk
+          test -f .tools/vpk.exe || { echo "::error::vpk 没装成（.tools/vpk.exe 不存在）"; exit 1; }
+          .tools/vpk.exe --version
+
       - name: Build desktop package
         shell: bash
         # versionCode 由 Gradle 从 versionName 派生，不需要传；
@@ -190,8 +209,12 @@ jobs:
         # ⚠️ 没设这个属性时构建**不会失败**，只是静默用 temurin 打运行时 ——
         # 那种「看起来成功、其实没换」是最坏的结局，所以这里显式指定 + 上面有断言。
         run: |
+          # ⚠️ `-Pcp.vpkPath` 用 `${{ github.workspace }}`（Windows 风格 `D:\a\...`），
+          # 不能写 `$PWD/.tools/vpk.exe`：Git Bash 的 `$PWD` 是 `/d/a/...`，Java 在
+          # Windows 上**解析不了**这种路径，vpk 会「找不到」而不是报路径错。
           ./gradlew ${{ matrix.gradleTasks }} --no-daemon \
             -Pcp.jbrHome="$PWD/.jbr/${{ matrix.platform }}-x64" \
+            -Pcp.vpkPath="${{ github.workspace }}/.tools/vpk.exe" \
             -Papp.versionName="${{ needs.meta.outputs.version }}" \
             -Papp.releaseChannel="${{ needs.meta.outputs.channel }}"
       # tar.gz 的执行位全靠打包时原样保留，这里只做布局断言（缺关键文件立刻失败，

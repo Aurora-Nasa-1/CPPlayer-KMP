@@ -50,7 +50,7 @@ To override the code explicitly, pass `-Papp.versionCode=` — only `scripts/fas
 | `v1.2.3` | `stable` | normal release | `CPPlayer-1.2.3-android.apk` |
 | `debug-v1.2.3` | `debug` | prerelease | `CPPlayer-1.2.3-android-debug.apk` |
 
-Desktop assets from both channels: `CPPlayer-<version>.msi` (Windows) and `CPPlayer-<version>.deb` (Linux).
+Desktop assets from both channels: `CPPlayer-<version>-win-Setup.exe` (Windows, Velopack) and `CPPlayer-<version>.deb` (Linux).
 
 The app's update checker only considers tags matching `vX.Y.Z` / `debug-vX.Y.Z`, ignores drafts, and hides prereleases from the `stable` channel. Switching between a debug-signed and a release-signed APK still requires an uninstall — that is a signing-key difference, not a versionCode one.
 
@@ -58,7 +58,7 @@ The app's update checker only considers tags matching `vX.Y.Z` / `debug-vX.Y.Z`,
 
 - `.github/workflows/release.yml` — `v*` tags. Builds and publishes the stable Android release APK.
 - `.github/workflows/debug-release.yml` — `debug-v*` tags or manual dispatch. Builds and publishes the debug Android APK.
-- `.github/workflows/desktop-release.yml` — `v*` / `debug-v*` tags or manual dispatch. Builds Windows `.msi` and Linux `.deb` on native runners and attaches them to the same release.
+- `.github/workflows/desktop-release.yml` — `v*` / `debug-v*` tags or manual dispatch. Builds the Windows Velopack installer (`.exe`) and Linux `.deb` on native runners and attaches them to the same release.
 
 All three share the concurrency group `release-<ref>` so they do not race on the same GitHub Release; `softprops/action-gh-release` is idempotent on an existing release, which is the real safety net.
 
@@ -74,7 +74,7 @@ Repository Actions must have `Settings -> Actions -> General -> Workflow permiss
 
 With none configured, the build still succeeds and produces an **unsigned** release APK.
 
-## Desktop packaging (icons + MSI options)
+## Desktop packaging (icons + installers)
 
 Icons live in two places and are **generated**, not hand-drawn:
 
@@ -91,7 +91,19 @@ The generator draws with signed distance fields, so one design stays sharp from 
 
 Android uses an **adaptive icon**: the background is a full-bleed square (the launcher masks it, so it must not carry its own rounded corners) and the foreground glyph is scaled into the central 66dp safe circle. All three layers come from the same script — never replace just one layer's PNG, or you get a new background under an old glyph.
 
-MSI options are declared in `app/build.gradle.kts` under `nativeDistributions.windows { ... }`: desktop shortcut, Start menu entry, per-user install (no UAC prompt), install-directory chooser, and vendor/description/copyright metadata.
+### Windows installer — Velopack (no more MSI)
+
+Windows **no longer ships an MSI**. jpackage only produces the app image (`:app:createDistributable`); the `packageWindowsVelopack` Gradle task hands that directory to [Velopack](https://velopack.io) and emits:
+
+| Asset | Role |
+|-------|------|
+| `CPPlayer-<version>-win-Setup.exe` | what users download — double-click, installed, app launches |
+| `CPPlayer-<version>-win-full.nupkg` + `RELEASES` | update feed consumed by Velopack |
+| `CPPlayer-<version>-win-portable.zip` | unzip-and-run, mirrors the Linux tar.gz |
+
+Why the switch, how the update feed is wired, and what still needs doing are in [`WINDOWS_PACKAGING.md`](WINDOWS_PACKAGING.md).
+
+Consequently `nativeDistributions.windows { ... }` now carries only `iconFile` — `shortcut` / `menu` / `perUserInstall` / `dirChooser` / `upgradeUuid` were MSI-only and have been removed.
 
 ### Bundled runtime: JetBrains Runtime (JBR)
 
@@ -111,16 +123,16 @@ on the default JDK and says so on stdout — `javaHome` is never set to a bogus 
 > `app/build.gradle.kts` and the workflow are computed from an actual download and must be
 > recomputed on every version bump.
 
-⚠️ **`description` must be ASCII.** jpackage writes it verbatim into the MSI `Package/@Description` (and `ARPCOMMENTS`), while the MSI database codepage is pinned to **1252** by jpackage's bundled `MsiInstallerStrings_en.wxl`. Any CJK character makes `light.exe` fail with **LGHT0311**, which jpackage reports only as `exited with 311 code` — the real message needs `--verbose`. `app/build.gradle.kts` asserts this at configuration time. Keeping Chinese would require overriding that `.wxl` with `Codepage="936"`, which is not exposed by the Compose plugin (`--resource-dir` is internal), so it is not worth it. (`--win-codepage` still does not exist: JDK-8290471.)
+> `description` **used to be** a hard ASCII requirement: jpackage wrote it verbatim into the MSI `Package/@Description`, and the MSI database codepage is pinned to **1252** by jpackage's bundled `MsiInstallerStrings_en.wxl`, so any CJK character made `light.exe` fail with **LGHT0311** — reported by jpackage only as `exited with 311 code`, with the real message visible solely under `--verbose`. With MSI gone (2026-10-05) that failure mode no longer exists; `app/build.gradle.kts` now only emits a warning. Keeping it ASCII is still recommended for deb/dmg and older tooling. (`--win-codepage` never landed: JDK-8290471.)
 
-⚠️ **`upgradeUuid` must never change after the first public release.** Windows Installer uses it to recognise a new package as an upgrade of the same product. Change it and installs fail with "another version of this product is already installed", and the old version can no longer be removed cleanly — which also breaks the in-app update chain below (step 4 installs an MSI).
+> The old MSI `upgradeUuid` (`4A6A38AA-6BC8-4526-9EEF-92A5499DEB9C`) is **no longer consumed**. Do not lose the value: should Windows packaging ever revert to MSI, it must come back **verbatim** — Windows Installer uses it to recognise a new package as an upgrade of the same product, and a changed UUID makes installs fail with "another version of this product is already installed" while the old version can no longer be removed cleanly.
 
 ## In-app update chain
 
 1. The About page calls the GitHub Releases API.
 2. It compares SemVer, including prerelease suffixes.
 3. Android selects the APK asset and queues it through `DownloadManager` into `Downloads`, with a completion notification.
-4. Windows selects the MSI/ZIP asset; Linux selects the DEB/TAR.GZ asset. Desktop opens the browser because package installation remains user-controlled.
+4. Windows selects the `-Setup.exe` asset; Linux selects the DEB/TAR.GZ asset. Desktop opens the browser because package installation remains user-controlled — see [`WINDOWS_PACKAGING.md`](WINDOWS_PACKAGING.md) for turning the Windows side into a silent in-app update.
 5. If no matching asset exists, the release page is opened as a safe fallback.
 
 Desktop build metadata reaches the app through `compose.desktop.application.jvmArgs` in `app/build.gradle.kts` (`-Dcp.player.versionName`, `.versionCode`, `.releaseChannel`, `.gitSha`) and is read by `BuildInfo`. **Gradle properties do not become JVM system properties on their own** — dropping those lines silently makes the About page report `v1.0.0 (1)` / `unknown` forever, regardless of the tag.

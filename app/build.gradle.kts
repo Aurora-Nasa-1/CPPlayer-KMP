@@ -27,8 +27,9 @@ val appReleaseChannel: String = rootProject.extra["cpAppReleaseChannel"] as Stri
 val appPackageVersion: String = rootProject.extra["cpAppPackageVersion"] as String
 val gitSha: String = rootProject.extra["cpGitSha"] as String
 
-// ⚠️ 这个字符串只能用 ASCII，**一个中文都不能有**。
+// 建议保持 ASCII（**不再是硬约束**，2026-10-05 起）。
 //
+// 原本是硬约束，来源是 MSI：
 // jpackage 把它原样写进 MSI：main.wxs 里的 `<Package Description="$(var.JpAppDescription)">`
 // 和 `ARPCOMMENTS`。MSI 是一张带 codepage 的数据库，而 jpackage 内置的
 // `MsiInstallerStrings_en.wxl` 把 Codepage 钉死在 **1252**（西欧），于是中文字符在
@@ -264,14 +265,20 @@ if (resolvedJbrHome == null && (findProperty("cp.jbrDownload") as String?) == "t
     resolvedJbrHome = ensureJbrDownloaded()
 }
 
-// 兜底断言：CI 的 Windows runner 上只会甩出一个 311，从日志根本看不出是文案问题。
-// 在配置期就拦住，省得下次有人把中文改回来又排查一轮。
-// description 是全平台共用的（deb / dmg / msi 同一个字段），MSI 是最严格的那个，
-// 所以这里不区分宿主平台。
-require(appDescription.none { it.code > 0x7F }) {
-    "nativeDistributions.description 含非 ASCII 字符：" +
-        "MSI 数据库 codepage 固定为 1252，light.exe 会报 LGHT0311（退出码 311）。" +
-        "见本文件 appDescription 上方的注释。"
+// 2026-10-05：这条**曾经是硬断言**，现在降级为警告 —— 它防的是 **MSI** 那条链路：
+// MSI 数据库的 codepage 被 jpackage 内置的 MsiInstallerStrings_en.wxl 钉死在 1252，
+// 中文在 light.exe 阶段直接 LGHT0311，而 jpackage 只会甩一句 `exited with 311 code`
+// （要 --verbose 才看得到原因）。Windows 安装包改由 Velopack 打之后，MSI 已经不出产了，
+// 这个失败模式不复存在。
+//
+// 剩下的 deb / dmg 对 UTF-8 没有意见，但保持 ASCII 依旧最省心（老工具链、
+// 「添加/删除程序」列表里读它），所以约束留着、只是不再让构建失败。
+if (appDescription.any { it.code > 0x7F }) {
+    logger.warn(
+        "CPPlayer: nativeDistributions.description 含非 ASCII 字符。" +
+            "MSI 时代它是硬错误（codepage 1252 → LGHT0311），现在只剩 deb/dmg 消费它，" +
+            "构建能过，但仍建议保持 ASCII。"
+    )
 }
 
 group = "cp.player"
@@ -430,7 +437,12 @@ compose.desktop {
             "-Dcp.player.gitSha=$gitSha",
         )
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Deb, TargetFormat.Msi)
+            // ⚠️ 故意没有 TargetFormat.Msi：Windows 安装包改由 Velopack 从 app-image 打
+            // （见文件末尾的 `packageWindowsVelopack`）。jpackage 的 MSI 是内置 WiX 模板
+            // 直出，`--resource-dir` 又不对外暴露 ⇒ 「装新版不继承上次的安装目录」
+            // 「目录选择框是老式对话框」「向导步骤多」这些都属于 MSI 的固有行为，
+            // 在本仓库的配置层面改不动。详见 RELEASE.md「Windows 安装包」。
+            targetFormats(TargetFormat.Dmg, TargetFormat.Deb)
             packageName = cpPackageName
             packageVersion = appPackageVersion
             // 「添加/删除程序」里显示的那几行元信息。不填的话 MSI 里厂商是 Unknown、
@@ -447,20 +459,20 @@ compose.desktop {
             // 由 scripts/gen_app_icon.py 生成，改主色或改形状后重跑一次即可。
             // ⚠️ 不放在 src/desktopMain/resources 下 —— 那会被打进运行时 jar，
             // .icns 有 300KB，白占体积。
+            // ⚠️ Windows 侧 jpackage **只出 app-image**（`createDistributable`），安装包由
+            // Velopack 从这份镜像打（见文件末尾的 `packageWindowsVelopack`）。所以这里
+            // 只留 iconFile —— 快捷方式、安装目录、升级识别全部归 Velopack 管。
+            //
+            // 原来的 `shortcut` / `menu` / `menuGroup` / `perUserInstall` / `dirChooser` /
+            // `upgradeUuid` 一律删掉了：它们**只对 jpackage 的 msi / exe 生效**（jpackage
+            // 对 `--type app-image` 会拒收其中一部分），在本场景下是死配置，留着只会
+            // 让人误以为「改这里能改安装行为」——而那恰恰是换 Velopack 的原因。
+            //
+            // 若将来要回退到 MSI：`upgradeUuid` 必须**原样沿用**
+            // `4A6A38AA-6BC8-4526-9EEF-92A5499DEB9C`（见 RELEASE.md），否则装新版会报
+            // "已安装此产品的另一个版本"，旧版本也卸不干净。
             windows {
                 iconFile.set(project.file("desktop-icons/icon.ico"))
-                // 桌面快捷方式 + 开始菜单快捷方式（jpackage 默认两个都关）。
-                shortcut = true
-                menu = true
-                menuGroup = packageName
-                // 免管理员安装（装到 %LOCALAPPDATA%\Programs 而不是 Program Files），
-                // 装的时候不弹 UAC；同时让用户自己挑目录。
-                perUserInstall = true
-                dirChooser = true
-                // ⚠️ 这个 UUID 一旦发布就**永远不能再改**：Windows Installer 靠它判定
-                // "新包是同一个应用的升级版"。改了会怎样？装新版本时报
-                // "已安装此产品的另一个版本"，而且旧版本卸不干净。
-                upgradeUuid = "4A6A38AA-6BC8-4526-9EEF-92A5499DEB9C"
             }
             macOS {
                 iconFile.set(project.file("desktop-icons/icon.icns"))
@@ -492,7 +504,7 @@ compose.desktop {
 //   - AbstractJPackageTask.kt：jpackage `--type <AppImage.id> --dest <destinationDir>`
 //   - destinationDir = outputBaseDir / "main" / format.outputDirName
 //     （TargetFormat.kt：AppImage.outputDirName = "app"；outputBaseDir 默认
-//      build/compose/binaries —— CI 对 binaries/main/msi 的既有 glob 是同一套约定）
+//      build/compose/binaries —— CI 对 binaries/main/velopack 的 glob 是同一套约定）
 //   ⇒ 应用镜像目录 = build/compose/binaries/main/app/CPPlayer/
 //
 // ⚠️ 只能在 Linux 宿主上构建：createDistributable 产出**当前宿主平台**的应用镜像
@@ -533,6 +545,108 @@ val packageLinuxTarGz = tasks.register<Tar>("packageLinuxTarGz") {
             "createDistributable 产物布局不符合预期（缺 bin/ 或 lib/runtime/）：${appDir.absolutePath}\n" +
                 "若 compose 插件改了输出目录，请按本任务上方注释里的出处同步更新路径。"
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Windows 安装包（Velopack）：把 createDistributable 的 Windows 应用镜像打成
+// `CPPlayer-<version>-win-Setup.exe`，并产出更新源（`*.nupkg` + `RELEASES`）。
+//
+// ## 为什么换掉 jpackage 的 MSI（2026-10-05 定案）
+//
+// MSI 的三个毛病——装新版**不继承上次的安装目录**、目录选择框是 WiX 的老式对话框、
+// 向导步骤多——全是 jpackage 内置 WiX 模板的行为。`--resource-dir` 不对外暴露
+// （Compose 插件也没透出），所以在本仓库的配置层面**改不动**，只能换打包后端。
+//
+// Velopack = Squirrel.Windows 的官方继任者，Rust 实现、**语言无关**（官方把 Java 列为
+// 一等支持）。它的解法是「取消问题」而不是「修好它」：不做目录选择页，直接装到
+// %LOCALAPPDATA%\CPPlayer，双击 Setup.exe 即装完并自动启动；升级走 delta 差分，由
+// `Update.exe` 静默替换，用户不必再走一遍向导。顺带把「每次升级重下整个 ~80MB 的
+// JBR runtime」变成只下差异。
+//
+// ⚠️ 只能在 Windows 宿主上构建：createDistributable 产出的是**当前宿主平台**的镜像
+// （Linux 上是 ELF 启动器 + Linux JBR），拿去打 Windows 包是错的。与 packageLinuxTarGz
+// 同一条纪律：非 Windows 宿主**不挂 dependsOn**（不会先白打一遍 jpackage 再报错），
+// doFirst 里再明确拦一道。
+//
+// ⚠️ vpk 是 .NET global tool。CI 用 `dotnet tool install --tool-path <dir>` 装到工作区，
+// 再经 `-Pcp.vpkPath=<dir>/vpk.exe` 传进来 —— 不能赌 `~/.dotnet/tools` 在 GitHub
+// runner 的 PATH 上（原生 runner 不保证）。
+//
+// ⚠️ `--skipVeloAppCheck`：Velopack 默认要求应用在启动早期调用自家的 VelopackApp
+// builder（安装/更新后的回调钩子）。JVM 侧不引它的 SDK，更新改由 `Update.exe`
+// 命令行驱动，所以必须跳过这项校验，否则 vpk 直接报错退出。
+//
+// ⚠️ `--shortcuts Desktop,StartMenu`：开始菜单快捷方式放进「CPPlayer」子目录，与
+// WindowsSmtcIdentity 自己写的 `Programs\CPPlayer.lnk` 错开 —— 同名文件互相覆盖会
+// 丢掉 AUMID，SMTC 面板的「来源应用」会退回「未知应用」。
+val packageWindowsVelopack = tasks.register<Exec>("packageWindowsVelopack") {
+    group = "compose desktop"
+    description =
+        "把 createDistributable 的 Windows 应用镜像打成 Velopack 安装包（Setup.exe + 更新源）。仅限 Windows 宿主。"
+    val onWindows = System.getProperty("os.name").lowercase().contains("win")
+    if (onWindows) {
+        dependsOn(tasks.named("createDistributable"))
+    }
+
+    val vpkOverride = (project.findProperty("cp.vpkPath") as String?)?.trim()?.ifBlank { null }
+    val appImageDir = layout.buildDirectory.dir("compose/binaries/main/app/$cpPackageName")
+    val outputDir = layout.buildDirectory.dir("compose/binaries/main/velopack")
+    val icoFile = project.file("desktop-icons/icon.ico")
+
+    // commandLine 必须在配置期定下来；平台不对 / vpk 缺失由下面的 doFirst 报清晰错误。
+    commandLine(
+        vpkOverride ?: "vpk", "pack",
+        "--packId", cpPackageName,
+        "--packVersion", appPackageVersion,
+        "--packTitle", cpPackageName,
+        "--packAuthors", "CPPlayer",
+        "--packDir", appImageDir.get().asFile.absolutePath,
+        "--mainExe", "$cpPackageName.exe",
+        "--icon", icoFile.absolutePath,
+        "--outputDir", outputDir.get().asFile.absolutePath,
+        "--shortcuts", "Desktop,StartMenu",
+        "--skipVeloAppCheck",
+    )
+    // 声明输出目录让 Gradle 认得这是有产物的任务；doFirst 里清空则是为了不让
+    // vpk 留下的旧 RELEASES / 旧 nupkg 混进本次产物。
+    outputs.dir(outputDir)
+
+    doFirst {
+        check(onWindows) {
+            "packageWindowsVelopack 只能在 Windows 宿主上运行：createDistributable 产出的是" +
+                "**当前宿主平台**的应用镜像（Linux 上是 ELF 启动器 + Linux JBR），" +
+                "打成 Windows 安装包是错的。请在 Windows 上或 CI 的 windows runner 构建。"
+        }
+        if (vpkOverride != null) {
+            check(File(vpkOverride).isFile) {
+                "cp.vpkPath 指向的 vpk 不存在：$vpkOverride\n" +
+                    "安装：`dotnet tool install --tool-path <目录> vpk`，再把 <目录>/vpk.exe 传进来。"
+            }
+        }
+        check(icoFile.isFile) { "缺图标文件：${icoFile.absolutePath}（先跑 scripts/gen_app_icon.py）" }
+        val appDir = appImageDir.get().asFile
+        // Windows 的 app-image 布局是 `<name>/<name>.exe` + `<name>/app/`（jar 与 .cfg）
+        // + `<name>/runtime/`（jlink 裁剪的 JBR）——与 Linux 的 bin/ + lib/ 不同。
+        check(
+            appDir.resolve("$cpPackageName.exe").isFile &&
+                (appDir.resolve("app").isDirectory || appDir.resolve("runtime").isDirectory)
+        ) {
+            "createDistributable 产物布局不符合预期（缺 $cpPackageName.exe，或 app/ 与 runtime/ 都没有）：${appDir.absolutePath}\n" +
+                "若 compose 插件改了输出目录，请按本任务上方注释里的出处同步更新路径。"
+        }
+        outputDir.get().asFile.deleteRecursively()
+    }
+
+    doLast {
+        val out = outputDir.get().asFile
+        val setup = out.listFiles()?.firstOrNull { it.name.endsWith("-Setup.exe", ignoreCase = true) }
+            ?: error("vpk 没产出 Setup.exe：${out.absolutePath}")
+        check(out.resolve("RELEASES").isFile) {
+            "vpk 没产出 RELEASES 更新清单：${out.absolutePath}\n" +
+                "没有它，应用内的 Velopack 更新源就不可用。"
+        }
+        logger.lifecycle("Velopack 产物：${setup.name}（${setup.length() / 1024 / 1024} MiB）in ${out.absolutePath}")
     }
 }
 

@@ -89,7 +89,7 @@ meta → desktop(Linux 腿: deb + tar.gz) → publish(挂到 GitHub Release)
 |------|-------|
 | `AUR_SSH_PRIVATE_KEY` | `~/.ssh/aur`（**私钥**）的完整内容，含首尾行 |
 
-就这一个 secret。tar.gz 与 MSI/deb 的发布**不需要任何配置**；未配置该 secret 时
+就这一个 secret。tar.gz 与 Windows 安装包 / deb 的发布**不需要任何配置**；未配置该 secret 时
 `aur` job 会打 notice 并跳过，不影响 release。
 
 ### 3.3 验证
@@ -105,7 +105,7 @@ ssh -i ~/.ssh/aur aur@aur.archlinux.org
 git tag v1.2.3 && git push origin v1.2.3
 ```
 
-- desktop-release.yml：Windows MSI + Linux deb + tar.gz 挂到 GitHub Release；
+- desktop-release.yml：Windows Setup.exe（Velopack）+ Linux deb + tar.gz 挂到 GitHub Release；
 - aur job：更新 AUR 上的 cpplayer-bin（首次推送会直接建包）；
 - release.yml：Android APK 挂到同一个 Release。
 

@@ -116,7 +116,7 @@ commonMain  ──▶  jvmMain  ──▶  { androidMain, desktopMain }
 
 # 产物
 ./gradlew :app:run              # 桌面端直接运行
-./gradlew :app:packageMsi       # Windows 安装包（另有 Dmg / Deb）
+./gradlew :app:packageWindowsVelopack  # Windows 安装包（Velopack，需 .NET SDK 装 vpk；另有 Dmg / Deb）
 ./gradlew :app-android:assembleDebug
 ```
 

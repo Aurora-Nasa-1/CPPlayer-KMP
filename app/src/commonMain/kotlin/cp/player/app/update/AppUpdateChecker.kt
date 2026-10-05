@@ -112,9 +112,13 @@ object AppUpdateChecker {
             val asset = latest.assets.firstOrNull { asset ->
                 when {
                     isAndroidPlatform() -> asset.name.endsWith(".apk", ignoreCase = true)
-                    desktopPlatform() == "windows" -> asset.name.endsWith(".msi", ignoreCase = true) || asset.name.endsWith(".zip", ignoreCase = true)
+                    // Windows 安装包由 Velopack 产出，恒为 `CPPlayer-<version>-win-Setup.exe`
+                    // （同一个 release 里还会有 `*-win-portable.zip` 与更新源用的
+                    // `*.nupkg` / `RELEASES`——**都不该当成下载目标**，所以这里只认
+                    // `-Setup.exe`，认不到就走下面的「打开发布页」兜底）。
+                    desktopPlatform() == "windows" -> asset.name.endsWith("-Setup.exe", ignoreCase = true)
                     desktopPlatform() == "linux" -> asset.name.endsWith(".deb", ignoreCase = true) || asset.name.endsWith(".tar.gz", ignoreCase = true)
-                    else -> asset.name.endsWith(".msi", true) || asset.name.endsWith(".deb", true)
+                    else -> asset.name.endsWith("-Setup.exe", true) || asset.name.endsWith(".deb", true)
                 }
             }
             val downloadUrl = asset?.browserDownloadUrl ?: latest.htmlUrl

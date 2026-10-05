@@ -68,13 +68,19 @@
   访问 `127.0.0.1` 会拿到 502。本地探针要 `env -u http_proxy -u https_proxy …`；
   测试 JVM 要设 `no_proxy=127.0.0.1,localhost`。
 - 后台起的 HTTP server 会**随父 shell 一起被杀**：server 和客户端放进**同一条命令**。
-- ⚠️ **`nativeDistributions.description` 只能 ASCII**（vendor 同；copyright 里的 `©`
-  没事，它在 cp1252 里且只进 exe 版本资源）。jpackage 把它原样写进 MSI 的
+- **`nativeDistributions.description` 建议保持 ASCII**（vendor 同；copyright 里的 `©`
+  没事）。曾在 jpackage 出 MSI 时是**硬约束**：description 被原样写进 MSI 的
   `Package/@Description`，而 MSI 数据库 codepage 被 jpackage 内置的
   `MsiInstallerStrings_en.wxl` 钉死在 1252 ⇒ light.exe 报 **LGHT0311**，
   jpackage 只甩一句 `exited with 311 code`，**日志里找不到原因**（要 `--verbose` 才看得到）。
-  `app/build.gradle.kts` 里已加 `require` 断言拦一道。打进包的文件名也不能有非 ASCII
-  （同一个坑，见 JDK-8290471）。
+  2026-10-05 起 Windows 安装包改走 Velopack（不出 MSI 了），该约束降级为**警告**；
+  仍建议保持 ASCII，因为 deb/dmg 与「添加/删除程序」里也会读它。
+- ⚠️ **Windows 安装包是 Velopack 打的，不是 jpackage 的 MSI**（2026-10-05）。
+  jpackage 只出 app-image（`:app:createDistributable`），`packageWindowsVelopack` 再交给
+  Velopack。所以 `nativeDistributions.windows{}` 里**只有 `iconFile` 有意义** ——
+  `shortcut` / `menu` / `perUserInstall` / `dirChooser` / `upgradeUuid` 都只对
+  jpackage 的 msi/exe 生效，别再往那儿加东西指望它影响安装行为。
+  打包细节、更新链路与待办见 `docs/dev/WINDOWS_PACKAGING.md`。
 
 ## 4. 文本编码完整性（本仓库有过整文件被毁）
 
