@@ -38,7 +38,13 @@ internal fun isTcpPortBindable(host: String, port: Int): Boolean = try {
 /**
  * JVM actual：走 `java.time`，与桌面 / Android 的系统时区一致。
  *
- * Android 侧要求 minSdk ≥ 26（`java.time` 从 API 26 起可用）—— 本项目已满足。
+ * ⚠️ `java.time` 是 **API 26** 才进系统的，而本项目 minSdk 已降到 **24**（Android 7.0）
+ * —— 这里能跑起来靠的是 **核心库脱糖**（`app-android` 的
+ * `compileOptions.isCoreLibraryDesugaringEnabled` + `coreLibraryDesugaring(...)`，
+ * 用 `desugar_jdk_libs_nio`，见 `libs.versions.toml`）。
+ * 脱糖是**应用层 D8 阶段**做的：`:core` / `:app` 这两个 KMP 库模块本身不需要开开关，
+ * 但**必须由 app 模块开着**，否则 API 24/25 上这里就是 `NoClassDefFoundError: java/time/Instant`。
+ * 关掉那个开关时编译、桌面端、单测**全都照常通过**，只有低版本真机运行才炸 —— 别顺手删。
  */
 actual fun localDateTimeOf(epochMillis: Long): LocalDateTimeParts {
     val dt = java.time.Instant.ofEpochMilli(epochMillis)

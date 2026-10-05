@@ -69,12 +69,32 @@ material-color-utilities = "5.0.1"
 #   - 与 `material-kolor` 5.0.1 的编译目标**完全一致**（5.0.1 自己就依赖这个精确版本）。
 # 换版本后必须复核 material-kolor 的字节码兼容性（见 TOPICS.md「主题 / 取色」）。
 material3 = "1.12.0-alpha03"
+# 核心库脱糖（core library desugaring）：把 `java.time` / `java.util.stream` /
+# `java.util.function` / `java.util.Optional` 这些 **Java 8+ 才有的 JDK API**
+# 打包进 APK，让 minSdk 24（Android 7.0）也能跑。
+#
+# ⚠️ 必须用 **`_nio` 变体**，不是 `desugar_jdk_libs`：
+# `core/src/jvmMain/.../PlatformSupport.kt` 的 `moveFile()` / `moveDir()` 用了
+# `java.nio.file.Files`（API 26+），而**标准变体不覆盖 `java.nio.file`**。
+# 已验证 `moveFile` 是安卓可达路径（`DownloadEngine` / `DownloadTaskStore` 都调它）
+# ⇒ 用标准变体的话，API 24/25 上「下载完成落盘」那一步会 NoClassDefFoundError。
+# 两个变体的 `desugar.json` 已逐项对比：`_nio` = 标准 + `java.nio.file*`，是超集。
+#
+# ⚠️ 只有 `java.time` 是硬需求：`PlatformSupport.kt` 的 `localDateTimeOf()` 与
+# `app` 的待机设置页都直接调 `java.time.Instant/ZoneId`，而 `java.time` 从 **API 26**
+# 才进系统。minSdk 29 时不需要，降到 24 就必须开。
+# 不开的后果不是编译失败 —— 是**运行时** `NoClassDefFoundError`（被 runCatching
+# 包住时还会静默退化成空串，正是 AGENTS.md §5 记的那类坑）。
+#
+# 2.1.5 = 2.1.x 线最新（Google Maven 上的最后一个版本，2025-02 之后没再发）。
+desugar-jdk-libs = "2.1.5"
 
 [libraries]
 accompanist-lyrics-ui = { module = "com.mocharealm.accompanist:lyrics-ui", version.ref = "accompanist-lyrics-ui" }
 accompanist-lyrics-core = { module = "com.mocharealm.accompanist:lyrics-core", version.ref = "accompanist-lyrics-core" }
 materialkolor = { module = "com.materialkolor:material-kolor", version.ref = "materialkolor" }
 material-color-utilities = { module = "com.materialkolor:material-color-utilities", version.ref = "material-color-utilities" }
+desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs_nio", version.ref = "desugar-jdk-libs" }
 material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "material3" }
 # compose 插件 1.11.x 起 `compose.components.resources` 访问器已标 deprecated
 # （编译时警告 "'val resources: String' is deprecated. Specify dependency directly."），

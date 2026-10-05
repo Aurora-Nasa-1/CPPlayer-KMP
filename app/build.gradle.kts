@@ -289,7 +289,8 @@ kotlin {
         namespace = "cp.player.app.lib"
         // 与 app-android 对齐：material-kolor 5.x 要求 compileSdk ≥ 37。
         compileSdk = 37
-        minSdk = 29
+        // 24 = Android 7.0（见 app-android 的 minSdk 注释）。
+        minSdk = 24
         // ⚠️ 这一行是 Compose 资源（字体）能在安卓上跑起来的**前提**，删了会静默失效。
         //
         // `com.android.kotlin.multiplatform.library` 默认关掉 Android 资源处理，

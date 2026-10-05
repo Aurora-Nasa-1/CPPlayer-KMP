@@ -1,5 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      ⚠️ 只为 minSdk 24（Android 7.0）而存在的强制声明，删掉它构建会直接失败：
+      `com.mocharealm.accompanist:lyrics-ui-android:1.0.19`（歌词滚动/卡拉OK 组件）
+      在自己的 AAR 清单里写了 `minSdkVersion="29"`，manifest merger 因此报
+      "uses-sdk:minSdkVersion 24 cannot be smaller than version 29 declared in library"。
+
+      这个 29 是**作者随手写的下限，不是真实依赖**。逐类 javap 核对过（2026-10-05）：
+        - 它对 `android.*` 的引用只有 `android.os.Build` / `Build$VERSION`，
+          用法仅是在 `SDK_INT >= 34 / >= 36` 时往集合里多塞几个 Unicode 区块
+          （CJK 扩展 E/F/G/H、Arabic Ext B）—— 低版本只是少认几个生僻字区块；
+        - 对 `java.*` 的引用只有 `java.lang.*` / `java.util.*`，没有 java.time / java.nio.file；
+        - 其余全是 androidx.compose。
+      ⇒ 强制放行在 API 24/25 上不会崩，最坏情况是极生僻字被当成非 CJK。
+
+      ⚠️ 换歌词库版本（或升到 2.x）时**必须重新核对**：拿新 AAR 的 classes.jar 跑一遍
+      `javap`/常量池扫描，确认没有新增 API > 24 的平台引用，否则这个覆盖会变成运行时崩溃。
+      ⚠️ 别把它当成「所有库都能这么放行」的先例 —— 只有核对过字节码的库才允许。
+    -->
+    <uses-sdk tools:overrideLibrary="com.mocharealm.accompanist.lyrics.ui" />
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />

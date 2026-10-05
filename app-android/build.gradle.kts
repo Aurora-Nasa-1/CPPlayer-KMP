@@ -15,11 +15,17 @@ plugins {
 android {
     namespace = "cp.player.app"
     // material-kolor 5.x 的 android 产物要求 compileSdk ≥ 37（AAR metadata 强制），
-    // targetSdk 保持 35（运行时行为不变），minSdk 保持 29。
+    // targetSdk 保持 35（运行时行为不变）。
+    //
+    // minSdk = 24（Android 7.0）。⚠️ 三处 minSdk 必须一致（app-android / app / core），
+    // 否则 AAR 合并时 AGP 会报 "cannot be smaller than version X declared in library"。
+    // 降到 24 的代价是 `java.time` 不再是系统 API ⇒ 必须开核心库脱糖（见 compileOptions
+    // 与 dependencies 里的 coreLibraryDesugaring），否则 API 24/25 上运行时
+    // NoClassDefFoundError: java/time/Instant。
     compileSdk = 37
     defaultConfig {
         applicationId = "cp.player"
-        minSdk = 29
+        minSdk = 24
         targetSdk = 35
         versionCode = appVersionCode
         versionName = appVersionName
@@ -81,6 +87,11 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
+        // ⚠️ minSdk 24 的必需品，不是优化项：`java.time` 从 API 26 才有，
+        // 而 `:core` 的 jvmMain（androidMain 依赖它）与 `:app` 都在运行时直接用它。
+        // 关掉它编译照样过、桌面端照样跑，**只有 API 24/25 真机运行时**才炸
+        // （NoClassDefFoundError: java/time/Instant）—— 所以别顺手删。
+        isCoreLibraryDesugaringEnabled = true
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -93,4 +104,8 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.exoplayer)
+    // 核心库脱糖的运行时实现（java.time 等被改写成这些类的调用）。
+    // 与 compileOptions.isCoreLibraryDesugaringEnabled 是一对，缺任何一个都不生效：
+    // 只开开关不引依赖 → AGP 报 "coreLibraryDesugaring configuration contains no dependencies"。
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
 }

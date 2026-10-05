@@ -14,7 +14,9 @@ kotlin {
         namespace = "cp.player.core"
         // 与 app-android 对齐：material-kolor 5.x 要求 compileSdk ≥ 37。
         compileSdk = 37
-        minSdk = 29
+        // 24 = Android 7.0。降到 24 之后 `java.time` 不再是系统 API，必须靠
+        // app 模块的核心库脱糖补上（见 libs.versions.toml 里 desugar-jdk-libs 的注释）。
+        minSdk = 24
         // AGP 9 的 KMP library 插件**没有** consumerProguardFiles —— consumer keep 规则
         // 改由 optimization.consumerKeepRules 提供（已 javap 核实 KmpOptimization 的 DSL）。
         // 此前 core/consumer-rules.pro 从未被任何构建引用（是个死文件），这里接上。
