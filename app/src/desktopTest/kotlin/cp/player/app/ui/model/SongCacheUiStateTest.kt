@@ -1,5 +1,6 @@
 package cp.player.app.ui.model
 
+import cp.player.app.i18n.CpStrings
 import cp.player.core.playback.SongCacheEntry
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -14,8 +15,14 @@ import kotlin.test.assertTrue
  * **找到并删掉**那首歌 —— 搜索匹配、三种空态的区分、四段副标题的格式化，
  * 任何一处错了都会表现成「明明有缓存却搜不到 / 列表一片空白」。
  * 这些不该靠肉眼看图来验。
+ *
+ * ⚠️ 展示类函数现在**都要传 `CpStrings`**（多语言迁移后）。刻意两种语言都断言：
+ * 只测中文的话，「英文下这些词一个没翻」这类问题照样全绿。
  */
 class SongCacheUiStateTest {
+
+    private val zh = CpStrings.zh
+    private val en = CpStrings.en
 
     private fun entry(
         id: String = "a.flac",
@@ -113,44 +120,63 @@ class SongCacheUiStateTest {
 
     @Test
     fun `未知曲目只在缺歌名时兜底`() {
-        assertEquals("夜曲", entry().displayName)
-        assertEquals("未知曲目", entry(title = null).displayName)
-        assertEquals("未知曲目", entry(title = "   ").displayName, "空白歌名等同于缺歌名")
+        assertEquals("夜曲", entry().displayName(zh))
+        assertEquals("未知曲目", entry(title = null).displayName(zh))
+        assertEquals("未知曲目", entry(title = "   ").displayName(zh), "空白歌名等同于缺歌名")
+        // 英文界面下占位词也要跟着换：写死中文的话，英文用户会看到一行英文里夹着中文。
+        assertEquals("Unknown track", entry(title = null).displayName(en))
     }
 
     @Test
     fun `音质档位覆盖界面可选四档之外的档位`() {
-        assertEquals("标准", qualityLabel("standard"))
-        assertEquals("极高", qualityLabel("exhigh"))
-        assertEquals("无损", qualityLabel("lossless"))
-        assertEquals("Hi-Res", qualityLabel("hires"))
+        assertEquals("标准", qualityLabel("standard", zh))
+        assertEquals("极高", qualityLabel("exhigh", zh))
+        assertEquals("无损", qualityLabel("lossless", zh))
+        assertEquals("Hi-Res", qualityLabel("hires", zh))
         // 这两档界面选不到，但音源或旧版本会写进缓存 —— 不能显示成空白。
-        assertEquals("母带", qualityLabel("jymaster"))
-        assertEquals("沉浸声", qualityLabel("sky"))
+        assertEquals("母带", qualityLabel("jymaster", zh))
+        assertEquals("沉浸声", qualityLabel("sky", zh))
         // 完全不认识的档位：原样显示，至少还能看出个所以然。
-        assertEquals("something-new", qualityLabel("something-new"))
+        assertEquals("something-new", qualityLabel("something-new", zh))
+        // 英文侧同样要覆盖到那两个「界外档位」，否则缓存行的英文会漏译。
+        assertEquals("Master", qualityLabel("jymaster", en))
+        assertEquals("Immersive", qualityLabel("sky", en))
     }
 
     @Test
     fun `相对时间分档正确`() {
         val now = 1_000_000_000_000L
         val minute = 60_000L
-        assertEquals("刚刚", relativeTime(now - minute / 2, now))
-        assertEquals("5 分钟前", relativeTime(now - 5 * minute, now))
-        assertEquals("3 小时前", relativeTime(now - 3 * 60 * minute, now))
-        assertEquals("2 天前", relativeTime(now - 2 * 24 * 60 * minute, now))
-        assertEquals("2 个月前", relativeTime(now - 61 * 24 * 60 * minute, now))
+        assertEquals("刚刚", relativeTime(now - minute / 2, zh, now))
+        assertEquals("5 分钟前", relativeTime(now - 5 * minute, zh, now))
+        assertEquals("3 小时前", relativeTime(now - 3 * 60 * minute, zh, now))
+        assertEquals("2 天前", relativeTime(now - 2 * 24 * 60 * minute, zh, now))
+        assertEquals("2 个月前", relativeTime(now - 61 * 24 * 60 * minute, zh, now))
+    }
+
+    @Test
+    fun `相对时间的英文分档与中文一致`() {
+        // 分档逻辑（判据在 relativeTime 里，措辞在文案层）必须两种语言对齐 ——
+        // 英文不是「翻译版」，是同一套判据换个说法。数量词位置不同（中英各一边）。
+        val now = 1_000_000_000_000L
+        val minute = 60_000L
+        assertEquals("Just now", relativeTime(now - minute / 2, en, now))
+        assertEquals("5 min ago", relativeTime(now - 5 * minute, en, now))
+        assertEquals("3 hr ago", relativeTime(now - 3 * 60 * minute, en, now))
+        assertEquals("2 d ago", relativeTime(now - 2 * 24 * 60 * minute, en, now))
+        assertEquals("2 mo ago", relativeTime(now - 61 * 24 * 60 * minute, en, now))
     }
 
     @Test
     fun `时间戳缺失时如实显示未知而不是刚刚`() {
         // 老缓存的 lastModified 读不出来会是 0；显示成「刚刚」会让用户以为它刚被播过。
-        assertEquals("时间未知", relativeTime(0L, 1_000_000L))
+        assertEquals("时间未知", relativeTime(0L, zh, 1_000_000L))
+        assertEquals("Time unknown", relativeTime(0L, en, 1_000_000L))
     }
 
     @Test
     fun `时钟回拨不会算出负数分钟`() {
-        assertEquals("刚刚", relativeTime(2_000L, 1_000L))
+        assertEquals("刚刚", relativeTime(2_000L, zh, 1_000L))
     }
 
     // ============ 接口缓存命中率 ============

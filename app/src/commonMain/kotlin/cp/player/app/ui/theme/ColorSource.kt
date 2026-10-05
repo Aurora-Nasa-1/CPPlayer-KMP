@@ -1,6 +1,7 @@
 package cp.player.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import cp.player.app.i18n.CpStrings
 
 /**
  * 种子色来源。
@@ -44,11 +45,13 @@ val DefaultSeedColor: Color = PrimaryLight
  * ⚠️ 三个标签都以「跟随」/「固定」开头，是为了**自解释**：旧版叫「系统 / 封面 / 默认」，
  * 其中「默认」尤其含糊（默认什么的默认？），而「系统」又与主题模式那边的「跟随系统」
  * 不一致 —— 同一页里两个选项组用了两套措辞。
+ *
+ * 收 [CpStrings] 而不是无参，理由同 [cp.player.app.ui.theme.ThemeMode.displayName]。
  */
-fun ColorSource.displayName(): String = when (this) {
-    ColorSource.PLATFORM -> "跟随系统"
-    ColorSource.COVER -> "跟随封面"
-    ColorSource.FIXED -> "固定配色"
+fun ColorSource.displayName(strings: CpStrings): String = when (this) {
+    ColorSource.PLATFORM -> strings.appearance.colorSourcePlatform
+    ColorSource.COVER -> strings.appearance.colorSourceCover
+    ColorSource.FIXED -> strings.appearance.colorSourceFixed
 }
 
 /**
@@ -57,10 +60,12 @@ fun ColorSource.displayName(): String = when (this) {
  * 刻意写明**回退行为**：这三个来源都可能取不到色（平台不支持 / 无封面），
  * 用户看到配色变了却不知道为什么，是最容易误报成 bug 的一类反馈。
  */
-fun ColorSource.description(platformAvailable: Boolean): String = when (this) {
-    ColorSource.PLATFORM ->
-        if (platformAvailable) "取自系统强调色（安卓壁纸 / Windows 强调色）"
-        else "当前平台不支持，将回退到固定配色"
-    ColorSource.COVER -> "取自当前曲目封面主色；未播放或无封面时改用系统壁纸配色"
-    ColorSource.FIXED -> "始终使用内置配色，不随内容与系统变化"
+fun ColorSource.description(strings: CpStrings, platformAvailable: Boolean): String = when (this) {
+    ColorSource.PLATFORM -> if (platformAvailable) {
+        strings.appearance.colorSourcePlatformOn
+    } else {
+        strings.appearance.colorSourcePlatformOff
+    }
+    ColorSource.COVER -> strings.appearance.colorSourceCoverNote
+    ColorSource.FIXED -> strings.appearance.colorSourceFixedNote
 }

@@ -23,6 +23,7 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.SettingsButtonItem
 import cp.player.app.ui.component.SettingsClickItem
@@ -65,6 +66,7 @@ class AppearanceSettingsScreen : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
+        val s = cpStrings()
         val themeMode by AppModel.themeModeFlow.collectAsState()
         val colorSource by AppModel.colorSourceFlow.collectAsState()
         val pureBlack by AppModel.pureBlackFlow.collectAsState()
@@ -89,10 +91,10 @@ class AppearanceSettingsScreen : Screen {
                 // ⚠️ 本组所有行的 `total` 必须**同为组内行数**（分段圆角按 index/total
                 // 算首/中/末段）。此处曾出现 segmented 行写 `total = 3`、开关行写 `total = 4`
                 // 的分叉 —— 加/减行时会错出圆角。增删行时一起改。
-                SettingsSection("外观") {
+                SettingsSection(s.appearance.sectionLook) {
                     SettingsSegmentedItem(
-                        title = "主题模式",
-                        options = ThemeMode.entries.map { it.displayName() },
+                        title = s.appearance.themeMode,
+                        options = ThemeMode.entries.map { it.displayName(s) },
                         selectedIndex = ThemeMode.entries.indexOf(themeMode).coerceAtLeast(0),
                         onSelect = { index ->
                             ThemeMode.entries.getOrNull(index)?.let(AppModel::setThemeMode)
@@ -101,8 +103,8 @@ class AppearanceSettingsScreen : Screen {
                         total = 5,
                     )
                     SettingsSegmentedItem(
-                        title = "取色来源",
-                        options = availableSources.map { it.displayName() },
+                        title = s.appearance.colorSource,
+                        options = availableSources.map { it.displayName(s) },
                         selectedIndex = availableSources.indexOf(colorSource).coerceAtLeast(0),
                         onSelect = { index ->
                             availableSources.getOrNull(index)?.let(AppModel::setColorSource)
@@ -111,8 +113,8 @@ class AppearanceSettingsScreen : Screen {
                         total = 5,
                     )
                     SettingsSwitchItem(
-                        title = "纯黑模式",
-                        subtitle = "深色主题下使用纯黑背景，OLED 屏幕更省电",
+                        title = s.appearance.pureBlack,
+                        subtitle = s.appearance.pureBlackNote,
                         checked = pureBlack,
                         onCheckedChange = AppModel::setPureBlack,
                         index = 2,
@@ -120,28 +122,26 @@ class AppearanceSettingsScreen : Screen {
                     )
                     // 窄屏布局才有底栏；桌面宽屏走侧栏，这项开着也无副作用。
                     SettingsSwitchItem(
-                        title = "自动隐藏底栏",
-                        subtitle = "向上滑动内容时收起底部导航栏，向下滑动重新显示",
+                        title = s.appearance.autoHideBottomBar,
+                        subtitle = s.appearance.autoHideBottomBarNote,
                         checked = bottomBarAutoHide,
                         onCheckedChange = AppModel::setBottomBarAutoHide,
                         index = 3,
                         total = 5,
                     )
                     SettingsSwitchItem(
-                        title = "封面飞行动画",
-                        subtitle = "点击歌曲 / 歌单封面时，播放封面飞向播放器或详情页的过渡动画；" +
-                            "关闭后点击更干脆利落",
+                        title = s.appearance.coverFlight,
+                        subtitle = s.appearance.coverFlightNote,
                         checked = coverFlightAnimation,
                         onCheckedChange = AppModel::setCoverFlightAnimation,
                         index = 4,
                         total = 5,
                     )
                 }
-                SettingsSection("字体") {
+                SettingsSection(s.appearance.sectionFont) {
                     SettingsSliderItem(
-                        title = "字体圆滑度",
-                        subtitle = "Google Sans Flex 的 ROND 可变轴：0 方正、100 最圆润。" +
-                            "Android 16 及以上默认 100，其余平台默认 $defaultRoundness",
+                        title = s.appearance.fontRoundness,
+                        subtitle = s.appearance.fontRoundnessNote(defaultRoundness),
                         value = displayedRoundness.toFloat(),
                         onValueChange = { draggingRoundness = it.toInt() },
                         valueRange = 0f..100f,
@@ -151,15 +151,19 @@ class AppearanceSettingsScreen : Screen {
                             draggingRoundness = -1
                         },
                         valueLabel = displayedRoundness.toString() +
-                            if (fontRoundness == null && displayedRoundness == defaultRoundness) " · 默认" else "",
+                            if (fontRoundness == null && displayedRoundness == defaultRoundness) {
+                                s.appearance.roundnessDefaultTag
+                            } else {
+                                ""
+                            },
                         index = 0,
                         total = if (fontRoundness != null) 2 else 1,
                     )
                     // 「恢复默认」只在用户自定义过之后出现：默认状态下它是个死按钮。
                     if (fontRoundness != null) {
                         SettingsButtonItem(
-                            text = "恢复平台默认",
-                            subtitle = "清除自定义值，回到当前平台的默认圆滑度",
+                            text = s.appearance.resetPlatformDefault,
+                            subtitle = s.appearance.resetPlatformDefaultNote,
                             icon = Icons.Filled.RestartAlt,
                             index = 1,
                             total = 2,
@@ -167,16 +171,13 @@ class AppearanceSettingsScreen : Screen {
                         )
                     }
                 }
-                SettingsNote(
-                    "字体圆滑度改动即时生效，会应用到整个界面的拉丁字符；" +
-                        "中文字形来自系统回退字体，不受此设置影响。"
-                )
-                SettingsNote(colorSource.description(platformAvailable))
+                SettingsNote(s.appearance.roundnessNote)
+                SettingsNote(colorSource.description(s, platformAvailable))
             }
         }
 
         CpRouteScaffold(
-            title = "外观与主题",
+            title = s.appearance.screenTitle,
             onBack = { navigator.popOrNotify() },
         ) { pageModifier -> body(pageModifier) }
     }
@@ -231,12 +232,13 @@ private fun StorageSettingsContent(
     onOpenSongCache: () -> Unit,
 ) {
     val state by model.state.collectAsState()
+    val s = cpStrings()
     val downloadDir by AppModel.downloadDirFlow.collectAsState()
     val isAndroid = cp.player.app.platform.isAndroidPlatform()
     val pickDownloadDir = cp.player.app.platform.rememberDirectoryPicker { path ->
         if (!path.isNullOrBlank()) {
             AppModel.setDownloadDir(path)
-            UiEvents.notify("下载目录已更新，仅对后续下载生效")
+            UiEvents.notify(s.storage.dirUpdated)
         }
     }
     // 从歌曲缓存明细页删完条目回来时，本页的数字必须是新的 ——
@@ -247,12 +249,15 @@ private fun StorageSettingsContent(
         SettingsPage(pageModifier) {
             // ---- 下载区：桌面 3 行（下载音乐 / 目录 / 打开目录），Android 2 行 ----
             val downloadRows = if (isAndroid) 2 else 3
-            SettingsSection("下载") {
+            SettingsSection(s.storage.sectionDownload) {
                 SettingsClickItem(
-                    title = "已下载音乐",
+                    title = s.storage.downloadedMusic,
                     subtitle = when {
-                        state.downloadedCount == 0 -> "还没有下载内容，点右上角新建或搜索页下载"
-                        else -> "${state.downloadedCount} 首 · 共 ${formatBytes(state.downloadedBytes)}"
+                        state.downloadedCount == 0 -> s.storage.downloadedMusicEmpty
+                        else -> s.storage.downloadedMusicSummary(
+                            state.downloadedCount,
+                            formatBytes(state.downloadedBytes),
+                        )
                     },
                     index = 0,
                     total = downloadRows,
@@ -260,11 +265,11 @@ private fun StorageSettingsContent(
                     onClick = onOpenDownloads,
                 )
                 SettingsClickItem(
-                    title = "下载目录",
+                    title = s.storage.downloadDir,
                     subtitle = if (isAndroid) {
-                        "Android 下载固定保存到应用私有目录"
+                        s.storage.downloadDirAndroid
                     } else {
-                        downloadDir.ifBlank { "默认下载目录" }
+                        downloadDir.ifBlank { s.storage.downloadDirDefault }
                     },
                     index = 1,
                     total = downloadRows,
@@ -273,8 +278,8 @@ private fun StorageSettingsContent(
                 )
                 if (!isAndroid) {
                     SettingsClickItem(
-                        title = "打开目录",
-                        subtitle = "在文件管理器中查看已下载的文件",
+                        title = s.storage.openDir,
+                        subtitle = s.storage.openDirNote,
                         index = 2,
                         total = downloadRows,
                         icon = Icons.AutoMirrored.Filled.OpenInNew,
@@ -282,7 +287,13 @@ private fun StorageSettingsContent(
                             val target = downloadDir
                             val ok = target.isNotBlank() &&
                                 cp.player.app.platform.openInFileManager(target)
-                            if (!ok) UiEvents.notify("打开目录失败：${target.ifBlank { "尚未设置下载目录" }}")
+                            if (!ok) {
+                                UiEvents.notify(
+                                    s.storage.openDirFailed(
+                                        target.ifBlank { s.storage.dirUnset },
+                                    ),
+                                )
+                            }
                         },
                     )
                 }
@@ -300,14 +311,16 @@ private fun StorageSettingsContent(
                 // index/total 算，见 LegacyListItem.segmentCorners）。
                 val hasSongCache = state.songCacheEntries > 0
                 val songCacheRows = 2 + (if (hasSongCache) 2 else 0) + (if (isAndroid) 0 else 1)
-                SettingsSection("歌曲缓存") {
+                SettingsSection(s.storage.sectionSongCache) {
                     SettingsClickItem(
-                        title = "已缓存歌曲",
+                        title = s.storage.cachedSongs,
                         subtitle = when {
-                            !hasSongCache -> "暂无缓存；播放无损音质的歌曲时会自动缓存"
-                            else -> "${state.songCacheEntries} 首 · 共 ${formatBytes(state.songCacheBytes)} / 上限 ${
-                                formatBytes(state.songCacheCapacityBytes)
-                            }"
+                            !hasSongCache -> s.storage.cachedSongsEmpty
+                            else -> s.storage.cachedSongsSummary(
+                                state.songCacheEntries,
+                                formatBytes(state.songCacheBytes),
+                                formatBytes(state.songCacheCapacityBytes),
+                            )
                         },
                         index = 0,
                         total = songCacheRows,
@@ -317,8 +330,8 @@ private fun StorageSettingsContent(
                     // 离散档位而不是滑条：容量是个「够用就好」的粗粒度决定，
                     // 滑条会让人以为要精确到 MB，还得解释「无损一首多大」。
                     SettingsSegmentedItem(
-                        title = "容量上限",
-                        subtitle = "上限调小后会立刻按最久未播放清理到位",
+                        title = s.storage.cacheCapacity,
+                        subtitle = s.storage.cacheCapacityNote,
                         options = SONG_CACHE_CAPACITY_OPTIONS.map { it.second },
                         selectedIndex = songCacheCapacityIndex(state.songCacheCapacityBytes),
                         onSelect = { i ->
@@ -333,20 +346,21 @@ private fun StorageSettingsContent(
                     // 点了没反应」的红色按钮比没有这一行更糟。
                     if (hasSongCache) {
                         SettingsButtonItem(
-                            text = "清理 30 天未播放的缓存",
-                            subtitle = "只删长期不听的，最近在听的不受影响",
+                            text = s.storage.clearStaleCache,
+                            subtitle = s.storage.clearStaleCacheNote,
                             index = 2,
                             total = songCacheRows,
                             icon = Icons.Filled.CleaningServices,
                             onClick = { model.clearSongCacheOlderThan(30) },
                         )
                         SettingsConfirmItem(
-                            title = "清空歌曲缓存",
-                            subtitle = "删除全部本地副本，已下载的音乐不受影响",
-                            confirmTitle = "清空歌曲缓存？",
-                            confirmMessage = "将删除 ${state.songCacheEntries} 首缓存（约 ${
-                                formatBytes(state.songCacheBytes)
-                            }）。已下载的音乐不受影响；这些无损歌曲下次播放时会重新缓存。",
+                            title = s.storage.clearSongCache,
+                            subtitle = s.storage.clearSongCacheNote,
+                            confirmTitle = s.storage.clearSongCacheConfirmTitle,
+                            confirmMessage = s.storage.clearSongCacheConfirmMessage(
+                                state.songCacheEntries,
+                                formatBytes(state.songCacheBytes),
+                            ),
                             onConfirm = { model.clearSongCache() },
                             index = 3,
                             total = songCacheRows,
@@ -355,8 +369,8 @@ private fun StorageSettingsContent(
                     }
                     if (!isAndroid) {
                         SettingsClickItem(
-                            title = "打开缓存目录",
-                            subtitle = "在文件管理器中核对 / 备份缓存文件",
+                            title = s.storage.openCacheDir,
+                            subtitle = s.storage.openCacheDirNote,
                             index = songCacheRows - 1,
                             total = songCacheRows,
                             icon = Icons.AutoMirrored.Filled.OpenInNew,
@@ -364,7 +378,7 @@ private fun StorageSettingsContent(
                                 val target = AppModel.backend.songCache.cacheDirPath()
                                 val ok = !target.isNullOrBlank() &&
                                     cp.player.app.platform.openInFileManager(target)
-                                if (!ok) UiEvents.notify("打开缓存目录失败")
+                                if (!ok) UiEvents.notify(s.storage.openCacheDirFailed)
                             },
                         )
                     }
@@ -372,13 +386,19 @@ private fun StorageSettingsContent(
             }
 
             // ---- 接口缓存区：歌曲 / 歌单等元数据的读透缓存 ----
-            SettingsSection("接口缓存") {
+            SettingsSection(s.storage.sectionApiCache) {
                 SettingsClickItem(
-                    title = "缓存条目",
+                    title = s.storage.apiCacheEntries,
                     subtitle = buildString {
-                        append(if (state.apiCacheEntries == 0) "暂无缓存" else "${state.apiCacheEntries} 条")
+                        append(
+                            if (state.apiCacheEntries == 0) {
+                                s.storage.apiCacheEmpty
+                            } else {
+                                s.storage.apiCacheEntryCount(state.apiCacheEntries)
+                            },
+                        )
                         state.apiCacheHitRate?.let { rate ->
-                            append(" · 本次会话命中率 ${(rate * 100).roundToInt()}%")
+                            append(s.storage.apiCacheHitRate((rate * 100).roundToInt()))
                         }
                     },
                     index = 0,
@@ -388,8 +408,8 @@ private fun StorageSettingsContent(
                     onClick = null,
                 )
                 SettingsButtonItem(
-                    text = "清理接口缓存",
-                    subtitle = "歌曲、歌单等信息的读取缓存；清理后下次会重新向音源请求",
+                    text = s.storage.clearApiCache,
+                    subtitle = s.storage.clearApiCacheNote,
                     index = 1,
                     total = 2,
                     icon = Icons.Filled.CleaningServices,
@@ -401,12 +421,12 @@ private fun StorageSettingsContent(
             }
 
             // ---- 图片缓存区 ----
-            SettingsSection("图片缓存") {
+            SettingsSection(s.storage.sectionImageCache) {
                 SettingsClickItem(
-                    title = "图片缓存",
+                    title = s.storage.imageCache,
                     subtitle = when {
-                        state.imageCacheBytes < 0 -> "统计中…"
-                        else -> "占用 ${formatBytes(state.imageCacheBytes)}"
+                        state.imageCacheBytes < 0 -> s.storage.imageCacheMeasuring
+                        else -> s.storage.imageCacheUsage(formatBytes(state.imageCacheBytes))
                     },
                     index = 0,
                     total = 2,
@@ -414,8 +434,8 @@ private fun StorageSettingsContent(
                     onClick = null,
                 )
                 SettingsButtonItem(
-                    text = "清理图片缓存",
-                    subtitle = "释放封面等图片占用的空间；已下载的歌曲不受影响",
+                    text = s.storage.clearImageCache,
+                    subtitle = s.storage.clearImageCacheNote,
                     index = 1,
                     total = 2,
                     icon = Icons.Filled.CleaningServices,
@@ -423,18 +443,12 @@ private fun StorageSettingsContent(
                 )
             }
 
-            SettingsNote(
-                if (isAndroid) {
-                    "下载目录的改动仅对后续下载生效，已下载的文件不会移动。清理各类缓存都不会删除已下载的音乐。"
-                } else {
-                    "下载目录的改动仅对后续下载生效，已下载的文件不会移动；如需迁移，可在打开目录后手动移动文件。清理各类缓存都不会删除已下载的音乐。"
-                }
-            )
+            SettingsNote(if (isAndroid) s.storage.noteAndroid else s.storage.noteDesktop)
         }
     }
 
     CpRouteScaffold(
-        title = "下载与存储",
+        title = s.storage.screenTitle,
         onBack = onBack,
     ) { pageModifier -> body(pageModifier) }
 }

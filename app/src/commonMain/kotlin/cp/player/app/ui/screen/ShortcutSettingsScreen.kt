@@ -42,6 +42,8 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
+import cp.player.app.i18n.CpStrings
+import cp.player.app.i18n.cpStrings
 import cp.player.app.shortcut.ShortcutAction
 import cp.player.app.shortcut.ShortcutBinding
 import cp.player.app.shortcut.ShortcutCategory
@@ -103,7 +105,7 @@ class ShortcutSettingsScreen : Screen {
         }
 
         CpRouteScaffold(
-            title = "快捷键",
+            title = cpStrings().shortcuts.screenTitle,
             onBack = { navigator.popOrNotify() },
         ) { pageModifier ->
             ShortcutSettingsBody(
@@ -133,17 +135,18 @@ internal fun ShortcutSettingsBody(
     // 冲突只提示不拦截：派发时取声明顺序靠前的那个，程序不会出错，
     // 但用户会遇到「按下去反应的不是我想的那个」，所以必须可见。
     val conflicts = remember(bindings) { findShortcutConflicts(bindings) }
+    val s = cpStrings()
 
     SettingsLazyPage(pageModifier) {
         ShortcutCategory.entries.forEach { category ->
             val actions = ShortcutAction.entries.filter { it.category == category }
             if (actions.isEmpty()) return@forEach
             item(key = "shortcut_section_${category.name}") {
-                SettingsSection(category.title) {
+                SettingsSection(category.titleOf(s)) {
                     actions.forEachIndexed { index, action ->
                         SettingsClickItem(
-                            title = action.label,
-                            subtitle = action.hint,
+                            title = action.labelOf(s),
+                            subtitle = action.hintOf(s),
                             index = index,
                             total = actions.size,
                             onClick = { onEdit(action) },
@@ -151,6 +154,7 @@ internal fun ShortcutSettingsBody(
                                 ShortcutKeyChip(
                                     binding = bindings[action.id],
                                     conflicted = action.id in conflicts,
+                                    strings = s,
                                 )
                             },
                         )
@@ -160,18 +164,15 @@ internal fun ShortcutSettingsBody(
         }
 
         item(key = "shortcut_note") {
-            SettingsNote(
-                "快捷键在任意界面生效；输入框获得焦点时不会触发（字母 / 数字键照常输入）。" +
-                    "点击任意一行可以重新录入键位。"
-            )
+            SettingsNote(s.shortcuts.note)
         }
         item(key = "shortcut_reset_all") {
             SettingsConfirmItem(
-                title = "全部恢复默认",
-                subtitle = "丢弃所有自定义键位，回到出厂设置",
-                confirmTitle = "全部恢复默认？",
-                confirmMessage = "所有自定义的快捷键都会丢失，恢复为默认键位。",
-                confirmLabel = "恢复",
+                title = s.shortcuts.resetAll,
+                subtitle = s.shortcuts.resetAllNote,
+                confirmTitle = s.shortcuts.resetAllConfirmTitle,
+                confirmMessage = s.shortcuts.resetAllConfirmMessage,
+                confirmLabel = s.shortcuts.resetLabel,
                 index = 0,
                 total = 1,
                 destructive = false,
@@ -186,9 +187,12 @@ internal fun ShortcutSettingsBody(
  *
  * 三种状态各有自己的配色，不能只靠文案区分：`未绑定` / 正常 / **冲突**（错误色）——
  * 冲突必须一眼看得见，否则用户只会觉得「按了没反应」。
+ *
+ * `internal` 而非 `private`：出图测试要用它渲染**真实**徽标（键位名是本批迁移的
+ * 重点之一，而它只在行尾那个小药丸里出现 —— 不复用真实组件就等于没验）。
  */
 @Composable
-private fun ShortcutKeyChip(binding: ShortcutBinding?, conflicted: Boolean) {
+internal fun ShortcutKeyChip(binding: ShortcutBinding?, conflicted: Boolean, strings: CpStrings) {
     // ⚠️ 「未绑定」的底色**不能**用 `surfaceContainerHighest`：深色主题下设置行的底色
     // 就是它（`settingsRowContainer()`），两者相同 ⇒ 徽标只剩文字、没有药丸形状，
     // 和相邻的键位徽标对不齐（离屏出图实测）。`surfaceContainer` 在浅色下比行底深一档、
@@ -205,7 +209,7 @@ private fun ShortcutKeyChip(binding: ShortcutBinding?, conflicted: Boolean) {
     }
     Surface(shape = MaterialTheme.shapes.small, color = container) {
         Text(
-            text = binding?.displayName ?: "未绑定",
+            text = binding?.displayName(strings) ?: strings.shortcuts.unbound,
             style = MaterialTheme.typography.labelLarge,
             color = content,
             maxLines = 1,
@@ -252,6 +256,8 @@ private fun ShortcutRecorderDialog(
     var draft by remember { mutableStateOf(current) }
     var waiting by remember { mutableStateOf(draft == null) }
     val focusRequester = remember { FocusRequester() }
+    val s = cpStrings()
+    val actionLabel = action.labelOf(s)
 
     val conflicts = remember(draft, current) {
         if (draft == null || draft == current) emptyList() else conflictsWith(draft!!)
@@ -285,13 +291,13 @@ private fun ShortcutRecorderDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("设置快捷键") },
+        title = { Text(s.shortcuts.recorderTitle) },
         text = {
             Column(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
-                    text = "「${action.label}」",
+                    text = s.shortcuts.recorderTarget(actionLabel),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -315,7 +321,7 @@ private fun ShortcutRecorderDialog(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = draft?.displayName ?: "按下新的组合键…",
+                        text = draft?.displayName(s) ?: s.shortcuts.recorderWaiting,
                         style = MaterialTheme.typography.titleMedium,
                         color = if (draft == null) {
                             MaterialTheme.colorScheme.onSurfaceVariant
@@ -326,14 +332,15 @@ private fun ShortcutRecorderDialog(
                     )
                 }
                 Text(
-                    text = if (waiting) "直接按下你想要的组合键，例如 Ctrl + Shift + K" else "再按一下可以换成别的组合键",
+                    text = if (waiting) s.shortcuts.recorderWaitingHint else s.shortcuts.recorderRecordedHint,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (conflicts.isNotEmpty()) {
                     Text(
-                        text = "注意：这个组合已经给了「" +
-                            conflicts.joinToString("、") { it.label } + "」，保存后会同时占用。",
+                        text = s.shortcuts.recorderConflict(
+                            conflicts.joinToString("、") { it.labelOf(s) },
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -348,7 +355,7 @@ private fun ShortcutRecorderDialog(
                 },
                 enabled = draft != null,
             ) {
-                Text("保存")
+                Text(s.shortcuts.recorderSave)
             }
         },
         dismissButton = {
@@ -359,7 +366,7 @@ private fun ShortcutRecorderDialog(
                         onDismiss()
                     },
                 ) {
-                    Text("恢复默认")
+                    Text(s.shortcuts.recorderReset)
                 }
                 TextButton(
                     onClick = {
@@ -369,11 +376,11 @@ private fun ShortcutRecorderDialog(
                     enabled = current != null,
                 ) {
                     Text(
-                        text = "清除",
+                        text = s.shortcuts.recorderClear,
                         color = if (current != null) MaterialTheme.colorScheme.error else Color.Unspecified,
                     )
                 }
-                TextButton(onClick = onDismiss) { Text("取消") }
+                TextButton(onClick = onDismiss) { Text(s.common.dismiss) }
             }
         },
     )

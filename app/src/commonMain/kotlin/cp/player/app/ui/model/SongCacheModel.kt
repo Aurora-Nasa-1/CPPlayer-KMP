@@ -3,6 +3,7 @@ package cp.player.app.ui.model
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
+import cp.player.app.i18n.CpStrings
 import cp.player.app.ui.util.UiEvents
 import cp.player.core.playback.SongCacheEntry
 import cp.player.core.util.currentTimeMillis
@@ -87,25 +88,35 @@ class SongCacheModel : ScreenModel {
      *
      * 删除失败**不是**异常路径：正在播放的那个文件在 Windows 上是锁住的，
      * 删不掉恰恰说明它正被使用。这里如实告诉用户，而不是假装成功。
+     *
+     * @param strings 由调用方（组合上下文）传入而不是在协程里取：通知发在 IO 协程中，
+     *   那儿读不到 CompositionLocal。传进来还顺带保证用的是**点击那一刻**的语言。
      */
-    fun remove(entry: SongCacheEntry) {
+    fun remove(entry: SongCacheEntry, strings: CpStrings) {
         screenModelScope.launch(Dispatchers.IO) {
             val ok = runCatching { cache.remove(entry.id) }.getOrDefault(false)
             refresh()
-            val name = entry.displayName
+            val name = entry.displayName(strings)
             withContext(Dispatchers.Main) {
                 UiEvents.notify(
-                    if (ok) "已删除「$name」的缓存，释放了 ${formatBytes(entry.bytes)}"
-                    else "删除失败，文件可能正在播放"
+                    if (ok) {
+                        strings.songCache.deleted(name, formatBytes(entry.bytes))
+                    } else {
+                        strings.songCache.deleteFailed
+                    },
                 )
             }
         }
     }
 }
 
-/** 管理页显示的曲目名：老缓存没有索引记录时给一个明确的占位，而不是空白行。 */
-internal val SongCacheEntry.displayName: String
-    get() = title?.takeIf { it.isNotBlank() } ?: "未知曲目"
+/**
+ * 管理页显示的曲目名：老缓存没有索引记录时给一个明确的占位，而不是空白行。
+ *
+ * 收 [CpStrings]：占位词是界面文案，`unknownTrack` 必须跟着语言走。
+ */
+internal fun SongCacheEntry.displayName(strings: CpStrings): String =
+    title?.takeIf { it.isNotBlank() } ?: strings.songCache.unknownTrack
 
 /**
  * 歌曲缓存容量上限的可选档位（字节 → 展示文案）。
@@ -139,21 +150,12 @@ internal fun songCacheCapacityIndex(capacityBytes: Long): Int {
 /**
  * 音质档位的中文名。
  *
- * 与 `AppModel.qualityOptions` 保持同一套用词，但**不复用它**：那份列表只覆盖
+ * 与 `AppModel.qualityLevels` 保持同一套用词，但**不复用它**：那份列表只覆盖
  * 界面可选的 4 档，而缓存里可能出现 `jymaster` / `sky` 这类由音源或旧版本写下的档位，
- * 复用会让它们显示成空白。
+ * 复用会让它们显示成空白。词表本体在 `QualityStrings`（两种语言共用一份判据）。
  */
-internal fun qualityLabel(level: String): String = when (level) {
-    "standard" -> "标准"
-    "higher" -> "较高"
-    "exhigh" -> "极高"
-    "lossless" -> "无损"
-    "hires" -> "Hi-Res"
-    "jymaster" -> "母带"
-    "sky" -> "沉浸声"
-    "jyeffect" -> "音效"
-    else -> level
-}
+internal fun qualityLabel(level: String, strings: CpStrings): String =
+    strings.quality.labelOf(level)
 
 /**
  * 相对时间：`刚刚` / `N 分钟前` / `N 小时前` / `N 天前` / `N 个月前`。
@@ -162,15 +164,19 @@ internal fun qualityLabel(level: String): String = when (level) {
  * 一碰就 `NoClassDefFoundError`，包在 `runCatching` 里还会静默退化成空串
  * （专辑发行年份整整丢过一栏，见 AGENTS.md）。这里只需要「现在」一个时间点，
  * 用 `currentTimeMillis()` 就够了。
+ *
+ * 五个分支的措辞全在文案层（`SongCacheStrings.relative*`），这里只做单位换算 ——
+ * 中英的语序不同（「5 分钟前」vs「5 min ago」），拼在调用方就没法翻译了。
  */
-internal fun relativeTime(ms: Long, now: Long = currentTimeMillis()): String {
-    if (ms <= 0L) return "时间未知"
+internal fun relativeTime(ms: Long, strings: CpStrings, now: Long = currentTimeMillis()): String {
+    if (ms <= 0L) return strings.songCache.timeUnknown
     val minutes = ((now - ms).coerceAtLeast(0L)) / 60_000L
+    val s = strings.songCache
     return when {
-        minutes < 1L -> "刚刚"
-        minutes < 60L -> "$minutes 分钟前"
-        minutes < 60L * 24L -> "${minutes / 60L} 小时前"
-        minutes < 60L * 24L * 30L -> "${minutes / (60L * 24L)} 天前"
-        else -> "${minutes / (60L * 24L * 30L)} 个月前"
+        minutes < 1L -> s.timeJustNow
+        minutes < 60L -> s.timeMinutesAgo(minutes)
+        minutes < 60L * 24L -> s.timeHoursAgo(minutes / 60L)
+        minutes < 60L * 24L * 30L -> s.timeDaysAgo(minutes / (60L * 24L))
+        else -> s.timeMonthsAgo(minutes / (60L * 24L * 30L))
     }
 }

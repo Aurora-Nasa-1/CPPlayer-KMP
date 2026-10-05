@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import cp.player.app.i18n.cpStrings
 
 /**
  * 一次二次确认请求。
@@ -19,12 +20,16 @@ import androidx.compose.ui.graphics.Color
  *
  * @param destructive true 时确认按钮走 `error` 色（不可逆 / 会丢数据）；
  *   false 时走默认色（只是需要用户再想一下，但后果可恢复）。
+ * @param confirmLabel / dismissLabel `null` = 用当前语言的通用词。**不要**在这里写死中文：
+ *   本类有 14 个调用点、遍布九个页面，写死等于英文界面处处弹中文按钮。
+ *   存 `null` 而不是当场替换，是因为 [CpConfirmState.request] 是**非组合**方法 ——
+ *   那里读不到语言。兜底发生在 [CpConfirmDialog]（组合上下文）里。
  */
 class CpConfirmRequest internal constructor(
     val title: String,
     val message: String,
-    val confirmLabel: String,
-    val dismissLabel: String,
+    val confirmLabel: String?,
+    val dismissLabel: String?,
     val destructive: Boolean,
     val onConfirm: () -> Unit,
 )
@@ -41,12 +46,17 @@ class CpConfirmState internal constructor() {
     var request: CpConfirmRequest? by mutableStateOf(null)
         private set
 
-    /** 发起一次确认。已有一个待确认时丢弃旧的（不可能同时点两个入口）。 */
+    /**
+     * 发起一次确认。已有一个待确认时丢弃旧的（不可能同时点两个入口）。
+     *
+     * `confirmLabel` / `dismissLabel` 省略时存 `null`，由 [CpConfirmDialog] 在**渲染那一刻**
+     * 按当前语言兜底 —— 见 [CpConfirmRequest] 的说明。
+     */
     fun request(
         title: String,
         message: String,
-        confirmLabel: String = "确认",
-        dismissLabel: String = "取消",
+        confirmLabel: String? = null,
+        dismissLabel: String? = null,
         destructive: Boolean = true,
         onConfirm: () -> Unit,
     ) {
@@ -96,6 +106,10 @@ fun CpConfirmHost(state: CpConfirmState) {
  * [SettingsConfirmItem] 里有一份，其余高风险入口（删除音源、移除账号、
  * 清空队列 …）干脆一个都没有 —— 一次误触就生效，且事后不可恢复。
  * 确认框只有一种外观，改一处处处生效。
+ *
+ * @param confirmLabel / dismissLabel `null` = 当前语言的通用词（[CommonStrings.confirm] /
+ *   [CommonStrings.dismiss]）。存 `null` 而非在参数默认值里写死中文，是为了让
+ *   「用哪个词」这件事发生在**渲染那一刻**而不是调用那一刻。
  */
 @Composable
 fun CpConfirmDialog(
@@ -103,10 +117,11 @@ fun CpConfirmDialog(
     message: String,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
-    confirmLabel: String = "确认",
-    dismissLabel: String = "取消",
+    confirmLabel: String? = null,
+    dismissLabel: String? = null,
     destructive: Boolean = true,
 ) {
+    val strings = cpStrings()
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -114,14 +129,14 @@ fun CpConfirmDialog(
         confirmButton = {
             TextButton(onClick = onConfirm) {
                 Text(
-                    text = confirmLabel,
+                    text = confirmLabel ?: strings.common.confirm,
                     // 破坏性操作的确认键用 error 色 —— 与菜单里的 danger 项同一语义。
                     color = if (destructive) MaterialTheme.colorScheme.error else Color.Unspecified,
                 )
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(dismissLabel) }
+            TextButton(onClick = onDismiss) { Text(dismissLabel ?: strings.common.dismiss) }
         },
     )
 }

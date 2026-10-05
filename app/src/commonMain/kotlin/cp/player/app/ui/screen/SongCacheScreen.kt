@@ -22,6 +22,7 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.SettingsClickItem
@@ -69,13 +70,14 @@ private fun SongCacheContent(
     onBack: () -> Unit,
 ) {
     val state by model.state.collectAsState()
+    val s = cpStrings()
 
-    CpRouteScaffold(title = "歌曲缓存", onBack = onBack) { pageModifier ->
+    CpRouteScaffold(title = s.songCache.screenTitle, onBack = onBack) { pageModifier ->
         if (!state.loading && !state.supported) {
             // 安卓走这一支：ExoPlayer 能定位 HTTP FLAC，本来就不落盘。
             // 给一句明确解释，比显示「0 首 / 共 0 B」强 —— 后者会被当成 bug 来报。
             SettingsPage(pageModifier) {
-                SettingsNote("当前平台不使用磁盘歌曲缓存。无损流落地只在桌面端启用：桌面引擎无法定位网络 FLAC，必须先落盘才能拖动进度。")
+                SettingsNote(s.songCache.unsupported)
             }
         } else {
             SettingsLazyPage(
@@ -84,13 +86,13 @@ private fun SongCacheContent(
             ) {
                 when {
                     state.loading -> item {
-                        SongCacheHint("正在统计缓存…")
+                        SongCacheHint(s.songCache.measuring)
                     }
                     state.isEmptyCache -> item {
-                        SongCacheHint("还没有缓存内容。播放无损音质的歌曲时会自动缓存到本地。")
+                        SongCacheHint(s.songCache.empty)
                     }
                     state.hasNoMatch -> item {
-                        SongCacheHint("没有匹配「${state.query}」的缓存。")
+                        SongCacheHint(s.songCache.noMatch(state.query))
                     }
                     else -> itemsIndexed(
                         items = state.visibleEntries,
@@ -100,7 +102,7 @@ private fun SongCacheContent(
                             entry = entry,
                             index = index,
                             total = state.visibleEntries.size,
-                            onDelete = { model.remove(entry) },
+                            onDelete = { model.remove(entry, s) },
                         )
                     }
                 }
@@ -120,14 +122,20 @@ private fun ColumnScope.SongCacheHeader(
     state: SongCacheUiState,
     onQueryChange: (String) -> Unit,
 ) {
+    val s = cpStrings()
     Text(
         text = if (state.loading) {
-            "正在统计…"
+            s.songCache.measuringShort
         } else if (state.isEmptyCache) {
-            "暂无缓存"
+            s.songCache.emptyShort
+        } else if (state.capacityBytes > 0L) {
+            s.songCache.summaryCapped(
+                state.entries.size,
+                formatBytes(state.totalBytes),
+                formatBytes(state.capacityBytes),
+            )
         } else {
-            "${state.entries.size} 首 · 共 ${formatBytes(state.totalBytes)}" +
-                if (state.capacityBytes > 0L) " / 上限 ${formatBytes(state.capacityBytes)}" else ""
+            s.songCache.summary(state.entries.size, formatBytes(state.totalBytes))
         },
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -142,11 +150,11 @@ private fun ColumnScope.SongCacheHeader(
         trailingIcon = {
             if (state.isFiltering) {
                 IconButton(onClick = { onQueryChange("") }) {
-                    Icon(Icons.Filled.Close, contentDescription = "清除搜索")
+                    Icon(Icons.Filled.Close, contentDescription = s.songCache.clearSearch)
                 }
             }
         },
-        placeholder = { Text("搜索歌名 / 歌手 / 音质") },
+        placeholder = { Text(s.songCache.searchPlaceholder) },
         modifier = Modifier.fillMaxWidth(),
     )
 }
@@ -165,15 +173,17 @@ private fun SongCacheRow(
     total: Int,
     onDelete: () -> Unit,
 ) {
+    val s = cpStrings()
+    val name = entry.displayName(s)
     val subtitle = buildList {
         entry.artist?.takeIf { it.isNotBlank() }?.let { add(it) }
-        entry.qualityLevel?.takeIf { it.isNotBlank() }?.let { add(qualityLabel(it)) }
+        entry.qualityLevel?.takeIf { it.isNotBlank() }?.let { add(qualityLabel(it, s)) }
         add(formatBytes(entry.bytes))
-        add(relativeTime(entry.lastAccessMs))
+        add(relativeTime(entry.lastAccessMs, s))
     }.joinToString(" · ")
 
     SettingsClickItem(
-        title = entry.displayName,
+        title = name,
         subtitle = subtitle,
         index = index,
         total = total,
@@ -181,7 +191,7 @@ private fun SongCacheRow(
         mergeSemantics = false,
         trailingContent = {
             IconButton(onClick = onDelete) {
-                Icon(Icons.Filled.Delete, contentDescription = "删除「${entry.displayName}」的缓存")
+                Icon(Icons.Filled.Delete, contentDescription = s.songCache.deleteEntry(name))
             }
         },
     )

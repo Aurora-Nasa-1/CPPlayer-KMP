@@ -41,6 +41,16 @@ interface CpStrings {
     val language: LanguageStrings
     val settings: SettingsStrings
 
+    /** 设置组件库（`SettingsKit`）里**跨页复用**的文案。 */
+    val common: CommonStrings
+
+    val appearance: AppearanceStrings
+    val storage: StorageStrings
+    val songCache: SongCacheStrings
+    val playback: PlaybackStrings
+    val shortcuts: ShortcutStrings
+    val quality: QualityStrings
+
     companion object {
         /** 简体中文实例。 */
         val zh: CpStrings get() = CpStringsZh
@@ -104,6 +114,267 @@ interface SettingsStrings {
     val itemDiagnostics: CpTextPair
     val itemRenderTuning: CpTextPair
     val itemOnboarding: CpTextPair
+}
+
+/**
+ * 跨页复用的通用词。
+ *
+ * 单独成组而不是散落各页：确认框的「确认 / 取消」、输入行的「应用 / 未保存」
+ * 出现在**每一页**的 `SettingsKit` 组件里。放这里才能保证同一个按钮在十个页面
+ * 上是同一个词，且加语言时只改一处。
+ */
+interface CommonStrings {
+    val confirm: String
+    val dismiss: String
+    val apply: String
+    val unsavedBlocked: String
+    val unsavedHint: String
+}
+
+// ---------------------------------------------------------------------------
+// 外观与主题
+// ---------------------------------------------------------------------------
+
+interface AppearanceStrings {
+    val screenTitle: String
+    val sectionLook: String
+    val sectionFont: String
+
+    val themeMode: String
+    val themeModeSystem: String
+    val themeModeLight: String
+    val themeModeDark: String
+
+    val colorSource: String
+    val colorSourcePlatform: String
+    val colorSourceCover: String
+    val colorSourceFixed: String
+    val colorSourcePlatformOn: String
+    val colorSourcePlatformOff: String
+    val colorSourceCoverNote: String
+    val colorSourceFixedNote: String
+
+    val pureBlack: String
+    val pureBlackNote: String
+    val autoHideBottomBar: String
+    val autoHideBottomBarNote: String
+    val coverFlight: String
+    val coverFlightNote: String
+
+    val fontRoundness: String
+
+    /** @param defaultRoundness 当前平台的默认圆滑度（各平台不一样，所以是参数）。 */
+    fun fontRoundnessNote(defaultRoundness: Int): String
+
+    /** 滑条右侧的「· 默认」后缀。 */
+    val roundnessDefaultTag: String
+    val resetPlatformDefault: String
+    val resetPlatformDefaultNote: String
+    val roundnessNote: String
+}
+
+// ---------------------------------------------------------------------------
+// 下载与存储
+// ---------------------------------------------------------------------------
+
+interface StorageStrings {
+    val screenTitle: String
+
+    val sectionDownload: String
+    val downloadedMusic: String
+    val downloadedMusicEmpty: String
+
+    /** @param count 曲目数；@param bytes 已格式化的体积（如 `128 MB`）。 */
+    fun downloadedMusicSummary(count: Int, bytes: String): String
+
+    val downloadDir: String
+    val downloadDirAndroid: String
+    val downloadDirDefault: String
+    val openDir: String
+    val openDirNote: String
+    val dirUnset: String
+    fun openDirFailed(dir: String): String
+
+    val sectionSongCache: String
+    val cachedSongs: String
+    val cachedSongsEmpty: String
+    fun cachedSongsSummary(count: Int, bytes: String, capacity: String): String
+    val cacheCapacity: String
+    val cacheCapacityNote: String
+    val clearStaleCache: String
+    val clearStaleCacheNote: String
+    val clearSongCache: String
+    val clearSongCacheNote: String
+    val clearSongCacheConfirmTitle: String
+    fun clearSongCacheConfirmMessage(count: Int, bytes: String): String
+    val openCacheDir: String
+    val openCacheDirNote: String
+    val openCacheDirFailed: String
+
+    val sectionApiCache: String
+    val apiCacheEntries: String
+    val apiCacheEmpty: String
+    fun apiCacheEntryCount(count: Int): String
+    fun apiCacheHitRate(rate: Int): String
+    val clearApiCache: String
+    val clearApiCacheNote: String
+
+    val sectionImageCache: String
+    val imageCache: String
+    val imageCacheMeasuring: String
+    fun imageCacheUsage(bytes: String): String
+    val clearImageCache: String
+    val clearImageCacheNote: String
+
+    val noteAndroid: String
+    val noteDesktop: String
+    val dirUpdated: String
+}
+
+// ---------------------------------------------------------------------------
+// 歌曲缓存明细页
+// ---------------------------------------------------------------------------
+
+interface SongCacheStrings {
+    val screenTitle: String
+    val unsupported: String
+    val measuring: String
+    val empty: String
+    val measuringShort: String
+    val emptyShort: String
+    fun summary(count: Int, bytes: String): String
+    fun summaryCapped(count: Int, bytes: String, capacity: String): String
+    val searchPlaceholder: String
+    val clearSearch: String
+    val unknownTrack: String
+    fun noMatch(query: String): String
+    fun deleteEntry(name: String): String
+    fun deleted(name: String, freed: String): String
+    val deleteFailed: String
+
+    val timeUnknown: String
+    val timeJustNow: String
+    fun timeMinutesAgo(minutes: Long): String
+    fun timeHoursAgo(hours: Long): String
+    fun timeDaysAgo(days: Long): String
+    fun timeMonthsAgo(months: Long): String
+}
+
+// ---------------------------------------------------------------------------
+// 播放与音质
+// ---------------------------------------------------------------------------
+
+interface PlaybackStrings {
+    val screenTitle: String
+
+    val sectionQuality: String
+    val defaultQuality: String
+    val defaultQualityNote: String
+    val meteredQuality: String
+    val meteredQualityNote: String
+
+    val sectionLyrics: String
+    val lyricsSource: String
+    val lyricsSourceNote: String
+    val lyricsProviderOnly: String
+    val lyricsAmllFirst: String
+    val lyricsAmllOnly: String
+
+    val sectionSleepTimer: String
+    val sleepTimer: String
+    val sleepAfterTrack: String
+    fun sleepRemaining(minutes: Long): String
+    val sleepOff: String
+
+    val sectionBackground: String
+    val batteryWhitelist: String
+    val batteryWhitelistOn: String
+    val batteryWhitelistOff: String
+    val vendorNote: String
+    val sharedTimerNote: String
+
+    /**
+     * 睡眠定时**弹窗**的文案。
+     *
+     * 与 [SettingsStrings] 里的「睡眠定时」分组是**两回事**：那几行是设置页的
+     * 静态文案，这个弹窗是设置页与播放页**共用**的（`SleepTimerDialog` 单一事实源），
+     * 所以它不能塞进 `playback` 以外的组，也不能只算「播放页的」。
+     */
+    val timerDialogTitle: String
+    fun timerActiveAfterTrack(): String
+    fun timerActiveInMinutes(minutes: Long): String
+    val timerPrompt: String
+    fun timerMinutesChip(minutes: Int): String
+    val timerAfterTrackChip: String
+    val timerCancel: String
+    val timerClose: String
+}
+
+// ---------------------------------------------------------------------------
+// 快捷键
+// ---------------------------------------------------------------------------
+
+interface ShortcutStrings {
+    val screenTitle: String
+    val note: String
+    val unbound: String
+
+    val categoryPlayback: String
+    val categoryMode: String
+    val categoryNavigation: String
+
+    val keySpace: String
+    val keyEnter: String
+    val keyBackspace: String
+
+    val actionPlayPause: String
+    val actionPlayPauseHint: String
+    val actionPrevTrack: String
+    val actionPrevTrackHint: String
+    val actionNextTrack: String
+    val actionNextTrackHint: String
+    val actionSeekBackward: String
+    val actionSeekForward: String
+    val seekHint: String
+    val actionToggleFavorite: String
+    val actionToggleFavoriteHint: String
+    val actionToggleShuffle: String
+    val actionToggleShuffleHint: String
+    val actionCycleRepeat: String
+    val actionCycleRepeatHint: String
+    val actionBack: String
+    val actionBackHint: String
+    val actionOpenSettings: String
+    val actionOpenSettingsHint: String
+
+    val resetAll: String
+    val resetAllNote: String
+    val resetAllConfirmTitle: String
+    val resetAllConfirmMessage: String
+    val resetLabel: String
+
+    val recorderTitle: String
+    fun recorderTarget(label: String): String
+    val recorderWaiting: String
+    val recorderWaitingHint: String
+    val recorderRecordedHint: String
+    fun recorderConflict(others: String): String
+    val recorderSave: String
+    val recorderReset: String
+    val recorderClear: String
+}
+
+/**
+ * 音质档位名。
+ *
+ * 抽成独立分组而不是塞进 `playback`：`AppModel.qualityOptions`（设置页下拉）与
+ * `SongCacheModel.qualityLabel`（缓存明细行）**用的是同一套档位词**，但后者还要
+ * 覆盖 `jymaster` / `sky` 等不在下拉里的档位。放一起才能保证两处用词一致。
+ *
+ * @param level 音源侧的档位标识（**不是**文案，别当 key 改）
+ */
+interface QualityStrings {
+    fun labelOf(level: String): String
 }
 
 // ---------------------------------------------------------------------------

@@ -578,13 +578,15 @@ object AppModel {
     // App.kt 订阅 `networkMeteredChanges()` 调 `onNetworkMeteredChanged()` 重同步。
     // `setQuality` 只作用于**后续加载**的曲目，切换网络不打断正在播的歌。
 
-    /** 可选在线音质等级（level → 展示名）。 */
-    val qualityOptions: List<Pair<String, String>> = listOf(
-        "standard" to "标准",
-        "exhigh" to "极高",
-        "lossless" to "无损",
-        "hires" to "Hi-Res",
-    )
+    /**
+     * 可选在线音质等级（**只有落盘用的 level**，不含展示名）。
+     *
+     * ⚠️ 这里刻意**不存**展示名：以前是 `level to "标准"` 的二元组，但 `AppModel` 是
+     * `object`，构造这行代码时还没有语言状态 ⇒ 英文界面下拉里会并排出现中文词。
+     * 展示名统一查 `QualityStrings.labelOf(level)`（见 `i18n` 包），
+     * 两处（设置页下拉 / 缓存明细行）用同一份词表。
+     */
+    val qualityLevels: List<String> = listOf("standard", "exhigh", "lossless", "hires")
 
     private val _playbackQuality = MutableStateFlow(playbackQuality())
     val playbackQualityFlow: StateFlow<String> = _playbackQuality.asStateFlow()

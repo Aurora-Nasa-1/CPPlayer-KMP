@@ -6,6 +6,7 @@ import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
+import cp.player.app.i18n.CpStrings
 
 /**
  * 桌面端快捷键的**唯一声明**（动作清单 / 默认绑定 / 序列化格式）。
@@ -36,15 +37,19 @@ import androidx.compose.ui.input.key.key
 /**
  * 一个可以被绑定的物理按键。
  *
- * [token] 是落盘用的稳定标识（**不要**用 [label] 存盘：它是给人看的，改文案不该让绑定失效）。
+ * [token] 是落盘用的稳定标识（**不要**用显示名存盘：它是给人看的，改文案不该让绑定失效）。
+ *
+ * [label] 只放**语言无关**的部分（字母、数字、F 键、符号、方向箭头）。带 CJK 的三个键
+ * （空格 / 回车 / 退格）走 [labelOf] 取值 —— 界面显示的一律用那个，别直接读 [label]，
+ * 否则英文界面下会混进三个中文词。
  */
 enum class ShortcutKey(val token: String, val label: String, val key: Key) {
     // —— 功能键 ——
-    SPACE("space", "空格", Key.Spacebar),
-    ENTER("enter", "回车", Key.Enter),
+    SPACE("space", "", Key.Spacebar),
+    ENTER("enter", "", Key.Enter),
     TAB("tab", "Tab", Key.Tab),
     ESCAPE("escape", "Esc", Key.Escape),
-    BACKSPACE("backspace", "退格", Key.Backspace),
+    BACKSPACE("backspace", "", Key.Backspace),
     DELETE("delete", "Delete", Key.Delete),
     INSERT("insert", "Insert", Key.Insert),
     // ⚠️ 用 `MoveHome` 而不是 `Key.Home`：后者在 Compose 1.11 已标 `@Deprecated`。
@@ -135,6 +140,20 @@ enum class ShortcutKey(val token: String, val label: String, val key: Key) {
     }
 }
 
+/**
+ * 按键的显示名。
+ *
+ * 语言无关的键直接返回 [ShortcutKey.label]；带 CJK 的三个键查文案层。
+ * 用 `ifBlank` 而不是逐个枚举匹配：加一种语言（或改这三个键的译名）只动文案层一处。
+ */
+fun ShortcutKey.labelOf(strings: CpStrings): String = when {
+    label.isNotBlank() -> label
+    this == ShortcutKey.SPACE -> strings.shortcuts.keySpace
+    this == ShortcutKey.ENTER -> strings.shortcuts.keyEnter
+    this == ShortcutKey.BACKSPACE -> strings.shortcuts.keyBackspace
+    else -> token
+}
+
 // ============================================================ 绑定
 
 /**
@@ -161,13 +180,18 @@ data class ShortcutBinding(
     fun matches(event: KeyEvent): Boolean =
         matches(event.key, event.isCtrlPressed, event.isShiftPressed, event.isAltPressed)
 
-    /** 给用户看的名字，如 `Ctrl+Shift+←`。 */
-    val displayName: String
-        get() = buildString {
+    /**
+     * 给用户看的名字，如 `Ctrl+Shift+←`。
+     *
+     * ⚠️ 必须传 [strings]：主键名可能带 CJK（空格 / 回车 / 退格），写死成中文的话
+     * 英文界面下 `Ctrl + 空格` 会变成 `Ctrl + Space` 里夹一个中文词。
+     */
+    fun displayName(strings: CpStrings): String =
+        buildString {
             if (ctrl) append("Ctrl + ")
             if (shift) append("Shift + ")
             if (alt) append("Alt + ")
-            append(key.label)
+            append(key.labelOf(strings))
         }
 
     /** 落盘格式：`ctrl+shift+left`（修饰键固定顺序，不与 UI 文案耦合）。 */
@@ -204,11 +228,16 @@ data class ShortcutBinding(
 
 // ============================================================ 动作
 
-/** 设置页里的分组标题。按「用户想干什么」划分，不按代码模块划分。 */
-enum class ShortcutCategory(val title: String) {
-    PLAYBACK("播放控制"),
-    MODE("播放模式与收藏"),
-    NAVIGATION("导航与窗口"),
+/**
+ * 设置页里的分组标题。按「用户想干什么」划分，不按代码模块划分。
+ *
+ * 标题是 `(CpStrings) -> String` 而不是 `String`：枚举构造参数在类加载时就定死，
+ * 那里读不到语言状态，写死等于「英文界面下这三个分组标题永远是中文」。
+ */
+enum class ShortcutCategory(val titleOf: (CpStrings) -> String) {
+    PLAYBACK({ it.shortcuts.categoryPlayback }),
+    MODE({ it.shortcuts.categoryMode }),
+    NAVIGATION({ it.shortcuts.categoryNavigation }),
 }
 
 /**
@@ -216,84 +245,86 @@ enum class ShortcutCategory(val title: String) {
  *
  * [defaultBinding] 为 `null` 表示**默认就没绑**（用户自己去设置页绑一个）。
  *
- * ⚠️ [id] 是落盘键名的一部分，**改名等于把用户的绑定丢掉**；要改文案改 [label] / [hint]。
+ * ⚠️ [id] 是落盘键名的一部分，**改名等于把用户的绑定丢掉**；要改文案改 [labelOf] / [hintOf]。
+ *
+ * [labelOf] / [hintOf] 同样是取值函数，理由见 [ShortcutCategory]。
  */
 enum class ShortcutAction(
     val id: String,
-    val label: String,
+    val labelOf: (CpStrings) -> String,
     val category: ShortcutCategory,
     val defaultBinding: ShortcutBinding?,
-    val hint: String,
+    val hintOf: (CpStrings) -> String,
 ) {
     PLAY_PAUSE(
         id = "play_pause",
-        label = "播放 / 暂停",
+        labelOf = { it.shortcuts.actionPlayPause },
         category = ShortcutCategory.PLAYBACK,
         defaultBinding = ShortcutBinding(ShortcutKey.SPACE),
-        hint = "切换当前曲目的播放状态",
+        hintOf = { it.shortcuts.actionPlayPauseHint },
     ),
     PREV_TRACK(
         id = "prev_track",
-        label = "上一首",
+        labelOf = { it.shortcuts.actionPrevTrack },
         category = ShortcutCategory.PLAYBACK,
         defaultBinding = ShortcutBinding(ShortcutKey.LEFT, ctrl = true, shift = true),
-        hint = "跳到队列中的上一首",
+        hintOf = { it.shortcuts.actionPrevTrackHint },
     ),
     NEXT_TRACK(
         id = "next_track",
-        label = "下一首",
+        labelOf = { it.shortcuts.actionNextTrack },
         category = ShortcutCategory.PLAYBACK,
         defaultBinding = ShortcutBinding(ShortcutKey.RIGHT, ctrl = true, shift = true),
-        hint = "跳到队列中的下一首",
+        hintOf = { it.shortcuts.actionNextTrackHint },
     ),
     SEEK_BACKWARD(
         id = "seek_backward",
-        label = "快退 5 秒",
+        labelOf = { it.shortcuts.actionSeekBackward },
         category = ShortcutCategory.PLAYBACK,
         defaultBinding = ShortcutBinding(ShortcutKey.LEFT, ctrl = true),
-        hint = "只在可拖动的曲目上生效（时长未知时自动忽略）",
+        hintOf = { it.shortcuts.seekHint },
     ),
     SEEK_FORWARD(
         id = "seek_forward",
-        label = "快进 5 秒",
+        labelOf = { it.shortcuts.actionSeekForward },
         category = ShortcutCategory.PLAYBACK,
         defaultBinding = ShortcutBinding(ShortcutKey.RIGHT, ctrl = true),
-        hint = "只在可拖动的曲目上生效（时长未知时自动忽略）",
+        hintOf = { it.shortcuts.seekHint },
     ),
     TOGGLE_FAVORITE(
         id = "toggle_favorite",
-        label = "收藏 / 取消收藏",
+        labelOf = { it.shortcuts.actionToggleFavorite },
         category = ShortcutCategory.MODE,
         defaultBinding = ShortcutBinding(ShortcutKey.L),
-        hint = "收藏当前播放的曲目；未登录时不生效",
+        hintOf = { it.shortcuts.actionToggleFavoriteHint },
     ),
     TOGGLE_SHUFFLE(
         id = "toggle_shuffle",
-        label = "随机播放",
+        labelOf = { it.shortcuts.actionToggleShuffle },
         category = ShortcutCategory.MODE,
         defaultBinding = ShortcutBinding(ShortcutKey.S),
-        hint = "开 / 关当前队列的随机播放",
+        hintOf = { it.shortcuts.actionToggleShuffleHint },
     ),
     CYCLE_REPEAT(
         id = "cycle_repeat",
-        label = "切换循环模式",
+        labelOf = { it.shortcuts.actionCycleRepeat },
         category = ShortcutCategory.MODE,
         defaultBinding = ShortcutBinding(ShortcutKey.R),
-        hint = "关 → 列表循环 → 单曲循环 → 关",
+        hintOf = { it.shortcuts.actionCycleRepeatHint },
     ),
     BACK(
         id = "back",
-        label = "返回上一级",
+        labelOf = { it.shortcuts.actionBack },
         category = ShortcutCategory.NAVIGATION,
         defaultBinding = ShortcutBinding(ShortcutKey.ESCAPE),
-        hint = "等价于标题栏上的返回键：先退当前页面 / 面板，退无可退时不响应",
+        hintOf = { it.shortcuts.actionBackHint },
     ),
     OPEN_SETTINGS(
         id = "open_settings",
-        label = "打开设置",
+        labelOf = { it.shortcuts.actionOpenSettings },
         category = ShortcutCategory.NAVIGATION,
         defaultBinding = ShortcutBinding(ShortcutKey.COMMA, ctrl = true),
-        hint = "从任意页面回到主界面并打开设置",
+        hintOf = { it.shortcuts.actionOpenSettingsHint },
     ),
     ;
 

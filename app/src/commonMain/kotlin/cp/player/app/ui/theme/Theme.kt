@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import com.materialkolor.PaletteStyle
 import com.materialkolor.ktx.animateColorScheme
 import com.materialkolor.rememberDynamicColorScheme
+import cp.player.app.i18n.CpStrings
 
 /**
  * 主题模式：跟随系统 / 浅色 / 深色。
@@ -27,11 +28,14 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
  *
  * 放这里而不是 UI 层：重构前这段 `when` 在「外观」页和已经删掉的「偏好设置」页
  * 各写了一份，两边措辞已经开始漂移。
+ *
+ * ⚠️ 收 [CpStrings] 而不是无参：枚举扩展函数读不到组合状态，写死中文的话
+ * 英文界面的分段控件里会并排出现 `Follow system / 浅色 / 深色`。
  */
-fun ThemeMode.displayName(): String = when (this) {
-    ThemeMode.SYSTEM -> "跟随系统"
-    ThemeMode.LIGHT -> "浅色"
-    ThemeMode.DARK -> "深色"
+fun ThemeMode.displayName(strings: CpStrings): String = when (this) {
+    ThemeMode.SYSTEM -> strings.appearance.themeModeSystem
+    ThemeMode.LIGHT -> strings.appearance.themeModeLight
+    ThemeMode.DARK -> strings.appearance.themeModeDark
 }
 
 /**

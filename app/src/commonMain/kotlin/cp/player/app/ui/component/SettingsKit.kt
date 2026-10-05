@@ -66,6 +66,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.theme.CpText
 import cp.player.app.ui.theme.LocalIsDarkTheme
 
@@ -824,6 +825,7 @@ fun SettingsTextInputItem(
     var draft by remember(value) { mutableStateOf(value) }
     val error = validate(draft)
     val dirty = draft != value
+    val strings = cpStrings()
 
     Surface(
         shape = legacySegmentShape(index, total),
@@ -862,13 +864,13 @@ fun SettingsTextInputItem(
                         onClick = { onCommit(draft) },
                         enabled = enabled && error == null,
                     ) {
-                        Text("应用")
+                        Text(strings.common.apply)
                     }
                 }
             }
             if (dirty) {
                 Text(
-                    text = if (error != null) "未保存 · 请先修正上面的问题" else "未保存 · 点「应用」生效",
+                    text = if (error != null) strings.common.unsavedBlocked else strings.common.unsavedHint,
                     style = MaterialTheme.typography.bodySmall,
                     color = if (error != null) {
                         MaterialTheme.colorScheme.error
@@ -922,6 +924,9 @@ fun SettingsButtonItem(
  * 而且没有任何提示。破坏性操作必须先说清后果、再让用户确认。
  *
  * @param destructive 是否用 `errorContainer` 呈现（不可逆操作）
+ * @param confirmLabel / dismissLabel 传 `null` = 用当前语言的通用词（「确认」/「取消」）。
+ *   刻意不给中文默认值：`null` 才能在**渲染那一刻**读到语言，写死的话
+ *   英文界面的每个确认框都会弹出中文按钮。
  */
 @Composable
 fun SettingsConfirmItem(
@@ -933,13 +938,14 @@ fun SettingsConfirmItem(
     total: Int,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
-    confirmLabel: String = "确认",
-    dismissLabel: String = "取消",
+    confirmLabel: String? = null,
+    dismissLabel: String? = null,
     icon: ImageVector? = null,
     destructive: Boolean = true,
     enabled: Boolean = true,
 ) {
     var showDialog by remember { mutableStateOf(false) }
+    val strings = cpStrings()
 
     if (destructive) {
         SettingsButtonItem(
@@ -980,13 +986,15 @@ fun SettingsConfirmItem(
                     },
                 ) {
                     Text(
-                        text = confirmLabel,
+                        text = confirmLabel ?: strings.common.confirm,
                         color = if (destructive) MaterialTheme.colorScheme.error else Color.Unspecified,
                     )
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDialog = false }) { Text(dismissLabel) }
+                TextButton(onClick = { showDialog = false }) {
+                    Text(dismissLabel ?: strings.common.dismiss)
+                }
             },
         )
     }

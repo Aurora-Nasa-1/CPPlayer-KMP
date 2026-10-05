@@ -1,6 +1,7 @@
 package cp.player.app.shortcut
 
 import androidx.compose.ui.input.key.Key
+import cp.player.app.i18n.CpStrings
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -68,9 +69,23 @@ class ShortcutBindingTest {
 
     @Test
     fun `display name lists modifiers then the key`() {
-        assertEquals("Ctrl + Shift + ←", ShortcutBinding(ShortcutKey.LEFT, ctrl = true, shift = true).displayName)
-        assertEquals("Alt + F5", ShortcutBinding(ShortcutKey.F5, alt = true).displayName)
-        assertEquals("空格", ShortcutBinding(ShortcutKey.SPACE).displayName)
+        val zh = CpStrings.zh
+        assertEquals("Ctrl + Shift + ←", ShortcutBinding(ShortcutKey.LEFT, ctrl = true, shift = true).displayName(zh))
+        assertEquals("Alt + F5", ShortcutBinding(ShortcutKey.F5, alt = true).displayName(zh))
+        assertEquals("空格", ShortcutBinding(ShortcutKey.SPACE).displayName(zh))
+    }
+
+    @Test
+    fun `key names follow the language`() {
+        // 空格 / 回车 / 退格 是仅有的三个带 CJK 的键；它们在英文界面下必须换词，
+        // 否则会出现 `Ctrl + 空格` 这种混排（这正是把它们移出 label 的原因）。
+        val en = CpStrings.en
+        assertEquals("Ctrl + Space", ShortcutBinding(ShortcutKey.SPACE, ctrl = true).displayName(en))
+        assertEquals("Enter", ShortcutBinding(ShortcutKey.ENTER).displayName(en))
+        assertEquals("Backspace", ShortcutBinding(ShortcutKey.BACKSPACE).displayName(en))
+        // 语言无关的键两语言一致（`label` 非空就直接用）。
+        assertEquals("F5", ShortcutKey.F5.labelOf(en))
+        assertEquals("F5", ShortcutKey.F5.labelOf(CpStrings.zh))
     }
 
     // ---------------------------------------------------------------- 匹配
@@ -103,9 +118,21 @@ class ShortcutBindingTest {
     fun `action ids are unique and every hint explains something`() {
         val ids = ShortcutAction.entries.map { it.id }
         assertEquals(ids.size, ids.toSet().size, "动作 id 重复会互相覆盖落盘值：$ids")
-        ShortcutAction.entries.forEach { action ->
-            assertTrue(action.label.isNotBlank(), "id=${action.id} 缺动作名")
-            assertTrue(action.hint.isNotBlank(), "id=${action.id} 缺说明")
+        // 两种语言都查：取值函数漏译在中文下看不出来。
+        listOf(CpStrings.zh, CpStrings.en).forEach { strings ->
+            ShortcutAction.entries.forEach { action ->
+                assertTrue(
+                    action.labelOf(strings).isNotBlank(),
+                    "id=${action.id} 在 ${strings.language.screenTitle} 下缺动作名",
+                )
+                assertTrue(
+                    action.hintOf(strings).isNotBlank(),
+                    "id=${action.id} 在 ${strings.language.screenTitle} 下缺说明",
+                )
+            }
+            ShortcutCategory.entries.forEach { category ->
+                assertTrue(category.titleOf(strings).isNotBlank(), "分组 ${category.name} 缺标题")
+            }
         }
         assertEquals(ShortcutAction.BACK, ShortcutAction.of("back"))
     }

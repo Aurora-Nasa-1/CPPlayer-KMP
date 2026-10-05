@@ -15,6 +15,7 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
+import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.isIgnoringBatteryOptimizations
 import cp.player.app.platform.requestIgnoreBatteryOptimizations
@@ -48,62 +49,61 @@ class PlaybackSettingsScreen : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
+        val s = cpStrings()
         val quality by AppModel.playbackQualityFlow.collectAsState()
         val meteredQuality by AppModel.meteredPlaybackQualityFlow.collectAsState()
         val lyricsMode by AppModel.lyricsSourceModeFlow.collectAsState()
         val playbackState by AppModel.playback.state.collectAsState()
         var showSleepTimer by remember { mutableStateOf(false) }
 
-        val qualityIndex = AppModel.qualityOptions.indexOfFirst { it.first == quality }.coerceAtLeast(0)
+        val qualityIndex = AppModel.qualityLevels.indexOfFirst { it == quality }.coerceAtLeast(0)
         val meteredQualityIndex =
-            AppModel.qualityOptions.indexOfFirst { it.first == meteredQuality }.coerceAtLeast(0)
+            AppModel.qualityLevels.indexOfFirst { it == meteredQuality }.coerceAtLeast(0)
         // 移动数据音质只在 Android 有意义：桌面端没有计费网络概念，恒走默认音质。
         val showMeteredQuality = isAndroidPlatform()
+        val qualityLabels = AppModel.qualityLevels.map { s.quality.labelOf(it) }
 
         // 歌词来源三档（对齐旧版 CPPlayer）：key 顺序即下拉顺序
         val lyricsModeOptions = listOf(
-            cp.player.core.api.LyricsSourceMode.PROVIDER_ONLY to "仅音源 API",
-            cp.player.core.api.LyricsSourceMode.AMLL_FIRST to "AMLL 优先",
-            cp.player.core.api.LyricsSourceMode.AMLL_ONLY to "仅 AMLL",
+            cp.player.core.api.LyricsSourceMode.PROVIDER_ONLY to s.playback.lyricsProviderOnly,
+            cp.player.core.api.LyricsSourceMode.AMLL_FIRST to s.playback.lyricsAmllFirst,
+            cp.player.core.api.LyricsSourceMode.AMLL_ONLY to s.playback.lyricsAmllOnly,
         )
         val lyricsModeIndex = lyricsModeOptions.indexOfFirst { it.first == lyricsMode }.coerceAtLeast(0)
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
             SettingsPage(pageModifier) {
-                SettingsSection("音质") {
+                SettingsSection(s.playback.sectionQuality) {
                     SettingsDropdownItem(
-                        title = "默认音质",
-                        subtitle = "WiFi / 非计费网络下在线播放优先请求的音质；音源不提供时自动降级",
-                        options = AppModel.qualityOptions.map { it.second },
+                        title = s.playback.defaultQuality,
+                        subtitle = s.playback.defaultQualityNote,
+                        options = qualityLabels,
                         selectedIndex = qualityIndex,
                         onSelect = { index ->
-                            AppModel.qualityOptions.getOrNull(index)?.let { (level, _) ->
-                                AppModel.setPlaybackQuality(level)
-                            }
+                            AppModel.qualityLevels.getOrNull(index)?.let(AppModel::setPlaybackQuality)
                         },
                         index = 0,
                         total = if (showMeteredQuality) 2 else 1,
                     )
                     if (showMeteredQuality) {
                         SettingsDropdownItem(
-                            title = "移动数据音质",
-                            subtitle = "蜂窝数据 / 热点下生效；切换网络后对下一首播放的曲目生效",
-                            options = AppModel.qualityOptions.map { it.second },
+                            title = s.playback.meteredQuality,
+                            subtitle = s.playback.meteredQualityNote,
+                            options = qualityLabels,
                             selectedIndex = meteredQualityIndex,
                             onSelect = { index ->
-                                AppModel.qualityOptions.getOrNull(index)?.let { (level, _) ->
-                                    AppModel.setMeteredPlaybackQuality(level)
-                                }
+                                AppModel.qualityLevels.getOrNull(index)
+                                    ?.let(AppModel::setMeteredPlaybackQuality)
                             },
                             index = 1,
                             total = 2,
                         )
                     }
                 }
-                SettingsSection("歌词") {
+                SettingsSection(s.playback.sectionLyrics) {
                     SettingsDropdownItem(
-                        title = "歌词来源",
-                        subtitle = "AMLL 为逐词歌词库（翻译/罗马音更全）；AMLL 优先时无匹配自动回退音源歌词，对下次刷新生效",
+                        title = s.playback.lyricsSource,
+                        subtitle = s.playback.lyricsSourceNote,
                         options = lyricsModeOptions.map { it.second },
                         selectedIndex = lyricsModeIndex,
                         onSelect = { index ->
@@ -115,14 +115,16 @@ class PlaybackSettingsScreen : Screen {
                         total = 1,
                     )
                 }
-                SettingsSection("睡眠定时") {
+                SettingsSection(s.playback.sectionSleepTimer) {
                     SettingsClickItem(
-                        title = "定时关闭",
+                        title = s.playback.sleepTimer,
                         subtitle = when {
-                            playbackState.sleepAfterTrack -> "播完当前歌曲后暂停"
+                            playbackState.sleepAfterTrack -> s.playback.sleepAfterTrack
                             playbackState.sleepTimerRemainingMs != null ->
-                                "剩余 ${(playbackState.sleepTimerRemainingMs!! / 60_000L) + 1} 分钟"
-                            else -> "未启用"
+                                s.playback.sleepRemaining(
+                                    (playbackState.sleepTimerRemainingMs!! / 60_000L) + 1,
+                                )
+                            else -> s.playback.sleepOff
                         },
                         icon = Icons.Filled.Bedtime,
                         index = 0,
@@ -133,17 +135,17 @@ class PlaybackSettingsScreen : Screen {
                 // 熄屏后台保活的用户侧开关：媒体前台服务（Service 层已做）只解决
                 // 「应用自愿降级」，电池优化白名单解决「系统/厂商主动杀」。
                 if (isAndroidPlatform()) {
-                    SettingsSection("后台播放") {
+                    SettingsSection(s.playback.sectionBackground) {
                         val scope = rememberCoroutineScope()
                         var batteryIgnored by remember {
                             mutableStateOf(isIgnoringBatteryOptimizations())
                         }
                         SettingsClickItem(
-                            title = "电池优化白名单",
+                            title = s.playback.batteryWhitelist,
                             subtitle = if (batteryIgnored) {
-                                "已加入白名单，熄屏后台播放受系统保护"
+                                s.playback.batteryWhitelistOn
                             } else {
-                                "未开启 —— 熄屏后系统可能很快杀掉后台播放，点击申请"
+                                s.playback.batteryWhitelistOff
                             },
                             icon = Icons.Filled.Lock,
                             index = 0,
@@ -160,12 +162,9 @@ class PlaybackSettingsScreen : Screen {
                             },
                         )
                     }
-                    SettingsNote(
-                        "部分厂商系统（MIUI/HyperOS、HarmonyOS、ColorOS 等）还需在" +
-                            "「自启动管理」里允许 CPPlayer 自启动与后台运行。"
-                    )
+                    SettingsNote(s.playback.vendorNote)
                 }
-                SettingsNote("这里与播放页的睡眠定时入口打开的是同一个对话框，状态始终一致。")
+                SettingsNote(s.playback.sharedTimerNote)
             }
         }
 
@@ -180,7 +179,7 @@ class PlaybackSettingsScreen : Screen {
         }
 
         CpRouteScaffold(
-            title = "播放与音质",
+            title = s.playback.screenTitle,
             onBack = { navigator.popOrNotify() },
         ) { pageModifier -> body(pageModifier) }
     }
