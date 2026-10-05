@@ -93,6 +93,41 @@ object CpStringsEn : CpStrings {
         override val unsavedHint = "Not saved · press Apply to keep it"
     }
 
+    override val messageNotify: MessageNotifyStrings = object : MessageNotifyStrings {
+        override val guideTitle = "Messages stay quiet by default"
+        override val guideBody = "To be notified about someone, right-click (desktop) or long-press " +
+            "(phone) a conversation and turn on new-message notifications. Nobody is watched by default."
+        override val guideConfirm = "Got it"
+
+        override val menuEnable = "Notify me about new messages"
+        override val menuDisable = "Stop notifying about new messages"
+        override val sheetTitle = "New message notifications"
+        override val sheetBody = "When on, you are only notified about new messages from this person. Off by default."
+
+        override val settingsTitle = "Message notifications"
+        override val settingsSubtitle = "Which contacts may raise a system notification"
+        override val masterLabel = "Allow direct-message notifications"
+        override val masterHint = "Nothing is polled while this is off. Only works while the app is running"
+        override val subscribedSection = "Contacts you follow"
+        override val subscribedEmpty = "No contact is followed yet"
+        override val unsupportedPlatform = "System notifications are not supported on this platform"
+        override val permissionMissing = "System notification permission is off, so you will not be notified"
+        override val grantPermission = "Grant permission"
+
+        override val trayShowWindow = "Show CPPlayer"
+        override val trayExit = "Quit CPPlayer"
+
+        override val closeDialogTitle = "Close window"
+        override val closeDialogMessage = "Quit CPPlayer, or keep it in the tray to receive message notifications?"
+        override val closeDialogMinimize = "Keep in tray"
+        override val closeDialogExit = "Quit"
+        override val closeDialogDontAsk = "Don't ask again, remember my choice"
+
+        override val closeBehaviorLabel = "When closing the window"
+        override val closeBehaviorAsk = "Ask every time"
+        override val closeBehaviorHint = "Only \u201Ckeep in tray\u201D lets you keep receiving message notifications after closing"
+    }
+
     override val appearance: AppearanceStrings = object : AppearanceStrings {
         override val screenTitle = "Appearance & Theme"
         override val sectionLook = "Look"

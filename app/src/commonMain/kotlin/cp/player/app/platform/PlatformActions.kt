@@ -182,3 +182,13 @@ expect fun BackHandler(enabled: Boolean = true, onBack: () -> Unit)
 @Composable
 expect fun PlatformRenderTuningContent()
 
+/**
+ * 桌面端「关闭窗口时的行为」设置行（消息通知设置页里）。
+ *
+ * 仅桌面端有意义：Android 没有「关闭窗口」这个动作（Activity 生命周期由系统管），
+ * 「最小化到托盘 / 直接退出」两档都没有对应概念，故实现为空 ——
+ * 与 [PlatformRenderTuningContent] 同一套做法。
+ */
+@Composable
+expect fun PlatformCloseBehaviorSetting(index: Int, total: Int)
+

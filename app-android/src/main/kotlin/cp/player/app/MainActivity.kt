@@ -14,9 +14,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.media3.session.MediaSessionService
 import cp.player.app.version.AppVersion
+import cp.player.app.platform.handleMessageNotificationIntent
 import cp.player.app.platform.notifyMediaReadPermissionGranted
 import cp.player.app.platform.provideAppContext
 import cp.player.app.platform.setMediaPermissionRequester
+import cp.player.app.platform.setNotificationPermissionRequester
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -27,6 +29,9 @@ class MainActivity : ComponentActivity() {
         provideAppContext(this)
         // 把媒体权限申请入口注册给 app 层（本地扫描 permissionDenied 时经此触发系统授权弹窗）
         setMediaPermissionRequester { requestMediaReadPermission() }
+        // 私信通知的权限入口同理：用户在消息页开启某个联系人的推送、但系统通知被关掉时，
+        // app 层经此再弹一次授权框（启动时那次用户可能拒过）。
+        setNotificationPermissionRequester { requestNotificationPermissionIfNeeded() }
         (application as CPPlayerApplication).backend
         AppModel.markInitialized()
         // 让媒体会话服务随应用启动而创建，通知栏/锁屏/耳机控制才有宿主。
@@ -74,6 +79,24 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent { App() }
+
+        // 从私信通知点进来：把会话信息交给 app 层。
+        // 此刻 `App()` 的处理器**还没注册**（组合尚未跑完），平台层会把这次点击缓存下来，
+        // 等处理器注册时补投 —— 所以这里同步调用是安全的。
+        handleMessageNotificationIntent(intent)
+    }
+
+    /**
+     * 应用已在后台时点击通知：Intent 会走这里（配合 `FLAG_ACTIVITY_CLEAR_TOP or SINGLE_TOP`，
+     * 复用同一个 Activity 实例而不是再叠一个）。
+     *
+     * ⚠️ 必须 `setIntent(intent)`：不换掉的话，后续 `getIntent()` 拿到的还是旧的，
+     * 旋转屏幕重建时会重新处理一遍已经处理过的 extras。
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleMessageNotificationIntent(intent)
     }
 
     override fun onDestroy() {

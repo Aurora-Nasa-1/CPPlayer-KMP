@@ -1009,6 +1009,8 @@ object AppModel {
         runCatching { playback.refreshFavorites() }
         // 未读私信数同样绑定账号：登出 / 切号后角标必须跟着变，否则会留着上一个账号的数字。
         if (profile != null) refreshUnreadMessages() else _unreadMessages.value = 0
+        // 私信轮询同样绑定账号（未登录时必须停）。
+        syncMessageWatch()
         return profile
     }
 
@@ -1034,6 +1036,130 @@ object AppModel {
         _unreadMessages.value = 0
     }
 
+    // ============ 私信新消息通知（本地轮询 → 系统通知） ============
+
+    /**
+     * 通知偏好（订阅表 / 提醒游标 / 首次引导标志）。
+     *
+     * ⚠️ 用 `by lazy` 而不是 `get()` —— 与 [settings] 同一个理由：桌面实现每次写入
+     * **全量回写**整个文件，同 namespace 上多个实例会互相覆盖。
+     */
+    val messageNotifyPrefs: cp.player.app.notify.MessageNotifyPrefs by lazy {
+        cp.player.app.notify.MessageNotifyPrefs(settings)
+    }
+
+    /**
+     * 私信轮询服务。
+     *
+     * 挂在应用级 [modelScope]（不绑 Compose）—— 「有没有人给我发消息」这件事
+     * 不该因为用户切到别的页面就停掉。**默认不启动**：见 [syncMessageWatch] 的三条闸门。
+     */
+    private val messageWatch: cp.player.app.notify.MessageWatchService by lazy {
+        cp.player.app.notify.MessageWatchService(
+            prefs = messageNotifyPrefs,
+            providerId = { activeProviderId() },
+            // 未登录就没有私信可谈 —— 也顺手挡住「登出瞬间旧账号的慢响应」。
+            isReady = { userProfileFlow.value != null },
+            fetchContacts = {
+                when (val result = socialRepository.getContacts()) {
+                    is cp.player.core.BackendResult.Success -> result.data
+                    else -> emptyList()
+                }
+            },
+            post = { cp.player.app.platform.postMessageNotification(it) },
+        )
+    }
+
+    /**
+     * 按当前状态起停轮询。**这是唯一的开关点** —— 登录态 / 总开关 / 订阅数
+     * 任何一处变化都要调它，否则会出现「关掉了还在轮询」或「开了却不响」。
+     *
+     * 三条闸门缺一不可：
+     * 1. 已登录（没账号谈不上私信）；
+     * 2. 总开关开着（默认 false ⇒ 默认零请求）；
+     * 3. 该音源至少有一个订阅（没有目标就不该占连接）。
+     */
+    fun syncMessageWatch() {
+        val shouldRun = userProfileFlow.value != null &&
+            messageNotifyPrefs.isMasterEnabled() &&
+            messageNotifyPrefs.subscribedCount(activeProviderId()) > 0
+        if (shouldRun) messageWatch.start(modelScope) else messageWatch.stop()
+    }
+
+    /** 该联系人是否已开启新消息通知（当前音源下）。 */
+    fun isMessageNotifySubscribed(uid: Long): Boolean =
+        messageNotifyPrefs.isSubscribed(activeProviderId(), uid)
+
+    /** 当前音源下**全部**已开启推送的 uid（消息列表一次读回，避免逐行查询）。 */
+    fun messageNotifySubscribedUids(): Set<Long> =
+        messageNotifyPrefs.subscribedUids(activeProviderId())
+
+    fun messageNotifySubscribedCount(): Int =
+        messageNotifyPrefs.subscribedCount(activeProviderId())
+
+    fun messageNotifyGuideDone(): Boolean = messageNotifyPrefs.isGuideDone()
+
+    fun markMessageNotifyGuideDone() = messageNotifyPrefs.setGuideDone()
+
+    fun messageNotifyMasterEnabled(): Boolean = messageNotifyPrefs.isMasterEnabled()
+
+    fun setMessageNotifyMasterEnabled(enabled: Boolean) {
+        messageNotifyPrefs.setMasterEnabled(enabled)
+        syncMessageWatch()
+        if (enabled) messageWatch.tickNow(modelScope)
+    }
+
+    /**
+     * 切换某人的新消息通知。
+     *
+     * 首次开启某人时**自动把总开关带上**：用户点的是「开启这个人的通知」，
+     * 如果因为总开关关着而毫无反应，他只会认为功能坏了。
+     *
+     * @return 切换后的状态
+     */
+    fun toggleMessageNotify(uid: Long, enabled: Boolean = !isMessageNotifySubscribed(uid)): Boolean {
+        if (enabled && !messageNotifyPrefs.isMasterEnabled()) messageNotifyPrefs.setMasterEnabled(true)
+        messageNotifyPrefs.setSubscribed(activeProviderId(), uid, enabled)
+        syncMessageWatch()
+        // 立刻跑一轮：用户刚开开关，马上看到效果才像「生效了」（否则最多等 45s）。
+        if (enabled) messageWatch.tickNow(modelScope)
+        return enabled
+    }
+
+    /**
+     * 告诉轮询「用户此刻正开着谁的会话」。
+     *
+     * 开着的时候不弹这个人的通知（他已经看见了）。由 `ChatContent` 在进出组合时设置；
+     * 传 null 表示离开。
+     */
+    fun setActiveChatPeer(uid: Long?) {
+        messageWatch.activePeerUid = uid
+    }
+
+    /**
+     * 通知被点击 → 待打开的会话。
+     *
+     * 走一条 Flow 而不是直接导航：点击可能发生在**进程刚被拉起、UI 还没组合**的时候
+     * （Android 冷启动）。存成状态，`App.kt` 组合起来后自然会消费到。
+     */
+    private val _pendingMessageOpen = MutableStateFlow<MessageOpenRequest?>(null)
+    val pendingMessageOpenFlow: StateFlow<MessageOpenRequest?> = _pendingMessageOpen.asStateFlow()
+
+    fun onMessageNotificationClicked(providerId: String, peerUid: Long, title: String) {
+        _pendingMessageOpen.value = MessageOpenRequest(providerId, peerUid, title)
+    }
+
+    fun consumePendingMessageOpen() {
+        _pendingMessageOpen.value = null
+    }
+
+    /** 「点通知要打开的会话」。 */
+    data class MessageOpenRequest(
+        val providerId: String,
+        val peerUid: Long,
+        val title: String,
+    )
+
     /** 清空当前用户资料（登出后调用）。 */
     fun clearUserProfile() {
         val wasLoggedIn = _userProfile.value != null
@@ -1042,6 +1168,8 @@ object AppModel {
         // 否则侧栏会留着上一个账号的歌单（见 [accountGeneration]）。
         if (profileResolvedOnce && wasLoggedIn) bumpAccountGeneration()
         _unreadMessages.value = 0
+        // 登出即停轮询（订阅关系保留 —— 用户回来还想收）。
+        syncMessageWatch()
         modelScope.launch { runCatching { playback.refreshFavorites() } }
     }
 

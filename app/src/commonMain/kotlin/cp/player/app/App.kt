@@ -78,6 +78,17 @@ fun App(
 ) {
     PlaybackMediaControlsBridge()
 
+    // 系统通知被点击 → 把目标会话记进 AppModel（**不在这里直接导航**）。
+    //
+    // 为什么不直接 push：Android 冷启动时点击发生在**组合之前**，此刻还没有 navigator。
+    // 平台层把这次点击缓存下来、在注册这一刻补投（见 PlatformNotifications 的说明），
+    // 这里只负责落成状态，真正的导航在下面的 Navigator 作用域里消费。
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        cp.player.app.platform.setOnMessageNotificationClick { providerId, peerUid, title ->
+            AppModel.onMessageNotificationClicked(providerId, peerUid, title)
+        }
+    }
+
     // 启动：应用持久化音质到播放控制器 + 拉取用户资料/收藏 + 启动播放历史记录 + 补齐最近播放缺失字段
     // + 启动封面取色（「跟随封面」主题用）
     androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -135,6 +146,26 @@ fun App(
                     if (current?.javaClass != target.javaClass) {
                         navigator.replaceAll(target)
                     }
+                }
+
+                // 通知点击 → 跳到对应会话。
+                //
+                // 必须在 Navigator 作用域内：要 push 到根栈。先 `popToMainShell()` 是因为
+                // 点击可能发生在任意路由页（播放页 / 设置 / 引导）之上 —— 直接 push 会叠在
+                // 那层之上，用户返回时看到的还是原来的页面，观感像「跳歪了」。
+                // 引导流程（尚未进主壳层）里不导航：那时还没有消息页可回。
+                val pendingOpen = AppModel.pendingMessageOpenFlow.collectAsState().value
+                LaunchedEffect(pendingOpen) {
+                    val target = pendingOpen ?: return@LaunchedEffect
+                    AppModel.consumePendingMessageOpen()
+                    if (startDestination !is AppStartDestination.Main) return@LaunchedEffect
+                    navigator.popToMainShell()
+                    navigator.push(
+                        cp.player.app.ui.screen.ChatScreen(
+                            peerUid = target.peerUid,
+                            peerName = target.title.ifBlank { null },
+                        )
+                    )
                 }
 
                 // Esc（桌面）在没有任何页面注册处理器时，退化为「Navigator 出栈」。

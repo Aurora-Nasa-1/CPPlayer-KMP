@@ -269,6 +269,13 @@ actual fun PlatformRenderTuningContent() {
     // 该设置入口在 Android 上也不会出现在设置列表里（见 SettingsScreen.settingsEntries）。
 }
 
+@Composable
+actual fun PlatformCloseBehaviorSetting(index: Int, total: Int) {
+    // Android 没有「关闭窗口」这个动作（Activity 生命周期由系统管），
+    // 「最小化到托盘 / 直接退出」两档都没有对应概念 ⇒ 空实现。
+    // 该行只在桌面端有意义，`MessageNotifySettingsScreen` 里由这个 actual 决定渲染与否。
+}
+
 // ============ 激进保活（Wi-Fi 高性能锁 + 组播锁） ============
 
 /**

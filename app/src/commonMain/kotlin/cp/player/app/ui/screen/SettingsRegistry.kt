@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
@@ -258,6 +259,24 @@ private fun connectivityEntries(): List<SettingsEntry> = listOf(
             "设备发现", "局域网", "听歌记录", "wifi", "组播", "standby", "sync", "keepalive",
         ),
         screen = { StandbySettingsScreen() },
+    ),
+    // 「谁开了私信推送」的全貌 + 总开关 + 桌面关窗去向，都收在这一页。
+    // 归在「连接与集成」而不是「通用」：它与「应用怎么和外界打交道」（这里指通知中心）
+    // 同一类，且与 [StandbySettingsScreen] 的「后台常驻」是同一件事的两面 ——
+    // 桌面端只有常驻托盘才收得到通知，两页的说明互相引用。
+    SettingsEntry(
+        id = "msg_notify",
+        group = SettingsGroup.CONNECTIVITY,
+        titleOf = { it.messageNotify.settingsTitle },
+        subtitleOf = { it.messageNotify.settingsSubtitle },
+        icon = Icons.Filled.Notifications,
+        accent = SettingsAccent.SECONDARY,
+        keywords = listOf(
+            "消息", "私信", "通知", "推送", "提醒", "铃铛", "联系人",
+            "托盘", "常驻", "最小化", "关窗",
+            "notification", "notify", "message", "tray", "minimize",
+        ),
+        screen = { MessageNotifySettingsScreen() },
     ),
 )
 

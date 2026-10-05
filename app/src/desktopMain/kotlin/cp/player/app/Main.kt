@@ -22,13 +22,16 @@ import androidx.compose.ui.window.WindowScope
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import cp.player.app.platform.DesktopBackDispatcher
+import cp.player.app.platform.DesktopCloseBehavior
 import cp.player.app.platform.DesktopRenderTuning
+import cp.player.app.platform.DesktopTray
 import cp.player.app.platform.DesktopWindowPlacement
 import cp.player.app.platform.JbrWindowChrome
 import cp.player.app.platform.WindowDecorChoice
 import cp.player.app.platform.WindowsWindowCorners
 import cp.player.app.platform.installDesktopImageCacheLimit
 import cp.player.app.ui.component.DesktopTitleBar
+import cp.player.app.ui.component.DesktopCloseDialog
 import cp.player.app.ui.component.TitleBarHeight
 import cp.player.app.ui.util.DesktopShell
 import cp.player.app.ui.util.next
@@ -137,8 +140,38 @@ fun main() {
             size = remember { loadWindowSize() },
             position = WindowPosition(Alignment.Center),
         )
+
+        // 关窗行为：ASK（每次问）/ TRAY（最小化到托盘）/ EXIT（直接退出）。
+        // 用户勾过「不再提示」的选择会被记住（见 DesktopCloseBehavior）。
+        var closeBehavior by remember { mutableStateOf(DesktopCloseBehavior.load()) }
+        var showCloseDialog by remember { mutableStateOf(false) }
+        var dontAskAgain by remember { mutableStateOf(false) }
+        // 关窗回调定义在 `Window(...)` 的参数位置上，那里拿不到 `window`，所以先把窗口存起来。
+        val windowRef = remember { mutableStateOf<java.awt.Window?>(null) }
+
+        // 隐藏到托盘。⚠️ 托盘装不上时必须**退回真退出** —— 否则窗口藏了、又没有图标能把它
+        // 叫回来，应用就变成一个人间蒸发的僵尸进程（任务栏里也找不到，只能去杀进程）。
+        val hideToTray: () -> Unit = {
+            if (DesktopTray.ensureInstalled()) {
+                windowRef.value?.isVisible = false
+            } else {
+                println("[CPPlayer] 本机没有系统托盘，无法最小化到托盘，改为退出")
+                exitApplication()
+            }
+        }
+
         Window(
-            onCloseRequest = ::exitApplication,
+            onCloseRequest = {
+                when (closeBehavior) {
+                    DesktopCloseBehavior.EXIT -> exitApplication()
+                    DesktopCloseBehavior.TRAY -> hideToTray()
+                    DesktopCloseBehavior.ASK -> {
+                        // 每次都从「未勾选」开始：上一次勾没勾不该影响这一次的默认值。
+                        dontAskAgain = false
+                        showCloseDialog = true
+                    }
+                }
+            },
             state = windowState,
             title = "CPPlayer",
             icon = AppWindowIcon.painter,
@@ -223,6 +256,19 @@ fun main() {
             // WindowDraggableArea 是 WindowScope 的扩展，而 WindowScope 不是 CompositionLocal，
             // 树内深层拿不到；Compose 自带的 LocalWindow 又标了 internal。所以在这里把
             // FrameWindowScope 捕获成 WindowScope 再传下去，标题栏才能在任意深度拖窗口。
+            // 托盘菜单的两个动作（托盘图标本身由 DesktopTray 懒创建）。
+            // `windowRef` 也要在这里补上 —— 关窗回调在 Window 之外，拿不到 window 对象。
+            LaunchedEffect(window) {
+                windowRef.value = window
+                DesktopTray.onShowWindow = {
+                    windowRef.value?.let { w ->
+                        w.isVisible = true
+                        w.toFront()
+                    }
+                }
+                DesktopTray.onExit = { exitApplication() }
+            }
+
             val windowScope: WindowScope = this
             App(
                 titleBar = { navigator ->
@@ -306,6 +352,32 @@ fun main() {
                     )
                 },
             )
+
+            // 关窗确认框（只可能出现在 `onCloseRequest` 走到 ASK 分支时）。
+            // 它是独立窗口（M3 AlertDialog 在桌面的实现方式），所以与 App 平级摆放即可。
+            if (showCloseDialog) {
+                DesktopCloseDialog(
+                    dontAskAgain = dontAskAgain,
+                    onDontAskAgainChange = { dontAskAgain = it },
+                    onMinimizeToTray = {
+                        if (dontAskAgain) {
+                            closeBehavior = DesktopCloseBehavior.TRAY
+                            DesktopCloseBehavior.save(closeBehavior)
+                        }
+                        showCloseDialog = false
+                        hideToTray()
+                    },
+                    onExit = {
+                        if (dontAskAgain) {
+                            closeBehavior = DesktopCloseBehavior.EXIT
+                            DesktopCloseBehavior.save(closeBehavior)
+                        }
+                        showCloseDialog = false
+                        exitApplication()
+                    },
+                    onDismiss = { showCloseDialog = false },
+                )
+            }
         }
     }
 }

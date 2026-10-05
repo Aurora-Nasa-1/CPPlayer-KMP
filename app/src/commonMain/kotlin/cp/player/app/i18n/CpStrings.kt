@@ -44,6 +44,9 @@ interface CpStrings {
     /** 设置组件库（`SettingsKit`）里**跨页复用**的文案。 */
     val common: CommonStrings
 
+    /** 私信新消息通知 + 桌面托盘常驻。 */
+    val messageNotify: MessageNotifyStrings
+
     val appearance: AppearanceStrings
     val storage: StorageStrings
     val songCache: SongCacheStrings
@@ -129,6 +132,57 @@ interface CommonStrings {
     val apply: String
     val unsavedBlocked: String
     val unsavedHint: String
+}
+
+// ---------------------------------------------------------------------------
+// 私信通知 + 桌面托盘
+// ---------------------------------------------------------------------------
+
+/**
+ * 私信新消息通知与桌面托盘常驻的文案。
+ *
+ * 单独成组是因为这批文案**跨越三个互不相邻的界面**：消息列表（右键菜单 / 引导弹层）、
+ * 设置页（通知分组）、以及托盘菜单与关窗确认框。散在各处的话，
+ * 「开启新消息通知」会在菜单和设置页出现两种说法。
+ */
+interface MessageNotifyStrings {
+    /** 首次进入消息页的引导。 */
+    val guideTitle: String
+    val guideBody: String
+    val guideConfirm: String
+
+    /** 联系人行右键 / 长按。 */
+    val menuEnable: String
+    val menuDisable: String
+    val sheetTitle: String
+    val sheetBody: String
+
+    /** 设置页分组。 */
+    val settingsTitle: String
+    val settingsSubtitle: String
+    val masterLabel: String
+    val masterHint: String
+    val subscribedSection: String
+    val subscribedEmpty: String
+    val unsupportedPlatform: String
+    val permissionMissing: String
+    val grantPermission: String
+
+    /** 桌面托盘菜单。 */
+    val trayShowWindow: String
+    val trayExit: String
+
+    /** 关窗确认。 */
+    val closeDialogTitle: String
+    val closeDialogMessage: String
+    val closeDialogMinimize: String
+    val closeDialogExit: String
+    val closeDialogDontAsk: String
+
+    /** 设置页里的「关闭窗口时」选项（桌面）。 */
+    val closeBehaviorLabel: String
+    val closeBehaviorAsk: String
+    val closeBehaviorHint: String
 }
 
 // ---------------------------------------------------------------------------

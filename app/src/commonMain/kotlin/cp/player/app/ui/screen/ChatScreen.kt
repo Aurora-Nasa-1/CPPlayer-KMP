@@ -24,6 +24,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -173,7 +174,19 @@ internal fun ChatContent(
             AppModel.socialRepository.markRead(peerUid)
             if (clearGlobalUnread) AppModel.clearUnreadMessages()
             AppModel.refreshUnreadMessages()
+            // 通知栏里这一条该收走了 —— 用户正在看这个会话。
+            cp.player.app.platform.cancelMessageNotification(
+                cp.player.app.notify.MessageNotification.keyOf(AppModel.activeProviderId(), peerUid)
+            )
         }
+    }
+
+    // 告诉轮询「用户此刻正开着谁」：开着的时候不再弹这个人的通知（他已经看见了）。
+    // 必须 DisposableEffect 而不是 LaunchedEffect —— 后者不会在离开组合时复位，
+    // 用户退出会话之后那个人的消息会**永久静音**。
+    DisposableEffect(peerUid) {
+        AppModel.setActiveChatPeer(peerUid)
+        onDispose { AppModel.setActiveChatPeer(null) }
     }
 
     // 新消息到达后滚到底部。用 `size` 而不是 `messages` 作 key：内容变化（例如重拉后

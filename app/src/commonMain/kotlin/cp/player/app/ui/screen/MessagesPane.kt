@@ -25,6 +25,8 @@ import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpTwoPane
 import cp.player.app.ui.component.LazyScrollColumn
+import cp.player.app.ui.component.MessageNotifyGuideSheet
+import cp.player.app.ui.component.rememberMessageNotifyGuide
 import cp.player.core.model.Contact
 import kotlinx.coroutines.launch
 
@@ -83,6 +85,12 @@ fun MessagesPane(
         }
     }
 
+    // 首次进入消息页的一次性引导（与窄屏整页 [MessagesScreen] 共用同一份记忆）。
+    val (guideVisible, dismissGuide) = rememberMessageNotifyGuide(
+        eligible = loggedIn && state.contacts.isNotEmpty(),
+    )
+    MessageNotifyGuideSheet(visible = guideVisible, onDismiss = dismissGuide)
+
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = CpBreakpoints.isExpanded(maxWidth)
 
@@ -101,6 +109,7 @@ fun MessagesPane(
                 state = state,
                 selectedUserId = selected?.userId,
                 onOpenContact = openContact,
+                onSetNotify = { uid, enabled -> model.setNotifySubscribed(uid, enabled) },
                 onRetry = { model.load() },
                 modifier = listModifier,
             )
@@ -154,6 +163,7 @@ private fun ContactList(
     state: MessagesUiState,
     selectedUserId: Long?,
     onOpenContact: (Contact) -> Unit,
+    onSetNotify: (Long, Boolean) -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -191,9 +201,12 @@ private fun ContactList(
             items(state.contacts.size, key = { state.contacts[it].userId }) { index ->
                 val contact = state.contacts[index]
                 val isSelected = contact.userId == selectedUserId
-                ContactRow(
+                ContactRowItem(
                     contact = contact,
+                    notifyEnabled = contact.userId in state.subscribedUids,
                     modifier = Modifier.animateItem(),
+                    onOpen = { onOpenContact(contact) },
+                    onSetNotify = { enabled -> onSetNotify(contact.userId, enabled) },
                     // 选中态必须**成组**换色：只换底色不换文字会在浅色主题下掉对比度
                     // （与 `SettingsClickItem` 的 `selected` 分支同一套做法）。
                     containerColor = if (isSelected) {
@@ -211,7 +224,6 @@ private fun ContactList(
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
-                    onClick = { onOpenContact(contact) },
                 )
             }
         }

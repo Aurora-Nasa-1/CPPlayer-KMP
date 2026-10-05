@@ -1,13 +1,18 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material3.Badge
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -15,7 +20,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -29,13 +37,21 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
+import cp.player.app.i18n.cpStrings
+import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.ui.component.ArtistAvatar
 import cp.player.app.ui.component.ContentState
+import cp.player.app.ui.component.CpContextMenu
+import cp.player.app.ui.component.CpContextMenuItem
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.LegacyListItem
+import cp.player.app.ui.component.MessageNotifyGuideSheet
+import cp.player.app.ui.component.MessageNotifySheet
+import cp.player.app.ui.component.NotifyBellIndicator
+import cp.player.app.ui.component.rememberMessageNotifyGuide
 import cp.player.app.ui.util.formatChatTime
 import cp.player.core.BackendResult
 import cp.player.core.model.Contact
@@ -70,6 +86,14 @@ internal data class MessagesUiState(
     val loading: Boolean = true,
     val error: String? = null,
     val contacts: List<Contact> = emptyList(),
+    /**
+     * 已开启新消息推送的 uid。
+     *
+     * 刻意**放进 state 而不是每行去问 AppModel**：订阅表是 `SettingsStorage` 里的
+     * 普通字符串（不是 Flow），逐行查询既不会触发重组、又读不出「刚刚切换过」。
+     * 放进 state 后，切换 → 更新 state → 列表重组，一条链走完。
+     */
+    val subscribedUids: Set<Long> = emptySet(),
 )
 
 /**
@@ -90,11 +114,26 @@ internal class MessagesModel : ScreenModel {
             val result = runCatching { AppModel.socialRepository.getContacts() }
                 .getOrElse { BackendResult.Error(it.message ?: "读取消息失败") }
             _state.value = when (result) {
-                is BackendResult.Success -> MessagesUiState(loading = false, contacts = result.data)
+                is BackendResult.Success -> MessagesUiState(
+                    loading = false,
+                    contacts = result.data,
+                    subscribedUids = AppModel.messageNotifySubscribedUids(),
+                )
                 is BackendResult.Error -> MessagesUiState(loading = false, error = result.message)
                 is BackendResult.Unsupported -> MessagesUiState(loading = false, error = result.message)
             }
         }
+    }
+
+    /**
+     * 切换某人的新消息推送。
+     *
+     * 真正的落盘与轮询起停都在 [AppModel.toggleMessageNotify] 里；这里只负责把
+     * 结果同步回 state（否则铃铛图标不会变 —— 见 [MessagesUiState.subscribedUids]）。
+     */
+    fun setNotifySubscribed(uid: Long, enabled: Boolean) {
+        AppModel.toggleMessageNotify(uid, enabled)
+        _state.value = _state.value.copy(subscribedUids = AppModel.messageNotifySubscribedUids())
     }
 
     /** 把某个联系人本地标为已读（不再重新拉整页 —— 用户刚点进去，列表不该整屏闪一次）。 */
@@ -157,10 +196,11 @@ private fun MessagesContent(
             ) {
                 items(state.contacts.size, key = { state.contacts[it].userId }) { index ->
                     val contact = state.contacts[index]
-                    ContactRow(
+                    ContactRowItem(
                         contact = contact,
+                        notifyEnabled = contact.userId in state.subscribedUids,
                         modifier = Modifier.animateItem(),
-                        onClick = {
+                        onOpen = {
                             // 本地标已读 + 上报服务端。服务端失败静默：用户已经进聊天页了，
                             // 为此弹一条报错只是噪音。
                             model.markReadLocally(contact.userId)
@@ -168,10 +208,17 @@ private fun MessagesContent(
                             AppModel.refreshUnreadMessages()
                             onOpenChat(contact)
                         },
+                        onSetNotify = { enabled -> model.setNotifySubscribed(contact.userId, enabled) },
                     )
                 }
             }
         }
+
+        // 首次进入的引导：只在「已登录 + 确实有联系人」时弹 —— 空态/错误态上再叠一层弹层很难看。
+        val (guideVisible, dismissGuide) = rememberMessageNotifyGuide(
+            eligible = loggedIn && state.contacts.isNotEmpty(),
+        )
+        MessageNotifyGuideSheet(visible = guideVisible, onDismiss = dismissGuide)
     }
 }
 
@@ -193,11 +240,16 @@ internal fun ContactRow(
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
     secondaryContentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    /** 该联系人是否已开启新消息推送 —— 决定行内要不要出小铃铛。 */
+    notifyEnabled: Boolean = false,
+    /** 长按（安卓）。桌面端传 null：那里用右键菜单。 */
+    onLongClick: (() -> Unit)? = null,
 ) {
     LegacyListItem(
         index = 0,
         total = 1,
         onClick = onClick,
+        onLongClick = onLongClick,
         modifier = modifier.fillMaxWidth(),
         containerColor = containerColor,
         leadingContent = { ArtistAvatar(url = contact.avatarUrl, size = 52.dp) },
@@ -233,17 +285,93 @@ internal fun ContactRow(
             )
         },
         trailingContent = {
-            if (contact.unreadCount > 0) {
-                Badge(
-                    containerColor = MaterialTheme.colorScheme.error,
-                    contentColor = MaterialTheme.colorScheme.onError,
-                ) {
-                    Text(
-                        if (contact.unreadCount > 99) "99+" else contact.unreadCount.toString(),
-                        style = MaterialTheme.typography.labelSmall,
-                    )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // 铃铛在未读角标**之前**：让「谁开了推送」一眼可见 ——
+                // 否则只能靠右键/长按逐个去翻。
+                if (notifyEnabled) {
+                    NotifyBellIndicator(Modifier.size(16.dp))
+                }
+                if (contact.unreadCount > 0) {
+                    Spacer(Modifier.width(6.dp))
+                    Badge(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ) {
+                        Text(
+                            if (contact.unreadCount > 99) "99+" else contact.unreadCount.toString(),
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
                 }
             }
         },
     )
+}
+
+/**
+ * 联系人行 + 「新消息通知」开关入口（窄屏整页与桌面双栏左栏**共用**）。
+ *
+ * 两个平台各只有一种自然的呼出方式，所以分成两路：
+ * - **桌面**：`CpContextMenu` 右键菜单。用默认的 Initial 消费 —— 行内菜单必须比
+ *   `App.kt` 那层整窗兜底（`passive = true`，Main 阶段）**更早**拿到事件，
+ *   否则右键会被兜底层先吃掉，菜单里只剩「返回上一级」。
+ * - **安卓**：长按 → [MessageNotifySheet]。长按交给 `LegacyListItem` 的 `onLongClick`
+ *   （它内部按该参数切换 `Surface(onClick)` / `combinedClickable`），
+ *   **不要**在外层再套一个 `combinedClickable` —— 两个手势识别器会互相抢。
+ *
+ * @param onSetNotify 目标状态（不是「切换」）：开关要能把「当前是开的」这个事实传回来，
+ *   而右键菜单只有「开启 / 关闭」一个动作、弹层里是一个 `Switch`，两边语义不同。
+ */
+@Composable
+internal fun ContactRowItem(
+    contact: Contact,
+    notifyEnabled: Boolean,
+    onOpen: () -> Unit,
+    onSetNotify: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    contentColor: Color = MaterialTheme.colorScheme.onSurface,
+    secondaryContentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    val strings = cpStrings().messageNotify
+    val desktop = !isAndroidPlatform()
+    var sheetOpen by remember { mutableStateOf(false) }
+
+    val row: @Composable () -> Unit = {
+        ContactRow(
+            contact = contact,
+            onClick = onOpen,
+            onLongClick = if (desktop) null else ({ sheetOpen = true }),
+            notifyEnabled = notifyEnabled,
+            modifier = Modifier.fillMaxWidth(),
+            containerColor = containerColor,
+            contentColor = contentColor,
+            secondaryContentColor = secondaryContentColor,
+        )
+    }
+
+    if (desktop) {
+        CpContextMenu(
+            items = listOf(
+                CpContextMenuItem(
+                    label = if (notifyEnabled) strings.menuDisable else strings.menuEnable,
+                    icon = if (notifyEnabled) Icons.Filled.NotificationsOff else Icons.Filled.Notifications,
+                    // 已开启时以主题色高亮 —— 与排序菜单的「当前项」同一套表达。
+                    isSelected = notifyEnabled,
+                    onClick = { onSetNotify(!notifyEnabled) },
+                ),
+            ),
+            modifier = modifier,
+        ) { row() }
+    } else {
+        Box(modifier) { row() }
+        if (sheetOpen) {
+            MessageNotifySheet(
+                contactName = contact.nickname,
+                enabled = notifyEnabled,
+                onToggle = { onSetNotify(it) },
+                onDismiss = { sheetOpen = false },
+            )
+        }
+    }
 }

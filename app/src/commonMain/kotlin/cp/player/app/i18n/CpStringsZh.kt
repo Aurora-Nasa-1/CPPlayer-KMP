@@ -98,6 +98,41 @@ object CpStringsZh : CpStrings {
         override val unsavedHint = "未保存 · 点「应用」生效"
     }
 
+    override val messageNotify: MessageNotifyStrings = object : MessageNotifyStrings {
+        override val guideTitle = "私信默认不打扰"
+        override val guideBody = "想收谁的新消息，就在会话上右键（电脑）/ 长按（手机）→ 开启新消息通知。" +
+            "默认不监听任何人，也不会在后台轮询。"
+        override val guideConfirm = "我知道了"
+
+        override val menuEnable = "开启新消息通知"
+        override val menuDisable = "关闭新消息通知"
+        override val sheetTitle = "新消息通知"
+        override val sheetBody = "开启后，只有这个人发来新消息时会提醒你。默认关闭。"
+
+        override val settingsTitle = "消息通知"
+        override val settingsSubtitle = "哪些联系人发来的新消息要弹系统通知"
+        override val masterLabel = "允许私信通知"
+        override val masterHint = "关闭时不会做任何后台请求。仅在应用运行时有效"
+        override val subscribedSection = "已开启的联系人"
+        override val subscribedEmpty = "还没有开启任何联系人"
+        override val unsupportedPlatform = "本平台不支持系统通知"
+        override val permissionMissing = "系统通知权限未开启，收不到提醒"
+        override val grantPermission = "去授权"
+
+        override val trayShowWindow = "显示主界面"
+        override val trayExit = "退出 CPPlayer"
+
+        override val closeDialogTitle = "关闭窗口"
+        override val closeDialogMessage = "退出 CPPlayer，还是最小化到托盘继续接收消息通知？"
+        override val closeDialogMinimize = "最小化到托盘"
+        override val closeDialogExit = "退出"
+        override val closeDialogDontAsk = "不再提示，记住我的选择"
+
+        override val closeBehaviorLabel = "关闭窗口时"
+        override val closeBehaviorAsk = "每次询问"
+        override val closeBehaviorHint = "选「最小化到托盘」才能关窗后继续收到消息通知"
+    }
+
     override val appearance: AppearanceStrings = object : AppearanceStrings {
         override val screenTitle = "外观与主题"
         override val sectionLook = "外观"

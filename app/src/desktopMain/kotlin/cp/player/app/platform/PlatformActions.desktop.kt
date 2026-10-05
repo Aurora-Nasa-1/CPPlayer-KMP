@@ -3,7 +3,13 @@ package cp.player.app.platform
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.component.SettingsSection
+import cp.player.app.ui.component.SettingsSegmentedItem
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import java.awt.Desktop
@@ -116,5 +122,39 @@ actual fun BackHandler(enabled: Boolean, onBack: () -> Unit) {
         if (!enabled) return@DisposableEffect onDispose { }
         val token = DesktopBackDispatcher.register { latest() }
         onDispose { DesktopBackDispatcher.unregister(token) }
+    }
+}
+
+/**
+ * 桌面端「关闭窗口时的行为」。
+ *
+ * 为什么要给用户一个改的地方：关窗确认框里勾了「不再提示」之后，选择就被记死了 ——
+ * 没有这个入口，用户想把「直接退出」改回「最小化到托盘」只能去手改 prefs 文件。
+ *
+ * ⚠️ 选中项直接复用 [DesktopCloseBehavior] 的 `ordinal` 作为下标，
+ * 所以选项列表的顺序**必须**与枚举声明顺序一致（ASK / TRAY / EXIT）。
+ */
+@Composable
+actual fun PlatformCloseBehaviorSetting(index: Int, total: Int) {
+    val strings = cpStrings().messageNotify
+    var current by remember { mutableStateOf(DesktopCloseBehavior.load()) }
+    SettingsSection(strings.closeBehaviorLabel) {
+        SettingsSegmentedItem(
+            title = strings.closeBehaviorLabel,
+            subtitle = strings.closeBehaviorHint,
+            options = listOf(
+                strings.closeBehaviorAsk,
+                strings.closeDialogMinimize,
+                strings.closeDialogExit,
+            ),
+            selectedIndex = current.ordinal,
+            onSelect = { selected ->
+                val value = DesktopCloseBehavior.values().getOrElse(selected) { DesktopCloseBehavior.ASK }
+                DesktopCloseBehavior.save(value)
+                current = value
+            },
+            index = index,
+            total = total,
+        )
     }
 }
