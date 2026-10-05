@@ -63,6 +63,8 @@ import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.LazyScrollColumn
+import cp.player.app.i18n.CpStrings
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.desktopPagerMouseControl
 import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.app.ui.model.DownloadsUiState
@@ -94,7 +96,7 @@ class DownloadsScreen(private val embedded: Boolean = false) : Screen {
         // rememberScreenModel 是 Screen 的扩展函数，只能在 Content() 里调用（见 AGENTS.md）。
         val model = rememberScreenModel { DownloadsScreenModel() }
         CpRouteScaffold(
-            title = "下载管理",
+            title = cpStrings().downloads.screenTitle,
             onBack = { navigator?.popOrNotify() },
             embedded = embedded,
         ) { pageModifier ->
@@ -130,13 +132,15 @@ private fun pageContentModifier(): Modifier = Modifier.widthIn(max = CpSpacing.p
 private fun DownloadsScreenContent(model: DownloadsScreenModel, modifier: Modifier = Modifier) {
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
+    val s = cpStrings()
 
     // Tab 上带计数：不切页也能看到「下载中还有几个 / 已完成多少」，
     // 这是下载管理最常被问的一件事，藏进分页里就得逐个点开数。
+    // 「下载中 / 已完成」复用媒体库那两个词（同一条文案不翻两种）。
     val tabs = listOf(
-        DownloadsTab("下载中", Icons.Filled.Download, state.activeTasks.size),
-        DownloadsTab("已完成", Icons.Filled.DownloadDone, state.completedTasks.size),
-        DownloadsTab("本地媒体库", Icons.Filled.FolderOpen, state.localItems.size),
+        DownloadsTab(s.library.downloading, Icons.Filled.Download, state.activeTasks.size),
+        DownloadsTab(s.library.completed, Icons.Filled.DownloadDone, state.completedTasks.size),
+        DownloadsTab(s.downloads.tabLocalLibrary, Icons.Filled.FolderOpen, state.localItems.size),
     )
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { tabs.size })
 
@@ -233,7 +237,7 @@ private fun DownloadsScreenContent(model: DownloadsScreenModel, modifier: Modifi
                 when (page) {
                     0 -> ActiveDownloadsTab(state = state, model = model)
                     1 -> CompletedDownloadsTab(state = state, model = model)
-                    2 -> LocalLibraryTab(state = state, model = model)
+                    2 -> LocalLibraryTab(state = state, model = model, strings = s)
                 }
             }
         }
@@ -245,12 +249,13 @@ private fun DownloadsScreenContent(model: DownloadsScreenModel, modifier: Modifi
 @Composable
 private fun ActiveDownloadsTab(state: DownloadsUiState, model: DownloadsScreenModel) {
     val tasks = state.activeTasks
+    val s = cpStrings()
     if (tasks.isEmpty()) {
         DownloadsPageBox {
             StateSurface(emptyStateModifier()) {
                 ContentState(
-                    title = "没有进行中的下载",
-                    message = "在歌曲更多菜单或歌单页点击「下载」，任务会显示在这里",
+                    title = s.downloads.emptyActiveTitle,
+                    message = s.downloads.emptyActiveNote,
                 )
             }
         }
@@ -285,6 +290,7 @@ private fun emptyStateModifier(): Modifier =
 
 @Composable
 private fun ActiveTaskCard(task: DownloadTask, model: DownloadsScreenModel) {
+    val s = cpStrings()
     Surface(
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -303,7 +309,7 @@ private fun ActiveTaskCard(task: DownloadTask, model: DownloadsScreenModel) {
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        task.artist ?: "未知艺术家",
+                        task.artist ?: s.downloads.unknownArtist,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -336,34 +342,35 @@ private fun ActiveTaskCard(task: DownloadTask, model: DownloadsScreenModel) {
 
 @Composable
 private fun TaskActions(task: DownloadTask, model: DownloadsScreenModel) {
+    val s = cpStrings()
     when (task.status) {
         DownloadStatus.DOWNLOADING -> {
             IconButton(onClick = { model.pause(task) }) {
-                Icon(Icons.Filled.Pause, contentDescription = "暂停")
+                Icon(Icons.Filled.Pause, contentDescription = s.downloads.pause)
             }
-            IconButton(onClick = { model.cancel(task) }) {
-                Icon(Icons.Filled.Close, contentDescription = "取消")
+            IconButton(onClick = { model.cancel(task, s) }) {
+                Icon(Icons.Filled.Close, contentDescription = s.common.dismiss)
             }
         }
         DownloadStatus.PENDING -> {
-            IconButton(onClick = { model.cancel(task) }) {
-                Icon(Icons.Filled.Close, contentDescription = "取消")
+            IconButton(onClick = { model.cancel(task, s) }) {
+                Icon(Icons.Filled.Close, contentDescription = s.common.dismiss)
             }
         }
         DownloadStatus.PAUSED -> {
             IconButton(onClick = { model.resume(task) }) {
-                Icon(Icons.Filled.PlayArrow, contentDescription = "继续")
+                Icon(Icons.Filled.PlayArrow, contentDescription = s.downloads.resume)
             }
-            IconButton(onClick = { model.cancel(task) }) {
-                Icon(Icons.Filled.Close, contentDescription = "取消")
+            IconButton(onClick = { model.cancel(task, s) }) {
+                Icon(Icons.Filled.Close, contentDescription = s.common.dismiss)
             }
         }
         DownloadStatus.FAILED, DownloadStatus.CANCELLED -> {
             IconButton(onClick = { model.retry(task) }) {
-                Icon(Icons.Filled.Replay, contentDescription = "重试")
+                Icon(Icons.Filled.Replay, contentDescription = s.player.retry)
             }
-            IconButton(onClick = { model.remove(task, deleteFile = false) }) {
-                Icon(Icons.Filled.Delete, contentDescription = "删除记录")
+            IconButton(onClick = { model.remove(task, deleteFile = false, s) }) {
+                Icon(Icons.Filled.Delete, contentDescription = s.downloads.deleteRecord)
             }
         }
         DownloadStatus.COMPLETED -> Unit
@@ -378,12 +385,13 @@ private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScree
     // 「删除文件与记录」的二次确认：删掉的是已下载的本体文件，重新下要花流量与时间。
     // 挂起态放在 tab 层而不是每张卡片一份 —— 卡片可能有几十张。
     var confirmDeleteTarget by remember { mutableStateOf<DownloadTask?>(null) }
+    val s = cpStrings()
     if (tasks.isEmpty()) {
         DownloadsPageBox {
             StateSurface(emptyStateModifier()) {
                 ContentState(
-                    title = "还没有下载完成的内容",
-                    message = "下载完成的音频与视频会保存在这里",
+                    title = s.downloads.emptyCompletedTitle,
+                    message = s.downloads.emptyCompletedNote,
                 )
             }
         }
@@ -410,6 +418,7 @@ private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScree
                         CompletedTaskCard(
                             task = task,
                             model = model,
+                            strings = s,
                             modifier = Modifier.weight(1f),
                             onDelete = { confirmDeleteTarget = task },
                         )
@@ -423,10 +432,10 @@ private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScree
 
     confirmDeleteTarget?.let { task ->
         cp.player.app.ui.component.CpConfirmDialog(
-            title = "删除下载",
-            message = "确定删除「${task.title}」吗？已下载的文件与记录会被一并移除。",
-            confirmLabel = "删除",
-            onConfirm = { model.remove(task, deleteFile = true) },
+            title = s.downloads.deleteConfirmTitle,
+            message = s.downloads.deleteConfirmMessage(task.title),
+            confirmLabel = s.downloads.delete,
+            onConfirm = { model.remove(task, deleteFile = true, s) },
             onDismiss = { confirmDeleteTarget = null },
         )
     }
@@ -436,9 +445,11 @@ private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScree
 private fun CompletedTaskCard(
     task: DownloadTask,
     model: DownloadsScreenModel,
+    /** 提示语的语言：协程里读不到 CompositionLocal，由宿主传进来。 */
+    strings: CpStrings,
     modifier: Modifier = Modifier,
     /** 请求删除（文件 + 记录）；由宿主弹二次确认后再真正执行。 */
-    onDelete: () -> Unit = { model.remove(task, deleteFile = true) },
+    onDelete: () -> Unit = { model.remove(task, deleteFile = true, strings) },
 ) {
     Surface(
         shape = RoundedCornerShape(20.dp),
@@ -488,9 +499,9 @@ private fun CompletedTaskCard(
 // ============ Tab 3：本地媒体库 ============
 
 @Composable
-private fun LocalLibraryTab(state: DownloadsUiState, model: DownloadsScreenModel) {
+private fun LocalLibraryTab(state: DownloadsUiState, model: DownloadsScreenModel, strings: CpStrings) {
     val pickFolder = cp.player.app.platform.rememberDirectoryPicker { path ->
-        if (path != null) model.importFolder(path)
+        if (path != null) model.importFolder(path, strings)
     }
 
     // 宽屏收口：内容居中、宽度封顶（等价另外两个 Tab 的 DownloadsPageBox）。
@@ -507,7 +518,7 @@ private fun LocalLibraryTab(state: DownloadsUiState, model: DownloadsScreenModel
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             FilledTonalButton(
-                onClick = { model.startScan() },
+                onClick = { model.startScan(strings) },
                 enabled = !state.scanning,
                 modifier = Modifier.weight(1f),
             ) {
@@ -581,7 +592,7 @@ private fun LocalLibraryTab(state: DownloadsUiState, model: DownloadsScreenModel
                     )
                 }
                 items(downloaded, key = { "dl:${it.path}" }) { item ->
-                    LocalMediaRow(item = item, model = model)
+                    LocalMediaRow(item = item, model = model, strings = strings)
                 }
             }
             if (imported.isNotEmpty()) {
@@ -595,7 +606,7 @@ private fun LocalLibraryTab(state: DownloadsUiState, model: DownloadsScreenModel
                     )
                 }
                 items(imported, key = { "im:${it.path}" }) { item ->
-                    LocalMediaRow(item = item, model = model)
+                    LocalMediaRow(item = item, model = model, strings = strings)
                 }
             }
         }
@@ -637,9 +648,9 @@ private fun LibraryGroupHeader(
 }
 
 @Composable
-private fun LocalMediaRow(item: LocalMediaItem, model: DownloadsScreenModel) {
+private fun LocalMediaRow(item: LocalMediaItem, model: DownloadsScreenModel, strings: CpStrings) {
     Surface(
-        onClick = { model.play(item) },
+        onClick = { model.play(item, strings) },
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f),
         modifier = Modifier.fillMaxWidth(),
@@ -693,7 +704,7 @@ private fun LocalMediaRow(item: LocalMediaItem, model: DownloadsScreenModel) {
                 )
             }
             // 从库中移除（不删除文件）
-            IconButton(onClick = { model.removeLocalItem(item) }) {
+            IconButton(onClick = { model.removeLocalItem(item, strings) }) {
                 Icon(
                     Icons.Filled.Close,
                     contentDescription = "从库中移除",

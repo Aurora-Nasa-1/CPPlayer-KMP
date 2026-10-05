@@ -1,5 +1,7 @@
 package cp.player.app.ui.component
 
+import cp.player.app.i18n.cpStrings
+import androidx.compose.runtime.Composable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.BookmarkRemove
@@ -42,33 +44,42 @@ data class SongMenuActions(
     val onDelete: (() -> Unit)? = null,
 )
 
-/** 按 [SongOptionsSheet] 的动线顺序构建右键菜单项；没有可用动作时返回空列表。 */
-fun songContextMenuItems(actions: SongMenuActions): List<CpContextMenuItem> = buildList {
+/**
+ * 按 [SongOptionsSheet] 的动线顺序构建右键菜单项；没有可用动作时返回空列表。
+ *
+ * **标了 `@Composable`**：菜单标签要随语言切换，而调用点全在组合上下文里
+ * （右键菜单、更多弹层）。标 @Composable 就能直接读 `cpStrings()`，
+ * 12 个调用点一个都不用改签名。
+ */
+@Composable
+fun songContextMenuItems(actions: SongMenuActions): List<CpContextMenuItem> {
+    val s = cpStrings()
+    return buildList {
     actions.onPlay?.let {
-        add(CpContextMenuItem("播放", Icons.Filled.PlayArrow, it))
+        add(CpContextMenuItem(s.library.play, Icons.Filled.PlayArrow, it))
     }
     actions.onRemoveFromQueue?.let {
-        add(CpContextMenuItem("从队列移除", Icons.Filled.Close, it, danger = true))
+        add(CpContextMenuItem(s.player.removeFromQueue, Icons.Filled.Close, it, danger = true))
     }
     if (actions.onToggleFavorite != null) {
         add(
             CpContextMenuItem(
-                if (actions.isFavorite) "取消收藏" else "收藏",
+                if (actions.isFavorite) s.library.unfavoritePlaylist else s.library.favoritePlaylist,
                 if (actions.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                 actions.onToggleFavorite,
             )
         )
     }
     actions.onAddToQueue?.let {
-        add(CpContextMenuItem("加入队列", Icons.Filled.QueueMusic, it))
+        add(CpContextMenuItem(s.library.addToQueue, Icons.Filled.QueueMusic, it))
     }
     actions.onPlayNext?.let {
-        add(CpContextMenuItem("下一首播放", Icons.Filled.SkipNext, it))
+        add(CpContextMenuItem(s.library.playNext, Icons.Filled.SkipNext, it))
     }
     if (actions.onDownload != null) {
         add(
             CpContextMenuItem(
-                if (actions.isDownloaded) "已下载" else "下载",
+                if (actions.isDownloaded) s.player.downloaded else s.player.download,
                 if (actions.isDownloaded) Icons.Filled.DownloadDone else Icons.Filled.Download,
                 actions.onDownload,
                 enabled = !actions.isDownloaded,
@@ -76,16 +87,17 @@ fun songContextMenuItems(actions: SongMenuActions): List<CpContextMenuItem> = bu
         )
     }
     actions.onAddToPlaylist?.let {
-        add(CpContextMenuItem("添加到歌单", Icons.Filled.PlaylistAdd, it))
+        add(CpContextMenuItem(s.player.addToPlaylist, Icons.Filled.PlaylistAdd, it))
     }
     actions.onShare?.let {
-        add(CpContextMenuItem("分享", Icons.Filled.Share, it))
+        add(CpContextMenuItem(s.player.share, Icons.Filled.Share, it))
     }
     actions.onShowInfo?.let {
-        add(CpContextMenuItem("歌曲信息", Icons.Filled.Info, it))
+        add(CpContextMenuItem(s.player.songInfo, Icons.Filled.Info, it))
     }
     actions.onDelete?.let {
-        add(CpContextMenuItem("从云盘删除", Icons.Filled.Delete, it, danger = true))
+        add(CpContextMenuItem(s.library.removeFromCloud, Icons.Filled.Delete, it, danger = true))
+    }
     }
 }
 
@@ -130,31 +142,35 @@ data class PlaylistMenuActions(
     val onDelete: (() -> Unit)? = null,
 )
 
-/** 按 [PlaylistOptionsSheet] 的瓦片顺序构建右键菜单项。 */
-fun playlistContextMenuItems(actions: PlaylistMenuActions): List<CpContextMenuItem> = buildList {
+/** 按 [PlaylistOptionsSheet] 的瓦片顺序构建右键菜单项。同样标 `@Composable` 以读语言。 */
+@Composable
+fun playlistContextMenuItems(actions: PlaylistMenuActions): List<CpContextMenuItem> {
+    val s = cpStrings()
+    return buildList {
     actions.onPlay?.let {
-        add(CpContextMenuItem("播放全部", Icons.Filled.PlayArrow, it))
+        add(CpContextMenuItem(s.library.playAll, Icons.Filled.PlayArrow, it))
     }
     actions.onAddToQueue?.let {
-        add(CpContextMenuItem("加入队列", Icons.Filled.QueueMusic, it))
+        add(CpContextMenuItem(s.library.addToQueue, Icons.Filled.QueueMusic, it))
     }
     actions.onDownload?.let {
-        add(CpContextMenuItem("全部下载", Icons.Filled.Download, it))
+        add(CpContextMenuItem(s.library.downloadAll, Icons.Filled.Download, it))
     }
     actions.onShare?.let {
-        add(CpContextMenuItem("分享歌单", Icons.Filled.Share, it))
+        add(CpContextMenuItem(s.library.sharePlaylist, Icons.Filled.Share, it))
     }
     // 收藏与删除是互斥的一对：owner 才有「删除歌单」，其余只能「取消收藏」。
     if (!actions.isOwner && actions.onToggleFavorite != null) {
         add(
             CpContextMenuItem(
-                if (actions.isFavorite) "取消收藏" else "收藏歌单",
+                if (actions.isFavorite) s.library.unfavoritePlaylist else s.library.favoritePlaylist,
                 if (actions.isFavorite) Icons.Filled.BookmarkRemove else Icons.Filled.BookmarkAdd,
                 actions.onToggleFavorite,
             )
         )
     }
     if (actions.isOwner && actions.onDelete != null) {
-        add(CpContextMenuItem("删除歌单", Icons.Filled.Delete, actions.onDelete, danger = true))
+        add(CpContextMenuItem(s.library.deletePlaylist, Icons.Filled.Delete, actions.onDelete, danger = true))
+    }
     }
 }

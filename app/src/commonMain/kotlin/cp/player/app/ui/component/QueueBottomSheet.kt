@@ -58,6 +58,7 @@ import coil3.compose.AsyncImage
 import cp.player.core.music.CPMediaId
 import cp.player.core.playback.QueueItem
 import cp.player.app.platform.shareText
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.util.resized
 import kotlinx.coroutines.launch
@@ -88,6 +89,7 @@ fun QueueBottomSheet(
     // 「清空队列」的二次确认：一键即生效的话，误触在底部工具行里太容易发生，
     // 而重建一份刚才的队列没有任何后悔药。
     val confirm = rememberConfirmState()
+    val s = cpStrings()
 
     LegacyModalBottomSheet(onDismissRequest = onClose, skipPartiallyExpanded = true) {
         Box(Modifier.fillMaxWidth()) {
@@ -100,13 +102,15 @@ fun QueueBottomSheet(
                 ) {
                     Column {
                         Text(
-                            "Next up",
+                            // ⚠️ 此前这里是硬编码的英文 "Next up" —— 中文界面也显示英文，
+                            // 属于漏译（不是有意的语言自称，那只适用于语言名）。
+                            s.player.queueUpNext,
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
-                            "${queue.size} 首 · 接下来播放",
+                            s.player.queueCount(queue.size),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -132,9 +136,16 @@ fun QueueBottomSheet(
                             onMove = onMove,
                             // 桌面端右键菜单：动作与行内 More 菜单一致并补一个分享入口。
                             contextMenu = buildList {
-                                add(CpContextMenuItem("播放", Icons.Filled.PlayArrow, onClick = { onPlayAt(i) }))
-                                add(CpContextMenuItem("从队列移除", Icons.Filled.Close, onClick = { onRemove(i) }, danger = true))
-                                add(CpContextMenuItem("分享", Icons.Filled.Share, onClick = {
+                                add(CpContextMenuItem(s.player.play, Icons.Filled.PlayArrow, onClick = { onPlayAt(i) }))
+                                add(
+                                    CpContextMenuItem(
+                                        s.player.removeFromQueue,
+                                        Icons.Filled.Close,
+                                        onClick = { onRemove(i) },
+                                        danger = true,
+                                    ),
+                                )
+                                add(CpContextMenuItem(s.player.share, Icons.Filled.Share, onClick = {
                                     val rid = runCatching { CPMediaId.parse(item.mediaId).resourceId }.getOrDefault(item.mediaId)
                                     shareText("「${item.title}」 https://music.163.com/#/song?id=$rid")
                                 }))
@@ -168,21 +179,21 @@ fun QueueBottomSheet(
                                     if (currentIndex in queue.indices) listState.animateScrollToItem(currentIndex)
                                 }
                             }) {
-                                Icon(Icons.Filled.LocationSearching, "定位当前")
+                                Icon(Icons.Filled.LocationSearching, s.player.locateCurrent)
                             }
                             IconButton(onClick = { showSaveDialog = true }) {
-                                Icon(Icons.AutoMirrored.Filled.PlaylistAdd, "保存为歌单")
+                                Icon(Icons.AutoMirrored.Filled.PlaylistAdd, s.player.saveAsPlaylist)
                             }
                             IconButton(onClick = {
                                 if (queue.isEmpty()) return@IconButton
                                 confirm.request(
-                                    title = "清空播放队列",
-                                    message = "确定清空全部 ${queue.size} 首队列歌曲吗？",
-                                    confirmLabel = "清空",
+                                    title = s.player.queueClearTitle,
+                                    message = s.player.queueClearMessage(queue.size),
+                                    confirmLabel = s.player.clearQueue,
                                     onConfirm = onClear,
                                 )
                             }) {
-                                Icon(Icons.Filled.DeleteSweep, "清空队列")
+                                Icon(Icons.Filled.DeleteSweep, s.player.clearQueue)
                             }
                         }
                     }
@@ -204,8 +215,11 @@ fun QueueBottomSheet(
                         val ok = ids.isNotEmpty() && runCatching {
                             cp.player.app.AppModel.musicRepository.addTracksToPlaylist(newId, ids)
                         }.getOrDefault(false)
-                        if (ok) cp.player.app.ui.util.UiEvents.notify("队列已保存为歌单")
-                        else cp.player.app.ui.util.UiEvents.notify("保存歌单失败")
+                        if (ok) {
+                            cp.player.app.ui.util.UiEvents.notify(s.player.queueSaved)
+                        } else {
+                            cp.player.app.ui.util.UiEvents.notify(s.player.queueSaveFailed)
+                        }
                     }
                 }
             },
@@ -231,6 +245,7 @@ private fun QueueRow(
     val bg = if (isCurrent) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
     var showMenu by remember { mutableStateOf(false) }
+    val s = cpStrings()
     val density = LocalDensity.current
     var dragAccum by remember { mutableStateOf(0f) }
 
@@ -258,7 +273,7 @@ private fun QueueRow(
         ) {
             Icon(
                 Icons.Filled.DragIndicator,
-                "长按拖拽重排",
+                s.player.queueReorderHint,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .padding(horizontal = 4.dp)
@@ -301,7 +316,7 @@ private fun QueueRow(
                         // [Bolt] Fetch smaller (150px) cover images for the queue list to reduce loading time
                         AsyncImage(
                             model = item.coverUrl.resized(150),
-                            contentDescription = "封面",
+                            contentDescription = s.player.coverContentDescription,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
                                 .clip(MaterialTheme.shapes.medium)
@@ -348,14 +363,14 @@ private fun QueueRow(
             }
             Box {
                 IconButton(onClick = { showMenu = true }) {
-                    Icon(Icons.Filled.MoreVert, "更多")
+                    Icon(Icons.Filled.MoreVert, s.player.more)
                 }
                 androidx.compose.material3.DropdownMenu(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false },
                 ) {
                     androidx.compose.material3.DropdownMenuItem(
-                        text = { Text("从队列移除") },
+                        text = { Text(s.player.removeFromQueue) },
                         onClick = {
                             showMenu = false
                             onRemove()

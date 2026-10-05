@@ -38,6 +38,8 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
+import cp.player.app.i18n.CpStrings
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpRouteScaffold
@@ -96,10 +98,19 @@ class InsightsScreen(private val initialTab: Int = TAB_OVERVIEW) : Screen {
     }
 }
 
-private val TAB_LABELS = listOf("概览", "习惯", "最近")
+/**
+ * tab 标签做成函数而不是顶层 `val`：顶层属性在**类加载时**求值，那一刻还没有语言状态
+ * ⇒ 标签会永远停在一种语言上（编译不报错、出图也看不出，见 I18N.md §5.9）。
+ */
+private fun tabLabels(s: CpStrings) = listOf(
+    s.insights.tabOverview,
+    s.insights.tabHabits,
+    s.insights.tabRecent,
+)
 
 @Composable
 private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
+    val s = cpStrings()
     val summary by AppModel.insightsSummaryFlow.collectAsState()
     val daily by AppModel.dailyInsightsFlow.collectAsState()
     val records by AppModel.listeningRecordsFlow.collectAsState()
@@ -122,12 +133,13 @@ private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
     val todayKey = remember { AppModel.todayKey() }
     val scale = remember(daily, todayKey) { Insights.heatScaleOf(daily, todayKey) }
 
-    var tab by remember { mutableIntStateOf(initialTab.coerceIn(0, TAB_LABELS.lastIndex)) }
+    val labels = tabLabels(s)
+    var tab by remember { mutableIntStateOf(initialTab.coerceIn(0, labels.lastIndex)) }
     var selectedDay by remember { mutableStateOf<String?>(null) }
     var recentSelection by remember { mutableStateOf<cp.player.core.music.TrackSummary?>(null) }
     val confirm = rememberConfirmState()
 
-    CpRouteScaffold(title = "听歌报告", onBack = onBack) { pageModifier ->
+    CpRouteScaffold(title = s.insights.screenTitle, onBack = onBack) { pageModifier ->
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             LazyScrollColumn(
                 modifier = pageModifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize(),
@@ -141,14 +153,15 @@ private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
             ) {
                 item {
-                    InsightsTabs(selected = tab, onSelect = { tab = it })
+                    InsightsTabs(selected = tab, labels = labels, onSelect = { tab = it })
                 }
 
                 if (writeError != null) {
                     item {
                         StateSurface {
                             ContentState(
-                                title = "统计可能不完整",
+                                title = s.insights.writeErrorTitle,
+                                // 写入失败的原因原样透出（与诊断页的约定一致，不冒充本地化文案）。
                                 message = writeError,
                                 error = true,
                             )
@@ -158,6 +171,7 @@ private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
 
                 when (tab) {
                     InsightsScreen.TAB_OVERVIEW -> overviewTab(
+                        strings = s,
                         summary = summary,
                         daily = daily,
                         scale = scale,
@@ -169,17 +183,18 @@ private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
                         onToggleGreen = { AppModel.setHeatmapGreen(!green) },
                         onClear = {
                             confirm.request(
-                                title = "清空听歌记录",
-                                message = "将删除全部收听历史与统计。此操作无法恢复。",
-                                confirmLabel = "清空",
+                                title = s.insights.clearTitle,
+                                message = s.insights.clearMessage,
+                                confirmLabel = s.insights.clearConfirmLabel,
                                 destructive = true,
                                 onConfirm = { AppModel.clearListeningRecords() },
                             )
                         },
                     )
 
-                    InsightsScreen.TAB_HABITS -> habitsTab(summary)
+                    InsightsScreen.TAB_HABITS -> habitsTab(strings = s, summary = summary)
                     else -> recentTab(
+                        strings = s,
                         recentTracks = recentTracks,
                         columns = recentColumns,
                         scope = recentScope,
@@ -210,6 +225,7 @@ private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
  * `LazyListScope` 的扩展函数不是 `@Composable`，在里面读 `collectAsState` 编译不过。
  */
 private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
+    strings: CpStrings,
     recentTracks: List<cp.player.core.music.TrackSummary>,
     columns: Int,
     scope: kotlinx.coroutines.CoroutineScope,
@@ -220,8 +236,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
         item {
             StateSurface {
                 ContentState(
-                    title = "还没有最近播放",
-                    message = "播放歌曲后会显示在这里",
+                    title = strings.insights.recentEmptyTitle,
+                    message = strings.insights.recentEmptyNote,
                 )
             }
         }
@@ -234,8 +250,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SectionHeader(
-                title = "最近播放",
-                supportingText = "完整历史列表 · 共 ${recentTracks.size} 首",
+                title = strings.library.recentPlays,
+                supportingText = strings.insights.recentCount(recentTracks.size),
                 modifier = Modifier.weight(1f),
             )
             TextButton(
@@ -246,7 +262,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
                     }
                 },
             ) {
-                Text("播放全部")
+                Text(strings.library.playAll)
             }
         }
     }
@@ -276,11 +292,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
                     },
                     onAddToQueue = {
                         scope.launch { AppModel.playback.addToQueue(toMediaId(track.id)) }
-                        cp.player.app.ui.util.UiEvents.notify("已加入播放队列")
+                        cp.player.app.ui.util.UiEvents.notify(strings.library.queuedToPlay)
                     },
                     onPlayNext = {
                         scope.launch { AppModel.playback.addNextToQueue(toMediaId(track.id)) }
-                        cp.player.app.ui.util.UiEvents.notify("将在下一首播放")
+                        cp.player.app.ui.util.UiEvents.notify(strings.library.playNext)
                     },
                     onShare = { shareText(songShareText(track)) },
                 )
@@ -294,7 +310,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
 // ============================================================
 
 @Composable
-private fun InsightsTabs(selected: Int, onSelect: (Int) -> Unit) {
+private fun InsightsTabs(selected: Int, labels: List<String>, onSelect: (Int) -> Unit) {
     Row(
         Modifier
             .clip(CircleShape)
@@ -303,7 +319,7 @@ private fun InsightsTabs(selected: Int, onSelect: (Int) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TAB_LABELS.forEachIndexed { index, label ->
+        labels.forEachIndexed { index, label ->
             val isSelected = index == selected
             Surface(
                 onClick = { onSelect(index) },
@@ -335,6 +351,7 @@ private fun InsightsTabs(selected: Int, onSelect: (Int) -> Unit) {
 // ============================================================
 
 private fun androidx.compose.foundation.lazy.LazyListScope.overviewTab(
+    strings: CpStrings,
     summary: cp.player.core.insights.InsightsSummary,
     daily: List<cp.player.core.insights.DailyAgg>,
     scale: cp.player.core.insights.HeatScale,
@@ -352,18 +369,18 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTab(
                 // 指标卡三列并排、窄屏每张 ~110dp ⇒ 这里用**极短**格式。
                 // 用 `formatDurationShort`（「2 小时 41 分」）在本仓离屏出图时被硬裁成
                 // 「2 小时」，而裁掉的恰好是分钟 —— 看起来像统计漏了。
-                formatDurationCompact(summary.todayMs) to "今日",
-                formatDurationCompact(summary.weekMs) to "本周",
-                formatDurationCompact(summary.totalMs) to "累计",
+                formatDurationCompact(summary.todayMs, strings) to strings.insights.metricToday,
+                formatDurationCompact(summary.weekMs, strings) to strings.insights.metricWeek,
+                formatDurationCompact(summary.totalMs, strings) to strings.insights.metricTotal,
             ),
         )
     }
     item {
         MetricRow(
             listOf(
-                "${summary.currentStreak} 天" to "当前连续",
-                "${summary.longestStreak} 天" to "最长连续",
-                "${summary.uniqueTrackCount} 首" to "听过曲目",
+                strings.insights.daysLabel(summary.currentStreak) to strings.insights.metricStreak,
+                strings.insights.daysLabel(summary.longestStreak) to strings.insights.metricLongestStreak,
+                strings.insights.tracksLabel(summary.uniqueTrackCount) to strings.insights.metricUniqueTracks,
             ),
         )
     }
@@ -374,8 +391,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTab(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SectionHeader(
-                title = "听歌日历",
-                supportingText = "一天一格，颜色 = 当天收听时长",
+                title = strings.insights.calendarTitle,
+                supportingText = strings.insights.calendarNote,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -385,8 +402,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTab(
         item {
             StateSurface {
                 ContentState(
-                    title = "还没有收听记录",
-                    message = "播放任意歌曲后，这里会开始记录你的听歌习惯",
+                    title = strings.insights.calendarEmptyTitle,
+                    message = strings.insights.calendarEmptyNote,
                 )
             }
         }
@@ -432,7 +449,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTab(
                 ListeningCalendarLegend(classicGreen = green)
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = onToggleGreen) {
-                    Text(if (green) "配色：经典绿" else "配色：跟随主题")
+                    Text(strings.insights.paletteLabel(green))
                 }
             }
         }
@@ -440,23 +457,23 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTab(
 
     selectedDay?.let { day ->
         item {
-            SelectedDayCard(dayKey = day, records = records)
+            SelectedDayCard(dayKey = day, records = records, strings = strings)
         }
     }
 
-    if (summary.topArtists.isNotEmpty()) {
+        if (summary.topArtists.isNotEmpty()) {
         item {
-            SectionHeader(title = "常听歌手", supportingText = "按收听时长", modifier = Modifier.padding(top = 12.dp))
+            SectionHeader(title = strings.insights.topArtistsTitle, supportingText = strings.insights.rankedByPlayTime, modifier = Modifier.padding(top = 12.dp))
         }
         items(summary.topArtists.size, key = { "artist-${summary.topArtists[it].key}" }) { index ->
-            RankRow(summary.topArtists[index], summary.topArtists.first().playedMs)
+            RankRow(summary.topArtists[index], summary.topArtists.first().playedMs, strings)
         }
     }
 
     if (daily.isNotEmpty()) {
         item {
             Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.Center) {
-                TextButton(onClick = onClear) { Text("清空听歌记录") }
+                TextButton(onClick = onClear) { Text(strings.insights.clearTitle) }
             }
         }
     }
@@ -467,6 +484,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTab(
 private fun SelectedDayCard(
     dayKey: String,
     records: List<cp.player.core.insights.PlayRecord>,
+    strings: CpStrings,
 ) {
     // 日期键形如 `yyyy-MM-dd`，直接拆比再走一次日期库便宜，也不会引入时区换算的边界。
     val parts = remember(dayKey) { dayKey.split('-') }
@@ -492,7 +510,7 @@ private fun SelectedDayCard(
                 fontWeight = FontWeight.Medium,
             )
             Text(
-                "${formatDurationShort(totalMs)} · ${dayRecords.size} 首",
+                strings.insights.daySummary(formatDurationShort(totalMs, strings), dayRecords.size),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -505,7 +523,7 @@ private fun SelectedDayCard(
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        formatDurationShort(r.playedMs),
+                        formatDurationShort(r.playedMs, strings),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -521,18 +539,19 @@ private fun SelectedDayCard(
 
 private fun androidx.compose.foundation.lazy.LazyListScope.habitsTab(
     summary: cp.player.core.insights.InsightsSummary,
+    strings: CpStrings,
 ) {
     item {
         MetricRow(
             listOf(
-                percent(summary.completedCount, summary.playCount) to "完播率",
-                percent(summary.skippedCount, summary.playCount) to "跳过率",
-                "${summary.newTrackCount} 首" to "新歌发现",
+                percent(summary.completedCount, summary.playCount) to strings.insights.metricCompletionRate,
+                percent(summary.skippedCount, summary.playCount) to strings.insights.metricSkipRate,
+                "${summary.newTrackCount} ${strings.insights.tracksLabel(summary.newTrackCount)}" to strings.insights.metricNewTracks,
             ),
         )
     }
     item {
-        SectionHeader(title = "作息分布", supportingText = "按小时累计的收听时长", modifier = Modifier.padding(top = 12.dp))
+        SectionHeader(title = strings.insights.hourlyTitle, supportingText = strings.insights.hourlyNote, modifier = Modifier.padding(top = 12.dp))
     }
     item {
         BarChart(
@@ -541,7 +560,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.habitsTab(
         )
     }
     item {
-        SectionHeader(title = "一周分布", supportingText = "周一到周日", modifier = Modifier.padding(top = 12.dp))
+        SectionHeader(title = strings.insights.weekdayTitle, supportingText = strings.insights.weekdayNote, modifier = Modifier.padding(top = 12.dp))
     }
     item {
         BarChart(
@@ -551,10 +570,10 @@ private fun androidx.compose.foundation.lazy.LazyListScope.habitsTab(
     }
     if (summary.topTracks.isNotEmpty()) {
         item {
-            SectionHeader(title = "常听歌曲", supportingText = "按收听时长", modifier = Modifier.padding(top = 12.dp))
+            SectionHeader(title = strings.insights.topTracksTitle, supportingText = strings.insights.rankedByPlayTime, modifier = Modifier.padding(top = 12.dp))
         }
         items(summary.topTracks.size, key = { "track-${summary.topTracks[it].key}" }) { index ->
-            RankRow(summary.topTracks[index], summary.topTracks.first().playedMs)
+            RankRow(summary.topTracks[index], summary.topTracks.first().playedMs, strings)
         }
     }
 }
@@ -598,7 +617,7 @@ private fun MetricRow(metrics: List<Pair<String, String>>) {
 
 /** 排行行：横条长度按最大值归一。 */
 @Composable
-private fun RankRow(item: RankItem, maxMs: Long) {
+private fun RankRow(item: RankItem, maxMs: Long, strings: CpStrings) {
     val fraction = if (maxMs <= 0L) 0f else (item.playedMs.toFloat() / maxMs).coerceIn(0f, 1f)
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -609,7 +628,7 @@ private fun RankRow(item: RankItem, maxMs: Long) {
                 modifier = Modifier.weight(1f),
             )
             Text(
-                formatDurationShort(item.playedMs),
+                formatDurationShort(item.playedMs, strings),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

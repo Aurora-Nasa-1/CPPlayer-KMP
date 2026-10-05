@@ -62,6 +62,8 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
+import cp.player.app.i18n.CpStrings
+import cp.player.app.i18n.cpStrings
 import cp.player.app.AppModel
 import cp.player.app.ui.component.BentoActionCard
 import cp.player.app.ui.component.BentoCard
@@ -116,13 +118,19 @@ class LibraryScreen(private val initialPlaylistId: Long? = null) : Screen {
 
 private data class FilterTab(val label: String, val icon: ImageVector)
 
-private val LibraryFilters = listOf(
-    FilterTab("歌单", Icons.AutoMirrored.Filled.QueueMusic),
-    FilterTab("下载", Icons.Filled.Download),
+/**
+ * ⚠️ 刻意做成**函数**而不是 `private val LibraryFilters = listOf(...)`：
+ * 顶层 `val` 在类加载时求值，那时还没有语言状态 —— 写死的话标签页永远是一种语言。
+ * 代价是每帧重建两个元素（微不足道），换来的是切换语言立即生效。
+ */
+private fun libraryFilters(s: CpStrings): List<FilterTab> = listOf(
+    FilterTab(s.library.tabPlaylists, Icons.AutoMirrored.Filled.QueueMusic),
+    FilterTab(s.library.tabDownloads, Icons.Filled.Download),
 )
 
 @Composable
 private fun LibraryScreenContent(model: LibraryScreenModel) {
+    val s = cpStrings()
     val state by model.state.collectAsState()
     var selectedPlaylist by remember { mutableStateOf<PlaylistSummary?>(null) }
     // 「删除歌单 / 取消收藏」的二次确认。此前本页自己写了一份 AlertDialog，
@@ -174,13 +182,13 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
             item {
                 LibraryDashboard(
                     expanded = expanded,
-                    title = if (expanded) "我的音乐"
-                    else profile?.nickname?.let { "你好，$it" } ?: "我的音乐",
-                    subtitle = "共 ${state.playlists.size} 个歌单 · 收藏 ${likedIds.size} 首",
+                    title = if (expanded) s.library.myMusic
+                    else profile?.nickname?.let { s.library.greeting(it) } ?: s.library.myMusic,
+                    subtitle = s.library.librarySubtitle(state.playlists.size, likedIds.size),
                     stats = listOf(
-                        state.playlists.size.toString() to "歌单",
-                        likedIds.size.toString() to "收藏",
-                        downloadsState.downloadedItems.size.toString() to "下载",
+                        s.library.countPlaylist(state.playlists.size.toString()),
+                        s.library.countLiked(likedIds.size.toString()),
+                        s.library.countDownload(downloadsState.downloadedItems.size.toString()),
                     ),
                     onCreatePlaylist = { showCreateDialog = true },
                     onRecentPlays = { navigator.push(InsightsScreen(InsightsScreen.TAB_RECENT)) },
@@ -215,10 +223,10 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
             item {
                 Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
                     SectionHeader(
-                        title = "曲库",
+                        title = s.library.libraryTitle,
                         supportingText = when (state.selectedTab) {
-                            0 -> "${state.playlists.size} 个歌单"
-                            else -> "离线与本地内容"
+                            0 -> s.library.libraryPlaylistsCount(state.playlists.size)
+                            else -> s.library.libraryOffline
                         },
                         action = {
                             // 放在标题行右侧而不是分段控件尾部：320dp 窄屏下三个分段 + 按钮会横向溢出。
@@ -229,16 +237,16 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
                                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                 ),
                             ) {
-                                Icon(Icons.Filled.Add, "新建歌单")
+                                Icon(Icons.Filled.Add, s.library.newPlaylist)
                             }
                         },
                     )
                     Spacer(Modifier.height(12.dp))
                     LibrarySegmentedTabs(
-                        filters = LibraryFilters,
+                        filters = libraryFilters(s),
                         // 兜底 coerce：云端曾存过 selectedTab=1（旧版云盘档），
                         // 恢复出的越界值不能再喂给两档分段控件。
-                        selectedIndex = state.selectedTab.coerceIn(0, LibraryFilters.lastIndex),
+                        selectedIndex = state.selectedTab.coerceIn(0, libraryFilters(s).lastIndex),
                         onSelect = model::selectTab,
                     )
                 }
@@ -246,6 +254,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
 
             when (state.selectedTab) {
                 0 -> playlistsSection(
+                    s = s,
                     state = state,
                     onRetry = model::refresh,
                     isOwner = model::isOwner,
@@ -254,6 +263,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
                 )
                 else -> item {
                     DownloadsSection(
+                        s = s,
                         state = downloadsState,
                         onOpen = { navigator.push(DownloadsScreen()) },
                     )
@@ -270,11 +280,11 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
             onDismiss = { selectedPlaylist = null },
             onPlay = { model.play(playlist) },
             onAddToQueue = { model.play(playlist, addOnly = true) },
-            onDelete = { askDeleteOrUnsubscribe(playlist, model, confirm) },
+            onDelete = { askDeleteOrUnsubscribe(playlist, model, confirm, s) },
             coverUrl = playlist.coverUrl,
             // 媒体库中的歌单均为已收藏/自建；非 owner 时复用同一个确认弹窗（文案按 owner 区分）
             isFavorite = true,
-            onToggleFavorite = { askDeleteOrUnsubscribe(playlist, model, confirm) },
+            onToggleFavorite = { askDeleteOrUnsubscribe(playlist, model, confirm, s) },
         )
     }
 
@@ -297,20 +307,22 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
  * 抽出来是因为同一个确认框被两个入口触发（owner 的「删除歌单」、非 owner 的
  * 「取消收藏」）—— 文案只写一处，两边不会漂。
  */
+/** 非 composable（确认框的请求构造）：[CpStrings] 由组合内的调用方传入。 */
 private fun askDeleteOrUnsubscribe(
     playlist: PlaylistSummary,
     model: LibraryScreenModel,
     confirm: cp.player.app.ui.component.CpConfirmState,
+    s: CpStrings,
 ) {
     val owner = model.isOwner(playlist)
     confirm.request(
-        title = if (owner) "删除歌单" else "取消收藏",
+        title = if (owner) s.library.deletePlaylist else s.library.unfavoritePlaylist,
         message = if (owner) {
-            "确定删除「${playlist.name}」吗？删除后无法恢复。"
+            s.library.deletePlaylistMessage(playlist.name)
         } else {
-            "确定取消收藏「${playlist.name}」吗？之后仍可重新收藏。"
+            s.library.unfavoritePlaylistMessage(playlist.name)
         },
-        confirmLabel = if (owner) "删除" else "取消收藏",
+        confirmLabel = if (owner) s.common.confirm else s.library.unfavoritePlaylist,
         destructive = owner,
         onConfirm = { model.deleteOrUnsubscribe(playlist) },
     )
@@ -360,6 +372,7 @@ private fun LibraryDashboard(
     onProviders: () -> Unit,
     onAbout: () -> Unit,
 ) {
+    val s = cpStrings()
     val neutral = MaterialTheme.colorScheme.surfaceContainerHigh
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(BentoGap)) {
         // ── 行 1：问候区 + 聆听统计 ──
@@ -371,7 +384,7 @@ private fun LibraryDashboard(
             ) {
                 LibraryGreeting(title, subtitle, Modifier.weight(2f))
                 BentoStatCard(
-                    "聆听统计", stats,
+                    s.library.insights, stats,
                     // 原先这两行数字是**死的** —— 看得到「歌单 12 / 收藏 80」却点不进去。
                     // 现在整张卡可点，进「听歌报告 → 概览」。
                     Modifier
@@ -394,23 +407,23 @@ private fun LibraryDashboard(
                 horizontalArrangement = Arrangement.spacedBy(BentoGap),
             ) {
                 BentoHeroCard(
-                    title = "创建歌单",
-                    subtitle = "把喜欢的音乐整理成册",
+                    title = s.library.createPlaylist,
+                    subtitle = s.library.createPlaylistNote,
                     icon = Icons.Filled.LibraryAdd,
                     onClick = onCreatePlaylist,
                     modifier = Modifier.weight(2f).fillMaxHeight(),
                 )
                 BentoActionCard(
-                    title = "最近播放",
-                    subtitle = "接着上次的节奏",
+                    title = s.library.recentPlays,
+                    subtitle = s.library.recentPlaysNote,
                     icon = Icons.Filled.History,
                     onClick = onRecentPlays,
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                 )
                 BentoActionCard(
-                    title = "离线下载",
-                    subtitle = "管理离线内容",
+                    title = s.library.offlineDownloads,
+                    subtitle = s.library.offlineDownloadsNote,
                     icon = Icons.Filled.Download,
                     onClick = onDownloads,
                     modifier = Modifier.weight(1f).fillMaxHeight(),
@@ -424,9 +437,9 @@ private fun LibraryDashboard(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(BentoGap),
             ) {
-                LibraryQuickEntry("最近播放", Icons.Filled.History, onRecentPlays, Modifier.weight(1f))
-                LibraryQuickEntry("云盘", Icons.Filled.CloudQueue, onCloud, Modifier.weight(1f))
-                LibraryQuickEntry("下载", Icons.Filled.Download, onDownloads, Modifier.weight(1f))
+                LibraryQuickEntry(s.library.recentPlays, Icons.Filled.History, onRecentPlays, Modifier.weight(1f))
+                LibraryQuickEntry(s.library.cloudDrive, Icons.Filled.CloudQueue, onCloud, Modifier.weight(1f))
+                LibraryQuickEntry(s.library.tabDownloads, Icons.Filled.Download, onDownloads, Modifier.weight(1f))
             }
         }
 
@@ -448,16 +461,16 @@ private fun LibraryDashboard(
                     modifier = Modifier.weight(2f).fillMaxHeight(),
                 )
                 BentoActionCard(
-                    title = "云盘",
-                    subtitle = "在线曲库",
+                    title = s.library.cloudDrive,
+                    subtitle = s.library.cloudDriveNote,
                     icon = Icons.Filled.CloudQueue,
                     onClick = onCloud,
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                     containerColor = neutral,
                 )
                 BentoActionCard(
-                    title = "存储管理",
-                    subtitle = "缓存与日志",
+                    title = s.library.storageManage,
+                    subtitle = s.library.storageManageNote,
                     icon = Icons.Filled.Storage,
                     onClick = onStorage,
                     modifier = Modifier.weight(1f).fillMaxHeight(),
@@ -470,7 +483,7 @@ private fun LibraryDashboard(
         // 「存储管理」已回到行 3；窄屏连「关于」也一并移除（关于页从设置可达）。
         if (expanded) {
             Box(Modifier.fillMaxWidth().padding(top = 4.dp), contentAlignment = Alignment.Center) {
-                BentoPill("关于 CPPlayer", Icons.Filled.Info, onAbout)
+                BentoPill(s.library.aboutCpPlayer, Icons.Filled.Info, onAbout)
             }
         }
     }
@@ -549,13 +562,14 @@ private fun LibraryPreferenceCard(
     onProviders: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val s = cpStrings()
     BentoCard(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         contentPadding = PaddingValues(18.dp),
     ) {
         Text(
-            "偏好设置",
+            s.library.preferences,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.fillMaxWidth(),
@@ -564,9 +578,9 @@ private fun LibraryPreferenceCard(
             Modifier.fillMaxWidth().weight(1f),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            BentoMiniTile("外观", Icons.Filled.Palette, onAppearance, Modifier.weight(1f).fillMaxHeight())
-            BentoMiniTile("播放", Icons.Filled.GraphicEq, onPlayback, Modifier.weight(1f).fillMaxHeight())
-            BentoMiniTile("音源", Icons.Filled.LibraryMusic, onProviders, Modifier.weight(1f).fillMaxHeight())
+            BentoMiniTile(s.library.appearance, Icons.Filled.Palette, onAppearance, Modifier.weight(1f).fillMaxHeight())
+            BentoMiniTile(s.library.playback, Icons.Filled.GraphicEq, onPlayback, Modifier.weight(1f).fillMaxHeight())
+            BentoMiniTile(s.library.providers, Icons.Filled.LibraryMusic, onProviders, Modifier.weight(1f).fillMaxHeight())
         }
     }
 }
@@ -612,7 +626,13 @@ private fun LibrarySegmentedTabs(
     }
 }
 
+/**
+ * `LazyListScope` 扩展，**不是** `@Composable` ⇒ 读不到 `cpStrings()`。
+ * 状态与文案都由 `@Composable` 宿主当参数传进来（同 `recentPlaysRows` 的约定，
+ * 见 AGENTS.md 关于 `LazyScrollColumn` content lambda 的坑）。
+ */
 private fun LazyListScope.playlistsSection(
+    s: CpStrings,
     state: LibraryUiState,
     onRetry: () -> Unit,
     isOwner: (PlaylistSummary) -> Boolean,
@@ -621,22 +641,22 @@ private fun LazyListScope.playlistsSection(
 ) {
     when {
         state.loading -> item {
-            StateSurface { ContentState(title = "正在同步媒体库", message = "正在加载你的歌单", loading = true) }
+            StateSurface { ContentState(title = s.library.syncingLibrary, message = s.library.syncingLibraryNote, loading = true) }
         }
         state.error != null -> item {
             StateSurface {
                 ContentState(
-                    title = "媒体库加载失败",
+                    title = s.library.libraryLoadFailed,
                     message = state.error,
                     error = true,
-                    actionLabel = "重试",
+                    actionLabel = s.library.retry,
                     onAction = onRetry,
                 )
             }
         }
         state.playlists.isEmpty() -> item {
             StateSurface {
-                ContentState(title = "这里还没有歌单", message = "登录账号后即可同步收藏与创建的歌单")
+                ContentState(title = s.library.noPlaylists, message = s.library.noPlaylistsNote)
             }
         }
         else -> items(state.playlists) { playlist ->
@@ -677,30 +697,31 @@ private fun PlaylistQuickGrid(
     onPlaylistClick: (PlaylistSummary) -> Unit,
     onSeeAll: () -> Unit,
 ) {
+    val s = cpStrings()
     Column(Modifier.fillMaxWidth()) {
         SectionHeader(
-            title = "我的歌单",
+            title = s.library.myPlaylists,
             supportingText = when {
-                loading && playlists.isEmpty() -> "正在同步媒体库"
-                else -> "${playlists.size} 个歌单"
+                loading && playlists.isEmpty() -> s.library.syncingLibrary
+                else -> s.library.myPlaylistsCount(playlists.size)
             },
             modifier = Modifier.padding(top = 8.dp),
             action = {
                 if (playlists.isNotEmpty()) {
-                    TextButton(onClick = onSeeAll) { Text("查看全部") }
+                    TextButton(onClick = onSeeAll) { Text(s.library.seeAll) }
                 }
             },
         )
         Spacer(Modifier.height(12.dp))
         when {
             loading && playlists.isEmpty() -> StateSurface {
-                ContentState(title = "正在同步媒体库", message = "正在加载你的歌单", loading = true)
+                ContentState(title = s.library.syncingLibrary, message = s.library.syncingLibraryNote, loading = true)
             }
             error != null && playlists.isEmpty() -> StateSurface {
-                ContentState(title = "媒体库加载失败", message = error, error = true)
+                ContentState(title = s.library.libraryLoadFailed, message = error, error = true)
             }
             playlists.isEmpty() -> StateSurface {
-                ContentState(title = "这里还没有歌单", message = "登录账号后即可同步收藏与创建的歌单")
+                ContentState(title = s.library.noPlaylists, message = s.library.noPlaylistsNote)
             }
             else -> BoxWithConstraints(Modifier.fillMaxWidth()) {
                 // 窄屏固定 2 列（单列封面浪费、3 列在 360dp 手机上封面只有 ~100dp）；
@@ -744,6 +765,7 @@ private fun PlaylistQuickGrid(
  */
 @Composable
 private fun DownloadsSection(
+    s: CpStrings,
     state: DownloadsUiState,
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
@@ -765,13 +787,13 @@ private fun DownloadsSection(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            DownloadMetric("下载中", active.size.toString(), Modifier.weight(1f))
-            DownloadMetric("已完成", completed.size.toString(), Modifier.weight(1f))
-            DownloadMetric("本地媒体", state.downloadedItems.size.toString(), Modifier.weight(1f))
+            DownloadMetric(s.library.downloading, active.size.toString(), Modifier.weight(1f))
+            DownloadMetric(s.library.completed, completed.size.toString(), Modifier.weight(1f))
+            DownloadMetric(s.library.localMedia, state.downloadedItems.size.toString(), Modifier.weight(1f))
         }
         if (completed.isEmpty() && active.isEmpty()) {
             Text(
-                "还没有下载任务。在歌曲菜单或歌单页点「下载」，任务会显示在这里。",
+                s.library.noDownloads,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 16.dp).widthIn(max = 760.dp),
@@ -806,7 +828,7 @@ private fun DownloadsSection(
                     }
                 }
                 Text(
-                    "打开下载管理",
+                    s.library.openDownloads,
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(top = 4.dp),

@@ -22,6 +22,7 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
+import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.isAggressiveStandbyActive
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.SettingsClickItem
@@ -32,6 +33,7 @@ import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.util.popOrNotify
+import cp.player.core.sync.SYNC_HTTP_PORT
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -58,6 +60,7 @@ class StandbySettingsScreen : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
+        val s = cpStrings()
         val enabled by AppModel.aggressiveStandbyFlow.collectAsState()
         // 实际持锁状态与开关值分开：持锁可能因权限被拒 / Wi-Fi 未开启而失败。
         var active by remember { mutableStateOf(isAggressiveStandbyActive()) }
@@ -69,7 +72,7 @@ class StandbySettingsScreen : Screen {
         val lanVisible by AppModel.lanVisibleFlow.collectAsState()
         val lanSyncEnabled by AppModel.lanSyncEnabledFlow.collectAsState()
         val lanSyncState by AppModel.lanSyncStateFlow.collectAsState()
-        val handoffMessage by AppModel.handoffMessageFlow.collectAsState()
+        val handoffState by AppModel.handoffStateFlow.collectAsState()
         // 转移按钮的可点判据：本机真的在放一首曲子 —— 没在放就没有「转移」可言。
         val playbackState by AppModel.playback.state.collectAsState()
         val nowPlayingName = playbackState.currentTrack?.name
@@ -99,32 +102,32 @@ class StandbySettingsScreen : Screen {
         val offline = peers.filterNot { it.isOnline(nowMs) }
 
         CpRouteScaffold(
-            title = "局域网设备",
+            title = s.standby.screenTitle,
             onBack = { navigator.popOrNotify() },
         ) { pageModifier ->
             SettingsPage(pageModifier) {
-                SettingsSection("本机") {
+                SettingsSection(s.standby.sectionSelf) {
                     SettingsFieldGroup {
-                        InfoRow("名称", identity.name)
-                        InfoRow("平台", identity.platform)
-                        InfoRow("设备 ID", identity.deviceId.take(8))
-                        InfoRow("版本", identity.appVersion)
+                        InfoRow(s.standby.deviceName, identity.name)
+                        InfoRow(s.standby.devicePlatform, identity.platform)
+                        InfoRow(s.standby.deviceId, identity.deviceId.take(8))
+                        InfoRow(s.standby.deviceVersion, identity.appVersion)
                         InfoRow(
-                            "发现状态",
+                            s.standby.discoveryStatus,
                             when {
-                                discoveryError != null -> "启动失败"
-                                running -> "监听中"
-                                else -> "未启动"
+                                discoveryError != null -> s.standby.discoveryFailed
+                                running -> s.standby.listening
+                                else -> s.standby.notStarted
                             },
                             highlight = discoveryError == null && running,
                         )
                     }
                 }
 
-                SettingsSection("在局域网中可见") {
+                SettingsSection(s.standby.sectionVisible) {
                     SettingsSwitchItem(
-                        title = "在局域网中可见",
-                        subtitle = "应用运行期间持续广播本机信标并监听其他设备 —— 无感同步与转移的前提；关闭后本机在局域网里隐身",
+                        title = s.standby.visible,
+                        subtitle = s.standby.visibleNote,
                         checked = lanVisible,
                         onCheckedChange = { AppModel.setLanVisible(it) },
                         index = 0,
@@ -137,11 +140,13 @@ class StandbySettingsScreen : Screen {
                 // 收到>0 且无效在涨 → 收到了但不认识（协议不符/别的程序占端口）；
                 // 收到>0 且无效=0 → 只收到自己的回环。
                 SettingsFieldGroup {
-                    InfoRow("信标已发送", "${stats.sent} 轮")
-                    InfoRow("已收到信标", "${stats.received}")
-                    if (stats.invalid > 0) InfoRow("无法识别的信标", "${stats.invalid}", highlight = true)
+                    InfoRow(s.standby.beaconSent, s.standby.beaconSentRounds(stats.sent))
+                    InfoRow(s.standby.beaconReceived, "${stats.received}")
+                    if (stats.invalid > 0) {
+                        InfoRow(s.standby.beaconInvalid, "${stats.invalid}", highlight = true)
+                    }
                     InfoRow(
-                        "最近收到",
+                        s.standby.lastReceived,
                         stats.lastRecvAt?.let {
                             java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault())
                                 .toLocalTime().toString()
@@ -149,25 +154,28 @@ class StandbySettingsScreen : Screen {
                     )
                 }
 
-                if (discoveryError != null) {
+                // ⚠️ 先落局部 val：`discoveryError` 是 `by collectAsState()` 的委托属性，
+                // **不能** smart cast（编译器明确拒绝：委托属性每次读都可能有新值）。
+                val discovery = discoveryError
+                if (discovery != null) {
                     SettingsNote(
-                        text = "设备发现启动失败：$discoveryError",
+                        text = s.standby.discoveryStartFailed(discovery),
                         emphasis = SettingsNoteEmphasis.ERROR,
                     )
                 }
 
-                SettingsSection("自动同步（局域网）") {
+                SettingsSection(s.standby.sectionAutoSync) {
                     SettingsSwitchItem(
-                        title = "自动同步听歌记录",
-                        subtitle = "两台设备互相交换听歌历史；开启后自动进行，无需任何手动操作",
+                        title = s.standby.autoSync,
+                        subtitle = s.standby.autoSyncNote,
                         checked = lanSyncEnabled,
                         onCheckedChange = { AppModel.setLanSyncEnabled(it) },
                         index = 0,
                         total = 2,
                     )
                     SettingsClickItem(
-                        title = "立即同步",
-                        subtitle = lanSyncState.lastSyncSummary.ifBlank { "尚未同步" },
+                        title = s.standby.syncNow,
+                        subtitle = lanSyncState.lastSyncSummary.ifBlank { s.standby.neverSynced },
                         index = 1,
                         total = 2,
                         onClick = { AppModel.syncNow() },
@@ -176,16 +184,16 @@ class StandbySettingsScreen : Screen {
 
                 SettingsFieldGroup {
                     InfoRow(
-                        "同步服务",
+                        s.standby.syncService,
                         when {
-                            lanSyncState.error != null -> "启动失败"
-                            lanSyncState.serverRunning -> "监听中（端口 38086）"
-                            else -> "未启动"
+                            lanSyncState.error != null -> s.standby.discoveryFailed
+                            lanSyncState.serverRunning -> s.standby.syncListeningPort(SYNC_HTTP_PORT)
+                            else -> s.standby.notStarted
                         },
                         highlight = lanSyncState.error == null && lanSyncState.serverRunning,
                     )
                     InfoRow(
-                        "上次同步",
+                        s.standby.lastSync,
                         lanSyncState.lastSyncAt?.let {
                             java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault())
                                 .toLocalTime().toString()
@@ -194,22 +202,15 @@ class StandbySettingsScreen : Screen {
                 }
 
                 SettingsNote(
-                    text = if (lanSyncEnabled) {
-                        "⚠️ 开启后，同一局域网内的任何设备都能读取与写入本机的**听歌记录**。" +
-                            "能同步的仅此一项 —— 不含账号、凭据、歌单、收藏。" +
-                            "在办公室等非私人网络请关闭。设备配对鉴权是下一步的工作。"
-                    } else {
-                        "默认关闭。开启后无需任何手动操作：两台设备只要都在同一网络并打开 CPPlayer，" +
-                            "听歌记录就会自动双向合并 —— 不分谁新谁旧，也不在乎交替使用。"
-                    },
+                    text = if (lanSyncEnabled) s.standby.syncWarning else s.standby.syncEnabledNote,
                     emphasis = if (lanSyncEnabled) SettingsNoteEmphasis.WARNING else SettingsNoteEmphasis.INFO,
                 )
 
                 if (cp.player.app.platform.isAndroidPlatform()) {
-                    SettingsSection("后台在线") {
+                    SettingsSection(s.standby.sectionKeepAlive) {
                         SettingsSwitchItem(
-                            title = "激进保活",
-                            subtitle = "熄屏后维持 Wi-Fi 在线，让设备发现与换设备播放仍可能命中",
+                            title = s.standby.aggressiveStandby,
+                            subtitle = s.standby.aggressiveStandbyNote,
                             checked = enabled,
                             onCheckedChange = { AppModel.setAggressiveStandby(it) },
                             index = 0,
@@ -219,24 +220,19 @@ class StandbySettingsScreen : Screen {
 
                     SettingsNote(
                         text = when {
-                            !enabled -> "未启用"
-                            active -> "已生效"
-                            else -> "未生效（可能被系统拒绝）"
-                        } + if (enabled && active) "" else "。没有它，熄屏后系统可能丢弃组播包。",
+                            !enabled -> s.standby.notEnabled
+                            active -> s.standby.inEffect
+                            else -> s.standby.notInEffect
+                        } + if (enabled && active) "" else s.standby.keepAliveHint,
                         emphasis = if (enabled && !active) SettingsNoteEmphasis.WARNING else SettingsNoteEmphasis.INFO,
                     )
                 }
 
-                SettingsSection("局域网设备") {
+                SettingsSection(s.standby.sectionLanDevices) {
                     if (online.isEmpty()) {
                         // 组内塞非分段文本会打断分段圆角，这里用说明行承载空态。
                         Text(
-                            text = if (running) {
-                                "正在监听，还没有发现其他设备。只要对方也在运行 CPPlayer（不必停留在任何页面），" +
-                                    "最多半分钟就会出现在这里。"
-                            } else {
-                                "设备发现未启动。"
-                            },
+                            text = if (running) s.standby.discovering else s.standby.discoveryNotStarted,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
@@ -245,8 +241,8 @@ class StandbySettingsScreen : Screen {
                         )
                     } else {
                         SettingsClickItem(
-                            title = "在线设备",
-                            subtitle = "${online.size} 台",
+                            title = s.standby.onlineDevices,
+                            subtitle = s.standby.onlineCount(online.size),
                             index = 0,
                             total = online.size + offline.size,
                             enabled = false,
@@ -255,13 +251,13 @@ class StandbySettingsScreen : Screen {
                 }
 
                 if (online.isNotEmpty()) {
-                    SettingsSection("在线 —— 点击把当前播放转移过去") {
+                    SettingsSection(s.standby.sectionOnline) {
                         online.forEachIndexed { index, peer ->
                             SettingsClickItem(
                                 title = peer.displayName,
                                 subtitle = "${peer.address}:${peer.streamPort} · ${peer.platform}" +
                                     (peer.appVersion.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "") +
-                                    if (nowPlayingName == null) " · 本机未在播放" else "",
+                                    if (nowPlayingName == null) s.standby.localNotPlaying else "",
                                 index = index,
                                 total = online.size,
                                 enabled = nowPlayingName != null,
@@ -272,11 +268,11 @@ class StandbySettingsScreen : Screen {
                 }
 
                 if (offline.isNotEmpty()) {
-                    SettingsSection("已离线") {
+                    SettingsSection(s.standby.sectionOffline) {
                         offline.forEachIndexed { index, peer ->
                             SettingsClickItem(
                                 title = peer.displayName,
-                                subtitle = "${peer.address}:${peer.streamPort} · 刚才还在",
+                                subtitle = s.standby.justOnline(peer.address, peer.streamPort),
                                 index = index,
                                 total = offline.size,
                                 enabled = false,
@@ -285,20 +281,16 @@ class StandbySettingsScreen : Screen {
                     }
                 }
 
-                SettingsNote(
-                    "搜不到设备时按顺序检查：① 两台设备都要在运行较新版本的 CPPlayer" +
-                        "（旧版本没有设备发现，对方发了信标这边也认不出）；" +
-                        "② 「在局域网中可见」都开着，且上面的「已收到信标」在增长 —— 若一直是 0，" +
-                        "是本机收不到包：查防火墙入站规则（Windows 首次监听会弹授权，拒绝过就再也收不到）；" +
-                        "③ 同一路由器下的同一网段（访客网络 / AP 隔离会把设备互相隔离）；" +
-                        "④ 若「已收到信标」> 0 但列表仍为空且「无法识别的信标」在涨，说明对端不是同版本的应用；" +
-                        "⑤ 多网卡机器（VPN、虚拟机网卡）可能需要多试几次。",
-                )
+                SettingsNote(s.standby.troubleshooting)
 
-                if (handoffMessage != null) {
+                // ⚠️ 先落局部 val：`handoffState` 是委托属性，不能 smart cast。
+                val handoff = handoffState
+                if (handoff != null) {
                     SettingsNote(
-                        text = handoffMessage.orEmpty(),
-                        emphasis = if (handoffMessage.orEmpty().startsWith("转移失败")) {
+                        // 成败看 [AppModel.HandoffState.failed]，**不是**看文案 ——
+                        // 旧版靠 `startsWith("转移失败")` 判断，改文案就会静默失配。
+                        text = handoff.textOf(s),
+                        emphasis = if (handoff.failed) {
                             SettingsNoteEmphasis.WARNING
                         } else {
                             SettingsNoteEmphasis.INFO
@@ -306,27 +298,10 @@ class StandbySettingsScreen : Screen {
                     )
                 }
 
-                SettingsNote(
-                    "无缝转移的前提：对方也开着「自动同步」（同步服务在监听），" +
-                        "并且已登录**同一音源** —— 转移的只是「放哪首、从哪秒开始」，" +
-                        "两端各自从自己的音源取播放地址。任一条件不满足会得到明确的失败提示，" +
-                        "本机继续播放、不会静音。",
-                )
-
-                SettingsNote(
-                    "仍需配对鉴权：转移与同步目前都未认证，端口只应出现在私人网络。" +
-                        "配对（PIN / 二维码）是下一步的工作。",
-                )
-
-                SettingsNote(
-                    "它**不能**让本应用免于被系统回收。系统按进程优先级淘汰后台进程，" +
-                        "与进程大小、用什么语言实现无关。真正可靠的常驻只有前台服务，" +
-                        "所以本开关只是把「系统愿意留你多久」往有利方向推。",
-                )
-
-                SettingsNote(
-                    "建议同时打开「播放与音质 → 电池优化白名单」，两者配合才能挡住厂商 ROM 的后台清理。",
-                )
+                SettingsNote(s.standby.handoffPrereq)
+                SettingsNote(s.standby.handoffSecurityNote)
+                SettingsNote(s.standby.keepAliveReality)
+                SettingsNote(s.standby.keepAliveRecommend)
             }
         }
     }

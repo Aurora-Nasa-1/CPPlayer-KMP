@@ -43,6 +43,7 @@ import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
+import cp.player.app.i18n.cpStrings
 import cp.player.app.AppModel
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.AlbumCoverThumb
@@ -117,7 +118,7 @@ private class AlbumDetailModel : ScreenModel {
         screenModelScope.launch {
             _state.value = AlbumUiState(loading = true)
             val result = runCatching { AppModel.musicRepository.getAlbumDetail(albumId) }
-                .getOrElse { BackendResult.Error(it.message ?: "加载专辑失败") }
+                .getOrElse { BackendResult.Error(it.message.orEmpty()) }
             _state.value = when (result) {
                 is BackendResult.Success -> AlbumUiState(loading = false, detail = result.data)
                 is BackendResult.Error -> AlbumUiState(
@@ -154,6 +155,7 @@ private fun AlbumDetailContent(
     model: AlbumDetailModel,
     onBack: () -> Unit,
 ) {
+    val s = cpStrings()
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
     val provider = AppModel.activeProviderId()
@@ -181,31 +183,32 @@ private fun AlbumDetailContent(
     val shufflePlay: () -> Unit = {
         scope.launch {
             AppModel.playback.playQueue(mediaIds.shuffled(), 0)
-            UiEvents.notify("已打乱播放")
+            UiEvents.notify(s.album.shufflePlay)
         }
     }
     val queueAll: () -> Unit = {
         scope.launch {
             mediaIds.forEach { AppModel.playback.addToQueue(it) }
-            UiEvents.notify("已加入播放队列")
+            UiEvents.notify(s.library.queuedToPlay)
         }
     }
 
-    CpRouteScaffold(title = detail?.name ?: fallback?.name ?: "专辑", onBack = onBack) { pageModifier ->
+    CpRouteScaffold(title = detail?.name ?: fallback?.name ?: s.album.fallbackTitle, onBack = onBack) { pageModifier ->
         BoxWithConstraints(pageModifier.fillMaxSize()) {
             // 宽屏把「封面 + 说明」放到左侧固定栏，曲目占右侧 —— 与歌单详情同一套断点。
             val isWide = cp.player.app.ui.component.CpBreakpoints.isExpanded(maxWidth)
             when {
                 state.loading && detail == null -> ContentState(
-                    title = "正在载入专辑",
-                    message = "正在从当前音源读取专辑信息",
+                    title = s.album.loading,
+                    message = s.album.loadingNote,
                     loading = true,
                 )
                 detail == null -> ContentState(
-                    title = "没有打开这张专辑",
-                    message = state.error,
+                    title = s.album.notOpened,
+                    // 后端给的 message 可能是空串（见 load() 里的 orEmpty）⇒ 用本地文案兜底。
+                    message = state.error?.takeIf { it.isNotBlank() } ?: s.album.loadFailed,
                     error = true,
-                    actionLabel = "重试",
+                    actionLabel = s.album.retry,
                     onAction = { model.load(albumId, fallback) },
                 )
                 else -> LazyScrollColumn(
@@ -231,11 +234,11 @@ private fun AlbumDetailContent(
                     }
                     item {
                         SectionHeader(
-                            title = "曲目",
+                            title = s.album.tracks,
                             supportingText = if (tracks.isEmpty()) {
-                                detail?.let { state.error ?: "这张专辑没有可播放的曲目" }.orEmpty()
+                                detail?.let { state.error ?: s.album.noPlayableTracks }.orEmpty()
                             } else {
-                                "${tracks.size} 首"
+                                s.album.trackCount(tracks.size)
                             },
                             modifier = Modifier.padding(top = 8.dp),
                         )
@@ -243,8 +246,8 @@ private fun AlbumDetailContent(
                     if (tracks.isEmpty()) {
                         item {
                             ContentState(
-                                title = "暂无曲目",
-                                message = state.error ?: "换一张专辑，或在音源设置里换一个音源试试",
+                                title = s.album.emptyTracks,
+                                message = state.error ?: s.album.emptyTracksNote,
                             )
                         }
                     } else {
@@ -267,16 +270,16 @@ private fun AlbumDetailContent(
                                             val target = track.id !in likedIds
                                             scope.launch {
                                                 AppModel.playback.toggleFavoriteFor("$provider://song/${track.id}")
-                                                UiEvents.notify(if (target) "已收藏" else "已取消收藏")
+                                                UiEvents.notify(if (target) s.album.liked else s.album.unliked)
                                             }
                                         },
                                         onAddToQueue = {
                                             scope.launch { AppModel.playback.addToQueue("$provider://song/${track.id}") }
-                                            UiEvents.notify("已加入播放队列")
+                                            UiEvents.notify(s.library.queuedToPlay)
                                         },
                                         onPlayNext = {
                                             scope.launch { AppModel.playback.addNextToQueue("$provider://song/${track.id}") }
-                                            UiEvents.notify("将在下一首播放")
+                                            UiEvents.notify(s.library.playNext)
                                         },
                                         isDownloaded = AppModel.isDownloaded(track.id),
                                         onDownload = { AppModel.downloadTrack(track) },
@@ -308,16 +311,16 @@ private fun AlbumDetailContent(
                 val target = track.id !in likedIds
                 scope.launch {
                     AppModel.playback.toggleFavoriteFor("$provider://song/${track.id}")
-                    UiEvents.notify(if (target) "已收藏" else "已取消收藏")
+                    UiEvents.notify(if (target) s.album.liked else s.album.unliked)
                 }
             },
             onAddToQueue = {
                 scope.launch { AppModel.playback.addToQueue("$provider://song/${track.id}") }
-                UiEvents.notify("已加入播放队列")
+                UiEvents.notify(s.library.queuedToPlay)
             },
             onPlayNext = {
                 scope.launch { AppModel.playback.addNextToQueue("$provider://song/${track.id}") }
-                UiEvents.notify("将在下一首播放")
+                UiEvents.notify(s.library.playNext)
             },
             onAddToPlaylist = { addToPlaylistTrack = track },
             onDownload = { AppModel.downloadTrack(track) },
@@ -341,13 +344,14 @@ private fun AlbumHeader(
     onAddToQueue: () -> Unit,
     onDownloadAll: () -> Unit,
 ) {
+    val s = cpStrings()
     val metaLine = buildList {
         detail.artistName?.takeIf { it.isNotBlank() }?.let(::add)
         detail.publishTimeMs?.let { ms ->
-            cp.player.app.ui.component.epochMillisToYear(ms)?.let { year -> add("$year 年发行") }
+            cp.player.app.ui.component.epochMillisToYear(ms)?.let { year -> add(s.album.releasedYear(year)) }
         }
         detail.company?.takeIf { it.isNotBlank() }?.let(::add)
-        if (trackCount > 0) add("$trackCount 首 · ${formatTimeMs(totalDurationMs)}")
+        if (trackCount > 0) add(s.album.albumMeta(trackCount, formatTimeMs(totalDurationMs)))
     }.joinToString(" · ")
 
     if (wide) {
@@ -437,6 +441,7 @@ private fun AlbumActions(
     onAddToQueue: () -> Unit,
     onDownloadAll: () -> Unit,
 ) {
+    val s = cpStrings()
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -444,22 +449,22 @@ private fun AlbumActions(
         androidx.compose.material3.FilledTonalButton(onClick = onPlayAll) {
             Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
-            Text("播放全部")
+            Text(s.library.playAll)
         }
         TextButton(onClick = onShuffle) {
             Icon(Icons.Filled.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
-            Text("打乱")
+            Text(s.album.shufflePlay)
         }
         TextButton(onClick = onAddToQueue) {
             Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
-            Text("加入队列")
+            Text(s.library.addToQueue)
         }
         TextButton(onClick = onDownloadAll) {
             Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
-            Text("下载")
+            Text(s.library.downloadAll)
         }
     }
 }

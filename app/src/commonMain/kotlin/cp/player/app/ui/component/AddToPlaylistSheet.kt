@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import cp.player.app.i18n.cpStrings
 import cp.player.app.AppModel
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.util.UiEvents
@@ -51,6 +52,7 @@ fun AddToPlaylistSheet(
     trackIds: List<String>,
     onDismiss: () -> Unit,
 ) {
+    val s = cpStrings()
     val scope = rememberCoroutineScope()
     var playlists by remember { mutableStateOf<List<PlaylistSummary>?>(null) }
     var newName by remember { mutableStateOf("") }
@@ -77,10 +79,10 @@ fun AddToPlaylistSheet(
             withContext(Dispatchers.Main) {
                 busy = false
                 if (ok) {
-                    UiEvents.notify("已添加 ${ids.size} 首歌曲")
+                    UiEvents.notify(s.playlistSheet.addedTracks(ids.size))
                     onDismiss()
                 } else {
-                    UiEvents.notify("加入歌单失败")
+                    UiEvents.notify(s.playlistSheet.addToPlaylistFailed)
                 }
             }
         }
@@ -99,7 +101,7 @@ fun AddToPlaylistSheet(
                 if (newId != null) {
                     addTo(newId)
                 } else {
-                    UiEvents.notify("新建歌单失败")
+                    UiEvents.notify(s.playlistSheet.createPlaylistFailed)
                 }
             }
         }
@@ -111,7 +113,7 @@ fun AddToPlaylistSheet(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
-                "添加到歌单",
+                s.playlistSheet.addToPlaylistTitle,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
             )
@@ -126,14 +128,14 @@ fun AddToPlaylistSheet(
                     value = newName,
                     onValueChange = { newName = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("新建歌单名称") },
+                    placeholder = { Text(s.playlistSheet.newPlaylistNamePlaceholder) },
                     singleLine = true,
                     shape = RoundedCornerShape(percent = 50),
                 )
                 TextButton(onClick = { createAndAdd() }, enabled = newName.isNotBlank() && !busy) {
                     Icon(Icons.Filled.Add, null, Modifier.size(18.dp))
                     Spacer(Modifier.size(4.dp))
-                    Text("新建")
+                    Text(s.playlistSheet.createShort)
                 }
             }
 
@@ -144,7 +146,7 @@ fun AddToPlaylistSheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) { CpLoadingIndicator(Modifier.size(40.dp)) }
                 playlists!!.isEmpty() -> Text(
-                    "还没有歌单，先在上方新建一个吧",
+                    s.playlistSheet.noPlaylistsHint,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -171,5 +173,6 @@ fun AddToPlaylistSheet(
     trackId: String,
     onDismiss: () -> Unit,
 ) {
+    val s = cpStrings()
     AddToPlaylistSheet(trackIds = listOf(trackId), onDismiss = onDismiss)
 }

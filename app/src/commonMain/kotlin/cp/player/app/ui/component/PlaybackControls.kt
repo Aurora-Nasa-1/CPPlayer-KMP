@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.theme.CpMotion
 
 /**
@@ -81,7 +82,8 @@ fun PlaybackControls(
             horizontalArrangement = horizontalArrangement,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            SkipButton(Icons.Filled.SkipPrevious, "上一首", onSkipPrevious, sideButtonModifier, sideIconSize)
+            val s = cpStrings()
+            SkipButton(Icons.Filled.SkipPrevious, s.player.previousTrack, onSkipPrevious, sideButtonModifier, sideIconSize)
 
             PlayPauseSurface(
                 isPlaying = isPlaying,
@@ -91,7 +93,7 @@ fun PlaybackControls(
                 iconSize = centerIconSize,
             )
 
-            SkipButton(Icons.Filled.SkipNext, "下一首", onSkipNext, sideButtonModifier, sideIconSize)
+            SkipButton(Icons.Filled.SkipNext, s.player.nextTrack, onSkipNext, sideButtonModifier, sideIconSize)
         }
     }
 }
@@ -135,6 +137,7 @@ private fun PlayPauseSurface(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val haptics = cp.player.app.ui.feedback.LocalCpHaptics.current
+    val s = cpStrings()
 
     // 胶囊(40dp) ↔ 圆角方形(22dp)。40dp 是「高度 72dp 的一半略多」，视觉上仍是胶囊。
     val corner by animateDpAsState(
@@ -173,7 +176,7 @@ private fun PlayPauseSurface(
                 ) { playing ->
                     Icon(
                         imageVector = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = if (playing) "暂停" else "播放",
+                        contentDescription = s.player.playOrPause(playing),
                         modifier = Modifier
                             .size(iconSize)
                             .graphicsLayer {

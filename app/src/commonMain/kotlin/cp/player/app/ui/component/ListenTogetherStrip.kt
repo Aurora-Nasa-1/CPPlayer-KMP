@@ -25,6 +25,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
+import cp.player.app.i18n.CpStrings
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.screen.ListenTogetherScreen
 import cp.player.app.ui.util.LocalRootNavigator
 import cp.player.app.ui.util.pushOrNotify
@@ -76,6 +78,8 @@ internal fun ListenTogetherStripContent(
 ) {
     val room = state.room
     if (!state.inRoom || room == null) return
+    val s = cpStrings()
+    val together = s.social.together
 
     // 结构：条在上、分隔线在**条与播放内容之间**、播放内容在下。
     // ⚠️ 分隔线不能放在条的上方 —— 那是卡片的最顶端，贴着圆角边几乎看不见，
@@ -106,17 +110,18 @@ internal fun ListenTogetherStripContent(
         }
 
         Text(
-            text = "一起听",
+            // 与更多面板里的「一起听」入口同一条文案（player.listenTogether）。
+            text = s.player.listenTogether,
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
             text = buildString {
-                append("${room.members.size} 人")
-                if (state.isOwner()) append(" · 房主")
+                append(together.memberCount(room.members.size))
+                if (state.isOwner()) append(together.ownerTag)
                 append(LT_REMAINING_SEPARATOR)
-                append(ltTtl(room.createdAtMs, room.effectiveDurationMs).shortText())
+                append(ltTtl(room.createdAtMs, room.effectiveDurationMs).shortText(s))
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -170,10 +175,23 @@ internal fun ltTtl(createdAtMs: Long?, durationMs: Long?): LtTtl {
     return if (minutes >= 1) LtTtl.Left(minutes) else LtTtl.Imminent
 }
 
-/** 小播放器那条用的紧凑文案。 */
-internal fun LtTtl.shortText(): String = when (this) {
-    LtTtl.Unknown -> "时长未知"
-    LtTtl.Expired -> "已到期"
-    LtTtl.Imminent -> "即将到期"
-    is LtTtl.Left -> "剩余 $minutes 分"
+/**
+ * 小播放器那条用的紧凑文案（不带前导分隔符，调用方负责拼 ` · `）。
+ * 映射到 [SocialStrings.Together.ttlShortUnknown] 等短形式。
+ */
+internal fun LtTtl.shortText(s: CpStrings): String = when (this) {
+    LtTtl.Unknown -> s.social.together.ttlShortUnknown
+    LtTtl.Expired -> s.social.together.ttlShortExpired
+    LtTtl.Imminent -> s.social.together.ttlShortImminent
+    is LtTtl.Left -> s.social.together.ttlShortLeft(minutes)
+}
+
+/**
+ * 房间页那一行的完整文案（自带前导 ` · `，与 [SocialStrings.Together.ttlExpired] 等同款）。
+ */
+internal fun LtTtl.roomText(s: CpStrings): String = when (this) {
+    LtTtl.Unknown -> s.social.together.ttlUnknown
+    LtTtl.Expired -> s.social.together.ttlExpired
+    LtTtl.Imminent -> s.social.together.ttlImminent
+    is LtTtl.Left -> s.social.together.ttlLeft(minutes)
 }

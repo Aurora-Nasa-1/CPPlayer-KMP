@@ -14,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import cp.player.app.i18n.cpStrings
 import cp.player.app.AppModel
 import cp.player.app.ui.util.UiEvents
 import cp.player.core.BackendResult
@@ -31,19 +32,20 @@ fun CreatePlaylistDialog(
     onDismiss: () -> Unit,
     onCreated: (Long?) -> Unit,
 ) {
+    val s = cpStrings()
     var name by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("新建歌单") },
+        title = { Text(s.playlistSheet.createDialogTitle) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("歌单名称") },
+                placeholder = { Text(s.playlistSheet.playlistNamePlaceholder) },
                 singleLine = true,
                 enabled = !busy,
                 shape = RoundedCornerShape(percent = 50),
@@ -62,18 +64,18 @@ fun CreatePlaylistDialog(
                         withContext(Dispatchers.Main) {
                             busy = false
                             if (newId != null) {
-                                UiEvents.notify("已创建「$playlistName」")
+                                UiEvents.notify(s.playlistSheet.created(playlistName))
                             } else {
-                                UiEvents.notify("创建歌单失败")
+                                UiEvents.notify(s.playlistSheet.createPlaylistFailed)
                             }
                             onCreated(newId)
                         }
                     }
                 },
-            ) { Text(if (busy) "创建中…" else "创建") }
+            ) { Text(if (busy) s.playlistSheet.creating else s.playlistSheet.createShort) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !busy) { Text("取消") }
+            TextButton(onClick = onDismiss, enabled = !busy) { Text(s.playlistSheet.cancel) }
         },
     )
 }

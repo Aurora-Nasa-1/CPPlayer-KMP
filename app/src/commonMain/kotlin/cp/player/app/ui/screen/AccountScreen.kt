@@ -62,6 +62,8 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.auth.AccountStore
+import cp.player.app.i18n.AccountStrings
+import cp.player.app.i18n.cpStrings
 import cp.player.app.auth.CookieLogin
 import cp.player.app.platform.isPackageInstalled
 import cp.player.app.platform.openTargetApp
@@ -109,7 +111,8 @@ class AccountScreen : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
-        val model = rememberScreenModel { AccountScreenModel() }
+        val s = cpStrings()
+        val model = rememberScreenModel { AccountScreenModel(s.account) }
         val provider by model.activeProvider.collectAsState()
         val profile by AppModel.userProfileFlow.collectAsState()
         val isLogged by model.isLogged.collectAsState()
@@ -721,7 +724,7 @@ private fun cookieHint(raw: String, normalized: String?): String = when {
 private fun cookieFieldCount(normalized: String): Int =
     normalized.split(';').count { it.contains('=') }
 
-class AccountScreenModel : ScreenModel {
+class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
     val activeProvider: StateFlow<cp.player.core.provider.BackendProvider?> = AppModel.activeProviderFlow
     val isLoading = MutableStateFlow(false)
     val isLogged = MutableStateFlow(false)

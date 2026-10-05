@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
+import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.shareText
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.formatTimeMs
@@ -77,6 +78,7 @@ fun PlayerMoreBottomSheet(
     onListenTogether: () -> Unit,
     onHandoff: () -> Unit,
 ) {
+    val s = cpStrings()
     LegacyModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp),
@@ -135,7 +137,7 @@ fun PlayerMoreBottomSheet(
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Filled.Share,
-                            contentDescription = "分享",
+                            contentDescription = s.player.share,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(24.dp),
                         )
@@ -153,7 +155,7 @@ fun PlayerMoreBottomSheet(
                 ) {
                     PlayerPillButton(
                         modifier = Modifier.weight(1f),
-                        text = "加入歌单",
+                        text = s.player.addToPlaylist,
                         icon = Icons.AutoMirrored.Filled.PlaylistAdd,
                         bgColor = MaterialTheme.colorScheme.primaryContainer,
                         textColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -164,7 +166,7 @@ fun PlayerMoreBottomSheet(
                     )
                     PlayerPillButton(
                         modifier = Modifier.weight(1f),
-                        text = if (isDownloaded) "已下载" else "下载",
+                        text = if (isDownloaded) s.player.downloaded else s.player.download,
                         icon = if (isDownloaded) Icons.Filled.DownloadDone else Icons.Filled.Download,
                         bgColor = MaterialTheme.colorScheme.secondaryContainer,
                         textColor = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -182,9 +184,10 @@ fun PlayerMoreBottomSheet(
                     PlayerPillButton(
                         modifier = Modifier.weight(1f),
                         text = when {
-                            sleepAfterTrack -> "睡眠定时 · 播完本曲"
-                            sleepTimerRemainingMs != null -> "睡眠定时 · ${(sleepTimerRemainingMs / 60_000L) + 1} 分钟"
-                            else -> "睡眠定时"
+                            sleepAfterTrack -> s.player.sleepTimerAfterTrack()
+                            sleepTimerRemainingMs != null ->
+                                s.player.sleepTimerRemaining((sleepTimerRemainingMs / 60_000L) + 1)
+                            else -> s.player.sleepTimer
                         },
                         icon = Icons.Filled.Timer,
                         bgColor = MaterialTheme.colorScheme.tertiaryContainer,
@@ -196,7 +199,7 @@ fun PlayerMoreBottomSheet(
                     )
                     PlayerPillButton(
                         modifier = Modifier.weight(1f),
-                        text = "不感兴趣",
+                        text = s.player.dislike,
                         icon = Icons.Filled.Block,
                         bgColor = MaterialTheme.colorScheme.errorContainer,
                         textColor = MaterialTheme.colorScheme.onErrorContainer,
@@ -215,7 +218,7 @@ fun PlayerMoreBottomSheet(
                 ) {
                     PlayerPillButton(
                         modifier = Modifier.weight(1f),
-                        text = "一起听",
+                        text = s.player.listenTogether,
                         icon = Icons.Filled.Headphones,
                         bgColor = MaterialTheme.colorScheme.primaryContainer,
                         textColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -226,7 +229,7 @@ fun PlayerMoreBottomSheet(
                     )
                     PlayerPillButton(
                         modifier = Modifier.weight(1f),
-                        text = "转移到设备",
+                        text = s.player.transferDevice,
                         icon = Icons.Filled.Cast,
                         bgColor = MaterialTheme.colorScheme.secondaryContainer,
                         textColor = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -258,7 +261,7 @@ fun PlayerMoreBottomSheet(
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
-                            text = "歌曲信息",
+                            text = s.player.songInfo,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -272,7 +275,7 @@ fun PlayerMoreBottomSheet(
                     )
                     track.album?.takeIf(String::isNotBlank)?.let {
                         Text(
-                            text = "Album: $it",
+                            text = "${s.player.infoFormat}: $it",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -282,24 +285,25 @@ fun PlayerMoreBottomSheet(
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         Spacer(Modifier.size(12.dp))
                         Text(
-                            text = "歌词信息",
+                            text = s.player.lyricInfo,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(Modifier.size(8.dp))
-                        Text("来源: ${info.source}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("格式: ${info.format}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${s.player.infoSource}: ${info.source}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${s.player.infoFormat}: ${info.format}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(
-                            text = "逐字歌词: ${if (info.hasWordLevel) "支持" else "不支持"}",
+                            text = "${s.player.wordLevelLyrics}: " +
+                                if (info.hasWordLevel) s.player.yes else s.player.no,
                             style = MaterialTheme.typography.bodyMedium,
                             color = if (info.hasWordLevel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         if (info.hasTranslation) {
-                            Text("翻译: 有", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                            Text("${s.player.infoTranslation}: ${s.player.yes}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                         }
                         if (info.hasPhonetic) {
-                            Text("音译: 有", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                            Text("${s.player.infoPhonetic}: ${s.player.yes}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                         }
                     }
                     formatInfo?.let { info ->
@@ -307,26 +311,26 @@ fun PlayerMoreBottomSheet(
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         Spacer(Modifier.size(12.dp))
                         Text(
-                            text = "音频格式",
+                            text = s.player.audioFormat,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(Modifier.size(8.dp))
                         info.codecName?.takeIf(String::isNotBlank)?.let {
-                            Text("编码: $it", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${s.player.infoCodec}: $it", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         info.sampleRate?.takeIf { it > 0 }?.let {
-                            Text("采样率: $it Hz", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${s.player.infoSampleRate}: $it Hz", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         info.bitDepth?.takeIf { it > 0 }?.let {
-                            Text("位深: $it bit", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${s.player.infoBitDepth}: $it bit", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         info.bitrate?.takeIf { it > 0 }?.let {
-                            Text("码率: ${it / 1000} kbps", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${s.player.infoBitrate}: ${it / 1000} kbps", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         info.channels?.takeIf { it > 0 }?.let {
-                            Text("声道: $it", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${s.player.infoChannels}: $it", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -409,6 +413,7 @@ fun PlayerMoreSheets(
 ) {
     val track = state.currentTrack ?: return
     val scope = rememberCoroutineScope()
+    val s = cpStrings()
 
     // ⚠️ controller 只在弹层 / 弹窗真正打开的分支里解析，**不要**提到函数顶层：
     // AppModel.playback → MusicBackend.instance 在后端未 init 的环境（desktopTest 的
@@ -446,7 +451,7 @@ fun PlayerMoreSheets(
                 scope.launch {
                     val rawId = runCatching { CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)
                     runCatching { AppModel.musicRepository.dislikeSong(rawId) }
-                    UiEvents.notify("已标记不感兴趣")
+                    UiEvents.notify(s.player.disliked)
                     controller.skipNext()
                 }
             },
@@ -495,40 +500,62 @@ fun SongInfoDialog(
     lyricsInfo: LyricsInfo?,
     onDismiss: () -> Unit,
 ) {
+    val s = cpStrings()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("歌曲信息", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        title = { Text(s.player.songInfo, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         text = {
             val info = formatInfo
             Text(
                 buildString {
-                    append("歌曲：").append(track.name)
-                    append("\n歌手：").append(track.artist)
-                    append("\n专辑：").append(track.album ?: "未知专辑")
-                    append("\n时长：").append(formatTimeMs(track.durationMs))
-                    append("\n歌曲 ID：").append(track.id)
+                    // 整段进剪贴板，**逐行**都是文案 —— 中英的行标签与分隔符都不同
+                    // （中文「歌手：」无空格，英文 "Artist: " 带空格），不能在调用方拼。
+                    append(
+                        s.player.shareTrack(
+                            name = track.name,
+                            artist = track.artist,
+                            album = track.album ?: s.player.unknownAlbum,
+                            duration = formatTimeMs(track.durationMs),
+                            id = track.id,
+                        ),
+                    )
                     lyricsInfo?.let { lyric ->
-                        append("\n\n歌词信息")
-                        append("\n来源：").append(lyric.source)
-                        append("\n格式：").append(lyric.format)
-                        append("\n逐字歌词：").append(if (lyric.hasWordLevel) "支持" else "不支持")
-                        if (lyric.hasTranslation) append("\n翻译：有")
-                        if (lyric.hasPhonetic) append("\n音译：有")
+                        append("\n\n")
+                        append(
+                            s.player.shareLyrics(
+                                source = lyric.source,
+                                format = lyric.format,
+                                wordLevel = if (lyric.hasWordLevel) s.player.yes else s.player.no,
+                                extra = buildString {
+                                    if (lyric.hasTranslation) {
+                                        append("\n${s.player.infoTranslation}: ${s.player.yes}")
+                                    }
+                                    if (lyric.hasPhonetic) {
+                                        append("\n${s.player.infoPhonetic}: ${s.player.yes}")
+                                    }
+                                },
+                            ),
+                        )
                     }
                     if (info != null) {
-                        append("\n\n音频格式")
-                        info.codecName?.takeIf(String::isNotBlank)?.let { append("\n编码：").append(it) }
-                        info.sampleRate?.takeIf { it > 0 }?.let { append("\n采样率：").append(it).append(" Hz") }
-                        info.bitDepth?.takeIf { it > 0 }?.let { append("\n位深：").append(it).append(" bit") }
-                        info.bitrate?.takeIf { it > 0 }?.let { append("\n码率：").append(it / 1000).append(" kbps") }
-                        info.channels?.takeIf { it > 0 }?.let { append("\n声道：").append(it) }
-                        info.mimeType?.takeIf(String::isNotBlank)?.let { append("\nMIME：").append(it) }
+                        append("\n\n")
+                        append(
+                            s.player.shareAudio(
+                                codec = info.codecName?.takeIf(String::isNotBlank),
+                                sampleRate = info.sampleRate?.takeIf { it > 0 }?.toString(),
+                                bitDepth = info.bitDepth?.takeIf { it > 0 }?.toString(),
+                                bitrate = info.bitrate?.takeIf { it > 0 }?.let { "${it / 1000}" },
+                                channels = info.channels?.takeIf { it > 0 }?.toString(),
+                            ),
+                        )
+                        // MIME 类型名不翻译（IETF 注册名，两端一致）。
+                        info.mimeType?.takeIf(String::isNotBlank)?.let { append("\nMIME: ").append(it) }
                     }
-                }
+                },
             )
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("关闭") }
+            TextButton(onClick = onDismiss) { Text(s.common.dismiss) }
         },
     )
 }

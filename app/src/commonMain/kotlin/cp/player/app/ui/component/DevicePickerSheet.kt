@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
+import cp.player.app.i18n.cpStrings
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -55,7 +56,8 @@ fun DevicePickerSheet(
     val peers by AppModel.discoveredPeersFlow.collectAsState()
     val running by AppModel.deviceDiscoveryRunningFlow.collectAsState()
     val discoveryError by AppModel.deviceDiscoveryErrorFlow.collectAsState()
-    val handoffMessage by AppModel.handoffMessageFlow.collectAsState()
+    val s = cpStrings()
+    val handoffState by AppModel.handoffStateFlow.collectAsState()
     val nowPlayingName = AppModel.playback.state.collectAsState().value.currentTrack?.name
 
     // 「在线与否」是时间的函数 —— 与设备页同款 2s 本地时钟，让掉线实时生效。
@@ -79,13 +81,13 @@ fun DevicePickerSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = "转移到其他设备",
+                text = s.standby.pickerTitle,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                text = nowPlayingName?.let { "正在播放：$it" } ?: "当前没有正在播放的曲目",
+                text = nowPlayingName?.let { s.standby.pickerNowPlaying(it) } ?: s.standby.pickerNoTrack,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -93,15 +95,13 @@ fun DevicePickerSheet(
             )
 
             val online = peers.filter { it.isOnline(nowMs) }
+            // ⚠️ `discoveryError` 是 `by collectAsState()` 的委托属性，**不能** smart cast
+            // （编译器明确拒绝：委托属性每次读都可能有新值）。先落局部 val 再用。
+            val discovery = discoveryError
             when {
-                discoveryError != null -> SheetHint("设备发现启动失败：$discoveryError")
+                discovery != null -> SheetHint(s.standby.pickerDiscoveryFailed(discovery))
                 online.isEmpty() -> SheetHint(
-                    if (running) {
-                        "正在搜索局域网内的设备…\n对方在运行较新版本的 CPPlayer 就会出现；" +
-                            "但转移要求对方开着「自动同步」（设置 → 局域网设备），否则接不住。"
-                    } else {
-                        "设备发现未启动。"
-                    },
+                    if (running) s.standby.pickerSearching else s.standby.discoveryNotStarted,
                 )
                 else -> {
                     online.forEachIndexed { index, peer ->
@@ -146,7 +146,7 @@ fun DevicePickerSheet(
                                 }
                                 Icon(
                                     imageVector = Icons.Filled.Cast,
-                                    contentDescription = "转移到这里",
+                                    contentDescription = s.standby.handoffToLabel,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
@@ -155,19 +155,17 @@ fun DevicePickerSheet(
                             }
                         }
                     }
-                    SheetHint(
-                        "点击即把当前播放（含整条队列）转移到该设备；" +
-                            "本机自动暂停、进度保留。转移前提：对方已登录同一音源。",
-                    )
+                    SheetHint(s.standby.pickerHint)
                 }
             }
 
-            handoffMessage?.let { msg ->
+            handoffState?.let { state ->
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    text = msg,
+                    text = state.textOf(s),
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (msg.startsWith("转移失败")) {
+                    // 成败看状态类型而非文案（旧版 `startsWith("转移失败")` 改文案就失配）。
+                    color = if (state.failed) {
                         MaterialTheme.colorScheme.error
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant

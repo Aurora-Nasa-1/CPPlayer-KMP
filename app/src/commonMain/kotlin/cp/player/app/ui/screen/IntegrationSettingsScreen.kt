@@ -22,6 +22,8 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
+import cp.player.app.i18n.CpStrings
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.component.SettingsClickItem
@@ -55,6 +57,7 @@ class IntegrationSettingsScreen : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
+        val s = cpStrings()
         val config by AppModel.localServerConfigFlow.collectAsState()
         val lastPush by AppModel.lastPushResult.collectAsState()
         var probing by remember { mutableStateOf(false) }
@@ -62,32 +65,32 @@ class IntegrationSettingsScreen : Screen {
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
             SettingsPage(pageModifier) {
-                SettingsSection("推送到接收端") {
+                SettingsSection(s.integration.sectionPush) {
                     SettingsTextInputItem(
-                        title = "接收端地址",
-                        subtitle = "接收推送的软件地址；推送方向是 CPPlayer 主动连它",
+                        title = s.integration.receiverAddress,
+                        subtitle = s.integration.receiverAddressNote,
                         value = config.receiverBaseUrl,
                         placeholder = LocalServerConfig.DEFAULT_RECEIVER_BASE_URL,
                         keyboardType = KeyboardType.Uri,
-                        validate = ::validateReceiverUrl,
+                        validate = { text -> validateReceiverUrl(text, s) },
                         onCommit = { text -> AppModel.setReceiverBaseUrl(text.trim()) },
                         index = 0,
                         total = 5,
                     )
                     SettingsSwitchItem(
-                        title = "曲目变化时自动推送",
-                        subtitle = "开始播放新曲目时自动替换接收端队列并播放",
+                        title = s.integration.autoPush,
+                        subtitle = s.integration.autoPushNote,
                         checked = config.pushEnabled,
                         onCheckedChange = AppModel::setPushEnabled,
                         index = 1,
                         total = 5,
                     )
                     SettingsClickItem(
-                        title = "测试连接",
+                        title = s.integration.testConnection,
                         subtitle = when {
-                            probing -> "正在请求…"
-                            probeResult != null -> describePush(probeResult)
-                            else -> "请求接收端 /api/health"
+                            probing -> s.integration.testProbing()
+                            probeResult != null -> describePush(s, probeResult)
+                            else -> s.integration.testIdle("/api/health")
                         },
                         icon = Icons.Filled.Wifi,
                         index = 2,
@@ -102,28 +105,28 @@ class IntegrationSettingsScreen : Screen {
                         },
                     )
                     SettingsClickItem(
-                        title = "推送当前曲目",
-                        subtitle = "替换接收端队列为这一首并立即播放",
+                        title = s.integration.pushCurrentTrack,
+                        subtitle = s.integration.pushCurrentTrackNote,
                         icon = Icons.AutoMirrored.Filled.Send,
                         index = 3,
                         total = 5,
                         onClick = { AppModel.pushCurrentTrack { } },
                     )
                     SettingsClickItem(
-                        title = "推送当前队列",
-                        subtitle = "整队列交给接收端，由它负责顺序播放",
+                        title = s.integration.pushCurrentQueue,
+                        subtitle = s.integration.pushCurrentQueueNote,
                         icon = Icons.AutoMirrored.Filled.Send,
                         index = 4,
                         total = 5,
                         onClick = { AppModel.pushQueueToReceiver { } },
                     )
                 }
-                SettingsNote(describePush(lastPush))
+                SettingsNote(describePush(s, lastPush))
 
-                SettingsSection("允许第三方访问") {
+                SettingsSection(s.integration.sectionThirdParty) {
                     SettingsSwitchItem(
-                        title = "允许第三方拉取音频流",
-                        subtitle = "接收端按曲目拉流所需的 GET /stream",
+                        title = s.integration.allowStream,
+                        subtitle = s.integration.allowStreamNote,
                         checked = config.exposeStream,
                         onCheckedChange = AppModel::setExposeStream,
                         icon = Icons.Filled.SettingsEthernet,
@@ -131,8 +134,8 @@ class IntegrationSettingsScreen : Screen {
                         total = 2,
                     )
                     SettingsSwitchItem(
-                        title = "允许第三方读取音源数据",
-                        subtitle = "搜索、曲目与播放状态（/api/v1/…）；默认关闭，因为会扩大暴露面",
+                        title = s.integration.allowApi,
+                        subtitle = s.integration.allowApiNote,
                         checked = config.exposeDataApi,
                         onCheckedChange = AppModel::setExposeDataApi,
                         icon = Icons.Filled.Api,
@@ -140,9 +143,9 @@ class IntegrationSettingsScreen : Screen {
                         total = 2,
                     )
                 }
-                SettingsNote("关闭「读取音源数据」后数据接口整体返回 403，但不影响接收端拉流。两个开关都即时生效。")
+                SettingsNote(s.integration.apiSwitchNote)
 
-                SettingsSection("接口地址") {
+                SettingsSection(s.integration.sectionEndpoint) {
                     SettingsFieldGroup {
                         SelectionContainer {
                             Text(
@@ -153,8 +156,7 @@ class IntegrationSettingsScreen : Screen {
                             )
                         }
                         Text(
-                            text = "第三方软件读 ~/.cpplayer/integration.json 即可拿到地址与令牌；" +
-                                "该文件含明文令牌，请勿外传。",
+                            text = s.integration.configFileNote,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -162,7 +164,7 @@ class IntegrationSettingsScreen : Screen {
                 }
                 if (!config.enabled) {
                     SettingsNote(
-                        text = "本地流输出当前未启用，上面的地址暂时不可达。请先到「本地流输出」页开启。",
+                        text = s.integration.streamDisabledNote,
                         emphasis = SettingsNoteEmphasis.WARNING,
                     )
                 }
@@ -170,7 +172,7 @@ class IntegrationSettingsScreen : Screen {
         }
 
         CpRouteScaffold(
-            title = "外部推送与集成",
+            title = s.integration.screenTitle,
             onBack = { navigator.popOrNotify() },
         ) { pageModifier -> body(pageModifier) }
     }
@@ -181,23 +183,30 @@ class IntegrationSettingsScreen : Screen {
  *
  * 只做「是不是一个能连的 http(s) 地址」这一档检查 —— 比不校验强得多（旧版完全不校验，
  * 打错的地址会一路静默到推送时才失败），又不至于把用户挡在门外。
+ *
+ * 收 [CpStrings]：顶层函数（非 composable）拿不到组合里的语言，三条错误说明都是文案。
  */
-private fun validateReceiverUrl(text: String): String? {
+private fun validateReceiverUrl(text: String, s: CpStrings): String? {
     val trimmed = text.trim()
-    if (trimmed.isEmpty()) return "接收端地址不能为空"
+    if (trimmed.isEmpty()) return s.integration.addressEmpty()
     if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
-        return "需要以 http:// 或 https:// 开头"
+        return s.integration.addressScheme()
     }
     val rest = trimmed.substringAfter("://")
     if (rest.isBlank() || rest.startsWith("/") || rest.startsWith(":")) {
-        return "缺少主机名，例如 ${LocalServerConfig.DEFAULT_RECEIVER_BASE_URL}"
+        return s.integration.addressNoHost(LocalServerConfig.DEFAULT_RECEIVER_BASE_URL)
     }
     return null
 }
 
-/** 推送结果文案。 */
-private fun describePush(result: PushResult?): String = when (result) {
-    null -> "尚无推送记录"
-    is PushResult.Ok -> "上次推送成功"
-    is PushResult.Failed -> "上次推送失败：${result.message}"
+/**
+ * 推送结果文案。
+ *
+ * ⚠️ [PushResult.Failed.message] 是**接收端返回的原始串**（跨设备、可能还是对方语言），
+ * 原样透出 —— 它是诊断信息，不参与本地化。
+ */
+private fun describePush(s: CpStrings, result: PushResult?): String = when (result) {
+    null -> s.integration.pushNever
+    is PushResult.Ok -> s.integration.pushOk
+    is PushResult.Failed -> s.integration.pushFailed(result.message)
 }

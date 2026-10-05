@@ -93,6 +93,7 @@ import androidx.compose.foundation.layout.width
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
+import cp.player.app.i18n.cpStrings
 import cp.player.app.AppModel
 import cp.player.app.ui.anim.LocalNavAnimatedVisibilityScope
 import cp.player.app.ui.anim.LocalSharedTransitionScope
@@ -247,6 +248,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
     onRemoveQueue: (Int) -> Unit,
     onMoveQueue: (Int, Int) -> Unit,
 ) {
+    val s = cpStrings()
     val track = state.currentTrack
     if (track == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -398,7 +400,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                             IconButton(onClick = onBack) {
                                 Icon(
                                     imageVector = Icons.Filled.KeyboardArrowDown,
-                                    contentDescription = "收起",
+                                    contentDescription = s.player.collapse,
                                     tint = MaterialTheme.colorScheme.onSurface,
                                 )
                             }
@@ -416,7 +418,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Filled.Translate,
-                                                contentDescription = "翻译",
+                                                contentDescription = s.player.translation,
                                                 // 「开/关」是状态不是禁用：用 onSurface / onSurfaceVariant 两档，
                                                 // 而不是 onSurface 再压 0.4 透明度 —— 后者在深色主题下几乎看不见。
                                                 tint = if (showTranslation) MaterialTheme.colorScheme.onSurface
@@ -439,7 +441,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                         ) {
                                             Icon(
                                                 imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                                contentDescription = "队列",
+                                                contentDescription = s.player.queue,
                                             )
                                         }
                                     }
@@ -557,6 +559,7 @@ private fun LyricsPage(
     isFavorite: Boolean,
     onLikeClick: () -> Unit,
 ) {
+    val s = cpStrings()
     Column(
         Modifier.fillMaxSize().padding(horizontal = 24.dp).padding(bottom = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -581,7 +584,7 @@ private fun LyricsPage(
                     else -> Icons.Filled.Repeat
                 }
                 Icon(
-                    icon, "循环", Modifier.size(24.dp),
+                    icon, s.player.repeat, Modifier.size(24.dp),
                     tint = if (state.repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -613,6 +616,7 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
     onMoreClick: () -> Unit,
     onSleepTimer: () -> Unit,
 ) {
+    val s = cpStrings()
     val track = state.currentTrack ?: return
 
     Column(
@@ -755,7 +759,7 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                 active = state.shuffleEnabled,
                 onClick = onShuffle,
                 icon = Icons.Filled.Shuffle,
-                label = "随机播放",
+                label = s.player.shuffle,
             )
             cp.player.app.ui.component.CpModeToggle(
                 active = state.repeatMode != RepeatMode.OFF,
@@ -764,20 +768,20 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                     RepeatMode.ONE -> Icons.Filled.RepeatOne
                     else -> Icons.Filled.Repeat
                 },
-                label = "循环",
+                label = s.player.repeat,
             )
             cp.player.app.ui.component.CpModeToggle(
                 active = (state.sleepTimerRemainingMs ?: 0L) > 0 || state.sleepAfterTrack,
                 onClick = onSleepTimer,
                 icon = Icons.Filled.AccessAlarm,
-                label = "睡眠定时",
+                label = s.player.sleepTimer,
                 activeTint = MaterialTheme.colorScheme.primary,
             )
             // 「更多」只负责入口：弹层本体（PlayerMoreBottomSheet）与二级弹窗
             // 已收进共享宿主 PlayerMoreSheets，由 PlayerScreenContent 末尾统一挂载。
             IconButton(onClick = onMoreClick) {
                 Icon(
-                    Icons.Filled.MoreVert, "更多",
+                    Icons.Filled.MoreVert, s.player.more,
                     Modifier.size(24.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -845,6 +849,7 @@ private fun ProgressRow(
     state: cp.player.core.playback.PlaybackUiState,
     onSeek: (Long) -> Unit,
 ) {
+    val s = cpStrings()
     val duration = state.durationMs.coerceAtLeast(0L)
     // 时长未知（流媒体元信息还没到、直播流）时滑条位置无法换算成绝对时间，
     // 拖出来必然是错的——保持禁用。但**必须说明原因**：静默失效会让用户
@@ -896,8 +901,11 @@ private fun ProgressRow(
                     Spacer(Modifier.width(4.dp))
                     val formattedSleepRemaining = remember(sleepRemainingMs / 1000) { formatTimeMs(sleepRemainingMs) }
                     Text(
-                        text = if (sleepRemainingMs > 0) "剩余 $formattedSleepRemaining"
-                        else "本曲结束",
+                        text = if (sleepRemainingMs > 0) {
+                            s.player.sleepRemainingLabel(formattedSleepRemaining)
+                        } else {
+                            s.player.sleepEndsWithTrack
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -934,6 +942,7 @@ private fun ProgressRow(
 
 @Composable
 private fun CommentPage(id: String, type: String) {
+    val s = cpStrings()
     val model = remember { cp.player.app.ui.model.CommentScreenModel(id, type) }
     val state by model.state.collectAsState(cp.player.app.ui.model.CommentUiState(id, type))
 
@@ -950,15 +959,15 @@ private fun CommentPage(id: String, type: String) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    Text("加载评论失败", style = MaterialTheme.typography.titleMedium)
+                    Text(s.player.commentsLoadFailed, style = MaterialTheme.typography.titleMedium)
                     Text(state.error!!, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
                     Button(onClick = model::loadComments, modifier = Modifier.padding(top = 16.dp)) {
-                        Text("重试")
+                        Text(s.player.retry)
                     }
                 }
             }
             state.comments.isEmpty() -> {
-                Text("暂无评论", Modifier.align(Alignment.Center), style = MaterialTheme.typography.bodyMedium)
+                Text(s.player.noComments, Modifier.align(Alignment.Center), style = MaterialTheme.typography.bodyMedium)
             }
             else -> {
                 LazyScrollColumn(
@@ -994,11 +1003,13 @@ fun DesktopLyricsContent(
 
 @Composable
 fun DesktopCommentContent(trackId: String) {
+    val s = cpStrings()
     CommentPage(trackId, "music")
 }
 
 @Composable
 private fun CommentItem(comment: Comment, onLike: () -> Unit) {
+    val s = cpStrings()
     Row(Modifier.fillMaxWidth()) {
         AsyncImage(
             model = comment.avatar,
@@ -1018,7 +1029,7 @@ private fun CommentItem(comment: Comment, onLike: () -> Unit) {
                 androidx.compose.material3.IconButton(onClick = onLike, modifier = Modifier.size(32.dp)) {
                     Icon(
                         if (comment.liked) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
-                        contentDescription = if (comment.liked) "取消点赞" else "点赞",
+                        contentDescription = if (comment.liked) s.player.unlike else s.player.like,
                         modifier = Modifier.size(14.dp),
                         tint = if (comment.liked) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant

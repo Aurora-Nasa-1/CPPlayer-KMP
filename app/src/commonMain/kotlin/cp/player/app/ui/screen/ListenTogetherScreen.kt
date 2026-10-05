@@ -26,6 +26,8 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.shareText
+import cp.player.app.i18n.CpStrings
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
@@ -35,7 +37,9 @@ import cp.player.app.ui.component.SettingsNoteEmphasis
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsTextInputItem
+import cp.player.app.ui.component.ltTtl
 import cp.player.app.ui.component.rememberConfirmState
+import cp.player.app.ui.component.roomText
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.popOrNotify
 import cp.player.core.listentogether.ListenTogetherEngine
@@ -72,6 +76,7 @@ class ListenTogetherScreen : Screen {
         val scope = rememberCoroutineScope()
         val state by AppModel.listenTogetherState.collectAsState()
         val confirm = rememberConfirmState()
+        val s = cpStrings()
 
         // 进页面立刻刷一次，否则要等一个轮询周期，看起来像「页面是空的」。
         LaunchedEffect(Unit) {
@@ -91,7 +96,9 @@ class ListenTogetherScreen : Screen {
             }
         }
 
-        CpRouteScaffold(title = PAGE_TITLE, onBack = { navigator.popOrNotify() }) { pageModifier ->
+        // 页面标题复用 `player.listenTogether`：更多面板里那个入口是同一条文案，
+        // 拆开写必然出现两种译法。
+        CpRouteScaffold(title = s.player.listenTogether, onBack = { navigator.popOrNotify() }) { pageModifier ->
             SettingsPage(pageModifier) {
                 val busy = state.busy
                 // 显式标注 `() -> Unit`：不加的话 lambda 的返回类型会被推断成 `Job`
@@ -99,12 +106,13 @@ class ListenTogetherScreen : Screen {
                 val refresh: () -> Unit = { scope.launch { AppModel.listenTogether.refresh() } }
 
                 if (!state.supported) {
-                    unsupportedContent()
+                    unsupportedContent(strings = s)
                     return@SettingsPage
                 }
 
                 if (!state.inRoom) {
                     joinContent(
+                        strings = s,
                         busy = busy,
                         onRefresh = refresh,
                         onCreate = { scope.launch { AppModel.listenTogether.createRoom() } },
@@ -114,15 +122,16 @@ class ListenTogetherScreen : Screen {
                 }
 
                 roomContent(
+                    strings = s,
                     state = state,
                     busy = busy,
                     onRefresh = refresh,
                     onShare = { link -> shareText(link) },
                     onLeave = {
                         confirm.request(
-                            title = "退出一起听房间？",
-                            message = "退出后房间立即结束且**无法恢复**。如果你是房主，对方也会同时断开。",
-                            confirmLabel = "退出房间",
+                            title = s.social.together.leaveConfirmTitle,
+                            message = s.social.together.leaveConfirmMessage,
+                            confirmLabel = s.social.together.leaveRoom,
                             destructive = true,
                             onConfirm = { scope.launch { AppModel.listenTogether.endRoom() } },
                         )
@@ -133,22 +142,18 @@ class ListenTogetherScreen : Screen {
 
         CpConfirmHost(confirm)
     }
-
-    private companion object {
-        const val PAGE_TITLE = "一起听"
-    }
 }
 
 // ======================== 状态 1：音源不支持 ========================
 
 @Composable
-private fun ColumnScope.unsupportedContent() {
+private fun ColumnScope.unsupportedContent(strings: CpStrings) {
     SettingsNote(
-        text = "当前音源不支持一起听。",
+        text = strings.social.together.unsupported,
         emphasis = SettingsNoteEmphasis.WARNING,
     )
     SettingsNote(
-        text = "一起听依赖音源自身的房间协议。切换到支持该能力的音源后，本页才会出现操作入口。",
+        text = strings.social.together.unsupportedNote,
     )
 }
 
@@ -156,17 +161,19 @@ private fun ColumnScope.unsupportedContent() {
 
 @Composable
 private fun ColumnScope.joinContent(
+    strings: CpStrings,
     busy: Boolean,
     onRefresh: () -> Unit,
     onCreate: () -> Unit,
     onJoin: (String) -> Unit,
 ) {
+    val together = strings.social.together
     var inviteText by remember { mutableStateOf("") }
 
-    SettingsSection("创建房间") {
+    SettingsSection(together.sectionCreate) {
         SettingsButtonItem(
-            text = if (busy) "处理中…" else "创建一起听房间",
-            subtitle = "创建后把邀请链接发给对方",
+            text = if (busy) together.creating else together.createRoom,
+            subtitle = together.createRoomNote,
             icon = Icons.Filled.Add,
             index = 0,
             total = 1,
@@ -175,24 +182,23 @@ private fun ColumnScope.joinContent(
         )
     }
     SettingsNote(
-        text = "一个账号同时只能在一个房间里。若你已经在一个房间中，请先退出再建房 —— " +
-            "建房会顶掉当前房间，而房间一旦结束就无法恢复。",
+        text = together.oneRoomNote,
         emphasis = SettingsNoteEmphasis.WARNING,
     )
 
-    SettingsSection("加入房间") {
+    SettingsSection(together.sectionJoin) {
         SettingsTextInputItem(
-            title = "邀请链接或房号",
+            title = together.inviteTitle,
             value = inviteText,
             onCommit = { inviteText = it },
             validate = { null },
             index = 0,
             total = 2,
-            placeholder = "粘贴对方发来的邀请链接",
+            placeholder = together.invitePlaceholder,
             enabled = !busy,
         )
         SettingsButtonItem(
-            text = "加入",
+            text = together.join,
             index = 1,
             total = 2,
             enabled = !busy && inviteText.isNotBlank(),
@@ -200,14 +206,12 @@ private fun ColumnScope.joinContent(
         )
     }
     SettingsNote(
-        text = "邀请链接里同时带着房间号与邀请人 id，缺一不可。" +
-            "若链接无效或房间已结束，服务端只返回一个笼统的错误 —— " +
-            "我们**无法区分**「房间不存在」与「邀请不是给你的」，所以这里不会给出更具体的原因。",
+        text = together.inviteNote,
     )
 
-    SettingsSection("其他") {
+    SettingsSection(together.sectionOther) {
         SettingsButtonItem(
-            text = "刷新房间状态",
+            text = together.refreshRoomState,
             icon = Icons.Filled.Refresh,
             index = 0,
             total = 1,
@@ -221,33 +225,34 @@ private fun ColumnScope.joinContent(
 
 @Composable
 private fun ColumnScope.roomContent(
+    strings: CpStrings,
     state: ListenTogetherState,
     busy: Boolean,
     onRefresh: () -> Unit,
     onShare: (String) -> Unit,
     onLeave: () -> Unit,
 ) {
+    val together = strings.social.together
     val room = state.room
     val link = state.shareUrl()
 
-    SettingsNote(text = "房间号：${room?.roomId.orEmpty()}")
+    SettingsNote(text = together.roomId(room?.roomId.orEmpty()))
     SettingsNote(
         text = buildString {
-            append("成员 ${room?.members?.size ?: 0} 人")
-            append(if (state.isOwner()) " · 你是房主" else "")
-            append(remainingText(room?.createdAtMs, room?.effectiveDurationMs))
+            append(together.memberCount(room?.members?.size ?: 0))
+            append(if (state.isOwner()) together.ownerTag else "")
+            append(ltTtl(room?.createdAtMs, room?.effectiveDurationMs).roomText(strings))
         },
     )
     // ⚠️ 实测 connectionStatus 恒为 NOT_CONNECTED（IM 长连接态），HTTP 客户端永远满足不了。
     // 它不是错误，所以不渲染成警告色，只说清「延迟从哪来」，免得用户以为出了问题。
     SettingsNote(
-        text = "房间状态每 ${ListenTogetherEngine.POLL_INTERVAL_MS / 1000} 秒同步一次 —— " +
-            "网易云不向第三方推送，这个延迟由协议决定，不是网络慢。",
+        text = together.pollNote(ListenTogetherEngine.POLL_INTERVAL_MS / 1000),
     )
 
-    SettingsSection("房间") {
+    SettingsSection(together.sectionRoom) {
         SettingsButtonItem(
-            text = "刷新",
+            text = together.refresh,
             icon = Icons.Filled.Refresh,
             index = 0,
             total = 1,
@@ -256,14 +261,10 @@ private fun ColumnScope.roomContent(
         )
     }
 
-    SettingsSection("邀请对方") {
+    SettingsSection(together.sectionInvite) {
         SettingsButtonItem(
-            text = if (isAndroidPlatform()) "分享邀请链接" else "复制邀请链接",
-            subtitle = if (isAndroidPlatform()) {
-                "用任意聊天工具发给对方"
-            } else {
-                "已复制到剪贴板，粘贴给朋友即可"
-            },
+            text = if (isAndroidPlatform()) together.shareInvite else together.copyInvite,
+            subtitle = if (isAndroidPlatform()) together.shareInviteNote else together.copyInviteNote,
             icon = Icons.Filled.Share,
             index = 0,
             total = 1,
@@ -273,7 +274,7 @@ private fun ColumnScope.roomContent(
     }
 
     if (link != null) {
-        SettingsNote(text = "或让对方直接扫描这个二维码加入：")
+        SettingsNote(text = together.qrHint)
         Box(
             modifier = Modifier.fillMaxWidth().padding(horizontal = CpSpacing.formHorizontal),
             contentAlignment = Alignment.Center,
@@ -282,20 +283,19 @@ private fun ColumnScope.roomContent(
         }
     } else {
         SettingsNote(
-            text = "暂时拿不到邀请链接：房间信息还没同步到，或账号资料未就绪。刷新一下试试。",
+            text = together.noLinkWarning,
             emphasis = SettingsNoteEmphasis.WARNING,
         )
     }
 
     SettingsNote(
-        text = "网易云没有「发出邀请」的接口 —— 官方客户端那条邀请走的是站内 IM，第三方调不到。" +
-            "所以邀请必然是「你主动把链接给对方」这一步，做不到点一下推进对方收件箱。",
+        text = together.inviteUnavailableNote,
     )
 
-    SettingsSection("退出") {
+    SettingsSection(together.sectionLeave) {
         SettingsButtonItem(
-            text = "退出房间",
-            subtitle = "退出后房间立即结束，无法恢复",
+            text = together.leaveRoom,
+            subtitle = together.leaveRoomNote,
             icon = Icons.Filled.ExitToApp,
             index = 0,
             total = 1,
@@ -306,17 +306,3 @@ private fun ColumnScope.roomContent(
         )
     }
 }
-
-/**
- * 剩余有效期（房间页文案）。
- *
- * 时间算法在 [cp.player.app.ui.component.ltTtl] 里**只有一份** —— 这里只负责措辞，
- * 免得两处界面各自算一遍、结果对不上。
- */
-private fun remainingText(createdAtMs: Long?, durationMs: Long?): String =
-    when (val ttl = cp.player.app.ui.component.ltTtl(createdAtMs, durationMs)) {
-        cp.player.app.ui.component.LtTtl.Unknown -> ""
-        cp.player.app.ui.component.LtTtl.Expired -> " · 已到有效期，建议重新创建"
-        cp.player.app.ui.component.LtTtl.Imminent -> " · 即将到期"
-        is cp.player.app.ui.component.LtTtl.Left -> " · 剩余约 ${ttl.minutes} 分钟"
-    }

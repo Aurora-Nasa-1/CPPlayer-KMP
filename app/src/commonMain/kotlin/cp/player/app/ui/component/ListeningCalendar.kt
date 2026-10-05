@@ -25,6 +25,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import cp.player.app.i18n.CpStrings
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.core.insights.DailyAgg
 import cp.player.core.insights.HeatScale
@@ -65,6 +67,7 @@ fun ListeningCalendar(
     weeks: Int = 53,
     onDayClick: (String) -> Unit = {},
 ) {
+    val s = cpStrings()
     val palette = rememberCalendarPalette(classicGreen)
     val grid = remember(daily, scale, todayKey, weeks) {
         Insights.yearGrid(daily, scale, todayKey, weeks)
@@ -76,7 +79,7 @@ fun ListeningCalendar(
     val recordedDays = remember(daily) { daily.count { it.playedMs > 0 } }
     Column(
         modifier = modifier.semantics {
-            contentDescription = "听歌日历，最近 $weeks 周，共 $recordedDays 天有收听记录"
+            contentDescription = s.insights.calendar.overviewDescription(weeks, recordedDays)
         },
         verticalArrangement = Arrangement.spacedBy(gap),
     ) {
@@ -123,13 +126,14 @@ fun MonthListeningCalendar(
     classicGreen: Boolean = false,
     onDayClick: (String) -> Unit = {},
 ) {
+    val s = cpStrings()
     val palette = rememberCalendarPalette(classicGreen)
     val grid = remember(daily, scale, year, month) {
         Insights.monthGrid(daily, scale, year, month)
     }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            WEEKDAY_LABELS.forEach { label ->
+            s.insights.calendar.weekdayLabels.forEach { label ->
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     Text(
                         label,
@@ -161,7 +165,7 @@ fun MonthListeningCalendar(
                                 )
                                 .clickable(enabled = cell.playedMs > 0) { onDayClick(cell.dateKey) }
                                 .semantics {
-                                    contentDescription = "${cell.dateKey}，${formatDurationShort(cell.playedMs)}"
+                                    contentDescription = "${cell.dateKey}，${formatDurationShort(cell.playedMs, s)}"
                                 },
                             contentAlignment = Alignment.Center,
                         ) {
@@ -184,6 +188,7 @@ fun ListeningCalendarLegend(
     modifier: Modifier = Modifier,
     classicGreen: Boolean = false,
 ) {
+    val s = cpStrings()
     val palette = rememberCalendarPalette(classicGreen)
     Row(
         modifier,
@@ -191,7 +196,7 @@ fun ListeningCalendarLegend(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(
-            "少",
+            s.insights.calendar.legendLess,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -208,7 +213,7 @@ fun ListeningCalendarLegend(
             )
         }
         Text(
-            "多",
+            s.insights.calendar.legendMore,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -216,9 +221,6 @@ fun ListeningCalendarLegend(
 }
 
 private val CellShape = RoundedCornerShape(2.dp)
-
-/** 与 [Insights.weekdayIndexOf] 的「周一 = 0」对齐。 */
-private val WEEKDAY_LABELS = listOf("一", "二", "三", "四", "五", "六", "日")
 
 /** 日历墙的 5 档配色（0–4）。 */
 data class CalendarPalette(val levels: List<Color>) {
@@ -262,17 +264,23 @@ fun rememberCalendarPalette(classicGreen: Boolean): CalendarPalette {
     }
 }
 
-/** 「3 小时 12 分」这类紧凑时长文案。习惯页多处要用，收敛到一处避免各写各的口径。 */
-fun formatDurationShort(ms: Long): String {
-    if (ms <= 0L) return "没有收听"
+/**
+ * 「3 小时 12 分」这类紧凑时长文案。习惯页多处要用，收敛到一处避免各写各的口径。
+ *
+ * 收 `strings` 而不是自己读 `cpStrings()`：调用点里有 `LazyListScope` 扩展
+ * （不是 `@Composable`，读不了 CompositionLocal）。
+ */
+fun formatDurationShort(ms: Long, strings: CpStrings): String {
+    val c = strings.insights.calendar
+    if (ms <= 0L) return c.noPlayback
     val totalMinutes = ms / 60_000L
     val hours = totalMinutes / 60
     val minutes = totalMinutes % 60
     return when {
-        hours > 0 && minutes > 0 -> "$hours 小时 $minutes 分"
-        hours > 0 -> "$hours 小时"
-        totalMinutes > 0 -> "$totalMinutes 分钟"
-        else -> "不到 1 分钟"
+        hours > 0 && minutes > 0 -> c.hoursAndMinutes(hours, minutes)
+        hours > 0 -> c.hoursLabel(hours)
+        totalMinutes > 0 -> c.minutesLabel(totalMinutes)
+        else -> c.underOneMinute
     }
 }
 
@@ -284,19 +292,20 @@ fun formatDurationShort(ms: Long): String {
  * 而且裁掉的是分钟，看起来像统计少了。
  * 所以这里优先保证「一定放得下」，精度让位于可读性：超过 1 小时就只给一位小数。
  */
-fun formatDurationCompact(ms: Long): String {
-    if (ms <= 0L) return "0 分"
+fun formatDurationCompact(ms: Long, strings: CpStrings): String {
+    val c = strings.insights.calendar
+    if (ms <= 0L) return c.compactZero
     val totalMinutes = ms / 60_000L
     return when {
-        totalMinutes < 60 -> "$totalMinutes 分"
+        totalMinutes < 60 -> c.compactMinutes(totalMinutes)
         totalMinutes < 600 -> {
             // 四舍五入到 0.1 小时，并**手工拼小数位**而不是用 Double.toString：
-            // 后者会给出「3.0 小时」这种尾巴，也可能受 locale 影响（小数点变成逗号）。
+            // 后者会给出「3.0」这种尾巴，也可能受 locale 影响（小数点变成逗号）。
             val tenths = (totalMinutes * 10 + 30) / 60
             val whole = tenths / 10
             val frac = tenths % 10
-            if (frac == 0L) "$whole 小时" else "$whole.$frac 小时"
+            c.compactHours(if (frac == 0L) "$whole" else "$whole.$frac")
         }
-        else -> "${totalMinutes / 60} 小时"
+        else -> c.compactHours("${totalMinutes / 60}")
     }
 }

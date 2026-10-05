@@ -70,6 +70,7 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
+import cp.player.app.i18n.cpStrings
 import cp.player.app.AppModel
 import cp.player.app.platform.BackHandler
 import cp.player.app.platform.shareText
@@ -156,6 +157,7 @@ fun PlaylistDetailContent(
     /** 调用方仍在拉取曲目：以加载态起步，避免先闪一屏"歌单暂无歌曲"。 */
     loadingOverride: Boolean = false,
 ) {
+    val s = cpStrings()
     val navigator = LocalNavigator.currentOrThrow
     val state by model.state.collectAsState()
     val playbackState by AppModel.playback.state.collectAsState()
@@ -211,7 +213,7 @@ fun PlaylistDetailContent(
     // "添加"按钮：仅创建者可向歌单导入歌曲
     val openAddSongs: () -> Unit = {
         if (isOwner) showAddSongsOptions = true
-        else UiEvents.notify("仅歌单创建者可添加歌曲")
+        else UiEvents.notify(s.library.creatorOnlyHint)
     }
 
     val togglePlaylistFavorite: () -> Unit = {
@@ -222,9 +224,9 @@ fun PlaylistDetailContent(
             }
             if (ok) {
                 playlistFavorite = target
-                UiEvents.notify(if (target) "已收藏歌单" else "已取消收藏")
+                UiEvents.notify(if (target) s.library.favorited else s.library.unfavorited)
             } else {
-                UiEvents.notify("操作失败")
+                UiEvents.notify(s.library.operationFailed)
             }
         }
     }
@@ -236,20 +238,20 @@ fun PlaylistDetailContent(
     // 取消收藏可再次收藏，故按非破坏性呈现（确认键不用 error 色）。
     val confirmDeletePlaylist: () -> Unit = {
         confirm.request(
-            title = if (isOwner) "删除歌单" else "取消收藏",
+            title = if (isOwner) s.library.deletePlaylist else s.library.unfavoritePlaylist,
             message = if (isOwner) {
-                "确定删除「${summary.name}」吗？删除后无法恢复。"
+                s.library.deletePlaylistMessage(summary.name)
             } else {
-                "确定取消收藏「${summary.name}」吗？之后仍可重新收藏。"
+                s.library.unfavoritePlaylistMessage(summary.name)
             },
-            confirmLabel = if (isOwner) "删除" else "取消收藏",
+            confirmLabel = if (isOwner) s.common.confirm else s.library.unfavoritePlaylist,
             destructive = isOwner,
             onConfirm = { model.deleteOrUnsubscribe { navigator.popOrNotify() } },
         )
     }
 
     // 桌面端右键菜单：歌曲行动作集合与 SongOptionsSheet 完全对齐（一处动线两处入口）。
-    val buildSongMenu: (TrackSummary, Int) -> List<CpContextMenuItem> = { track, index ->
+    val buildSongMenu: @Composable (TrackSummary, Int) -> List<CpContextMenuItem> = { track, index ->
         songContextMenuItems(
             SongMenuActions(
                 onPlay = { model.playAt(index) },
@@ -258,13 +260,13 @@ fun PlaylistDetailContent(
                 onAddToQueue = {
                     scope.launch {
                         AppModel.playback.addToQueue("${AppModel.activeProviderId()}://song/${track.id}")
-                        UiEvents.notify("已加入播放队列")
+                        UiEvents.notify(s.library.queuedToPlay)
                     }
                 },
                 onPlayNext = {
                     scope.launch {
                         AppModel.playback.addNextToQueue("${AppModel.activeProviderId()}://song/${track.id}")
-                        UiEvents.notify("将在下一首播放")
+                        UiEvents.notify(s.library.playNext)
                     }
                 },
                 isDownloaded = AppModel.isDownloaded(track.id),
@@ -279,11 +281,11 @@ fun PlaylistDetailContent(
     // 桌面端歌单动作菜单：右键信息面板 + 宽屏左栏「更多」按钮共用同一份。
     // 本地虚拟歌单没有服务端实体，分享 / 收藏 / 删除链接与接口都无效，不出菜单。
     val playlistMenu: List<CpContextMenuItem>? = if (isLocalPlaylist) null else buildList {
-        add(CpContextMenuItem("播放全部", Icons.Filled.PlayArrow, onClick = { model.playAll() }))
-        add(CpContextMenuItem("加入队列", Icons.Filled.QueueMusic, onClick = { model.queueAll() }))
-        add(CpContextMenuItem("全部下载", Icons.Filled.Download, onClick = { AppModel.downloadTracks(displayTracks) }))
+        add(CpContextMenuItem(s.library.playAll, Icons.Filled.PlayArrow, onClick = { model.playAll() }))
+        add(CpContextMenuItem(s.library.addToQueue, Icons.Filled.QueueMusic, onClick = { model.queueAll() }))
+        add(CpContextMenuItem(s.library.downloadAll, Icons.Filled.Download, onClick = { AppModel.downloadTracks(displayTracks) }))
         add(CpContextMenuSeparator)
-        add(CpContextMenuItem("分享歌单", Icons.Filled.Share, onClick = {
+        add(CpContextMenuItem(s.library.sharePlaylist, Icons.Filled.Share, onClick = {
             shareText(playlistShareText(playlist.id, summary.name))
         }))
         // 与 PlaylistOptionsSheet 的收藏 / 删除可见性规则保持一致：
@@ -291,7 +293,7 @@ fun PlaylistDetailContent(
         if (!isOwner) {
             add(
                 CpContextMenuItem(
-                    if (playlistFavorite) "取消收藏" else "收藏歌单",
+                    if (playlistFavorite) s.library.unfavoritePlaylist else s.library.favoritePlaylist,
                     if (playlistFavorite) Icons.Filled.BookmarkRemove else Icons.Filled.BookmarkAdd,
                     onClick = togglePlaylistFavorite,
                 )
@@ -300,7 +302,7 @@ fun PlaylistDetailContent(
         if (isOwner) {
             add(
                 CpContextMenuItem(
-                    "删除歌单", Icons.Filled.Delete,
+                    s.library.deletePlaylist, Icons.Filled.Delete,
                     onClick = confirmDeletePlaylist,
                     danger = true,
                 )
@@ -312,9 +314,9 @@ fun PlaylistDetailContent(
     val confirmRemoveTracks: (List<String>) -> Unit = { ids ->
         if (ids.isNotEmpty()) {
             confirm.request(
-                title = "从歌单移除",
-                message = "确定从「${summary.name}」移除选中的 ${ids.size} 首歌曲吗？",
-                confirmLabel = "移除",
+                title = s.library.removeFromPlaylist,
+                message = "${s.library.removeSelectedMessage(summary.name, ids.size)}",
+                confirmLabel = s.library.removeSelected,
                 onConfirm = { model.removeTracks(ids) },
             )
         }
@@ -412,13 +414,13 @@ fun PlaylistDetailContent(
             onAddToQueue = {
                 scope.launch {
                     AppModel.playback.addToQueue("${AppModel.activeProviderId()}://song/${track.id}")
-                    UiEvents.notify("已加入播放队列")
+                    UiEvents.notify(s.library.queuedToPlay)
                 }
             },
             onPlayNext = {
                 scope.launch {
                     AppModel.playback.addNextToQueue("${AppModel.activeProviderId()}://song/${track.id}")
-                    UiEvents.notify("将在下一首播放")
+                    UiEvents.notify(s.library.playNext)
                 }
             },
             onAddToPlaylist = { addToPlaylistIds = listOf(track.id) },
@@ -454,7 +456,7 @@ fun PlaylistDetailContent(
     // 从歌单导入：源歌单选择器（排除当前歌单）
     if (showImportPicker) {
         PlaylistPickerSheet(
-            title = "从歌单导入",
+            title = s.library.importFromPlaylist,
             excludePlaylistId = playlist.id,
             onDismiss = { showImportPicker = false },
             onSelected = { source ->
@@ -495,7 +497,7 @@ fun PlaylistDetailContent(
             )
         }
         SourceSongsSelectionSheet(
-            sourceName = "正在播放",
+            sourceName = s.library.sourceNowPlaying,
             initialSongs = queueTracks,
             onDismiss = { showQueueSelection = false },
             onAddSelected = { tracks ->
@@ -521,13 +523,13 @@ fun PlaylistDetailContent(
                         as? BackendResult.Success)?.data
             }
             if (info == null) {
-                UiEvents.notify("获取歌曲信息失败")
+                UiEvents.notify(s.library.loadTrackInfoFailed)
                 showInfoTarget = null
             }
         }
         AlertDialog(
             onDismissRequest = { showInfoTarget = null },
-            title = { Text("歌曲详情", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            title = { Text(s.library.songDetails, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             text = {
                 val current = info
                 if (current == null) {
@@ -540,32 +542,62 @@ fun PlaylistDetailContent(
                 } else {
                     Text(
                         buildString {
-                            append("歌曲：").append(current.name)
-                            append("\n歌手：").append(current.artist)
-                            append("\n专辑：").append(current.album.ifBlank { "未知专辑" })
-                            append("\n时长：").append(formatTimeMs(current.durationMs))
-                            current.publishTimeMs?.let { append("\n发行时间：").append(formatPublishDate(it)) }
-                            current.commentCount?.let { append("\n评论数：").append(it) }
-                            current.mvId?.let { append("\nMV ID：").append(it) }
-                            current.maxBitrate?.let { append("\n最高码率：").append(it / 1000).append("kbps") }
-                            current.fee?.let {
-                                append("\n付费类型：").append(
-                                    when (it) {
-                                        0 -> "免费"
-                                        1 -> "VIP"
-                                        4 -> "购买"
-                                        8 -> "低音质免费"
-                                        else -> "未知"
-                                    }
-                                )
-                            }
-                            append("\n歌曲 ID：").append(current.songId)
+                            // 整段进剪贴板 ⇒ 逐行都是文案。`extra` 收「有值才出现」的那些行
+                            // （发行时间 / 评论数 / MV / 码率 / 付费类型），调用方只管判断有没有值。
+                            append(
+                                s.library.shareTrack(
+                                    name = current.name,
+                                    artist = current.artist,
+                                    album = current.album.ifBlank { s.player.unknownAlbum },
+                                    duration = formatTimeMs(current.durationMs),
+                                    extra = buildString {
+                                        current.publishTimeMs?.let {
+                                            append(
+                                                s.library.songShareLine(
+                                                    s.library.publishDate,
+                                                    formatPublishDate(it),
+                                                ),
+                                            )
+                                        }
+                                        current.commentCount?.let {
+                                            append(s.library.songShareLine(s.library.commentCount, "$it"))
+                                        }
+                                        // MV ID 是标识符，不翻译。
+                                        current.mvId?.let { append(s.library.songShareLine("MV ID", "$it")) }
+                                        current.maxBitrate?.let {
+                                            append(
+                                                s.library.songShareLine(
+                                                    s.library.maxBitrate,
+                                                    "${it / 1000}kbps",
+                                                ),
+                                            )
+                                        }
+                                        current.fee?.let { fee ->
+                                            append(
+                                                s.library.songShareLine(
+                                                    s.library.paidType,
+                                                    when (fee) {
+                                                        0 -> s.library.paidFree
+                                                        // 「VIP」是音源侧的等级名，两端一致，不翻译。
+                                                        1 -> "VIP"
+                                                        4 -> s.library.paidPurchased
+                                                        8 -> s.library.paidLowQualityFree
+                                                        else -> s.library.paidUnknown
+                                                    },
+                                                ),
+                                            )
+                                        }
+                                    },
+                                ),
+                            )
+                            // 「歌曲 ID」是标识符标签，两端都用 ID。
+                            append(s.library.songShareLine("ID", current.songId))
                         }
                     )
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showInfoTarget = null }) { Text("关闭") }
+                TextButton(onClick = { showInfoTarget = null }) { Text(s.common.dismiss) }
             },
         )
     }
@@ -594,22 +626,23 @@ private fun NarrowLayout(
     onAddTracks: () -> Unit,
     /** 移除选中曲目；由宿主包一层二次确认后再落到 [model]。 */
     onRemoveSelected: (List<String>) -> Unit,
-    buildSongMenu: (TrackSummary, Int) -> List<CpContextMenuItem>,
+    buildSongMenu: @Composable (TrackSummary, Int) -> List<CpContextMenuItem>,
 ) {
+    val s = cpStrings()
     if (state.selectionMode) {
         AppScaffold(
-            title = "已选 ${state.selectedIds.size} 首",
+            title = s.library.selectedCount(state.selectedIds.size),
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
             navigationIcon = {
                 IconButton(onClick = { model.exitSelection() }) {
-                    Icon(Icons.Filled.Close, contentDescription = "退出多选")
+                    Icon(Icons.Filled.Close, contentDescription = s.library.exitSelection)
                 }
             },
             topBarActions = buildList {
-                add(TopBarAction(icon = { Icon(Icons.Filled.SelectAll, contentDescription = "全选") }, onClick = { model.selectAll() }))
+                add(TopBarAction(icon = { Icon(Icons.Filled.SelectAll, contentDescription = s.library.selectAll) }, onClick = { model.selectAll() }))
                 add(
                     TopBarAction(
-                        icon = { Icon(Icons.Filled.QueueMusic, contentDescription = "加入队列") },
+                        icon = { Icon(Icons.Filled.QueueMusic, contentDescription = s.library.addToQueue) },
                         onClick = {
                             model.queueSelected()
                             model.exitSelection()
@@ -618,14 +651,14 @@ private fun NarrowLayout(
                 )
                 add(
                     TopBarAction(
-                        icon = { Icon(Icons.Filled.PlaylistAdd, contentDescription = "加入歌单") },
+                        icon = { Icon(Icons.Filled.PlaylistAdd, contentDescription = s.player.addToPlaylist) },
                         onClick = onAddSelectedToPlaylist,
                     )
                 )
                 if (isOwner) {
                     add(
                         TopBarAction(
-                            icon = { Icon(Icons.Filled.Delete, contentDescription = "从歌单移除") },
+                            icon = { Icon(Icons.Filled.Delete, contentDescription = s.library.removeFromPlaylist) },
                             onClick = { onRemoveSelected(state.selectedIds.toList()) },
                         )
                     )
@@ -688,7 +721,7 @@ private fun NarrowLayout(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            text = "$trackCount 首歌曲 • $durationStr",
+                            text = s.library.trackCountLabel(trackCount, durationStr),
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -699,7 +732,7 @@ private fun NarrowLayout(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
             topBarActions = listOf(
                 TopBarAction(
-                    icon = { Icon(Icons.Filled.MoreVert, contentDescription = "更多选项") },
+                    icon = { Icon(Icons.Filled.MoreVert, contentDescription = s.library.moreOptions) },
                     onClick = onOpenPlaylistSheet,
                 )
             ),
@@ -742,23 +775,24 @@ private fun WideLayout(
     onRemoveSelected: (List<String>) -> Unit,
     /** 左栏信息面板的右键菜单（桌面端）；null 时不启用。 */
     playlistMenu: List<CpContextMenuItem>?,
-    buildSongMenu: (TrackSummary, Int) -> List<CpContextMenuItem>,
+    buildSongMenu: @Composable (TrackSummary, Int) -> List<CpContextMenuItem>,
 ) {
+    val s = cpStrings()
     // 宽屏左栏的排序锚定菜单：排序方式只在这里切换，不再借道底部弹层；
     // 「更多」按钮承载歌单级动作（分享 / 收藏 / 删除），两者职责分离不再冲突。
     val sortMenuItems = listOf(
         CpContextMenuItem(
-            "默认顺序", Icons.AutoMirrored.Filled.List,
+            s.library.sortDefault, Icons.AutoMirrored.Filled.List,
             onClick = { model.setSort(PlaylistSortType.DEFAULT) },
             isSelected = state.sortType == PlaylistSortType.DEFAULT,
         ),
         CpContextMenuItem(
-            "按名称", Icons.Filled.SortByAlpha,
+            s.library.sortByName, Icons.Filled.SortByAlpha,
             onClick = { model.setSort(PlaylistSortType.NAME) },
             isSelected = state.sortType == PlaylistSortType.NAME,
         ),
         CpContextMenuItem(
-            "按歌手", Icons.Filled.Person,
+            s.library.sortByArtist, Icons.Filled.Person,
             onClick = { model.setSort(PlaylistSortType.ARTIST) },
             isSelected = state.sortType == PlaylistSortType.ARTIST,
         ),
@@ -824,7 +858,7 @@ private fun WideLayout(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "$trackCount 首 • $durationStr",
+                text = s.library.playlistCountLabel(trackCount, durationStr),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -867,12 +901,12 @@ private fun WideLayout(
                     ) {
                         Icon(
                             Icons.Filled.MoreVert,
-                            contentDescription = "更多选项",
+                            contentDescription = s.library.moreOptions,
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            "更多",
+                            s.player.more,
                             color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.Medium,
                         )
@@ -908,12 +942,12 @@ private fun WideLayout(
                     if (state.selectionMode) {
                         if (showBackButton) Spacer(Modifier.width(12.dp))
                         Text(
-                            text = "已选 ${state.selectedIds.size} 首",
+                            text = s.library.selectedCount(state.selectedIds.size),
                             style = MaterialTheme.typography.titleMedium,
                         )
                         Spacer(Modifier.width(8.dp))
                         IconButton(onClick = { model.selectAll() }) {
-                            Icon(Icons.Filled.SelectAll, contentDescription = "全选")
+                            Icon(Icons.Filled.SelectAll, contentDescription = s.library.selectAll)
                         }
                         IconButton(
                             onClick = {
@@ -921,14 +955,14 @@ private fun WideLayout(
                                 model.exitSelection()
                             },
                         ) {
-                            Icon(Icons.Filled.QueueMusic, contentDescription = "加入队列")
+                            Icon(Icons.Filled.QueueMusic, contentDescription = s.library.addToQueue)
                         }
                         IconButton(onClick = onAddSelectedToPlaylist) {
-                            Icon(Icons.Filled.PlaylistAdd, contentDescription = "加入歌单")
+                            Icon(Icons.Filled.PlaylistAdd, contentDescription = s.player.addToPlaylist)
                         }
                         if (isOwner) {
                             IconButton(onClick = { onRemoveSelected(state.selectedIds.toList()) }) {
-                                Icon(Icons.Filled.Delete, contentDescription = "从歌单移除")
+                                Icon(Icons.Filled.Delete, contentDescription = s.library.removeFromPlaylist)
                             }
                         }
                     }
@@ -950,10 +984,11 @@ private fun TrackList(
     onSongOptions: (TrackSummary) -> Unit,
     onSortClick: () -> Unit,
     onAddTracks: () -> Unit,
-    buildSongMenu: (TrackSummary, Int) -> List<CpContextMenuItem>,
+    buildSongMenu: @Composable (TrackSummary, Int) -> List<CpContextMenuItem>,
     modifier: Modifier = Modifier,
     topContentPadding: Dp = 0.dp,
 ) {
+    val s = cpStrings()
     when {
         state.loading && displayTracks.isEmpty() -> {
               Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -973,7 +1008,7 @@ private fun TrackList(
                     )
                     // force：加载失败时 loadedPlaylistId 已置位，重试必须越过守卫。
                     TextButton(onClick = { state.summary?.let { model.load(it, force = true) } }) {
-                        Text("重试")
+                        Text(s.library.retry)
                     }
                 }
             }
@@ -1034,7 +1069,7 @@ private fun TrackList(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            "歌单暂无歌曲",
+                            s.library.playlistEmpty,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1067,7 +1102,7 @@ private fun TrackList(
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             Text(
-                                "加载失败，点击重试",
+                                s.library.loadFailedRetry,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
@@ -1099,6 +1134,7 @@ private fun PlaylistHeader(
      */
     sortMenuItems: List<CpContextMenuItem>? = null,
 ) {
+    val s = cpStrings()
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 0.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.Start,
@@ -1118,12 +1154,12 @@ private fun PlaylistHeader(
                 ) {
                     Icon(
                         Icons.Filled.PlayArrow,
-                        contentDescription = "播放",
+                        contentDescription = s.library.play,
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "播放",
+                        s.library.play,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -1143,12 +1179,12 @@ private fun PlaylistHeader(
                 ) {
                     Icon(
                         Icons.Filled.Shuffle,
-                        contentDescription = "随机",
+                        contentDescription = s.library.shuffle,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "随机",
+                        s.library.shuffle,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1174,12 +1210,12 @@ private fun PlaylistHeader(
                 ) {
                     Icon(
                         Icons.Filled.PlaylistAdd,
-                        contentDescription = "添加",
+                        contentDescription = s.library.add,
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "添加",
+                        s.library.add,
                         color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Medium,
                     )
@@ -1212,12 +1248,12 @@ private fun PlaylistHeader(
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.Sort,
-                            contentDescription = "排序",
+                            contentDescription = s.library.sort,
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            "排序",
+                            s.library.sort,
                             color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.Medium,
                         )
@@ -1242,12 +1278,12 @@ private fun PlaylistHeader(
             ) {
                 Icon(
                     Icons.Filled.Download,
-                    contentDescription = "全部下载",
+                    contentDescription = s.library.downloadAll,
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "全部下载",
+                    s.library.downloadAll,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Medium,
                 )

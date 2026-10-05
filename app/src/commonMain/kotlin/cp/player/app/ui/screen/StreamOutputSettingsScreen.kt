@@ -20,6 +20,8 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
+import cp.player.app.i18n.CpStrings
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.component.SettingsConfirmItem
@@ -50,15 +52,16 @@ class StreamOutputSettingsScreen : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
+        val s = cpStrings()
         val config by AppModel.localServerConfigFlow.collectAsState()
         val status by AppModel.localServerStatus.collectAsState()
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
             SettingsPage(pageModifier) {
-                SettingsSection("本地流输出") {
+                SettingsSection(s.streamOutput.sectionMain) {
                     SettingsSwitchItem(
-                        title = "启用本地流输出",
-                        subtitle = "把当前曲目以 HTTP 流对外提供，供接收端按曲目拉取",
+                        title = s.streamOutput.enabled,
+                        subtitle = s.streamOutput.enabledNote,
                         checked = config.enabled,
                         onCheckedChange = AppModel::setLocalServerEnabled,
                         icon = Icons.Filled.Dns,
@@ -66,13 +69,12 @@ class StreamOutputSettingsScreen : Screen {
                         total = 3,
                     )
                     SettingsSegmentedItem(
-                        title = "音频输出",
-                        subtitle = if (config.silentLocalOutput) {
-                            "本机不出声，音频只从接收端播放"
-                        } else {
-                            "本机正常出声"
-                        },
-                        options = listOf("本机播放", "仅对外提供"),
+                        title = s.streamOutput.audioOutput,
+                        subtitle = s.streamOutput.outputNote(config.silentLocalOutput),
+                        options = listOf(
+                            s.streamOutput.outputLocal,
+                            s.streamOutput.outputRemoteOnly,
+                        ),
                         selectedIndex = if (config.outputMode == OutputMode.SERVER_ONLY) 1 else 0,
                         onSelect = { index ->
                             AppModel.setOutputMode(
@@ -84,9 +86,9 @@ class StreamOutputSettingsScreen : Screen {
                         enabled = config.enabled,
                     )
                     SettingsSegmentedItem(
-                        title = "绑定范围",
-                        subtitle = "决定哪些设备能访问这个服务",
-                        options = listOf("仅本机", "局域网"),
+                        title = s.streamOutput.bindScope,
+                        subtitle = s.streamOutput.bindScopeNote,
+                        options = listOf(s.streamOutput.scopeLocalhost, s.streamOutput.scopeLan),
                         selectedIndex = if (config.bindAddress == LocalServerConfig.BIND_ALL) 1 else 0,
                         onSelect = { index ->
                             AppModel.setLocalServerBind(
@@ -99,30 +101,29 @@ class StreamOutputSettingsScreen : Screen {
                     )
                 }
 
-                statusSummary(config, status)
+                statusSummary(s, config, status)
                 if (config.exposedToLan) {
                     SettingsNote(
-                        text = "已监听 0.0.0.0，同网段的任何设备都能访问。请务必保留访问令牌。",
+                        text = s.streamOutput.warningLanNoToken,
                         emphasis = SettingsNoteEmphasis.WARNING,
                     )
                 }
                 if (!config.boundToLoopback && config.accessToken.isBlank()) {
                     SettingsNote(
-                        text = "当前绑定局域网却没有访问令牌：媒体面与数据面都会拒绝所有请求，" +
-                            "请先在下面重新生成访问令牌。",
+                        text = s.streamOutput.warningLanNoToken,
                         emphasis = SettingsNoteEmphasis.ERROR,
                     )
                 }
 
-                SettingsSection("端口") {
+                SettingsSection(s.streamOutput.sectionPort) {
                     SettingsTextInputItem(
-                        title = "流输出端口",
-                        subtitle = "接收端按曲目拉流时访问的端口；改动即时生效",
+                        title = s.streamOutput.port,
+                        subtitle = s.streamOutput.portNote,
                         value = config.streamPort.toString(),
                         placeholder = LocalServerConfig.DEFAULT_STREAM_PORT.toString(),
                         keyboardType = KeyboardType.Number,
                         enabled = config.enabled,
-                        validate = ::validateStreamPort,
+                        validate = { text -> validateStreamPort(text, s) },
                         onCommit = { text ->
                             text.trim().toIntOrNull()?.let(AppModel::setLocalServerStreamPort)
                         },
@@ -130,29 +131,28 @@ class StreamOutputSettingsScreen : Screen {
                         total = 1,
                     )
                 }
-                SettingsNote("端口改动会重启监听，正在进行的拉流会短暂中断。")
+                SettingsNote(s.streamOutput.portRestartNote)
 
-                SettingsSection("访问令牌") {
+                SettingsSection(s.streamOutput.sectionToken) {
                     SettingsConfirmItem(
-                        title = "重新生成访问令牌",
-                        subtitle = "所有已连接的设备将立即失效",
-                        confirmTitle = "重新生成访问令牌？",
-                        confirmMessage = "旧令牌会立即作废。所有已连接的第三方软件与接收端都需要改用新令牌，" +
-                            "否则会收到 401。",
-                        confirmLabel = "重新生成",
+                        title = s.streamOutput.regenerateToken,
+                        subtitle = s.streamOutput.regenerateTokenNote,
+                        confirmTitle = s.streamOutput.regenerateConfirmTitle,
+                        confirmMessage = s.streamOutput.regenerateConfirmMessage,
+                        confirmLabel = s.streamOutput.regenerateLabel,
                         icon = Icons.Filled.Lock,
                         index = 0,
                         total = 1,
                         onConfirm = {
                             AppModel.regenerateLocalServerToken()
-                            UiEvents.notify("访问令牌已重新生成，已连接的设备需重新配置")
+                            UiEvents.notify(s.streamOutput.tokenRegenerated)
                         },
                     )
                 }
-                TokenPanel(config.accessToken)
-                SettingsNote("令牌明文保存在 ~/.cpplayer/integration.json，请勿外传。")
+                TokenPanel(s, config.accessToken)
+                SettingsNote(s.streamOutput.tokenStorageNote)
 
-                SettingsSection("接收端拉流的地址") {
+                SettingsSection(s.streamOutput.sectionEndpoint) {
                     SettingsFieldGroup {
                         SelectionContainer {
                             Text(
@@ -165,7 +165,7 @@ class StreamOutputSettingsScreen : Screen {
                             )
                         }
                         Text(
-                            text = "按曲目拉流时接收端会带上 ?mediaId=…，CPPlayer 据此解析并转发字节。",
+                            text = s.streamOutput.endpointNote,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -175,7 +175,7 @@ class StreamOutputSettingsScreen : Screen {
         }
 
         CpRouteScaffold(
-            title = "本地流输出",
+            title = s.streamOutput.screenTitle,
             onBack = { navigator.popOrNotify() },
         ) { pageModifier -> body(pageModifier) }
     }
@@ -187,13 +187,19 @@ class StreamOutputSettingsScreen : Screen {
  * 与旧版的关键差别：旧版在 `onValueChange` 里就 `toIntOrNull()?.let(setLocalServerStreamPort)`，
  * 输入 `8080` 会依次提交 `8 / 80 / 808 / 8080` —— 每次都是全量文件回写 + 服务器重绑。
  * 现在校验只作用于草稿，「应用」按钮在通过后才可用。
+ *
+ * 收 [CpStrings] 而不是无参：这是**顶层函数**（不是 composable），拿不到组合里的语言。
+ * 三条错误说明都是文案，调用方（组合内）把 `s` 传进来。
  */
-private fun validateStreamPort(text: String): String? {
+private fun validateStreamPort(text: String, s: CpStrings): String? {
     val trimmed = text.trim()
-    if (trimmed.isEmpty()) return "端口不能为空"
-    val value = trimmed.toIntOrNull() ?: return "端口必须是数字"
+    if (trimmed.isEmpty()) return s.streamOutput.portEmpty()
+    val value = trimmed.toIntOrNull() ?: return s.streamOutput.portNotNumber()
     if (value !in LocalServerConfig.PORT_RANGE) {
-        return "端口需在 ${LocalServerConfig.PORT_RANGE.first}–${LocalServerConfig.PORT_RANGE.last} 之间"
+        return s.streamOutput.portOutOfRange(
+            LocalServerConfig.PORT_RANGE.first,
+            LocalServerConfig.PORT_RANGE.last,
+        )
     }
     return null
 }
@@ -205,16 +211,16 @@ private fun validateStreamPort(text: String): String? {
  * 拉流地址是可选的，令牌却选不中，用户没法复制，只能手抄 32 位十六进制。
  */
 @Composable
-private fun TokenPanel(token: String) {
+private fun TokenPanel(s: CpStrings, token: String) {
     SettingsFieldGroup {
         Text(
-            text = "当前令牌",
+            text = s.streamOutput.currentToken,
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
         )
         if (token.isBlank()) {
             Text(
-                text = "启用后自动生成",
+                text = s.streamOutput.tokenAutoGenerated,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -233,15 +239,15 @@ private fun TokenPanel(token: String) {
 
 /** 服务状态摘要：未启用 / 启动失败 / 运行中（附地址）/ 启动中。 */
 @Composable
-private fun statusSummary(config: LocalServerConfig, status: LocalServerStatus) {
+private fun statusSummary(s: CpStrings, config: LocalServerConfig, status: LocalServerStatus) {
     val error = status.error
     when {
-        !config.enabled -> SettingsNote("服务未启用。")
+        !config.enabled -> SettingsNote(s.streamOutput.statusDisabled)
         error != null -> SettingsNote(
-            text = "启动失败：$error",
+            text = s.streamOutput.statusStartFailed(error),
             emphasis = SettingsNoteEmphasis.ERROR,
         )
-        status.running -> SettingsNote("运行中 · ${status.streamUrl}")
-        else -> SettingsNote("启动中…")
+        status.running -> SettingsNote(s.streamOutput.statusRunning(status.streamUrl))
+        else -> SettingsNote(s.streamOutput.statusStarting)
     }
 }

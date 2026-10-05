@@ -3,6 +3,7 @@ package cp.player.app.ui.model
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
+import cp.player.app.i18n.CpStrings
 import cp.player.app.platform.requestMediaScanPermission
 import cp.player.app.platform.setOnMediaPermissionGranted
 import cp.player.app.ui.util.UiEvents
@@ -99,17 +100,23 @@ class DownloadsScreenModel : ScreenModel {
 
     fun resume(task: DownloadTask) = runCatching { AppModel.downloads.resume(task.id) }
 
-    fun cancel(task: DownloadTask) {
+    /**
+     * @param strings 由调用方（组合上下文）传入而不是在协程里取：通知发在 IO 协程中，
+     *   那儿读不到 CompositionLocal（照 `SongCacheModel.remove(entry, strings)` 的写法）。
+     */
+    fun cancel(task: DownloadTask, strings: CpStrings) {
         AppModel.cancelDownload(task.id)
-        UiEvents.notify("已取消下载")
+        UiEvents.notify(strings.downloads.downloadCancelled)
     }
 
     fun retry(task: DownloadTask) = runCatching { AppModel.downloads.retry(task.id) }
 
     /** 移除任务记录；[deleteFile] 为 true 时同时删除已下载文件。 */
-    fun remove(task: DownloadTask, deleteFile: Boolean) {
+    fun remove(task: DownloadTask, deleteFile: Boolean, strings: CpStrings) {
         runCatching { AppModel.downloads.remove(task.id, deleteFile) }
-        UiEvents.notify(if (deleteFile) "已删除文件与记录" else "已移除记录")
+        UiEvents.notify(
+            if (deleteFile) strings.downloads.fileAndRecordDeleted else strings.downloads.recordRemoved
+        )
     }
 
     // ============ 本地媒体库操作 ============
@@ -125,8 +132,12 @@ class DownloadsScreenModel : ScreenModel {
         super.onDispose()
     }
 
-    /** 触发一次设备扫描，进度经 [DownloadsUiState.scanProgress] 反馈。 */
-    fun startScan() {
+    /**
+     * 触发一次设备扫描，进度经 [DownloadsUiState.scanProgress] 反馈。
+     *
+     * @param strings 由调用方（组合上下文）传入；理由见 [cancel]。
+     */
+    fun startScan(strings: CpStrings) {
         if (_state.value.scanning) return
         screenModelScope.launch {
             _state.value = _state.value.copy(scanning = true, scanProgress = null)
@@ -134,6 +145,7 @@ class DownloadsScreenModel : ScreenModel {
             val result = runCatching {
                 AppModel.localMedia.scan().collect { progress ->
                     if (progress.permissionDenied) permissionDenied = true
+                    // 不翻译：`errorMessage` 是 core 扫描层给的原始串（平台层文案，见 I18N.md 批次 7）。
                     progress.errorMessage?.let { UiEvents.notify(it) }
                     _state.value = _state.value.copy(scanProgress = progress)
                 }
@@ -143,29 +155,32 @@ class DownloadsScreenModel : ScreenModel {
                 permissionDenied -> {
                     // 触发平台权限申请（Android 弹系统授权框；Desktop 空实现）
                     requestMediaScanPermission()
-                    UiEvents.notify("已请求媒体读取权限，授权后请重新扫描")
+                    UiEvents.notify(strings.downloads.permissionRequested)
                     // 授权完成后自动重试一次扫描
                     if (!permissionRetryPending) {
                         permissionRetryPending = true
                         setOnMediaPermissionGranted {
                             setOnMediaPermissionGranted(null)
                             permissionRetryPending = false
-                            startScan()
+                            startScan(strings)
                         }
                     }
                 }
                 result.isFailure ->
-                    UiEvents.notify("扫描失败：${result.exceptionOrNull()?.message}")
+                    UiEvents.notify(strings.downloads.scanFailed(result.exceptionOrNull()?.message))
                 else -> {
                     val total = _state.value.scanProgress?.total ?: 0
-                    UiEvents.notify(if (total > 0) "扫描完成，共 $total 个媒体文件" else "扫描完成")
+                    UiEvents.notify(
+                        if (total > 0) strings.downloads.scanCompleted(total)
+                        else strings.downloads.scanCompletedEmpty
+                    )
                 }
             }
         }
     }
 
     /** 导入文件夹 / SAF 树，完成后提示新增条数。 */
-    fun importFolder(uri: String) {
+    fun importFolder(uri: String, strings: CpStrings) {
         if (_state.value.importing) return
         screenModelScope.launch {
             _state.value = _state.value.copy(importing = true)
@@ -175,24 +190,24 @@ class DownloadsScreenModel : ScreenModel {
             _state.value = _state.value.copy(importing = false)
             UiEvents.notify(
                 when {
-                    added < 0 -> "导入失败"
-                    added == 0 -> "该文件夹没有新的媒体文件"
-                    else -> "已导入 $added 个媒体文件"
+                    added < 0 -> strings.downloads.importFailed
+                    added == 0 -> strings.downloads.importNoNewFiles
+                    else -> strings.downloads.imported(added)
                 }
             )
         }
     }
 
     /** 从库中移除条目（不删除磁盘文件）。 */
-    fun removeLocalItem(item: LocalMediaItem) {
+    fun removeLocalItem(item: LocalMediaItem, strings: CpStrings) {
         runCatching { AppModel.localMedia.removeItem(item) }
-        UiEvents.notify("已从媒体库移除")
+        UiEvents.notify(strings.downloads.removedFromLibrary)
     }
 
     /** 播放本地音频（mediaId 规则 `local://{audio|video}/{path}`）；视频暂不支持。 */
-    fun play(item: LocalMediaItem) {
+    fun play(item: LocalMediaItem, strings: CpStrings) {
         if (item.mediaType != MediaType.AUDIO) {
-            UiEvents.notify("暂不支持播放该媒体")
+            UiEvents.notify(strings.downloads.unsupportedMedia)
             return
         }
         val mediaId = "local://audio/${item.path}"

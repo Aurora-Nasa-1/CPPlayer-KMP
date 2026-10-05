@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import cp.player.app.i18n.cpStrings
 import cp.player.app.AppModel
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.util.UiEvents
@@ -61,6 +62,7 @@ fun PlaylistPickerRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val s = cpStrings()
     Surface(
         onClick = onClick,
         shape = MaterialTheme.shapes.large,
@@ -103,11 +105,11 @@ fun PlaylistPickerRow(
                     if (!playlist.creatorName.isNullOrBlank()) append(playlist.creatorName)
                     if (playlist.trackCount > 0) {
                         if (isNotEmpty()) append(" · ")
-                        append("${playlist.trackCount} 首")
+                        append(s.playlistSheet.trackCount(playlist.trackCount))
                     }
                 }
                 Text(
-                    subtitle.ifEmpty { "歌单" },
+                    subtitle.ifEmpty { s.playlistSheet.playlistFallbackTitle },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -142,6 +144,7 @@ fun PlaylistPickerSheet(
     onSelected: (PlaylistSummary) -> Unit,
     excludePlaylistId: Long? = null,
 ) {
+    val s = cpStrings()
     var playlists by remember { mutableStateOf<List<PlaylistSummary>?>(null) }
 
     LaunchedEffect(Unit) {
@@ -169,7 +172,7 @@ fun PlaylistPickerSheet(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        "暂无可用歌单",
+                        s.playlistSheet.noPlaylists,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -205,6 +208,7 @@ fun AddSongsOptionsSheet(
     onImportFromPlaylist: () -> Unit,
     onAddFromQueue: () -> Unit,
 ) {
+    val s = cpStrings()
     LegacyModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier.fillMaxWidth()
@@ -213,7 +217,7 @@ fun AddSongsOptionsSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = "添加歌曲",
+                text = s.playlistSheet.addTracksTitle,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -236,7 +240,7 @@ fun AddSongsOptionsSheet(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "从歌单导入",
+                        s.playlistSheet.importFrom,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -260,7 +264,7 @@ fun AddSongsOptionsSheet(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "从播放队列添加",
+                        s.playlistSheet.addFromQueue,
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -285,6 +289,7 @@ fun SourceSongsSelectionSheet(
     initialSongs: List<TrackSummary>? = null,
     fetchSongs: (suspend () -> List<TrackSummary>)? = null,
 ) {
+    val s = cpStrings()
     var songs by remember { mutableStateOf<List<TrackSummary>?>(initialSongs) }
     var isLoading by remember { mutableStateOf(initialSongs == null) }
     var selectedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -311,13 +316,13 @@ fun SourceSongsSelectionSheet(
             ) {
                 Column {
                     Text(
-                        "选择歌曲",
+                        s.playlistSheet.selectTracks,
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        "来自 $sourceName",
+                        s.playlistSheet.fromSource(sourceName),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -328,7 +333,7 @@ fun SourceSongsSelectionSheet(
                         selectedIds = if (allSelected) emptySet()
                         else songs!!.mapTo(LinkedHashSet()) { it.id }
                     }) {
-                        Text(if (allSelected) "取消全选" else "全选")
+                        Text(if (allSelected) s.playlistSheet.deselectAll else s.playlistSheet.selectAll)
                     }
                 }
             }
@@ -343,7 +348,7 @@ fun SourceSongsSelectionSheet(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        "未找到歌曲",
+                        s.playlistSheet.noTracksFound,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -387,7 +392,7 @@ fun SourceSongsSelectionSheet(
                         Icon(Icons.Filled.Add, null, tint = MaterialTheme.colorScheme.onPrimary)
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            "添加 ${selectedIds.size} 首歌曲",
+                            s.playlistSheet.addCount(selectedIds.size),
                             color = MaterialTheme.colorScheme.onPrimary,
                             fontWeight = FontWeight.SemiBold,
                         )
