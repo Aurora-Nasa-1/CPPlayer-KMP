@@ -1,5 +1,5 @@
 import React from 'react';
-import {AbsoluteFill, Easing} from 'remotion';
+import {AbsoluteFill, Audio, Easing, staticFile} from 'remotion';
 import {TransitionSeries, linearTiming} from '@remotion/transitions';
 import {fade} from '@remotion/transitions/fade';
 import {M3} from './theme';
@@ -42,6 +42,26 @@ const timing = linearTiming({
   easing: Easing.bezier(0.4, 0, 0.2, 1),
 });
 
+/**
+ * 配乐音量自动化。
+ *
+ * 曲子本身（public/bgm.mp3，"Home Tonight" by DoKashiteru, CC BY 2.5）是 3:31，
+ * 片长 78.4s 只用到前 78s，**不需要 loop**。
+ * 但它 0–78s 段是一段平稳的 loop，没有天然的高潮 —— 所以用音量曲线给它做出
+ * 「进场 → 缓慢抬升 → 收尾」的弧线：抬升幅度只有 0.14，听得出来但不突兀。
+ */
+const BGM_IN = 40; // 1.3s 淡入
+const BGM_OUT = PROMO_TOTAL - 110; // 结尾 3.7s 淡出
+
+const bgmVolume = (frame: number): number => {
+  if (frame <= BGM_IN) return (frame / BGM_IN) * 0.8;
+  if (frame >= BGM_OUT) {
+    const p = Math.min(1, (frame - BGM_OUT) / (PROMO_TOTAL - BGM_OUT));
+    return 0.94 * (1 - p);
+  }
+  return 0.8 + 0.14 * ((frame - BGM_IN) / (BGM_OUT - BGM_IN));
+};
+
 export const Promo: React.FC = () => {
   return (
     <AbsoluteFill style={{background: M3.d.surfaceLowest}}>
@@ -60,10 +80,8 @@ export const Promo: React.FC = () => {
 
       <Grain />
 
-      {/*
-        配乐：把音频放到 public/bgm.mp3 之后取消注释即可（不需要改别处）。
-        <Audio src={staticFile('bgm.mp3')} volume={0.7} />
-      */}
+      {/* 配乐：署名见 promo-video/ATTRIBUTION.txt（CC BY 2.5 要求保留） */}
+      <Audio src={staticFile('bgm.mp3')} volume={bgmVolume} />
     </AbsoluteFill>
   );
 };

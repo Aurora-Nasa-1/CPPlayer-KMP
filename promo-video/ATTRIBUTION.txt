@@ -1,0 +1,42 @@
+CPPlayer 宣发片 · 配乐署名（CC BY 2.5 要求保留署名）
+==================================================
+
+片中使用的配乐
+--------------
+
+"Home Tonight" by DoKashiteru
+  文件:      public/bgm.mp3
+  来源:      https://ccmixter.org/files/DoKashiteru/15611
+  许可:      Attribution 2.5 (CC BY 2.5)
+             http://creativecommons.org/licenses/by/2.5/
+  说明:      片长 78s，取该曲前 78s；音量在合成里做了自动化（淡入 / 缓慢抬升 / 结尾淡出）。
+
+发布视频时请保留上述署名（简介、说明栏或片尾均可）。
+
+
+备选（未使用，仅供试听后替换）
+------------------------------
+
+.bgm-alternates/ 目录（已在 .gitignore 中，不进版本库）：
+
+"Kinta dos Avilios" by Toka Collective
+  https://ccmixter.org/files/rpm/1789  ·  CC BY 2.5
+  更冲、更快（129 BPM house），密度高，一上来就满能量。
+
+"Against Yourself" by The Null Pointer Exceptions
+  https://ccmixter.org/files/jaybill/566  ·  CC BY 2.5
+  拍子最实、最平稳（96 BPM），偏中性，适合当纯底噪。
+
+"On The Moon (Trip Hop mix)" by disharmonic
+  https://ccmixter.org/files/disharmonic/2958  ·  CC BY 2.5
+  氛围 trip-hop（72 BPM），前 90s 偏空，78s 内到不了高潮。
+
+替换方式：把文件覆盖成 public/bgm.mp3 即可，代码不需要改。
+
+
+曲库
+----
+
+全部来自 ccMixter（https://ccmixter.org）—— 由 Creative Commons 共同创立的
+社区混音站点。筛选时只保留 CC BY / CC BY-SA（可商用），已排除带
+NonCommercial / NoDerivs 的曲目。

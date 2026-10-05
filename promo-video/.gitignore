@@ -1,3 +1,5 @@
 node_modules
 out
 .remotion
+# 试听用的备选配乐（选定的那首在 public/bgm.mp3，是要入库的）
+.bgm-alternates
