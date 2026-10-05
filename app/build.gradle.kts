@@ -444,6 +444,39 @@ compose.desktop {
             // 「目录选择框是老式对话框」「向导步骤多」这些都属于 MSI 的固有行为，
             // 在本仓库的配置层面改不动。详见 RELEASE.md「Windows 安装包」。
             targetFormats(TargetFormat.Dmg, TargetFormat.Deb)
+
+            // ⚠️ release 的 jlink 镜像是**按模块清单裁剪**的，这份清单必须手工维护
+            // （2026-10-05 真实事故：1.4.3 安装包启动即死，本地 `desktopRun` 完全复现不了）。
+            //
+            // 机制（compose 插件 1.12.1 逐类 javap 核实）：
+            //   - 默认模块集只有四个：java.base / java.desktop / java.logging / jdk.crypto.ec
+            //     （`JvmApplicationDistributionsKt.DEFAULT_RUNTIME_MODULES`），jlink 再按
+            //     `requires` 传递解析成 7 个。**这里面没有任何 JDK 内部/可选模块。**
+            //   - `suggestModules`（内部是 jdeps）**只打日志、不参与打包** ——
+            //     `AbstractSuggestModulesTask.run()` 把结果过滤后 `logger.quiet` 一行就完了，
+            //     不会写进 `nativeDistributions.modules`。所以「插件会自动带上需要的模块」
+            //     是错觉，必须手动抄进来。
+            //   - `modules(...)` 是**追加**（`JvmApplicationDistributions.modules()` 走 `addAll`），
+            //     不会顶掉上面那四个默认模块；但 `setModules(list)` 会整体替换 —— 别用那个。
+            //
+            // 下面的清单 = `./gradlew :app:suggestModules` 的输出原样抄录。
+            // ⚠️ **增删依赖后要重跑 `:app:suggestModules` 并同步这一行**，否则又是「本地能跑、
+            // 安装包缺类」——而且缺在类初始化期的话，表现是启动器只打一句
+            // `Failed to launch JVM`，栈里连模块名都看不到（就是 1.4.3 的死法）。
+            //   - `jdk.unsupported`：`JbrWindowChrome` 要用 `sun.misc.Unsafe` 翻
+            //     `AccessibleObject.override` 位来突破 Jigsaw 的访问检查。**缺它 = JBR 自定义
+            //     标题栏装不上**（会回退自绘无边框），所以这一行是功能性的，不是保险。
+            //     1.4.3 正是缺它死的 —— 但死法比「功能失效」严重得多：那时代码把 `Unsafe`
+            //     当**静态类型**用，缺类在 `JbrWindowChrome.<clinit>` 期就要解析
+            //     ⇒ `NoClassDefFoundError: sun/misc/Unsafe` ⇒ `main()` 直接退出。
+            //     代码侧已改成 `Class.forName("sun.misc.Unsafe")` 纯反射（该类型不再出现在
+            //     任何签名/常量池里），把「硬崩」降级回「功能失效 + 走兜底」。
+            //     ⚠️ 所以别因为「现在有反射兜底了」就把这一行删掉：真正让 JBR 标题栏可用的
+            //     是它，反射只是保证缺模块时应用还能起来。
+            //   - `java.instrument` / `java.management` / `jdk.security.auth`：jdeps 从运行时
+            //     类路径里量出来的缺口，目前没有触发崩溃，但迟早会在某条分支上炸。
+            modules("java.instrument", "java.management", "jdk.security.auth", "jdk.unsupported")
+
             packageName = cpPackageName
             packageVersion = appPackageVersion
             // 「添加/删除程序」里显示的那几行元信息。不填的话 MSI 里厂商是 Unknown、

@@ -1,9 +1,9 @@
 package cp.player.app.platform
 
-import sun.misc.Unsafe
 import java.awt.Frame
 import java.awt.Window
 import java.lang.reflect.AccessibleObject
+import java.lang.reflect.Field
 import java.lang.reflect.Method
 
 /**
@@ -34,6 +34,12 @@ import java.lang.reflect.Method
  * 绕法：`AccessibleObject.override` 是该类的**第一个实例字段**，用同布局的替身类算出偏移，
  * 再用 `sun.misc.Unsafe.putBooleanVolatile` 直接把它翻成 true —— 访问检查被整体跳过。
  * `jdk.unsupported` 模块 open 了 `sun.misc`，取 `theUnsafe` 本身不需要任何 hack。
+ * ⚠️ 但**这个模块必须真的在运行时镜像里**：jpackage 出的 release 包是按模块清单裁过的，
+ * 缺了它连取句柄的机会都没有 —— 缺类会在 `JbrWindowChrome` 的 `<clinit>` 期就炸成
+ * `NoClassDefFoundError`（静态类型引用在类初始化期必须解析），整个应用直接起不来。
+ * 所以本文件全程**不出现 `sun.misc.Unsafe` 这个类型**，只用 `Class.forName` 拿句柄：
+ * 模块缺失时这里只是拿到 null，回退自绘无边框的链路仍然成立。
+ * 打包侧对应 `app/build.gradle.kts` 的 `nativeDistributions.modules(...)`（含 `jdk.unsupported`）。
  * （此手法来自 ButterCam/compose-jetbrains-theme 与 JetBrains 自家的用法，已被广泛验证。）
  *
  * ## 版式约束（谁可点、谁可拖）
@@ -194,14 +200,52 @@ object JbrWindowChrome {
         var second: Any? = null
     }
 
-    private val theUnsafe: Unsafe? by lazy {
-        runCatching {
-            val field = Unsafe::class.java.getDeclaredField("theUnsafe")
-            field.isAccessible = true
-            field.get(null) as Unsafe
-        }.onFailure {
-            println("[JbrWindowChrome] 取不到 Unsafe，JBR 反射兜底不可用（将回退自绘无边框方案）：$it")
-        }.getOrNull()
+    private val unsafeAccess: UnsafeAccess? by lazy { UnsafeAccess.load() }
+
+    /**
+     * `sun.misc.Unsafe` 的**纯反射**句柄（只用到 `objectFieldOffset` / `putBooleanVolatile`）。
+     *
+     * ⚠️ 这里刻意不 `import sun.misc.Unsafe`、也不让这个类型出现在任何签名里。
+     * 它只存在于 `jdk.unsupported` 模块，而 release 的 jlink 镜像是按模块清单裁过的：
+     * 一旦镜像里没有它，**类常量池里的静态类型引用会在 `JbrWindowChrome` 的 `<clinit>` 期
+     * 炸成 `NoClassDefFoundError: sun/misc/Unsafe`** —— 整个类初始化失败 ⇒ `main()` 直接退出，
+     * 本文件所有「探测失败就回退无边框」的兜底一行都跑不到。
+     * （2026-10-05 真实事故：1.4.3 安装包启动即 `Failed to launch JVM`，本地 `desktopRun` 因跑在
+     * 完整 JBR SDK 上无法复现。打包侧已补 `modules("jdk.unsupported")`，这里再兜一层：
+     * 缺模块时只是拿到 null，回退链路才真的成立。）
+     */
+    private class UnsafeAccess private constructor(
+        private val instance: Any,
+        private val objectFieldOffsetMethod: Method,
+        private val putBooleanVolatileMethod: Method,
+    ) {
+        fun objectFieldOffset(field: Field): Long = objectFieldOffsetMethod.invoke(instance, field) as Long
+
+        fun putBooleanVolatile(target: Any, offset: Long, value: Boolean) {
+            putBooleanVolatileMethod.invoke(instance, target, offset, value)
+        }
+
+        companion object {
+            fun load(): UnsafeAccess? = runCatching {
+                val cls = Class.forName("sun.misc.Unsafe")
+                val theUnsafe = cls.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null)!!
+                UnsafeAccess(
+                    instance = theUnsafe,
+                    objectFieldOffsetMethod = cls.getMethod("objectFieldOffset", Field::class.java),
+                    putBooleanVolatileMethod = cls.getMethod(
+                        "putBooleanVolatile",
+                        Any::class.java,
+                        Long::class.javaPrimitiveType,
+                        Boolean::class.javaPrimitiveType,
+                    ),
+                )
+            }.onFailure {
+                println(
+                    "[JbrWindowChrome] 取不到 sun.misc.Unsafe（运行时是否缺 jdk.unsupported 模块？），" +
+                        "JBR 反射兜底不可用（将回退自绘无边框方案）：$it",
+                )
+            }.getOrNull()
+        }
     }
 
     /**
@@ -210,7 +254,7 @@ object JbrWindowChrome {
      */
     private fun forceAccessible(obj: AccessibleObject) {
         if (obj.trySetAccessible()) return
-        val u = theUnsafe ?: return
+        val u = unsafeAccess ?: return
         val offset = u.objectFieldOffset(AccessibleOverrideLayout::class.java.getDeclaredField("first"))
         u.putBooleanVolatile(obj, offset, true)
     }
