@@ -1736,9 +1736,57 @@ object AppModel {
 
     // ============ 无缝转移播放 ============
 
-    /** 最近一次转移的状态文案（成功 / 失败 / 接管提示），给设备页展示。 */
-    private val _handoffMessage = MutableStateFlow<String?>(null)
-    val handoffMessageFlow: StateFlow<String?> = _handoffMessage.asStateFlow()
+    /**
+     * 一次转移的**状态**（不是文案）。
+     *
+     * ### 为什么不能只发一个字符串
+     *
+     * 旧版这里发的是成品中文串，UI 靠 `msg.startsWith("转移失败")` 决定配色 ——
+     * **状态与文案耦死了**：文案一改（翻译 / 改措辞），那个判断静默失配，
+     * 失败提示会显示成普通信息色，且**没有任何编译或测试能发现**。
+     *
+     * 所以这里只发「发生了什么」，`textOf(strings)` 在渲染那一刻才组出文案。
+     * 判成败看 [HandoffState.failed]，与用哪个语言无关。
+     */
+    sealed interface HandoffState {
+        /** 本机没有正在播放的曲目，无从转移。 */
+        data object NoTrack : HandoffState
+
+        /** 正在转移中。 */
+        data class Starting(val deviceName: String) : HandoffState
+
+        /** 转移成功：本机已暂停、进度保留。 */
+        data class Done(val deviceName: String) : HandoffState
+
+        /** 转移失败；本机继续播放。 [reason] 是协议层给的原因，可能为空。 */
+        data class Failed(val reason: String?) : HandoffState
+
+        /** 本机是目标端，接管了对端的播放。 */
+        data class TakenOver(val fromName: String, val trackName: String) : HandoffState
+
+        /** 接管失败。 */
+        data class TakeOverFailed(val fromName: String, val reason: String) : HandoffState
+
+        /** 失败态 —— UI 据此上错误色。 */
+        val failed: Boolean
+            get() = this is Failed || this is TakeOverFailed || this is NoTrack
+
+        /** 组出给用户看的文案（两种语言共用同一套判据）。 */
+        fun textOf(strings: cp.player.app.i18n.CpStrings): String = when (this) {
+            is NoTrack -> strings.standby.handoffNoTrack
+            is Starting -> strings.standby.handoffStarting(deviceName)
+            is Done -> strings.standby.handoffDone(deviceName)
+            is Failed -> strings.standby.handoffFailed(
+                reason?.takeIf { it.isNotBlank() } ?: strings.standby.noResponse,
+            )
+            is TakenOver -> strings.standby.handoffTakenOver(fromName, trackName)
+            is TakeOverFailed -> strings.standby.handoffTakeOverFailed(fromName, reason)
+        }
+    }
+
+    /** 最近一次转移的状态；`null` = 还没发起过。给设备页与设备选择弹层展示。 */
+    private val _handoffState = MutableStateFlow<HandoffState?>(null)
+    val handoffStateFlow: StateFlow<HandoffState?> = _handoffState.asStateFlow()
 
     /**
      * 把本机当前播放**无缝转移**到目标设备。
@@ -1755,7 +1803,7 @@ object AppModel {
         val st = playback.state.value
         val track = st.currentTrack
         if (track == null) {
-            _handoffMessage.value = "当前没有正在播放的曲目，无法转移"
+            _handoffState.value = HandoffState.NoTrack
             return
         }
         val wasPlaying = st.isPlaying
@@ -1776,7 +1824,7 @@ object AppModel {
             .takeIf { queue.isNotEmpty() && it in queue.indices && queue[it].mediaId == track.id }
             ?: -1
         modelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            _handoffMessage.value = "正在转移到 $deviceName …"
+            _handoffState.value = HandoffState.Starting(deviceName)
             val result = cp.player.core.sync.SyncTransport.handoff(
                 address,
                 cp.player.core.sync.HandoffRequest(
@@ -1798,9 +1846,9 @@ object AppModel {
                         playback.pause()
                     }
                 }
-                _handoffMessage.value = "已转移到 $deviceName（本机已暂停，进度保留）"
+                _handoffState.value = HandoffState.Done(deviceName)
             } else {
-                _handoffMessage.value = "转移失败：${result?.message ?: "设备无响应"} —— 本机继续播放"
+                _handoffState.value = HandoffState.Failed(result?.message)
             }
         }
     }
@@ -1836,6 +1884,10 @@ object AppModel {
                 if (st.currentTrack?.id != wantId) {
                     return@withTimeoutOrNull cp.player.core.sync.HandoffResult(
                         accepted = false,
+                        // ⚠️ 这个串会**跨设备**送到源端显示，而两端语言可能不同。
+                        // 彻底解决要把它改成协议级错误码（core 的改动，影响两端兼容），
+                        // 本批不碰；此处保持既有行为 —— 它是诊断信息，不参与本地化，
+                        // 界面上会作为「对端给出的原因」原样透出。
                         message = "本机无法播放该曲目（音源未登录或曲目不存在）",
                     )
                 }
@@ -1848,10 +1900,11 @@ object AppModel {
             )
         }
         val from = req.fromName.ifBlank { req.fromDeviceId.take(8) }
-        _handoffMessage.value = if (result.accepted) {
-            "已接管 $from 的播放：${req.trackName}"
+        _handoffState.value = if (result.accepted) {
+            HandoffState.TakenOver(from, req.trackName)
         } else {
-            "${req.fromName.ifBlank { "对端" }} 想转移播放，但接管失败：${result.message}"
+            // 失败原因来自对端（可能是它不认识的旧版本说法的中文），原样透出。
+            HandoffState.TakeOverFailed(req.fromName.ifBlank { from }, result.message.orEmpty())
         }
         return result
     }
