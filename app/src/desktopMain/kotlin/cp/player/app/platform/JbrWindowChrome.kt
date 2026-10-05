@@ -75,18 +75,34 @@ object JbrWindowChrome {
         }
         return runCatching {
             val bar = a.createCustomTitleBar.invoke(a.windowDecorations)
-                ?: return null
-            val setHeight = findMethod(bar.javaClass, "setHeight", paramCount = 1) ?: return null
+            if (bar == null) {
+                println("[JbrWindowChrome] createCustomTitleBar() 返回 null，放弃安装")
+                return null
+            }
+            val setHeight = findMethod(bar.javaClass, "setHeight", paramCount = 1)
+            if (setHeight == null) {
+                println("[JbrWindowChrome] 自定义标题栏实现类上找不到 setHeight(float)，放弃安装")
+                return null
+            }
+            // ⚠️ **这两行的顺序不能反**（2026-10-05 实测踩到，症状是「原生标题栏又回来了」）：
+            // `Window.setCustomTitleBar` 开头就校验 `bar.getHeight() > 0`，而
+            // `createCustomTitleBar()` 刚造出来的 bar 高度是 **0**（其构造器只初始化 insets）。
+            // ⇒ 先装后设高必然抛 `IllegalArgumentException: TitleBar height must be positive`，
+            // 被下面的 runCatching 吞掉后表现成「安装失败」，而且 20 次重试每次都以同样方式失败，
+            // 最终回落到「窗口保留系统标题栏」—— 用户看到的就是系统标题栏叠在自绘顶栏之上。
+            //
+            // 反过来先设高是安全的：`setHeight` 末尾的 `notifyUpdate()` 在 `bar.window == null`
+            // 时直接返回，不会去碰还没挂上的 peer（JBR 的 `Window$CustomTitleBar` 反汇编确认）。
+            setHeight.invoke(bar, titleBarHeightPx)
             a.setCustomTitleBar.invoke(a.windowDecorations, window, bar)
             Controller(
                 window = window,
                 api = a,
                 titleBar = bar,
-                setHeight = setHeight,
                 forceHitTest = findMethod(bar.javaClass, "forceHitTest", paramCount = 1),
                 putProperty = findMethod(bar.javaClass, "putProperty", paramCount = 2),
                 getRightInset = findMethod(bar.javaClass, "getRightInset", paramCount = 0),
-            ).also { it.setHeight(titleBarHeightPx) }
+            )
         }.onFailure {
             println("[JbrWindowChrome] 安装自定义标题栏失败：$it")
         }.getOrNull()
@@ -97,7 +113,6 @@ object JbrWindowChrome {
         private val window: Frame,
         private val api: WindowDecorationsApi,
         private val titleBar: Any,
-        private val setHeight: Method,
         private val forceHitTest: Method?,
         private val putProperty: Method?,
         private val getRightInset: Method?,
@@ -129,9 +144,6 @@ object JbrWindowChrome {
         fun uninstall() {
             runCatching { api.setCustomTitleBar.invoke(api.windowDecorations, window, null) }
         }
-
-        // install() 装完后立即设一次高度，所以可见性只放到 internal（限本文件/模块内使用）。
-        internal fun setHeight(heightPx: Float) = runCatching { setHeight.invoke(titleBar, heightPx) }
     }
 
     /** `WindowDecorations` 单例与其入口方法的反射句柄。 */
