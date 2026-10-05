@@ -113,7 +113,9 @@ class SettingsRegistryTest {
             assertEquals(
                 // ⚠️ `standby`（局域网设备）是后来加的入口，这一行当时没跟着更新，
                 // 于是快照测试一直挂在红灯上 —— 本次迁移顺手补回来。
-                listOf("stream_output", "integration", "standby"),
+                // `msg_notify`（私信通知）同理：它与 `standby` 是同一件事的两面
+                // （桌面端只有常驻托盘才收得到通知），所以紧挨着它。
+                listOf("stream_output", "integration", "standby", "msg_notify"),
                 byGroup[SettingsGroup.CONNECTIVITY]?.map { it.id },
                 "「连接与集成」组的内容或顺序变了",
             )
