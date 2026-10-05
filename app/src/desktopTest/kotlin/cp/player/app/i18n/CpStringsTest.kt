@@ -55,6 +55,38 @@ class CpStringsTest {
         enPaths.forEach { path -> assertContains(zhPaths, path, "中文文案缺少 $path") }
     }
 
+    @Test
+    fun `no string carries markdown or emphasis markers`() {
+        // `SettingsNote` / `Text` **不解析** Markdown：`**加粗**` 会把星号原样显示在界面上。
+        // 迁移时很容易照搬旧文案里的 `**…**`（本仓真发生过：局域网页的中英文都带着它，
+        // 只有出图才看出来 —— 两条警告的粉色背景上飘着四个星号）。
+        // 强调语义改用引号（中文「」/ 英文 ""）表达。
+        // 注意两个收集器收的不是同一个东西：`strings` 是 `路径 → 文案` 的 Map，
+        // 而 `collectParameterizedStrings` 要的是**被遍历的树根**（CpStrings 实例）——
+        // 传错成 Map 会在递归里 NPE（默认参数 `out` 变成 null）。
+        val locales = listOf<Pair<String, CpStrings>>("zh" to CpStringsZh, "en" to CpStringsEn)
+        locales.forEach { (language, root) ->
+            collectStrings(root).forEach { (path, value) ->
+                BANNED_MARKS.forEach { mark ->
+                    assertFalse(
+                        value.contains(mark),
+                        "[$language] $path 的文案里有 $mark —— 界面不解析 Markdown，星号会原样显示：$value",
+                    )
+                }
+            }
+            // 带参文案同样要查（警告语里那几条就是带参拼接出来的）。
+            collectParameterizedStrings(root).forEach { (path, sample) ->
+                BANNED_MARKS.forEach { mark ->
+                    assertFalse(
+                        sample.value.contains(mark),
+                        "[$language] $path 的输出里有 $mark —— 界面不解析 Markdown，" +
+                            "星号会原样显示：${sample.value}",
+                    )
+                }
+            }
+        }
+    }
+
     /**
      * 带参数的文案函数必须**真的用到每一个参数**。
      *
@@ -280,5 +312,14 @@ class CpStringsTest {
          */
         const val NUMBER_ARG = "12345"
         const val NUMBER_VALUE = 12345L
+
+        /**
+         * 文案里不该出现的标记。
+         *
+         * `SettingsNote` / `Text` 只渲染纯文本，不解析 Markdown（实锤见
+         * `no string carries markdown or emphasis markers` 的说明）。
+         * 反引号同理 —— 那是 KDoc 里的写法，混进文案就会原样显示。
+         */
+        val BANNED_MARKS = listOf("**", "`")
     }
 }

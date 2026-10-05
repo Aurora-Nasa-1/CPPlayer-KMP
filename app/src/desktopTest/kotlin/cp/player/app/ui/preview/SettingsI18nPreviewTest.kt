@@ -1,6 +1,10 @@
 package cp.player.app.ui.preview
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.Text
 import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.ui.component.SettingsNote
 import androidx.compose.foundation.layout.Box
@@ -9,6 +13,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
@@ -32,8 +37,10 @@ import cp.player.app.ui.component.MonetIcon
 import cp.player.app.ui.component.SettingsButtonItem
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsDropdownItem
+import cp.player.app.ui.component.SettingsFieldGroup
 import cp.player.app.ui.component.SettingsLazyPage
 import cp.player.app.ui.component.SettingsNote
+import cp.player.app.ui.component.SettingsNoteEmphasis
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSegmentedItem
 import cp.player.app.ui.component.SettingsSliderItem
@@ -297,6 +304,170 @@ class SettingsI18nPreviewTest {
     }
 
     /**
+     * 本地流输出页的**真实文案**。
+     *
+     * 单独出图的理由：这一页的警告文案最长（英文 `warningLanNoToken` 有 160+ 字符），
+     * 而它恰恰是最需要被看见的一条 —— 窄屏下换行后是否还能读完整，编译和单测量不到。
+     */
+    @Composable
+    private fun StreamOutputPage() {
+        val s = cpStrings()
+        ScrollColumn(Modifier.fillMaxSize()) {
+            SettingsSection(s.streamOutput.sectionMain) {
+                SettingsSwitchItem(
+                    title = s.streamOutput.enabled,
+                    subtitle = s.streamOutput.enabledNote,
+                    checked = true,
+                    onCheckedChange = {},
+                    index = 0,
+                    total = 3,
+                )
+                SettingsSegmentedItem(
+                    title = s.streamOutput.audioOutput,
+                    subtitle = s.streamOutput.outputNote(local = false),
+                    options = listOf(s.streamOutput.outputLocal, s.streamOutput.outputRemoteOnly),
+                    selectedIndex = 1,
+                    onSelect = {},
+                    index = 1,
+                    total = 3,
+                )
+                SettingsSegmentedItem(
+                    title = s.streamOutput.bindScope,
+                    subtitle = s.streamOutput.bindScopeNote,
+                    options = listOf(s.streamOutput.scopeLocalhost, s.streamOutput.scopeLan),
+                    selectedIndex = 1,
+                    onSelect = {},
+                    index = 2,
+                    total = 3,
+                )
+            }
+            SettingsNote(s.streamOutput.statusRunning("http://192.168.1.24:38086/stream"))
+            // 两条警告同页：ERROR 那条比 WARNING 长，中文短英文长三倍。
+            SettingsNote(s.streamOutput.warningLanNoToken, emphasis = SettingsNoteEmphasis.WARNING)
+            SettingsNote(s.integration.streamDisabledNote, emphasis = SettingsNoteEmphasis.WARNING)
+            SettingsSection(s.streamOutput.sectionToken) {
+                SettingsButtonItem(
+                    text = s.streamOutput.regenerateToken,
+                    subtitle = s.streamOutput.regenerateTokenNote,
+                    index = 0,
+                    total = 1,
+                    onClick = {},
+                )
+            }
+            SettingsNote(s.streamOutput.tokenStorageNote)
+        }
+    }
+
+    /** 集成页：带参数的校验错误说明 + 推送结果。 */
+    @Composable
+    private fun IntegrationPage() {
+        val s = cpStrings()
+        ScrollColumn(Modifier.fillMaxSize()) {
+            SettingsSection(s.integration.sectionPush) {
+                SettingsClickItem(
+                    title = s.integration.testConnection,
+                    subtitle = s.integration.testIdle("/api/health"),
+                    index = 0,
+                    total = 3,
+                    onClick = {},
+                )
+                SettingsClickItem(
+                    title = s.integration.pushCurrentQueue,
+                    subtitle = s.integration.pushCurrentQueueNote,
+                    index = 1,
+                    total = 3,
+                    onClick = {},
+                )
+                SettingsClickItem(
+                    title = s.integration.receiverAddress,
+                    subtitle = s.integration.pushFailed("connection refused"),
+                    index = 2,
+                    total = 3,
+                    onClick = {},
+                )
+            }
+            SettingsSection(s.integration.sectionThirdParty) {
+                SettingsSwitchItem(
+                    title = s.integration.allowApi,
+                    subtitle = s.integration.allowApiNote,
+                    checked = false,
+                    onCheckedChange = {},
+                    index = 0,
+                    total = 2,
+                )
+            }
+            SettingsNote(s.integration.apiSwitchNote)
+            SettingsNote(s.integration.configFileNote)
+        }
+    }
+
+    /**
+     * 局域网设备页的**真实文案**。
+     *
+     * 这一页有一条 400+ 字符的排障说明（`troubleshooting`），是全仓最长的单条文案 ——
+     * 英文窄屏下它是「能不能读下去」的唯一考验。顺带验转移失败态（错误色那一路）。
+     */
+    @Composable
+    private fun StandbyPage() {
+        val s = cpStrings()
+        ScrollColumn(Modifier.fillMaxSize()) {
+            SettingsSection(s.standby.sectionSelf) {
+                SettingsFieldGroup {
+                    InfoRowStub(s.standby.deviceName, "Living Room")
+                    InfoRowStub(s.standby.discoveryStatus, s.standby.listening, highlight = true)
+                }
+            }
+            SettingsSection(s.standby.sectionAutoSync) {
+                SettingsSwitchItem(
+                    title = s.standby.autoSync,
+                    subtitle = s.standby.autoSyncNote,
+                    checked = true,
+                    onCheckedChange = {},
+                    index = 0,
+                    total = 1,
+                )
+            }
+            SettingsNote(s.standby.syncWarning, emphasis = SettingsNoteEmphasis.WARNING)
+            SettingsSection(s.standby.sectionLanDevices) {
+                SettingsClickItem(
+                    title = s.standby.onlineDevices,
+                    subtitle = s.standby.onlineCount(1),
+                    index = 0,
+                    total = 1,
+                    enabled = false,
+                )
+            }
+            // 转移失败态：验「错误色 + 由状态组出的文案」这一路（本批重点改动）。
+            SettingsNote(
+                AppModel.HandoffState.Failed("connection refused").textOf(s),
+                emphasis = SettingsNoteEmphasis.WARNING,
+            )
+            SettingsNote(s.standby.troubleshooting)
+        }
+    }
+
+    /** 只读信息行（`StandbySettingsScreen.InfoRow` 是 Screen 的私有成员，此处同形复刻）。 */
+    @Composable
+    private fun InfoRowStub(label: String, value: String, highlight: Boolean = false) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                value,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (highlight) FontWeight.Medium else FontWeight.Normal,
+                color = if (highlight) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+
+    /**
      * 睡眠定时**弹窗**的文案。
      *
      * 单独出图的理由：这是设置页 / 播放页 / 玩家界面**三处共用**的弹窗（单一事实源），
@@ -420,6 +591,10 @@ class SettingsI18nPreviewTest {
                     // 那个按钮是 error 色的破坏性动作，英文下最容易挤爆。
                     "timer-active" to @Composable { SleepTimerDialogContent(active = true) },
                     "timer-idle" to @Composable { SleepTimerDialogContent(active = false) },
+                    // 批次 2：警告文案最长的三页，`troubleshooting` 单条 400+ 字符。
+                    "stream" to @Composable { StreamOutputPage() },
+                    "integration" to @Composable { IntegrationPage() },
+                    "standby" to @Composable { StandbyPage() },
                 ).forEach { (name, content) ->
                     render("i18n-$name-$tag-wide", 1000, 1100) {
                         ProvideCpStrings(language) {
