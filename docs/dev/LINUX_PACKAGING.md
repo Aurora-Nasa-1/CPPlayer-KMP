@@ -18,10 +18,25 @@ tar.gz = jpackage 的 app-image（`createDistributable` 产物）直接压缩：
 
 ```
 CPPlayer/
-├── bin/CPPlayer              启动器（自带 jlink 裁剪的 JBR 运行时）
-├── lib/CPPlayer.png 等       图标 / 配置
-└── lib/runtime/...           JetBrains Runtime（原生窗口拖动同 Windows 包）
+├── bin/CPPlayer                    启动器（ELF；直接链 libjli）
+├── lib/app/*.jar + CPPlayer.cfg    应用与依赖
+├── lib/CPPlayer.png 等             图标 / 配置
+└── lib/runtime/                    jlink 裁剪的 JBR 运行时
+    ├── release                     运行时镜像标记（jlink 无条件写）
+    ├── lib/modules                 模块 jimage
+    └── lib/server/libjvm.so        JVM
 ```
+
+⚠️ **运行时镜像里没有 `java` 可执行文件。** jpackage 的 jlink 带
+`--strip-native-commands`，`lib/runtime/bin/` 只剩 .so（Windows 镜像里是
+`jli.dll` / `java.dll` / `server/`，同样没有 `java.exe`）；启动器直接链 `libjli`，
+不需要 `bin/java`。**别拿 `lib/runtime/bin/java` 当「运行时在不在」的判据** ——
+CI 上这么断言会**永远红**（2026-10-05 白挂两次发布）。要判运行时用
+`lib/runtime/release` + `lib/runtime/lib/modules`。
+
+⚠️ Windows 的 app-image 布局**不一样**：启动器在根（`CPPlayer.exe`）、运行时在
+`runtime/`，**没有** `bin/` 与 `lib/` 这层。本页的路径只在 Linux 侧成立
+（`app/build.gradle.kts` 的 `packageLinuxTarGz` 也只在 Linux 宿主上跑，见下）。
 
 - **为什么不是 AppImage**：AppImage 需要额外下载 appimagetool、产物行为也和普通
   目录不同；tar.gz 解压即用，任何发行版都能跑，也是 AUR `-bin` 包的标准源。
@@ -36,9 +51,11 @@ CPPlayer/
 - 在 Windows/macOS 上运行该任务会**立即报错**（不会先白跑 jpackage）：
   createDistributable 产出的是当前宿主平台的应用镜像，打成 Linux 包是错的。
   刻意不做静默跳过 —— 那是 SKIPPED + BUILD SUCCESSFUL 的假成功。
-- 权限位（启动器/`bin/java`/`jspawnhelper` 的 755）靠「源目录 → tar」在 POSIX
-  文件系统上原样保留，任务里**不要**加 `fileMode`；CI 的布局断言 +
-  PKGBUILD 里的 `chmod` 兜底是双保险。
+- 权限位（启动器 `bin/CPPlayer` 与 `lib/runtime/lib/jspawnhelper` 的 755）靠
+  「源目录 → tar」在 POSIX 文件系统上原样保留，任务里**不要**加 `fileMode`；
+  CI 的布局断言 + PKGBUILD 里的 `chmod` 兜底是双保险。
+  ⚠️ 原来这里写的是「启动器 / `bin/java` / `jspawnhelper`」—— `bin/java` 在
+  app-image 里**根本不存在**（见上），已删。
 
 ## 2. AUR 包（cpplayer-bin）是怎么发的
 

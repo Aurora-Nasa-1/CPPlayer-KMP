@@ -244,10 +244,33 @@ jobs:
           # 先把清单整个读进变量（tar 真正跑完、退出码可判；损坏包也会在此 `set -e` 中止），
           # 再对变量做 grep —— 断言该有的牙口一点没少。
           listing="$(tar -tzf "$f")"
-          grep -qx 'CPPlayer/bin/CPPlayer' <<<"$listing" \
-            || { echo "::error::tar.gz 里缺 CPPlayer/bin/CPPlayer（启动器）"; exit 1; }
-          grep -qx 'CPPlayer/lib/runtime/bin/java' <<<"$listing" \
-            || { echo "::error::tar.gz 里缺 CPPlayer/lib/runtime/bin/java（内置运行时）"; exit 1; }
+          # ⚠️ 断言的路径必须是**实际存在的**。app-image 里**没有 `java` 可执行文件**：
+          # jlink 带 `--strip-native-commands`，运行时镜像的 `bin/` 只剩 .so/.dll
+          # （实测 Windows 镜像 `runtime/bin/` 里是 jli.dll / java.dll / server/，无 java.exe），
+          # 启动器直接链 libjli，不靠 `bin/java`。曾在 `lib/runtime/bin/java` 上断言
+          # ⇒ **永远红**，白挂两次发布（2026-10-05）。
+          # 现在只断言「启动器 + 运行时镜像的结构性标记」，两者都是 jlink 必产：
+          #   release      运行时镜像根，jlink 无条件写（含 JAVA_VERSION/IMPLEMENTOR）
+          #   lib/modules  模块 jimage，真正的 Java 运行时数据
+          # Linux app-image 布局（与 Windows 不同 —— Windows 启动器在根、运行时在 runtime/）：
+          #   CPPlayer/bin/CPPlayer                    启动器
+          #   CPPlayer/lib/app/*.jar + CPPlayer.cfg
+          #   CPPlayer/lib/runtime/{release,lib/modules,lib/server/libjvm.so,...}
+          for p in \
+            'CPPlayer/bin/CPPlayer' \
+            'CPPlayer/lib/runtime/release' \
+            'CPPlayer/lib/runtime/lib/modules'
+          do
+            grep -qx "$p" <<<"$listing" || {
+              echo "::error::tar.gz 里缺 $p"
+              # 把实际内容打出来 —— 路径假设错了要能一眼看出来，别再靠猜。
+              echo "--- 实际 CPPlayer/bin/ ---"
+              grep '^CPPlayer/bin/' <<<"$listing" | head -20 || true
+              echo "--- 实际 CPPlayer/lib/runtime/（前 30 条）---"
+              grep '^CPPlayer/lib/runtime/' <<<"$listing" | head -30 || true
+              exit 1
+            }
+          done
           echo "tar.gz 布局 OK"
       - name: Upload package
         uses: actions/upload-artifact@v4
