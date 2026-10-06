@@ -165,7 +165,7 @@ fun PlaylistDetailContent(
     val scope = rememberCoroutineScope()
 
     var showPlaylistSheet by remember { mutableStateOf(false) }
-    var optionsTarget by remember { mutableStateOf<TrackSummary?>(null) }
+    var optionsTarget by remember { mutableStateOf<Pair<Int, TrackSummary>?>(null) }
     var showInfoTarget by remember { mutableStateOf<TrackSummary?>(null) }
     var addToPlaylistIds by remember { mutableStateOf<List<String>?>(null) }
     // 添加歌曲来源流程（移植旧项目）：来源选项 → 歌单选择器/队列 → 歌曲多选
@@ -347,7 +347,7 @@ fun PlaylistDetailContent(
                 isOwner = isOwner,
                 showBackButton = canShowInlineBack,
                 onBack = { if (embedded) onEmbeddedBack?.invoke() else navigator.popOrNotify() },
-                onSongOptions = { optionsTarget = it },
+                onSongOptions = { index, track -> optionsTarget = index to track },
                 onOpenPlaylistSheet = { showPlaylistSheet = true },
                 onAddSelectedToPlaylist = { addToPlaylistIds = state.selectedIds.toList() },
                 onAddTracks = openAddSongs,
@@ -366,7 +366,7 @@ fun PlaylistDetailContent(
                 currentTrackId = currentTrackId,
                 isOwner = isOwner,
                 onBack = { if (embedded) onEmbeddedBack?.invoke() else navigator.popOrNotify() },
-                onSongOptions = { optionsTarget = it },
+                onSongOptions = { index, track -> optionsTarget = index to track },
                 onOpenPlaylistSheet = { showPlaylistSheet = true },
                 onAddSelectedToPlaylist = { addToPlaylistIds = state.selectedIds.toList() },
                 onAddTracks = openAddSongs,
@@ -398,7 +398,7 @@ fun PlaylistDetailContent(
     }
 
     // 歌曲选项弹层
-    optionsTarget?.let { track ->
+    optionsTarget?.let { (index, track) ->
         SongOptionsSheet(
             songName = track.name,
             artistName = track.artist,
@@ -407,8 +407,12 @@ fun PlaylistDetailContent(
             onDismiss = { optionsTarget = null },
             // 点击时对当前列表重新求值索引，避免弹层组合时固化过期 index
             onPlay = {
-                val index = displayTracks.indexOf(track)
-                if (index >= 0) model.playAt(index)
+                if (index >= 0 && index < displayTracks.size && displayTracks[index] == track) {
+                    model.playAt(index)
+                } else {
+                    val fallbackIndex = displayTracks.indexOf(track)
+                    if (fallbackIndex >= 0) model.playAt(fallbackIndex)
+                }
             },
             onToggleFavorite = { model.toggleLike(track) },
             onAddToQueue = {
@@ -620,7 +624,7 @@ private fun NarrowLayout(
     currentTrackId: String?,
     isOwner: Boolean,
     onBack: () -> Unit,
-    onSongOptions: (TrackSummary) -> Unit,
+    onSongOptions: (Int, TrackSummary) -> Unit,
     onOpenPlaylistSheet: () -> Unit,
     onAddSelectedToPlaylist: () -> Unit,
     onAddTracks: () -> Unit,
@@ -767,7 +771,7 @@ private fun WideLayout(
     isOwner: Boolean,
     showBackButton: Boolean,
     onBack: () -> Unit,
-    onSongOptions: (TrackSummary) -> Unit,
+    onSongOptions: (Int, TrackSummary) -> Unit,
     onOpenPlaylistSheet: () -> Unit,
     onAddSelectedToPlaylist: () -> Unit,
     onAddTracks: () -> Unit,
@@ -981,7 +985,7 @@ private fun TrackList(
     displayTracks: List<TrackSummary>,
     currentTrackId: String?,
     withHeader: Boolean,
-    onSongOptions: (TrackSummary) -> Unit,
+    onSongOptions: (Int, TrackSummary) -> Unit,
     onSortClick: () -> Unit,
     onAddTracks: () -> Unit,
     buildSongMenu: @Composable (TrackSummary, Int) -> List<CpContextMenuItem>,
@@ -1055,7 +1059,7 @@ private fun TrackList(
                         else model.playAt(index)
                     },
                     onOptionsClick = if (!state.selectionMode) {
-                        { onSongOptions(track) }
+                        { onSongOptions(index, track) }
                     } else null,
                     onLongClick = if (!state.selectionMode) {
                         { model.enterSelection(track.id) }
