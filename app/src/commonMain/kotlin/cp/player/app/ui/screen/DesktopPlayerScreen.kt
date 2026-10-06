@@ -35,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -52,6 +53,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.navigator.LocalNavigator
 import coil3.compose.AsyncImage
+import cp.player.app.AppModel
 import cp.player.app.ui.component.CpModeToggle
 import cp.player.app.ui.component.CpPlayPauseButton
 import cp.player.app.ui.component.CpSeekBar
@@ -60,6 +62,7 @@ import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.MorphingShape
 import cp.player.app.ui.component.SimilarSongsPanel
 import cp.player.app.ui.component.TrackArtistText
+import cp.player.app.ui.component.cpFluidBackground
 import cp.player.app.ui.component.PlayerMoreSheets
 import cp.player.app.ui.component.rememberPlayerMoreSheetState
 import cp.player.app.ui.theme.CpMotion
@@ -122,6 +125,11 @@ fun DesktopPlayerScreen(
     // ⇒ 本函数每 200ms 重组一次。Gradient/RadialGradient 的构造不算便宜（要算色标、
     // 建对象），不 remember 就是每秒 5 次无谓分配 + 一次背景重绘。颜色是唯一变量，
     // 故以颜色为 key —— 主题切换时才重建。
+    //
+    // 这支径向渐变现在有**两个身份**：`enabled = false`（用户在「外观」里关了流体背景）
+    // 时的唯一背景，以及流体背景在 Android 12 及以下（没有 RuntimeShader）时的实际外观。
+    // 两套播放页（本页与窄屏 PlayerScreen）共用同一个 `cpFluidBackground` 组件，
+    // 参数也共用 `CpFluidBackgroundDefaults` —— 别在这里另起一套速度 / 尺度。
     val surfaceHigh = MaterialTheme.colorScheme.surfaceContainerHigh
     val background0 = MaterialTheme.colorScheme.background
     val background = remember(surfaceHigh, background0) {
@@ -130,6 +138,7 @@ fun DesktopPlayerScreen(
             radius = 1200f,
         )
     }
+    val fluidBackground by AppModel.fluidBackgroundFlow.collectAsState()
     // 封面「呼吸」：播放时收紧圆角，暂停时松开。
     val artCorner by animateDpAsState(
         targetValue = if (state.isPlaying) 18.dp else 26.dp,
@@ -137,7 +146,7 @@ fun DesktopPlayerScreen(
         label = "desktopArtCorner",
     )
 
-    Box(Modifier.fillMaxSize().background(background).padding(28.dp)) {
+    Box(Modifier.fillMaxSize().cpFluidBackground(enabled = fluidBackground, fallback = background).padding(28.dp)) {
         Column(Modifier.fillMaxSize()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) { Icon(Icons.Filled.Close, "收起播放页") }

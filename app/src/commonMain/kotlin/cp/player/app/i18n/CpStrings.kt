@@ -245,6 +245,9 @@ interface AppearanceStrings {
     val coverFlight: String
     val coverFlightNote: String
 
+    val fluidBackground: String
+    val fluidBackgroundNote: String
+
     val fontRoundness: String
 
     /** @param defaultRoundness 当前平台的默认圆滑度（各平台不一样，所以是参数）。 */

@@ -72,6 +72,7 @@ class AppearanceSettingsScreen : Screen {
         val pureBlack by AppModel.pureBlackFlow.collectAsState()
         val bottomBarAutoHide by AppModel.bottomBarAutoHideFlow.collectAsState()
         val coverFlightAnimation by AppModel.coverFlightAnimationFlow.collectAsState()
+        val fluidBackground by AppModel.fluidBackgroundFlow.collectAsState()
         val fontRoundness by AppModel.fontRoundnessFlow.collectAsState()
         val platformAvailable = isPlatformColorSourceAvailable()
         val defaultRoundness = cp.player.app.platform.defaultFontRoundness()
@@ -100,7 +101,7 @@ class AppearanceSettingsScreen : Screen {
                             ThemeMode.entries.getOrNull(index)?.let(AppModel::setThemeMode)
                         },
                         index = 0,
-                        total = 5,
+                        total = 6,
                     )
                     SettingsSegmentedItem(
                         title = s.appearance.colorSource,
@@ -110,7 +111,7 @@ class AppearanceSettingsScreen : Screen {
                             availableSources.getOrNull(index)?.let(AppModel::setColorSource)
                         },
                         index = 1,
-                        total = 5,
+                        total = 6,
                     )
                     SettingsSwitchItem(
                         title = s.appearance.pureBlack,
@@ -118,7 +119,7 @@ class AppearanceSettingsScreen : Screen {
                         checked = pureBlack,
                         onCheckedChange = AppModel::setPureBlack,
                         index = 2,
-                        total = 5,
+                        total = 6,
                     )
                     // 窄屏布局才有底栏；桌面宽屏走侧栏，这项开着也无副作用。
                     SettingsSwitchItem(
@@ -127,7 +128,7 @@ class AppearanceSettingsScreen : Screen {
                         checked = bottomBarAutoHide,
                         onCheckedChange = AppModel::setBottomBarAutoHide,
                         index = 3,
-                        total = 5,
+                        total = 6,
                     )
                     SettingsSwitchItem(
                         title = s.appearance.coverFlight,
@@ -135,7 +136,17 @@ class AppearanceSettingsScreen : Screen {
                         checked = coverFlightAnimation,
                         onCheckedChange = AppModel::setCoverFlightAnimation,
                         index = 4,
-                        total = 5,
+                        total = 6,
+                    )
+                    // 与「封面飞行动画」同属「播放页的视觉特效」，所以放同一组而不是
+                    // 播放设置页：用户找它时的心理位置是「界面长什么样」，不是「怎么播」。
+                    SettingsSwitchItem(
+                        title = s.appearance.fluidBackground,
+                        subtitle = s.appearance.fluidBackgroundNote,
+                        checked = fluidBackground,
+                        onCheckedChange = AppModel::setFluidBackground,
+                        index = 5,
+                        total = 6,
                     )
                 }
                 SettingsSection(s.appearance.sectionFont) {

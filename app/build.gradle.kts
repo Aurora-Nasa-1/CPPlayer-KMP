@@ -342,6 +342,10 @@ kotlin {
                 implementation(libs.ktor.serialization.json)
                 implementation(libs.accompanist.lyrics.ui)
                 implementation(libs.accompanist.lyrics.core)
+                // 播放页流体背景：SkSL 运行时着色器 → Modifier.shaderBackground。
+                // ⚠️ 只有 core 模块是 MIT；`hypnoticcanvas-shaders` 里多数着色器是
+                // CC-BY-NC-SA（非商用），**别加**。版本联动关系见 libs.versions.toml。
+                implementation(libs.hypnoticcanvas)
                 // 跨平台 Material You：seed 色 → M3 ColorScheme（含逐角色过渡动画）
                 implementation(libs.materialkolor)
                 // 封面 / 壁纸取色：Material You 官方的量化 + 打分算法（与系统 Monet 同源）

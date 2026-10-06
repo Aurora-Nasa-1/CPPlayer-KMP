@@ -160,6 +160,10 @@ object CpStringsZh : CpStrings {
         override val coverFlightNote = "点击歌曲 / 歌单封面时，播放封面飞向播放器或详情页的过渡动画；" +
             "关闭后点击更干脆利落"
 
+        override val fluidBackground = "流体背景"
+        override val fluidBackgroundNote = "播放页使用缓慢流动的渐变底色（仿 Apple Music），" +
+            "配色跟随当前主题与封面取色；Android 13 以下自动改用静态渐变。关闭可省电"
+
         override val fontRoundness = "字体圆滑度"
         override fun fontRoundnessNote(defaultRoundness: Int) =
             "Google Sans Flex 的 ROND 可变轴：0 方正、100 最圆润。" +

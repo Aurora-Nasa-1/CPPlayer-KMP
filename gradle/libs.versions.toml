@@ -37,6 +37,22 @@ media3 = "1.11.1"
 #   compose 1.12.x  ↔ coil 3.6.x（skiko 0.150.1）
 # 3.3.0（skiko 0.9.4.2）/ 3.4.0（skiko 0.9.22.2）都落在两档之外，必然报警。
 coil = "3.6.3"
+# 播放页的流体背景（仿 Apple Music 的流动网格渐变）：把 SkSL 运行时着色器包成
+# Compose Multiplatform 的 `Modifier.shaderBackground`。
+#
+# ⚠️ **版本与 Kotlin / CMP 是联动的**，不能单独升：0.6.0 的 Gradle module metadata 里
+# 写死 `kotlin-stdlib 2.4.10` + `compose.ui / compose.foundation 1.12.0`，
+# 与本项目的 `kotlin = 2.4.10` / `compose = 1.12.1` 正好同代（本项目更高，安全）。
+# 换版本前先读它的 `.module` 文件核对这两项。
+#
+# ⚠️ **只引 `hypnoticcanvas`，不要引 `hypnoticcanvas-shaders`**：后者除
+# PrismGlass / SpectralAurora 外，其余着色器是 `CC-BY-NC-SA-3.0`（**非商用**）。
+# 本项目要用的 `MeshGradient` 在 core 模块里，是 MIT。
+#
+# ⚠️ 各平台能力不同（库自身行为，不是 bug）：桌面 / iOS / Web 恒走真着色器；
+# Android 只有 **API 33+** 有 `android.graphics.RuntimeShader`，更低版本自动回退到
+# 调用方给的 `fallback` Brush（见 `CpFluidBackground` 的 KDoc）。
+hypnoticcanvas = "0.6.0"
 mp3spi = "1.9.5.4"
 jflac = "1.5.2"
 jlayer = "1.0.1"
@@ -127,6 +143,7 @@ androidx-media-compat = { module = "androidx.media:media", version = "1.7.0" }
 composemediaplayer-audio = { module = "io.github.kdroidfilter:composemediaplayer-audio", version = "0.11.4" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
+hypnoticcanvas = { module = "com.mikepenz.hypnoticcanvas:hypnoticcanvas", version.ref = "hypnoticcanvas" }
 mp3spi = { module = "com.googlecode.soundlibs:mp3spi", version.ref = "mp3spi" }
 jflac-codec = { module = "org.jflac:jflac-codec", version.ref = "jflac" }
 jlayer = { module = "javazoom:jlayer", version.ref = "jlayer" }

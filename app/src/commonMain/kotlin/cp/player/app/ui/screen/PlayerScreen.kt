@@ -99,6 +99,7 @@ import cp.player.app.ui.anim.LocalNavAnimatedVisibilityScope
 import cp.player.app.ui.anim.LocalSharedTransitionScope
 import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.LazyScrollColumn
+import cp.player.app.ui.component.cpFluidBackground
 import cp.player.app.ui.component.desktopPagerMouseControl
 import cp.player.app.ui.component.PlayerMoreSheets
 import cp.player.app.ui.component.QueueBottomSheet
@@ -290,7 +291,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
         if (pagerState.settledPage != 1 && offsetY.value > 0f) offsetY.snapTo(0f)
     }
 
-    // 背景：竖向渐变。
+    // 背景：流体网格渐变（仿 Apple Music），低版本安卓 / 用户关掉时回退到竖向渐变。
     //
     // 两个色都取自 MaterialTheme，所以「跟随封面 / 跟随系统」换色时这里会一起变。
     // 深色分支原先硬编码 `#1B1B22 → #0A0A0F` —— 那是「KMP 还没有封面取色」时期的替代品，
@@ -301,6 +302,12 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
     // 背景会停在旧配色上而其余控件已经换色 —— 看起来就像「主题只换了一半」。
     // ⚠️ 读 LocalIsDarkTheme（已解析的明暗），**不要**读 isSystemInDarkTheme()：
     // 播放页允许用户显式选浅色/深色，用系统状态会在「应用深色 + 系统浅色」时取错色板。
+    //
+    // ⚠️ 这支渐变现在有**两个身份**，改色前先想清楚动的是哪一个：
+    //   1. `enabled = false`（用户在「外观」里关了流体背景）时的**唯一背景**；
+    //   2. 流体背景在 Android 12 及以下（没有 RuntimeShader）的**实际外观** —— 那边
+    //      不是「降级到一帧纯色」，而是整段播放都长这样。
+    // 所以它不是可以随便糊弄的兜底，观感必须能单独站住。
     val isDark = LocalIsDarkTheme.current
     val surfaceTop = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh
     else MaterialTheme.colorScheme.surfaceVariant
@@ -309,6 +316,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
     val bgBrush = remember(surfaceTop, surfaceBottom) {
         Brush.verticalGradient(listOf(surfaceTop, surfaceBottom))
     }
+    val fluidBackground by AppModel.fluidBackgroundFlow.collectAsState()
 
     Box(
         Modifier
@@ -317,7 +325,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                 sharedContentState = rememberSharedContentState(key = "player-container"),
                 animatedVisibilityScope = animatedVisibilityScope
             )
-            .background(bgBrush)
+            .cpFluidBackground(enabled = fluidBackground, fallback = bgBrush)
             .windowInsetsPadding(WindowInsets.systemBars)
     ) {
 

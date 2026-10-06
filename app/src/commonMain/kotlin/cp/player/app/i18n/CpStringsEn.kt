@@ -158,6 +158,12 @@ object CpStringsEn : CpStrings {
             "Transition that flies the artwork into the player or detail page when you tap a track or " +
                 "playlist cover. Turn it off for a snappier tap."
 
+        override val fluidBackground = "Fluid background"
+        override val fluidBackgroundNote =
+            "A slowly drifting gradient behind the player, inspired by Apple Music. Colors follow the " +
+                "current theme and artwork palette; Android 13 and below falls back to a static gradient. " +
+                "Turn it off to save power."
+
         override val fontRoundness = "Font roundness"
         override fun fontRoundnessNote(defaultRoundness: Int) =
             "The ROND variable axis of Google Sans Flex: 0 is square, 100 is roundest. " +

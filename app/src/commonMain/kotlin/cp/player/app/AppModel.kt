@@ -267,6 +267,7 @@ object AppModel {
     private val KEY_DYNAMIC_COLOR_LEGACY = "dynamic_color"
     private val KEY_COLOR_SOURCE = "color_source"
     private val KEY_PURE_BLACK = "pure_black"
+    private val KEY_FLUID_BACKGROUND = "fluid_background"
     private val KEY_PLAYBACK_QUALITY = "playback_quality"
     private val KEY_METERED_PLAYBACK_QUALITY = "playback_quality_metered"
 
@@ -365,6 +366,31 @@ object AppModel {
     fun setPureBlack(enabled: Boolean) {
         settings.putString(KEY_PURE_BLACK, enabled.toString())
         _pureBlack.value = enabled
+    }
+
+    // ============ 播放页流体背景（持久化） ============
+
+    private val _fluidBackground = MutableStateFlow(fluidBackground())
+
+    /**
+     * 播放页是否使用流体背景（仿 Apple Music 的流动网格渐变）。
+     *
+     * **默认开**：这是播放页的主视觉，默认关掉等于「做了个没人看得见的功能」。
+     * 低版本安卓（API < 33，没有 `RuntimeShader`）本来就自动回退成静态渐变，
+     * 不需要用户为平台差异操心。
+     *
+     * 关掉的意义只有一条：**着色器在屏期间持续出帧**（见 `cpFluidBackground` 的 KDoc），
+     * 低端机 / 想省电的用户需要一个开关。所以这里存的是用户偏好，不是能力探测 ——
+     * 「这个平台跑不跑得动」由库自己判，别在设置层再猜一遍。
+     */
+    val fluidBackgroundFlow: StateFlow<Boolean> = _fluidBackground.asStateFlow()
+
+    fun fluidBackground(): Boolean =
+        settings.getString(KEY_FLUID_BACKGROUND)?.toBooleanStrictOrNull() ?: true
+
+    fun setFluidBackground(enabled: Boolean) {
+        settings.putString(KEY_FLUID_BACKGROUND, enabled.toString())
+        _fluidBackground.value = enabled
     }
 
     // ============ 保留上次播放（持久化） ============
