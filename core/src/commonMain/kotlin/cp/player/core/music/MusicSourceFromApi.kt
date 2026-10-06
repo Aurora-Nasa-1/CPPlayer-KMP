@@ -378,6 +378,17 @@ object MusicSourceFromApi {
     }
 
     /**
+     * 解析用户收藏的专辑（`album/sublist`）：`{ data: [...] }`。
+     *
+     * ⚠️ 返回形状与 `album/new` 的 `{ albums: [...] }` **不同**，所以两个键都要试。
+     * 复用 [parseAlbumArray] 的字段映射 —— 上游四处（新碟 / 搜索 / 歌手专辑 / 收藏专辑）
+     * 的专辑对象形状一致，各写一份迟早分叉。
+     */
+    fun parseAlbumSublist(json: JsonElement): MusicResult<List<AlbumSummary>> {
+        return json.toMusicResult { parseAlbumArray(this, "data", "albums") }
+    }
+
+    /**
      * 从 [root] 里按候选键取专辑数组并映射。
      *
      * 键名按出现频率排列，全部命不中时返回空列表（而不是报错）：专辑列表为空
@@ -659,6 +670,15 @@ object MusicSourceFromApi {
 
     suspend fun getNewAlbums(api: MusicApiService, area: String = "ALL", limit: Int = 30): MusicResult<List<AlbumSummary>> =
         parseAlbums(api.getTopAlbums(area = area, limit = limit))
+
+    /**
+     * 用户收藏的专辑（`album/sublist`）—— 专辑墙的**主数据源**。
+     *
+     * 与 [getNewAlbums]（新碟，全站）的区别：这是"我的"库，墙要铺的是用户自己的东西。
+     * 未登录 / 未收藏时上游返回空数组，属于正常状态，不是错误。
+     */
+    suspend fun getUserAlbums(api: MusicApiService, limit: Int = 100, offset: Int = 0): MusicResult<List<AlbumSummary>> =
+        parseAlbumSublist(api.getAlbumSublist(limit = limit, offset = offset))
 
     suspend fun getTopSongs(api: MusicApiService, type: Int = 0): MusicResult<List<TrackSummary>> =
         parseTopSongs(api.getTopSongs(type = type))

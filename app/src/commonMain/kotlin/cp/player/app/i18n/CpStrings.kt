@@ -84,6 +84,14 @@ interface CpStrings {
     /** 一起听、私信、消息、评论。 */
     val social: SocialStrings
 
+    /**
+     * 专辑墙模式（`ui/wall`）。
+     *
+     * 单独成组：墙是**跨数据源的模式**（专辑 / 歌单 / 艺人 都能上墙），
+     * 不属于"媒体库"这一页；将来歌手页、搜索结果的「用墙看」也读同一组。
+     */
+    val wall: WallStrings
+
     companion object {
         /** 简体中文实例。 */
         val zh: CpStrings get() = CpStringsZh

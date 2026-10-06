@@ -104,6 +104,16 @@ class MusicRepository(private val api: MusicApiService) {
         MusicSourceFromApi.getNewAlbums(api, limit = limit)
 
     /**
+     * 用户收藏的专辑 —— 专辑墙的主数据源。
+     *
+     * 走 [MusicApiService] 而**不是** `MusicSource` 接口：后者是"统一音乐源"的抽象，
+     * 加成员要带默认实现（AGENTS §5），而墙只是 app 侧的一个视图模式，
+     * 没必要为它污染所有 Provider 的实现面。
+     */
+    suspend fun getUserAlbums(limit: Int = 100, offset: Int = 0): MusicResult<List<AlbumSummary>> =
+        MusicSourceFromApi.getUserAlbums(api, limit = limit, offset = offset)
+
+    /**
      * 新歌速递。
      * @param type 地区：0=全部, 7=华语, 96=欧美, 8=日本, 16=韩国
      */

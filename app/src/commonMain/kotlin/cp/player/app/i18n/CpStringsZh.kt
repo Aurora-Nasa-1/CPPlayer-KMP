@@ -798,6 +798,7 @@ object CpStringsZh : CpStrings {
     override val account = AccountStringsZh
     override val downloads = DownloadStringsZh
     override val insights = InsightStringsZh
+    override val wall = WallStringsZh
     override val social = SocialStringsZh
 
 }

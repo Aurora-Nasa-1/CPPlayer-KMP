@@ -857,5 +857,6 @@ object CpStringsEn : CpStrings {
     override val downloads = DownloadStringsEn
     override val insights = InsightStringsEn
     override val social = SocialStringsEn
+    override val wall = WallStringsEn
 
 }
