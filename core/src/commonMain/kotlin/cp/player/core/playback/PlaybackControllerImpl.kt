@@ -8,7 +8,10 @@ import cp.player.core.music.TrackSummary
 import cp.player.core.music.UnifiedMusicSource
 import cp.player.core.model.LyricsInfo
 import cp.player.core.util.SettingsStorage
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -96,6 +99,18 @@ class PlaybackControllerImpl(
         @Volatile var summary: TrackSummary? = null
     }
 
+    /**
+     * 「上次播放」快照的内存形态（[PlaybackSessionSettings.KEY_LAST_SESSION] 的解析结果）。
+     *
+     * 与持久化格式一一对应；改字段时 [encodeSession] / [decodeSession] 必须同步改。
+     */
+    private data class Session(
+        val ids: List<String>,
+        val index: Int,
+        val sourceId: String?,
+        val positionMs: Long,
+    )
+
     private val _queue = mutableListOf<Entry>()
     private var _index = -1
     private var _repeat = RepeatMode.OFF
@@ -133,6 +148,18 @@ class PlaybackControllerImpl(
      * 这个意图不能落到 B 头上。
      */
     @Volatile private var deferredSeek: Pair<String, Long>? = null
+
+    /**
+     * 「保留上次播放」恢复出来的起播进度：`曲目 mediaId → 毫秒`。
+     *
+     * 恢复只把队列与当前曲目摆好（**不自动播放**），进度先记在这里；
+     * 等用户手动点播放、[playCurrent] 真正装载该曲时，把它当作起始位置交给引擎
+     * ——「停在上次进度」而不是「从头开始」。
+     *
+     * 带 mediaId 的理由与 [deferredSeek] 相同：用户可能先切到别的曲子，
+     * 这份进度不能落到别人头上。它在 [playCurrent] 里**无条件清空**（一次性）。
+     */
+    @Volatile private var restoredResume: Pair<String, Long>? = null
 
     /**
      * 当前曲目**已就绪的本地副本**：`曲目 mediaId → 本地绝对路径`。
@@ -201,6 +228,9 @@ class PlaybackControllerImpl(
     init {
         restorePlaybackModes()
         observePlatform()
+        // 必须在 observePlatform 之后：恢复要写入的 positionMs 不能被引擎初始的 0 冲掉
+        // （positionMs 采集器已对「恢复中」做了保护，见 observePlatform）。
+        restoreLastSession()
     }
 
     // ============ 播放模式持久化（随机 / 循环） ============
@@ -230,6 +260,107 @@ class PlaybackControllerImpl(
         runCatching {
             storage.putString(KEY_REPEAT_MODE, _repeat.name)
             storage.putString(KEY_SHUFFLE_ENABLED, _shuffle.toString())
+        }
+    }
+
+    // ============ 上次播放会话持久化（「保留上次播放」） ============
+
+    /** 开关是否开启。无存储（最小装配路径 / 测试）时恒为 false，保持零存储副作用。 */
+    private fun keepLastPlaybackEnabled(): Boolean =
+        playbackModeSettings?.let { PlaybackSessionSettings.keepLastPlayback(it) } ?: false
+
+    /**
+     * 把当前会话（队列 + 当前下标 + 来源 + 进度）落盘；失败静默。
+     *
+     * 队列为空 / 无当前曲目时**删除**快照 —— 「清空队列」也是一种用户意图，
+     * 下次启动不该把已清掉的队列又摆回来。开关关闭时同样删除，避免关掉后
+     * 旧快照一直躺着、用户再打开开关时恢复到一份早已过期的队列。
+     *
+     * 由 [pushQueueState]（队列结构变化）与 [playCurrent]（切曲）触发，
+     * 另在播放期间由 scrobble tick 每 [SESSION_SAVE_INTERVAL_S] 秒刷新一次进度。
+     */
+    private fun persistSession() {
+        val storage = playbackModeSettings ?: return
+        runCatching {
+            if (!keepLastPlaybackEnabled()) {
+                storage.remove(PlaybackSessionSettings.KEY_LAST_SESSION)
+                return
+            }
+            val encoded = encodeSession()
+            if (encoded == null) {
+                storage.remove(PlaybackSessionSettings.KEY_LAST_SESSION)
+            } else {
+                storage.putString(PlaybackSessionSettings.KEY_LAST_SESSION, encoded)
+            }
+        }
+    }
+
+    /** 编码为 JSON；队列为空 / 无当前曲目时返回 null（表示「没有可保留的会话」）。 */
+    private fun encodeSession(): String? {
+        if (_index !in _queue.indices) return null
+        val obj = JsonObject(
+            mapOf(
+                "sourceId" to (_sourceId?.let { JsonPrimitive(it) } ?: JsonNull),
+                "index" to JsonPrimitive(_index),
+                "positionMs" to JsonPrimitive(_state.value.positionMs),
+                "ids" to JsonArray(_queue.map { JsonPrimitive(it.mediaId) }),
+            ),
+        )
+        return obj.toString()
+    }
+
+    /** 解析 [encodeSession] 写出的 JSON；任何不合法内容都返回 null（宁可恢复失败，不要崩）。 */
+    private fun decodeSession(raw: String): Session? {
+        val obj = runCatching { Json.parseToJsonElement(raw) as? JsonObject }.getOrNull() ?: return null
+        val ids = (obj["ids"] as? JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+            ?.filter { it.isNotBlank() }
+            .orEmpty()
+        if (ids.isEmpty()) return null
+        val index = (obj["index"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull() ?: 0
+        val positionMs = (obj["positionMs"] as? JsonPrimitive)?.contentOrNull?.toLongOrNull() ?: 0L
+        val sourceId = (obj["sourceId"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+        return Session(
+            ids = ids,
+            index = index.coerceIn(0, ids.lastIndex),
+            sourceId = sourceId,
+            positionMs = positionMs.coerceAtLeast(0L),
+        )
+    }
+
+    /**
+     * 启动时恢复上次的播放队列 —— **只摆队列，不自动播放**。
+     *
+     * 「保留上次播放」的语义是「还在上次那首、接着听」，而不是「一开就自己响」：
+     * 自动出声在半夜 / 插耳机前都可能吓人一跳。恢复后小播放器显示该曲，
+     * 进度停在 [Session.positionMs]，用户点播放才真正出声并从该进度起播。
+     *
+     * ⚠️ 恢复在后台协程里做，且**只在队列仍为空时**执行：若用户在它完成前
+     * 已经开始播放（队列非空），放弃恢复 —— 绝不覆盖用户刚做出的选择。
+     */
+    private fun restoreLastSession() {
+        val storage = playbackModeSettings ?: return
+        if (!PlaybackSessionSettings.keepLastPlayback(storage)) return
+        val session = storage.getString(PlaybackSessionSettings.KEY_LAST_SESSION)
+            ?.let(::decodeSession) ?: return
+        scope.launch {
+            val restored = navMutex.withLock {
+                if (_queue.isNotEmpty() || _index >= 0) return@withLock false
+                _queue.clear()
+                session.ids.forEach { _queue.add(Entry(it)) }
+                _order = if (_shuffle) shuffledOrder(_queue.size) else null
+                _index = session.index.coerceIn(0, _queue.lastIndex)
+                _orderPos = _order?.indexOf(_index) ?: _index
+                _sourceId = session.sourceId
+                restoredResume = _queue[_index].mediaId to session.positionMs
+                true
+            }
+            if (!restored) return@launch
+            // ⚠️ 先写 positionMs、再 pushQueueState：后者会顺带落盘快照，
+            // 顺序反过来时快照里的进度会被此刻仍是 0 的 state 覆盖掉（恢复当场丢失进度）。
+            updateState { it.copy(sourceId = session.sourceId, positionMs = session.positionMs) }
+            pushQueueState()
+            resolveQueueInBackground(startFrom = _index)
         }
     }
 
@@ -263,6 +394,9 @@ class PlaybackControllerImpl(
             // 直接写入会把 requestSeek 刚做的乐观回写冲掉——进度条松手即回弹。
             // 等 playCurrent 把暂存值作为起始位置交给引擎后，这里自然恢复接管。
             if (deferredSeek != null) return@onEach
+            // 「保留上次播放」恢复出来、尚未起播的曲目：引擎位置恒为 0，别把恢复的进度冲掉。
+            // 用户点播放后 playCurrent 会清掉 restoredResume 并置 engineReady，这里自然恢复接管。
+            if (!engineReady && restoredResume?.first == _queue.getOrNull(_index)?.mediaId) return@onEach
             updateState { it.copy(positionMs = pos, activeLyricIndex = computeLyricIndex(it.lyrics, pos)) }
         }.launchIn(scope)
         platform.durationMs.onEach { dur ->
@@ -331,6 +465,8 @@ class PlaybackControllerImpl(
             _index = startIndex.coerceIn(0, _queue.lastIndex)
             _orderPos = _order?.indexOf(_index) ?: _index
             _sourceId = sourceId
+            // 换了队列：上次恢复出来的进度不再适用，别让它落到新队列的同名曲上。
+            restoredResume = null
         }
         pushQueueState()
         resolveQueueInBackground(startFrom = _index)
@@ -510,7 +646,12 @@ class PlaybackControllerImpl(
         }
     }
 
-    override fun pause() { platform.pause() }
+    override fun pause() {
+        platform.pause()
+        // 暂停是「要离开了」的最强信号：立刻把进度落盘，下次启动能停在这里。
+        // 派发到 scope —— pause() 会在 UI 线程被调用，不该在那里做文件写入。
+        scope.launch { persistSession() }
+    }
     override fun resume() { platform.play() }
     override fun seekTo(positionMs: Long) { requestSeek(positionMs) }
 
@@ -925,6 +1066,8 @@ class PlaybackControllerImpl(
     override fun setVolume(volume: Float) { platform.setVolume(volume.coerceIn(0f, 1f)) }
 
     override fun release() {
+        // 释放前先落盘：正常退出 / 后端重置时，这是最后一次写快照的机会。
+        persistSession()
         scrobbleTickJob?.cancel(); scrobbleJob?.cancel(); lyricsJob?.cancel(); loadJob?.cancel()
         sleepTimerJob?.cancel(); favoritesLoadingJob?.cancel(); resolveJob?.cancel()
         queueGeneration++
@@ -1001,7 +1144,14 @@ class PlaybackControllerImpl(
             // 否则这次 seek 会被 load() 的默认 0 直接覆盖掉（「拖了没反应」）。
             // 注意必须在这里取而不是协程开头——用户的 seek 通常发生在
             // 「协程已启动、播放地址还没解析出来」这段时间里。
-            val startAt = consumeDeferredSeek(mediaId) ?: 0L
+            //
+            // 用户没拖过时，回退到「保留上次播放」恢复出来的进度（一次性消费，随即清空）：
+            // 这正是「点播放从上次位置接着听」的落点。
+            val resume = restoredResume
+            restoredResume = null
+            val startAt = consumeDeferredSeek(mediaId)
+                ?: resume?.takeIf { it.first == mediaId }?.second
+                ?: 0L
             // 无损档位最终必须播**本地文件**，引擎才定位得动（桌面 rodio 无法定位
             // FLAC over HTTP，见 [StreamLocalizer]）。但**绝不等整曲下完才开播**：
             // 命中缓存就直接播本地；未命中就先用流立刻开播，落盘丢到后台并行做。
@@ -1038,6 +1188,8 @@ class PlaybackControllerImpl(
                     consumeDeferredSeek(mediaId)?.let { platform.seekTo(it) }
                 }
                 platform.play()
+                // 切曲完成 ⇒ 快照里的当前曲目 / 下标要立刻跟上（进度随后由 tick 刷新）。
+                persistSession()
                 // 开播之后才起后台落盘：不占首帧出声的时间。
                 if (localizing && cachedLocal == null) {
                     startBackgroundLocalize(
@@ -1312,6 +1464,10 @@ class PlaybackControllerImpl(
                 currentIndex = _index,
             )
         }
+        // 队列结构 / 当前下标变了 ⇒ 刷新「保留上次播放」快照。
+        // 放在这里而不是每个队列变更方法里，是为了让「谁改了队列」都自动被覆盖到，
+        // 不会有某个入口漏写（漏写 = 下次启动恢复到一份不存在的旧队列）。
+        persistSession()
     }
 
     private fun clearState() {
@@ -1347,6 +1503,8 @@ class PlaybackControllerImpl(
                 kotlinx.coroutines.delay(1_000L)
                 scrobbledSeconds += 1
                 if (scrobbledSeconds % SCROBBLE_INTERVAL_S == 0) flushScrobble()
+                // 播放期间定期刷新「保留上次播放」的进度：应用被强杀时也能停在最近几秒内。
+                if (scrobbledSeconds % SESSION_SAVE_INTERVAL_S == 0) persistSession()
             }
         }
     }
@@ -1377,6 +1535,14 @@ class PlaybackControllerImpl(
     private companion object {
         /** 每 N 秒上报一次听歌打卡。 */
         const val SCROBBLE_INTERVAL_S = 30
+
+        /**
+         * 播放期间每 N 秒刷新一次「保留上次播放」快照的进度。
+         *
+         * 取 5 秒而不是每秒：进度只用于「下次接着听」，秒级精度没有意义，
+         * 而桌面端每次写快照都会全量回写设置文件，频率越低越省。
+         */
+        const val SESSION_SAVE_INTERVAL_S = 5
 
         /** 持久化键：循环模式（[RepeatMode] 枚举名）。 */
         const val KEY_REPEAT_MODE = "playback_repeat_mode"
