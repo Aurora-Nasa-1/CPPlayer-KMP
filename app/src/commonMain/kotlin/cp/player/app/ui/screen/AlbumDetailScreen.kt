@@ -162,7 +162,7 @@ private fun AlbumDetailContent(
     val playbackState by AppModel.playback.state.collectAsState()
     val currentTrackId = playbackState.currentTrack?.id
     val likedIds by AppModel.playback.likedIds.collectAsState()
-    var optionsTarget by remember { mutableStateOf<TrackSummary?>(null) }
+    var optionsTarget by remember { mutableStateOf<Pair<Int, TrackSummary>?>(null) }
     var addToPlaylistTrack by remember { mutableStateOf<TrackSummary?>(null) }
 
     LaunchedEffect(albumId) { model.load(albumId, fallback) }
@@ -260,7 +260,7 @@ private fun AlbumDetailContent(
                                 isCurrentlyPlaying = track.id == currentTrackId,
                                 modifier = Modifier.animateItem(),
                                 onClick = { playAt(index) },
-                                onOptionsClick = { optionsTarget = track },
+                                onOptionsClick = { optionsTarget = index to track },
                                 // 桌面端右键菜单：动作集合与 SongOptionsSheet 对齐
                                 contextMenu = songContextMenuItems(
                                     SongMenuActions(
@@ -295,7 +295,7 @@ private fun AlbumDetailContent(
         }
     }
 
-    optionsTarget?.let { track ->
+    optionsTarget?.let { (index, track) ->
         SongOptionsSheet(
             songName = track.name,
             artistName = track.artist,
@@ -304,7 +304,7 @@ private fun AlbumDetailContent(
             isDownloaded = AppModel.isDownloaded(track.id),
             onDismiss = { optionsTarget = null },
             onPlay = {
-                playAt(tracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0))
+                playAt(index.coerceAtLeast(0))
                 optionsTarget = null
             },
             onToggleFavorite = {
