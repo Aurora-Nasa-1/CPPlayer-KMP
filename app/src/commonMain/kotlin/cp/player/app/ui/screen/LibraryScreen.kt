@@ -27,7 +27,6 @@ import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LibraryAdd
@@ -193,8 +192,6 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
                     ),
                     onCreatePlaylist = { showCreateDialog = true },
                     onRecentPlays = { navigator.push(InsightsScreen(InsightsScreen.TAB_RECENT)) },
-                    // 墙是整页路由（覆盖底栏），与「模式」的语义一致 —— 见 AlbumWallScreen 的 KDoc。
-                    onOpenWall = { navigator.push(AlbumWallScreen()) },
                     // 宽屏仪表盘上的「聆听统计」卡：进报告页的概览（日历墙那一屏）。
                     onOpenInsights = { navigator.push(InsightsScreen(InsightsScreen.TAB_OVERVIEW)) },
                     onDownloads = { navigator.push(DownloadsScreen()) },
@@ -366,7 +363,6 @@ private fun LibraryDashboard(
     stats: List<Pair<String, String>>,
     onCreatePlaylist: () -> Unit,
     onRecentPlays: () -> Unit,
-    onOpenWall: () -> Unit,
     onOpenInsights: () -> Unit,
     onDownloads: () -> Unit,
     onCloud: () -> Unit,
@@ -442,7 +438,6 @@ private fun LibraryDashboard(
                 horizontalArrangement = Arrangement.spacedBy(BentoGap),
             ) {
                 LibraryQuickEntry(s.library.recentPlays, Icons.Filled.History, onRecentPlays, Modifier.weight(1f))
-                LibraryQuickEntry(s.wall.entryLabel, Icons.Filled.GridView, onOpenWall, Modifier.weight(1f))
                 LibraryQuickEntry(s.library.cloudDrive, Icons.Filled.CloudQueue, onCloud, Modifier.weight(1f))
                 LibraryQuickEntry(s.library.tabDownloads, Icons.Filled.Download, onDownloads, Modifier.weight(1f))
             }

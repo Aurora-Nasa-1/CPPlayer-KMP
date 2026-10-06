@@ -18,7 +18,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.outlined.Message
-import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
@@ -411,7 +410,6 @@ class MainScreen : Screen {
                             },
                             onOpenDownloads = { desktopPane = DesktopPane.Downloads },
                             onOpenRecentPlays = { desktopPane = DesktopPane.RecentPlays },
-                            onOpenWall = { navigator?.push(AlbumWallScreen()) },
                             onOpenMessages = {
                                 desktopPane = DesktopPane.Messages
                                 AppModel.refreshUnreadMessages()
@@ -1071,14 +1069,6 @@ private fun DesktopSidebar(
     onOpenPlaylist: (PlaylistSummary) -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenRecentPlays: () -> Unit,
-    /**
-     * 打开专辑墙模式。
-     *
-     * ⚠️ 与上面几个不同，它**不做成 `DesktopPane`** —— 墙是"把现有内容展开成墙"的模式，
-     * 它要盖住整扇窗（含侧栏）才是对的；做成右栏面板反而变成"一个页面"，
-     * 与模式的定义冲突。所以这里 push 整页路由。
-     */
-    onOpenWall: () -> Unit,
     onOpenMessages: () -> Unit,
     onOpenAllPlaylists: () -> Unit,
     /**
@@ -1237,17 +1227,6 @@ private fun DesktopSidebar(
                         label = "最近播放",
                         selected = selectedPane is DesktopPane.RecentPlays,
                         onClick = onOpenRecentPlays,
-                    )
-                }
-                item {
-                    // 专辑墙放在「最近播放」与「下载管理」之间：它属于同一类目
-                    // （浏览我的内容），且不占标题栏 —— 标题栏右侧已固定三个动作。
-                    SidebarAction(
-                        icon = Icons.Filled.GridView,
-                        label = "专辑墙",
-                        // 墙是整页路由，不参与 DesktopPane 的选中态
-                        selected = false,
-                        onClick = onOpenWall,
                     )
                 }
                 item {
