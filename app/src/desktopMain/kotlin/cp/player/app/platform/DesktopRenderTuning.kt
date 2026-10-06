@@ -46,6 +46,7 @@ import java.io.File
  * 1. 应用了「设置页选定的非默认后端」或「平台默认 OpenGL」时，在其它初始化都跑完之后
  *    （[beginStartupProbe]）写一个探测文件；
  * 2. 窗口连续出满 [HEALTHY_FRAME_COUNT] 帧后，由 `Main` 调 [markStartupHealthy] 删掉它；
+ *    进程**正常退出**时也会删掉（见 [disarmProbeOnGracefulExit]）；
  * 3. 下次启动若探测文件**还在**，说明那个后端没能起来 → 自动改回「自动」并在设置页提示。
  *
  * 判断逻辑见 [abandonedBackend] 与 [shouldArmProbe]，都是纯函数、可测。
@@ -284,6 +285,29 @@ internal object DesktopRenderTuning {
     fun beginStartupProbe() {
         if (shouldArmProbe(appliedSource, appliedBackend)) {
             writeProbeTo(probeFile(), appliedBackend!!)
+            disarmProbeOnGracefulExit()
+        }
+    }
+
+    /**
+     * 立字据的同时装上「正常退出就撤字据」的关闭钩子。
+     *
+     * 探测文件的语义是「这次启动没能出帧就结束了」，但**怎么结束**必须区分开：
+     * - 后端在原生层把进程带崩（`hs_err_pid*.log`）、或渲染循环卡死被强杀 ⇒ JVM 走不到
+     *   关闭钩子，文件留下 ⇒ 下次启动回退。这正是安全模式要抓的情况。
+     * - 应用自己**正常退出**（关窗 / 托盘退出 / 启动后随即退出）⇒ 进程完整跑完了，
+     *   没出帧的原因多半只是窗口还没来得及显示（会话锁屏、窗口被遮挡、启动后马上退出），
+     *   与后端无关。此时若还留着字据，下次启动就会把用户的 OpenGL 静默换成「自动」
+     *   —— 2026-10-06 本机就中了一次：`desktop_render_api` 被写成 `AUTO`、
+     *   `last_revert=OPENGL`，表现就是「明明选了 OpenGL，实际却跑在 Direct3D 12 上」。
+     *
+     * 钩子只在**真的立了字据**时才装；注册失败不抛（撤销只是尽力而为）。
+     *
+     * @param register 关闭钩子的注册处，默认 `Runtime.addShutdownHook`；仅供测试替换。
+     */
+    internal fun disarmProbeOnGracefulExit(register: (Thread) -> Unit = Runtime.getRuntime()::addShutdownHook) {
+        runCatching {
+            register(Thread(::clearProbe, "cpplayer-render-probe-disarm"))
         }
     }
 

@@ -353,6 +353,34 @@ class DesktopRenderTuningTest {
         }
     }
 
+    @Test
+    fun `a graceful exit removes the armed probe`() {
+        // 「没出帧」不等于「后端不可用」：应用正常退出（关窗 / 托盘退出）时进程是完整跑完的，
+        // 留着字据就会把用户选的 OpenGL 在下次启动时静默换成「自动」（2026-10-06 真实事故）。
+        // 只有崩在原生层、被强杀或卡死 —— 也就是走不到关闭钩子的情况 —— 才算后端起不来。
+        val dir = Files.createTempDirectory("cpplayer-probe-disarm").toFile()
+        try {
+            val probe = File(dir, "render_tuning_probe")
+            System.setProperty(OVERRIDE_PROBE, probe.path)
+            DesktopRenderTuning.writeProbeTo(probe, Backend.OPENGL)
+            assertEquals("OPENGL", DesktopRenderTuning.readProbeFrom(probe))
+
+            var hook: Thread? = null
+            DesktopRenderTuning.disarmProbeOnGracefulExit { hook = it }
+            val registered = hook
+            assertTrue(registered != null, "立了字据就必须装上撤字据的钩子")
+            registered!!.run() // 模拟 JVM 正常退出
+
+            assertNull(
+                DesktopRenderTuning.readProbeFrom(probe),
+                "正常退出后不该还留着字据，否则下次启动会误判后端不可用",
+            )
+        } finally {
+            System.clearProperty(OVERRIDE_PROBE)
+            dir.deleteRecursively()
+        }
+    }
+
     // ======================== 「重启后生效」提示 ========================
 
     @Test
