@@ -13,11 +13,11 @@ import kotlin.test.assertTrue
  */
 class WallEngineTest {
 
-    /** 120 项，比例按 3:1:1 混专辑 / 歌单 / 单曲 —— 与真实库里"专辑远多于歌单"一致。 */
+    /** 120 项，比例按 3:1:1 混专辑 / 歌曲 / 本地 —— 与真实库"专辑远多于本地文件"一致。 */
     private val kinds: List<WallKind> = List(120) { i ->
         when (i % 5) {
-            3 -> WallKind.PLAYLIST
-            4 -> WallKind.SINGLE
+            3 -> WallKind.SONG
+            4 -> WallKind.LOCAL
             else -> WallKind.ALBUM
         }
     }
@@ -218,6 +218,37 @@ class WallEngineTest {
         assertEquals(0f, pan, 0.001f)
         val rectLeft = 400f + pan
         assertEquals(500f, rectLeft + 0.5f * 200f, 0.001f)
+    }
+
+    // ======================== 缩放谱的纵向映射 ========================
+
+    @Test
+    fun `ladder ratio maps row centres onto level zooms`() {
+        // 5 行的圆心落在 0.1 / 0.3 / 0.5 / 0.7 / 0.9；拖到第 i 行圆心必须**正好**得到第 i 层的焦距。
+        // 直接 `zoom = ratio` 会差 3% 左右，表现为"滑块停在封面层，HUD 却说是马赛克"。
+        val n = WallLevel.Ordered.size
+        WallLevel.Ordered.forEachIndexed { index, level ->
+            val centre = (index + 0.5f) / n
+            assertEquals(level.zoom, zoomAtLadderRatio(centre), 0.002f, "第 $index 行圆心对不上")
+        }
+    }
+
+    @Test
+    fun `ladder ratio clamps outside the track`() {
+        assertEquals(WallLevel.DUST.zoom, zoomAtLadderRatio(-5f), 0.001f)
+        assertEquals(WallLevel.IMMERSIVE.zoom, zoomAtLadderRatio(5f), 0.001f)
+    }
+
+    @Test
+    fun `ladder ratio is monotonic`() {
+        var prev = -1f
+        var r = 0f
+        while (r <= 1f) {
+            val z = zoomAtLadderRatio(r)
+            assertTrue(z >= prev - 0.0001f, "r=$r 时焦距回缩了：$prev -> $z")
+            prev = z
+            r += 0.05f
+        }
     }
 
     // ======================== 命中测试 ========================

@@ -2,6 +2,7 @@ package cp.player.app.ui.screen
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -13,9 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -32,53 +31,57 @@ import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.wall.AlbumWall
 import cp.player.app.ui.wall.WallCrown
 import cp.player.app.ui.wall.WallHud
+import cp.player.app.ui.wall.WallImmersive
 import cp.player.app.ui.wall.WallItem
 import cp.player.app.ui.wall.WallKind
+import cp.player.app.ui.wall.WallLevel
+import cp.player.app.ui.wall.WallOverlaySlot
+import cp.player.app.ui.wall.WallChrome
+import cp.player.app.ui.wall.WallSort
 import cp.player.app.ui.wall.WallState
 import cp.player.app.ui.wall.WallZoomLadder
-import cp.player.app.ui.wall.WallLevel
-import cp.player.app.ui.wall.WallZoomMath
 import cp.player.core.BackendResult
+import cp.player.core.media.LocalMediaItem
 import cp.player.core.music.AlbumSummary
-import cp.player.core.music.PlaylistSummary
+import cp.player.core.music.TrackSummary
 import cp.player.core.util.localDateTimeOf
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-
-/**
- * 墙的**构图方式**（排序）。
- *
- * 排序在墙模式里不是设置项，而是构图手段 —— 换一次排序整面墙重新排布，
- * 但**谁是大瓦片不变**（大瓦片由"最近"决定，见 [buildWallItems]）。
- * 于是换排序是一次纯粹的"洗牌"，而不是"重新评价一遍谁重要"。
- *
- * ⚠️ 「色彩」排序（按封面主色相排成彩虹）需要 `ui/theme/CoverColor.kt` 的
- * `extractSeedColor` 走一遍全库取色，而那个缓存是"无锁、靠调用方串行"的
- * （见方案 §9.4）—— 属于 P3，这里先不做，避免在墙里随手调它。
- */
-enum class WallSort { RECENT, ARTIST, TRACKS }
 
 data class WallUiState(
     val loading: Boolean = true,
     val error: String? = null,
     val albums: List<AlbumSummary> = emptyList(),
-    val playlists: List<PlaylistSummary> = emptyList(),
+    val liked: List<TrackSummary> = emptyList(),
+    val recent: List<TrackSummary> = emptyList(),
+    val local: List<LocalMediaItem> = emptyList(),
     val sort: WallSort = WallSort.RECENT,
 )
 
 /**
  * 专辑墙的模式数据。
  *
- * 数据源是「收藏专辑 + 我的歌单」：两者一起才能让马赛克有**比例差异**
- * （专辑 `1:1`、歌单 `2:1`），只有专辑时整面墙会退化成均匀网格，
- * 那正是这个模式要避免的。
+ * ## 四个源，各司其职
+ *
+ * | 源 | 取法 | 上墙理由 |
+ * |---|---|---|
+ * | 收藏专辑 | `album/sublist` | 方形瓦片的主体，一屏能放很多张 |
+ * | 我喜欢的音乐 | 「我喜欢的音乐」歌单的曲目 | **用户明确表达过偏好的歌曲**，优先级最高 |
+ * | 最近播放 | `AppModel.recentTracksFlow` | 本地历史，零网络请求，永远可用 |
+ * | 本地歌曲 | `AppModel.localMedia` | 离线也完整，且是唯一"没有封面"的一类（走竖条） |
+ *
+ * ⚠️ **不用歌单**：歌单数量少（十几到几十个），铺不出"墙"的密度，而且歌单封面
+ * 与专辑封面视觉上无从区分 —— 上墙只会是一堆长得一样的方块。
  */
 class AlbumWallScreenModel : ScreenModel {
 
@@ -86,33 +89,158 @@ class AlbumWallScreenModel : ScreenModel {
     val state: StateFlow<WallUiState> = _state.asStateFlow()
 
     init {
+        observeRecent()
         refresh()
+    }
+
+    /**
+     * 最近播放是本地状态、随时会变（用户在别的页面听一首歌就变了），
+     * 所以用 collect 持续跟，而不是刷新时读一次快照。
+     */
+    private fun observeRecent() {
+        screenModelScope.launch {
+            AppModel.recentTracksFlow.collect { tracks ->
+                _state.update { it.copy(recent = tracks) }
+            }
+        }
     }
 
     fun refresh() {
         screenModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
             val repo = AppModel.musicRepository
-            val albumsResult = repo.getUserAlbums(limit = 200)
-            val playlistsResult = runCatching { repo.getCurrentUserPlaylists() }
-                .getOrElse { BackendResult.Error(it.message ?: "playlists") }
-            val albums = (albumsResult as? BackendResult.Success)?.data.orEmpty()
-            val playlists = (playlistsResult as? BackendResult.Success)?.data.orEmpty()
+
+            // 四个源并发拉，**每个都自己兜异常** —— 一个源挂了不该把别的已经拿到的也丢掉
+            // （并发里任何一个抛出都会取消整个 scope）。
+            val albumsTask = async { safe { repo.getUserAlbums(limit = 300) } }
+            val likedTask = async { loadLikedSongs() }
+            val localTask = async {
+                runCatching { AppModel.localMedia.items().first() }.getOrElse { emptyList() }
+            }
+
+            val albumsResult = albumsTask.await()
+            val albums = albumsResult.dataOrEmpty()
+            val liked = likedTask.await()
+            val local = localTask.await()
+
             _state.update {
                 it.copy(
                     loading = false,
                     albums = albums,
-                    playlists = playlists,
+                    liked = liked,
+                    local = local,
                     // ⚠️ 空列表**不是错误**：未登录 / 未收藏就是这个状态，
                     // 把它显示成"加载失败"会让用户以为坏了。
-                    error = (albumsResult as? BackendResult.Error)?.message?.takeIf { albums.isEmpty() },
+                    error = (albumsResult as? BackendResult.Error)?.message
+                        ?.takeIf { albums.isEmpty() && liked.isEmpty() && local.isEmpty() },
                 )
             }
         }
     }
 
+    /** 拉「我喜欢的音乐」歌单的曲目。找不到该歌单（未登录 / 平台改名）时返回空。 */
+    private suspend fun loadLikedSongs(): List<TrackSummary> {
+        val playlists = safe { AppModel.musicRepository.getCurrentUserPlaylists() }.dataOrEmpty()
+        val liked = playlists.firstOrNull { isLikedPlaylistName(it.name) } ?: return emptyList()
+        return safe { AppModel.musicRepository.getPlaylistTracks(liked.id, limit = 300) }
+            .let { (it as? BackendResult.Success)?.data?.tracks.orEmpty() }
+    }
+
     fun selectSort(sort: WallSort) = _state.update { it.copy(sort = sort) }
+
+    /**
+     * 从墙上播一项。
+     *
+     * ## 三种类型的队列语义不同，这是有意的
+     *
+     * | 类型 | 队列 | 理由 |
+     * |---|---|---|
+     * | 歌曲 | **墙上所有歌曲**（按当前构图顺序），从点中的那首起 | 于是"队列 = 墙上的邻居"成立：缩小一点就能看到接下来听什么（方案 §7.3） |
+     * | 本地 | 墙上所有本地文件 | 同上，离线也自洽 |
+     * | 专辑 | **那一张专辑的曲目** | 点专辑的语义是"听这张专辑"，不是"从这一首开始往下听全库" |
+     *
+     * ⚠️ 歌曲分支走 [AppModel.playTrackClicked] 而不是直接 `playQueue`：一起听进行中时
+     * 点歌的语义是「下一首播放」，这个拦截只在这一处生效，绕过它会让一起听不同步。
+     */
+    fun play(item: WallItem, wallItems: List<WallItem>, onStarted: (() -> Unit)? = null) {
+        val sourceId = item.sourceId ?: return
+        screenModelScope.launch {
+            val started = when (item.kind) {
+                WallKind.ALBUM -> playAlbum(sourceId)
+                WallKind.SONG -> playSongs(item, wallItems)
+                WallKind.LOCAL -> playLocal(item, wallItems)
+            }
+            // ⚠️ 只在**真的起播了**之后才允许调用方推进焦距。
+            // 乐观推进的话，专辑为空 / 未登录时会进到沉浸层而那里没有曲目
+            // （`WallImmersive` 直接 return），用户看到的是一张巨大的网格，比不动更糟。
+            if (started) onStarted?.invoke()
+        }
+    }
+
+    private suspend fun playAlbum(albumId: String): Boolean {
+        val id = albumId.toLongOrNull() ?: return false.also { notifyPlayFailed() }
+        val detail = safe { AppModel.musicRepository.getAlbumDetail(id) }
+            .let { (it as? BackendResult.Success)?.data }
+        val ids = detail?.tracks?.map { it.id }.orEmpty()
+        if (ids.isEmpty()) return false.also { notifyPlayFailed() }
+        AppModel.playback.playQueue(ids, startIndex = 0, sourceId = albumId)
+        return true
+    }
+
+    private suspend fun playSongs(clicked: WallItem, wallItems: List<WallItem>): Boolean {
+        val songs = wallItems.filter { it.kind == WallKind.SONG }.mapNotNull { it.sourceId }
+        val index = songs.indexOf(clicked.sourceId).coerceAtLeast(0)
+        if (songs.isEmpty()) return false.also { notifyPlayFailed() }
+        val mediaId = songs[index]
+        AppModel.playTrackClicked(mediaId) {
+            AppModel.playback.playQueue(songs, startIndex = index)
+        }
+        return true
+    }
+
+    private suspend fun playLocal(clicked: WallItem, wallItems: List<WallItem>): Boolean {
+        val locals = wallItems.filter { it.kind == WallKind.LOCAL }
+        if (locals.isEmpty()) return false.also { notifyPlayFailed() }
+        val index = locals.indexOfFirst { it.id == clicked.id }.coerceAtLeast(0)
+        AppModel.playback.playQueue(
+            locals.map { "local://audio/${it.sourceId}" },
+            startIndex = index,
+        )
+        return true
+    }
+
+    /** 拿不到可播曲目时**必须出声** —— 静默什么都不发生，用户只会以为界面坏了。 */
+    private fun notifyPlayFailed() {
+        UiEvents.notify(AppModel.strings().wall.playFailed)
+    }
+
+    /**
+     * 把会抛异常的仓库调用收敛成 [MusicResult]。
+     *
+     * 并发拉取时任何一个源抛异常都会取消整个 scope，连带把已经拿到的数据一起丢掉 ——
+     * 所以每个分支都必须自己兜住异常。
+     */
+    private suspend fun <T> safe(block: suspend () -> BackendResult<T>): BackendResult<T> =
+        runCatching { block() }.getOrElse { BackendResult.Error(it.message ?: "wall source failed") }
 }
+
+/**
+ * 只对 `BackendResult<List<T>>` 生效。
+ *
+ * ⚠️ 写成 `BackendResult<T>.dataOrEmpty(): List<T>` 是错的：那样 `T` 会被推断成
+ * `List<AlbumSummary>`，返回值就成了 `List<List<AlbumSummary>>`，
+ * 调用点报"期望 List<AlbumSummary>，实际是 List<List<...>>"，
+ * 并连带把后面所有用到该列表的 lambda 全标成 Unresolved（看起来像整段都坏了）。
+ */
+private fun <T> BackendResult<List<T>>.dataOrEmpty(): List<T> = when (this) {
+    is BackendResult.Success -> data
+    else -> emptyList()
+}
+
+/** 「我喜欢的音乐」在不同平台叫法不同：先按平台固定名，再退回关键词。 */
+private fun isLikedPlaylistName(name: String): Boolean =
+    name.contains("喜欢的音乐") || name.contains("我喜欢的") ||
+        name.contains("喜欢", ignoreCase = true) || name.contains("Like", ignoreCase = true)
 
 class AlbumWallScreen : Screen {
 
@@ -128,15 +256,18 @@ private fun AlbumWallContent(model: AlbumWallScreenModel) {
     val state by model.state.collectAsState()
     val navigator = LocalNavigator.currentOrThrow
     val wall = remember { WallState() }
+    val playback by AppModel.playback.state.collectAsState()
 
-    val items = remember(state.albums, state.playlists, state.sort, s) {
+    val items = remember(state.albums, state.liked, state.recent, state.local, state.sort, s) {
         buildWallItems(state, s)
     }
-    val albumById = remember(state.albums) { state.albums.associateBy { "album:${it.id}" } }
 
-    // 缩回 Z2 以下就收起海报 —— 海报是"墙在某个焦距上的样子"，焦距走了它就该走。
+    // 缩回封面层以下就收起海报 —— 海报是"墙在某个焦距上的样子"，焦距走了它就该走。
     LaunchedEffect(wall.zoom) {
-        if (wall.zoom < WallLevel.COVER.zoom) wall.posterId = null
+        if (wall.zoom < WallLevel.COVER.zoom) {
+            wall.posterId = null
+            wall.posterFrom = null
+        }
     }
 
     CpRouteScaffold(
@@ -166,98 +297,45 @@ private fun AlbumWallContent(model: AlbumWallScreenModel) {
                         items = items,
                         state = wall,
                         onOpenPoster = { wall.posterId = it.id },
-                        onClosePoster = { wall.posterId = null },
+                        onClosePoster = {
+                            wall.posterId = null
+                            wall.posterFrom = null
+                        },
+                        // 播放成功后**继续推进焦距**到沉浸层 —— 这是方案 §7 说的
+                        // "点海报的播放键 = 进 Z4 + 开始播放"，也是墙与播放器之间
+                        // 唯一一次由动作（而不是手势）驱动的转场。
                         onPlay = { item ->
-                            item.sourceId?.let { id ->
-                                navigator.push(AlbumDetailScreen(id, albumById[item.id]))
-                            }
+                            model.play(item, items) { wall.zoomToCentre(WallLevel.IMMERSIVE.zoom) }
                         },
                     )
 
-                    // 缩放谱：右缘。给"无极"一个可发现、可点击的入口。
-                    WallZoomLadder(
-                        zoom = wall.zoom,
-                        onZoom = { wall.zoom = it },
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .padding(end = 18.dp),
+                    // 浮层走**共享**的 WallChrome（页面与出图夹具同一份代码）。
+                    // 第一版两边各写一份，夹具漏了"海报打开时收起缩放谱"，出图就骗过了自己。
+                    WallChrome(
+                        state = wall,
+                        sort = state.sort,
+                        onSortChange = model::selectSort,
                     )
 
-                    // 表冠：模式的签名控件。拖动 = 无极缩放，双击 = 回默认层。
-                    WallCrown(
+                    // Z4 沉浸播放器。它排在 WallChrome 之后（更晚绘制 = 更上层），
+                    // 且 `WallChrome` 在 zoom ≥ ImmersiveFrom 时整体让位。
+                    //
+                    // 「队列 = 墙上的邻居」：从当前曲目在墙上的位置往后取 ——
+                    // 缩小一点就能看到接下来听什么。
+                    WallImmersive(
+                        playback = playback,
                         zoom = wall.zoom,
-                        onZoomDelta = { delta ->
-                            wall.zoom = (wall.zoom + delta).coerceIn(0f, 1f)
+                        upNext = remember(items, playback.currentTrack?.id) {
+                            val currentId = playback.currentTrack?.id
+                            val start = items.indexOfFirst { it.sourceId == currentId }
+                            if (start >= 0) items.drop(start + 1).take(8) else items.take(8)
                         },
-                        onReset = { wall.zoom = WallLevel.MOSAIC.zoom },
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(end = 78.dp, bottom = 30.dp),
-                    )
-
-                    WallSortChips(
-                        selected = state.sort,
-                        onSelect = model::selectSort,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(start = 20.dp, top = 20.dp),
-                    )
-
-                    // HUD 读画布回填的布局，而不是自己再算一份 —— 否则读数和画面
-                    // 可能因为视口宽 / pad 取值不同而对不上。
-                    wall.layout?.let { layout ->
-                        WallHud(
-                            zoom = wall.zoom,
-                            layout = layout,
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(bottom = 26.dp),
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun WallSortChips(
-    selected: WallSort,
-    onSelect: (WallSort) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val s = cpStrings()
-    val options = listOf(
-        WallSort.RECENT to s.wall.sortRecent,
-        WallSort.ARTIST to s.wall.sortArtist,
-        WallSort.TRACKS to s.wall.sortTracks,
-    )
-    Surface(
-        modifier = modifier,
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 3.dp,
-    ) {
-        Row(
-            Modifier.padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            options.forEach { (key, label) ->
-                val on = key == selected
-                Surface(
-                    onClick = { onSelect(key) },
-                    shape = CircleShape,
-                    color = if (on) MaterialTheme.colorScheme.secondaryContainer
-                    else MaterialTheme.colorScheme.surface,
-                    contentColor = if (on) MaterialTheme.colorScheme.onSecondaryContainer
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                ) {
-                    Text(
-                        label,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
+                        onCollapse = { wall.zoomToCentre(WallLevel.COVER.zoom) },
+                        onPlayPause = { AppModel.playback.togglePlayPause() },
+                        onSkipNext = { AppModel.playback.skipNext() },
+                        onSkipPrevious = { AppModel.playback.skipPrevious() },
+                        onSeek = { AppModel.playback.seekTo(it) },
+                        onPlayUpNext = { item -> model.play(item, items) },
                     )
                 }
             }
@@ -268,56 +346,95 @@ private fun WallSortChips(
 /**
  * 领域模型 → 墙上的条目。
  *
- * ## 两条规则
+ * ## 权重怎么定（决定谁长成 `2:2`）
  *
- * 1. **`weight` 只由"最近"决定**，与当前排序无关。这样换排序是一次纯粹的洗牌：
- *    谁长成 `2:2` 不变，变的是它们排在哪 —— 用户不会因为切了个排序就"东西全变了"。
- * 2. **内容类型决定基础比例**：专辑 `1:1`、歌单 `2:1`。这不是装饰，
- *    `2:1` 多出来的那一格真的用来放标题与歌手（见 `AlbumWall` 的 `WallTile`）。
+ * 1. 四个源先**轮转交错**成一条规范顺序（喜欢 / 最近 / 专辑 / 本地 依次各取一个），
+ *    权重 = 总条数 − 名次。
+ *    ⚠️ 交错是必要的：如果按源顺序拼接，前 30% 会全部落在同一个源上，
+ *    大瓦片会变成"清一色的喜欢歌曲"，马赛克的比例多样性就没了。
+ * 2. **权重与当前排序无关** —— 换排序是一次纯粹的洗牌：谁大不变，变的是它们排在哪。
+ *    否则用户切一下排序会觉得"东西全变了"。
+ *
+ * ## 去重
+ *
+ * 同一首歌可能既在「我喜欢」又在「最近播放」；本地文件也可能与云端同一首。
+ * 按 `id` 去重，保留**先出现的那一个**（顺序即优先级：喜欢 > 最近 > 专辑 > 本地）。
  */
 private fun buildWallItems(state: WallUiState, s: CpStrings): List<WallItem> {
-    // 先把"最近"算出来，作为全局的大瓦片依据
-    val orderedByRecency = (
-        state.albums.map { "album:${it.id}" to (it.publishTimeMs ?: 0L) } +
-            state.playlists.mapIndexed { index, pl ->
-                // 歌单没有发布时间；按拉取顺序折算（越靠前越"新"）。
-                "playlist:${pl.id}" to (1_000_000L - index)
-            }
-        ).sortedByDescending { it.second }
-    val total = orderedByRecency.size
-    val weightOf: Map<String, Int> = orderedByRecency
-        .mapIndexed { index, pair -> pair.first to (total - index) }
-        .toMap()
+    val seen = HashSet<String>()
 
-    val albums = state.albums.map { al ->
-        WallItem(
-            id = "album:${al.id}",
-            title = al.name,
-            subtitle = s.wall.subtitle(al.artistName, albumYear(al), s.wall.kindAlbum),
-            coverUrl = al.coverUrl,
-            kind = WallKind.ALBUM,
-            weight = weightOf["album:${al.id}"] ?: 0,
-            sourceId = al.id,
-        )
-    }
-    val playlists = state.playlists.map { pl ->
-        WallItem(
-            id = "playlist:${pl.id}",
-            title = pl.name,
-            subtitle = s.wall.subtitle(pl.creatorName, null, s.wall.kindPlaylist),
-            coverUrl = pl.coverUrl,
-            kind = WallKind.PLAYLIST,
-            weight = weightOf["playlist:${pl.id}"] ?: 0,
-            // 歌单的"播放"落到专辑详情是错的，这里先不给落点（P1 接歌单详情页）。
-            sourceId = null,
-        )
+    fun albumItems(): List<WallItem> = state.albums
+        .sortedByDescending { it.publishTimeMs ?: 0L }
+        .mapNotNull { al ->
+            val id = "album:${al.id}"
+            if (!seen.add(id)) return@mapNotNull null
+            WallItem(
+                id = id,
+                title = al.name,
+                subtitle = s.wall.subtitle(al.artistName, albumYear(al), s.wall.kindAlbum),
+                coverUrl = al.coverUrl,
+                kind = WallKind.ALBUM,
+                weight = 0,
+                sourceId = al.id.toString(),
+            )
+        }
+
+    fun songItems(source: List<TrackSummary>, prefix: String, kind: WallKind): List<WallItem> =
+        source.mapNotNull { tr ->
+            val id = "$prefix:${tr.id}"
+            if (!seen.add(id)) return@mapNotNull null
+            WallItem(
+                id = id,
+                title = tr.name,
+                subtitle = s.wall.subtitle(
+                    tr.artist.takeIf { it.isNotBlank() },
+                    null,
+                    if (kind == WallKind.SONG) s.wall.kindSong else s.wall.kindLocal,
+                ),
+                coverUrl = tr.coverUrl,
+                kind = kind,
+                weight = 0,
+                sourceId = tr.id,
+            )
+        }
+
+    fun localItems(): List<WallItem> = state.local
+        .filter { it.mediaType == cp.player.core.media.MediaType.AUDIO }
+        .sortedByDescending { it.lastModified }
+        .mapNotNull { lm ->
+            val id = "local:${lm.path}"
+            if (!seen.add(id)) return@mapNotNull null
+            WallItem(
+                id = id,
+                title = lm.title,
+                subtitle = s.wall.subtitle(lm.artist, null, s.wall.kindLocal),
+                coverUrl = lm.coverUri,
+                kind = WallKind.LOCAL,
+                weight = 0,
+                sourceId = lm.path,
+            )
+        }
+
+    // 各源内部已按"最近"排好；这里做轮转交错，让大瓦片分散在四个源上
+    val perSource = listOf(
+        songItems(state.liked, "song", WallKind.SONG),
+        songItems(state.recent, "recent", WallKind.SONG),
+        albumItems(),
+        localItems(),
+    )
+    val canonical = ArrayList<WallItem>(perSource.sumOf { it.size })
+    val maxLen = perSource.maxOfOrNull { it.size } ?: 0
+    for (i in 0 until maxLen) {
+        perSource.forEach { list -> list.getOrNull(i)?.let(canonical::add) }
     }
 
-    val merged = albums + playlists
+    val total = canonical.size
+    val weighted = canonical.mapIndexed { index, item -> item.copy(weight = total - index) }
+
     return when (state.sort) {
-        WallSort.RECENT -> merged.sortedByDescending { it.weight }
-        WallSort.ARTIST -> merged.sortedBy { it.subtitle ?: it.title }
-        WallSort.TRACKS -> merged.sortedByDescending { it.title.length }
+        WallSort.RECENT -> weighted
+        WallSort.TITLE -> weighted.sortedBy { it.title.lowercase() }
+        WallSort.TYPE -> weighted.sortedWith(compareBy({ it.kind.ordinal }, { it.title.lowercase() }))
     }
 }
 

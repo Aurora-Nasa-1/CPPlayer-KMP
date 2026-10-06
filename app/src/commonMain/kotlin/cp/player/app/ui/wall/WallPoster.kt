@@ -1,6 +1,7 @@
 package cp.player.app.ui.wall
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -81,7 +83,10 @@ internal fun WallPosterOverlay(
     }
 
     val zoom = state.zoom
-    val amount = wallSmoothstep(0.68f, 0.78f, zoom)
+    // ⚠️ 到 Z4 时海报要让位给**沉浸播放器**（`WallImmersive`）：两者都从 0.86 起交叉，
+    // 海报淡出、播放器淡入。第一版让海报自己继续铺满整屏，结果 Z4 是"铺满的海报 +
+    // 盖在上面的播放器"两层叠着，多画一层还互相压字。
+    val amount = wallSmoothstep(0.68f, 0.78f, zoom) * (1f - wallSmoothstep(0.88f, 1.0f, zoom))
     if (amount <= 0.004f) return
 
     // 出生矩形 → 目标海报矩形 的连续插值。
@@ -97,42 +102,37 @@ internal fun WallPosterOverlay(
     val toX = (viewportW - cardW) / 2f
     val toY = (viewportH - cardH) / 2f
 
-    val x0 = origin.x + (toX - origin.x) * morph
-    val y0 = origin.y + (toY - origin.y) * morph
-    val w0 = origin.w + (cardW - origin.w) * morph
-    val h0 = origin.h + (cardH - origin.h) * morph
+    val x = origin.x + (toX - origin.x) * morph
+    val y = origin.y + (toY - origin.y) * morph
+    val w = origin.w + (cardW - origin.w) * morph
+    val h = origin.h + (cardH - origin.h) * morph
 
-    // ── 第二阶段：Z4 沉浸（P0 极简版）──
-    // 海报继续铺满整屏，成为"墙在最大焦距上的样子"。
-    // ⚠️ 完整的沉浸播放器（队列环、表冠双语义、歌词）是 P2；这里只把**几何**做连续 ——
-    // 否则 Z4 会停在"巨大网格 + 一张海报卡"，是个说不通的状态。
-    // 也因此：Z4 目前需要先点开一张专辑（有 `posterId`）才成立。
-    val imm = wallSmoothstep(0.86f, 1.0f, zoom)
-    val x = x0 + (0f - x0) * imm
-    val y = y0 + (0f - y0) * imm
-    val w = w0 + (viewportW - w0) * imm
-    val h = h0 + (viewportH - h0) * imm
-
-    // 遮罩：墙在身后变暗，而不是被"盖住"
+    // 遮罩：墙在身后变暗，而不是被"盖住"。
+    // 它同时是"点空白关掉海报"的落点 —— 遮罩在交互层之上，所以这一次点击
+    // 不会穿透到画布去开下一张海报（画布那边也有一道 `posterId != null` 的保险）。
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.50f * amount * (1f - wallSmoothstep(0.86f, 0.96f, zoom)))),
+            .background(Color.Black.copy(alpha = 0.50f * amount * (1f - wallSmoothstep(0.86f, 0.96f, zoom))))
+            .pointerInput(Unit) { detectTapGestures { onClose() } },
     )
 
     Box(
         Modifier
             .offset { IntOffset(x.roundToInt(), y.roundToInt()) }
             .size(with(density) { w.toDp() }, with(density) { h.toDp() })
-            .clip(RoundedCornerShape((26f * (1f - wallSmoothstep(0.86f, 1.0f, zoom))).dp))
+            .clip(RoundedCornerShape(26.dp))
             .background(MaterialTheme.colorScheme.surface)
-            .graphicsAlpha(amount),
+            .graphicsAlpha(amount)
+            // 卡片自己也要吞事件：否则点卡片空白处会落到下面的遮罩上，把海报关掉。
+            .consumeAllPointerInput(),
     ) {
         Box(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
             if (!item.coverUrl.isNullOrBlank()) {
                 AsyncImage(
-                    model = item.coverUrl.resized(900),
+                    // 按卡片**实际像素**取图：固定 900 在大窗口下会被拉到 1300+ 而发糊。
+                    model = item.coverUrl.resized(wallCoverRequestSize(maxOf(w, h))),
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,

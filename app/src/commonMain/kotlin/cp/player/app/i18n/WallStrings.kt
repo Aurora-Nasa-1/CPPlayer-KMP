@@ -3,7 +3,7 @@ package cp.player.app.i18n
 /**
  * 专辑墙模式（`ui/wall`）的文案。
  *
- * 单独成组而不是并进 `LibraryStrings`：墙是一个**跨数据源的模式**（专辑 / 歌单 / 艺人
+ * 单独成组而不是并进 `LibraryStrings`：墙是一个**跨数据源的模式**（专辑 / 歌曲 / 本地文件
  * 都能上墙），它的文案不属于"媒体库"这一页；将来「歌手页 → 用墙看」「搜索结果 → 用墙看」
  * 也会读同一组，挂在某个页面的组下会让调用点看起来像跨页偷读。
  */
@@ -36,17 +36,15 @@ interface WallStrings {
 
     // —— 排序（即构图） ——
     val sortRecent: String
-    val sortColor: String
-    val sortArtist: String
-    val sortPlays: String
-    val sortYear: String
-    /** 曲目数排序。 */
-    val sortTracks: String
+    val sortTitle: String
+    val sortType: String
     val sortLabel: String
 
     // —— 海报 / 沉浸 ——
     val posterPlay: String
     val posterClose: String
+    val skipPrevious: String
+    val skipNext: String
     val nowPlaying: String
     val immersiveQueue: String
 
@@ -58,13 +56,15 @@ interface WallStrings {
     val failed: String
     val retry: String
 
+    /** 点了播放但拿不到可播的曲目（专辑为空 / 未登录等）。 */
+    val playFailed: String
+
     // —— 内容类型 ——
     val kindAlbum: String
-    val kindPlaylist: String
-    val kindSingle: String
-    val kindArtist: String
+    val kindSong: String
+    val kindLocal: String
 
-    /** 副标题：`歌手 · 年份` 之类，缺项自动省略。 */
+    /** 副标题：`歌手 · 年份 · 类型` 之类，缺项自动省略。 */
     fun subtitle(artist: String?, year: String?, kind: String): String
 }
 
@@ -90,30 +90,29 @@ object WallStringsZh : WallStrings {
     override fun hudMix(big: Int, wide: Int, tall: Int, square: Int) =
         "大 $big · 横 $wide · 竖 $tall · 标准 $square"
 
-    override val sortRecent = "最近添加"
-    override val sortColor = "色彩"
-    override val sortArtist = "歌手"
-    override val sortPlays = "热度"
-    override val sortYear = "年份"
-    override val sortTracks = "曲目数"
+    override val sortRecent = "最近"
+    override val sortTitle = "标题"
+    override val sortType = "类型"
     override val sortLabel = "构图"
 
     override val posterPlay = "播放"
     override val posterClose = "收起"
+    override val skipPrevious = "上一首"
+    override val skipNext = "下一首"
     override val nowPlaying = "正在播放"
     override val immersiveQueue = "接下来"
 
     override val loading = "正在铺开音乐库"
-    override val loadingNote = "拉取专辑与封面"
+    override val loadingNote = "拉取专辑、歌曲与封面"
     override val empty = "还没有可上墙的内容"
-    override val emptyNote = "收藏一些专辑，或把本地音乐导入后再来"
+    override val emptyNote = "收藏一些专辑、喜欢几首歌，或导入本地音乐"
     override val failed = "加载失败"
     override val retry = "重试"
+    override val playFailed = "这一项没有可播放的曲目"
 
     override val kindAlbum = "专辑"
-    override val kindPlaylist = "歌单"
-    override val kindSingle = "单曲"
-    override val kindArtist = "艺人"
+    override val kindSong = "歌曲"
+    override val kindLocal = "本地"
 
     override fun subtitle(artist: String?, year: String?, kind: String): String = buildList {
         artist?.takeIf { it.isNotBlank() }?.let(::add)
@@ -144,30 +143,29 @@ object WallStringsEn : WallStrings {
     override fun hudMix(big: Int, wide: Int, tall: Int, square: Int) =
         "big $big · wide $wide · tall $tall · square $square"
 
-    override val sortRecent = "Recently added"
-    override val sortColor = "Colour"
-    override val sortArtist = "Artist"
-    override val sortPlays = "Plays"
-    override val sortYear = "Year"
-    override val sortTracks = "Tracks"
+    override val sortRecent = "Recent"
+    override val sortTitle = "Title"
+    override val sortType = "Type"
     override val sortLabel = "Compose"
 
     override val posterPlay = "Play"
     override val posterClose = "Collapse"
+    override val skipPrevious = "Previous"
+    override val skipNext = "Next"
     override val nowPlaying = "Now playing"
     override val immersiveQueue = "Up next"
 
     override val loading = "Unfolding your library"
-    override val loadingNote = "Fetching albums and covers"
+    override val loadingNote = "Fetching albums, songs and covers"
     override val empty = "Nothing to put on the wall yet"
-    override val emptyNote = "Favourite some albums or import local music first"
+    override val emptyNote = "Favourite some albums, like a few songs, or import local music"
     override val failed = "Could not load"
     override val retry = "Retry"
+    override val playFailed = "Nothing playable in this item"
 
     override val kindAlbum = "Album"
-    override val kindPlaylist = "Playlist"
-    override val kindSingle = "Single"
-    override val kindArtist = "Artist"
+    override val kindSong = "Song"
+    override val kindLocal = "Local"
 
     override fun subtitle(artist: String?, year: String?, kind: String): String = buildList {
         artist?.takeIf { it.isNotBlank() }?.let(::add)
