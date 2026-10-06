@@ -46,6 +46,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.CpShapes
 
@@ -84,6 +85,7 @@ fun CpSearchField(
     focusRequester: FocusRequester? = null,
     height: Dp = CpSearchFieldHeight,
 ) {
+    val s = cpStrings()
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
     val background by animateColorAsState(
@@ -143,12 +145,12 @@ fun CpSearchField(
                         modifier = Modifier
                             .size(clearSize)
                             .clip(CpShapes.full)
-                            .clickable(onClickLabel = "清空") { onQueryChange("") },
+                            .clickable(onClickLabel = s.songCache.clearSearch) { onQueryChange("") },
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             Icons.Rounded.Close,
-                            contentDescription = "清空",
+                            contentDescription = s.songCache.clearSearch,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(clearSize * 0.7f),
                         )
