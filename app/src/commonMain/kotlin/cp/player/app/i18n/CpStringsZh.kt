@@ -277,6 +277,11 @@ object CpStringsZh : CpStrings {
         override fun sleepRemaining(minutes: Long) = "剩余 $minutes 分钟"
         override val sleepOff = "未启用"
 
+        override val sectionLastPlayback = "上次播放"
+        override val keepLastPlayback = "保留上次播放"
+        override val keepLastPlaybackNote =
+            "启动时恢复上次的播放队列与进度，但不自动播放；点播放才从上次位置接着听"
+
         override val sectionBackground = "后台播放"
         override val batteryWhitelist = "电池优化白名单"
         override val batteryWhitelistOn = "已加入白名单，熄屏后台播放受系统保护"

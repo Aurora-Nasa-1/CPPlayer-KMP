@@ -13,6 +13,7 @@ import cp.player.core.control.LocalServerStatus
 import cp.player.core.control.OutputMode
 import cp.player.core.monitor.HealthMonitor
 import cp.player.core.playback.PlaybackController
+import cp.player.core.playback.PlaybackSessionSettings
 import cp.player.core.provider.BackendProvider
 import cp.player.core.provider.ProviderCookieStorage
 import cp.player.core.util.SettingsStorage
@@ -364,6 +365,32 @@ object AppModel {
     fun setPureBlack(enabled: Boolean) {
         settings.putString(KEY_PURE_BLACK, enabled.toString())
         _pureBlack.value = enabled
+    }
+
+    // ============ 保留上次播放（持久化） ============
+
+    private val _keepLastPlayback = MutableStateFlow(keepLastPlayback())
+
+    /**
+     * 启动时是否恢复上次的播放队列与进度（默认开，见
+     * [PlaybackSessionSettings.DEFAULT_KEEP_LAST_PLAYBACK]）。
+     *
+     * 开关只在这里读写；**快照的落盘与恢复在播放内核**（`PlaybackControllerImpl`）。
+     * 两者共用同一份 [SettingsStorage]（`defaultSettingsStorage()` 的共享实例）与
+     * 同一组键常量，所以设置页一改、内核下一次落盘就按新值走，无需任何通知。
+     */
+    val keepLastPlaybackFlow: StateFlow<Boolean> = _keepLastPlayback.asStateFlow()
+
+    fun keepLastPlayback(): Boolean =
+        settings.getString(PlaybackSessionSettings.KEY_KEEP_LAST_PLAYBACK)?.toBooleanStrictOrNull()
+            ?: PlaybackSessionSettings.DEFAULT_KEEP_LAST_PLAYBACK
+
+    fun setKeepLastPlayback(enabled: Boolean) {
+        settings.putString(PlaybackSessionSettings.KEY_KEEP_LAST_PLAYBACK, enabled.toString())
+        // 关掉时立刻清掉已有快照：否则「关掉 → 再打开」之间旧队列一直躺在盘上，
+        // 重新打开会恢复到一份早已过期的会话（期间可能换了音源 / 删了歌单）。
+        if (!enabled) settings.remove(PlaybackSessionSettings.KEY_LAST_SESSION)
+        _keepLastPlayback.value = enabled
     }
 
     // ============ 字体圆滑度（持久化，Google Sans Flex 的 ROND 轴） ============

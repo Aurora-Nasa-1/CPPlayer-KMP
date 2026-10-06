@@ -286,6 +286,12 @@ object CpStringsEn : CpStrings {
         override fun sleepRemaining(minutes: Long) = "$minutes min left"
         override val sleepOff = "Off"
 
+        override val sectionLastPlayback = "Last playback"
+        override val keepLastPlayback = "Keep last playback"
+        override val keepLastPlaybackNote =
+            "Restore your last queue and position on launch, without auto-playing; " +
+                "press play to resume where you left off"
+
         override val sectionBackground = "Background playback"
         override val batteryWhitelist = "Battery optimization whitelist"
         override val batteryWhitelistOn = "Added — background playback is protected while the screen is off"

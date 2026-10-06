@@ -370,6 +370,10 @@ interface PlaybackStrings {
     fun sleepRemaining(minutes: Long): String
     val sleepOff: String
 
+    val sectionLastPlayback: String
+    val keepLastPlayback: String
+    val keepLastPlaybackNote: String
+
     val sectionBackground: String
     val batteryWhitelist: String
     val batteryWhitelistOn: String

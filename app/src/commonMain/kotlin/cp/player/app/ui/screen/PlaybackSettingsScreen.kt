@@ -26,6 +26,7 @@ import cp.player.app.ui.component.SettingsDropdownItem
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
+import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.SleepTimerDialog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -53,6 +54,7 @@ class PlaybackSettingsScreen : Screen {
         val quality by AppModel.playbackQualityFlow.collectAsState()
         val meteredQuality by AppModel.meteredPlaybackQualityFlow.collectAsState()
         val lyricsMode by AppModel.lyricsSourceModeFlow.collectAsState()
+        val keepLastPlayback by AppModel.keepLastPlaybackFlow.collectAsState()
         val playbackState by AppModel.playback.state.collectAsState()
         var showSleepTimer by remember { mutableStateOf(false) }
 
@@ -130,6 +132,16 @@ class PlaybackSettingsScreen : Screen {
                         index = 0,
                         total = 1,
                         onClick = { showSleepTimer = true },
+                    )
+                }
+                SettingsSection(s.playback.sectionLastPlayback) {
+                    SettingsSwitchItem(
+                        title = s.playback.keepLastPlayback,
+                        subtitle = s.playback.keepLastPlaybackNote,
+                        checked = keepLastPlayback,
+                        onCheckedChange = { AppModel.setKeepLastPlayback(it) },
+                        index = 0,
+                        total = 1,
                     )
                 }
                 // 熄屏后台保活的用户侧开关：媒体前台服务（Service 层已做）只解决
