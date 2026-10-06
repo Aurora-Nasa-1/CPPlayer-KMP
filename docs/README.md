@@ -21,6 +21,15 @@
 | [dev/LINUX_PACKAGING.md](dev/LINUX_PACKAGING.md) | Linux 通用 tar.gz 分发包 + AUR（cpplayer-bin）自动发布与 GitHub 配置 | 动 Linux 打包 / AUR |
 | [dev/WINDOWS_PACKAGING.md](dev/WINDOWS_PACKAGING.md) | Windows 安装包改用 Velopack（取代 jpackage 的 MSI）：产物、构建、更新链路与待办 | 动 Windows 打包 / 自动更新 |
 
+## 设计提案（[`design/`](design/)）
+
+> 尚未实施的前瞻设计。与 `history/` 的区别：`history/` 是**已做完**的归档，
+> 这里是**待评审 / 待排期**的方案，结论不构成当前架构约定。
+
+| 文档 | 内容 |
+|------|------|
+| [design/ALBUM_WALL_MODE.md](design/ALBUM_WALL_MODE.md) | 专辑墙模式：无极缩放的尺度空间、手机 / 桌面交互、沉浸播放器与队列空间化（附可交互原型 `album-wall-prototype.html`） |
+
 ## 历史归档（[`history/`](history/)）
 
 > 这些文档记录**当时**的诊断与方案，多数已实施完毕。文中引用的文件路径、
