@@ -135,6 +135,10 @@ fun SongItem(
         },
         // CpText 而不是 Text：歌名 / 歌手被截断后仍可读全（悬停浮出完整文本）。
         // 静态观感与治理前一致 —— 默认走尾部省略，且只在真的溢出时才挂额外能力。
+        //
+        // ⚠️ 只有**正在播放**的那一行是焦点位（emphasized）：列表里若每行都滚，
+        // 一屏十几个动画同时跑既吃帧率又像屏保。isCurrentlyPlaying 在一次渲染里
+        // 天然只有一个为真，跑马灯等于自带限流（见 CpTextReveal.Marquee）。
         headlineContent = {
             CpText(
                 text = track.name,
@@ -143,6 +147,7 @@ fun SongItem(
                 maxLines = 1,
                 color = if (isCurrentlyPlaying) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurface,
+                emphasized = isCurrentlyPlaying,
             )
         },
         supportingContent = {
@@ -157,6 +162,7 @@ fun SongItem(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
+                emphasized = isCurrentlyPlaying,
             )
         },
         trailingContent = if (!selectionMode && (onOptionsClick != null || anchoredMenu)) {{

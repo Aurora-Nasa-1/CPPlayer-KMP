@@ -133,17 +133,21 @@ fun SharedTransitionScope.MiniPlayer(
                 }
                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                     // CpText 而不是 Text：小播放器是**最容易被截断**的地方（宽度被三个
-                    // 按钮挤掉一半），而它显示的正是「现在在放什么」。
+                    // 按钮挤掉一半），而它显示的正是「现在在放什么」—— 全应用最该滚起来的
+                    // 那一行，所以它是**焦点位**，显式开跑马灯（emphasized = true）。
                     //
-                    // ⚠️ 这里刻意**不开** emphasized（不开跑马灯）：两个 Text 都挂着
-                    // `sharedBounds`，而 `basicMarquee` 会插一层带无限宽约束的 layout
-                    // 节点，可能改变共享元素上报的 bounds。先只上悬停浮层（不改布局），
-                    // 共享元素动画的实测留给出图验收。
+                    // ⚠️ 曾经的顾虑（P0 时为此把跑马灯推迟了）：这两个 Text 都挂着
+                    // `sharedBounds`，担心 `basicMarquee` 插的那层 layout 节点会改变共享
+                    // 元素上报的 bounds、把封面飞行/展开动画弄跳。实测**不成立** ——
+                    // `basicMarquee` 只把**无限宽约束**发给它的子节点，自己上报的仍是父级
+                    // 给的受限尺寸，且它在 `sharedBounds` **内层**，所以共享元素量到的
+                    // bounds 一字不变。守卫测试见 `CpTextMarqueeTest`。
                     CpText(
                         text = track.name,
                         style = MaterialTheme.typography.titleSmall,
                         maxLines = 1,
                         color = MaterialTheme.colorScheme.onSurface,
+                        emphasized = true,
                         modifier = Modifier.sharedBounds(
                             sharedContentState = rememberSharedContentState(key = "title-${track.id}"),
                             animatedVisibilityScope = animatedVisibilityScope,
@@ -154,6 +158,7 @@ fun SharedTransitionScope.MiniPlayer(
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 1,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        emphasized = true,
                         modifier = Modifier.sharedBounds(
                             sharedContentState = rememberSharedContentState(key = "artist-${track.id}"),
                             animatedVisibilityScope = animatedVisibilityScope,

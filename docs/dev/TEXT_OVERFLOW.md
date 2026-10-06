@@ -3,7 +3,7 @@
 > **目标**：解决「歌单名 / 歌名 / 歌手 / 其他文字过长出现省略号」，
 > 且**静态观感与今天逐像素一致** —— 不改宽度、不改行高、不改字号、不改颜色、不改对齐。
 >
-> 状态：**提案**（未开工）。落地按文末 §7 分期执行。
+> 状态：**P0 已落地**，S3 跑马灯已在焦点位启用（2026-10-07）。落地按文末 §7 分期执行。
 
 ---
 
@@ -247,9 +247,18 @@ fun CpHoverReveal(
 5. **溢出处理在下一帧才生效**：检测发生在 `onTextLayout`（第一帧布局结束后）。
    默认 `Tail` 档无感知差异；`Middle` / `Filename` 是省略号位置的一帧切换。
    离屏测试必须渲染多帧。
-6. **MiniPlayer 刻意不开跑马灯**：两个 `Text` 都挂着 `sharedBounds`，而
-   `basicMarquee` 会插一层无限宽约束的 layout 节点，可能改变共享元素上报的 bounds。
-   P0 只上悬停浮层（不改布局）；跑马灯要等共享元素动画实测通过再单开。
+6. **MiniPlayer 的跑马灯已于 2026-10-07 开启**（`emphasized = true`）。P0 时曾因
+   两个 `Text` 挂着 `sharedBounds`、担心 `basicMarquee` 插的 layout 节点会改变共享元素
+   上报的 bounds 而推迟；实测**顾虑不成立** —— `basicMarquee` 只把无限宽约束发给**它的
+   子节点**，自己上报的仍是父级给的受限尺寸，且它在 `sharedBounds` **内层**，共享元素量到的
+   bounds 一字不变。守卫测试 `CpTextMarqueeTest`。
+7. ⚠️ **跑马灯曾经整个是死代码（2026-10-07 修）**：`CpTextReveal` 的 `Marquee` 分支只由
+   `emphasized` 或显式 `reveal = Marquee` 选中，而 P0 落地时**没有任何调用点传这两个值** ——
+   于是 `Auto` 永远解析成 `Hover`，长文本**依旧显示省略号**，S3 等于没做。
+   修法：在「焦点位」显式开启（正在播放的 `SongItem`、`MiniPlayer` 标题/歌手、
+   `PlayerScreen` 顶栏大标题、`DesktopPlayerScreen` 大标题）。
+   **教训**：跑马灯这类「随时间变化」的行为，编译 + 静态出图都量不到 ——
+   静态图本来就不动。必须沿时间轴 `render(nanoTime)` 多帧比对（见 `CpTextMarqueeTest`）。
 
 
 ---
@@ -266,8 +275,12 @@ fun CpHoverReveal(
 ### 5.2 `sharedBounds` 场景必须出图验证
 
 `MiniPlayer` 的歌名/歌手带 `Modifier.sharedBounds(...)`（共享元素动画）。
-外面套 `Box` + `Popup` 后，参与动画的节点多了一层 —— **可能匹配不上或动画跳变**。
+外面套 `Box` + `Popup` / `basicMarquee` 后，参与动画的节点多了一层 —— **可能匹配不上或动画跳变**。
 P0 阶段必须先出图比对 hover 前后与播放页切换动画。
+
+> **2026-10-07 结论**：跑马灯节点位于 `sharedBounds` **内层**，只把无限宽约束发给子节点、
+> 自身上报尺寸不变 ⇒ 共享元素 bounds 不受影响，已开启（见 §4.4.6）。悬停浮层的 `Popup`
+> 是独立窗口、不参与组合树尺寸，同样安全。
 
 ### 5.3 所有新增 UI 文案走 i18n 文案层
 
@@ -284,6 +297,7 @@ P0 阶段必须先出图比对 hover 前后与播放页切换动画。
 | 动态验收 | 出图 hover 态浮层、跑马灯首尾帧；确认浮层不越窗口边界、不吃点击 |
 | 逻辑单测 | `SmartEllipsisTest`：`fitText` 收敛（同参两次调用结果相同）、结果宽度 ≤ 上限、扩展名保留、退化为原文时不递归 |
 | 策略单测 | `CpTextRevealTest`：`emphasized=false` 时不得产生 marquee；`maxLines>1` 时不走智能省略 |
+| 跑马灯 | `CpTextMarqueeTest`（沿时间轴 `render(nanoTime)` 多帧）：`emphasized=true` ⇒ 帧间必变（真在滚）且末帧 ≠ 尾截形态；`emphasized=false` ⇒ 帧间**逐字节一致**（不滚）；显式 `reveal=Marquee` ⇒ 无视 emphasized 直接滚 |
 | 守卫测试 | `TextOverflowGuardTest`（源码扫描）：`app/src` 下出现 `TextOverflow.Ellipsis` 的文件必须在 `CpText*` 或白名单内 ⇒ 防新增裸 Text 回潮（照 `NestedScrollGuardTest` 风格） |
 
 ---

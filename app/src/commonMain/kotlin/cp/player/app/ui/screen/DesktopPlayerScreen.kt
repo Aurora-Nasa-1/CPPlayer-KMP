@@ -57,6 +57,7 @@ import cp.player.app.AppModel
 import cp.player.app.ui.component.CpModeToggle
 import cp.player.app.ui.component.CpPlayPauseButton
 import cp.player.app.ui.component.CpSeekBar
+import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.CpToggleChip
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.MorphingShape
@@ -155,12 +156,12 @@ fun DesktopPlayerScreen(
                     // 副标题写**专辑**（没有就退到歌手）。原先这里恒为「音乐」——
                     // 一个对任何曲目都成立、也就等于什么都没说的字符串。
                     // 同一屏下方已经有大字歌名了，重复它同样没有收益。
-                    Text(
-                        track.album?.takeIf { it.isNotBlank() } ?: track.artist,
+                    // 次级信息走 CpText 默认档（悬停浮出），焦点位在下方的大字歌名上。
+                    CpText(
+                        text = track.album?.takeIf { it.isNotBlank() } ?: track.artist,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 // 此前这里只有一个 `onClick = { /* reserved */ }` 的假按钮，被以
@@ -205,7 +206,15 @@ fun DesktopPlayerScreen(
                             Spacer(Modifier.height(22.dp))
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(track.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    // 播放页大标题 = 焦点位：溢出时横向滚动（跑马灯），
+                                    // 而不是留一个省略号。静态观感不变（默认 Tail 档）。
+                                    CpText(
+                                        text = track.name,
+                                        style = MaterialTheme.typography.headlineSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        emphasized = true,
+                                    )
                                     TrackArtistText(
                                         track = track,
                                         onArtistClick = onArtistClick,

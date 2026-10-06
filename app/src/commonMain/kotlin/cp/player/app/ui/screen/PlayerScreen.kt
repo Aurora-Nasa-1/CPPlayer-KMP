@@ -380,12 +380,14 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                     Text("", Modifier.fillMaxWidth())
                                 } else {
                                     Column {
-                                        Text(
+                                        // 顶栏大标题 = 焦点位（当前页 0）：溢出即跑马灯滚动，
+                                        // 不再只留一个省略号。静态观感与治理前一致（CpText 默认 Tail 档）。
+                                        cp.player.app.ui.component.CpText(
                                             text = track.name,
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.SemiBold,
                                             maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            emphasized = true,
                                         )
                                         // 歌手可点（多歌手各自分段）：顶栏这行是 bodySmall，
                                         // 与下方大字歌手行共用同一个组件、同一份跳转。
@@ -688,12 +690,14 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text(
-                    track.name,
+                // 播放页大标题 = 焦点位：溢出即跑马灯（与 MiniPlayer 的那条共用
+                // sharedBounds key，两处一起改才不至于一边滚一边截）。
+                cp.player.app.ui.component.CpText(
+                    text = track.name,
                     style = MaterialTheme.typography.headlineSmall,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onSurface,
+                    emphasized = true,
                     modifier = Modifier.sharedBounds(
                         sharedContentState = rememberSharedContentState(key = "title-${track.id}"),
                         animatedVisibilityScope = animatedVisibilityScope,
