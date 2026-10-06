@@ -132,22 +132,27 @@ fun SharedTransitionScope.MiniPlayer(
                     }
                 }
                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                    Text(
-                        track.name,
+                    // CpText 而不是 Text：小播放器是**最容易被截断**的地方（宽度被三个
+                    // 按钮挤掉一半），而它显示的正是「现在在放什么」。
+                    //
+                    // ⚠️ 这里刻意**不开** emphasized（不开跑马灯）：两个 Text 都挂着
+                    // `sharedBounds`，而 `basicMarquee` 会插一层带无限宽约束的 layout
+                    // 节点，可能改变共享元素上报的 bounds。先只上悬停浮层（不改布局），
+                    // 共享元素动画的实测留给出图验收。
+                    CpText(
+                        text = track.name,
                         style = MaterialTheme.typography.titleSmall,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.sharedBounds(
                             sharedContentState = rememberSharedContentState(key = "title-${track.id}"),
                             animatedVisibilityScope = animatedVisibilityScope,
                         )
                     )
-                    Text(
-                        track.artist,
+                    CpText(
+                        text = track.artist,
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.sharedBounds(
                             sharedContentState = rememberSharedContentState(key = "artist-${track.id}"),

@@ -57,7 +57,6 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowScope
@@ -274,12 +273,13 @@ fun DesktopTitleBar(
                             .fillMaxHeight(),
                         contentAlignment = Alignment.CenterStart,
                     ) {
-                        Text(
-                            title,
+                        // CpText 而不是 Text：页面标题（"每日推荐 · 2026 年 10 月" 这类）
+                        // 被左侧固定宽度的拖拽区挤断后仍可读全。
+                        CpText(
+                            text = title,
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(start = CpSpacing.pageHorizontal),
                         )
                     }
@@ -292,12 +292,11 @@ fun DesktopTitleBar(
                             .fillMaxHeight()
                             .onTitleBarDoubleClick(toggleMaximize),
                     ) {
-                        Text(
-                            title,
+                        CpText(
+                            text = title,
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(start = CpSpacing.pageHorizontal),
                         )
                     }

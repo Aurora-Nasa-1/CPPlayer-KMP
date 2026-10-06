@@ -106,22 +106,22 @@ fun PlaylistItem(
             }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(
-                    playlist.name,
+                // CpText 而不是 Text：歌单名（尤其是「我喜欢的音乐 2026 年 10 月第 3 周合集」
+                // 这种）截断后仍可读全。静态观感不变，只在溢出时才挂悬停浮层。
+                CpText(
+                    text = playlist.name,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.height(2.dp))
                 val ownerStr = if (isOwner) "创建的歌单" else "收藏 · ${playlist.creatorName ?: "未知"}"
                 val countStr = if (playlist.trackCount > 0) "${playlist.trackCount} 首" else ""
-                Text(
-                    listOf(ownerStr, countStr).filter { it.isNotEmpty() }.joinToString(" · "),
+                CpText(
+                    text = listOf(ownerStr, countStr).filter { it.isNotEmpty() }.joinToString(" · "),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Spacer(Modifier.width(8.dp))

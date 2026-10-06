@@ -29,7 +29,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.ui.anim.CoverFlight
@@ -134,20 +133,21 @@ fun SongItem(
                 }
             }
         },
+        // CpText 而不是 Text：歌名 / 歌手被截断后仍可读全（悬停浮出完整文本）。
+        // 静态观感与治理前一致 —— 默认走尾部省略，且只在真的溢出时才挂额外能力。
         headlineContent = {
-            Text(
-                track.name,
+            CpText(
+                text = track.name,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = if (isCurrentlyPlaying) FontWeight.Bold else FontWeight.Normal,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
                 color = if (isCurrentlyPlaying) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurface,
             )
         },
         supportingContent = {
-            Text(
-                buildString {
+            CpText(
+                text = buildString {
                     append(track.artist)
                     if (!track.album.isNullOrBlank()) {
                         append(" · ")
@@ -157,7 +157,6 @@ fun SongItem(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         },
         trailingContent = if (!selectionMode && (onOptionsClick != null || anchoredMenu)) {{
