@@ -108,6 +108,8 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.transitions.ScreenTransition
 import cp.player.app.AppModel
+import cp.player.app.auth.QrLoginStore
+import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.shareText
 import cp.player.app.ui.component.MiniPlayer
 import cp.player.app.ui.component.CpBackButton
@@ -131,6 +133,15 @@ import cp.player.core.music.PlaylistSummary
 private const val SIDEBAR_PLAYLIST_LIMIT = 8
 
 /**
+ * 「上次的扫码登录还没扫完」的启动提示**每个进程只给一次**。
+ *
+ * ⚠️ 必须是进程级、不能放 composable 的 `remember`：MainScreen 在手机端会被账号 /
+ * 设置 / 专辑等路由页盖住而**离开组合**，返回时它的 `LaunchedEffect(Unit)` 会重跑，
+ * remember 版就成了「每次从子页面返回都再弹一遍」。
+ */
+private var qrResumePromptShown = false
+
+/**
  * 三个主 tab 的 Screen 实例：**会话级稳定，整个 app 生命周期只建一次**。
  *
  * ⚠️ 绝不能放回 `MainScreen.Content()` 的 `remember { }`：MainScreen 被根栈 push 覆盖
@@ -152,6 +163,8 @@ class MainScreen : Screen {
     @OptIn(ExperimentalSharedTransitionApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
     @Composable
     override fun Content() {
+        // 文案层（本页其余字面量属 I18N.md 批次 6，尚未迁移）。
+        val s = cpStrings()
         // 选中索引的状态本体要交给 [DesktopContentRootScreen]（内嵌 Navigator 的根页）
         // 持引用，所以这里留一份实例、再用 `by` 委托出读写别名。
         val selectedIndexState = rememberSaveable { mutableIntStateOf(0) }
@@ -310,6 +323,22 @@ class MainScreen : Screen {
                     withDismissAction = true,
                     duration = androidx.compose.material3.SnackbarDuration.Short,
                 )
+            }
+        }
+
+        // 「上次的扫码登录还没扫完」的启动提示。
+        //
+        // 场景：用户在登录页看到二维码后切到手机 App 去扫，本进程被系统回收 ——
+        // 二维码现场由 `QrLoginStore` 落盘（见它的 KDoc）。这里只负责让用户知道
+        // 「那张二维码还在、不用从头来」，现场本身由登录页自己恢复。
+        //
+        // ⚠️ 必须排在上面那条 `LaunchedEffect` **之后**：UiEvents 是 replay = 0 的
+        // SharedFlow，先发后订阅就丢了；两条都是 `LaunchedEffect(Unit)`，按声明顺序启动。
+        androidx.compose.runtime.LaunchedEffect(Unit) {
+            val providerId = AppModel.activeProviderId()
+            if (!qrResumePromptShown && providerId.isNotBlank() && QrLoginStore.hasPending(providerId)) {
+                qrResumePromptShown = true
+                cp.player.app.ui.util.UiEvents.notify(s.account.qrResumePrompt)
             }
         }
 

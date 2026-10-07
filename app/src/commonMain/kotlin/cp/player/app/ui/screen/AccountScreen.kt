@@ -65,6 +65,8 @@ import cp.player.app.auth.AccountStore
 import cp.player.app.i18n.AccountStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.auth.CookieLogin
+import cp.player.app.auth.QrLoginSession
+import cp.player.app.auth.QrLoginStore
 import cp.player.app.platform.isPackageInstalled
 import cp.player.app.platform.openTargetApp
 import cp.player.app.platform.saveQrCodeToGallery
@@ -76,10 +78,12 @@ import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsDropdownItem
 import cp.player.app.ui.component.SettingsFieldGroup
 import cp.player.app.ui.component.SettingsNote
+import cp.player.app.ui.component.SettingsNoteEmphasis
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.settingsRowHighlightContent
 import cp.player.core.api.isLoggedInStatus
+import cp.player.core.util.currentTimeMillis
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -120,6 +124,7 @@ class AccountScreen : Screen {
         val message by model.message.collectAsState()
         val qrUrl by model.qrUrl.collectAsState()
         val qrImgBase64 by model.qrImgBase64.collectAsState()
+        val qrRestored by model.qrRestored.collectAsState()
         val targetAppName by model.targetAppName.collectAsState()
         val targetAppInstalled by model.targetAppInstalled.collectAsState()
         val accounts by model.accounts.collectAsState()
@@ -155,6 +160,13 @@ class AccountScreen : Screen {
 
                 // 状态反馈（切号、清除、扫码轮询…）放页面顶部，登录与否都能看见。
                 message?.let { SettingsNote(it, color = MaterialTheme.colorScheme.primary) }
+
+                // 「这张二维码是上次没扫完、这次恢复出来的」要**单独一条常显提示**：
+                // 轮询每 2 秒就把 message 覆盖成「等待扫码…」，捎在 message 里等于没提示。
+                // ⚠️ 必须放在 SettingsSection 之外（说明条是分段卡片之间的元素）。
+                if (qrRestored) {
+                    SettingsNote(s.account.qrRestored, emphasis = SettingsNoteEmphasis.WARNING)
+                }
 
                 // 登录区（方式选择 + 表单 + 提交按钮）抽成局部块，两个位置复用：
                 // 未登录 → 紧跟 Hero 放在页面**最上面**，手机端第一屏就是二维码/登录表单，
@@ -731,6 +743,14 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
     val message = MutableStateFlow<String?>(null)
     val qrUrl = MutableStateFlow<String?>(null)
     val qrImgBase64 = MutableStateFlow<String?>(null)
+
+    /**
+     * 当前这张二维码是不是**上次没扫完、这次恢复出来的**。
+     *
+     * 只存布尔量、不存提示文案：状态带文案，切语言时那句话就永远是旧语言（见
+     * `docs/dev/I18N.md` §5.5）；显示用的句子由界面拿 `account.qrRestored` 现取。
+     */
+    val qrRestored = MutableStateFlow(false)
     val targetAppName = MutableStateFlow<String?>(null)
     val targetAppInstalled = MutableStateFlow(false)
     val accounts = MutableStateFlow<List<AccountStore.SavedAccount>>(emptyList())
@@ -806,7 +826,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                 checkLoginStatus()
                 if (first) {
                     first = false
-                    if (!isLogged.value && LoginChannel.QR in loginChannels.value) fetchQrCode()
+                    if (!isLogged.value && LoginChannel.QR in loginChannels.value) restoreOrFetchQrCode()
                 }
             }
         }
@@ -818,7 +838,8 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
         method.value = channel
         showForm.value = true
         // 离开扫码方式就停掉轮询，否则它在后台继续请求、继续改 message。
-        if (channel == LoginChannel.QR) fetchQrCode() else cancelQrPolling()
+        // （现场留在盘上：切回扫码方式时接着用，不必再扫一张新的。）
+        if (channel == LoginChannel.QR) restoreOrFetchQrCode() else cancelQrPolling()
         // 切到手机号登录时预取一次图形验证码（音源声明了该能力才有）。
         if (channel == LoginChannel.PHONE && supportsCaptchaImage.value) fetchCaptchaImage()
     }
@@ -843,7 +864,8 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
 
     fun startAddAccount() {
         showForm.value = true
-        fetchQrCode()
+        // 与进页时同一套判据：上次没扫完的那张还在就直接接着扫，不必再开一张新的。
+        restoreOrFetchQrCode()
     }
 
     private fun refreshAccounts() {
@@ -886,44 +908,113 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
     }
 
     /**
-     * 取二维码 + 轮询扫码结果。
+     * 重新要一张二维码：界面上的「刷新二维码」按钮走这里。
      *
-     * 「取 key / 出图」与「轮询」刻意放进**同一个 Job**：过期重取改成外层 `repeat`
-     * 再来一轮，而不是像原先那样 `800 -> fetchQrCode()` 递归调回自己 —— 那个写法
-     * 能跑通，但 `fetchQrCode` 开头会 `cancel()` 掉正在跑的那条协程（也就是它自己），
-     * 语义绕、也没人看得懂为什么还能work。
-     *
-     * `finally` 里统一收 `isLoading`：原先三条退出路径各写一遍，漏一条就是
-     * 「一直转圈但什么也不发生」。
+     * 刻意**不**去恢复上次的现场 —— 用户点刷新就是嫌当前这张不能用了（多半已过期），
+     * 再把它捞回来只会原地打转。
      */
     fun fetchQrCode() {
+        qrRestored.value = false
+        startQrJob(initialKey = null, reuseQr = false)
+    }
+
+    /**
+     * 进登录页 / 切回扫码方式时的入口：**先看有没有上次没扫完的现场**。
+     *
+     * 现场是 [QrLoginStore] 落的那一份（用户切后台去扫码时进程被系统回收，见它的 KDoc）。
+     * 有就接着同一张二维码继续轮询 —— 用户手机里那张二维码还有效，不用重扫；
+     * 没有就照旧取一张新的。
+     *
+     * 已经在轮询时直接返回：`init` 里「先按音源能力纠正方式、再补一次首次进入」两条
+     * 路径都会走到这里，不去重就会把刚建的 Job 取消再重建一遍。
+     */
+    private fun restoreOrFetchQrCode() {
+        if (qrJob?.isActive == true) return
+        // 音源没声明扫码能力时保持原样（老行为就是「照旧要一张二维码」）——
+        // 这里若把 method 改成 QR，下拉框仍只列可用方式，标签与实际表单会对不上。
+        if (LoginChannel.QR !in loginChannels.value) {
+            fetchQrCode()
+            return
+        }
+        val session = QrLoginStore.load(providerId())
+        if (session == null) {
+            fetchQrCode()
+            return
+        }
+        method.value = LoginChannel.QR
+        qrUrl.value = session.url
+        qrImgBase64.value = session.imageBase64
+        qrRestored.value = true
+        startQrJob(initialKey = session.key, reuseQr = true)
+    }
+
+    /**
+     * 二维码任务本体：取 key / 出图 /（恢复现场）/ 轮询**全在这一个 Job 里**。
+     *
+     * 之所以守着「一个 Job」这个形态：过期重取改成外层 `repeat` 再来一轮，而不是像原先
+     * 那样 `800 -> fetchQrCode()` 递归调回自己 —— 那个写法能跑通，但 `fetchQrCode` 开头会
+     * `cancel()` 掉正在跑的那条协程（也就是它自己），语义绕、也没人看得懂为什么还能 work。
+     * `finally` 里统一收 `isLoading`：原先三条退出路径各写一遍，漏一条就是
+     * 「一直转圈但什么也不发生」。
+     *
+     * @param initialKey 恢复现场时**已有的** key；null = 本轮重新向服务端要一个。
+     * @param reuseQr 第一轮是否沿用界面上已有的那张二维码图（恢复现场时不重复请求出图，
+     *   否则刚恢复出来的那张会被新图顶掉，用户手机上那张立刻作废）。
+     */
+    private fun startQrJob(initialKey: String?, reuseQr: Boolean) {
         cancelQrPolling()
         qrJob = screenModelScope.launch {
             isLoading.value = true
             try {
+                var pendingKey = initialKey
+                var pendingReuse = reuseQr
                 repeat(QR_MAX_ROUNDS) { round ->
-                    val key = runCatching { AppModel.authRepository.getQrKey() }
-                        .getOrNull()?.uniCodeKey()
+                    val key = pendingKey
+                        ?: runCatching { AppModel.authRepository.getQrKey() }.getOrNull()?.uniCodeKey()
+                    val reuse = pendingReuse
+                    pendingKey = null
+                    pendingReuse = false
                     if (key == null) {
-                        message.value = "获取二维码 key 失败"
+                        message.value = account.qrKeyFailed
                         return@launch
                     }
-                    val qrResp = runCatching { AppModel.authRepository.createQrCode(key) }.getOrNull()
-                    qrUrl.value = qrResp?.uniQrUrl()
-                    qrImgBase64.value = qrResp?.uniQrImage()
-                    if (qrUrl.value == null) {
-                        message.value = "二维码加载失败"
-                        return@launch
+                    if (!reuse) {
+                        val qrResp = runCatching { AppModel.authRepository.createQrCode(key) }.getOrNull()
+                        val url = qrResp?.uniQrUrl()
+                        val img = qrResp?.uniQrImage()
+                        qrUrl.value = url
+                        qrImgBase64.value = img
+                        if (url == null) {
+                            message.value = account.qrLoadFailed
+                            return@launch
+                        }
+                        // 换成新图了 ⇒「恢复出来的」这个说法不再成立；同时把现场落盘，
+                        // 这样接下来无论进程怎么死，下次进来都是这张二维码。
+                        qrRestored.value = false
+                        val providerId = providerId()
+                        QrLoginStore.save(
+                            providerId,
+                            QrLoginSession(
+                                key = key,
+                                url = url,
+                                imageBase64 = img,
+                                createdAtMs = currentTimeMillis(),
+                            ),
+                        )
                     }
                     isLoading.value = false
                     when (pollQrStatus(key)) {
                         QrPollResult.LOGGED_IN -> return@launch
-                        QrPollResult.STOPPED -> return@launch
+                        QrPollResult.STOPPED -> {
+                            // 超时 / 连续失败：这张二维码已经盖棺，别让它下次开机又被恢复出来。
+                            if (!isLogged.value) QrLoginStore.clear(providerId())
+                            return@launch
+                        }
                         QrPollResult.EXPIRED ->
                             if (round == QR_MAX_ROUNDS - 1) {
-                                message.value = "二维码反复过期，请点「刷新二维码」重试"
+                                message.value = account.qrExpiredRetry
                             } else {
-                                message.value = "二维码已过期，正在重新获取…"
+                                message.value = account.qrRefreshing
                                 isLoading.value = true
                             }
                     }
@@ -956,14 +1047,14 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
             if (resp == null) {
                 consecutiveFailures++
                 if (consecutiveFailures >= QR_FAILURE_LIMIT) {
-                    message.value = "查询扫码状态连续失败，请检查网络后刷新二维码"
+                    message.value = account.qrPollFailed
                     return QrPollResult.STOPPED
                 }
             } else {
                 consecutiveFailures = 0
                 when (resp.asCode()) {
-                    801 -> message.value = "等待扫码…"
-                    802 -> message.value = "已扫码，请在手机上确认登录"
+                    801 -> message.value = account.qrWaiting
+                    802 -> message.value = account.qrScanned
                     803 -> {
                         onLoginSucceeded(resp.uniCookie())
                         return QrPollResult.LOGGED_IN
@@ -974,7 +1065,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
             // 别的入口（切号 / Cookie 登录 / 登出）已经改过登录态 ⇒ 立刻停，别再往回写
             if (isLogged.value) return QrPollResult.LOGGED_IN
         }
-        message.value = "二维码已超时，请点「刷新二维码」重试"
+        message.value = account.qrTimedOut
         return QrPollResult.STOPPED
     }
 
@@ -1049,6 +1140,8 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                     message.value = "Cookie 无效或已过期，请重新获取"
                     return@launch
                 }
+                // 粘 cookie 登录成功：扫码现场一并作废（与 onLoginSucceeded 同一规矩）。
+                QrLoginStore.clear(providerId)
                 AccountStore.save(
                     providerId,
                     AccountStore.SavedAccount(
@@ -1116,6 +1209,8 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
         val profile = AppModel.refreshUserProfileAwait()
         isLogged.value = profile != null
         if (profile != null) {
+            // 这单登录已经成了 ⇒ 扫码现场作废，别让下次开机又把它恢复出来。
+            QrLoginStore.clear(providerId)
             if (!cookie.isNullOrEmpty()) {
                 AccountStore.save(
                     providerId,
@@ -1141,6 +1236,8 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
             val providerId = providerId()
             val previousCookie = AppModel.cookieStorage.getCookie(providerId)
             val previousUid = AccountStore.activeUid(providerId)
+            // 换账号 = 登录态要变了 ⇒ 没扫完的那张二维码不再代表「正在进行的登录」。
+            QrLoginStore.clear(providerId)
             if (account.cookie.isNotBlank()) {
                 AppModel.cookieStorage.saveCookie(providerId, account.cookie)
             }
@@ -1169,6 +1266,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
         screenModelScope.launch {
             val providerId = providerId()
             val wasActive = AccountStore.activeUid(providerId) == account.uid
+            QrLoginStore.clear(providerId)
             AccountStore.remove(providerId, account.uid)
             if (wasActive) {
                 isLogged.value = false
@@ -1189,6 +1287,8 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
             runCatching { AppModel.authRepository.logout() }
             AppModel.cookieStorage.clear(providerId)
             AccountStore.setActive(providerId, null)
+            // 登出后不该再恢复上次那张二维码（那是登出前那次登录的现场）。
+            QrLoginStore.clear(providerId)
             AppModel.clearUserProfile()
             isLogged.value = false
             message.value = "已退出登录"

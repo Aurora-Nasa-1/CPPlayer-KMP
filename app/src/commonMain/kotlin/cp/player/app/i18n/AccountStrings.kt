@@ -122,6 +122,17 @@ interface AccountStrings {
     val refreshQr: String
     val saveQr: String
 
+    /**
+     * 「这张二维码是上次没扫完、这次恢复出来的」常显提示（登录页顶部）。
+     *
+     * 与上面那组 ScreenModel 提示语分开：那些走 `message`，2 秒一次轮询就会把它们覆盖掉，
+     * 而这条要一直挂到用户扫完或刷新为止。
+     */
+    val qrRestored: String
+
+    /** 进程被系统回收后重新打开应用时的启动提示（全局 Snackbar，一进程一次）。 */
+    val qrResumePrompt: String
+
     /** @param name 音源对应的目标 App 名。 */
     fun openApp(name: String): String
 
@@ -328,6 +339,9 @@ object AccountStringsZh : AccountStrings {
     override val qrLoadFailed = "二维码加载失败"
     override val refreshQr = "刷新二维码"
     override val saveQr = "保存二维码"
+    override val qrRestored = "已恢复上次没扫完的二维码 —— 用手机接着扫这一张即可；" +
+        "若已经失效，刷新一次就能拿到新的。"
+    override val qrResumePrompt = "上次的扫码登录还没完成，二维码已经为你保留；到「账号」页可以接着扫。"
     override fun openApp(name: String) = "打开 $name"
     override fun installApp(name: String) = "安装 $name"
 
@@ -474,6 +488,10 @@ object AccountStringsEn : AccountStrings {
     override val qrLoadFailed = "Couldn't load the QR code"
     override val refreshQr = "Refresh QR code"
     override val saveQr = "Save QR code"
+    override val qrRestored = "Restored the QR code you didn't finish scanning — " +
+        "keep scanning the same one on your phone; if it has expired, refresh for a new one."
+    override val qrResumePrompt = "Your last QR sign-in wasn't finished and the code was kept — " +
+        "open the Account page to continue."
     override fun openApp(name: String) = "Open $name"
     override fun installApp(name: String) = "Install $name"
 
