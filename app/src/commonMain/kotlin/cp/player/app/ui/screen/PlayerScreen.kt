@@ -965,46 +965,9 @@ private fun ProgressRow(
 
 @Composable
 private fun CommentPage(id: String, type: String) {
-    val s = cpStrings()
+    // 列表 / 楼层 / 回复输入条全部在共享组件 CommentPane 里（窄屏评论页与桌面弹层同一份）。
     val model = remember { cp.player.app.ui.model.CommentScreenModel(id, type) }
-    val state by model.state.collectAsState(cp.player.app.ui.model.CommentUiState(id, type))
-
-    Box(Modifier.fillMaxSize()) {
-        when {
-            state.loading && state.comments.isEmpty() -> {
-                cp.player.app.ui.component.CpLoadingIndicator(
-                    Modifier.align(Alignment.Center).size(40.dp)
-                )
-            }
-            state.error != null -> {
-                Column(
-                    Modifier.fillMaxSize().padding(32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text(s.player.commentsLoadFailed, style = MaterialTheme.typography.titleMedium)
-                    Text(state.error!!, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
-                    Button(onClick = model::loadComments, modifier = Modifier.padding(top = 16.dp)) {
-                        Text(s.player.retry)
-                    }
-                }
-            }
-            state.comments.isEmpty() -> {
-                Text(s.player.noComments, Modifier.align(Alignment.Center), style = MaterialTheme.typography.bodyMedium)
-            }
-            else -> {
-                LazyScrollColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    items(state.comments) { comment ->
-                        CommentItem(comment, onLike = { model.toggleLike(comment) })
-                    }
-                }
-            }
-        }
-    }
+    cp.player.app.ui.component.CommentPane(model = model, modifier = Modifier.fillMaxSize())
 }
 
 @Composable
@@ -1028,53 +991,5 @@ fun DesktopLyricsContent(
 
 @Composable
 fun DesktopCommentContent(trackId: String) {
-    val s = cpStrings()
     CommentPage(trackId, "music")
-}
-
-@Composable
-private fun CommentItem(comment: Comment, onLike: () -> Unit) {
-    val s = cpStrings()
-    Row(Modifier.fillMaxWidth()) {
-        AsyncImage(
-            model = comment.avatar,
-            contentDescription = null,
-            modifier = Modifier.size(40.dp).clip(CircleShape),
-            contentScale = ContentScale.Crop
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    comment.user,
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                androidx.compose.material3.IconButton(onClick = onLike, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        if (comment.liked) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
-                        contentDescription = if (comment.liked) s.player.unlike else s.player.like,
-                        modifier = Modifier.size(14.dp),
-                        tint = if (comment.liked) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    comment.likedCount.toString(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Text(comment.time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(4.dp))
-            Text(comment.content, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-            androidx.compose.material3.HorizontalDivider(
-                Modifier.padding(top = 12.dp),
-                thickness = 0.5.dp,
-                color = MaterialTheme.colorScheme.outlineVariant
-            )
-        }
-    }
 }

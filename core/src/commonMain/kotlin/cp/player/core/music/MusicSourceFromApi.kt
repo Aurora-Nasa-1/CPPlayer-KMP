@@ -78,34 +78,122 @@ object MusicSourceFromApi {
     }
 
     /**
-     * 解析评论响应为 [Comment] 列表。
+     * 解析评论响应为一页**顶层评论**。
      *
      * 上游形状：`{comments, hotComments}` 或包一层 `{data: {comments, hotComments}}`；
-     * 评论区优先取 `comments`，为空再取 `hotComments`。评论接口不在读透缓存名单内，
-     * 调用即直连网络（与旧行为一致）。
+     * 评论区优先取 `comments`，为空再取 `hotComments`（热门，标记 `isHot`）。
+     *
+     * ⚠️ **不校验 `code`**：评论端点历史上就是「拿到就解析」，且部分 Provider 的响应体里
+     * 根本没有 `code` 字段 —— 加码表判定会让这些音源的评论从「能看」变成「报错」。
+     * 这里只在 JSON 形状不对 / 解码失败时报错，与改造前行为一致。
+     *
+     * 分页字段（`totalCount` / `hasMore` / `cursor` / `sortType`）能取就取，取不到按
+     * 「已给一页、无更多」兜底 —— 调用方据此决定要不要继续翻页。评论接口不在读透缓存
+     * 名单内，调用即直连网络（与旧行为一致）。
      */
-    fun parseComments(json: JsonElement): MusicResult<List<Comment>> {
+    fun parseComments(json: JsonElement): MusicResult<CommentPage> {
         if (json !is JsonObject) return BackendResult.Error("响应格式异常（非 JsonObject）")
         return runCatching {
             val dto = commentJsonDecoder.decodeFromJsonElement<CommentResponseDto>(json)
-            val dtos = dto.data?.comments
-                ?: dto.comments
-                ?: dto.data?.hotComments
-                ?: dto.hotComments
-                ?: emptyList()
-            BackendResult.Success(dtos.map { d ->
-                val userDto = d.user ?: d.author
-                Comment(
-                    id = d.commentId ?: d.id ?: 0L,
-                    content = d.content ?: "",
-                    user = userDto?.nickname ?: "Unknown",
-                    avatar = userDto?.avatarUrl ?: "",
-                    time = d.timeStr ?: d.time?.toString() ?: "",
-                    likedCount = d.likedCount ?: 0,
-                    liked = d.liked ?: false,
+            val data = dto.data
+            val topDtos = data?.comments ?: dto.comments
+            val hotDtos = data?.hotComments ?: dto.hotComments
+            val topEmpty = topDtos.isNullOrEmpty()
+            val usedHot = topEmpty && !hotDtos.isNullOrEmpty()
+            val dtos = if (topEmpty) hotDtos.orEmpty() else topDtos.orEmpty()
+            val parsed = dtos.mapNotNull { it.toComment(isHot = usedHot) }
+            val comments = groupFlattenedReplies(parsed)
+            BackendResult.Success(
+                CommentPage(
+                    comments = comments,
+                    totalCount = data?.totalCount ?: dto.total ?: comments.size.toLong(),
+                    hasMore = data?.hasMore ?: dto.more ?: false,
+                    cursor = data?.cursor.orEmpty(),
+                    sortType = data?.sortType ?: 1,
                 )
-            })
+            )
         }.getOrElse { BackendResult.Error("评论解析失败: ${it.message}", cause = it) }
+    }
+
+    /**
+     * 把**平铺**在同一个 `comments` 数组里的楼层回复归回父评论。
+     *
+     * 网易云的 `comment/music` 把回复放在 `showFloorComment.topReplies` 里（已由
+     * [CommentDto.toComment] 解析），但有些音源直接把 `parentCommentId > 0` 的回复**平铺在顶层
+     * 数组里**。不归组的话，它们会变成一条条独立评论 —— 界面上就是「一条孤零零的『回复 @xxx』」，
+     * 而父评论底下永远没有楼层入口。
+     *
+     * 归组规则：
+     * - `parentCommentId == 0` 的留在顶层；
+     * - `parentCommentId` 命中本页某条顶层评论的，挂到它的 [Comment.topReplies]，
+     *   并把 [Comment.replyCount] 抬到至少等于归组的条数（这样楼层入口才会出现）；
+     * - 父评论**不在本页**的回复原样留在顶层 —— 宁可多显示，也不能让用户什么都看不到。
+     *
+     * 对标准网易云响应是**恒等变换**：那里顶层数组里本来就没有 `parentCommentId > 0` 的条目。
+     */
+    private fun groupFlattenedReplies(parsed: List<Comment>): List<Comment> {
+        if (parsed.none { it.parentCommentId > 0L }) return parsed
+        val (topLevel, replies) = parsed.partition { it.parentCommentId == 0L }
+        if (replies.isEmpty()) return parsed
+        val byParent = replies.groupBy { it.parentCommentId }
+        val topIds = topLevel.mapTo(HashSet()) { it.id }
+        val merged = topLevel.map { parent ->
+            val children = byParent[parent.id].orEmpty()
+            if (children.isEmpty()) {
+                parent
+            } else {
+                parent.copy(
+                    replyCount = maxOf(parent.replyCount, children.size),
+                    topReplies = if (parent.topReplies.isEmpty()) children else parent.topReplies,
+                )
+            }
+        }
+        val orphans = replies.filter { it.parentCommentId !in topIds }
+        return merged + orphans
+    }
+
+    /**
+     * 解析**楼层**响应（`comment/floor`）为 [CommentFloorPage]。
+     *
+     * 楼层里的回复**都**属于某个顶层评论（`parentCommentId > 0`）；上游偶尔省略该字段，
+     * 用 [parentCommentId] 兜底回填（见 [CommentDto.toComment] 的 `parentOverride`）。
+     *
+     * @param parentCommentId 楼层所属的顶层评论 id（调用方传入）
+     */
+    fun parseFloorComments(json: JsonElement, parentCommentId: Long = 0L): MusicResult<CommentFloorPage> {
+        if (json !is JsonObject) return BackendResult.Error("响应格式异常（非 JsonObject）")
+        return runCatching {
+            val dto = commentJsonDecoder.decodeFromJsonElement<CommentFloorResponseDto>(json)
+            val data = dto.data
+            val dtos = data?.comments ?: dto.comments ?: emptyList()
+            val replies = dtos.mapNotNull { it.toComment(parentOverride = parentCommentId) }
+            BackendResult.Success(
+                CommentFloorPage(
+                    replies = replies,
+                    totalCount = data?.totalCount ?: replies.size,
+                    hasMore = data?.hasMore ?: false,
+                    nextTime = data?.time ?: replies.lastOrNull()?.timeMs ?: 0L,
+                )
+            )
+        }.getOrElse { BackendResult.Error("楼层解析失败: ${it.message}", cause = it) }
+    }
+
+    /**
+     * 解析**发表 / 回复**评论的响应（`comment`）。
+     *
+     * 上游把新建的评论放在 `comment` 或 `data.comment` 下；两处都取不到时返回 `null`
+     * （表示服务端接受了但没回体）——调用方据此决定是「用返回体插列表」还是「重新拉一页」。
+     *
+     * @param parentCommentId 本次回复所属的楼层（顶层评论传 0）；上游响应体常省略，
+     *   由调用方带回，用于「回复落在哪个楼层」的归属判定
+     */
+    fun parseCreatedComment(json: JsonElement, parentCommentId: Long = 0L): MusicResult<Comment?> {
+        if (json !is JsonObject) return BackendResult.Error("响应格式异常（非 JsonObject）")
+        return runCatching {
+            val dto = commentJsonDecoder.decodeFromJsonElement<CommentCreatedResponseDto>(json)
+            val commentDto = dto.comment ?: dto.data?.comment
+            BackendResult.Success(commentDto?.toComment(parentOverride = parentCommentId))
+        }.getOrElse { BackendResult.Error("评论发送结果解析失败: ${it.message}", cause = it) }
     }
 
     // ============ 推荐歌单 ============
@@ -706,19 +794,51 @@ object MusicSourceFromApi {
         parseRecommendedPlaylists(api.getHighqualityPlaylists(cat = cat, limit = limit))
 }
 
-// ============ 评论 DTO（仅供 [MusicSourceFromApi.parseComments] 使用） ============
+// ============ 评论 DTO（仅供本文件的评论解析使用） ============
 
 @Serializable
 private data class CommentResponseDto(
     val data: CommentDataDto? = null,
     val comments: List<CommentDto>? = null,
     val hotComments: List<CommentDto>? = null,
+    /** 兼容：少数 Provider 把 total / more 放在顶层。 */
+    val total: Long? = null,
+    val more: Boolean? = null,
 )
 
 @Serializable
 private data class CommentDataDto(
     val comments: List<CommentDto>? = null,
     val hotComments: List<CommentDto>? = null,
+    val totalCount: Long? = null,
+    val hasMore: Boolean? = null,
+    val cursor: String? = null,
+    val sortType: Int? = null,
+)
+
+@Serializable
+private data class CommentFloorResponseDto(
+    val data: CommentFloorDataDto? = null,
+    val comments: List<CommentDto>? = null,
+)
+
+@Serializable
+private data class CommentFloorDataDto(
+    val comments: List<CommentDto>? = null,
+    val totalCount: Int? = null,
+    val hasMore: Boolean? = null,
+    val time: Long? = null,
+)
+
+@Serializable
+private data class CommentCreatedResponseDto(
+    val comment: CommentDto? = null,
+    val data: CommentCreatedDataDto? = null,
+)
+
+@Serializable
+private data class CommentCreatedDataDto(
+    val comment: CommentDto? = null,
 )
 
 @Serializable
@@ -732,10 +852,96 @@ private data class CommentDto(
     val liked: Boolean? = null,
     val user: CommentUserDto? = null,
     val author: CommentUserDto? = null,
+    val parentCommentId: Long? = null,
+    val replyCount: Int? = null,
+    val showFloorComment: CommentShowFloorDto? = null,
+    val beReplied: List<CommentRepliedDto>? = null,
+    val ipLocation: CommentIpLocationDto? = null,
+)
+
+@Serializable
+private data class CommentShowFloorDto(
+    val replyCount: Int? = null,
+    /** 上游内联的前几条回复；解析进 `Comment.topReplies`，让楼层不必等第二次请求。 */
+    val topReplies: List<CommentDto>? = null,
+)
+
+@Serializable
+private data class CommentRepliedDto(
+    val user: CommentUserDto? = null,
+    val content: String? = null,
+    val beRepliedCommentId: Long? = null,
+)
+
+@Serializable
+private data class CommentIpLocationDto(
+    val location: String? = null,
 )
 
 @Serializable
 private data class CommentUserDto(
+    val userId: Long? = null,
     val nickname: String? = null,
     val avatarUrl: String? = null,
 )
+
+/**
+ * 评论 DTO → 领域模型。
+ *
+ * 映射规则与网易云原 API 的字段形状保持一致：
+ * - 主键取 `commentId`，无则退 `id`；两者都缺失 / ≤0 视为无效条目（返回 null，整条丢弃）；
+ * - [Comment.replyCount] 取 `replyCount`、`showFloorComment.replyCount`、内联回复条数三者的
+ *   **较大值** —— 部分响应只给其中一个，只看前两个会让「只给内联回复」的音源永远不显示楼层；
+ * - [Comment.topReplies] 取 `showFloorComment.topReplies`（只向下取一层，不再递归）；
+ * - [Comment.beReplied] 取 `beReplied[0]`；**当目标 id 就是本楼层 id 时置空**
+ *   （直回楼主不显示「回复 @x」前缀，与官方客户端一致）；
+ * - [Comment.parentCommentId] 为 0 / 缺失时用 [parentOverride] 回填（楼层解析用）。
+ */
+private fun CommentDto.toComment(
+    isHot: Boolean = false,
+    parentOverride: Long = 0L,
+    includeTopReplies: Boolean = true,
+): Comment? {
+    val cid = commentId ?: id ?: return null
+    if (cid <= 0L) return null
+    val parent = (parentCommentId ?: 0L).takeIf { it > 0L } ?: parentOverride
+    val replied = beReplied?.firstOrNull()?.let { target ->
+        val targetId = target.beRepliedCommentId ?: 0L
+        if (parent > 0L && targetId == parent) null
+        else Comment.Reply(
+            userId = target.user?.userId ?: 0L,
+            nickname = target.user?.nickname.orEmpty(),
+            content = target.content.orEmpty(),
+        )
+    }
+    // 内联回复：只向下取一层（回复的回复不再递归），父楼层就是本条评论。
+    val topReplies = if (includeTopReplies) {
+        showFloorComment?.topReplies
+            .orEmpty()
+            .mapNotNull { it.toComment(parentOverride = cid, includeTopReplies = false) }
+    } else {
+        emptyList()
+    }
+    val userDto = user ?: author
+    return Comment(
+        id = cid,
+        content = content.orEmpty(),
+        user = userDto?.nickname ?: "Unknown",
+        avatar = userDto?.avatarUrl.orEmpty(),
+        time = timeStr ?: time?.toString().orEmpty(),
+        likedCount = (likedCount ?: 0).coerceAtLeast(0),
+        liked = liked ?: false,
+        replyCount = maxOf(
+            replyCount ?: 0,
+            showFloorComment?.replyCount ?: 0,
+            topReplies.size,
+        ).coerceAtLeast(0),
+        beReplied = replied?.let { listOf(it) },
+        userId = userDto?.userId ?: 0L,
+        timeMs = time ?: 0L,
+        parentCommentId = parent,
+        ipLocation = ipLocation?.location.orEmpty(),
+        isHot = isHot,
+        topReplies = topReplies,
+    )
+}

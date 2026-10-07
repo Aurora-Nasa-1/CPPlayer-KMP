@@ -130,6 +130,49 @@ interface SocialStrings {
         val title: String
         val like: String
         val unlike: String
+
+        // —— 排序页签 ——
+        val sortRecommend: String
+        val sortHot: String
+        val sortLatest: String
+
+        /** 评论总数（已做万/千分档）；调用方在 [count] 为 0 时自行决定是否显示。 */
+        fun totalCount(count: Long): String
+
+        /** 「热评」徽章。 */
+        val hotBadge: String
+
+        // —— 回复与输入条 ——
+        val reply: String
+
+        /** 「回复 @昵称」。 */
+        fun replyTo(nickname: String): String
+
+        val cancelReply: String
+        val inputPlaceholder: String
+        val send: String
+        val sendFailed: String
+
+        /** 超出字数上限（按码点）。 */
+        fun tooLong(max: Int): String
+
+        // —— 楼层展开 / 折叠 ——
+        /** 折叠态：「查看 N 条回复」。 */
+        fun expandReplies(count: Int): String
+
+        /** 展开态：「收起回复」。 */
+        val collapseReplies: String
+
+        /** 楼层内翻页。 */
+        val moreReplies: String
+        val loadingReplies: String
+        val repliesFailed: String
+
+        // —— 顶层列表 ——
+        val loadMore: String
+        val noMore: String
+        val empty: String
+        val emptyHint: String
     }
 }
 
@@ -239,6 +282,32 @@ object SocialStringsZh : SocialStrings {
         override val title = "评论"
         override val like = "点赞"
         override val unlike = "取消点赞"
+
+        override val sortRecommend = "推荐"
+        override val sortHot = "热度"
+        override val sortLatest = "最新"
+        override fun totalCount(count: Long) =
+            if (count == 1L) "1 条评论" else "${zhCompactCount(count)} 条评论"
+        override val hotBadge = "热评"
+
+        override val reply = "回复"
+        override fun replyTo(nickname: String) = "回复 @$nickname"
+        override val cancelReply = "取消"
+        override val inputPlaceholder = "说点什么…"
+        override val send = "发送"
+        override val sendFailed = "发送失败"
+        override fun tooLong(max: Int) = "已超出 $max 字上限"
+
+        override fun expandReplies(count: Int) = "查看 $count 条回复"
+        override val collapseReplies = "收起回复"
+        override val moreReplies = "查看更多回复"
+        override val loadingReplies = "正在载入回复"
+        override val repliesFailed = "回复加载失败"
+
+        override val loadMore = "加载更多"
+        override val noMore = "没有更多评论了"
+        override val empty = "还没有评论"
+        override val emptyHint = "来抢沙发吧"
     }
 }
 
@@ -359,5 +428,51 @@ object SocialStringsEn : SocialStrings {
         override val title = "Comments"
         override val like = "Like"
         override val unlike = "Unlike"
+
+        override val sortRecommend = "Recommended"
+        override val sortHot = "Hot"
+        override val sortLatest = "Latest"
+        override fun totalCount(count: Long) =
+            if (count == 1L) "1 comment" else "${enCompactCount(count)} comments"
+        override val hotBadge = "Hot"
+
+        override val reply = "Reply"
+        override fun replyTo(nickname: String) = "Reply to @$nickname"
+        override val cancelReply = "Cancel"
+        override val inputPlaceholder = "Say something…"
+        override val send = "Send"
+        override val sendFailed = "Couldn't send"
+        override fun tooLong(max: Int) = "Over the $max-character limit"
+
+        override fun expandReplies(count: Int) =
+            if (count == 1) "View 1 reply" else "View $count replies"
+        override val collapseReplies = "Collapse replies"
+        override val moreReplies = "View more replies"
+        override val loadingReplies = "Loading replies"
+        override val repliesFailed = "Couldn't load replies"
+
+        override val loadMore = "Load more"
+        override val noMore = "No more comments"
+        override val empty = "No comments yet"
+        override val emptyHint = "Be the first to comment"
     }
 }
+
+/**
+ * 评论数的「万」分档（中文侧）。
+ *
+ * 10_000 以上折成「1.2万」；不足一万原样输出。放在文案层而不是调用方，
+ * 是为了让「数字 + 量词」这一整句保持同一个来源（见 I18N.md：带数字的句子写成文案函数）。
+ */
+private fun zhCompactCount(count: Long): String =
+    if (count < 10_000L) count.toString()
+    else "${trimTrailingZero((count / 1_000) / 10.0)}万"
+
+/** 评论数的「k」分档（英文侧）。 */
+private fun enCompactCount(count: Long): String =
+    if (count < 1_000L) count.toString()
+    else "${trimTrailingZero((count / 100) / 10.0)}k"
+
+/** 去掉小数末尾的 0 与孤立的小数点：`1.0` → `1`，`12.3` → `12.3`。 */
+private fun trimTrailingZero(value: Double): String =
+    value.toString().trimEnd('0').trimEnd('.')

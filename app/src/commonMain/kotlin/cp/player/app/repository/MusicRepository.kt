@@ -9,6 +9,8 @@ import cp.player.core.music.ArtistProfile
 import cp.player.core.music.ArtistSummary
 import cp.player.core.music.BannerItem
 import cp.player.core.music.Comment
+import cp.player.core.music.CommentFloorPage
+import cp.player.core.music.CommentPage
 import cp.player.core.music.MusicResult
 import cp.player.core.music.MusicSourceFromApi
 import cp.player.core.music.PlaylistDetail
@@ -277,13 +279,58 @@ class MusicRepository(private val api: MusicApiService) {
         MusicSourceFromApi.parseSongDetailInfo(api.getSongDetail(listOf(songId)), fallback)
 
     /**
-     * 评论列表。
+     * 评论列表（顶层评论，分页）。
      *
      * ⚠️ 评论接口不在读透缓存名单内（comment 直通网络），每次调用都打网络 ——
      * 与旧行为一致，别按「有缓存」来设计刷新节奏。
+     *
+     * @param sortType 1=推荐 / 2=热度 / 3=最新。返回体的 [CommentPage.sortType] 是服务端
+     *   **实际**使用的排序，翻页时必须回传它（未登录时「推荐」会被服务端按「热度」服务，
+     *   再用「推荐」请求下一页会 400）。
      */
-    suspend fun getComments(rawId: String, type: String): MusicResult<List<Comment>> =
-        MusicSourceFromApi.parseComments(api.getComments(rawId, type))
+    suspend fun getComments(
+        rawId: String,
+        type: String,
+        limit: Int = 20,
+        offset: Int = 0,
+        sortType: Int = 1,
+    ): MusicResult<CommentPage> =
+        MusicSourceFromApi.parseComments(api.getComments(rawId, type, limit, offset, sortType))
+
+    /**
+     * 楼层（某条顶层评论下的回复），分页。
+     *
+     * @param time 翻页游标；首页传 0。返回体的 [CommentFloorPage.nextTime] 原样带回请求下一页。
+     */
+    suspend fun getFloorComments(
+        rawId: String,
+        parentCommentId: Long,
+        type: String,
+        limit: Int = 20,
+        time: Long = 0L,
+    ): MusicResult<CommentFloorPage> =
+        MusicSourceFromApi.parseFloorComments(
+            api.getFloorComments(rawId, parentCommentId, type, limit, time),
+            parentCommentId,
+        )
+
+    /**
+     * 发表评论 / 回复。
+     *
+     * @param replyToCommentId 被回复的评论 id；null = 发表新的顶层评论
+     * @param parentCommentId 本次回复所属的楼层（顶层评论传 0）；用于把返回体归位到正确楼层
+     */
+    suspend fun postComment(
+        rawId: String,
+        type: String,
+        content: String,
+        replyToCommentId: Long? = null,
+        parentCommentId: Long = 0L,
+    ): MusicResult<Comment?> =
+        MusicSourceFromApi.parseCreatedComment(
+            api.postComment(rawId, type, content, replyToCommentId),
+            parentCommentId,
+        )
 
     /** 点赞 / 取消点赞评论。 */
     suspend fun likeComment(rawId: String, commentId: Long, type: String, like: Boolean): Boolean =
