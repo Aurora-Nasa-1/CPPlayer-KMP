@@ -554,23 +554,42 @@ fun SettingsSegmentedItem(
         color = resolveContainer(containerColor),
         modifier = modifier.fillMaxWidth().heightIn(min = CpSpacing.formRowMinHeight),
     ) {
-        SettingsRowContent(
-            leadingContent = icon?.let { img ->
-                { SettingsLeadingIcon(img, MaterialTheme.colorScheme.onSurfaceVariant) }
-            },
-            title = title,
-            subtitle = subtitle,
-            titleColor = MaterialTheme.colorScheme.onSurface,
-            subtitleColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            extra = {
-                SegmentedControl(
-                    options = options,
-                    selectedIndex = selectedIndex,
-                    enabled = enabled,
-                    onSelect = onSelect,
-                )
-            },
-        )
+        // 分段控件**独占一整行**（标题在上、分段条在下），而不是挤在标题右侧。
+        //
+        // ⚠️ 曾经把它塞进 [SettingsRowContent] 的 `extra` 槽（与标题同一行）：
+        // 分段条自身是 `fillMaxWidth`，而 `extra` 又不给 `weight`，
+        // 于是它把整行宽度全抢走，标题列被压到只剩一个字符宽 ——
+        // 「主题模式」竖排成「主/题/模/式」、「取色来源」截成「取色…」。
+        // 出图实测确认（`SettingsI18nPreviewTest` 的 appearance 页，中英宽窄四张全中）。
+        // 分段条需要按等分权重铺开（每项 `weight(1f)`），本就没有「与标题共享一行」的余量，
+        // 因此布局上必须让它另起一行 —— 与 [SettingsSliderItem] 同构。
+        Column(
+            modifier = Modifier.padding(
+                horizontal = CpSpacing.formRowHorizontal,
+                vertical = CpSpacing.formRowVertical,
+            ),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CpSpacing.formRowGap),
+            ) {
+                icon?.let { img ->
+                    SettingsLeadingIcon(img, MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Column(Modifier.weight(1f)) {
+                    RowTitle(title, MaterialTheme.colorScheme.onSurface)
+                    subtitle?.let { RowSubtitle(it, MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+            }
+            SegmentedControl(
+                options = options,
+                selectedIndex = selectedIndex,
+                enabled = enabled,
+                onSelect = onSelect,
+            )
+        }
     }
 }
 
@@ -594,7 +613,9 @@ private fun SegmentedControl(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 10.dp)
+            // ⚠️ 这里**没有** `padding(top = …)`：分段条现在由 `SettingsSegmentedItem`
+            // 放在标题下方（单独的 Column 行），行间距由宿主给的 `spacedBy(2.dp)` 负责。
+            // 曾经它是标题右侧的行内元素，靠 10dp 顶边距与标题拉开距离 —— 那个布局已废弃。
             .clip(outerShape)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             .padding(trackPadding)
