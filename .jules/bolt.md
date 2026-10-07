@@ -8,3 +8,8 @@
 
 - **Bottleneck**: In `UnifiedMusicSourceImpl.kt`, `getTrackDetails` uses `apiIds.chunked(500)` to fetch details in batches. Inside the loop processing the response, it iterates over `songs?.forEach` and for each song, it used `chunk.find { it.resourceId == rid }`. Since `chunk` can be up to 500 items, and `songs` can be up to 500, this resulted in an O(N^2) lookup within the loop.
 - **Optimization**: Converted the `chunk` list to a hash map using `val chunkMap = chunk.associateBy { it.resourceId }` prior to the `songs?.forEach` loop. The inner lookup was changed to `val matchedApiId = chunkMap[rid]`, changing the time complexity from O(N^2) to O(N) for that batch processing step.
+
+# 2026-10-02
+
+- **Bottleneck**: In `AlbumDetailScreen.kt`, the contextual menu `SongOptionsSheet` relied on an O(N) lookup (`indexOfFirst { it.id == track.id }`) in the `onPlay` callback when launching an item to play, creating unnecessary overhead per click.
+- **Optimization**: Modified the `optionsTarget` state to hold `Pair<Int, TrackSummary>` instead of just `TrackSummary`. Captured both the `index` and `track` during `onOptionsClick` to completely eliminate the runtime lookup within the `onPlay` callback.
