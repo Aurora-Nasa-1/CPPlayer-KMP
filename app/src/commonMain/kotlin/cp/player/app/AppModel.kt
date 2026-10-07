@@ -419,6 +419,97 @@ object AppModel {
         _keepLastPlayback.value = enabled
     }
 
+    // ============ 音效（持久化，Android 生效 / 桌面明示不支持） ============
+    //
+    // 这里只做三件事：
+    // ① 读盘得到初值（键与编码在 `AudioEffectSettings`，与后端共用同一份常量）；
+    // ② 把改变后的配置**同时**落盘与下发播放控制器；
+    // ③ 暴露能力位供设置页决定是否禁用控件。
+    //
+    // ⚠️ 能力位**不在启动时缓存**：它是平台相关的常量，但订阅它要碰平台播放器
+    // （Android 侧首次读会促使 ExoPlayer 申请音频会话）。用 `StateFlow` 惰性暴露、
+    // 只在设置页真正渲染时读一次即可。
+
+    private val _audioEffect =
+        MutableStateFlow(cp.player.core.playback.AudioEffectSettings.read(settings))
+
+    /** 当前音效配置（设置页渲染用）。 */
+    val audioEffectFlow: StateFlow<cp.player.core.playback.AudioEffectConfig> =
+        _audioEffect.asStateFlow()
+
+    /** 当前音效配置快照。 */
+    fun audioEffect(): cp.player.core.playback.AudioEffectConfig = _audioEffect.value
+
+    /**
+     * 音效能力（平台相关）。
+     *
+     * 读它会**触达平台播放器**（Android 侧会申请音频会话），
+     * 所以只应由音效设置页调用 —— 别放进启动路径。
+     */
+    fun audioEffectCapabilities(): cp.player.core.playback.AudioEffectCapabilities =
+        runCatching { playback.audioEffectCapabilities }
+            .getOrDefault(cp.player.core.playback.AudioEffectCapabilities.NONE)
+
+    /**
+     * 覆盖式保存音效配置：先落盘、再下发、最后更新流。
+     *
+     * ### 顺序为什么是「盘 → 引擎 → 流」
+     * - 先落盘：即使下发失败（平台不支持 / effect 被回收），用户的选择也不丢；
+     * - 再下发：引擎拿到的永远是最新的一份；
+     * - 最后更新流：UI 永远在看到新值的同时，盘上已经有一份了。
+     *
+     * 反过来的话，UI 会先变、用户在极短窗口里杀掉进程就丢设置。
+     */
+    fun setAudioEffect(config: cp.player.core.playback.AudioEffectConfig) {
+        cp.player.core.playback.AudioEffectSettings.write(settings, config)
+        runCatching { playback.setAudioEffect(config) }
+        _audioEffect.value = config
+    }
+
+    /**
+     * 启动时把持久化的音效配置同步给播放控制器。
+     *
+     * 与 [syncPlaybackQuality] 同一类：设置页不在监听链路上时（冷启动直接播放），
+     * 引擎也必须按用户上次的设置走。
+     */
+    fun syncAudioEffect() {
+        runCatching { playback.setAudioEffect(_audioEffect.value) }
+    }
+
+    // ============ 淡入淡出 ============
+
+    private val _fade = MutableStateFlow(cp.player.core.playback.FadeSettings.read(settings))
+
+    /** 当前淡入淡出配置（设置页渲染用）。 */
+    val fadeFlow: StateFlow<cp.player.core.playback.FadeConfig> = _fade.asStateFlow()
+
+    /** 当前淡入淡出配置快照。 */
+    fun fade(): cp.player.core.playback.FadeConfig = _fade.value
+
+    /**
+     * 覆盖式保存淡入淡出配置：先落盘、再下发、最后更新流（顺序理由同 [setAudioEffect]）。
+     *
+     * 与音效不同的是**这里没有能力位要判**：淡入淡出只改音量，
+     * 而「改音量」是所有平台都有的能力（[PlaybackController.setVolume] 是抽象成员，
+     * 两端都实现了）。所以桌面端也能用，不需要像 PEQ 那样明示不支持。
+     */
+    fun setFade(config: cp.player.core.playback.FadeConfig) {
+        cp.player.core.playback.FadeSettings.write(settings, config)
+        runCatching { playback.setFade(config) }
+        _fade.value = config
+    }
+
+    /**
+     * 启动时把持久化的淡入淡出配置同步给播放控制器。
+     *
+     * 与 [syncAudioEffect] 同一类：冷启动直接播放时，引擎也必须按用户上次的设置走。
+     * （控制器自己也会在构造期读一次盘；这里再同步一次是为了覆盖
+     * 「控制器先于设置页创建、而设置页又改过值」的时序。）
+     */
+    fun syncFade() {
+        runCatching { playback.setFade(_fade.value) }
+    }
+
     // ============ 字体圆滑度（持久化，Google Sans Flex 的 ROND 轴） ============
 
     private const val KEY_FONT_ROUNDNESS = "font_roundness"

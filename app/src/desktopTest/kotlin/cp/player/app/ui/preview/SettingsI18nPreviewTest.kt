@@ -299,6 +299,39 @@ class SettingsI18nPreviewTest {
                     onClick = {},
                 )
             }
+            // 淡入淡出：两个开关 + 一条带读数的时长滑杆。
+            // 时长标签是**带单位的一位小数**（「3.5 秒」/「3.5 sec」），
+            // 英文下比中文长，窄屏最容易挤爆 —— 必须出图核对。
+            SettingsSection(s.playback.sectionFade) {
+                SettingsSwitchItem(
+                    title = s.playback.fadeIn,
+                    subtitle = s.playback.fadeInNote,
+                    checked = true,
+                    onCheckedChange = {},
+                    index = 0,
+                    total = 3,
+                )
+                SettingsSwitchItem(
+                    title = s.playback.fadeOut,
+                    subtitle = s.playback.fadeOutNote,
+                    checked = true,
+                    onCheckedChange = {},
+                    index = 1,
+                    total = 3,
+                )
+                SettingsSliderItem(
+                    title = s.playback.fadeDuration,
+                    value = 3500f,
+                    valueLabel = s.playback.fadeDurationSeconds("3.5"),
+                    valueRange = cp.player.core.playback.FadeConfig.MIN_DURATION_MS.toFloat()..
+                        cp.player.core.playback.FadeConfig.MAX_DURATION_MS.toFloat(),
+                    steps = 18,
+                    onValueChange = {},
+                    onValueChangeFinished = {},
+                    index = 2,
+                    total = 3,
+                )
+            }
             SettingsNote(s.playback.sharedTimerNote)
         }
     }
@@ -446,6 +479,133 @@ class SettingsI18nPreviewTest {
         }
     }
 
+    /**
+     * 音效页的**真实文案**。
+     *
+     * 单独出图的理由：这一页的行数最多（5 段 × 2 个滑杆 + 预设 + 三类开关），
+     * 且每条滑杆都带 `valueLabel`（读数）—— 英文下 `Frequency` / `Gain` 加读数
+     * 很容易在一行里挤到换行。窄屏那张必须看。
+     *
+     * ⚠️ 这里渲染的是**完整可用形态**（能力全支持），不是桌面端的禁用形态：
+     * 要核对的是文案与版式，禁用态的灰色会让"挤没挤爆"更难判断。
+     * 禁用态另有 `SettingsLayoutPreviewTest` 覆盖。
+     */
+    @Composable
+    private fun AudioEffectPage() {
+        val s = cpStrings()
+        val bands = listOf(
+            2f to 60f,
+            1f to 230f,
+            -1f to 910f,
+            2f to 3600f,
+            2.5f to 14000f,
+        )
+        ScrollColumn(Modifier.fillMaxSize()) {
+            SettingsSection(s.audioEffect.sectionEqualizer) {
+                SettingsSwitchItem(
+                    title = s.audioEffect.equalizerEnabled,
+                    subtitle = s.audioEffect.equalizerEnabledNote,
+                    checked = true,
+                    onCheckedChange = {},
+                    index = 0,
+                    total = 12,
+                )
+                SettingsDropdownItem(
+                    title = s.audioEffect.equalizerPreset,
+                    subtitle = s.audioEffect.equalizerPresetNote,
+                    options = listOf(
+                        s.audioEffect.presetFlat,
+                        s.audioEffect.presetPop,
+                        s.audioEffect.presetRock,
+                        s.audioEffect.presetVocal,
+                        s.audioEffect.presetBassBoost,
+                        s.audioEffect.presetTrebleBoost,
+                    ),
+                    selectedIndex = 1,
+                    onSelect = {},
+                    index = 1,
+                    total = 12,
+                )
+                bands.forEachIndexed { index, (gain, hz) ->
+                    SettingsSliderItem(
+                        title = s.audioEffect.bandFrequency,
+                        subtitle = s.audioEffect.bandSubtitle(
+                            index = index,
+                            hz = "${(hz / 1000f).toString().take(3)} kHz",
+                            gainDb = "+$gain",
+                        ),
+                        value = hz,
+                        onValueChange = {},
+                        onValueChangeFinished = {},
+                        valueRange = 20f..20000f,
+                        steps = 0,
+                        valueLabel = "${(hz / 1000f).toString().take(3)} kHz",
+                        index = 2 + index * 2,
+                        total = 12,
+                    )
+                    SettingsSliderItem(
+                        title = s.audioEffect.bandGain,
+                        value = gain,
+                        onValueChange = {},
+                        onValueChangeFinished = {},
+                        valueRange = -12f..12f,
+                        steps = 0,
+                        valueLabel = s.audioEffect.gainLabel("+$gain"),
+                        index = 3 + index * 2,
+                        total = 12,
+                    )
+                }
+            }
+            SettingsSection(s.audioEffect.sectionMixer) {
+                SettingsSliderItem(
+                    title = s.audioEffect.balance,
+                    subtitle = s.audioEffect.balanceNote,
+                    value = -0.35f,
+                    onValueChange = {},
+                    onValueChangeFinished = {},
+                    valueRange = -1f..1f,
+                    steps = 0,
+                    valueLabel = "${s.audioEffect.balanceLeft} 35%",
+                    index = 0,
+                    total = 1,
+                )
+            }
+            SettingsSection(s.audioEffect.sectionLeveling) {
+                SettingsSwitchItem(
+                    title = s.audioEffect.levelingEnabled,
+                    subtitle = s.audioEffect.levelingEnabledNote,
+                    checked = true,
+                    onCheckedChange = {},
+                    index = 0,
+                    total = 3,
+                )
+                SettingsSliderItem(
+                    title = s.audioEffect.levelingTarget,
+                    subtitle = s.audioEffect.levelingTargetNote,
+                    value = -6f,
+                    onValueChange = {},
+                    onValueChangeFinished = {},
+                    valueRange = -24f..0f,
+                    steps = 0,
+                    valueLabel = s.audioEffect.gainLabel("-6.0"),
+                    index = 1,
+                    total = 3,
+                )
+                SettingsSwitchItem(
+                    title = s.audioEffect.preventClipping,
+                    subtitle = s.audioEffect.preventClippingNote,
+                    checked = true,
+                    onCheckedChange = {},
+                    index = 2,
+                    total = 3,
+                )
+            }
+            SettingsNote(s.audioEffect.levelingNote)
+            // 桌面端的「不支持」提示：最长的单条之一，窄屏必须看。
+            SettingsNote(s.audioEffect.unsupportedNote, emphasis = SettingsNoteEmphasis.ERROR)
+        }
+    }
+
     /** 只读信息行（`StandbySettingsScreen.InfoRow` 是 Screen 的私有成员，此处同形复刻）。 */
     @Composable
     private fun InfoRowStub(label: String, value: String, highlight: Boolean = false) {
@@ -587,6 +747,9 @@ class SettingsI18nPreviewTest {
                     "storage" to @Composable { StoragePage() },
                     "playback" to @Composable { PlaybackPage() },
                     "shortcut" to @Composable { ShortcutPage() },
+                    // 音效页：全仓行数最多的设置页（5 段 × 2 滑杆 + 三类开关），
+                    // 且每条滑杆都有读数 —— 英文下最容易挤爆，必须出图。
+                    "audio_effect" to @Composable { AudioEffectPage() },
                     // 睡眠定时弹窗：两个态都要 —— 「未启用」时不渲染取消按钮，
                     // 那个按钮是 error 色的破坏性动作，英文下最容易挤爆。
                     "timer-active" to @Composable { SleepTimerDialogContent(active = true) },

@@ -286,6 +286,14 @@ object CpStringsZh : CpStrings {
         override val keepLastPlaybackNote =
             "启动时恢复上次的播放队列与进度，但不自动播放；点播放才从上次位置接着听"
 
+        override val sectionFade = "淡入淡出"
+        override val fadeIn = "开始时淡入"
+        override val fadeInNote = "播放新曲目时，音量从无声逐渐升到当前音量"
+        override val fadeOut = "结束前淡出"
+        override val fadeOutNote = "曲目结束前音量逐渐降低，避免下一首突然响起"
+        override val fadeDuration = "过渡时长"
+        override fun fadeDurationSeconds(seconds: String) = "$seconds 秒"
+
         override val sectionBackground = "后台播放"
         override val batteryWhitelist = "电池优化白名单"
         override val batteryWhitelistOn = "已加入白名单，熄屏后台播放受系统保护"
@@ -302,6 +310,50 @@ object CpStringsZh : CpStrings {
         override val timerAfterTrackChip = "播完本曲"
         override val timerCancel = "取消定时"
         override val timerClose = "关闭"
+    }
+
+    override val audioEffect: AudioEffectStrings = object : AudioEffectStrings {
+        override val screenTitle = "音效"
+        override val entrySubtitle = "参数均衡器、声道平衡与响度均衡"
+        override val unsupportedNote = "当前平台的音频引擎只提供音量接口，没有可用的均衡与效果处理，" +
+            "因此本页在桌面端不可调整。"
+
+        override val sectionEqualizer = "参数均衡器"
+        override val equalizerEnabled = "启用均衡器"
+        override val equalizerEnabledNote = "按下面的曲线调整各频段响度；关闭时音频原样输出"
+        override val equalizerPreset = "预设"
+        override val equalizerPresetNote = "选一个预设作为起点，之后可继续单独调整每一段"
+        override val presetFlat = "平直"
+        override val presetPop = "流行"
+        override val presetRock = "摇滚"
+        override val presetVocal = "人声"
+        override val presetBassBoost = "低音增强"
+        override val presetTrebleBoost = "高音增强"
+        override val presetCustom = "自定义"
+
+        override fun bandTitle(index: Int) = "第 ${index + 1} 段"
+        override fun bandSubtitle(index: Int, hz: String, gainDb: String) = "$hz · $gainDb"
+        override val bandFrequency = "频率"
+        override val bandGain = "增益"
+        override fun gainLabel(gainDb: String) = "$gainDb dB"
+
+        override val sectionMixer = "混音"
+        override val balance = "声道平衡"
+        override val balanceNote = "左右声道音量配比，只在单侧衰减，不会把整体变响"
+        override val balanceCenter = "居中"
+        override val balanceLeft = "偏左"
+        override val balanceRight = "偏右"
+
+        override val sectionLeveling = "音量均衡"
+        override val levelingEnabled = "响度均衡"
+        override val levelingEnabledNote = "把过响的段落压下来、过轻的抬上去，避免音量忽大忽小"
+        override val levelingTarget = "目标响度"
+        override val levelingTargetNote = "数值越大整体越响；它作用于音量滑杆之前，不是替代音量"
+        override val preventClipping = "防爆音"
+        override val preventClippingNote = "限制峰值电平，避免削顶产生的失真"
+
+        override val levelingNote = "响度均衡与防爆音都在音量调节之前生效，因此不会与音量滑杆重复。" +
+            "均衡器与混音会改变音频信号本身，追求原始音质时请关闭音效。"
     }
 
     override val shortcuts: ShortcutStrings = object : ShortcutStrings {

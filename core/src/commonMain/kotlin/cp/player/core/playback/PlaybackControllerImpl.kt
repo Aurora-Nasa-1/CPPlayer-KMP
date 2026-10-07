@@ -87,8 +87,11 @@ class PlaybackControllerImpl(
      */
     private val lyricsPluginService: cp.player.core.lyricsplugin.LyricsPluginService? = null,
     /**
+     * 淡入淡出的持久化存储。null = 不持久化（既有测试与最小装配路径保持零存储副作用）。
      *
+     * 非空时构造期读回用户设置；设置页改完由前端 [setFade] 通知本类重读。
      */
+    private val fadeSettings: SettingsStorage? = null,
 ) : PlaybackController {
 
     private val _state = MutableStateFlow(PlaybackUiState())
@@ -408,6 +411,7 @@ class PlaybackControllerImpl(
             // 「保留上次播放」恢复出来、尚未起播的曲目：引擎位置恒为 0，别把恢复的进度冲掉。
             // 用户点播放后 playCurrent 会清掉 restoredResume 并置 engineReady，这里自然恢复接管。
             if (!engineReady && restoredResume?.first == _queue.getOrNull(_index)?.mediaId) return@onEach
+            maybeStartFadeOut(pos)
             updateState { it.copy(positionMs = pos, activeLyricIndex = computeLyricIndex(it.lyrics, pos)) }
         }.launchIn(scope)
         platform.durationMs.onEach { dur ->
@@ -659,11 +663,36 @@ class PlaybackControllerImpl(
 
     override fun pause() {
         platform.pause()
+        // ⚠️ 暂停时若有斜坡在跑，必须停掉并**把音量归位**。
+        //
+        // 实锤场景：曲末淡出途中用户按了暂停。此时音量已经被斜坡压到很低，
+        // 斜坡被取消后音量就停在那个残值上；用户再点播放，
+        // 这首歌会以"几乎听不见"的音量继续 —— 而音量滑杆明明在 100%。
+        // 暂停不是"离开"，不该继承淡出的半成品状态。
+        if (fadeRunner.isRunning) {
+            fadeRunner.cancel()
+            platform.setVolume(userVolume)
+        }
         // 暂停是「要离开了」的最强信号：立刻把进度落盘，下次启动能停在这里。
         // 派发到 scope —— pause() 会在 UI 线程被调用，不该在那里做文件写入。
         scope.launch { persistSession() }
     }
-    override fun resume() { platform.play() }
+
+    /**
+     * 恢复播放。
+     *
+     * ⚠️ 这里**不**重放淡入：从暂停恢复不是"新的一首"，用淡入会让每次
+     * 「暂停→播放」都从静音爬上来，用户会以为播放器卡了。参考实现的
+     * `startSinglePlayerFadeIn` 也只在**卸装新曲目**时调用，不在 resume 时。
+     * 但要把音量**归位**到用户值 —— 见 [pause] 里那个场景的另一半：
+     * 若暂停时发生了归位，这里其实已经是正确的；此处的归位是为了兜住
+     * 「暂停发生在归位之前、或归位被别处覆盖」的残余情况，代价是一次无害的写。
+     */
+    override fun resume() {
+        fadeRunner.cancel()
+        platform.setVolume(userVolume)
+        platform.play()
+    }
     override fun seekTo(positionMs: Long) { requestSeek(positionMs) }
 
     /**
@@ -1110,13 +1139,215 @@ class PlaybackControllerImpl(
         return LyricsState.Success(lines) to info
     }
 
-    // ============ 音量 / 释放 ============
+    // ============ 音量 / 音效 / 释放 ============
 
-    override fun setVolume(volume: Float) { platform.setVolume(volume.coerceIn(0f, 1f)) }
+    /**
+     * 设置用户音量。
+     *
+     * ⚠️ 有斜坡在跑时必须**先取消它**，否则会出现这一幕：用户拖动音量滑杆，
+     * 斜坡同时在推自己的值 —— 两者交替写入平台，音量表现为「抖动」，
+     * 松手后还可能停在斜坡的中间值上。用户的直接操作永远优先于自动化过渡。
+     */
+    override fun setVolume(volume: Float) {
+        val v = volume.coerceIn(0f, 1f)
+        userVolume = v
+        fadeRunner.cancel()
+        platform.setVolume(v)
+    }
+
+    /**
+     * 平台能力**直接透出**而不是在这里再判一次平台类型：
+     * 能力由平台播放器实现声明（[PlatformPlayer.audioEffectCapabilities]），
+     * 控制器只做转发。在这里写 `if (isAndroid)` 会让「谁支持什么」出现第二个事实源。
+     */
+    override val audioEffectCapabilities: AudioEffectCapabilities
+        get() = platform.audioEffectCapabilities
+
+    // ============ 淡入淡出 ============
+
+    /**
+     * 用户音量（`[0,1]`）。
+     *
+     * ⚠️ 这是**唯一**可信的音量事实源，淡入淡出全程都不改它。
+     * 淡入淡出改的是「实际送给平台的音量」，与它无关 —— 否则淡出走完会变成
+     * 「用户音量被清成 0」，下次播放就静音了。
+     */
+    @Volatile
+    private var userVolume: Float = 1f
+
+    /**
+     * 当前生效的淡入淡出配置。
+     *
+     * 直接在声明处求值（而不是像播放模式那样在 `init` 里赋值）：
+     * `init` 块位置在字段声明**之前**，从 init 里赋值会报
+     * "Variable cannot be initialized before declaration"。
+     * 而这个值必须在第一次播放前就位，否则「启动即自动播放」的那首会漏掉淡入。
+     */
+    @Volatile
+    private var fadeConfig: FadeConfig = fadeSettings?.let { FadeSettings.read(it) } ?: FadeConfig.OFF
+
+    /**
+     * 斜坡执行器。
+     *
+     * 直接写 `_state` 而**不**改 [userVolume]：见 [userVolume] 的说明。
+     * 抽成 [FadeRunner] 是为了单测能脱离音频设备验证曲线与步进。
+     */
+    private val fadeRunner: FadeRunner = FadeRunner(
+        scope = scope,
+        apply = { v -> platform.setVolume(v.coerceIn(0f, 1f)) },
+    )
+
+    /**
+     * 更新淡入淡出配置。设置页改完调这里，本类随即按新配置工作。
+     *
+     * 与 [setAudioEffect] 不同，这里**不**需要"重放"：淡入淡出是**事件驱动**的
+     * （切歌 / 曲末才动），不是"一直挂着的一条效果链"。用户改完设置后，
+     * 下一次切歌自然就用上新值了；如果此刻硬要重放（比如立刻淡入一次），
+     * 反而会在用户只是调了个滑杆时打断正在播的歌。
+     */
+    override fun setFade(config: FadeConfig) {
+        fadeConfig = config
+        fadeSettings?.let { FadeSettings.write(it, config) }
+        // 关掉总开关时，若此刻正有一条半成品斜坡在跑，要立刻收尾 ——
+        // 否则它会继续把音量往目标推，而用户已经说了"不要淡入淡出"。
+        if (!config.enabled) {
+            fadeRunner.cancel()
+            platform.setVolume(userVolume)
+        }
+    }
+
+    override fun fadeConfiguration(): FadeConfig = fadeConfig
+
+    /**
+     * 起一段淡入（切歌 / 开始播放）。
+     *
+     * 条件不满足时**立即把音量设回 [userVolume]** —— 这一步不能省：
+     * 上一首可能是淡出到一个很低的音量后被打断的，若不归位，
+     * 下一首就会以那个残值开始播（表现为「这歌怎么这么小声」）。
+     */
+    private fun startFadeIn() {
+        val cfg = fadeConfig
+        if (!cfg.enabled || !cfg.fadeIn) {
+            fadeRunner.cancel()
+            platform.setVolume(userVolume)
+            return
+        }
+        fadeRunner.start(
+            from = 0f,
+            to = userVolume,
+            durationMs = cfg.durationMsClamped,
+        )
+    }
+
+    /**
+     * 起一段淡出，[onFinished] 在自然走完后触发（被抢占则不触发）。
+     *
+     * @param onFinished 淡出结束时要做的动作（自然曲末是「推进下一首」，
+     *   手动切歌是「其实不用等，已经切了」）。**被抢占时不会调用** ——
+     *   抢占意味着用户已经手动接管，此时再推进一首就会连跳两首。
+     */
+    private fun startFadeOut(onFinished: (() -> Unit)? = null) {
+        val cfg = fadeConfig
+        if (!cfg.enabled || !cfg.fadeOut) {
+            onFinished?.invoke()
+            return
+        }
+        fadeRunner.start(
+            // 从"当前已到达的音量"起跳而不是从 userVolume：如果上一段淡入还没走完
+            // 用户就按了下一首，实际音量正在爬升途中，从 userVolume 起跳会先
+            // 「跳上去再掉下来」，听感是个明显的凸起。
+            from = currentPlatformVolume(),
+            to = 0f,
+            durationMs = cfg.durationMsClamped,
+            onFinished = onFinished,
+        )
+    }
+
+    /** 读平台当前音量；读不到就回落到 [userVolume]（宁可从正确的地方起跳）。 */
+    private fun currentPlatformVolume(): Float = runCatching { platform.getVolume() }
+        .getOrNull()
+        ?.coerceIn(0f, 1f)
+        ?: userVolume
+
+    /**
+     * 曲末淡出：在**剩余时长正好等于淡出时长**时启动斜坡。
+     *
+     * ### 为什么必须在位置轮询里做，而不是等 `Ended`
+     *
+     * 淡出必须在**曲子结束之前**开始 —— 等 `Ended` 到了再淡出，那首歌已经放完了，
+     * 淡出的是"下一首的开头"（或者干脆没声音可淡）。所以判据只能是
+     * 「剩余时长 ≤ 淡出时长」，而唯一能拿到滚动位置的现成机制就是这个轮询
+     * （与参考实现 `cp-player-legacy` 的做法一致：它的 100ms 计时循环里
+     * 判 `dur - pos <= effectiveFadeDur`）。
+     *
+     * ### 为什么需要 [fadeOutStartedFor] 这个"本曲已淡出"标记
+     *
+     * 轮询是**反复**触发的：剩余 3000ms 时启动斜坡，下一拍（200ms 后）
+     * 剩余 2800ms，判据依然成立 ⇒ 会把刚起头的斜坡反复重置回起点，
+     * 音量被永远钉在 begin 值上，实际听感是「曲末被静音了」。
+     * 所以每条曲目只允许启动一次，换曲时由 [playCurrent] 重置该标记。
+     */
+    private fun maybeStartFadeOut(pos: Long) {
+        val cfg = fadeConfig
+        if (!cfg.enabled || !cfg.fadeOut) return
+        if (fadeOutStartedFor == _queue.getOrNull(_index)?.mediaId) return
+        val total = currentDurationMs() ?: return
+        if (total <= 0L) return
+        // 位置已经越过淡出起点才判定：`pos` 在某些引擎上会短暂回跳（seek 落点回调），
+        // 用 `remaining <= duration` 比 `pos >= total - duration` 更稳，
+        // 因为它天然容忍 pos 的抖动而不需要额外的容差常数。
+        val remaining = total - pos
+        if (remaining > cfg.durationMsClamped) return
+        // 已经播完（remaining <= 0）就别起了：没有时间可淡了，
+        // 起一条 0 时长斜坡还会额外写一次音量，可能干扰紧接着的换曲。
+        if (remaining <= 0L) return
+        fadeOutStartedFor = _queue.getOrNull(_index)?.mediaId
+        // 用**剩余时长**作为斜坡时长，这样曲子正好在音量归零的同时结束 ——
+        // 若用完整配置时长，而实际剩余更短（轮询间隔造成的误差），
+        // 音乐会在音量还有残留时被硬切，白做了淡出。
+        val effective = remaining.coerceAtMost(cfg.durationMsClamped.toLong()).toInt()
+        fadeRunner.start(
+            from = currentPlatformVolume(),
+            to = 0f,
+            durationMs = effective,
+        )
+    }
+
+    /** 当前曲目的有效时长：优先引擎上报，回落到元信息（与跳过逻辑同口径）。 */
+    private fun currentDurationMs(): Long? =
+        _state.value.durationMs.takeIf { it > 0L }
+            ?: _state.value.currentTrack?.durationMs?.takeIf { it > 0L }
+
+    /** 已启动过淡出的曲目 mediaId（每曲只淡出一次，见 [maybeStartFadeOut]）。 */
+    @Volatile
+    private var fadeOutStartedFor: String? = null
+
+    /** 记录最后应用的音效配置，供换曲 / 重建效果链时重放。 */
+    @Volatile
+    private var lastAudioEffect: AudioEffectConfig = AudioEffectConfig.OFF
+
+    /**
+     * 应用音效配置：先落一份本地副本，再下发平台层。
+     *
+     * 记副本的理由：`load()` 换曲在 Android 侧可能重建音频会话
+     * （ExoPlayer 的 `audioSessionId` 在部分设备上换源后会变），
+     * 效果链必须随之重建 —— 那时需要把用户设置**重放**一遍，
+     * 而配置的权威来源（设置页）此刻不一定在监听的链路上。
+     */
+    override fun setAudioEffect(config: AudioEffectConfig) {
+        lastAudioEffect = config
+        platform.applyAudioEffect(config)
+    }
 
     override fun release() {
         // 释放前先落盘：正常退出 / 后端重置时，这是最后一次写快照的机会。
         persistSession()
+        // ⚠️ 必须在 platform.release() **之前**停掉斜坡：
+        // 探针实测，对已释放的 handle 调 nativeSetVolume 会抛 RodioException
+        // 并直达进程边界（DLL 对无效 handle 毫无容错）。斜坡是异步的，
+        // 不先停就可能刚好砸在那个窗口上。
+        fadeRunner.cancel()
+        fadeOutStartedFor = null
         scrobbleTickJob?.cancel(); scrobbleJob?.cancel(); lyricsJob?.cancel(); loadJob?.cancel()
         sleepTimerJob?.cancel(); favoritesLoadingJob?.cancel(); resolveJob?.cancel()
         queueGeneration++
@@ -1130,6 +1361,13 @@ class PlaybackControllerImpl(
     /** 获取 URL 并交给平台播放器播放当前曲目。 */
     private suspend fun playCurrent() {
         val entry = _queue.getOrNull(_index) ?: return
+        // ⚠️ 换曲是**所有**过渡的必经点（切歌 / 上一首 / 曲末自动续播 / 点歌），
+        // 所以淡入淡出的"交接"统一放在这里，不散到各个调用点：
+        // 上一首可能在淡出途中被打断（音量已压得很低），这里先把斜坡停掉、
+        // 音量归位到用户值 —— 新曲目的淡入由 startFadeIn() 从一个干净状态开始。
+        fadeRunner.cancel()
+        fadeOutStartedFor = null
+        platform.setVolume(userVolume)
         // 每次加载新曲目都推进导航世代：在此之前的 Ended / 切歌请求都会因世代不匹配而作废。
         navigationSeq += 1
         // 引擎里此刻装的还是上一首：load() 返回之前到达的 seek 必须暂存，
@@ -1237,6 +1475,11 @@ class PlaybackControllerImpl(
                     consumeDeferredSeek(mediaId)?.let { platform.seekTo(it) }
                 }
                 platform.play()
+                // 淡入：从静音爬到用户音量。
+                // ⚠️ 必须紧跟在 platform.play() 之后 —— 先把音量压到 0 再 play，
+                // 会让"开始播放"那一瞬间的判定（以及部分设备的解码启动）拿到音量 0；
+                // 压在 play 之后则只是把已经开始的播放快速提上来，听感上就是淡入。
+                startFadeIn()
                 // 切曲完成 ⇒ 快照里的当前曲目 / 下标要立刻跟上（进度随后由 tick 刷新）。
                 persistSession()
                 // 开播之后才起后台落盘：不占首帧出声的时间。

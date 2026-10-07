@@ -102,10 +102,12 @@ class SettingsRegistryTest {
                 // 「语言」排第一：它是唯一一个「改变整棵树读到的东西」的设置，
                 // 也常常是用户在看不懂界面时要找的第一个入口。
                 //
+                // ⚠️ `audio_effect`（音效）紧跟在 `playback`（播放与音质）之后：
                 // 两者是同一主题的两个层次 —— 音质决定「拿到什么」，
                 // 音效决定「听起来怎么样」，用户找前者时常顺手看后者。
                 // 它**不是** desktopOnly：桌面端底层没有音效能力，但那一页会
                 // 明示禁用并解释原因（入口消失会让用户以为桌面版是残缺的）。
+                listOf("language", "appearance", "playback", "audio_effect", "storage", "shortcuts"),
                 byGroup[SettingsGroup.GENERAL]?.map { it.id },
                 "「通用」组的内容或顺序变了",
             )

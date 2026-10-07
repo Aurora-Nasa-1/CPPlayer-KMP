@@ -26,6 +26,7 @@ import cp.player.app.ui.component.SettingsDropdownItem
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
+import cp.player.app.ui.component.SettingsSliderItem
 import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.SleepTimerDialog
 import kotlinx.coroutines.delay
@@ -56,6 +57,10 @@ class PlaybackSettingsScreen : Screen {
         val lyricsMode by AppModel.lyricsSourceModeFlow.collectAsState()
         val keepLastPlayback by AppModel.keepLastPlaybackFlow.collectAsState()
         val playbackState by AppModel.playback.state.collectAsState()
+        // 淡入淡出配置：拖动滑杆时只改本地 draft，松手才提交（与音效页同一节奏，
+        // 因为 SettingsStorage 是全量文件回写，拖一次就写一次盘会很浪费）。
+        val fadePersisted by AppModel.fadeFlow.collectAsState()
+        var fadeDraft by remember { mutableStateOf(fadePersisted) }
         var showSleepTimer by remember { mutableStateOf(false) }
 
         val qualityIndex = AppModel.qualityLevels.indexOfFirst { it == quality }.coerceAtLeast(0)
@@ -101,6 +106,54 @@ class PlaybackSettingsScreen : Screen {
                             total = 2,
                         )
                     }
+                }
+                SettingsSection(s.playback.sectionFade) {
+                    // 提交助手：先归一化 `enabled`（它等于"至少有一个子开关开着"），
+                    // 再落盘 + 下发。没有 UI 总开关 —— 总开关与子开关是同一状态的两个
+                    // 入口，必然出现「总开关开着但子项全关」的白挂状态、
+                    // 以及两处不同步（与音效页同一套判断）。
+                    fun commitFade(next: cp.player.core.playback.FadeConfig) {
+                        val normalized = next.copy(
+                            enabled = next.fadeIn || next.fadeOut,
+                        )
+                        fadeDraft = normalized
+                        AppModel.setFade(normalized)
+                    }
+                    SettingsSwitchItem(
+                        title = s.playback.fadeIn,
+                        subtitle = s.playback.fadeInNote,
+                        checked = fadeDraft.fadeIn,
+                        onCheckedChange = { commitFade(fadeDraft.copy(fadeIn = it)) },
+                        index = 0,
+                        total = 3,
+                    )
+                    SettingsSwitchItem(
+                        title = s.playback.fadeOut,
+                        subtitle = s.playback.fadeOutNote,
+                        checked = fadeDraft.fadeOut,
+                        onCheckedChange = { commitFade(fadeDraft.copy(fadeOut = it)) },
+                        index = 1,
+                        total = 3,
+                    )
+                    // 时长滑杆：两个子开关都关着时禁用（没有过渡发生，调时长无意义）。
+                    SettingsSliderItem(
+                        title = s.playback.fadeDuration,
+                        value = fadeDraft.durationMs.toFloat(),
+                        valueLabel = fadeDurationLabel(s, fadeDraft.durationMs),
+                        valueRange = cp.player.core.playback.FadeConfig.MIN_DURATION_MS.toFloat()..
+                            cp.player.core.playback.FadeConfig.MAX_DURATION_MS.toFloat(),
+                        steps = (
+                            (cp.player.core.playback.FadeConfig.MAX_DURATION_MS -
+                                cp.player.core.playback.FadeConfig.MIN_DURATION_MS) /
+                                cp.player.core.playback.FadeConfig.DURATION_STEP_MS
+                            ) - 1,
+                        enabled = fadeDraft.enabled,
+                        // 拖动只改显示，松手才提交（SettingsStorage 是全量文件回写）。
+                        onValueChange = { fadeDraft = fadeDraft.copy(durationMs = it.toInt()) },
+                        onValueChangeFinished = { commitFade(fadeDraft) },
+                        index = 2,
+                        total = 3,
+                    )
                 }
                 SettingsSection(s.playback.sectionLyrics) {
                     SettingsDropdownItem(
@@ -195,4 +248,20 @@ class PlaybackSettingsScreen : Screen {
             onBack = { navigator.popOrNotify() },
         ) { pageModifier -> body(pageModifier) }
     }
+}
+
+/**
+ * 时长标签：把毫秒转成「3.5 秒」这种一位小数的秒数。
+ *
+ * 抽出来是为了让单位与数字分开拼（中英语序不同，整句必须由文案层给），
+ * 而且 3500ms 要显示成 `3.5` 而不是 `3`（滑杆步进是 500ms，
+ * 整除截断会让相邻两档显示成同一个数字，用户以为滑杆坏了）。
+ */
+private fun fadeDurationLabel(
+    s: cp.player.app.i18n.CpStrings,
+    ms: Int,
+): String {
+    val tenths = (ms / 100f).toInt()
+    val text = if (tenths % 10 == 0) "${tenths / 10}" else "${tenths / 10}.${tenths % 10}"
+    return s.playback.fadeDurationSeconds(text)
 }

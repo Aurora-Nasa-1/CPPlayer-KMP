@@ -93,6 +93,8 @@ fun App(
     // + 启动封面取色（「跟随封面」主题用）
     androidx.compose.runtime.LaunchedEffect(Unit) {
         AppModel.syncPlaybackQuality()
+        AppModel.syncAudioEffect()
+        AppModel.syncFade()
         AppModel.restoreLocalServer()
         AppModel.restoreAggressiveStandby()
         AppModel.restoreLanSync()

@@ -336,6 +336,9 @@ class MusicBackend private constructor(
             // 歌词源插件（Lyrico Plugin API）：作为 AMLL 与音源之后的最后兜底。
             // 只有用户显式启用插件后才会联网，未启用用户行为不变。
             lyricsPluginService = lyricsPlugins,
+            // 淡入淡出：构造期读回用户设置（必须在第一次播放前就位，
+            // 否则「启动即自动播放」那首会漏掉淡入）。
+            fadeSettings = settings,
         )
     }
 

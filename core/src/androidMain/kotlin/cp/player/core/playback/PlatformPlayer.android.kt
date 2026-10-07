@@ -1,6 +1,8 @@
 package cp.player.core.playback
 
+import android.media.audiofx.DynamicsProcessing
 import android.net.Uri
+import android.os.Build
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -20,6 +22,9 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import cp.player.core.util.PlatformContext
 import cp.player.core.util.androidContext
 import java.io.File
+import kotlin.math.max
+import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -112,6 +117,51 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
 
     private val scope = CoroutineScope(Dispatchers.Main)
     private var pollJob: Job? = null
+
+    /**
+     * 音效链（PEQ / 声道平衡 / 响度均衡）。
+     *
+     * ### 为什么在这里持有一条链，而不是每次 `applyAudioEffect` 现建
+     * `DynamicsProcessing` 挂在**音频会话**上，重建一次就是一次系统资源申请
+     * （且有咔哒声）。设置页拖动滑杆是连着来的，每调一次建一次链条不可用。
+     * 所以持有实例、只改参数（见 [DynamicsProcessingChain]）。
+     *
+     * ### 为什么惰性创建（null 直到首次应用）
+     * 首次读取 `player.audioSessionId` 会促使 ExoPlayer **申请**音频会话，
+     * 也就提前占用了音频输出资源。一个从不碰音效的用户不该付出这个代价，
+     * 所以拖到第一次真正应用音效时才建。
+     *
+     * 用 nullable 字段而不是 `by lazy`：`release()` 需要判断「建过没有」来决定
+     * 是否释放 —— 而读 `lazy` 的 `isInitialized()` 之外碰一下就会反向触发创建。
+     * 显式 nullable 让这件事一目了然。
+     */
+    @Volatile
+    private var audioEffectChain: AudioEffectChain? = null
+
+    /** 取出（必要时创建）音效链。API < 28 恒返回 [NoopAudioEffectChain]。 */
+    private fun obtainAudioEffectChain(): AudioEffectChain {
+        audioEffectChain?.let { return it }
+        val chain = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            DynamicsProcessingChain(runCatching { player.audioSessionId }.getOrDefault(0))
+        } else {
+            NoopAudioEffectChain
+        }
+        audioEffectChain = chain
+        return chain
+    }
+
+    /** 最近一次应用到链上的配置；会话变化时用来重放。 */
+    @Volatile
+    private var pendingAudioEffect: AudioEffectConfig? = null
+
+    /**
+     * 音频会话当前的值，用于发现会话重建。
+     *
+     * 0 是「尚未建立」的哨兵值，**不能**当作合法会话去建效果链，
+     * 但也不能因此就一直不去看 —— 所以轮询里只在值**变为非 0 且与上次不同**时重建。
+     */
+    @Volatile
+    private var observedSessionId: Int = 0
 
     /**
      * 待定 seek 的状态机：**安卓与桌面共用 [PendingSeekTracker]**，不再各写一份同构逻辑。
@@ -283,6 +333,13 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
         pollJob?.cancel()
         pollJob = null
         pendingSeek.cancel()
+        // 效果链要显式释放：不释放会在系统里留一个持有音频会话的 effect，
+        // 后续重建播放器时可能出现「会话被占用」的怪问题。
+        // 用 nullable 字段判断「建过没有」，避免反向触发创建（见字段的 KDoc）。
+        runCatching { audioEffectChain?.release() }
+        audioEffectChain = null
+        pendingAudioEffect = null
+        observedSessionId = 0
         runCatching { player.removeListener(listener) }
         // 走单例的统一释放：既释放 ExoPlayer 也清掉缓存句柄，
         // 避免 SharedMedia3Player.instance 指向一个已释放的播放器。
@@ -292,9 +349,37 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
     override fun setVolume(volume: Float) { player.volume = volume.coerceIn(0f, 1f) }
     override fun getVolume(): Float = player.volume
 
+    // ============ 音效 ============
+
+    /**
+     * 能力由链实现声明。
+     *
+     * ⚠️ 这里**不能**简单返回 `AudioEffectCapabilities.ANDROID_DYNAMICS`：
+     * API < 28 时链是 [NoopAudioEffectChain]，能力位必须是全 false，
+     * 否则设置页会在老设备上显示一组永远无效的控件。
+     * 走 `audioEffectChain.capabilities` 就自动对上了 —— 但它会触发 `lazy`
+     * （进而读 `audioSessionId`、提前申请音频会话）。所以**先判版本**，
+     * 老系统直接短路，不碰链。
+     */
+    override val audioEffectCapabilities: AudioEffectCapabilities
+        get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            obtainAudioEffectChain().capabilities
+        } else {
+            AudioEffectCapabilities.NONE
+        }
+
+    override fun applyAudioEffect(config: AudioEffectConfig) {
+        pendingAudioEffect = config
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
+        obtainAudioEffectChain().apply(config)
+    }
+
     private fun publishPosition() {
         // 轮询可能与 release() 竞态；播放器已释放时读位置会抛异常，直接忽略这一轮。
         val actual = runCatching { player.currentPosition }.getOrNull()?.coerceAtLeast(0L) ?: return
+        // 音频会话可能随换源重建 ⇒ 挂在旧会话上的效果会静默失效。
+        // 在这里顺带观察（位置轮询本来就在跑，不额外增加定时器）。
+        syncAudioSession()
         val playbackState = runCatching { player.playbackState }.getOrDefault(Player.STATE_IDLE)
         // 装载/缓冲中：seek 到未缓冲区间要先建连拿首包，宽限期必须放宽，
         // 否则 800ms 一到就把乐观值丢掉，进度条回弹——用户看到的就是「seek 没生效」。
@@ -316,6 +401,33 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
         }
         _position.value = pendingSeek.displayMs() ?: actual
         _duration.value = runCatching { player.duration }.getOrNull()?.takeIf { it > 0 } ?: 0L
+    }
+
+    /**
+     * 观察音频会话变化，会话重建时把效果链迁到新会话上。
+     *
+     * ### 为什么必须做这件事
+     * `DynamicsProcessing`（以及所有 `audiofx` 效果）都绑定在 `audioSessionId` 上。
+     * ExoPlayer 在部分设备 / 部分换源路径下会重新申请会话，**旧会话上的效果
+     * 不会被报错，只是从此不再作用** —— 表现为「换了首歌音效就没了」。
+     * 这是最难排查的一类问题（无声失败），所以在这里统一盯着。
+     *
+     * ### 只在真的应用过音效时才去读
+     * 未应用过（`pendingAudioEffect == null`）说明用户没开音效，
+     * 此时连 `audioSessionId` 都不该读（读它会促使 ExoPlayer 申请会话）。
+     */
+    private fun syncAudioSession() {
+        if (pendingAudioEffect == null) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
+        val sessionId = runCatching { player.audioSessionId }.getOrDefault(0)
+        // 0 = 会话尚未建立；与上次相同 = 没变。两种都不需要动作。
+        if (sessionId == 0 || sessionId == observedSessionId) return
+        observedSessionId = sessionId
+        val chain = obtainAudioEffectChain()
+        chain.onAudioSessionChanged(sessionId)
+        // 重建后重放配置：链内部的 lastConfig 在「首次还没应用过」时仍是默认的 OFF，
+        // 由这里显式补一次，保证「会话后建」的路径也拿到用户设置。
+        pendingAudioEffect?.let(chain::apply)
     }
 
     private companion object {

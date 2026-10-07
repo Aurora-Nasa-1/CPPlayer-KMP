@@ -122,6 +122,48 @@ interface PlaybackController {
      */
     suspend fun refreshLyrics()
 
+    // ============ 音效 ============
+
+    /**
+     * 本平台对音效各能力的支持情况（见 [AudioEffectCapabilities]）。
+     *
+     * 由平台播放器直接透出。设置页据此**明示禁用**不支持的项，而不是让用户
+     * 拖一个什么都不发生的滑杆（桌面 rodio 栈只有音量，没有效果链）。
+     *
+     * 默认 [AudioEffectCapabilities.NONE]：与 [setAudioEffect] 一样给默认实现，
+     * 是为了让测试假播放器与最小装配路径**不必改动**
+     * （与 [PlatformPlayer.audioEffectCapabilities] 同一套思路）。
+     */
+    val audioEffectCapabilities: AudioEffectCapabilities
+        get() = AudioEffectCapabilities.NONE
+
+    /**
+     * 应用一份音效配置（全量覆盖）。见 [PlatformPlayer.applyAudioEffect] 的契约。
+     *
+     * 配置的**持久化不在这里**：写盘是前端的事（`AppModel` 读设置页的改动落盘），
+     * 控制器只负责把当前配置作用到音频链上。这样重启后的恢复路径只有一条
+     * （启动时读盘 → 调本方法），不会出现「控制器自己也记一份」的双份事实源。
+     *
+     * 默认空实现：不支持音效的实现无需覆写。
+     */
+    fun setAudioEffect(config: AudioEffectConfig) {}
+
+    // ============ 淡入淡出 ============
+
+    /**
+     * 应用一份淡入淡出配置。设置页改完调这里。
+     *
+     * 与 [setAudioEffect] 的区别：淡入淡出是**事件驱动**的（切歌 / 曲末才动），
+     * 不是一条常驻的效果链，所以不存在"换曲后要重放"的问题 ——
+     * 一次设置立刻生效到**下一次**过渡事件上。
+     *
+     * 默认空实现：让测试假播放器与最小装配路径不必改动。
+     */
+    fun setFade(config: FadeConfig) {}
+
+    /** 当前生效的淡入淡出配置（设置页用来回填控件）。默认关闭。 */
+    fun fadeConfiguration(): FadeConfig = FadeConfig.OFF
+
     // ============ 其它 ============
 
     fun setVolume(volume: Float)

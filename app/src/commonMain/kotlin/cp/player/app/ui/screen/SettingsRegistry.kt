@@ -5,6 +5,7 @@ import androidx.compose.material.icons.filled.Api
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Keyboard
@@ -162,6 +163,28 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
         accent = SettingsAccent.SECONDARY,
         keywords = listOf("音质", "无损", "hires", "定时", "睡眠", "关闭", "quality", "sleep"),
         screen = { PlaybackSettingsScreen() },
+    ),
+    // 音效紧跟在「播放与音质」之后：两者是同一主题的两个层次
+    // （音质决定"拿到什么"，音效决定"听起来怎么样"），用户找前者时常顺手看后者。
+    //
+    // ⚠️ **不做 desktopOnly**：桌面端底层没有音效能力（见 `AudioEffectSettingsScreen`
+    // 的 KDoc），但那一页会明示禁用并解释原因 —— 比入口直接消失更好，
+    // 否则用户会以为桌面版只是没做这个功能。这与「快捷键」页的处理**刻意不同**：
+    // 快捷键在安卓没有是「系统压根没有这个概念」，音效则是「有这个期待但当前做不到」。
+    SettingsEntry(
+        id = "audio_effect",
+        group = SettingsGroup.GENERAL,
+        titleOf = { it.audioEffect.screenTitle },
+        subtitleOf = { it.audioEffect.entrySubtitle },
+        icon = Icons.Filled.Equalizer,
+        accent = SettingsAccent.TERTIARY,
+        keywords = listOf(
+            "音效", "均衡器", "均衡", "EQ", "PEQ", "参数均衡", "调音", "音染", "预设",
+            "混音", "声道", "平衡", "声像", "左右",
+            "响度", "音量均衡", "归一化", "防爆音", "削顶", "动态",
+            "effect", "equalizer", "eq", "balance", "pan", "loudness", "leveling", "clipping",
+        ),
+        screen = { AudioEffectSettingsScreen() },
     ),
     SettingsEntry(
         id = "storage",

@@ -51,6 +51,15 @@ interface CpStrings {
     val storage: StorageStrings
     val songCache: SongCacheStrings
     val playback: PlaybackStrings
+
+    /**
+     * 音效（PEQ / 混音 / 音量均衡）。
+     *
+     * 与 [playback] 分开而不是并进「播放与音质」：音效是独立的一页、
+     * 独立的功能块，将来播放页的快捷入口也读同一组（理由见 [AudioEffectStrings]）。
+     */
+    val audioEffect: AudioEffectStrings
+
     val shortcuts: ShortcutStrings
     val quality: QualityStrings
 
@@ -392,6 +401,19 @@ interface PlaybackStrings {
     val keepLastPlayback: String
     val keepLastPlaybackNote: String
 
+    // ---- 淡入淡出 ----
+    //
+    // 注意这一组属于**播放设置页**（不是音效页）：淡入淡出只改音量，
+    // 桌面端同样可用，所以不能和「仅 Android」的 PEQ 混在一页。
+    val sectionFade: String
+    val fadeIn: String
+    val fadeInNote: String
+    val fadeOut: String
+    val fadeOutNote: String
+    val fadeDuration: String
+    /** 时长滑杆的当前值标签（如「3.0 秒」）。含数字 ⇒ 必须是函数（语序不同）。 */
+    fun fadeDurationSeconds(seconds: String): String
+
     val sectionBackground: String
     val batteryWhitelist: String
     val batteryWhitelistOn: String
@@ -417,8 +439,99 @@ interface PlaybackStrings {
 }
 
 // ---------------------------------------------------------------------------
-// 快捷键
+// 音效
 // ---------------------------------------------------------------------------
+
+/**
+ * 音效设置页（PEQ / 混音 / 音量均衡）。
+ *
+ * ### 为什么独立成组而不是并进 `playback`
+ *
+ * `playback` 已经承载了音质 / 歌词 / 睡眠定时 / 上次播放/ 后台保活五组，
+ * 而音效自己就是一个完整的功能块（三种效果 × 各自的开关 / 参数 / 说明）。
+ * 并进去会让那个接口继续膨胀，且「音效」的文案将来还会被播放页的快捷入口读到
+ * （与 `player` 组的关系，和 `timerDialogTitle` 被两个页面共用是同一情形）。
+ *
+ * ### 关于「不支持」的文案
+ *
+ * 桌面端底层没有音效能力（见 `PlatformPlayer.audioEffectCapabilities` 的 KDoc），
+ * 因此需要 [unsupportedNote] 说明原因 —— 这比给一排无效滑杆诚实得多。
+ * ⚠️ 该条**不得**描述成「暂时不支持」：那是承诺一个没有排期的事。
+ * 措辞就事论事地讲清「这个平台的音频引擎没有提供效果接口」即可。
+ */
+interface AudioEffectStrings {
+    val screenTitle: String
+
+    /**
+     * 设置根列表里这一项的副标题。
+     *
+     * 与 [unsupportedNote] 分开：那一条是页内说明（讲清为什么不能用），
+     * 这一条只是一句话概括这页干什么。根列表不该出现「本平台不支持」这种
+     * 让用户先踩空的提示 —— 副标题的职责是「值不值得点进去」。
+     */
+    val entrySubtitle: String
+    val unsupportedNote: String
+
+    // ---- PEQ ----
+    val sectionEqualizer: String
+    val equalizerEnabled: String
+    val equalizerEnabledNote: String
+    val equalizerPreset: String
+    val equalizerPresetNote: String
+    val presetFlat: String
+    val presetPop: String
+    val presetRock: String
+    val presetVocal: String
+    val presetBassBoost: String
+    val presetTrebleBoost: String
+    val presetCustom: String
+
+    /** 第 [index] 段的标题（1-based，如「第 1 段」）。 */
+    fun bandTitle(index: Int): String
+
+    /** 第 [index] 段的副标题：当前频率与增益，如「60 Hz · +3.0 dB」。 */
+    fun bandSubtitle(index: Int, hz: String, gainDb: String): String
+
+    /**
+     * 某一段的**频率**标签，如「频率」。
+     *
+     * 单独一条而不是复用：频点滑杆与增益滑杆在不同段上标题相同、
+     * 只有这一段不同，抽出来才能保证两处措辞一致。
+     */
+    val bandFrequency: String
+
+    /** 某一段的**增益**标签。 */
+    val bandGain: String
+
+    /** 增益读数，如「+3.0 dB」。 */
+    fun gainLabel(gainDb: String): String
+
+    // ⚠️ 刻意**没有**「频率读数」这一条：`Hz` / `kHz` 是国际单位符号，
+    // 中英文写法完全一致（`60 Hz` / `3.6 kHz`），翻译它反而不专业。
+    // 频率读数在 `AudioEffectSettingsScreen.formatHz` 里生成，
+    // 单位随数量级自动选择 —— 与增益不同（增益的 `dB` 也一样通用，
+    // 但增益有「正负号」这个需要按语言习惯决定要不要省略的点，故保留文案函数）。
+
+    // ---- 混音 ----
+    val sectionMixer: String
+    val balance: String
+    val balanceNote: String
+    val balanceCenter: String
+    val balanceLeft: String
+    val balanceRight: String
+
+    // ---- 音量均衡 ----
+    val sectionLeveling: String
+    val levelingEnabled: String
+    val levelingEnabledNote: String
+    val levelingTarget: String
+    val levelingTargetNote: String
+    val preventClipping: String
+    val preventClippingNote: String
+
+    /** 页尾说明：讲清这一层与用户音量的关系（避免误认为两个滑杆重复）。 */
+    val levelingNote: String
+}
 
 interface ShortcutStrings {
     val screenTitle: String

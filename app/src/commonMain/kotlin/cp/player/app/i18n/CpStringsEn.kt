@@ -298,6 +298,14 @@ object CpStringsEn : CpStrings {
             "Restore your last queue and position on launch, without auto-playing; " +
                 "press play to resume where you left off"
 
+        override val sectionFade = "Fade in / out"
+        override val fadeIn = "Fade in on start"
+        override val fadeInNote = "Ramp volume up from silence when a new track begins"
+        override val fadeOut = "Fade out before end"
+        override val fadeOutNote = "Lower the volume near the end so the next track does not cut in"
+        override val fadeDuration = "Transition length"
+        override fun fadeDurationSeconds(seconds: String) = "$seconds sec"
+
         override val sectionBackground = "Background playback"
         override val batteryWhitelist = "Battery optimization whitelist"
         override val batteryWhitelistOn = "Added — background playback is protected while the screen is off"
@@ -316,6 +324,58 @@ object CpStringsEn : CpStrings {
         override val timerAfterTrackChip = "After this track"
         override val timerCancel = "Cancel timer"
         override val timerClose = "Close"
+    }
+
+    override val audioEffect: AudioEffectStrings = object : AudioEffectStrings {
+        override val screenTitle = "Audio effects"
+        override val entrySubtitle = "Parametric equalizer, channel balance and loudness leveling"
+        override val unsupportedNote =
+            "This platform's audio engine only exposes volume — it has no equalizer or effect " +
+                "processing available, so nothing on this page can be adjusted on desktop."
+
+        override val sectionEqualizer = "Parametric equalizer"
+        override val equalizerEnabled = "Enable equalizer"
+        override val equalizerEnabledNote =
+            "Shapes each band using the curve below; when off, audio passes through untouched"
+        override val equalizerPreset = "Preset"
+        override val equalizerPresetNote =
+            "Pick a preset as a starting point, then fine-tune any band individually"
+        override val presetFlat = "Flat"
+        override val presetPop = "Pop"
+        override val presetRock = "Rock"
+        override val presetVocal = "Vocal"
+        override val presetBassBoost = "Bass boost"
+        override val presetTrebleBoost = "Treble boost"
+        override val presetCustom = "Custom"
+
+        override fun bandTitle(index: Int) = "Band ${index + 1}"
+        override fun bandSubtitle(index: Int, hz: String, gainDb: String) = "$hz · $gainDb"
+        override val bandFrequency = "Frequency"
+        override val bandGain = "Gain"
+        override fun gainLabel(gainDb: String) = "$gainDb dB"
+
+        override val sectionMixer = "Mixer"
+        override val balance = "Channel balance"
+        override val balanceNote =
+            "Left/right volume ratio — only one side is attenuated, so the overall level stays the same"
+        override val balanceCenter = "Center"
+        override val balanceLeft = "Left"
+        override val balanceRight = "Right"
+
+        override val sectionLeveling = "Volume leveling"
+        override val levelingEnabled = "Loudness leveling"
+        override val levelingEnabledNote =
+            "Pulls loud passages down and quiet ones up, so the volume stops jumping around"
+        override val levelingTarget = "Target loudness"
+        override val levelingTargetNote =
+            "Higher values are louder overall; it applies before the volume slider rather than replacing it"
+        override val preventClipping = "Prevent clipping"
+        override val preventClippingNote = "Caps peak levels to avoid distortion from clipping"
+
+        override val levelingNote =
+            "Loudness leveling and clipping prevention both apply before the volume control, so " +
+                "they don't duplicate the volume slider. The equalizer and mixer alter the audio " +
+                "signal itself — turn effects off when you want the original audio."
     }
 
     override val shortcuts: ShortcutStrings = object : ShortcutStrings {
