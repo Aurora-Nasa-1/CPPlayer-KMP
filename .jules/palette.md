@@ -1,0 +1,9 @@
+## 2024-10-07 - Accessibility in Media Components
+**Learning:** Found multiple instances where purely informational or decorative icons have `contentDescription = null`. However, in `PlayerMoreBottomSheet`, `s.player.coverContentDescription` (or similar) is missing for the track cover image, and the fallback `MusicNote` icon lacks an a11y label. I'll focus on replacing `contentDescription = null` with localized strings for interactive or informative elements, while leaving decorative ones alone. The cover in the "More Actions" bottom sheet represents the current track and is adjacent to the track title, making it semi-decorative, but wait! The info icon in the "Song Info" section has `contentDescription = null` which is purely decorative because it's right next to "Song Info" text.
+
+Let's check `PlayerPillButton`.
+**Action:** In `PlayerMoreBottomSheet`, I will change `contentDescription = null` to `contentDescription = s.player.coverContentDescription` for the `AsyncImage` representing the track cover, and the `Icon` for the fallback. The `Icon` inside `PlayerPillButton` is purely decorative, as it's accompanied by text in a single button layout, so `contentDescription = null` is correct there. Same for `Icons.Filled.Info`. The cover itself, however, has an a11y label available that isn't being used.
+
+## 2024-10-07 - Localized a11y labels for track covers
+**Learning:** Found that some informative media images, like the track cover and its fallback icon in the `PlayerMoreBottomSheet`, had their `contentDescription` incorrectly set to `null`, effectively hiding them from screen readers.
+**Action:** Replaced `null` with the localized accessibility string `s.player.coverContentDescription`. When adding images that provide context (like a specific track's cover), always use a descriptive localized label rather than treating them as purely decorative.
