@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
@@ -35,8 +36,9 @@ class CommentScreen(val id: String, val type: String = "music") : Screen {
         val model = rememberScreenModel { CommentScreenModel(id, type) }
         val state by model.state.collectAsState()
         val navigator = LocalNavigator.current
+        val s = cpStrings()
         // 桌面自绘标题栏的标题（页内顶栏在桌面端整体让位，见 CpRouteScaffold 的 KDoc）。
-        cp.player.app.ui.util.DesktopRouteTitle("评论")
+        cp.player.app.ui.util.DesktopRouteTitle(s.social.comment.title)
 
         // ⚠️ 必须走 `CpRouteScaffold`，不要退回 `AppScaffold`。
         //
@@ -47,7 +49,7 @@ class CommentScreen(val id: String, val type: String = "music") : Screen {
         // `CpRouteScaffold` 把「桌面发布标题 / 窄屏自绘顶栏 / 双栏右栏只出正文」三选一
         // 收在一处，本页只需要声明标题与返回动作。
         CpRouteScaffold(
-            title = "评论",
+            title = s.social.comment.title,
             onBack = { navigator.popOrNotify() },
         ) { pageModifier ->
             Box(pageModifier) {
@@ -59,10 +61,10 @@ class CommentScreen(val id: String, val type: String = "music") : Screen {
                     }
                     state.error != null -> {
                         ContentState(
-                            title = "加载失败",
+                            title = s.player.commentsLoadFailed,
                             message = state.error,
                             error = true,
-                            actionLabel = "重试",
+                            actionLabel = s.player.retry,
                             onAction = model::loadComments
                         )
                     }
@@ -83,6 +85,7 @@ class CommentScreen(val id: String, val type: String = "music") : Screen {
 
     @Composable
     private fun CommentItem(comment: Comment, onLike: () -> Unit) {
+        val commentStrings = cpStrings().social.comment
         Row(Modifier.fillMaxWidth()) {
             AsyncImage(
                 model = comment.avatar,
@@ -101,7 +104,11 @@ class CommentScreen(val id: String, val type: String = "music") : Screen {
                     IconButton(onClick = onLike, modifier = Modifier.size(32.dp)) {
                         Icon(
                             if (comment.liked) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
-                            contentDescription = if (comment.liked) "取消点赞" else "点赞",
+                            contentDescription = if (comment.liked) {
+                                commentStrings.unlike
+                            } else {
+                                commentStrings.like
+                            },
                             tint = if (comment.liked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(16.dp)
                         )

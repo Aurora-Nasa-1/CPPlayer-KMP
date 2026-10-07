@@ -37,6 +37,7 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
+import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.ui.component.ArtistAvatar
@@ -108,11 +109,15 @@ internal class MessagesModel : ScreenModel {
     private val _state = MutableStateFlow(MessagesUiState())
     val state: StateFlow<MessagesUiState> = _state
 
-    fun load() {
+    /**
+     * @param strings 失败兜底文案按**当前语言**组 —— 协程里读不到 CompositionLocal，
+     *   由组合侧传进来（见 I18N.md §5.9）。
+     */
+    fun load(strings: CpStrings) {
         screenModelScope.launch {
             _state.value = _state.value.copy(loading = true, error = null)
             val result = runCatching { AppModel.socialRepository.getContacts() }
-                .getOrElse { BackendResult.Error(it.message ?: "读取消息失败") }
+                .getOrElse { BackendResult.Error(it.message ?: strings.social.messages.loadFailed) }
             _state.value = when (result) {
                 is BackendResult.Success -> MessagesUiState(
                     loading = false,
@@ -156,32 +161,34 @@ private fun MessagesContent(
     val profile by AppModel.userProfileFlow.collectAsState()
     val loggedIn = profile != null
     val scope = rememberCoroutineScope()
+    val s = cpStrings()
+    val messages = s.social.messages
 
     LaunchedEffect(Unit) {
         if (loggedIn) {
-            model.load()
+            model.load(strings = s)
             AppModel.refreshUnreadMessages()
         }
     }
 
-    CpRouteScaffold(title = "消息", onBack = onBack) { pageModifier ->
+    CpRouteScaffold(title = messages.title, onBack = onBack) { pageModifier ->
         when {
             !loggedIn -> ContentState(
-                title = "登录后查看私信",
-                message = "消息与账号绑定，先在「账号与登录」里登录当前音源",
+                title = messages.loginRequired,
+                message = messages.loginRequiredNote,
                 modifier = pageModifier.padding(top = 32.dp),
             )
             state.loading && state.contacts.isEmpty() -> ContentState(
-                title = "正在载入消息",
-                message = "正在从当前音源读取最近联系人",
+                title = messages.loading,
+                message = messages.loadingNote,
                 loading = true,
             )
             state.contacts.isEmpty() -> ContentState(
-                title = "还没有消息",
-                message = state.error ?: "在歌手或用户主页点「发私信」就能开始聊天",
+                title = messages.empty,
+                message = state.error ?: messages.emptyHint,
                 error = state.error != null,
-                actionLabel = if (state.error != null) "重试" else null,
-                onAction = if (state.error != null) ({ model.load() }) else null,
+                actionLabel = if (state.error != null) s.player.retry else null,
+                onAction = if (state.error != null) ({ model.load(strings = s) }) else null,
                 modifier = pageModifier.padding(top = 32.dp),
             )
             else -> LazyScrollColumn(
@@ -245,6 +252,7 @@ internal fun ContactRow(
     /** 长按（安卓）。桌面端传 null：那里用右键菜单。 */
     onLongClick: (() -> Unit)? = null,
 ) {
+    val strings = cpStrings()
     LegacyListItem(
         index = 0,
         total = 1,
@@ -256,7 +264,7 @@ internal fun ContactRow(
         headlineContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    contact.nickname.ifBlank { "未知用户" },
+                    contact.nickname.ifBlank { strings.social.messages.unknownUser },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium,
                     color = contentColor,
@@ -277,7 +285,7 @@ internal fun ContactRow(
         },
         supportingContent = {
             Text(
-                contact.lastMessage.orEmpty().ifBlank { "（没有消息内容）" },
+                contact.lastMessage.orEmpty().ifBlank { strings.social.messages.noPreview },
                 style = MaterialTheme.typography.bodyMedium,
                 color = secondaryContentColor,
                 maxLines = 1,

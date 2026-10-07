@@ -42,9 +42,12 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
+import cp.player.app.i18n.CpStrings
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.ArtistAvatar
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.util.formatChatTime
@@ -103,8 +106,11 @@ internal class ChatModel : ScreenModel {
      * ⚠️ 双栏模式下这个模型是**跨会话复用**的（左栏点谁就切谁），若沿用 `_state.value.copy(…)`
      * 保留旧 messages，切换瞬间右栏会先渲染**上一个会话的气泡**（还在 `messages` 里的那些），
      * 等网络回来才换成新的 —— 那一下闪现比空白更糟。所以进这里就换成一个干净的 state。
+     *
+     * @param strings 失败兜底文案要按**当前语言**组 —— 协程里读不到 CompositionLocal，
+     *   由组合侧传进来（见 I18N.md §5.9）。
      */
-    fun load(peerUid: Long, myUid: Long, force: Boolean = false) {
+    fun load(peerUid: Long, myUid: Long, force: Boolean = false, strings: CpStrings) {
         if (!force && loadedUid == peerUid && _state.value.messages.isNotEmpty()) return
         val switchingPeer = loadedUid != peerUid
         loadedUid = peerUid
@@ -112,7 +118,7 @@ internal class ChatModel : ScreenModel {
             _state.value = if (switchingPeer) ChatUiState(loading = true)
             else _state.value.copy(loading = true, error = null)
             val result = runCatching { AppModel.socialRepository.getMessages(peerUid, myUid) }
-                .getOrElse { BackendResult.Error(it.message ?: "读取私信失败") }
+                .getOrElse { BackendResult.Error(it.message ?: strings.social.chat.loadFailed) }
             _state.value = when (result) {
                 is BackendResult.Success -> ChatUiState(loading = false, messages = result.data)
                 is BackendResult.Error -> _state.value.copy(loading = false, error = result.message)
@@ -128,14 +134,20 @@ internal class ChatModel : ScreenModel {
      * 直接追加看似更快，但服务端返回的 id / 时间与本地臆造的不一致，
      * 下次进这一页重新拉取时整条消息会「跳一下」。
      */
-    fun send(peerUid: Long, myUid: Long, text: String, onResult: (Boolean) -> Unit) {
+    fun send(
+        peerUid: Long,
+        myUid: Long,
+        text: String,
+        strings: CpStrings,
+        onResult: (Boolean) -> Unit,
+    ) {
         val body = text.trim()
         if (body.isEmpty() || _state.value.sending) return
         _state.value = _state.value.copy(sending = true)
         screenModelScope.launch {
             val ok = AppModel.socialRepository.sendMessage(peerUid, body)
             _state.value = _state.value.copy(sending = false)
-            if (ok) load(peerUid, myUid, force = true)
+            if (ok) load(peerUid, myUid, force = true, strings = strings)
             onResult(ok)
         }
     }
@@ -164,12 +176,14 @@ internal fun ChatContent(
     val myUid = me?.uid ?: 0L
     var draft by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    val s = cpStrings()
+    val chat = s.social.chat
 
     LaunchedEffect(peerUid, myUid) {
         if (myUid != 0L) {
             // ⚠️ `force = true` 不能省：双栏模式下左栏点谁就切谁，`peerUid` 一变这里就要
             // 重新拉。`ChatModel` 自己只按 `loadedUid` 判重，页面这层不再兜一遍。
-            model.load(peerUid, myUid, force = true)
+            model.load(peerUid, myUid, force = true, strings = s)
             // 进对话即视为已读（列表页已经本地标过一次，这里补上报服务端）。
             AppModel.socialRepository.markRead(peerUid)
             if (clearGlobalUnread) AppModel.clearUnreadMessages()
@@ -199,8 +213,8 @@ internal fun ChatContent(
     val submit: () -> Unit = {
         val body = draft
         if (body.isNotBlank()) {
-            model.send(peerUid, myUid, body) { ok ->
-                if (ok) draft = "" else cp.player.app.ui.util.UiEvents.notify("发送失败，请检查登录状态")
+            model.send(peerUid, myUid, body, strings = s) { ok ->
+                if (ok) draft = "" else UiEvents.notify(chat.sendFailed)
             }
         }
     }
@@ -210,19 +224,23 @@ internal fun ChatContent(
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when {
                     myUid == 0L -> ContentState(
-                        title = "登录后可发送私信",
-                        message = "私信与账号绑定",
+                        title = chat.loginRequired,
+                        message = chat.accountBound,
                     )
                     state.loading && state.messages.isEmpty() -> ContentState(
-                        title = "正在载入对话",
+                        title = chat.loading,
                         loading = true,
                     )
                     state.messages.isEmpty() -> ContentState(
-                        title = "还没有聊过",
-                        message = state.error ?: "在下面输入第一句话吧",
+                        title = chat.empty,
+                        message = state.error ?: chat.emptyHint,
                         error = state.error != null,
-                        actionLabel = if (state.error != null) "重试" else null,
-                        onAction = if (state.error != null) ({ model.load(peerUid, myUid, force = true) }) else null,
+                        actionLabel = if (state.error != null) s.player.retry else null,
+                        onAction = if (state.error != null) (
+                            {
+                                model.load(peerUid, myUid, force = true, strings = s)
+                            }
+                            ) else null,
                     )
                     else -> LazyColumn(
                         state = listState,
@@ -238,7 +256,7 @@ internal fun ChatContent(
                             // 纯 id 作 key 会让 Compose 直接抛「Key was already used」。
                             "${state.messages[index].id}-$index"
                         }) { index ->
-                            MessageBubble(state.messages[index])
+                            MessageBubble(state.messages[index], emptyText = chat.emptyMessage)
                         }
                     }
                 }
@@ -257,7 +275,7 @@ internal fun ChatContent(
                         value = draft,
                         onValueChange = { draft = it },
                         modifier = Modifier.weight(1f),
-                        placeholder = { Text("说点什么…", style = MaterialTheme.typography.bodyMedium) },
+                        placeholder = { Text(chat.inputPlaceholder, style = MaterialTheme.typography.bodyMedium) },
                         shape = MaterialTheme.shapes.large,
                         maxLines = 4,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
@@ -267,7 +285,7 @@ internal fun ChatContent(
                         onClick = submit,
                         enabled = draft.isNotBlank() && !state.sending && myUid != 0L,
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送")
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = chat.send)
                     }
                 }
             }
@@ -281,14 +299,14 @@ internal fun ChatContent(
         return
     }
 
-    CpRouteScaffold(title = peerName ?: "私信", onBack = onBack) { pageModifier ->
+    CpRouteScaffold(title = peerName ?: chat.titleFallback, onBack = onBack) { pageModifier ->
         body(pageModifier.fillMaxSize())
     }
 }
 
 /** 单条消息气泡。自己发的靠右、用 `primaryContainer`。 */
 @Composable
-private fun MessageBubble(message: Message) {
+private fun MessageBubble(message: Message, emptyText: String) {
     val isMe = message.isMe
     // 朝向对方那一侧留直角：右上的「尾巴」指向输入框，左上的指向头像。
     val bubbleShape = if (isMe) {
@@ -313,7 +331,7 @@ private fun MessageBubble(message: Message) {
         Column(horizontalAlignment = if (isMe) Alignment.End else Alignment.Start) {
             Surface(color = bubbleColor, shape = bubbleShape) {
                 Text(
-                    message.text.ifBlank { "（空消息）" },
+                    message.text.ifBlank { emptyText },
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                     style = MaterialTheme.typography.bodyLarge,
                     color = bubbleContent,

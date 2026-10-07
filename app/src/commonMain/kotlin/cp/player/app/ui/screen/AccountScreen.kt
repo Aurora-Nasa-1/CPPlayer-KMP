@@ -63,6 +63,7 @@ import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.auth.AccountStore
 import cp.player.app.i18n.AccountStrings
+import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.auth.CookieLogin
 import cp.player.app.auth.QrLoginSession
@@ -177,11 +178,13 @@ class AccountScreen : Screen {
                     // 表单与提交按钮都要用它，所以在这一层算一次。
                     val normalizedCookie = CookieLogin.normalize(cookieText)
 
-                    SettingsSection(if (isLogged) "添加账号" else "登录方式") {
+                    SettingsSection(
+                        if (isLogged) s.account.addAccount else s.account.loginMethod,
+                    ) {
                         SettingsDropdownItem(
-                            title = "登录方式",
+                            title = s.account.loginMethod,
                             // 只显示当前音源支持的方式（音源未声明时是网易云系全量）
-                            options = loginChannels.map { it.label },
+                            options = loginChannels.map { it.labelOf(s) },
                             selectedIndex = loginChannels.indexOf(method).coerceAtLeast(0),
                             onSelect = { model.setChannel(loginChannels[it]) },
                             index = 0,
@@ -230,7 +233,7 @@ class AccountScreen : Screen {
 
                     when (method) {
                         LoginChannel.EMAIL -> SettingsButtonItem(
-                            text = if (isLoading) "登录中…" else "邮箱登录",
+                            text = if (isLoading) s.account.loggingIn else s.account.channelEmail,
                             index = 0,
                             total = 2,
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -239,7 +242,7 @@ class AccountScreen : Screen {
                             onClick = { model.loginEmail(email, password) },
                         )
                         LoginChannel.PHONE -> SettingsButtonItem(
-                            text = if (isLoading) "登录中…" else "手机登录",
+                            text = if (isLoading) s.account.loggingIn else s.account.channelPhone,
                             index = 0,
                             total = 2,
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -248,7 +251,7 @@ class AccountScreen : Screen {
                             onClick = { model.loginPhone(phone, captcha) },
                         )
                         LoginChannel.COOKIE -> SettingsButtonItem(
-                            text = if (isLoading) "登录中…" else "Cookie 登录",
+                            text = if (isLoading) s.account.loggingIn else s.account.channelCookie,
                             index = 0,
                             total = 2,
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -261,7 +264,7 @@ class AccountScreen : Screen {
                             val fallback = loginChannels.firstOrNull { it != LoginChannel.QR }
                             if (fallback != null) {
                                 SettingsButtonItem(
-                                    text = "改用${fallback.label}",
+                                    text = s.account.switchToMethod(fallback.labelOf(s)),
                                     index = 0,
                                     total = 1,
                                     onClick = { model.setChannel(fallback) },
@@ -271,7 +274,7 @@ class AccountScreen : Screen {
                     }
                     if (method != LoginChannel.QR) {
                         SettingsButtonItem(
-                            text = "游客登录 / 跳过",
+                            text = s.account.guestLogin,
                             index = 1,
                             total = 2,
                             enabled = !isLoading,
@@ -284,18 +287,18 @@ class AccountScreen : Screen {
                 // 但应用里除了这页顶部的头像之外，没有第二个地方能把它们打开。
                 // （未登录时没有资料可看，整块不渲染。）
                 if (isLogged) profile?.let { me ->
-                    SettingsSection("我的") {
+                    SettingsSection(s.account.sectionMine) {
                         SettingsClickItem(
-                            title = "我的主页",
-                            subtitle = "歌曲、专辑与歌单，和你在别人主页看到的是同一套",
+                            title = s.account.myProfile,
+                            subtitle = s.account.myProfileNote,
                             icon = Icons.Filled.Person,
                             index = 0,
                             total = 2,
                             onClick = { navigator.push(UserProfileScreen(me.uid, me.nickname)) },
                         )
                         SettingsClickItem(
-                            title = "消息",
-                            subtitle = "最近联系人与私信",
+                            title = s.account.messages,
+                            subtitle = s.account.messagesNote,
                             icon = Icons.AutoMirrored.Filled.Message,
                             index = 1,
                             total = 2,
@@ -307,11 +310,11 @@ class AccountScreen : Screen {
                 // 未登录：登录区紧跟 Hero 放在最上面（手机端一进页就能扫码/填表单）。
                 if (!isLogged) loginSection()
 
-                SettingsSection("当前音源") {
+                SettingsSection(s.account.currentProvider) {
                     SettingsClickItem(
-                        title = provider?.name ?: "尚未加载音源",
-                        subtitle = provider?.let { "${it.type.name} · v${it.version}" }
-                            ?: "先在音源管理里导入一个 Provider 模块",
+                        title = provider?.name ?: s.account.noProvider,
+                        subtitle = provider?.let { s.account.providerMeta(it.type.name, it.version) }
+                            ?: s.account.noProviderNote,
                         icon = Icons.Filled.Extension,
                         index = 0,
                         total = 1,
@@ -323,27 +326,28 @@ class AccountScreen : Screen {
                             ) {
                                 Icon(Icons.Filled.SwapHoriz, contentDescription = null, modifier = Modifier.size(CpIconSize.inline))
                                 Spacer(Modifier.width(6.dp))
-                                Text("切换音源", style = MaterialTheme.typography.labelSmall)
+                                Text(s.account.switchProvider, style = MaterialTheme.typography.labelSmall)
                             }
                         },
                     )
                 }
 
-                SettingsSection("音源隔离") {
+                SettingsSection(s.account.sectionIsolation) {
                     cp.player.app.ui.component.SettingsSwitchItem(
-                        title = "切音源时同步刷新账号资料",
-                        subtitle = "关闭后仍会切换登录态（登录态本来就按音源分开存），" +
-                            "只是不立即重新拉取昵称与头像",
+                        title = s.account.isolationTitle,
+                        subtitle = s.account.isolationSubtitle,
                         checked = switchAccount,
                         onCheckedChange = AppModel::setIsolationSwitchAccount,
                         index = 0,
                         total = 1,
                     )
                 }
-                SettingsNote("每个音源都有自己的登录态、缓存与账号列表，互不共享。")
+                SettingsNote(s.account.isolationHint)
 
                 if (isLogged) {
-                    SettingsSection("${provider?.name ?: "当前音源"} 的账号") {
+                    SettingsSection(
+                        s.account.accountsOf(provider?.name ?: s.account.currentProvider),
+                    ) {
                         accounts.forEachIndexed { index, account ->
                             val activeUid = AccountStore.activeUid(model.providerId())
                                 ?: profile?.uid?.toString()
@@ -356,10 +360,10 @@ class AccountScreen : Screen {
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             }
                             SettingsClickItem(
-                                title = account.nickname.ifBlank { "未知账号" },
+                                title = account.nickname.ifBlank { s.account.unknownAccount },
                                 subtitle = buildString {
-                                    append("ID: ${account.uid}")
-                                    if (isActive) append(" · 当前登录")
+                                    append(s.account.accountId(account.uid))
+                                    if (isActive) append(s.account.activeSuffix)
                                 },
                                 index = index,
                                 total = accounts.size + 1,
@@ -373,27 +377,27 @@ class AccountScreen : Screen {
                                         if (isActive) {
                                             Icon(
                                                 Icons.Filled.CheckCircle,
-                                                contentDescription = "当前登录",
+                                                contentDescription = s.account.currentlyLoggedIn,
                                                 tint = trailingTint,
                                                 modifier = Modifier.size(CpIconSize.list),
                                             )
                                         }
                                         IconButton(onClick = {
                                             confirm.request(
-                                                title = "移除账号",
-                                                message = "确定移除「${account.nickname}」吗？" +
+                                                title = s.account.removeAccount,
+                                                message = s.account.removeAccountMessage(account.nickname) +
                                                     if (AccountStore.activeUid(model.providerId()) == account.uid) {
-                                                        "\n它正是当前账号，移除后将退出登录，需要重新登录。"
+                                                        s.account.removeAccountActiveNote
                                                     } else {
-                                                        "\n已保存的登录凭据会被删除，之后需要重新登录。"
+                                                        s.account.removeAccountSavedNote
                                                     },
-                                                confirmLabel = "移除",
+                                                confirmLabel = s.account.removeLabel,
                                                 onConfirm = { model.removeAccount(account) },
                                             )
                                         }) {
                                             Icon(
                                                 Icons.Filled.Close,
-                                                contentDescription = "移除账号",
+                                                contentDescription = s.account.removeAccount,
                                                 tint = trailingTint,
                                                 modifier = Modifier.size(CpIconSize.inline),
                                             )
@@ -403,8 +407,8 @@ class AccountScreen : Screen {
                             )
                         }
                         SettingsButtonItem(
-                            text = "添加账号",
-                            subtitle = "再登录一个账号，之后可在这里一键切换",
+                            text = s.account.addAccount,
+                            subtitle = s.account.addAccountNote,
                             index = accounts.size,
                             total = accounts.size + 1,
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -415,14 +419,14 @@ class AccountScreen : Screen {
                     // 已登录「添加账号」：复用同一个登录区，放在账号列表之后。
                     if (showForm) loginSection()
                 } else {
-                    SettingsNote("登录后可同步歌单、红心与播放记录；登录态只保存在当前音源内。")
+                    SettingsNote(s.account.loginBenefitsNote)
                 }
 
                 if (isLogged) {
-                    SettingsSection("账号操作") {
+                    SettingsSection(s.account.sectionAccountActions) {
                         SettingsButtonItem(
-                            text = "退出登录",
-                            subtitle = "清除当前音源的登录态；已保存的账号会保留，方便一键切回",
+                            text = s.account.logout,
+                            subtitle = s.account.logoutNote,
                             index = 0,
                             total = 1,
                             containerColor = MaterialTheme.colorScheme.errorContainer,
@@ -435,7 +439,7 @@ class AccountScreen : Screen {
         }
 
         CpRouteScaffold(
-            title = "账号与登录",
+            title = s.account.screenTitle,
             onBack = { navigator.popOrNotify() },
         ) { pageModifier -> body(pageModifier) }
 
@@ -451,6 +455,7 @@ private fun AccountHero(
     uid: Long?,
     isLogged: Boolean,
 ) {
+    val s = cpStrings()
     Column(
         modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -469,14 +474,22 @@ private fun AccountHero(
         }
         Spacer(Modifier.height(16.dp))
         Text(
-            text = if (isLogged) nickname.orEmpty().ifBlank { "已登录" } else "未登录",
+            text = if (isLogged) {
+                nickname.orEmpty().ifBlank { s.account.loggedIn }
+            } else {
+                s.account.notLoggedIn
+            },
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            text = if (isLogged && uid != null) "ID: $uid" else "登录后可同步歌单、红心与播放记录",
+            text = if (isLogged && uid != null) {
+                s.account.accountId(uid.toString())
+            } else {
+                s.account.loggedInHint
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -523,12 +536,13 @@ private fun QrLoginContent(
     onOpenTargetApp: () -> Unit,
     onRefresh: () -> Unit,
 ) {
+    val s = cpStrings().account
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = "请使用音源对应的 App 扫描二维码登录",
+            text = s.qrHint,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -542,7 +556,7 @@ private fun QrLoginContent(
                 when {
                     isLoading -> cp.player.app.ui.component.CpLoadingIndicator(Modifier.size(40.dp))
                     qrUrl != null -> QrCodeImage(qrUrl, Modifier.size(200.dp))
-                    else -> Text("二维码加载失败", color = MaterialTheme.colorScheme.outline)
+                    else -> Text(s.qrLoadFailed, color = MaterialTheme.colorScheme.outline)
                 }
             }
         }
@@ -551,13 +565,13 @@ private fun QrLoginContent(
             TextButton(onClick = onRefresh, enabled = !isLoading) {
                 Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(CpIconSize.inline))
                 Spacer(Modifier.width(4.dp))
-                Text("刷新二维码")
+                Text(s.refreshQr)
             }
             if (qrImgBase64 != null) {
                 TextButton(onClick = onSaveQr, enabled = !isLoading) {
                     Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(CpIconSize.inline))
                     Spacer(Modifier.width(4.dp))
-                    Text("保存二维码")
+                    Text(s.saveQr)
                 }
             }
         }
@@ -565,7 +579,13 @@ private fun QrLoginContent(
             OutlinedButton(onClick = onOpenTargetApp) {
                 Icon(Icons.AutoMirrored.Filled.OpenInNew, null, Modifier.size(CpIconSize.inline))
                 Spacer(Modifier.width(6.dp))
-                Text(if (targetAppInstalled) "打开 $targetAppName" else "安装 $targetAppName")
+                Text(
+                    if (targetAppInstalled) {
+                        s.openApp(targetAppName)
+                    } else {
+                        s.installApp(targetAppName)
+                    },
+                )
             }
         }
     }
@@ -578,11 +598,12 @@ private fun EmailLoginForm(
     password: String,
     onPasswordChange: (String) -> Unit,
 ) {
+    val s = cpStrings().account
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(
             value = email,
             onValueChange = onEmailChange,
-            label = { Text("邮箱") },
+            label = { Text(s.emailLabel) },
             leadingIcon = { Icon(Icons.Filled.Email, null) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
@@ -590,7 +611,7 @@ private fun EmailLoginForm(
         OutlinedTextField(
             value = password,
             onValueChange = onPasswordChange,
-            label = { Text("密码") },
+            label = { Text(s.passwordLabel) },
             leadingIcon = { Icon(Icons.Filled.Lock, null) },
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -598,7 +619,7 @@ private fun EmailLoginForm(
             singleLine = true,
         )
         Text(
-            text = "密码只发给当前音源，不会离开本机。",
+            text = s.passwordNote,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -619,11 +640,12 @@ private fun PhoneLoginForm(
     onRefreshCaptcha: () -> Unit = {},
     onSendCaptcha: () -> Unit,
 ) {
+    val s = cpStrings().account
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(
             value = phone,
             onValueChange = onPhoneChange,
-            label = { Text("手机号") },
+            label = { Text(s.phoneLabel) },
             leadingIcon = { Icon(Icons.Filled.Phone, null) },
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
@@ -633,8 +655,8 @@ private fun PhoneLoginForm(
             OutlinedTextField(
                 value = imageCaptcha,
                 onValueChange = onImageCaptchaChange,
-                label = { Text("图形验证码") },
-                supportingText = { Text("音源要求人机校验；看不清点「换一张」") },
+                label = { Text(s.imageCaptchaLabel) },
+                supportingText = { Text(s.imageCaptchaHint(s.refreshCaptcha)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
@@ -649,14 +671,14 @@ private fun PhoneLoginForm(
                 ) {
                     AsyncImage(
                         model = captchaImageUrl,
-                        contentDescription = "图形验证码",
+                        contentDescription = s.imageCaptchaLabel,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
                 Spacer(Modifier.width(8.dp))
                 OutlinedButton(onClick = onRefreshCaptcha, enabled = !isLoading) {
-                    Text("换一张")
+                    Text(s.refreshCaptcha)
                 }
             }
         }
@@ -668,14 +690,14 @@ private fun PhoneLoginForm(
             OutlinedTextField(
                 value = captcha,
                 onValueChange = onCaptchaChange,
-                label = { Text("验证码 / 密码") },
+                label = { Text(s.captchaOrPassword) },
                 modifier = Modifier.weight(1f),
                 singleLine = true,
             )
             OutlinedButton(
                 onClick = onSendCaptcha,
                 enabled = phone.isNotBlank() && !isLoading,
-            ) { Text("发送验证码") }
+            ) { Text(s.sendCaptcha) }
         }
     }
 }
@@ -697,39 +719,44 @@ internal fun CookieLoginForm(
     onRawChange: (String) -> Unit,
     normalized: String?,
 ) {
+    val s = cpStrings().account
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(
             value = raw,
             onValueChange = onRawChange,
-            label = { Text("Cookie") },
+            label = { Text(s.cookieLabel) },
             leadingIcon = { Icon(Icons.Filled.Key, null) },
-            placeholder = { Text("MUSIC_U=…; __csrf=…") },
+            placeholder = { Text(s.cookiePlaceholder) },
             modifier = Modifier.fillMaxWidth().heightIn(min = 104.dp),
             minLines = 3,
             maxLines = 6,
             singleLine = false,
             isError = raw.isNotBlank() && normalized == null,
-            supportingText = { Text(cookieHint(raw, normalized)) },
+            supportingText = { Text(cookieHint(s, raw, normalized)) },
         )
         Text(
-            text = "获取方式：浏览器登录后按 F12 → 网络（Network）→ 任选一个请求 → " +
-                "复制请求头里的 Cookie 整行。登录态等同于密码，只存在本机、" +
-                "并按音源隔离，不会发给当前音源以外的任何一方。",
+            text = s.cookieHowTo,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
 
-/** 输入框下方的即时反馈文案。 */
-private fun cookieHint(raw: String, normalized: String?): String = when {
-    raw.isBlank() -> "整行粘贴即可：会自动去掉 `Cookie:` 前缀、换行与多余空格。"
-    normalized == null -> "没解析出任何 name=value —— 请确认复制的是 Cookie，而不是网址或整段请求。"
+/**
+ * 输入框下方的即时反馈文案。
+ *
+ * ⚠️ 是**纯函数**（被 `OutlinedTextField(supportingText)` 直接当字符串用），
+ * 读不到 CompositionLocal —— 语言由调用方传进来（见 I18N.md §5.9）。
+ */
+private fun cookieHint(strings: AccountStrings, raw: String, normalized: String?): String = when {
+    raw.isBlank() -> strings.cookieHintEmpty
+    normalized == null -> strings.cookieHintUnparsed
     !CookieLogin.hasSessionKey(normalized) ->
-        "已识别 ${cookieFieldCount(normalized)} 个字段，但其中没有常见的会话字段，多半是复制错了。"
+        strings.cookieNoSessionKey(cookieFieldCount(normalized))
     else -> {
         val masked = CookieLogin.mask(normalized)
-        "已识别 ${cookieFieldCount(normalized)} 个字段：" + masked.take(120) + if (masked.length > 120) "…" else ""
+        strings.cookieRecognized(cookieFieldCount(normalized)) +
+            masked.take(120) + if (masked.length > 120) "…" else ""
     }
 }
 
@@ -857,7 +884,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
             } else {
                 captchaImage.value = null
                 captchaSessionCookie = null
-                message.value = "图形验证码获取失败，可留空直接发送短信验证码"
+                message.value = account.captchaImageFailed
             }
         }
     }
@@ -902,7 +929,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
         isLogged.value = ok
         if (ok) {
             runCatching { AppModel.refreshUserProfileAwait() }
-            message.value = "已恢复登录"
+            message.value = account.loginRestored
         }
         refreshAccounts()
     }
@@ -1078,7 +1105,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                 val body = AppModel.authRepository.login(email, password)
                 onLoginSucceeded(body.uniCookie(), body.asCodeOk())
             } catch (e: Exception) {
-                message.value = "登录失败: ${e.message}"
+                message.value = account.loginFailed(e.message)
             } finally {
                 isLoading.value = false
             }
@@ -1099,13 +1126,14 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                 )
                 if (!body.asCodeOk()) {
                     // 登录失败多半是图形验证码不对/过期 —— 立即换一张再让用户输
-                    message.value = "登录失败: ${(body.asObject()?.get("msg") as? JsonPrimitive)?.contentOrNull ?: "请重试"}"
+                    val reason = (body.asObject()?.get("msg") as? JsonPrimitive)?.contentOrNull
+                    message.value = account.loginFailed(reason ?: account.pleaseRetry)
                     fetchCaptchaImage()
                     return@launch
                 }
                 onLoginSucceeded(body.uniCookie(), ok = true)
             } catch (e: Exception) {
-                message.value = "登录失败: ${e.message}"
+                message.value = account.loginFailed(e.message)
             } finally {
                 isLoading.value = false
             }
@@ -1121,7 +1149,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
     fun loginWithCookie(raw: String) {
         val cookie = CookieLogin.normalize(raw)
         if (cookie == null) {
-            message.value = "Cookie 格式不对：至少要有一个 name=value"
+            message.value = account.cookieFormatError
             return
         }
         cancelQrPolling()
@@ -1137,7 +1165,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                     else AppModel.cookieStorage.saveCookie(providerId, previous)
                     AppModel.refreshUserProfileAwait()
                     isLogged.value = false
-                    message.value = "Cookie 无效或已过期，请重新获取"
+                    message.value = account.cookieInvalid
                     return@launch
                 }
                 // 粘 cookie 登录成功：扫码现场一并作废（与 onLoginSucceeded 同一规矩）。
@@ -1153,7 +1181,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                 )
                 isLogged.value = true
                 showForm.value = false
-                message.value = "登录成功，欢迎 ${profile.nickname}"
+                message.value = account.loginWelcome(profile.nickname)
                 refreshAccounts()
             } finally {
                 isLoading.value = false
@@ -1172,14 +1200,15 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
             }
                 .onSuccess { body ->
                     if (body.asCodeOk()) {
-                        message.value = "验证码已发送"
+                        message.value = account.captchaSent
                     } else {
                         // 失败时换一张图 —— 咪咕的验证码一次一换，旧图已作废
-                        message.value = "验证码发送失败: ${(body.asObject()?.get("msg") as? JsonPrimitive)?.contentOrNull ?: "请重试"}"
+                        val reason = (body.asObject()?.get("msg") as? JsonPrimitive)?.contentOrNull
+                        message.value = account.captchaSendFailed(reason ?: account.pleaseRetry)
                         fetchCaptchaImage()
                     }
                 }
-                .onFailure { message.value = "验证码发送失败: ${it.message}" }
+                .onFailure { message.value = account.captchaSendFailed(it.message) }
         }
     }
 
@@ -1191,7 +1220,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                 val body = AppModel.authRepository.loginAnonymous()
                 onLoginSucceeded(body.uniCookie(), body.asCodeOk())
             } catch (e: Exception) {
-                message.value = "游客登录失败: ${e.message}"
+                message.value = account.guestLoginFailed(e.message)
             } finally {
                 isLoading.value = false
             }
@@ -1201,7 +1230,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
     /** 登录成功：写回当前音源的 cookie → 拉资料 → 存进账号列表（音源隔离）。 */
     private suspend fun onLoginSucceeded(cookie: String?, ok: Boolean = true) {
         if (!ok) {
-            message.value = "登录失败，请重试"
+            message.value = account.loginFailedRetry
             return
         }
         val providerId = providerId()
@@ -1223,9 +1252,9 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                 )
             }
             showForm.value = false
-            message.value = "登录成功，欢迎 ${profile.nickname}"
+            message.value = account.loginWelcome(profile.nickname)
         } else {
-            message.value = "登录态校验失败，请重试"
+            message.value = account.loginCheckFailed
         }
         refreshAccounts()
     }
@@ -1245,7 +1274,8 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
             val profile = AppModel.refreshUserProfileAwait()
             if (profile != null) {
                 isLogged.value = true
-                message.value = "已切换到 ${profile.nickname}"
+                // ⚠️ 作用域里 `account` 是形参（SavedAccount），文案那份要显式指回外层。
+                message.value = this@AccountScreenModel.account.switchedTo(profile.nickname)
             } else {
                 // 目标账号的登录态已失效 ⇒ **回滚**，别把当前音源留成「无登录态」。
                 // 原实现只提示一句就完事：cookie 已经被目标账号覆盖，用户的正常登录
@@ -1255,7 +1285,9 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                 AccountStore.setActive(providerId, previousUid)
                 val restored = AppModel.refreshUserProfileAwait()
                 isLogged.value = restored != null
-                message.value = "「${account.nickname}」的登录态已失效，已回到原账号"
+                // ⚠️ 作用域里 `account` 是形参（SavedAccount），文案那份要显式指回外层；
+                // 这里还在 `launch` 里，`this` 是 CoroutineScope，必须写全 this@AccountScreenModel。
+                message.value = this@AccountScreenModel.account.accountExpired(account.nickname)
             }
             refreshAccounts()
         }
@@ -1271,9 +1303,9 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
             if (wasActive) {
                 isLogged.value = false
                 AppModel.clearUserProfile()
-                message.value = "已移除「${account.nickname}」的登录态"
+                message.value = this@AccountScreenModel.account.removedSession(account.nickname)
             } else {
-                message.value = "已移除「${account.nickname}」"
+                message.value = this@AccountScreenModel.account.removedAccount(account.nickname)
             }
             refreshAccounts()
         }
@@ -1291,7 +1323,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
             QrLoginStore.clear(providerId)
             AppModel.clearUserProfile()
             isLogged.value = false
-            message.value = "已退出登录"
+            message.value = account.loggedOut
             refreshAccounts()
         }
     }
@@ -1328,11 +1360,11 @@ private enum class QrPollResult {
  * 其它方式就一并保留；音源**什么都没声明**时按旧行为展示全量（网易云系音源
  * 不用改 manifest 就有全部方式）。
  */
-enum class LoginChannel(val label: String) {
-    QR("扫码登录"),
-    EMAIL("邮箱登录"),
-    PHONE("手机号登录"),
-    COOKIE("Cookie 登录"),
+enum class LoginChannel(val labelOf: (CpStrings) -> String) {
+    QR({ it.account.channelQr }),
+    EMAIL({ it.account.channelEmail }),
+    PHONE({ it.account.channelPhone }),
+    COOKIE({ it.account.channelCookie }),
     ;
 
     companion object {

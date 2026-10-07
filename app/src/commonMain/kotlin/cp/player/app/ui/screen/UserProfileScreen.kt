@@ -39,6 +39,8 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
+import cp.player.app.i18n.CpStrings
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.AlbumCoverCard
 import cp.player.app.ui.component.ArtistAvatar
@@ -113,13 +115,17 @@ private class UserProfileModel : ScreenModel {
 
     private var loadedUid: Long? = null
 
-    fun load(uid: Long, fallbackName: String?) {
+    /**
+     * @param strings 失败兜底文案按**当前语言**组 —— 协程里读不到 CompositionLocal，
+     *   由组合侧传进来（见 I18N.md §5.9）。
+     */
+    fun load(uid: Long, fallbackName: String?, strings: CpStrings) {
         if (loadedUid == uid && _state.value.bundle != null) return
         loadedUid = uid
         screenModelScope.launch {
             _state.value = ProfileUiState(loading = true)
             val result = runCatching { AppModel.musicRepository.getProfileBundle(uid) }
-                .getOrElse { BackendResult.Error(it.message ?: "加载失败") }
+                .getOrElse { BackendResult.Error(it.message ?: strings.account.profileLoadFailed) }
             _state.value = when (result) {
                 is BackendResult.Success -> ProfileUiState(loading = false, bundle = result.data)
                 is BackendResult.Error -> ProfileUiState(
@@ -138,9 +144,9 @@ private class UserProfileModel : ScreenModel {
         }
     }
 
-    fun reload(uid: Long, fallbackName: String?) {
+    fun reload(uid: Long, fallbackName: String?, strings: CpStrings) {
         loadedUid = null
-        load(uid, fallbackName)
+        load(uid, fallbackName, strings)
     }
 }
 
@@ -154,6 +160,7 @@ private fun UserProfileContent(
 ) {
     val state by model.state.collectAsState()
     val navigator = LocalNavigator.currentOrThrow
+    val s = cpStrings()
     val me by AppModel.userProfileFlow.collectAsState()
     val playbackState by AppModel.playback.state.collectAsState()
     val currentTrackId = playbackState.currentTrack?.id
@@ -173,7 +180,7 @@ private fun UserProfileContent(
     // 「删除歌单 / 取消收藏」的二次确认：锚定菜单与底部弹层两个入口共用一份。
     val confirm = cp.player.app.ui.component.rememberConfirmState()
 
-    LaunchedEffect(uid) { model.load(uid, displayName) }
+    LaunchedEffect(uid) { model.load(uid, displayName, strings = s) }
 
     val bundle = state.bundle
     val songs = bundle?.songs.orEmpty()
@@ -184,21 +191,21 @@ private fun UserProfileContent(
     val visibleSongs = if (songsExpanded) songs else songs.take(SONG_PREVIEW)
 
     CpRouteScaffold(
-        title = bundle?.nickname ?: displayName ?: "主页",
+        title = bundle?.nickname ?: displayName ?: s.account.profileFallbackTitle,
         onBack = onBack,
     ) { pageModifier ->
         when {
             state.loading && bundle == null -> ContentState(
-                title = "正在载入主页",
-                message = "正在从当前音源读取资料",
+                title = s.account.profileLoading,
+                message = s.account.profileLoadingNote,
                 loading = true,
             )
             bundle == null -> ContentState(
-                title = "没有打开这个主页",
+                title = s.account.profileNotOpened,
                 message = state.error,
                 error = true,
-                actionLabel = "重试",
-                onAction = { model.reload(uid, displayName) },
+                actionLabel = s.library.retry,
+                onAction = { model.reload(uid, displayName, strings = s) },
             )
             else -> LazyScrollColumn(
                 modifier = pageModifier.fillMaxSize(),
@@ -221,8 +228,8 @@ private fun UserProfileContent(
                 if (bundle.isArtist && songs.isNotEmpty()) {
                     item {
                         SectionHeader(
-                            title = "热门歌曲",
-                            supportingText = "${songs.size} 首",
+                            title = s.account.topSongs,
+                            supportingText = s.account.songCount(songs.size),
                             modifier = Modifier.padding(top = 8.dp),
                         )
                     }
@@ -246,7 +253,7 @@ private fun UserProfileContent(
                                 scope.launch {
                                     val target = track.id !in likedIds
                                     AppModel.playback.toggleFavoriteFor("$provider://song/${track.id}")
-                                    UiEvents.notify(if (target) "已收藏" else "已取消收藏")
+                                    UiEvents.notify(if (target) s.album.liked else s.album.unliked)
                                 }
                             },
                             // 桌面端右键菜单
@@ -261,16 +268,16 @@ private fun UserProfileContent(
                                         scope.launch {
                                             val target = track.id !in likedIds
                                             AppModel.playback.toggleFavoriteFor("$provider://song/${track.id}")
-                                            UiEvents.notify(if (target) "已收藏" else "已取消收藏")
+                                            UiEvents.notify(if (target) s.album.liked else s.album.unliked)
                                         }
                                     },
                                     onAddToQueue = {
                                         scope.launch { AppModel.playback.addToQueue("$provider://song/${track.id}") }
-                                        UiEvents.notify("已加入播放队列")
+                                        UiEvents.notify(s.library.queuedToPlay)
                                     },
                                     onPlayNext = {
                                         scope.launch { AppModel.playback.addNextToQueue("$provider://song/${track.id}") }
-                                        UiEvents.notify("将在下一首播放")
+                                        UiEvents.notify(s.library.playNext)
                                     },
                                     onShare = { shareText(songShareText(track)) },
                                 )
@@ -283,7 +290,7 @@ private fun UserProfileContent(
                                 onClick = { songsExpanded = !songsExpanded },
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
-                                Text(if (songsExpanded) "收起" else "展开全部 ${songs.size} 首")
+                                Text(if (songsExpanded) s.player.collapse else s.account.expandAllSongs(songs.size))
                             }
                         }
                     }
@@ -292,8 +299,8 @@ private fun UserProfileContent(
                 if (bundle.isArtist && bundle.albums.isNotEmpty()) {
                     item {
                         SectionHeader(
-                            title = "专辑",
-                            supportingText = "${bundle.albums.size} 张",
+                            title = s.account.albumsSection,
+                            supportingText = s.account.albumCount(bundle.albums.size),
                             modifier = Modifier.padding(top = 12.dp),
                         )
                     }
@@ -315,8 +322,8 @@ private fun UserProfileContent(
                 if (!bundle.isArtist && bundle.playlists.isNotEmpty()) {
                     item {
                         SectionHeader(
-                            title = "歌单",
-                            supportingText = "${bundle.playlists.size} 个",
+                            title = s.account.playlistsSection,
+                            supportingText = s.account.playlistCount(bundle.playlists.size),
                             modifier = Modifier.padding(top = 12.dp),
                         )
                     }
@@ -338,15 +345,15 @@ private fun UserProfileContent(
                 if (bundle.isArtist && bundle.albums.isEmpty() && songs.isEmpty()) {
                     item {
                         ContentState(
-                            title = "这位歌手还没有可展示的内容",
-                            message = state.error ?: "换个音源可能能看到更多",
+                            title = s.account.artistEmptyTitle,
+                            message = state.error ?: s.account.artistEmptyNote,
                         )
                     }
                 }
                 if (!bundle.isArtist && bundle.playlists.isEmpty()) {
                     item {
                         ContentState(
-                            title = "TA 还没有公开的歌单",
+                            title = s.account.noPublicPlaylists,
                             message = state.error,
                         )
                     }
@@ -362,13 +369,14 @@ private fun UserProfileContent(
         // 两个入口（锚定菜单 / 底部弹层）共用同一个确认请求，文案只写一处。
         val askDelete: () -> Unit = {
             confirm.request(
-                title = if (owner) "删除歌单" else "取消收藏",
+                title = if (owner) s.library.deletePlaylist else s.library.unfavoritePlaylist,
                 message = if (owner) {
-                    "确定删除「${playlist.name}」吗？删除后无法恢复。"
+                    s.library.deletePlaylistMessage(playlist.name)
                 } else {
-                    "确定取消收藏「${playlist.name}」吗？之后仍可重新收藏。"
+                    s.library.unfavoritePlaylistMessage(playlist.name)
                 },
-                confirmLabel = if (owner) "删除" else "取消收藏",
+                // 与侧栏 / 歌单详情页同一条规则：删除用通用「确定」，取消收藏直接点出动作。
+                confirmLabel = if (owner) s.common.confirm else s.library.unfavoritePlaylist,
                 destructive = owner,
                 onConfirm = { playlistActions.deleteOrUnsubscribePlaylist(playlist) },
             )
@@ -448,6 +456,7 @@ private fun ProfileHero(
     isMe: Boolean,
     onOpenChat: (String) -> Unit,
 ) {
+    val s = cpStrings()
     Column(
         Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -455,7 +464,7 @@ private fun ProfileHero(
         ArtistAvatar(url = bundle.avatarUrl, size = 112.dp)
         Spacer(Modifier.height(14.dp))
         Text(
-            bundle.nickname.ifBlank { "未知用户" },
+            bundle.nickname.ifBlank { s.account.unknownUser },
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
@@ -480,12 +489,12 @@ private fun ProfileHero(
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
             if (bundle.isArtist) {
-                ProfileStat(bundle.primaryCount, "专辑")
-                ProfileStat(bundle.followeds, "粉丝")
+                ProfileStat(bundle.primaryCount, s.account.statAlbums)
+                ProfileStat(bundle.followeds, s.account.statFollowers)
             } else {
-                ProfileStat(bundle.primaryCount, "歌单")
-                ProfileStat(bundle.follows, "关注")
-                ProfileStat(bundle.followeds, "粉丝")
+                ProfileStat(bundle.primaryCount, s.account.statPlaylists)
+                ProfileStat(bundle.follows, s.account.statFollowing)
+                ProfileStat(bundle.followeds, s.account.statFollowers)
             }
         }
         // 自己的主页发不了私信给自己 —— 这个按钮必须消失，而不是点了报错。
@@ -494,7 +503,7 @@ private fun ProfileHero(
             TextButton(onClick = { onOpenChat(bundle.nickname) }) {
                 Icon(Icons.Filled.Email, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("发私信")
+                Text(s.account.sendMessage)
             }
         }
     }

@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cp.player.app.AppModel
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.CpSpacing
@@ -67,6 +68,7 @@ fun MessagesPane(
     val profile by AppModel.userProfileFlow.collectAsState()
     val loggedIn = profile != null
     val scope = rememberCoroutineScope()
+    val strings = cpStrings()
 
     // 当前选中的会话。刻意**不自动选第一个**：进消息面板先看到一句「选择左侧会话」，
     // 比替用户决定看谁的私信更合适（也和设置页宽屏一致）。
@@ -80,7 +82,7 @@ fun MessagesPane(
 
     LaunchedEffect(loggedIn) {
         if (loggedIn) {
-            model.load()
+            model.load(strings = strings)
             AppModel.refreshUnreadMessages()
         }
     }
@@ -110,7 +112,7 @@ fun MessagesPane(
                 selectedUserId = selected?.userId,
                 onOpenContact = openContact,
                 onSetNotify = { uid, enabled -> model.setNotifySubscribed(uid, enabled) },
-                onRetry = { model.load() },
+                onRetry = { model.load(strings = strings) },
                 modifier = listModifier,
             )
         }
@@ -129,8 +131,8 @@ fun MessagesPane(
                 val contact = selected
                 if (contact == null) {
                     ContentState(
-                        title = "选择左侧会话",
-                        message = "从左边挑一个联系人，右边就是和他的对话",
+                        title = strings.social.messages.selectConversation,
+                        message = strings.social.messages.selectConversationNote,
                         modifier = Modifier.align(Alignment.Center).padding(horizontal = 32.dp),
                     )
                 } else {
@@ -167,23 +169,27 @@ private fun ContactList(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 双栏左栏这一栏是窄的：未登录说明走 [accountBound] 那句短的，
+    // 整页那条 [loginRequiredNote] 在这里会折行成一坨。
+    val s = cpStrings()
+    val messages = s.social.messages
     when {
         !loggedIn -> ContentState(
-            title = "登录后查看私信",
-            message = "消息与账号绑定",
+            title = messages.loginRequired,
+            message = messages.accountBound,
             modifier = modifier.padding(top = 24.dp),
         )
         state.loading && state.contacts.isEmpty() -> ContentState(
-            title = "正在载入消息",
-            message = "正在从当前音源读取最近联系人",
+            title = messages.loading,
+            message = messages.loadingNote,
             loading = true,
             modifier = modifier,
         )
         state.contacts.isEmpty() -> ContentState(
-            title = "还没有消息",
-            message = state.error ?: "在歌手或用户主页点「发私信」就能开始聊天",
+            title = messages.empty,
+            message = state.error ?: messages.emptyHint,
             error = state.error != null,
-            actionLabel = if (state.error != null) "重试" else null,
+            actionLabel = if (state.error != null) s.player.retry else null,
             onAction = if (state.error != null) onRetry else null,
             modifier = modifier.padding(top = 24.dp),
         )
