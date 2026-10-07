@@ -54,7 +54,7 @@ coil = "3.6.3"
 # 调用方给的 `fallback` Brush（见 `CpFluidBackground` 的 KDoc）。
 hypnoticcanvas = "0.6.0"
 # Mozilla Rhino：纯 JVM 的 JavaScript 引擎，用于运行 Lyrico 格式的歌词源插件。
-# 选它而不是 QuickJS（Halcyon 用的 Android 专有 wrapper）是因为本仓库要 Android 与桌面
+# 选它而不是 Android 专有的 QuickJS wrapper 是因为本仓库要 Android 与桌面
 # **共用同一套宿主契约**，而 QuickJS 的 Android wrapper 在桌面 JVM 上不可用。
 # Rhino 支持插件实际用到的 ES5/ES2020 子集（globalThis / JSON / RegExp / Array 高阶函数）。
 # ⚠️ 版本需 ≥ 1.7.13 才有 globalThis；锁 1.7.15（1.7.x 线最后一个稳定版）。

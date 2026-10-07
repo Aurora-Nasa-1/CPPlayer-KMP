@@ -1,6 +1,6 @@
 /*
- * Ported from Halcyon (https://github.com/Kifranei/Halcyon) — Apache License 2.0.
- * Upstream: app/src/main/java/com/ella/music/plugin/runtime/HostApiRegistry.kt
+ * Based on the Lyrico Plugin API host contract (https://github.com/Replica0110/Lyrico) — Apache-2.0.
+ * Host contract reference: app/src/main/java/com/ella/music/plugin/runtime/HostApiRegistry.kt
  * Changes: package renamed to cp.player.core.lyricsplugin; the supported-API set was trimmed to
  *          the ops this host actually implements (see THIRD_PARTY_LICENSES.md).
  */

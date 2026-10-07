@@ -320,6 +320,15 @@ private fun RowSubtitle(text: String, color: Color) {
 }
 
 /** 行内容布局：`[leading] [title / subtitle / extra] [trailing]`。 */
+/**
+ * 行的内容布局：左侧图标 + 中间「标题 / 副标题」文字列 + 可选的行内控件 + 行尾控件。
+ *
+ * @param leadingTrailingContent 夹在**文字列与行尾控件之间**的额外控件（排序按钮这类）。
+ *   刻意渲染成「文字列 `weight(1f)` → 额外控件 → 行尾开关」的横向排布，
+ *   而不是把额外控件塞进文字列内部：塞进去它会落在副标题**下方**另起一行，
+ *   一行来源就横跨三四行（真实翻过车，见 `LyricsSourceRowActions` 的 KDoc）。
+ *   ⚠️ 额外控件必须**不给 weight**：给了它会把宽度从文字列那里抢走。
+ */
 @Composable
 private fun SettingsRowContent(
     leadingContent: (@Composable () -> Unit)?,
@@ -327,7 +336,7 @@ private fun SettingsRowContent(
     subtitle: String?,
     titleColor: Color,
     subtitleColor: Color,
-    extra: (@Composable ColumnScope.() -> Unit)? = null,
+    extra: (@Composable () -> Unit)? = null,
     trailingContent: (@Composable RowScope.() -> Unit)? = null,
 ) {
     Row(
@@ -341,8 +350,8 @@ private fun SettingsRowContent(
         Column(Modifier.weight(1f)) {
             RowTitle(title, titleColor)
             subtitle?.let { RowSubtitle(it, subtitleColor) }
-            extra?.invoke(this)
         }
+        extra?.invoke()
         trailingContent?.invoke(this)
     }
 }
@@ -437,6 +446,15 @@ fun SettingsClickItem(
  * （`toggleable` + `Role.Switch`），`Switch` 只负责画。
  *
  * 选中时拇指内嵌 `Check` —— 旧版靠它让「开」的状态在小尺寸下也能一眼看出来。
+ *
+ * @param leadingTrailingContent 放在**开关左边、文字右边**的额外控件（排序按钮这类）。
+ *   与 [SettingsClickItem] 的 `trailingContent` 不同，这里的行尾是开关，
+ *   额外控件只能挤在开关与文字之间。⚠️ 一旦传了它，整行**必须**关掉语义合并
+ *   （`mergeDescendants = false`），否则子按钮的点击动作会被并进父节点，
+ *   读屏用户再也点不到 —— 与 `mergeSemantics` 的那条约定是同一个道理。
+ *
+ *   ⚠️ **不要给里面的控件加 `weight`**：这一行里只有标题列可以吃剩余宽度，
+ *   额外控件跟着抢会把长副标题挤成竖排。
  */
 @Composable
 fun SettingsSwitchItem(
@@ -450,6 +468,7 @@ fun SettingsSwitchItem(
     icon: ImageVector? = null,
     enabled: Boolean = true,
     containerColor: Color = Color.Unspecified,
+    leadingTrailingContent: (@Composable () -> Unit)? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     // 按下时圆角从组内圆角(4dp)撑到容器圆角(20dp) —— 与 `LegacyListItem` 同源。
@@ -472,7 +491,7 @@ fun SettingsSwitchItem(
                 role = Role.Switch,
                 onValueChange = onCheckedChange,
             )
-            .semantics(mergeDescendants = true) {},
+            .semantics(mergeDescendants = leadingTrailingContent == null) {},
     ) {
         SettingsRowContent(
             leadingContent = icon?.let { img ->
@@ -482,6 +501,9 @@ fun SettingsSwitchItem(
             subtitle = subtitle,
             titleColor = MaterialTheme.colorScheme.onSurface,
             subtitleColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            // 额外控件排在开关**之前**：开关是这一行的主控件，位置必须稳定 ——
+            // 若随着排序按钮的有无左右浮动，同一页里各行的开关就参差不齐了。
+            extra = leadingTrailingContent,
             trailingContent = {
                 Switch(
                     checked = checked,

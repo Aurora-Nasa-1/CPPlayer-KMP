@@ -1,12 +1,16 @@
 package cp.player.app.ui.component
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableLongStateOf
@@ -26,6 +30,7 @@ import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeSyllable
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.KaraokeLyricsView
+import cp.player.app.i18n.cpStrings
 import cp.player.core.playback.LyricsState
 import cp.player.core.playback.PlaybackUiState
 
@@ -39,24 +44,36 @@ fun LyricContent(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(vertical = 60.dp, horizontal = 8.dp),
+    /** 无歌词时的换源入口（跳「歌词来源」页）。null = 不显示入口。 */
+    onChangeSource: (() -> Unit)? = null,
 ) {
     val lyricState = state.lyrics
     val lines = (lyricState as? LyricsState.Success)?.lines.orEmpty()
 
     if (lines.isEmpty()) {
+        val s = cpStrings()
         val label = when (lyricState) {
-            LyricsState.Loading -> "歌词加载中…"
-            LyricsState.NoLyrics -> "暂无歌词"
-            is LyricsState.Error -> "歌词获取失败：${lyricState.message}"
-            else -> "等待曲目开始播放后展示歌词"
+            LyricsState.Loading -> s.player.lyricsLoading
+            LyricsState.NoLyrics -> s.player.lyricsEmpty
+            is LyricsState.Error -> s.player.lyricsError(lyricState.message)
+            else -> s.player.lyricsIdle
         }
         Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-            Text(
-                label,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+                // 「没词」是用户最想换源的时刻：把换源入口放在这里，而不是让他回设置里翻。
+                if (lyricState is LyricsState.NoLyrics && onChangeSource != null) {
+                    Spacer(Modifier.height(12.dp))
+                    TextButton(onClick = onChangeSource) {
+                        Text(s.lyricsPlugin.changeSourceAction)
+                    }
+                }
+            }
         }
         return
     }

@@ -1,6 +1,6 @@
 /*
- * Ported from Halcyon (https://github.com/Kifranei/Halcyon) — Apache License 2.0.
- * Upstream: app/src/main/java/com/ella/music/plugin/source/PluginJsonParser.kt
+ * Based on the Lyrico Plugin API host contract (https://github.com/Replica0110/Lyrico) — Apache-2.0.
+ * Host contract reference: app/src/main/java/com/ella/music/plugin/source/PluginJsonParser.kt
  * Changes: package renamed; result conversion targets cp.player.core.playback.SyncedLyricLine and
  *          reuses this repo's TtmlParser / LyricsParser instead of upstream's own LRC writers;
  *          raw-lyric rendering back into LRC/TTML was dropped (not needed for this integration).

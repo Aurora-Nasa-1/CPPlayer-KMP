@@ -39,15 +39,40 @@ interface LyricsPluginService {
     /**
      * 用已启用的插件检索歌词。
      *
-     * 多插件并发检索，返回**第一个命中**的结果（按插件顺序）。
+     * 多插件**按顺序**检索，返回**第一个命中**的结果。
      * 无启用插件 / 全部未命中时返回 null。
+     *
+     * @deprecated 统一来源体系（`cp.player.core.lyrics`）改用 [fetchLyricsFrom] 逐个插件调用，
+     *   顺序由 `LyricsSourceRegistry` 决定。此方法保留给旧调用点与测试，不再由主链路使用。
      */
+    @Deprecated("Use fetchLyricsFrom with an explicit source id instead.")
     suspend fun fetchLyrics(
         title: String,
         artist: String,
         album: String,
         durationMs: Long = 0L,
     ): PluginLyricsOutcome?
+
+    /**
+     * 用**指定插件**检索歌词（统一来源体系的入口）。
+     *
+     * @return 命中结果；插件停用 / 未声明 `getLyrics` / 未命中时返回 null
+     */
+    suspend fun fetchLyricsFrom(
+        id: String,
+        title: String,
+        artist: String,
+        album: String,
+        durationMs: Long = 0L,
+    ): PluginLyricsOutcome?
+
+    /**
+     * [listSources] 的**同步**版本。
+     *
+     * 存在的理由：`FileLyricsSourceRegistry` 在构造期就要拿到插件清单（枚举顺序 / 能力），
+     * 而它的 `init` 不是挂起上下文。这是纯本地读文件 + 解析 manifest，不含网络与 JS 求值。
+     */
+    fun listSourcesSync(): List<LyricsPluginSourceInfo>
 
     /** 释放 JS 运行时与 HTTP 客户端。 */
     fun close()
@@ -63,6 +88,8 @@ data class LyricsPluginSourceInfo(
     val capabilities: Set<PluginCapability>,
     val enabled: Boolean,
     val bundled: Boolean,
+    /** manifest 里声明的自定义配置项（宿主渲染成表单）。 */
+    val configFields: List<PluginConfigField> = emptyList(),
 )
 
 /**

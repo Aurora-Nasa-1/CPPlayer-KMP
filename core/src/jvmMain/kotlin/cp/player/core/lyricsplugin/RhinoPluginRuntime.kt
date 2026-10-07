@@ -1,6 +1,6 @@
 /*
- * Ported from Halcyon (https://github.com/Kifranei/Halcyon) — Apache License 2.0.
- * Upstream: app/src/main/java/com/ella/music/plugin/runtime/PluginJsRuntime.kt
+ * Based on the Lyrico Plugin API host contract (https://github.com/Replica0110/Lyrico) — Apache-2.0.
+ * Host contract reference: app/src/main/java/com/ella/music/plugin/runtime/PluginJsRuntime.kt
  * Changes: the JS engine was swapped from Android-only quickjs-wrapper to Mozilla Rhino so the
  *          same host contract runs on both Android and Desktop JVM. The Lyrico host bootstrap and
  *          __invoke dispatcher are reproduced verbatim from upstream so existing plugins run
@@ -16,7 +16,7 @@ import org.mozilla.javascript.ScriptableObject
 
 /**
  * 宿主 → JS 的桥。插件通过 `__lyricoHostCall(name, payloadJson)` 调用宿主的 `Platform.*`。
- * 与 Lyrico / Halcyon 的契约一致。
+ * 与 Lyrico Plugin API 的契约一致。
  */
 interface PluginHostApi {
     fun call(name: String, payloadJson: String): String

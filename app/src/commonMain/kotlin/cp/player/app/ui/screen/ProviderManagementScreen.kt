@@ -43,6 +43,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.platform.rememberZipPicker
 import cp.player.app.platform.rememberZipSaver
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpRouteScaffold
@@ -306,9 +307,24 @@ private fun ProviderRow(
         onWriteTo = onExport,
     )
 
+    // 能力标签：只展示宿主**认识**且当前语言有译名的那些（见 CpStrings.capabilityLabel）。
+    // 未声明的音源（老包）这里就是空串，副标题与从前一模一样 —— 不能因为「没声明」
+    // 就写一句「不支持任何能力」，那是在替音源下结论（未声明 ≠ 不支持）。
+    val s = cpStrings()
+    val capabilityText = provider.capabilities.orEmpty()
+        .mapNotNull { s.player.capabilityLabel(it) }
+        .joinToString(" · ")
+    // API v1 是历史默认值，不显示（每个老包都是 v1，写出来只是噪声）；
+    // 只有真正用了新契约的音源才值得占这段字。
+    val apiText = if (provider.apiVersion > 1) " · API v${provider.apiVersion}" else ""
+    val subtitle = buildString {
+        append("${provider.type.name} · v${provider.version} · ${provider.id}$apiText")
+        if (capabilityText.isNotEmpty()) append("\n$capabilityText")
+    }
+
     SettingsClickItem(
         title = provider.name,
-        subtitle = "${provider.type.name} · v${provider.version} · ${provider.id}",
+        subtitle = subtitle,
         icon = Icons.Filled.FolderZip,
         index = index,
         total = total,

@@ -28,7 +28,9 @@ class HttpProvider(
     override val apiMap: Map<String, String>? = null,
     override val updateUrl: String? = null,
     override val targetAppPackage: String? = null,
-    override val loginMethods: List<String>? = null
+    override val loginMethods: List<String>? = null,
+    override val capabilities: List<String>? = null,
+    override val apiVersion: Int = 1
 ) : BackendProvider {
 
     override val type: ProviderType = ProviderType.HTTP

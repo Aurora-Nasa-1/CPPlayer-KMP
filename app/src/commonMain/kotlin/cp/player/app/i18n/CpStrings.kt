@@ -779,6 +779,18 @@ interface PlayerStrings {
     val clearQueue: String
     val more: String
 
+    // —— 歌词状态（播放页歌词区的空/加载/错误态） ——
+    val lyricsLoading: String
+    val lyricsEmpty: String
+    val lyricsIdle: String
+    /** @param message 失败原因（来自异常，可能本身就是英文/技术串） */
+    fun lyricsError(message: String): String
+
+    // —— 音源能力标签（音源管理页）——
+    // 映射 `ProviderCapability` 里的字符串常量。**必须按 key 查而不是按顺序取**：
+    // 能力列表来自外部 manifest，宿主不得假设顺序；用错位下标会让标签张冠李戴。
+    fun capabilityLabel(key: String): String?
+
     // —— 歌曲信息弹层 ——
     val songInfo: String
     val lyricInfo: String

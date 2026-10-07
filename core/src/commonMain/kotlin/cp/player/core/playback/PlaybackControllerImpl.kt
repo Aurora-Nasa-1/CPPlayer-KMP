@@ -87,6 +87,14 @@ class PlaybackControllerImpl(
      */
     private val lyricsPluginService: cp.player.core.lyricsplugin.LyricsPluginService? = null,
     /**
+     * 歌词来源注册表（统一来源体系，见 [cp.player.core.lyrics]）。
+     *
+     * 非 null 时**取词主链路走它**（`LyricsEngine`），顺序完全由用户的来源排序决定；
+     * 旧的 [amllClient] / [lyricsSourceMode] / [lyricsPluginService] 三件套退化为
+     * 「未装配注册表时的兜底路径」（既有测试与最小装配仍走老路，行为不变）。
+     */
+    private val lyricsSourceRegistry: cp.player.core.lyrics.LyricsSourceRegistry? = null,
+    /**
      * 淡入淡出的持久化存储。null = 不持久化（既有测试与最小装配路径保持零存储副作用）。
      *
      * 非空时构造期读回用户设置；设置页改完由前端 [setFade] 通知本类重读。
@@ -1053,6 +1061,33 @@ class PlaybackControllerImpl(
      * 本地歌曲没有音源歌词可回退：AMLL 落空即 [LyricsState.NoLyrics]。
      */
     private suspend fun fetchLyricsFor(
+        id: cp.player.core.music.CPMediaId,
+        entry: Entry?,
+    ): Pair<LyricsState, LyricsInfo?> {
+        // 统一来源体系：顺序由用户排序决定，首个命中即胜出。
+        lyricsSourceRegistry?.let { registry ->
+            val engine = cp.player.core.lyrics.LyricsEngine(registry)
+            val request = cp.player.core.lyrics.LyricsRequest(
+                mediaId = id,
+                title = entry?.summary?.name.orEmpty(),
+                artist = entry?.summary?.artist.orEmpty(),
+                album = entry?.summary?.album.orEmpty(),
+                durationMs = entry?.summary?.durationMs ?: 0L,
+                isLocal = id.providerId == "local",
+            )
+            return engine.resolveToState(request)
+        }
+        return fetchLyricsForLegacy(id, entry)
+    }
+
+    /**
+     * 旧回退链（无注册表时的兜底路径，行为与改造前逐字一致）。
+     *
+     * 保留它的理由：既有测试与最小装配（如 `PlaybackControllerImplTest`）不注入注册表，
+     * 若直接删掉这条路径，那些测试会在「没有来源可用」的空实现上全绿 —— 绿得没有意义。
+     * 组合根（`MusicBackend`）**总是**注入注册表，因此生产路径不会走到这里。
+     */
+    private suspend fun fetchLyricsForLegacy(
         id: cp.player.core.music.CPMediaId,
         entry: Entry?,
     ): Pair<LyricsState, LyricsInfo?> {

@@ -66,6 +66,8 @@ import cp.player.app.ui.component.TrackArtistText
 import cp.player.app.ui.component.cpFluidBackground
 import cp.player.app.ui.component.PlayerMoreSheets
 import cp.player.app.ui.component.rememberPlayerMoreSheetState
+// 这两个是本包的顶层函数（PlayerScreen.kt）：不用 import（同包），
+// 这里写注释而不是 import 是为了防止后来者以为漏了导入又加一条多余的 import。
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.util.SeekAvailability
 import cp.player.app.ui.util.formatTimeMs
@@ -109,6 +111,12 @@ fun DesktopPlayerScreen(
     val onArtistClick: ((cp.player.core.music.ArtistSummary) -> Unit)? = remember(navigator) {
         navigator?.let { nav ->
             { artist -> nav.pushOrNotify(UserProfileScreen(artist.id, artist.name)) }
+        }
+    }
+    // 「没歌词 → 换源」。与点歌手同一契约：拿不到 Navigator 就不显示入口。
+    val onChangeLyricsSource: (() -> Unit)? = remember(navigator) {
+        navigator?.let { nav ->
+            { nav.pushOrNotify(cp.player.app.ui.screen.LyricsPluginSettingsScreen()) }
         }
     }
     // 「更多」弹层的开关状态 + 共享宿主（动作实现唯一一份，见 PlayerMoreSheets）。
@@ -291,7 +299,13 @@ fun DesktopPlayerScreen(
                         Spacer(Modifier.height(16.dp))
                         when (selectedTab) {
                             0 -> QueueContent(state, scope, onPlayAt)
-                            1 -> DesktopLyricsContent(state, onSeek, onRepeat, onLike)
+                            1 -> DesktopLyricsContent(
+                                state = state,
+                                onSeek = onSeek,
+                                onRepeat = onRepeat,
+                                onLikeClick = onLike,
+                                onChangeSource = onChangeLyricsSource,
+                            )
                             2 -> DesktopCommentContent(track.id)
                             else -> SimilarSongsPanel(track.id)
                         }
@@ -299,6 +313,7 @@ fun DesktopPlayerScreen(
                 }
             }
         }
+
     }
 
     // 「更多」弹层 + 二级弹窗宿主：与窄屏播放页共用同一组件（PlayerMoreSheets）。

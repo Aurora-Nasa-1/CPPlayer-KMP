@@ -9,10 +9,20 @@ import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.ui.component.SettingsNote
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ClosedCaption
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -276,18 +286,13 @@ class SettingsI18nPreviewTest {
                 )
             }
             SettingsSection(s.playback.sectionLyrics) {
-                SettingsDropdownItem(
+                // 三档下拉已废弃：现在这里是一行跳转到「歌词来源」页。
+                SettingsClickItem(
                     title = s.playback.lyricsSource,
                     subtitle = s.playback.lyricsSourceNote,
-                    options = listOf(
-                        s.playback.lyricsProviderOnly,
-                        s.playback.lyricsAmllFirst,
-                        s.playback.lyricsAmllOnly,
-                    ),
-                    selectedIndex = 1,
-                    onSelect = {},
                     index = 0,
                     total = 1,
+                    onClick = {},
                 )
             }
             SettingsSection(s.playback.sectionSleepTimer) {
@@ -707,6 +712,98 @@ class SettingsI18nPreviewTest {
         }
     }
 
+    /**
+     * 歌词来源页的**真实文案**。
+     *
+     * 单独出图的理由：这一页最容易挤爆。
+     * - 副标题本就最长（内置来源是「说明句 ＋ 停用后缀」，第三方是「作者 · 版本 — 能力标签」）；
+     * - 排序/删除按钮**收在卡片内部**（开关左侧），主标题与副标题因此只剩更窄的一条 ——
+     *   英文窄屏下这是全仓最挤的行之一。
+     *
+     * ⚠️ 出图必须覆盖「有删除按钮」的那条（第三方来源三枚按钮）与
+     * 「只有上下移」的那条（内置来源两枚）：按钮数量不同，标题让出的宽度也不同。
+     */
+    @Composable
+    private fun LyricsSourcesPage() {
+        val t = cpStrings().lyricsPlugin
+        ScrollColumn(Modifier.fillMaxSize()) {
+            SettingsNote(t.note)
+            SettingsNote(t.orderNote)
+            entries.forEachIndexed { index, entry ->
+                SettingsSwitchItem(
+                    title = entry.title,
+                    subtitle = entry.subtitle,
+                    checked = entry.enabled,
+                    onCheckedChange = {},
+                    index = index,
+                    total = entries.size,
+                    icon = Icons.Filled.ClosedCaption,
+                    leadingTrailingContent = {
+                        SettingsRowIconButtonPreview(Icons.Filled.KeyboardArrowUp, enabled = index > 0)
+                        SettingsRowIconButtonPreview(Icons.Filled.KeyboardArrowDown)
+                        if (entry.removable) {
+                            SettingsRowIconButtonPreview(Icons.Filled.DeleteOutline, errorTint = true)
+                        }
+                    },
+                )
+            }
+            SettingsButtonItem(
+                text = t.importAction,
+                onClick = {},
+                index = 0,
+                total = 1,
+                icon = Icons.Filled.FileUpload,
+            )
+        }
+    }
+
+    /** 预览用的行内小图标按钮（与页面实现同尺寸同色，但不接受点击）。 */
+    @Composable
+    private fun SettingsRowIconButtonPreview(
+        icon: ImageVector,
+        enabled: Boolean = true,
+        errorTint: Boolean = false,
+    ) {
+        IconButton(onClick = {}, enabled = enabled, modifier = Modifier.size(40.dp)) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (errorTint) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+
+    /** 预览用的一行来源（名称 / 副标题直接取文案层的成品字符串）。 */
+    private data class PreviewEntry(
+        val title: String,
+        val subtitle: String,
+        val enabled: Boolean,
+        /** 第三方才有删除按钮 —— 按钮数量会改变标题可用宽度，出图必须两种都覆盖。 */
+        val removable: Boolean = false,
+    )
+
+    private val entries: List<PreviewEntry>
+        @Composable get() {
+            val t = cpStrings().lyricsPlugin
+            return listOf(
+                PreviewEntry(t.builtinSidecar, "${t.bundledBadge} — ${t.builtinSidecarNote}", true),
+                PreviewEntry(t.builtinAmll, "${t.bundledBadge} — ${t.builtinAmllNote}", true),
+                PreviewEntry(
+                    "LunaBeat TTML Hub",
+                    "LunaBeat · v1.0.0 — ${t.capabilitySearchSongs} / ${t.capabilityGetLyrics}",
+                    true,
+                    removable = true,
+                ),
+                PreviewEntry(
+                    t.builtinProvider,
+                    "${t.bundledBadge} — ${t.builtinProviderNote} · ${t.disabledHint}",
+                    false,
+                ),
+            )
+        }
+
     @Test
     fun renderBothLanguages() {
         AppLanguage.entries
@@ -750,6 +847,9 @@ class SettingsI18nPreviewTest {
                     // 音效页：全仓行数最多的设置页（5 段 × 2 滑杆 + 三类开关），
                     // 且每条滑杆都有读数 —— 英文下最容易挤爆，必须出图。
                     "audio_effect" to @Composable { AudioEffectPage() },
+                    // 歌词来源页：副标题最长（内置说明句 / 作者·版本·四个能力标签），
+                    // 英文窄屏最容易挤爆。
+                    "lyrics_sources" to @Composable { LyricsSourcesPage() },
                     // 睡眠定时弹窗：两个态都要 —— 「未启用」时不渲染取消按钮，
                     // 那个按钮是 error 色的破坏性动作，英文下最容易挤爆。
                     "timer-active" to @Composable { SleepTimerDialogContent(active = true) },

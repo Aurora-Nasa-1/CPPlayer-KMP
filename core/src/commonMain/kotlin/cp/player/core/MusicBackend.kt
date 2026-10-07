@@ -336,9 +336,28 @@ class MusicBackend private constructor(
             // 歌词源插件（Lyrico Plugin API）：作为 AMLL 与音源之后的最后兜底。
             // 只有用户显式启用插件后才会联网，未启用用户行为不变。
             lyricsPluginService = lyricsPlugins,
+            // 统一来源体系：顺序由用户的来源排序决定（取代 lyricsSourceMode 三档）。
+            // 装配了它，取词主链路就走 LyricsEngine；上面三件套只在未装配时兜底。
+            lyricsSourceRegistry = lyricsSourceRegistry,
             // 淡入淡出：构造期读回用户设置（必须在第一次播放前就位，
             // 否则「启动即自动播放」那首会漏掉淡入）。
             fadeSettings = settings,
+        )
+    }
+
+    /**
+     * 歌词来源注册表（统一来源体系）。
+     *
+     * 惰性创建；`sources.json` 落在 `dataDir/lyrics-sources/`。
+     * 构造期会做一次从 `lyrics_source_mode` 的迁移（只在 `sources.json` 缺失时发生）。
+     */
+    val lyricsSourceRegistry: cp.player.core.lyrics.LyricsSourceRegistry by lazy {
+        cp.player.core.lyrics.createLyricsSourceRegistry(
+            context = context,
+            plugins = lyricsPlugins,
+            amllClient = amllClientLazy.value,
+            api = musicApiImpl,
+            legacySettings = settings,
         )
     }
 

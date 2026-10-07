@@ -1,6 +1,6 @@
 /*
- * Ported from Halcyon (https://github.com/Kifranei/Halcyon) — Apache License 2.0.
- * Upstream: app/src/main/java/com/ella/music/plugin/source/PluginSourceModels.kt
+ * Based on the Lyrico Plugin API host contract (https://github.com/Replica0110/Lyrico) — Apache-2.0.
+ * Host contract reference: app/src/main/java/com/ella/music/plugin/source/PluginSourceModels.kt
  * Changes: package renamed to cp.player.core.lyricsplugin; Android File type replaced by a
  *          platform-neutral cache dir path; see THIRD_PARTY_LICENSES.md.
  */

@@ -622,6 +622,23 @@ object CpStringsZh : CpStrings {
         override val clearQueue = "清空队列"
         override val more = "更多"
 
+        override val lyricsLoading = "歌词加载中…"
+        override val lyricsEmpty = "暂无歌词"
+        override val lyricsIdle = "等待曲目开始播放后展示歌词"
+        override fun lyricsError(message: String) = "歌词获取失败：$message"
+
+        override fun capabilityLabel(key: String): String? = when (key) {
+            "qrLogin" -> "扫码登录"
+            "wordSyncedLyrics" -> "逐字歌词"
+            "comments" -> "评论"
+            "cloudDrive" -> "云盘"
+            "recommend" -> "个性推荐"
+            "lyricsSearch" -> "搜索歌词"
+            // 未识别的能力返回 null（调用方跳过）——**不要回落到 key 本身**，
+            // 那会把 `wordSyncedLyrics` 这种内部标识直接甩给用户看。
+            else -> null
+        }
+
         override val songInfo = "歌曲信息"
         override val lyricInfo = "歌词信息"
         override val audioFormat = "音频格式"

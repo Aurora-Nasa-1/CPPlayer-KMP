@@ -277,6 +277,14 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
         }
     }
 
+    // 「没歌词 → 换源」。与点歌手同一契约：拿不到 Navigator 就不显示入口
+    // （宁可没有按钮，也不要一个点了没反应的按钮）。
+    val onChangeLyricsSource: (() -> Unit)? = remember(navigator) {
+        navigator?.let { nav ->
+            { nav.pushOrNotify(cp.player.app.ui.screen.LyricsPluginSettingsScreen()) }
+        }
+    }
+
     // Pager 四页：0=歌词，1=播放器，2=评论，3=相似歌曲
     val pagerState = rememberPagerState(initialPage = 1) { 4 }
     val scope = rememberCoroutineScope()
@@ -508,6 +516,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                 onRepeat = onRepeat,
                                 isFavorite = state.isFavorite,
                                 onLikeClick = { playerScope.launch { controller.toggleFavorite() } },
+                                onChangeSource = onChangeLyricsSource,
                             )
                             1 -> PlayerPage(
                                 state = state,
@@ -568,6 +577,7 @@ private fun LyricsPage(
     onRepeat: () -> Unit,
     isFavorite: Boolean,
     onLikeClick: () -> Unit,
+    onChangeSource: (() -> Unit)? = null,
 ) {
     val s = cpStrings()
     Column(
@@ -579,6 +589,7 @@ private fun LyricsPage(
                 state = state,
                 showTranslation = showTranslation,
                 onSeek = onSeek,
+                onChangeSource = onChangeSource,
             )
         }
         // 浮动胶囊：**按内容宽度**收口并居中，而不是铺满整宽。
@@ -1002,6 +1013,7 @@ fun DesktopLyricsContent(
     onSeek: (Long) -> Unit,
     onRepeat: () -> Unit,
     onLikeClick: () -> Unit,
+    onChangeSource: (() -> Unit)? = null,
 ) {
     LyricsPage(
         state = state,
@@ -1010,6 +1022,7 @@ fun DesktopLyricsContent(
         onRepeat = onRepeat,
         isFavorite = state.isFavorite,
         onLikeClick = onLikeClick,
+        onChangeSource = onChangeSource,
     )
 }
 

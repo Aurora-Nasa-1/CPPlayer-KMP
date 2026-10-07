@@ -15,6 +15,25 @@ interface LyricsPluginStrings {
     val screenTitle: String
     val note: String
 
+    // —— 排序与来源（统一来源体系） ——
+    /** 排序区说明：讲清「顺序就是优先级」。 */
+    val orderNote: String
+    /** 上移 / 下移（Android 与桌面都可以用；桌面另有拖拽）。 */
+    val moveUp: String
+    val moveDown: String
+    /** 已停用的来源行的说明后缀。 */
+    val disabledHint: String
+    /** 内置来源的展示名（`localizeName = true` 时按 id 查）。 */
+    val builtinSidecar: String
+    val builtinAmll: String
+    val builtinProvider: String
+    /** 内置来源的副标题。 */
+    val builtinSidecarNote: String
+    val builtinAmllNote: String
+    val builtinProviderNote: String
+    /** 播放页无歌词时的换源入口文案。 */
+    val changeSourceAction: String
+
     // —— 导入 ——
     val importAction: String
     val importSuccess: String
@@ -33,6 +52,7 @@ interface LyricsPluginStrings {
     val capabilitySearchSongs: String
     val capabilityGetLyrics: String
     val capabilitySearchCovers: String
+    val capabilityLookupById: String
 
     // —— 删除 ——
     val deleteAction: String
@@ -42,20 +62,33 @@ interface LyricsPluginStrings {
 }
 
 object LyricsPluginStringsZh : LyricsPluginStrings {
-    override val entryTitle = "歌词源插件"
-    override val entrySubtitle = "导入第三方歌词源（兼容 Lyrico 插件）"
+    override val entryTitle = "歌词来源"
+    override val entrySubtitle = "排序与启用歌词来源（内置 + 插件）"
 
-    override val screenTitle = "歌词源插件"
+    override val screenTitle = "歌词来源"
     override val note =
-        "插件遵循 Lyrico Plugin API，按该规范编写的插件可直接导入。" +
-            "启用后会在官方词库与音源歌词都拿不到时参与取词。插件只在你启用后才会联网。"
+        "歌词按下面的顺序查找，第一个命中的来源生效。" +
+            "内置来源随应用提供；插件遵循 Lyrico Plugin API，按该规范编写的插件可直接导入。" +
+            "插件只在你启用后才会联网。"
 
-    override val importAction = "导入插件（zip）"
+    override val orderNote = "拖动或使用箭头调整顺序；关闭的来源不参与查找。"
+    override val moveUp = "上移"
+    override val moveDown = "下移"
+    override val disabledHint = "已停用"
+    override val builtinSidecar = "本地边车歌词"
+    override val builtinAmll = "AMLL 官方词库"
+    override val builtinProvider = "音源自带歌词"
+    override val builtinSidecarNote = "音频同目录的 .lrc / .ttml / .elrc"
+    override val builtinAmllNote = "api.amll.dev · 逐字 TTML"
+    override val builtinProviderNote = "当前音源的 lyric/new · 逐字 YRC"
+    override val changeSourceAction = "换个歌词来源"
+
+    override val importAction = "导入歌词源插件（zip）"
     override val importSuccess = "导入成功"
     override fun importSuccessCount(count: Int) = "已导入 $count 个插件"
     override val importFailed = "导入失败：文件不是有效的插件包"
 
-    override val emptyTitle = "还没有歌词源插件"
+    override val emptyTitle = "还没有歌词来源"
     override val emptyMessage = "导入一个 zip 插件包即可扩展歌词来源"
     override val bundledBadge = "内置"
     override val enabled = "已启用"
@@ -64,6 +97,7 @@ object LyricsPluginStringsZh : LyricsPluginStrings {
     override val capabilitySearchSongs = "搜索歌曲"
     override val capabilityGetLyrics = "获取歌词"
     override val capabilitySearchCovers = "搜索封面"
+    override val capabilityLookupById = "按 ID 精确定位"
 
     override val deleteAction = "删除插件"
     override val deleteConfirmTitle = "删除这个插件？"
@@ -71,21 +105,34 @@ object LyricsPluginStringsZh : LyricsPluginStrings {
 }
 
 object LyricsPluginStringsEn : LyricsPluginStrings {
-    override val entryTitle = "Lyric source plugins"
-    override val entrySubtitle = "Import third-party lyric sources (Lyrico-compatible)"
+    override val entryTitle = "Lyric sources"
+    override val entrySubtitle = "Order and toggle lyric sources (built-in + plugins)"
 
-    override val screenTitle = "Lyric source plugins"
+    override val screenTitle = "Lyric sources"
     override val note =
-        "Plugins follow the Lyrico Plugin API, so any plugin written to that spec can be imported. " +
-            "Once enabled they are consulted only when neither the official TTML database nor the " +
-            "provider returns lyrics. A plugin only reaches the network after you enable it."
+        "Lyrics are looked up in the order below; the first source that matches wins. " +
+            "Built-in sources ship with the app; plugins follow the Lyrico Plugin API and any plugin " +
+            "written to that spec can be imported. A plugin only reaches the network after you enable it."
 
-    override val importAction = "Import plugin (zip)"
+    override val orderNote =
+        "Drag or use the arrows to reorder. Disabled sources are skipped during lookup."
+    override val moveUp = "Move up"
+    override val moveDown = "Move down"
+    override val disabledHint = "Disabled"
+    override val builtinSidecar = "Local sidecar lyrics"
+    override val builtinAmll = "AMLL official database"
+    override val builtinProvider = "Provider lyrics"
+    override val builtinSidecarNote = "Same-folder .lrc / .ttml / .elrc next to the audio"
+    override val builtinAmllNote = "api.amll.dev · word-level TTML"
+    override val builtinProviderNote = "Current provider's lyric/new · word-level YRC"
+    override val changeSourceAction = "Change lyric source"
+
+    override val importAction = "Import lyric plugin (zip)"
     override val importSuccess = "Imported"
     override fun importSuccessCount(count: Int) = "Imported $count plugin(s)"
     override val importFailed = "Import failed: not a valid plugin package"
 
-    override val emptyTitle = "No lyric source plugins yet"
+    override val emptyTitle = "No lyric sources yet"
     override val emptyMessage = "Import a plugin zip to add more lyric sources"
     override val bundledBadge = "Built-in"
     override val enabled = "Enabled"
@@ -94,6 +141,7 @@ object LyricsPluginStringsEn : LyricsPluginStrings {
     override val capabilitySearchSongs = "Search songs"
     override val capabilityGetLyrics = "Fetch lyrics"
     override val capabilitySearchCovers = "Search covers"
+    override val capabilityLookupById = "Exact lookup by ID"
 
     override val deleteAction = "Delete plugin"
     override val deleteConfirmTitle = "Delete this plugin?"

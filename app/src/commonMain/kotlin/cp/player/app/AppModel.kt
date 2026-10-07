@@ -795,6 +795,15 @@ object AppModel {
         _lyricsSourceMode.value = mode
     }
 
+    /**
+     * 歌词来源注册表（统一来源体系）。
+     *
+     * 取代 [lyricsSourceMode] 成为**取词顺序的唯一事实源**：内置三源（边车 / AMLL / 音源）
+     * 与第三方插件在同一个可排序列表里。旧模式键只在首次迁移时被读一次。
+     */
+    val lyricsSources: cp.player.core.lyrics.LyricsSourceRegistry
+        get() = backend.lyricsSourceRegistry
+
     // ============ 桌面快捷键（持久化，桌面端消费） ============
     //
     // 动作清单与默认键位全部声明在 `cp.player.app.shortcut.ShortcutAction`，这里只管三件事：

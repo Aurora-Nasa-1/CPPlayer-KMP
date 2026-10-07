@@ -122,6 +122,15 @@ class ModuleManager(
                 lastLoadError = "模块包不匹配：包内 id 为 ${manifest.id}，无法更新 $expectedId"
                 return false
             }
+            // API 版本闸门：包声明的最低宿主版本高于本宿主 ⇒ 拒绝，且必须**明确说原因**。
+            // 放行的话会以旧代码执行新契约，失败点落在插件内部，用户只会看到「这个音源坏了」。
+            // 判据只用 minHostApiVersion（不是 apiVersion）—— 见 ModuleManifest 的 KDoc。
+            if (!manifest.isLoadable) {
+                PlatformSupport.deleteRecursively(tempDir)
+                lastLoadError = "此音源需要更高版本的应用" +
+                    "（需要 API ${manifest.resolvedMinHostApiVersion}，当前支持 ${HOST_PROVIDER_API_VERSION}）"
+                return false
+            }
             val targetDir = "$modulesDir/${manifest.id}"
             // 旧目录清理失败（典型：Windows 上活跃 jni 模块的 dll 被占用）必须中止，
             // 否则 moveDir 语义未定义、旧文件半新半旧。
@@ -154,6 +163,13 @@ class ModuleManager(
                 ModuleManifest.serializer(),
                 PlatformSupport.readTextFile(manifestPath) ?: ""
             )
+            // 与导入路径同一道闸门。为什么必须在**加载**处也判一次：应用降级安装
+            // （用户回退到旧版本）时，modules 目录里已经躺着新契约的包，从没走过 importZip。
+            if (!manifest.isLoadable) {
+                lastLoadError = "此音源需要更高版本的应用" +
+                    "（需要 API ${manifest.resolvedMinHostApiVersion}，当前支持 ${HOST_PROVIDER_API_VERSION}）"
+                return false
+            }
             val provider = ProviderFactory.create(manifest, dir)
             if (provider == null) {
                 val reason = when (manifest.type) {

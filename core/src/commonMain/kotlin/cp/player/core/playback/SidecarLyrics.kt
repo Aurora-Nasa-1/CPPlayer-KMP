@@ -25,8 +25,6 @@ import cp.player.core.util.PlatformSupport
  */
 internal object SidecarLyrics {
 
-    private val EXTENSIONS = listOf("lrc", "ttml", "elrc")
-
     /**
      * 尝试从音频文件同目录加载边车歌词。
      *
@@ -34,6 +32,27 @@ internal object SidecarLyrics {
      * @return 命中的歌词与来源信息；没有边车文件或解析不出内容时返回 null
      */
     fun load(audioPath: String): Pair<LyricsState, LyricsInfo>? {
+        val hit = SidecarLyricLoader.load(audioPath) ?: return null
+        return LyricsState.Success(hit.first) to hit.second
+    }
+}
+
+/**
+ * 边车歌词的**纯加载器**（只出行级结果，不碰 [LyricsState] / [LyricsInfo]）。
+ *
+ * 拆出来是为了让统一来源体系（`cp.player.core.lyrics.SidecarLyricsSource`）复用同一份
+ * 「找同目录同名文件 + 按扩展名分派解析器」的逻辑 —— 两份实现必然漂移，而这里最容易漂移的
+ * 恰是**大小写双试**与 **content:// 跳过**这两个边界判据。
+ */
+internal object SidecarLyricLoader {
+
+    private val EXTENSIONS = listOf("lrc", "ttml", "elrc")
+
+    /**
+     * @param audioPath 音频文件绝对路径（即 `CPMediaId.resourceId`）
+     * @return `行列表 to 来源信息`；没有边车文件或解析不出内容时返回 null
+     */
+    fun load(audioPath: String): Pair<List<SyncedLyricLine>, LyricsInfo>? {
         if (audioPath.isBlank()) return null
         // content:// / 其他带 scheme 的 URI：没有可拼接的目录路径。
         if (audioPath.contains("://")) return null
@@ -53,7 +72,7 @@ internal object SidecarLyrics {
                 // 没有词级标签时会退化成行级，与 parseLrc 结果一致，因此统一走它。
                 val lines = if (extension == "ttml") TtmlParser.parse(raw) else LyricsParser.parseEnhancedLrc(raw)
                 if (lines.isEmpty()) continue
-                return LyricsState.Success(lines) to LyricsInfo(
+                return lines to LyricsInfo(
                     source = "Sidecar .$extension",
                     format = extension.uppercase(),
                     hasWordLevel = lines.any { it.words.isNotEmpty() },

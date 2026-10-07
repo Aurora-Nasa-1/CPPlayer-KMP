@@ -681,6 +681,21 @@ object CpStringsEn : CpStrings {
         override val clearQueue = "Clear queue"
         override val more = "More"
 
+        override val lyricsLoading = "Loading lyrics…"
+        override val lyricsEmpty = "No lyrics"
+        override val lyricsIdle = "Lyrics appear once the track starts playing"
+        override fun lyricsError(message: String) = "Failed to load lyrics: $message"
+
+        override fun capabilityLabel(key: String): String? = when (key) {
+            "qrLogin" -> "QR sign-in"
+            "wordSyncedLyrics" -> "Word-level lyrics"
+            "comments" -> "Comments"
+            "cloudDrive" -> "Cloud drive"
+            "recommend" -> "Recommendations"
+            "lyricsSearch" -> "Lyrics search"
+            else -> null
+        }
+
         override val songInfo = "Track info"
         override val lyricInfo = "Lyrics info"
         override val audioFormat = "Audio format"

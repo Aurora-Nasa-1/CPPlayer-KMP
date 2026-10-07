@@ -65,6 +65,24 @@ interface BackendProvider {
     val loginMethods: List<String>? get() = null
 
     /**
+     * 音源声称支持的能力（见 [ProviderCapability]），可选。
+     *
+     * null = 未声明。**未声明不等于不支持** —— 能力只用于展示与解释，
+     * 不参与功能开关（否则每个老音源都会瞬间「少一堆功能」）。
+     * 内置 Provider 可以不给（返回 null）；外部模块由 manifest 带入，
+     * 并经 [PlatformSupport] 侧的 [ModuleManifest.knownCapabilities] 过滤。
+     *
+     * 带默认实现：`core` 接口新增成员必须给默认实现（见 AGENTS.md）。
+     */
+    val capabilities: List<String>? get() = null
+
+    /**
+     * 音源实现的插件 API 版本（缺省 1，见 [HOST_PROVIDER_API_VERSION]）。
+     * 同样给默认实现以保持所有既有实现类可编译。
+     */
+    val apiVersion: Int get() = 1
+
+    /**
      * 启动 Provider 服务。
      *
      * 对于 BinaryProvider，会启动可执行文件；

@@ -1,6 +1,6 @@
 /*
- * Ported from Halcyon (https://github.com/Kifranei/Halcyon) — Apache License 2.0.
- * Upstream: app/src/main/java/com/ella/music/plugin/runtime/QuickJsHostApi.kt
+ * Based on the Lyrico Plugin API host contract (https://github.com/Replica0110/Lyrico) — Apache-2.0.
+ * Host contract reference: app/src/main/java/com/ella/music/plugin/runtime/QuickJsHostApi.kt
  * Changes: package renamed; OkHttp replaced by java.net.HttpURLConnection (no extra dependency,
  *          works on both Android and Desktop JVM); Android Base64/Log replaced by java.util.Base64
  *          and a pluggable log sink; AES + XML host calls omitted (see HostApiRegistry).

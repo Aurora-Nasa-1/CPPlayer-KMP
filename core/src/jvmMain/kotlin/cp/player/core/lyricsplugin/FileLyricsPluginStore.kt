@@ -1,6 +1,6 @@
 /*
- * Ported from Halcyon (https://github.com/Kifranei/Halcyon) — Apache License 2.0.
- * Upstream: app/src/main/java/com/ella/music/plugin/source/CustomPluginStore.kt
+ * Based on the Lyrico Plugin API host contract (https://github.com/Replica0110/Lyrico) — Apache-2.0.
+ * Host contract reference: app/src/main/java/com/ella/music/plugin/source/CustomPluginStore.kt
  * Changes: Android Context/assets replaced by a plain root directory + classpath resources;
  *          enabled-state and plugin config moved into a single state.json; i18n dropped.
  *          See THIRD_PARTY_LICENSES.md.

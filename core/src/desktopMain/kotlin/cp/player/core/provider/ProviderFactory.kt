@@ -9,6 +9,8 @@ actual fun createJniProvider(manifest: ModuleManifest, soPath: String): BackendP
         apiMap = manifest.apiMap,
         updateUrl = manifest.updateUrl,
         targetAppPackage = manifest.targetAppPackage,
-        loginMethods = manifest.loginMethods
+        loginMethods = manifest.loginMethods,
+        capabilities = manifest.knownCapabilities.ifEmpty { null },
+        apiVersion = manifest.resolvedApiVersion,
     )
 }

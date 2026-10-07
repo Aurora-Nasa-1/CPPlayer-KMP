@@ -2,6 +2,7 @@ package cp.player.app.ui.screen
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -54,7 +55,6 @@ class PlaybackSettingsScreen : Screen {
         val s = cpStrings()
         val quality by AppModel.playbackQualityFlow.collectAsState()
         val meteredQuality by AppModel.meteredPlaybackQualityFlow.collectAsState()
-        val lyricsMode by AppModel.lyricsSourceModeFlow.collectAsState()
         val keepLastPlayback by AppModel.keepLastPlaybackFlow.collectAsState()
         val playbackState by AppModel.playback.state.collectAsState()
         // 淡入淡出配置：拖动滑杆时只改本地 draft，松手才提交（与音效页同一节奏，
@@ -69,14 +69,6 @@ class PlaybackSettingsScreen : Screen {
         // 移动数据音质只在 Android 有意义：桌面端没有计费网络概念，恒走默认音质。
         val showMeteredQuality = isAndroidPlatform()
         val qualityLabels = AppModel.qualityLevels.map { s.quality.labelOf(it) }
-
-        // 歌词来源三档（对齐旧版 CPPlayer）：key 顺序即下拉顺序
-        val lyricsModeOptions = listOf(
-            cp.player.core.api.LyricsSourceMode.PROVIDER_ONLY to s.playback.lyricsProviderOnly,
-            cp.player.core.api.LyricsSourceMode.AMLL_FIRST to s.playback.lyricsAmllFirst,
-            cp.player.core.api.LyricsSourceMode.AMLL_ONLY to s.playback.lyricsAmllOnly,
-        )
-        val lyricsModeIndex = lyricsModeOptions.indexOfFirst { it.first == lyricsMode }.coerceAtLeast(0)
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
             SettingsPage(pageModifier) {
@@ -156,18 +148,16 @@ class PlaybackSettingsScreen : Screen {
                     )
                 }
                 SettingsSection(s.playback.sectionLyrics) {
-                    SettingsDropdownItem(
+                    // 三档下拉已废弃：来源顺序改由「歌词来源」页的**有序列表**表达
+                    // （内置三源 + 插件可混排）。这里保留一行跳转而不是删掉整个分段 ——
+                    // 「播放与音质」是用户找歌词设置的主入口，直接删会让人以为功能没了。
+                    SettingsClickItem(
                         title = s.playback.lyricsSource,
                         subtitle = s.playback.lyricsSourceNote,
-                        options = lyricsModeOptions.map { it.second },
-                        selectedIndex = lyricsModeIndex,
-                        onSelect = { index ->
-                            lyricsModeOptions.getOrNull(index)?.let { (mode, _) ->
-                                AppModel.setLyricsSourceMode(mode)
-                            }
-                        },
+                        icon = Icons.Filled.ClosedCaption,
                         index = 0,
                         total = 1,
+                        onClick = { navigator.push(LyricsPluginSettingsScreen()) },
                     )
                 }
                 SettingsSection(s.playback.sectionSleepTimer) {

@@ -45,8 +45,12 @@ class LyricoLyricsPluginService(
         }
 
     override suspend fun listSources(): List<LyricsPluginSourceInfo> = withContext(Dispatchers.IO) {
+        listSourcesSync()
+    }
+
+    override fun listSourcesSync(): List<LyricsPluginSourceInfo> {
         val enabled = store.enabledIds()
-        store.loadSources().map { source ->
+        return store.loadSources().map { source ->
             LyricsPluginSourceInfo(
                 id = source.manifest.id,
                 name = source.manifest.name,
@@ -56,6 +60,7 @@ class LyricoLyricsPluginService(
                 capabilities = source.manifest.capabilities.ifEmpty { setOf(PluginCapability.SEARCH_SONGS) },
                 enabled = source.manifest.id in enabled,
                 bundled = source.bundled,
+                configFields = source.manifest.configFields,
             )
         }
     }
@@ -83,6 +88,7 @@ class LyricoLyricsPluginService(
         store.setConfigValue(id, key, value)
     }
 
+    @Deprecated("Use fetchLyricsFrom with an explicit source id instead.")
     override suspend fun fetchLyrics(
         title: String,
         artist: String,
@@ -108,6 +114,30 @@ class LyricoLyricsPluginService(
             if (outcome != null) return@withContext outcome
         }
         null
+    }
+
+    /**
+     * 指定插件取词 —— 统一来源体系的入口。
+     *
+     * 与 [fetchLyrics] 的差别：**只试一个插件**，不再内部遍历。
+     * 顺序由 `LyricsSourceRegistry` 决定，插件服务回归「执行单个插件」的单一职责。
+     */
+    override suspend fun fetchLyricsFrom(
+        id: String,
+        title: String,
+        artist: String,
+        album: String,
+        durationMs: Long,
+    ): PluginLyricsOutcome? = withContext(dispatcher) {
+        if (title.isBlank()) return@withContext null
+        val source = store.loadSources().firstOrNull { it.manifest.id == id } ?: return@withContext null
+        val capabilities = source.manifest.capabilities.ifEmpty { setOf(PluginCapability.SEARCH_SONGS) }
+        if (PluginCapability.GET_LYRICS !in capabilities) return@withContext null
+        val keyword = listOf(title, artist).filter { it.isNotBlank() }.joinToString(" ")
+        runCatching { fetchFromSource(source, keyword, durationMs) }.getOrElse { throwable ->
+            if (throwable is CancellationException) throw throwable
+            null
+        }
     }
 
     private fun fetchFromSource(

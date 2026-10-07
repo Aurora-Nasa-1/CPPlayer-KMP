@@ -4,6 +4,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Api
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Extension
@@ -238,18 +239,19 @@ private fun accountEntries(): List<SettingsEntry> = listOf(
         keywords = listOf("音源", "导入", "模块", "切换", "provider", "module"),
         screen = { ProviderManagementScreen() },
     ),
-    // 歌词源插件与音源管理同组：两者都是「内容/数据来源」，用户找它们时想的是同一件事
+    // 歌词来源与音源管理同组：两者都是「内容/数据来源」，用户找它们时想的是同一件事
     // ——「我从哪儿拿内容」。且都支持导入 zip，放在一起心智一致。
     SettingsEntry(
         id = "lyrics_plugins",
         group = SettingsGroup.ACCOUNT_AND_PROVIDER,
         titleOf = { it.lyricsPlugin.entryTitle },
         subtitleOf = { it.lyricsPlugin.entrySubtitle },
-        icon = Icons.Filled.Extension,
+        icon = Icons.Filled.ClosedCaption,
         accent = SettingsAccent.TERTIARY,
         keywords = listOf(
-            "歌词源", "插件", "歌词插件", "lyrico", "lrc", "ttml", "逐字", "导入歌词",
-            "lyrics", "plugin", "source", "karaoke",
+            "歌词源", "歌词来源", "来源", "排序", "优先级", "插件", "歌词插件",
+            "lyrico", "lrc", "ttml", "逐字", "导入歌词", "amll", "边车",
+            "lyrics", "source", "plugin", "order", "priority", "karaoke",
         ),
         screen = { LyricsPluginSettingsScreen() },
     ),
