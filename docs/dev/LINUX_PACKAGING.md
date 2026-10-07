@@ -69,8 +69,27 @@ meta → desktop(Linux 腿: deb + tar.gz) → publish(挂到 GitHub Release)
    3. clone ssh://aur@aur.archlinux.org/cpplayer-bin.git
       （包不存在时 AUR 给空仓库 → 首次发布也是全自动）
    4. 拷入本仓库的 PKGBUILD 模板，sed 重写 pkgver/pkgrel/url/source/sha256sums 五行
-   5. makepkg --printsrcinfo > .SRCINFO；commit；push origin HEAD:master
+   5. makepkg --printsrcinfo > .SRCINFO（**必须降权跑**，见 2.1）；commit；push origin HEAD:master
 ```
+
+### 2.1 makepkg 不能以 root 跑
+
+容器 job 里 runner 就是 root，而 makepkg **拒绝以 root 运行**（exit 10）：
+
+```
+==> ERROR: Running makepkg as root is not allowed as it can cause permanent,
+    catastrophic damage to your system.
+```
+
+连「不构建、只打印元数据」的 `--printsrcinfo` 也一样被挡 —— v1.4.5 / v1.4.6 / v1.4.7
+连续三次发布都挂在这里（2026-10-07 修）。
+
+所以 workflow 里专门 `useradd -m -s /bin/bash builder`，把 PKGBUILD 拷进 builder
+自己的临时目录，用 `su builder`（su 在容器里开不了会话时退到 `setpriv`）跑
+`makepkg --printsrcinfo`。**git clone / commit / push 仍然用 root** —— SSH 私钥是
+root 名下的 600，换用户去跑反而要额外处理权限。
+
+⚠️ 别改回直接 `makepkg` 或用 `sudo`（base-devel 镜像里**没有** sudo）。
 
 - 包布局：整体装 `/opt/CPPlayer`，`/usr/bin/cpplayer` 是跳板脚本
   （`exec /opt/CPPlayer/bin/CPPlayer "$@"`，不用软链 —— jpackage 启动器按自身

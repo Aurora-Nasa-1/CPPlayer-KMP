@@ -71,3 +71,22 @@
 # ---------------------------------------------------------------------------
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
+
+# ---------------------------------------------------------------------------
+# 7. 安卓上不存在的 JDK 类（Rhino —— 歌词插件的 JS 运行时）
+# ---------------------------------------------------------------------------
+# `core` 的 jvmMain 用 Mozilla Rhino 跑 Lyrico 插件（androidMain 依赖 jvmMain，
+# 所以安卓同样带这份运行时）。Rhino 的 JavaToJSONConverters 在**静态初始化**里
+# 建「任意 Java 对象 → JSON」的转换表，其中 JavaBean 那一格引用了 java.beans.*
+# （JDK 专有，安卓没有，核心库脱糖也不含它）。
+# R8 把「引用了不存在的类」当**硬错误**（不是 warning）⇒ minifyReleaseWithR8 直接
+# 失败（2026-10-07 v1.4.7 首发即挂，报 5 条 Missing class java.beans.*）。
+#
+# 我们的宿主只把 **JS 值** 转成字符串（RhinoPluginRuntime 里 Context.toString），
+# 从不把 Java Bean 喂进 JSON —— 该分支运行时走不到，-dontwarn 安全。
+# ⚠️ 真要让插件序列化 Java 对象时，这里得换成真正的依赖（不是加 keep 能解决的）。
+-dontwarn java.beans.BeanDescriptor
+-dontwarn java.beans.BeanInfo
+-dontwarn java.beans.IntrospectionException
+-dontwarn java.beans.Introspector
+-dontwarn java.beans.PropertyDescriptor

@@ -358,6 +358,22 @@ jobs:
       # checkout 依赖 git，所以 pacman 必须在 checkout 之前。
       - name: Install git / openssh / curl
         run: pacman -Syu --noconfirm git openssh curl
+
+      # ⚠️ makepkg **拒绝以 root 运行**，连「不构建、只打印元数据」的 `--printsrcinfo`
+      # 也一样，直接 exit 10：
+      #   ==> ERROR: Running makepkg as root is not allowed as it can cause permanent,
+      #       catastrophic damage to your system.
+      # 容器 job 里 runner 就是以 root 跑的（镜像里只有 root 一个用户），所以必须现建
+      # 一个非特权用户专门跑 makepkg。
+      # git clone / commit / push **仍然用 root** —— SSH 私钥是 root 名下的 600，
+      # 换用户去跑反而要额外处理权限，没必要。
+      # 2026-10-07：v1.4.5 / v1.4.6 / v1.4.7 连续三次发布都挂在这一行。
+      - name: Create unprivileged user for makepkg
+        run: |
+          set -euo pipefail
+          id -u builder >/dev/null 2>&1 || useradd -m -s /bin/bash builder
+          id builder
+
       - uses: actions/checkout@v4
 
       - name: Check AUR key configured
@@ -462,7 +478,27 @@ jobs:
             -e "s#^source=.*#source=(\"CPPlayer-\${pkgver}-linux-x64.tar.gz::${asset_url}\")#" \
             -e "s/^sha256sums=.*/sha256sums=('${sha256}')/" \
             PKGBUILD
-          makepkg --printsrcinfo > .SRCINFO
+          # ⚠️ makepkg 只能以非 root 跑（见上一步建 builder 的注释）。
+          # 这里只用它生成 .SRCINFO —— `--printsrcinfo` **不构建、不建 srcdir**，
+          # 所以把 PKGBUILD 拷进 builder 自己的临时目录里跑就够；root 建的 aur/ 目录
+          # builder 写不进去，别让它碰（顺带也不会污染工作区）。
+          scratch="$(mktemp -d)"
+          cp PKGBUILD "$scratch/PKGBUILD"
+          chown -R builder "$scratch"
+          # 降权执行：su 走 PAM，是常规路子；容器里 su 开不了会话时退到 setpriv
+          # （util-linux，纯降 uid/gid，不碰 PAM）。两者都在 base 镜像里。
+          makepkg_cmd="cd '$scratch' && makepkg --printsrcinfo"
+          if su builder -s /bin/bash -c 'true' >/dev/null 2>&1; then
+            su builder -s /bin/bash -c "$makepkg_cmd" > .SRCINFO
+          else
+            setpriv --reuid=builder --regid=builder --init-groups --inh-caps=-all \
+              /bin/bash -c "$makepkg_cmd" > .SRCINFO
+          fi
+          rm -rf "$scratch"
+          test -s .SRCINFO || {
+            echo "::error::.SRCINFO 是空的 —— makepkg --printsrcinfo 没产出内容"
+            exit 1
+          }
           # AUR 提交以这里的身份落库（Arch Wiki 建议按包配置，别动容器全局）。
           git config user.name  "CPPlayer Release Bot"
           git config user.email "cpplayer-bot@users.noreply.github.com"
