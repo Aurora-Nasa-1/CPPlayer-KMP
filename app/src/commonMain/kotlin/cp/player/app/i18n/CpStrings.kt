@@ -85,6 +85,13 @@ interface CpStrings {
     val social: SocialStrings
 
     /**
+     * 歌词源插件（Lyrico Plugin API 兼容）。
+     *
+     * 单独成组：它由独立的插件管理页消费，且将来播放页的「无歌词 → 换源」也读同一组。
+     */
+    val lyricsPlugin: LyricsPluginStrings
+
+    /**
      * 专辑墙模式（`ui/wall`）。
      *
      * 单独成组：墙是**跨数据源的模式**（专辑 / 歌单 / 艺人 都能上墙），

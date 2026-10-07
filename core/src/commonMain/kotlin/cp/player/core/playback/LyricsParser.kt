@@ -78,6 +78,61 @@ object LyricsParser {
         return out
     }
 
+    // ============ 增强 LRC / ELRC 逐字 ============
+
+    /** 词级标签 `<mm:ss.xx>`（增强 LRC / ELRC）。 */
+    private val ENHANCED_WORD_TAG = Regex("""<(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?>""")
+
+    /**
+     * 增强 LRC / ELRC 逐字解析：`[mm:ss.xx]<mm:ss.xx>词<mm:ss.xx>词…`
+     *
+     * 与 [parseLrc] 的差别只在**行内**：带 `<…>` 词级标签时产出 [SyncedLyricLine.words]，
+     * 不带时退化为行级。这样 `.elrc` 边车文件与插件返回的 `rawEnhancedLrc` 都不会丢逐字信息
+     * —— [parseLrc] 只认行级标签，词级标签会被当成正文文本一起读进来。
+     */
+    internal fun parseEnhancedLrc(raw: String): List<SyncedLyricLine> {
+        val out = mutableListOf<SyncedLyricLine>()
+        raw.lineSequence().forEach { line ->
+            val lineTags = LRC_LINE_TAG.findAll(line).toList()
+            if (lineTags.isEmpty()) return@forEach
+            val body = line.substring(lineTags.last().range.last + 1)
+            val wordTags = ENHANCED_WORD_TAG.findAll(body).toList()
+            if (wordTags.isEmpty()) {
+                lineTags.forEach { out.add(SyncedLyricLine(time = lrcTagMillis(it), text = body.trim())) }
+                return@forEach
+            }
+            val words = wordTags.mapIndexedNotNull { index, match ->
+                val start = lrcTagMillis(match)
+                val next = wordTags.getOrNull(index + 1)
+                val end = next?.let { lrcTagMillis(it) } ?: start
+                val text = body.substring(match.range.last + 1, next?.range?.first ?: body.length)
+                if (text.isEmpty()) null else SyncedLyricLine.SyncedWord(text, start, end)
+            }
+            if (words.isEmpty()) return@forEach
+            val text = words.joinToString("") { it.text }.trim()
+            val endTime = words.last().endTime
+            // 一行可挂多个行级时间标签（同一句重复出现）。
+            lineTags.forEach {
+                out.add(SyncedLyricLine(time = lrcTagMillis(it), text = text, endTime = endTime, words = words))
+            }
+        }
+        return out
+    }
+
+    /** `[mm:ss.xx]` / `<mm:ss.xx>` 标签 → 毫秒（与 [parseLrc] 同一套进位规则）。 */
+    private fun lrcTagMillis(match: MatchResult): Long {
+        val min = match.groupValues[1].toIntOrNull() ?: 0
+        val sec = match.groupValues[2].toIntOrNull() ?: 0
+        val msPart = match.groupValues[3]
+        val ms = when {
+            msPart.isBlank() -> 0
+            msPart.length == 1 -> msPart.toInt() * 100
+            msPart.length == 2 -> msPart.toInt() * 10
+            else -> msPart.take(3).toInt()
+        }
+        return (min * 60_000L) + (sec * 1_000L) + ms
+    }
+
     /** 按时间戳把翻译/罗马音合并到主歌词（时间近似相等即合并）。 */
     private fun mergeTranslation(
         main: List<SyncedLyricLine>,

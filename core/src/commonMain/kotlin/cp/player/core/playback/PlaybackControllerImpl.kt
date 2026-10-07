@@ -78,6 +78,17 @@ class PlaybackControllerImpl(
      * 保持零存储副作用。
      */
     private val playbackModeSettings: SettingsStorage? = null,
+    /**
+     * 用户启用的歌词源插件（Lyrico Plugin API 兼容，见 [cp.player.core.lyricsplugin]）。
+     *
+     * null = 未装配（既有测试与最小装配路径保持零插件行为）。
+     * 非 null 时作为 AMLL 与音源 API **之后**的最后兜底：只有用户显式启用插件后才会真正联网，
+     * 因此不会改变未启用插件用户的取词行为。
+     */
+    private val lyricsPluginService: cp.player.core.lyricsplugin.LyricsPluginService? = null,
+    /**
+     *
+     */
 ) : PlaybackController {
 
     private val _state = MutableStateFlow(PlaybackUiState())
@@ -1018,21 +1029,59 @@ class PlaybackControllerImpl(
     ): Pair<LyricsState, LyricsInfo?> {
         val mode = lyricsSourceMode()
         val isLocal = id.providerId == "local"
+        // 本地歌曲先看边车歌词（同目录同名 .lrc/.ttml/.elrc）：用户把歌词放在音频旁边
+        // 是明确的本地优先意图，比任何在线匹配都更可信。
+        if (isLocal) {
+            SidecarLyrics.load(id.resourceId)?.let { return it }
+        }
         if (mode != LyricsSourceMode.PROVIDER_ONLY && amllClient != null) {
             val amll = fetchFromAmll(id, entry?.summary, allowPlatformLookup = !isLocal)
             if (amll != null) return amll
             if (mode == LyricsSourceMode.AMLL_ONLY) {
-                return LyricsState.NoLyrics to LyricsInfo(source = "AMLL TTML", format = "N/A")
+                // 「只走 AMLL」仍允许歌词源插件兜底：插件是用户显式启用的补充来源，
+                // 不属于被该模式排除的「音源 API」。
+                return fetchFromPlugins(entry?.summary)
+                    ?: (LyricsState.NoLyrics to LyricsInfo(source = "AMLL TTML", format = "N/A"))
             }
-            if (isLocal) return LyricsState.NoLyrics to null
+            if (isLocal) return fetchFromPlugins(entry?.summary) ?: (LyricsState.NoLyrics to null)
         } else if (isLocal) {
-            return LyricsState.NoLyrics to null
+            return fetchFromPlugins(entry?.summary) ?: (LyricsState.NoLyrics to null)
         }
         val json = api.getLyric(id.resourceId)
         val lines = LyricsParser.parse(json)
         val info = extractLyricsInfo(json, lines)
+        // 音源也没词时，最后尝试用户启用的歌词源插件。
+        if (lines.isEmpty()) {
+            fetchFromPlugins(entry?.summary)?.let { return it }
+        }
         val state = if (lines.isEmpty()) LyricsState.NoLyrics else LyricsState.Success(lines)
         return state to info
+    }
+
+    /**
+     * 用户启用的歌词源插件兜底。
+     *
+     * 放在 AMLL 与音源 API **之后**：插件是用户显式启用的补充来源，不应盖过官方词库与
+     * 音源自带歌词。未装配服务、或未启用任何插件时直接返回 null，不产生任何网络请求。
+     */
+    private suspend fun fetchFromPlugins(summary: TrackSummary?): Pair<LyricsState, LyricsInfo?>? {
+        val service = lyricsPluginService ?: return null
+        val title = summary?.name ?: return null
+        val outcome = runCatching {
+            service.fetchLyrics(
+                title = title,
+                artist = summary.artist.orEmpty(),
+                album = summary.album.orEmpty(),
+            )
+        }.getOrNull() ?: return null
+        if (outcome.lines.isEmpty()) return null
+        return LyricsState.Success(outcome.lines) to LyricsInfo(
+            source = outcome.sourceName,
+            format = if (outcome.hasWordLevel) "Plugin (Karaoke)" else "Plugin",
+            hasWordLevel = outcome.hasWordLevel,
+            hasTranslation = outcome.lines.any { !it.translation.isNullOrBlank() },
+            hasPhonetic = outcome.lines.any { !it.romanization.isNullOrBlank() },
+        )
     }
 
     /** AMLL 取词 + 解析；拿不到 TTML 或解析不出行返回 null（由调用方回退）。 */

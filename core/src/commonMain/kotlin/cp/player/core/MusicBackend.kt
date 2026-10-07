@@ -333,7 +333,19 @@ class MusicBackend private constructor(
             },
             // 播放模式（随机 / 循环）持久化：启动恢复、变更落盘。
             playbackModeSettings = settings,
+            // 歌词源插件（Lyrico Plugin API）：作为 AMLL 与音源之后的最后兜底。
+            // 只有用户显式启用插件后才会联网，未启用用户行为不变。
+            lyricsPluginService = lyricsPlugins,
         )
+    }
+
+    /**
+     * 歌词源插件服务（前端「设置 → 歌词源插件」管理页使用）。
+     *
+     * 惰性创建；插件目录落在 [PlatformSupport.dataDir] 下的 `lyrics-plugins/`。
+     */
+    val lyricsPlugins: cp.player.core.lyricsplugin.LyricsPluginService by lazy {
+        cp.player.core.lyricsplugin.createLyricsPluginService(context)
     }
 
     // ============ 对外集成契约（数据面） ============

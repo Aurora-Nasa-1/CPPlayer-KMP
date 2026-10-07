@@ -800,5 +800,6 @@ object CpStringsZh : CpStrings {
     override val insights = InsightStringsZh
     override val wall = WallStringsZh
     override val social = SocialStringsZh
+    override val lyricsPlugin = LyricsPluginStringsZh
 
 }
