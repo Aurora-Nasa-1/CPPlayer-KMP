@@ -106,6 +106,20 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
     /** 供缓存目录等使用；持有 application context 不泄漏 Activity。 */
     private val appContext = context.applicationContext
 
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private fun runOnMainThread(block: () -> Unit) {
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            block()
+        } else {
+            val latch = java.util.concurrent.CountDownLatch(1)
+            mainHandler.post {
+                block()
+                latch.countDown()
+            }
+            latch.await()
+        }
+    }
+
     private val _state = MutableStateFlow<PlatformPlaybackState>(PlatformPlaybackState.Idle)
     override val state: StateFlow<PlatformPlaybackState> = _state.asStateFlow()
     private val _position = MutableStateFlow(0L)
@@ -170,7 +184,13 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
      * 那是乐观值，会让「引擎一步没动就补发」的判定永久失效（详见该类 KDoc）。
      */
     private val pendingSeek = PendingSeekTracker(
-        enginePositionMs = { runCatching { player.currentPosition }.getOrDefault(0L).coerceAtLeast(0L) },
+        enginePositionMs = {
+            var pos = 0L
+            runOnMainThread {
+                pos = runCatching { player.currentPosition }.getOrDefault(0L).coerceAtLeast(0L)
+            }
+            pos
+        },
         dispatchSeek = ::applySeekToEngine,
     )
 
@@ -217,7 +237,7 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
     }
 
     init {
-        player.addListener(listener)
+        runOnMainThread { player.addListener(listener) }
         startPolling()
     }
 
@@ -231,7 +251,7 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
         }
     }
 
-    override suspend fun load(url: String, startPositionMs: Long, headers: Map<String, String>, metadata: PlaybackMetadata?) {
+    override suspend fun load(url: String, startPositionMs: Long, headers: Map<String, String>, metadata: PlaybackMetadata?) = kotlinx.coroutines.withContext(Dispatchers.Main) {
         // 换曲：清掉上一首遗留的待定 seek，避免污染新曲目的位置。
         pendingSeek.cancel()
         val uri = Uri.parse(url)
@@ -278,32 +298,39 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
             }
             .setMediaMetadata(mediaMetadata ?: MediaMetadata.Builder().build())
             .build()
-        player.setMediaSource(DefaultMediaSourceFactory(dataSource).createMediaSource(mediaItem))
-        player.prepare()
-        if (startPositionMs > 0) {
-            // 起始位置同样纳入乐观值：prepare 尚未完成时引擎位置还是 0，
-            // 不接管的话进度条会先显示 0 再跳到目标。
-            // 刚 setMediaSource + prepare，media item 虽已设入但还没准备好，
-            // 这里按「未就绪」处理，交给轮询补发更稳。
-            pendingSeek.request(startPositionMs, engineReady = false)
-            _position.value = startPositionMs
-        } else {
-            // 从头播放不需要乐观值（目标就是引擎当前位置），直接定位即可。
-            // 走 tracker 反而会挂一个「目标 0」的待定 seek，把位置冻在 0 直到宽限期结束。
-            applySeekToEngine(0L)
+        val mediaSource = DefaultMediaSourceFactory(dataSource).createMediaSource(mediaItem)
+
+        runOnMainThread {
+            player.setMediaSource(mediaSource)
+            player.prepare()
+            if (startPositionMs > 0) {
+                // 起始位置同样纳入乐观值：prepare 尚未完成时引擎位置还是 0，
+                // 不接管的话进度条会先显示 0 再跳到目标。
+                // 刚 setMediaSource + prepare，media item 虽已设入但还没准备好，
+                // 这里按「未就绪」处理，交给轮询补发更稳。
+                pendingSeek.request(startPositionMs, engineReady = false)
+                _position.value = startPositionMs
+            } else {
+                // 从头播放不需要乐观值（目标就是引擎当前位置），直接定位即可。
+                // 走 tracker 反而会挂一个「目标 0」的待定 seek，把位置冻在 0 直到宽限期结束。
+                applySeekToEngine(0L)
+            }
+            player.play()
         }
-        player.play()
     }
 
-    override fun play() { player.play() }
-    override fun pause() { player.pause() }
+    override fun play() { runOnMainThread { player.play() } }
+    override fun pause() { runOnMainThread { player.pause() } }
 
     override fun seekTo(positionMs: Long) {
         val target = positionMs.coerceAtLeast(0L)
         // 乐观更新：立即把目标位置推给 UI，随后由轮询确认引擎是否已追上。
         // 基线捕获、补发、落定全部交给 [PendingSeekTracker]，本类不再内联这套逻辑。
         // engineReady 必须是**引擎真值**：media item 没设入时下发是空操作，需要轮询补发。
-        val engineReady = runCatching { player.mediaItemCount }.getOrDefault(0) > 0
+        var engineReady = false
+        runOnMainThread {
+            engineReady = runCatching { player.mediaItemCount }.getOrDefault(0) > 0
+        }
         pendingSeek.request(target, engineReady = engineReady)
         _position.value = target
     }
@@ -317,15 +344,20 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
      * 2. 播放器已释放 —— 读位置/seek 会抛 `IllegalStateException`。
      */
     private fun applySeekToEngine(target: Long): Boolean {
-        val mediaItemCount = runCatching { player.mediaItemCount }.getOrDefault(0)
-        if (mediaItemCount <= 0) return false
-        return runCatching { player.seekTo(target) }.isSuccess
+        var success = false
+        runOnMainThread {
+            val mediaItemCount = runCatching { player.mediaItemCount }.getOrDefault(0)
+            if (mediaItemCount > 0) {
+                success = runCatching { player.seekTo(target) }.isSuccess
+            }
+        }
+        return success
     }
 
     override fun stop() {
         // 停止后引擎位置无意义，残留的待定 seek 只会让进度条停在旧目标上。
         pendingSeek.cancel()
-        player.stop()
+        runOnMainThread { player.stop() }
         _state.value = PlatformPlaybackState.Idle
     }
 
@@ -340,14 +372,24 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
         audioEffectChain = null
         pendingAudioEffect = null
         observedSessionId = 0
-        runCatching { player.removeListener(listener) }
-        // 走单例的统一释放：既释放 ExoPlayer 也清掉缓存句柄，
-        // 避免 SharedMedia3Player.instance 指向一个已释放的播放器。
-        SharedMedia3Player.release()
+        runOnMainThread {
+            runCatching { player.removeListener(listener) }
+            // 走单例的统一释放：既释放 ExoPlayer 也清掉缓存句柄，
+            // 避免 SharedMedia3Player.instance 指向一个已释放的播放器。
+            SharedMedia3Player.release()
+        }
     }
 
-    override fun setVolume(volume: Float) { player.volume = volume.coerceIn(0f, 1f) }
-    override fun getVolume(): Float = player.volume
+    override fun setVolume(volume: Float) {
+        val v = volume.coerceIn(0f, 1f)
+        lastRequestedVolume = v
+        runOnMainThread { player.volume = v }
+    }
+
+    @Volatile
+    private var lastRequestedVolume: Float = 1f
+
+    override fun getVolume(): Float = lastRequestedVolume
 
     // ============ 音效 ============
 
@@ -376,18 +418,28 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
 
     private fun publishPosition() {
         // 轮询可能与 release() 竞态；播放器已释放时读位置会抛异常，直接忽略这一轮。
-        val actual = runCatching { player.currentPosition }.getOrNull()?.coerceAtLeast(0L) ?: return
+        var actual = -1L
+        var playbackState = Player.STATE_IDLE
+        var engineReady = false
+        var duration = 0L
+        runOnMainThread {
+            actual = runCatching { player.currentPosition }.getOrNull()?.coerceAtLeast(0L) ?: -1L
+            playbackState = runCatching { player.playbackState }.getOrDefault(Player.STATE_IDLE)
+            engineReady = runCatching { player.mediaItemCount }.getOrDefault(0) > 0
+            duration = runCatching { player.duration }.getOrNull()?.takeIf { it > 0 } ?: 0L
+        }
+        if (actual == -1L) return
+
         // 音频会话可能随换源重建 ⇒ 挂在旧会话上的效果会静默失效。
         // 在这里顺带观察（位置轮询本来就在跑，不额外增加定时器）。
         syncAudioSession()
-        val playbackState = runCatching { player.playbackState }.getOrDefault(Player.STATE_IDLE)
+
         // 装载/缓冲中：seek 到未缓冲区间要先建连拿首包，宽限期必须放宽，
         // 否则 800ms 一到就把乐观值丢掉，进度条回弹——用户看到的就是「seek 没生效」。
         val engineLoading = playbackState == Player.STATE_BUFFERING || playbackState == Player.STATE_IDLE
         // 引擎是否**真的建好了**：media item 已设入才算。
         // 未设入时 `seekTo` 是空操作（见 applySeekToEngine），必须靠轮询补发。
         // 不能改用「位置有没有动」去反推——见 PendingSeekTracker 的 KDoc。
-        val engineReady = runCatching { player.mediaItemCount }.getOrDefault(0) > 0
         // 推进待定 seek：落定则释放乐观值；刚就绪 / 未就绪 / 就绪后没动 都要补发。
         val tick = pendingSeek.tick(
             enginePositionMs = actual,
@@ -400,7 +452,7 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
             _seekFailures.tryEmit(SeekFailure(tick.targetMs, tick.actualMs))
         }
         _position.value = pendingSeek.displayMs() ?: actual
-        _duration.value = runCatching { player.duration }.getOrNull()?.takeIf { it > 0 } ?: 0L
+        _duration.value = duration
     }
 
     /**
@@ -419,7 +471,10 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
     private fun syncAudioSession() {
         if (pendingAudioEffect == null) return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
-        val sessionId = runCatching { player.audioSessionId }.getOrDefault(0)
+        var sessionId = 0
+        runOnMainThread {
+            sessionId = runCatching { player.audioSessionId }.getOrDefault(0)
+        }
         // 0 = 会话尚未建立；与上次相同 = 没变。两种都不需要动作。
         if (sessionId == 0 || sessionId == observedSessionId) return
         observedSessionId = sessionId
