@@ -169,7 +169,7 @@ fun SharedTransitionScope.MiniPlayer(
                     IconButton(onClick = onSkipPrev, modifier = Modifier.size(40.dp)) {
                         // 与全屏播放页的主控件行同族（Filled）—— 之前这里是 Outlined、
                         // 全屏页是 Filled，同一个「上一首」在同一个应用里长两个样子。
-                        Icon(Icons.Filled.SkipPrevious, "Prev", Modifier.size(24.dp))
+                        Icon(Icons.Filled.SkipPrevious, "上一首", Modifier.size(24.dp))
                     }
                     CpPlayPauseButton(
                         isPlaying = state.isPlaying,
@@ -178,7 +178,7 @@ fun SharedTransitionScope.MiniPlayer(
                         isLoading = state.isBuffering,
                     )
                     IconButton(onClick = onSkipNext, modifier = Modifier.size(40.dp)) {
-                        Icon(Icons.Filled.SkipNext, "Next", Modifier.size(24.dp))
+                        Icon(Icons.Filled.SkipNext, "下一首", Modifier.size(24.dp))
                     }
                 }
             }
