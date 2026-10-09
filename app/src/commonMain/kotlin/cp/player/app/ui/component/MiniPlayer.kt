@@ -26,6 +26,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.anim.coverFlightTarget
 import cp.player.app.ui.theme.CpShapes
@@ -67,6 +68,7 @@ fun SharedTransitionScope.MiniPlayer(
         (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f)
     } else 0f
     val press = rememberPressedScale()
+    val s = cpStrings()
 
     Surface(
         onClick = onClick,
@@ -169,7 +171,7 @@ fun SharedTransitionScope.MiniPlayer(
                     IconButton(onClick = onSkipPrev, modifier = Modifier.size(40.dp)) {
                         // 与全屏播放页的主控件行同族（Filled）—— 之前这里是 Outlined、
                         // 全屏页是 Filled，同一个「上一首」在同一个应用里长两个样子。
-                        Icon(Icons.Filled.SkipPrevious, "Prev", Modifier.size(24.dp))
+                        Icon(Icons.Filled.SkipPrevious, s.player.previousTrack, Modifier.size(24.dp))
                     }
                     CpPlayPauseButton(
                         isPlaying = state.isPlaying,
@@ -178,7 +180,7 @@ fun SharedTransitionScope.MiniPlayer(
                         isLoading = state.isBuffering,
                     )
                     IconButton(onClick = onSkipNext, modifier = Modifier.size(40.dp)) {
-                        Icon(Icons.Filled.SkipNext, "Next", Modifier.size(24.dp))
+                        Icon(Icons.Filled.SkipNext, s.player.nextTrack, Modifier.size(24.dp))
                     }
                 }
             }
