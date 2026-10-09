@@ -96,14 +96,14 @@ fun PlayerMoreBottomSheet(
                     if (!track.coverUrl.isNullOrBlank()) {
                         AsyncImage(
                             model = track.coverUrl.resized(200),
-                            contentDescription = null,
+                            contentDescription = s.player.coverContentDescription,
                             modifier = Modifier.size(72.dp).clip(CircleShape),
                             contentScale = ContentScale.Crop,
                         )
                     } else {
                         Icon(
                             Icons.Filled.MusicNote,
-                            contentDescription = null,
+                            contentDescription = s.player.coverContentDescription,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
