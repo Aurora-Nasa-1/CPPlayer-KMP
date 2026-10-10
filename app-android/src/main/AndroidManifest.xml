@@ -3,24 +3,42 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!--
-      ⚠️ 只为 minSdk 24（Android 7.0）而存在的强制声明，删掉它构建会直接失败：
-      `com.mocharealm.accompanist:lyrics-ui-android:1.0.19`（歌词滚动/卡拉OK 组件）
-      在自己的 AAR 清单里写了 `minSdkVersion="29"`，manifest merger 因此报
-      "uses-sdk:minSdkVersion 24 cannot be smaller than version 29 declared in library"。
+      ⚠️ 为 minSdk 24（Android 7.0）强制放行的库清单。
 
-      这个 29 是**作者随手写的下限，不是真实依赖**。逐类 javap 核对过（2026-10-05）：
-        - 它对 `android.*` 的引用只有 `android.os.Build` / `Build$VERSION`，
-          用法仅是在 `SDK_INT >= 34 / >= 36` 时往集合里多塞几个 Unicode 区块
-          （CJK 扩展 E/F/G/H、Arabic Ext B）—— 低版本只是少认几个生僻字区块；
-        - 对 `java.*` 的引用只有 `java.lang.*` / `java.util.*`，没有 java.time / java.nio.file；
-        - 其余全是 androidx.compose。
-      ⇒ 强制放行在 API 24/25 上不会崩，最坏情况是极生僻字被当成非 CJK。
+      1. `com.mocharealm.accompanist.lyrics.ui` —— 歌词滚动/卡拉OK 组件。
+         它在自己的 AAR 清单里写了 `minSdkVersion="29"`，manifest merger 因此报
+         "uses-sdk:minSdkVersion 24 cannot be smaller than version 29 declared in library"。
 
-      ⚠️ 换歌词库版本（或升到 2.x）时**必须重新核对**：拿新 AAR 的 classes.jar 跑一遍
-      `javap`/常量池扫描，确认没有新增 API > 24 的平台引用，否则这个覆盖会变成运行时崩溃。
+         这个 29 是**作者随手写的下限，不是真实依赖**。逐类 javap 核对过（2026-10-05）：
+           - 它对 `android.*` 的引用只有 `android.os.Build` / `Build$VERSION`，
+             用法仅是在 `SDK_INT >= 34 / >= 36` 时往集合里多塞几个 Unicode 区块
+             （CJK 扩展 E/F/G/H、Arabic Ext B）—— 低版本只是少认几个生僻字区块；
+           - 对 `java.*` 的引用只有 `java.lang.*` / `java.util.*`，没有 java.time / java.nio.file；
+           - 其余全是 androidx.compose。
+         ⇒ 强制放行在 API 24/25 上不会崩，最坏情况是极生僻字被当成非 CJK。
+
+      2. `com.xzakota.hyper.notification.focus`（HyperOS 焦点通知 / 超级岛，AAR 声明 minSdk 27）
+         —— 已核对：整包的 `android.*` 引用只有 12 个类型
+         （Notification / Notification$Builder / NotificationManager / Context /
+          ContentResolver / Uri / Bundle / Parcelable / RemoteViews / Settings$System /
+          SuppressLint），**全部 API ≤ 24 就存在**；
+         调用的**方法**只有 `Notification$Builder.addExtras`（API 20）、`build()`、
+         `NotificationManager.notify`、`ContentResolver.call`、`Settings$System.getInt`
+         —— 没有一处是 26/27+ 才有的 API。它声明 27 是因为自己面向 HyperOS，
+         而 HyperOS 本身 ≥ 29，与本库能否在 24/25 上加载无关。
+
+      3. `com.hchen.superlyricapi`（SuperLyric 发布者契约，AAR 声明 minSdk 26）
+         —— 已核对：`android.*` 引用为 Bundle / Parcel / Parcelable / IBinder / Binder /
+         IInterface / RemoteException / ServiceManager / Log / MediaMetadata / PlaybackState
+         —— 全部 API ≤ 24 就存在（`ServiceManager` 是隐藏类，但自 API 1 就存在，只是不在公开
+         SDK 里）。声明 26 同样是作者随手写的。
+
+      ⚠️ 换这三个库的版本时**必须重新核对**：拿新 AAR 的 classes.jar 跑一遍
+      `javap` / 常量池扫描，确认没有新增 API > 24 的平台引用，否则这些覆盖会变成运行时崩溃。
       ⚠️ 别把它当成「所有库都能这么放行」的先例 —— 只有核对过字节码的库才允许。
     -->
-    <uses-sdk tools:overrideLibrary="com.mocharealm.accompanist.lyrics.ui" />
+    <uses-sdk
+        tools:overrideLibrary="com.mocharealm.accompanist.lyrics.ui,com.xzakota.hyper.notification.focus,com.hchen.superlyricapi" />
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -34,6 +52,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- 小米超级岛歌词：由 specialUse 类型的前台服务承载焦点通知（见下方 service 声明）。
+         这是 normal 权限，系统自动授予，不会弹窗。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- 「设置 → 播放与音质 → 电池优化白名单」需要：弹系统授权框申请豁免电池优化，
          熄屏后台播放的进程级保护（配合媒体前台服务使用） -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -61,6 +82,25 @@
             </intent-filter>
         </service>
 
+        <!--
+          HyperOS 超级岛歌词的载体（见 core 的 XiaomiSuperIslandLyricService）。
+
+          ⚠️ `specialUse` + `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` 是硬要求：HyperOS 只把
+          从**专用前台服务**里发出的焦点通知当作超级岛载荷，从播放进程直接 notify() 只会
+          得到一条普通通知。
+
+          ⚠️ 声明在 app-android 而不是 core：core 没有 AndroidManifest.xml
+          （KMP library 插件下它的清单不参与合并），服务类本身在 core 里，靠全限定名引用。
+        -->
+        <service
+            android:name="cp.player.core.lyricpush.XiaomiSuperIslandLyricService"
+            android:foregroundServiceType="specialUse"
+            android:exported="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Rendering the current lyric line inside the HyperOS Super Island while music plays" />
+        </service>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -71,6 +111,26 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          词幕（Lyricon）通过这几个 meta-data 发现「本应用可以作为它的歌词来源」。
+          少了 `lyricon_module`，词幕里根本不会出现 CPPlayer 这个条目 ——
+          表现为「代码全对但词幕收不到」，很难联想。见 core 的 LyriconBridge。
+        -->
+        <meta-data
+            android:name="lyricon_module"
+            android:value="true" />
+        <meta-data
+            android:name="lyricon_module_author"
+            android:value="CPPlayer" />
+        <meta-data
+            android:name="lyricon_module_description"
+            android:value="CPPlayer 歌词投放" />
+
+        <!--
+          SuperLyric 的 meta-data（`superlyricapi` / 版本号）由它的 AAR 清单自动合并，
+          这里不需要重复声明。
+        -->
     </application>
 
 </manifest>

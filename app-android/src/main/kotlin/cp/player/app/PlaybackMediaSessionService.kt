@@ -17,6 +17,14 @@ class PlaybackMediaSessionService : MediaSessionService() {
     private var player: ControllerForwardingPlayer? = null
     private var mediaSession: MediaSession? = null
 
+    /**
+     * 歌词写回媒体会话的通道（ColorOS 锁屏岛 extras + 蓝牙/车机通知歌词）。
+     *
+     * 注册到 `core` 的全局表里：`core` 的歌词投放协调器拿不到本服务实例
+     * （它比服务先初始化），所以只能由服务在创建时把实现挂上去、销毁时摘掉。
+     */
+    private var lyricSink: LyricMetadataSink? = null
+
     override fun onCreate() {
         (application as? CPPlayerApplication)?.backend
         super.onCreate()
@@ -27,6 +35,11 @@ class PlaybackMediaSessionService : MediaSessionService() {
             AppModel.playback
         }
         player = sessionPlayer
+        // 歌词写回挂在同一个 sessionPlayer 上：媒体会话、蓝牙 AVRCP 与 ColorOS
+        // 读的都是它的 currentMediaItem.mediaMetadata。
+        val sink = LyricMetadataSink { sessionPlayer }
+        lyricSink = sink
+        cp.player.core.lyricpush.LyricPushSinks.metadataSink = sink
         // 通知栏那个小图标：media3 默认用它自带的占位图（media3_notification_small_icon），
         // 在状态栏里和本应用没有任何关系。换成自己的单色播放三角。
         // ⚠️ 状态栏图标必须是**白色剪影 + 透明底**，系统会统一着色 —— 带颜色的图会被糊成色块。
@@ -141,6 +154,13 @@ class PlaybackMediaSessionService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        // 先摘歌词通道再释放会话：否则会话销毁后 sink 仍被 core 持有，
+        // 下一帧歌词会对着已释放的播放器调 replaceMediaItem。
+        if (cp.player.core.lyricpush.LyricPushSinks.metadataSink === lyricSink) {
+            cp.player.core.lyricpush.LyricPushSinks.metadataSink = null
+        }
+        lyricSink?.release()
+        lyricSink = null
         mediaSession?.release()
         mediaSession = null
         // SharedMedia3Player is released by the playback controller lifecycle.

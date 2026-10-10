@@ -29,6 +29,39 @@
 
 ---
 
+## Halcyon（Apache-2.0）——歌词对外投放体系
+
+- **上游**：Halcyon — https://github.com/Kifranei/Halcyon
+- **许可证**：Apache-2.0（上游 LICENSE 无单列版权行、无 NOTICE 文件）
+- **本仓库落点**：
+  - `core/src/commonMain/kotlin/cp/player/core/lyricpush/**`（配置模型与纯协议层）
+  - `core/src/androidMain/kotlin/cp/player/core/lyricpush/**`（各渠道 bridge）
+  - `app-android/src/main/kotlin/cp/player/app/LyricMetadataSink.kt`
+- **移植了什么**：词幕（Lyricon）、SuperLyric、Lyric Getter、HyperOS 超级岛、
+  ColorOS 锁屏岛、Flyme 状态栏歌词 / 浮动通知歌词、Android 16 实时活动歌词、
+  媒体通知歌词（蓝牙 / 车机）共八条渠道的**协议实现与设置项**。
+- **改动清单**（逐文件写在头部注释里，这里给总览）：
+  1. Halcyon 的 `org.json` / `String.format(Locale.US)` 换成自带的
+     `LyricPushJson` 与手写补零（KMP `commonMain` 没有这两者）。
+  2. 分散在 `PlayerViewModel` 的「变化了吗 → 该发什么」判定收敛为单一协调器
+     `AndroidLyricPusher`：跨平台核心层只能看到一个投放出口。
+  3. **未移植**的部分（均为有意的设计取舍，不是遗漏）：
+     - Shizuku + 隐藏 `IConnectivityManager` 的 XMSF 断网旁路（只保留「直接发送」路径）；
+     - 超级岛的媒体控制按钮与分享卡片（需要上游的 `R.drawable` 矢量资源）；
+     - `PlaybackTickerState`（上游用于就地改写自家播放通知，本仓库的通知归 media3
+       `DefaultMediaNotificationProvider` 管，改写的入口是 `LyricMetadataSink`）。
+  4. 专辑封面改为**可选注入**（`LyricPushArtworkProvider`）：`core` 不引入图片加载依赖，
+     未注入时超级岛/通知走无封面 + 默认强调色的退化路径。
+  5. 小图标由 `Canvas` 合成（`core` 没有 `res/drawable`）。
+- **反向依赖说明**：词幕 Provider API（`io.github.proify.lyricon:provider`）、
+  SuperLyric（`com.github.HChenX:SuperLyricApi`）、Lyric Getter
+  （`com.github.HChenX:Lyric-Getter-Api`）、HyperOS 焦点通知
+  （`com.xzakota.hyper.notification:focus-api`）均为各自上游的公开 AAR，
+  见 `gradle/libs.versions.toml`。协议细节（intent action、extras 键名、
+  `miui.focus.*` 布局字段）以上游契约为准，本仓库不做改写。
+
+---
+
 ## 其余依赖
 
 其余第三方库（Compose Multiplatform、Ktor、kotlinx、Coil、Media3 等）见

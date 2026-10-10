@@ -59,6 +59,16 @@ hypnoticcanvas = "0.6.0"
 # Rhino 支持插件实际用到的 ES5/ES2020 子集（globalThis / JSON / RegExp / Array 高阶函数）。
 # ⚠️ 版本需 ≥ 1.7.13 才有 globalThis；锁 1.7.15（1.7.x 线最后一个稳定版）。
 rhino = "1.7.15"
+# —— 歌词对外投放（系统级歌词渠道）——
+# 这四个都是 AAR，且**只在 androidMain 用**：桌面端没有对应生态，commonMain 只留
+# 「纯协议层」（OPlus 的 LRC/JSON 构建、节流与重试策略），才能在 desktopTest 里单测。
+#
+# ⚠️ 词幕 provider 与 HyperOS focus-api 都在 Maven Central；SuperLyricApi 与
+# Lyric-Getter-Api **只在 JitPack**（settings.gradle.kts 的 jitpack 仓库就是为它们加的）。
+lyriconProvider = "0.1.70"
+superLyricApi = "3.4"
+lyricGetterApi = "7.0.0"
+hyperFocusApi = "1.4"
 mp3spi = "1.9.5.4"
 jflac = "1.5.2"
 jlayer = "1.0.1"
@@ -133,7 +143,7 @@ ktor-serialization-json = { module = "io.ktor:ktor-serialization-kotlinx-json", 
 ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
 ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
 ktor-server-cio = { module = "io.ktor:ktor-server-cio", version.ref = "ktor" }
-androidx-core-ktx = { module = "androidx.core:core-ktx", version = "1.15.0" }
+androidx-core-ktx = { module = "androidx.core:core-ktx", version = "1.17.0" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
 voyager-navigator = { module = "cafe.adriel.voyager:voyager-navigator", version.ref = "voyager" }
 voyager-screenmodel = { module = "cafe.adriel.voyager:voyager-screenmodel", version.ref = "voyager" }
@@ -151,6 +161,14 @@ coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" 
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
 hypnoticcanvas = { module = "com.mikepenz.hypnoticcanvas:hypnoticcanvas", version.ref = "hypnoticcanvas" }
 rhino = { module = "org.mozilla:rhino", version.ref = "rhino" }
+# 词幕（Lyricon）：Provider API —— 词幕侧靠 manifest 的 lyricon_module 元数据发现本应用。
+lyricon-provider = { module = "io.github.proify.lyricon:provider", version.ref = "lyriconProvider" }
+# SuperLyric：HChenX 的广播 IPC 生态，逐字歌词发布者协议。
+superlyric-api = { module = "com.github.HChenX:SuperLyricApi", version.ref = "superLyricApi" }
+# Lyric Getter：cn.lyric.getter.api 生态（状态栏歌词老牌方案）。
+lyric-getter-api = { module = "com.github.HChenX:Lyric-Getter-Api", version.ref = "lyricGetterApi" }
+# HyperOS 超级小岛：Focus Notification 的 Kotlin DSL（miui.focus.* extras 由它生成）。
+hyper-focus-api = { module = "com.xzakota.hyper.notification:focus-api", version.ref = "hyperFocusApi" }
 mp3spi = { module = "com.googlecode.soundlibs:mp3spi", version.ref = "mp3spi" }
 jflac-codec = { module = "org.jflac:jflac-codec", version.ref = "jflac" }
 jlayer = { module = "javazoom:jlayer", version.ref = "jlayer" }

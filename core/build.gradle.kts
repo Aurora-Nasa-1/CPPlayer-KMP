@@ -65,12 +65,25 @@ kotlin {
         }
         androidMain.dependencies {
             implementation(libs.kotlinx.coroutines.android)
+            // ⚠️ 版本由 1.15.0 提到 1.17.0（gradle/libs.versions.toml）。
+            // 原因：歌词投放要用的 `NotificationCompat.setShortCriticalText` /
+            // `setRequestPromotedOngoing`（Android 16 实时活动）是 core 1.16+ 才有的 API。
+            // 词幕的 AAR 本来就会把 1.17.0 顶上来，所以**实际解析结果没变** ——
+            // 显式声明只是让「这行依赖是刻意的」这件事不依赖传递依赖的偶然。
             implementation(libs.androidx.core.ktx)
             implementation(libs.androidx.media3.exoplayer)
             implementation(libs.androidx.media3.datasource)
             implementation(libs.androidx.media3.datasource.okhttp)
             // SimpleCache / StandaloneDatabaseProvider —— 音频流磁盘缓存
             implementation(libs.androidx.media3.database)
+            // —— 歌词对外投放（系统级歌词渠道）——
+            // 只放 androidMain：桌面端无对应生态，commonMain 只保留可测的纯协议层。
+            // 用 implementation 而非 api：消费方（app / app-android）只通过
+            // cp.player.core.lyricpush.LyricPusher 这个自家接口打交道，不直接碰 SDK 类型。
+            implementation(libs.lyricon.provider)      // 词幕（Lyricon）
+            implementation(libs.superlyric.api)        // SuperLyric
+            implementation(libs.lyric.getter.api)      // Lyric Getter
+            implementation(libs.hyper.focus.api)       // HyperOS 超级小岛
         }
 
         // 注意：这里曾声明 org.openjfx:javafx-graphics / javafx-base，但全仓 Kotlin 源码

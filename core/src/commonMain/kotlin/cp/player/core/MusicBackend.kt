@@ -13,6 +13,7 @@ import cp.player.core.control.ExternalPusher
 import cp.player.core.control.LocalServer
 import cp.player.core.control.LocalServerConfig
 import cp.player.core.control.LocalServerConfigStore
+import cp.player.core.lyricpush.LyricPushConfig
 import cp.player.core.control.LocalServerStatus
 import cp.player.core.control.PushResult
 import cp.player.core.control.PushTrack
@@ -344,7 +345,30 @@ class MusicBackend private constructor(
             // 淡入淡出：构造期读回用户设置（必须在第一次播放前就位，
             // 否则「启动即自动播放」那首会漏掉淡入）。
             fadeSettings = settings,
+            // 歌词对外投放（词幕 / SuperLyric / 超级岛 / 锁屏岛 / 状态栏歌词 …）。
+            // 桌面是空实现；Android 上是真实投放，但**所有渠道默认关闭**，
+            // 只有用户在设置页显式打开后才会对外写数据。
+            lyricPusher = lyricPusherLazy.value,
         )
+    }
+
+    /**
+     * 歌词对外投放入口。
+     *
+     * 惰性创建：桌面返回空实现，Android 构造各渠道 bridge（构造本身无副作用，
+     * 真正对外写数据要等 [applyLyricPushConfig] 把开关打开）。
+     */
+    private val lyricPusherLazy: kotlin.Lazy<cp.player.core.lyricpush.LyricPusher> =
+        kotlin.lazy { cp.player.core.lyricpush.createLyricPusher(context) }
+
+    /**
+     * 应用歌词投放配置（设置页改动 / 启动恢复）。
+     *
+     * **不落盘**：持久化由前端（`LyricPushConfigStore`）负责，后端只管生效 ——
+     * 与 [applyOutputConfig] 的分工一致。
+     */
+    fun applyLyricPushConfig(config: LyricPushConfig) {
+        runCatching { lyricPusherLazy.value.applyConfig(config) }
     }
 
     /**
@@ -805,6 +829,9 @@ class MusicBackend private constructor(
         // AMLL 歌词客户端同样持有 Ktor 客户端。仅当真装配过时才关 —— 否则 reset 会反向触发
         // 它的惰性创建（平白多一个请求 + 多一个连接池）。
         if (amllClientLazy.isInitialized()) runCatching { amllClientLazy.value.close() }
+        // 歌词投放：true 时会解除渠道注册（词幕 unregister / SuperLyric 反注册 /
+        // 收起超级岛与实时活动）。未装配过就不碰，避免反向触发惰性创建。
+        if (lyricPusherLazy.isInitialized()) runCatching { lyricPusherLazy.value.close() }
         // 仅在已装配时关闭下载引擎（避免 reset 反向触发惰性初始化）
         if (downloadManagerLazy.isInitialized()) {
             runCatching { downloadManager.shutdown() }

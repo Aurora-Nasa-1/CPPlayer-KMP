@@ -90,3 +90,39 @@
 -dontwarn java.beans.IntrospectionException
 -dontwarn java.beans.Introspector
 -dontwarn java.beans.PropertyDescriptor
+
+# ---------------------------------------------------------------------------
+# 8. 歌词对外投放的第三方 SDK
+# ---------------------------------------------------------------------------
+# 这三个 AAR 都是**跨进程 / 被外部进程按名字找**的契约类，混淆掉任何一个都会
+# 变成「编译能过、运行时对方收不到」——最难查的一类问题。
+#
+#  - 词幕（Lyricon）：AIDL 生成的 Stub/Proxy 类名与 Parcelable 字段名参与跨进程封送；
+#    另外它的 Provider 模型（Song / RichLyricLine / LyricWord）会被词幕侧反序列化。
+#  - SuperLyric：`com.hchen.superlyricapi.**` 是发布者/接收方共用的契约，且
+#    SuperLyricHelper 通过隐藏的 `android.os.ServiceManager` 找系统服务。
+#  - Lyric Getter：`cn.lyric.getter.api.**` 会被 Xposed 模块按**类名+成员名** hook，
+#    改名等于把 hook 点弄丢。
+#
+# ⚠️ 这三条是「协议名字」而不是「实现细节」，改动它们前先确认对方进程也能跟着改。
+-keep class io.github.proify.lyricon.** { *; }
+-dontwarn io.github.proify.lyricon.**
+-keep class com.hchen.superlyricapi.** { *; }
+-dontwarn com.hchen.superlyricapi.**
+-keep class cn.lyric.getter.api.** { *; }
+-dontwarn cn.lyric.getter.api.**
+# SuperLyricApi 引用了隐藏框架类（见 LyriconBridge 的注释）；缺失只是该路径不可用，
+# 不是必需依赖。
+-dontwarn android.os.ServiceManager
+
+# HyperOS 焦点通知：载荷由 focus-api 生成 JSON（`miui.focus.*` 键），
+# 模型类参与 kotlinx.serialization 的序列化 ⇒ 保留其 serializer 与字段名。
+-keep class com.xzakota.hyper.notification.** { *; }
+-keepclassmembers class com.xzakota.hyper.notification.** {
+    *** Companion;
+    *** serializer(...);
+}
+-dontwarn com.xzakota.hyper.notification.**
+
+# 超级岛前台服务由 AndroidManifest 按全限定名实例化，必须保留。
+-keep class cp.player.core.lyricpush.XiaomiSuperIslandLyricService { *; }

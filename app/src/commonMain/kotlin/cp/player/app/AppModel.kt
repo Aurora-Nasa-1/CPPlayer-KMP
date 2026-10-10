@@ -11,6 +11,14 @@ import cp.player.core.control.LocalServerConfig
 import cp.player.core.control.LocalServerConfigStore
 import cp.player.core.control.LocalServerStatus
 import cp.player.core.control.OutputMode
+import cp.player.core.lyricpush.LiveUpdateDisplayMode
+import cp.player.core.lyricpush.LiveUpdateSecondaryMode
+import cp.player.core.lyricpush.LyricContentMode
+import cp.player.core.lyricpush.LyricPushConfig
+import cp.player.core.lyricpush.LyricPushConfigStore
+import cp.player.core.lyricpush.LyricSecondaryMode
+import cp.player.core.lyricpush.OPlusLyricMode
+import cp.player.core.lyricpush.XiaomiSuperIslandConfig
 import cp.player.core.monitor.HealthMonitor
 import cp.player.core.playback.PlaybackController
 import cp.player.core.playback.PlaybackSessionSettings
@@ -979,6 +987,89 @@ object AppModel {
     fun restoreLocalServer() {
         val config = _localServerConfig.value
         if (config.enabled) runCatching { backend.applyOutputConfig(config) }
+    }
+
+    // ============ 歌词投放（词幕 / SuperLyric / 超级岛 / 锁屏岛 …） ============
+
+    private val _lyricPushConfig = MutableStateFlow(LyricPushConfigStore.read(settings))
+
+    /** 歌词投放配置流（设置页所有开关读它）。 */
+    val lyricPushConfigFlow: StateFlow<LyricPushConfig> = _lyricPushConfig.asStateFlow()
+
+    /** 当前配置快照（非 Compose 调用方用）。 */
+    fun lyricPushConfig(): LyricPushConfig = _lyricPushConfig.value
+
+    /**
+     * 按持久化配置恢复投放（应用启动时调用）。
+     *
+     * 全关时不做任何事 —— 这同时是「不引入任何多余 IPC / 通知」的保证：
+     * 未启用任何渠道的用户，投放入口连频道注册都不会发生。
+     */
+    fun restoreLyricPush() {
+        val config = _lyricPushConfig.value
+        if (config.anyEnabled) runCatching { backend.applyLyricPushConfig(config) }
+    }
+
+    fun setLyriconEnabled(enabled: Boolean) =
+        updateLyricPush(_lyricPushConfig.value.copy(lyriconEnabled = enabled))
+
+    fun setLyriconSecondary(mode: LyricSecondaryMode) =
+        updateLyricPush(_lyricPushConfig.value.copy(lyriconSecondary = mode))
+
+    fun setSuperLyricEnabled(enabled: Boolean) =
+        updateLyricPush(_lyricPushConfig.value.copy(superLyricEnabled = enabled))
+
+    fun setSuperLyricSecondary(mode: LyricSecondaryMode) =
+        updateLyricPush(_lyricPushConfig.value.copy(superLyricSecondary = mode))
+
+    fun setLyricGetterEnabled(enabled: Boolean) =
+        updateLyricPush(_lyricPushConfig.value.copy(lyricGetterEnabled = enabled))
+
+    fun setXiaomiSuperIslandEnabled(enabled: Boolean) =
+        updateLyricPush(_lyricPushConfig.value.copy(xiaomiSuperIslandEnabled = enabled))
+
+    /** 超级岛外观：整份替换（`sanitized()` 由 store 落盘时统一做）。 */
+    fun setXiaomiSuperIsland(config: XiaomiSuperIslandConfig) =
+        updateLyricPush(_lyricPushConfig.value.copy(xiaomiSuperIsland = config))
+
+    fun setColorOsEnabled(enabled: Boolean) =
+        updateLyricPush(_lyricPushConfig.value.copy(colorOsEnabled = enabled))
+
+    fun setColorOsMode(mode: OPlusLyricMode) =
+        updateLyricPush(_lyricPushConfig.value.copy(colorOsMode = mode))
+
+    fun setStatusBarLyricEnabled(enabled: Boolean) =
+        updateLyricPush(_lyricPushConfig.value.copy(statusBarLyricEnabled = enabled))
+
+    fun setStatusBarSecondary(mode: LyricSecondaryMode) =
+        updateLyricPush(_lyricPushConfig.value.copy(statusBarSecondary = mode))
+
+    fun setHeadsUpLyricEnabled(enabled: Boolean) =
+        updateLyricPush(_lyricPushConfig.value.copy(headsUpLyricEnabled = enabled))
+
+    fun setLiveUpdateEnabled(enabled: Boolean) =
+        updateLyricPush(_lyricPushConfig.value.copy(liveUpdateEnabled = enabled))
+
+    fun setLiveUpdateContent(mode: LyricContentMode) =
+        updateLyricPush(_lyricPushConfig.value.copy(liveUpdateContent = mode))
+
+    fun setLiveUpdateDisplay(mode: LiveUpdateDisplayMode) =
+        updateLyricPush(_lyricPushConfig.value.copy(liveUpdateDisplay = mode))
+
+    fun setLiveUpdateSecondary(mode: LiveUpdateSecondaryMode) =
+        updateLyricPush(_lyricPushConfig.value.copy(liveUpdateSecondary = mode))
+
+    fun setMediaNotificationLyricEnabled(enabled: Boolean) =
+        updateLyricPush(_lyricPushConfig.value.copy(mediaNotificationLyricEnabled = enabled))
+
+    fun setMediaNotificationSecondary(mode: LyricSecondaryMode) =
+        updateLyricPush(_lyricPushConfig.value.copy(mediaNotificationSecondary = mode))
+
+    /** 写盘 + 更新流 + 应用到后端。 */
+    private fun updateLyricPush(config: LyricPushConfig) {
+        LyricPushConfigStore.write(settings, config)
+        _lyricPushConfig.value = config
+        runCatching { backend.applyLyricPushConfig(config) }
     }
 
     // ---- 推送动作（供设置页手动触发） ----

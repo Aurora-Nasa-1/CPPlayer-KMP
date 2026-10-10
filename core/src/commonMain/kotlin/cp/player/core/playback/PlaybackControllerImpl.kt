@@ -100,6 +100,18 @@ class PlaybackControllerImpl(
      * 非空时构造期读回用户设置；设置页改完由前端 [setFade] 通知本类重读。
      */
     private val fadeSettings: SettingsStorage? = null,
+    /**
+     * 歌词对外投放出口（词幕 / SuperLyric / 超级岛 / 锁屏岛 / 状态栏歌词 等）。
+     *
+     * null = 未装配（既有测试与最小装配路径保持零对外副作用）。
+     * 非 null 时**每帧**收一次 [cp.player.core.lyricpush.LyricPushFrame] —— 节流与去重
+     * 全部由投放入口自己负责，这里不做判断，因为不同渠道关心的变化粒度不同
+     * （词幕要进度、SuperLyric 只要换行、超级岛 1.5s 一次）。
+     *
+     * 推送用 `runCatching` 包住：它是**旁路**功能，任何一个渠道的实现抛异常都不该
+     * 影响播放本身。
+     */
+    private val lyricPusher: cp.player.core.lyricpush.LyricPusher? = null,
 ) : PlaybackController {
 
     private val _state = MutableStateFlow(PlaybackUiState())
@@ -253,6 +265,48 @@ class PlaybackControllerImpl(
         // 必须在 observePlatform 之后：恢复要写入的 positionMs 不能被引擎初始的 0 冲掉
         // （positionMs 采集器已对「恢复中」做了保护，见 observePlatform）。
         restoreLastSession()
+        observeForLyricPush()
+    }
+
+    // ============ 歌词对外投放 ============
+
+    /**
+     * 把 [state] 的每一版快照折成 [cp.player.core.lyricpush.LyricPushFrame] 交给投放入口。
+     *
+     * 为什么挂在 `_state` 上而不是在 positionMs 采集器里直接发：歌词换行、换歌、
+     * 播放/暂停这三类变化**也**要走同一条路径，而它们分别写在好几处。挂在整个状态流上
+     * 就只有这一个出口，不会漏事件。`_state` 的变化频率由播放器位置轮询决定（约 200ms），
+     * 远低于 UI 帧率，开销可忽略。
+     */
+    private fun observeForLyricPush() {
+        val pusher = lyricPusher ?: return
+        _state
+            .onEach { snapshot ->
+                val lyrics = (snapshot.lyrics as? LyricsState.Success)?.lines.orEmpty()
+                val track = snapshot.currentTrack?.let { summary ->
+                    cp.player.core.lyricpush.LyricPushTrack(
+                        id = summary.id,
+                        title = summary.name,
+                        artist = summary.artist,
+                        album = summary.album.orEmpty(),
+                        durationMs = summary.durationMs,
+                        sourceId = snapshot.sourceId,
+                    )
+                }
+                runCatching {
+                    pusher.onFrame(
+                        cp.player.core.lyricpush.LyricPushFrame(
+                            track = track,
+                            lines = lyrics,
+                            lineIndex = snapshot.activeLyricIndex,
+                            positionMs = snapshot.positionMs,
+                            durationMs = snapshot.durationMs,
+                            isPlaying = snapshot.isPlaying,
+                        ),
+                    )
+                }
+            }
+            .launchIn(scope)
     }
 
     // ============ 播放模式持久化（随机 / 循环） ============

@@ -96,6 +96,7 @@ fun App(
         AppModel.syncAudioEffect()
         AppModel.syncFade()
         AppModel.restoreLocalServer()
+        AppModel.restoreLyricPush()
         AppModel.restoreAggressiveStandby()
         AppModel.restoreLanSync()
         AppModel.restoreLanVisibility()
