@@ -82,7 +82,9 @@ import androidx.graphics.shapes.RoundedPolygon
 import cp.player.app.ui.feedback.CpHaptic
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.util.formatTimeMs
+import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 
 /**
  * [CpSeekBar] 的总高。
@@ -283,11 +285,22 @@ fun CpSeekBar(
     color: Color = MaterialTheme.colorScheme.primary,
     trackColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
     thumbColor: Color = MaterialTheme.colorScheme.primary,
+    /**
+     * 曲目标识。变化时清掉「松手保持」的目标 —— 换歌后位置跳回 0，不清的话滑条会
+     * 举着上一首的秒数停最多 5 秒。null（默认）= 调用方不关心（不换曲的场景）。
+     */
+    trackKey: Any? = null,
 ) {
     val duration = durationMs.coerceAtLeast(1L).toFloat()
     var dragging by remember { mutableStateOf(false) }
     var dragValue by remember { mutableStateOf(0f) }
-    val shown = (if (dragging) dragValue else positionMs.toFloat()).coerceIn(0f, duration)
+    val held = rememberHeldSeekTarget(positionMs, durationMs, trackKey)
+    val shown = (when {
+        dragging -> dragValue
+        // 松手后**按住**目标位置，等播放追上来 —— 见 [rememberHeldSeekTarget]。
+        held.targetMs >= 0L -> held.targetMs.toFloat()
+        else -> positionMs.toFloat()
+    }).coerceIn(0f, duration)
     val haptics = cp.player.app.ui.feedback.LocalCpHaptics.current
     // 拖动时每跨过一整秒给一次轻点 —— 这是「我在逐秒定位」的唯一反馈，
     // 否则手指在波形上滑动完全是盲的。记住上一次打点的秒数，避免每帧触发。
@@ -325,7 +338,11 @@ fun CpSeekBar(
                 dragging = false
                 lastTickSecond = -1L
                 haptics.perform(CpHaptic.Confirm)
-                onSeek(dragValue.toLong().coerceIn(0L, durationMs.coerceAtLeast(0L)))
+                val target = dragValue.toLong().coerceIn(0L, durationMs.coerceAtLeast(0L))
+                // 先「按住目标」再发 seek：即便 onSeek 同步生效、引擎位置立刻回退，
+                // 也不会闪一帧原位。
+                held.hold(target)
+                onSeek(target)
             },
             valueRange = 0f..duration,
             enabled = enabled,
@@ -372,6 +389,95 @@ fun CpSeekBar(
     }
 }
 
+// ---------------------------------------------------------------- 滑条：松手保持目标
+
+/**
+ * 「松手后保持目标」的滑条状态。
+ *
+ * ## 为什么需要它
+ *
+ * seek 之后引擎要过几百毫秒才真的跳到新位置。这期间若继续读引擎位置，滑条会
+ * **先弹回原位、再追上来** —— 这一下弹回比不做任何平滑还难看，也是「seek 不跟手」
+ * 的唯一来源。所以松手时把目标**按住**，直到权威位置追平、或安全网超时。
+ *
+ * 判据与 PixelPlayer 的 `targetSeekFraction` 同源：**追平容差 = 4% 时长**
+ * （短曲目按 500ms 兜底），**安全网 5s**（引擎卡住 / seek 失败时不至于永远举着）。
+ *
+ * ⚠️ 用**权威位置**判追平，不用外推位置：外推值自己就在前进，拿它判会立刻自我
+ * 满足，等于没按住。
+ *
+ * ## 为什么这里**不做**逐帧插值（一个刻意的取舍）
+ *
+ * 引擎每 200ms 给一次权威位置，理论上可以像歌词那样外推成逐帧前进的值。但滑条
+ * 与歌词有一个本质差别：**歌词的位置是在绘制阶段读的（lambda provider，每帧只重绘），
+ * 而 `Slider` 的 `value` 是组合期参数** —— 喂逐帧变化的值就是让整条滑条（含 M3
+ * `Slider` 自身的交互层）**每秒重组 60 次**。
+ *
+ * 而收益是：每 200ms 的位移 = `200ms / 曲长 × 轨道像素宽`。240s 的歌在 600px 轨道上
+ * 是 **0.5px**（亚像素，看不见）；只有**很短的曲目**（30s 级）才会到 ~4px 而可见。
+ * 波形那一路本来就有 `animateFloatAsState` 弹簧（见 [CpWavyProgress]），已经是连续的。
+ *
+ * ⇒ 为一个「多数曲目下不可见、少数曲目下是 4px 台阶」的收益，换每秒 60 次重组，
+ * **不划算**。将来若真的在短曲目上看到台阶，正确做法是把拇指改成自绘 + 手势自接
+ * （那时位置可以在绘制阶段读），而不是给 `Slider` 喂逐帧值。
+ */
+internal class HeldSeekTarget {
+    /** 按住的目标（毫秒）；-1 = 没有未完成的 seek。 */
+    var targetMs by mutableStateOf(-1L)
+        private set
+
+    internal fun hold(targetMs: Long) {
+        this.targetMs = targetMs
+    }
+
+    internal fun release() {
+        targetMs = -1L
+    }
+}
+
+/** 追平容差占时长的比例。 */
+private const val HeldSeekToleranceFraction = 0.04f
+
+/** 追平容差的绝对下限（短曲目用），毫秒。 */
+private const val HeldSeekMinToleranceMs = 500L
+
+/** 安全网：无论位置有没有更新，这么久之后一定放手。 */
+private const val HeldSeekMaxHoldMs = 5_000L
+
+/**
+ * @param trackKey 曲目标识；变化时立刻放手（新曲目的位置与旧目标无关）。
+ */
+@Composable
+internal fun rememberHeldSeekTarget(
+    positionMs: Long,
+    durationMs: Long,
+    trackKey: Any?,
+): HeldSeekTarget {
+    val state = remember { HeldSeekTarget() }
+
+    // 换曲：立刻放手。
+    LaunchedEffect(trackKey) { state.release() }
+
+    // 追平即放手。用权威位置判定（见 KDoc）。positionMs 每 200ms 变一次 ⇒ 本效果
+    // 每 200ms 重启一次，代价只是读两个字段 + 一次比较。
+    LaunchedEffect(positionMs, state.targetMs, durationMs) {
+        val target = state.targetMs
+        if (target < 0L) return@LaunchedEffect
+        val tolerance = (durationMs * HeldSeekToleranceFraction).toLong()
+            .coerceAtLeast(HeldSeekMinToleranceMs)
+        if (abs(positionMs - target) <= tolerance) state.release()
+    }
+
+    // 安全网：与位置是否更新无关，保证一定会放手。
+    LaunchedEffect(state.targetMs) {
+        if (state.targetMs < 0L) return@LaunchedEffect
+        delay(HeldSeekMaxHoldMs)
+        state.release()
+    }
+
+    return state
+}
+
 /**
  * 旧版同款**直线**进度条 —— 1:1 移植自 `reference/cp-player-legacy` 的
  * `ui/component/ProgressSection.kt`（移动端播放页用，桌面播放页保留 [CpSeekBar] 波形）。
@@ -387,6 +493,12 @@ fun CpSeekBar(
  * 不顶住的话滑条会被拽回去。
  *
  * 旧版没有的东西也不加：无拖动时间气泡、无逐秒触感打点 —— 「旧版同款」按字面执行。
+ *
+ * ⚠️ **唯一的例外**：松手后滑条会「按住」目标位置，等播放追上来（见 [HeldSeekTarget]）。
+ * 这不是新增视觉，而是**修一个缺陷** —— 旧版在这里会先弹回原位再追上，看起来像
+ * 「seek 没生效」。保留原有视觉的底线是「外观逐像素一致」，不包括复刻这个抖动。
+ *
+ * @param trackKey 曲目标识；变化时清掉未完成的「保持目标」。见 [HeldSeekTarget]。
  */
 @Composable
 fun CpPlainSeekBar(
@@ -395,11 +507,17 @@ fun CpPlainSeekBar(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    trackKey: Any? = null,
 ) {
     val duration = durationMs.coerceAtLeast(1L).toFloat()
     var dragging by remember { mutableStateOf(false) }
     var dragValue by remember { mutableStateOf(0f) }
-    val shown = (if (dragging) dragValue else positionMs.toFloat()).coerceIn(0f, duration)
+    val held = rememberHeldSeekTarget(positionMs, durationMs, trackKey)
+    val shown = (when {
+        dragging -> dragValue
+        held.targetMs >= 0L -> held.targetMs.toFloat()
+        else -> positionMs.toFloat()
+    }).coerceIn(0f, duration)
     Slider(
         value = shown,
         onValueChange = {
@@ -408,7 +526,10 @@ fun CpPlainSeekBar(
         },
         onValueChangeFinished = {
             dragging = false
-            onSeek(dragValue.toLong().coerceIn(0L, durationMs.coerceAtLeast(0L)))
+            val target = dragValue.toLong().coerceIn(0L, durationMs.coerceAtLeast(0L))
+            // 先按住再 seek（同 CpSeekBar）。
+            held.hold(target)
+            onSeek(target)
         },
         valueRange = 0f..duration,
         enabled = enabled,
@@ -466,21 +587,28 @@ fun MorphingShape(
  *
  * 三根棒用不同的时长 + 起始偏移，节奏错开才像在跳；同步起落会像一个整体在缩放。
  *
+ * **暂停时塌成三个点**：单看一个静止的图标分不出「暂停」和「还没开始」，
+ * 而三根棒收成三个点读起来就是「音乐停住了」—— 形状比颜色多一个信息维度。
+ *
  * ⚠️ 性能：这是全应用**调用点最多**的常驻无限动画（迷你播放器 + 每个列表行 +
- * 队列弹层都可能同时挂着一份）。两条纪律：
+ * 队列弹层都可能同时挂着一份）。三条纪律：
  * 1. **动画值只写进 `graphicsLayer`，不写进 `height`**。旧写法把每帧变化的
  *    `barHeight.dp` 直接喂给 `Modifier.height(...)`，等于每帧触发一次**重新测量
  *    + 重新布局**；而换算到 `scaleY` 后每帧只重绘，布局完全不动。
- * 2. 只有真的在播放时才挂载（调用方负责，见 MiniPlayer / SongItem），
- *    暂停时整条 `rememberInfiniteTransition` 应当被卸载而不是空转。
+ * 2. **暂停时本组件自己就不挂 `rememberInfiniteTransition`**（按 [isPlaying] 分支）——
+ *    暂停态是纯静态的三个点，零动画开销，调用方不必再自己判。
+ * 3. 调用方仍只在**真的需要这个标记**时才渲染它（列表里只有当前那一首）：
+ *    多挂一份就多一份绘制，与本组件内部省不省动画无关。
+ *
+ * @param isPlaying 播放中 → 三根棒跳动；暂停 → 塌成三个点（静态）。
  */
 @Composable
 fun CpPlayingEqualizer(
     modifier: Modifier = Modifier,
     barColor: Color = Color.White,
     scrimColor: Color = Color.Black.copy(alpha = 0.55f),
+    isPlaying: Boolean = true,
 ) {
-    val transition = rememberInfiniteTransition(label = "cpEq")
     Row(
         modifier = modifier
             .background(scrimColor, MaterialTheme.shapes.extraSmall)
@@ -488,36 +616,54 @@ fun CpPlayingEqualizer(
         horizontalArrangement = Arrangement.spacedBy(1.5.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
-        repeat(3) { index ->
-            val scale by transition.animateFloat(
-                initialValue = CpEqualizerBarLowFraction,
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(
-                    // 时长错开 + 反向播放 + 起始偏移：三根棒三种节奏，
-                    // 这样才像三根独立的棒而不是一个块在伸缩。
-                    animation = tween(
-                        durationMillis = 480 + index * 140,
-                        easing = FastOutSlowInEasing,
+        if (isPlaying) {
+            val transition = rememberInfiniteTransition(label = "cpEq")
+            repeat(3) { index ->
+                // ⚠️ 不要写成 `by`：这里刻意保留 `State` 本体，让 `.value` 只在
+                // 下面 `graphicsLayer` 的**绘制 lambda** 里被读 —— 每帧只重绘、不重组。
+                val scale = transition.animateFloat(
+                    initialValue = CpEqualizerBarLowFraction,
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        // 时长错开 + 反向播放 + 起始偏移：三根棒三种节奏，
+                        // 这样才像三根独立的棒而不是一个块在伸缩。
+                        animation = tween(
+                            durationMillis = 480 + index * 140,
+                            easing = FastOutSlowInEasing,
+                        ),
+                        repeatMode = RepeatMode.Reverse,
+                        initialStartOffset = StartOffset(index * 160),
                     ),
-                    repeatMode = RepeatMode.Reverse,
-                    initialStartOffset = StartOffset(index * 160),
-                ),
-                label = "cpEqBar$index",
-            )
-            Box(
-                Modifier
-                    .width(2.dp)
-                    // 布局尺寸恒定在**最大**高度（10dp），动画只缩不涨 ——
-                    // 这样 Row 的高度在播放期间是个常量，不会每帧重新测量。
-                    .height(CpEqualizerBarMaxHeight)
-                    .graphicsLayer {
-                        scaleY = scale
-                        transformOrigin = TransformOrigin(0.5f, 1f)
-                    }
-                    .background(barColor, RoundedCornerShape(1.dp))
-            )
+                    label = "cpEqBar$index",
+                )
+                CpEqualizerBar(scale, barColor)
+            }
+        } else {
+            // 暂停：三根棒收成三个点。一个常量 State 就够，不挂任何动画。
+            val dotScale = remember { mutableStateOf(CpEqualizerDotFraction) }
+            repeat(3) { CpEqualizerBar(dotScale, barColor) }
         }
     }
+}
+
+/** 单根棒。`scaleY` 由外部传入的 [State] 提供，**只在绘制阶段读取**（见上方性能纪律）。 */
+@Composable
+private fun CpEqualizerBar(
+    scale: androidx.compose.runtime.State<Float>,
+    barColor: Color,
+) {
+    Box(
+        Modifier
+            .width(2.dp)
+            // 布局尺寸恒定在**最大**高度（10dp），动画只缩不涨 ——
+            // 这样 Row 的高度在播放期间是个常量，不会每帧重新测量。
+            .height(CpEqualizerBarMaxHeight)
+            .graphicsLayer {
+                scaleY = scale.value
+                transformOrigin = TransformOrigin(0.5f, 1f)
+            }
+            .background(barColor, RoundedCornerShape(1.dp))
+    )
 }
 
 /** 均衡器单根棒的**布局**高度（dp）。动画只在它之上做 `scaleY` 缩放，不改布局。 */
@@ -526,16 +672,21 @@ private val CpEqualizerBarMaxHeight = 10.dp
 /** 均衡器最短态占最长态的比例（3dp / 10dp），保持与原观感一致。 */
 private const val CpEqualizerBarLowFraction = 3f / 10f
 
+/** 暂停时三根棒收成的「点」占最长态的比例（棒宽 2dp / 最长 10dp）⇒ 正方形小点。 */
+private const val CpEqualizerDotFraction = 2f / 10f
+
 
 // ---------------------------------------------------------------- 播放控制
 
 /**
  * Expressive 播放 / 暂停按钮。
  *
- * 三处动效叠在一起，缺一个就会「像普通 FilledIconButton」：
- * 1. 按下时容器**圆角收缩**（圆 → 圆角方形），带回弹；
- * 2. 图标随按下轻微缩小（触感反馈）；
- * 3. 播放 ↔ 暂停之间交叉淡入淡出。
+ * 四处动效叠在一起，缺一个就会「像普通 FilledIconButton」：
+ * 1. **形状表达状态**：播放中是胶囊（正圆），暂停是圆角方形 —— 单看一个静止的图标
+ *    分不出「在放」和「停住了」，形状比颜色多一个信息维度；
+ * 2. 按下时容器**圆角再收紧一档**，带回弹；
+ * 3. 图标随按下轻微缩小（触感反馈）；
+ * 4. 播放 ↔ 暂停之间交叉淡入淡出。
  */
 @Composable
 fun CpPlayPauseButton(
@@ -552,8 +703,11 @@ fun CpPlayPauseButton(
     val pressed by interaction.collectIsPressedAsState()
     val haptics = cp.player.app.ui.feedback.LocalCpHaptics.current
 
+    // 静止圆角由播放状态决定：播放中 size/2（正圆 / 胶囊），暂停 size*0.36（圆角方形）。
+    // 按下时无论哪种状态都收到 0.30 —— 「按下去」始终是同一个方向。
+    val idleCorner = if (isPlaying) size / 2f else size * 0.36f
     val corner by animateDpAsState(
-        targetValue = if (pressed) size * 0.30f else size / 2f,
+        targetValue = if (pressed) size * 0.30f else idleCorner,
         animationSpec = CpMotion.spatialFast(),
         label = "cpPlayCorner",
     )

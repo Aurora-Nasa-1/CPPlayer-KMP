@@ -117,6 +117,10 @@ private const val MAX_EXTENSION_LEN = 6
  * - 内部渲染的仍是 material3 的 [Text]，`Modifier`（含 `sharedBounds`）原样传给它。
  *
  * @param emphasized 焦点位标记。只有它为真的文本才允许**自动**滚动，见 [CpTextReveal.Marquee]。
+ * @param marqueeEnabled 是否**允许**自动滚动，默认 true。
+ *   播放页 / 迷你播放器把「正在播放」传进来 —— 暂停时歌名停住不滚，画面跟着声音一起停；
+ *   这既是状态语义（静止的标题 = 静止的音乐），也让列表里少一个常驻动画。
+ *   为 false 时跑马灯**降级为悬停浮出**，不是关掉揭示：桌面上仍然读得到全文。
  */
 @Composable
 fun CpText(
@@ -129,6 +133,7 @@ fun CpText(
     reveal: CpTextReveal = CpTextReveal.Auto,
     ellipsisMode: CpEllipsisMode = CpEllipsisMode.Tail,
     emphasized: Boolean = false,
+    marqueeEnabled: Boolean = true,
 ) {
     // 字重参与测量（同一串字 Bold 比 Regular 宽），颜色不影响宽度 ⇒ 只合 fontWeight。
     val resolvedStyle = if (fontWeight != null) style.copy(fontWeight = fontWeight) else style
@@ -158,8 +163,11 @@ fun CpText(
     val effective = when (reveal) {
         CpTextReveal.None -> CpTextReveal.None
         CpTextReveal.Hover -> CpTextReveal.Hover
-        CpTextReveal.Marquee -> CpTextReveal.Marquee
-        CpTextReveal.Auto -> if (emphasized) CpTextReveal.Marquee else CpTextReveal.Hover
+        // ⚠️ [marqueeEnabled] 为 false 时降级为「悬停浮出」，**不是**关掉揭示：
+        // 桌面上仍然能把全文读出来，只是不自动滚 —— 观感更安静，也不白跑动画。
+        CpTextReveal.Marquee -> if (marqueeEnabled) CpTextReveal.Marquee else CpTextReveal.Hover
+        CpTextReveal.Auto ->
+            if (emphasized && marqueeEnabled) CpTextReveal.Marquee else CpTextReveal.Hover
     }
 
     val marquee = if (overflow && effective == CpTextReveal.Marquee) {

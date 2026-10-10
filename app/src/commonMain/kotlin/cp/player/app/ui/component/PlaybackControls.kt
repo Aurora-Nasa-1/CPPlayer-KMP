@@ -10,7 +10,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,8 +28,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -39,21 +41,44 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.theme.CpMotion
+import kotlinx.coroutines.delay
+
+/** 主控件行的三个槽位 —— 记住「刚按下的是哪一个」，用来驱动权重联动。 */
+private enum class ControlSlot { PREV, PLAY, NEXT }
+
+/**
+ * 按下后维持「胀开/收窄」的时长。
+ *
+ * 比动画本身略长一点：动画走 `spatialFast`（百毫秒量级），松手瞬间就回落会让
+ * 整排的「呼吸」只闪一下看不清；维持到动作已经发出去之后再回落，读起来才是一整下。
+ */
+private const val ControlWeightHoldMillis = 260L
 
 /**
  * 主控件行：上一首 / 播放·暂停 / 下一首。
  *
- * **Expressive 化的三处**（都靠 [CpMotion]，跟着主题的 `MotionScheme` 走）：
+ * **Expressive 化的四处**（都靠 [CpMotion]，跟着主题的 `MotionScheme` 走）：
  *
- * 1. 中央按钮按下时**圆角从 40dp 收到 22dp** —— 从胶囊向圆角方形过渡。这是 M3 Expressive
+ * 1. **权重联动**：按下的那一颗胀到 [pressedExpansion] 倍、另外两颗同时收到
+ *    [pressedCompression] 倍 —— 整排像被捏了一下。形状没变、颜色没变，但整行的
+ *    「重量」在动。这是本组件里感知最强、成本最低的一处反馈。
+ * 2. 中央按钮按下时**圆角从 40dp 收到 22dp** —— 从胶囊向圆角方形过渡。这是 M3 Expressive
  *    表达「按下」的方式，比单纯变暗/缩放更有辨识度。
- * 2. 图标随按下轻微缩小（`0.90`），松手用 spatial 回弹弹回。
- * 3. 缓冲态用**变形加载指示器**（[CpLoadingIndicator]）而不是转圈的
+ * 3. 图标随按下轻微缩小（`0.90`），松手用 spatial 回弹弹回。
+ * 4. 缓冲态用**变形加载指示器**（[CpLoadingIndicator]）而不是转圈的
  *    `CircularProgressIndicator` —— 后者在 M3 Expressive 里已被前者取代。
  *
  * ⚠️ 中央按钮的**尺寸由调用方通过 [centerButtonModifier] 决定**（播放页给的是
- * `weight(1.2f).height(72.dp)`，即一个宽胶囊）。所以这里只动画圆角、不硬编码尺寸 ——
- * 换成固定直径的圆按钮会让 72dp 的宽胶囊塌成一个小圆，整行比例垮掉。
+ * `.height(72.dp)`，配合 [centerWeight] = 1.2 得到一个略宽的胶囊）。所以这里只动画
+ * 权重与圆角、不硬编码尺寸 —— 换成固定直径的圆按钮会让 72dp 的宽胶囊塌成一个小圆，
+ * 整行比例垮掉。
+ *
+ * ⚠️ **[sideButtonModifier] / [centerButtonModifier] 里不要再写 `weight`**：
+ * 权重现在由本组件按 [sideWeight] / [centerWeight] 加联动系数算出来，
+ * 传进来的 `weight` 会被 `Modifier.weight` 的**后写覆盖**规则吃掉一半，行为不可预期。
+ *
+ * @param pressedExpansion 按下者相对自身基准权重的倍率。
+ * @param pressedCompression 其余两颗相对自身基准权重的倍率（< 1 ⇒ 收窄）。
  */
 @Composable
 fun PlaybackControls(
@@ -65,10 +90,45 @@ fun PlaybackControls(
     modifier: Modifier = Modifier,
     sideButtonModifier: Modifier = Modifier,
     centerButtonModifier: Modifier = Modifier,
+    sideWeight: Float = 1f,
+    centerWeight: Float = 1.2f,
+    pressedExpansion: Float = 1.1f,
+    pressedCompression: Float = 0.65f,
     sideIconSize: Dp = 28.dp,
     centerIconSize: Dp = 40.dp,
-    horizontalArrangement: Arrangement.Horizontal = Arrangement.SpaceEvenly,
 ) {
+    var lastPressed by remember { mutableStateOf<ControlSlot?>(null) }
+    LaunchedEffect(lastPressed) {
+        if (lastPressed != null) {
+            delay(ControlWeightHoldMillis)
+            lastPressed = null
+        }
+    }
+
+    // 倍率是**乘在各自基准权重上**的，不是绝对值 —— 这样 1 : 1.2 的「中央略宽」
+    // 在联动期间也保持住，否则按下侧键时中央会被拉成和侧键一样宽，比例会跳一下。
+    fun weightFor(slot: ControlSlot, base: Float): Float = when (lastPressed) {
+        slot -> base * pressedExpansion
+        null -> base
+        else -> base * pressedCompression
+    }
+
+    val prevWeight by animateFloatAsState(
+        targetValue = weightFor(ControlSlot.PREV, sideWeight),
+        animationSpec = CpMotion.spatialFast(),
+        label = "prevWeight",
+    )
+    val playWeight by animateFloatAsState(
+        targetValue = weightFor(ControlSlot.PLAY, centerWeight),
+        animationSpec = CpMotion.spatialFast(),
+        label = "playWeight",
+    )
+    val nextWeight by animateFloatAsState(
+        targetValue = weightFor(ControlSlot.NEXT, sideWeight),
+        animationSpec = CpMotion.spatialFast(),
+        label = "nextWeight",
+    )
+
     Surface(
         modifier = modifier,
         shape = CircleShape,
@@ -79,21 +139,41 @@ fun PlaybackControls(
     ) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
-            horizontalArrangement = horizontalArrangement,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             val s = cpStrings()
-            SkipButton(Icons.Filled.SkipPrevious, s.player.previousTrack, onSkipPrevious, sideButtonModifier, sideIconSize)
+            Box(Modifier.weight(prevWeight).then(sideButtonModifier)) {
+                SkipButton(
+                    icon = Icons.Filled.SkipPrevious,
+                    label = s.player.previousTrack,
+                    onClick = onSkipPrevious,
+                    onPressed = { lastPressed = ControlSlot.PREV },
+                    modifier = Modifier.fillMaxSize(),
+                    iconSize = sideIconSize,
+                )
+            }
 
-            PlayPauseSurface(
-                isPlaying = isPlaying,
-                isBuffering = isBuffering,
-                onClick = onPlayPause,
-                modifier = centerButtonModifier,
-                iconSize = centerIconSize,
-            )
+            Box(Modifier.weight(playWeight).then(centerButtonModifier)) {
+                PlayPauseSurface(
+                    isPlaying = isPlaying,
+                    isBuffering = isBuffering,
+                    onClick = onPlayPause,
+                    onPressed = { lastPressed = ControlSlot.PLAY },
+                    modifier = Modifier.fillMaxSize(),
+                    iconSize = centerIconSize,
+                )
+            }
 
-            SkipButton(Icons.Filled.SkipNext, s.player.nextTrack, onSkipNext, sideButtonModifier, sideIconSize)
+            Box(Modifier.weight(nextWeight).then(sideButtonModifier)) {
+                SkipButton(
+                    icon = Icons.Filled.SkipNext,
+                    label = s.player.nextTrack,
+                    onClick = onSkipNext,
+                    onPressed = { lastPressed = ControlSlot.NEXT },
+                    modifier = Modifier.fillMaxSize(),
+                    iconSize = sideIconSize,
+                )
+            }
         }
     }
 }
@@ -103,6 +183,7 @@ private fun SkipButton(
     icon: ImageVector,
     label: String,
     onClick: () -> Unit,
+    onPressed: () -> Unit,
     modifier: Modifier,
     iconSize: Dp,
 ) {
@@ -110,6 +191,9 @@ private fun SkipButton(
     val haptics = cp.player.app.ui.feedback.LocalCpHaptics.current
     IconButton(
         onClick = {
+            // 先点亮「我按的是这一颗」，再发动作 —— 权重联动立刻开始，
+            // 而动作本身要等下一帧，观感上是「按下去 → 整排动 → 才切歌」。
+            onPressed()
             // 切歌与播放/暂停同级，都是「我按了，必须马上知道」的动作。
             haptics.perform(cp.player.app.ui.feedback.CpHaptic.Confirm)
             onClick()
@@ -131,6 +215,7 @@ private fun PlayPauseSurface(
     isPlaying: Boolean,
     isBuffering: Boolean,
     onClick: () -> Unit,
+    onPressed: () -> Unit,
     modifier: Modifier,
     iconSize: Dp,
 ) {
@@ -153,6 +238,7 @@ private fun PlayPauseSurface(
 
     Surface(
         onClick = {
+            onPressed()
             haptics.perform(cp.player.app.ui.feedback.CpHaptic.Confirm)
             onClick()
         },

@@ -2,6 +2,7 @@ package cp.player.app.ui.screen
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -38,6 +39,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.platform.downloadUpdate
 import cp.player.app.platform.openUrl
 import cp.player.app.ui.component.CpIconSize
+import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.util.popOrNotify
@@ -89,24 +91,18 @@ class AboutScreen : Screen {
             onBack = { navigator.popOrNotify() },
         ) { pageModifier ->
             SettingsPage(pageModifier) {
+                AboutHero()
                 SettingsSection("版本信息") {
                     SettingsClickItem(
                         index = 0,
-                        total = 3,
-                        icon = Icons.Default.Info,
-                        title = "当前版本",
-                        subtitle = AppVersion.fullVersion,
-                    )
-                    SettingsClickItem(
-                        index = 1,
-                        total = 3,
+                        total = 2,
                         icon = Icons.Default.Code,
                         title = "提交哈希",
                         subtitle = AppVersion.shortSha,
                     )
                     SettingsClickItem(
-                        index = 2,
-                        total = 3,
+                        index = 1,
+                        total = 2,
                         icon = if (isChecking) null else Icons.Default.SystemUpdate,
                         title = "检查更新",
                         subtitle = when {
@@ -186,6 +182,59 @@ class AboutScreen : Screen {
                     showUpdateDialog = false
                 },
             )
+        }
+    }
+}
+
+/**
+ * 「关于」页的门面：大号主色应用名 + 版本 + 一句话定位 + 更新日志入口。
+ *
+ * **为什么值得单独做一个 hero**：这一页此前是一串 `SettingsClickItem`，与「播放设置」
+ * 「音源管理」长得完全一样 —— 用户读不出这是「这个软件的门面」。参考 Kazumi 的
+ * `about_page.dart`：它把应用名做成巨型主色标题，下面是版本号与一句话定位，
+ * 再下面是药丸按钮组。这是**零依赖、零成本**的「这是个正经项目」信号。
+ *
+ * 版本号刻意只在这里出现一次 —— 下面「版本信息」组不再重复列「当前版本」。
+ *
+ * ⚠️ 左右内边距用 [CpSpacing.formRowHorizontal]，与 [SettingsSection] 的标题、
+ * 分组行的内边距同源 —— 三者左边缘必须落在同一条竖线上，否则整页会歪。
+ */
+@Composable
+private fun AboutHero() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                start = CpSpacing.formRowHorizontal,
+                end = CpSpacing.formRowHorizontal,
+                top = CpSpacing.formVertical,
+            ),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = "CPPlayer",
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            text = AppVersion.fullVersion,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "Compose Multiplatform 音乐播放器",
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Spacer(Modifier.height(4.dp))
+        // 内边距清零，让文字左边缘与上面的标题对齐 —— TextButton 默认有 12dp 横向内边距，
+        // 直接用会让这一行比标题右缩 12dp，一眼看出没对齐。
+        TextButton(
+            onClick = { openUrl(AppVersion.RELEASES_PAGE) },
+            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 8.dp),
+        ) {
+            Text("更新日志")
         }
     }
 }

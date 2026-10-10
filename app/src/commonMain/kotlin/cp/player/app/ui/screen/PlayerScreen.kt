@@ -7,6 +7,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -580,6 +581,9 @@ private fun LyricsPage(
     onChangeSource: (() -> Unit)? = null,
 ) {
     val s = cpStrings()
+    // 沉浸歌词（影院模式）：歌词自己判定「无操作够久了」，这里负责把控件收起来。
+    // 状态由 LyricContent 持有并回调（它才知道什么时候算「无操作」）。
+    var lyricsImmersive by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxSize().padding(horizontal = 24.dp).padding(bottom = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -590,30 +594,39 @@ private fun LyricsPage(
                 showTranslation = showTranslation,
                 onSeek = onSeek,
                 onChangeSource = onChangeSource,
+                onImmersiveChange = { lyricsImmersive = it },
             )
         }
         // 浮动胶囊：**按内容宽度**收口并居中，而不是铺满整宽。
         // 原先这枚只有两个按钮却长满一行，`SpaceEvenly` 把它们推到 1/4 与 3/4 处，
         // 中间空出一大块 —— 看起来像「少了两个按钮」。
         // 换成与播放器页同款的 CpFloatingToolbar 之后，左右滑动换页时底部不再跳。
-        cp.player.app.ui.component.CpFloatingToolbar(
-            modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp),
+        //
+        // 沉浸态整条收起来：屏幕只剩歌词。`Modifier.align` 必须留在 AnimatedVisibility
+        // **外面** —— 里面的 scope 是 AnimatedVisibilityScope，不是 ColumnScope。
+        AnimatedVisibility(
+            visible = !lyricsImmersive,
+            modifier = Modifier.align(Alignment.CenterHorizontally),
         ) {
-            IconButton(onClick = onRepeat) {
-                val icon = when (state.repeatMode) {
-                    RepeatMode.ONE -> Icons.Filled.RepeatOne
-                    else -> Icons.Filled.Repeat
+            cp.player.app.ui.component.CpFloatingToolbar(
+                modifier = Modifier.padding(top = 8.dp),
+            ) {
+                IconButton(onClick = onRepeat) {
+                    val icon = when (state.repeatMode) {
+                        RepeatMode.ONE -> Icons.Filled.RepeatOne
+                        else -> Icons.Filled.Repeat
+                    }
+                    Icon(
+                        icon, s.player.repeat, Modifier.size(24.dp),
+                        tint = if (state.repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
-                Icon(
-                    icon, s.player.repeat, Modifier.size(24.dp),
-                    tint = if (state.repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                cp.player.app.ui.component.ExpressiveLikeButton(
+                    isFavorite = state.isFavorite,
+                    onClick = onLikeClick,
                 )
             }
-            cp.player.app.ui.component.ExpressiveLikeButton(
-                isFavorite = state.isFavorite,
-                onClick = onLikeClick,
-            )
         }
         Spacer(Modifier.height(8.dp))
     }
@@ -659,6 +672,17 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
             animationSpec = cp.player.app.ui.theme.CpMotion.spatialSlow(),
             label = "coverElevation",
         )
+        // 暂停时封面轻轻「收」一下（0.95）。用**确定时长的 tween** 而不是 spring：
+        // spring 要 ~1s 才停，长尾会和随后的手势抢帧，而这一下本来就该是「一下就完」。
+        // 说不出它做了什么，但拿掉之后整个播放页会显得「死」。
+        //
+        // ⚠️ graphicsLayer 放在 sharedBounds **之后**（内层）：共享元素上报的是**布局**
+        // bounds，不受这里的绘制缩放影响 —— 否则封面飞行/展开的落点会偏 5%。
+        val coverScale by animateFloatAsState(
+            targetValue = if (state.isPlaying) 1f else 0.95f,
+            animationSpec = tween(260),
+            label = "coverScale",
+        )
         Box(
             Modifier.weight(1.2f).fillMaxWidth(),
             contentAlignment = Alignment.Center,
@@ -670,6 +694,10 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                         sharedContentState = rememberSharedContentState(key = "cover-${track.id}"),
                         animatedVisibilityScope = animatedVisibilityScope
                     )
+                    .graphicsLayer {
+                        scaleX = coverScale
+                        scaleY = coverScale
+                    }
                     .clip(RoundedCornerShape(coverCorner)),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                 shadowElevation = coverElevation,
@@ -709,6 +737,8 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                     maxLines = 1,
                     color = MaterialTheme.colorScheme.onSurface,
                     emphasized = true,
+                    // 暂停时停住不滚：画面跟着声音一起停。见 CpText.marqueeEnabled。
+                    marqueeEnabled = state.isPlaying,
                     modifier = Modifier.sharedBounds(
                         sharedContentState = rememberSharedContentState(key = "title-${track.id}"),
                         animatedVisibilityScope = animatedVisibilityScope,
@@ -739,6 +769,10 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
         ProgressRow(state, onSeek)
 
         // 主控件（prev / play-pause / next）
+        //
+        // ⚠️ 这里**不再传 `weight`**：权重由 PlaybackControls 按 sideWeight / centerWeight
+        // 算，并在按下时做联动（按下者胀、另两颗收）。传进来的 weight 会被后写覆盖，
+        // 行为不可预期 —— 见该组件的 KDoc。
         cp.player.app.ui.component.PlaybackControls(
             isPlaying = state.isPlaying,
             isBuffering = state.isBuffering,
@@ -746,8 +780,10 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
             onSkipNext = onSkipNext,
             onSkipPrevious = onSkipPrev,
             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-            sideButtonModifier = Modifier.weight(1f).height(72.dp),
-            centerButtonModifier = Modifier.weight(1.2f).height(72.dp),
+            sideButtonModifier = Modifier.height(72.dp),
+            centerButtonModifier = Modifier.height(72.dp),
+            sideWeight = 1f,
+            centerWeight = 1.2f,
             sideIconSize = 36.dp,
             centerIconSize = 40.dp,
         )
@@ -889,6 +925,7 @@ private fun ProgressRow(
             durationMs = duration,
             onSeek = onSeek,
             enabled = seekable,
+            trackKey = state.currentTrack?.id,
             modifier = Modifier.fillMaxWidth(),
         )
         Row(

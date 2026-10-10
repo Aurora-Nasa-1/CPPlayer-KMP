@@ -244,6 +244,7 @@ fun DesktopPlayerScreen(
                                 onSeek = onSeek,
                                 enabled = seekable,
                                 waveFlowing = state.isPlaying,
+                                trackKey = track.id,
                                 modifier = Modifier.fillMaxWidth(),
                             )
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

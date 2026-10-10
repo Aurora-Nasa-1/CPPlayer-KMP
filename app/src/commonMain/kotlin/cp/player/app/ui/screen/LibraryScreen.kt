@@ -73,6 +73,7 @@ import cp.player.app.ui.component.BentoMiniTile
 import cp.player.app.ui.component.BentoPill
 import cp.player.app.ui.component.BentoStatCard
 import cp.player.app.ui.component.ContentState
+import cp.player.app.ui.component.CpSongRowSkeleton
 import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LazyScrollColumn
@@ -641,7 +642,18 @@ private fun LazyListScope.playlistsSection(
 ) {
     when {
         state.loading -> item {
-            StateSurface { ContentState(title = s.library.syncingLibrary, message = s.library.syncingLibraryNote, loading = true) }
+            // 骨架屏而不是「一张写着『正在同步』的卡」：结构先到位、数据后填，
+            // 页面看起来是在**长出来**而不是重画一遍（见 CpSongRowSkeleton）。
+            // 文案保留一行 —— 用户仍然知道在等什么，而不是对着会动的灰块猜。
+            Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                Text(
+                    text = s.library.syncingLibraryNote,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 4.dp),
+                )
+                CpSongRowSkeleton(rows = 6)
+            }
         }
         state.error != null -> item {
             StateSurface {

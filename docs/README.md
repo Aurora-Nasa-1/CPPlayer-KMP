@@ -29,6 +29,7 @@
 | 文档 | 内容 |
 |------|------|
 | [design/ALBUM_WALL_MODE.md](design/ALBUM_WALL_MODE.md) | 专辑墙模式：无极缩放的尺度空间、手机 / 桌面交互、沉浸播放器与队列空间化（附可交互原型 `album-wall-prototype.html`） |
+| [design/M3E_REFERENCE_ADOPTION.md](design/M3E_REFERENCE_ADOPTION.md) | 参考 PixelPlayer / Kazumi 的 M3 Expressive 借鉴（**体验版**）：按「用户能感觉到什么」组织 —— 单一 `expansionFraction` 驱动的播放页编排、十个「代码看不出但拿掉就廉价」的细节、Kazumi「关于」页的 hero 版式、手势物理、播放页主题跟歌走 |
 
 ## 历史归档（[`history/`](history/)）
 

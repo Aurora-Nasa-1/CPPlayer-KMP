@@ -1,5 +1,6 @@
 package cp.player.app.ui.component
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -12,12 +13,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextMotion
@@ -31,11 +38,42 @@ import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeSyllable
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.KaraokeLyricsView
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.theme.CpMotion
 import cp.player.core.playback.LyricsState
 import cp.player.core.playback.PlaybackUiState
+import kotlinx.coroutines.delay
+
+/** 沉浸歌词：无操作多久之后进入（毫秒）。 */
+private const val ImmersiveTimeoutMs = 6_000L
+
+/** 沉浸歌词的检测间隔。250ms 足够跟手，又比逐帧轮询便宜得多。 */
+private const val ImmersivePollIntervalMs = 250L
+
+/** 沉浸态的歌词放大倍率。再大就会把当前行挤出视口、失去「读歌词」的本意。 */
+private const val ImmersiveFontScale = 1.25f
 
 /**
  * 歌词显示组件（KMP 版使用官方 accompanist-lyrics-ui 移植）。
+ *
+ * ## 沉浸模式（影院模式）
+ *
+ * 无操作 [ImmersiveTimeoutMs] 之后自动进入：**歌词放大 1.25×**，并通过
+ * [onImmersiveChange] 让宿主把控件（底部工具条、进度条等）收起来 —— 屏幕上只剩
+ * 歌词本身。任意指针交互立刻复位。
+ *
+ * 三个设计取舍：
+ * 1. **只在播放中进入**。暂停时进沉浸会让「想操作却找不到按钮」，而且暂停本来
+ *    就是用户要动手的时刻。
+ * 2. **不做上下渐变遮罩**。遮罩要么用固定色（但播放页背景是一条竖向渐变，固定色
+ *    会在中间出现一条色带），要么用 `DstIn` 把内容本身淡出（但那要求
+ *    `CompositingStrategy.Offscreen` —— 而歌词本来就在逐帧重绘，再套一层全尺寸
+ *    离屏缓冲是实打实的开销）。两害相权，先不做。
+ * 3. **交互检测写纯字段，不写 Compose 状态**。指针事件每帧都可能来，写 State 会
+ *    让整棵歌词子树每帧重组；写字段则零成本，沉浸与否由后台轮询统一决定
+ *    （见 [ImmersiveController]）。
+ *
+ * @param immersiveEnabled 是否允许自动进入沉浸模式。
+ * @param onImmersiveChange 沉浸态变化回调；宿主据此隐藏 / 恢复自己的控件。
  */
 @Composable
 fun LyricContent(
@@ -46,9 +84,22 @@ fun LyricContent(
     contentPadding: PaddingValues = PaddingValues(vertical = 60.dp, horizontal = 8.dp),
     /** 无歌词时的换源入口（跳「歌词来源」页）。null = 不显示入口。 */
     onChangeSource: (() -> Unit)? = null,
+    immersiveEnabled: Boolean = true,
+    onImmersiveChange: ((Boolean) -> Unit)? = null,
 ) {
     val lyricState = state.lyrics
     val lines = (lyricState as? LyricsState.Success)?.lines.orEmpty()
+
+    val immersiveController = remember { ImmersiveController() }
+    val immersive = rememberImmersiveState(
+        controller = immersiveController,
+        enabled = immersiveEnabled,
+        isPlaying = state.isPlaying,
+        onImmersiveChange = onImmersiveChange,
+    )
+    val immersiveInteraction = remember(immersiveController) {
+        immersiveInteractionModifier(immersiveController)
+    }
 
     if (lines.isEmpty()) {
         val s = cpStrings()
@@ -161,27 +212,36 @@ fun LyricContent(
         }
     }
 
+    // 沉浸态的字体放大。改的是**真实字号**而不是 graphicsLayer 缩放：后者是把已栅格化
+    // 的文字层拉大，中文会发糊。代价是放大过程中歌词会重新测量排版 —— 只发生在
+    // 切换的那 ~400ms，且只有视口内十来行。
+    val fontScale by animateFloatAsState(
+        targetValue = if (immersive) ImmersiveFontScale else 1f,
+        animationSpec = CpMotion.spatialSlow(),
+        label = "immersiveFontScale",
+    )
+
     val currentTextStyle = MaterialTheme.typography.headlineMedium
-    val normalStyle = remember(currentTextStyle) {
+    val normalStyle = remember(currentTextStyle, fontScale) {
         currentTextStyle.copy(
-            fontSize = 28.sp,
+            fontSize = (28 * fontScale).sp,
             fontWeight = FontWeight.Bold,
-            lineHeight = 36.sp,
+            lineHeight = (36 * fontScale).sp,
             textMotion = TextMotion.Animated,
         )
     }
 
-    val accompanimentStyle = remember(currentTextStyle) {
+    val accompanimentStyle = remember(currentTextStyle, fontScale) {
         currentTextStyle.copy(
-            fontSize = 20.sp,
+            fontSize = (20 * fontScale).sp,
             fontWeight = FontWeight.Bold,
             textMotion = TextMotion.Animated,
         )
     }
 
     val phoneticTextStyle = MaterialTheme.typography.bodyMedium.copy(
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
+        fontSize = (14 * fontScale).sp,
+        lineHeight = (20 * fontScale).sp,
     )
 
     // 读 [smoothPosition] 而不是直接读 positionSource：只有读 State 才能在绘制阶段
@@ -190,21 +250,101 @@ fun LyricContent(
         { smoothPosition.longValue.toInt() }
     }
 
-    KaraokeLyricsView(
-        listState = listState,
-        lyrics = syncedLyrics,
-        currentPosition = currentPositionProvider,
-        onLineClicked = { line -> onSeek(line.start.toLong()) },
-        onLinePressed = { },
-        normalLineTextStyle = normalStyle,
-        accompanimentLineTextStyle = accompanimentStyle,
-        phoneticTextStyle = phoneticTextStyle,
-        textColor = MaterialTheme.colorScheme.onSurface,
-        showTranslation = showTranslation,
-        showPhonetic = true,
-        useBlurEffect = false,
-        modifier = modifier.fillMaxSize()
-    )
+    Box(modifier.fillMaxSize().then(immersiveInteraction)) {
+        KaraokeLyricsView(
+            listState = listState,
+            lyrics = syncedLyrics,
+            currentPosition = currentPositionProvider,
+            onLineClicked = { line -> onSeek(line.start.toLong()) },
+            onLinePressed = { },
+            normalLineTextStyle = normalStyle,
+            accompanimentLineTextStyle = accompanimentStyle,
+            phoneticTextStyle = phoneticTextStyle,
+            textColor = MaterialTheme.colorScheme.onSurface,
+            showTranslation = showTranslation,
+            showPhonetic = true,
+            useBlurEffect = false,
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
+
+/**
+ * 「观察但不消费」的指针交互检测。
+ *
+ * 走 `PointerEventPass.Initial` 且**不 consume**：手势照常传给下面的歌词列表，
+ * 我们只是搭个便车记录时间戳。写成普通函数（不是 @Composable）—— 它只是造一个
+ * modifier，没有任何组合期依赖。
+ */
+private fun immersiveInteractionModifier(controller: ImmersiveController): Modifier =
+    Modifier.pointerInput(Unit) {
+        awaitPointerEventScope {
+            while (true) {
+                awaitPointerEvent(PointerEventPass.Initial)
+                controller.lastInteractionNanos = System.nanoTime()
+            }
+        }
+    }
+
+/**
+ * 沉浸歌词的超时判定。
+ *
+ * ## 为什么交互时间戳是**纯字段**而不是 Compose 状态
+ *
+ * 指针事件（尤其拖动滚动）每帧都可能来。若把时间戳写成 `mutableStateOf`，
+ * 每次指针事件都会让读它的 composable 重组 —— 一秒 60 次。写成普通字段则零成本，
+ * 而「是否沉浸」由一个后台轮询统一决定：只有它翻转时才重组
+ * （见 [ImmersiveController.immersive]）。
+ *
+ * ## 轮询而不是 `delay(timeout)` 一次性定时
+ *
+ * 一次性定时在「已经沉浸、用户又碰了一下屏幕」时无法重新计时（协程早就结束了）。
+ * 轮询每 [ImmersivePollIntervalMs] 比较一次空闲时长，进入 / 退出两个方向都能覆盖，
+ * 而且同值写入不会触发重组。
+ */
+@Composable
+private fun rememberImmersiveState(
+    controller: ImmersiveController,
+    enabled: Boolean,
+    isPlaying: Boolean,
+    onImmersiveChange: ((Boolean) -> Unit)?,
+): Boolean {
+    LaunchedEffect(enabled, isPlaying) {
+        if (!enabled || !isPlaying) {
+            controller.immersive = false
+            return@LaunchedEffect
+        }
+        controller.lastInteractionNanos = System.nanoTime()
+        controller.immersive = false
+        while (true) {
+            delay(ImmersivePollIntervalMs)
+            val idleMs = (System.nanoTime() - controller.lastInteractionNanos) / 1_000_000
+            controller.immersive = idleMs >= ImmersiveTimeoutMs
+        }
+    }
+
+    LaunchedEffect(controller.immersive) {
+        onImmersiveChange?.invoke(controller.immersive)
+    }
+    // 离开歌词页时恢复宿主控件 —— 否则沉浸态会「粘」到别的页面上。
+    DisposableEffect(Unit) {
+        onDispose { onImmersiveChange?.invoke(false) }
+    }
+
+    return controller.immersive
+}
+
+/**
+ * 沉浸歌词的运行时状态。
+ *
+ * @property lastInteractionNanos 最近一次指针交互的单调时钟读数（纳秒）。
+ *   **纯字段** —— 写它不触发重组，见 [rememberImmersiveState] 的 KDoc。
+ * @property immersive 是否处于沉浸态。这是**唯一**的 Compose 状态：
+ *   只有它翻转时才需要重组。
+ */
+private class ImmersiveController {
+    var lastInteractionNanos: Long = 0L
+    var immersive by mutableStateOf(false)
 }
 
 /**
