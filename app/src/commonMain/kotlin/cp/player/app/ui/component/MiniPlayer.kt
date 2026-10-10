@@ -21,11 +21,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
@@ -72,9 +67,6 @@ fun SharedTransitionScope.MiniPlayer(
         (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f)
     } else 0f
     val press = rememberPressedScale()
-    // 渐变消隐的落色 = 页面背景色。**必须在组合期取出来**：`MaterialTheme.colorScheme`
-    // 是 @ReadOnlyComposable，在 drawBehind 的绘制 lambda 里读会编译不过。
-    val scrimColor = MaterialTheme.colorScheme.surface
 
     Surface(
         onClick = onClick,
@@ -83,30 +75,6 @@ fun SharedTransitionScope.MiniPlayer(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp)
-            // 底部渐变消隐：把卡片**上方**那条内容「化」进底栏，而不是被一条直线切断。
-            //
-            // 画在节点边界**之外**（向上 28dp）—— 既不参与布局，也不影响宿主量到的
-            // onBarHeight（尾留白量的是布局尺寸）。它排在 Surface 的背景之前，于是与
-            // 卡片重叠的那一段被卡片自己盖住，只有上方那一段可见。
-            //
-            // ⚠️ 若将来某层父容器加了 `clipToBounds`，这一段会被裁掉 —— 表现是渐变
-            // 完全消失（不是变窄）。届时要把渐变移到宿主层，而不是加大高度。
-            .drawBehind {
-                val scrim = 28.dp.toPx()
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            scrimColor.copy(alpha = 0.75f),
-                            scrimColor,
-                        ),
-                        startY = -scrim,
-                        endY = 0f,
-                    ),
-                    topLeft = Offset(0f, -scrim),
-                    size = Size(size.width, scrim),
-                )
-            }
             .then(press.second)
             .sharedBounds(
                 sharedContentState = rememberSharedContentState(key = "player-container"),
