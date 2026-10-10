@@ -36,6 +36,14 @@ data class SearchUiState(
     val searchHistory: List<String> = emptyList(),
 )
 
+/**
+ * 搜索页的状态与取数。
+ *
+ * ⚠️ [initialQuery] **只在模型构造时读一次**（见 `init`）：调用方必须保证
+ * 「一个 `SearchScreen` 实例一份模型」，否则这个参数会被静默丢弃 ——
+ * 落点是 `SearchScreen.modelTag`（Voyager 的 ScreenModel 按 Screen 类名键控，
+ * 不传 `tag` 时常驻的搜索 tab 会与首页 push 出来的搜索页共用一份模型）。
+ */
 class SearchScreenModel(private val initialQuery: String = "") : ScreenModel {
     private val _state = MutableStateFlow(SearchUiState(query = initialQuery))
     val state: StateFlow<SearchUiState> = _state.asStateFlow()

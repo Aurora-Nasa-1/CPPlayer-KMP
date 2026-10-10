@@ -79,10 +79,29 @@ import kotlinx.coroutines.launch
 private val SearchFieldTopPadding = 12.dp
 
 class SearchScreen(private val initialQuery: String = "") : Screen {
+    /**
+     * 本实例在 Voyager `ScreenModelStore` 里的槽位后缀 —— 让**每个实例各有一份**
+     * [SearchScreenModel]。
+     *
+     * ⚠️ 不传 `tag` 就是**共用一份**：Voyager 的 ScreenModel 按 **Screen 类名**键控
+     * （`Screen.getKey()` 默认返回类全名，`ScreenModelStore.getKey(screen, tag)` =
+     * `类名/模型类名/(tag ?: "default")`，底层还是 static 表），于是 `MAIN_TABS` 里那个
+     * **常驻**的搜索 tab 与首页 banner / 专辑卡 / 歌手卡 `push(SearchScreen(名字))` 出来的
+     * 路由页会撞进同一个模型。而工厂只在**第一次**调用 ⇒ `initialQuery` 被静默丢弃：
+     * 从首页点专辑打开的，是「搜索 tab 里上次那批结果 / 空框占位符」。
+     *
+     * tag 取**实例身份**而不是关键词：tab 的关键词恒为空串，按关键词区分就会与
+     * 「标题为空的那张 banner」push 出来的页面撞槽。实例由 `MAIN_TABS` 与导航栈持有
+     * ⇒ tag 在整个会话里稳定，模型也就跟着稳定（push 覆盖再返回时不会重建，
+     * 用户改过的关键词还在）。⚠️ 因此本类**不能改成 `data class`** —— 那时
+     * `hashCode()` 变成按内容相等，上面那两种空关键词的实例又会撞回同一个槽。
+     */
+    private val modelTag = "search-${hashCode()}"
+
     @OptIn(ExperimentalLayoutApi::class)
     @Composable
     override fun Content() {
-        val model = rememberScreenModel { SearchScreenModel(initialQuery) }
+        val model = rememberScreenModel(tag = modelTag) { SearchScreenModel(initialQuery) }
         val state by model.state.collectAsState()
         val scope = rememberCoroutineScope()
         val provider = AppModel.activeProviderId()
