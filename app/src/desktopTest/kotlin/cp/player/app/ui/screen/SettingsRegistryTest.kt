@@ -124,7 +124,11 @@ class SettingsRegistryTest {
                 // 于是快照测试一直挂在红灯上 —— 本次迁移顺手补回来。
                 // `msg_notify`（私信通知）同理：它与 `standby` 是同一件事的两面
                 // （桌面端只有常驻托盘才收得到通知），所以紧挨着它。
-                listOf("stream_output", "integration", "standby", "msg_notify"),
+                //
+                // ⚠️ 2026-10-10：`stream_output` + `integration` 合成 `external_access`
+                // ——两者共用同一份 LocalServerConfig，分成两个入口时「允许第三方读数据」
+                // 依赖的总开关在另一页。合并后这一组只剩一个对外入口。
+                listOf("external_access", "standby", "msg_notify"),
                 byGroup[SettingsGroup.CONNECTIVITY]?.map { it.id },
                 "「连接与集成」组的内容或顺序变了",
             )

@@ -342,100 +342,95 @@ class SettingsI18nPreviewTest {
     }
 
     /**
-     * 本地流输出页的**真实文案**。
+     * 外部访问页的**真实文案**。
      *
      * 单独出图的理由：这一页的警告文案最长（英文 `warningLanNoToken` 有 160+ 字符），
      * 而它恰恰是最需要被看见的一条 —— 窄屏下换行后是否还能读完整，编译和单测量不到。
+     *
+     * 2026-10-10：原「本地流输出」页与「集成」页合成一页，出图也随之合成一张 ——
+     * 合并后的页比原来任一页都长（六段），**窄屏能否读完整**是这一张图唯一要回答的问题。
      */
     @Composable
-    private fun StreamOutputPage() {
+    private fun ExternalAccessPage() {
         val s = cpStrings()
         ScrollColumn(Modifier.fillMaxSize()) {
-            SettingsSection(s.streamOutput.sectionMain) {
+            SettingsSection(s.externalAccess.sectionService) {
                 SettingsSwitchItem(
-                    title = s.streamOutput.enabled,
-                    subtitle = s.streamOutput.enabledNote,
+                    title = s.externalAccess.enabled,
+                    subtitle = s.externalAccess.enabledNote,
                     checked = true,
                     onCheckedChange = {},
                     index = 0,
                     total = 3,
                 )
                 SettingsSegmentedItem(
-                    title = s.streamOutput.audioOutput,
-                    subtitle = s.streamOutput.outputNote(local = false),
-                    options = listOf(s.streamOutput.outputLocal, s.streamOutput.outputRemoteOnly),
+                    title = s.externalAccess.audioOutput,
+                    subtitle = s.externalAccess.outputNote(local = false),
+                    options = listOf(s.externalAccess.outputLocal, s.externalAccess.outputRemoteOnly),
                     selectedIndex = 1,
                     onSelect = {},
                     index = 1,
                     total = 3,
                 )
                 SettingsSegmentedItem(
-                    title = s.streamOutput.bindScope,
-                    subtitle = s.streamOutput.bindScopeNote,
-                    options = listOf(s.streamOutput.scopeLocalhost, s.streamOutput.scopeLan),
+                    title = s.externalAccess.bindScope,
+                    subtitle = s.externalAccess.bindScopeNote,
+                    options = listOf(s.externalAccess.scopeLocalhost, s.externalAccess.scopeLan),
                     selectedIndex = 1,
                     onSelect = {},
                     index = 2,
                     total = 3,
                 )
             }
-            SettingsNote(s.streamOutput.statusRunning("http://192.168.1.24:38086/stream"))
-            // 两条警告同页：ERROR 那条比 WARNING 长，中文短英文长三倍。
-            SettingsNote(s.streamOutput.warningLanNoToken, emphasis = SettingsNoteEmphasis.WARNING)
-            SettingsNote(s.integration.streamDisabledNote, emphasis = SettingsNoteEmphasis.WARNING)
-            SettingsSection(s.streamOutput.sectionToken) {
+            SettingsNote(s.externalAccess.statusRunning("http://192.168.1.24:38086/stream"))
+            // 警告文案最长的一条（中文短、英文长三倍），与「服务未启用」提示同页。
+            SettingsNote(s.externalAccess.warningLanNoToken, emphasis = SettingsNoteEmphasis.WARNING)
+            SettingsNote(s.externalAccess.serviceDisabledNote, emphasis = SettingsNoteEmphasis.WARNING)
+            SettingsSection(s.externalAccess.sectionToken) {
                 SettingsButtonItem(
-                    text = s.streamOutput.regenerateToken,
-                    subtitle = s.streamOutput.regenerateTokenNote,
+                    text = s.externalAccess.regenerateToken,
+                    subtitle = s.externalAccess.regenerateTokenNote,
                     index = 0,
                     total = 1,
                     onClick = {},
                 )
             }
-            SettingsNote(s.streamOutput.tokenStorageNote)
-        }
-    }
-
-    /** 集成页：带参数的校验错误说明 + 推送结果。 */
-    @Composable
-    private fun IntegrationPage() {
-        val s = cpStrings()
-        ScrollColumn(Modifier.fillMaxSize()) {
-            SettingsSection(s.integration.sectionPush) {
-                SettingsClickItem(
-                    title = s.integration.testConnection,
-                    subtitle = s.integration.testIdle("/api/health"),
-                    index = 0,
-                    total = 3,
-                    onClick = {},
-                )
-                SettingsClickItem(
-                    title = s.integration.pushCurrentQueue,
-                    subtitle = s.integration.pushCurrentQueueNote,
-                    index = 1,
-                    total = 3,
-                    onClick = {},
-                )
-                SettingsClickItem(
-                    title = s.integration.receiverAddress,
-                    subtitle = s.integration.pushFailed("connection refused"),
-                    index = 2,
-                    total = 3,
-                    onClick = {},
-                )
-            }
-            SettingsSection(s.integration.sectionThirdParty) {
+            SettingsNote(s.externalAccess.tokenStorageNote)
+            SettingsSection(s.externalAccess.sectionThirdParty) {
                 SettingsSwitchItem(
-                    title = s.integration.allowApi,
-                    subtitle = s.integration.allowApiNote,
+                    title = s.externalAccess.allowApi,
+                    subtitle = s.externalAccess.allowApiNote,
                     checked = false,
                     onCheckedChange = {},
                     index = 0,
                     total = 2,
                 )
             }
-            SettingsNote(s.integration.apiSwitchNote)
-            SettingsNote(s.integration.configFileNote)
+            SettingsNote(s.externalAccess.apiSwitchNote)
+            SettingsSection(s.externalAccess.sectionPush) {
+                SettingsClickItem(
+                    title = s.externalAccess.testConnection,
+                    subtitle = s.externalAccess.testIdle("/api/health"),
+                    index = 0,
+                    total = 3,
+                    onClick = {},
+                )
+                SettingsClickItem(
+                    title = s.externalAccess.pushCurrentQueue,
+                    subtitle = s.externalAccess.pushCurrentQueueNote,
+                    index = 1,
+                    total = 3,
+                    onClick = {},
+                )
+                SettingsClickItem(
+                    title = s.externalAccess.receiverAddress,
+                    subtitle = s.externalAccess.pushFailed("connection refused"),
+                    index = 2,
+                    total = 3,
+                    onClick = {},
+                )
+            }
+            SettingsNote(s.externalAccess.configFileNote)
         }
     }
 
@@ -854,9 +849,9 @@ class SettingsI18nPreviewTest {
                     // 那个按钮是 error 色的破坏性动作，英文下最容易挤爆。
                     "timer-active" to @Composable { SleepTimerDialogContent(active = true) },
                     "timer-idle" to @Composable { SleepTimerDialogContent(active = false) },
-                    // 批次 2：警告文案最长的三页，`troubleshooting` 单条 400+ 字符。
-                    "stream" to @Composable { StreamOutputPage() },
-                    "integration" to @Composable { IntegrationPage() },
+                    // 批次 2：警告文案最长的两页，`troubleshooting` 单条 400+ 字符。
+                    // `external_access` 是合并后的六段长页 —— 出图看的是窄屏能不能读完整。
+                    "external" to @Composable { ExternalAccessPage() },
                     "standby" to @Composable { StandbyPage() },
                 ).forEach { (name, content) ->
                     render("i18n-$name-$tag-wide", 1000, 1100) {

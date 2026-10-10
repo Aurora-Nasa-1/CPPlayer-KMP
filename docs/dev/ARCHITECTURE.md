@@ -153,7 +153,7 @@ val api: cp.player.core.api.MusicApiService get() = backend.musicApi
 > 属配置/数据契约类，是否收敛待另行评估）：
 > `AccountScreen`（`api.isLoggedInStatus`）、`BackendErrorScreen` 与
 > `ProviderManagementScreen`（`provider.BackendProvider`）、
-> `IntegrationSettingsScreen` / `StreamOutputSettingsScreen`（`control.LocalServerConfig`
+> `ExternalAccessSettingsScreen`（`control.LocalServerConfig`
 > / `OutputMode` / `LocalServerStatus` / `PushResult` / `resolveAdvertisedHost`）。
 > 这些类型本质是**跨端配置与状态的数据契约**（类比 §3.1 的 `music.*` 共享模型），
 > 但按 §3.1「领域模型本就该直接引用」的口径它们又不够格 —— 后续要么升格为

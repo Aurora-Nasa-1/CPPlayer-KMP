@@ -1,7 +1,6 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Api
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.ClosedCaption
@@ -18,6 +17,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SettingsEthernet
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.WavingHand
 import androidx.compose.ui.graphics.vector.ImageVector
 import cafe.adriel.voyager.core.screen.Screen
@@ -260,33 +260,50 @@ private fun accountEntries(): List<SettingsEntry> = listOf(
 /**
  * 「连接与集成」组。
  *
- * ⚠️ 这里原本是**一个**「本地服务器」巨石页（5 个分组 + 8 条说明），把两个方向相反的
- * 角色混在一起：
- * 1. **服务方（inbound）** —— 按自己的契约对外提供音频流与数据接口；
- * 2. **推送方（outbound）** —— 把流地址推给接收端，接收端定义接口、CPPlayer 适配它。
+ * ⚠️ 这一组关于本机 HTTP 服务的入口经历了「一页 → 两页 → 一页」：
+ * 1. 最初是**一个**「本地服务器」巨石页（5 个分组 + 8 条说明）；
+ * 2. 后按方向拆成「本地流输出」+「外部推送与集成」两页；
+ * 3. 2026-10-10 又合回**一页**（[ExternalAccessSettingsScreen]）。
  *
- * 拆成两页后，每页只回答一个问题：「别人怎么连我」 vs 「我怎么连别人」。
+ * 拆开的代价是**跨页依赖**：两个方向共用同一份 `LocalServerConfig`，于是「允许第三方
+ * 读取数据」在推送页、它依赖的服务总开关却在另一页，只能在页尾写「请先到另一页开启」。
+ * 现在它们是一个入口下的若干段落，由**一个总开关**统管。
  */
 private fun connectivityEntries(): List<SettingsEntry> = listOf(
     SettingsEntry(
-        id = "stream_output",
+        id = "external_access",
         group = SettingsGroup.CONNECTIVITY,
-        titleOf = { it.settings.itemStreamOutput.title },
-        subtitleOf = { it.settings.itemStreamOutput.subtitle },
+        titleOf = { it.settings.itemExternalAccess.title },
+        subtitleOf = { it.settings.itemExternalAccess.subtitle },
         icon = Icons.Filled.SettingsEthernet,
         accent = SettingsAccent.SECONDARY,
-        keywords = listOf("服务器", "端口", "绑定", "局域网", "令牌", "token", "端口占用", "stream", "server", "port"),
-        screen = { StreamOutputSettingsScreen() },
+        // 两个方向的词都在：用户不一定记得「拉流」和「推送」分别在哪一页（现在也不分家了）。
+        keywords = listOf(
+            "服务器", "端口", "绑定", "局域网", "令牌", "token", "端口占用",
+            "推送", "接收端", "接口", "第三方", "集成", "外部", "访问",
+            "stream", "server", "port", "push", "receiver", "api", "integration",
+        ),
+        screen = { ExternalAccessSettingsScreen() },
     ),
+    // 歌词投放与「外部访问」同族：都是「把本机正在发生的事交给别人」。
+    // 区别只在出口 —— 那一页给的是 HTTP 接口，这一页给的是系统 UI 与歌词应用。
     SettingsEntry(
-        id = "integration",
+        id = "lyric_push",
         group = SettingsGroup.CONNECTIVITY,
-        titleOf = { it.settings.itemIntegration.title },
-        subtitleOf = { it.settings.itemIntegration.subtitle },
-        icon = Icons.Filled.Api,
-        accent = SettingsAccent.SECONDARY,
-        keywords = listOf("推送", "接收端", "接口", "第三方", "集成", "api", "push", "receiver"),
-        screen = { IntegrationSettingsScreen() },
+        titleOf = { it.lyricPush.entryTitle },
+        subtitleOf = { it.lyricPush.entrySubtitle },
+        icon = Icons.Filled.Subtitles,
+        accent = SettingsAccent.TERTIARY,
+        // ⚠️ androidOnly：所有渠道都依赖 Android 的通知/前台服务/SDK，
+        // 且两端**不共用设置存储** ⇒ 桌面显示这一页只会得到一堆永不生效的开关。
+        androidOnly = true,
+        keywords = listOf(
+            "歌词", "词幕", "状态栏歌词", "桌面歌词", "锁屏歌词", "超级岛", "灵动岛",
+            "实时活动", "通知歌词", "车机", "蓝牙", "投送", "投放", "外发",
+            "lyric", "lyricon", "superlyric", "super island", "hyperos", "coloros",
+            "oplus", "flyme", "ticker", "live update", "lock screen", "notification",
+        ),
+        screen = { LyricPushSettingsScreen() },
     ),
     SettingsEntry(
         id = "standby",
