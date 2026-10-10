@@ -3,12 +3,14 @@ package cp.player.app.ui.screen
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,7 +23,12 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
+import cp.player.app.platform.ShizukuState
+import cp.player.app.platform.openUrl
+import cp.player.app.platform.requestShizukuPermission
+import cp.player.app.platform.shizukuState
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
@@ -75,6 +82,11 @@ class LyricPushSettingsScreen : Screen {
                 channelsSection(s, config)
                 colorOsSection(s, config)
                 superIslandSection(s, config)
+                if (config.xiaomiSuperIslandEnabled &&
+                    config.xiaomiSuperIsland.xmsfMode != XiaomiSuperIslandConfig.XmsfIsolationMode.OFF
+                ) {
+                    SettingsNote(s.lyricPush.islandShizukuNote)
+                }
                 liveUpdateSection(s, config)
             }
         }
@@ -262,7 +274,7 @@ private fun superIslandSection(s: CpStrings, config: LyricPushConfig) {
             selectedIndex = island.content.ordinal,
             onSelect = { AppModel.setXiaomiSuperIsland(island.copy(content = LyricContentMode.entries[it])) },
             index = 0,
-            total = 10,
+            total = 14,
             enabled = enabled,
         )
         SettingsSegmentedItem(
@@ -281,7 +293,7 @@ private fun superIslandSection(s: CpStrings, config: LyricPushConfig) {
                 )
             },
             index = 1,
-            total = 10,
+            total = 14,
             enabled = enabled,
         )
         SettingsSwitchItem(
@@ -290,7 +302,7 @@ private fun superIslandSection(s: CpStrings, config: LyricPushConfig) {
             checked = island.fullLyricShowLeftCover,
             onCheckedChange = { AppModel.setXiaomiSuperIsland(island.copy(fullLyricShowLeftCover = it)) },
             index = 2,
-            total = 10,
+            total = 14,
             enabled = enabled && island.lyricMode == XiaomiSuperIslandConfig.LyricMode.FULL,
         )
         SettingsSwitchItem(
@@ -299,7 +311,7 @@ private fun superIslandSection(s: CpStrings, config: LyricPushConfig) {
             checked = island.scrollingEnabled,
             onCheckedChange = { AppModel.setXiaomiSuperIsland(island.copy(scrollingEnabled = it)) },
             index = 3,
-            total = 10,
+            total = 14,
             enabled = enabled,
         )
         IslandCharSlider(
@@ -308,7 +320,7 @@ private fun superIslandSection(s: CpStrings, config: LyricPushConfig) {
             range = XiaomiSuperIslandConfig.RIGHT_CHARS_RANGE,
             enabled = enabled,
             index = 4,
-            total = 10,
+            total = 14,
         ) { AppModel.setXiaomiSuperIsland(island.copy(rightTextChars = it)) }
         IslandCharSlider(
             title = s.lyricPush.islandLeftCoverChars,
@@ -316,7 +328,7 @@ private fun superIslandSection(s: CpStrings, config: LyricPushConfig) {
             range = XiaomiSuperIslandConfig.LEFT_WITH_COVER_RANGE,
             enabled = enabled,
             index = 5,
-            total = 10,
+            total = 14,
         ) { AppModel.setXiaomiSuperIsland(island.copy(leftWithCoverTextChars = it)) }
         IslandCharSlider(
             title = s.lyricPush.islandLeftChars,
@@ -324,7 +336,7 @@ private fun superIslandSection(s: CpStrings, config: LyricPushConfig) {
             range = XiaomiSuperIslandConfig.LEFT_WITHOUT_COVER_RANGE,
             enabled = enabled,
             index = 6,
-            total = 10,
+            total = 14,
         ) { AppModel.setXiaomiSuperIsland(island.copy(leftWithoutCoverTextChars = it)) }
         SettingsSwitchItem(
             title = s.lyricPush.islandTextColor,
@@ -332,7 +344,7 @@ private fun superIslandSection(s: CpStrings, config: LyricPushConfig) {
             checked = island.textColorEnabled,
             onCheckedChange = { AppModel.setXiaomiSuperIsland(island.copy(textColorEnabled = it)) },
             index = 7,
-            total = 10,
+            total = 14,
             enabled = enabled,
         )
         SettingsSegmentedItem(
@@ -351,7 +363,7 @@ private fun superIslandSection(s: CpStrings, config: LyricPushConfig) {
                 )
             },
             index = 8,
-            total = 10,
+            total = 14,
             enabled = enabled && island.textColorEnabled,
         )
         SettingsSwitchItem(
@@ -360,7 +372,7 @@ private fun superIslandSection(s: CpStrings, config: LyricPushConfig) {
             checked = island.progressColorEnabled,
             onCheckedChange = { AppModel.setXiaomiSuperIsland(island.copy(progressColorEnabled = it)) },
             index = 9,
-            total = 10,
+            total = 14,
             enabled = enabled,
         )
         SettingsSegmentedItem(
@@ -374,10 +386,88 @@ private fun superIslandSection(s: CpStrings, config: LyricPushConfig) {
                 .coerceAtLeast(0),
             onSelect = { AppModel.setXiaomiSuperIsland(island.copy(dismissDelayMs = DISMISS_ORDER[it])) },
             index = 10,
-            total = 10,
+            total = 14,
             enabled = enabled,
         )
+        // —— 网络隔离（XMSF / Shizuku）——
+        // 三档的语义见 XiaomiSuperIslandConfig.XmsfIsolationMode 与移植指南 §5.4。
+        SettingsSegmentedItem(
+            title = s.lyricPush.islandXmsf,
+            subtitle = when (island.xmsfMode) {
+                XiaomiSuperIslandConfig.XmsfIsolationMode.OFF -> s.lyricPush.islandXmsfOffNote
+                XiaomiSuperIslandConfig.XmsfIsolationMode.STANDARD -> s.lyricPush.islandXmsfStandardNote
+                XiaomiSuperIslandConfig.XmsfIsolationMode.ENHANCED -> s.lyricPush.islandXmsfEnhancedNote
+            },
+            options = listOf(
+                s.lyricPush.islandXmsfOff,
+                s.lyricPush.islandXmsfStandard,
+                s.lyricPush.islandXmsfEnhanced,
+            ),
+            selectedIndex = island.xmsfMode.ordinal,
+            onSelect = {
+                AppModel.setXiaomiSuperIsland(
+                    island.copy(xmsfMode = XiaomiSuperIslandConfig.XmsfIsolationMode.entries[it]),
+                )
+            },
+            index = 11,
+            total = 14,
+            enabled = enabled,
+        )
+        SettingsSegmentedItem(
+            title = s.lyricPush.islandXmsfDuration,
+            options = XMSF_BLOCK_PRESETS.map { s.lyricPush.islandXmsfDurationValue(it) },
+            selectedIndex = XMSF_BLOCK_PRESETS.indexOf(island.xmsfBlockDurationMs).coerceAtLeast(0),
+            onSelect = {
+                AppModel.setXiaomiSuperIsland(island.copy(xmsfBlockDurationMs = XMSF_BLOCK_PRESETS[it]))
+            },
+            index = 12,
+            total = 14,
+            // 只有标准档会「发完就恢复」，时长对它才有意义。
+            enabled = enabled && island.xmsfMode == XiaomiSuperIslandConfig.XmsfIsolationMode.STANDARD,
+        )
+        ShizukuGrantItem(
+            enabled = enabled && island.xmsfMode != XiaomiSuperIslandConfig.XmsfIsolationMode.OFF,
+            index = 13,
+            total = 14,
+        )
     }
+}
+
+/**
+ * Shizuku 授权行。
+ *
+ * ### 为什么状态要每次进页面重读
+ * `shizukuState()` 读的是**进程内**的 binder / 权限状态，用户在 Shizuku Manager 里
+ * 授权或重启 Shizuku 都不会给本应用发通知。进页面时重读一次是最省事且不会漏的做法
+ * （点授权走的是回调，不依赖这里）。
+ *
+ * ### 未安装时点它是「去下载」
+ * 未装 Shizuku 的点击没有可请求的权限对象，跳下载页比弹一句 Toast 有用。
+ */
+@Composable
+private fun ShizukuGrantItem(enabled: Boolean, index: Int, total: Int) {
+    val s = cpStrings()
+    var state by remember { mutableStateOf(shizukuState()) }
+    LaunchedEffect(Unit) { state = shizukuState() }
+    SettingsClickItem(
+        title = s.lyricPush.islandShizuku,
+        subtitle = when (state) {
+            ShizukuState.NOT_INSTALLED -> s.lyricPush.islandShizukuNotInstalled
+            ShizukuState.UNAUTHORIZED -> s.lyricPush.islandShizukuUnauthorized
+            ShizukuState.READY -> s.lyricPush.islandShizukuReady
+        },
+        icon = Icons.Filled.Lock,
+        index = index,
+        total = total,
+        enabled = enabled,
+        onClick = {
+            if (state == ShizukuState.NOT_INSTALLED) {
+                openUrl("https://shizuku.rikka.app/download/")
+            } else {
+                requestShizukuPermission { state = it }
+            }
+        },
+    )
 }
 
 /**
@@ -422,6 +512,9 @@ private fun IslandCharSlider(
 
 /** 与 [XiaomiSuperIslandConfig.DISMISS_DELAYS_MS] 同序（升序），供下标映射。 */
 private val DISMISS_ORDER: List<Int> = XiaomiSuperIslandConfig.DISMISS_DELAYS_MS.sorted()
+
+/** 与 [XiaomiSuperIslandConfig.XMSF_BLOCK_PRESETS_MS] 同序，供下标映射。 */
+private val XMSF_BLOCK_PRESETS: List<Int> = XiaomiSuperIslandConfig.XMSF_BLOCK_PRESETS_MS
 
 // ============ 4. 实时活动 ============
 

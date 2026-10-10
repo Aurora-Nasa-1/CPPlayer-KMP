@@ -110,6 +110,18 @@ actual fun applyAggressiveStandby(enabled: Boolean) {
 actual fun isAggressiveStandbyActive(): Boolean = false
 
 /**
+ * 桌面端没有 Shizuku（它是 Android 上的 shell/root 提权工具），恒为未安装。
+ *
+ * 「歌词投放」整页在桌面上本来就不可达（`SettingsRegistry` 里标了 `androidOnly`），
+ * 这两个 actual 只是为了让 expect 声明在桌面端也能编译。
+ */
+actual fun shizukuState(): ShizukuState = ShizukuState.NOT_INSTALLED
+
+actual fun requestShizukuPermission(onResult: (ShizukuState) -> Unit) {
+    onResult(ShizukuState.NOT_INSTALLED)
+}
+
+/**
  * 桌面端用 Esc 承担安卓返回键的角色。
  *
  * 这里只负责「注册/注销」，真正的派发在窗口级按键回调里（见 `Main.kt`）——

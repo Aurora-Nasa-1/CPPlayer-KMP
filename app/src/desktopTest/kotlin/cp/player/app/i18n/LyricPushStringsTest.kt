@@ -98,6 +98,21 @@ class LyricPushStringsTest {
             "islandProgressColorNote" to islandProgressColorNote,
             "islandDismissDelay" to islandDismissDelay,
             "islandDismissImmediately" to islandDismissImmediately,
+            "islandXmsf" to islandXmsf,
+            "islandXmsfNote" to islandXmsfNote,
+            "islandXmsfOff" to islandXmsfOff,
+            "islandXmsfStandard" to islandXmsfStandard,
+            "islandXmsfEnhanced" to islandXmsfEnhanced,
+            "islandXmsfOffNote" to islandXmsfOffNote,
+            "islandXmsfStandardNote" to islandXmsfStandardNote,
+            "islandXmsfEnhancedNote" to islandXmsfEnhancedNote,
+            "islandXmsfDuration" to islandXmsfDuration,
+            "islandShizuku" to islandShizuku,
+            "islandShizukuNotInstalled" to islandShizukuNotInstalled,
+            "islandShizukuUnauthorized" to islandShizukuUnauthorized,
+            "islandShizukuReady" to islandShizukuReady,
+            "islandShizukuGrant" to islandShizukuGrant,
+            "islandShizukuNote" to islandShizukuNote,
         )
     }
 
@@ -170,6 +185,21 @@ class LyricPushStringsTest {
             "islandProgressColorNote" to islandProgressColorNote,
             "islandDismissDelay" to islandDismissDelay,
             "islandDismissImmediately" to islandDismissImmediately,
+            "islandXmsf" to islandXmsf,
+            "islandXmsfNote" to islandXmsfNote,
+            "islandXmsfOff" to islandXmsfOff,
+            "islandXmsfStandard" to islandXmsfStandard,
+            "islandXmsfEnhanced" to islandXmsfEnhanced,
+            "islandXmsfOffNote" to islandXmsfOffNote,
+            "islandXmsfStandardNote" to islandXmsfStandardNote,
+            "islandXmsfEnhancedNote" to islandXmsfEnhancedNote,
+            "islandXmsfDuration" to islandXmsfDuration,
+            "islandShizuku" to islandShizuku,
+            "islandShizukuNotInstalled" to islandShizukuNotInstalled,
+            "islandShizukuUnauthorized" to islandShizukuUnauthorized,
+            "islandShizukuReady" to islandShizukuReady,
+            "islandShizukuGrant" to islandShizukuGrant,
+            "islandShizukuNote" to islandShizukuNote,
         )
     }
 
@@ -213,6 +243,8 @@ class LyricPushStringsTest {
         assertTrue("7" in en.islandCharsValue(7))
         assertTrue("3" in zh.islandDismissAfter(3))
         assertTrue("3" in en.islandDismissAfter(3))
+        assertTrue("200" in zh.islandXmsfDurationValue(200))
+        assertTrue("200" in en.islandXmsfDurationValue(200))
         // 「立即收起」与「N 秒后收起」必须是两个不同的说法，否则用户看不出区别。
         assertFalse(zh.islandDismissImmediately == zh.islandDismissAfter(3))
     }

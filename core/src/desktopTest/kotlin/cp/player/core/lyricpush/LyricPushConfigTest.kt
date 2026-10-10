@@ -140,8 +140,46 @@ class LyricPushConfigTest {
             customColor = 0xFF00FF00.toInt(),
             progressColorEnabled = true,
             dismissDelayMs = 1_000,
+            xmsfMode = XiaomiSuperIslandConfig.XmsfIsolationMode.ENHANCED,
+            xmsfBlockDurationMs = 300,
         )
         assertEquals(config, XiaomiSuperIslandConfig.decode(config.encode()))
+    }
+
+    @Test
+    fun `island xmsf block duration snaps to the nearest preset`() {
+        // 阻断时长在设置页只能按预设选；手改配置留下一个中间值时必须吸附，
+        // 否则滑杆的 selectedIndex 会 indexOf 落空、显示成第一档。
+        assertEquals(
+            200,
+            XiaomiSuperIslandConfig(xmsfBlockDurationMs = 180).sanitized().xmsfBlockDurationMs,
+        )
+        assertEquals(
+            500,
+            XiaomiSuperIslandConfig(xmsfBlockDurationMs = 9_999).sanitized().xmsfBlockDurationMs,
+        )
+        assertEquals(
+            100,
+            XiaomiSuperIslandConfig(xmsfBlockDurationMs = -50).sanitized().xmsfBlockDurationMs,
+        )
+        // 默认值本身必须在预设里，否则「默认配置往返」会被静默改写。
+        assertTrue(
+            XiaomiSuperIslandConfig.DEFAULT_XMSF_BLOCK_MS in XiaomiSuperIslandConfig.XMSF_BLOCK_PRESETS_MS,
+        )
+    }
+
+    @Test
+    fun `unknown xmsf mode falls back to standard`() {
+        // 枚举改名 / 删项之后老配置里留着旧名字，必须回退默认而不是抛异常。
+        val storage = FakeSettings()
+        storage.putString(
+            LyricPushConfig.KEY_XIAOMI_ISLAND_SETTINGS,
+            XiaomiSuperIslandConfig().encode().replace("STANDARD", "AGGRESSIVE_5"),
+        )
+        assertEquals(
+            XiaomiSuperIslandConfig.XmsfIsolationMode.STANDARD,
+            LyricPushConfigStore.read(storage).xiaomiSuperIsland.xmsfMode,
+        )
     }
 
     @Test

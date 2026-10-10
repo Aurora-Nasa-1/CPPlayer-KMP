@@ -126,3 +126,22 @@
 
 # 超级岛前台服务由 AndroidManifest 按全限定名实例化，必须保留。
 -keep class cp.player.core.lyricpush.XiaomiSuperIslandLyricService { *; }
+
+# ---------------------------------------------------------------------------
+# 9. Shizuku（超级岛歌词的 XMSF 断网隔离）
+# ---------------------------------------------------------------------------
+# - UserService 类由 **Shizuku 服务器在另一个进程里按全限定名反射实例化**
+#   （构造签名必须是 `(Context)`），类名一混淆就永远绑不上 keepalive。
+# - `ShizukuProvider` 由清单按全限定名引用。
+# - Shizuku / HiddenApiBypass 内部大量走反射（`ServiceManager.getService`、
+#   `Class.getDeclaredField("TRANSACTION_…")`、`MethodHandle`），逐类 keep 最省心。
+-keep class cp.player.core.lyricpush.ShizukuKeepAliveService { *; }
+-keep class rikka.shizuku.ShizukuProvider { *; }
+-keep class rikka.shizuku.** { *; }
+-keep class org.lsposed.hiddenapibypass.** { *; }
+# Shizuku api 引用了若干只在 Shizuku 运行时存在的服务端类；缺失只是对应路径不可用，
+# 不是必需依赖。不 -dontwarn 的话 R8 会当**硬错误**直接失败。
+-dontwarn moe.shizuku.**
+-dontwarn rikka.shizuku.**
+-dontwarn org.lsposed.hiddenapibypass.**
+

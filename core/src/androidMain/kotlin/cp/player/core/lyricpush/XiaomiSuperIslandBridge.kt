@@ -2,9 +2,9 @@
  * Ported from Halcyon — Apache-2.0.
  * Upstream reference: app/src/main/java/com/ella/music/player/XiaomiSuperIslandLyricBridge.kt
  * Changes:
- *   - **删掉 XMSF 断网旁路**（三档模式 + Shizuku + 隐藏 IConnectivityManager 桩）：本仓库
- *     不引入 Shizuku，只保留「直接发送」这一条路径。上游的 `XMSF_MODE_DISABLED` 分支
- *     行为与之等价。
+ *   - **XMSF 断网旁路已补回**（2026-10-10）：三档隔离（关闭 / 标准 / 增强）由
+ *     [XmsfIsolationController] 驱动，底层走 [XmsfFirewall] 的 Shizuku wrapped binder。
+ *     未授予 Shizuku 权限时自动退化为「直接发送」，即上游 `XMSF_MODE_DISABLED` 的行为。
  *   - 删掉分享卡片、媒体控制按钮（后者需要 app 的矢量图标资源；core 没有 res）。
  *     进度条常驻，作为岛内唯一的动态元素。
  *   - 断句/权重逻辑移到 commonMain 的 XiaomiSuperIslandLayout（可单测）。
@@ -51,6 +51,9 @@ internal class XiaomiSuperIslandBridge(
     private val notificationManager =
         appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
+    /** XMSF 隔离调度：标准档「阻断→发→延迟恢复」，增强档「阻断后保持」。 */
+    private val isolation = XmsfIsolationController(appContext, scope)
+
     private val appIcon by lazy { Icon.createWithBitmap(LyricPushArtwork.appIcon(96)) }
     private val smallIcon by lazy { Icon.createWithBitmap(LyricPushArtwork.silhouetteIcon(48)) }
 
@@ -86,13 +89,21 @@ internal class XiaomiSuperIslandBridge(
         lastPayloadKey = null
         if (enabled) {
             ensureChannel()
+            // 冷启动也要能用：开启渠道时先挂上 Shizuku keepalive。
+            // 未授权 / 未装 Shizuku 时内部只安排重试，**不会弹窗**（见 ShizukuKeepAlive）。
+            ShizukuKeepAlive.ensureBound(appContext)
         } else {
             clear()
+            ShizukuKeepAlive.unbind()
         }
     }
 
     fun setConfig(config: XiaomiSuperIslandConfig) {
         val sanitized = config.sanitized()
+        // 隔离档位必须**先于**早退应用：`XiaomiSuperIslandConfig()` 的默认档就是 STANDARD，
+        // 若把 applyMode 放在 `if (this.config == sanitized) return` 之后，
+        // 「配置恰好等于默认值」这条最常见路径会让控制器一直停在 OFF。
+        isolation.applyMode(sanitized.xmsfMode, sanitized.xmsfBlockDurationMs)
         if (this.config == sanitized) return
         this.config = sanitized
         lastPayloadKey = null
@@ -156,6 +167,8 @@ internal class XiaomiSuperIslandBridge(
     /** 暂停时按配置延迟收起岛（0 = 立即收起）。 */
     fun onPlaybackPaused() {
         if (!enabled) return
+        // 暂停即恢复网络（移植指南 §5.4）：增强档靠这一句结束「播放期保持阻断」。
+        isolation.restoreNow()
         pauseDismissJob?.cancel()
         val dismissDelay = config.dismissDelayMs.toLong()
         if (dismissDelay <= 0L) {
@@ -169,6 +182,8 @@ internal class XiaomiSuperIslandBridge(
     }
 
     fun clear() {
+        // 清空歌词 / 关闭功能一律恢复网络，别把 XMSF 留在断网状态。
+        isolation.restoreNow()
         pauseDismissJob?.cancel()
         pauseDismissJob = null
         pendingRender?.cancel()
@@ -183,6 +198,7 @@ internal class XiaomiSuperIslandBridge(
     fun destroy() {
         enabled = false
         clear()
+        isolation.restoreNow()
         artworkSource = null
         artworkCover = null
         artworkIsland = null
@@ -216,7 +232,11 @@ internal class XiaomiSuperIslandBridge(
 
     private fun dispatch(notification: Notification, trackKey: String) {
         if (!enabled) return
-        XiaomiSuperIslandLyricService.publish(appContext, notification)
+        // 隔离窗口：标准档「阻断 → 发通知 → 延迟恢复」，增强档「阻断后保持到暂停」。
+        // 未授予 Shizuku 权限时 aroundPublish 直接发出去 —— 基础可用性不受隔离影响。
+        isolation.aroundPublish {
+            XiaomiSuperIslandLyricService.publish(appContext, notification)
+        }
         Log.d(TAG, "Published super island lyric for $trackKey")
     }
 

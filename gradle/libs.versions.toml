@@ -69,6 +69,16 @@ lyriconProvider = "0.1.70"
 superLyricApi = "3.4"
 lyricGetterApi = "7.0.0"
 hyperFocusApi = "1.4"
+# Shizuku：把「系统服务 binder」包成以 shell/root 身份执行事务的代理。
+# 超级岛歌词靠它在发送焦点通知前后**临时切断 com.xiaomi.xmsf 的网络** ——
+# 这是「联网时也能显示超级岛」的关键一层，只发 Focus 通知会被 XMSF 拦掉
+# （见 .workbuddy-ai/memory/TOPICS.md 与 core 的 XmsfFirewall）。
+# 13.1.5 是当前 api/provider 的同一版本号；api 会传递引入 aidl + shared 两个子模块
+# （`moe.shizuku.server.IShizukuService` 等 AIDL 生成类就在 aidl 里，别只引 api 就以为够了）。
+shizuku = "13.1.5"
+# HiddenApiBypass：豁免隐藏 API 限制（`IConnectivityManager` 的 TRANSACTION_* 常量、
+# `ServiceManager.getService` 都要反射读）。**进程级、非永久**，进程重建后要重装。
+hiddenApiBypass = "6.1"
 mp3spi = "1.9.5.4"
 jflac = "1.5.2"
 jlayer = "1.0.1"
@@ -169,6 +179,12 @@ superlyric-api = { module = "com.github.HChenX:SuperLyricApi", version.ref = "su
 lyric-getter-api = { module = "com.github.HChenX:Lyric-Getter-Api", version.ref = "lyricGetterApi" }
 # HyperOS 超级小岛：Focus Notification 的 Kotlin DSL（miui.focus.* extras 由它生成）。
 hyper-focus-api = { module = "com.xzakota.hyper.notification:focus-api", version.ref = "hyperFocusApi" }
+# Shizuku：api 是调用侧 SDK（Shizuku / ShizukuBinderWrapper / SystemServiceHelper）；
+# provider 提供 `rikka.shizuku.ShizukuProvider`，需要在宿主清单里按全限定名声明。
+shizuku-api = { module = "dev.rikka.shizuku:api", version.ref = "shizuku" }
+shizuku-provider = { module = "dev.rikka.shizuku:provider", version.ref = "shizuku" }
+# 隐藏 API 豁免（Apache-2.0）。
+hidden-api-bypass = { module = "org.lsposed.hiddenapibypass:hiddenapibypass", version.ref = "hiddenApiBypass" }
 mp3spi = { module = "com.googlecode.soundlibs:mp3spi", version.ref = "mp3spi" }
 jflac-codec = { module = "org.jflac:jflac-codec", version.ref = "jflac" }
 jlayer = { module = "javazoom:jlayer", version.ref = "jlayer" }

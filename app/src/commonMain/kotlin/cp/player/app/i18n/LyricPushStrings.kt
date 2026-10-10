@@ -109,6 +109,27 @@ interface LyricPushStrings {
 
     /** 例：「3 秒后收起」。 */
     fun islandDismissAfter(seconds: Int): String
+
+    // —— 超级岛：网络隔离（XMSF / Shizuku） ——
+    val islandXmsf: String
+    val islandXmsfNote: String
+    val islandXmsfOff: String
+    val islandXmsfStandard: String
+    val islandXmsfEnhanced: String
+    val islandXmsfOffNote: String
+    val islandXmsfStandardNote: String
+    val islandXmsfEnhancedNote: String
+    val islandXmsfDuration: String
+
+    /** 例：「150 毫秒」。 */
+    fun islandXmsfDurationValue(ms: Int): String
+
+    val islandShizuku: String
+    val islandShizukuNotInstalled: String
+    val islandShizukuUnauthorized: String
+    val islandShizukuReady: String
+    val islandShizukuGrant: String
+    val islandShizukuNote: String
 }
 
 /**
@@ -208,6 +229,25 @@ object LyricPushStringsZh : LyricPushStrings {
     override val islandDismissDelay = "暂停后收起"
     override val islandDismissImmediately = "立即收起"
     override fun islandDismissAfter(seconds: Int) = "$seconds 秒后收起"
+
+    override val islandXmsf = "网络隔离（Shizuku）"
+    override val islandXmsfNote = "发送超级岛通知前临时切断小米 XMSF 的网络，否则联网时超级岛会被系统拦掉"
+    override val islandXmsfOff = "关闭"
+    override val islandXmsfStandard = "标准"
+    override val islandXmsfEnhanced = "增强"
+    override val islandXmsfOffNote = "不动 XMSF 直接发送：大多数情况下联网时超级岛不会显示，仅作兜底"
+    override val islandXmsfStandardNote = "发送前后短暂切断 XMSF 网络，系统压力最小，推荐"
+    override val islandXmsfEnhancedNote = "播放期间持续切断 XMSF 网络，联网显示最稳，但会一直影响 XMSF 联网"
+    override val islandXmsfDuration = "阻断时长"
+    override fun islandXmsfDurationValue(ms: Int) = "$ms 毫秒"
+
+    override val islandShizuku = "Shizuku 授权"
+    override val islandShizukuNotInstalled = "未安装 Shizuku —— 装上并启动后回来授权，否则网络隔离无法生效"
+    override val islandShizukuUnauthorized = "未授权 —— 点这里授权；授权前网络隔离不会生效（普通通知不受影响）"
+    override val islandShizukuReady = "已授权 —— 网络隔离可用"
+    override val islandShizukuGrant = "授权"
+    override val islandShizukuNote = "Shizuku 是 Android 上的提权工具，只有它能临时切断 XMSF 的网络。" +
+        "授权只在「网络隔离」开启时被用到，播放过程中不会反复弹窗。"
 }
 
 /** English. */
@@ -304,4 +344,28 @@ object LyricPushStringsEn : LyricPushStrings {
     override val islandDismissDelay = "Dismiss after pause"
     override val islandDismissImmediately = "Immediately"
     override fun islandDismissAfter(seconds: Int) = "After $seconds s"
+
+    override val islandXmsf = "Network isolation (Shizuku)"
+    override val islandXmsfNote = "Briefly cuts Xiaomi XMSF's network around each island update — " +
+        "without it the island is blocked by the system while online"
+    override val islandXmsfOff = "Off"
+    override val islandXmsfStandard = "Standard"
+    override val islandXmsfEnhanced = "Enhanced"
+    override val islandXmsfOffNote = "Sends directly without touching XMSF — the island usually won't " +
+        "show while online; fallback only"
+    override val islandXmsfStandardNote = "Cuts XMSF briefly around each update — lightest on the system, recommended"
+    override val islandXmsfEnhancedNote = "Keeps XMSF cut for the whole playback — most reliable online, " +
+        "but affects XMSF the whole time"
+    override val islandXmsfDuration = "Block duration"
+    override fun islandXmsfDurationValue(ms: Int) = "$ms ms"
+
+    override val islandShizuku = "Shizuku permission"
+    override val islandShizukuNotInstalled = "Shizuku not installed — install and start it, then come back to grant"
+    override val islandShizukuUnauthorized = "Not granted — tap to grant; isolation stays off until you do " +
+        "(normal notifications are unaffected)"
+    override val islandShizukuReady = "Granted — network isolation available"
+    override val islandShizukuGrant = "Grant"
+    override val islandShizukuNote = "Shizuku is an Android privilege tool; only it can temporarily cut " +
+        "XMSF's network. The permission is used only while Network isolation is on, and never re-prompts " +
+        "during playback."
 }

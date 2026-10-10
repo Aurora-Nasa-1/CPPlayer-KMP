@@ -2,10 +2,11 @@
  * Ported from Halcyon — Apache-2.0.
  * Upstream reference: app/src/main/java/com/ella/music/data/XiaomiSuperIslandSettings.kt
  * Changes: org.json.JSONObject 换成包内 LyricPushJson（commonMain 没有 org.json）；
- *          **删掉 XMSF 断网旁路三档与自定义时长**（它们依赖 Shizuku + 隐藏的
- *          IConnectivityManager，本仓库不引入），只保留「直接发送」一条路径；
- *          删掉媒体控制按钮 / 分享卡片 / 通知样式（需要 app-android 的 drawable 与
+ *          媒体控制按钮 / 分享卡片 / 通知样式仍删掉（需要 app-android 的 drawable 与
  *          分享链接构造，收益低于复杂度）；lyricTextMode 三档复用 LyricContentMode。
+ *          **XMSF 断网隔离三档（关闭 / 标准 / 增强）与标准档时长已补回**（2026-10-10）：
+ *          这一层依赖 Shizuku + 隐藏的 IConnectivityManager，现由 androidMain 的
+ *          XmsfFirewall / XmsfIsolationController 实现，见 XIAOMI_SUPER_ISLAND_PORTING.md。
  * See THIRD_PARTY_LICENSES.md.
  */
 package cp.player.core.lyricpush
@@ -39,12 +40,34 @@ data class XiaomiSuperIslandConfig(
     val progressColorEnabled: Boolean = false,
     /** 暂停后延迟多久收起（毫秒）。 */
     val dismissDelayMs: Int = 0,
+    /**
+     * XMSF 断网隔离档位。
+     *
+     * 默认 [XmsfIsolationMode.STANDARD]：只有先临时切断 `com.xiaomi.xmsf` 的网络，
+     * 焦点通知才不会被 XMSF 的联网校验拦掉（见 XIAOMI_SUPER_ISLAND_PORTING.md §0 / §5）。
+     * **未授予 Shizuku 权限时该档位自动退化为「直接发送」**，与 [XmsfIsolationMode.OFF]
+     * 等价 —— 所以默认开启是安全的：它只在用户主动授权后才真正生效。
+     */
+    val xmsfMode: XmsfIsolationMode = XmsfIsolationMode.STANDARD,
+    /** [XmsfIsolationMode.STANDARD] 下，发完通知后保持阻断的时长（毫秒，100–500）。 */
+    val xmsfBlockDurationMs: Int = DEFAULT_XMSF_BLOCK_MS,
 ) {
     /** 布局模式。 */
     enum class LyricMode { STANDARD, FULL }
 
     /** 强调色来源。 */
     enum class IslandColorSource { ALBUM, CUSTOM }
+
+    /**
+     * XMSF 断网隔离档位（三档，语义与 NeriPlayer / 移植指南 §5.4 一致）。
+     *
+     * | 档位 | 行为 | 定位 |
+     * | --- | --- | --- |
+     * | [OFF] | 不动 XMSF，直接发通知 | 联网时通常不显示，仅兜底 |
+     * | [STANDARD] | 阻断 → 发通知 → 等 [xmsfBlockDurationMs] → 恢复 | 默认，系统压力最小 |
+     * | [ENHANCED] | 播放期间持续阻断，暂停 / 关闭 / 切档时才恢复 | 联网稳定优先，副作用更大 |
+     */
+    enum class XmsfIsolationMode { OFF, STANDARD, ENHANCED }
 
     /**
      * 把越界值夹回合法区间。
@@ -60,6 +83,11 @@ data class XiaomiSuperIslandConfig(
         leftWithoutCoverTextChars = leftWithoutCoverTextChars.coerceIn(LEFT_WITHOUT_COVER_RANGE),
         customColor = customColor or (0xFF shl 24),
         dismissDelayMs = dismissDelayMs.takeIf { it in DISMISS_DELAYS_MS } ?: 0,
+        // 吸附到最近的预设档而不是简单夹值：UI 用「第几段」映射预设，
+        // 手改配置留下一个非预设值会让滑杆显示与实际值对不上。
+        xmsfBlockDurationMs = XMSF_BLOCK_PRESETS_MS
+            .minByOrNull { kotlin.math.abs(it - xmsfBlockDurationMs) }
+            ?: DEFAULT_XMSF_BLOCK_MS,
     )
 
     fun encode(): String = LyricPushJson.buildObject(
@@ -75,16 +103,29 @@ data class XiaomiSuperIslandConfig(
         "customColor" to customColor.toString(),
         "progressColor" to progressColorEnabled.toString(),
         "dismissDelay" to dismissDelayMs.toString(),
+        "xmsfMode" to xmsfMode.name,
+        "xmsfBlockMs" to xmsfBlockDurationMs.toString(),
     )
 
     companion object {
         /** 与上游 bridge 的默认强调色一致（HyperOS 岛内的蓝）。 */
         const val DEFAULT_CUSTOM_COLOR = -0x00CB7D01
 
+        /**
+         * 标准档默认阻断时长（毫秒）。移植指南 §5.4 给的区间是 100–500。
+         *
+         * ⚠️ 必须**本身就是** [XMSF_BLOCK_PRESETS_MS] 里的一档：`sanitized()` 会把任意值
+         * 吸附到最近的预设，默认值若不在预设里，「默认配置往返」就会被改写成另一档。
+         */
+        const val DEFAULT_XMSF_BLOCK_MS = 200
+
         val RIGHT_CHARS_RANGE = 6..14
         val LEFT_WITH_COVER_RANGE = 4..10
         val LEFT_WITHOUT_COVER_RANGE = 6..14
         val DISMISS_DELAYS_MS = setOf(0, 1_000, 3_000, 5_000)
+
+        /** 标准档阻断时长可选档（毫秒），与设置页的分段控件一一对应。 */
+        val XMSF_BLOCK_PRESETS_MS = listOf(100, 200, 300, 500)
 
         fun decode(value: String?): XiaomiSuperIslandConfig {
             if (value.isNullOrBlank()) return XiaomiSuperIslandConfig()
@@ -112,6 +153,11 @@ data class XiaomiSuperIslandConfig(
                     customColor = LyricPushJson.intField(value, "customColor") ?: DEFAULT_CUSTOM_COLOR,
                     progressColorEnabled = LyricPushJson.boolField(value, "progressColor") ?: false,
                     dismissDelayMs = LyricPushJson.intField(value, "dismissDelay") ?: 0,
+                    xmsfMode = LyricPushJson.stringField(value, "xmsfMode")
+                        ?.let { runCatching { XmsfIsolationMode.valueOf(it) }.getOrNull() }
+                        ?: XmsfIsolationMode.STANDARD,
+                    xmsfBlockDurationMs = LyricPushJson.intField(value, "xmsfBlockMs")
+                        ?: DEFAULT_XMSF_BLOCK_MS,
                 ).sanitized()
             }.getOrDefault(XiaomiSuperIslandConfig())
         }

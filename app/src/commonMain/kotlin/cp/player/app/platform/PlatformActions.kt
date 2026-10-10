@@ -192,3 +192,31 @@ expect fun PlatformRenderTuningContent()
 @Composable
 expect fun PlatformCloseBehaviorSetting(index: Int, total: Int)
 
+/**
+ * Shizuku 的可用状态。
+ *
+ * 超级岛歌词的 XMSF 断网隔离依赖 Shizuku（见 XIAOMI_SUPER_ISLAND_PORTING.md §5）：
+ * 只有它能把系统服务 binder 包成「以 shell/root 身份执行」，从而临时切断
+ * `com.xiaomi.xmsf` 的网络。桌面端与未装 Shizuku 的设备恒为 [NOT_INSTALLED]。
+ */
+enum class ShizukuState {
+    /** 没装 Shizuku Manager（或桌面端）。 */
+    NOT_INSTALLED,
+
+    /** 装了，但 binder 未就绪 / 未授权。 */
+    UNAUTHORIZED,
+
+    /** 已授权，隔离可以生效。 */
+    READY,
+}
+
+/** 读当前 Shizuku 状态（**只检查，不请求**）。 */
+expect fun shizukuState(): ShizukuState
+
+/**
+ * 显式请求 Shizuku 授权（**唯一会弹窗的入口**，只应由设置页按钮触发）。
+ *
+ * @param onResult 结果回调，参数是**请求后**重新读到的状态。
+ */
+expect fun requestShizukuPermission(onResult: (ShizukuState) -> Unit)
+

@@ -55,12 +55,27 @@
     <!-- 小米超级岛歌词：由 specialUse 类型的前台服务承载焦点通知（见下方 service 声明）。
          这是 normal 权限，系统自动授予，不会弹窗。 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Android 16 实时活动（Live Update）：`setRequestPromotedOngoing` 需要它。
+         normal 权限，自动授予。 -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+    <!-- Shizuku：超级岛歌词靠它临时切断 com.xiaomi.xmsf 的网络（联网显示的关键）。
+         这条权限由 `dev.rikka.shizuku:provider` 的清单声明，这里显式重复一次只为可读性。 -->
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
     <!-- 「设置 → 播放与音质 → 电池优化白名单」需要：弹系统授权框申请豁免电池优化，
          熄屏后台播放的进程级保护（配合媒体前台服务使用） -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+
+    <!--
+      Android 11（API 30）起的包可见性：不声明 `<queries>` 的话
+      `getPackageInfo("moe.shizuku.privileged.api")` 会抛 NameNotFoundException，
+      表现为「明明装了 Shizuku，设置页却说未安装」。见 core 的 ShizukuPermissions。
+    -->
+    <queries>
+        <package android:name="moe.shizuku.privileged.api" />
+    </queries>
 
     <application
         android:name=".CPPlayerApplication"
@@ -100,6 +115,38 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Rendering the current lyric line inside the HyperOS Super Island while music plays" />
         </service>
+
+        <!--
+          Shizuku 的 keepalive UserService（见 core 的 ShizukuKeepAlive）。
+
+          ⚠️ 官方 Shizuku README / demo **并不要求**声明 UserService 组件 —— 它由 Shizuku
+          服务器在**独立进程**里按类名反射实例化（`UserServiceArgs.processNameSuffix`），
+          与 Android 的 Service 组件无关。这里按移植指南 XIAOMI_SUPER_ISLAND_PORTING.md §2
+          保留声明（指南把它列为必需项）；它是个空实现，声明与否都不影响绑定。
+          若将来确认无必要，可以连同这条注释一起删掉。
+
+          ⚠️ 类名不能被混淆：Shizuku 按全限定名加载它，见 proguard-rules.pro。
+        -->
+        <service
+            android:name="cp.player.core.lyricpush.ShizukuKeepAliveService"
+            android:exported="true" />
+
+        <!--
+          Shizuku 的 ContentProvider 通道（官方 README 明确要求，缺了就拿不到 binder）。
+
+          ⚠️ `moe.shizuku.client.V3_SUPPORT` 这个 meta-data 与
+          `moe.shizuku.manager.permission.API_V23` 权限都由
+          `dev.rikka.shizuku:provider` 的 AAR 清单自动合并进来（2026-10-10 核对过 AAR 内的
+          AndroidManifest.xml），这里**不要**再声明一遍 —— 重复声明同值虽然能合并，
+          但一旦上游改了值就会变成 merger 冲突。
+        -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
         <activity
             android:name=".MainActivity"

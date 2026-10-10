@@ -46,7 +46,6 @@
   2. 分散在 `PlayerViewModel` 的「变化了吗 → 该发什么」判定收敛为单一协调器
      `AndroidLyricPusher`：跨平台核心层只能看到一个投放出口。
   3. **未移植**的部分（均为有意的设计取舍，不是遗漏）：
-     - Shizuku + 隐藏 `IConnectivityManager` 的 XMSF 断网旁路（只保留「直接发送」路径）；
      - 超级岛的媒体控制按钮与分享卡片（需要上游的 `R.drawable` 矢量资源）；
      - `PlaybackTickerState`（上游用于就地改写自家播放通知，本仓库的通知归 media3
        `DefaultMediaNotificationProvider` 管，改写的入口是 `LyricMetadataSink`）。
@@ -59,6 +58,27 @@
   （`com.xzakota.hyper.notification:focus-api`）均为各自上游的公开 AAR，
   见 `gradle/libs.versions.toml`。协议细节（intent action、extras 键名、
   `miui.focus.*` 布局字段）以上游契约为准，本仓库不做改写。
+
+---
+
+## Shizuku（Apache-2.0）与 AndroidHiddenApiBypass（Apache-2.0）
+
+- **用途**：超级岛歌词的 **XMSF 临时断网隔离**（联网时能否显示超级岛的关键一层）。
+- **依赖**：`dev.rikka.shizuku:api` / `dev.rikka.shizuku:provider`（Apache-2.0，
+  https://github.com/RikkaApps/Shizuku-API ）、
+  `org.lsposed.hiddenapibypass:hiddenapibypass`（Apache-2.0，
+  https://github.com/LSPosed/AndroidHiddenApiBypass ）。
+- **本仓库落点**：`core/src/androidMain/kotlin/cp/player/core/lyricpush/`
+  （`XmsfFirewall.kt` / `XmsfIsolationController.kt` / `ShizukuPermissions.kt` /
+  `ShizukuKeepAlive.kt` / `HiddenApiExemptions.kt`）。
+- **实现方式与许可边界（重要）**：移植指南
+  （`XIAOMI_SUPER_ISLAND_PORTING.md`）提到 Capsulyric 的 `FirewallCompat` 与
+  InstallerX Revived 的 hooked-binder 技术，并注明它们分别是 **GPL-3.0 /
+  GPL-3.0-only**。本仓库**没有移植这两个项目的任何代码**，而是按指南描述的协议
+  （Shizuku wrapped binder + 反射读 `IConnectivityManager.TRANSACTION_*` + 手工
+  构造 Parcel 事务）**自行实现**，因此不产生 GPL-3.0 的传染义务，也不需要本仓库
+  整体改为 GPL 兼容许可。若将来有人把上述 GPL 项目的代码复制进来，必须先满足
+  GPL-3.0 的许可条件。
 
 ---
 
