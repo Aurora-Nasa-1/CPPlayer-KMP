@@ -2,7 +2,9 @@ package cp.player.core.music
 
 import cp.player.core.BackendResult
 import cp.player.core.api.MusicApiService
+import cp.player.core.local.LocalFavorites
 import cp.player.core.local.LocalMediaSource
+import cp.player.core.local.LocalScanSettingsStore
 import cp.player.core.local.ScanProgress
 import cp.player.core.media.LocalMediaItem
 import kotlinx.coroutines.flow.Flow
@@ -51,6 +53,9 @@ class UnifiedMusicSourceContractTest {
         override fun items(): StateFlow<List<LocalMediaItem>> = items
         override val isScanningFlow: StateFlow<Boolean> = scanning
         override fun addExternalItems(items: List<LocalMediaItem>) {}
+        // 空文件名：测试替身不落盘，收藏 / 扫描规则读写都会被 runCatching 吞掉
+        override val favorites: LocalFavorites = LocalFavorites("")
+        override val scanSettings: LocalScanSettingsStore = LocalScanSettingsStore("")
     }
 
     private fun source(

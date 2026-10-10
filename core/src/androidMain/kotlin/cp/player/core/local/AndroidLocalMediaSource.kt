@@ -9,6 +9,7 @@ import android.provider.DocumentsContract
 import android.provider.MediaStore
 import cp.player.core.media.LocalMediaItem
 import cp.player.core.media.LocalMediaOrigin
+import cp.player.core.media.LocalTrackMetadata
 import cp.player.core.media.MediaType
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -35,7 +36,8 @@ import kotlinx.coroutines.withContext
  *   标志的进度，供 UI 引导授权
  * - 索引持久化于 `filesDir/local-media/index.json`
  *
- * 元数据解析保持轻量：SAF 文件名推断 title，无法获取时 duration 填 0。
+ * 元数据：MediaStore 提供 title/artist/album/duration（SAF 树条目只能靠文件名推断），
+ * 并从 album_id 拼出专辑封面 URI、从 year/track/album_artist/genre 补深度字段。
  */
 class AndroidLocalMediaSource(private val context: Context) : LocalMediaSource {
 
@@ -48,6 +50,12 @@ class AndroidLocalMediaSource(private val context: Context) : LocalMediaSource {
 
     private val index: LocalMediaIndex =
         LocalMediaIndex(File(dataDir, "index.json").absolutePath).also { it.load() }
+
+    override val favorites: LocalFavorites =
+        LocalFavorites(File(dataDir, "favorites.json").absolutePath)
+
+    override val scanSettings: LocalScanSettingsStore =
+        LocalScanSettingsStore(File(dataDir, "scan-settings.json").absolutePath)
 
     /**
      * 索引读改写串行锁：scan/importFolder/addExternalItems/removeItem 的
@@ -78,7 +86,10 @@ class AndroidLocalMediaSource(private val context: Context) : LocalMediaSource {
         if (_isScanning.value) return@flow
         _isScanning.value = true
         try {
-            val discovered = withContext(Dispatchers.IO) { queryMediaStore() }
+            // 扫描过滤规则在此生效（排除目录 / 最短时长 / 是否含视频）
+            val discovered = withContext(Dispatchers.IO) {
+                scanSettings.snapshot().apply(queryMediaStore())
+            }
             var scanned = 0
             val total = discovered.size
             for (chunk in discovered.chunked(CHUNK_SIZE)) {
@@ -187,42 +198,95 @@ class AndroidLocalMediaSource(private val context: Context) : LocalMediaSource {
             PackageManager.PERMISSION_GRANTED
     }
 
+    /**
+     * 查询单个 MediaStore 集合。
+     *
+     * 音频集合额外取 `album_id` / `year` / `track` / `album_artist` / `genre`：
+     * - `album_id` → 专辑封面 URI（`content://media/external/audio/albumart/<id>`）。
+     *   此前 `coverUri` 恒为 null，本地曲进不了封面取色、专辑墙与播放器页 —— 这是
+     *   本地库「看起来很素」的根因。
+     * - `year` / `track` → 排序与音轨号展示
+     *
+     * 这些列不是所有 ROM / API 版本都提供（部分为 API 30+），因此统一用
+     * `getColumnIndex` 取列号并检查 -1，缺失时该项降级为 null 而不是整次查询失败。
+     */
     private fun queryCollection(uri: Uri, type: MediaType): List<LocalMediaItem> {
-        val projection = arrayOf(
-            MediaStore.MediaColumns._ID,
-            MediaStore.MediaColumns.TITLE,
-            MediaStore.MediaColumns.ARTIST,
-            MediaStore.MediaColumns.ALBUM,
-            MediaStore.MediaColumns.DURATION,
-            MediaStore.MediaColumns.SIZE,
-            MediaStore.MediaColumns.DATE_MODIFIED,
-            MediaStore.MediaColumns.DATA,
-        )
+        val isAudio = type == MediaType.AUDIO
+        val projection = buildList {
+            add(MediaStore.MediaColumns._ID)
+            add(MediaStore.MediaColumns.TITLE)
+            add(MediaStore.MediaColumns.ARTIST)
+            add(MediaStore.MediaColumns.ALBUM)
+            add(MediaStore.MediaColumns.DURATION)
+            add(MediaStore.MediaColumns.SIZE)
+            add(MediaStore.MediaColumns.DATE_MODIFIED)
+            add(MediaStore.MediaColumns.DATA)
+            if (isAudio) {
+                add(MediaStore.Audio.AlbumColumns.ALBUM_ID)
+                add("year")
+                add("track")
+                add("album_artist")
+                add("genre")
+            }
+        }.toTypedArray()
+
         val out = mutableListOf<LocalMediaItem>()
         runCatching {
             context.contentResolver.query(uri, projection, null, null, null)?.use { c ->
-                val iTitle = c.getColumnIndexOrThrow(MediaStore.MediaColumns.TITLE)
-                val iArtist = c.getColumnIndexOrThrow(MediaStore.MediaColumns.ARTIST)
-                val iAlbum = c.getColumnIndexOrThrow(MediaStore.MediaColumns.ALBUM)
-                val iDuration = c.getColumnIndexOrThrow(MediaStore.MediaColumns.DURATION)
-                val iSize = c.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
-                val iModified = c.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)
-                val iData = c.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)
+                val iTitle = c.getColumnIndex(MediaStore.MediaColumns.TITLE)
+                val iArtist = c.getColumnIndex(MediaStore.MediaColumns.ARTIST)
+                val iAlbum = c.getColumnIndex(MediaStore.MediaColumns.ALBUM)
+                val iDuration = c.getColumnIndex(MediaStore.MediaColumns.DURATION)
+                val iSize = c.getColumnIndex(MediaStore.MediaColumns.SIZE)
+                val iModified = c.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+                val iData = c.getColumnIndex(MediaStore.MediaColumns.DATA)
+                val iAlbumId = c.getColumnIndex(MediaStore.Audio.AlbumColumns.ALBUM_ID)
+                val iYear = c.getColumnIndex("year")
+                val iTrack = c.getColumnIndex("track")
+                val iAlbumArtist = c.getColumnIndex("album_artist")
+                val iGenre = c.getColumnIndex("genre")
                 while (c.moveToNext()) {
-                    val path = c.getString(iData) ?: continue
+                    val path = iData.takeIf { it >= 0 }?.let { c.getString(it) } ?: continue
                     val fileName = File(path).name
+                    val albumId = iAlbumId.takeIf { it >= 0 }?.let { c.getLong(it) } ?: -1L
+                    val year = iYear.takeIf { it >= 0 }?.let { c.getString(it) }?.take(4)?.toIntOrNull()
+                    // MediaStore 的 track 列在部分 ROM 上是「碟号*1000+轨号」的复合值
+                    val rawTrack = iTrack.takeIf { it >= 0 }?.let { c.getInt(it) } ?: 0
+                    val trackNumber = when {
+                        rawTrack <= 0 -> null
+                        rawTrack > 1000 -> rawTrack % 1000
+                        else -> rawTrack
+                    }
+                    val albumArtist = iAlbumArtist.takeIf { it >= 0 }?.let { c.getString(it) }
+                        ?.takeIf { it.isNotBlank() && it != "<unknown>" }
+                    val genre = iGenre.takeIf { it >= 0 }?.let { c.getString(it) }
+                        ?.takeIf { it.isNotBlank() }
                     out += LocalMediaItem(
                         path = path,
-                        title = c.getString(iTitle) ?: File(path).nameWithoutExtension,
-                        artist = c.getString(iArtist)?.takeIf { it.isNotBlank() && it != "<unknown>" },
-                        album = c.getString(iAlbum)?.takeIf { it.isNotBlank() },
-                        durationMs = c.getLong(iDuration),
-                        sizeBytes = c.getLong(iSize),
+                        title = iTitle.takeIf { it >= 0 }?.let { c.getString(it) }
+                            ?: File(path).nameWithoutExtension,
+                        artist = iArtist.takeIf { it >= 0 }?.let { c.getString(it) }
+                            ?.takeIf { it.isNotBlank() && it != "<unknown>" },
+                        album = iAlbum.takeIf { it >= 0 }?.let { c.getString(it) }
+                            ?.takeIf { it.isNotBlank() },
+                        durationMs = iDuration.takeIf { it >= 0 }?.let { c.getLong(it) } ?: 0L,
+                        sizeBytes = iSize.takeIf { it >= 0 }?.let { c.getLong(it) } ?: 0L,
                         mediaType = type,
-                        coverUri = null,
+                        coverUri = if (isAudio && albumId > 0) albumArtUri(albumId) else null,
                         source = LocalMediaOrigin.IMPORTED,
                         // DATE_MODIFIED 单位为秒 → 毫秒
-                        lastModified = c.getLong(iModified) * 1000L,
+                        lastModified = (iModified.takeIf { it >= 0 }?.let { c.getLong(it) } ?: 0L) * 1000L,
+                        metadata = if (isAudio && (year != null || trackNumber != null ||
+                            albumArtist != null || genre != null)
+                        ) {
+                            LocalTrackMetadata(
+                                albumArtist = albumArtist,
+                                genre = genre,
+                                year = year,
+                                trackNumber = trackNumber,
+                                hasEmbeddedCover = false,
+                            )
+                        } else null,
                     ).let { item ->
                         if (item.title.isBlank()) item.copy(title = fileName) else item
                     }
@@ -231,6 +295,13 @@ class AndroidLocalMediaSource(private val context: Context) : LocalMediaSource {
         }
         return out
     }
+
+    /** MediaStore 专辑封面 URI；Coil 能直接按 content:// 解码。 */
+    private fun albumArtUri(albumId: Long): String =
+        android.content.ContentUris.withAppendedId(
+            Uri.parse("content://media/external/audio/albumart"),
+            albumId,
+        ).toString()
 
     /** 递归遍历 SAF 树（[DocumentsContract]，框架 API，无额外依赖）。 */
     private fun walkTree(treeUri: Uri, docId: String, out: MutableList<LocalMediaItem>) {

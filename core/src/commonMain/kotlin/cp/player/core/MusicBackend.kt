@@ -28,7 +28,9 @@ import cp.player.core.integration.IntegrationProviderInfo
 import cp.player.core.integration.IntegrationService
 import cp.player.core.integration.createIntegrationDescriptorWriter
 import cp.player.core.integration.createIntegrationRoutes
+import cp.player.core.local.LocalFavorites
 import cp.player.core.local.LocalMediaSource
+import cp.player.core.local.LocalScanSettingsStore
 import cp.player.core.local.ScanProgress
 import cp.player.core.local.createLocalMediaSource
 import cp.player.core.media.LocalMediaItem
@@ -946,6 +948,9 @@ class MusicBackend private constructor(
 object NoopLocalMusicSource : LocalMediaSource {
     private val emptyItems = MutableStateFlow<List<LocalMediaItem>>(emptyList())
     private val emptyScanning = MutableStateFlow(false)
+    // 装配前不应该有人读写收藏 / 扫描规则；给空文件名的实例，读写都会被 runCatching 吞掉
+    override val favorites: LocalFavorites = LocalFavorites("")
+    override val scanSettings: LocalScanSettingsStore = LocalScanSettingsStore("")
 
     override suspend fun scan(): Flow<ScanProgress> = emptyFlow()
     override suspend fun importFolder(uri: String): Int = 0

@@ -1,11 +1,16 @@
 package cp.player.core.local
 
+import cp.player.core.media.AudioMetadataReader
 import cp.player.core.media.LocalMediaItem
 import cp.player.core.media.LocalMediaOrigin
 import cp.player.core.media.MediaType
+import cp.player.core.media.toTrackMetadata
 import cp.player.core.util.DesktopDataDir
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +41,17 @@ class DesktopLocalMediaSource(dataDir: String? = null) : LocalMediaSource {
 
     companion object {
         private const val CHUNK_SIZE = 50
+
+        /**
+         * 标签解析用的并发池。
+         *
+         * 上下限刻意收窄到 2..8：过低在 NVMe 上吃不满带宽，过高在机械盘 / 网络盘上
+         * 会因为寻道竞争反而更慢。这类「IO 密集但每次只读几十 KB」的负载，
+         * 并发度略高于核数是合适的，再多就是纯排队。
+         */
+        private val parseDispatcher = Dispatchers.IO.limitedParallelism(
+            Runtime.getRuntime().availableProcessors().coerceIn(2, 8),
+        )
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -56,6 +72,15 @@ class DesktopLocalMediaSource(dataDir: String? = null) : LocalMediaSource {
 
     private val foldersFile: File = File(dataDirFile, "imported-folders.json")
 
+    /** 封面磁盘缓存（内嵌封面提取 / 目录封面回退）。 */
+    private val coverStore = LocalCoverStore(File(dataDirFile, "covers"))
+
+    override val favorites: LocalFavorites =
+        LocalFavorites(File(dataDirFile, "favorites.json").absolutePath)
+
+    override val scanSettings: LocalScanSettingsStore =
+        LocalScanSettingsStore(File(dataDirFile, "scan-settings.json").absolutePath)
+
     private val importedFolders = MutableStateFlow(loadImportedFolders())
 
     private val _items = MutableStateFlow(index.items)
@@ -70,12 +95,8 @@ class DesktopLocalMediaSource(dataDir: String? = null) : LocalMediaSource {
         _isScanning.value = true
         try {
             val roots = allRoots()
-            val discovered = withContext(Dispatchers.IO) { discoverFiles(roots) }
-            var scanned = 0
-            val total = discovered.size
-            for (chunk in discovered.chunked(CHUNK_SIZE)) {
-                scanned += chunk.size
-                emit(ScanProgress(scanned, total, chunk))
+            val discovered = scanOnce(roots) { scanned, total, batch ->
+                emit(ScanProgress(scanned, total, batch))
             }
             // 「index 读改写 + _items 赋值 + save」整体临界区（临界区内无挂起点）
             indexMutex.withLock {
@@ -87,6 +108,41 @@ class DesktopLocalMediaSource(dataDir: String? = null) : LocalMediaSource {
             _isScanning.value = false
         }
     }.flowOn(Dispatchers.IO)
+
+    /**
+     * 一次完整扫描：收集文件 → **并发**解析标签 → 按批回调进度 → 应用过滤规则。
+     *
+     * ## 为什么要并发
+     *
+     * 标签解析是纯 IO 等待（读文件头 / moov / OGG 尾页），单线程下每首都要
+     * 走一次完整的「seek + read」，几千首的曲库会拖到几十秒。这里用
+     * [parseDispatcher]（受 CPU 核数限制的 IO 池）并发解析，同时**仍然按批回调**，
+     * 进度条不会退化成 0 → 100 的跳变。
+     *
+     * 过滤放在解析**之后**：最短时长规则依赖解析出来的时长，先滤会让时长未知
+     * 的文件被整批误伤。
+     */
+    private suspend fun scanOnce(
+        roots: List<File>,
+        onProgress: suspend (scanned: Int, total: Int, batch: List<LocalMediaItem>) -> Unit = { _, _, _ -> },
+    ): List<LocalMediaItem> {
+        val files = withContext(Dispatchers.IO) { collectFiles(roots) }
+        val settings = scanSettings.snapshot()
+        val total = files.size
+        var scanned = 0
+        val parsed = ArrayList<LocalMediaItem>(total)
+        for (chunk in files.chunked(CHUNK_SIZE)) {
+            // 批内并发：每个文件一个协程（很轻），实际并行度由 parseDispatcher 收口
+            val batch = coroutineScope {
+                chunk.map { file -> async(parseDispatcher) { file.toItem() } }.awaitAll()
+            }
+            val accepted = settings.apply(batch)
+            parsed += accepted
+            scanned += chunk.size
+            onProgress(scanned, total, accepted)
+        }
+        return parsed
+    }
 
     override suspend fun importFolder(uri: String): Int {
         val dir = File(uri)
@@ -101,7 +157,7 @@ class DesktopLocalMediaSource(dataDir: String? = null) : LocalMediaSource {
         _isScanning.value = true
         return try {
             val roots = allRoots()
-            val discovered = withContext(Dispatchers.IO) { discoverFiles(roots) }
+            val discovered = scanOnce(roots)
             // 「index 读改写 + _items 赋值 + save」整体临界区
             val result = indexMutex.withLock {
                 val r = index.reconcile(discovered, scanRoots = roots.map { it.absolutePath })
@@ -156,32 +212,59 @@ class DesktopLocalMediaSource(dataDir: String? = null) : LocalMediaSource {
             .filter { it.isDirectory }
             .distinctBy { it.absolutePath }
 
-    /** 遍历根目录，按扩展名白名单收集媒体文件。 */
-    private fun discoverFiles(roots: List<File>): List<LocalMediaItem> {
-        val out = ArrayList<LocalMediaItem>()
+    /**
+     * 遍历根目录，按扩展名白名单收集媒体文件。
+     *
+     * 只做「发现」不解析标签 —— 解析被拆到 [scanOnce] 里并发执行，
+     * 顺序遍历目录树这件事本身很便宜，不值得并行（并行反而会打乱 inode 访问顺序）。
+     */
+    private fun collectFiles(roots: List<File>): List<File> {
+        val out = ArrayList<File>()
         for (root in roots) {
             runCatching {
                 root.walkTopDown().forEach { f ->
                     if (!f.isFile) return@forEach
-                    val type = MediaType.fromFileName(f.name)
-                    if (type == MediaType.OTHER) return@forEach
-                    out += f.toItem(type)
+                    if (MediaType.fromFileName(f.name) == MediaType.OTHER) return@forEach
+                    out += f
                 }
             }
         }
         return out.distinctBy { it.path }
     }
 
-    /** 轻量元数据：文件名推断 title，duration 未知填 0。 */
-    private fun File.toItem(type: MediaType): LocalMediaItem = LocalMediaItem(
-        path = absolutePath,
-        title = nameWithoutExtension.ifBlank { name },
-        durationMs = 0L,
-        sizeBytes = runCatching { length() }.getOrDefault(0L),
-        mediaType = type,
-        source = LocalMediaOrigin.IMPORTED,
-        lastModified = runCatching { lastModified() }.getOrDefault(0L),
-    )
+    /**
+     * 组装条目：音频文件读标签（标题 / 艺人 / 专辑 / 时长 / 音质），视频只用文件名。
+     *
+     * 标签解析只读取文件头部若干字节（MP4 额外读 moov、OGG 额外读尾页），
+     * 不读音频数据本体；读失败时静默回退到文件名，绝不让坏文件拖垮整次扫描。
+     */
+    private fun File.toItem(): LocalMediaItem {
+        val type = MediaType.fromFileName(name)
+        val tag = if (type == MediaType.AUDIO) AudioMetadataReader.read(absolutePath) else null
+        val hasCover = tag?.hasEmbeddedCover == true
+        return LocalMediaItem(
+            path = absolutePath,
+            title = tag?.title?.takeIf { it.isNotBlank() && !isPlaceholder(it) }
+                ?: nameWithoutExtension.ifBlank { name },
+            artist = tag?.artist?.takeIf { it.isNotBlank() && !isPlaceholder(it) },
+            album = tag?.album?.takeIf { it.isNotBlank() && !isPlaceholder(it) },
+            durationMs = tag?.durationMs ?: 0L,
+            sizeBytes = runCatching { length() }.getOrDefault(0L),
+            mediaType = type,
+            coverUri = if (type == MediaType.AUDIO) {
+                runCatching { coverStore.resolve(absolutePath, hasCover) }.getOrNull()
+            } else null,
+            source = LocalMediaOrigin.IMPORTED,
+            lastModified = runCatching { lastModified() }.getOrDefault(0L),
+            metadata = tag?.toTrackMetadata(),
+        )
+    }
+
+    /** MediaStore / 部分转录工具会把空值写成 `<unknown>`，直接透传会在 UI 上很难看。 */
+    private fun isPlaceholder(value: String): Boolean {
+        val v = value.trim()
+        return v.equals("<unknown>", ignoreCase = true) || v.equals("unknown", ignoreCase = true)
+    }
 
     private fun loadImportedFolders(): List<String> = runCatching {
         val text = localMediaReadText(foldersFile.absolutePath) ?: return emptyList()

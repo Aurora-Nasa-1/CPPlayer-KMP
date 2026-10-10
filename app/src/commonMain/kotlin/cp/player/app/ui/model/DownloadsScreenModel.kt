@@ -7,6 +7,10 @@ import cp.player.app.i18n.CpStrings
 import cp.player.app.platform.requestMediaScanPermission
 import cp.player.app.platform.setOnMediaPermissionGranted
 import cp.player.app.ui.util.UiEvents
+import cp.player.core.local.LocalGridSort
+import cp.player.core.local.LocalLibraryFilter
+import cp.player.core.local.LocalLibrarySort
+import cp.player.core.local.LocalScanSettings
 import cp.player.core.local.ScanProgress
 import cp.player.core.media.LocalMediaItem
 import cp.player.core.media.MediaType
@@ -27,6 +31,14 @@ import kotlinx.coroutines.withContext
  * @param scanning 是否正在扫描设备
  * @param scanProgress 最近一次扫描进度快照
  * @param importing 是否正在导入文件夹
+ * @param libraryTab 本地库子页下标（0 歌曲 / 1 专辑 / 2 艺术家 / 3 收藏）
+ * @param libraryQuery 本地库搜索关键词
+ * @param songSort 歌曲排序方式
+ * @param songSortDescending 歌曲排序是否降序
+ * @param gridSort 专辑 / 艺术家网格排序方式
+ * @param favoritePaths 本地收藏的文件路径集合
+ * @param scanSettings 扫描过滤规则（影响索引，改动后需重扫）
+ * @param libraryFilter 浏览期筛选开关（只影响当前视图）
  */
 data class DownloadsUiState(
     val tasks: List<DownloadTask> = emptyList(),
@@ -34,6 +46,14 @@ data class DownloadsUiState(
     val scanning: Boolean = false,
     val scanProgress: ScanProgress? = null,
     val importing: Boolean = false,
+    val libraryTab: Int = 0,
+    val libraryQuery: String = "",
+    val songSort: LocalLibrarySort = LocalLibrarySort.TITLE,
+    val songSortDescending: Boolean = false,
+    val gridSort: LocalGridSort = LocalGridSort.NAME,
+    val favoritePaths: Set<String> = emptySet(),
+    val scanSettings: LocalScanSettings = LocalScanSettings(),
+    val libraryFilter: LocalLibraryFilter = LocalLibraryFilter(),
 ) {
     /** 进行中任务：等待 / 下载中 / 暂停 / 失败 / 已取消。 */
     val activeTasks: List<DownloadTask>
@@ -60,6 +80,10 @@ data class DownloadsUiState(
         get() = localItems.filter {
             it.source == cp.player.core.media.LocalMediaOrigin.IMPORTED
         }
+
+    /** 本地库音频条目（视频不参与音乐库聚合与播放队列）。 */
+    val localAudioItems: List<LocalMediaItem>
+        get() = localItems.filter { it.mediaType == MediaType.AUDIO }
 }
 
 /**
@@ -92,6 +116,80 @@ class DownloadsScreenModel : ScreenModel {
                 _state.value = _state.value.copy(scanning = scanning)
             }
         }
+        // 本地收藏（按文件路径）
+        screenModelScope.launch {
+            AppModel.localMedia.favorites.paths.collect { paths ->
+                _state.value = _state.value.copy(favoritePaths = paths)
+            }
+        }
+        // 扫描过滤规则（最短时长 / 排除目录 / 是否含视频）
+        screenModelScope.launch {
+            AppModel.localMedia.scanSettings.settings.collect { settings ->
+                _state.value = _state.value.copy(scanSettings = settings)
+            }
+        }
+    }
+
+    // ============ 本地库浏览状态 ============
+
+    fun setLibraryTab(index: Int) {
+        _state.value = _state.value.copy(libraryTab = index)
+    }
+
+    fun setLibraryQuery(query: String) {
+        _state.value = _state.value.copy(libraryQuery = query)
+    }
+
+    fun setGridSort(sort: LocalGridSort) {
+        _state.value = _state.value.copy(gridSort = sort)
+    }
+
+    // ============ 扫描规则与浏览筛选 ============
+
+    /** 整体替换扫描规则并持久化；需重扫一次才会体现到曲库。 */
+    fun updateScanSettings(next: LocalScanSettings) {
+        runCatching { AppModel.localMedia.scanSettings.update(next) }
+    }
+
+    fun resetScanSettings() {
+        runCatching { AppModel.localMedia.scanSettings.reset() }
+    }
+
+    /** 切换浏览期筛选开关。 */
+    fun toggleLibraryFilter(transform: (LocalLibraryFilter) -> LocalLibraryFilter) {
+        _state.value = _state.value.copy(libraryFilter = transform(_state.value.libraryFilter))
+    }
+
+    fun clearLibraryFilter() {
+        _state.value = _state.value.copy(libraryFilter = LocalLibraryFilter())
+    }
+
+    /**
+     * 设置歌曲排序；重复点同一项时切换升降序。
+     *
+     * 复用同一排序键切方向，比在菜单里再放一个「升序/降序」开关省一次点击，
+     * 也是桌面音乐播放器的通行做法。
+     */
+    fun toggleSongSort(sort: LocalLibrarySort) {
+        val current = _state.value
+        _state.value = if (current.songSort == sort) {
+            current.copy(songSortDescending = !current.songSortDescending)
+        } else {
+            current.copy(songSort = sort, songSortDescending = false)
+        }
+    }
+
+    /**
+     * 切换某条本地曲的收藏状态。
+     *
+     * 本地曲没有在线 id，走音源的 `likeSong` 恒为 false，因此这里用独立的
+     * 本地收藏（按文件路径持久化）。
+     */
+    fun toggleFavorite(path: String, strings: CpStrings) {
+        val nowFavorite = runCatching { AppModel.localMedia.favorites.toggle(path) }.getOrDefault(false)
+        UiEvents.notify(
+            if (nowFavorite) strings.downloads.addedToFavorites else strings.downloads.removedFromFavorites
+        )
     }
 
     // ============ 下载任务操作 ============
@@ -201,6 +299,8 @@ class DownloadsScreenModel : ScreenModel {
     /** 从库中移除条目（不删除磁盘文件）。 */
     fun removeLocalItem(item: LocalMediaItem, strings: CpStrings) {
         runCatching { AppModel.localMedia.removeItem(item) }
+        // 同步清掉收藏，避免留下指向已移出曲库的「幽灵收藏」
+        runCatching { AppModel.localMedia.favorites.removeAll(listOf(item.path)) }
         UiEvents.notify(strings.downloads.removedFromLibrary)
     }
 
@@ -210,9 +310,25 @@ class DownloadsScreenModel : ScreenModel {
             UiEvents.notify(strings.downloads.unsupportedMedia)
             return
         }
-        val mediaId = "local://audio/${item.path}"
+        playQueue(listOf(item), 0)
+    }
+
+    /**
+     * 播放整个列表（专辑 / 艺术家 / 搜索结果的「播放全部」）。
+     *
+     * 队列一次性建好，并且**只推送音频条目** —— 视频混进队列会让播放器在
+     * 切歌时撞上不支持的媒体。
+     */
+    fun playAll(items: List<LocalMediaItem>, startIndex: Int = 0) {
+        val playable = items.filter { it.mediaType == MediaType.AUDIO }
+        if (playable.isEmpty()) return
+        playQueue(playable, startIndex.coerceIn(0, playable.lastIndex))
+    }
+
+    private fun playQueue(items: List<LocalMediaItem>, startIndex: Int) {
+        val mediaIds = items.map { "local://audio/${it.path}" }
         screenModelScope.launch {
-            AppModel.playback.playQueue(listOf(mediaId), startIndex = 0)
+            AppModel.playback.playQueue(mediaIds, startIndex = startIndex)
         }
     }
 }

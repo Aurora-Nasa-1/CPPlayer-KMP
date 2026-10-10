@@ -44,6 +44,22 @@ interface LocalMediaSource {
     /** 当前全部本地条目（响应式快照流）。 */
     fun items(): StateFlow<List<LocalMediaItem>>
 
+    /**
+     * 本地曲「喜欢」集合。
+     *
+     * 独立于在线 `likeSong`：本地曲没有在线 id，走音源收藏恒为 false。
+     * 按文件路径收藏，持久化在平台数据目录。
+     */
+    val favorites: LocalFavorites
+
+    /**
+     * 扫描过滤规则（最短时长 / 排除目录 / 是否含视频）。
+     *
+     * 规则在 [scan] 阶段生效并**影响索引内容**：改完规则需重扫一次才会体现。
+     * 与浏览期的显示筛选是两件事（后者不改变索引）。
+     */
+    val scanSettings: LocalScanSettingsStore
+
     /** 是否正在扫描（响应式）。 */
     val isScanningFlow: StateFlow<Boolean>
 

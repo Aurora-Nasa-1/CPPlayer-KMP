@@ -113,6 +113,26 @@ interface DownloadStrings {
     val lyrics: String
     val comments: String
     val similar: String
+
+    // —— 本地曲库浏览 ——
+    val tabSongs: String
+    val tabAlbums: String
+    val tabArtists: String
+    val tabFavorites: String
+    val tabFolders: String
+    val librarySearchHint: String
+    val playAll: String
+    val shuffleAll: String
+    val addedToFavorites: String
+    val removedFromFavorites: String
+
+    /** @param count 专辑数。 */
+    fun albumCount(count: Int): String
+    val emptyFavoritesTitle: String
+    val emptyFavoritesNote: String
+    val emptySearchTitle: String
+    val unknownAlbum: String
+    val favoriteSongs: String
 }
 
 /** 简体中文实现（界面现有字面量照搬）。 */
@@ -177,6 +197,23 @@ object DownloadStringsZh : DownloadStrings {
     override val lyrics = "歌词"
     override val comments = "评论"
     override val similar = "相似"
+
+    override val tabSongs = "歌曲"
+    override val tabAlbums = "专辑"
+    override val tabArtists = "艺术家"
+    override val tabFavorites = "收藏"
+    override val tabFolders = "文件夹"
+    override val librarySearchHint = "搜索本地歌曲、专辑、艺术家"
+    override val playAll = "播放全部"
+    override val shuffleAll = "随机播放"
+    override val addedToFavorites = "已加入收藏"
+    override val removedFromFavorites = "已取消收藏"
+    override fun albumCount(count: Int) = "$count 张专辑"
+    override val emptyFavoritesTitle = "还没有收藏的本地歌曲"
+    override val emptyFavoritesNote = "点击歌曲右侧的心形图标即可收藏"
+    override val emptySearchTitle = "没有匹配的结果"
+    override val unknownAlbum = "未知专辑"
+    override val favoriteSongs = "我喜欢的本地音乐"
 }
 
 /** 英文实现。 */
@@ -241,6 +278,23 @@ object DownloadStringsEn : DownloadStrings {
     override val addAllToQueue = "Add all to queue"
     override val sortOrder = "Sort by"
     override val sortDefault = "Default"
+
+    override val tabSongs = "Songs"
+    override val tabAlbums = "Albums"
+    override val tabArtists = "Artists"
+    override val tabFavorites = "Favorites"
+    override val tabFolders = "Folders"
+    override val librarySearchHint = "Search local songs, albums, artists"
+    override val playAll = "Play all"
+    override val shuffleAll = "Shuffle"
+    override val addedToFavorites = "Added to favorites"
+    override val removedFromFavorites = "Removed from favorites"
+    override fun albumCount(count: Int) = if (count == 1) "1 album" else "$count albums"
+    override val emptyFavoritesTitle = "No favorite local songs yet"
+    override val emptyFavoritesNote = "Tap the heart icon next to a song to add it"
+    override val emptySearchTitle = "No matches"
+    override val unknownAlbum = "Unknown album"
+    override val favoriteSongs = "Liked local music"
 
     override val collapsePlayer = "Collapse the player"
     override val lyrics = "Lyrics"

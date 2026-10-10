@@ -40,5 +40,18 @@ data class LocalMediaItem(
     /** 条目来源（下载 / 导入） */
     val source: LocalMediaOrigin = LocalMediaOrigin.IMPORTED,
     /** 文件最后修改时间戳（毫秒） */
-    val lastModified: Long = 0L
-)
+    val lastModified: Long = 0L,
+    /**
+     * 音频专属的深度元数据（流派 / 年份 / 轨号 / 码率 / 采样率 / 位深 / 编码 / 内嵌封面标记）。
+     *
+     * 视频条目与未解析成功的音频条目为 null。字段全带默认值，
+     * 保证旧版 `index.json`（无此键）反序列化不崩。
+     */
+    val metadata: LocalTrackMetadata? = null,
+) {
+    /** 音质短标签（如 `FLAC 24/96`、`320k MP3`）；无元数据时为 null。 */
+    val qualityLabel: String? get() = metadata?.qualityLabel
+
+    /** 是否为无损（位深已知即视为无损，有损格式没有位深概念）。 */
+    val isLossless: Boolean get() = metadata?.bitDepth != null
+}
