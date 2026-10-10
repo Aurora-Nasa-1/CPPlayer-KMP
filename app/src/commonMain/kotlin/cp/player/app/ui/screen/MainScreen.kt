@@ -358,6 +358,30 @@ class MainScreen : Screen {
         var isPlayerExpanded by rememberSaveable { mutableStateOf(false) }
         val scope = rememberCoroutineScope()
 
+        // 输入焦点不能比它所在的那一屏活得久 —— 搜索框的光标 / 文本选择手柄必须随页面一起离开。
+        //
+        // 症状（安卓实机）：在搜索框里打过字之后切到首页 / 我的 / 展开播放页，那对小手柄
+        // 仍然留在屏上、**盖在所有页面之上**（软键盘也不收），只能在别的页面再点一下才消失。
+        //
+        // 成因：`TabContent` 刻意让**访问过的 tab 常驻组合**（滚动状态靠它保留），被切走的
+        // 搜索页里那个 `BasicTextField` 焦点节点因此还在、输入焦点也还在 —— 焦点只随节点
+        // **离开组合**才释放。而光标 / 文本选择手柄是 **Popup（独立窗口）**：宿主页已经不放置、
+        // 不绘制了，它照样浮在整个窗口之上（`TextFieldSelectionState` 的 cursor / selection
+        // handleState 只在 `isWindowAndTextFieldFocused` 为真时才非 Hidden ⇒ 收掉焦点即收掉手柄）。
+        // 桌面用鼠标选择、不画手柄，所以此前只有安卓能看见。
+        //
+        // 三个键覆盖「搜索页被盖住」的全部路径：切 tab（底栏 / 侧栏 / 标题栏搜索切到搜索 tab）、
+        // 展开播放页、宽屏打开内嵌面板。**不含 push 出去的路由页**：那时 MainScreen 整棵组合被
+        // 丢弃（见 MAIN_TABS 的说明），焦点由组合自行释放，这里再判就是多余的分支。
+        //
+        // 桌面端可见的副作用：切走再切回搜索 tab 不再自动聚焦（原先焦点被留在不可见的那一页上，
+        // 回来时才显得「还记得」）—— 要打字点一下输入框即可。**进页面时的自动聚焦不受影响**：
+        // 那条在 `SearchScreen` 自己的 `LaunchedEffect(Unit)` 里，页面重新进组合时照常请求焦点。
+        val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+        LaunchedEffect(selectedIndex, desktopPane, isPlayerExpanded) {
+            focusManager.clearFocus()
+        }
+
         // 播放页展开态的返回处理器**刻意不在这里注册**：桌面 `DesktopBackDispatcher` 是
         // 「后注册优先」，放在 Content 顶部会排到最底层 —— 宽屏同时开着面板 / 内嵌详情页
         // 并展开播放页时，Esc 会先退**被播放页盖住**的层级，与视觉层级相反。
