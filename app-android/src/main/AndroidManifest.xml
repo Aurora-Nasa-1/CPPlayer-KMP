@@ -117,21 +117,6 @@
         </service>
 
         <!--
-          Shizuku 的 keepalive UserService（见 core 的 ShizukuKeepAlive）。
-
-          ⚠️ 官方 Shizuku README / demo **并不要求**声明 UserService 组件 —— 它由 Shizuku
-          服务器在**独立进程**里按类名反射实例化（`UserServiceArgs.processNameSuffix`），
-          与 Android 的 Service 组件无关。这里按移植指南 XIAOMI_SUPER_ISLAND_PORTING.md §2
-          保留声明（指南把它列为必需项）；它是个空实现，声明与否都不影响绑定。
-          若将来确认无必要，可以连同这条注释一起删掉。
-
-          ⚠️ 类名不能被混淆：Shizuku 按全限定名加载它，见 proguard-rules.pro。
-        -->
-        <service
-            android:name="cp.player.core.lyricpush.ShizukuKeepAliveService"
-            android:exported="true" />
-
-        <!--
           Shizuku 的 ContentProvider 通道（官方 README 明确要求，缺了就拿不到 binder）。
 
           ⚠️ `moe.shizuku.client.V3_SUPPORT` 这个 meta-data 与
