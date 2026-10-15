@@ -22,12 +22,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.VolumeDown
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -37,6 +37,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.ui.layout.ContentScale
+import coil3.compose.AsyncImage
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.openUrl
 import androidx.compose.material3.MaterialTheme
@@ -59,6 +61,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -191,14 +195,31 @@ fun VideoPlayerView(
                 )
             },
     ) {
-        // 1. 底层视频画面渲染
+        // 1. 底层封面海报背景（有封面时显示，提供电影质感暗色遮罩，避免桌面端黑屏）
+        state.currentMedia?.coverUrl?.let { coverUrl ->
+            Box(modifier = Modifier.fillMaxSize()) {
+                AsyncImage(
+                    model = coverUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.65f)),
+                )
+            }
+        }
+
+        // 2. 原生视频画面渲染（Android 原生 SurfaceView / 桌面端挂载 Canvas）
         VideoSurface(
             player = controller.platformPlayer,
             modifier = Modifier.fillMaxSize(),
             scalingMode = state.scalingMode,
         )
 
-        // 2. 缓冲中旋转动画
+        // 3. 缓冲中旋转动画
         if (state.isBuffering) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -212,35 +233,49 @@ fun VideoPlayerView(
             }
         }
 
-        // 3. 错误提示
+        // 4. 错误提示
         if (state.errorMessage != null) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
             ) {
                 Surface(
-                    color = Color.Black.copy(alpha = 0.8f),
-                    shape = RoundedCornerShape(12.dp),
+                    color = Color.Black.copy(alpha = 0.85f),
+                    shape = RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
                     modifier = Modifier.padding(24.dp),
                 ) {
                     Column(
-                        modifier = Modifier.padding(16.dp),
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text(
                             text = state.errorMessage ?: "播放失败",
                             color = MaterialTheme.colorScheme.error,
                             fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        IconButton(
-                            onClick = {
-                                state.currentMedia?.let { media ->
-                                    scope.launch { controller.play(media.mediaId) }
-                                }
-                            },
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(Icons.Filled.Refresh, contentDescription = "重试", tint = Color.White)
+                            if (onBackClick != null) {
+                                FilledTonalButton(
+                                    onClick = onBackClick,
+                                    shape = RoundedCornerShape(50),
+                                ) {
+                                    Text("返回", fontSize = 13.sp)
+                                }
+                            }
+                            FilledTonalButton(
+                                onClick = { controller.retry() },
+                                shape = RoundedCornerShape(50),
+                            ) {
+                                Icon(Icons.Filled.Refresh, contentDescription = "重试", modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("重试", fontSize = 13.sp)
+                            }
                         }
                     }
                 }
@@ -408,7 +443,7 @@ fun VideoPlayerView(
                             },
                         ) {
                             Icon(
-                                Icons.Filled.OpenInNew,
+                                Icons.AutoMirrored.Filled.OpenInNew,
                                 contentDescription = "在系统播放器中打开",
                                 tint = Color.White,
                             )
@@ -416,43 +451,77 @@ fun VideoPlayerView(
                     }
                 }
 
-                // 桌面端专属：原生播放器引导横幅（在控制栏显示时呈现）
+                // 桌面端专属：原生播放器引导卡片（在控制栏显示时呈现）
                 if (!isAndroidPlatform() && state.currentMedia != null) {
+                    val clipboardManager = LocalClipboardManager.current
+                    var copied by remember { mutableStateOf(false) }
+
+                    LaunchedEffect(copied) {
+                        if (copied) {
+                            delay(2000)
+                            copied = false
+                        }
+                    }
+
                     Surface(
                         modifier = Modifier
                             .align(Alignment.Center)
                             .padding(horizontal = 24.dp),
                         shape = RoundedCornerShape(16.dp),
-                        color = Color.Black.copy(alpha = 0.75f),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                        color = Color.Black.copy(alpha = 0.85f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
                     ) {
                         Column(
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 18.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             Text(
-                                text = "正在播放流媒体 / 本地视频",
+                                text = "正在播放: ${state.currentMedia?.title ?: "视频"}",
                                 color = Color.White,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
-                            FilledTonalButton(
-                                onClick = {
-                                    state.currentMedia?.url?.let { mediaUrl ->
-                                        val openTarget = if (mediaUrl.startsWith("http://") || mediaUrl.startsWith("https://")) {
-                                            mediaUrl
-                                        } else {
-                                            "file:///$mediaUrl".replace('\\', '/')
-                                        }
-                                        openUrl(openTarget)
-                                    }
-                                },
-                                shape = RoundedCornerShape(50),
+                            Text(
+                                text = "已解析画质: ${state.currentQuality?.label ?: "标准"} • Windows 建议使用系统播放器全硬解",
+                                color = Color.White.copy(alpha = 0.75f),
+                                fontSize = 12.sp,
+                            )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Icon(Icons.Filled.OpenInNew, null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("使用系统默认播放器打开", fontSize = 13.sp)
+                                FilledTonalButton(
+                                    onClick = {
+                                        state.currentMedia?.url?.let { mediaUrl ->
+                                            val openTarget = if (mediaUrl.startsWith("http://") || mediaUrl.startsWith("https://")) {
+                                                mediaUrl
+                                            } else {
+                                                "file:///$mediaUrl".replace('\\', '/')
+                                            }
+                                            openUrl(openTarget)
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(50),
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.OpenInNew, null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("系统播放器打开 (PotPlayer/推荐)", fontSize = 13.sp)
+                                }
+
+                                FilledTonalButton(
+                                    onClick = {
+                                        state.currentMedia?.url?.let { mediaUrl ->
+                                            clipboardManager.setText(AnnotatedString(mediaUrl))
+                                            copied = true
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(50),
+                                ) {
+                                    Text(if (copied) "已复制直链" else "复制播放直链", fontSize = 13.sp)
+                                }
                             }
                         }
                     }
@@ -467,11 +536,12 @@ fun VideoPlayerView(
                 ) {
                     // 进度条
                     val displayPos = if (isDraggingSlider) draggingProgressMs else state.positionMs
-                    val totalDur = state.durationMs.coerceAtLeast(1L)
-                    val sliderValue = (displayPos.toFloat() / totalDur).coerceIn(0f, 1f)
+                    val totalDur = state.durationMs
+                    val sliderValue = if (totalDur > 0L) (displayPos.toFloat() / totalDur).coerceIn(0f, 1f) else 0f
 
                     Slider(
                         value = sliderValue,
+                        enabled = totalDur > 0L,
                         onValueChange = { frac ->
                             isDraggingSlider = true
                             draggingProgressMs = (frac * totalDur).toLong()
@@ -503,8 +573,9 @@ fun VideoPlayerView(
                             }
 
                             // 播放时间 / 总时长
+                            val durText = if (state.durationMs > 0L) formatVideoMs(state.durationMs) else "--:--"
                             Text(
-                                text = "${formatVideoMs(state.positionMs)} / ${formatVideoMs(state.durationMs)}",
+                                text = "${formatVideoMs(state.positionMs)} / $durText",
                                 color = Color.White.copy(alpha = 0.85f),
                                 fontSize = 12.sp,
                                 modifier = Modifier.padding(start = 4.dp),

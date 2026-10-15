@@ -82,6 +82,9 @@ interface VideoPlaybackController {
 
     /** 销毁播放控制器与底层内核 */
     fun release()
+
+    /** 重试当前或最近一次失败的媒体播放 */
+    fun retry() {}
 }
 
 class VideoPlaybackControllerImpl(
@@ -100,6 +103,8 @@ class VideoPlaybackControllerImpl(
     override val seekFailures: SharedFlow<SeekFailure> = platformPlayer.seekFailures
 
     private var loadJob: Job? = null
+    private var lastMediaId: String? = null
+    private var lastQuality: String? = null
 
     init {
         // 监听平台播放状态
@@ -145,6 +150,8 @@ class VideoPlaybackControllerImpl(
         quality: String?,
         startPositionMs: Long,
     ) {
+        lastMediaId = mediaId
+        lastQuality = quality
         loadJob?.cancel()
         _state.value = _state.value.copy(
             isBuffering = true,
@@ -260,5 +267,13 @@ class VideoPlaybackControllerImpl(
         platformPlayer.release()
         _state.value = VideoPlaybackUiState()
         onPlaybackStopped?.invoke()
+    }
+
+    override fun retry() {
+        val mediaId = lastMediaId ?: return
+        val quality = lastQuality
+        scope.launch {
+            play(mediaId, quality)
+        }
     }
 }

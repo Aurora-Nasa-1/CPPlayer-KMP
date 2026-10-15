@@ -89,15 +89,20 @@ class UnifiedMediaResolverImpl(
             )
         }
 
-        if (parsed.resourceType == "mv") {
+        if (parsed.resourceType == "mv" || parsed.resourceType == "video") {
             return try {
-                val detailJson = musicApiService.getMvDetail(parsed.resourceId)
-                val qualities = extractMvQualities(detailJson)
+                val isVideo = parsed.resourceType == "video" || !parsed.resourceId.all { it.isDigit() }
+                val detailJson = if (isVideo) {
+                    musicApiService.getVideoDetail(parsed.resourceId)
+                } else {
+                    musicApiService.getMvDetail(parsed.resourceId)
+                }
+                val qualities = if (isVideo) extractVideoQualities(detailJson) else extractMvQualities(detailJson)
                 BackendResult.Success(qualities)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                BackendResult.Error("获取 MV 清晰度列表失败: ${e.message}", cause = e)
+                BackendResult.Error("获取清晰度列表失败: ${e.message}", cause = e)
             }
         }
 
@@ -142,27 +147,103 @@ class UnifiedMediaResolverImpl(
         preferredQuality: String?,
     ): BackendResult<MediaStream> {
         return try {
-            // 1. 获取 MV 详情
-            val detailJson = musicApiService.getMvDetail(parsed.resourceId)
-            val dataObj = (detailJson as? JsonObject)?.get("data")?.jsonObject
+            val isVideo = parsed.resourceType == "video" || !parsed.resourceId.all { it.isDigit() }
+
+            // 1. 获取详情（根据资源类型分流到 MV 或短视频 Video）
+            val detailJson = if (isVideo) {
+                musicApiService.getVideoDetail(parsed.resourceId)
+            } else {
+                musicApiService.getMvDetail(parsed.resourceId)
+            }
+
+            val dataObj = (detailJson as? JsonObject)?.get("data") as? JsonObject
                 ?: (detailJson as? JsonObject)
 
-            val name = (dataObj?.get("name") as? JsonPrimitive)?.contentOrNull
+            val name = (dataObj?.get("name") ?: dataObj?.get("title"))?.jsonPrimitive?.contentOrNull
             val artistName = (dataObj?.get("artistName") as? JsonPrimitive)?.contentOrNull
-                ?: (dataObj?.get("artists") as? JsonArray)?.firstOrNull()?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull
-            val cover = (dataObj?.get("cover") as? JsonPrimitive)?.contentOrNull
-                ?: (dataObj?.get("coverUrl") as? JsonPrimitive)?.contentOrNull
-            val duration = (dataObj?.get("duration") as? JsonPrimitive)?.longOrNull ?: 0L
+                ?: (dataObj?.get("creator") as? JsonObject)?.get("nickname")?.jsonPrimitive?.contentOrNull
+                ?: (dataObj?.get("artists") as? JsonArray)?.firstOrNull()?.let { it as? JsonObject }?.get("name")?.jsonPrimitive?.contentOrNull
+            val cover = (dataObj?.get("cover") ?: dataObj?.get("coverUrl"))?.jsonPrimitive?.contentOrNull
 
-            val availableQualities = extractMvQualities(detailJson)
-            val targetRes = preferredQuality?.toIntOrNull()
-                ?: availableQualities.firstOrNull()?.resolution
-                ?: 1080
+            val rawDuration = (dataObj?.get("duration")
+                ?: dataObj?.get("durationms")
+                ?: dataObj?.get("durationMs")
+                ?: dataObj?.get("dt"))?.jsonPrimitive?.longOrNull ?: 0L
+            val duration = if (rawDuration in 1..9999) rawDuration * 1000L else rawDuration
 
-            // 2. 获取目标清晰度的流地址
-            val urlJson = musicApiService.getMvUrl(parsed.resourceId, targetRes)
-            val streamUrl = extractUrlFromMvUrlResponse(urlJson)
-                ?: return BackendResult.Error("无法获取 MV 播放流 (清晰度=$targetRes)")
+            val availableQualities = if (isVideo) {
+                extractVideoQualities(detailJson)
+            } else {
+                extractMvQualities(detailJson)
+            }
+
+            val brsObj = dataObj?.get("brs") as? JsonObject
+
+            // 2. 构建清晰度尝试优先级列表：用户期望 -> 可选清晰度 -> 默认降级阶梯(1080 -> 720 -> 480 -> 240)
+            val preferredRes = preferredQuality?.toIntOrNull()
+            val candidateResolutions = buildList {
+                if (preferredRes != null) add(preferredRes)
+                availableQualities.forEach { add(it.resolution) }
+                addAll(listOf(1080, 720, 480, 240))
+            }.filter { it > 0 }.distinct()
+
+            var streamUrl: String? = null
+            var resolvedRes = 0
+
+            // 3. 循环尝试各清晰度，支持 brs 直链与 API 流解析降级
+            for (res in candidateResolutions) {
+                // a. 优先检测详情中是否已内嵌对应清晰度的直链 (brs)
+                val directBrsUrl = brsObj?.get(res.toString())?.jsonPrimitive?.contentOrNull
+                if (!directBrsUrl.isNullOrBlank() && (directBrsUrl.startsWith("http://") || directBrsUrl.startsWith("https://"))) {
+                    streamUrl = directBrsUrl
+                    resolvedRes = res
+                    break
+                }
+
+                // b. 调用接口拉取清晰度流地址
+                val urlJson = try {
+                    if (isVideo) {
+                        musicApiService.getVideoUrl(parsed.resourceId, res)
+                    } else {
+                        musicApiService.getMvUrl(parsed.resourceId, res)
+                    }
+                } catch (_: Exception) {
+                    null
+                }
+
+                val fetchedUrl = urlJson?.let { extractUrlFromMvUrlResponse(it) }
+                if (!fetchedUrl.isNullOrBlank() && (fetchedUrl.startsWith("http://") || fetchedUrl.startsWith("https://"))) {
+                    streamUrl = fetchedUrl
+                    resolvedRes = res
+                    break
+                }
+            }
+
+            // 4. 若上述均未命中，尝试从 brs 对象中任意获取一条非空链接兜底
+            if (streamUrl.isNullOrBlank() && brsObj != null) {
+                for ((k, v) in brsObj) {
+                    val fallback = v.jsonPrimitive.contentOrNull
+                    if (!fallback.isNullOrBlank() && (fallback.startsWith("http://") || fallback.startsWith("https://"))) {
+                        streamUrl = fallback
+                        resolvedRes = k.toIntOrNull() ?: 720
+                        break
+                    }
+                }
+            }
+
+            // 5. 兼容短视频详情内的 urlInfos 兜底
+            if (streamUrl.isNullOrBlank() && isVideo) {
+                val urlInfos = dataObj?.get("urlInfos")?.jsonArray
+                val firstInfoUrl = urlInfos?.firstOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+                if (!firstInfoUrl.isNullOrBlank() && (firstInfoUrl.startsWith("http://") || firstInfoUrl.startsWith("https://"))) {
+                    streamUrl = firstInfoUrl
+                    resolvedRes = urlInfos.firstOrNull()?.jsonObject?.get("r")?.jsonPrimitive?.intOrNull ?: 720
+                }
+            }
+
+            if (streamUrl.isNullOrBlank()) {
+                return BackendResult.Error("无法获取播放地址（可能需要 VIP 权限或资源暂不可用）")
+            }
 
             val cookie = cookieProvider()?.takeIf { it.isNotBlank() }
             val headers = buildMap {
@@ -173,8 +254,12 @@ class UnifiedMediaResolverImpl(
                 }
             }
 
-            val currentQuality = availableQualities.find { it.resolution == targetRes }
-                ?: MediaQualityOption(id = targetRes.toString(), label = "${targetRes}P", resolution = targetRes)
+            val currentQuality = availableQualities.find { it.resolution == resolvedRes }
+                ?: MediaQualityOption(
+                    id = resolvedRes.toString(),
+                    label = formatResolutionLabel(resolvedRes),
+                    resolution = resolvedRes,
+                )
 
             BackendResult.Success(
                 MediaStream(
@@ -232,9 +317,28 @@ class UnifiedMediaResolverImpl(
         }
     }
 
+    private fun extractVideoQualities(json: JsonElement): List<MediaQualityOption> {
+        val dataObj = (json as? JsonObject)?.get("data") as? JsonObject ?: (json as? JsonObject) ?: return emptyList()
+        val resolutions = dataObj["resolutions"] as? JsonArray
+        if (resolutions != null && resolutions.isNotEmpty()) {
+            return resolutions.mapNotNull { element ->
+                val obj = element as? JsonObject ?: return@mapNotNull null
+                val res = obj["resolution"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+                val size = obj["size"]?.jsonPrimitive?.longOrNull ?: 0L
+                MediaQualityOption(
+                    id = res.toString(),
+                    label = formatResolutionLabel(res),
+                    resolution = res,
+                    sizeBytes = size,
+                )
+            }.sortedByDescending { it.resolution }
+        }
+        return extractMvQualities(json)
+    }
+
     private fun extractMvQualities(json: JsonElement): List<MediaQualityOption> {
-        val dataObj = (json as? JsonObject)?.get("data")?.jsonObject ?: (json as? JsonObject) ?: return emptyList()
-        val brsObj = dataObj["brs"]?.jsonObject
+        val dataObj = (json as? JsonObject)?.get("data") as? JsonObject ?: (json as? JsonObject) ?: return emptyList()
+        val brsObj = dataObj["brs"] as? JsonObject
         if (brsObj != null && brsObj.isNotEmpty()) {
             return brsObj.keys.mapNotNull { it.toIntOrNull() }
                 .sortedDescending()
@@ -247,10 +351,10 @@ class UnifiedMediaResolverImpl(
                 }
         }
 
-        val brsArray = dataObj["brs"]?.jsonArray
+        val brsArray = dataObj["brs"] as? JsonArray
         if (brsArray != null && brsArray.isNotEmpty()) {
-            return brsArray.mapNotNull {
-                val obj = it.jsonObject
+            return brsArray.mapNotNull { element ->
+                val obj = element as? JsonObject ?: return@mapNotNull null
                 val r = (obj["br"] ?: obj["r"])?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
                 MediaQualityOption(
                     id = r.toString(),
@@ -270,11 +374,24 @@ class UnifiedMediaResolverImpl(
     }
 
     private fun extractUrlFromMvUrlResponse(json: JsonElement): String? {
-        val dataObj = (json as? JsonObject)?.get("data")?.jsonObject ?: (json as? JsonObject)
-        val url = (dataObj?.get("url") as? JsonPrimitive)?.contentOrNull
+        val rootObj = json as? JsonObject ?: return null
+        val dataObj = rootObj["data"] as? JsonObject ?: rootObj
+
+        // 1. 常规 data.url
+        val url = dataObj["url"]?.jsonPrimitive?.contentOrNull
         if (!url.isNullOrBlank()) return url
-        // 兼容直接包含 url 的结构
-        return (json as? JsonObject)?.get("url")?.jsonPrimitive?.contentOrNull
+
+        // 2. 短视频 urls 列表
+        val urlsArray = rootObj["urls"] as? JsonArray
+        val urlFromUrls = (urlsArray?.firstOrNull() as? JsonObject)?.get("url")?.jsonPrimitive?.contentOrNull
+        if (!urlFromUrls.isNullOrBlank()) return urlFromUrls
+
+        // 3. data 为数组情况
+        val dataArray = rootObj["data"] as? JsonArray
+        val urlFromArray = (dataArray?.firstOrNull() as? JsonObject)?.get("url")?.jsonPrimitive?.contentOrNull
+        if (!urlFromArray.isNullOrBlank()) return urlFromArray
+
+        return null
     }
 
     private fun formatResolutionLabel(res: Int): String = when {

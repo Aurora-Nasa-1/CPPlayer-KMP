@@ -133,4 +133,44 @@ class UnifiedMediaResolverTest {
         assertEquals(1080, stream.currentQuality?.resolution)
         assertTrue(stream.headers.containsKey("Referer"))
     }
+
+    @Test
+    fun `当1080P返回空流时应自动降级至720P并纠正秒级时长`() = runBlocking {
+        val mvDetailJson = Json.parseToJsonElement("""
+            {
+                "data": {
+                    "id": 99999,
+                    "name": "Fallback Test Song",
+                    "duration": 213,
+                    "brs": {
+                        "720": "https://vod.music.126.net/fallback_720.mp4"
+                    }
+                }
+            }
+        """.trimIndent())
+
+        val emptyUrlJson = Json.parseToJsonElement("""
+            {
+                "data": {
+                    "id": 99999,
+                    "url": null,
+                    "r": 0
+                }
+            }
+        """.trimIndent())
+
+        val resolver = UnifiedMediaResolverImpl(
+            localMediaSource = FakeLocalMediaSource(),
+            musicApiService = mockMusicApi(mvDetailJson, emptyUrlJson),
+        )
+
+        // 请求 1080P，虽然 1080P API 返回 url: null，但应自动降级命中 brs 中的 720P 直链
+        val result = resolver.resolveStream("netease://mv/99999", preferredQuality = "1080")
+        assertTrue(result is BackendResult.Success, "解析应降级成功: $result")
+        val stream = result.data
+        assertEquals("https://vod.music.126.net/fallback_720.mp4", stream.url)
+        assertEquals(720, stream.currentQuality?.resolution)
+        // 213 秒应自动转换为 213,000 毫秒
+        assertEquals(213_000L, stream.durationMs)
+    }
 }

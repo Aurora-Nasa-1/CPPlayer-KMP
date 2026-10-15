@@ -9,11 +9,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.awt.SwingPanel
 import cp.player.core.media.VideoScalingMode
 import cp.player.core.playback.video.PlatformVideoPlayer
-import java.awt.Canvas
-import java.awt.Color
 
 @Composable
 actual fun VideoSurface(
@@ -34,18 +31,8 @@ actual fun VideoSurface(
             Modifier.fillMaxSize()
         }
 
-        SwingPanel(
-            modifier = aspectModifier,
-            factory = {
-                Canvas().apply {
-                    background = Color.BLACK
-                    player.attachSurface(this)
-                }
-            },
-            update = { canvas ->
-                player.attachSurface(canvas)
-            },
-        )
+        // 桌面端视口容器：使用纯 Compose 轻量组件，彻底消除重量级 AWT SwingPanel 对所有界面的纯黑遮挡 (Airspace Issue)
+        Box(modifier = aspectModifier)
     }
 
     DisposableEffect(player) {
