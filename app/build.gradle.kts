@@ -700,13 +700,22 @@ val packageWindowsVelopack = tasks.register<Exec>("packageWindowsVelopack") {
                 "若 compose 插件改了输出目录，请按本任务上方注释里的出处同步更新路径。"
         }
 
-        // 打包前将预编译原生动态库（如 rust_lib_flick_player.dll）注入到 app-image 根目录（与 exe 同级）
+        // 打包前将预编译原生动态库（如 rust_lib_flick_player.dll）注入到 app-image 多重关键位置（exe 同级、app 目录、JRE bin 目录）
         val nativeDir = project.file("native")
         if (nativeDir.isDirectory) {
+            val targets = listOf(
+                appDir,
+                appDir.resolve("app"),
+                appDir.resolve("runtime/bin"),
+            )
             nativeDir.listFiles()?.filter { it.isFile }?.forEach { f ->
-                val dest = appDir.resolve(f.name)
-                f.copyTo(dest, overwrite = true)
-                logger.lifecycle("已注入原生动态库至安装镜像: ${f.name} -> ${dest.absolutePath}")
+                targets.forEach { targetDir ->
+                    if (targetDir.isDirectory) {
+                        val dest = targetDir.resolve(f.name)
+                        f.copyTo(dest, overwrite = true)
+                        logger.lifecycle("已注入原生动态库至安装镜像: ${f.name} -> ${dest.absolutePath}")
+                    }
+                }
             }
         }
 

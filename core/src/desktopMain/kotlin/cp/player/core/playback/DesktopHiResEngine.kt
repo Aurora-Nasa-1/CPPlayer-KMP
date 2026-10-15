@@ -96,7 +96,7 @@ object DesktopHiResEngine {
             logger.log(Level.WARNING, "Failed to load '$LIB_NAME' from system path", e)
         }
 
-        // 2. 尝试从应用本地数据目录或工作区常见输出目录显式查找
+        // 2. 尝试从应用运行根目录（exe/jar 所在位置）、本地配置目录或工作区常见输出目录查找
         val os = System.getProperty("os.name", "").lowercase()
         val libFileName = when {
             os.contains("win") -> "$LIB_NAME.dll"
@@ -104,16 +104,55 @@ object DesktopHiResEngine {
             else -> "lib$LIB_NAME.so"
         }
 
+        val searchCandidates = linkedSetOf<File>()
+
+        // (a) 当前正在运行的可执行程序（CPPlayer.exe）所在目录探测 (Java 9+ ProcessHandle)
+        try {
+            ProcessHandle.current().info().command().ifPresent { exePath ->
+                val exeFile = File(exePath)
+                val appRoot = exeFile.parentFile
+                if (appRoot != null && appRoot.exists()) {
+                    searchCandidates += File(appRoot, libFileName)
+                    searchCandidates += File(appRoot, "runtime/bin/$libFileName")
+                    searchCandidates += File(appRoot, "app/$libFileName")
+                }
+            }
+        } catch (_: Throwable) {
+        }
+
+        // (b) 当前代码包（JAR）位置逆向推导安装根目录
+        try {
+            val codeSourceLoc = DesktopHiResEngine::class.java.protectionDomain?.codeSource?.location
+            if (codeSourceLoc != null) {
+                val jarFile = File(codeSourceLoc.toURI())
+                val jarDir = jarFile.parentFile // 通常为 <install>/app
+                if (jarDir != null && jarDir.exists()) {
+                    searchCandidates += File(jarDir, libFileName)
+                    val appRoot = jarDir.parentFile // 通常为 <install>
+                    if (appRoot != null && appRoot.exists()) {
+                        searchCandidates += File(appRoot, libFileName)
+                        searchCandidates += File(appRoot, "runtime/bin/$libFileName")
+                    }
+                }
+            }
+        } catch (_: Throwable) {
+        }
+
+        // (c) Compose 应用资源目录环境变量
+        System.getProperty("compose.application.resources.dir")?.let { resDir ->
+            searchCandidates += File(resDir, libFileName)
+            searchCandidates += File(resDir, "../$libFileName")
+        }
+
+        // (d) 常规工作区与持久化目录
+        searchCandidates += File(System.getProperty("user.home"), ".cpplayer/native/$libFileName")
         val userDir = File(System.getProperty("user.dir"))
-        val searchCandidates = listOf(
-            File(System.getProperty("user.home"), ".cpplayer/native/$libFileName"),
-            File(userDir, "native/$libFileName"),
-            File(userDir, "../native/$libFileName"),
-            File(userDir, "app/native/$libFileName"),
-            File(userDir, "native/flick-player-engine/target/release/$libFileName"),
-            File(userDir, "../native/flick-player-engine/target/release/$libFileName"),
-            File(userDir, libFileName),
-        )
+        searchCandidates += File(userDir, libFileName)
+        searchCandidates += File(userDir, "native/$libFileName")
+        searchCandidates += File(userDir, "../native/$libFileName")
+        searchCandidates += File(userDir, "app/native/$libFileName")
+        searchCandidates += File(userDir, "native/flick-player-engine/target/release/$libFileName")
+        searchCandidates += File(userDir, "../native/flick-player-engine/target/release/$libFileName")
 
         for (candidate in searchCandidates) {
             if (candidate.exists()) {
