@@ -135,11 +135,19 @@ class AboutScreen : Screen {
                 SettingsSection("项目信息") {
                     SettingsClickItem(
                         index = 0,
-                        total = 1,
+                        total = 2,
                         icon = Icons.Default.Link,
                         title = "GitHub 项目",
                         subtitle = "${AppVersion.REPO_OWNER}/${AppVersion.REPO_NAME}",
-                        onClick = { openUrl(AppVersion.RELEASES_PAGE) },
+                        onClick = { openUrl("https://github.com/${AppVersion.REPO_OWNER}/${AppVersion.REPO_NAME}") },
+                    )
+                    SettingsClickItem(
+                        index = 1,
+                        total = 2,
+                        icon = Icons.Default.Info,
+                        title = "开源许可与致谢",
+                        subtitle = "Apache-2.0 · 核心致谢 moss-apps/Flick 等开源项目",
+                        onClick = { openUrl("https://github.com/${AppVersion.REPO_OWNER}/${AppVersion.REPO_NAME}/blob/main/THIRD_PARTY_LICENSES.md") },
                     )
                 }
 

@@ -80,9 +80,27 @@
   整体改为 GPL 兼容许可。若将来有人把上述 GPL 项目的代码复制进来，必须先满足
   GPL-3.0 的许可条件。
 
+## Flick / FlickEngine（MIT 许可证）——发烧级 Hi-Res 音频引擎内核
+
+- **上游项目**：Flick — https://github.com/moss-apps/Flick
+- **原作者 / 版权方**：moss-apps 团队及 Flick 贡献者（Copyright (c) 2026 Flick Player Contributors / moss-apps）
+- **许可证**：MIT License（与 Apache-2.0 完全兼容）
+- **本仓库落点**：
+  - `native/flick-player-engine/`（底层 Rust 音频引擎源码）
+  - `app/native/rust_lib_flick_player.dll`（预编译 Windows 原生动态库）
+  - `core/src/androidMain/kotlin/cp/player/core/playback/flick/**` 与 `core/src/androidMain/kotlin/cp/player/engine/RustEngine.kt`（Android 原生引擎与 JNI 桥）
+  - `core/src/desktopMain/kotlin/cp/player/core/playback/DesktopHiResEngine.kt` 与 `DesktopHiResPlatformPlayer.kt`（桌面端 Hi-Res 发烧引擎）
+  - `app/src/commonMain/kotlin/cp/player/app/ui/screen/AudioEngineSettingsScreen.kt`（发烧特性与硬件直通设置）
+- **功能与归属说明**：
+  本项目的高保真音频输出与硬件独占直通特性（FlickEngine）基于 moss-apps 团队开源的 Flick 项目核心架构与 Rust 音频内核实现。原项目提供了高质量的音频解码管线、Symphonia 解码器集成、低延迟音频推流等探索。
+  CPPlayer-KMP 在此基础上针对跨平台 KMP 架构进行了 JNI 封装与生命周期管理，并为 Windows 平台增加了 WASAPI Exclusive 独占直通、Event-Driven 事件驱动模式与采样率自适应协商等增强。
+- **许可合规说明**：
+  按照 MIT 许可证条款，原项目的版权声明与许可证全文已完整保留在 `native/flick-player-engine/LICENSE` 以及根目录 `NOTICE` 文件中。
+
 ---
 
 ## 其余依赖
 
 其余第三方库（Compose Multiplatform、Ktor、kotlinx、Coil、Media3 等）见
 `gradle/libs.versions.toml` 与其各自仓库的许可证声明；本文件只登记**源码级移植**。
+

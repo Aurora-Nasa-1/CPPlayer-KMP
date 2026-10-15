@@ -31,6 +31,7 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cp.player.app.AppModel
 import cp.player.app.platform.isAndroidPlatform
+import cp.player.app.platform.openUrl
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.SettingsClickItem
@@ -228,6 +229,18 @@ class AudioEngineSettingsScreen : Screen {
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary,
                             )
+                        },
+                    )
+                }
+
+                SettingsSection("开源内核致谢与归属") {
+                    SettingsClickItem(
+                        title = "moss-apps / Flick",
+                        subtitle = "FlickEngine 核心技术源自开源项目 moss-apps/Flick (MIT)，特此致敬原作者",
+                        index = 0,
+                        total = 1,
+                        onClick = {
+                            openUrl("https://github.com/moss-apps/Flick")
                         },
                     )
                 }
