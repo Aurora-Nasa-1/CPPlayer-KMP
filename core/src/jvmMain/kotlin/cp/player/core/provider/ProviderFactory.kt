@@ -21,6 +21,8 @@ actual object ProviderFactory {
                 loginMethods = manifest.loginMethods,
                 capabilities = caps,
                 apiVersion = apiVersion,
+                contract = manifest.contract,
+                settingsSchema = manifest.settingsSchema,
             )
             "binary" -> {
                 val binPath = PlatformSupport.resolveEntryPoint(moduleDir, manifest.entryPoint, manifest.supportedAbis)

@@ -1,7 +1,6 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -13,17 +12,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -32,8 +28,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -49,6 +45,8 @@ import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.AlbumCoverThumb
 import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.ContentState
+import cp.player.app.ui.component.CpActionButtonGroup
+import cp.player.app.ui.component.CpActionGroupItem
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.component.CpSpacing
@@ -156,6 +154,7 @@ private fun AlbumDetailContent(
     onBack: () -> Unit,
 ) {
     val s = cpStrings()
+    val navigator = LocalNavigator.current
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
     val provider = AppModel.activeProviderId()
@@ -164,6 +163,8 @@ private fun AlbumDetailContent(
     val likedIds by AppModel.playback.likedIds.collectAsState()
     var optionsTarget by remember { mutableStateOf<TrackSummary?>(null) }
     var addToPlaylistTrack by remember { mutableStateOf<TrackSummary?>(null) }
+    // 「歌曲信息」的目标：与其余页面同款，走共享的 SongDetailInfoDialog。
+    var showInfoTarget by remember { mutableStateOf<TrackSummary?>(null) }
 
     LaunchedEffect(albumId) { model.load(albumId, fallback) }
 
@@ -265,6 +266,9 @@ private fun AlbumDetailContent(
                                 contextMenu = songContextMenuItems(
                                     SongMenuActions(
                                         onPlay = { playAt(index) },
+                                        onPlayMv = track.mvId?.takeIf { it > 0 }?.let { mvId ->
+                                            { navigator?.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV")) }
+                                        },
                                         isFavorite = track.id in likedIds,
                                         onToggleFavorite = {
                                             val target = track.id !in likedIds
@@ -324,15 +328,40 @@ private fun AlbumDetailContent(
             },
             onAddToPlaylist = { addToPlaylistTrack = track },
             onDownload = { AppModel.downloadTrack(track) },
+            onShowInfo = { showInfoTarget = track },
+            onShare = { shareText(songShareText(track)) },
+            onPlayMv = track.mvId?.takeIf { it > 0 }?.let { mvId ->
+                { navigator?.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV")) }
+            },
         )
     }
 
     addToPlaylistTrack?.let { track ->
         AddToPlaylistSheet(trackId = track.id, onDismiss = { addToPlaylistTrack = null })
     }
+
+    showInfoTarget?.let { track ->
+        cp.player.app.ui.component.SongDetailInfoDialog(
+            track = track,
+            onDismiss = { showInfoTarget = null },
+        )
+    }
 }
 
-/** 专辑头部：封面 + 名称 + 歌手 / 发行信息 + 说明 + 三个动作。 */
+/**
+ * 专辑头部：封面 + 名称 + 歌手 / 发行信息 + 说明 + 动作组。
+ *
+ * 按 M3 Expressive 的「hero 详情头」组织（与 `AboutScreen` 的 hero 同一套语言）：
+ * 1. **标题用主色 + Bold** —— 一页的门面要一眼认出来；普通 `onSurface` 标题与列表行
+ *    里的正文没有层级差，整页看起来像「一堆没排序的文字」；
+ * 2. 封面圆角走 `shapes.extraLarge`（28dp），不是列表缩略图的 12dp —— 大图配大圆角；
+ * 3. 四个动作收敛成**一枚连体动作组**（[CpActionButtonGroup]）。收敛前是
+ *    「一个 `FilledTonalButton` + 三个 `TextButton`」：四种不同重量的控件挤在一行，
+ *    看不出哪个是主操作，窄屏上还会被压成一排小字。
+ *
+ * ⚠️ 曲目为空时四个动作**全部禁用**。拿不到曲目时头部仍会画出来（错误态也保留封面与
+ * 名称），可点的按钮会让用户以为「点了没反应」—— 实际上队列里什么都没有。
+ */
 @Composable
 private fun AlbumHeader(
     detail: AlbumDetail,
@@ -354,6 +383,14 @@ private fun AlbumHeader(
         if (trackCount > 0) add(s.album.albumMeta(trackCount, formatTimeMs(totalDurationMs)))
     }.joinToString(" · ")
 
+    val hasTracks = trackCount > 0
+    val actions = listOf(
+        CpActionGroupItem(s.library.playAll, Icons.Filled.PlayArrow, onPlayAll, enabled = hasTracks),
+        CpActionGroupItem(s.album.shufflePlay, Icons.Filled.Shuffle, onShuffle, enabled = hasTracks),
+        CpActionGroupItem(s.library.addToQueue, Icons.AutoMirrored.Filled.PlaylistAdd, onAddToQueue, enabled = hasTracks),
+        CpActionGroupItem(s.library.downloadAll, Icons.Filled.Download, onDownloadAll, enabled = hasTracks),
+    )
+
     if (wide) {
         Row(
             Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -361,42 +398,26 @@ private fun AlbumHeader(
         ) {
             AlbumCoverThumb(
                 coverUrl = detail.coverUrl,
-                corner = 24.dp,
+                corner = AlbumCoverCorner,
                 modifier = Modifier.size(220.dp),
             )
             Column(Modifier.weight(1f)) {
-                Text(
-                    detail.name,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                AlbumTitle(detail.name, MaterialTheme.typography.headlineMedium)
                 Spacer(Modifier.height(8.dp))
-                Text(
-                    metaLine,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                AlbumMetaLine(metaLine)
                 detail.description?.takeIf { it.isNotBlank() }?.let { desc ->
                     Spacer(Modifier.height(12.dp))
-                    Text(
-                        desc,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 6,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    AlbumDescription(desc, maxLines = 6)
                 }
                 Spacer(Modifier.height(16.dp))
-                AlbumActions(onPlayAll, onShuffle, onAddToQueue, onDownloadAll)
+                CpActionButtonGroup(actions, modifier = Modifier.fillMaxWidth())
             }
         }
     } else {
         Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
             AlbumCoverThumb(
                 coverUrl = detail.coverUrl,
-                corner = 24.dp,
+                corner = AlbumCoverCorner,
                 // ⚠️ `widthIn` 必须在 `fillMaxWidth` **之前**：顺序反了约束已被钉死，
                 // `widthIn` 会变成空操作（见 AGENTS.md 的宽高约束约定）。
                 modifier = Modifier
@@ -405,66 +426,63 @@ private fun AlbumHeader(
                     .aspectRatio(1f),
             )
             Spacer(Modifier.height(16.dp))
-            Text(
-                detail.name,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
+            AlbumTitle(detail.name, MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(8.dp))
-            Text(
-                metaLine,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            AlbumMetaLine(metaLine)
             detail.description?.takeIf { it.isNotBlank() }?.let { desc ->
                 Spacer(Modifier.height(12.dp))
-                Text(
-                    desc,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 5,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                AlbumDescription(desc, maxLines = 5)
             }
             Spacer(Modifier.height(16.dp))
-            AlbumActions(onPlayAll, onShuffle, onAddToQueue, onDownloadAll)
+            CpActionButtonGroup(actions, modifier = Modifier.fillMaxWidth())
         }
     }
 }
 
+/**
+ * 专辑名。**主色 + Bold** —— 详情页的门面。
+ *
+ * 宽度（`headlineMedium` / `headlineSmall`）由调用方按宽窄屏选：同一个值在手机上
+ * 会一行只放得下三四个字，专辑名普遍偏长，会立刻折成三行把封面挤下去。
+ */
 @Composable
-private fun AlbumActions(
-    onPlayAll: () -> Unit,
-    onShuffle: () -> Unit,
-    onAddToQueue: () -> Unit,
-    onDownloadAll: () -> Unit,
-) {
-    val s = cpStrings()
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        androidx.compose.material3.FilledTonalButton(onClick = onPlayAll) {
-            Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(s.library.playAll)
-        }
-        TextButton(onClick = onShuffle) {
-            Icon(Icons.Filled.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(s.album.shufflePlay)
-        }
-        TextButton(onClick = onAddToQueue) {
-            Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(s.library.addToQueue)
-        }
-        TextButton(onClick = onDownloadAll) {
-            Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(s.library.downloadAll)
-        }
-    }
+private fun AlbumTitle(name: String, style: TextStyle) {
+    Text(
+        name,
+        style = style,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.primary,
+        maxLines = 3,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
+
+/** 元信息行：歌手 · 发行年 · 发行方 · N 首 / 时长。全空时**不画**（否则留一条空行）。 */
+@Composable
+private fun AlbumMetaLine(text: String) {
+    if (text.isBlank()) return
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/** 专辑说明。**不套卡片**：说明本身是长文，再包一层容器只会多一道边框和一层内边距。 */
+@Composable
+private fun AlbumDescription(text: String, maxLines: Int) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+/**
+ * 专辑封面圆角，取 M3 形状刻度的 `extraLarge`（28dp）—— 与卡片 / 弹层同一档。
+ *
+ * 不沿用列表缩略图的 12dp：那个值是按 60dp 的图定的，套到 220dp 的封面上会显得很方。
+ */
+private val AlbumCoverCorner = 28.dp

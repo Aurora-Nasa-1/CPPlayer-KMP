@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
@@ -83,11 +85,13 @@ import cp.player.app.ui.component.PlaylistItem
 import cp.player.app.ui.component.PlaylistOptionsSheet
 import cp.player.app.ui.component.SectionHeader
 import cp.player.app.ui.component.StateSurface
+import cp.player.app.ui.component.rememberActiveProviderSupports
 import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.app.ui.model.DownloadsUiState
 import cp.player.app.ui.model.LibraryScreenModel
 import cp.player.app.ui.model.LibraryUiState
 import cp.player.core.music.PlaylistSummary
+import cp.player.core.provider.ProviderCapability
 import kotlinx.coroutines.launch
 
 /**
@@ -126,7 +130,7 @@ private data class FilterTab(val label: String, val icon: ImageVector)
  */
 private fun libraryFilters(s: CpStrings): List<FilterTab> = listOf(
     FilterTab(s.library.tabPlaylists, Icons.AutoMirrored.Filled.QueueMusic),
-    FilterTab(s.library.tabDownloads, Icons.Filled.Download),
+    FilterTab(s.downloads.tabLocalLibrary, Icons.Filled.FolderOpen),
 )
 
 @Composable
@@ -196,6 +200,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
                     // 宽屏仪表盘上的「聆听统计」卡：进报告页的概览（日历墙那一屏）。
                     onOpenInsights = { navigator.push(InsightsScreen(InsightsScreen.TAB_OVERVIEW)) },
                     onDownloads = { navigator.push(DownloadsScreen()) },
+                    onLocal = { navigator.push(LocalLibraryScreen()) },
                     onCloud = { navigator.push(CloudDriveScreen()) },
                     onStorage = { navigator.push(StorageSettingsScreen()) },
                     onAppearance = { navigator.push(AppearanceSettingsScreen()) },
@@ -263,10 +268,11 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
                     onPlaylistOptions = { selectedPlaylist = it },
                 )
                 else -> item {
-                    DownloadsSection(
+                    LocalLibrarySection(
                         s = s,
                         state = downloadsState,
-                        onOpen = { navigator.push(DownloadsScreen()) },
+                        onOpenLocal = { navigator.push(LocalLibraryScreen()) },
+                        onOpenDownloads = { navigator.push(DownloadsScreen()) },
                     )
                 }
             }
@@ -366,6 +372,7 @@ private fun LibraryDashboard(
     onRecentPlays: () -> Unit,
     onOpenInsights: () -> Unit,
     onDownloads: () -> Unit,
+    onLocal: () -> Unit,
     onCloud: () -> Unit,
     onStorage: () -> Unit,
     onAppearance: () -> Unit,
@@ -402,6 +409,7 @@ private fun LibraryDashboard(
         }
 
         // ── 行 2：主行动卡 + 两个高频入口 ──
+        val supportsCloud = rememberActiveProviderSupports(ProviderCapability.CLOUD_DRIVE)
         if (expanded) {
             Row(
                 Modifier.fillMaxWidth().height(168.dp),
@@ -432,14 +440,16 @@ private fun LibraryDashboard(
                 )
             }
         } else {
-            // 手机端：一排快捷圆形入口（最近播放 / 云盘 / 下载）。
-            // 「创建歌单」hero 不再保留 —— 曲库标题行的 [+] 就是这个动作，窄屏不再重复占 152dp。
+            // 手机端：一排快捷圆形入口（本地曲库 / 最近播放 / 云盘（按需） / 下载）。
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(BentoGap),
             ) {
+                LibraryQuickEntry(s.downloads.tabLocalLibrary, Icons.Filled.FolderOpen, onLocal, Modifier.weight(1f))
                 LibraryQuickEntry(s.library.recentPlays, Icons.Filled.History, onRecentPlays, Modifier.weight(1f))
-                LibraryQuickEntry(s.library.cloudDrive, Icons.Filled.CloudQueue, onCloud, Modifier.weight(1f))
+                if (supportsCloud) {
+                    LibraryQuickEntry(s.library.cloudDrive, Icons.Filled.CloudQueue, onCloud, Modifier.weight(1f))
+                }
                 LibraryQuickEntry(s.library.tabDownloads, Icons.Filled.Download, onDownloads, Modifier.weight(1f))
             }
         }
@@ -461,20 +471,22 @@ private fun LibraryDashboard(
                     onProviders = onProviders,
                     modifier = Modifier.weight(2f).fillMaxHeight(),
                 )
-                BentoActionCard(
-                    title = s.library.cloudDrive,
-                    subtitle = s.library.cloudDriveNote,
-                    icon = Icons.Filled.CloudQueue,
-                    onClick = onCloud,
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    containerColor = neutral,
-                )
+                if (supportsCloud) {
+                    BentoActionCard(
+                        title = s.library.cloudDrive,
+                        subtitle = s.library.cloudDriveNote,
+                        icon = Icons.Filled.CloudQueue,
+                        onClick = onCloud,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        containerColor = neutral,
+                    )
+                }
                 BentoActionCard(
                     title = s.library.storageManage,
                     subtitle = s.library.storageManageNote,
                     icon = Icons.Filled.Storage,
                     onClick = onStorage,
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    modifier = Modifier.weight(if (supportsCloud) 1f else 1.5f).fillMaxHeight(),
                     containerColor = neutral,
                 )
             }
@@ -770,94 +782,125 @@ private fun PlaylistQuickGrid(
 }
 
 /**
- * 「下载」分段的内联摘要。
+ * 「本地音乐」分段的内联概览。
  *
- * 完整清单在 [DownloadsScreen]（下载中 / 已完成 / 本地媒体库三档），
- * 这里只做概览 + 最近完成，避免在同一个滚动容器里再嵌一层 LazyColumn。
+ * 完整清单在 [LocalLibraryScreen]（歌曲 / 专辑 / 艺术家 / 收藏 / 文件夹）。
+ * 这里提供本地曲库的直达入口与统计卡片，并将下载管理作为配套辅助入口保留。
  */
 @Composable
-private fun DownloadsSection(
+private fun LocalLibrarySection(
     s: CpStrings,
     state: DownloadsUiState,
-    onOpen: () -> Unit,
+    onOpenLocal: () -> Unit,
+    onOpenDownloads: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val completed = state.completedTasks
-    val active = state.activeTasks
-    BentoCard(
-        onClick = onOpen,
-        modifier = modifier.fillMaxWidth(),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        contentPadding = PaddingValues(20.dp),
-        // 内容行数不固定（0–4 条已完成）⇒ 高度由内容决定，不能让卡片去撑满父容器。
-        fillHeight = false,
-    ) {
-        // 指标行与完成列表都收一个上限宽度：桌面端这张卡最宽能到 1360dp，
-        // 不限宽的话三个数字会被 SpaceEvenly 摊到整行、艺术家被甩到最右边，整张卡显得散。
-        Row(
-            Modifier.widthIn(max = 560.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
+    val localCount = state.localAudioItems.size
+    val completedCount = state.completedTasks.size
+    val activeCount = state.activeTasks.size
+
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // 主卡片：本地音乐库入口
+        BentoCard(
+            onClick = onOpenLocal,
+            modifier = Modifier.fillMaxWidth(),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentPadding = PaddingValues(20.dp),
+            fillHeight = false,
         ) {
-            DownloadMetric(s.library.downloading, active.size.toString(), Modifier.weight(1f))
-            DownloadMetric(s.library.completed, completed.size.toString(), Modifier.weight(1f))
-            DownloadMetric(s.library.localMedia, state.downloadedItems.size.toString(), Modifier.weight(1f))
-        }
-        if (completed.isEmpty() && active.isEmpty()) {
-            Text(
-                s.library.noDownloads,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 16.dp).widthIn(max = 760.dp),
-            )
-        } else {
-            Column(
-                Modifier.widthIn(max = 760.dp).padding(top = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                completed.take(4).forEach { task ->
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Filled.Download, null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.width(10.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(52.dp),
+                    ) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Filled.FolderOpen,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(28.dp),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Column(Modifier.weight(1f)) {
                         Text(
-                            task.title,
+                            s.downloads.tabLocalLibrary,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            "共 $localCount 首本地歌曲",
                             style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Text(
-                            task.artist ?: "",
-                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
+                FilledTonalButton(
+                    onClick = onOpenLocal,
+                    modifier = Modifier.padding(start = 12.dp),
+                ) {
+                    Text("浏览曲库")
+                }
+            }
+        }
+
+        // 次级卡片：下载传输管理
+        BentoCard(
+            onClick = onOpenDownloads,
+            modifier = Modifier.fillMaxWidth(),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            contentPadding = PaddingValues(16.dp),
+            fillHeight = false,
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.Download,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        s.library.offlineDownloads,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    if (activeCount > 0) {
+                        Spacer(Modifier.width(8.dp))
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primary,
+                        ) {
+                            Text(
+                                "$activeCount 下载中",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
+                }
                 Text(
-                    s.library.openDownloads,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 4.dp),
+                    "已下载 $completedCount 首",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun DownloadMetric(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Text(
-            label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }

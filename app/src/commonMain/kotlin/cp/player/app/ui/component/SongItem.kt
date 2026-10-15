@@ -1,5 +1,7 @@
 package cp.player.app.ui.component
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,10 +13,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Surface
+import cafe.adriel.voyager.navigator.LocalNavigator
+import cp.player.app.ui.screen.VideoPlayerScreen
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.anim.coverFlightSource
+import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.resized
 import cp.player.core.music.TrackSummary
@@ -64,10 +73,33 @@ fun SongItem(
      */
     contextMenu: List<CpContextMenuItem>? = null,
 ) {
-    val shape = MaterialTheme.shapes.medium
     // 桌面端（窗口 chrome 接管）且传入了菜单项 ⇒ MoreVert 走锚定菜单而不是底部弹层。
     // 判据用 LocalWindowChromeActive 而不是平台，理由见它的 KDoc。
     val anchoredMenu = LocalWindowChromeActive.current && !contextMenu.isNullOrEmpty()
+
+    val targetContainerColor = when {
+        selectionMode && isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+        isCurrentlyPlaying -> MaterialTheme.colorScheme.primaryContainer
+        // ⚠️ 读 LocalIsDarkTheme（已解析的明暗），不要读 isSystemInDarkTheme() ——
+        // 用户显式选深色而系统是浅色时后者会给出错的色板，行与背景撞色。
+        // 浅色分支取 surfaceContainerLow 而非 surface：后者与页面背景同色，整列会糊成一片。
+        else -> if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainerHighest
+        else MaterialTheme.colorScheme.surfaceContainerLow
+    }
+    val animatedContainerColor by animateColorAsState(
+        targetValue = targetContainerColor,
+        animationSpec = CpMotion.effects(),
+        label = "songItemContainerColor",
+    )
+
+    // 正在播放时封面圆角从 12dp 平滑 morph 变形成 26dp（52dp 的正圆 Pill）
+    val coverCorner by animateDpAsState(
+        targetValue = if (isCurrentlyPlaying) 26.dp else 12.dp,
+        animationSpec = CpMotion.spatial(),
+        label = "songCoverCornerMorph",
+    )
+    val coverShape = remember(coverCorner) { RoundedCornerShape(coverCorner) }
+
     val row: @Composable (Modifier) -> Unit = { rowModifier ->
         LegacyListItem(
             index = index.coerceAtLeast(0),
@@ -75,15 +107,8 @@ fun SongItem(
             onClick = onClick,
             onLongClick = onLongClick,
             modifier = rowModifier,
-        containerColor = when {
-            selectionMode && isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-            isCurrentlyPlaying -> MaterialTheme.colorScheme.primaryContainer
-            // ⚠️ 读 LocalIsDarkTheme（已解析的明暗），不要读 isSystemInDarkTheme() ——
-            // 用户显式选深色而系统是浅色时后者会给出错的色板，行与背景撞色。
-            // 浅色分支取 surfaceContainerLow 而非 surface：后者与页面背景同色，整列会糊成一片。
-            else -> if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainerHighest
-            else MaterialTheme.colorScheme.surfaceContainerLow
-        },
+            emphasized = isCurrentlyPlaying,
+            containerColor = animatedContainerColor,
         leadingContent = {
             if (selectionMode) {
                 Checkbox(
@@ -102,9 +127,9 @@ fun SongItem(
                     )
                 }
                 Box(
-                    Modifier.size(52.dp).clip(shape)
+                    Modifier.size(52.dp).clip(coverShape)
                         .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .coverFlightSource(CoverFlight.trackKey(track.id), 12.dp),
+                        .coverFlightSource(CoverFlight.trackKey(track.id), coverCorner),
                     contentAlignment = Alignment.Center,
                 ) {
                     if (!track.coverUrl.isNullOrBlank()) {
@@ -115,11 +140,10 @@ fun SongItem(
                             contentScale = ContentScale.Crop,
                         )
                     } else {
-                        Icon(
-                            Icons.Filled.MusicNote,
-                            null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp),
+                        CpCoverPlaceholder(
+                            modifier = Modifier.fillMaxSize(),
+                            corner = coverCorner,
+                            animated = false,
                         )
                     }
                     // 正在播放：封面上浮一个跳动的均衡器。它比「标题变主题色 + 加粗」
@@ -140,15 +164,39 @@ fun SongItem(
         // 一屏十几个动画同时跑既吃帧率又像屏保。isCurrentlyPlaying 在一次渲染里
         // 天然只有一个为真，跑马灯等于自带限流（见 CpTextReveal.Marquee）。
         headlineContent = {
-            CpText(
-                text = track.name,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = if (isCurrentlyPlaying) FontWeight.Bold else FontWeight.Normal,
-                maxLines = 1,
-                color = if (isCurrentlyPlaying) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurface,
-                emphasized = isCurrentlyPlaying,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CpText(
+                    text = track.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = if (isCurrentlyPlaying) FontWeight.Bold else FontWeight.Normal,
+                    maxLines = 1,
+                    color = if (isCurrentlyPlaying) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurface,
+                    emphasized = isCurrentlyPlaying,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                val mvId = track.mvId
+                if (mvId != null && mvId > 0) {
+                    val nav = LocalNavigator.current
+                    Spacer(Modifier.width(6.dp))
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                        modifier = Modifier.clickable {
+                            nav?.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV"))
+                        },
+                    ) {
+                        Text(
+                            text = "MV",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                        )
+                    }
+                }
+            }
         },
         supportingContent = {
             CpText(

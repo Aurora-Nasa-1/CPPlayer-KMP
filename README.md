@@ -212,3 +212,14 @@ CPPlayer 可作为**推送方**，把本地转码后的 HTTP 流推给外部接�
   网易云 API 实现，`src/server/` 与 `src/util/` 提供本地 HTTP 服务与 JNI 入口。
 
 > 移植过程与差异说明见 `reference/cp-player-legacy/README.md` 及本文件历史版本。
+
+---
+
+## 致谢与开源声明 (Acknowledgments)
+
+本项目中的 **Hi-Res 发烧级音频内核**（FlickEngine / Desktop WASAPI Exclusive 硬件独占直通 / DSD 解码）的设计思想与底层实现参考并来源于开源项目 **[FlickPlayer](https://github.com/) / FlickEngine**。
+
+- **核心贡献**：衷心感谢 FlickPlayer 原创作者及开源社区在跨平台音频解码管线、Symphonia 解码器集成、WASAPI/Oboe 低延迟推流架构等领域做出的卓越探索与开源贡献。
+- **演进与优化**：CPPlayer-KMP 在此基础上针对 Windows 平台修复了 WASAPI Event-Driven 驱动独占推流欠载、Pre-roll 预填防爆音以及 JNI 生命周期安全释放等关键链路。
+- 特别鸣谢：[Rodio](https://github.com/RustAudio/rodio)、[Symphonia](https://github.com/pdeljanov/Symphonia)、[cpal](https://github.com/RustAudio/cpal) 以及广大 Rust 音频生态开发者。
+

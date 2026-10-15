@@ -699,6 +699,17 @@ val packageWindowsVelopack = tasks.register<Exec>("packageWindowsVelopack") {
             "createDistributable 产物布局不符合预期（缺 $cpPackageName.exe，或 app/ 与 runtime/ 都没有）：${appDir.absolutePath}\n" +
                 "若 compose 插件改了输出目录，请按本任务上方注释里的出处同步更新路径。"
         }
+
+        // 打包前将预编译原生动态库（如 rust_lib_flick_player.dll）注入到 app-image 根目录（与 exe 同级）
+        val nativeDir = project.file("native")
+        if (nativeDir.isDirectory) {
+            nativeDir.listFiles()?.filter { it.isFile }?.forEach { f ->
+                val dest = appDir.resolve(f.name)
+                f.copyTo(dest, overwrite = true)
+                logger.lifecycle("已注入原生动态库至安装镜像: ${f.name} -> ${dest.absolutePath}")
+            }
+        }
+
         outputDir.get().asFile.deleteRecursively()
     }
 

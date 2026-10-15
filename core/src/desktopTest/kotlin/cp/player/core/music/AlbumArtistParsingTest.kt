@@ -171,6 +171,83 @@ class AlbumArtistParsingTest {
     }
 
     @Test
+    fun `专辑详情取顶层 songs 而不是为空的 album_songs`() {
+        // ⚠️ 这是网易云 v1 `/api/v1/album/{id}` 的**真实形状**（2026-10-15 用 JNI 直连
+        // 音源模块 ncm_api_rs.dll 抓下来的）：`album.songs` 存在但**是空数组**，
+        // 真正的曲目在与 `album` 平级的 `songs` 里。
+        // 旧实现写的是 `album["songs"] ?: this["songs"]` —— elvis 链在第一项就停下，
+        // 于是专辑详情恒解析出 0 首曲目，界面永远显示「暂无曲目」。
+        val payload = """
+            {
+              "code": 200,
+              "album": {
+                "id": 18875,
+                "name": "跨时代",
+                "picUrl": "https://example.com/a2.jpg",
+                "artist": { "id": 6452, "name": "周杰伦" },
+                "company": "杰威尔",
+                "publishTime": 1274112000000,
+                "size": 2,
+                "songs": []
+              },
+              "songs": [
+                {
+                  "id": 185666,
+                  "name": "跨时代",
+                  "ar": [ { "id": 6452, "name": "周杰伦" } ],
+                  "al": { "name": "跨时代", "picUrl": "https://example.com/a2.jpg" },
+                  "dt": 194000
+                },
+                {
+                  "id": 185667,
+                  "name": "说了再见",
+                  "ar": [ { "id": 6452, "name": "周杰伦" } ],
+                  "al": { "name": "跨时代", "picUrl": "https://example.com/a2.jpg" },
+                  "dt": 235000
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val detail = (MusicSourceFromApi.parseAlbumDetail(parse(payload)) as BackendResult.Success).data
+        assertEquals(2, detail.tracks.size, "曲目必须从顶层 songs 取到，而不是那个空的 album.songs")
+        assertEquals("185666", detail.tracks[0].id)
+        assertEquals("跨时代", detail.tracks[0].name)
+        assertEquals("周杰伦", detail.tracks[0].artist)
+        // 专辑元信息仍要来自 `album` 对象本身（不是被顶层 songs 顶掉）。
+        assertEquals(18875L, detail.id)
+        assertEquals("周杰伦", detail.artistName)
+        assertEquals("杰威尔", detail.company)
+    }
+
+    @Test
+    fun `专辑详情两处曲目都为空时返回空列表而不是报错`() {
+        // 「这张专辑没有可播放曲目」是正常状态，不该让整页变成错误态。
+        val payload = """{ "code": 200, "album": { "id": 1, "name": "空专辑", "songs": [] }, "songs": [] }"""
+        val detail = (MusicSourceFromApi.parseAlbumDetail(parse(payload)) as BackendResult.Success).data
+        assertTrue(detail.tracks.isEmpty())
+    }
+
+    @Test
+    fun `收藏专辑取非空的 data 而不是空壳 albums`() {
+        // `parseAlbumArray` 同一类缺陷：`albums` 存在但为空、真数据在 `data` 里时，
+        // 只判「存在」会让整面专辑墙空掉。
+        val payload = """
+            {
+              "code": 200,
+              "albums": [],
+              "data": [
+                { "id": 1001, "name": "范特西", "artist": { "id": 6452, "name": "周杰伦" }, "size": 10 }
+              ]
+            }
+        """.trimIndent()
+
+        val albums = (MusicSourceFromApi.parseAlbumSublist(parse(payload)) as BackendResult.Success).data
+        assertEquals(1, albums.size)
+        assertEquals(1001L, albums[0].id)
+    }
+
+    @Test
     fun `用户详情从 profile 解析关注与粉丝`() {
         val payload = """
             {

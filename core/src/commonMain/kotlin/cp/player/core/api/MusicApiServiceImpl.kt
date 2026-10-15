@@ -236,8 +236,37 @@ class MusicApiServiceImpl(
 
     // ======================== 社交 Social ========================
 
-    override suspend fun getComments(id: String, type: String, limit: Int, offset: Int, sortType: Int): JsonElement =
-        callApi(getCommentMethod(type), mapOf("id" to id, "limit" to limit.toString(), "offset" to offset.toString(), "sortType" to sortType.toString()))
+    /**
+     * 评论列表（顶层评论）。
+     *
+     * ⚠️ 必须走**新版评论端点** `comment/new`，不能用 [getCommentMethod] 返回的
+     * `comment/music` 那一族老端点。
+     *
+     * 老端点的请求体里只有 `rid` / `limit` / `offset` / `beforeTime` —— **`sortType` 会被
+     * Provider 原样丢掉**（`reference/netease-module-rust/src/api/comment_music.rs` 等 6 个
+     * 文件都是这么写的）。于是「推荐 / 热度 / 最新」三个页签拿到的是同一份按时间排的列表，
+     * 界面看着能点、实际切了没反应，而且请求里还带着一个骗人的 `sortType` 参数。
+     * 只有 `/api/v2/resource/comments`（即 `comment/new`）认 `sortType`。
+     *
+     * 与老端点的另外两处差异，都在这里吸收掉：
+     * - 资源类型由 `type`（0-6 类型码，见 [typeToCode]）决定，而不是靠端点区分；
+     * - 分页是 `pageNo` / `pageSize`，所以把调用方的 `offset` 换算成页码 ——
+     *   调用方（[cp.player.app.ui.model.CommentScreenModel]）仍按「每页 +limit」的
+     *   offset 语义翻页，换算对不上就会出现同一页反复拉。
+     */
+    override suspend fun getComments(id: String, type: String, limit: Int, offset: Int, sortType: Int): JsonElement {
+        val pageSize = limit.coerceAtLeast(1)
+        return callApi(
+            MusicApiMethod.COMMENT_NEW,
+            mapOf(
+                "id" to id,
+                "type" to typeToCode(type),
+                "pageNo" to ((offset / pageSize) + 1).toString(),
+                "pageSize" to pageSize.toString(),
+                "sortType" to sortType.toString(),
+            )
+        )
+    }
     override suspend fun getFloorComments(id: String, parentCommentId: Long, type: String, limit: Int, time: Long): JsonElement {
         val t = typeToCode(type)
         val params = mutableMapOf("id" to id, "parentCommentId" to parentCommentId.toString(), "type" to t, "limit" to limit.toString())

@@ -95,3 +95,20 @@ interface LyricPushMetadataSink {
  * 与既有的 `createLyricsPluginService` / `createPlatformPlayer` 同一套 expect/actual 惯例。
  */
 expect fun createLyricPusher(context: cp.player.core.util.PlatformContext): LyricPusher
+
+/**
+ * 当前平台能否渲染 HyperOS 超级岛。
+ *
+ * ### 为什么由 core 出这个口而不是让设置页自己判
+ * 判据是 `focus-api` 的 `FocusUtils.isSupportIsland()`（读系统属性
+ * `persist.sys.feature.island`），而该库是 core androidMain 的 `implementation` 依赖 ——
+ * app 侧看不到它的类型，只能由 core 提供一个平台无关的布尔出口。
+ *
+ * ### 为什么 UI 需要它
+ * 「不是 HyperOS 时打开开关也不会有岛」这件事必须让用户在**打开开关的当下**就看到；
+ * 否则唯一的反馈是「岛没出现」，会被直接误判成功能没移植好。
+ *
+ * 桌面端恒为 `false`（`LyricPushSettingsScreen` 本身是 androidOnly 页面，
+ * 这里只是把 expect 补齐，保证换平台不会编译不过）。
+ */
+expect fun isSuperIslandSupported(): Boolean

@@ -166,8 +166,12 @@ interface PlaybackController {
 
     // ============ 其它 ============
 
+    val currentVolume: Float get() = 1f
     fun setVolume(volume: Float)
     fun release()
+
+    /** 重载/热切换底层播放引擎（在用户更改音频内核设置后调用）。默认空实现。 */
+    fun reloadEngine() {}
 
     companion object {
         /** [setSleepTimer] 特殊值：播完当前曲目后暂停。 */

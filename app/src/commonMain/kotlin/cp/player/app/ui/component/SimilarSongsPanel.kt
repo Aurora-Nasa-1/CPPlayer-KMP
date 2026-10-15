@@ -231,18 +231,11 @@ private fun SimilarArtwork(url: String?) {
             contentScale = ContentScale.Crop,
         )
     } else {
-        Box(
-            Modifier.size(42.dp).clip(MaterialTheme.shapes.small)
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.Filled.MusicNote,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp),
-            )
-        }
+        CpCoverPlaceholder(
+            modifier = Modifier.size(42.dp),
+            corner = 8.dp,
+            animated = false,
+        )
     }
 }
 

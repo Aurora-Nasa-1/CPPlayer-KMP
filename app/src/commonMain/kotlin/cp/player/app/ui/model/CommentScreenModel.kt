@@ -4,17 +4,27 @@ import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
 import cp.player.core.BackendResult
+import cp.player.core.provider.ProviderCapability
 import cp.player.core.music.COMMENT_MAX_LENGTH
 import cp.player.core.music.Comment
 import cp.player.core.music.clipComment
 import cp.player.core.music.commentCodePointLength
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-/** 评论排序（取值与上游 `sortType` 一致）。 */
+/**
+ * 评论排序（取值与上游 `sortType` 一致）。
+ *
+ * ⚠️ 这套取值**只对 `comment/new` 有意义**：`comment/music` 那一族老端点的请求体里
+ * 没有 `sortType`，传过去会被 Provider 丢掉（见 `MusicApiServiceImpl.getComments`）。
+ * Provider 侧再把「推荐」翻译成上游真正要的 `99`，返回体里带回的也是那个值。
+ */
 object CommentSort {
     /** 推荐（默认）。未登录时服务端会按热度服务，返回体里会带回实际值。 */
     const val RECOMMEND = 1
@@ -93,13 +103,24 @@ class CommentScreenModel(val id: String, val type: String) : ScreenModel {
     /** 在途的「顶层列表」请求：用它去重，而不是「loading 且有内容」这种会被空列表绕过的守卫。 */
     private var loadJob: Job? = null
 
+    /** 单调自增的加载代数：用于丢弃因切排序、快速连点而作废的在途网络响应。 */
+    private var loadGen = 0
+
     /** 在途的楼层请求，按楼层 id 去重。 */
     private val floorJobs = mutableMapOf<Long, Job>()
 
     /** 服务端**实际**使用的排序 —— 翻页必须回传它（见 [CommentSort] 的说明）。 */
     private var serverSortType: Int = CommentSort.RECOMMEND
 
-    /** 下一页 offset（顶层列表）。 */
+    /**
+     * 下一页 offset（顶层列表）。
+     *
+     * ⚠️ 每次前进**一个 [PAGE_SIZE]**，而不是「本页实际回来几条」。
+     * 评论列表走 `comment/new`，那边是 `pageNo = offset / pageSize + 1` 的页码分页
+     * （见 `MusicApiServiceImpl.getComments`）。按实际条数前进的话，只要服务端少给一条
+     * （过滤、或平铺回复被归进父评论）页码就会原地踏步 ⇒ 下一页把同一页又拉一遍，
+     * 表现为「滚动加载出重复评论」。
+     */
     private var nextOffset: Int = 0
 
     init {
@@ -110,56 +131,102 @@ class CommentScreenModel(val id: String, val type: String) : ScreenModel {
         return runCatching { cp.player.core.music.CPMediaId.parse(fullId).resourceId }.getOrDefault(fullId)
     }
 
-    /** 重新加载第一页（首次进入 / 下拉刷新）。 */
+    /** 重新加载第一页（首次进入 / 下拉刷新 / 失败重试）。 */
     fun loadComments() {
-        reload()
+        reload(force = true)
     }
 
     /** 切换排序并重新加载。 */
     fun setSort(sortType: Int) {
-        if (sortType == _state.value.sortType) return
+        if (sortType == _state.value.sortType) {
+            // 如果已加载且未出错，点击相同排序不重复重载；
+            // 但如果处于加载失败或列表为空或正在加载，再次点击允许重试 / 重新加载
+            if (_state.value.comments.isNotEmpty() && !_state.value.loading && _state.value.error == null) {
+                return
+            }
+        }
         serverSortType = sortType
-        _state.value = _state.value.copy(
-            sortType = sortType,
-            comments = emptyList(),
-            floors = emptyMap(),
-            hasMore = false,
-            error = null,
-        )
-        reload()
+        nextOffset = 0
+        _state.update {
+            it.copy(
+                sortType = sortType,
+                comments = emptyList(),
+                floors = emptyMap(),
+                hasMore = false,
+                error = null,
+            )
+        }
+        reload(force = true)
     }
 
-    private fun reload() {
+    /**
+     * 拉第一页。
+     *
+     * @param force 显式动作（刷新 / 切排序 / 重试）传 true：**顶掉**在途请求。
+     *   否则用户点「热度」时若首屏还在路上，这次切换会被守卫静默丢掉 ——
+     *   页签高亮变了、列表还是旧的，看起来就是「排序切了没反应」。
+     *   隐式重入（不该发生的并发）仍由守卫挡住。
+     */
+    private fun reload(force: Boolean = false) {
+        if (!AppModel.activeProviderSupports(ProviderCapability.COMMENTS)) {
+            _state.update {
+                it.copy(
+                    loading = false,
+                    error = "当前音源未提供评论功能",
+                    loadingMore = false,
+                )
+            }
+            return
+        }
         // 已有请求在途就别再发（原来的守卫是「loading && comments 非空」，
         // comments 为空时会被绕过 ⇒ 重复并发加载）。
-        if (loadJob?.isActive == true) return
+        if (loadJob?.isActive == true) {
+            if (!force) return
+            loadJob?.cancel()
+        }
 
-        _state.value = _state.value.copy(loading = true, error = null, loadingMore = false)
+        val gen = ++loadGen
+        val requestedSort = _state.value.sortType
         nextOffset = 0
+        _state.update { it.copy(loading = true, error = null, loadingMore = false) }
+
         loadJob = screenModelScope.launch {
-            val result = AppModel.musicRepository.getComments(
-                rawId = extractRawId(id),
-                type = type,
-                limit = PAGE_SIZE,
-                offset = 0,
-                sortType = _state.value.sortType,
-            )
-            when (result) {
-                is BackendResult.Success -> {
-                    val page = result.data
-                    serverSortType = page.sortType
-                    nextOffset = page.comments.size
-                    _state.value = _state.value.copy(
-                        comments = page.comments,
-                        totalCount = page.totalCount,
-                        hasMore = page.hasMore,
-                        loading = false,
-                        // 用上游内联的 topReplies 预置楼层：入口立刻可见，展开不用先转圈。
-                        floors = seedFloors(page.comments),
-                    )
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        AppModel.musicRepository.getComments(
+                            rawId = extractRawId(id),
+                            type = type,
+                            limit = PAGE_SIZE,
+                            offset = 0,
+                            sortType = requestedSort,
+                        )
+                    }.getOrElse { BackendResult.Error(it.message ?: "加载评论失败") }
                 }
-                is BackendResult.Error -> _state.value = _state.value.copy(error = result.message, loading = false)
-                is BackendResult.Unsupported -> _state.value = _state.value.copy(error = result.message, loading = false)
+                if (gen != loadGen) return@launch
+                _state.update { s ->
+                    when (result) {
+                        is BackendResult.Success -> {
+                            val page = result.data
+                            serverSortType = page.sortType
+                            nextOffset = PAGE_SIZE
+                            s.copy(
+                                comments = page.comments,
+                                totalCount = page.totalCount,
+                                hasMore = page.hasMore,
+                                loading = false,
+                                // 用上游内联的 topReplies 预置楼层：入口立刻可见，展开不用先转圈。
+                                floors = seedFloors(page.comments),
+                            )
+                        }
+                        is BackendResult.Error -> s.copy(error = result.message, loading = false)
+                        is BackendResult.Unsupported -> s.copy(error = result.message, loading = false)
+                    }
+                }
+            } finally {
+                if (gen == loadGen && _state.value.loading) {
+                    _state.update { it.copy(loading = false) }
+                }
             }
         }
     }
@@ -182,28 +249,43 @@ class CommentScreenModel(val id: String, val type: String) : ScreenModel {
         if (s.loading || s.loadingMore || !s.hasMore) return
         if (loadJob?.isActive == true) return
 
-        _state.value = s.copy(loadingMore = true)
+        val gen = loadGen
+        val requestedSort = s.sortType
+        _state.update { it.copy(loadingMore = true) }
         loadJob = screenModelScope.launch {
-            val result = AppModel.musicRepository.getComments(
-                rawId = extractRawId(id),
-                type = type,
-                limit = PAGE_SIZE,
-                offset = nextOffset,
-                sortType = serverSortType,
-            )
-            when (result) {
-                is BackendResult.Success -> {
-                    val page = result.data
-                    serverSortType = page.sortType
-                    nextOffset += page.comments.size
-                    _state.value = _state.value.copy(
-                        comments = _state.value.comments + page.comments,
-                        hasMore = page.hasMore && page.comments.isNotEmpty(),
-                        loadingMore = false,
-                    )
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        AppModel.musicRepository.getComments(
+                            rawId = extractRawId(id),
+                            type = type,
+                            limit = PAGE_SIZE,
+                            offset = nextOffset,
+                            sortType = serverSortType,
+                        )
+                    }.getOrElse { BackendResult.Error(it.message ?: "加载更多评论失败") }
                 }
-                is BackendResult.Error -> _state.value = _state.value.copy(loadingMore = false, error = result.message)
-                is BackendResult.Unsupported -> _state.value = _state.value.copy(loadingMore = false, error = result.message)
+                if (gen != loadGen || _state.value.sortType != requestedSort) return@launch
+                _state.update { curr ->
+                    when (result) {
+                        is BackendResult.Success -> {
+                            val page = result.data
+                            serverSortType = page.sortType
+                            nextOffset += PAGE_SIZE
+                            curr.copy(
+                                comments = curr.comments + page.comments,
+                                hasMore = page.hasMore && page.comments.isNotEmpty(),
+                                loadingMore = false,
+                            )
+                        }
+                        is BackendResult.Error -> curr.copy(loadingMore = false, error = result.message)
+                        is BackendResult.Unsupported -> curr.copy(loadingMore = false, error = result.message)
+                    }
+                }
+            } finally {
+                if (gen == loadGen && _state.value.loadingMore) {
+                    _state.update { it.copy(loadingMore = false) }
+                }
             }
         }
     }

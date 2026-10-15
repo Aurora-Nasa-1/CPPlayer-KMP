@@ -154,6 +154,30 @@ class DownloadEngine(
         }
     }
 
+    /** 一键暂停全部进行中的任务。 */
+    fun pauseAll() {
+        val targets = _tasks.value.filter {
+            it.status == DownloadStatus.PENDING || it.status == DownloadStatus.DOWNLOADING
+        }
+        targets.forEach { pause(it.id) }
+    }
+
+    /** 一键恢复全部已暂停的任务。 */
+    fun resumeAll() {
+        val targets = _tasks.value.filter { it.status == DownloadStatus.PAUSED }
+        targets.forEach { resume(it.id) }
+    }
+
+    /** 一键取消全部未完成的任务（DOWNLOADING/PENDING/PAUSED）。 */
+    fun cancelAll() {
+        val targets = _tasks.value.filter {
+            it.status == DownloadStatus.DOWNLOADING ||
+                it.status == DownloadStatus.PENDING ||
+                it.status == DownloadStatus.PAUSED
+        }
+        targets.forEach { cancel(it.id) }
+    }
+
     /** 移除任务记录；[deleteFile] 为 true 时连同已下载文件与 .part 一并删除。 */
     fun remove(id: String, deleteFile: Boolean = false) {
         scope.launch {
@@ -276,9 +300,12 @@ class DownloadEngine(
         }
 
         // 4. 流式下载（进度节流 250ms）
-        val totalBytes = songUrl.sizeBytes
-        val written = executor.download(songUrl.url, headers, partPath, resumeBytes) { sessionWritten ->
-            reportProgress(task.id, resumeBytes + sessionWritten, totalBytes)
+        val fallbackTotal = songUrl.sizeBytes
+        var resolvedTotal: Long? = fallbackTotal
+        val written = executor.download(songUrl.url, headers, partPath, resumeBytes) { sessionWritten, streamTotal ->
+            val effectiveTotal = streamTotal ?: fallbackTotal
+            if (streamTotal != null) resolvedTotal = streamTotal
+            reportProgress(task.id, resumeBytes + sessionWritten, effectiveTotal)
         }
 
         // 挂起点后复查状态：pause/cancel 已转目标态则自行退出，避免完成写覆盖
@@ -294,11 +321,12 @@ class DownloadEngine(
             task.id,
             predicate = { it.status == DownloadStatus.PENDING || it.status == DownloadStatus.DOWNLOADING },
             transform = {
+                val finalTotal = resolvedTotal ?: it.totalBytes?.takeIf { tb -> tb > 0L } ?: downloaded
                 it.copy(
                     status = DownloadStatus.COMPLETED,
                     progress = 1f,
                     downloadedBytes = downloaded,
-                    totalBytes = totalBytes ?: downloaded,
+                    totalBytes = finalTotal,
                     localPath = targetPath,
                     error = null
                 )
@@ -398,11 +426,12 @@ class DownloadEngine(
         }
         if (!shouldEmit) return
         updateTask(id) {
+            val effectiveTotal = totalBytes ?: it.totalBytes
             it.copy(
                 downloadedBytes = downloadedBytes,
-                totalBytes = totalBytes ?: it.totalBytes,
-                progress = if (totalBytes != null && totalBytes > 0L) {
-                    (downloadedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
+                totalBytes = effectiveTotal,
+                progress = if (effectiveTotal != null && effectiveTotal > 0L) {
+                    (downloadedBytes.toFloat() / effectiveTotal.toFloat()).coerceIn(0f, 1f)
                 } else {
                     it.progress
                 }

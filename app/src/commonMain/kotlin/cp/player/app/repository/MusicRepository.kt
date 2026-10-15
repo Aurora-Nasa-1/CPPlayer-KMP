@@ -281,8 +281,12 @@ class MusicRepository(private val api: MusicApiService) {
     /**
      * 评论列表（顶层评论，分页）。
      *
-     * ⚠️ 评论接口不在读透缓存名单内（comment 直通网络），每次调用都打网络 ——
-     * 与旧行为一致，别按「有缓存」来设计刷新节奏。
+     * ⚠️ 端点固定是 `comment/new` —— 老端点（`comment/music` 等）的请求体里没有 `sortType`，
+     * 用它就永远切不了排序。列表走**读透缓存**（键里含 `type` / `offset` / `sortType`），
+     * 所以同一排序下短时间内重复进入不会重新打网络；点赞 / 发表评论会失效这份缓存。
+     *
+     * ⚠️ **分页按页大小前进**：`offset` 每次 +`limit`（不要按「本页实际回来几条」加），
+     * 端点那边是 `pageNo = offset / limit + 1`，算错就会把同一页反复拉回来。
      *
      * @param sortType 1=推荐 / 2=热度 / 3=最新。返回体的 [CommentPage.sortType] 是服务端
      *   **实际**使用的排序，翻页时必须回传它（未登录时「推荐」会被服务端按「热度」服务，

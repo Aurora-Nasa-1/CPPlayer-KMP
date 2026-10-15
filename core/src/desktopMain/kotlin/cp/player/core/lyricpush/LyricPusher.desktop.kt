@@ -18,3 +18,6 @@ private object NoOpLyricPusher : LyricPusher {
 }
 
 actual fun createLyricPusher(context: PlatformContext): LyricPusher = NoOpLyricPusher
+
+/** 桌面端没有 HyperOS，超级岛恒不可用。 */
+actual fun isSuperIslandSupported(): Boolean = false

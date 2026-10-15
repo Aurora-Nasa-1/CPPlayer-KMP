@@ -122,6 +122,7 @@ data class TrackSummary(
     val coverUrl: String?,
     val durationMs: Long,
     val artists: List<ArtistSummary> = emptyList(),
+    val mvId: Long? = null,
 ) : cp.player.core.util.JavaSerializable
 
 /**

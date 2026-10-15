@@ -82,6 +82,20 @@ interface BackendProvider {
      */
     val apiVersion: Int get() = 1
 
+    /** 协议契约模式（"standard" | "netease-legacy"），缺省为 null（按 legacy 模式） */
+    val contract: String? get() = null
+
+    /** 声明式自定义设置项规范（可选） */
+    val settingsSchema: List<ProviderSettingItemSchema>? get() = null
+
+    /**
+     * 判定当前 Provider 是否支持某特定能力。
+     * - 未声明 [capabilities] 时返回 true（保守兼容老模块与内置源）
+     * - 声明了 [capabilities] 时以声明为准，用于 UI 动态隐藏与自适应降级
+     */
+    fun isFeatureAvailable(capability: String): Boolean =
+        capabilities?.contains(capability) ?: true
+
     /**
      * 启动 Provider 服务。
      *
@@ -142,5 +156,7 @@ enum class ProviderType {
     /** WebSocket 通信（预留） */
     WEBSOCKET,
     /** HTTP API 服务（如 NeteaseCloudMusicApi） */
-    HTTP
+    HTTP,
+    /** 脚本化执行源（JS/TS 插件脚本） */
+    SCRIPT
 }

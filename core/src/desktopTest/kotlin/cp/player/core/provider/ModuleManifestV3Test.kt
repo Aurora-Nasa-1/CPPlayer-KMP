@@ -126,6 +126,65 @@ class ModuleManifestV3Test {
         )
     }
 
+    @Test
+    fun featureAvailabilityRespectsCapabilitiesDeclaration() {
+        val legacy = parse(legacyJson)
+        // 未声明能力的老包：保守兼容，所有能力均不主动禁用
+        assertTrue(legacy.isFeatureAvailable(ProviderCapability.CLOUD_DRIVE))
+        assertTrue(legacy.isFeatureAvailable(ProviderCapability.COMMENTS))
+
+        val declared = parse(
+            """
+            {
+              "id": "caps", "name": "Caps", "version": "1.0.0",
+              "type": "http", "entryPoint": "http://127.0.0.1:3000",
+              "capabilities": ["comments"]
+            }
+            """.trimIndent()
+        )
+        // 显式声明了能力的新模块：未声明的进行物理隐藏与功能降级
+        assertTrue(declared.isFeatureAvailable(ProviderCapability.COMMENTS))
+        assertFalse(declared.isFeatureAvailable(ProviderCapability.CLOUD_DRIVE))
+    }
+
+    @Test
+    fun settingsSchemaSerializationAndParsing() {
+        val manifest = parse(
+            """
+            {
+              "id": "schema-source", "name": "Schema Source", "version": "1.0.0",
+              "type": "http", "entryPoint": "http://127.0.0.1:3000",
+              "contract": "standard",
+              "settingsSchema": [
+                {
+                  "key": "serverUrl",
+                  "label": "服务器地址",
+                  "type": "string",
+                  "placeholder": "https://music.example.com",
+                  "required": true
+                },
+                {
+                  "key": "quality",
+                  "label": "首选音质",
+                  "type": "select",
+                  "default": "lossless",
+                  "options": [
+                    { "label": "标准", "value": "standard" },
+                    { "label": "无损", "value": "lossless" }
+                  ]
+                }
+              ]
+            }
+            """.trimIndent()
+        )
+        assertEquals("standard", manifest.contract)
+        val schema = manifest.settingsSchema
+        assertEquals(2, schema?.size)
+        assertEquals("serverUrl", schema?.get(0)?.key)
+        assertTrue(schema?.get(0)?.required ?: false)
+        assertEquals(2, schema?.get(1)?.options?.size)
+    }
+
     private companion object {
         /** 故意写成 `宿主版本 + 1`：宿主 API 涨到 4 时这条测试跟着仍然成立。 */
         const val HOST_PROVIDER_API_VERSION_PLUS_ONE = HOST_PROVIDER_API_VERSION + 1

@@ -264,8 +264,10 @@ class CachedMusicApiService(
     /**
      * 评论列表。
      *
-     * `type` **必须进键**：`music` 与未知类型都会落到 `comment/music`（端点相同），
-     * 键里不带 type 就只能靠端点区分 ⇒ 两种评论互相串数据。
+     * 端点固定为 [MusicApiMethod.COMMENT_NEW]（唯一认 `sortType` 的评论端点，见
+     * `MusicApiServiceImpl.getComments`）⇒ **`type` 必须进键**：所有资源类型打的是同一个
+     * 端点，键里不带 type 就只能靠端点区分，歌曲与歌单的评论会互相串数据。
+     * `sortType` 同理 —— 少了它，切「热度」会直接命中「推荐」的缓存。
      */
     override suspend fun getComments(
         id: String,
@@ -274,7 +276,7 @@ class CachedMusicApiService(
         offset: Int,
         sortType: Int
     ): JsonElement = read(
-        getCommentMethod(type),
+        MusicApiMethod.COMMENT_NEW,
         mapOf(
             "id" to id,
             "type" to type,
@@ -347,16 +349,22 @@ class CachedMusicApiService(
     override suspend fun dislikeSong(id: String): JsonElement =
         write(MusicApiMethod.USER_LIKE_LIST) { delegate.dislikeSong(id) }
 
-    /** 评论只失效 `type` 对应的那一个端点，别把整个评论域都打掉。 */
+    /**
+     * 评论写操作（点赞 / 发表）失效评论列表缓存。
+     *
+     * 失效的是 [MusicApiMethod.COMMENT_NEW] —— 读侧现在只有这一个端点（见 [getComments]），
+     * 写 `getCommentMethod(type)` 那个前缀会**一个条目都删不掉**：表现就是发完评论，
+     * 退出再进来还是那份不含新评论的旧列表。
+     */
     override suspend fun likeComment(id: String, cid: Long, type: String, liked: Boolean): JsonElement =
-        write(getCommentMethod(type)) { delegate.likeComment(id, cid, type, liked) }
+        write(MusicApiMethod.COMMENT_NEW) { delegate.likeComment(id, cid, type, liked) }
 
     override suspend fun postComment(
         id: String,
         type: String,
         content: String,
         replyId: Long?
-    ): JsonElement = write(getCommentMethod(type)) { delegate.postComment(id, type, content, replyId) }
+    ): JsonElement = write(MusicApiMethod.COMMENT_NEW) { delegate.postComment(id, type, content, replyId) }
 
     override suspend fun deleteUserCloud(songIds: List<String>): JsonElement =
         write(MusicApiMethod.USER_CLOUD) { delegate.deleteUserCloud(songIds) }
@@ -599,8 +607,11 @@ class CachedMusicApiService(
         MusicApiMethod.ARTIST_ALBUM, MusicApiMethod.SEARCH_CLOUD, MusicApiMethod.SEARCH_HOT_DETAIL,
         MusicApiMethod.TOPLIST, MusicApiMethod.TOPLIST_DETAIL, MusicApiMethod.PERSONALIZED,
         MusicApiMethod.PERSONALIZED_NEWSONG, MusicApiMethod.BANNER, MusicApiMethod.SIMI_SONG,
-        MusicApiMethod.SIMI_ARTIST, MusicApiMethod.SIMI_PLAYLIST, MusicApiMethod.COMMENT_MUSIC,
-        MusicApiMethod.COMMENT_PLAYLIST, MusicApiMethod.COMMENT_ALBUM,
+        MusicApiMethod.SIMI_ARTIST, MusicApiMethod.SIMI_PLAYLIST,
+        // 评论列表读的只有 comment/new（`COMMENT_MUSIC` 那一族老端点已无读路径：
+        // 它们不收 sortType，见 `MusicApiServiceImpl.getComments`）。
+        // 名单里留着它们只会让「声明缓存了 comment/music」与实际行为对不上。
+        MusicApiMethod.COMMENT_NEW,
         // 首页发现区的公共内容：新歌速递 / 新碟上架 / 热门歌手 / 精品歌单。
         // 这几张表按天甚至按周才变一次，不缓存的话每次切回首页都要重打一遍 ——
         // 首页一屏会并发十几个请求，这几个是纯公共数据、最没必要重复拉的那部分。

@@ -43,6 +43,7 @@ import cp.player.core.lyricpush.LyricPushConfig
 import cp.player.core.lyricpush.LyricSecondaryMode
 import cp.player.core.lyricpush.OPlusLyricMode
 import cp.player.core.lyricpush.XiaomiSuperIslandConfig
+import cp.player.core.lyricpush.isSuperIslandSupported
 import kotlin.math.roundToInt
 
 /**
@@ -97,6 +98,9 @@ class LyricPushSettingsScreen : Screen {
 
 @Composable
 private fun channelsSection(s: CpStrings, config: LyricPushConfig) {
+    // 能力检测只与设备有关、与配置无关，一次组合判一次即可（读系统属性，很便宜，
+    // 但没有必要每帧都读）。
+    val superIslandSupported = remember { isSuperIslandSupported() }
     SettingsSection(s.lyricPush.sectionChannels) {
         SettingsSwitchItem(
             title = s.lyricPush.lyricon,
@@ -142,7 +146,14 @@ private fun channelsSection(s: CpStrings, config: LyricPushConfig) {
 
         SettingsSwitchItem(
             title = s.lyricPush.superIsland,
-            subtitle = if (config.xiaomiSuperIslandEnabled) s.lyricPush.superIslandUnsupported else s.lyricPush.superIslandNote,
+            // 只有「开了但系统不支持」才需要警告：其余情况一律用中性说明。
+            // 反过来写（支持时另给一句确认）也可以，但那要新增一条文案；这里选择
+            // 让「不支持」成为唯一特殊分支 —— 用户在 HyperOS 上看到的就是普通说明。
+            subtitle = if (config.xiaomiSuperIslandEnabled && !superIslandSupported) {
+                s.lyricPush.superIslandUnsupported
+            } else {
+                s.lyricPush.superIslandNote
+            },
             checked = config.xiaomiSuperIslandEnabled,
             onCheckedChange = AppModel::setXiaomiSuperIslandEnabled,
             icon = Icons.Filled.PhoneAndroid,

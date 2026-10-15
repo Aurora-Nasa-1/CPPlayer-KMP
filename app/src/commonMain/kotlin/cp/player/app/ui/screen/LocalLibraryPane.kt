@@ -2,6 +2,8 @@ package cp.player.app.ui.screen
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,11 +27,16 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandMore
+import cp.player.app.AppModel
+import cp.player.app.ui.util.UiEvents
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FilterList
@@ -41,6 +48,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -52,14 +60,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import cp.player.app.ui.component.CpToggleChip
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,14 +79,23 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.launch
 import cp.player.app.i18n.CpStrings
 import cp.player.app.platform.rememberDirectoryPicker
 import cp.player.app.ui.component.ContentState
+import cp.player.app.ui.component.CpCoverPlaceholder
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.app.ui.model.DownloadsUiState
+import androidx.compose.runtime.collectAsState
+import cafe.adriel.voyager.core.model.rememberScreenModel
+import cafe.adriel.voyager.core.screen.Screen
+import cafe.adriel.voyager.navigator.LocalNavigator
+import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.util.popOrNotify
 import cp.player.core.local.LocalAlbum
 import cp.player.core.local.LocalArtist
 import cp.player.core.local.LocalFolderNode
@@ -91,7 +108,37 @@ import cp.player.core.media.LocalMediaItem
 import cp.player.app.ui.util.resized
 
 /**
- * 本地曲库浏览面板（下载页 Tab 3）。
+ * 本地音乐库独立页面。
+ *
+ * 作为一等公民页面，支持手机端路由压栈（push）以及桌面端双栏面板嵌入（embedded = true）。
+ */
+class LocalLibraryScreen(private val embedded: Boolean = false) : Screen {
+    @Composable
+    override fun Content() {
+        val navigator = LocalNavigator.current
+        val model = rememberScreenModel { DownloadsScreenModel() }
+        val state by model.state.collectAsState()
+        val s = cpStrings()
+
+        CpRouteScaffold(
+            title = s.downloads.tabLocalLibrary,
+            onBack = { navigator?.popOrNotify() },
+            embedded = embedded,
+        ) { pageModifier ->
+            Box(pageModifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                Surface(
+                    Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background,
+                ) {
+                    LocalLibraryTab(state = state, model = model, strings = s)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 本地曲库浏览面板（下载页 Tab 3 / 本地音乐独立页核心）。
  *
  * 相对早期的「两个分组平铺所有文件」，这里把它升级成一个真正的**音乐库**：
  * 歌曲 / 专辑 / 艺术家 / 收藏四个子页，配搜索框与排序菜单。
@@ -543,29 +590,22 @@ private fun LocalLibrarySubTabs(
         s.tabFavorites to favoriteCount,
         s.tabFolders to folderCount,
     )
-    Box(Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth()) {
-        TabRow(selectedTabIndex = selected) {
-            labels.forEachIndexed { index, (label, count) ->
-                Tab(
-                    selected = selected == index,
-                    onClick = { onSelect(index) },
-                    text = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Text(label, maxLines = 1)
-                            if (count > 0) {
-                                Text(
-                                    "$count",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    },
-                )
-            }
+    Row(
+        modifier = Modifier
+            .widthIn(max = CpSpacing.pageMaxWidth)
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = CpSpacing.pageHorizontal, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        labels.forEachIndexed { index, (label, count) ->
+            val text = if (count > 0) "$label $count" else label
+            CpToggleChip(
+                checked = selected == index,
+                onCheckedChange = { if (it) onSelect(index) },
+                label = text,
+            )
         }
     }
 }
@@ -641,9 +681,19 @@ private fun LocalSongRow(
     strings: CpStrings,
     onPlay: () -> Unit,
 ) {
+    val navigator = cafe.adriel.voyager.navigator.LocalNavigator.current
     val s = strings.downloads
+    val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
+    val handlePlay: () -> Unit = {
+        if (isVideo) {
+            navigator?.push(VideoPlayerScreen("local://video/${song.path}", title = song.title))
+        } else {
+            onPlay()
+        }
+    }
+
     Surface(
-        onClick = onPlay,
+        onClick = handlePlay,
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f),
         modifier = Modifier.fillMaxWidth(),
@@ -654,8 +704,8 @@ private fun LocalSongRow(
         ) {
             LocalCover(
                 coverUri = song.coverUri,
-                fallbackIcon = if (song.mediaType == cp.player.core.media.MediaType.VIDEO) {
-                    Icons.Filled.Album
+                fallbackIcon = if (isVideo) {
+                    Icons.Filled.VideoLibrary
                 } else {
                     Icons.Filled.MusicNote
                 },
@@ -683,6 +733,11 @@ private fun LocalSongRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            var menuExpanded by remember { mutableStateOf(false) }
+            var showDeleteConfirm by remember { mutableStateOf(false) }
+            val scope = rememberCoroutineScope()
+            val mediaId = "local://audio/${song.path}"
+
             IconButton(onClick = { model.toggleFavorite(song.path, strings) }) {
                 Icon(
                     if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
@@ -694,11 +749,101 @@ private fun LocalSongRow(
                     },
                 )
             }
-            IconButton(onClick = { model.removeLocalItem(song, strings) }) {
-                Icon(
-                    Icons.Filled.Close,
-                    contentDescription = s.removeFromLibrary,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            if (isVideo) {
+                IconButton(onClick = handlePlay) {
+                    Icon(
+                        Icons.Filled.PlayArrow,
+                        contentDescription = "播放视频",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            } else {
+                IconButton(onClick = {
+                    scope.launch {
+                        AppModel.playback.addNextToQueue(mediaId)
+                        UiEvents.notify("已添加为下一首播放")
+                    }
+                }) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = "下一首播放",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(
+                        Icons.Filled.MoreVert,
+                        contentDescription = "更多操作",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                ) {
+                    if (isVideo) {
+                        DropdownMenuItem(
+                            text = { Text("播放视频") },
+                            leadingIcon = { Icon(Icons.Filled.PlayArrow, null) },
+                            onClick = {
+                                menuExpanded = false
+                                handlePlay()
+                            },
+                        )
+                    } else {
+                        DropdownMenuItem(
+                            text = { Text("加入播放队列") },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null) },
+                            onClick = {
+                                menuExpanded = false
+                                scope.launch {
+                                    AppModel.playback.addToQueue(mediaId)
+                                    UiEvents.notify("已加入播放队列")
+                                }
+                            },
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text("在文件管理器中打开") },
+                        leadingIcon = { Icon(Icons.Filled.FolderOpen, null) },
+                        onClick = {
+                            menuExpanded = false
+                            cp.player.app.platform.openInFileManager(song.path)
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("从本地曲库移除") },
+                        leadingIcon = { Icon(Icons.Filled.Close, null) },
+                        onClick = {
+                            menuExpanded = false
+                            model.removeLocalItem(song, strings)
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("彻底删除本地文件", color = MaterialTheme.colorScheme.error) },
+                        leadingIcon = {
+                            Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error)
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            showDeleteConfirm = true
+                        },
+                    )
+                }
+            }
+
+            if (showDeleteConfirm) {
+                cp.player.app.ui.component.CpConfirmDialog(
+                    title = "彻底删除本地文件",
+                    message = "确定要将《${song.title}》从磁盘彻底删除吗？此操作无法撤销。",
+                    confirmLabel = "彻底删除",
+                    onConfirm = {
+                        model.deleteLocalFile(song, strings)
+                        showDeleteConfirm = false
+                    },
+                    onDismiss = { showDeleteConfirm = false },
                 )
             }
         }
@@ -1187,6 +1332,12 @@ private fun LocalCover(
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
+            )
+        } else if (fallbackIcon == Icons.Filled.MusicNote) {
+            CpCoverPlaceholder(
+                modifier = Modifier.fillMaxSize(),
+                corner = if (circular) 36.dp else 8.dp,
+                animated = false,
             )
         } else {
             Icon(

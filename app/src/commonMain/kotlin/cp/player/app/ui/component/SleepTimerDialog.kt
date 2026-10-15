@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -22,7 +21,6 @@ import cp.player.app.i18n.cpStrings
  * @param activeRemainingMs 当前生效中的定时剩余毫秒（null = 未设置）。
  * @param afterTrackActive  当前是否为"播完当前"模式。
  */
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun SleepTimerDialog(
     activeRemainingMs: Long?,
@@ -31,20 +29,28 @@ fun SleepTimerDialog(
     onCancelTimer: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // 90 分钟此前只存在于设置页的下拉里，对话框没有 —— 于是「设置页能选的」和
-    // 「播放页能选的」不是同一套。统一到这里，两边共用一份。
+    // 90 分钟此前只存在于设置页的下拉里，对话框没有 —— 统一到这里，两边共用一份。
     val options = listOf(15, 30, 45, 60, 90)
     val s = cpStrings()
+    val activeMinutes = activeRemainingMs?.let { ((it + 30_000L) / 60_000L).toInt() }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(s.playback.timerDialogTitle) },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = MaterialTheme.shapes.extraLarge,
+        title = {
+            Text(
+                s.playback.timerDialogTitle,
+                style = MaterialTheme.typography.headlineSmall,
+            )
+        },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 if (activeRemainingMs != null || afterTrackActive) {
                     Text(
-                        // ⚠️ `+ 1` 留在**文案函数**里而不是这里：这是向上取整到分钟的
+                        // ⚠️ `+ 1` 留在文案函数里而不是这里：这是向上取整到分钟的
                         // 显示规则（中英都成立），但两边的措辞不同，调用方拼就散了。
-                        if (afterTrackActive) {
+                        text = if (afterTrackActive) {
                             s.playback.timerActiveAfterTrack()
                         } else {
                             s.playback.timerActiveInMinutes(activeRemainingMs!! / 60_000L)
@@ -59,20 +65,20 @@ fun SleepTimerDialog(
                     options.chunked(3).forEach { chunk ->
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             chunk.forEach { minutes ->
-                                FilterChip(
-                                    selected = false,
-                                    onClick = { onSelect(minutes); onDismiss() },
-                                    label = { Text(s.playback.timerMinutesChip(minutes)) },
+                                CpToggleChip(
+                                    checked = !afterTrackActive && (minutes == activeMinutes),
+                                    onCheckedChange = { onSelect(minutes); onDismiss() },
+                                    label = s.playback.timerMinutesChip(minutes),
                                 )
                             }
                         }
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = afterTrackActive,
-                        onClick = { onSelect(AppModel.sleepAfterTrack); onDismiss() },
-                        label = { Text(s.playback.timerAfterTrackChip) },
+                    CpToggleChip(
+                        checked = afterTrackActive,
+                        onCheckedChange = { onSelect(AppModel.sleepAfterTrack); onDismiss() },
+                        label = s.playback.timerAfterTrackChip,
                     )
                 }
             }

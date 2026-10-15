@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SmartDisplay
 import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -48,6 +49,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
@@ -56,7 +58,30 @@ import cp.player.app.ui.util.resized
 /** Playlist sort order shared by the playlist options sheet and screen models. */
 enum class PlaylistSortType { DEFAULT, NAME, ARTIST }
 
-/** Pure UI song action sheet matching the Android app's expressive action layout. */
+/**
+ * 歌曲「更多」弹层 —— 手机端**唯一**一份。
+ *
+ * ## 动线（三排，顺序与 [songContextMenuItems] 的桌面右键菜单逐项对齐）
+ *
+ * ```
+ * 第一排  [播放 磁贴]  [收藏 圆钮]  [分享 圆钮]      ← 88dp 高，主命令 + 两个图标钮
+ * 第二排  [下一首播放] [添加到队列]                 ← 64dp 胶囊
+ * 第三排  [下载]      [歌单]      [歌曲信息 圆钮]   ← 64dp 胶囊 + 64dp 圆钮
+ * ```
+ *
+ * ## ⚠️ 八个动作全部**必填**，别再改回 `= null`
+ *
+ * 曾经它们都是可选的，调用方「有什么给什么」⇒ 首页只给了 6 项、歌单详情给了 8 项，
+ * 于是**同一个「歌曲更多」在不同页面长得不一样**（首页少一个分享圆钮、少一个
+ * 歌曲信息圆钮，第一排从三格变两格、播放磁贴变宽）。这类漂移靠自觉维护不住，
+ * 所以改成必填：任何页面想用它，就得先把分享与歌曲信息也接上 —— 漏了直接编译不过。
+ *
+ * 「分享」与「歌曲信息」对**任何一首歌**都成立（前者是固定形状的网易云链接，
+ * 见 [songShareText]；后者是 `song/detail` 元数据，见 [SongDetailInfoDialog]），
+ * 没有「这一页给不了」的合法理由。
+ *
+ * [isDownloaded] 为 true 时下载格显示「已下载」且不可点；其余状态由调用方给。
+ */
 @Composable
 fun SongOptionsSheet(
     songName: String,
@@ -67,12 +92,13 @@ fun SongOptionsSheet(
     onPlay: () -> Unit,
     onToggleFavorite: () -> Unit,
     onAddToQueue: () -> Unit,
-    /** 「下一首播放」：插到当前曲目之后；null 时不出现该入口（与右键菜单一致）。 */
-    onPlayNext: (() -> Unit)? = null,
-    onAddToPlaylist: (() -> Unit)? = null,
-    onDownload: (() -> Unit)? = null,
-    onShowInfo: (() -> Unit)? = null,
-    onShare: (() -> Unit)? = null,
+    /** 「下一首播放」：插到当前曲目之后（电台 / 长队列里追加到末尾基本听不到）。 */
+    onPlayNext: () -> Unit,
+    onAddToPlaylist: () -> Unit,
+    onDownload: () -> Unit,
+    onShowInfo: () -> Unit = {},
+    onShare: () -> Unit = {},
+    onPlayMv: (() -> Unit)? = null,
     coverUrl: String? = null,
 ) {
     LegacyModalBottomSheet(onDismissRequest = onDismiss) {
@@ -97,10 +123,10 @@ fun SongOptionsSheet(
                                 contentScale = ContentScale.Crop,
                             )
                         } else {
-                            Icon(
-                                Icons.Filled.MusicNote,
-                                null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            CpCoverPlaceholder(
+                                modifier = Modifier.fillMaxSize(),
+                                corner = 36.dp,
+                                animated = false,
                             )
                         }
                     }
@@ -123,6 +149,7 @@ fun SongOptionsSheet(
                         )
                     }
                 }
+            // 第一排：主命令 + 两个图标钮。三格宽度固定，不随调用方给不给动作变化。
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -140,64 +167,70 @@ fun SongOptionsSheet(
                     label = if (isFavorite) "取消收藏" else "收藏",
                     onClick = { onToggleFavorite(); onDismiss() },
                 )
-                onShare?.let { share ->
-                    CircleAction(
-                        icon = Icons.Filled.Share,
-                        label = "分享",
-                        onClick = { share(); onDismiss() },
-                    )
-                }
+                CircleAction(
+                    icon = Icons.Filled.Share,
+                    label = "分享",
+                    onClick = { onShare(); onDismiss() },
+                )
             }
+            // 第二排：两个等宽胶囊。
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                onPlayNext?.let { playNext ->
-                    ActionPill(
-                        label = "下一首播放",
-                        icon = Icons.Filled.SkipNext,
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.weight(1f),
-                        onClick = { playNext(); onDismiss() },
-                    )
-                }
+                ActionPill(
+                    label = "下一首播放",
+                    icon = Icons.Filled.SkipNext,
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.weight(1f),
+                    onClick = { onPlayNext(); onDismiss() },
+                )
                 ActionPill(
                     label = "添加到队列",
                     icon = Icons.Filled.QueueMusic,
                     color = MaterialTheme.colorScheme.tertiaryContainer,
                     contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                    modifier = if (onPlayNext != null) Modifier.weight(1f) else Modifier,
+                    modifier = Modifier.weight(1f),
                     onClick = { onAddToQueue(); onDismiss() },
                 )
             }
+            // 第三排：两个胶囊 + 一个图标钮。
+            // ⚠️ 「歌曲信息」这个圆钮必须与同排胶囊**等高**（[ActionPill] 是 64dp）——
+            // 它此前沿用了第一排的 88dp（对齐 [ActionTile] 的高度），单独杵在两个
+            // 64dp 胶囊旁边明显大一圈，整排看着像错位。
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                onDownload?.let { download ->
-                    ActionPill(
-                        label = if (isDownloaded) "已下载" else "下载",
-                        icon = if (isDownloaded) Icons.Filled.DownloadDone else Icons.Filled.Download,
-                        modifier = Modifier.weight(1f),
-                        onClick = { if (!isDownloaded) download(); onDismiss() },
-                    )
-                }
-                onAddToPlaylist?.let { add ->
-                    ActionPill(
-                        label = "歌单",
-                        icon = Icons.Filled.AddCircleOutline,
-                        modifier = Modifier.weight(1f),
-                        onClick = { add(); onDismiss() },
-                    )
-                }
-                onShowInfo?.let { show ->
-                    CircleAction(
-                        icon = Icons.Filled.Info,
-                        label = "歌曲信息",
-                        onClick = { show(); onDismiss() },
-                    )
-                }
+                ActionPill(
+                    label = if (isDownloaded) "已下载" else "下载",
+                    icon = if (isDownloaded) Icons.Filled.DownloadDone else Icons.Filled.Download,
+                    modifier = Modifier.weight(1f),
+                    onClick = { if (!isDownloaded) onDownload(); onDismiss() },
+                )
+                ActionPill(
+                    label = "歌单",
+                    icon = Icons.Filled.AddCircleOutline,
+                    modifier = Modifier.weight(1f),
+                    onClick = { onAddToPlaylist(); onDismiss() },
+                )
+                CircleAction(
+                    icon = Icons.Filled.Info,
+                    label = "歌曲信息",
+                    size = ActionPillHeight,
+                    onClick = { onShowInfo(); onDismiss() },
+                )
+            }
+            if (onPlayMv != null) {
+                ActionPill(
+                    label = "播放 MV",
+                    icon = Icons.Filled.SmartDisplay,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onPlayMv(); onDismiss() },
+                )
             }
         }
         }
@@ -241,10 +274,10 @@ fun PlaylistOptionsSheet(
                             contentScale = ContentScale.Crop,
                         )
                     } else {
-                        Icon(
-                            Icons.Filled.MusicNote,
-                            null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        CpCoverPlaceholder(
+                            modifier = Modifier.fillMaxSize(),
+                            corner = 36.dp,
+                            animated = false,
                         )
                     }
                 }
@@ -365,6 +398,21 @@ fun PlaylistOptionsSheet(
     }
 }
 
+/**
+ * 第一排（主命令磁贴 / 图标钮）的高度。
+ *
+ * 磁贴与圆钮共用，两者并排时等高。
+ */
+private val ActionTileHeight = 88.dp
+
+/**
+ * 第二、三排（胶囊 / 图标钮）的高度。
+ *
+ * 胶囊与圆钮共用同一个值 —— 第三排的「歌曲信息」圆钮曾沿用了第一排的 88dp，
+ * 与同排 64dp 的胶囊差出一圈，是「INFO 按钮过大」的成因。
+ */
+private val ActionPillHeight = 64.dp
+
 @Composable
 private fun ActionTile(
     label: String,
@@ -375,7 +423,7 @@ private fun ActionTile(
     contentColor: Color = MaterialTheme.colorScheme.onSecondaryContainer,
 ) {
     Surface(
-        modifier = modifier.fillMaxWidth().height(88.dp),
+        modifier = modifier.fillMaxWidth().height(ActionTileHeight),
         shape = MaterialTheme.shapes.large,
         color = color,
         onClick = onClick,
@@ -399,9 +447,11 @@ private fun CircleAction(
     onClick: () -> Unit,
     color: Color = MaterialTheme.colorScheme.secondaryContainer,
     contentColor: Color = MaterialTheme.colorScheme.onSecondaryContainer,
+    /** 直径。缺省对齐第一排的 [ActionTileHeight]；与胶囊同排时必须传 [ActionPillHeight]。 */
+    size: Dp = ActionTileHeight,
 ) {
     Surface(
-        modifier = Modifier.size(88.dp),
+        modifier = Modifier.size(size),
         shape = CircleShape,
         color = color,
         onClick = onClick,
@@ -422,7 +472,7 @@ private fun ActionPill(
     contentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
 ) {
     Surface(
-        modifier = modifier.height(64.dp),
+        modifier = modifier.height(ActionPillHeight),
         shape = RoundedCornerShape(percent = 50),
         color = color,
         onClick = onClick,

@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -49,6 +50,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.SmartDisplay
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Button
@@ -653,200 +655,219 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
     val s = cpStrings()
     val track = state.currentTrack ?: return
 
-    Column(
-        Modifier.fillMaxSize().padding(horizontal = 24.dp).padding(bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        // 封面区域。
-        //
-        // Expressive 的「呼吸」感：播放时圆角收紧 + 阴影加深，暂停时松开 —— 都走主题的
-        // spatial 动效（带回弹），所以切播放/暂停时封面会「弹」一下，而不是硬切。
-        val coverCorner by animateDpAsState(
-            targetValue = if (state.isPlaying) 22.dp else 34.dp,
-            animationSpec = cp.player.app.ui.theme.CpMotion.spatialSlow(),
-            label = "coverCorner",
-        )
-        val coverElevation by animateDpAsState(
-            targetValue = if (state.isPlaying) 28.dp else 12.dp,
-            animationSpec = cp.player.app.ui.theme.CpMotion.spatialSlow(),
-            label = "coverElevation",
-        )
-        // 暂停时封面轻轻「收」一下（0.95）。用**确定时长的 tween** 而不是 spring：
-        // spring 要 ~1s 才停，长尾会和随后的手势抢帧，而这一下本来就该是「一下就完」。
-        // 说不出它做了什么，但拿掉之后整个播放页会显得「死」。
-        //
-        // ⚠️ graphicsLayer 放在 sharedBounds **之后**（内层）：共享元素上报的是**布局**
-        // bounds，不受这里的绘制缩放影响 —— 否则封面飞行/展开的落点会偏 5%。
-        val coverScale by animateFloatAsState(
-            targetValue = if (state.isPlaying) 1f else 0.95f,
-            animationSpec = tween(260),
-            label = "coverScale",
-        )
-        Box(
-            Modifier.weight(1.2f).fillMaxWidth(),
-            contentAlignment = Alignment.Center,
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val screenHeight = maxHeight
+        val isUltraCompact = screenHeight < 620.dp
+        val isCompact = screenHeight in 620.dp..760.dp
+
+        val verticalGap = when {
+            isUltraCompact -> 6.dp
+            isCompact -> 10.dp
+            else -> 16.dp
+        }
+        val horizontalPadding = if (isUltraCompact) 16.dp else 24.dp
+        val bottomPadding = if (isUltraCompact) 6.dp else 12.dp
+        val controlsHeight = when {
+            isUltraCompact -> 54.dp
+            isCompact -> 62.dp
+            else -> 70.dp
+        }
+        val sideIconSize = when {
+            isUltraCompact -> 24.dp
+            isCompact -> 30.dp
+            else -> 34.dp
+        }
+        val centerIconSize = when {
+            isUltraCompact -> 28.dp
+            isCompact -> 34.dp
+            else -> 38.dp
+        }
+
+        Column(
+            Modifier.fillMaxSize().padding(horizontal = horizontalPadding).padding(bottom = bottomPadding),
+            verticalArrangement = Arrangement.spacedBy(verticalGap),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Surface(
-                shape = RoundedCornerShape(coverCorner),
-                modifier = Modifier.aspectRatio(1f).fillMaxWidth(0.95f)
-                    .sharedBounds(
-                        sharedContentState = rememberSharedContentState(key = "cover-${track.id}"),
-                        animatedVisibilityScope = animatedVisibilityScope
-                    )
-                    .graphicsLayer {
-                        scaleX = coverScale
-                        scaleY = coverScale
-                    }
-                    .clip(RoundedCornerShape(coverCorner)),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                shadowElevation = coverElevation,
+            // 封面区域：支持根据屏幕高度自适应伸缩，避免在 16:9 或矮屏上挤压控制控件。
+            //
+            // Expressive 的「呼吸」感：播放时圆角收紧 + 阴影加深，暂停时松开 —— 都走主题的
+            // spatial 动效（带回弹），所以切播放/暂停时封面会「弹」一下，而不是硬切。
+            val coverCorner by animateDpAsState(
+                targetValue = if (state.isPlaying) 22.dp else 34.dp,
+                animationSpec = cp.player.app.ui.theme.CpMotion.spatialSlow(),
+                label = "coverCorner",
+            )
+            val coverElevation by animateDpAsState(
+                targetValue = if (state.isPlaying) 28.dp else 12.dp,
+                animationSpec = cp.player.app.ui.theme.CpMotion.spatialSlow(),
+                label = "coverElevation",
+            )
+            val coverScale by animateFloatAsState(
+                targetValue = if (state.isPlaying) 1f else 0.95f,
+                animationSpec = tween(260),
+                label = "coverScale",
+            )
+            Box(
+                Modifier
+                    .weight(1f, fill = false)
+                    .heightIn(max = if (isUltraCompact) 200.dp else if (isCompact) 280.dp else 360.dp)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center,
             ) {
-                if (!track.coverUrl.isNullOrBlank()) {
-                    AsyncImage(
-                        model = track.coverUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
+                Surface(
+                    shape = RoundedCornerShape(coverCorner),
+                    modifier = Modifier.aspectRatio(1f)
+                        .fillMaxWidth(if (isUltraCompact) 0.82f else 0.95f)
+                        .sharedBounds(
+                            sharedContentState = rememberSharedContentState(key = "cover-${track.id}"),
+                            animatedVisibilityScope = animatedVisibilityScope
+                        )
+                        .graphicsLayer {
+                            scaleX = coverScale
+                            scaleY = coverScale
+                        }
+                        .clip(RoundedCornerShape(coverCorner)),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    shadowElevation = coverElevation,
+                ) {
+                    if (!track.coverUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = track.coverUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        cp.player.app.ui.component.CpCoverPlaceholder(
+                            modifier = Modifier.fillMaxSize(),
+                            corner = coverCorner,
+                        )
+                    }
+                }
+            }
+
+            // 歌曲信息行：标题 / 歌手 / 喜欢
+            Row(
+                Modifier.fillMaxWidth().padding(top = if (isUltraCompact) 0.dp else 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    cp.player.app.ui.component.CpText(
+                        text = track.name,
+                        style = if (isUltraCompact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall,
+                        maxLines = 1,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        emphasized = true,
+                        marqueeEnabled = state.isPlaying,
+                        modifier = Modifier.sharedBounds(
+                            sharedContentState = rememberSharedContentState(key = "title-${track.id}"),
+                            animatedVisibilityScope = animatedVisibilityScope,
+                        )
                     )
-                } else {
-                    // 空封面：与桌面播放页、迷你播放器共用同一套 Expressive 占位
-                    // （primaryContainer→tertiaryContainer 渐变 + 持续变形的形状）。
-                    // 原先这里是一个 128dp 的灰「♪」，桌面版是渐变 + 变形形状 ——
-                    // 同一个「没有封面」在两端是两个应用。
-                    cp.player.app.ui.component.CpCoverPlaceholder(
-                        modifier = Modifier.fillMaxSize(),
-                        corner = coverCorner,
+                    Spacer(Modifier.height(if (isUltraCompact) 0.dp else 2.dp))
+                    cp.player.app.ui.component.TrackArtistText(
+                        track = track,
+                        onArtistClick = onArtistClick,
+                        style = if (isUltraCompact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        modifier = Modifier.sharedBounds(
+                            sharedContentState = rememberSharedContentState(key = "artist-${track.id}"),
+                            animatedVisibilityScope = animatedVisibilityScope,
+                        )
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    track.mvId?.takeIf { it > 0 }?.let { mvId ->
+                        val nav = LocalNavigator.current
+                        IconButton(
+                            onClick = {
+                                nav?.push(VideoPlayerScreen("netease://mv/$mvId"))
+                            },
+                        ) {
+                            Icon(
+                                Icons.Filled.SmartDisplay,
+                                contentDescription = "播放 MV",
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                    cp.player.app.ui.component.ExpressiveLikeButton(
+                        isFavorite = state.isFavorite,
+                        onClick = onLikeClick,
                     )
                 }
             }
-        }
 
-        // 歌曲信息行：标题 / 歌手 / 喜欢
-        Row(
-            Modifier.fillMaxWidth().padding(top = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                // 播放页大标题 = 焦点位：溢出即跑马灯（与 MiniPlayer 的那条共用
-                // sharedBounds key，两处一起改才不至于一边滚一边截）。
-                cp.player.app.ui.component.CpText(
-                    text = track.name,
-                    style = MaterialTheme.typography.headlineSmall,
-                    maxLines = 1,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    emphasized = true,
-                    // 暂停时停住不滚：画面跟着声音一起停。见 CpText.marqueeEnabled。
-                    marqueeEnabled = state.isPlaying,
-                    modifier = Modifier.sharedBounds(
-                        sharedContentState = rememberSharedContentState(key = "title-${track.id}"),
-                        animatedVisibilityScope = animatedVisibilityScope,
-                    )
-                )
-                Spacer(Modifier.height(2.dp))
-                cp.player.app.ui.component.TrackArtistText(
-                    track = track,
-                    onArtistClick = onArtistClick,
-                    style = MaterialTheme.typography.titleMedium,
-                    // 同一处曾写 `onSurfaceVariant.copy(alpha = 0.8f)`：那是「比次级再淡一点」的
-                    // 自创层级，M3 里没有这一档，跟顶栏的歌手名（onSurfaceVariant 原样）也不一致。
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    modifier = Modifier.sharedBounds(
-                        sharedContentState = rememberSharedContentState(key = "artist-${track.id}"),
-                        animatedVisibilityScope = animatedVisibilityScope,
-                    )
+            // 进度条（含中央音质 chip）
+            ProgressRow(state, onSeek)
+
+            // 主控件（prev / play-pause / next）：自适应按键高度
+            cp.player.app.ui.component.PlaybackControls(
+                isPlaying = state.isPlaying,
+                isBuffering = state.isBuffering,
+                onPlayPause = onTogglePlay,
+                onSkipNext = onSkipNext,
+                onSkipPrevious = onSkipPrev,
+                modifier = Modifier.fillMaxWidth().padding(vertical = if (isUltraCompact) 0.dp else 2.dp),
+                sideButtonModifier = Modifier.height(controlsHeight),
+                centerButtonModifier = Modifier.height(controlsHeight),
+                sideWeight = 1f,
+                centerWeight = 1.2f,
+                sideIconSize = sideIconSize,
+                centerIconSize = centerIconSize,
+            )
+
+            // 错误提示
+            AnimatedVisibility(visible = !state.error.isNullOrBlank()) {
+                Text(
+                    state.error ?: "",
+                    Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-            cp.player.app.ui.component.ExpressiveLikeButton(
-                isFavorite = state.isFavorite,
-                onClick = onLikeClick,
-            )
-        }
 
-        // 进度条（含中央音质 chip）
-        ProgressRow(state, onSeek)
-
-        // 主控件（prev / play-pause / next）
-        //
-        // ⚠️ 这里**不再传 `weight`**：权重由 PlaybackControls 按 sideWeight / centerWeight
-        // 算，并在按下时做联动（按下者胀、另两颗收）。传进来的 weight 会被后写覆盖，
-        // 行为不可预期 —— 见该组件的 KDoc。
-        cp.player.app.ui.component.PlaybackControls(
-            isPlaying = state.isPlaying,
-            isBuffering = state.isBuffering,
-            onPlayPause = onTogglePlay,
-            onSkipNext = onSkipNext,
-            onSkipPrevious = onSkipPrev,
-            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-            sideButtonModifier = Modifier.height(72.dp),
-            centerButtonModifier = Modifier.height(72.dp),
-            sideWeight = 1f,
-            centerWeight = 1.2f,
-            sideIconSize = 36.dp,
-            centerIconSize = 40.dp,
-        )
-
-        // 错误提示
-        AnimatedVisibility(visible = !state.error.isNullOrBlank()) {
-            Text(
-                state.error ?: "",
-                Modifier.fillMaxWidth().padding(horizontal = 24.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-
-        // 底部工具行：随机 / 循环 / 睡眠定时 / 更多
-        //
-        // 收藏按钮**刻意不放在这里** —— 它已经在上方歌曲信息行（歌名右侧）出现过一次，
-        // 同一屏放两个红心是纯重复。腾出来的位置给了睡眠定时：这个功能原先只藏在
-        // more 弹层里，开完就没人知道自己开了，而它恰恰是最需要持续可见的倒计时状态。
-        //
-        // 容器用 CpFloatingToolbar（按内容宽度的浮动胶囊），**不再铺满整宽**：
-        // 上面那枚主控件胶囊已经是整宽的了，两枚等宽圆角条上下叠着，读起来像两条工具栏，
-        // 主命令与次级工具的层级全丢。收成浮动胶囊之后「大胶囊=主命令、小胶囊=次级工具」
-        // 一眼可辨，也顺带把两页底部统一成了同一个组件。
-        cp.player.app.ui.component.CpFloatingToolbar(
-            modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp),
-        ) {
-            cp.player.app.ui.component.CpModeToggle(
-                active = state.shuffleEnabled,
-                onClick = onShuffle,
-                icon = Icons.Filled.Shuffle,
-                label = s.player.shuffle,
-            )
-            cp.player.app.ui.component.CpModeToggle(
-                active = state.repeatMode != RepeatMode.OFF,
-                onClick = onRepeat,
-                icon = when (state.repeatMode) {
-                    RepeatMode.ONE -> Icons.Filled.RepeatOne
-                    else -> Icons.Filled.Repeat
-                },
-                label = s.player.repeat,
-            )
-            cp.player.app.ui.component.CpModeToggle(
-                active = (state.sleepTimerRemainingMs ?: 0L) > 0 || state.sleepAfterTrack,
-                onClick = onSleepTimer,
-                icon = Icons.Filled.AccessAlarm,
-                label = s.player.sleepTimer,
-                activeTint = MaterialTheme.colorScheme.primary,
-            )
-            // 「更多」只负责入口：弹层本体（PlayerMoreBottomSheet）与二级弹窗
-            // 已收进共享宿主 PlayerMoreSheets，由 PlayerScreenContent 末尾统一挂载。
-            IconButton(onClick = onMoreClick) {
-                Icon(
-                    Icons.Filled.MoreVert, s.player.more,
-                    Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            // 底部工具行：随机 / 循环 / 睡眠定时 / 更多
+            cp.player.app.ui.component.CpFloatingToolbar(
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = if (isUltraCompact) 0.dp else 4.dp),
+            ) {
+                cp.player.app.ui.component.CpModeToggle(
+                    active = state.shuffleEnabled,
+                    onClick = onShuffle,
+                    icon = Icons.Filled.Shuffle,
+                    label = s.player.shuffle,
                 )
+                cp.player.app.ui.component.CpModeToggle(
+                    active = state.repeatMode != RepeatMode.OFF,
+                    onClick = onRepeat,
+                    icon = when (state.repeatMode) {
+                        RepeatMode.ONE -> Icons.Filled.RepeatOne
+                        else -> Icons.Filled.Repeat
+                    },
+                    label = s.player.repeat,
+                )
+                cp.player.app.ui.component.CpModeToggle(
+                    active = (state.sleepTimerRemainingMs ?: 0L) > 0 || state.sleepAfterTrack,
+                    onClick = onSleepTimer,
+                    icon = Icons.Filled.AccessAlarm,
+                    label = s.player.sleepTimer,
+                    activeTint = MaterialTheme.colorScheme.primary,
+                )
+                IconButton(onClick = onMoreClick) {
+                    Icon(
+                        Icons.Filled.MoreVert, s.player.more,
+                        Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
+            Spacer(Modifier.height(4.dp))
         }
-        Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -1003,7 +1024,10 @@ private fun ProgressRow(
 @Composable
 private fun CommentPage(id: String, type: String) {
     // 列表 / 楼层 / 回复输入条全部在共享组件 CommentPane 里（窄屏评论页与桌面弹层同一份）。
-    val model = remember { cp.player.app.ui.model.CommentScreenModel(id, type) }
+    //
+    // ⚠️ `remember` 必须带 key。这里是 pager 的一页，位置不随曲目变化 —— 不带 key 时切歌
+    // 会**复用同一个模型**，评论页显示的仍是上一首的评论（模型构造参数只在第一次生效）。
+    val model = remember(id, type) { cp.player.app.ui.model.CommentScreenModel(id, type) }
     cp.player.app.ui.component.CommentPane(model = model, modifier = Modifier.fillMaxSize())
 }
 
@@ -1011,19 +1035,20 @@ private fun CommentPage(id: String, type: String) {
 fun DesktopLyricsContent(
     state: cp.player.core.playback.PlaybackUiState,
     onSeek: (Long) -> Unit,
-    onRepeat: () -> Unit,
-    onLikeClick: () -> Unit,
+    onRepeat: () -> Unit = {},
+    onLikeClick: () -> Unit = {},
     onChangeSource: (() -> Unit)? = null,
 ) {
-    LyricsPage(
-        state = state,
-        showTranslation = true,
-        onSeek = onSeek,
-        onRepeat = onRepeat,
-        isFavorite = state.isFavorite,
-        onLikeClick = onLikeClick,
-        onChangeSource = onChangeSource,
-    )
+    Box(Modifier.fillMaxSize()) {
+        cp.player.app.ui.component.LyricContent(
+            state = state,
+            showTranslation = true,
+            onSeek = onSeek,
+            onChangeSource = onChangeSource,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(vertical = 24.dp, horizontal = 12.dp),
+        )
+    }
 }
 
 @Composable

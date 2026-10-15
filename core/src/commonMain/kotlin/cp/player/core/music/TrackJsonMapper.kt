@@ -29,16 +29,37 @@ internal fun trackSummaryOf(json: JsonObject, id: String): TrackSummary {
     val artists = fromArray.ifEmpty { listOfNotNull((json["artist"] as? JsonObject)?.let(::artistOf)) }
     val artistNames = artists.joinToString(" / ") { it.name }
         .ifEmpty { (json["artist"] as? JsonPrimitive)?.contentOrNull ?: "" }
+
     val albumObj = (json["al"] as? JsonObject) ?: (json["album"] as? JsonObject)
+    val albumName = (albumObj?.get("name") as? JsonPrimitive)?.contentOrNull
+        ?: (albumObj?.get("title") as? JsonPrimitive)?.contentOrNull
+        ?: (json["album"] as? JsonPrimitive)?.contentOrNull
+
+    val rootCover = ((json["coverUrl"] ?: json["cover"] ?: json["picture"] ?: json["picUrl"]) as? JsonPrimitive)?.contentOrNull
+    val albumCover = (albumObj?.get("picUrl") as? JsonPrimitive)?.contentOrNull
+        ?: (albumObj?.get("coverUrl") as? JsonPrimitive)?.contentOrNull
+        ?: (albumObj?.get("cover") as? JsonPrimitive)?.contentOrNull
+    val coverUrl = rootCover ?: albumCover
+
+    val rawDuration = ((json["dt"] ?: json["duration"] ?: json["durationMs"]) as? JsonPrimitive)?.longOrNull ?: 0L
+    // 若时长在 1..10000 范围，通常为秒（如 240s），自动换算为毫秒
+    val durationMs = if (rawDuration in 1..9999) rawDuration * 1000L else rawDuration
+
+    val trackTitle = (json["title"] as? JsonPrimitive)?.contentOrNull
+        ?: (json["name"] as? JsonPrimitive)?.contentOrNull
+        ?: ((json["song"] as? JsonPrimitive)?.contentOrNull ?: "")
+
+    val mvId = ((json["mv"] ?: json["mvid"]) as? JsonPrimitive)?.longOrNull?.takeIf { it > 0 }
+
     return TrackSummary(
         id = id,
-        name = (json["name"] as? JsonPrimitive)?.contentOrNull
-            ?: ((json["song"] as? JsonPrimitive)?.contentOrNull ?: ""),
+        name = trackTitle,
         artist = artistNames,
-        album = (albumObj?.get("name") as? JsonPrimitive)?.contentOrNull,
-        coverUrl = (albumObj?.get("picUrl") as? JsonPrimitive)?.contentOrNull,
-        durationMs = ((json["dt"] ?: json["duration"]) as? JsonPrimitive)?.longOrNull ?: 0L,
+        album = albumName,
+        coverUrl = coverUrl,
+        durationMs = durationMs,
         artists = artists,
+        mvId = mvId,
     )
 }
 
@@ -59,8 +80,9 @@ private fun artistOf(element: JsonElement): ArtistSummary? {
     )
 }
 
-/** 上游返回的裸曲目 id：`id` 优先，`songId` 回退。搜索路径用它当 [TrackSummary.id]。 */
+/** 上游返回的裸曲目 id：`id` 优先，`songId`/`trackId` 回退。搜索路径用它当 [TrackSummary.id]。 */
 internal fun rawTrackId(json: JsonObject): String =
     (json["id"] as? JsonPrimitive)?.contentOrNull
         ?: (json["songId"] as? JsonPrimitive)?.contentOrNull
+        ?: (json["trackId"] as? JsonPrimitive)?.contentOrNull
         ?: ""

@@ -12,15 +12,20 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import cp.player.app.ui.theme.CpMotion
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
@@ -66,6 +71,12 @@ fun SharedTransitionScope.MiniPlayer(
     val progress = if (state.durationMs > 0) {
         (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f)
     } else 0f
+    val coverCorner by animateDpAsState(
+        targetValue = if (state.isPlaying) 24.dp else 12.dp,
+        animationSpec = CpMotion.spatial(),
+        label = "miniCoverCornerMorph",
+    )
+    val coverShape = remember(coverCorner) { RoundedCornerShape(coverCorner) }
     val press = rememberPressedScale()
 
     Surface(
@@ -104,12 +115,12 @@ fun SharedTransitionScope.MiniPlayer(
                             model = track.coverUrl.resized(150),
                             contentDescription = null,
                             modifier = Modifier.fillMaxSize()
-                                .coverFlightTarget(CoverFlight.TARGET_MINI, 12.dp)
+                                .coverFlightTarget(CoverFlight.TARGET_MINI, coverCorner)
                                 .sharedBounds(
                                     sharedContentState = rememberSharedContentState(key = "cover-${track.id}"),
                                     animatedVisibilityScope = animatedVisibilityScope
                                 )
-                                .clip(MaterialTheme.shapes.medium),
+                                .clip(coverShape),
                             contentScale = ContentScale.Crop,
                         )
                     } else {
@@ -118,7 +129,7 @@ fun SharedTransitionScope.MiniPlayer(
                         // 不该在迷你播放器和播放页长得不一样。
                         CpCoverPlaceholder(
                             modifier = Modifier.fillMaxSize(),
-                            corner = 16.dp,
+                            corner = coverCorner,
                             // 48dp 下变形看不出来，关掉省一条常驻动画。
                             animated = false,
                         )

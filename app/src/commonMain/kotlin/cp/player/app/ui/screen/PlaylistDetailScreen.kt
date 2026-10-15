@@ -79,11 +79,15 @@ import cp.player.app.ui.anim.coverFlightTarget
 import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.AddSongsOptionsSheet
 import cp.player.app.ui.component.AppScaffold
+import cp.player.app.ui.component.CpActionButtonGroup
+import cp.player.app.ui.component.CpActionGroupItem
 import cp.player.app.ui.component.CpAnchoredMenu
 import cp.player.app.ui.component.CpBackButton
+import cp.player.app.ui.component.CpCoverPlaceholder
 import cp.player.app.ui.component.CpContextMenu
 import cp.player.app.ui.component.CpContextMenuItem
 import cp.player.app.ui.component.CpContextMenuSeparator
+import cp.player.app.ui.component.LocalWindowChromeActive
 import cp.player.app.ui.component.CpTwoPane
 import cp.player.app.ui.component.PlaylistSortType
 import cp.player.app.ui.component.LazyScrollColumn
@@ -255,6 +259,9 @@ fun PlaylistDetailContent(
         songContextMenuItems(
             SongMenuActions(
                 onPlay = { model.playAt(index) },
+                onPlayMv = track.mvId?.takeIf { it > 0 }?.let { mvId ->
+                    { navigator.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV")) }
+                },
                 isFavorite = model.isLiked(track.id),
                 onToggleFavorite = { model.toggleLike(track) },
                 onAddToQueue = {
@@ -428,6 +435,9 @@ fun PlaylistDetailContent(
             onShowInfo = { showInfoTarget = track },
             onShare = {
                 shareText("「${track.name}」 https://music.163.com/#/song?id=${track.id}")
+            },
+            onPlayMv = track.mvId?.takeIf { it > 0 }?.let { mvId ->
+                { navigator.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV")) }
             },
             coverUrl = track.coverUrl,
         )
@@ -699,18 +709,12 @@ private fun NarrowLayout(
                                     .graphicsLayer { alpha = if (hideCover) 0f else 1f },
                             )
                         } else {
-                            Box(
-                                Modifier.fillMaxSize()
+                            CpCoverPlaceholder(
+                                modifier = Modifier.fillMaxSize()
                                     .graphicsLayer { alpha = if (hideCover) 0f else 1f },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    Icons.Filled.MusicNote,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
+                                corner = 12.dp,
+                                animated = false,
+                            )
                         }
                     }
                     Spacer(Modifier.width(16.dp))
@@ -832,18 +836,12 @@ private fun WideLayout(
                             .graphicsLayer { alpha = if (hideCover) 0f else 1f },
                     )
                 } else {
-                    Box(
-                        Modifier.fillMaxSize()
+                    CpCoverPlaceholder(
+                        modifier = Modifier.fillMaxSize()
                             .graphicsLayer { alpha = if (hideCover) 0f else 1f },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Filled.MusicNote,
-                            contentDescription = null,
-                            modifier = Modifier.size(64.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                        corner = 16.dp,
+                        animated = true,
+                    )
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -864,55 +862,16 @@ private fun WideLayout(
             )
             Spacer(Modifier.height(16.dp))
             PlaylistHeader(
+                hasTracks = displayTracks.isNotEmpty(),
                 onPlayAll = { model.playAll() },
                 onShuffle = { model.playShuffle() },
                 onAdd = onAddTracks,
                 onSort = onOpenPlaylistSheet,
                 sortMenuItems = sortMenuItems,
                 onDownloadAll = { AppModel.downloadTracks(displayTracks) },
+                moreMenuItems = playlistMenu,
+                onMore = onOpenPlaylistSheet,
             )
-            // 宽屏没有顶栏「更多」按钮（那套 Scaffold 只在窄屏布局里）。
-            // 桌面端点击弹出歌单动作锚定菜单（与右键同一份 items）；非桌面（平板宽屏）
-            // 回落到底部弹层。排序按钮已经分流了排序职责，这里不再与它重复。
-            var moreMenuExpanded by remember { mutableStateOf(false) }
-            val windowChromeActive = cp.player.app.ui.component.LocalWindowChromeActive.current
-            Spacer(Modifier.height(10.dp))
-            CpAnchoredMenu(
-                expanded = moreMenuExpanded,
-                onDismiss = { moreMenuExpanded = false },
-                items = playlistMenu,
-            ) {
-                Surface(
-                    onClick = {
-                        if (!playlistMenu.isNullOrEmpty() && windowChromeActive) {
-                            moreMenuExpanded = true
-                        } else {
-                            onOpenPlaylistSheet()
-                        }
-                    },
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    modifier = Modifier.fillMaxWidth().height(46.dp),
-                ) {
-                    Row(
-                        Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            Icons.Filled.MoreVert,
-                            contentDescription = s.library.moreOptions,
-                            tint = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            s.player.more,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Medium,
-                        )
-                    }
-                }
-            }
             }
             }
         },
@@ -1026,6 +985,7 @@ private fun TrackList(
             if (withHeader) {
                 item(key = "__header__") {
                     PlaylistHeader(
+                        hasTracks = displayTracks.isNotEmpty(),
                         onPlayAll = { model.playAll() },
                         onShuffle = { model.playShuffle() },
                         onAdd = onAddTracks,
@@ -1123,6 +1083,7 @@ private fun TrackList(
 
 @Composable
 private fun PlaylistHeader(
+    hasTracks: Boolean = true,
     onPlayAll: () -> Unit,
     onShuffle: () -> Unit,
     onAdd: () -> Unit,
@@ -1133,103 +1094,46 @@ private fun PlaylistHeader(
      * 为 null（窄屏布局）时保持原行为：打开歌单选项弹层。
      */
     sortMenuItems: List<CpContextMenuItem>? = null,
+    moreMenuItems: List<CpContextMenuItem>? = null,
+    onMore: (() -> Unit)? = null,
 ) {
     val s = cpStrings()
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 0.dp, vertical = 8.dp),
-        horizontalAlignment = Alignment.Start,
+    var sortMenuExpanded by remember { mutableStateOf(false) }
+    var moreMenuExpanded by remember { mutableStateOf(false) }
+    val windowChromeActive = LocalWindowChromeActive.current
+
+    val actions = remember(
+        hasTracks, sortMenuItems, moreMenuItems, windowChromeActive, s,
+        onPlayAll, onShuffle, onAdd, onSort, onDownloadAll, onMore,
     ) {
-        // 第一行：播放 + 随机
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Surface(
-                onClick = onPlayAll,
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.weight(1f).height(52.dp),
-            ) {
-                Row(
-                    Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Filled.PlayArrow,
-                        contentDescription = s.library.play,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        s.library.play,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                }
-            }
-            Surface(
-                onClick = onShuffle,
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.weight(1f).height(52.dp),
-            ) {
-                Row(
-                    Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Filled.Shuffle,
-                        contentDescription = s.library.shuffle,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        s.library.shuffle,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-
-        Spacer(Modifier.height(10.dp))
-
-        // 第二行：添加 + 排序
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Surface(
-                onClick = onAdd,
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                modifier = Modifier.weight(1.2f).height(46.dp),
-            ) {
-                Row(
-                    Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Filled.PlaylistAdd,
-                        contentDescription = s.library.add,
-                        tint = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        s.library.add,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.Medium,
-                    )
-                }
-            }
-            var sortMenuExpanded by remember { mutableStateOf(false) }
-            val windowChromeActive = cp.player.app.ui.component.LocalWindowChromeActive.current
-            CpAnchoredMenu(
-                expanded = sortMenuExpanded,
-                onDismiss = { sortMenuExpanded = false },
-                items = sortMenuItems,
-                modifier = Modifier.weight(1.2f),
-            ) {
-                Surface(
+        buildList {
+            add(
+                CpActionGroupItem(
+                    label = s.library.play,
+                    icon = Icons.Filled.PlayArrow,
+                    onClick = onPlayAll,
+                    enabled = hasTracks,
+                )
+            )
+            add(
+                CpActionGroupItem(
+                    label = s.library.shuffle,
+                    icon = Icons.Filled.Shuffle,
+                    onClick = onShuffle,
+                    enabled = hasTracks,
+                )
+            )
+            add(
+                CpActionGroupItem(
+                    label = s.library.add,
+                    icon = Icons.Filled.PlaylistAdd,
+                    onClick = onAdd,
+                )
+            )
+            add(
+                CpActionGroupItem(
+                    label = s.library.sort,
+                    icon = Icons.AutoMirrored.Filled.Sort,
                     onClick = {
                         if (!sortMenuItems.isNullOrEmpty() && windowChromeActive) {
                             sortMenuExpanded = true
@@ -1237,57 +1141,50 @@ private fun PlaylistHeader(
                             onSort()
                         }
                     },
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    modifier = Modifier.fillMaxWidth().height(46.dp),
-                ) {
-                    Row(
-                        Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.Sort,
-                            contentDescription = s.library.sort,
-                            tint = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            s.library.sort,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Medium,
-                        )
-                    }
-                }
+                )
+            )
+            add(
+                CpActionGroupItem(
+                    label = s.library.downloadAll,
+                    icon = Icons.Filled.Download,
+                    onClick = onDownloadAll,
+                    enabled = hasTracks,
+                )
+            )
+            if (onMore != null) {
+                add(
+                    CpActionGroupItem(
+                        label = s.player.more,
+                        icon = Icons.Filled.MoreVert,
+                        onClick = {
+                            if (!moreMenuItems.isNullOrEmpty() && windowChromeActive) {
+                                moreMenuExpanded = true
+                            } else {
+                                onMore()
+                            }
+                        },
+                    )
+                )
             }
         }
+    }
 
-        Spacer(Modifier.height(10.dp))
-
-        // 第三行：全部下载
-        Surface(
-            onClick = onDownloadAll,
-            shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-            modifier = Modifier.fillMaxWidth().height(46.dp),
+    CpAnchoredMenu(
+        expanded = sortMenuExpanded,
+        onDismiss = { sortMenuExpanded = false },
+        items = sortMenuItems,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+    ) {
+        CpAnchoredMenu(
+            expanded = moreMenuExpanded,
+            onDismiss = { moreMenuExpanded = false },
+            items = moreMenuItems,
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            Row(
-                Modifier.fillMaxSize(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    Icons.Filled.Download,
-                    contentDescription = s.library.downloadAll,
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    s.library.downloadAll,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Medium,
-                )
-            }
+            CpActionButtonGroup(
+                items = actions,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }

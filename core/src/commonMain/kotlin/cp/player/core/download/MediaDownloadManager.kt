@@ -52,11 +52,20 @@ interface MediaDownloadManager {
     /** 暂停任务（保留 .part 供续传）。 */
     fun pause(id: String)
 
+    /** 一键暂停全部进行中的任务。 */
+    fun pauseAll()
+
     /** 恢复已暂停任务（断点续传）。 */
     fun resume(id: String)
 
+    /** 一键恢复全部已暂停的任务。 */
+    fun resumeAll()
+
     /** 取消任务并删除 .part。 */
     fun cancel(id: String)
+
+    /** 一键取消全部未完成的任务。 */
+    fun cancelAll()
 
     /** 重试失败/已取消任务。 */
     fun retry(id: String)
@@ -169,10 +178,13 @@ class MediaDownloadManagerImpl(
     }
 
     override fun pause(id: String) = engine.pause(id)
+    override fun pauseAll() = engine.pauseAll()
 
     override fun resume(id: String) = engine.resume(id)
+    override fun resumeAll() = engine.resumeAll()
 
     override fun cancel(id: String) = engine.cancel(id)
+    override fun cancelAll() = engine.cancelAll()
 
     override fun retry(id: String) = engine.retry(id)
 

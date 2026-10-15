@@ -223,6 +223,11 @@ interface MusicApiService {
      * 现按旧项目 `reference/cp-player-legacy` 的 `when` 分支恢复。
      *
      * 大小写敏感、未知类型一律退回 [MusicApiMethod.COMMENT_MUSIC]（保持既有行为）。
+     *
+     * ⚠️ **顶层评论列表已经不走这里了**：那一族老端点不收 `sortType`，用它们就永远切不了
+     * 排序（详见 [MusicApiServiceImpl.getComments]）。列表改走 [MusicApiMethod.COMMENT_NEW]，
+     * 本函数保留给「按资源类型分发」的语义与旧 Provider 对照，目前没有生产调用方 ——
+     * 和 [MusicApiMethod.COMMENT_NEW] 一样，别看到它没被调用就删掉。
      */
     fun getCommentMethod(type: String): String = when (type) {
         "music" -> MusicApiMethod.COMMENT_MUSIC

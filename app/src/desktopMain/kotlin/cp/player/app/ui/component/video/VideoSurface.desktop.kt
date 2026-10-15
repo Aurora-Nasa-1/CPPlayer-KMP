@@ -1,0 +1,56 @@
+package cp.player.app.ui.component.video
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.awt.SwingPanel
+import cp.player.core.media.VideoScalingMode
+import cp.player.core.playback.video.PlatformVideoPlayer
+import java.awt.Canvas
+import java.awt.Color
+
+@Composable
+actual fun VideoSurface(
+    player: PlatformVideoPlayer,
+    modifier: Modifier,
+    scalingMode: VideoScalingMode,
+) {
+    val resolution by player.videoResolution.collectAsState()
+
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        val aspect = resolution?.aspectRatio ?: (16f / 9f)
+        val aspectModifier = if (scalingMode == VideoScalingMode.FIT && aspect > 0f) {
+            Modifier.aspectRatio(aspect)
+        } else {
+            Modifier.fillMaxSize()
+        }
+
+        SwingPanel(
+            modifier = aspectModifier,
+            factory = {
+                Canvas().apply {
+                    background = Color.BLACK
+                    player.attachSurface(this)
+                }
+            },
+            update = { canvas ->
+                player.attachSurface(canvas)
+            },
+        )
+    }
+
+    DisposableEffect(player) {
+        onDispose {
+            player.attachSurface(null)
+        }
+    }
+}

@@ -70,8 +70,57 @@ class PlaybackSettingsScreen : Screen {
         val showMeteredQuality = isAndroidPlatform()
         val qualityLabels = AppModel.qualityLevels.map { s.quality.labelOf(it) }
 
+        val audioEngine by AppModel.audioEngineFlow.collectAsState()
+        val isFlickEngine = audioEngine == cp.player.core.playback.PlaybackSessionSettings.ENGINE_FLICK_HIRES
+
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
             SettingsPage(pageModifier) {
+                SettingsSection("音频输出内核") {
+                    val engineOptions = listOf(
+                        "标准系统引擎 (默认)",
+                        "FlickEngine 发烧引擎 (专有 / VIP)",
+                    )
+                    val engineSubtitle = if (isFlickEngine) {
+                        if (isAndroidPlatform()) {
+                            "Oboe 低延迟直通 · USB DAC 源码输出 · DSD 软解"
+                        } else {
+                            "WASAPI Exclusive 独占直通 · Bit-Perfect 源码输出 (绕过系统混音器)"
+                        }
+                    } else {
+                        if (isAndroidPlatform()) {
+                            "AndroidX Media3 (ExoPlayer) 系统默认通道"
+                        } else {
+                            "系统混音共享输出 (默认，轻量高兼容)"
+                        }
+                    }
+                    SettingsDropdownItem(
+                        title = "播放内核架构",
+                        subtitle = engineSubtitle,
+                        options = engineOptions,
+                        selectedIndex = if (isFlickEngine) 1 else 0,
+                        onSelect = { index ->
+                            val target = if (index == 1) {
+                                cp.player.core.playback.PlaybackSessionSettings.ENGINE_FLICK_HIRES
+                            } else {
+                                cp.player.core.playback.PlaybackSessionSettings.ENGINE_STANDARD
+                            }
+                            AppModel.setAudioEngine(target)
+                        },
+                        index = 0,
+                        total = 2,
+                    )
+                    SettingsClickItem(
+                        title = "硬件直通与独占配置",
+                        subtitle = "查看 WASAPI Exclusive、Bit-Perfect 源码输出与 DSD 软解状态",
+                        index = 1,
+                        total = 2,
+                        onClick = {
+                            navigator.push(AudioEngineSettingsScreen())
+                        },
+                    )
+                }
+                SettingsNote("FlickEngine 支持声卡硬件采样率自适应源码输出（Bit-Perfect）与 DSD 母带级软解，切换后将在切歌或重新播放时生效。")
+
                 SettingsSection(s.playback.sectionQuality) {
                     SettingsDropdownItem(
                         title = s.playback.defaultQuality,

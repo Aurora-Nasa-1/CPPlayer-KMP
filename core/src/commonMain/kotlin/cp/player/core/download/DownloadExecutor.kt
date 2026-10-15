@@ -32,7 +32,7 @@ interface DownloadExecutor {
      * @param targetPartPath 临时文件（.part）绝对路径
      * @param resumeBytes 断点续传起始字节（>0 时实现应附加 Range 头；
      *                    若服务端返回 200 而非 206，抛出 [ResumeNotSupportedException]）
-     * @param onProgress 进度回调：本次会话已写入字节数（节流由调用方负责）
+     * @param onProgress 进度回调：本次会话已写入字节数与探测到的文件总字节数（若可获取）
      * @return 本次会话写入的字节数
      * @throws DownloadFailedException HTTP/IO 失败
      * @throws ResumeNotSupportedException 服务端忽略 Range 请求
@@ -42,8 +42,16 @@ interface DownloadExecutor {
         headers: Map<String, String>,
         targetPartPath: String,
         resumeBytes: Long,
-        onProgress: suspend (sessionWrittenBytes: Long) -> Unit
+        onProgress: suspend (sessionWrittenBytes: Long, totalBytes: Long?) -> Unit
     ): Long
+
+    suspend fun download(
+        url: String,
+        headers: Map<String, String>,
+        targetPartPath: String,
+        resumeBytes: Long,
+        onProgress: suspend (sessionWrittenBytes: Long) -> Unit
+    ): Long = download(url, headers, targetPartPath, resumeBytes) { written, _ -> onProgress(written) }
 }
 
 /**

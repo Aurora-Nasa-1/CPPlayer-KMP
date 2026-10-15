@@ -144,6 +144,10 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
         var addToPlaylistTrack by androidx.compose.runtime.remember {
             androidx.compose.runtime.mutableStateOf<cp.player.core.music.TrackSummary?>(null)
         }
+        // 「歌曲信息」的目标：与其余页面同款，走共享的 SongDetailInfoDialog。
+        var showInfoTarget by androidx.compose.runtime.remember {
+            androidx.compose.runtime.mutableStateOf<cp.player.core.music.TrackSummary?>(null)
+        }
         // 「清空搜索历史」的二次确认：一键即生效会把积累的搜索痕迹一次抹掉。
         val confirm = cp.player.app.ui.component.rememberConfirmState()
 
@@ -253,30 +257,38 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                         )
                     }
                     state.result == null -> {
-                        Column(
-                            Modifier
-                                .widthIn(max = CpSpacing.pageMaxWidth)
-                                .fillMaxSize()
-                                .padding(horizontal = CpSpacing.pageHorizontal),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        // ⚠️ 这一段必须是**可滚动**容器。收敛前这里是个裸 `Column`（不滚动）：
+                        // 「最近搜索」（最多 10 条）+「热门搜索」（最多 20 条）在矮窗口 / 手机上
+                        // 远超一屏，超出的部分既不显示也滑不动 —— 用户只看到最近搜索那几条，
+                        // 会以为「推荐没了」。换成 LazyScrollColumn 后还能顺带拿到桌面滚动条。
+                        LazyScrollColumn(
+                            Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize(),
+                            contentPadding = PaddingValues(
+                                start = CpSpacing.pageHorizontal,
+                                end = CpSpacing.pageHorizontal,
+                                top = CpSpacing.listRowGap,
+                                bottom = CpSpacing.formBottomInset,
+                            ),
+                            verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
                         ) {
                             if (state.query.isBlank() && state.searchHistory.isNotEmpty()) {
-                                Row(
-                                    Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    SectionHeader(title = "最近搜索")
-                                    TextButton(onClick = {
-                                        confirm.request(
-                                            title = "清空搜索历史",
-                                            message = "确定清空全部 ${state.searchHistory.size} 条搜索记录吗？",
-                                            confirmLabel = "清空",
-                                            onConfirm = model::clearHistory,
-                                        )
-                                    }) { Text("清空") }
+                                item {
+                                    SectionHeader(
+                                        title = "最近搜索",
+                                        action = {
+                                            TextButton(onClick = {
+                                                confirm.request(
+                                                    title = "清空搜索历史",
+                                                    message = "确定清空全部 ${state.searchHistory.size} 条搜索记录吗？",
+                                                    confirmLabel = "清空",
+                                                    onConfirm = model::clearHistory,
+                                                )
+                                            }) { Text("清空") }
+                                        },
+                                    )
                                 }
-                                state.searchHistory.forEach { keyword ->
+                                items(state.searchHistory.size) { index ->
+                                    val keyword = state.searchHistory[index]
                                     Row(
                                         Modifier.fillMaxWidth().clickable { model.search(keyword) }.padding(vertical = 8.dp),
                                         verticalAlignment = Alignment.CenterVertically,
@@ -288,8 +300,16 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                 }
                             }
                             if (state.query.isBlank()) {
-                                SectionHeader(title = "热门搜索")
-                                state.hotSearches.forEachIndexed { index, hot ->
+                                // 区块间距：两块之间必须是**区块**级的空白（28dp），不是行间距（4dp）。
+                                // 原先两块只隔 12dp，最近搜索的最后一条与「热门搜索」标题几乎贴在一起，
+                                // 读起来像同一个列表的两个标题。
+                                // ⚠️ 只在上面那块真的画出来时才补 —— 否则页面顶部会多一段空。
+                                if (state.searchHistory.isNotEmpty()) {
+                                    item { Spacer(Modifier.height(CpSpacing.section)) }
+                                }
+                                item { SectionHeader(title = "热门搜索") }
+                                items(state.hotSearches.size) { index ->
+                                    val hot = state.hotSearches[index]
                                     Row(
                                         Modifier.fillMaxWidth().clickable { model.search(hot.keyword) }.padding(vertical = 8.dp),
                                         verticalAlignment = Alignment.CenterVertically,
@@ -309,11 +329,13 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                         Icon(Icons.AutoMirrored.Filled.TrendingUp, null, tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
                                     }
                                 }
-                                ContentState(
-                                    title = "发现下一首喜欢的音乐",
-                                    message = "输入关键词后按搜索键",
-                                    modifier = Modifier.padding(top = 20.dp),
-                                )
+                                item {
+                                    ContentState(
+                                        title = "发现下一首喜欢的音乐",
+                                        message = "输入关键词后按搜索键",
+                                        modifier = Modifier.padding(top = 20.dp),
+                                    )
+                                }
                             }
                         }
                     }
@@ -377,6 +399,9 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                                     onPlay = {
                                                         CoverFlight.play(track.id, track.coverUrl)
                                                         scope.launch { AppModel.playback.playQueue(result.songs.map { "$provider://song/${it.id}" }, index) }
+                                                    },
+                                                    onPlayMv = track.mvId?.takeIf { it > 0 }?.let { mvId ->
+                                                        { navigator.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV")) }
                                                     },
                                                     isFavorite = track.id in likedIds,
                                                     onToggleFavorite = {
@@ -481,6 +506,9 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                 },
                 onAddToPlaylist = { addToPlaylistTrack = track },
                 onDownload = { AppModel.downloadTrack(track) },
+                onPlayMv = track.mvId?.takeIf { it > 0 }?.let { mvId ->
+                    { navigator.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV")) }
+                },
             )
         }
 

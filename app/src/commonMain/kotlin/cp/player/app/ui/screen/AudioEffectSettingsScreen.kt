@@ -6,13 +6,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
+import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsDropdownItem
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsNoteEmphasis
@@ -103,6 +107,26 @@ class AudioEffectSettingsScreen : Screen {
                         s.audioEffect.unsupportedNote,
                         emphasis = SettingsNoteEmphasis.ERROR,
                     )
+                    if (!isAndroidPlatform()) {
+                        SettingsSection("发烧音效与硬件增强") {
+                            SettingsClickItem(
+                                title = "开启 FlickEngine Hi-Res 发烧内核",
+                                subtitle = "启用专属发烧架构以解锁 64 位浮点 5 段参数均衡器 (PEQ) 与空间环绕增强",
+                                index = 0,
+                                total = 1,
+                                onClick = {
+                                    navigator.push(AudioEngineSettingsScreen())
+                                },
+                                trailingContent = {
+                                    Text(
+                                        text = "前往设置",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                },
+                            )
+                        }
+                    }
                 }
 
                 // ---------------- 均衡器 ----------------

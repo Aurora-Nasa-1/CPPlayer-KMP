@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SmartDisplay
 import cp.player.core.music.TrackSummary
 
 /**
@@ -28,6 +29,7 @@ import cp.player.core.music.TrackSummary
  */
 data class SongMenuActions(
     val onPlay: (() -> Unit)? = null,
+    val onPlayMv: (() -> Unit)? = null,
     val isFavorite: Boolean = false,
     val onToggleFavorite: (() -> Unit)? = null,
     val onAddToQueue: (() -> Unit)? = null,
@@ -57,6 +59,9 @@ fun songContextMenuItems(actions: SongMenuActions): List<CpContextMenuItem> {
     return buildList {
     actions.onPlay?.let {
         add(CpContextMenuItem(s.library.play, Icons.Filled.PlayArrow, it))
+    }
+    actions.onPlayMv?.let {
+        add(CpContextMenuItem("播放 MV", Icons.Filled.SmartDisplay, it))
     }
     actions.onRemoveFromQueue?.let {
         add(CpContextMenuItem(s.player.removeFromQueue, Icons.Filled.Close, it, danger = true))

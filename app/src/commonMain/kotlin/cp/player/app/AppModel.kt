@@ -77,6 +77,13 @@ object AppModel {
     val activeProviderFlow: StateFlow<BackendProvider?> get() = backend.activeProviderFlow
 
     /**
+     * 判断当前活跃音源是否支持某项能力（[cp.player.core.provider.ProviderCapability]）。
+     * 若未加载音源或音源未显式声明能力，保守返回 true；若音源声明了能力，以声明为准。
+     */
+    fun activeProviderSupports(capability: String): Boolean =
+        backend.activeProvider()?.isFeatureAvailable(capability) ?: true
+
+    /**
      * 「音源代际」：每次**用户主动**切换音源成功后 +1。
      *
      * 为什么不用 [activeProviderFlow] 当刷新信号：应用启动时后端会自动恢复上次的
@@ -425,6 +432,21 @@ object AppModel {
         // 重新打开会恢复到一份早已过期的会话（期间可能换了音源 / 删了歌单）。
         if (!enabled) settings.remove(PlaybackSessionSettings.KEY_LAST_SESSION)
         _keepLastPlayback.value = enabled
+    }
+
+    // ============ 播放内核 / 输出引擎（持久化） ============
+
+    private val _audioEngine = MutableStateFlow(audioEngine())
+    val audioEngineFlow: StateFlow<String> = _audioEngine.asStateFlow()
+
+    fun audioEngine(): String =
+        settings.getString(PlaybackSessionSettings.KEY_AUDIO_ENGINE)
+            ?: PlaybackSessionSettings.ENGINE_STANDARD
+
+    fun setAudioEngine(engine: String) {
+        settings.putString(PlaybackSessionSettings.KEY_AUDIO_ENGINE, engine)
+        _audioEngine.value = engine
+        runCatching { playback.reloadEngine() }
     }
 
     // ============ 音效（持久化，Android 生效 / 桌面明示不支持） ============
@@ -1438,6 +1460,39 @@ object AppModel {
                 if (track != null && st.isPlaying && track.id != lastRecordedId) {
                     lastRecordedId = track.id
                     recordRecentTrack(track)
+                }
+            }
+        }
+    }
+
+    private var fmLoaderStarted = false
+    private var fmLoading = false
+
+    /** 启动私人 FM 队列自动补充机制：当队列来自私人 FM 且剩余曲目数不足时，自动预取追加。 */
+    fun startFmAutoLoader() {
+        if (fmLoaderStarted) return
+        fmLoaderStarted = true
+        modelScope.launch {
+            playback.state.collect { st ->
+                if (st.sourceId == "personal_fm" && !fmLoading) {
+                    val remaining = st.queue.size - st.currentIndex - 1
+                    if (remaining <= 3 && st.queue.isNotEmpty()) {
+                        fmLoading = true
+                        launch(kotlinx.coroutines.Dispatchers.IO) {
+                            try {
+                                val result = runCatching { musicRepository.getPersonalFmBatch(targetSize = 10) }.getOrNull()
+                                val songs = (result as? cp.player.core.BackendResult.Success<List<cp.player.core.music.TrackSummary>>)?.data.orEmpty()
+                                val provider = activeProviderId()
+                                val existingIds = playback.state.value.queue.map { it.mediaId }.toSet()
+                                val newIds = songs.map { "$provider://song/${it.id}" }.filter { it !in existingIds }
+                                for (mediaId in newIds) {
+                                    playback.addToQueue(mediaId)
+                                }
+                            } finally {
+                                fmLoading = false
+                            }
+                        }
+                    }
                 }
             }
         }

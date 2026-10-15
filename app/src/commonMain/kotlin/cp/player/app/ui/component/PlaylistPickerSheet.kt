@@ -87,9 +87,10 @@ fun PlaylistPickerRow(
                         contentScale = ContentScale.Crop,
                     )
                 } else {
-                    Icon(
-                        Icons.Filled.MusicNote, null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    CpCoverPlaceholder(
+                        modifier = Modifier.fillMaxSize(),
+                        corner = 12.dp,
+                        animated = false,
                     )
                 }
             }

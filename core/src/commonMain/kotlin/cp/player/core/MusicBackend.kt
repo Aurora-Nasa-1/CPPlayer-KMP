@@ -36,12 +36,17 @@ import cp.player.core.local.ScanProgress
 import cp.player.core.local.createLocalMediaSource
 import cp.player.core.media.LocalMediaItem
 import cp.player.core.monitor.HealthMonitor
+import cp.player.core.media.UnifiedMediaResolver
+import cp.player.core.media.UnifiedMediaResolverImpl
 import cp.player.core.playback.PlaybackController
 import cp.player.core.playback.PlaybackControllerImpl
 import cp.player.core.playback.SilentOutputPlayer
 import cp.player.core.playback.StreamLocalizer
 import cp.player.core.playback.createPlatformPlayer
 import cp.player.core.playback.createStreamLocalizer
+import cp.player.core.playback.video.VideoPlaybackController
+import cp.player.core.playback.video.VideoPlaybackControllerImpl
+import cp.player.core.playback.video.createPlatformVideoPlayer
 import cp.player.core.provider.BackendProvider
 import cp.player.core.provider.ModuleManager
 import cp.player.core.provider.ProviderCookieStorage
@@ -351,6 +356,35 @@ class MusicBackend private constructor(
             lyricPusher = lyricPusherLazy.value,
         )
     }
+
+    // ============ 多媒体流解析与视频播控 ============
+
+    /** 统一媒体流解析器（整合本地音频/视频与云端 MV/歌曲）。 */
+    val mediaResolver: UnifiedMediaResolver by lazy {
+        UnifiedMediaResolverImpl(
+            localMediaSource = localMedia,
+            musicApiService = musicApiImpl,
+            cookieProvider = { activeProvider()?.let { p -> providerManager.cookieStorage.getCookie(p.id) } },
+        )
+    }
+
+    private val videoControllerLazy: kotlin.Lazy<VideoPlaybackController> = kotlin.lazy {
+        val platformVideo = createPlatformVideoPlayer(context)
+        VideoPlaybackControllerImpl(
+            platformPlayer = platformVideo,
+            mediaResolver = mediaResolver,
+            scope = backendScope,
+            onPlaybackStarted = {
+                // 开启视频播放时，自动暂停正在播放的背景音乐
+                if (playbackController.state.value.isPlaying) {
+                    playbackController.pause()
+                }
+            },
+        )
+    }
+
+    /** 前端视频播放控制入口（MV 与本地视频播放）。 */
+    val videoController: VideoPlaybackController get() = videoControllerLazy.value
 
     /**
      * 歌词对外投放入口。
@@ -826,6 +860,7 @@ class MusicBackend private constructor(
         // 会话将脱钩、通知恒 IDLE。当前 reset() 只在测试路径触发；生产代码不要在
         // 服务存活时调用本方法（桌面无单例问题，不受此限）。
         runCatching { playbackController.release() }
+        if (videoControllerLazy.isInitialized()) runCatching { videoController.release() }
         // AMLL 歌词客户端同样持有 Ktor 客户端。仅当真装配过时才关 —— 否则 reset 会反向触发
         // 它的惰性创建（平白多一个请求 + 多一个连接池）。
         if (amllClientLazy.isInitialized()) runCatching { amllClientLazy.value.close() }

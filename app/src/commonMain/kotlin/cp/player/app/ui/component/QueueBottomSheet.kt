@@ -1,11 +1,15 @@
 package cp.player.app.ui.component
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import cp.player.app.ui.theme.CpMotion
+import cp.player.app.ui.theme.LocalIsDarkTheme
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -157,34 +161,37 @@ fun QueueBottomSheet(
                     }
                 }
 
-                // 底部工具行
+                // 底部工具行：居中浮动胶囊条，与播放页视觉语言统一
                 Box(
-                    Modifier.fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surface)
+                    modifier = Modifier
+                        .fillMaxWidth()
                         .navigationBarsPadding()
                         .padding(horizontal = 16.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
-                        shape = MaterialTheme.shapes.large,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            IconButton(onClick = {
+                    CpFloatingToolbar {
+                        IconButton(
+                            onClick = {
                                 scope.launch {
                                     if (currentIndex in queue.indices) listState.animateScrollToItem(currentIndex)
                                 }
-                            }) {
-                                Icon(Icons.Filled.LocationSearching, s.player.locateCurrent)
-                            }
-                            IconButton(onClick = { showSaveDialog = true }) {
-                                Icon(Icons.AutoMirrored.Filled.PlaylistAdd, s.player.saveAsPlaylist)
-                            }
-                            IconButton(onClick = {
+                            },
+                        ) {
+                            Icon(
+                                Icons.Filled.LocationSearching,
+                                contentDescription = s.player.locateCurrent,
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                        IconButton(onClick = { showSaveDialog = true }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.PlaylistAdd,
+                                contentDescription = s.player.saveAsPlaylist,
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                        IconButton(
+                            onClick = {
                                 if (queue.isEmpty()) return@IconButton
                                 confirm.request(
                                     title = s.player.queueClearTitle,
@@ -192,9 +199,14 @@ fun QueueBottomSheet(
                                     confirmLabel = s.player.clearQueue,
                                     onConfirm = onClear,
                                 )
-                            }) {
-                                Icon(Icons.Filled.DeleteSweep, s.player.clearQueue)
-                            }
+                            },
+                            enabled = queue.isNotEmpty(),
+                        ) {
+                            Icon(
+                                Icons.Filled.DeleteSweep,
+                                contentDescription = s.player.clearQueue,
+                                tint = if (queue.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                            )
                         }
                     }
                 }
@@ -242,8 +254,34 @@ private fun QueueRow(
     /** 桌面端右键菜单项；null 时不启用。 */
     contextMenu: List<CpContextMenuItem>? = null,
 ) {
-    val bg = if (isCurrent) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+    val isDark = LocalIsDarkTheme.current
+    val targetBg = if (isCurrent) {
+        if (isDark) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f)
+        else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
+    val animatedBg by animateColorAsState(
+        targetValue = targetBg,
+        animationSpec = CpMotion.effects(),
+        label = "queueRowBgAnim",
+    )
+    val rowCorner by animateDpAsState(
+        targetValue = if (isCurrent) 24.dp else 16.dp,
+        animationSpec = CpMotion.spatial(),
+        label = "queueRowCornerMorph",
+    )
+    val coverCorner by animateDpAsState(
+        targetValue = if (isCurrent) 24.dp else 12.dp,
+        animationSpec = CpMotion.spatial(),
+        label = "queueCoverCornerMorph",
+    )
+    val coverShape = remember(coverCorner) { RoundedCornerShape(coverCorner) }
+    val titleColor by animateColorAsState(
+        targetValue = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+        animationSpec = CpMotion.effects(),
+        label = "queueTitleColorAnim",
+    )
     var showMenu by remember { mutableStateOf(false) }
     val s = cpStrings()
     val density = LocalDensity.current
@@ -264,8 +302,8 @@ private fun QueueRow(
     CpContextMenu(items = contextMenu, modifier = modifier) {
     Surface(
         Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        color = bg,
+        shape = remember(rowCorner) { RoundedCornerShape(rowCorner) },
+        color = animatedBg,
     ) {
         Row(
             Modifier.padding(8.dp),
@@ -308,7 +346,7 @@ private fun QueueRow(
             )
             Spacer(Modifier.width(4.dp))
             Row(
-                Modifier.weight(1f).clickable { onPlay() },
+                Modifier.weight(1f).cpBounceClickable { onPlay() },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(Modifier.size(48.dp)) {
@@ -319,21 +357,15 @@ private fun QueueRow(
                             contentDescription = s.player.coverContentDescription,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
-                                .clip(MaterialTheme.shapes.medium)
+                                .clip(coverShape)
                                 .background(MaterialTheme.colorScheme.surfaceVariant),
                         )
                     } else {
-                        Box(
-                            Modifier.fillMaxSize().clip(MaterialTheme.shapes.medium)
-                                .background(MaterialTheme.colorScheme.surfaceVariant),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                Icons.Filled.MusicNote, null,
-                                Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                        CpCoverPlaceholder(
+                            modifier = Modifier.fillMaxSize(),
+                            corner = coverCorner,
+                            animated = false,
+                        )
                     }
                     if (isCurrent) {
                         CpPlayingEqualizer(
@@ -347,8 +379,7 @@ private fun QueueRow(
                         item.title,
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
-                        color = if (isCurrent) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurface,
+                        color = titleColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )

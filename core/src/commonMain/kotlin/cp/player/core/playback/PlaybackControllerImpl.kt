@@ -1237,6 +1237,9 @@ class PlaybackControllerImpl(
      * 斜坡同时在推自己的值 —— 两者交替写入平台，音量表现为「抖动」，
      * 松手后还可能停在斜坡的中间值上。用户的直接操作永远优先于自动化过渡。
      */
+    override val currentVolume: Float
+        get() = userVolume
+
     override fun setVolume(volume: Float) {
         val v = volume.coerceIn(0f, 1f)
         userVolume = v
@@ -1426,6 +1429,10 @@ class PlaybackControllerImpl(
     override fun setAudioEffect(config: AudioEffectConfig) {
         lastAudioEffect = config
         platform.applyAudioEffect(config)
+    }
+
+    override fun reloadEngine() {
+        platform.reloadEngine()
     }
 
     override fun release() {

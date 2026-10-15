@@ -45,7 +45,7 @@ internal class LocalCoverStore(private val cacheDir: File) {
 
         val key = sha256(path)
         cacheDir.listFiles { f -> f.name.startsWith("$key.") && !f.name.endsWith(".part") }
-            ?.firstOrNull()?.let { return it.toURI().toString() }
+            ?.firstOrNull()?.let { return toFileUriString(it) }
 
         val found = if (hasEmbeddedCover) {
             runCatching { extractEmbedded(source) }.getOrNull()
@@ -75,8 +75,39 @@ internal class LocalCoverStore(private val cacheDir: File) {
                     Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
                 }
             }
-            target.toURI().toString()
+            toFileUriString(target)
         }.getOrNull()
+    }
+
+    /** 写入显式获取到的封面字节到缓存（如网络下载的歌曲封面缓存）。 */
+    fun storeCoverBytes(path: String, bytes: ByteArray, ext: String = "jpg"): String? {
+        if (bytes.isEmpty() || bytes.size > MAX_COVER_BYTES) return null
+        val key = sha256(path)
+        return runCatching {
+            val target = File(cacheDir, "$key.$ext")
+            val tmp = File(cacheDir, "$key.$ext.part")
+            tmp.writeBytes(bytes)
+            runCatching {
+                Files.move(
+                    tmp.toPath(), target.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE,
+                )
+            }.onFailure {
+                runCatching {
+                    Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                }
+            }
+            toFileUriString(target)
+        }.getOrNull()
+    }
+
+    private fun toFileUriString(file: File): String {
+        val uri = file.toURI().toString()
+        return if (uri.startsWith("file:/") && !uri.startsWith("file:///")) {
+            "file:///" + uri.removePrefix("file:/")
+        } else {
+            uri
+        }
     }
 
     /**
@@ -98,8 +129,8 @@ internal class LocalCoverStore(private val cacheDir: File) {
 
     private fun extractEmbedded(source: File): Pair<String, ByteArray>? {
         RandomAccessFile(source, "r").use { raf ->
-            val header = ByteArray(4)
-            if (readFully(raf, 0, header) != header.size) return null
+            val header = ByteArray(8)
+            if (readFully(raf, 0, header) < 4) return null
             return when {
                 header[0] == 'I'.code.toByte() && header[1] == 'D'.code.toByte() &&
                     header[2] == '3'.code.toByte() -> fromId3(raf)
@@ -148,17 +179,32 @@ internal class LocalCoverStore(private val cacheDir: File) {
         val mimeEnd = indexOfZero(frame, p, end) ?: return null
         val mime = String(frame, p, mimeEnd - p, Charsets.ISO_8859_1)
         p = mimeEnd + 1 + 1 // 越过 mime 终止符与 picture type
-        p = skipText(frame, p, end, encoding) ?: return null
-        if (p >= end) return null
-        return image(frame.copyOfRange(p, end), mime)
+        val textEnd = skipText(frame, p, end, encoding)
+        val candidateStart = textEnd ?: p
+        if (candidateStart < end) {
+            val normalImg = image(frame.copyOfRange(candidateStart, end), mime)
+            if (normalImg != null) return normalImg
+        }
+        // 魔数兜底扫描：若文本终止符对齐不规范，直接在帧内搜图片魔数
+        for (i in p until (end - 3)) {
+            if (frame[i] == 0xFF.toByte() && frame[i + 1] == 0xD8.toByte() && frame[i + 2] == 0xFF.toByte()) {
+                return "jpg" to frame.copyOfRange(i, end)
+            }
+            if (i + 8 <= end && frame[i] == 0x89.toByte() && frame[i + 1] == 'P'.code.toByte() &&
+                frame[i + 2] == 'N'.code.toByte() && frame[i + 3] == 'G'.code.toByte()
+            ) {
+                return "png" to frame.copyOfRange(i, end)
+            }
+        }
+        return null
     }
 
     private fun skipText(data: ByteArray, from: Int, end: Int, encoding: Int): Int? {
-        if (encoding == 1 || encoding == 2) { // UTF-16：终止符为双 0，按 2 字节步进
+        if (encoding == 1 || encoding == 2) { // UTF-16：终止符为双 0
             var i = from
             while (i + 1 < end) {
                 if (data[i] == 0.toByte() && data[i + 1] == 0.toByte()) return i + 2
-                i += 2
+                i++
             }
             return null
         }

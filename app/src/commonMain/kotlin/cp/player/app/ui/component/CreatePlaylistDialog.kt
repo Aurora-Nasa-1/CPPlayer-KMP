@@ -1,8 +1,12 @@
 package cp.player.app.ui.component
 
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -13,7 +17,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import cp.player.app.i18n.cpStrings
 import cp.player.app.AppModel
 import cp.player.app.ui.util.UiEvents
@@ -39,7 +45,14 @@ fun CreatePlaylistDialog(
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text(s.playlistSheet.createDialogTitle) },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = MaterialTheme.shapes.extraLarge,
+        title = {
+            Text(
+                s.playlistSheet.createDialogTitle,
+                style = MaterialTheme.typography.headlineSmall,
+            )
+        },
         text = {
             OutlinedTextField(
                 value = name,
@@ -48,12 +61,13 @@ fun CreatePlaylistDialog(
                 placeholder = { Text(s.playlistSheet.playlistNamePlaceholder) },
                 singleLine = true,
                 enabled = !busy,
-                shape = RoundedCornerShape(percent = 50),
+                shape = MaterialTheme.shapes.large,
             )
         },
         confirmButton = {
-            TextButton(
+            Button(
                 enabled = name.isNotBlank() && !busy,
+                shape = MaterialTheme.shapes.large,
                 onClick = {
                     val playlistName = name.trim()
                     busy = true
@@ -72,7 +86,18 @@ fun CreatePlaylistDialog(
                         }
                     }
                 },
-            ) { Text(if (busy) s.playlistSheet.creating else s.playlistSheet.createShort) }
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (busy) {
+                        CpLoadingIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text(if (busy) s.playlistSheet.creating else s.playlistSheet.createShort)
+                }
+            }
         },
         dismissButton = {
             TextButton(onClick = onDismiss, enabled = !busy) { Text(s.playlistSheet.cancel) }

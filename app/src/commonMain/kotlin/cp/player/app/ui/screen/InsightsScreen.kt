@@ -137,6 +137,10 @@ private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
     var tab by remember { mutableIntStateOf(initialTab.coerceIn(0, labels.lastIndex)) }
     var selectedDay by remember { mutableStateOf<String?>(null) }
     var recentSelection by remember { mutableStateOf<cp.player.core.music.TrackSummary?>(null) }
+    // 「更多」弹层里的二级弹层目标必须由**本层**持有：弹层先回调动作、再自行关闭，
+    // 宿主随之卸载，状态放宿主里会被一起丢掉（详见 RecentPlaysOptionsHost 的 KDoc）。
+    var recentAddToPlaylist by remember { mutableStateOf<cp.player.core.music.TrackSummary?>(null) }
+    var recentShowInfo by remember { mutableStateOf<cp.player.core.music.TrackSummary?>(null) }
     val confirm = rememberConfirmState()
 
     CpRouteScaffold(title = s.insights.screenTitle, onBack = onBack) { pageModifier ->
@@ -209,7 +213,21 @@ private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
     RecentPlaysOptionsHost(
         track = recentSelection,
         onDismiss = { recentSelection = null },
+        onAddToPlaylist = { recentAddToPlaylist = it },
+        onShowInfo = { recentShowInfo = it },
     )
+    recentAddToPlaylist?.let { track ->
+        cp.player.app.ui.component.AddToPlaylistSheet(
+            trackId = track.id,
+            onDismiss = { recentAddToPlaylist = null },
+        )
+    }
+    recentShowInfo?.let { track ->
+        cp.player.app.ui.component.SongDetailInfoDialog(
+            track = track,
+            onDismiss = { recentShowInfo = null },
+        )
+    }
 }
 
 /**

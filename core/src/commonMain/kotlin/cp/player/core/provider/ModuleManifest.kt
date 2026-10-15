@@ -13,6 +13,12 @@ import kotlinx.serialization.Serializable
  * 必须**忽略而不是解析失败** —— 新宿主能力出现时，旧宿主仍应能加载该音源。
  */
 object ProviderCapability {
+    /** 歌曲与歌单搜索。 */
+    const val SEARCH = "search"
+
+    /** 音频播放串流。 */
+    const val PLAYBACK = "playback"
+
     /** 扫码登录。 */
     const val QR_LOGIN = "qrLogin"
 
@@ -31,11 +37,49 @@ object ProviderCapability {
     /** 搜索兜底歌词（音源侧 `lyric/new`）。 */
     const val LYRICS_SEARCH = "lyricsSearch"
 
+    /** 排行榜 / 发现榜单。 */
+    const val CHARTS = "charts"
+
+    /** 用户歌单（个人创建/收藏）。 */
+    const val USER_PLAYLISTS = "userPlaylists"
+
+    /** 歌手主页与作品浏览。 */
+    const val ARTIST_EXPLORER = "artistExplorer"
+
+    /** 专辑主页与曲目浏览。 */
+    const val ALBUM_EXPLORER = "albumExplorer"
+
+    /** 自定义目录或流派浏览。 */
+    const val DIRECTORY_BROWSER = "directoryBrowser"
+
     /** 全部已知能力，供 UI 按稳定顺序展示。 */
     val ALL: List<String> = listOf(
-        QR_LOGIN, WORD_SYNCED_LYRICS, COMMENTS, CLOUD_DRIVE, RECOMMEND, LYRICS_SEARCH,
+        SEARCH, PLAYBACK, QR_LOGIN, WORD_SYNCED_LYRICS, COMMENTS, CLOUD_DRIVE, RECOMMEND,
+        LYRICS_SEARCH, CHARTS, USER_PLAYLISTS, ARTIST_EXPLORER, ALBUM_EXPLORER, DIRECTORY_BROWSER,
     )
 }
+
+/**
+ * 声明式音源自定义设置项规范。
+ */
+@Serializable
+data class ProviderSettingItemSchema(
+    val key: String,
+    val label: String,
+    /** 输入类型: "string", "password", "switch", "select" */
+    val type: String,
+    val placeholder: String? = null,
+    val default: String? = null,
+    val options: List<ProviderSettingOption>? = null,
+    val required: Boolean = false,
+    val description: String? = null
+)
+
+@Serializable
+data class ProviderSettingOption(
+    val label: String,
+    val value: String
+)
 
 /**
  * 本宿主支持的最高 **插件 API 版本**。
@@ -60,7 +104,7 @@ data class ModuleManifest(
     val id: String,
     val name: String,
     val version: String,
-    val type: String, // "jni", "binary", "http"
+    val type: String, // "jni", "binary", "http", "script"
     val entryPoint: String,
     val apiMap: Map<String, String>? = null,
     /**
@@ -122,7 +166,18 @@ data class ModuleManifest(
      * **null / 缺省 = 跳过校验**（向后兼容旧格式模块包；CODE_REVIEW K5）。
      * 生成方式：`sha256sum xxx.zip`，把结果填进 manifest.json 后重新打包。
      */
-    val sha256: String? = null
+    val sha256: String? = null,
+    /**
+     * 协议契约模式（可选）。
+     * - "standard": 现代语义化领域协议（扁平响应模型）
+     * - "netease-legacy" 或 null: 兼容现有网易云旧协议
+     */
+    val contract: String? = null,
+    /**
+     * 声明式音源设置界面配置项（可选）。
+     * 宿主可根据此配置自动渲染设置表单，并持久化用户配置。
+     */
+    val settingsSchema: List<ProviderSettingItemSchema>? = null
 ) {
     /**
      * 已解析的 API 版本（缺省 1）。
@@ -159,4 +214,12 @@ data class ModuleManifest(
 
     /** 是否声称支持 [capability]（见 [ProviderCapability]）。 */
     fun supports(capability: String): Boolean = capability in capabilities.orEmpty()
+
+    /**
+     * 判定某项能力在当前音源下是否可用。
+     * - 当 [capabilities] 为 null（未声明，如历史遗留包）：保守兼容返回 true，不主动禁用功能。
+     * - 当 [capabilities] 明确提供时：严格按照声明列表判断，支持 UI 动态隐藏与功能降级。
+     */
+    fun isFeatureAvailable(capability: String): Boolean =
+        capabilities?.contains(capability) ?: true
 }

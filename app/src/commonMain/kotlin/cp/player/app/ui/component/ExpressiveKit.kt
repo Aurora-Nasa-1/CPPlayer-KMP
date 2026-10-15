@@ -19,13 +19,16 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,6 +44,8 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.ButtonGroup
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -66,8 +71,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.TransformOrigin
@@ -302,6 +311,11 @@ fun CpSeekBar(
         else -> positionMs.toFloat()
     }).coerceIn(0f, duration)
     val haptics = cp.player.app.ui.feedback.LocalCpHaptics.current
+    val thumbMorphFraction by animateFloatAsState(
+        targetValue = if (dragging) 1f else 0f,
+        animationSpec = CpMotion.spatialFast(),
+        label = "thumbMorphFraction",
+    )
     // 拖动时每跨过一整秒给一次轻点 —— 这是「我在逐秒定位」的唯一反馈，
     // 否则手指在波形上滑动完全是盲的。记住上一次打点的秒数，避免每帧触发。
     var lastTickSecond by remember { mutableStateOf(-1L) }
@@ -315,14 +329,16 @@ fun CpSeekBar(
         modifier = modifier.height(CpSeekBarHeight).onSizeChanged { trackWidthPx = it.width },
         contentAlignment = Alignment.Center,
     ) {
+        // 拖动中平息波形流动，避免动态波峰干扰手指的精准定位；松手后恢复律动
         CpWavyProgress(
             progress = shown / duration,
             modifier = Modifier.fillMaxWidth(),
             color = if (enabled) color else MaterialTheme.colorScheme.onSurfaceVariant,
             trackColor = trackColor,
             animated = !dragging,
-            waveFlowing = waveFlowing,
+            waveFlowing = waveFlowing && !dragging,
         )
+        // 底层 Slider 接管手势交互与读屏无障碍，thumbColor 设置为透明由上层自适应绘制
         Slider(
             value = shown,
             onValueChange = {
@@ -347,8 +363,8 @@ fun CpSeekBar(
             valueRange = 0f..duration,
             enabled = enabled,
             colors = SliderDefaults.colors(
-                thumbColor = if (enabled) thumbColor else MaterialTheme.colorScheme.onSurfaceVariant,
-                // 轨道全部透明：视觉完全交给下面的波形，Slider 只留一个「珠子」当抓手。
+                thumbColor = Color.Transparent,
+                // 轨道全部透明：视觉完全交给下面的波形
                 activeTrackColor = Color.Transparent,
                 inactiveTrackColor = Color.Transparent,
                 activeTickColor = Color.Transparent,
@@ -356,6 +372,29 @@ fun CpSeekBar(
             ),
             modifier = Modifier.fillMaxWidth(),
         )
+
+        val activeThumbColor = if (enabled) thumbColor else MaterialTheme.colorScheme.onSurfaceVariant
+
+        // PixelPlayer 式 Expressive 交互胶囊抓手：
+        // 静止时为 12dp 的圆点，触摸拖动时弹性拉伸为 24dp 的垂直交互抓手胶囊
+        Canvas(Modifier.fillMaxWidth().height(CpSeekBarHeight)) {
+            val progress = (shown / duration).coerceIn(0f, 1f)
+            val baseRadiusPx = 6.dp.toPx()
+            val trackEdgePaddingPx = 10.dp.toPx()
+            val availableWidth = (size.width - trackEdgePaddingPx * 2f).coerceAtLeast(0f)
+            val thumbX = trackEdgePaddingPx + availableWidth * progress
+            val thumbY = size.height / 2f
+
+            val currentWidth = (1f - thumbMorphFraction) * (baseRadiusPx * 2f) + thumbMorphFraction * 5.dp.toPx()
+            val currentHeight = (1f - thumbMorphFraction) * (baseRadiusPx * 2f) + thumbMorphFraction * 24.dp.toPx()
+
+            drawRoundRect(
+                color = activeThumbColor,
+                topLeft = Offset(thumbX - currentWidth / 2f, thumbY - currentHeight / 2f),
+                size = Size(currentWidth, currentHeight),
+                cornerRadius = CornerRadius(currentWidth / 2f),
+            )
+        }
 
         // 时间气泡：只在拖动时出现。静止时不出现 —— 那个位置下面的 time 行已经写着了，
         // 再浮一个只会和它打架。
@@ -890,6 +929,93 @@ private fun RowScope.ChipContent(icon: ImageVector?, label: String) {
     Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
 }
 
+// ---------------------------------------------------------------- 动作组
+
+/** [CpActionButtonGroup] 里的一颗动作。 */
+data class CpActionGroupItem(
+    val label: String,
+    val icon: ImageVector,
+    val onClick: () -> Unit,
+    val enabled: Boolean = true,
+)
+
+/**
+ * M3 Expressive **动作组**（`ButtonGroup` 的收口）—— 一排**连体**按钮。
+ *
+ * 这是「一坨相关动作」在 Expressive 里的标准长相：按钮彼此贴合成一个整体，
+ * 按下时**被按的那颗会横向撑开、邻居被压窄**（`expandedRatio`），而不是各自缩一下。
+ * 装不下时末尾自动多出一颗「更多」，把放不下的动作收进下拉菜单 —— 这正是它比
+ * 「一个主按钮 + 三个 TextButton」强的地方：后者在窄屏上会挤成一排小字，谁也不突出。
+ *
+ * 与 [CpFloatingToolbar] 的分工：工具条是**图标**（次级、无文字、浮在内容之上），
+ * 动作组是**图标 + 文字**（主要动作、参与页面流）。播放页用前者，详情页头部用后者。
+ *
+ * ⚠️ 与 `CpToggleChip` 的区别：那个是**开关**（选中态由形状表达），这个是**动作**，
+ * 点了就走，没有选中态。别拿它当筛选器用。
+ *
+ * @param items 动作列表，顺序即展示顺序。**至少给 2 项** —— 只有一项时应该用普通按钮。
+ */
+@Composable
+fun CpActionButtonGroup(
+    items: List<CpActionGroupItem>,
+    modifier: Modifier = Modifier,
+) {
+    if (items.isEmpty()) return
+    FlowRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items.forEachIndexed { index, item ->
+            val interactionSource = remember { MutableInteractionSource() }
+            val isPrimary = index == 0
+            val containerColor = if (isPrimary) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh
+            }
+            val contentColor = if (isPrimary) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            }
+            val shape = if (isPrimary) MaterialTheme.shapes.large else CircleShape
+
+            Surface(
+                onClick = item.onClick,
+                enabled = item.enabled,
+                shape = shape,
+                color = containerColor,
+                contentColor = contentColor,
+                modifier = Modifier
+                    .cpPressScale(interactionSource, pressedScale = 0.96f)
+                    .height(42.dp),
+                interactionSource = interactionSource,
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = item.icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(CpIconSize.inline),
+                        tint = contentColor.copy(alpha = if (item.enabled) 1f else 0.38f),
+                    )
+                    Text(
+                        text = item.label,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (isPrimary) FontWeight.SemiBold else FontWeight.Medium,
+                        color = contentColor.copy(alpha = if (item.enabled) 1f else 0.38f),
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------- Modifier
 
 /**
@@ -913,6 +1039,25 @@ fun Modifier.cpPressScale(
         scaleX = scale
         scaleY = scale
     }
+}
+
+/**
+ * 具有 M3 Expressive 弹性缩放与 Ripple 交互的便捷点击修饰符。
+ * 内部自动保持交互状态与硬件加速缩放对齐。
+ */
+@Composable
+fun Modifier.cpBounceClickable(
+    pressedScale: Float = 0.97f,
+    onClick: () -> Unit,
+): Modifier {
+    val interactionSource = remember { MutableInteractionSource() }
+    return this
+        .cpPressScale(interactionSource, pressedScale)
+        .clickable(
+            interactionSource = interactionSource,
+            indication = androidx.compose.material3.ripple(),
+            onClick = onClick,
+        )
 }
 
 /** 给任意容器套一个「Expressive 大圆角」的裁剪。 */

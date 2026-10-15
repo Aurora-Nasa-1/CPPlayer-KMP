@@ -90,13 +90,18 @@ internal class LyriconBridge(private val context: Context) {
         lastTrack = track
         lastLines = lines
         val signature = signature(track, lines)
-        val active = provider ?: return
+        // provider 非空 ≠ 已连上：注册是广播、回连是异步的。这里必须留痕，否则
+        // 「整首歌词没过去」与「过去了但接收端没收」在日志里长得一模一样。
+        val active = provider ?: run {
+            Log.d(TAG, "setSong skipped: provider not created yet")
+            return
+        }
         if (!force && signature == lastSignature) {
             runCatching { active.player.setDisplayTranslation(secondary != LyricSecondaryMode.OFF) }
             return
         }
         runCatching {
-            active.player.setSong(
+            val accepted = active.player.setSong(
                 io.github.proify.lyricon.lyric.model.Song(
                     id = track.id,
                     name = track.title,
@@ -108,6 +113,14 @@ internal class LyriconBridge(private val context: Context) {
             active.player.setDisplayTranslation(secondary != LyricSecondaryMode.OFF)
             active.player.setDisplayRoma(secondary == LyricSecondaryMode.PRONUNCIATION)
             lastSignature = signature
+            // 逐字是否真的进了接收端，只能靠「有多少行带 words」这一个数字判 ——
+            // 接收端拿不到词级时间轴时，界面表现与「位置不动」几乎一样。
+            Log.i(
+                TAG,
+                "setSong accepted=$accepted lines=${lines.size} " +
+                    "linesWithWords=${lines.count { it.words.isNotEmpty() }} " +
+                    "durationMs=${track.durationMs}",
+            )
         }.onFailure { Log.w(TAG, "Unable to publish lyrics to Lyricon", it) }
     }
 
@@ -118,10 +131,38 @@ internal class LyriconBridge(private val context: Context) {
         runCatching { provider?.player?.setPlaybackState(playing) }
     }
 
-    /** 进度推进。词幕自己插值，所以这里**不必**每帧都发（上游用 41ms 间隔）。 */
+    /**
+     * 进度推进。词幕自己插值，所以这里**不必**每帧都发（上游用 41ms 间隔）。
+     *
+     * ### 为什么要看返回值（2026-10-15 补）
+     * `RemotePlayer` 的每个写方法都返回 `Boolean`，而上游把 `setPosition` 的结果丢掉了。
+     * 真机反馈「逐字歌词到了词幕、但高亮卡在第一个字前面」时，第一件要分清的事就是：
+     * 位置**有没有被接收端接受**，以及**发出去的值是不是一直停在 0**。
+     * 这两种原因的表象完全一样，只看界面分不出来，所以这里按节流打一行日志。
+     */
     fun sendPosition(positionMs: Long) {
         if (!enabled) return
-        runCatching { provider?.player?.setPosition(positionMs) }
+        val accepted = runCatching { provider?.player?.setPosition(positionMs) }.getOrNull()
+        logPosition(positionMs, accepted)
+    }
+
+    private var lastPositionLogAtMs = 0L
+    private var lastLoggedPositionAccepted: Boolean? = null
+
+    /**
+     * 位置推送的日志节流。
+     *
+     * 推送频率是 4Hz，逐帧打会把日志刷爆；但**只在「结果变化」时打又看不到位置在不在走**。
+     * 所以两者取并集：结果一变就打，否则每 [POSITION_LOG_INTERVAL_MS] 打一次采样。
+     */
+    private fun logPosition(positionMs: Long, accepted: Boolean?) {
+        val now = System.currentTimeMillis()
+        if (accepted == lastLoggedPositionAccepted && now - lastPositionLogAtMs < POSITION_LOG_INTERVAL_MS) {
+            return
+        }
+        lastPositionLogAtMs = now
+        lastLoggedPositionAccepted = accepted
+        Log.d(TAG, "setPosition($positionMs) accepted=$accepted connected=${provider != null}")
     }
 
     fun clearSong() {
@@ -145,6 +186,9 @@ internal class LyriconBridge(private val context: Context) {
         lastLines = emptyList()
         lastSignature = null
         lastPlaying = null
+        // 日志节流状态跟着清：重新开启渠道后第一条位置日志必须是可见的。
+        lastLoggedPositionAccepted = null
+        lastPositionLogAtMs = 0L
     }
 
     private fun resendLastTrack() {
@@ -198,5 +242,8 @@ internal class LyriconBridge(private val context: Context) {
 
     private companion object {
         const val TAG = "LyriconBridge"
+
+        /** 位置推送日志的采样间隔（见 [logPosition]）。 */
+        const val POSITION_LOG_INTERVAL_MS = 3_000L
     }
 }

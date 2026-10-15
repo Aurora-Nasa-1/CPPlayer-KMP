@@ -180,18 +180,11 @@ fun PlaylistCoverCard(
             // URL 有值、图还在路上（或已经 404）。那时 AsyncImage 什么都没画出来，
             // 只剩底部那条压暗渐变悬在卡片底色上 —— 整块磁贴看起来像渲染坏了。
             // 放在底层就三种情况都成立：图到位被盖住，图挂了/没到就露出占位块。
-            Box(
-                Modifier.fillMaxSize()
-                    .clip(MaterialTheme.shapes.extraLarge)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Filled.MusicNote, null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(40.dp),
-                )
-            }
+            CpCoverPlaceholder(
+                modifier = Modifier.fillMaxSize(),
+                corner = 28.dp,
+                animated = true,
+            )
             if (overImage) {
                 // [Bolt] Limit playlist thumbnail downloads to 300px to avoid large memory footprints
                 AsyncImage(

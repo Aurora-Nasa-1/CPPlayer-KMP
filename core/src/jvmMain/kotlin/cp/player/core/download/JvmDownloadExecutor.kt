@@ -7,6 +7,7 @@ import io.ktor.client.request.header
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.readAvailable
@@ -54,7 +55,7 @@ class JvmDownloadExecutor : DownloadExecutor {
         headers: Map<String, String>,
         targetPartPath: String,
         resumeBytes: Long,
-        onProgress: suspend (sessionWrittenBytes: Long) -> Unit
+        onProgress: suspend (sessionWrittenBytes: Long, totalBytes: Long?) -> Unit
     ): Long {
         val partFile = File(targetPartPath)
         partFile.parentFile?.mkdirs()
@@ -73,7 +74,17 @@ class JvmDownloadExecutor : DownloadExecutor {
                     throw ResumeNotSupportedException("续传偏移超出文件大小（HTTP 416），清空重下")
                 !resp.status.isSuccess() ->
                     throw DownloadFailedException("HTTP ${resp.status.value}")
-                else -> writeBody(resp, partFile, resumeBytes, onProgress)
+                else -> {
+                    val contentLength = resp.headers[HttpHeaders.ContentLength]?.toLongOrNull()
+                    val totalBytes = if (resp.status == HttpStatusCode.PartialContent) {
+                        val contentRange = resp.headers[HttpHeaders.ContentRange]
+                        val totalFromRange = contentRange?.substringAfterLast('/')?.trim()?.toLongOrNull()
+                        totalFromRange ?: (if (contentLength != null && contentLength >= 0L) resumeBytes + contentLength else null)
+                    } else {
+                        if (contentLength != null && contentLength >= 0L) contentLength else null
+                    }
+                    writeBody(resp, partFile, resumeBytes, totalBytes, onProgress)
+                }
             }
         }
     }
@@ -82,7 +93,8 @@ class JvmDownloadExecutor : DownloadExecutor {
         response: HttpResponse,
         partFile: File,
         resumeBytes: Long,
-        onProgress: suspend (Long) -> Unit
+        totalBytes: Long?,
+        onProgress: suspend (Long, Long?) -> Unit
     ): Long {
         val channel = response.bodyAsChannel()
         val buffer = ByteArray(BUFFER_SIZE)
@@ -99,7 +111,7 @@ class JvmDownloadExecutor : DownloadExecutor {
                 if (read < 0) break
                 raf.write(buffer, 0, read)
                 written += read
-                onProgress(written)
+                onProgress(written, totalBytes)
             }
         }
         return written

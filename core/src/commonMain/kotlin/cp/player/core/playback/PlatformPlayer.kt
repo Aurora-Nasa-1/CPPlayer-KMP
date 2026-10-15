@@ -33,21 +33,15 @@ data class SeekFailure(val targetMs: Long, val actualMs: Long)
  */
 private val NoSeekFailures: SharedFlow<SeekFailure> = MutableSharedFlow()
 
-interface PlatformPlayer {
+/**
+ * 跨平台通用多媒体播放内核基接口（音频与视频共享）。
+ *
+ * 封装了基础的播放状态、进度轮询、Seek 状态流与通用生命周期控制。
+ */
+interface PlatformMediaPlayer {
     val state: StateFlow<PlatformPlaybackState>
     val positionMs: StateFlow<Long>
     val durationMs: StateFlow<Long>
-    val formatInfo: StateFlow<AudioFormatInfo?>
-
-    /**
-     * 本平台是否支持**音频独占**（绕过系统混音器直接输出）。
-     *
-     * ⚠️ 全仓当前**没有任何实现返回 true**，也没有消费方 —— 保留它是作为能力位，
-     * 供将来「音效 vs 独占」的取舍决策使用：独占输出会绕过系统音效链，
-     * 开了独占之后 [applyAudioEffect] 的效果将不可用。一旦某平台真的实现独占，
-     * 这条约束必须同时在 UI 上体现（两者互斥，不能各自安好地各显示一个开关）。
-     */
-    val supportsExclusiveAudio: Boolean get() = false
 
     /**
      * seek 未能生效的事件流。
@@ -71,6 +65,20 @@ interface PlatformPlayer {
     fun release()
     fun setVolume(volume: Float)
     fun getVolume(): Float
+}
+
+interface PlatformPlayer : PlatformMediaPlayer {
+    val formatInfo: StateFlow<AudioFormatInfo?>
+
+    /**
+     * 本平台是否支持**音频独占**（绕过系统混音器直接输出）。
+     *
+     * ⚠️ 全仓当前**没有任何实现返回 true**，也没有消费方 —— 保留它是作为能力位，
+     * 供将来「音效 vs 独占」的取舍决策使用：独占输出会绕过系统音效链，
+     * 开了独占之后 [applyAudioEffect] 的效果将不可用。一旦某平台真的实现独占，
+     * 这条约束必须同时在 UI 上体现（两者互斥，不能各自安好地各显示一个开关）。
+     */
+    val supportsExclusiveAudio: Boolean get() = false
 
     // ============ 音效 ============
 
@@ -105,6 +113,12 @@ interface PlatformPlayer {
      * 默认空实现：不支持音效的平台无需覆写。
      */
     fun applyAudioEffect(config: AudioEffectConfig) {}
+
+    /**
+     * 重载/热切换底层播放引擎（例如在设置中切换标准/Hi-Res独占引擎时调用）。
+     * 默认空实现。
+     */
+    fun reloadEngine() {}
 }
 
 

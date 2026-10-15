@@ -196,7 +196,11 @@ class DownloadsScreenModel : ScreenModel {
 
     fun pause(task: DownloadTask) = runCatching { AppModel.downloads.pause(task.id) }
 
+    fun pauseAll() = runCatching { AppModel.downloads.pauseAll() }
+
     fun resume(task: DownloadTask) = runCatching { AppModel.downloads.resume(task.id) }
+
+    fun resumeAll() = runCatching { AppModel.downloads.resumeAll() }
 
     /**
      * @param strings 由调用方（组合上下文）传入而不是在协程里取：通知发在 IO 协程中，
@@ -204,6 +208,11 @@ class DownloadsScreenModel : ScreenModel {
      */
     fun cancel(task: DownloadTask, strings: CpStrings) {
         AppModel.cancelDownload(task.id)
+        UiEvents.notify(strings.downloads.downloadCancelled)
+    }
+
+    fun cancelAll(strings: CpStrings) {
+        runCatching { AppModel.downloads.cancelAll() }
         UiEvents.notify(strings.downloads.downloadCancelled)
     }
 
@@ -302,6 +311,13 @@ class DownloadsScreenModel : ScreenModel {
         // 同步清掉收藏，避免留下指向已移出曲库的「幽灵收藏」
         runCatching { AppModel.localMedia.favorites.removeAll(listOf(item.path)) }
         UiEvents.notify(strings.downloads.removedFromLibrary)
+    }
+
+    /** 彻底删除本地文件并移出曲库。 */
+    fun deleteLocalFile(item: LocalMediaItem, strings: CpStrings) {
+        removeLocalItem(item, strings)
+        runCatching { cp.player.core.util.PlatformSupport.deleteRecursively(item.path) }
+        UiEvents.notify("已删除本地文件")
     }
 
     /** 播放本地音频（mediaId 规则 `local://{audio|video}/{path}`）；视频暂不支持。 */

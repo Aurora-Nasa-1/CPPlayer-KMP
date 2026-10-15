@@ -67,14 +67,23 @@
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!-- USB DAC 源码直通与 UAC2 硬件独占（required=false 保证无 OTG/USB Host 的设备仍可正常安装） -->
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
 
     <!--
       Android 11（API 30）起的包可见性：不声明 `<queries>` 的话
       `getPackageInfo("moe.shizuku.privileged.api")` 会抛 NameNotFoundException，
       表现为「明明装了 Shizuku，设置页却说未安装」。见 core 的 ShizukuPermissions。
+
+      ⚠️ `com.xiaomi.xmsf` 是**同一类坑的第二处**（2026-10-15 补）：XMSF 断网隔离要靠
+      `getPackageUid("com.xiaomi.xmsf")` 拿到它的 uid，而它在设备的 `forceQueryable`
+      名单里并不存在 ⇒ 拿不到 uid ⇒ `XmsfFirewall.block()` 直接失败 ⇒
+      `XmsfIsolationController` 静默退化成「不隔离直接发」（联网时超级岛因此不显示，
+      且日志里只有一行 `XMSF package not found`）。见 core 的 XmsfFirewall。
     -->
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
+        <package android:name="com.xiaomi.xmsf" />
     </queries>
 
     <application

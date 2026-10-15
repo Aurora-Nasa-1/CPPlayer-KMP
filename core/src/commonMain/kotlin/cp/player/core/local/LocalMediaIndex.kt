@@ -109,8 +109,16 @@ class LocalMediaIndex(private val indexFile: String) {
             val meta = data.meta[item.path]
             when {
                 old == null -> added += item
-                meta == null || meta.size != item.sizeBytes || meta.lastModified != item.lastModified ->
-                    updated += item
+                meta == null || meta.size != item.sizeBytes || meta.lastModified != item.lastModified -> {
+                    val merged = if (item.coverUri.isNullOrBlank() && !old.coverUri.isNullOrBlank()) {
+                        item.copy(coverUri = old.coverUri, source = old.source)
+                    } else if (old.source == LocalMediaOrigin.DOWNLOADED && item.source != LocalMediaOrigin.DOWNLOADED) {
+                        item.copy(source = old.source)
+                    } else {
+                        item
+                    }
+                    updated += merged
+                }
                 else -> kept += old
             }
         }

@@ -165,6 +165,19 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
         keywords = listOf("音质", "无损", "hires", "定时", "睡眠", "关闭", "quality", "sleep"),
         screen = { PlaybackSettingsScreen() },
     ),
+    SettingsEntry(
+        id = "audio_engine",
+        group = SettingsGroup.GENERAL,
+        titleOf = { "音频输出与硬件独占" },
+        subtitleOf = { "FlickEngine Hi-Res 发烧内核 · WASAPI Exclusive 独占 · Bit-Perfect 源码输出" },
+        icon = Icons.Filled.Memory,
+        accent = SettingsAccent.TERTIARY,
+        keywords = listOf(
+            "flick", "engine", "wasapi", "exclusive", "独占", "hires", "bit-perfect", "源码",
+            "内核", "发烧", "dsd", "asio", "声卡", "音频", "输出", "dac",
+        ),
+        screen = { AudioEngineSettingsScreen() },
+    ),
     // 音效紧跟在「播放与音质」之后：两者是同一主题的两个层次
     // （音质决定"拿到什么"，音效决定"听起来怎么样"），用户找前者时常顺手看后者。
     //

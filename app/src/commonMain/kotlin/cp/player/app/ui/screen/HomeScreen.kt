@@ -153,6 +153,9 @@ private fun HomeScreenContent(model: HomeScreenModel) {
     val loading = state.loading
     var selectedTrack by remember { mutableStateOf<TrackSummary?>(null) }
     var addToPlaylistTrack by remember { mutableStateOf<TrackSummary?>(null) }
+    // 「歌曲信息」的目标曲目。与其余页面同款：弹层里点「歌曲信息」→ 打开共享的
+    // SongDetailInfoDialog（`song/detail` 元数据）。
+    var showInfoTarget by remember { mutableStateOf<TrackSummary?>(null) }
     val likedIds by AppModel.playback.likedIds.collectAsState()
     val recentTracks by AppModel.recentTracksFlow.collectAsState()
     // ⚠️ 位置**先除到秒**再进快照：引擎每 200ms 推一次位置，照原样收会让首页
@@ -301,15 +304,16 @@ private fun HomeScreenContent(model: HomeScreenModel) {
             val playingSeed = nowPlaying.track?.id?.let { id ->
                 runCatching { cp.player.core.music.CPMediaId.parse(id).resourceId }.getOrDefault(id)
             }
+            val seedId = playingSeed
+                ?: likedIds.shuffled().firstOrNull()
+                ?: dailySongs.shuffled().firstOrNull()?.id
             navigator.push(
                 HomeGeneratedPlaylistScreen(
                     intelligencePlaylist,
                     emptyList(),
                     // 不传 startIndex：打开心动模式只浏览，点了具体曲目才播。
                     kind = HomeGeneratedPlaylistKind.IntelligenceFromDaily,
-                    seedTrackId = playingSeed
-                        ?: likedIds.firstOrNull()
-                        ?: dailySongs.firstOrNull()?.id,
+                    seedTrackId = seedId,
                     seedPlaylistId = pid,
                 )
             )
@@ -401,6 +405,8 @@ private fun HomeScreenContent(model: HomeScreenModel) {
             },
             onAddToPlaylist = { addToPlaylistTrack = track },
             onDownload = { AppModel.downloadTrack(track) },
+            onShowInfo = { showInfoTarget = track },
+            onShare = { shareText(songShareText(track)) },
         )
     }
 
@@ -408,6 +414,13 @@ private fun HomeScreenContent(model: HomeScreenModel) {
         cp.player.app.ui.component.AddToPlaylistSheet(
             trackId = track.id,
             onDismiss = { addToPlaylistTrack = null },
+        )
+    }
+
+    showInfoTarget?.let { track ->
+        cp.player.app.ui.component.SongDetailInfoDialog(
+            track = track,
+            onDismiss = { showInfoTarget = null },
         )
     }
 }
@@ -2347,7 +2360,11 @@ class HomeGeneratedPlaylistScreen(
      * 上游把 `pid=0` 当非法请求 —— 没有收藏夹时该入口拿不到推荐，属于正常降级。
      */
     private val seedPlaylistId: Long? = null,
+    private val instanceToken: Long = cp.player.core.util.currentTimeMillis(),
 ) : Screen {
+    override val key: cafe.adriel.voyager.core.screen.ScreenKey =
+        "HomeGeneratedPlaylist_${playlist.id}_${kind}_${seedTrackId}_${instanceToken}"
+
     @Composable
     override fun Content() {
         val model = rememberScreenModel { PlaylistDetailScreenModel() }
@@ -2468,6 +2485,12 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
         val scope = rememberCoroutineScope()
         val provider = AppModel.activeProviderId()
         var selectedTrack by remember { mutableStateOf<TrackSummary?>(null) }
+        // ⚠️ 「更多」弹层里点「歌单 / 歌曲信息」会**先回调动作、再自行关闭**弹层
+        // （见 SongOptionsSheet 的 onClick）。所以这两个二级弹层的目标必须由**本层**
+        // 持有 —— 交给弹层宿主自己 remember 的话，弹层一关宿主就被卸载，目标状态
+        // 跟着丢，二级弹层永远不出现。
+        var addToPlaylistTrack by remember { mutableStateOf<TrackSummary?>(null) }
+        var showInfoTarget by remember { mutableStateOf<TrackSummary?>(null) }
         val likedIds by AppModel.playback.likedIds.collectAsState()
         val toMediaId = { id: String -> if (id.contains("://")) id else "$provider://song/$id" }
         val navigator = LocalNavigator.current
@@ -2581,7 +2604,26 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
         }
 
         selectedTrack?.let { track ->
-            RecentPlaysOptionsHost(track = track, onDismiss = { selectedTrack = null })
+            RecentPlaysOptionsHost(
+                track = track,
+                onDismiss = { selectedTrack = null },
+                onAddToPlaylist = { addToPlaylistTrack = it },
+                onShowInfo = { showInfoTarget = it },
+            )
+        }
+
+        addToPlaylistTrack?.let { track ->
+            cp.player.app.ui.component.AddToPlaylistSheet(
+                trackId = track.id,
+                onDismiss = { addToPlaylistTrack = null },
+            )
+        }
+
+        showInfoTarget?.let { track ->
+            cp.player.app.ui.component.SongDetailInfoDialog(
+                track = track,
+                onDismiss = { showInfoTarget = null },
+            )
         }
     }
 }
@@ -2591,11 +2633,17 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
  *
  * 独立整页与听歌报告的「最近」tab 共用同一份 —— 两处各写一遍的话，
  * 收藏判定与文案迟早会漂。
+ *
+ * ⚠️ 这里只负责**弹层本身**；弹层里的「歌单 / 歌曲信息」二级弹层的目标由调用方持有，
+ * 经 [onAddToPlaylist] / [onShowInfo] 回调出去。原因见调用点的注释 —— 弹层会先回调
+ * 动作、再自行 `onDismiss`，宿主随之卸载，状态放这里会被一起丢掉。
  */
 @Composable
 fun RecentPlaysOptionsHost(
     track: cp.player.core.music.TrackSummary?,
     onDismiss: () -> Unit,
+    onAddToPlaylist: (cp.player.core.music.TrackSummary) -> Unit,
+    onShowInfo: (cp.player.core.music.TrackSummary) -> Unit,
 ) {
     if (track == null) return
     val scope = rememberCoroutineScope()
@@ -2633,8 +2681,10 @@ fun RecentPlaysOptionsHost(
             scope.launch { AppModel.playback.addNextToQueue(toMediaId(track.id)) }
             cp.player.app.ui.util.UiEvents.notify("将在下一首播放")
         },
-        onAddToPlaylist = {},
+        onAddToPlaylist = { onAddToPlaylist(track) },
         onDownload = { AppModel.downloadTrack(track) },
+        onShowInfo = { onShowInfo(track) },
+        onShare = { shareText(songShareText(track)) },
     )
 }
 

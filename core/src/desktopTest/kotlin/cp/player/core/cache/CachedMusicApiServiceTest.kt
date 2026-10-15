@@ -164,8 +164,8 @@ class CachedMusicApiServiceTest {
     fun `同一端点下不同 type 不共用缓存`() = runBlocking {
         val f = Fixture()
 
-        // "music" 与未知类型都会落到 comment/music（getCommentMethod 的 else 分支），
-        // 端点相同 ⇒ 只能靠键里的 type 区分，否则两种评论互相串数据
+        // 所有资源类型的评论列表都打同一个端点（comment/new，唯一认 sortType 的那个），
+        // 只能靠键里的 type 区分，否则两种评论互相串数据
         f.api.getComments("9", "music", 20, 0, 1)
         f.api.getComments("9", "event", 20, 0, 1)
 

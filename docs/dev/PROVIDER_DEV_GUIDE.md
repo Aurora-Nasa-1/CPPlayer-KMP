@@ -2,10 +2,11 @@
 
 > **面向：** 为 CPPlayer 开发音乐数据源（Provider）的第三方开发者
 >
-> **版本：** 3.0.0 · **最后更新：** 2026-09-25（§3.3 JNI 导出符号前缀随宿主包名改为 `cp.player.core`）
+> 💡 **提示：** 如果你需要开发的是轻量新音源，或者移植第三方音乐软件（如 QQ 音乐、酷狗、Bilibili、Subsonic、Navidrome 等），强烈建议直接查阅 👉 [**《5 分钟上手：现代音源开发与移植指南 (Standard v3)》**](QUICK_PROVIDER_DEV_GUIDE.md)。只需实现 2 个基础接口，且支持 UI 自动隐藏与声明式原生配置表单。
 >
-> 本指南覆盖 Provider 插件系统的完整 API 接口规范，
-> 包含所有 API 方法的请求/响应格式、参数说明、字段要求和健康监控集成。
+> **版本：** 3.1.0 · **最后更新：** 2026-10-15（新增 Standard v3 契约、声明式设置项与能力网格）
+>
+> 本指南为网易云兼容 Legacy 音源的完整规范参考，覆盖所有传统网易云 API 映射细节。
 
 ---
 
@@ -1786,14 +1787,32 @@ Java_cp_player_core_provider_JniProvider_analyzeAudioFile(
 | `comment/dj` | 电台 |
 | `comment/video` | 视频 |
 
-**通用请求参数：**
+**通用请求参数（`comment/music` 等 6 个老端点）：**
 
 | 参数 | 说明 |
 |------|------|
 | `id` | 资源 ID |
 | `limit` | 每页数量，默认 20 |
 | `offset` | 偏移量（页码 = offset/limit） |
-| `sortType` | `0`=推荐排序，`1`=时间排序，`2`=热度排序 |
+
+> ⚠️ **老端点没有排序能力**：`comment/music` / `playlist` / `album` / `mv` / `dj` / `video`
+> 的请求体只认 `rid` / `limit` / `offset` / `beforeTime`，`sortType` 传了也会被丢掉
+> （对照 `reference/netease-module-rust/src/api/comment_music.rs`）。
+> 宿主读评论列表**不再走这 6 个端点**，它们只用于「资源类型 → 端点」的历史对照。
+
+**宿主实际使用的评论列表端点：`comment/new`**
+
+| 参数 | 说明 |
+|------|------|
+| `id` | 资源 ID |
+| `type` | 资源类型码 `0`=歌曲 / `1`=MV / `2`=歌单 / `3`=专辑 / `4`=电台 / `5`=视频 |
+| `pageNo` | 页码，从 1 开始 |
+| `pageSize` | 每页数量，默认 20 |
+| `sortType` | `1`=推荐（实现侧通常翻成上游的 `99`）/ `2`=热度 / `3`=最新 |
+
+> `sortType` 是**唯一**能切排序的入口 —— 这也是列表改走本端点的原因。
+> 响应同样是「包一层 `data`」的形状（`data.comments` / `data.hotComments` /
+> `data.totalCount` / `data.hasMore` / `data.sortType`）。
 
 **响应：**
 ```json

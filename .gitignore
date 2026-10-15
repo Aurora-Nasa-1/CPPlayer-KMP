@@ -38,7 +38,7 @@ local.properties
 
 # --- Read-only reference checkouts (not part of the Gradle build) --------
 # Legacy Android project: a plain local checkout, excluded on purpose.
-reference/cp-player-legacy/
+reference/
 # Upstream Flutter player used as a visual-design reference. Also a plain
 # local checkout (~59 MB, its own .git) — referenced from docs/ only.
 reference/Kazumi/
@@ -75,3 +75,22 @@ reference/netease-module-rust/
 # JVM 崩溃日志（hs_err_pid<pid>.log）：本机运行时产物，不进版本库。
 hs_err_pid*.log
 replay_pid*.log
+
+# --- Proprietary native engine & local builds ----------------------------
+# FlickPlayer Hi-Res native Rust audio engine source & local cargo artifacts.
+# 闭源 Rust 源码与本地编译生成物严格排除。
+native/flick-player-engine/
+native/*.dll
+native/*.so
+native/*.dylib
+native/target/
+
+# 放行发布所需的预编译二进制库
+!app/native/
+!app/native/*
+
+# 私有发卡与算号脚本（仅限本地商业发卡，绝不入库）
+scripts/*vip*
+scripts/*license*
+scripts/*keygen*
+

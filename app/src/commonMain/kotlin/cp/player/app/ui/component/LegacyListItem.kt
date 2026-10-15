@@ -54,6 +54,8 @@ fun LegacyListItem(
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    shape: Shape? = null,
+    emphasized: Boolean = false,
     leadingContent: (@Composable () -> Unit)? = null,
     headlineContent: @Composable () -> Unit,
     supportingContent: (@Composable () -> Unit)? = null,
@@ -61,9 +63,9 @@ fun LegacyListItem(
 ) {
     val press = rememberPressedScale()
     val pressed by press.first.collectIsPressedAsState()
-    // 只在**真的可点**时才做形状变形：不可点的行按下没反应，圆角却撑开，
-    // 会给出"这里能点"的错误暗示。
-    val shape = rememberSegmentShape(index, total, pressed = pressed && onClick != null)
+    // 只在真的可点或焦点态时才做形状变形
+    val segmentShape = rememberSegmentShape(index, total, pressed = pressed && onClick != null, emphasized = emphasized)
+    val resolvedShape = shape ?: segmentShape
 
     // Surface 自带 onClick 不支持长按，需要长按时改用 combinedClickable
     val content: @Composable () -> Unit = {
@@ -89,7 +91,7 @@ fun LegacyListItem(
                     onClick = { onClick?.invoke() },
                     onLongClick = onLongClick,
                 ),
-            shape = shape,
+            shape = resolvedShape,
             color = containerColor,
             content = content,
         )
@@ -99,7 +101,7 @@ fun LegacyListItem(
             enabled = onClick != null,
             interactionSource = press.first,
             modifier = modifier.fillMaxWidth().then(if (onClick != null) press.second else Modifier),
-            shape = shape,
+            shape = resolvedShape,
             color = containerColor,
             content = content,
         )
@@ -118,27 +120,33 @@ fun legacySegmentShape(index: Int, total: Int): Shape {
 }
 
 /**
- * 会随按压**变形**的分段圆角。
+ * 会随按压或焦点高亮**变形**的分段圆角。
  *
- * 实现是"四角分别向 [SegmentOuterRadius] 插值"，用**一条** `animateFloatAsState`
+ * 实现是"四角分别向目标圆角插值"，用**一条** `animateFloatAsState`
  * 驱动（而不是四个 `animateDpAsState`）—— 四角共用同一个进度值，变形过程才不会
  * 出现四个角各走各的节奏。
  *
  * ⚠️ 不可点的行不要传 `pressed = true`：那会做出"能点"的假象。
  */
 @Composable
-fun rememberSegmentShape(index: Int, total: Int, pressed: Boolean): Shape {
+fun rememberSegmentShape(
+    index: Int,
+    total: Int,
+    pressed: Boolean,
+    emphasized: Boolean = false,
+): Shape {
     val morph by animateFloatAsState(
-        targetValue = if (pressed) 1f else 0f,
+        targetValue = if (pressed || emphasized) 1f else 0f,
         animationSpec = CpMotion.spatial(),
         label = "segmentShapeMorph",
     )
     val c = segmentCorners(index, total)
+    val targetRadius = if (emphasized) 24.dp else SegmentOuterRadius
     return RoundedCornerShape(
-        topStart = lerp(c[0], SegmentOuterRadius, morph),
-        topEnd = lerp(c[1], SegmentOuterRadius, morph),
-        bottomEnd = lerp(c[2], SegmentOuterRadius, morph),
-        bottomStart = lerp(c[3], SegmentOuterRadius, morph),
+        topStart = lerp(c[0], targetRadius, morph),
+        topEnd = lerp(c[1], targetRadius, morph),
+        bottomEnd = lerp(c[2], targetRadius, morph),
+        bottomStart = lerp(c[3], targetRadius, morph),
     )
 }
 

@@ -69,6 +69,28 @@ object MusicSourceFromApi {
             .getOrElse { BackendResult.Error("数据解析失败: ${it.message}", cause = it) }
     }
 
+    // ============ 数组取值（跨 Provider 的键名兼容） ============
+
+    /**
+     * 按候选键取**第一个非空**数组；全都空 / 都不存在时返回 `null`。
+     *
+     * ⚠️ 为什么不能写成 `root["a"] ?: root["b"]`：上游经常把**同一个字段既给空的又给满的**。
+     * 实测 `album`（网易云 v1 `/api/v1/album/{id}`）的响应是
+     * `{ album: { ..., songs: [] }, songs: [11 首] }` —— `album.songs` **存在但为空**，
+     * elvis 链在第一项就停下，于是专辑详情恒解析出 0 首曲目，界面永远显示「暂无曲目」。
+     * 判据必须是「非空」，不是「存在」。
+     *
+     * 返回 null（而不是那个空数组）是有意的：调用方因此可以用 `?:` 继续往下找候选键 ——
+     * 若返回空数组，`?:` 会在第一项就短路，等于没修。
+     */
+    private fun JsonObject.firstNonEmptyArray(vararg keys: String): JsonArray? {
+        keys.forEach { key ->
+            val array = this[key] as? JsonArray ?: return@forEach
+            if (array.isNotEmpty()) return array
+        }
+        return null
+    }
+
     // ============ 评论 ============
 
     private val commentJsonDecoder = Json {
@@ -198,10 +220,12 @@ object MusicSourceFromApi {
 
     // ============ 推荐歌单 ============
 
-    /** 从 `recommend` / `result` 数组解析推荐歌单摘要列表。 */
+    /** 从 `recommend` / `result` / `data` 数组解析推荐歌单摘要列表。 */
     fun parseRecommendedPlaylists(json: JsonElement): MusicResult<List<PlaylistSummary>> {
         return json.toMusicResult {
-            val array = (this["recommend"] ?: this["result"] ?: this["playlists"] ?: (this["data"] as? JsonObject)?.get("playlists")) as? JsonArray
+            val array = (this["recommend"] ?: this["result"] ?: this["playlists"]
+                ?: (this["data"] as? JsonObject)?.get("playlists")
+                ?: (this["data"] as? JsonArray)) as? JsonArray
                 ?: JsonArray(emptyList())
             array.mapNotNull { (it as? JsonObject)?.toPlaylistSummary()?.takeIf { playlist -> playlist.id != 0L && playlist.name.isNotBlank() } }
         }
@@ -209,11 +233,16 @@ object MusicSourceFromApi {
 
     // ============ 推荐歌曲（日推） ============
 
-    /** 从 `data.dailySongs` / `data` / `recommend` 数组解析推荐歌曲。 */
+    /** 从 `data.dailySongs` / `data.tracks` / `data` / `recommend` 数组解析推荐歌曲。 */
     fun parseRecommendedSongs(json: JsonElement): MusicResult<List<TrackSummary>> {
         return json.toMusicResult {
             val root = this["data"] as? JsonObject ?: this
-            val array = (root["dailySongs"] ?: root["songs"] ?: this["recommend"] ?: this["result"]) as? JsonArray
+            // 逐级取**非空**数组（见 firstNonEmptyArray）：`dailySongs: []` 与
+            // `tracks: [...]` 同时出现时，只判存在会让日推恒为空。
+            // 候选顺序与收敛前逐条一致，只把「存在」收紧成「非空」。
+            val array = root.firstNonEmptyArray("dailySongs", "tracks", "songs")
+                ?: (this["data"] as? JsonArray)?.takeIf { it.isNotEmpty() }
+                ?: firstNonEmptyArray("recommend", "result")
                 ?: JsonArray(emptyList())
             array.mapNotNull { (it as? JsonObject)?.toTrackSummary()?.takeIf { track -> track.id.isNotBlank() } }
         }
@@ -231,10 +260,15 @@ object MusicSourceFromApi {
      */
     fun parseSearchSongs(json: JsonElement, type: Int = 1): MusicResult<SearchResult> {
         return json.toMusicResult {
-            val result = this["result"] as? JsonObject ?: this
-            val songs = (result["songs"] as? JsonArray ?: JsonArray(emptyList()))
+            val result = (this["data"] as? JsonObject) ?: (this["result"] as? JsonObject) ?: this
+            // 非空优先（见 firstNonEmptyArray）：`tracks: []` 与 `songs: [...]` 同时出现时，
+            // 只判存在会让搜索结果恒为空。
+            val songsArray = result.firstNonEmptyArray("tracks", "songs")
+                ?: (this["data"] as? JsonArray)?.takeIf { it.isNotEmpty() }
+                ?: JsonArray(emptyList())
+            val songs = songsArray
                 .mapNotNull { (it as? JsonObject)?.toTrackSummary()?.takeIf { t -> t.id.isNotBlank() } }
-            val playlists = (result["playlists"] as? JsonArray ?: JsonArray(emptyList()))
+            val playlists = ((result["playlists"] ?: result["playlist"]) as? JsonArray ?: JsonArray(emptyList()))
                 .map { it.jsonObject.toPlaylistSummary() }
                 .filter { it.id != 0L }
             val artists = (result["artists"] as? JsonArray ?: JsonArray(emptyList()))
@@ -483,7 +517,9 @@ object MusicSourceFromApi {
      * 是「这位歌手没有专辑」的正常状态，不该让整页变成错误态。
      */
     private fun parseAlbumArray(root: JsonObject, vararg keys: String): List<AlbumSummary> {
-        val array = keys.firstNotNullOfOrNull { root[it] as? JsonArray } ?: return emptyList()
+        // 取第一个**非空**数组：`{ albums: [], data: [...] }` 这种「空壳键 + 真数据」的组合
+        // 在上游确实存在（见 firstNonEmptyArray），只判存在会拿到空列表。
+        val array = root.firstNonEmptyArray(*keys) ?: return emptyList()
         return array.mapNotNull { el ->
             val obj = el as? JsonObject ?: return@mapNotNull null
             val name = (obj["name"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
@@ -510,16 +546,23 @@ object MusicSourceFromApi {
     // ============ 专辑详情 ============
 
     /**
-     * 解析专辑详情（`album`）：`{ album: { ... songs: [...] } }`。
+     * 解析专辑详情（`album`）：`{ album: { ... }, songs: [...] }`。
      *
-     * 曲目数组优先取 `album.songs`，回退到与 `album` 平级的 `songs`
-     * （部分 Provider 会把歌曲提到顶层）。
+     * 曲目数组优先取 `album.songs`，回退到与 `album` 平级的 `songs` / `tracks`。
+     *
+     * ⚠️ **两处都要判「非空」而不是「存在」**：网易云 v1 `/api/v1/album/{id}` 的实际形状是
+     * `{ album: { ..., songs: [] }, songs: [11 首] }` —— `album.songs` 存在但为空。
+     * 写成 `album["songs"] ?: this["songs"]` 会在第一项短路，恒解析出 0 首曲目，
+     * 界面永远显示「暂无曲目」（2026-10-15 用 JNI 直连音源模块核实过响应体）。
      */
     fun parseAlbumDetail(json: JsonElement): MusicResult<AlbumDetail> {
         return json.toMusicResult {
             val album = this["album"] as? JsonObject ?: this["data"] as? JsonObject ?: this
             val artist = album["artist"] as? JsonObject
-            val rawTracks = (album["songs"] as? JsonArray) ?: (this["songs"] as? JsonArray)
+            // ⚠️ `album.songs` 可能是**存在但为空**的数组，而真正的曲目在顶层 `songs` 里
+            // （网易云 v1 `/api/v1/album/{id}` 就是这个形状）—— 必须判非空，见 firstNonEmptyArray。
+            val rawTracks = album.firstNonEmptyArray("songs")
+                ?: firstNonEmptyArray("songs", "tracks", "data")
             val tracks = (rawTracks ?: JsonArray(emptyList()))
                 .mapNotNull { (it as? JsonObject)?.toTrackSummary()?.takeIf { t -> t.id.isNotBlank() } }
             AlbumDetail(

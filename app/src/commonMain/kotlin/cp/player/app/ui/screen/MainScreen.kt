@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
@@ -111,6 +112,7 @@ import cp.player.app.AppModel
 import cp.player.app.auth.QrLoginStore
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.shareText
+import cp.player.app.ui.component.CpCoverPlaceholder
 import cp.player.app.ui.component.MiniPlayer
 import cp.player.app.ui.component.CpBackButton
 import cp.player.app.ui.component.CpContextMenu
@@ -287,6 +289,7 @@ class MainScreen : Screen {
             DesktopPane.Tabs -> tabs[selectedIndex].label
             DesktopPane.Settings -> "设置"
             DesktopPane.Downloads -> "下载管理"
+            DesktopPane.LocalLibrary -> "本地音乐"
             DesktopPane.RecentPlays -> "最近播放"
             DesktopPane.Messages -> "消息"
             is DesktopPane.Playlist -> pane.playlist.name
@@ -432,10 +435,15 @@ class MainScreen : Screen {
             label = "expandProgress"
         )
 
+        val activeProvider by AppModel.activeProviderFlow.collectAsState()
+
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val expanded = cp.player.app.ui.component.CpBreakpoints.isExpanded(maxWidth)
 
-            CompositionLocalProvider(cp.player.app.ui.component.LocalIsExpanded provides expanded) {
+            CompositionLocalProvider(
+                cp.player.app.ui.component.LocalIsExpanded provides expanded,
+                cp.player.app.ui.component.LocalActiveProvider provides activeProvider,
+            ) {
             // 主内容，应用缩放和变暗
             Box(Modifier.fillMaxSize().graphicsLayer {
                 // Desktop keeps the window layout stable; only compact player expansion scales.
@@ -462,6 +470,7 @@ class MainScreen : Screen {
                                 desktopPane = DesktopPane.Playlist(it)
                             },
                             onOpenDownloads = { desktopPane = DesktopPane.Downloads },
+                            onOpenLocalLibrary = { desktopPane = DesktopPane.LocalLibrary },
                             onOpenRecentPlays = { desktopPane = DesktopPane.RecentPlays },
                             onOpenMessages = {
                                 desktopPane = DesktopPane.Messages
@@ -601,6 +610,8 @@ class MainScreen : Screen {
                                                     // 或宽屏平板自己那条顶栏）—— 页内不再自绘，
                                                     // 否则同一屏会出现两条顶栏。
                                                     DownloadsScreen(embedded = true).Content()
+                                                DesktopPane.LocalLibrary ->
+                                                    LocalLibraryScreen(embedded = true).Content()
                                                 DesktopPane.RecentPlays ->
                                                     RecentPlaysScreen(embedded = true).Content()
                                                 DesktopPane.Messages ->
@@ -1121,6 +1132,7 @@ private fun DesktopSidebar(
     onOpenSettings: () -> Unit,
     onOpenPlaylist: (PlaylistSummary) -> Unit,
     onOpenDownloads: () -> Unit,
+    onOpenLocalLibrary: () -> Unit,
     onOpenRecentPlays: () -> Unit,
     onOpenMessages: () -> Unit,
     onOpenAllPlaylists: () -> Unit,
@@ -1272,6 +1284,14 @@ private fun DesktopSidebar(
                         onClick = {
                             homeState.likedPlaylist?.let(onOpenPlaylist) ?: onSelect(2)
                         },
+                    )
+                }
+                item {
+                    SidebarAction(
+                        icon = Icons.Filled.FolderOpen,
+                        label = "本地音乐",
+                        selected = selectedPane is DesktopPane.LocalLibrary,
+                        onClick = onOpenLocalLibrary,
                     )
                 }
                 item {
@@ -1513,11 +1533,10 @@ private fun SidebarPlaylistRow(
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest),
             contentAlignment = androidx.compose.ui.Alignment.Center,
         ) {
-            Icon(
-                Icons.Filled.MusicNote,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp),
+            CpCoverPlaceholder(
+                modifier = Modifier.fillMaxSize(),
+                corner = 8.dp,
+                animated = false,
             )
             if (!playlist.coverUrl.isNullOrBlank()) {
                 AsyncImage(
@@ -1603,6 +1622,7 @@ private sealed interface DesktopPane {
     data object Tabs : DesktopPane
     data object Settings : DesktopPane
     data object Downloads : DesktopPane
+    data object LocalLibrary : DesktopPane
     data object RecentPlays : DesktopPane
     data object Messages : DesktopPane
     data class Playlist(val playlist: PlaylistSummary) : DesktopPane

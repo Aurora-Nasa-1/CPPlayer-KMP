@@ -18,18 +18,27 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import cp.player.app.AppModel
+import cp.player.app.ui.util.UiEvents
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -59,8 +68,10 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import coil3.compose.AsyncImage
 import cp.player.app.ui.component.ContentState
+import cp.player.app.ui.component.CpCoverPlaceholder
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
+import cp.player.app.ui.component.CpToggleChip
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.i18n.CpStrings
@@ -150,57 +161,19 @@ private fun DownloadsScreenContent(model: DownloadsScreenModel, modifier: Modifi
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
             Row(
                 Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                    .padding(horizontal = CpSpacing.pageHorizontal, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 tabs.forEachIndexed { index, tab ->
                     val isSelected = pagerState.currentPage == index
-                    Surface(
-                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
-                        shape = RoundedCornerShape(percent = 50),
-                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
-                    ) {
-                        Row(
-                            Modifier.padding(
-                                horizontal = if (isSelected) 20.dp else 14.dp,
-                                vertical = 10.dp,
-                            ),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                tab.icon, null,
-                                tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp),
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                tab.label,
-                                style = MaterialTheme.typography.labelLarge,
-                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                            )
-                            if (tab.count > 0) {
-                                Spacer(Modifier.width(6.dp))
-                                Surface(
-                                    shape = RoundedCornerShape(percent = 50),
-                                    color = if (isSelected) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.surfaceContainerHighest,
-                                ) {
-                                    Text(
-                                        if (tab.count > 99) "99+" else tab.count.toString(),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary
-                                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    val countLabel = if (tab.count > 0) " (${if (tab.count > 99) "99+" else tab.count})" else ""
+                    CpToggleChip(
+                        checked = isSelected,
+                        onCheckedChange = { if (it) scope.launch { pagerState.animateScrollToPage(index) } },
+                        label = "${tab.label}$countLabel",
+                        icon = tab.icon,
+                    )
                 }
             }
         }
@@ -250,6 +223,8 @@ private fun DownloadsScreenContent(model: DownloadsScreenModel, modifier: Modifi
 private fun ActiveDownloadsTab(state: DownloadsUiState, model: DownloadsScreenModel) {
     val tasks = state.activeTasks
     val s = cpStrings()
+    var showCancelAllConfirm by remember { mutableStateOf(false) }
+
     if (tasks.isEmpty()) {
         DownloadsPageBox {
             StateSurface(emptyStateModifier()) {
@@ -261,6 +236,10 @@ private fun ActiveDownloadsTab(state: DownloadsUiState, model: DownloadsScreenMo
         }
         return
     }
+
+    val hasRunning = tasks.any { it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.PENDING }
+    val hasPaused = tasks.any { it.status == DownloadStatus.PAUSED }
+
     DownloadsPageBox {
         LazyScrollColumn(
             pageContentModifier(),
@@ -272,10 +251,82 @@ private fun ActiveDownloadsTab(state: DownloadsUiState, model: DownloadsScreenMo
             ),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            item(key = "batch_controls") {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.7f),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            "队列任务 (${tasks.size})",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            if (hasRunning) {
+                                FilledTonalButton(
+                                    onClick = { model.pauseAll() },
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                    shape = RoundedCornerShape(50),
+                                ) {
+                                    Icon(Icons.Filled.Pause, null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("全部暂停", style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                            if (hasPaused) {
+                                FilledTonalButton(
+                                    onClick = { model.resumeAll() },
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                    shape = RoundedCornerShape(50),
+                                ) {
+                                    Icon(Icons.Filled.PlayArrow, null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("全部继续", style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                            OutlinedButton(
+                                onClick = { showCancelAllConfirm = true },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                shape = RoundedCornerShape(50),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.error,
+                                ),
+                            ) {
+                                Icon(Icons.Filled.Close, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("全部取消", style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                    }
+                }
+            }
             items(tasks, key = { it.id }) { task ->
                 ActiveTaskCard(task = task, model = model)
             }
         }
+    }
+
+    if (showCancelAllConfirm) {
+        cp.player.app.ui.component.CpConfirmDialog(
+            title = "取消全部下载",
+            message = "确定要取消所有进行中的下载任务吗？未完成的临时文件将被清除。",
+            confirmLabel = "全部取消",
+            onConfirm = {
+                model.cancelAll(s)
+                showCancelAllConfirm = false
+            },
+            onDismiss = { showCancelAllConfirm = false },
+        )
     }
 }
 
@@ -451,7 +502,28 @@ private fun CompletedTaskCard(
     /** 请求删除（文件 + 记录）；由宿主弹二次确认后再真正执行。 */
     onDelete: () -> Unit = { model.remove(task, deleteFile = true, strings) },
 ) {
+    val navigator = cafe.adriel.voyager.navigator.LocalNavigator.current
+    var menuExpanded by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val isVideo = task.mediaType == MediaType.VIDEO
+    val mediaId = task.localPath?.let { path ->
+        if (isVideo) "local://video/$path" else "local://audio/$path"
+    }
+
     Surface(
+        onClick = {
+            if (isVideo) {
+                task.localPath?.let { path ->
+                    navigator?.push(VideoPlayerScreen("local://video/$path", title = task.title))
+                }
+            } else {
+                mediaId?.let { id ->
+                    AppModel.playTrackClicked(id) {
+                        AppModel.playback.playQueue(listOf(id), startIndex = 0)
+                    }
+                }
+            }
+        },
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = modifier,
@@ -484,13 +556,91 @@ private fun CompletedTaskCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            // 删除：文件 + 记录（先经宿主的二次确认）
-            IconButton(onClick = onDelete) {
-                Icon(
-                    Icons.Filled.Delete,
-                    contentDescription = "删除文件与记录",
-                    tint = MaterialTheme.colorScheme.error,
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (isVideo) {
+                    IconButton(onClick = {
+                        task.localPath?.let { path ->
+                            navigator?.push(VideoPlayerScreen("local://video/$path", title = task.title))
+                        }
+                    }) {
+                        Icon(
+                            Icons.Filled.PlayArrow,
+                            contentDescription = "播放视频",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                } else if (mediaId != null) {
+                    IconButton(onClick = {
+                        scope.launch {
+                            AppModel.playback.addNextToQueue(mediaId)
+                            UiEvents.notify("已添加为下一首播放")
+                        }
+                    }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.QueueMusic,
+                            contentDescription = "下一首播放",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(
+                            Icons.Filled.MoreVert,
+                            contentDescription = "更多操作",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false },
+                    ) {
+                        if (isVideo) {
+                            task.localPath?.let { path ->
+                                DropdownMenuItem(
+                                    text = { Text("播放视频") },
+                                    leadingIcon = { Icon(Icons.Filled.PlayArrow, null) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        navigator?.push(VideoPlayerScreen("local://video/$path", title = task.title))
+                                    },
+                                )
+                            }
+                        } else if (mediaId != null) {
+                            DropdownMenuItem(
+                                text = { Text("加入播放队列") },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    scope.launch {
+                                        AppModel.playback.addToQueue(mediaId)
+                                        UiEvents.notify("已加入播放队列")
+                                    }
+                                },
+                            )
+                        }
+                        task.localPath?.let { path ->
+                            DropdownMenuItem(
+                                text = { Text("在文件管理器中打开") },
+                                leadingIcon = { Icon(Icons.Filled.FolderOpen, null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    cp.player.app.platform.openInFileManager(path)
+                                },
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("删除文件与记录", color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = {
+                                Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error)
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onDelete()
+                            },
+                        )
+                    }
+                }
             }
         }
     }
@@ -517,16 +667,21 @@ private fun TaskCover(coverUrl: String?, mediaType: MediaType, modifier: Modifie
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
                 )
-            } else {
+            } else if (mediaType == MediaType.VIDEO) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Icon(
-                        if (mediaType == MediaType.VIDEO) Icons.Filled.VideoLibrary
-                        else Icons.Filled.MusicNote,
+                        Icons.Filled.VideoLibrary,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(22.dp),
                     )
                 }
+            } else {
+                CpCoverPlaceholder(
+                    modifier = Modifier.fillMaxSize(),
+                    corner = 12.dp,
+                    animated = false,
+                )
             }
         }
     }

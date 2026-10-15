@@ -105,6 +105,7 @@ fun App(
         AppModel.startListeningRecorder()
         AppModel.startRecentTracksEnrich()
         AppModel.startCoverColorTracking()
+        AppModel.startFmAutoLoader()
     }
 
     // 网络类型变化（WiFi ↔ 蜂窝/热点）：按当前网络重选音质档位并同步给播放控制器。
@@ -285,7 +286,8 @@ fun App(
                                             show = startDestination is AppStartDestination.Main &&
                                                 navigator.lastItem !is MainScreen &&
                                                 navigator.lastItem !is PlayerScreen &&
-                                                navigator.lastItem !is ChatScreen,
+                                                navigator.lastItem !is ChatScreen &&
+                                                navigator.lastItem !is cp.player.app.ui.screen.VideoPlayerScreen,
                                             onClick = { navigator.push(PlayerScreen()) },
                                         ) {
                                             ScreenTransition(

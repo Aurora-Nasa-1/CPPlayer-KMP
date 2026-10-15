@@ -14,8 +14,11 @@ import kotlin.test.assertEquals
  * 而 `comment/new` 又不在 `MusicApiServiceImpl` 的响应校验表里 —— 连响应形态都没人校验。
  * 对照基准是旧项目 `reference/cp-player-legacy` 里同样的 `when` 分支。
  *
- * 映射是纯函数、测起来最便宜，所以钉住它。它同时决定了
- * `CachedMusicApiService.isCacheable` 必须覆盖哪几个方法：漏一个，那个分支就静默不走缓存。
+ * 映射是纯函数、测起来最便宜，所以钉住它。
+ *
+ * ⚠️ 它**不再**决定评论列表的端点：列表已改走 `comment/new`（老端点收不到 `sortType`，
+ * 三个排序页签会拿到同一份列表，见 `MusicApiServiceImpl.getComments`）。本映射现在只剩
+ * 「资源类型 → 老端点」的语义，没有生产调用方 —— 留着是为了与旧 Provider / 旧项目对照。
  */
 class CommentMethodMappingTest {
 

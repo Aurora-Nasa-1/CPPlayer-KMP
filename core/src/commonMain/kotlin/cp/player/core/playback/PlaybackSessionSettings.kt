@@ -43,6 +43,15 @@ object PlaybackSessionSettings {
      */
     const val DEFAULT_KEEP_LAST_PLAYBACK = true
 
+    /**
+     * 播放引擎选择键。
+     *
+     * 值：[ENGINE_STANDARD] (标准) 或 [ENGINE_FLICK_HIRES] (发烧级专有引擎)。
+     */
+    const val KEY_AUDIO_ENGINE = "playback_audio_engine"
+    const val ENGINE_STANDARD = "standard"
+    const val ENGINE_FLICK_HIRES = "flick_hires"
+
     /** 读取开关；缺失或非法值回落到 [DEFAULT_KEEP_LAST_PLAYBACK]。 */
     fun keepLastPlayback(storage: SettingsStorage): Boolean =
         storage.getString(KEY_KEEP_LAST_PLAYBACK)?.toBooleanStrictOrNull()

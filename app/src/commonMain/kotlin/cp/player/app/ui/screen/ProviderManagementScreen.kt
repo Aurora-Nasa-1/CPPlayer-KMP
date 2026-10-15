@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -159,6 +160,7 @@ class ProviderManagementScreen : Screen {
                             }
                         }
                         itemsIndexed(providers, key = { _, provider -> provider.id }) { index, provider ->
+                            val schemas = provider.settingsSchema
                             ProviderRow(
                                 provider = provider,
                                 index = index,
@@ -185,6 +187,9 @@ class ProviderManagementScreen : Screen {
                                     updateTarget = provider
                                     pickZip()
                                 },
+                                onOpenSettings = if (!schemas.isNullOrEmpty()) {
+                                    { navigator.push(ProviderCustomSettingsScreen(provider.id, provider.name, schemas)) }
+                                } else null,
                             )
                         }
                     }
@@ -292,6 +297,7 @@ private fun ProviderRow(
     onDelete: () -> Unit,
     onExport: (destPath: String?) -> Boolean,
     onUpdate: () -> Unit,
+    onOpenSettings: (() -> Unit)? = null,
 ) {
     // 当前音源那行的底色是 primaryContainer，行尾控件必须跟着换成它的前景色 ——
     // 继续用 onSurfaceVariant 会在浅色主题下掉对比度。
@@ -358,6 +364,16 @@ private fun ProviderRow(
                         expanded = menuOpen,
                         onDismissRequest = { menuOpen = false },
                     ) {
+                        if (!provider.settingsSchema.isNullOrEmpty() && onOpenSettings != null) {
+                            DropdownMenuItem(
+                                text = { Text("音源配置") },
+                                leadingIcon = { Icon(Icons.Filled.Tune, null) },
+                                onClick = {
+                                    menuOpen = false
+                                    onOpenSettings()
+                                },
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text("导出模块") },
                             leadingIcon = { Icon(Icons.Filled.FileUpload, null) },

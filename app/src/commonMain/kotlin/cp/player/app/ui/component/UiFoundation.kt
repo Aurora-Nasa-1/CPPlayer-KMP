@@ -32,7 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -344,17 +344,19 @@ fun ContentState(
 @Composable
 fun rememberPressedScale(
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+    pressedScale: Float = 0.97f,
 ): Pair<MutableInteractionSource, Modifier> {
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.98f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium,
-        ),
+        targetValue = if (pressed) pressedScale else 1f,
+        animationSpec = cp.player.app.ui.theme.CpMotion.spatialFast(),
         label = "pressedScale",
     )
-    return interactionSource to Modifier.scale(scale)
+    val pressModifier = Modifier.graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }
+    return interactionSource to pressModifier
 }
 
 @Composable

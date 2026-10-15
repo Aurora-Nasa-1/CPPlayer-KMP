@@ -2,6 +2,7 @@ package cp.player.core.provider
 
 import cp.player.core.util.PlatformContext
 import cp.player.core.util.createHttpClient
+import cp.player.core.util.defaultSettingsStorage
 import io.ktor.client.call.body
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -30,26 +31,48 @@ class HttpProvider(
     override val targetAppPackage: String? = null,
     override val loginMethods: List<String>? = null,
     override val capabilities: List<String>? = null,
-    override val apiVersion: Int = 1
+    override val apiVersion: Int = 1,
+    override val contract: String? = null,
+    override val settingsSchema: List<ProviderSettingItemSchema>? = null
 ) : BackendProvider {
 
     override val type: ProviderType = ProviderType.HTTP
 
     private val client = createHttpClient()
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
+    private val configStorage by lazy { defaultSettingsStorage("provider_config_$id") }
 
     override fun startServer(context: PlatformContext, port: Int) {}
     override fun stopServer() {}
 
     override fun callApi(method: String, params: Map<String, String>): String {
+        val configJson = settingsSchema?.let { schema ->
+            buildJsonObject {
+                schema.forEach { item ->
+                    val v = configStorage.getString(item.key) ?: item.default
+                    if (v != null) put(item.key, JsonPrimitive(v))
+                }
+            }.toString()
+        }
+
         val body = buildJsonObject {
+            // 先注入用户在音源配置项中的值（作为基础上下文）
+            settingsSchema?.forEach { item ->
+                val v = configStorage.getString(item.key) ?: item.default
+                if (v != null) put(item.key, JsonPrimitive(v))
+            }
+            // 运行时实际调用的业务参数（覆盖同名字段）
             params.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
         }.toString()
+
         return try {
             // callApi 是同步契约，使用 runBlocking 转发 IO 协程
             kotlinx.coroutines.runBlocking {
                 val resp: HttpResponse = client.post("${baseUrl.trimEnd('/')}/$method") {
                     contentType(ContentType.Application.Json)
+                    if (configJson != null) {
+                        headers.append("X-Provider-Config", configJson)
+                    }
                     setBody(body)
                 }
                 resp.bodyAsText()

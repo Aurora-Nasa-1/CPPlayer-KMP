@@ -109,9 +109,6 @@ internal class XiaomiSuperIslandBridge(
         lastPayloadKey = null
     }
 
-    /** 当前设备是否可能渲染超级岛（不满足时上游会静默降级为普通通知）。 */
-    fun isSupported(): Boolean = runCatching { FocusUtils.isSupportIsland() }.getOrDefault(false)
-
     fun sendFrame(
         track: LyricPushTrack?,
         lines: List<SyncedLyricLine>,
@@ -493,3 +490,13 @@ internal class XiaomiSuperIslandBridge(
         const val SEEK_BAR_TRACK = "#333333"
     }
 }
+
+/**
+ * `actual`：HyperOS 焦点通知协议是否可用（读系统属性 `persist.sys.feature.island`）。
+ *
+ * 判据本身很便宜，但**可能抛**（`PropUtils` 内部走 `SystemProperties` 反射，命中非 SDK
+ * 接口限制时会抛），所以整体 runCatching 并 fail-closed 到 `false` —— 判成「不支持」
+ * 只影响设置页那一行文案，判成「支持」却发不出去才是误导。
+ */
+actual fun isSuperIslandSupported(): Boolean =
+    runCatching { FocusUtils.isSupportIsland() }.getOrDefault(false)

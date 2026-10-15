@@ -52,6 +52,7 @@ import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.popOrNotify
 import cp.player.core.BackendResult
 import cp.player.core.music.TrackSummary
+import cp.player.core.provider.ProviderCapability
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -154,6 +155,10 @@ class CloudDriveScreenModel : ScreenModel {
 
     /** 从第一页重拉（首次 / 下拉 / 切源 / 换账号）。IO 线程只取数，状态回写在 Main。 */
     fun load(force: Boolean = false) {
+        if (!AppModel.activeProviderSupports(ProviderCapability.CLOUD_DRIVE)) {
+            _state.value = CloudDriveUiState(loading = false, error = "当前音源未提供云盘功能")
+            return
+        }
         if (_state.value.loading && job?.isActive == true && !force) return
         job?.cancel()
         moreJob?.cancel()

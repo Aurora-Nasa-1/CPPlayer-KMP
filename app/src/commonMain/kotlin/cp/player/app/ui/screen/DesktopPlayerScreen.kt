@@ -2,6 +2,7 @@ package cp.player.app.ui.screen
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,11 +28,20 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.SmartDisplay
+import cafe.adriel.voyager.navigator.LocalNavigator
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeMute
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -68,7 +78,9 @@ import cp.player.app.ui.component.PlayerMoreSheets
 import cp.player.app.ui.component.rememberPlayerMoreSheetState
 // 这两个是本包的顶层函数（PlayerScreen.kt）：不用 import（同包），
 // 这里写注释而不是 import 是为了防止后来者以为漏了导入又加一条多余的 import。
+import cp.player.app.ui.component.PlaybackControls
 import cp.player.app.ui.theme.CpMotion
+import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.SeekAvailability
 import cp.player.app.ui.util.formatTimeMs
 import cp.player.app.ui.util.pushOrNotify
@@ -139,6 +151,7 @@ fun DesktopPlayerScreen(
     // 时的唯一背景，以及流体背景在 Android 12 及以下（没有 RuntimeShader）时的实际外观。
     // 两套播放页（本页与窄屏 PlayerScreen）共用同一个 `cpFluidBackground` 组件，
     // 参数也共用 `CpFluidBackgroundDefaults` —— 别在这里另起一套速度 / 尺度。
+    val isDark = LocalIsDarkTheme.current
     val surfaceHigh = MaterialTheme.colorScheme.surfaceContainerHigh
     val background0 = MaterialTheme.colorScheme.background
     val background = remember(surfaceHigh, background0) {
@@ -150,58 +163,113 @@ fun DesktopPlayerScreen(
     val fluidBackground by AppModel.fluidBackgroundFlow.collectAsState()
     // 封面「呼吸」：播放时收紧圆角，暂停时松开。
     val artCorner by animateDpAsState(
-        targetValue = if (state.isPlaying) 18.dp else 26.dp,
+        targetValue = if (state.isPlaying) 20.dp else 28.dp,
         animationSpec = CpMotion.spatialSlow(),
         label = "desktopArtCorner",
     )
+    val cardShape = MaterialTheme.shapes.extraExtraLarge
+    val cardBorder = Modifier.border(
+        width = 1.dp,
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.18f else 0.32f),
+        shape = cardShape,
+    )
+    val cardBg = if (isDark) MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.42f)
+    else MaterialTheme.colorScheme.surface.copy(alpha = 0.62f)
 
-    Box(Modifier.fillMaxSize().cpFluidBackground(enabled = fluidBackground, fallback = background).padding(28.dp)) {
+    Box(Modifier.fillMaxSize().cpFluidBackground(enabled = fluidBackground, fallback = background).padding(24.dp)) {
         Column(Modifier.fillMaxSize()) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.Filled.Close, "收起播放页") }
-                Column(Modifier.weight(1f).padding(start = 8.dp)) {
-                    Text("正在播放", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                    // 副标题写**专辑**（没有就退到歌手）。原先这里恒为「音乐」——
-                    // 一个对任何曲目都成立、也就等于什么都没说的字符串。
-                    // 同一屏下方已经有大字歌名了，重复它同样没有收益。
-                    // 次级信息走 CpText 默认档（悬停浮出），焦点位在下方的大字歌名上。
-                    CpText(
-                        text = track.album?.takeIf { it.isNotBlank() } ?: track.artist,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                    )
-                }
-                // 此前这里只有一个 `onClick = { /* reserved */ }` 的假按钮，被以
-                // 「假可供性比缺入口更糟」为由删掉 —— 删得对，但连带把「更多」这组功能
-                // （加入歌单 / 下载 / 睡眠定时 / 不感兴趣 / 分享 / 歌曲信息）从宽屏整个
-                // 取消了，而宽屏是桌面默认形态（1320×860 ≥ 840 断点）。
-                // 现在补回**真**入口：弹层宿主是共享组件 PlayerMoreSheets（本页末尾挂载），
-                // 与窄屏布局复用同一份动作实现。外观与窄屏顶栏的「队列」按钮同款
-                // （FilledIconButton + surfaceContainerHighest），不另造一套。
-                FilledIconButton(
-                    onClick = { moreSheets.showMoreMenu = true },
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                    ),
+            // 顶栏：左侧收起 + 专辑，右侧音质标识 + 音量控制胶囊 + 更多菜单
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f, fill = false),
                 ) {
-                    Icon(Icons.Filled.MoreVert, contentDescription = "更多")
+                    IconButton(onClick = onBack) { Icon(Icons.Filled.Close, "收起播放页") }
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("正在播放", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            state.formatInfo?.qualityLabel?.let { qLabel ->
+                                Surface(
+                                    shape = MaterialTheme.shapes.small,
+                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                                ) {
+                                    Text(
+                                        text = qLabel,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    )
+                                }
+                            }
+                            val isFlickEngine = AppModel.audioEngineFlow.collectAsState().value == cp.player.core.playback.PlaybackSessionSettings.ENGINE_FLICK_HIRES
+                            if (isFlickEngine) {
+                                Surface(
+                                    shape = MaterialTheme.shapes.small,
+                                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                                    modifier = Modifier.clickable {
+                                        navigator?.push(AudioEngineSettingsScreen())
+                                    },
+                                ) {
+                                    Text(
+                                        text = "Flick Hi-Res · 独占",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    )
+                                }
+                            }
+                        }
+                        CpText(
+                            text = track.album?.takeIf { it.isNotBlank() } ?: track.artist,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                        )
+                    }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    // 桌面端专属音量调节胶囊
+                    DesktopVolumeControl()
+
+                    FilledIconButton(
+                        onClick = { moreSheets.showMoreMenu = true },
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                        ),
+                    ) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "更多")
+                    }
                 }
             }
-            Spacer(Modifier.height(18.dp))
-            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+
+            Spacer(Modifier.height(16.dp))
+
+            // 核心工作区：双浮动表现力岛屿（左：大屏控制台，右：多功能展示区）
+            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                // 左侧播放控制岛
                 Surface(
-                    Modifier.weight(1.15f).fillMaxHeight(),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
+                    modifier = Modifier.weight(1.15f).fillMaxHeight().then(cardBorder),
+                    shape = cardShape,
+                    color = cardBg,
+                    shadowElevation = 0.dp,
                 ) {
-                    Box(Modifier.fillMaxSize().padding(28.dp), contentAlignment = Alignment.Center) {
-                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                            // 封面必须保持 1:1。旧版写的是 `fillMaxWidth().weight(1f)`，
-                            // 那是「把剩余高度全吃掉」——面板越扁封面越扁（1400×900 实测
-                            // 502×420），被拉伸的专辑封面一眼就看出不对。
-                            // `aspectRatio` 在受限容器里会自动取**能放下的最大正方形**。
+                    Box(Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 24.dp), contentAlignment = Alignment.Center) {
+                        Column(
+                            Modifier.fillMaxWidth().widthIn(max = 560.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            // 封面保持 1:1，居中微光悬浮
                             Box(
                                 modifier = Modifier.fillMaxWidth().weight(1f),
                                 contentAlignment = Alignment.Center,
@@ -211,11 +279,10 @@ fun DesktopPlayerScreen(
                                     Modifier.aspectRatio(1f).clip(RoundedCornerShape(artCorner)),
                                 )
                             }
-                            Spacer(Modifier.height(22.dp))
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+
+                            // 歌曲标题与艺术家
+                            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
-                                    // 播放页大标题 = 焦点位：溢出时横向滚动（跑马灯），
-                                    // 而不是留一个省略号。静态观感不变（默认 Tail 档）。
                                     CpText(
                                         text = track.name,
                                         style = MaterialTheme.typography.headlineSmall,
@@ -231,13 +298,32 @@ fun DesktopPlayerScreen(
                                         maxLines = 1,
                                     )
                                 }
-                                IconButton(onClick = onLike) {
-                                    Icon(if (state.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, "收藏", tint = if (state.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    track.mvId?.takeIf { it > 0 }?.let { mvId ->
+                                        val nav = LocalNavigator.current
+                                        IconButton(
+                                            onClick = {
+                                                nav?.push(VideoPlayerScreen("netease://mv/$mvId"))
+                                            },
+                                        ) {
+                                            Icon(
+                                                Icons.Filled.SmartDisplay,
+                                                contentDescription = "播放 MV",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                            )
+                                        }
+                                    }
+                                    IconButton(onClick = onLike) {
+                                        Icon(
+                                            if (state.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                                            "收藏",
+                                            tint = if (state.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                 }
                             }
-                            // 波形进度条（内部叠了透明 Slider 接手势，松手才 seek）。
-                            // 波纹流动跟随播放状态：播放中以 M3 规格流动（每秒一个波长），
-                            // 暂停时静止 —— 「画面随声音停住」，暂停态也回到零逐帧重绘。
+
+                            // 波形进度条
                             CpSeekBar(
                                 positionMs = state.positionMs,
                                 durationMs = duration,
@@ -247,10 +333,9 @@ fun DesktopPlayerScreen(
                                 trackKey = track.id,
                                 modifier = Modifier.fillMaxWidth(),
                             )
+
+                            // 时间行与禁用原因
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                // 与紧凑版播放页的时间行**同款**（labelMedium + onSurfaceVariant）。
-                                // 之前这里是 labelSmall 且没给颜色 ⇒ 继承 onSurface（全亮），
-                                // 同一个「已播 / 总时长」在桌面端比手机端更抢眼、字还更小。
                                 val formattedPosition = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
                                 Text(
                                     formattedPosition,
@@ -263,8 +348,6 @@ fun DesktopPlayerScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                            // 禁用滑条必须给出原因：静默失效的观感就是「拖了没反应」。
-                            // 两种原因互斥呈现（落盘优先），由 SeekAvailability 统一决定。
                             SeekAvailability.disabledReason(duration, state.isLocalizing)?.let { reason ->
                                 Text(
                                     reason,
@@ -272,29 +355,43 @@ fun DesktopPlayerScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
+
+                            // M3E 播放控制组件
                             PlayerControls(state, onTogglePlay, onSkipNext, onSkipPrev, onRepeat, onShuffle)
                         }
                     }
                 }
+
+                // 右侧沉浸展示岛
                 Surface(
-                    Modifier.weight(1f).fillMaxHeight(),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                    modifier = Modifier.weight(1f).fillMaxHeight().then(cardBorder),
+                    shape = cardShape,
+                    color = cardBg,
+                    shadowElevation = 0.dp,
                 ) {
                     Column(Modifier.fillMaxSize().padding(22.dp)) {
-                        // 用 Expressive 的 ToggleButton 代替 TabRow：选中态由**形状**表达
-                        // （圆角方形 ↔ 胶囊），而不是一条下划线 —— 这是 M3 Expressive 与
-                        // M3 基础版在「分段选择」上最直观的差别。
-                        // 四个页签（队列 / 歌词 / 评论 / 相似）。相似歌曲以**当前在播曲目**
-                        // 为种子，种子变化由 SimilarSongsPanel 内部处理（切歌自动重新拉取）。
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf("队列", "歌词", "评论", "相似").forEachIndexed { index, title ->
-                                CpToggleChip(
-                                    checked = selectedTab == index,
-                                    onCheckedChange = { selectedTab = index },
-                                    label = title,
-                                    modifier = Modifier.weight(1f),
-                                )
+                        // 居中聚集的胶囊页签切换药丸组，告别空洞撑满整宽
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                        ) {
+                            Surface(
+                                shape = MaterialTheme.shapes.extraLarge,
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.55f),
+                            ) {
+                                Row(
+                                    Modifier.padding(4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    listOf("队列", "歌词", "评论", "相似").forEachIndexed { index, title ->
+                                        CpToggleChip(
+                                            checked = selectedTab == index,
+                                            onCheckedChange = { selectedTab = index },
+                                            label = title,
+                                        )
+                                    }
+                                }
                             }
                         }
                         Spacer(Modifier.height(16.dp))
@@ -314,7 +411,6 @@ fun DesktopPlayerScreen(
                 }
             }
         }
-
     }
 
     // 「更多」弹层 + 二级弹窗宿主：与窄屏播放页共用同一组件（PlayerMoreSheets）。
@@ -326,7 +422,11 @@ private fun QueueContent(state: PlaybackUiState, scope: kotlinx.coroutines.Corou
     LazyScrollColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         itemsIndexed(state.queue) { index, item ->
             val selected = index == state.currentIndex
-            Surface(onClick = { scope.launch { onPlayAt(index) } }, shape = MaterialTheme.shapes.medium, color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent) {
+            Surface(
+                onClick = { scope.launch { onPlayAt(index) } },
+                shape = MaterialTheme.shapes.medium,
+                color = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.70f) else Color.Transparent,
+            ) {
                 Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("${index + 1}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(24.dp))
                     Artwork(item.coverUrl, Modifier.size(42.dp).clip(MaterialTheme.shapes.small))
@@ -369,30 +469,109 @@ private fun Artwork(url: String?, modifier: Modifier) {
 }
 
 @Composable
-private fun PlayerControls(state: PlaybackUiState, onTogglePlay: () -> Unit, onNext: () -> Unit, onPrev: () -> Unit, onRepeat: () -> Unit, onShuffle: () -> Unit) {
+private fun DesktopVolumeControl(modifier: Modifier = Modifier) {
+    val playback = AppModel.playback
+    var volume by remember { mutableStateOf(playback.currentVolume) }
+    var lastNonZeroVolume by remember { mutableStateOf(if (volume > 0.05f) volume else 1f) }
+    val isMuted = volume <= 0.001f
+
+    Surface(
+        modifier = modifier.height(40.dp),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            IconButton(
+                onClick = {
+                    if (isMuted) {
+                        volume = lastNonZeroVolume
+                        playback.setVolume(lastNonZeroVolume)
+                    } else {
+                        lastNonZeroVolume = volume
+                        volume = 0f
+                        playback.setVolume(0f)
+                    }
+                },
+                modifier = Modifier.size(28.dp),
+            ) {
+                Icon(
+                    imageVector = when {
+                        isMuted -> Icons.AutoMirrored.Filled.VolumeOff
+                        volume < 0.5f -> Icons.AutoMirrored.Filled.VolumeMute
+                        else -> Icons.AutoMirrored.Filled.VolumeUp
+                    },
+                    contentDescription = if (isMuted) "取消静音" else "静音",
+                    modifier = Modifier.size(18.dp),
+                    tint = if (isMuted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            Slider(
+                value = volume,
+                onValueChange = {
+                    volume = it
+                    playback.setVolume(it)
+                },
+                valueRange = 0f..1f,
+                modifier = Modifier.width(96.dp).height(24.dp),
+                colors = SliderDefaults.colors(
+                    thumbColor = MaterialTheme.colorScheme.primary,
+                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                    inactiveTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                ),
+            )
+            Text(
+                text = "${(volume * 100).toInt()}%",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.width(32.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayerControls(
+    state: PlaybackUiState,
+    onTogglePlay: () -> Unit,
+    onNext: () -> Unit,
+    onPrev: () -> Unit,
+    onRepeat: () -> Unit,
+    onShuffle: () -> Unit
+) {
     Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+        Modifier.fillMaxWidth().widthIn(max = 480.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // 随机 / 循环改用 [CpModeToggle]，与紧凑版播放页**同款**：
-        // 选中态由「容器长出来 + 形状从圆角方变正圆」两层表达，而不是只把图标换个颜色
-        // —— 后者和「禁用态」几乎分不清，是这套 UI 里最弱的一种状态表达，
-        // 而桌面端恰恰是这三颗按钮被点得最多的地方。
+        // 随机播放
         CpModeToggle(
             active = state.shuffleEnabled,
             onClick = onShuffle,
             icon = Icons.Filled.Shuffle,
             label = "随机播放",
         )
-        IconButton(onClick = onPrev, modifier = Modifier.size(52.dp)) { Icon(Icons.Filled.SkipPrevious, "上一首", Modifier.size(30.dp)) }
-        CpPlayPauseButton(
+
+        // 中央 M3E 表现力胶囊控件：上一首 / 播放暂停 / 下一首
+        PlaybackControls(
             isPlaying = state.isPlaying,
-            onClick = onTogglePlay,
-            size = 64.dp,
-            isLoading = state.isBuffering,
+            isBuffering = state.isBuffering,
+            onPlayPause = onTogglePlay,
+            onSkipNext = onNext,
+            onSkipPrevious = onPrev,
+            modifier = Modifier.widthIn(max = 280.dp).padding(horizontal = 8.dp),
+            sideButtonModifier = Modifier.height(56.dp),
+            centerButtonModifier = Modifier.height(56.dp),
+            sideWeight = 1f,
+            centerWeight = 1.25f,
+            sideIconSize = 28.dp,
+            centerIconSize = 32.dp,
         )
-        IconButton(onClick = onNext, modifier = Modifier.size(52.dp)) { Icon(Icons.Filled.SkipNext, "下一首", Modifier.size(30.dp)) }
+
+        // 循环模式
         CpModeToggle(
             active = state.repeatMode != RepeatMode.OFF,
             onClick = onRepeat,
