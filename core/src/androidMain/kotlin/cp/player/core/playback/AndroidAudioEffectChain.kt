@@ -102,6 +102,7 @@ internal class DynamicsProcessingChain(initialSessionId: Int) : AudioEffectChain
                 println("[$TAG] DynamicsProcessing 创建失败（session=$sessionId）: ${it.message}")
             }
             .getOrNull()
+        effect?.let { applyInternal(lastConfig) }
     }
 
     /**
@@ -154,6 +155,12 @@ internal class DynamicsProcessingChain(initialSessionId: Int) : AudioEffectChain
             applyEqualizer(dp, if (on) config.equalizer else null)
             applyBalance(dp, if (on) config.mixer else null)
             applyLimiter(dp, if (on) config.leveling else null)
+            // ⚠️ 关键：DynamicsProcessing 继承自 AudioEffect，默认处于禁用状态（mEnabled=false）。
+            // 必须显式 setEnabled(true) 才会真正接入系统混音管线并处理音频，否则所有配置均被静默旁路。
+            val shouldEnable = on && config.anyFeatureEnabled
+            if (dp.enabled != shouldEnable) {
+                dp.enabled = shouldEnable
+            }
         }.onFailure { println("[$TAG] 应用音效失败: ${it.message}") }
     }
 
@@ -273,7 +280,7 @@ internal class DynamicsProcessingChain(initialSessionId: Int) : AudioEffectChain
 
     @Synchronized
     override fun onAudioSessionChanged(sessionId: Int) {
-        if (sessionId == currentSessionId) return
+        if (sessionId == currentSessionId && effect != null) return
         rebuild(sessionId)
     }
 

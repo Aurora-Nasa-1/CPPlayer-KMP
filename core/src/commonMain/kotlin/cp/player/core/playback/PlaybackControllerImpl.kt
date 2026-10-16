@@ -712,8 +712,8 @@ class PlaybackControllerImpl(
 
     override fun togglePlayPause() {
         when (platform.state.value) {
-            PlatformPlaybackState.Playing -> platform.pause()
-            PlatformPlaybackState.Paused, PlatformPlaybackState.Ready -> platform.play()
+            PlatformPlaybackState.Playing -> pause()
+            PlatformPlaybackState.Paused, PlatformPlaybackState.Ready -> resume()
             PlatformPlaybackState.Ended -> {
                 if (_index in _queue.indices) scope.launch { playCurrent() }
             }
@@ -1324,6 +1324,7 @@ class PlaybackControllerImpl(
             platform.setVolume(userVolume)
             return
         }
+        platform.setVolume(0f)
         fadeRunner.start(
             from = 0f,
             to = userVolume,
@@ -1463,7 +1464,9 @@ class PlaybackControllerImpl(
         // 音量归位到用户值 —— 新曲目的淡入由 startFadeIn() 从一个干净状态开始。
         fadeRunner.cancel()
         fadeOutStartedFor = null
-        platform.setVolume(userVolume)
+        val cfg = fadeConfig
+        val initialVolume = if (cfg.enabled && cfg.fadeIn) 0f else userVolume
+        platform.setVolume(initialVolume)
         // 每次加载新曲目都推进导航世代：在此之前的 Ended / 切歌请求都会因世代不匹配而作废。
         navigationSeq += 1
         // 引擎里此刻装的还是上一首：load() 返回之前到达的 seek 必须暂存，
@@ -1669,7 +1672,10 @@ class PlaybackControllerImpl(
             }
             when (_repeat) {
                 RepeatMode.ONE -> {
-                    requestSeek(0L); platform.play()
+                    fadeOutStartedFor = null
+                    requestSeek(0L)
+                    platform.play()
+                    startFadeIn()
                 }
                 RepeatMode.ALL, RepeatMode.OFF -> {
                     var next: Int? = null

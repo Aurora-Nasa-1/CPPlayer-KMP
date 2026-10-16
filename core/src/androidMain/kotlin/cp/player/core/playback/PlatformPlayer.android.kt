@@ -234,6 +234,15 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
         override fun onPlayerError(error: PlaybackException) {
             _state.value = PlatformPlaybackState.Error(error.message ?: "Media playback error")
         }
+
+        override fun onAudioSessionIdChanged(audioSessionId: Int) {
+            if (audioSessionId != 0 && audioSessionId != observedSessionId) {
+                observedSessionId = audioSessionId
+                val chain = obtainAudioEffectChain()
+                chain.onAudioSessionChanged(audioSessionId)
+                pendingAudioEffect?.let(chain::apply)
+            }
+        }
     }
 
     init {
@@ -413,6 +422,14 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
     override fun applyAudioEffect(config: AudioEffectConfig) {
         pendingAudioEffect = config
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
+        var sessionId = 0
+        runOnMainThread {
+            sessionId = runCatching { player.audioSessionId }.getOrDefault(0)
+        }
+        if (sessionId != 0 && sessionId != observedSessionId) {
+            observedSessionId = sessionId
+            obtainAudioEffectChain().onAudioSessionChanged(sessionId)
+        }
         obtainAudioEffectChain().apply(config)
     }
 

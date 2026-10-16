@@ -6,11 +6,14 @@ import androidx.compose.material.icons.filled.Cached
 import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.runtime.Composable
+import cp.player.app.i18n.AppLanguage
+import cp.player.app.i18n.displayName
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -68,6 +71,7 @@ class AppearanceSettingsScreen : Screen {
         val navigator = LocalNavigator.currentOrThrow
         val s = cpStrings()
         val themeMode by AppModel.themeModeFlow.collectAsState()
+        val currentLanguage by AppModel.appLanguageFlow.collectAsState()
         val colorSource by AppModel.colorSourceFlow.collectAsState()
         val pureBlack by AppModel.pureBlackFlow.collectAsState()
         val bottomBarAutoHide by AppModel.bottomBarAutoHideFlow.collectAsState()
@@ -89,6 +93,22 @@ class AppearanceSettingsScreen : Screen {
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
             SettingsPage(pageModifier) {
+                // 界面语言首选项（就地切换，整合设置项无需单开全屏二级页）
+                SettingsSection(s.language.screenTitle) {
+                    SettingsSegmentedItem(
+                        title = s.language.screenTitle,
+                        subtitle = currentLanguage.displayName(s),
+                        icon = Icons.Filled.Language,
+                        options = AppLanguage.entries.map { it.displayName(s) },
+                        selectedIndex = AppLanguage.entries.indexOf(currentLanguage).coerceAtLeast(0),
+                        onSelect = { index ->
+                            AppLanguage.entries.getOrNull(index)?.let(AppModel::setAppLanguage)
+                        },
+                        index = 0,
+                        total = 1,
+                    )
+                }
+
                 // ⚠️ 本组所有行的 `total` 必须**同为组内行数**（分段圆角按 index/total
                 // 算首/中/末段）。此处曾出现 segmented 行写 `total = 3`、开关行写 `total = 4`
                 // 的分叉 —— 加/减行时会错出圆角。增删行时一起改。

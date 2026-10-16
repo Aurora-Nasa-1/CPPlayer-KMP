@@ -3,7 +3,11 @@ package cp.player.app.ui.screen
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.ClosedCaption
+import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -22,14 +26,21 @@ import cp.player.app.platform.isIgnoringBatteryOptimizations
 import cp.player.app.platform.requestIgnoreBatteryOptimizations
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.component.SettingsBadge
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsDropdownItem
+import cp.player.app.ui.component.SettingsHeroCard
 import cp.player.app.ui.component.SettingsNote
+import cp.player.app.ui.component.SettingsNoteEmphasis
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
+import cp.player.app.ui.component.SettingsSegmentedItem
 import cp.player.app.ui.component.SettingsSliderItem
 import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.SleepTimerDialog
+import cp.player.app.ui.component.VipActivationDialog
+import cp.player.core.license.VipLicenseManager
+import cp.player.core.playback.PlaybackSessionSettings
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -71,55 +82,167 @@ class PlaybackSettingsScreen : Screen {
         val qualityLabels = AppModel.qualityLevels.map { s.quality.labelOf(it) }
 
         val audioEngine by AppModel.audioEngineFlow.collectAsState()
-        val isFlickEngine = audioEngine == cp.player.core.playback.PlaybackSessionSettings.ENGINE_FLICK_HIRES
+        val isFlickEngine = audioEngine == PlaybackSessionSettings.ENGINE_FLICK_HIRES
+        val vipInfo by VipLicenseManager.licenseState.collectAsState()
+        var showVipDialog by remember { mutableStateOf(false) }
+
+        if (showVipDialog) {
+            VipActivationDialog(
+                onDismiss = { showVipDialog = false },
+                onSuccess = {
+                    AppModel.setAudioEngine(PlaybackSessionSettings.ENGINE_FLICK_HIRES)
+                },
+            )
+        }
+
+        val isAndroid = isAndroidPlatform()
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
             SettingsPage(pageModifier) {
-                SettingsSection("音频输出内核") {
-                    val engineOptions = listOf(
-                        "标准系统引擎 (默认)",
-                        "FlickEngine 发烧引擎 (专有 / VIP)",
-                    )
-                    val engineSubtitle = if (isFlickEngine) {
-                        if (isAndroidPlatform()) {
-                            "Oboe 低延迟直通 · USB DAC 源码输出 · DSD 软解"
-                        } else {
-                            "WASAPI Exclusive 独占直通 · Bit-Perfect 源码输出 (绕过系统混音器)"
-                        }
+                // M3 Expressive 音频架构与输出模式卡片
+                val heroSubtitle = if (isFlickEngine) {
+                    if (isAndroid) {
+                        "Oboe 低延迟硬件直通 · USB DAC 源码输出 · DSD 软解已就绪"
                     } else {
-                        if (isAndroidPlatform()) {
-                            "AndroidX Media3 (ExoPlayer) 系统默认通道"
-                        } else {
-                            "系统混音共享输出 (默认，轻量高兼容)"
-                        }
+                        "WASAPI Exclusive 硬件独占直通 · Bit-Perfect 源码输出 (绕过 Windows 混音器)"
                     }
-                    SettingsDropdownItem(
-                        title = "播放内核架构",
-                        subtitle = engineSubtitle,
+                } else {
+                    if (isAndroid) {
+                        "AndroidX Media3 (ExoPlayer) 标准混音通道"
+                    } else {
+                        "系统混音共享输出 (轻量兼容，受 Windows 混音器影响)"
+                    }
+                }
+                SettingsHeroCard(
+                    title = if (isFlickEngine) "FlickEngine 发烧架构" else "系统标准音频架构",
+                    subtitle = heroSubtitle,
+                    icon = Icons.Filled.Memory,
+                    badgeText = if (isFlickEngine) {
+                        if (vipInfo.isActivated) "Hi-Res VIP · 源码独占" else "VIP 待激活"
+                    } else {
+                        "标准共享通道"
+                    },
+                    badgeContainerColor = if (isFlickEngine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                    badgeContentColor = if (isFlickEngine) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                SettingsSection("音频输出内核架构") {
+                    val engineOptions = listOf(
+                        "系统标准引擎",
+                        "FlickEngine 发烧引擎 (VIP)",
+                    )
+                    SettingsSegmentedItem(
+                        title = "回放内核架构",
+                        subtitle = if (isFlickEngine) "已启用发烧内核，绕过系统混音器" else "使用系统默认通道，轻量兼容",
                         options = engineOptions,
                         selectedIndex = if (isFlickEngine) 1 else 0,
                         onSelect = { index ->
-                            val target = if (index == 1) {
-                                cp.player.core.playback.PlaybackSessionSettings.ENGINE_FLICK_HIRES
+                            if (index == 1) {
+                                if (!vipInfo.isActivated) {
+                                    showVipDialog = true
+                                } else {
+                                    AppModel.setAudioEngine(PlaybackSessionSettings.ENGINE_FLICK_HIRES)
+                                }
                             } else {
-                                cp.player.core.playback.PlaybackSessionSettings.ENGINE_STANDARD
+                                AppModel.setAudioEngine(PlaybackSessionSettings.ENGINE_STANDARD)
                             }
-                            AppModel.setAudioEngine(target)
                         },
                         index = 0,
-                        total = 2,
+                        total = 1,
                     )
+                }
+
+                if (isFlickEngine) {
+                    SettingsSection("硬件直通与发烧特性") {
+                        SettingsClickItem(
+                            title = if (isAndroid) "Oboe / AAudio 直通" else "WASAPI Exclusive 独占直通",
+                            subtitle = if (isAndroid) {
+                                "绕过 Android AudioFlinger 重采样，直通底层音频 HAL / USB DAC"
+                            } else {
+                                "完全绕过 Windows 系统混音器与音频增强，由播放器直接接管声卡终端"
+                            },
+                            index = 0,
+                            total = 4,
+                            onClick = {
+                                navigator.push(AudioEngineSettingsScreen())
+                            },
+                            trailingContent = {
+                                SettingsBadge(
+                                    text = "已启用",
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                            },
+                        )
+                        SettingsClickItem(
+                            title = "Bit-Perfect 位完美源码输出",
+                            subtitle = "声卡硬件采样率根据音轨物理规格自动重协商（44.1k/48k/96k/192kHz 自适应）",
+                            index = 1,
+                            total = 4,
+                            onClick = {},
+                            trailingContent = {
+                                SettingsBadge(
+                                    text = "自动自适应",
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                )
+                            },
+                        )
+                        SettingsClickItem(
+                            title = "DSD 母带级原生软解",
+                            subtitle = "支持 DSF / DFF 容器，支持 DSD64 / DSD128 高规格直接解码播放",
+                            index = 2,
+                            total = 4,
+                            onClick = {},
+                            trailingContent = {
+                                SettingsBadge(
+                                    text = "内置支持",
+                                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                )
+                            },
+                        )
+                        SettingsClickItem(
+                            title = "特权授权管理",
+                            subtitle = if (vipInfo.isActivated) "已激活：${vipInfo.planName} (${vipInfo.licenseKey ?: "永久授权"})" else "未激活，点击输入卡密解锁",
+                            index = 3,
+                            total = 4,
+                            onClick = { showVipDialog = true },
+                            trailingContent = {
+                                Text(
+                                    text = if (vipInfo.isActivated) "更换卡密" else "激活特权",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            },
+                        )
+                    }
+                    SettingsNote(
+                        if (isAndroid) "在 USB DAC 直通模式下，音频流直接送至外接解码耳放，实现全链路原生 Hi-Res 还原。"
+                        else "在 WASAPI Exclusive 独占模式下，声卡将独占输出通道，播放期间其他应用程序的声音将被静音，以确保 0 混音劣化与极致信噪比。",
+                        emphasis = SettingsNoteEmphasis.INFO,
+                    )
+                }
+
+                SettingsSection("DSP 音效与调音台") {
                     SettingsClickItem(
-                        title = "硬件直通与独占配置",
-                        subtitle = "查看 WASAPI Exclusive、Bit-Perfect 源码输出与 DSD 软解状态",
-                        index = 1,
-                        total = 2,
+                        title = "64位浮点 DSP 音效管线",
+                        subtitle = "内置 5段参数均衡器 (PEQ)、声道混音平衡与响度均衡调节",
+                        icon = Icons.Filled.Equalizer,
+                        index = 0,
+                        total = 1,
                         onClick = {
-                            navigator.push(AudioEngineSettingsScreen())
+                            navigator.push(AudioEffectSettingsScreen())
+                        },
+                        trailingContent = {
+                            Text(
+                                text = "调音台",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
                         },
                     )
                 }
-                SettingsNote("FlickEngine 支持声卡硬件采样率自适应源码输出（Bit-Perfect）与 DSD 母带级软解，切换后将在切歌或重新播放时生效。")
 
                 SettingsSection(s.playback.sectionQuality) {
                     SettingsDropdownItem(
