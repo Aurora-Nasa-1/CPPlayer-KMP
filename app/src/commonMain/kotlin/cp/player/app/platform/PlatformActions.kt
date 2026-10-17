@@ -57,6 +57,15 @@ expect fun isPackageInstalled(packageName: String): Boolean
  */
 expect fun openUrl(url: String)
 
+/**
+ * 打开 WebView 或网页浏览器进行登录或安全验证。
+ *
+ * @param url 要打开的目标网址
+ * @param title 页面标题（可选）
+ */
+expect fun openWebview(url: String, title: String? = null)
+
+
 /** Download a release asset using the platform's native download flow. */
 expect fun downloadUpdate(url: String, fileName: String)
 

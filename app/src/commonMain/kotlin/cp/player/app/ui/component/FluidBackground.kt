@@ -1,22 +1,29 @@
 package cp.player.app.ui.component
 
+import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import androidx.compose.foundation.background
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.toSize
 import com.materialkolor.hct.Hct
-import com.mikepenz.hypnoticcanvas.shaderBackground
 import com.mikepenz.hypnoticcanvas.shaders.MeshGradient
+import com.mikepenz.hypnoticcanvas.shaders.Shader
 import cp.player.app.ui.theme.LocalIsDarkTheme
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 /**
  * 流体背景：仿 Apple Music 的缓慢流动的网格渐变。
@@ -45,12 +52,12 @@ import kotlinx.coroutines.delay
  * 调用方传入的 [fallback] Brush。所以 [fallback] 不是「保险」，而是低版本安卓的
  * **实际外观**，必须是好看的：调用方一律传该页原本用的那支渐变。
  *
- * ### 性能
+ * ### 性能与帧率控制
  *
- * 着色器靠 `withInfiniteAnimationFrameMillis` 驱动，**只要在屏就一直在动**
- * （与 Apple Music 一致：暂停时背景也在缓慢漂移）。代价是播放页在屏期间持续出帧 ——
- * 这正是它必须能被设置项关掉的原因（「外观 → 流体背景」）。关掉时本函数退化成
- * 一次 `background(fallback)`，与改造前完全等价。
+ * 着色器靠物理时钟节拍分频驱动（见 [FluidFpsConfig]）：
+ * - 桌面端：显示屏刷新率的一半（60Hz -> 30fps, 120Hz -> 60fps, 144Hz -> 72fps）；
+ * - 手机端：根据屏幕 Hz 在 2..5 范围内取整除因子，目标帧率最大 60fps（120Hz -> 60fps, 90Hz -> 45fps, 60Hz -> 30fps）；
+ * 非渲染帧跳过 state 更新，使 Compose 智能抑制重绘，既省电又保持物理流动速度完全一致。
  *
  * @param enabled 设置项「流体背景」。false 时只画 [fallback]。
  * @param fallback 低版本安卓 / 着色器未就绪时的静态底色，同时是 `enabled = false` 时的唯一背景。
@@ -79,24 +86,70 @@ fun Modifier.cpFluidBackground(
     val palette = remember(primary, base, dark) { buildFluidPalette(primary, base, dark) }
 
     // ⚠️ 必须自己 remember 着色器实例，**不能**把 `MeshGradient(...)` 直接写在
-    // `shaderBackground(...)` 的实参位置上：库内部是 `remember(shader) { buildEffect(shader) }`，
-    // 而 `MeshGradient` 没重写 `equals` ⇒ 逐帧新建实例 = 逐帧重新编译 SkSL。
+    // 实参位置上：`MeshGradient` 没重写 `equals` ⇒ 逐帧新建实例 = 逐帧重新编译 SkSL。
     val settled = rememberSettledPalette(palette)
     val shader = remember(settled, scale) {
         MeshGradient(
             colors = settled.toTypedArray(),
-            // 库把这个 `speed` 拼进 SkSL（`$speed`），改它要重编译；总速度交给
-            // `shaderBackground(speed = …)` 那个 uniform 控制，这里保持默认。
+            // 库把这个 `speed` 拼进 SkSL（`$speed`），改它要重编译；总速度交给 uniform 控制。
             speed = 1f,
             scale = scale,
         )
     }
 
-    return this.shaderBackground(
+    val fpsConfig = rememberFluidFpsConfig()
+
+    return this.cpPacedShaderBackground(
         shader = shader,
+        fallback = fallback,
         speed = speed,
-        fallback = { fallback },
+        fpsConfig = fpsConfig,
     )
+}
+
+/**
+ * 带有精准垂直同步（VSync）节拍分频控制的着色器背景修饰符。
+ */
+@Composable
+private fun Modifier.cpPacedShaderBackground(
+    shader: Shader,
+    fallback: Brush,
+    speed: Float,
+    fpsConfig: FluidFpsConfig,
+): Modifier {
+    val effect = remember(shader) { buildRuntimeEffect(shader) }
+    if (!effect.supported) return this.background(fallback)
+
+    val speedModifier = shader.speedModifier
+    var reportedSize by remember { mutableStateOf(Size.Zero) }
+
+    val time by produceState(initialValue = 0f, key1 = fpsConfig) {
+        var frameCount = 0L
+        var startNanos = 0L
+        val divisor = fpsConfig.divisor.coerceAtLeast(1)
+        while (isActive) {
+            withInfiniteAnimationFrameNanos { frameTimeNanos ->
+                if (startNanos == 0L) startNanos = frameTimeNanos
+                frameCount++
+                if (frameCount % divisor == 0L) {
+                    value = (frameTimeNanos - startNanos) / 1_000_000_000f
+                }
+            }
+        }
+    }
+
+    return this
+        .onGloballyPositioned { reportedSize = it.size.toSize() }
+        .drawBehind {
+            val w = if (reportedSize.width > 0f) reportedSize.width else size.width
+            val h = if (reportedSize.height > 0f) reportedSize.height else size.height
+            effect.update(shader, time * speed * speedModifier, w, h)
+            if (effect.ready) {
+                drawRect(effect.build())
+            } else {
+                drawRect(fallback)
+            }
+        }
 }
 
 /**

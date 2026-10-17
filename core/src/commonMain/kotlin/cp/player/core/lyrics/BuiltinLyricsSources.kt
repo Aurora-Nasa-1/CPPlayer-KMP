@@ -51,6 +51,24 @@ internal class SidecarLyricsSource : LyricsSource {
 }
 
 /**
+ * 内嵌歌词来源（本地曲次选，紧随同名同目录边车歌词之后）。
+ */
+internal class EmbeddedLyricsSource : LyricsSource {
+    override val id = BuiltinLyricsSourceIds.EMBEDDED
+    override val name = "Embedded lyrics"
+    override val bundled = true
+    override val localizeName = true
+    override val capabilities = setOf(LyricsCapability.GET_LYRICS)
+
+    override suspend fun fetch(request: LyricsRequest): LyricsSourceResult? {
+        if (!request.isLocal) return null
+        val resourceId = request.mediaId?.resourceId ?: return null
+        val hit = cp.player.core.playback.EmbeddedLyricLoader.load(resourceId) ?: return null
+        return LyricsSourceResult(lines = hit.first)
+    }
+}
+
+/**
  * AMLL 官方词库来源（api.amll.dev，TTML）。
  *
  * 取词顺序（与改造前 `fetchFromAmll` 完全一致）：
@@ -72,14 +90,15 @@ internal class AmllLyricsSource(
     )
 
     override suspend fun fetch(request: LyricsRequest): LyricsSourceResult? {
-        val mediaId = request.mediaId
-        // 本地曲不能按平台 ID 取（providerId = "local" 不是任何平台）。
-        val allowPlatformLookup = !request.isLocal && amllPlatformFor(mediaId?.providerId) != null
+        val targetMediaId = request.platformMediaId ?: request.mediaId
+        // 本地曲若有原始平台 ID（如 netease://...），也可以按平台 ID 精确取。
+        val allowPlatformLookup = targetMediaId?.providerId != null && targetMediaId.providerId != "local" && amllPlatformFor(targetMediaId.providerId) != null
+        val sanitized = cp.player.core.util.MusicSearchSanitizer.sanitize(request.title, request.artist)
         val ttml = client.fetchLyricsTtml(
-            providerId = mediaId?.providerId?.takeIf { allowPlatformLookup },
-            songId = mediaId?.resourceId,
-            name = request.title.ifBlank { null },
-            artist = request.artist.ifBlank { null },
+            providerId = targetMediaId?.providerId?.takeIf { allowPlatformLookup },
+            songId = targetMediaId?.resourceId?.takeIf { allowPlatformLookup },
+            name = sanitized.title.ifBlank { null },
+            artist = sanitized.artist.ifBlank { null },
             album = request.album.ifBlank { null },
         ) ?: return null
         val lines = TtmlParser.parse(ttml)
@@ -106,9 +125,10 @@ internal class ProviderLyricsSource(
     override val capabilities = setOf(LyricsCapability.GET_LYRICS)
 
     override suspend fun fetch(request: LyricsRequest): LyricsSourceResult? {
-        // 本地曲没有音源歌词可回退（resourceId 是文件路径，不是平台歌曲 ID）。
-        if (request.isLocal) return null
-        val songId = request.mediaId?.resourceId ?: return null
+        val targetMediaId = request.platformMediaId ?: request.mediaId
+        // 没有可用平台 ID 或为原生本地曲（无 originalMediaId）时无法通过音源 API 取词。
+        if (targetMediaId == null || targetMediaId.providerId == "local") return null
+        val songId = targetMediaId.resourceId
         val json = api.getLyric(songId)
         val lines = LyricsParser.parse(json)
         if (lines.isEmpty()) return null

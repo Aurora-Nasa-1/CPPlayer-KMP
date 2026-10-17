@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -12,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cp.player.app.i18n.cpStrings
@@ -32,20 +35,7 @@ import cp.player.app.ui.component.settingsRowContainer
 import cp.player.app.ui.util.popOrNotify
 
 /**
- * 设置根页。
- *
- * ### 与重构前的差异
- *
- * 1. **按分组渲染，不再是 13 行平铺。** 分组与顺序全部来自 [settingsEntries]，
- *    本文件不再持有任何「哪个入口排第几」的知识。
- * 2. **删掉了三栏布局。** 旧版在宽屏下拼出「分类导航栏 + 列表 + 详情」三栏，而那个
- *    分类导航（`SettingsCategoryRail`）硬编码了 4 个标签、永远高亮 index 0，
- *    映射关系（0→外观 / 1→播放 / 2→交互逻辑 / 其余→音源管理）与实际列表毫无关系。
- *    两栏已经足够，第三栏是纯粹的冗余。
- * 3. **宽屏默认选中第一项。** 旧版右侧是一句「选择中间菜单查看设置内容」的占位 ——
- *    用户点进设置先看到一句让人困惑的空态。
- * 4. **只有一套详情渲染路径。** 旧版 `toScreen()` 与 `DesktopSettingsDetail()` 是两张
- *    平行的映射表，改一处漏一处的风险长期存在；现在两者都走 [SettingsEntry.screen]。
+ * 设置根页面。
  */
 class SettingsScreen(private val embedded: Boolean = false) : Screen {
     @Composable
@@ -61,15 +51,50 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
     val entries = remember { settingsEntries() }
     var searchQuery by remember { mutableStateOf("") }
 
-    val filteredEntries = remember(searchQuery, entries, strings) {
+    val searchResults = remember(searchQuery, entries, strings) {
         val q = searchQuery.trim().lowercase()
-        if (q.isEmpty()) entries
+        if (q.isEmpty()) emptyList()
         else {
-            entries.filter { entry ->
+            val queryTokens = q.split("\\s+".toRegex()).filter { it.isNotBlank() }
+            val results = mutableListOf<SettingsSearchResult>()
+
+            // 1. 优先搜索所有具体设置子项 (SubItemMatch)
+            entries.forEach { entry ->
+                entry.visibleSubItems().forEach { subItem ->
+                    val title = subItem.titleOf(strings).lowercase()
+                    val subtitle = subItem.subtitleOf?.invoke(strings)?.lowercase().orEmpty()
+                    val section = subItem.sectionOf?.invoke(strings)?.lowercase().orEmpty()
+                    val allKeywords = subItem.keywords.map { it.lowercase() }
+
+                    val matches = queryTokens.all { token ->
+                        title.contains(token) ||
+                            subtitle.contains(token) ||
+                            section.contains(token) ||
+                            allKeywords.any { it.contains(token) }
+                    }
+                    if (matches) {
+                        results.add(SettingsSearchResult.SubItemMatch(entry, subItem))
+                    }
+                }
+            }
+
+            // 2. 搜索一级分类入口 (EntryMatch)
+            entries.forEach { entry ->
                 val title = entry.titleOf(strings).lowercase()
                 val subtitle = entry.subtitleOf(strings).lowercase()
-                title.contains(q) || subtitle.contains(q) || entry.keywords.any { it.lowercase().contains(q) }
+                val allKeywords = entry.keywords.map { it.lowercase() }
+
+                val matches = queryTokens.all { token ->
+                    title.contains(token) ||
+                        subtitle.contains(token) ||
+                        allKeywords.any { it.contains(token) }
+                }
+                if (matches) {
+                    results.add(SettingsSearchResult.EntryMatch(entry))
+                }
             }
+
+            results
         }
     }
 
@@ -96,9 +121,9 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
                         )
                         if (searchQuery.isNotBlank()) {
                             SettingsSearchResults(
-                                entries = filteredEntries,
+                                results = searchResults,
                                 selectedId = selectedId,
-                                onSelect = { entry -> selectedId = entry.id },
+                                onSelectEntry = { entry -> selectedId = entry.id },
                                 query = searchQuery,
                             )
                         } else {
@@ -132,9 +157,9 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
             )
             if (searchQuery.isNotBlank()) {
                 SettingsSearchResults(
-                    entries = filteredEntries,
+                    results = searchResults,
                     selectedId = null,
-                    onSelect = { entry -> navigator?.push(entry.screen()) },
+                    onSelectEntry = { entry -> navigator?.push(entry.screen()) },
                     query = searchQuery,
                 )
             } else {
@@ -162,26 +187,101 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
 
 @Composable
 private fun SettingsSearchResults(
-    entries: List<SettingsEntry>,
+    results: List<SettingsSearchResult>,
     selectedId: String?,
-    onSelect: (SettingsEntry) -> Unit,
+    onSelectEntry: (SettingsEntry) -> Unit,
     query: String,
 ) {
-    if (entries.isEmpty()) {
+    if (results.isEmpty()) {
         SettingsNote("未找到与「$query」相匹配的设置项，请尝试其他关键词。")
-    } else {
-        SettingsSection("搜索结果 (找到 ${entries.size} 项)") {
-            entries.forEachIndexed { index, entry ->
-                SettingsRow(
-                    entry = entry,
+        return
+    }
+
+    val subItemMatches = remember(results) {
+        results.filterIsInstance<SettingsSearchResult.SubItemMatch>()
+    }
+    val entryMatches = remember(results) {
+        results.filterIsInstance<SettingsSearchResult.EntryMatch>()
+    }
+
+    if (subItemMatches.isNotEmpty()) {
+        SettingsSection("具体设置项 (${subItemMatches.size})") {
+            subItemMatches.forEachIndexed { index, match ->
+                SettingsSubItemRow(
+                    entry = match.entry,
+                    subItem = match.subItem,
                     index = index,
-                    total = entries.size,
-                    isSelected = entry.id == selectedId,
-                    onClick = { onSelect(entry) },
+                    total = subItemMatches.size,
+                    isSelected = match.entry.id == selectedId,
+                    onClick = { onSelectEntry(match.entry) },
                 )
             }
         }
     }
+
+    if (entryMatches.isNotEmpty()) {
+        SettingsSection("设置分类 (${entryMatches.size})") {
+            entryMatches.forEachIndexed { index, match ->
+                SettingsRow(
+                    entry = match.entry,
+                    index = index,
+                    total = entryMatches.size,
+                    isSelected = match.entry.id == selectedId,
+                    onClick = { onSelectEntry(match.entry) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsSubItemRow(
+    entry: SettingsEntry,
+    subItem: SettingsSubItem,
+    index: Int,
+    total: Int,
+    isSelected: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val strings = cpStrings()
+    val breadcrumb = remember(entry, subItem, strings) {
+        val entryTitle = entry.titleOf(strings)
+        val sectionTitle = subItem.sectionOf?.invoke(strings)
+        if (sectionTitle.isNullOrBlank() || sectionTitle == entryTitle) {
+            entryTitle
+        } else {
+            "$entryTitle › $sectionTitle"
+        }
+    }
+
+    SettingsClickItem(
+        title = subItem.titleOf(strings),
+        subtitle = subItem.subtitleOf?.invoke(strings),
+        index = index,
+        total = total,
+        onClick = onClick,
+        selected = isSelected,
+        leadingContent = {
+            MonetIcon(
+                icon = entry.icon,
+                containerColor = entry.accent.container(),
+                contentColor = entry.accent.content(),
+            )
+        },
+        trailingContent = {
+            Surface(
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            ) {
+                Text(
+                    text = breadcrumb,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+            }
+        },
+    )
 }
 
 /** 按 [SettingsGroup] 分组的入口列表；[selectedId] 非空时高亮对应行（宽屏左栏用）。 */

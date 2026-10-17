@@ -80,11 +80,13 @@ import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.LocalIsExpanded
+import cp.player.app.platform.shareText
 import cp.player.app.ui.component.PlaylistCoverCard
 import cp.player.app.ui.component.PlaylistItem
 import cp.player.app.ui.component.PlaylistOptionsSheet
 import cp.player.app.ui.component.SectionHeader
 import cp.player.app.ui.component.StateSurface
+import cp.player.app.ui.component.playlistShareText
 import cp.player.app.ui.component.rememberActiveProviderSupports
 import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.app.ui.model.DownloadsUiState
@@ -287,6 +289,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
             onDismiss = { selectedPlaylist = null },
             onPlay = { model.play(playlist) },
             onAddToQueue = { model.play(playlist, addOnly = true) },
+            onShare = { shareText(playlistShareText(playlist.id, playlist.name)) },
             onDelete = { askDeleteOrUnsubscribe(playlist, model, confirm, s) },
             coverUrl = playlist.coverUrl,
             // 媒体库中的歌单均为已收藏/自建；非 owner 时复用同一个确认弹窗（文案按 owner 区分）

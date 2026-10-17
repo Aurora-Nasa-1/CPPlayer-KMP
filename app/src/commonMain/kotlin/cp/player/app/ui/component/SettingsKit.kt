@@ -97,22 +97,16 @@ import cp.player.app.ui.theme.LocalIsDarkTheme
  * | 组内行距 | 4dp | `CpSpacing.listRowGap` |
  *
  * ⚠️ **页面容器只认 [SettingsPage]（静态）与 [SettingsLazyPage]（长列表）**，
- * 不要在页面里自己拼 `ScrollColumn { Column(Modifier.widthIn(...).padding(16.dp)) }`
- * —— 那样宽度上限、页边距、区块间距三样都会各写各的，正是重构前 11 个设置页
- * 里 4 个与其余 7 个长得不一样的原因。
+ * 不要在页面里自行拼装自定义容器，以保证所有设置页的宽度上限、页边距与区块间距一致。
  *
  * ⚠️ 组件**内部**的微调（图标与文字之间 4/6/8dp 这类）允许写裸值：它们不跨页面复用。
  * 判据是「这个值会不会在第二个页面出现」——会，就必须进 `CpSpacing`。
  *
- * ## 与旧版的三处刻意差异
+ * ## 设计约定
  *
- * 1. **每一行都有可访问性语义。** 旧版一行是「图标 + 标题 + 副标题 + 控件」四个独立
- *    语义节点，读屏要念四遍；开关行更糟 —— 整行可点、内层 `Switch` 也可点，
- *    于是**一个设置项有两个可聚焦目标**。现在统一 `mergeDescendants`，
- *    开关行的角色与状态由整行承担（内层 `Switch` 只负责画）。
- * 2. **不再靠 `maxLines` 截断标题。** 旧版标题 `maxLines = 2` + `Ellipsis`，
- *    200% 字号下设置项的含义会被吃掉。行高本来就是 `heightIn(min = 68.dp)`，允许增长。
- * 3. **新增三个组件**，对应三类此前没有正确交互契约的设置项：
+ * 1. **可访问性语义合并**：统一使用 `mergeDescendants`，整行作为一个可聚焦与朗读的语义单元。
+ * 2. **自适应行高**：不硬性通过 `maxLines` 截断标题，由 `heightIn(min = 68.dp)` 保证最少高度并自适应多行显示。
+ * 3. **统一交互状态**：明确区分开关行、单选行、点击行与只读信息的展示与交互反馈。
  *    [SettingsSegmentedItem]（选项少时别用弹层）、[SettingsTextInputItem]（别边打字边提交）、
  *    [SettingsConfirmItem]（破坏性操作要二次确认）。
  *
@@ -277,16 +271,9 @@ fun settingsRowContainer(): Color =
 /**
  * 「**当前生效 / 当前选中**」的行容器色。
  *
- * 全应用唯一一处。收敛前同一个语义有三种写法：`AccountScreen` 里当前账号是
- * `primaryContainer.copy(alpha = 0.5f)`、`ProviderManagementScreen` 里当前音源是
- * `primaryContainer.copy(alpha = 0.45f)`、`SettingsScreen` 左栏选中是 `surfaceContainerHigh`
- * —— 两个 alpha 纯属巧合，第三个更是连色相都不一样。
+ * 选 `primaryContainer` 作为高亮容器角色色，与 [SongItem] 激活态保持一致。
  *
- * 选 `primaryContainer` 而不是 `secondaryContainer`：本应用已经用它表达「正在播放」
- * （`SongItem`），「当前账号 / 当前音源」是同一类概念，沿用同一个角色色。
- *
- * ⚠️ 配 [settingsRowHighlightContent] 使用 —— 底色换成 primaryContainer 之后
- * 标题再写 `onSurface` 会在浅色主题下掉对比度。
+ * ⚠️ 配 [settingsRowHighlightContent] 使用 —— 保证在浅色与深色主题下的对比度。
  */
 @Composable
 fun settingsRowHighlight(): Color = MaterialTheme.colorScheme.primaryContainer
@@ -1098,17 +1085,13 @@ fun Modifier.settingsContentWidth(): Modifier =
         .padding(horizontal = CpSpacing.formHorizontal)
 
 /**
- * 设置页正文列（旧版的页面容器）。
+ * 设置页正文容器。
  *
- * 宽度收敛到 [CpSpacing.formMaxWidth]（720dp）、水平 [CpSpacing.formHorizontal]（16dp）、
+ * 宽度统一收敛到 [CpSpacing.formMaxWidth]（720dp）、水平 [CpSpacing.formHorizontal]（16dp）、
  * 上下 [CpSpacing.formVertical]（8dp）、区块间距 [CpSpacing.formSectionGap]（12dp）、
  * 页尾 [CpSpacing.formBottomInset]（32dp）。
  *
- * ⚠️ **所有设置 / 表单类页面都必须走这里**（长列表走 [SettingsLazyPage]）。
- * 重构前 11 个设置页里有 4 个自己拼容器：`SettingsScreen` 根页没有宽度上限
- * （宽屏下列表横跨整屏、点进子页又收到 720dp，正文宽度整体跳一下）、
- * `AboutScreen` 用 `padding(16.dp)` + 4dp 行距、`ProviderManagementScreen` 用 8dp 页边距、
- * `HealthScreen` 用 20/12/48 三种混着的内边距 —— 同一套设置，四种边距。
+ * ⚠️ 所有设置与表单类页面均应走这里（长列表走 [SettingsLazyPage]）以保证全应用视觉一致。
  *
  * @param pageModifier 由 scaffold 传下来的 `fillMaxSize()`/`fillMaxWidth()`
  */

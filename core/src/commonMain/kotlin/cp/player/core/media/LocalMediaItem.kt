@@ -48,6 +48,8 @@ data class LocalMediaItem(
      * 保证旧版 `index.json`（无此键）反序列化不崩。
      */
     val metadata: LocalTrackMetadata? = null,
+    /** 下载歌曲的原始 mediaId（如 netease://song/12345），用于精确取词与封面匹配 */
+    val originalMediaId: String? = null,
 ) {
     /** 音质短标签（如 `FLAC 24/96`、`320k MP3`）；无元数据时为 null。 */
     val qualityLabel: String? get() = metadata?.qualityLabel

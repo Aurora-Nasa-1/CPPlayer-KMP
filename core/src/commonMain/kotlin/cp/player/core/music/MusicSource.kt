@@ -123,6 +123,7 @@ data class TrackSummary(
     val durationMs: Long,
     val artists: List<ArtistSummary> = emptyList(),
     val mvId: Long? = null,
+    val originalMediaId: String? = null,
 ) : cp.player.core.util.JavaSerializable
 
 /**
@@ -137,14 +138,7 @@ data class SongUrl(
 )
 
 /**
- * 搜索结果。
- *
- * ⚠️ **专辑与歌手是两个不同的字段**，不能共用 [playlists]。
- *
- * 收敛前这里只有 `songs` / `playlists` / `artists` 三个字段，而搜索界面在「专辑」页签下
- * 直接把 `playlists` 当专辑渲染 —— 上游 `cloudsearch?type=10` 返回的其实是 `result.albums`，
- * 而 `result.playlists` 在专辑搜索里**根本不存在**，于是「专辑」页签永远空白。
- * 「歌手」页签勉强能出人名，但头像、点击进详情都没有。
+ * 跨音源搜索结果。
  */
 data class SearchResult(
     val songs: List<TrackSummary>,

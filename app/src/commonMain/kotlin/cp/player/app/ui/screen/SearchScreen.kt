@@ -167,10 +167,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
         Column(contentModifier.fillMaxSize()) {
             // 搜索框与建议下拉共用一层容器，宽度按 [CpSpacing.pageMaxWidth] 收口、居中 ——
             // ⚠️ `widthIn` 必须写在 `fillMaxWidth` **之前**，否则后者先把约束钉死、前者是空操作。
-            //
-            // ⚠️ 这一层 Box 的高度**钉死**在搜索框高度上：建议下拉必须是**浮层**，超出这层
-            // 容器的部分不参与外层 Column 的布局（靠组件自带的 `wrapContentHeight(unbounded)`）。
-            // 收敛前建议列表是内联的一段 Surface —— 它一出现，整页内容就往下跳一次。
+            // 建议下拉浮层容器
             Box(
                 Modifier
                     // 浮层要盖住下方所有兄弟（类型切换行、结果列表）—— 本 Box 是 Column 的
@@ -257,10 +254,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                         )
                     }
                     state.result == null -> {
-                        // ⚠️ 这一段必须是**可滚动**容器。收敛前这里是个裸 `Column`（不滚动）：
-                        // 「最近搜索」（最多 10 条）+「热门搜索」（最多 20 条）在矮窗口 / 手机上
-                        // 远超一屏，超出的部分既不显示也滑不动 —— 用户只看到最近搜索那几条，
-                        // 会以为「推荐没了」。换成 LazyScrollColumn 后还能顺带拿到桌面滚动条。
+                        // 可滚动容器展示最近搜索与热门搜索推荐
                         LazyScrollColumn(
                             Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize(),
                             contentPadding = PaddingValues(
@@ -342,10 +336,6 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                     state.result == null -> Unit
                     else -> {
                         val result = state.result!!
-                        // ⚠️ 每个页签只能数**它自己那个数组**。
-                        // 收敛前这里是 `ALBUM, PLAYLIST -> result.playlists.size`，
-                        // 而专辑搜索返回的是 `result.albums` —— 计数恒为 0，
-                        // 于是专辑页签永远显示「没有找到结果」，即使服务端返回了 30 张专辑。
                         val count = when (state.searchType) {
                             SearchType.SONG -> result.songs.size
                             SearchType.ALBUM -> result.albums.size

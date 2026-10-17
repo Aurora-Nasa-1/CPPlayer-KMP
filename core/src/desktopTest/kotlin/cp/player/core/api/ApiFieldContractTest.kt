@@ -77,7 +77,25 @@ class ApiFieldContractTest {
         assertFalse(satisfied(MusicApiMethod.AUTH_LOGIN_STATUS, """{"code":200}"""))
     }
 
+    // ---------- webview / verify ----------
+
+    @Test
+    fun `webview 与 verify 接口满足主字段或别名`() {
+        assertEquals("url", ApiFieldContract.expectedFieldOf(MusicApiMethod.AUTH_WEBVIEW_URL))
+        assertTrue(satisfied(MusicApiMethod.AUTH_WEBVIEW_URL, """{"code":200,"url":"https://login.example.com"}"""))
+        assertTrue(satisfied(MusicApiMethod.AUTH_WEBVIEW_URL, """{"code":0,"data":{"url":"https://login.example.com"}}"""))
+        assertTrue(satisfied(MusicApiMethod.AUTH_WEBVIEW_URL, """{"code":200,"verifyUrl":"https://login.example.com"}"""))
+
+        assertEquals("url", ApiFieldContract.expectedFieldOf(MusicApiMethod.AUTH_VERIFY_URL))
+        assertTrue(satisfied(MusicApiMethod.AUTH_VERIFY_URL, """{"code":250,"verifyUrl":"https://verify.example.com"}"""))
+        assertTrue(satisfied(MusicApiMethod.AUTH_VERIFY_URL, """{"code":0,"data":{"url":"https://verify.example.com"}}"""))
+
+        assertEquals("code", ApiFieldContract.expectedFieldOf(MusicApiMethod.AUTH_VERIFY_CHECK))
+        assertTrue(satisfied(MusicApiMethod.AUTH_VERIFY_CHECK, """{"code":200}"""))
+    }
+
     // ---------- 表的自洽 ----------
+
 
     @Test
     fun `等价字段的键必须也在主表里`() {

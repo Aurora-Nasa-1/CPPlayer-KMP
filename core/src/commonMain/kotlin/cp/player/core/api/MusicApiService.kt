@@ -83,7 +83,47 @@ interface MusicApiService {
     /** 获取当前登录状态 */
     suspend fun getLoginStatus(cookie: String? = null): JsonElement
 
+    /**
+     * 获取 WebView / 网页端登录 URL。
+     *
+     * 响应通常返回 `{ code: 0, data: { url: "https://..." } }` 或 `{ code: 200, url: "..." }`。
+     */
+    suspend fun getWebviewLoginUrl(): JsonElement =
+        callApi(MusicApiMethod.AUTH_WEBVIEW_URL)
+
+    /**
+     * 获取安全风控 / 人机核验 / 验证码跳转网址。
+     *
+     * @param phone 手机号（可选）
+     * @param customParams 额外参数（可选）
+     */
+    suspend fun getVerifyUrl(
+        phone: String? = null,
+        customParams: Map<String, String> = emptyMap()
+    ): JsonElement =
+        callApi(
+            MusicApiMethod.AUTH_VERIFY_URL,
+            buildMap {
+                if (!phone.isNullOrBlank()) put("phone", phone)
+                putAll(customParams)
+            }
+        )
+
+    /**
+     * 检查人机验证 / 验证码完成状态。
+     *
+     * @param verifyId 验证会话 ID 或 token（可选）
+     */
+    suspend fun checkVerifyStatus(verifyId: String? = null): JsonElement =
+        callApi(
+            MusicApiMethod.AUTH_VERIFY_CHECK,
+            buildMap {
+                if (!verifyId.isNullOrBlank()) put("verifyId", verifyId)
+            }
+        )
+
     // ======================== 用户 User ========================
+
 
     /** 获取用户歌单列表（包含创建的和收藏的） */
     suspend fun getUserPlaylists(uid: Long): JsonElement

@@ -52,19 +52,7 @@ import cp.player.app.version.AppVersion
 import kotlinx.coroutines.launch
 
 /**
- * 关于与支持。
- *
- * ### 与重构前的差异（2026-10-01 统一版式时收敛）
- *
- * 1. **删掉了本文件私有的 `SectionHeader` / `ClickEntry`。** 它们是 `SettingsSection` /
- *    `SettingsClickItem` 的**第二份实现**，而且三处不一致：分组标题内边距是
- *    `horizontal = 16, vertical = 8`（标准是 `start=16 / top=12 / bottom=8`）、
- *    页面用 `padding(16.dp)` 四边等距（标准是水平 16 / 垂直 8）、组间距 4dp（标准 12dp）。
- * 2. **行底色回到 `settingsRowContainer()`。** 私有实现直接用了 `LegacyListItem` 的默认色
- *    `surfaceContainerHigh` —— 浅色主题下它比其余设置页的 `surfaceContainerLow` 明显更深，
- *    于是「关于」这一页的行比旁边每一页都"重"。默认值只在没有约定的地方才对。
- * 3. **正文宽度收进 [SettingsPage]**（720dp）。此前它没有上限，宽屏下与其余设置页不同宽。
- * 4. **底部署名改用 [SettingsNote]**，不再手写 `bodySmall + onSurfaceVariant + padding`。
+ * 关于与支持页面。
  */
 class AboutScreen : Screen {
     @OptIn(ExperimentalMaterial3Api::class)
@@ -162,8 +150,6 @@ class AboutScreen : Screen {
                     )
                 }
 
-                // 原「赞助」是一个独立的一级设置入口，但它的全部内容就是「项目主页 + 维护者主页」
-                // 两个链接 —— 与本页已有的两个条目完全重合。合并进来，设置根页少一个入口。
                 SettingsSection("支持项目") {
                     SettingsClickItem(
                         index = 0,
@@ -195,17 +181,7 @@ class AboutScreen : Screen {
 }
 
 /**
- * 「关于」页的门面：大号主色应用名 + 版本 + 一句话定位 + 更新日志入口。
- *
- * **为什么值得单独做一个 hero**：这一页此前是一串 `SettingsClickItem`，与「播放设置」
- * 「音源管理」长得完全一样 —— 用户读不出这是「这个软件的门面」。参考 Kazumi 的
- * `about_page.dart`：它把应用名做成巨型主色标题，下面是版本号与一句话定位，
- * 再下面是药丸按钮组。这是**零依赖、零成本**的「这是个正经项目」信号。
- *
- * 版本号刻意只在这里出现一次 —— 下面「版本信息」组不再重复列「当前版本」。
- *
- * ⚠️ 左右内边距用 [CpSpacing.formRowHorizontal]，与 [SettingsSection] 的标题、
- * 分组行的内边距同源 —— 三者左边缘必须落在同一条竖线上，否则整页会歪。
+ * 「关于」页顶部 Hero 区域：展示应用标识、版本号与更新日志入口。
  */
 @Composable
 private fun AboutHero() {

@@ -106,4 +106,35 @@ class LoginStatusTest {
         )
         assertNull(unwrapLoginStatusData(json("""[]""")))
     }
+
+    // ---------- 验证码与安全核验网址 ----------
+
+    @Test
+    fun `extractVerifyUrl 提取根层与 data 层多种键名`() {
+        assertEquals(
+            "https://music.163.com/verify?token=123",
+            extractVerifyUrl(json("""{"code":250,"verifyUrl":"https://music.163.com/verify?token=123"}""")),
+        )
+        assertEquals(
+            "https://example.com/captcha/slider",
+            extractVerifyUrl(json("""{"code":0,"data":{"url":"https://example.com/captcha/slider"}}""")),
+        )
+        assertEquals(
+            "http://example.com/check",
+            extractVerifyUrl(json("""{"code":4001,"data":{"verifyContentUrl":"http://example.com/check"}}""")),
+        )
+        assertNull(extractVerifyUrl(json("""{"code":200,"data":{"id":123}}""")))
+        assertNull(extractVerifyUrl(json("""{"code":250,"verifyUrl":"javascript:alert(1)"}""")))
+    }
+
+    @Test
+    fun `isVerificationChallenge 识别状态码与网址`() {
+        assertTrue(isVerificationChallenge(json("""{"code":250,"msg":"人机验证"}""")))
+        assertTrue(isVerificationChallenge(json("""{"code":804}""")))
+        assertTrue(isVerificationChallenge(json("""{"code":4001}""")))
+        assertTrue(isVerificationChallenge(json("""{"code":500,"verifyUrl":"https://verify.domain.com"}""")))
+        assertFalse(isVerificationChallenge(json("""{"code":200,"msg":"success"}""")))
+        assertFalse(isVerificationChallenge(json("""{"code":500,"msg":"server error"}""")))
+    }
 }
+

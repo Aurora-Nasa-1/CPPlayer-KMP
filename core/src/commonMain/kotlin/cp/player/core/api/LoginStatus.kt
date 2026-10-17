@@ -3,6 +3,7 @@ package cp.player.core.api
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 
@@ -73,3 +74,53 @@ fun isLoggedInStatus(status: JsonElement?): Boolean = extractUidFromLoginStatus(
 fun resolveLoginStatusCode(json: JsonObject): Int? =
     (json["code"] as? JsonPrimitive)?.intOrNull
         ?: ((json["data"] as? JsonObject)?.get("code") as? JsonPrimitive)?.intOrNull
+
+/**
+ * 从 API 响应中提取安全验证或验证码跳转网址（verifyUrl）。
+ *
+ * 识别多源形状：
+ * - 根层或 `data` 下的 `verifyUrl`, `url`, `verifyContentUrl`, `captchaUrl`, `webUrl`, `verify_url`
+ * - 必须为以 http/https 开头的有效 URL。
+ */
+fun extractVerifyUrl(root: JsonElement?): String? {
+    val obj = root as? JsonObject ?: return null
+    val data = obj["data"] as? JsonObject
+    val candidates = listOf(
+        obj["verifyUrl"],
+        data?.get("verifyUrl"),
+        obj["verifyContentUrl"],
+        data?.get("verifyContentUrl"),
+        obj["captchaUrl"],
+        data?.get("captchaUrl"),
+        obj["url"],
+        data?.get("url"),
+        obj["webUrl"],
+        data?.get("webUrl"),
+        obj["verify_url"],
+        data?.get("verify_url"),
+    )
+    for (candidate in candidates) {
+        val s = (candidate as? JsonPrimitive)?.contentOrNull?.trim()
+        if (!s.isNullOrBlank() && (s.startsWith("http://") || s.startsWith("https://"))) {
+            return s
+        }
+    }
+    return null
+}
+
+/**
+ * 判定当前响应是否代表需要进行安全验证 / 人机验证拦截。
+ *
+ * 当满足以下任一条件时返回 true：
+ * 1. 响应提取出有效的验证网址（见 [extractVerifyUrl]）；
+ * 2. 业务状态码属于 [ApiResponseCodes.VERIFY_REQUIRED]（如 250、804、4001）。
+ */
+fun isVerificationChallenge(root: JsonElement?): Boolean {
+    if (root == null) return false
+    if (extractVerifyUrl(root) != null) return true
+    val obj = root as? JsonObject ?: return false
+    val code = (obj["code"] as? JsonPrimitive)?.intOrNull
+        ?: ((obj["data"] as? JsonObject)?.get("code") as? JsonPrimitive)?.intOrNull
+    return ApiResponseCodes.isVerifyRequired(code)
+}
+

@@ -36,7 +36,19 @@ class AuthRepository(private val api: MusicApiService) {
      */
     suspend fun getCaptchaImage(): JsonElement = api.callApi("captcha/image", emptyMap(), cookie = null)
 
+    /** 获取 WebView / 网页端登录入口 URL */
+    suspend fun getWebviewLoginUrl(): JsonElement = api.getWebviewLoginUrl()
+
+    /** 获取安全人机验证 / 验证码跳转网址 */
+    suspend fun getVerifyUrl(phone: String? = null, customParams: Map<String, String> = emptyMap()): JsonElement =
+        api.getVerifyUrl(phone, customParams)
+
+    /** 检查验证完成状态 */
+    suspend fun checkVerifyStatus(verifyId: String? = null): JsonElement =
+        api.checkVerifyStatus(verifyId)
+
     suspend fun loginAnonymous(): JsonElement = api.loginAnonymous()
 
     suspend fun logout(): JsonElement = api.logout()
 }
+

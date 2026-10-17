@@ -74,6 +74,7 @@ internal object AudioMetadataReader {
         var track: Int? = null
         var disc: Int? = null
         var hasCover = false
+        var lyrics: String? = null
 
         val tagSize = if (id3Size >= 0) id3Size else parseId3v2(head) { id, text ->
             when (id) {
@@ -85,6 +86,7 @@ internal object AudioMetadataReader {
                 "TYER", "TDRC" -> if (year == null) year = text.take(4).toIntOrNull()
                 "TRCK" -> if (track == null) track = text.substringBefore('/').toIntOrNull()
                 "TPOS" -> if (disc == null) disc = text.substringBefore('/').toIntOrNull()
+                "USLT" -> if (lyrics == null) lyrics = text.takeIf { it.isNotBlank() }
             }
             if (id == "APIC") hasCover = true
         }
@@ -129,6 +131,7 @@ internal object AudioMetadataReader {
             channels = frame?.channels,
             hasEmbeddedCover = hasCover,
             codec = "MP3",
+            lyrics = lyrics,
         )
     }
 
@@ -163,11 +166,62 @@ internal object AudioMetadataReader {
             if (frameSize <= 0 || pos + 10 + frameSize > bodyEnd) break
             val dataStart = pos + 10
             // v2.4 的帧有「分组标识 / 压缩 / 加密 / 同步」标志位，这里一律跳过不处理
-            val text = if (id == "APIC") "" else decodeId3Text(head, dataStart, frameSize)
+            val text = when (id) {
+                "APIC" -> ""
+                "USLT" -> decodeId3Uslt(head, dataStart, frameSize)
+                else -> decodeId3Text(head, dataStart, frameSize)
+            }
             onFrame(id, text)
             pos = dataStart + frameSize
         }
         return size
+    }
+
+    /** ID3 USLT 未同步歌词帧：encoding(1) + language(3) + descriptor(null terminated) + lyrics */
+    private fun decodeId3Uslt(data: ByteArray, start: Int, size: Int): String {
+        if (size <= 4) return ""
+        val encoding = data[start].toInt() and 0xFF
+        var p = start + 4
+        val end = start + size
+        // 跳过以 null 结尾的 content descriptor 描述符
+        if (encoding == 1 || encoding == 2) {
+            while (p + 1 < end) {
+                if (data[p] == 0.toByte() && data[p + 1] == 0.toByte()) {
+                    p += 2
+                    break
+                }
+                p += 2
+            }
+        } else {
+            while (p < end) {
+                if (data[p] == 0.toByte()) {
+                    p += 1
+                    break
+                }
+                p += 1
+            }
+        }
+        if (p >= end) return ""
+        val raw = data.copyOfRange(p, end)
+        return runCatching {
+            val text = when (encoding) {
+                1 -> {
+                    if (raw.size >= 2) {
+                        val le = raw[0] == 0xFF.toByte() && raw[1] == 0xFE.toByte()
+                        val body = if ((raw[0] == 0xFF.toByte() && raw[1] == 0xFE.toByte()) ||
+                            (raw[0] == 0xFE.toByte() && raw[1] == 0xFF.toByte())
+                        ) {
+                            raw.copyOfRange(2, raw.size)
+                        } else raw
+                        String(body, if (le) Charsets.UTF_16LE else Charsets.UTF_16BE)
+                    } else ""
+                }
+                2 -> String(raw, Charsets.UTF_16BE)
+                3 -> String(raw, Charsets.UTF_8)
+                else -> String(raw, Charsets.ISO_8859_1)
+            }
+            text.trim().trim('\u0000')
+        }.getOrDefault("")
     }
 
     /** ID3 文本帧：encoding(1) + 文本。encoding 1/2 为 UTF-16，需处理 BOM。 */
@@ -321,6 +375,7 @@ internal object AudioMetadataReader {
         var year: Int? = null
         var track: Int? = null
         var disc: Int? = null
+        var lyrics: String? = null
 
         var offset = 4 // 跳过 "fLaC"
         var guard = 0
@@ -357,6 +412,7 @@ internal object AudioMetadataReader {
                         ?: comments["YEAR"]?.take(4)?.toIntOrNull()
                     track = comments["TRACKNUMBER"]?.substringBefore('/')?.toIntOrNull()
                     disc = comments["DISCNUMBER"]?.substringBefore('/')?.toIntOrNull()
+                    lyrics = comments["LYRICS"] ?: comments["UNSYNCEDLYRICS"]
                 }
                 6 -> hasCover = true // PICTURE
             }
@@ -374,6 +430,7 @@ internal object AudioMetadataReader {
             } else null,
             sampleRateHz = sampleRate, bitDepth = bitDepth, channels = channels,
             hasEmbeddedCover = hasCover, codec = "FLAC",
+            lyrics = lyrics,
         )
     }
 
@@ -413,6 +470,7 @@ internal object AudioMetadataReader {
         var track: Int? = null
         var disc: Int? = null
         var hasCover = false
+        var lyrics: String? = null
 
         // mvhd：时长
         val mvhd = childAtom(moov, 0, moov.size, "mvhd")
@@ -459,6 +517,7 @@ internal object AudioMetadataReader {
                         "aART" -> albumArtist = String(value, Charsets.UTF_8)
                         "\u00A9gen" -> genre = normalizeGenre(String(value, Charsets.UTF_8))
                         "\u00A9day" -> year = String(value, Charsets.UTF_8).take(4).toIntOrNull()
+                        "\u00A9lyr" -> lyrics = String(value, Charsets.UTF_8).trim()
                         "covr" -> hasCover = true
                         "trkn" -> if (value.size >= 4) {
                             track = ((value[2].toInt() and 0xFF shl 8) or (value[3].toInt() and 0xFF))
@@ -479,6 +538,7 @@ internal object AudioMetadataReader {
             bitrateKbps = null, // MP4 的码率要遍历 stsz/stco 统计，成本高，交给 UI 用文件大小估算
             sampleRateHz = null, hasEmbeddedCover = hasCover,
             codec = "AAC",
+            lyrics = lyrics,
         )
     }
 
@@ -568,6 +628,7 @@ internal object AudioMetadataReader {
         var year: Int? = null
         var track: Int? = null
         var disc: Int? = null
+        var lyrics: String? = null
         if (packets.size >= 2) {
             val comments = when {
                 isOpus -> {
@@ -586,6 +647,7 @@ internal object AudioMetadataReader {
             year = comments["DATE"]?.take(4)?.toIntOrNull()
             track = comments["TRACKNUMBER"]?.substringBefore('/')?.toIntOrNull()
             disc = comments["DISCNUMBER"]?.substringBefore('/')?.toIntOrNull()
+            lyrics = comments["LYRICS"] ?: comments["UNSYNCEDLYRICS"]
         }
 
         // 时长：最后一个页面的 granule position（Opus 恒按 48kHz 计）
@@ -604,6 +666,7 @@ internal object AudioMetadataReader {
             sampleRateHz = sampleRate, channels = channels,
             hasEmbeddedCover = false, // OGG 的封面在 METADATA_BLOCK_PICTURE 里，罕见，不解析
             codec = if (isOpus) "Opus" else "Vorbis",
+            lyrics = lyrics,
         )
     }
 

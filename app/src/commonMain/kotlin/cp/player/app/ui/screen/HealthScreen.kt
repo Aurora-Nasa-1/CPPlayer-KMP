@@ -49,19 +49,7 @@ import cp.player.app.HealthLevel
 import cp.player.core.util.localDateTimeOf
 
 /**
- * 诊断：接口调用记录。
- *
- * ### 与重构前的差异（2026-10-01 统一版式时收敛）
- *
- * 1. **页边距回到表单页标准。** 原先一个页面里混了三种内边距：概览 20/12、筛选条 16/8、
- *    空态 48dp、列表自己拼 `LazyScrollColumn(fillMaxWidth)` 完全没有宽度上限 ——
- *    宽屏下记录列表横跨整屏，和上一屏的设置页完全不同宽。
- * 2. **筛选条钉在列表上方**（`SettingsLazyPage` 的 `header` 槽位），仍不参与滚动 ——
- *    记录一多，翻到一半就改不了筛选条件了。表头与列表正文受同一个宽度上限约束。
- * 3. **行距从 2dp 改到 `CpSpacing.listRowGap`(4dp)。** 2dp 不是刻度上的值，
- *    而且行按下时圆角会从 4dp 撑到 20dp，2dp 的缝太窄、变形后与邻行粘连。
- * 4. **行底色回到 `settingsRowContainer()`。** 原先吃 `LegacyListItem` 的默认色
- *    `surfaceContainerHigh`，浅色主题下比其余设置页的行深一档。
+ * 诊断与健康监控页面：接口调用记录与运行状态诊断。
  */
 class HealthScreen : Screen {
     @OptIn(ExperimentalMaterial3Api::class)

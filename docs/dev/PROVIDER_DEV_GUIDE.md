@@ -199,6 +199,10 @@ Java_cp_player_core_provider_JniProvider_analyzeAudioFile(
         "cloudsearch": "search",
         "like": "unsupported"
     },
+    "contract": "standard",         // "standard" | "legacy" (默认)
+    "capabilities": ["search", "playback", "webviewLogin"],
+    "loginMethods": ["qr", "phone", "email", "cookie", "webview"],
+    "settingsSchema": [ ... ],
     "updateUrl": "https://example.com/update.json",
     "supportedAbis": ["arm64-v8a", "armeabi-v7a"],
     "targetAppPackage": "com.example.app"
@@ -214,6 +218,10 @@ Java_cp_player_core_provider_JniProvider_analyzeAudioFile(
 | `version`          | 是  | 语义化版本                                                                                                              |
 | `type`             | 是  | Provider 类型：`"http"` / `"binary"` / `"jni"`                                                                        |
 | `entryPoint`       | 是  | URL、文件名或 .so 名                                                                                                     |
+| `contract`         | 否  | 契约模型规范：`"standard"`（Standard v3 扁平模型）或 `"legacy"`（网易云传统模型，默认）                                                |
+| `capabilities`     | 否  | 显式能力声明列表，如 `["search", "playback", "webviewLogin"]`。未声明的能力将在 UI 中自动物理隐藏                                    |
+| `loginMethods`     | 否  | 支持的登录方式：`["qr", "phone", "email", "cookie", "webview"]`（或 `"web"`）                                           |
+| `settingsSchema`   | 否  | 声明式原生配置表单定义列表，供应用内渲染原生设置面板并无状态携带配置                                                              |
 | `apiMap`           | 否  | API 方法名映射表                                                                                                         |
 | `updateUrl`        | 否  | 检查更新 URL，指向返回最新版本信息的 JSON 端点                                                                                       |
 | `supportedAbis`    | 否  | 支持的 CPU 架构列表，如 `["arm64-v8a", "armeabi-v7a"]`                                                                      |
@@ -649,6 +657,81 @@ Java_cp_player_core_provider_JniProvider_analyzeAudioFile(
 > （`unwrapLoginStatusData` / `extractUidFromLoginStatus` /  
 > `isLoggedInStatus` / `resolveLoginStatusCode`），期望字段则在  
 > `cp.player.core.api.ApiFieldContract`。**不要在别处再抄一份**。
+
+#### `login/webview/url` — WebView 网页授权登录地址
+
+| 方法名 | `login/webview/url` |
+| --- | ------------------- |
+| 参数  | 无                   |
+
+**响应：**
+
+```json
+{
+  "code": 200,
+  "data": {
+    "url": "https://music.example.com/oauth/authorize?client_id=xxx"
+  }
+}
+```
+
+> CPPlayer 会在桌面端或移动端以系统 Webview/系统默认浏览器唤起该授权页，用户完成授权后返回。
+
+#### `captcha/verify/url` — 获取安全核验 / 人机验证页面 URL
+
+| 方法名 | `captcha/verify/url` |
+| --- | -------------------- |
+| 参数  | `phone?`, 自定义参数    |
+
+**响应：**
+
+```json
+{
+  "code": 200,
+  "data": {
+    "verifyUrl": "https://verify.example.com/captcha/slider?token=xxx",
+    "verifyId": "vid_123456"
+  }
+}
+```
+
+#### `captcha/verify/check` — 检查安全核验状态
+
+| 方法名 | `captcha/verify/check` |
+| --- | ---------------------- |
+| 参数  | `verifyId`             |
+
+**响应：**
+
+```json
+{
+  "code": 200,
+  "data": {
+    "verified": true
+  }
+}
+```
+
+#### 登录风控与人机安全核验拦截流（统一机制）
+
+当音源登录相关接口（`login/cellphone`、`login`、`captcha/sent` 等）遇到上游风控阻拦时：
+
+1. **响应格式**：返回带有验证码或核验网址的 JSON，响应状态码建议为 `250`（风控）、`804`（安全限制）、`4001`（需要人机验证）或任意非成功错误码：
+```json
+{
+  "code": 250,
+  "message": "本次登录环境存在风险，请完成安全核验",
+  "data": {
+    "verifyUrl": "https://verify.example.com/captcha?token=8f9a2b"
+  }
+}
+```
+2. **网址字段支持**：解析器（`LoginStatus.extractVerifyUrl`）兼容读取顶层或 `data` 内部的 `verifyUrl`、`url`、`verifyContentUrl`、`captchaUrl`、`webUrl` 等字段。
+3. **UI 自动化交互**：
+   - CPPlayer 自动捕获该响应，阻断并转入核验状态；
+   - 界面弹出安全核验卡片，高亮警告提示；
+   - 用户点击「打开验证页面」直接唤起系统 Web 容器完成滑动验证码或人机交互；
+   - 完成后支持「复制验证链接」或点击关闭/重试继续完成登录。
 
 ---
 

@@ -169,17 +169,25 @@ class JvmPluginHostApi(
 
     private class HttpResult(val text: String, val bytes: ByteArray)
 
-    private fun httpRequest(payload: JsonObject?, method: String): HttpResult? {
+    private fun httpRequest(payload: JsonObject?, method: String, redirectCount: Int = 0): HttpResult? {
         val url = payload?.str("url").orEmpty()
         if (url.isBlank()) return null
         // ⚠️ 只允许 http/https，避免插件用 file:// 读取本地文件。
         if (!url.startsWith("http://") && !url.startsWith("https://")) return null
+        if (redirectCount > 3) return null
         return runCatching {
             val connection = (java.net.URI(url).toURL().openConnection() as HttpURLConnection).apply {
                 requestMethod = method
                 connectTimeout = payload?.int("connectTimeoutMs") ?: DEFAULT_CONNECT_TIMEOUT_MS
                 readTimeout = payload?.int("readTimeoutMs") ?: DEFAULT_READ_TIMEOUT_MS
                 instanceFollowRedirects = payload?.bool("followRedirects") ?: true
+                
+                // 默认请求头：避免被各大音乐服务反爬（默认 Java/xx 会直接 403）
+                setRequestProperty("User-Agent", DEFAULT_USER_AGENT)
+                setRequestProperty("Accept", "*/*")
+                setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+                setRequestProperty("Accept-Encoding", "gzip, deflate")
+
                 payload?.obj("headers")?.forEach { (key, value) ->
                     setRequestProperty(key, value.jsonPrimitive.contentOrNull.orEmpty())
                 }
@@ -193,7 +201,31 @@ class JvmPluginHostApi(
                 connection.outputStream.use { it.write(body) }
             }
             val code = connection.responseCode
-            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            // 处理跨协议重定向（HttpURLConnection 不会自动在 http 和 https 之间跳转）
+            if (code in listOf(301, 302, 303, 307, 308) && (payload?.bool("followRedirects") ?: true)) {
+                val location = connection.getHeaderField("Location")
+                connection.disconnect()
+                if (!location.isNullOrBlank()) {
+                    val nextUrl = if (location.startsWith("http://") || location.startsWith("https://")) {
+                        location
+                    } else {
+                        java.net.URI(url).resolve(location).toString()
+                    }
+                    val nextPayload = buildJsonObject {
+                        payload?.forEach { (k, v) -> put(k, v) }
+                        put("url", nextUrl)
+                    }
+                    return httpRequest(nextPayload, if (code == 303) "GET" else method, redirectCount + 1)
+                }
+            }
+            val encoding = connection.contentEncoding?.lowercase()
+            val rawStream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val stream = when {
+                rawStream == null -> null
+                encoding == "gzip" -> java.util.zip.GZIPInputStream(rawStream)
+                encoding == "deflate" -> java.util.zip.InflaterInputStream(rawStream)
+                else -> rawStream
+            }
             val bytes = stream?.use { input ->
                 val buffer = ByteArrayOutputStream()
                 input.copyTo(buffer)
@@ -280,12 +312,12 @@ class JvmPluginHostApi(
 
     private fun intArrayJson(bytes: ByteArray): JsonElement =
         buildJsonArray { bytes.forEach { add(JsonPrimitive(it.toInt() and 0xFF)) } }
-
-    private companion object {
-        const val DEFAULT_CONNECT_TIMEOUT_MS = 5_000
-        const val DEFAULT_READ_TIMEOUT_MS = 6_000
-    }
 }
+
+private const val DEFAULT_CONNECT_TIMEOUT_MS = 8_000
+private const val DEFAULT_READ_TIMEOUT_MS = 10_000
+private const val DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 CPPlayer/1.0"
+
 
 // ============ JSON 读取助手 ============
 

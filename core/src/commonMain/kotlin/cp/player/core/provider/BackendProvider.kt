@@ -96,6 +96,10 @@ interface BackendProvider {
     fun isFeatureAvailable(capability: String): Boolean =
         capabilities?.contains(capability) ?: true
 
+    /** 是否明确声称支持 [capability]（见 [ProviderCapability]）。 */
+    fun supports(capability: String): Boolean =
+        capabilities?.contains(capability) == true
+
     /**
      * 启动 Provider 服务。
      *

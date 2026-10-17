@@ -28,10 +28,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import cp.player.app.AppModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -72,7 +74,14 @@ fun SongItem(
      * 多选模式下忽略（长按已被多选语义占用，右键同时弹菜单会打架）。
      */
     contextMenu: List<CpContextMenuItem>? = null,
+    /**
+     * 是否在副标题显示所属专辑。传 null 时跟随系统全局设置 [AppModel.showSongAlbumFlow]（默认关闭）。
+     */
+    showAlbum: Boolean? = null,
 ) {
+    val globalShowAlbum by AppModel.showSongAlbumFlow.collectAsState()
+    val actualShowAlbum = showAlbum ?: globalShowAlbum
+
     // 桌面端（窗口 chrome 接管）且传入了菜单项 ⇒ MoreVert 走锚定菜单而不是底部弹层。
     // 判据用 LocalWindowChromeActive 而不是平台，理由见它的 KDoc。
     val anchoredMenu = LocalWindowChromeActive.current && !contextMenu.isNullOrEmpty()
@@ -202,7 +211,7 @@ fun SongItem(
             CpText(
                 text = buildString {
                     append(track.artist)
-                    if (!track.album.isNullOrBlank()) {
+                    if (actualShowAlbum && !track.album.isNullOrBlank()) {
                         append(" · ")
                         append(track.album)
                     }

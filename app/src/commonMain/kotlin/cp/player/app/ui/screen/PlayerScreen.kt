@@ -15,6 +15,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -41,12 +43,16 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.AccessAlarm
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
@@ -79,6 +85,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -102,6 +109,7 @@ import cp.player.app.ui.anim.LocalNavAnimatedVisibilityScope
 import cp.player.app.ui.anim.LocalSharedTransitionScope
 import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.LazyScrollColumn
+import cp.player.app.ui.component.LegacyModalBottomSheet
 import cp.player.app.ui.component.cpFluidBackground
 import cp.player.app.ui.component.desktopPagerMouseControl
 import cp.player.app.ui.component.PlayerMoreSheets
@@ -109,6 +117,7 @@ import cp.player.app.ui.component.QueueBottomSheet
 import cp.player.app.ui.component.SimilarSongsPanel
 import cp.player.app.ui.component.rememberPlayerMoreSheetState
 import cp.player.app.ui.model.CommentScreenModel
+import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.util.SeekAvailability
 import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.formatTimeMs
@@ -265,6 +274,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
     // 宿主与动作实现是共享组件 PlayerMoreSheets（本页末尾挂载；桌面播放页
     // DesktopPlayerScreen 同款复用）—— 两套布局互斥切换，各持一份状态。
     var showQueueSheet by remember { mutableStateOf(false) }
+    var showSimilarSheet by remember { mutableStateOf(false) }
     var showTranslation by remember { mutableStateOf(true) }
     val moreSheets = rememberPlayerMoreSheetState()
     val playerScope = rememberCoroutineScope()
@@ -288,8 +298,8 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
         }
     }
 
-    // Pager 四页：0=歌词，1=播放器，2=评论，3=相似歌曲
-    val pagerState = rememberPagerState(initialPage = 1) { 4 }
+    // 手机端三页 Pager：0=歌词，1=播放器/歌曲，2=评论（相似歌曲由顶栏独立按钮与队列入口呼出）
+    val pagerState = rememberPagerState(initialPage = 1) { 3 }
     val scope = rememberCoroutineScope()
 
     // 下拉关闭手势（仅播放器页启用）
@@ -433,37 +443,58 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                             ) { page ->
                                 when (page) {
                                     0 -> {
-                                        IconButton(
-                                            onClick = { showTranslation = !showTranslation },
-                                            modifier = Modifier.padding(end = 8.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Filled.Translate,
-                                                contentDescription = s.player.translation,
-                                                // 「开/关」是状态不是禁用：用 onSurface / onSurfaceVariant 两档，
-                                                // 而不是 onSurface 再压 0.4 透明度 —— 后者在深色主题下几乎看不见。
-                                                tint = if (showTranslation) MaterialTheme.colorScheme.onSurface
-                                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            IconButton(
+                                                onClick = { showTranslation = !showTranslation },
+                                                modifier = Modifier.padding(end = 4.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Translate,
+                                                    contentDescription = s.player.translation,
+                                                    tint = if (showTranslation) MaterialTheme.colorScheme.primary
+                                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                            FilledIconButton(
+                                                onClick = { showQueueSheet = true },
+                                                modifier = Modifier.padding(end = 8.dp),
+                                                colors = IconButtonDefaults.filledIconButtonColors(
+                                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                                    contentColor = MaterialTheme.colorScheme.onSurface,
+                                                ),
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                                    contentDescription = s.player.queue,
+                                                )
+                                            }
                                         }
                                     }
                                     else -> {
-                                        // 与桌面顶栏的账号 / 设置按钮同款（FilledIconButton +
-                                        // surfaceContainerHighest），而不是自己往 IconButton 上贴一层
-                                        // surfaceVariant 20% 的圆形背景 —— 那个「看起来像个按钮的按钮」
-                                        // 是上一轮凑出来的，圆角和内边距都跟别处对不上。
-                                        FilledIconButton(
-                                            onClick = { showQueueSheet = true },
-                                            modifier = Modifier.padding(end = 8.dp),
-                                            colors = IconButtonDefaults.filledIconButtonColors(
-                                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                                contentColor = MaterialTheme.colorScheme.onSurface,
-                                            ),
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                                contentDescription = s.player.queue,
-                                            )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            IconButton(
+                                                onClick = { showSimilarSheet = true },
+                                                modifier = Modifier.padding(end = 4.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.AutoAwesome,
+                                                    contentDescription = "相似歌曲",
+                                                    tint = MaterialTheme.colorScheme.onSurface,
+                                                )
+                                            }
+                                            FilledIconButton(
+                                                onClick = { showQueueSheet = true },
+                                                modifier = Modifier.padding(end = 8.dp),
+                                                colors = IconButtonDefaults.filledIconButtonColors(
+                                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                                    contentColor = MaterialTheme.colorScheme.onSurface,
+                                                ),
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                                    contentDescription = s.player.queue,
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -476,15 +507,11 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                 }
             ) { inner ->
                 Column(Modifier.fillMaxSize().padding(inner)) {
-                    // 三页（歌词 / 播放器 / 评论）是靠左右滑切换的，可这三页彼此毫无关联——
-                    // 不给任何可见提示的话，用户根本不知道还有评论和歌词，
-                    // 这两个功能等于藏起来了。这里给一条可点的分段指示器：
-                    // 选中段拉长 + 变主题色，跟着 pager 一起走。
-                    PagerIndicator(
-                        pageCount = 4,
+                    // 手机端三栏表现力切换选择器（【歌词】、【歌曲】、【评论】）
+                    MobilePlayerTabSelector(
                         currentPage = pagerState.currentPage,
                         onSelect = { page -> scope.launch { pagerState.animateScrollToPage(page) } },
-                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                        modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 6.dp),
                     )
                     HorizontalPager(
                         state = pagerState,
@@ -541,11 +568,6 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                 },
                             )
                             2 -> CommentPage(track.id, "music")
-                            // 相似歌曲以当前在播曲目为种子；种子变化由面板内部处理。
-                            3 -> SimilarSongsPanel(
-                                seedTrackId = track.id,
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                            )
                         }
                     }
                 }
@@ -562,7 +584,24 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             onMove = onMoveQueue,
             onClear = onClearQueue,
             onClose = { showQueueSheet = false },
+            onOpenSimilar = {
+                showQueueSheet = false
+                showSimilarSheet = true
+            },
         )
+    }
+
+    if (showSimilarSheet) {
+        LegacyModalBottomSheet(
+            onDismissRequest = { showSimilarSheet = false },
+            skipPartiallyExpanded = true,
+        ) {
+            SimilarSongsPanel(
+                seedTrackId = track.id,
+                onBack = { showSimilarSheet = false },
+                modifier = Modifier.padding(horizontal = 16.dp).fillMaxHeight(0.85f),
+            )
+        }
     }
 
     // 「更多」弹层 + 二级弹窗：宿主与动作实现全在共享组件 PlayerMoreSheets 里，
@@ -876,53 +915,76 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
 // 窄屏布局共用同一宿主，SongInfoDialog 作为其二级弹窗必须同处一处。
 
 @Composable
-private fun PagerIndicator(
-    pageCount: Int,
+private fun MobilePlayerTabSelector(
     currentPage: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier.padding(top = 2.dp, bottom = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    val isDark = LocalIsDarkTheme.current
+    val tabs = remember {
+        listOf(
+            MobileTabItem("歌词", Icons.Filled.Lyrics),
+            MobileTabItem("歌曲", Icons.Filled.MusicNote),
+            MobileTabItem("评论", Icons.AutoMirrored.Filled.Comment),
+        )
+    }
+    Surface(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.extraExtraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = if (isDark) 0.45f else 0.55f),
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.18f else 0.28f),
+        ),
     ) {
-        repeat(pageCount) { index ->
-            val selected = index == currentPage
-            // 选中段从 7dp 拉到 22dp：长度是比颜色更强的状态信号，
-            // 而且只有 spatial（带回弹）才有「弹过去」的感觉，用 tween 会像进度条在爬。
-            val width by androidx.compose.animation.core.animateDpAsState(
-                targetValue = if (selected) 22.dp else 7.dp,
-                animationSpec = cp.player.app.ui.theme.CpMotion.spatialFast(),
-                label = "pagerIndicatorWidth$index",
-            )
-            val color by animateColorAsState(
-                targetValue = if (selected) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.30f),
-                // 颜色必须走 **effects** 通道。以前这里是 spatialFast()，那是「位移 / 尺寸」
-                // 的规格、**带回弹** —— 挂在颜色上会让小圆点在到位前先过冲再回落，
-                // 看起来像颜色在抖。长度那一路（下面的 width）继续用 spatialFast，那才是对的。
-                animationSpec = cp.player.app.ui.theme.CpMotion.effectsFast(),
-                label = "pagerIndicatorColor$index",
-            )
-            // 外层是 28×24dp 的可点区域，内层才是 7dp 高的细段 ——
-            // 只让细段可点的话，实际命中区小到几乎点不中。
-            Surface(
-                onClick = { onSelect(index) },
-                shape = CircleShape,
-                color = androidx.compose.ui.graphics.Color.Transparent,
-                modifier = Modifier.width(28.dp).height(24.dp),
-            ) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Box(
-                        Modifier.width(width).height(7.dp)
-                            .background(color, CircleShape)
-                    )
+        Row(
+            Modifier.padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            tabs.forEachIndexed { index, tab ->
+                val selected = currentPage == index
+                val containerColor by animateColorAsState(
+                    targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer
+                    else Color.Transparent,
+                    animationSpec = CpMotion.effects(),
+                    label = "mobileTabContainerColor$index",
+                )
+                val contentColor by animateColorAsState(
+                    targetValue = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    animationSpec = CpMotion.effects(),
+                    label = "mobileTabContentColor$index",
+                )
+                Surface(
+                    onClick = { onSelect(index) },
+                    shape = MaterialTheme.shapes.large,
+                    color = containerColor,
+                    contentColor = contentColor,
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 13.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Icon(
+                            imageVector = tab.icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(15.dp),
+                        )
+                        Text(
+                            text = tab.title,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+private data class MobileTabItem(val title: String, val icon: ImageVector)
 
 @Composable
 private fun ProgressRow(
@@ -1035,6 +1097,7 @@ private fun CommentPage(id: String, type: String) {
 fun DesktopLyricsContent(
     state: cp.player.core.playback.PlaybackUiState,
     onSeek: (Long) -> Unit,
+    showTranslation: Boolean = true,
     onRepeat: () -> Unit = {},
     onLikeClick: () -> Unit = {},
     onChangeSource: (() -> Unit)? = null,
@@ -1042,7 +1105,7 @@ fun DesktopLyricsContent(
     Box(Modifier.fillMaxSize()) {
         cp.player.app.ui.component.LyricContent(
             state = state,
-            showTranslation = true,
+            showTranslation = showTranslation,
             onSeek = onSeek,
             onChangeSource = onChangeSource,
             modifier = Modifier.fillMaxSize(),

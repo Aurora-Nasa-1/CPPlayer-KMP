@@ -49,6 +49,9 @@ internal object ApiFieldContract {
         MusicApiMethod.AUTH_CAPTCHA_SENT to "data",
         MusicApiMethod.AUTH_LOGOUT to "code",
         MusicApiMethod.AUTH_ANONYMOUS to "code",
+        MusicApiMethod.AUTH_WEBVIEW_URL to "url",
+        MusicApiMethod.AUTH_VERIFY_URL to "url",
+        MusicApiMethod.AUTH_VERIFY_CHECK to "code",
         // 主字段取 NCM(Node) 的包裹层 `data`；平铺 Provider 靠 ALIASES 的 profile/account 兜住。
         MusicApiMethod.AUTH_LOGIN_STATUS to "data",
         MusicApiMethod.USER_LIKE to "songs",
@@ -192,7 +195,9 @@ internal object ApiFieldContract {
      * 目前只有 `login/status` —— 见文件头的形状对照表。
      */
     val ALIASES: Map<String, List<String>> = mapOf(
-        MusicApiMethod.AUTH_LOGIN_STATUS to listOf("profile", "account")
+        MusicApiMethod.AUTH_LOGIN_STATUS to listOf("profile", "account"),
+        MusicApiMethod.AUTH_WEBVIEW_URL to listOf("data", "verifyUrl", "webUrl"),
+        MusicApiMethod.AUTH_VERIFY_URL to listOf("data", "verifyUrl", "captchaUrl")
     )
 
     /** 该方法声明的主字段；未声明（不校验数据字段）时返回 null。 */

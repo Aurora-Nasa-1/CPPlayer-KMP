@@ -50,25 +50,12 @@ import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.CpShapes
 
 /**
- * 全应用**唯一**的搜索输入框外壳。
+ * 全应用统一的搜索输入框胶囊组件。
  *
- * 收敛前「搜索」这一件事在本仓里有**两套**长得完全不像的东西：
- *
- * | 位置 | 旧形态 | 症状 |
- * |------|--------|------|
- * | 搜索页 | `OutlinedTextField` + 前导 `Search` 图标 + 尾部再一个 `Search` 图标 | 1dp 描边的朴素输入框；空态下**前后两个放大镜**；宽屏不收口（1400dp 以上一条通到底） |
- * | 桌面标题栏 | 手写的 `BasicTextField` 填充胶囊 | 观感是对的，但那份代码**只在标题栏里**，页面抄不到 |
- *
- * 现在两处共用这一份：**填充式胶囊**（M3 Expressive 的 search bar 语言）+ 统一的清除按钮。
- * 建议下拉见 [CpSearchSuggestionPanel] —— 它与输入框刻意分成两个组件，好让页面把它当
- * **浮层**用（浮的关键是那层高度固定的 Box，见 `SearchScreen` 的说明）。
- *
- * @param onSubmit 提交搜索（IME 的「搜索」键）。**关键词是否为空由调用方判**，这里不代劳。
- * @param focusRequester 传非 null 时挂 `focusRequester` —— 由调用方决定要不要自动聚焦。
- *   ⚠️ 触屏上不要自动聚焦（进页面就弹软键盘会把历史 / 热门整块内容顶掉一半）。
- * @param containerColor / focusedContainerColor 未聚焦 / 聚焦时的容器色。**直接给颜色而不是**
- *   靠 `tonalElevation` —— 标题栏与页面正文所在的背景不是同一档色阶，再叠一层 tonal
- *   会让同一个输入框在两处亮出两个不同的层次。
+ * @param onSubmit 提交搜索回调。
+ * @param focusRequester 焦点请求器。
+ * @param containerColor 未聚焦时的容器底色。
+ * @param focusedContainerColor 聚焦时的容器底色。
  */
 @Composable
 fun CpSearchField(

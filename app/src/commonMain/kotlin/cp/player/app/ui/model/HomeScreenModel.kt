@@ -219,6 +219,12 @@ class HomeScreenModel(
                 refresh(force = true)
             }
         }
+        // 订阅歌单代际：用户创建/删除/收藏歌单或增删曲目时，自动刷新侧栏与首页歌单列表
+        screenModelScope.launch {
+            AppModel.playlistGeneration.drop(1).collect {
+                refresh(force = true)
+            }
+        }
     }
 
     /** 播放私人 FM：按批次连续拉取，补足一组可听队列。 */

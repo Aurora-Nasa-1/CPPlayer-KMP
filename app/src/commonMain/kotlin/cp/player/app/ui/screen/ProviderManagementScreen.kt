@@ -65,32 +65,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 音源管理：导入 / 切换 / 更新 / 导出 / 删除音源模块。
- *
- * ### 与重构前的差异（2026-10-01 统一版式时收敛）
- *
- * 1. **页边距从 8dp 收到表单页标准。** 原先自己拼 `LazyScrollColumn(...padding(8.dp))`，
- *    行距 4dp 恰好对，但页边距只有旁边 9 个设置页的一半（16dp），
- *    列表左右比别的页多出一截。现在走 [SettingsLazyPage]。
- * 2. **行底色回到 `settingsRowContainer()`。** 私有实现直接用了 `LegacyListItem` 的默认色
- *    `surfaceContainerHigh`；当前音源那行是 `primaryContainer.copy(alpha = 0.45f)` ——
- *    与账号页的 `0.5f` 纯属巧合，现在统一走 `SettingsClickItem(selected = true)`。
- * 3. **空态改用全应用统一的 [ContentState]**，不再手写图标 + 两行文字。
- * 4. **列表底部留出 FAB 的高度**（`bottomInset`）：原先没有，最后一行会被
- *    「+」按钮压住 —— 模块多的时候只能靠继续滚动碰运气。
- *
- * ### 2026-10-02 行内「更多」弹出菜单
- *
- * 5. 行尾换成 MoreVert 圆形按钮（样式对齐歌曲列表的 [cp.player.app.ui.component.SongItem]），
- *    弹出菜单承载 **导出 / 更新 / 删除**，删除不再单独占一个裸 IconButton。
- *    - 导出：系统「保存文件」对话框（[rememberZipSaver]），把模块目录打包为 zip；
- *      文件名按 `id-v版本.zip` 生成（id 本身就是模块目录名，天然文件名安全）。
- *    - 更新：与 FAB 导入共用同一个 zip 选择器 —— 点「更新」先记下目标行，
- *      回调里按包内 manifest.id 一致性校验替换，防止把 A 模块的包覆盖到 B 上。
- *    - busy 遮罩从「正在导入」泛化成 [ProviderManagementModel.busy]（文案随操作变化），
- *      导入 / 更新 / 导出共用。
- * 6. **列表顶部加显式「导入模块」按钮行**（[SettingsButtonItem]）：FAB 只剩快捷入口，
- *    空态文案同步指向按钮。
+ * 音源管理：导入、切换、更新、导出与删除音源模块。
  */
 class ProviderManagementScreen : Screen {
     @OptIn(ExperimentalMaterial3Api::class)

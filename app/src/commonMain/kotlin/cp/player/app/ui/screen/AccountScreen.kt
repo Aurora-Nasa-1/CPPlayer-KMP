@@ -5,6 +5,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -33,17 +34,23 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -94,6 +101,7 @@ import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.isPackageInstalled
 import cp.player.app.platform.openTargetApp
+import cp.player.app.platform.openWebview
 import cp.player.app.platform.saveQrCodeToGallery
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpIconSize
@@ -109,8 +117,12 @@ import cp.player.app.ui.component.rememberConfirmState
 import cp.player.app.ui.component.settingsRowHighlightContent
 import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.popOrNotify
+import cp.player.core.api.extractVerifyUrl
 import cp.player.core.api.isLoggedInStatus
+import cp.player.core.api.isVerificationChallenge
+import cp.player.core.provider.ProviderCapability
 import cp.player.core.util.currentTimeMillis
+
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -157,6 +169,8 @@ class AccountScreen : Screen {
         val isLogged by model.isLogged.collectAsState()
         val isLoading by model.isLoading.collectAsState()
         val message by model.message.collectAsState()
+        val verifyUrl by model.verifyUrl.collectAsState()
+        val webviewLoginUrl by model.webviewLoginUrl.collectAsState()
         val qrUrl by model.qrUrl.collectAsState()
         val qrImgBase64 by model.qrImgBase64.collectAsState()
         val qrRestored by model.qrRestored.collectAsState()
@@ -177,12 +191,25 @@ class AccountScreen : Screen {
         var cookieText by remember { mutableStateOf("") }
 
         val confirm = rememberConfirmState()
+        val clipboardManager = LocalClipboardManager.current
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
             SettingsPage(pageModifier) {
                 // 状态消息提醒
                 message?.let {
                     SettingsNote(it, color = MaterialTheme.colorScheme.primary)
+                }
+
+                verifyUrl?.let { url ->
+                    SecurityVerificationCard(
+                        verifyUrl = url,
+                        onOpenWebview = { model.openVerifyUrl() },
+                        onDismiss = { model.clearVerifyUrl() },
+                        onCopyUrl = {
+                            clipboardManager.setText(AnnotatedString(url))
+                            model.message.value = s.account.verifyCopied
+                        },
+                    )
                 }
 
                 if (qrRestored && (!isLogged || showForm)) {
@@ -260,6 +287,12 @@ class AccountScreen : Screen {
                                     normalized = normalizedCookie,
                                     isLoading = isLoading,
                                     onSubmit = { model.loginWithCookie(cookieText) },
+                                )
+                                LoginChannel.WEBVIEW -> WebviewLoginPanel(
+                                    webviewUrl = webviewLoginUrl,
+                                    isLoading = isLoading,
+                                    onFetchUrl = { model.fetchWebviewLoginUrl() },
+                                    onOpenWebview = { model.openWebviewLogin() },
                                 )
                             }
                         }
@@ -457,6 +490,12 @@ class AccountScreen : Screen {
                                             isLoading = isLoading,
                                             onSubmit = { model.loginWithCookie(cookieText) },
                                         )
+                                        LoginChannel.WEBVIEW -> WebviewLoginPanel(
+                                            webviewUrl = webviewLoginUrl,
+                                            isLoading = isLoading,
+                                            onFetchUrl = { model.fetchWebviewLoginUrl() },
+                                            onOpenWebview = { model.openWebviewLogin() },
+                                        )
                                     }
                                 }
                             }
@@ -647,7 +686,9 @@ private fun LoginChannelSelector(
                     LoginChannel.PHONE -> Icons.Filled.Phone
                     LoginChannel.EMAIL -> Icons.Filled.Email
                     LoginChannel.COOKIE -> Icons.Filled.Key
+                    LoginChannel.WEBVIEW -> Icons.Filled.Language
                 }
+
                 Surface(
                     shape = MaterialTheme.shapes.medium,
                     color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
@@ -1024,6 +1065,175 @@ internal fun CookieLoginForm(
 }
 
 /**
+ * 安全验证/风控挑战提示卡片。
+ * 支持直接唤起系统 WebView / 外部浏览器完成人机或安全核验，并支持复制验证链接。
+ */
+@Composable
+private fun SecurityVerificationCard(
+    verifyUrl: String,
+    onOpenWebview: () -> Unit,
+    onDismiss: () -> Unit,
+    onCopyUrl: () -> Unit,
+) {
+    val s = cpStrings().account
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(CpSpacing.formRowHorizontal),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(
+                    Icons.Filled.Security,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(22.dp),
+                )
+                Text(
+                    text = s.verifyRequiredTitle,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(28.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = s.clearVerify,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+
+            Text(
+                text = s.verifyUrlHint,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = onOpenWebview,
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.weight(1f).height(42.dp),
+                ) {
+                    Icon(Icons.Filled.Language, null, Modifier.size(CpIconSize.inline))
+                    Spacer(Modifier.width(6.dp))
+                    Text(s.openVerifyUrl)
+                }
+                OutlinedButton(
+                    onClick = onCopyUrl,
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.height(42.dp),
+                ) {
+                    Icon(Icons.Filled.ContentCopy, null, Modifier.size(CpIconSize.inline))
+                    Spacer(Modifier.width(4.dp))
+                    Text(s.copyVerifyUrl)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * WebView 网页登录面板。
+ */
+@Composable
+private fun WebviewLoginPanel(
+    webviewUrl: String?,
+    isLoading: Boolean,
+    onFetchUrl: () -> Unit,
+    onOpenWebview: () -> Unit,
+) {
+    val s = cpStrings().account
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Surface(
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.Language,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Text(
+                        s.webviewLoginTitle,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                Text(
+                    s.webviewLoginHint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        Spacer(Modifier.height(4.dp))
+
+        if (webviewUrl != null) {
+            Button(
+                onClick = onOpenWebview,
+                enabled = !isLoading,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+            ) {
+                Icon(Icons.AutoMirrored.Filled.OpenInNew, null, Modifier.size(CpIconSize.inline))
+                Spacer(Modifier.width(8.dp))
+                Text(s.openWebviewLogin, style = MaterialTheme.typography.titleSmall)
+            }
+        } else {
+            Button(
+                onClick = onFetchUrl,
+                enabled = !isLoading,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+            ) {
+                if (isLoading) {
+                    CpLoadingIndicator(Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(s.webviewUrlLoading)
+                } else {
+                    Icon(Icons.Filled.Language, null, Modifier.size(CpIconSize.inline))
+                    Spacer(Modifier.width(8.dp))
+                    Text(s.fetchWebviewUrl, style = MaterialTheme.typography.titleSmall)
+                }
+            }
+        }
+    }
+}
+
+/**
  * 已登录状态下的 M3E 个人信息 Hero 卡片。
  */
 @Composable
@@ -1207,6 +1417,8 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
     val supportsCaptchaImage = MutableStateFlow(false)
     val captchaImage = MutableStateFlow<String?>(null)
     val imageCaptcha = MutableStateFlow("")
+    val verifyUrl = MutableStateFlow<String?>(null)
+    val webviewLoginUrl = MutableStateFlow<String?>(null)
     private var captchaSessionCookie: String? = null
 
     private var qrJob: Job? = null
@@ -1233,6 +1445,9 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                         if ("qr" in declared) add(LoginChannel.QR)
                         if ("sms" in declared || "phone" in declared) add(LoginChannel.PHONE)
                         if ("email" in declared) add(LoginChannel.EMAIL)
+                        if ("webview" in declared || "web" in declared) {
+                            add(LoginChannel.WEBVIEW)
+                        }
                         add(LoginChannel.COOKIE)
                     }
                 }
@@ -1255,11 +1470,49 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
         method.value = channel
         if (channel == LoginChannel.QR) restoreOrFetchQrCode() else cancelQrPolling()
         if (channel == LoginChannel.PHONE && supportsCaptchaImage.value) fetchCaptchaImage()
+        if (channel == LoginChannel.WEBVIEW && webviewLoginUrl.value == null) fetchWebviewLoginUrl()
+    }
+
+    fun fetchWebviewLoginUrl() {
+        screenModelScope.launch {
+            isLoading.value = true
+            try {
+                val resp = AppModel.authRepository.getWebviewLoginUrl()
+                val url = extractVerifyUrl(resp) ?: ((resp as? JsonObject)?.get("url") as? JsonPrimitive)?.contentOrNull
+                if (!url.isNullOrBlank()) {
+                    webviewLoginUrl.value = url
+                } else {
+                    message.value = account.webviewUrlFailed
+                }
+            } catch (e: Exception) {
+                message.value = account.webviewUrlFailed
+            } finally {
+                isLoading.value = false
+            }
+        }
+    }
+
+    fun openWebviewLogin(customUrl: String? = null) {
+        val url = customUrl?.takeIf { it.isNotBlank() } ?: webviewLoginUrl.value
+        if (!url.isNullOrBlank()) {
+            openWebview(url, account.webviewLoginTitle)
+        } else {
+            fetchWebviewLoginUrl()
+        }
+    }
+
+    fun openVerifyUrl() {
+        verifyUrl.value?.let { openWebview(it, account.verifyRequiredTitle) }
+    }
+
+    fun clearVerifyUrl() {
+        verifyUrl.value = null
     }
 
     fun fetchCaptchaImage() {
         if (!supportsCaptchaImage.value) return
         screenModelScope.launch {
+
             val body = runCatching { AppModel.authRepository.getCaptchaImage() }.getOrNull()
             val obj = body?.asObject()
             val img = (obj?.get("captchaImage") as? JsonPrimitive)?.contentOrNull
@@ -1444,6 +1697,12 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
             isLoading.value = true
             try {
                 val body = AppModel.authRepository.login(email, password)
+                val vUrl = extractVerifyUrl(body)
+                if (vUrl != null || isVerificationChallenge(body)) {
+                    verifyUrl.value = vUrl
+                    message.value = account.verifyRequired
+                    return@launch
+                }
                 onLoginSucceeded(body.uniCookie(), body.asCodeOk())
             } catch (e: Exception) {
                 message.value = account.loginFailed(e.message)
@@ -1466,6 +1725,12 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                     captchaSessionCookie,
                 )
                 if (!body.asCodeOk()) {
+                    val vUrl = extractVerifyUrl(body)
+                    if (vUrl != null || isVerificationChallenge(body)) {
+                        verifyUrl.value = vUrl
+                        message.value = account.verifyRequired
+                        return@launch
+                    }
                     val reason = (body.asObject()?.get("msg") as? JsonPrimitive)?.contentOrNull
                     message.value = account.loginFailed(reason ?: account.pleaseRetry)
                     fetchCaptchaImage()
@@ -1535,6 +1800,12 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                     if (body.asCodeOk()) {
                         message.value = account.captchaSent
                     } else {
+                        val vUrl = extractVerifyUrl(body)
+                        if (vUrl != null || isVerificationChallenge(body)) {
+                            verifyUrl.value = vUrl
+                            message.value = account.verifyRequired
+                            return@launch
+                        }
                         val reason = (body.asObject()?.get("msg") as? JsonPrimitive)?.contentOrNull
                         message.value = account.captchaSendFailed(reason ?: account.pleaseRetry)
                         fetchCaptchaImage()
@@ -1543,6 +1814,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                 .onFailure { message.value = account.captchaSendFailed(it.message) }
         }
     }
+
 
     fun loginAnonymous() {
         cancelQrPolling()
@@ -1672,12 +1944,14 @@ enum class LoginChannel(val labelOf: (CpStrings) -> String) {
     PHONE({ it.account.channelPhone }),
     EMAIL({ it.account.channelEmail }),
     COOKIE({ it.account.channelCookie }),
+    WEBVIEW({ it.account.channelWebview }),
     ;
 
     companion object {
-        val DEFAULT = listOf(QR, PHONE, EMAIL, COOKIE)
+        val DEFAULT = listOf(QR, PHONE, EMAIL, COOKIE, WEBVIEW)
     }
 }
+
 
 private const val QR_POLL_INTERVAL_MS = 2000L
 private const val QR_POLL_MAX = 120

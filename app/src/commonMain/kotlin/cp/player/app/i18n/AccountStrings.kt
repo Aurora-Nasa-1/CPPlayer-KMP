@@ -58,9 +58,26 @@ interface AccountStrings {
      * 找到它的 —— 译成中文反而对不上。别当漏译改掉。
      */
     val channelCookie: String
+    val channelWebview: String
+
+    val webviewLoginTitle: String
+    val webviewLoginHint: String
+    val openWebviewLogin: String
+    val fetchWebviewUrl: String
+    val webviewUrlLoading: String
+    val webviewUrlFailed: String
+    val verifyRequired: String
+    val verifyRequiredTitle: String
+    val verifyUrlHint: String
+    val openVerifyUrl: String
+    val copyVerifyUrl: String
+    val verifyCopied: String
+    val verifyCompletedRetry: String
+    val clearVerify: String
 
     /** @param method 目标登录方式的显示名（[channelEmail] 之类）。 */
     fun switchToMethod(method: String): String
+
 
     val guestLogin: String
     val loginByPhone: String
@@ -298,7 +315,25 @@ object AccountStringsZh : AccountStrings {
     override val channelEmail = "邮箱登录"
     override val channelPhone = "手机号登录"
     override val channelCookie = "Cookie 登录"
+    override val channelWebview = "WebView 登录"
+
+    override val webviewLoginTitle = "WebView 网页登录"
+    override val webviewLoginHint = "在系统或内置 WebView 浏览器中打开音源登录页，登录完成后将 Cookie 复制回应用或返回刷新状态。"
+    override val openWebviewLogin = "打开 WebView 登录"
+    override val fetchWebviewUrl = "获取网页登录网址"
+    override val webviewUrlLoading = "正在获取网页登录网址…"
+    override val webviewUrlFailed = "未能获取到有效的登录网址，请稍后重试"
+    override val verifyRequired = "需要完成安全验证"
+    override val verifyRequiredTitle = "安全核验与验证码"
+    override val verifyUrlHint = "当前登录或验证码发送被安全拦截，请在 WebView 或浏览器中打开以下网址完成滑块或人机验证后继续："
+    override val openVerifyUrl = "打开验证网址 (WebView)"
+    override val copyVerifyUrl = "复制验证网址"
+    override val verifyCopied = "验证网址已复制到剪贴板"
+    override val verifyCompletedRetry = "已完成验证，继续登录"
+    override val clearVerify = "关闭验证"
+
     override fun switchToMethod(method: String) = "改用$method"
+
     override val guestLogin = "游客登录 / 跳过"
     override val loginByPhone = "手机登录"
 
@@ -445,7 +480,25 @@ object AccountStringsEn : AccountStrings {
     override val channelEmail = "Sign in with email"
     override val channelPhone = "Sign in with a phone number"
     override val channelCookie = "Sign in with a Cookie"
+    override val channelWebview = "Sign in with WebView"
+
+    override val webviewLoginTitle = "WebView web sign-in"
+    override val webviewLoginHint = "Open the provider's login page in WebView or browser. After signing in, copy the Cookie back or return to refresh."
+    override val openWebviewLogin = "Open WebView Sign-in"
+    override val fetchWebviewUrl = "Get web sign-in URL"
+    override val webviewUrlLoading = "Getting web sign-in URL…"
+    override val webviewUrlFailed = "Failed to get a valid login URL. Please try again later."
+    override val verifyRequired = "Security verification required"
+    override val verifyRequiredTitle = "Security Verification & Captcha"
+    override val verifyUrlHint = "Action blocked by security check. Please open the URL in WebView or browser to complete the verification challenge, then continue:"
+    override val openVerifyUrl = "Open Verification URL (WebView)"
+    override val copyVerifyUrl = "Copy verification link"
+    override val verifyCopied = "Verification link copied to clipboard"
+    override val verifyCompletedRetry = "Verification completed, continue"
+    override val clearVerify = "Dismiss verification"
+
     override fun switchToMethod(method: String) = "Use $method instead"
+
     override val guestLogin = "Continue as guest / Skip"
     override val loginByPhone = "Sign in with phone"
 

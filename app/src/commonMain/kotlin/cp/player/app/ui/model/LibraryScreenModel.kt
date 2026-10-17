@@ -54,6 +54,10 @@ class LibraryScreenModel : ScreenModel {
         screenModelScope.launch {
             AppModel.sourceGeneration.drop(1).collect { refresh() }
         }
+        // 订阅歌单代际（新建、删除、收藏、取消收藏、曲目增删等），自动静默刷新媒体库歌单
+        screenModelScope.launch {
+            AppModel.playlistGeneration.drop(1).collect { refresh() }
+        }
     }
 
     /**

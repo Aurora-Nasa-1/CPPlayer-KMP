@@ -1,53 +1,44 @@
-# CPPlayer 文档导航
+# CPPlayer 文档索引
 
-> 全部文档按受众分三档：**用户文档**（怎么用）、**开发者文档**（怎么改 / 怎么接入）、
-> **历史归档**（一次性方案与审计，记录决策来历，内容以当时的仓库状态为基准）。
+欢迎查阅 CPPlayer 文档。本文档分为**用户使用指南**与**开发者手册**两大板块。
 
-## 用户文档
+---
 
-| 文档 | 内容 |
+## 📖 用户文档
+
+| 文档 | 说明 |
 |------|------|
-| [USER_GUIDE.md](USER_GUIDE.md) | 安装、首次启动、音源导入、账号登录、播放、本地服务器与推送、常见问题 |
+| [USER_GUIDE.md](USER_GUIDE.md) | 安装分发、首次启动、音源模块导入、账号登录、音频播放、局域网流推送与常见问题 |
 
-## 开发者文档（[`dev/`](dev/)）
+---
 
-| 文档 | 内容 | 什么时候读 |
-|------|------|------------|
-| [dev/ARCHITECTURE.md](dev/ARCHITECTURE.md) | 模块职责、依赖规则、源集分层、边界越界点清单 | **新增代码前必读** |
-| [dev/PROVIDER_DEV_GUIDE.md](dev/PROVIDER_DEV_GUIDE.md) | 音源（Provider）插件开发指南，面向第三方音源作者 | 给 CPPlayer 写音源模块 |
-| [dev/INTEGRATION_API.md](dev/INTEGRATION_API.md) | 对外集成契约（v1）：让第三方软件把 CPPlayer 当音源用 | 对接 CPPlayer 的 `/api/v1/...` 端点 |
-| [dev/RELEASE.md](dev/RELEASE.md) | 发布流程 | 发版 |
-| [dev/JBR_PACKAGING.md](dev/JBR_PACKAGING.md) | 桌面端 JBR（JetBrains Runtime）打包方案 | 动桌面端打包 / 窗口 chrome |
-| [dev/LINUX_PACKAGING.md](dev/LINUX_PACKAGING.md) | Linux 通用 tar.gz 分发包 + AUR（cpplayer-bin）自动发布与 GitHub 配置 | 动 Linux 打包 / AUR |
-| [dev/WINDOWS_PACKAGING.md](dev/WINDOWS_PACKAGING.md) | Windows 安装包改用 Velopack（取代 jpackage 的 MSI）：产物、构建、更新链路与待办 | 动 Windows 打包 / 自动更新 |
+## 🛠️ 开发者文档 (`docs/dev/`)
 
-## 设计提案（[`design/`](design/)）
+### 插件与音源开发（核心）
 
-> 尚未实施的前瞻设计。与 `history/` 的区别：`history/` 是**已做完**的归档，
-> 这里是**待评审 / 待排期**的方案，结论不构成当前架构约定。
+| 文档 | 说明 | 适用场景 |
+|------|------|----------|
+| [QUICK_PROVIDER_DEV_GUIDE.md](dev/QUICK_PROVIDER_DEV_GUIDE.md) | **现代插件开发极速指南 (Standard v3)** | 开发轻量自定义音源、第三方平台移植、歌词插件（5 分钟上手） |
+| [PROVIDER_DEV_GUIDE.md](dev/PROVIDER_DEV_GUIDE.md) | **音源与插件开发完整参考手册** | Standard v3 规范、网易云全量端点参考、Lyrico 歌词插件规范与打包规范 |
 
-| 文档 | 内容 |
+### 核心架构与生态集成
+
+| 文档 | 说明 |
 |------|------|
-| [design/ALBUM_WALL_MODE.md](design/ALBUM_WALL_MODE.md) | 专辑墙模式：无极缩放的尺度空间、手机 / 桌面交互、沉浸播放器与队列空间化（附可交互原型 `album-wall-prototype.html`） |
-| [design/M3E_REFERENCE_ADOPTION.md](design/M3E_REFERENCE_ADOPTION.md) | 参考 PixelPlayer / Kazumi 的 M3 Expressive 借鉴（**体验版**）：按「用户能感觉到什么」组织 —— 单一 `expansionFraction` 驱动的播放页编排、十个「代码看不出但拿掉就廉价」的细节、Kazumi「关于」页的 hero 版式、手势物理、播放页主题跟歌走 |
+| [ARCHITECTURE.md](dev/ARCHITECTURE.md) | 架构分层、模块边界 (`app-android` / `app` / `core`) 与源集依赖规则 |
+| [INTEGRATION_API.md](dev/INTEGRATION_API.md) | 对外集成契约 (v1)：第三方应用与游戏通过 HTTP 访问播放器媒体流与数据 |
+| [I18N.md](dev/I18N.md) | 国际化 (i18n) 机制与多语言文案规范 |
 
-## 历史归档（[`history/`](history/)）
+### 打包分发与发布
 
-> 这些文档记录**当时**的诊断与方案，多数已实施完毕。文中引用的文件路径、
-> 行号以写作时为准，不代表当前代码；正式的架构约定以 [`dev/ARCHITECTURE.md`](dev/ARCHITECTURE.md) 为准。
-
-| 文档 | 状态 |
+| 文档 | 说明 |
 |------|------|
-| [history/RESTRUCTURE_PLAN.md](history/RESTRUCTURE_PLAN.md) | 目录结构迁移方案（2026-09-25），已实施 |
-| [history/DEAD_CODE_AUDIT.md](history/DEAD_CODE_AUDIT.md) | 死代码审计（2026-09-26，含 2026-09-30 订正） |
-| [history/HARMONYOS_FEASIBILITY.md](history/HARMONYOS_FEASIBILITY.md) | 鸿蒙（HarmonyOS NEXT）适配可行性分析（2026-09-26） |
-| [history/HOME_CARD_REFRESH_PLAN.md](history/HOME_CARD_REFRESH_PLAN.md) | 首页卡片重复度改造（已全部实施） |
-| [history/INTEGRATION_PLAN.md](history/INTEGRATION_PLAN.md) | 对外集成方案分阶段计划（契约手册见 `dev/INTEGRATION_API.md`；§13 能力清单同步纪律仍在生效） |
-| [history/PLAYER_MORE_MENU_PORT.md](history/PLAYER_MORE_MENU_PORT.md) | 播放页「更多」菜单移植方案（已完成约 90%+） |
-| [history/SETTINGS_REDESIGN.md](history/SETTINGS_REDESIGN.md) | 设置界面重构方案（2026-09-30） |
-| [history/VISUAL_EXPRESSIVE_PLAN.md](history/VISUAL_EXPRESSIVE_PLAN.md) | 视觉优化方案（对标 M3 Expressive） |
+| [RELEASE.md](dev/RELEASE.md) | 发布流程、版本号规范与产物校验 |
+| [WINDOWS_PACKAGING.md](dev/WINDOWS_PACKAGING.md) | Windows 端 Velopack 安装包与自动更新机制 |
+| [LINUX_PACKAGING.md](dev/LINUX_PACKAGING.md) | Linux tar.gz 与 AUR (`cpplayer-bin`) 发布 |
+| [JBR_PACKAGING.md](dev/JBR_PACKAGING.md) | 桌面端 JetBrains Runtime (JBR) 打包与窗口装饰 |
 
-## 其他入口
+---
 
-- 仓库门面与构建说明：[`README.md`](../README.md)
-- AI 协作硬约定（本仓库动手前必读）：[`AGENTS.md`](../AGENTS.md)
+## 📌 快速导航
+- 仓库主页与构建说明：[`README.md`](../README.md)

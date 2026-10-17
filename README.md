@@ -1,234 +1,95 @@
 # CPPlayer
 
-> 跨平台音乐播放器（Kotlin Multiplatform）。Android 与 Desktop（JVM）共用一套
-> 播放内核、音源插件系统与 Compose UI。
->
-> 本仓库是原 Android 项目 `CPPlayer` 的 KMP 移植版。旧项目与第三方音源模块源码
-> 作为**只读参考**保留在 `reference/` 下，不参与构建。
+> 现代化跨平台音乐播放器（Kotlin Multiplatform）。Android 与 Desktop（Windows / macOS / Linux）共用同一套播放内核、音源插件系统与 Compose Multiplatform 界面。
 
-**文档入口**：[用户使用指南](docs/USER_GUIDE.md)（安装 / 音源 / 账号 / 推送 / FAQ）
-· [开发者文档索引](docs/README.md)（架构 / Provider 开发 / 集成契约 / 发布）
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.4.10-purple.svg)](https://kotlinlang.org)
+[![Compose Multiplatform](https://img.shields.io/badge/Compose%20Multiplatform-1.11.1-blue.svg)](https://www.jetbrains.com/lp/compose-multiplatform/)
 
 ---
 
-## 模块划分
+## 📌 文档入口
 
-工程由三个 Gradle 模块组成，职责按「后端 / 前端 / 平台入口」划分：
+- 📖 **用户手册**：[用户使用指南 (USER_GUIDE.md)](docs/USER_GUIDE.md)（安装、音源导入、账号登录、推送、常见问题）
+- 🔌 **插件开发**：[5分钟极速上手现代音源与插件 (Standard v3)](docs/dev/QUICK_PROVIDER_DEV_GUIDE.md) · [插件完整参考手册](docs/dev/PROVIDER_DEV_GUIDE.md)
+- 🛠️ **开发者文档**：[开发者文档总索引](docs/README.md)（架构、集成契约、各平台打包）
 
-| 模块 | 角色 | 规模 | 说明 |
-|------|------|------|------|
-| `core` | **后端** | 94 文件 / 11.4k 行 | 音源插件系统、音乐 API、缓存、播放内核、下载、本地媒体扫描、本地流输出服务。**不含任何 UI 代码** |
-| `app` | **前端** | 88 文件 / 16.6k 行 | Compose Multiplatform UI、Voyager 导航、ScreenModel、更新检查。另有桌面端入口 `Main.kt` |
-| `app-android` | **安卓入口点** | 4 文件 / 236 行 | `MainActivity`、`Application`、Media3 `MediaSessionService`、Manifest |
+---
 
-依赖方向是单向的，不允许反向或跨层引用：
+## 🌟 核心特性
+
+- **纯正跨平台一致体验**：基于 Compose Multiplatform 打造，桌面端原生窗口手势吸附、移动端沉浸体验。
+- **现代化插件系统 (Standard v3)**：
+  - 极简契约：仅需实现“搜索”与“获取音频直链” 2 个接口即可快速接入新音源。
+  - 原生声明式设置：音源在 `manifest.json` 中声明配置字段，客户端自动渲染 Material 3 原生设置面板。
+  - UI 动态自适应：根据音源声明的 `capabilities` 自动展示或隐藏云盘、评论、推荐等功能区。
+  - 多类型插件生态：支持 Standard v3 / Legacy 音源插件、Lyrico 歌词插件系统与本地边车歌词。
+- **发烧级音频解码引擎**：
+  - 支持 WASAPI Exclusive 硬件独占直通推流、DSD 解码与无损流落盘缓存。
+  - 10 频段参数均衡器 (PEQ)、声道平衡、响度归一化与防爆音削顶。
+- **生态集成与本地流输出**：
+  - 内置基于 Ktor CIO 的本地 HTTP 流媒体服务（支持字节范围请求与断点续传）。
+  - 支持将正在播放的曲目与音频流推送到外部接收端（如游戏 Radio 或车载系统）。
+- **多端局域网同步**：
+  - 同一局域网内自动发现对等设备，一键转移播放进度并双向同步听歌记录。
+
+---
+
+## 🏗️ 架构与模块划分
 
 ```
 app-android ──▶ app ──▶ core
 ```
 
-前端访问后端的**唯一入口**是 `cp.player.core.MusicBackend`。Provider / Module / API
-等内部组件不应被前端直接触碰 —— 详见 [`docs/dev/ARCHITECTURE.md`](docs/dev/ARCHITECTURE.md)
-（含当前越界点的清单）。
+| 模块 | 职责 | 说明 |
+|------|------|------|
+| `core` | **后端领域核心** | 音源插件系统、API 服务、读透缓存、播放内核、本地媒体库、下载与流输出服务。**无任何 UI 代码** |
+| `app` | **前端跨平台共享** | Compose Multiplatform UI、Voyager 导航、ScreenModel、主题系统，以及桌面端入口 `Main.kt` |
+| `app-android` | **Android 平台入口** | 依 AGP 规范独立的应用模块：`MainActivity`、`Application`、Media3 `MediaSessionService` |
 
-> **后端包名已从 `cp.player.kmp` 改为 `cp.player.core`**（与模块名对齐）。
-> 这会让 JNI 导出符号前缀同步变化，用旧前缀编译的音源模块需要重新构建 ——
-> 详见 [`docs/history/RESTRUCTURE_PLAN.md`](docs/history/RESTRUCTURE_PLAN.md) §7.3。
-
-### 为什么安卓入口是独立模块
-
-这不是历史遗留，而是 **AGP 9 的硬性要求**。自 AGP 9.0 起，Kotlin Multiplatform
-插件**不再兼容** `com.android.application` / `com.android.library`：
-
-> When used along with Android Gradle plugin 9.0 or newer, the Kotlin Multiplatform
-> Gradle plugin stops being compatible with the `com.android.application` and the
-> `com.android.library` plugins.
-> —— [kotlinlang.org · AGP 9 迁移指南](https://kotlinlang.org/docs/multiplatform/multiplatform-project-agp-9-migration.html)
-
-官方给出的迁移动作是「把 Android 入口点抽到独立模块」，推荐结构正是
-**独立的应用模块（应用插件）+ 共享模块（Android-KMP library 插件）**。
-本工程已经采用了这套结构（`app` 与 `core` 均使用
-`com.android.kotlin.multiplatform.library`）。
-
-**所以 `app-android` 不能合并进 `app`** —— 在 AGP 10 移除遗留 API 之前，
-唯一能这么做的办法是设置 `android.enableLegacyVariantApi=true`，那只是把问题
-推迟到 2026 下半年。
+前端与后端的统一交互入口为 `cp.player.core.MusicBackend`。详细架构与依赖规则见 [`docs/dev/ARCHITECTURE.md`](docs/dev/ARCHITECTURE.md)。
 
 ---
 
-## 目录结构
+## 🚀 构建与运行
 
-```
-CPPlayer-KMP/
-├── settings.gradle.kts            # include(":core") / (":app") / (":app-android")
-├── build.gradle.kts               # 根：插件声明（全部 apply false）
-├── gradle.properties              # 版本号唯一来源：app.versionName / versionCode / releaseChannel
-├── gradle/libs.versions.toml      # 版本目录
-├── docs/
-│   ├── README.md                  # 文档导航（用户 / 开发者 / 历史归档三档）
-│   ├── USER_GUIDE.md              # 用户使用指南
-│   ├── dev/                       # 开发者文档：架构、Provider 指南、集成契约、发布、JBR 打包
-│   └── history/                   # 历史方案与审计归档（内容以写作时点为基准）
-├── scripts/                       # release.ps1 / fastrelease-install.ps1
-├── native/windows-smtc/           # 决策记录：SMTC 已由 JMTC 实现，此处方案已废弃（无代码）
-├── reference/                     # 只读参考，不参与构建
-│   ├── cp-player-legacy/          # 原 Android 项目（本地 checkout，已 gitignore）
-│   └── netease-module-rust/       # 第三方音源模块（Rust：api / server / util）
-├── core/                          # 后端
-│   └── src/{commonMain,jvmMain,androidMain,desktopMain,desktopTest}
-├── app/                           # 前端（共享 UI 库 + 桌面入口）
-│   └── src/{commonMain,androidMain,desktopMain,desktopTest}
-└── app-android/                   # 安卓入口点
-    └── src/main/{kotlin,res,AndroidManifest.xml}
-```
+### 环境要求
+- JDK 21+（推荐使用 JetBrains Runtime 21）
+- Android SDK (API 34+)
 
-### 源集分层
-
-`core` 采用四层源集，`app` 采用三层：
-
-```
-commonMain  ──▶  jvmMain  ──▶  { androidMain, desktopMain }
-```
-
-| 源集 | 放什么 |
-|------|--------|
-| `commonMain` | 纯跨平台代码：模型、Provider 抽象、Ktor 客户端、缓存、播放控制 |
-| `jvmMain` | Android 与 Desktop 共享的 JVM 实现：Socket / Zip / ELF / 二进制 Provider / 本地流输出服务 |
-| `androidMain` | Android 独有：`Context`、`SharedPreferences`、`Build.SUPPORTED_ABIS`、Media3 播放器、JNI Provider |
-| `desktopMain` | Desktop 独有：`~/.cpplayer` 持久化（运行时配置目录，首次启动自动从旧名 `.kmp-pro` 迁移）、rodio 播放器、JMTC 媒体控制、Skiko 渲染调优 |
-
----
-
-## 构建
+### 常用命令
 
 ```bash
-# 后端（两个平台各编译一次）
+# 桌面端直接运行
+./gradlew :app:run
+
+# 编译后端
 ./gradlew :core:compileKotlinDesktop
 ./gradlew :core:compileAndroidMain
 
-# 后端单元测试（回归测试所在）
+# 运行单元测试
 ./gradlew :core:desktopTest
-
-# 前端
-./gradlew :app:compileKotlinDesktop
-./gradlew :app:compileAndroidMain
 ./gradlew :app:desktopTest
 
-# 产物
-./gradlew :app:run              # 桌面端直接运行
-./gradlew :app:packageWindowsVelopack  # Windows 安装包（Velopack，需 .NET SDK 装 vpk；另有 Dmg / Deb）
-./gradlew :app-android:assembleDebug
+# 打包分发产物
+./gradlew :app:packageWindowsVelopack  # Windows 安装包 (Velopack)
+./gradlew :app-android:assembleDebug   # Android 安装包
 ```
 
-技术栈：Gradle 9.4.1 / Kotlin 2.4.10 / AGP 9.1.1 / Compose Multiplatform 1.11.1 /
-Ktor 3.0.3 / kotlinx-serialization 1.7.3 / coroutines 1.9.0 / datetime 0.6.1 /
-Media3 1.4.1。版本号唯一来源是 `gradle/libs.versions.toml`。
-
-发布流程见 [`docs/dev/RELEASE.md`](docs/dev/RELEASE.md)，桌面端打包运行时（JBR）见
-[`docs/dev/JBR_PACKAGING.md`](docs/dev/JBR_PACKAGING.md)。
+发布细节请参阅 [`docs/dev/RELEASE.md`](docs/dev/RELEASE.md)。
 
 ---
 
-## 核心设计
+## 🤝 致谢与开源声明 (Acknowledgments)
 
-### 后端统一入口：`MusicBackend`
+本项目中的 **Hi-Res 音频内核**（FlickEngine / WASAPI 独占直通 / DSD 解码）设计思想与底层实现参考并来源于开源项目 **[Flick](https://github.com/moss-apps/Flick)**。
 
-`core/src/commonMain/.../MusicBackend.kt` 是前端的唯一依赖类型，负责：
-
-1. **生命周期 + 状态机** —— 通过 `stateFlow` 暴露 `BackendState`，自动处理初始化、
-   Provider 激活与错误恢复；
-2. **Provider 管理** —— 导入 / 切换 / 删除音源模块，导入时自动激活首个 Provider；
-3. **音乐数据访问** —— 通过 `musicApi` / `cachedApi` 提供**带缓存**的云音乐 API；
-4. **播放控制** —— 队列、seek、切歌、歌词、音质。
-
-### 缓存层：`CachedMusicApiService`
-
-在 `MusicApiServiceImpl` 之上再封装一层。它**实现同一个 `MusicApiService` 接口**，
-所以对调用方是透明的 —— `MusicBackend.musicApi` 交出去的就是它，裸实现不外泄。
-
-**主路径：读透（read-through）**，覆写了 `isCacheable(...)` 名单内的读类方法：
-
-```
-1) 命中且未超过 freshTtlMs  → 直接返回缓存，不发网络请求
-2) 未命中 / 已过期          → 回源；成功则写回缓存并返回
-3) 回源抛异常 / 判为 ERROR  → 多 Provider 容灾 → 旧缓存（哪怕过期）→ 原样交出失败响应
-```
-
-**副路径：流式 `callApiCached(...)`**，需要"先渲染缓存、后台刷新"时用，
-返回 `Flow<CacheResult<JsonElement>>`，多值发射：
-
-```
-1) 先返回缓存          → CacheResult.Cached(data, isStale)        （即时）
-2) 后台拉取网络        → delegate.callApi(...)
-3) 计算响应指纹        → Fingerprinter.compute(json)
-4) 指纹相同            → CacheResult.NoChange                     （内容未变）
-   指纹不同            → CacheResult.Fresh(data)                  （异步回传 + 写回缓存）
-5) 响应判为 ERROR      → 多 Provider 容灾 tryFallback(...)
-6) 网络异常            → CacheResult.Error(message, fallback = 缓存)
-```
-
-- **指纹**（`Fingerprinter`）：抽取 `code` + 顶层数组长度 + 主数据数组的 `id` 列表
-  （前 64 个，去重排序）+ 版本位。增删条目指纹变化、**重排不算变化**，改无关字段不影响。
-- **缓存键**：`providerId#method#sortedParams#cookieHash`，默认 `InMemoryApiCache`
-  （LRU，容量取 `CacheConfig.maxEntries`）。**cookie 参与键** —— 同机多账号必须隔离，
-  否则 B 账号会读到 A 账号的歌单。
-- **写/动作类接口不缓存**（登录、点赞、发评论、打卡等），见 `isCacheable(...)`。
-- **写操作会失效对应读缓存**：`addTracksToPlaylist` → `playlist/track/all` + `playlist/detail`，
-  `likeSong` → `user/like/list`，`postComment` / `likeComment` → 该 `type` 对应的评论端点，
-  `logout` 清全表。新增写接口时要同步补映射。
-- **可观测**：`backend.cachedApi.stats`（hits / misses / stores / staleServed / invalidated）。
-- **关缓存**：`CacheConfig(enableCache = false)`。
-
-### 三级健康分类
-
-| 级别 | 含义 | 处理 |
-|------|------|------|
-| `OK` | 响应正常 | 直接使用 |
-| `WARNING` | 不符合预期但勉强可用（缺可选字段、慢响应、空数据、异常 code） | 使用但附 `warnings` 告警 |
-| `ERROR` | 不可用（解析失败、Provider 不支持 code=-1、`MALFORMED_RESPONSE`） | 触发多 Provider 错误回退；失败则带缓存降级 |
-
-`overallLevelFlow` 反映最近 100 条记录的综合等级，供 UI 顶部状态指示。
-
-### 本地流输出 + 外部推送
-
-CPPlayer 可作为**推送方**，把本地转码后的 HTTP 流推给外部接收端（游戏 radio 一类）：
-
-- `8080` 是 CPPlayer 自己开的流输出端口（Ktor CIO，字节直通，透传
-  `Content-Length` / `Content-Range` / `Accept-Ranges`）；
-- `8420` 是**接收端**的端口，通过 `/api/v1/play-url` 等端点接收推送；
-- 输出模式可选「本机声卡」或「只做服务器」（静默模式，本机音量恒定为 0）。
-
-配置见 `cp.player.core.control.LocalServerConfig`，UI 入口在设置页「本地服务器」。
+- 核心归属与致谢：感谢 **[moss-apps](https://github.com/moss-apps)** 团队及社区在跨平台音频解码管线与低延迟推流领域的开源贡献（遵循 MIT 许可证）。
+- 开源生态鸣谢：[Rodio](https://github.com/RustAudio/rodio)、[Symphonia](https://github.com/pdeljanov/Symphonia)、[cpal](https://github.com/RustAudio/cpal)、[Lyrico](https://github.com/Replica0110/Lyrico) 等优秀开源项目。
+- 完整第三方许可证清单：详见 [NOTICE](NOTICE) 与 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。
 
 ---
 
-## 参考代码
-
-`reference/` 下的两份源码**仅供查阅，不参与构建**，改动它们不会影响产物：
-
-- `reference/cp-player-legacy/` —— 原 Android 项目（Kotlin + Media3 + Rust 音频引擎）。
-  移植时的对照基准，尤其用于核对 seek / 切歌 / 本地文件打开等行为差异。
-- `reference/netease-module-rust/` —— 第三方音源模块，`src/api/` 下有 400+ 个
-  网易云 API 实现，`src/server/` 与 `src/util/` 提供本地 HTTP 服务与 JNI 入口。
-
-> 移植过程与差异说明见 `reference/cp-player-legacy/README.md` 及本文件历史版本。
-
----
-
-## 致谢与开源声明 (Acknowledgments)
-
-本项目中的 **Hi-Res 发烧级音频内核**（FlickEngine / Desktop WASAPI Exclusive 硬件独占直通 / DSD 解码）的设计思想与底层实现参考并来源于开源项目 **[Flick](https://github.com/moss-apps/Flick)**。
-
-- **核心归属与致谢**：衷心感谢 **[moss-apps](https://github.com/moss-apps)** 团队及 Flick 开源社区在跨平台音频解码管线、Symphonia 解码器集成、低延迟推流架构等领域做出的卓越探索与开源贡献。FlickEngine 核心归属于 moss-apps 团队，并遵循 MIT 开源许可证。
-- **演进与优化**：CPPlayer-KMP 在此基础上针对 Windows 平台修复了 WASAPI Event-Driven 驱动独占推流欠载、Pre-roll 预填防爆音以及 JNI 生命周期安全释放等关键链路，并实现 Kotlin Multiplatform (Android & Desktop) 双端深度接入。
-- **开源生态鸣谢**：特别鸣谢 [Rodio](https://github.com/RustAudio/rodio)、[Symphonia](https://github.com/pdeljanov/Symphonia)、[cpal](https://github.com/RustAudio/cpal) 以及广大 Rust 音频生态开发者。
-- **第三方协议与完整清单**：详见 [NOTICE](NOTICE) 与 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。
-
----
-
-## 许可证 (License)
+## 📄 许可证 (License)
 
 CPPlayer-KMP 项目遵循 [Apache License 2.0](LICENSE) 开源协议。
-第三方组件的版权与许可证详见 [NOTICE](NOTICE) 及 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。
-
-

@@ -68,18 +68,7 @@ import kotlinx.coroutines.launch
 /**
  * 用户 / 歌手主页（统一页面）。
  *
- * ## 为什么是**一个**页面而不是两个
- *
- * 上游 `user/detail` 与 `artist/detail` 共用同一段数字 id 空间，同一个 id 两边都可能返回
- * 数据 —— 「点进去之前」根本不知道对方是人还是歌手。硬拆成两页就必须在这里先猜一次，
- * 猜错就是个空页。旧项目 `UserViewModel.fetchOtherUserProfile` 用的也是「先试歌手」的
- * 单页方案，这里沿用。
- *
- * ## 收敛前它不存在
- *
- * 搜索结果里的歌手只能显示一行**纯文字**（连头像都没有），首页「热门歌手」点下去是
- * 「拿歌手名字再搜一遍」。这一页把 `artist/detail` + `artist/top/song` + `artist/album`
- * + `user/detail` + `user/playlist` 真正接起来。
+ * 用户与歌手个人主页页面：展示资料、热门单曲、专辑与创建的歌单。
  */
 class UserProfileScreen(
     private val uid: Long,

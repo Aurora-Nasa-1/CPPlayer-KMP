@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -148,7 +149,8 @@ fun PlaylistPickerSheet(
     val s = cpStrings()
     var playlists by remember { mutableStateOf<List<PlaylistSummary>?>(null) }
 
-    LaunchedEffect(Unit) {
+    val playlistGen by AppModel.playlistGeneration.collectAsState()
+    LaunchedEffect(playlistGen) {
         playlists = withContext(Dispatchers.IO) {
             runCatching { fetchOwnedPlaylists() }.getOrDefault(emptyList())
         }

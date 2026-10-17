@@ -43,7 +43,12 @@ data class LyricsRequest(
     val album: String,
     val durationMs: Long = 0L,
     val isLocal: Boolean = false,
+    val originalMediaId: CPMediaId? = null,
 ) {
+    /** 实际可用于平台精确查询的 mediaId（在线曲为 mediaId，已下载本地曲为 originalMediaId）。 */
+    val platformMediaId: CPMediaId?
+        get() = if (!isLocal) mediaId else originalMediaId
+
     /** 关键词形式的检索串（插件 `searchSongs` 用）；空标题返回空串，由调用方决定是否放弃。 */
     val keyword: String
         get() = listOf(title, artist).filter { it.isNotBlank() }.joinToString(" ")
@@ -110,11 +115,12 @@ interface LyricsSource {
  */
 object BuiltinLyricsSourceIds {
     const val SIDECAR = "builtin.sidecar"
+    const val EMBEDDED = "builtin.embedded"
     const val AMLL = "builtin.amll"
     const val PROVIDER = "builtin.provider"
 
-    /** 默认顺序（首次安装 / 老配置迁移的兜底）：与改造前 `AMLL_FIRST` 的行为一致。 */
-    val DEFAULT_ORDER = listOf(SIDECAR, AMLL, PROVIDER)
+    /** 默认顺序（首次安装 / 老配置迁移的兜底）：边车 -> 内嵌 -> AMLL -> 音源 */
+    val DEFAULT_ORDER = listOf(SIDECAR, EMBEDDED, AMLL, PROVIDER)
 
-    val ALL = setOf(SIDECAR, AMLL, PROVIDER)
+    val ALL = setOf(SIDECAR, EMBEDDED, AMLL, PROVIDER)
 }

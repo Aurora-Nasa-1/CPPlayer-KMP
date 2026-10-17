@@ -137,4 +137,7 @@ expect object PlatformSupport {
 
     /** 重命名/移动目录（src → dest）。dest 必须不存在或可覆盖。 */
     fun moveDir(src: String, dest: String): Boolean
+
+    /** 读取音频文件内嵌歌词（支持 ID3v2 USLT/SYLT, Vorbis LYRICS, MP4 ©lyr）。无内嵌或失败返回 null */
+    fun readEmbeddedLyrics(path: String): String?
 }

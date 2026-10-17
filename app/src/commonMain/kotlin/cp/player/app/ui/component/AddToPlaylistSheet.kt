@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,7 +59,8 @@ fun AddToPlaylistSheet(
     var newName by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
+    val playlistGen by AppModel.playlistGeneration.collectAsState()
+    LaunchedEffect(playlistGen) {
         playlists = withContext(Dispatchers.IO) {
             runCatching { fetchOwnedPlaylists() }.getOrDefault(emptyList())
         }

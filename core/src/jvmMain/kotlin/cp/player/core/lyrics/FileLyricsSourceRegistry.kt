@@ -57,10 +57,11 @@ class FileLyricsSourceRegistry(
     /** 已载入的第三方来源快照（[reload] 刷新）。 */
     private var pluginSources: List<LyricsSource> = emptyList()
 
-    /** 内置三源：恒定在册。 */
+    /** 内置源：恒定在册。 */
     private val builtins: List<LyricsSource> by lazy {
         buildList {
             add(SidecarLyricsSource())
+            add(EmbeddedLyricsSource())
             amllClient?.let { add(AmllLyricsSource(it)) }
             add(ProviderLyricsSource(api))
         }

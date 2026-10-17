@@ -92,6 +92,9 @@ class PlaylistDetailScreenModel : ScreenModel {
      */
     private var loadGen = 0
 
+    /** 本地乐观修改中标记，避免自身增删曲目时并发触发的 playlistEvents 覆盖本地状态。 */
+    private var isSelfModifying = false
+
     init {
         // 音源切换后，本页曲目属于旧音源：作废加载标记并（真实歌单）按当前音源重拉。
         // 与 HomeScreenModel / LibraryScreenModel 同一套处理。
@@ -106,6 +109,15 @@ class PlaylistDetailScreenModel : ScreenModel {
                 if (summary.id > 0) load(summary, force = true)
             }
         }
+        // 订阅歌单事件：当外部修改了当前歌单（如在播放器中加入当前歌单）时静默重拉
+        screenModelScope.launch {
+            AppModel.playlistEvents.collect { event ->
+                val summary = _state.value.summary ?: return@collect
+                if (!isSelfModifying && summary.id > 0 && event.playlistId == summary.id) {
+                    refresh()
+                }
+            }
+        }
     }
 
     // ============ 加载 ============
@@ -113,7 +125,7 @@ class PlaylistDetailScreenModel : ScreenModel {
     /**
      * 加载歌单详情（description / trackCount 修正）与首页曲目（并行），并拉取收藏列表。
      *
-     * @param force 为 true 时忽略 [loadedPlaylistId] 守卫（供「重试」按钮使用）。
+     * @param force 为 true 时忽略 [loadedPlaylistId] 守卫（供「重试」与「刷新」使用）。
      */
     fun load(summary: PlaylistSummary, force: Boolean = false) {
         if (!force && loadedPlaylistId == summary.id) return
@@ -122,7 +134,10 @@ class PlaylistDetailScreenModel : ScreenModel {
         val requestProvider = AppModel.activeProviderId()
         loadedPlaylistId = summary.id
         fetchingPlaylistId = summary.id
-        _state.value = PlaylistDetailUiState(summary = summary)
+        val silent = force && _state.value.tracks.isNotEmpty()
+        if (!silent) {
+            _state.value = PlaylistDetailUiState(summary = summary)
+        }
         loadLiked()
         screenModelScope.launch {
             val results = withContext(Dispatchers.IO) {
@@ -139,7 +154,11 @@ class PlaylistDetailScreenModel : ScreenModel {
             // 歌单已切换，或有更新的一次加载（切源重拉）已在途 —— 丢弃过期结果
             if (fetchingPlaylistId != summary.id || gen != loadGen) return@launch
             if (results == null) {
-                _state.update { it.copy(loading = false, error = "歌单详情加载失败") }
+                if (silent) {
+                    UiEvents.notify("歌单详情刷新失败")
+                } else {
+                    _state.update { it.copy(loading = false, error = "歌单详情加载失败") }
+                }
                 return@launch
             }
             val (detailResult, tracksResult) = results
@@ -163,12 +182,27 @@ class PlaylistDetailScreenModel : ScreenModel {
                         error = null,
                         loadMoreError = null,
                     )
+                    if (silent) {
+                        UiEvents.notify("已刷新")
+                    }
                 }
-                is BackendResult.Error -> next = next.copy(loading = false, error = tracksResult.message)
-                is BackendResult.Unsupported -> next = next.copy(loading = false, error = tracksResult.message)
+                is BackendResult.Error -> {
+                    if (silent) UiEvents.notify(tracksResult.message)
+                    else next = next.copy(loading = false, error = tracksResult.message)
+                }
+                is BackendResult.Unsupported -> {
+                    if (silent) UiEvents.notify(tracksResult.message)
+                    else next = next.copy(loading = false, error = tracksResult.message)
+                }
             }
             _state.value = next
         }
+    }
+
+    /** 手动刷新当前歌单详情与曲目（静默刷新，不闪空白屏）。 */
+    fun refresh() {
+        val summary = _state.value.summary ?: return
+        if (summary.id > 0) load(summary, force = true)
     }
 
     /**
@@ -424,25 +458,30 @@ class PlaylistDetailScreenModel : ScreenModel {
         val playlist = _state.value.summary ?: return
         if (newTracks.isEmpty() || !isOwner()) return
         screenModelScope.launch {
-            val ids = newTracks.map { it.id }
-            val ok = withContext(Dispatchers.IO) {
-                runCatching { AppModel.musicRepository.addTracksToPlaylist(playlist.id, ids) }
-                    .getOrDefault(false)
-            }
-            if (ok) {
-                var addedCount = 0
-                _state.update { s ->
-                    val seen = s.tracks.mapTo(HashSet()) { it.id }
-                    val added = newTracks.filter { seen.add(it.id) }
-                    addedCount = added.size
-                    s.copy(
-                        tracks = s.tracks + added,
-                        summary = s.summary?.copy(trackCount = s.summary.trackCount + added.size),
-                    )
+            isSelfModifying = true
+            try {
+                val ids = newTracks.map { it.id }
+                val ok = withContext(Dispatchers.IO) {
+                    runCatching { AppModel.musicRepository.addTracksToPlaylist(playlist.id, ids) }
+                        .getOrDefault(false)
                 }
-                UiEvents.notify(if (addedCount > 0) "已添加 $addedCount 首歌曲" else "所选歌曲均已在歌单中")
-            } else {
-                UiEvents.notify("加入歌单失败")
+                if (ok) {
+                    var addedCount = 0
+                    _state.update { s ->
+                        val seen = s.tracks.mapTo(HashSet()) { it.id }
+                        val added = newTracks.filter { seen.add(it.id) }
+                        addedCount = added.size
+                        s.copy(
+                            tracks = s.tracks + added,
+                            summary = s.summary?.copy(trackCount = s.summary.trackCount + added.size),
+                        )
+                    }
+                    UiEvents.notify(if (addedCount > 0) "已添加 $addedCount 首歌曲" else "所选歌曲均已在歌单中")
+                } else {
+                    UiEvents.notify("加入歌单失败")
+                }
+            } finally {
+                isSelfModifying = false
             }
         }
     }
@@ -452,26 +491,31 @@ class PlaylistDetailScreenModel : ScreenModel {
         val playlist = _state.value.summary ?: return
         if (trackIds.isEmpty() || !isOwner()) return
         screenModelScope.launch {
-            val ok = withContext(Dispatchers.IO) {
-                runCatching { AppModel.musicRepository.removeTracksFromPlaylist(playlist.id, trackIds) }
-                    .getOrDefault(false)
-            }
-            if (ok) {
-                // 以本地 tracks 实际命中剔除的数量计数（removeTracks 只删本地，不回退 nextOffset）
-                var removedCount = 0
-                _state.update { s ->
-                    val idSet = trackIds.toSet()
-                    removedCount = s.tracks.count { it.id in idSet }
-                    s.copy(
-                        tracks = s.tracks.filterNot { it.id in idSet },
-                        selectionMode = false,
-                        selectedIds = emptySet(),
-                        summary = s.summary?.copy(trackCount = (s.summary.trackCount - removedCount).coerceAtLeast(0)),
-                    )
+            isSelfModifying = true
+            try {
+                val ok = withContext(Dispatchers.IO) {
+                    runCatching { AppModel.musicRepository.removeTracksFromPlaylist(playlist.id, trackIds) }
+                        .getOrDefault(false)
                 }
-                UiEvents.notify("已移除 $removedCount 首歌曲")
-            } else {
-                UiEvents.notify("操作失败")
+                if (ok) {
+                    // 以本地 tracks 实际命中剔除的数量计数（removeTracks 只删本地，不回退 nextOffset）
+                    var removedCount = 0
+                    _state.update { s ->
+                        val idSet = trackIds.toSet()
+                        removedCount = s.tracks.count { it.id in idSet }
+                        s.copy(
+                            tracks = s.tracks.filterNot { it.id in idSet },
+                            selectionMode = false,
+                            selectedIds = emptySet(),
+                            summary = s.summary?.copy(trackCount = (s.summary.trackCount - removedCount).coerceAtLeast(0)),
+                        )
+                    }
+                    UiEvents.notify("已移除 $removedCount 首歌曲")
+                } else {
+                    UiEvents.notify("操作失败")
+                }
+            } finally {
+                isSelfModifying = false
             }
         }
     }

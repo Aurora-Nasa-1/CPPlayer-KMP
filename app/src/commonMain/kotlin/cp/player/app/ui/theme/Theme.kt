@@ -26,11 +26,7 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
 /**
  * 设置页用的短标签。
  *
- * 放这里而不是 UI 层：重构前这段 `when` 在「外观」页和已经删掉的「偏好设置」页
- * 各写了一份，两边措辞已经开始漂移。
- *
- * ⚠️ 收 [CpStrings] 而不是无参：枚举扩展函数读不到组合状态，写死中文的话
- * 英文界面的分段控件里会并排出现 `Follow system / 浅色 / 深色`。
+ * ⚠️ 接收 [CpStrings]：枚举扩展函数在非 Composable 上下文中需显式传入多语言实例。
  */
 fun ThemeMode.displayName(strings: CpStrings): String = when (this) {
     ThemeMode.SYSTEM -> strings.appearance.themeModeSystem

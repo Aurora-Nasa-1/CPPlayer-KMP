@@ -1,5 +1,6 @@
 package cp.player.app.repository
 
+import cp.player.app.AppModel
 import cp.player.core.api.extractUidFromLoginStatus
 import cp.player.core.BackendResult
 import cp.player.core.api.MusicApiService
@@ -247,19 +248,36 @@ class MusicRepository(private val api: MusicApiService) {
         )
     }
 
-    suspend fun deletePlaylist(id: Long): Boolean = isApiSuccess(api.deletePlaylist(id))
+    suspend fun deletePlaylist(id: Long): Boolean {
+        val ok = isApiSuccess(api.deletePlaylist(id))
+        if (ok) AppModel.notifyPlaylistChanged(id)
+        return ok
+    }
 
-    suspend fun unsubscribePlaylist(id: Long): Boolean = isApiSuccess(api.subscribePlaylist(id, t = 2))
+    suspend fun unsubscribePlaylist(id: Long): Boolean {
+        val ok = isApiSuccess(api.subscribePlaylist(id, t = 2))
+        if (ok) AppModel.notifyPlaylistChanged(id)
+        return ok
+    }
 
     /** 收藏 / 取消收藏歌单。 */
-    suspend fun subscribePlaylist(id: Long, subscribe: Boolean): Boolean =
-        isApiSuccess(api.subscribePlaylist(id, t = if (subscribe) 1 else 2))
+    suspend fun subscribePlaylist(id: Long, subscribe: Boolean): Boolean {
+        val ok = isApiSuccess(api.subscribePlaylist(id, t = if (subscribe) 1 else 2))
+        if (ok) AppModel.notifyPlaylistChanged(id)
+        return ok
+    }
 
-    suspend fun addTracksToPlaylist(playlistId: Long, ids: List<String>): Boolean =
-        isApiSuccess(api.addTracksToPlaylist(playlistId, ids))
+    suspend fun addTracksToPlaylist(playlistId: Long, ids: List<String>): Boolean {
+        val ok = isApiSuccess(api.addTracksToPlaylist(playlistId, ids))
+        if (ok) AppModel.notifyPlaylistChanged(playlistId)
+        return ok
+    }
 
-    suspend fun removeTracksFromPlaylist(playlistId: Long, ids: List<String>): Boolean =
-        isApiSuccess(api.removeTracksFromPlaylist(playlistId, ids))
+    suspend fun removeTracksFromPlaylist(playlistId: Long, ids: List<String>): Boolean {
+        val ok = isApiSuccess(api.removeTracksFromPlaylist(playlistId, ids))
+        if (ok) AppModel.notifyPlaylistChanged(playlistId)
+        return ok
+    }
 
     suspend fun likeSong(songId: String, like: Boolean): Boolean = isApiSuccess(api.likeSong(songId, like))
 
@@ -271,8 +289,13 @@ class MusicRepository(private val api: MusicApiService) {
      *
      * ⚠️ 这是**写操作**，不在缓存名单内——每次都直连网络，不存在「建完马上查不到」的缓存窗口。
      */
-    suspend fun createPlaylist(name: String): MusicResult<Long> =
-        MusicSourceFromApi.parseCreatePlaylist(api.createPlaylist(name))
+    suspend fun createPlaylist(name: String): MusicResult<Long> {
+        val result = MusicSourceFromApi.parseCreatePlaylist(api.createPlaylist(name))
+        if (result is BackendResult.Success) {
+            AppModel.notifyPlaylistChanged(result.data)
+        }
+        return result
+    }
 
     /** 歌曲详情信息（信息弹窗用）；[fallback] 提供列表里已知的回退字段。 */
     suspend fun getSongDetailInfo(songId: String, fallback: SongDetailInfo? = null): MusicResult<SongDetailInfo> =

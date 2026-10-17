@@ -1,6 +1,9 @@
 package cp.player.app.ui.component
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,18 +20,25 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+import cp.player.app.ui.theme.CpMotion
+import cp.player.app.ui.theme.LocalIsDarkTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -235,7 +245,7 @@ private fun FloorSection(comment: Comment, floor: CommentFloorUi?, model: Commen
                 Modifier
                     .fillMaxWidth()
                     .padding(top = 8.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(MaterialTheme.shapes.medium)
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
                     .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -399,12 +409,13 @@ private fun LikeButton(comment: Comment, model: CommentScreenModel) {
     }
 }
 
-/** 底部输入条：回复目标（可取消）+ 输入框 + 发送。 */
+/** 底部输入条：无割裂感的沉浸浮动式胶囊 Dock。 */
 @Composable
 private fun CommentComposer(state: CommentUiState, model: CommentScreenModel) {
     val s = cpStrings().social.comment
+    val isDark = LocalIsDarkTheme.current
     val focus = remember { FocusRequester() }
-    // 点了「回复」就把焦点送进输入框 —— 否则用户还得再点一下，多一步。
+    // 点了「回复」就把焦点送进输入框
     LaunchedEffect(state.replyTarget?.id) {
         if (state.replyTarget != null) runCatching { focus.requestFocus() }
     }
@@ -412,58 +423,136 @@ private fun CommentComposer(state: CommentUiState, model: CommentScreenModel) {
     Column(
         Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 8.dp, vertical = 6.dp),
     ) {
         state.replyTarget?.let { target ->
+            Surface(
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.75f),
+                modifier = Modifier.padding(start = 6.dp, bottom = 6.dp),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.Comment,
+                        contentDescription = null,
+                        modifier = Modifier.size(13.dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                    Text(
+                        s.replyTo(target.user),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .clickable { model.cancelReply() }
+                            .padding(2.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = s.cancelReply,
+                            modifier = Modifier.size(13.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
+                }
+            }
+        }
+
+        // 浮动一体化药丸胶囊：输入与发送合一，告别横向割裂的方块底板
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.extraExtraLarge,
+            color = if (isDark) MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.75f)
+            else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.90f),
+            border = BorderStroke(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.18f else 0.30f),
+            ),
+        ) {
             Row(
-                Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    s.replyTo(target.user),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
+                TextField(
+                    value = state.draft,
+                    onValueChange = model::updateDraft,
+                    modifier = Modifier.weight(1f).focusRequester(focus),
+                    placeholder = {
+                        Text(
+                            s.inputPlaceholder,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.60f),
+                        )
+                    },
+                    maxLines = 4,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        cursorColor = MaterialTheme.colorScheme.primary,
+                    ),
                 )
-                Text(
-                    s.cancelReply,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .clip(MaterialTheme.shapes.small)
-                        .clickable { model.cancelReply() }
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
+
+                if (state.draft.length >= COMMENT_MAX_LENGTH - 30) {
+                    Text(
+                        text = "${state.draft.length}/$COMMENT_MAX_LENGTH",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (state.draftTooLong) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 6.dp),
+                    )
+                }
+
+                val sendBtnBg by animateColorAsState(
+                    targetValue = if (state.canSend) MaterialTheme.colorScheme.primary else Color.Transparent,
+                    animationSpec = CpMotion.effects(),
+                    label = "sendBtnBg",
                 )
+                val sendBtnTint by animateColorAsState(
+                    targetValue = if (state.canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                    animationSpec = CpMotion.effects(),
+                    label = "sendBtnTint",
+                )
+
+                FilledIconButton(
+                    onClick = model::send,
+                    enabled = state.canSend,
+                    shape = CircleShape,
+                    modifier = Modifier.size(36.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = sendBtnBg,
+                        contentColor = sendBtnTint,
+                        disabledContainerColor = Color.Transparent,
+                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
+                    ),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Send,
+                        contentDescription = s.send,
+                        modifier = Modifier.size(17.dp),
+                    )
+                }
             }
         }
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            OutlinedTextField(
-                value = state.draft,
-                onValueChange = model::updateDraft,
-                modifier = Modifier.weight(1f).focusRequester(focus),
-                placeholder = { Text(s.inputPlaceholder) },
-                maxLines = 4,
-                isError = state.draftTooLong,
-                shape = MaterialTheme.shapes.large,
-            )
-            FilledIconButton(onClick = model::send, enabled = state.canSend) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = s.send)
-            }
-        }
+
         val hint = state.sendError ?: if (state.draftTooLong) s.tooLong(COMMENT_MAX_LENGTH) else null
         if (hint != null) {
             Text(
                 hint,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 4.dp, start = 4.dp),
+                modifier = Modifier.padding(top = 4.dp, start = 12.dp),
             )
         }
     }

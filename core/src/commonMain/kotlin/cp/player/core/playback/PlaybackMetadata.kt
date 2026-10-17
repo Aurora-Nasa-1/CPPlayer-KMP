@@ -1,11 +1,7 @@
 package cp.player.core.playback
 
 /**
- * 播放元信息（与播放引擎解耦的最小集合）。
- *
- * 原与 `PlaybackEngine` / `EngineType` / `PlaybackState` 同放在 `PlaybackEngine.kt`；
- * 2026-09-25 那三者作为死代码移除后，本类单独成文件 —— 它是活的，
- * 由 [PlatformPlayer.load] 与 [PlaybackControllerImpl] 实际使用。
+ * 播放元信息（与播放引擎解耦的跨平台元数据对象）。
  */
 data class PlaybackMetadata(
     val id: String = "",

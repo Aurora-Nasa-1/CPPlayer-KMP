@@ -138,7 +138,24 @@ class MusicApiServiceImpl(
     override suspend fun getLoginStatus(cookie: String?): JsonElement =
         callApi(MusicApiMethod.AUTH_LOGIN_STATUS, cookie = cookie)
 
+    override suspend fun getWebviewLoginUrl(): JsonElement =
+        callApi(MusicApiMethod.AUTH_WEBVIEW_URL)
+
+    override suspend fun getVerifyUrl(phone: String?, customParams: Map<String, String>): JsonElement {
+        val params = mutableMapOf<String, String>()
+        if (!phone.isNullOrBlank()) params["phone"] = phone
+        params.putAll(customParams)
+        return callApi(MusicApiMethod.AUTH_VERIFY_URL, params)
+    }
+
+    override suspend fun checkVerifyStatus(verifyId: String?): JsonElement {
+        val params = mutableMapOf<String, String>()
+        if (!verifyId.isNullOrBlank()) params["verifyId"] = verifyId
+        return callApi(MusicApiMethod.AUTH_VERIFY_CHECK, params)
+    }
+
     // ======================== 用户 User ========================
+
 
     override suspend fun getUserPlaylists(uid: Long): JsonElement =
         callApi(MusicApiMethod.USER_PLAYLIST, mapOf("uid" to uid.toString()))

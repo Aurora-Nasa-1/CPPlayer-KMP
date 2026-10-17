@@ -212,7 +212,8 @@ class MediaDownloadManagerImpl(
             mediaType = task.mediaType,
             coverUri = task.coverUrl,
             source = LocalMediaOrigin.DOWNLOADED,
-            lastModified = PlatformSupport.fileLastModified(path)
+            lastModified = PlatformSupport.fileLastModified(path),
+            originalMediaId = task.mediaId,
         )
         runCatching { callback(task, item) }
     }

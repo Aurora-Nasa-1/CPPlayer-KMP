@@ -45,7 +45,12 @@ actual fun openUrl(url: String) {
     } catch (_: Exception) {}
 }
 
+actual fun openWebview(url: String, title: String?) {
+    openUrl(url)
+}
+
 actual fun downloadUpdate(url: String, fileName: String) = openUrl(url)
+
 
 /**
  * 清空 Coil 的内存 / 磁盘缓存。

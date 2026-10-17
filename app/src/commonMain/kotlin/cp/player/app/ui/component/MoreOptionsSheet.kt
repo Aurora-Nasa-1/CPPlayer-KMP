@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SmartDisplay
@@ -244,6 +245,7 @@ fun PlaylistOptionsSheet(
     onDismiss: () -> Unit,
     onPlay: () -> Unit,
     onAddToQueue: () -> Unit,
+    onRefresh: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     onShare: (() -> Unit)? = null,
     coverUrl: String? = null,
@@ -301,7 +303,7 @@ fun PlaylistOptionsSheet(
                 }
             }
 
-            // 第一行：播放 + 分享 + 删除/收藏
+            // 第一行：播放 + 刷新 + 分享 + 删除/收藏
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 ActionTile(
                     label = "播放",
@@ -311,6 +313,13 @@ fun PlaylistOptionsSheet(
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     onClick = { onPlay(); onDismiss() },
                 )
+                onRefresh?.let { refresh ->
+                    CircleAction(
+                        icon = Icons.Filled.Refresh,
+                        label = "刷新",
+                        onClick = { refresh(); onDismiss() },
+                    )
+                }
                 onShare?.let { share ->
                     CircleAction(
                         icon = Icons.Filled.Share,

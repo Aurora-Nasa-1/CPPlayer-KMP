@@ -61,13 +61,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 /**
- * 消息列表页（最近联系人）。
- *
- * 收敛前整个「消息」入口在应用里**不存在**：`MusicApiService` 上早就有一整套私信端点
- * （`msg/recentcontact` / `msg/private` / `send/text`），但没有任何页面够得到它们。
- *
- * 版式沿用旧项目 `ContactListScreen`：头像 + 昵称 + 最后一条 + 时间 + 未读红点。
- * 未登录或音源不支持时给明确空态，而不是一屏空白。
+ * 消息与私信列表页面。
  */
 class MessagesScreen : Screen {
     @Composable

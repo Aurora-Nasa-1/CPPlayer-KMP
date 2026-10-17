@@ -51,19 +51,7 @@ import cp.player.app.ui.util.popOrNotify
 import kotlin.math.roundToInt
 
 /**
- * 外观与主题。
- *
- * ### 与重构前的差异
- *
- * 1. **状态只从 `AppModel` 的 StateFlow 读。** 旧版写的是
- *    `var themeMode by remember { mutableStateOf(AppModel.themeMode()) }` ——
- *    在页面里复制了一份持久值。别处（恢复默认、封面取色）改了它，这份副本不会同步，
- *    UI 会一直显示陈旧值。
- * 2. **「主题模式」「取色来源」改用分段控件。** 两者都是 3 选 1，走旧版的
- *    「下拉行 → 底部弹层」要「点开 + 点选」两次，而且当前值只能从副标题里猜；
- *    分段控件让三个选项直接可见，一次点击完成。
- * 3. **不可用的取色来源直接不显示**，而不是置灰。置灰的选项对用户是纯噪声 ——
- *    他既选不了，也看不出为什么。
+ * 外观与主题设置页面。
  */
 class AppearanceSettingsScreen : Screen {
     @Composable
@@ -77,6 +65,7 @@ class AppearanceSettingsScreen : Screen {
         val bottomBarAutoHide by AppModel.bottomBarAutoHideFlow.collectAsState()
         val coverFlightAnimation by AppModel.coverFlightAnimationFlow.collectAsState()
         val fluidBackground by AppModel.fluidBackgroundFlow.collectAsState()
+        val showSongAlbum by AppModel.showSongAlbumFlow.collectAsState()
         val fontRoundness by AppModel.fontRoundnessFlow.collectAsState()
         val platformAvailable = isPlatformColorSourceAvailable()
         val defaultRoundness = cp.player.app.platform.defaultFontRoundness()
@@ -121,7 +110,7 @@ class AppearanceSettingsScreen : Screen {
                             ThemeMode.entries.getOrNull(index)?.let(AppModel::setThemeMode)
                         },
                         index = 0,
-                        total = 6,
+                        total = 7,
                     )
                     SettingsSegmentedItem(
                         title = s.appearance.colorSource,
@@ -131,7 +120,7 @@ class AppearanceSettingsScreen : Screen {
                             availableSources.getOrNull(index)?.let(AppModel::setColorSource)
                         },
                         index = 1,
-                        total = 6,
+                        total = 7,
                     )
                     SettingsSwitchItem(
                         title = s.appearance.pureBlack,
@@ -139,7 +128,7 @@ class AppearanceSettingsScreen : Screen {
                         checked = pureBlack,
                         onCheckedChange = AppModel::setPureBlack,
                         index = 2,
-                        total = 6,
+                        total = 7,
                     )
                     // 窄屏布局才有底栏；桌面宽屏走侧栏，这项开着也无副作用。
                     SettingsSwitchItem(
@@ -148,7 +137,7 @@ class AppearanceSettingsScreen : Screen {
                         checked = bottomBarAutoHide,
                         onCheckedChange = AppModel::setBottomBarAutoHide,
                         index = 3,
-                        total = 6,
+                        total = 7,
                     )
                     SettingsSwitchItem(
                         title = s.appearance.coverFlight,
@@ -156,7 +145,7 @@ class AppearanceSettingsScreen : Screen {
                         checked = coverFlightAnimation,
                         onCheckedChange = AppModel::setCoverFlightAnimation,
                         index = 4,
-                        total = 6,
+                        total = 7,
                     )
                     // 与「封面飞行动画」同属「播放页的视觉特效」，所以放同一组而不是
                     // 播放设置页：用户找它时的心理位置是「界面长什么样」，不是「怎么播」。
@@ -166,7 +155,15 @@ class AppearanceSettingsScreen : Screen {
                         checked = fluidBackground,
                         onCheckedChange = AppModel::setFluidBackground,
                         index = 5,
-                        total = 6,
+                        total = 7,
+                    )
+                    SettingsSwitchItem(
+                        title = s.appearance.showSongAlbum,
+                        subtitle = s.appearance.showSongAlbumNote,
+                        checked = showSongAlbum,
+                        onCheckedChange = AppModel::setShowSongAlbum,
+                        index = 6,
+                        total = 7,
                     )
                 }
                 SettingsSection(s.appearance.sectionFont) {

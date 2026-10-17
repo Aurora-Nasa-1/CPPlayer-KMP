@@ -69,13 +69,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 /**
- * 专辑详情页。
- *
- * 收敛前**根本不存在**：首页的「新碟上架」与搜索的「专辑」页签点下去都只能退回搜索框，
- * 用户看到的是「点了没反应 / 又搜了一遍」。这一页把 `album` 接口真正接进来。
- *
- * 版式与 [PlaylistDetailContent] 对齐 —— 同一个应用里「一坨内容的详情页」只该有一种长相：
- * 顶部是封面 + 元信息 + 三个动作（播放 / 打乱 / 加入队列），下面是曲目列表。
+ * 专辑详情页面：展示专辑元数据、曲目列表与播放控制。
  */
 class AlbumDetailScreen(
     private val albumId: Long,
@@ -354,10 +348,8 @@ private fun AlbumDetailContent(
  * 按 M3 Expressive 的「hero 详情头」组织（与 `AboutScreen` 的 hero 同一套语言）：
  * 1. **标题用主色 + Bold** —— 一页的门面要一眼认出来；普通 `onSurface` 标题与列表行
  *    里的正文没有层级差，整页看起来像「一堆没排序的文字」；
- * 2. 封面圆角走 `shapes.extraLarge`（28dp），不是列表缩略图的 12dp —— 大图配大圆角；
- * 3. 四个动作收敛成**一枚连体动作组**（[CpActionButtonGroup]）。收敛前是
- *    「一个 `FilledTonalButton` + 三个 `TextButton`」：四种不同重量的控件挤在一行，
- *    看不出哪个是主操作，窄屏上还会被压成一排小字。
+ * 2. 封面圆角走 `shapes.extraLarge`（28dp），大图配大圆角；
+ * 3. 动作操作整合为连体动作组（[CpActionButtonGroup]），主次分明且自适应横向布局。
  *
  * ⚠️ 曲目为空时四个动作**全部禁用**。拿不到曲目时头部仍会画出来（错误态也保留封面与
  * 名称），可点的按钮会让用户以为「点了没反应」—— 实际上队列里什么都没有。

@@ -31,10 +31,24 @@ object ApiResponseCodes {
     val QR_PENDING: Set<Int> = setOf(801, 802, 803)
 
     /**
+     * 触发安全风控 / 人机核验 / 验证码重定向网址拦截的响应码。
+     * - `250` 网易云反爬风控滑块验证
+     * - `804` 验证码安全拦截
+     * - `4001` 标准现代 API 人机核验要求
+     */
+    val VERIFY_REQUIRED: Set<Int> = setOf(250, 804, 4001)
+
+    /**
      * 判定响应码是否为成功。
      *
      * 拿不到 `code`（返回 null）一律不算成功 —— 响应体里没有 code 字段时
      * 无法判断业务是否成功，按失败处理（与既有行为一致）。
      */
     fun isSuccess(code: Int?): Boolean = code != null && code in SUCCESS
+
+    /**
+     * 判定响应码是否表明需要完成安全/验证码网址验证。
+     */
+    fun isVerifyRequired(code: Int?): Boolean = code != null && code in VERIFY_REQUIRED
 }
+

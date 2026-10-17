@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
@@ -191,7 +192,7 @@ fun PlaylistDetailContent(
         else model.load(playlist)
     }
 
-    // 曲目就绪后从 autoPlayIndex 开始播放（沿用重构前"点击即播放"的行为；为 null 时只浏览不播放）
+    // 曲目就绪后从 autoPlayIndex 开始播放（为 null 时只浏览不播放）
     //
     // ⚠️ 走 [PlaylistDetailScreenModel.autoPlayAt] 而不是直接 `playAt`：从播放页 pop 回来
     // 时本页会重新进入组合，这个 LaunchedEffect 会重新执行，直接 playAt 会重建队列并
@@ -288,6 +289,7 @@ fun PlaylistDetailContent(
     // 桌面端歌单动作菜单：右键信息面板 + 宽屏左栏「更多」按钮共用同一份。
     // 本地虚拟歌单没有服务端实体，分享 / 收藏 / 删除链接与接口都无效，不出菜单。
     val playlistMenu: List<CpContextMenuItem>? = if (isLocalPlaylist) null else buildList {
+        add(CpContextMenuItem(s.common.refresh, Icons.Filled.Refresh, onClick = { model.refresh() }))
         add(CpContextMenuItem(s.library.playAll, Icons.Filled.PlayArrow, onClick = { model.playAll() }))
         add(CpContextMenuItem(s.library.addToQueue, Icons.Filled.QueueMusic, onClick = { model.queueAll() }))
         add(CpContextMenuItem(s.library.downloadAll, Icons.Filled.Download, onClick = { AppModel.downloadTracks(displayTracks) }))
@@ -391,6 +393,7 @@ fun PlaylistDetailContent(
             onDismiss = { showPlaylistSheet = false },
             onPlay = { model.playAll() },
             onAddToQueue = { model.queueAll() },
+            onRefresh = if (isLocalPlaylist) null else { { model.refresh() } },
             onDelete = if (isOwner) confirmDeletePlaylist else null,
             onShare = if (isLocalPlaylist) null else {
                 { shareText("「${summary.name}」 https://music.163.com/#/playlist?id=${playlist.id}") }
@@ -661,6 +664,16 @@ private fun NarrowLayout(
                 )
                 add(
                     TopBarAction(
+                        icon = { Icon(Icons.Filled.Download, contentDescription = s.player.download) },
+                        onClick = {
+                            val selectedTracks = displayTracks.filter { it.id in state.selectedIds }
+                            AppModel.downloadTracks(selectedTracks)
+                            model.exitSelection()
+                        },
+                    )
+                )
+                add(
+                    TopBarAction(
                         icon = { Icon(Icons.Filled.PlaylistAdd, contentDescription = s.player.addToPlaylist) },
                         onClick = onAddSelectedToPlaylist,
                     )
@@ -915,6 +928,15 @@ private fun WideLayout(
                             },
                         ) {
                             Icon(Icons.Filled.QueueMusic, contentDescription = s.library.addToQueue)
+                        }
+                        IconButton(
+                            onClick = {
+                                val selectedTracks = displayTracks.filter { it.id in state.selectedIds }
+                                AppModel.downloadTracks(selectedTracks)
+                                model.exitSelection()
+                            },
+                        ) {
+                            Icon(Icons.Filled.Download, contentDescription = s.player.download)
                         }
                         IconButton(onClick = onAddSelectedToPlaylist) {
                             Icon(Icons.Filled.PlaylistAdd, contentDescription = s.player.addToPlaylist)

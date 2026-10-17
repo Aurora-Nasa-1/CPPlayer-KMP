@@ -16,11 +16,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * 双栏（左右平行查看）布局的宽度刻度。
- *
- * 收敛前「左栏多宽」是各页各写一个裸值的：设置页 `width(320.dp)`、歌单详情宽屏
- * `width(320.dp)` —— 两个值恰好一样纯属巧合，改一处不会带上另一处。
- * 断点收敛到 [CpBreakpoints]，宽度收敛到这里，理由相同。
+ * 双栏布局标准宽度常量。
  */
 object CpPaneWidth {
 

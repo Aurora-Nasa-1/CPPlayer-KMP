@@ -114,9 +114,9 @@ private val CpSeekBubbleHeight = 18.dp
  * `LinearWavyProgressIndicator` / `LoadingIndicator` / `ToggleButton`，理由：
  *
  * 1. 它们都带 `@ExperimentalMaterial3ExpressiveApi`，散落各处会让每个文件都要 opt-in；
- * 2. 波形进度条 / 变形加载器的**尺寸约束**很容易踩坑（默认容器高度远大于普通进度条），
+ * 2. 波形进度条 / 变形加载器的**尺寸约束**较为特殊（默认容器高度远大于普通进度条），
  *    统一在这里收口；
- * 3. 观感要能一处调、处处变。
+ * 3. 观感一处调整、全局生效。
  *
  * ⚠️ 这些 API 来自 material3 `1.11.0-alpha07`（由 `libs.material3` 显式顶上去）。
  * 插件自带的 `compose.material3` 只有 `1.9.0`，里面**没有** `MaterialShapes` /

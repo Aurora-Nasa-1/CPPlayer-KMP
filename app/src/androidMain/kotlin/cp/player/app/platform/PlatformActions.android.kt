@@ -156,6 +156,17 @@ actual fun openUrl(url: String) {
     } catch (_: Exception) {}
 }
 
+actual fun openWebview(url: String, title: String?) {
+    val ctx = ctxOrNull ?: return
+    try {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        ctx.startActivity(intent)
+    } catch (_: Exception) {}
+}
+
+
 actual fun downloadUpdate(url: String, fileName: String) {
     val ctx = ctxOrNull ?: return
     try {

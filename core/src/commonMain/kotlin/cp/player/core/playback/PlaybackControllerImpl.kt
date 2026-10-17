@@ -1121,8 +1121,12 @@ class PlaybackControllerImpl(
         // 统一来源体系：顺序由用户排序决定，首个命中即胜出。
         lyricsSourceRegistry?.let { registry ->
             val engine = cp.player.core.lyrics.LyricsEngine(registry)
+            val origId = entry?.summary?.originalMediaId?.let {
+                runCatching { cp.player.core.music.CPMediaId.parse(it) }.getOrNull()
+            }
             val request = cp.player.core.lyrics.LyricsRequest(
                 mediaId = id,
+                originalMediaId = origId,
                 title = entry?.summary?.name.orEmpty(),
                 artist = entry?.summary?.artist.orEmpty(),
                 album = entry?.summary?.album.orEmpty(),
@@ -1151,9 +1155,27 @@ class PlaybackControllerImpl(
         // 是明确的本地优先意图，比任何在线匹配都更可信。
         if (isLocal) {
             SidecarLyrics.load(id.resourceId)?.let { return it }
+            // 内嵌歌词次之
+            EmbeddedLyricLoader.load(id.resourceId)?.let { hit ->
+                val lines = hit.first
+                val hasWords = lines.any { it.words.isNotEmpty() }
+                return LyricsState.Success(lines) to LyricsInfo(
+                    source = "Embedded",
+                    format = if (hasWords) "Embedded (Karaoke)" else "Embedded",
+                    hasWordLevel = hasWords,
+                    hasTranslation = lines.any { !it.translation.isNullOrBlank() },
+                    hasPhonetic = lines.any { !it.romanization.isNullOrBlank() },
+                )
+            }
         }
+        val origId = entry?.summary?.originalMediaId?.let {
+            runCatching { cp.player.core.music.CPMediaId.parse(it) }.getOrNull()
+        }
+        val effectiveMediaId = if (isLocal) origId else id
         if (mode != LyricsSourceMode.PROVIDER_ONLY && amllClient != null) {
-            val amll = fetchFromAmll(id, entry?.summary, allowPlatformLookup = !isLocal)
+            val targetForAmll = effectiveMediaId ?: id
+            val allowLookup = targetForAmll.providerId != "local"
+            val amll = fetchFromAmll(targetForAmll, entry?.summary, allowPlatformLookup = allowLookup)
             if (amll != null) return amll
             if (mode == LyricsSourceMode.AMLL_ONLY) {
                 // 「只走 AMLL」仍允许歌词源插件兜底：插件是用户显式启用的补充来源，
@@ -1161,11 +1183,14 @@ class PlaybackControllerImpl(
                 return fetchFromPlugins(entry?.summary)
                     ?: (LyricsState.NoLyrics to LyricsInfo(source = "AMLL TTML", format = "N/A"))
             }
-            if (isLocal) return fetchFromPlugins(entry?.summary) ?: (LyricsState.NoLyrics to null)
-        } else if (isLocal) {
+            if (isLocal && effectiveMediaId == null) return fetchFromPlugins(entry?.summary) ?: (LyricsState.NoLyrics to null)
+        } else if (isLocal && effectiveMediaId == null) {
             return fetchFromPlugins(entry?.summary) ?: (LyricsState.NoLyrics to null)
         }
-        val json = api.getLyric(id.resourceId)
+        if (effectiveMediaId == null || effectiveMediaId.providerId == "local") {
+            return fetchFromPlugins(entry?.summary) ?: (LyricsState.NoLyrics to null)
+        }
+        val json = api.getLyric(effectiveMediaId.resourceId)
         val lines = LyricsParser.parse(json)
         val info = extractLyricsInfo(json, lines)
         // 音源也没词时，最后尝试用户启用的歌词源插件。
@@ -1208,12 +1233,13 @@ class PlaybackControllerImpl(
         summary: TrackSummary?,
         allowPlatformLookup: Boolean,
     ): Pair<LyricsState, LyricsInfo>? {
+        val sanitized = cp.player.core.util.MusicSearchSanitizer.sanitize(summary?.name.orEmpty(), summary?.artist.orEmpty())
         val ttml = amllClient?.fetchLyricsTtml(
             providerId = id.providerId.takeIf { allowPlatformLookup },
-            songId = id.resourceId,
-            name = summary?.name,
-            artist = summary?.artist,
-            album = summary?.album,
+            songId = id.resourceId.takeIf { allowPlatformLookup },
+            name = sanitized.title.ifBlank { null },
+            artist = sanitized.artist.ifBlank { null },
+            album = summary?.album?.ifBlank { null },
         ) ?: return null
         val lines = TtmlParser.parse(ttml)
         if (lines.isEmpty()) return null

@@ -286,6 +286,7 @@ private fun sourceTitle(
 } else {
     when (source.id) {
         BuiltinLyricsSourceIds.SIDECAR -> t.builtinSidecar
+        BuiltinLyricsSourceIds.EMBEDDED -> t.builtinEmbedded
         BuiltinLyricsSourceIds.AMLL -> t.builtinAmll
         BuiltinLyricsSourceIds.PROVIDER -> t.builtinProvider
         else -> source.name
@@ -332,6 +333,7 @@ private fun builtinNote(
     t: cp.player.app.i18n.LyricsPluginStrings,
 ): String? = when (source.id) {
     BuiltinLyricsSourceIds.SIDECAR -> t.builtinSidecarNote
+    BuiltinLyricsSourceIds.EMBEDDED -> t.builtinEmbeddedNote
     BuiltinLyricsSourceIds.AMLL -> t.builtinAmllNote
     BuiltinLyricsSourceIds.PROVIDER -> t.builtinProviderNote
     else -> null

@@ -70,7 +70,8 @@ class UnifiedMusicSourceImpl(
                         artist = item.artist ?: "Unknown",
                         album = item.album,
                         coverUrl = item.coverUri,
-                        durationMs = item.durationMs
+                        durationMs = item.durationMs,
+                        originalMediaId = item.originalMediaId,
                     )
                 )
             } else {
@@ -117,7 +118,8 @@ class UnifiedMusicSourceImpl(
                         artist = item.artist ?: "Unknown",
                         album = item.album,
                         coverUrl = item.coverUri,
-                        durationMs = item.durationMs
+                        durationMs = item.durationMs,
+                        originalMediaId = item.originalMediaId,
                     ))
                 }
             }

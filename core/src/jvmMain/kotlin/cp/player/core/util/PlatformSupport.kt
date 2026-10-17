@@ -344,4 +344,8 @@ actual object PlatformSupport {
             false
         }
     }
+
+    actual fun readEmbeddedLyrics(path: String): String? = runCatching {
+        cp.player.core.media.AudioMetadataReader.read(path)?.lyrics
+    }.getOrNull()
 }

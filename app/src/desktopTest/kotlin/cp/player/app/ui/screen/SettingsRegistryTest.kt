@@ -1,5 +1,6 @@
 package cp.player.app.ui.screen
 
+import cp.player.app.i18n.CpStringsZh
 import cp.player.app.version.AppVersion
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -10,8 +11,7 @@ import kotlin.test.assertTrue
  * [settingsEntries] 的不变量。
  *
  * 这份注册表是设置树的**唯一声明**（根列表 / 桌面左栏 / 详情渲染全部由它驱动），
- * 所以它坏了不会有编译错误，只会以「设置页少一项 / 多一项 / 标题重复」的形式出现 ——
- * 恰恰是重构前那四份平行结构互相漂移时踩过的坑。
+ * 单测确保各分支结构与渠道过滤的一致性，防止配置漂移。
  *
  * 隔离：`settingsEntries()` 只读 `isAndroidPlatform()`（desktopTest 下为 false）、
  * `AppVersion.releaseChannel`（本文件内显式设置并恢复，不碰磁盘）
@@ -158,6 +158,68 @@ class SettingsRegistryTest {
             val ids = settingsEntries().map { it.id }
             assertTrue("render_tuning" in ids, "debug 构建应出现「渲染后端」入口")
             assertTrue("onboarding" in ids, "debug 构建应出现「重看新手引导」入口")
+        }
+    }
+
+    @Test
+    fun `subItem ids are unique`() {
+        withReleaseChannel("debug") {
+            val allSubItems = settingsEntries().flatMap { it.subItems }
+            val ids = allSubItems.map { it.id }
+            assertEquals(
+                ids.size,
+                ids.toSet().size,
+                "具体设置子项 id 必须唯一：$ids",
+            )
+        }
+    }
+
+    @Test
+    fun `every subItem has keywords and title`() {
+        val s = CpStringsZh
+        withReleaseChannel("debug") {
+            settingsEntries().forEach { entry ->
+                entry.subItems.forEach { subItem ->
+                    assertTrue(
+                        subItem.titleOf(s).isNotBlank(),
+                        "subItem id=${subItem.id} 标题不能为空",
+                    )
+                    assertTrue(
+                        subItem.keywords.isNotEmpty(),
+                        "subItem id=${subItem.id} 缺搜索关键词",
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `deep search matches subItems correctly`() {
+        val s = CpStringsZh
+        withReleaseChannel("debug") {
+            val entries = settingsEntries()
+
+            // 搜索 "纯黑"：能精准匹配到外观下的具体子项 appearance_pure_black
+            val pureBlackSubItems = entries.flatMap { entry ->
+                entry.visibleSubItems().filter { subItem ->
+                    subItem.keywords.any { it.contains("纯黑") } || subItem.titleOf(s).contains("纯黑")
+                }
+            }
+            assertTrue(
+                pureBlackSubItems.any { it.id == "appearance_pure_black" },
+                "深度搜索未搜到「纯黑模式」具体设置项",
+            )
+
+            // 搜索 "缓存"：能搜出容量上限、明细、清空等具体项
+            val cacheSubItems = entries.flatMap { entry ->
+                entry.visibleSubItems().filter { subItem ->
+                    subItem.keywords.any { it.contains("缓存") } || subItem.titleOf(s).contains("缓存")
+                }
+            }
+            assertTrue(
+                cacheSubItems.size >= 4,
+                "搜索「缓存」应当命中多个具体子项，实际命中：${cacheSubItems.map { it.id }}",
+            )
         }
     }
 }

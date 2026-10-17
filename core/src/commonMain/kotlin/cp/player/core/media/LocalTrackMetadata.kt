@@ -39,6 +39,8 @@ data class LocalTrackMetadata(
     val hasEmbeddedCover: Boolean = false,
     /** 音频编码名，如 `FLAC` / `MP3` / `AAC` / `Opus` / `PCM` */
     val codec: String? = null,
+    /** 内嵌歌词文本（USLT/SYLT/Vorbis/©lyr） */
+    val lyrics: String? = null,
 ) {
     /**
      * 音质短标签，如 `FLAC 24/96`、`320k MP3`、`Opus`。
@@ -93,6 +95,7 @@ data class AudioTagInfo(
     val channels: Int? = null,
     val hasEmbeddedCover: Boolean = false,
     val codec: String? = null,
+    val lyrics: String? = null,
 )
 
 /** 由 [AudioTagInfo] 组装可持久化的深度元数据。 */
@@ -108,4 +111,5 @@ fun AudioTagInfo.toTrackMetadata(): LocalTrackMetadata = LocalTrackMetadata(
     channels = channels,
     hasEmbeddedCover = hasEmbeddedCover,
     codec = codec,
+    lyrics = lyrics,
 )

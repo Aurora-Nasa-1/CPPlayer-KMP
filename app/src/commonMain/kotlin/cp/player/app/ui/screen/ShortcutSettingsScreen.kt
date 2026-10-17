@@ -58,22 +58,7 @@ import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.util.popOrNotify
 
 /**
- * 快捷键（**桌面端专属**）。
- *
- * ### 这一页解决什么
- *
- * 重构前快捷键是 `Main.kt` 里的一串硬编码 `when`：5 条、键位写死、看不见全貌，
- * 用户更没法改。现在动作清单声明在 [ShortcutAction]，页面只做两件事：
- * 把「动作 → 当前绑定」列出来（按 [ShortcutCategory] 分组），以及提供一个**录制**入口。
- *
- * ### 三件事刻意分开，不要合并
- *
- * - **保存**：把录到的组合键绑定上去（可与其他动作冲突，冲突只提示不拦截）；
- * - **清除绑定**：把这个动作**关掉**（落盘哨兵值），**不是**恢复默认 ——
- *   用户按下「清除」是想让它消失，再给它塞回默认键位是纯粹的错误行为；
- * - **恢复默认**：回到 `ShortcutAction.defaultBinding`（先前的自定义一并丢弃）。
- *
- * 页脚还有一个「全部恢复默认」，覆盖用户改乱之后一键兜底。
+ * 快捷键设置页面（桌面端专属）：自定义全局与应用内快捷键。
  */
 class ShortcutSettingsScreen : Screen {
     @Composable

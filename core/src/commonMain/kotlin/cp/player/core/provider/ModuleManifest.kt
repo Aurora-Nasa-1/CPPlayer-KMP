@@ -22,6 +22,9 @@ object ProviderCapability {
     /** 扫码登录。 */
     const val QR_LOGIN = "qrLogin"
 
+    /** WebView / 网页登录与跳转验证。 */
+    const val WEBVIEW_LOGIN = "webviewLogin"
+
     /** 逐字歌词（YRC / TTML 级）。 */
     const val WORD_SYNCED_LYRICS = "wordSyncedLyrics"
 
@@ -54,10 +57,11 @@ object ProviderCapability {
 
     /** 全部已知能力，供 UI 按稳定顺序展示。 */
     val ALL: List<String> = listOf(
-        SEARCH, PLAYBACK, QR_LOGIN, WORD_SYNCED_LYRICS, COMMENTS, CLOUD_DRIVE, RECOMMEND,
+        SEARCH, PLAYBACK, QR_LOGIN, WEBVIEW_LOGIN, WORD_SYNCED_LYRICS, COMMENTS, CLOUD_DRIVE, RECOMMEND,
         LYRICS_SEARCH, CHARTS, USER_PLAYLISTS, ARTIST_EXPLORER, ALBUM_EXPLORER, DIRECTORY_BROWSER,
     )
 }
+
 
 /**
  * 声明式音源自定义设置项规范。
@@ -150,12 +154,13 @@ data class ModuleManifest(
      * 音源支持的登录方式声明（可选）。
      *
      * 取值：`"qr"`（扫码）、`"email"`（邮箱）、`"sms"`（手机验证码）、
-     * `"cookie"`（粘贴 Cookie）、`"captchaImage"`（图形验证码人机校验）。
+     * `"cookie"`（粘贴 Cookie）、`"captchaImage"`（图形验证码人机校验）、
+     * `"webview"` / `"web"`（WebView 网页登录）。
      *
-     * - **null / 缺省**：按旧行为展示全部四种方式（网易云系音源的默认）；
-     * - **声明了列表**：登录页只显示声明的方式（`cookie` 是宿主端能力，
-     *   声明了 sms/qr/email 时仍会强制附加上）；
-     *   `"captchaImage"` 表示登录流程支持图形验证码（见 `captcha/image` 方法）。
+     * - **null / 缺省**：按旧行为展示全部常用方式（网易云系音源默认展示 QR/SMS/EMAIL/COOKIE/WEBVIEW）；
+     * - **声明了列表**：登录页展示声明的方式（`cookie` 是宿主端兜底能力，始终可用）；
+     *   `"captchaImage"` 表示登录流程支持图形验证码（见 `captcha/image` 方法）；
+     *   `"webview"` / `"web"` 表示支持在内置/系统 WebView 中加载登录网址。
      */
     val loginMethods: List<String>? = null,
     /**

@@ -185,6 +185,29 @@ class ModuleManifestV3Test {
         assertEquals(2, schema?.get(1)?.options?.size)
     }
 
+    @Test
+    fun loginMethodsAndWebviewCapabilityParsedCorrectly() {
+        val manifest = parse(
+            """
+            {
+              "id": "webview-source", "name": "Webview Source", "version": "1.0.0",
+              "type": "http", "entryPoint": "http://127.0.0.1:3000",
+              "contract": "standard",
+              "capabilities": ["webviewLogin", "playback", "search"],
+              "loginMethods": ["webview", "sms"]
+            }
+            """.trimIndent()
+        )
+        assertTrue(manifest.supports(ProviderCapability.WEBVIEW_LOGIN))
+        assertTrue(manifest.isFeatureAvailable(ProviderCapability.WEBVIEW_LOGIN))
+        assertEquals(listOf("webview", "sms"), manifest.loginMethods)
+        assertEquals(
+            listOf(ProviderCapability.SEARCH, ProviderCapability.PLAYBACK, ProviderCapability.WEBVIEW_LOGIN),
+            manifest.knownCapabilities,
+        )
+    }
+
+
     private companion object {
         /** 故意写成 `宿主版本 + 1`：宿主 API 涨到 4 时这条测试跟着仍然成立。 */
         const val HOST_PROVIDER_API_VERSION_PLUS_ONE = HOST_PROVIDER_API_VERSION + 1

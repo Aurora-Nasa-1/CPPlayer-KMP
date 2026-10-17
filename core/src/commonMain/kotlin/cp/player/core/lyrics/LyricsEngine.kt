@@ -63,6 +63,7 @@ class LyricsEngine(
     private fun formatLabelOf(hit: LyricsSourceResult): String = when (hit.sourceId) {
         BuiltinLyricsSourceIds.AMLL -> if (hit.hasWordLevel) "TTML (Karaoke)" else "TTML"
         BuiltinLyricsSourceIds.SIDECAR -> if (hit.hasWordLevel) "Karaoke" else "LRC"
+        BuiltinLyricsSourceIds.EMBEDDED -> if (hit.hasWordLevel) "Embedded (Karaoke)" else "Embedded"
         BuiltinLyricsSourceIds.PROVIDER -> if (hit.hasWordLevel) "YRC (Karaoke)" else "LRC"
         else -> if (hit.hasWordLevel) "Plugin (Karaoke)" else "Plugin"
     }

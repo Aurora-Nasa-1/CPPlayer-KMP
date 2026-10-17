@@ -12,16 +12,24 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import cp.player.app.ui.theme.LocalIsDarkTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -66,6 +74,7 @@ import kotlinx.coroutines.launch
 fun SimilarSongsPanel(
     seedTrackId: String?,
     modifier: Modifier = Modifier,
+    onBack: (() -> Unit)? = null,
 ) {
     val seed = remember(seedTrackId) {
         runCatching { CPMediaId.parse(seedTrackId.orEmpty()).resourceId }
@@ -76,14 +85,10 @@ fun SimilarSongsPanel(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var unsupported by remember { mutableStateOf(false) }
     var tracks by remember { mutableStateOf<List<TrackSummary>>(emptyList()) }
-    // 按种子去重：面板随 pager 翻页而离开重组，回来时不要重新请求。
-    // 切歌 → seed 变化 → LaunchedEffect 重启 → fetchedFor 不匹配 → 重新拉取。
     var fetchedFor by remember { mutableStateOf<String?>(null) }
     var refreshToken by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
-    // ⚠️ 惰性取 provider：`AppModel.activeProviderId()` 会取 MusicBackend 单例，
-    // 未 init() 时直接抛异常（离屏渲染实测）。放进 lambda 里只在真正点播时才读，
-    // 组合期零依赖 —— 组件因此可以在无后端的预览/测试环境里独立渲染。
+    val isDark = LocalIsDarkTheme.current
     val toMediaId = { id: String ->
         if (id.contains("://")) id
         else "${AppModel.activeProviderId()}://song/$id"
@@ -122,14 +127,103 @@ fun SimilarSongsPanel(
     }
 
     Column(modifier.fillMaxSize()) {
-        Text(
-            "基于当前播放的这首歌推荐 · 点击任意一首替换播放队列",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
-        )
+        // M3E 顶部推荐头部卡片
+        Surface(
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.55f),
+            border = BorderStroke(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.15f else 0.25f),
+            ),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f, fill = false),
+                ) {
+                    if (onBack != null) {
+                        Surface(
+                            onClick = onBack,
+                            shape = MaterialTheme.shapes.small,
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f),
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Filled.Close,
+                                    contentDescription = "返回",
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(17.dp),
+                                )
+                            }
+                        }
+                    } else {
+                        Icon(
+                            Icons.Filled.AutoAwesome,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Column {
+                        Text(
+                            "相似歌曲推荐",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                        )
+                        Text(
+                            if (tracks.isNotEmpty()) "发现 ${tracks.size} 首相似好歌 · 点击即播" else "基于在播歌曲智能推荐",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
+                }
+
+                if (tracks.isNotEmpty()) {
+                    Surface(
+                        onClick = {
+                            scope.launch {
+                                AppModel.playback.playQueue(
+                                    tracks.map { toMediaId(it.id) },
+                                    startIndex = 0,
+                                )
+                            }
+                        },
+                        shape = MaterialTheme.shapes.large,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Icon(
+                                Icons.Filled.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                            Text(
+                                "全部播放",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         when {
             // 拉取中且还没有旧数据：整页 loading。
             loading && tracks.isEmpty() -> {
@@ -176,20 +270,30 @@ fun SimilarSongsPanel(
                                     )
                                 }
                             },
-                            shape = MaterialTheme.shapes.medium,
-                            color = if (playingSeed) MaterialTheme.colorScheme.secondaryContainer
+                            shape = MaterialTheme.shapes.large,
+                            color = if (playingSeed) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
                             else androidx.compose.ui.graphics.Color.Transparent,
                         ) {
                             Row(
-                                Modifier.fillMaxWidth().padding(10.dp),
+                                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text(
-                                    "${index + 1}",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.width(24.dp),
-                                )
+                                if (playingSeed) {
+                                    Icon(
+                                        Icons.Filled.GraphicEq,
+                                        contentDescription = "当前播放",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                } else {
+                                    Text(
+                                        "${index + 1}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.width(24.dp),
+                                    )
+                                }
                                 SimilarArtwork(item.coverUrl)
                                 Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                                     Text(
@@ -197,6 +301,7 @@ fun SimilarSongsPanel(
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         fontWeight = if (playingSeed) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (playingSeed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                     )
                                     Text(
                                         item.artist,
@@ -206,12 +311,42 @@ fun SimilarSongsPanel(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
-                                Icon(
-                                    Icons.Filled.MusicNote,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp),
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(
+                                        onClick = {
+                                            scope.launch {
+                                                AppModel.playback.addNextToQueue(toMediaId(item.id))
+                                            }
+                                        },
+                                        modifier = Modifier.size(32.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.AutoMirrored.Filled.QueueMusic,
+                                            contentDescription = "下一首播放",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(17.dp),
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            CoverFlight.play(item.id, item.coverUrl)
+                                            AppModel.playTrackClicked(toMediaId(item.id)) {
+                                                AppModel.playback.playQueue(
+                                                    tracks.map { toMediaId(it.id) },
+                                                    startIndex = index,
+                                                )
+                                            }
+                                        },
+                                        modifier = Modifier.size(32.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.PlayArrow,
+                                            contentDescription = "播放",
+                                            tint = if (playingSeed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(19.dp),
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

@@ -237,9 +237,7 @@ object MusicSourceFromApi {
     fun parseRecommendedSongs(json: JsonElement): MusicResult<List<TrackSummary>> {
         return json.toMusicResult {
             val root = this["data"] as? JsonObject ?: this
-            // 逐级取**非空**数组（见 firstNonEmptyArray）：`dailySongs: []` 与
-            // `tracks: [...]` 同时出现时，只判存在会让日推恒为空。
-            // 候选顺序与收敛前逐条一致，只把「存在」收紧成「非空」。
+            // 逐级取非空数组
             val array = root.firstNonEmptyArray("dailySongs", "tracks", "songs")
                 ?: (this["data"] as? JsonArray)?.takeIf { it.isNotEmpty() }
                 ?: firstNonEmptyArray("recommend", "result")
@@ -253,10 +251,8 @@ object MusicSourceFromApi {
     /**
      * 从 `result` 子对象解析搜索结果。
      *
-     * 四个数组**按类型各自解析**：`type=10`（专辑）只填 `result.albums`，
-     * `type=100`（歌手）只填 `result.artists`，其余为空。
-     * 调用方必须按 `result` 里**对应的那个数组**渲染，不能拿别的数组顶替 ——
-     * 收敛前「专辑」页签就是拿 `playlists` 渲染的，而专辑搜索里没有这个数组，页面恒空。
+     * 四个数组按类型各自解析：`type=10`（专辑）填 `result.albums`，
+     * `type=100`（歌手）填 `result.artists`，单曲填 `result.songs`，歌单填 `result.playlists`。
      */
     fun parseSearchSongs(json: JsonElement, type: Int = 1): MusicResult<SearchResult> {
         return json.toMusicResult {
@@ -550,10 +546,7 @@ object MusicSourceFromApi {
      *
      * 曲目数组优先取 `album.songs`，回退到与 `album` 平级的 `songs` / `tracks`。
      *
-     * ⚠️ **两处都要判「非空」而不是「存在」**：网易云 v1 `/api/v1/album/{id}` 的实际形状是
-     * `{ album: { ..., songs: [] }, songs: [11 首] }` —— `album.songs` 存在但为空。
-     * 写成 `album["songs"] ?: this["songs"]` 会在第一项短路，恒解析出 0 首曲目，
-     * 界面永远显示「暂无曲目」（2026-10-15 用 JNI 直连音源模块核实过响应体）。
+     * 判非空优先获取曲目数组。
      */
     fun parseAlbumDetail(json: JsonElement): MusicResult<AlbumDetail> {
         return json.toMusicResult {

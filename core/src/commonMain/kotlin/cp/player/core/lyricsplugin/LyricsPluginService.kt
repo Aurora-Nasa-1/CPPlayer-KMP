@@ -103,6 +103,7 @@ data class PluginLyricsOutcome(
     val sourceName: String,
     val lines: List<SyncedLyricLine>,
     val hasWordLevel: Boolean,
+    val coverUrl: String? = null,
 )
 
 /**

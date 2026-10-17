@@ -42,7 +42,17 @@ object MusicApiMethod {
     /** 获取登录状态 */
     const val AUTH_LOGIN_STATUS = "login/status"
 
+    /** WebView / 网页登录入口 URL 获取 */
+    const val AUTH_WEBVIEW_URL = "login/webview/url"
+
+    /** 获取验证码 / 安全人机核验网址 */
+    const val AUTH_VERIFY_URL = "captcha/verify/url"
+
+    /** 查询验证码 / 人机核验完成状态 */
+    const val AUTH_VERIFY_CHECK = "captcha/verify/check"
+
     // ======================== 用户 User ========================
+
 
     /** 获取用户歌单列表（包含创建的和收藏的） */
     const val USER_PLAYLIST = "user/playlist"

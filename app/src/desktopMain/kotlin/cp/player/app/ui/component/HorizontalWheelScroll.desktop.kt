@@ -26,9 +26,7 @@ private val WheelStep = 72.dp
  *
  * ## 事件阶段为什么必须是 [PointerEventPass.Initial]
  *
- * 这是**本函数唯一一处容易写错的参数**，收敛前用的是默认的 `Main` pass，症状是
- * 「首页顶部横幅能横向滚、其余的横向卡片行不能」随机出现。原因是同一层上并存着
- * 两个消费者：
+ * 必须使用 `Initial` pass 而非默认的 `Main` pass。因为同一层级可能并存两个消费者：
  *
  * - 外层纵向滚动容器的 `MouseWheelScrollingLogic`（`ScrollableNode` 里）；
  * - `LazyRow` 自己的横向 `MouseWheelScrollingLogic`。

@@ -33,8 +33,11 @@ import cp.player.app.shortcut.ShortcutBinding
 import cp.player.app.shortcut.UNBOUND_SHORTCUT_MARKER
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -115,6 +118,27 @@ object AppModel {
     val accountGeneration: StateFlow<Int> = _accountGeneration.asStateFlow()
 
     private fun bumpAccountGeneration() { _accountGeneration.value += 1 }
+
+    data class PlaylistChangeEvent(
+        val playlistId: Long? = null,
+    )
+
+    /**
+     * 「歌单代际」：当歌单被创建、删除、收藏、取消收藏，或内部曲目被添加/移除时递增。
+     *
+     * 驱动媒体库（LibraryScreenModel）、首页侧栏（HomeScreenModel）等各处歌单列表自动刷新，
+     * 以及通知歌单详情页（PlaylistDetailScreenModel）感知变动。
+     */
+    private val _playlistGeneration = MutableStateFlow(0)
+    val playlistGeneration: StateFlow<Int> = _playlistGeneration.asStateFlow()
+
+    private val _playlistEvents = MutableSharedFlow<PlaylistChangeEvent>(extraBufferCapacity = 16)
+    val playlistEvents: SharedFlow<PlaylistChangeEvent> = _playlistEvents.asSharedFlow()
+
+    fun notifyPlaylistChanged(playlistId: Long? = null) {
+        _playlistGeneration.value += 1
+        _playlistEvents.tryEmit(PlaylistChangeEvent(playlistId))
+    }
 
     /**
      * 首次资料恢复是否已经跑完（见 [accountGeneration]）。
@@ -625,6 +649,28 @@ object AppModel {
     fun setCoverFlightAnimation(enabled: Boolean) {
         settings.putString(KEY_COVER_FLIGHT_ANIMATION, enabled.toString())
         _coverFlightAnimation.value = enabled
+    }
+
+    // ============ 歌曲列表显示专辑名（持久化） ============
+
+    private const val KEY_SHOW_SONG_ALBUM = "show_song_album"
+
+    private val _showSongAlbum = MutableStateFlow(
+        settings.getString(KEY_SHOW_SONG_ALBUM)?.toBooleanStrictOrNull() ?: false
+    )
+
+    /**
+     * 歌曲列表项中是否显示所属专辑名（默认关）。
+     *
+     * 开启后在歌曲项副标题显示「歌手 · 专辑」，关闭时仅显示「歌手」。
+     */
+    val showSongAlbumFlow: StateFlow<Boolean> = _showSongAlbum.asStateFlow()
+
+    fun showSongAlbum(): Boolean = _showSongAlbum.value
+
+    fun setShowSongAlbum(enabled: Boolean) {
+        settings.putString(KEY_SHOW_SONG_ALBUM, enabled.toString())
+        _showSongAlbum.value = enabled
     }
 
     // ============ 首次使用引导（持久化） ============

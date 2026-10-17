@@ -148,12 +148,23 @@ class LyricoLyricsPluginService(
         val runtime = runtimeFor(source)
         val config = store.pluginConfig(source.manifest.id)
 
-        val searchRequest = PluginSearchSongsRequest(keyword = keyword, page = 1, pageSize = 5, config = config)
-        val hits = parser.parseSongResults(
-            rawJson = runtime.call("searchSongs", pluginJson.encodeToString(searchRequest)),
-            pluginId = source.manifest.id,
-            pluginName = source.manifest.name,
-        )
+        // 优先使用清洗后的关键词；如果没搜到且原词不同，用原词再试一次
+        val sanitized = cp.player.core.util.MusicSearchSanitizer.sanitize(keyword)
+        val candidateKeywords = listOf(sanitized.cleanKeyword, keyword).distinct().filter { it.isNotBlank() }
+
+        var hits = emptyList<PluginSongSearchResult>()
+        for (kw in candidateKeywords) {
+            val searchRequest = PluginSearchSongsRequest(keyword = kw, page = 1, pageSize = 5, config = config)
+            val parsedHits = parser.parseSongResults(
+                rawJson = runtime.call("searchSongs", pluginJson.encodeToString(searchRequest)),
+                pluginId = source.manifest.id,
+                pluginName = source.manifest.name,
+            )
+            if (parsedHits.isNotEmpty()) {
+                hits = parsedHits
+                break
+            }
+        }
         if (hits.isEmpty()) return null
 
         // 优先挑时长最接近的候选，减少同名曲误配。
@@ -177,6 +188,7 @@ class LyricoLyricsPluginService(
             sourceName = source.manifest.name,
             lines = lines,
             hasWordLevel = lines.any { it.words.isNotEmpty() },
+            coverUrl = hit.picUrl.takeIf { it.isNotBlank() },
         )
     }
 

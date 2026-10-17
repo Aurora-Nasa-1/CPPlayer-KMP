@@ -95,6 +95,19 @@ class AudioMetadataReaderTest {
         file.delete()
     }
 
+    @Test
+    fun `USLT 帧内嵌歌词能被解析`() {
+        val lrc = "[00:01.00]第一句歌词\n[00:05.00]第二句歌词"
+        val file = tempFile("lyrics.mp3").apply {
+            writeBytes(id3v2Frames(textFrame("TIT2", "有歌词"), usltFrame(lrc)))
+        }
+        val info = AudioMetadataReader.read(file.absolutePath)
+        assertNotNull(info)
+        assertEquals("有歌词", info.title)
+        assertEquals(lrc, info.lyrics)
+        file.delete()
+    }
+
     // ============ 健壮性 ============
 
     @Test
@@ -214,4 +227,23 @@ class AudioMetadataReaderTest {
         0x89.toByte(), 'P'.code.toByte(), 'N'.code.toByte(), 'G'.code.toByte(),
         0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0, 0, 0, 0, 0,
     )
+
+    /** USLT 帧：enc + lang(3) + desc\0 + lyrics。 */
+    private fun usltFrame(lyrics: String, lang: String = "eng"): ByteArray {
+        val lrcBytes = lyrics.toByteArray(Charsets.UTF_8)
+        val langBytes = lang.toByteArray(Charsets.ISO_8859_1)
+        val size = 1 + 3 + 1 + lrcBytes.size
+        val frame = ByteArray(10 + size)
+        "USLT".forEachIndexed { i, c -> frame[i] = c.code.toByte() }
+        frame[4] = (size shr 24).toByte()
+        frame[5] = (size shr 16).toByte()
+        frame[6] = (size shr 8).toByte()
+        frame[7] = size.toByte()
+        var p = 10
+        frame[p++] = 3 // UTF-8
+        langBytes.copyInto(frame, p, 0, 3); p += 3
+        frame[p++] = 0 // 空描述终止符
+        lrcBytes.copyInto(frame, p)
+        return frame
+    }
 }

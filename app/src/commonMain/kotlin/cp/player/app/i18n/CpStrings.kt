@@ -190,6 +190,7 @@ interface CommonStrings {
     val confirm: String
     val dismiss: String
     val apply: String
+    val refresh: String
     val unsavedBlocked: String
     val unsavedHint: String
 }
@@ -277,6 +278,9 @@ interface AppearanceStrings {
 
     val fluidBackground: String
     val fluidBackgroundNote: String
+
+    val showSongAlbum: String
+    val showSongAlbumNote: String
 
     val fontRoundness: String
 

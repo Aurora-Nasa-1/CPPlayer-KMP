@@ -17,11 +17,23 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Comment
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.VolumeMute
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
@@ -29,12 +41,7 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.SmartDisplay
-import cafe.adriel.voyager.navigator.LocalNavigator
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.automirrored.filled.VolumeOff
-import androidx.compose.material.icons.automirrored.filled.VolumeMute
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,6 +51,8 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.vector.ImageVector
+import cafe.adriel.voyager.navigator.LocalNavigator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -135,6 +144,8 @@ fun DesktopPlayerScreen(
     // 本页与窄屏布局互斥切换，各持一份状态。
     val moreSheets = rememberPlayerMoreSheetState()
     var selectedTab by remember { mutableIntStateOf(1) }
+    var showTranslation by remember { mutableStateOf(true) }
+    var showSimilarOverlay by remember { mutableStateOf(false) }
     val duration = state.durationMs.coerceAtLeast(0L)
     // 时长未知（流媒体元信息还没到、直播流）时滑条位置无法换算成绝对时间，
     // 拖出来必然是错的——保持禁用。但**必须说明原因**：静默失效会让用户
@@ -168,13 +179,30 @@ fun DesktopPlayerScreen(
         label = "desktopArtCorner",
     )
     val cardShape = MaterialTheme.shapes.extraExtraLarge
+    val rimBorderBrush = remember(isDark) {
+        Brush.verticalGradient(
+            colors = if (isDark) {
+                listOf(
+                    Color.White.copy(alpha = 0.22f),
+                    Color.White.copy(alpha = 0.08f),
+                    Color.White.copy(alpha = 0.03f),
+                )
+            } else {
+                listOf(
+                    Color.White.copy(alpha = 0.65f),
+                    Color.White.copy(alpha = 0.30f),
+                    Color.White.copy(alpha = 0.10f),
+                )
+            }
+        )
+    }
     val cardBorder = Modifier.border(
         width = 1.dp,
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.18f else 0.32f),
+        brush = rimBorderBrush,
         shape = cardShape,
     )
-    val cardBg = if (isDark) MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.42f)
-    else MaterialTheme.colorScheme.surface.copy(alpha = 0.62f)
+    val cardBg = if (isDark) MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f)
+    else MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
 
     Box(Modifier.fillMaxSize().cpFluidBackground(enabled = fluidBackground, fallback = background).padding(24.dp)) {
         Column(Modifier.fillMaxSize()) {
@@ -188,8 +216,26 @@ fun DesktopPlayerScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f, fill = false),
                 ) {
-                    IconButton(onClick = onBack) { Icon(Icons.Filled.Close, "收起播放页") }
-                    Spacer(Modifier.width(8.dp))
+                    Surface(
+                        onClick = onBack,
+                        shape = MaterialTheme.shapes.large,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.65f),
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.18f else 0.32f),
+                        ),
+                        modifier = Modifier.size(40.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = "收起播放页",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(12.dp))
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("正在播放", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
@@ -237,17 +283,75 @@ fun DesktopPlayerScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
+                    // 歌词翻译按钮：与手机端对齐，在歌词面板时呈现
+                    if (selectedTab == 1 && !showSimilarOverlay) {
+                        Surface(
+                            onClick = { showTranslation = !showTranslation },
+                            modifier = Modifier.size(40.dp),
+                            shape = MaterialTheme.shapes.large,
+                            color = if (showTranslation) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
+                            else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f),
+                            border = BorderStroke(
+                                width = 1.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.18f else 0.32f),
+                            ),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Filled.Translate,
+                                    contentDescription = "歌词翻译",
+                                    modifier = Modifier.size(19.dp),
+                                    tint = if (showTranslation) MaterialTheme.colorScheme.onPrimaryContainer
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+
+                    // 相似歌曲快捷入口
+                    Surface(
+                        onClick = { showSimilarOverlay = !showSimilarOverlay },
+                        modifier = Modifier.size(40.dp),
+                        shape = MaterialTheme.shapes.large,
+                        color = if (showSimilarOverlay) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
+                        else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f),
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.18f else 0.32f),
+                        ),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Filled.AutoAwesome,
+                                contentDescription = if (showSimilarOverlay) "关闭相似推荐" else "相似歌曲推荐",
+                                modifier = Modifier.size(19.dp),
+                                tint = if (showSimilarOverlay) MaterialTheme.colorScheme.onPrimaryContainer
+                                else MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+
                     // 桌面端专属音量调节胶囊
                     DesktopVolumeControl()
 
-                    FilledIconButton(
+                    Surface(
                         onClick = { moreSheets.showMoreMenu = true },
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            contentColor = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(40.dp),
+                        shape = MaterialTheme.shapes.large,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f),
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.18f else 0.32f),
                         ),
                     ) {
-                        Icon(Icons.Filled.MoreVert, contentDescription = "更多")
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Filled.MoreVert,
+                                contentDescription = "更多",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
                     }
                 }
             }
@@ -370,42 +474,43 @@ fun DesktopPlayerScreen(
                     shadowElevation = 0.dp,
                 ) {
                     Column(Modifier.fillMaxSize().padding(22.dp)) {
-                        // 居中聚集的胶囊页签切换药丸组，告别空洞撑满整宽
+                        // M3E 表现力胶囊页签切换组件（保留三个核心主栏：队列、歌词、评论）
                         Row(
                             Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.Center,
                         ) {
-                            Surface(
-                                shape = MaterialTheme.shapes.extraLarge,
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.55f),
-                            ) {
-                                Row(
-                                    Modifier.padding(4.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    listOf("队列", "歌词", "评论", "相似").forEachIndexed { index, title ->
-                                        CpToggleChip(
-                                            checked = selectedTab == index,
-                                            onCheckedChange = { selectedTab = index },
-                                            label = title,
-                                        )
-                                    }
-                                }
-                            }
+                            DesktopTabSelector(
+                                selectedTab = if (showSimilarOverlay) -1 else selectedTab,
+                                onTabSelect = {
+                                    selectedTab = it
+                                    showSimilarOverlay = false
+                                },
+                            )
                         }
                         Spacer(Modifier.height(16.dp))
-                        when (selectedTab) {
-                            0 -> QueueContent(state, scope, onPlayAt)
-                            1 -> DesktopLyricsContent(
-                                state = state,
-                                onSeek = onSeek,
-                                onRepeat = onRepeat,
-                                onLikeClick = onLike,
-                                onChangeSource = onChangeLyricsSource,
+                        if (showSimilarOverlay) {
+                            SimilarSongsPanel(
+                                seedTrackId = track.id,
+                                onBack = { showSimilarOverlay = false },
                             )
-                            2 -> DesktopCommentContent(track.id)
-                            else -> SimilarSongsPanel(track.id)
+                        } else {
+                            when (selectedTab) {
+                                0 -> QueueContent(
+                                    state = state,
+                                    scope = scope,
+                                    onPlayAt = onPlayAt,
+                                    onOpenSimilar = { showSimilarOverlay = true },
+                                )
+                                1 -> DesktopLyricsContent(
+                                    state = state,
+                                    onSeek = onSeek,
+                                    showTranslation = showTranslation,
+                                    onRepeat = onRepeat,
+                                    onLikeClick = onLike,
+                                    onChangeSource = onChangeLyricsSource,
+                                )
+                                else -> DesktopCommentContent(track.id)
+                            }
                         }
                     }
                 }
@@ -418,21 +523,160 @@ fun DesktopPlayerScreen(
 }
 
 @Composable
-private fun QueueContent(state: PlaybackUiState, scope: kotlinx.coroutines.CoroutineScope, onPlayAt: (Int) -> Unit) {
+private fun DesktopTabSelector(
+    selectedTab: Int,
+    onTabSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val isDark = LocalIsDarkTheme.current
+    val tabs = remember {
+        listOf(
+            DesktopTabItem("队列", Icons.AutoMirrored.Filled.QueueMusic),
+            DesktopTabItem("歌词", Icons.Filled.Lyrics),
+            DesktopTabItem("评论", Icons.AutoMirrored.Filled.Comment),
+        )
+    }
+    Surface(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.extraExtraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.55f),
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.18f else 0.30f),
+        ),
+    ) {
+        Row(
+            Modifier.padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            tabs.forEachIndexed { index, tab ->
+                val selected = selectedTab == index
+                val containerColor by animateColorAsState(
+                    targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer
+                    else Color.Transparent,
+                    animationSpec = CpMotion.effects(),
+                    label = "tabContainerColor",
+                )
+                val contentColor by animateColorAsState(
+                    targetValue = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    animationSpec = CpMotion.effects(),
+                    label = "tabContentColor",
+                )
+                Surface(
+                    onClick = { onTabSelect(index) },
+                    shape = MaterialTheme.shapes.large,
+                    color = containerColor,
+                    contentColor = contentColor,
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(
+                            imageVector = tab.icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(17.dp),
+                        )
+                        Text(
+                            text = tab.title,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private data class DesktopTabItem(val title: String, val icon: ImageVector)
+
+@Composable
+private fun QueueContent(
+    state: PlaybackUiState,
+    scope: kotlinx.coroutines.CoroutineScope,
+    onPlayAt: (Int) -> Unit,
+    onOpenSimilar: (() -> Unit)? = null,
+) {
+    val isDark = LocalIsDarkTheme.current
     LazyScrollColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         itemsIndexed(state.queue) { index, item ->
             val selected = index == state.currentIndex
             Surface(
                 onClick = { scope.launch { onPlayAt(index) } },
-                shape = MaterialTheme.shapes.medium,
-                color = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.70f) else Color.Transparent,
+                shape = MaterialTheme.shapes.large,
+                color = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f) else Color.Transparent,
             ) {
-                Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${index + 1}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(24.dp))
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (selected) {
+                        Icon(
+                            Icons.Filled.GraphicEq,
+                            contentDescription = "正在播放",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                    } else {
+                        Text(
+                            "${index + 1}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.width(24.dp),
+                        )
+                    }
                     Artwork(item.coverUrl, Modifier.size(42.dp).clip(MaterialTheme.shapes.small))
                     Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                        Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
-                        Text(item.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            item.title,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            item.artist,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+        if (onOpenSimilar != null) {
+            item {
+                Surface(
+                    onClick = onOpenSimilar,
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.50f),
+                    border = BorderStroke(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.15f else 0.25f),
+                    ),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        Icon(
+                            Icons.Filled.AutoAwesome,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(17.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "基于在播曲目探索相似歌曲",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium,
+                        )
                     }
                 }
             }
@@ -474,11 +718,15 @@ private fun DesktopVolumeControl(modifier: Modifier = Modifier) {
     var volume by remember { mutableStateOf(playback.currentVolume) }
     var lastNonZeroVolume by remember { mutableStateOf(if (volume > 0.05f) volume else 1f) }
     val isMuted = volume <= 0.001f
-
+    val isDark = LocalIsDarkTheme.current
     Surface(
         modifier = modifier.height(40.dp),
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f),
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.18f else 0.32f),
+        ),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp),
