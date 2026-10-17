@@ -106,11 +106,16 @@ jobs:
           cp app-android/build/outputs/apk/release/app-android-release.apk \
              "CPPlayer-${{ steps.meta.outputs.version }}-android.apk"
 
+      - name: Generate release notes
+        shell: bash
+        run: |
+          bash scripts/generate_release_notes.sh "${{ steps.meta.outputs.tag }}" "${{ runner.temp }}/RELEASE_NOTES.md"
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
           name: CPPlayer ${{ steps.meta.outputs.version }}
           prerelease: false
-          generate_release_notes: true
+          body_path: ${{ runner.temp }}/RELEASE_NOTES.md
           files: CPPlayer-${{ steps.meta.outputs.version }}-android.apk

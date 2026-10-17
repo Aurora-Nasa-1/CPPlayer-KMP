@@ -323,11 +323,18 @@ jobs:
     needs: [meta, desktop]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           path: release-assets
           pattern: CPPlayer-*
           merge-multiple: true
+      - name: Generate release notes
+        shell: bash
+        run: |
+          bash scripts/generate_release_notes.sh "${{ needs.meta.outputs.tag }}" "${{ runner.temp }}/RELEASE_NOTES.md"
       - name: Publish desktop assets
         uses: softprops/action-gh-release@v2
         with:
@@ -335,6 +342,7 @@ jobs:
           tag_name: ${{ needs.meta.outputs.tag }}
           name: "CPPlayer ${{ needs.meta.outputs.version }}${{ needs.meta.outputs.channel == 'debug' && ' (debug)' || '' }}"
           prerelease: ${{ needs.meta.outputs.channel != 'stable' }}
+          body_path: ${{ runner.temp }}/RELEASE_NOTES.md
           files: release-assets/**/*
 
   # ---------------------------------------------------------------------------

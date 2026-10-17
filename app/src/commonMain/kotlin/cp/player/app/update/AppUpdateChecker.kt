@@ -155,8 +155,10 @@ object AppUpdateChecker {
         for (release in ordered) {
             val body = release.body
             if (!body.isNullOrBlank()) {
-                sb.appendLine("### ${release.tagName}")
-                sb.appendLine()
+                if (ordered.size > 1) {
+                    sb.appendLine("### ${release.tagName}")
+                    sb.appendLine()
+                }
                 sb.appendLine(body.trim())
                 sb.appendLine()
             }

@@ -11,16 +11,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.SystemUpdate
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,6 +39,7 @@ import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.component.AppUpdateDialog
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
@@ -166,7 +163,7 @@ class AboutScreen : Screen {
         }
 
         if (showUpdateDialog && updateResult != null) {
-            UpdateDialog(
+            AppUpdateDialog(
                 result = updateResult!!,
                 onDismiss = { showUpdateDialog = false },
                 onDownload = {
@@ -221,53 +218,4 @@ private fun AboutHero() {
             Text("更新日志")
         }
     }
-}
-
-@Composable
-private fun UpdateDialog(
-    result: AppUpdateChecker.UpdateResult,
-    onDismiss: () -> Unit,
-    onDownload: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Default.SystemUpdate, null, tint = MaterialTheme.colorScheme.primary) },
-        title = { Text("发现新版本") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "v${result.versionName}",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                if (result.publishedAt != null) {
-                    Text(
-                        result.publishedAt.take(10),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (!result.changelog.isNullOrBlank()) {
-                    Spacer(Modifier.height(4.dp))
-                    Text("更新日志", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
-                    Surface(
-                        shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(result.changelog, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(12.dp))
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            FilledTonalButton(onClick = onDownload) {
-                Icon(Icons.Default.Download, null, modifier = Modifier.size(CpIconSize.inline))
-                Spacer(Modifier.width(6.dp))
-                Text("下载更新")
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
-    )
 }
