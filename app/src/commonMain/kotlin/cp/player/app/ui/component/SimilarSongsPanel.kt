@@ -127,102 +127,98 @@ fun SimilarSongsPanel(
     }
 
     Column(modifier.fillMaxSize()) {
-        // M3E 顶部推荐头部卡片
-        Surface(
-            shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.55f),
-            border = BorderStroke(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.15f else 0.25f),
-            ),
-            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+        // 顶部通透呼吸感标题栏（无厚重边框，轻量通透）
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.weight(1f, fill = false),
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.weight(1f, fill = false),
-                ) {
-                    if (onBack != null) {
-                        Surface(
-                            onClick = onBack,
-                            shape = MaterialTheme.shapes.small,
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f),
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    Icons.Filled.Close,
-                                    contentDescription = "返回",
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(17.dp),
-                                )
-                            }
-                        }
-                    } else {
+                if (onBack != null) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.size(36.dp),
+                    ) {
                         Icon(
-                            Icons.Filled.AutoAwesome,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.primary,
+                            Icons.Filled.Close,
+                            contentDescription = "返回",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(20.dp),
                         )
                     }
-                    Column {
-                        Text(
-                            "相似歌曲推荐",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                        )
-                        Text(
-                            if (tracks.isNotEmpty()) "发现 ${tracks.size} 首相似好歌 · 点击即播" else "基于在播歌曲智能推荐",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                        )
+                } else {
+                    Surface(
+                        shape = androidx.compose.foundation.shape.CircleShape,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Filled.AutoAwesome,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                     }
                 }
+                Column {
+                    Text(
+                        "相似歌曲",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                    )
+                    Text(
+                        if (tracks.isNotEmpty()) "${tracks.size} 首相似好歌 · 点击即播" else "基于在播歌曲探索推荐",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+            }
 
-                if (tracks.isNotEmpty()) {
-                    Surface(
-                        onClick = {
-                            scope.launch {
-                                AppModel.playback.playQueue(
-                                    tracks.map { toMediaId(it.id) },
-                                    startIndex = 0,
-                                )
-                            }
-                        },
-                        shape = MaterialTheme.shapes.large,
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Icon(
-                                Icons.Filled.PlayArrow,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            )
-                            Text(
-                                "全部播放",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            if (tracks.isNotEmpty()) {
+                Surface(
+                    onClick = {
+                        scope.launch {
+                            AppModel.playback.playQueue(
+                                tracks.map { toMediaId(it.id) },
+                                startIndex = 0,
                             )
                         }
+                    },
+                    shape = MaterialTheme.shapes.extraLarge,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                        Text(
+                            "全部播放",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
                     }
                 }
             }
         }
+
+        Spacer(Modifier.height(4.dp))
 
         when {
             // 拉取中且还没有旧数据：整页 loading。
@@ -256,7 +252,7 @@ fun SimilarSongsPanel(
             else -> {
                 LazyScrollColumn(
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     itemsIndexed(tracks) { index, item ->
                         val playingSeed = item.id == seed
@@ -270,82 +266,72 @@ fun SimilarSongsPanel(
                                     )
                                 }
                             },
-                            shape = MaterialTheme.shapes.large,
-                            color = if (playingSeed) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
-                            else androidx.compose.ui.graphics.Color.Transparent,
+                            shape = MaterialTheme.shapes.medium,
+                            color = if (playingSeed) {
+                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (isDark) 0.5f else 0.7f)
+                            } else {
+                                androidx.compose.ui.graphics.Color.Transparent
+                            },
                         ) {
                             Row(
-                                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                if (playingSeed) {
-                                    Icon(
-                                        Icons.Filled.GraphicEq,
-                                        contentDescription = "当前播放",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                    Spacer(Modifier.width(6.dp))
-                                } else {
-                                    Text(
-                                        "${index + 1}",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.width(24.dp),
-                                    )
+                                Box(modifier = Modifier.size(46.dp)) {
+                                    SimilarArtwork(item.coverUrl)
+                                    if (playingSeed) {
+                                        Box(
+                                            modifier = Modifier
+                                                .matchParentSize()
+                                                .clip(MaterialTheme.shapes.medium)
+                                                .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f)),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Icon(
+                                                Icons.Filled.GraphicEq,
+                                                contentDescription = "当前播放",
+                                                tint = androidx.compose.ui.graphics.Color.White,
+                                                modifier = Modifier.size(20.dp),
+                                            )
+                                        }
+                                    }
                                 }
-                                SimilarArtwork(item.coverUrl)
-                                Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+
+                                Spacer(Modifier.width(12.dp))
+
+                                Column(Modifier.weight(1f)) {
                                     Text(
                                         item.name,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
-                                        fontWeight = if (playingSeed) FontWeight.Bold else FontWeight.Normal,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (playingSeed) FontWeight.Bold else FontWeight.Medium,
                                         color = if (playingSeed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                     )
+                                    Spacer(Modifier.height(2.dp))
                                     Text(
                                         item.artist,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
-                                        style = MaterialTheme.typography.labelSmall,
+                                        style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    IconButton(
-                                        onClick = {
-                                            scope.launch {
-                                                AppModel.playback.addNextToQueue(toMediaId(item.id))
-                                            }
-                                        },
-                                        modifier = Modifier.size(32.dp),
-                                    ) {
-                                        Icon(
-                                            Icons.AutoMirrored.Filled.QueueMusic,
-                                            contentDescription = "下一首播放",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(17.dp),
-                                        )
-                                    }
-                                    IconButton(
-                                        onClick = {
-                                            CoverFlight.play(item.id, item.coverUrl)
-                                            AppModel.playTrackClicked(toMediaId(item.id)) {
-                                                AppModel.playback.playQueue(
-                                                    tracks.map { toMediaId(it.id) },
-                                                    startIndex = index,
-                                                )
-                                            }
-                                        },
-                                        modifier = Modifier.size(32.dp),
-                                    ) {
-                                        Icon(
-                                            Icons.Filled.PlayArrow,
-                                            contentDescription = "播放",
-                                            tint = if (playingSeed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(19.dp),
-                                        )
-                                    }
+
+                                IconButton(
+                                    onClick = {
+                                        scope.launch {
+                                            AppModel.playback.addNextToQueue(toMediaId(item.id))
+                                        }
+                                    },
+                                    modifier = Modifier.size(36.dp),
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.QueueMusic,
+                                        contentDescription = "下一首播放",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp),
+                                    )
                                 }
                             }
                         }
@@ -362,13 +348,13 @@ private fun SimilarArtwork(url: String?) {
         AsyncImage(
             model = url.resized(180),
             contentDescription = null,
-            modifier = Modifier.size(42.dp).clip(MaterialTheme.shapes.small),
+            modifier = Modifier.size(46.dp).clip(MaterialTheme.shapes.medium),
             contentScale = ContentScale.Crop,
         )
     } else {
         CpCoverPlaceholder(
-            modifier = Modifier.size(42.dp),
-            corner = 8.dp,
+            modifier = Modifier.size(46.dp),
+            corner = 12.dp,
             animated = false,
         )
     }

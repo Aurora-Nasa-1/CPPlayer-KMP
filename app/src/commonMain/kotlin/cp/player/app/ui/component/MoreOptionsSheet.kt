@@ -261,148 +261,182 @@ fun PlaylistOptionsSheet(
                     .padding(horizontal = 24.dp).padding(bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-            // 头部：圆形封面 + 歌单名
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(72.dp).clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (!coverUrl.isNullOrBlank()) {
-                        AsyncImage(
-                            model = coverUrl.resized(200),
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize().clip(CircleShape),
-                            contentScale = ContentScale.Crop,
-                        )
-                    } else {
-                        CpCoverPlaceholder(
-                            modifier = Modifier.fillMaxSize(),
-                            corner = 36.dp,
-                            animated = false,
-                        )
-                    }
-                }
-                Spacer(Modifier.width(16.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        playlistName,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        "歌单",
-                        fontSize = 18.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-
-            // 第一行：播放 + 刷新 + 分享 + 删除/收藏
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ActionTile(
-                    label = "播放",
-                    icon = Icons.Filled.PlayArrow,
-                    modifier = Modifier.weight(1f),
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    onClick = { onPlay(); onDismiss() },
-                )
-                onRefresh?.let { refresh ->
-                    CircleAction(
-                        icon = Icons.Filled.Refresh,
-                        label = "刷新",
-                        onClick = { refresh(); onDismiss() },
-                    )
-                }
-                onShare?.let { share ->
-                    CircleAction(
-                        icon = Icons.Filled.Share,
-                        label = "分享",
-                        onClick = { share(); onDismiss() },
-                    )
-                }
-                if (isOwner) {
-                    onDelete?.let { delete ->
-                        CircleAction(
-                            icon = Icons.Filled.Delete,
-                            label = "删除歌单",
-                            color = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                            onClick = { delete(); onDismiss() },
-                        )
-                    }
-                } else {
-                    onToggleFavorite?.let { toggle ->
-                        if (isFavorite) {
-                            CircleAction(
-                                icon = Icons.Filled.BookmarkRemove,
-                                label = "取消收藏",
-                                color = MaterialTheme.colorScheme.errorContainer,
-                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                                onClick = { toggle(); onDismiss() },
+                // 头部：M3E 圆角封面 + 歌单名 + 右侧快捷分享圆形胶囊
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        modifier = Modifier.size(72.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shadowElevation = 4.dp,
+                    ) {
+                        if (!coverUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = coverUrl.resized(220),
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
                             )
                         } else {
-                            CircleAction(
-                                icon = Icons.Filled.BookmarkAdd,
-                                label = "收藏",
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                onClick = { toggle(); onDismiss() },
+                            CpCoverPlaceholder(
+                                modifier = Modifier.fillMaxSize(),
+                                corner = 20.dp,
+                                animated = false,
                             )
                         }
                     }
+                    Spacer(Modifier.width(16.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            playlistName,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ) {
+                            Text(
+                                if (isOwner) "我创建的歌单" else if (isFavorite) "已收藏歌单" else "公开歌单",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                            )
+                        }
+                    }
+                    if (onShare != null) {
+                        Spacer(Modifier.width(10.dp))
+                        CircleAction(
+                            icon = Icons.Filled.Share,
+                            label = "分享歌单",
+                            size = 48.dp,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                            onClick = { onShare(); onDismiss() },
+                        )
+                    }
+                }
+
+                // 第一排：全部播放 + 全部加入队列（等宽大胶囊）
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    ActionPill(
+                        label = "全部播放",
+                        icon = Icons.Filled.PlayArrow,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onPlay(); onDismiss() },
+                    )
+                    ActionPill(
+                        label = "加入队列",
+                        icon = Icons.Filled.QueueMusic,
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onAddToQueue(); onDismiss() },
+                    )
+                }
+
+                // 第二排：关键操作胶囊（删除 / 取消收藏 / 收藏 / 刷新 / 分享）
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    if (isOwner && onDelete != null) {
+                        // 创建者：删除歌单大胶囊（醒目红底）
+                        ActionPill(
+                            label = "删除歌单",
+                            icon = Icons.Filled.Delete,
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onDelete(); onDismiss() },
+                        )
+                    } else if (onToggleFavorite != null) {
+                        // 非创建者：取消收藏 / 收藏歌单
+                        if (isFavorite) {
+                            ActionPill(
+                                label = "取消收藏",
+                                icon = Icons.Filled.BookmarkRemove,
+                                color = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.weight(1f),
+                                onClick = { onToggleFavorite(); onDismiss() },
+                            )
+                        } else {
+                            ActionPill(
+                                label = "收藏歌单",
+                                icon = Icons.Filled.BookmarkAdd,
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                modifier = Modifier.weight(1f),
+                                onClick = { onToggleFavorite(); onDismiss() },
+                            )
+                        }
+                    }
+
+                    if (onShare != null) {
+                        ActionPill(
+                            label = "分享歌单",
+                            icon = Icons.Filled.Share,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onShare(); onDismiss() },
+                        )
+                    }
+
+                    if (onRefresh != null) {
+                        CircleAction(
+                            icon = Icons.Filled.Refresh,
+                            label = "刷新歌单",
+                            size = ActionPillHeight,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                            onClick = { onRefresh(); onDismiss() },
+                        )
+                    }
+                }
+
+                // 排序选项
+                if (currentSort != null) {
+                    Text(
+                        "排序方式",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SortPill(
+                            label = "默认",
+                            icon = Icons.AutoMirrored.Filled.List,
+                            isSelected = currentSort == PlaylistSortType.DEFAULT,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onSortChange?.invoke(PlaylistSortType.DEFAULT) },
+                        )
+                        SortPill(
+                            label = "按名称",
+                            icon = Icons.Filled.SortByAlpha,
+                            isSelected = currentSort == PlaylistSortType.NAME,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onSortChange?.invoke(PlaylistSortType.NAME) },
+                        )
+                        SortPill(
+                            label = "按歌手",
+                            icon = Icons.Filled.Person,
+                            isSelected = currentSort == PlaylistSortType.ARTIST,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onSortChange?.invoke(PlaylistSortType.ARTIST) },
+                        )
+                    }
                 }
             }
-
-            // 第二行：全部加入队列
-            ActionPill(
-                label = "全部加入队列",
-                icon = Icons.Filled.QueueMusic,
-                modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.tertiaryContainer,
-                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                onClick = { onAddToQueue(); onDismiss() },
-            )
-
-            // 排序行
-            if (currentSort != null) {
-                Text(
-                    "排序方式",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.Medium,
-                )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SortPill(
-                        label = "默认",
-                        icon = Icons.AutoMirrored.Filled.List,
-                        isSelected = currentSort == PlaylistSortType.DEFAULT,
-                        modifier = Modifier.weight(1f),
-                        onClick = { onSortChange?.invoke(PlaylistSortType.DEFAULT) },
-                    )
-                    SortPill(
-                        label = "按名称",
-                        icon = Icons.Filled.SortByAlpha,
-                        isSelected = currentSort == PlaylistSortType.NAME,
-                        modifier = Modifier.weight(1f),
-                        onClick = { onSortChange?.invoke(PlaylistSortType.NAME) },
-                    )
-                    SortPill(
-                        label = "按歌手",
-                        icon = Icons.Filled.Person,
-                        isSelected = currentSort == PlaylistSortType.ARTIST,
-                        modifier = Modifier.weight(1f),
-                        onClick = { onSortChange?.invoke(PlaylistSortType.ARTIST) },
-                    )
-                }
-            }
-        }
         }
     }
 }

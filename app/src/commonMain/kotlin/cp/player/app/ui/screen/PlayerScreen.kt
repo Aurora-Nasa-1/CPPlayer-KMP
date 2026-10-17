@@ -35,6 +35,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.systemBars
@@ -69,6 +71,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -274,7 +277,6 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
     // 宿主与动作实现是共享组件 PlayerMoreSheets（本页末尾挂载；桌面播放页
     // DesktopPlayerScreen 同款复用）—— 两套布局互斥切换，各持一份状态。
     var showQueueSheet by remember { mutableStateOf(false) }
-    var showSimilarSheet by remember { mutableStateOf(false) }
     var showTranslation by remember { mutableStateOf(true) }
     val moreSheets = rememberPlayerMoreSheetState()
     val playerScope = rememberCoroutineScope()
@@ -387,45 +389,12 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             Scaffold(
                 containerColor = Color.Transparent,
                 topBar = {
-                    TopAppBar(
+                    CenterAlignedTopAppBar(
                         title = {
-                            AnimatedContent(
-                                targetState = pagerState.currentPage,
-                                transitionSpec = {
-                                    (slideInVertically { h -> h } + fadeIn()) togetherWith
-                                        (slideOutVertically { h -> -h } + fadeOut())
-                                },
-                                label = "TopBarTitle",
-                            ) { page ->
-                                if (page == 1) {
-                                    Text("", Modifier.fillMaxWidth())
-                                } else {
-                                    Column {
-                                        // 顶栏大标题 = 焦点位（当前页 0）：溢出即跑马灯滚动，
-                                        // 不再只留一个省略号。静态观感与治理前一致（CpText 默认 Tail 档）。
-                                        cp.player.app.ui.component.CpText(
-                                            text = track.name,
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.SemiBold,
-                                            maxLines = 1,
-                                            emphasized = true,
-                                        )
-                                        // 歌手可点（多歌手各自分段）：顶栏这行是 bodySmall，
-                                        // 与下方大字歌手行共用同一个组件、同一份跳转。
-                                        // 次级文字用 onSurfaceVariant，不要 onSurface + 手写 alpha。
-                                        // 手写 alpha 在「跟随封面取色」时不可控：封面色一深，
-                                        // 0.6 的次级文字就掉到对比度下限以下，而同一层级的文字
-                                        // 在别的页面是 onSurfaceVariant —— 同级别、不同深浅。
-                                        cp.player.app.ui.component.TrackArtistText(
-                                            track = track,
-                                            onArtistClick = onArtistClick,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                        )
-                                    }
-                                }
-                            }
+                            MobilePlayerTabSelector(
+                                currentPage = pagerState.currentPage,
+                                onSelect = { page -> scope.launch { pagerState.animateScrollToPage(page) } },
+                            )
                         },
                         navigationIcon = {
                             IconButton(onClick = onBack) {
@@ -459,7 +428,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                                 onClick = { showQueueSheet = true },
                                                 modifier = Modifier.padding(end = 8.dp),
                                                 colors = IconButtonDefaults.filledIconButtonColors(
-                                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = if (isDark) 0.6f else 0.8f),
                                                     contentColor = MaterialTheme.colorScheme.onSurface,
                                                 ),
                                             ) {
@@ -471,48 +440,30 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                         }
                                     }
                                     else -> {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            IconButton(
-                                                onClick = { showSimilarSheet = true },
-                                                modifier = Modifier.padding(end = 4.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.AutoAwesome,
-                                                    contentDescription = "相似歌曲",
-                                                    tint = MaterialTheme.colorScheme.onSurface,
-                                                )
-                                            }
-                                            FilledIconButton(
-                                                onClick = { showQueueSheet = true },
-                                                modifier = Modifier.padding(end = 8.dp),
-                                                colors = IconButtonDefaults.filledIconButtonColors(
-                                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                                    contentColor = MaterialTheme.colorScheme.onSurface,
-                                                ),
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                                    contentDescription = s.player.queue,
-                                                )
-                                            }
+                                        FilledIconButton(
+                                            onClick = { showQueueSheet = true },
+                                            modifier = Modifier.padding(end = 8.dp),
+                                            colors = IconButtonDefaults.filledIconButtonColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = if (isDark) 0.6f else 0.8f),
+                                                contentColor = MaterialTheme.colorScheme.onSurface,
+                                            ),
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                                contentDescription = s.player.queue,
+                                            )
                                         }
                                     }
                                 }
                             }
                         },
-                        colors = TopAppBarDefaults.topAppBarColors(
+                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                             containerColor = Color.Transparent
                         )
                     )
                 }
             ) { inner ->
                 Column(Modifier.fillMaxSize().padding(inner)) {
-                    // 手机端三栏表现力切换选择器（【歌词】、【歌曲】、【评论】）
-                    MobilePlayerTabSelector(
-                        currentPage = pagerState.currentPage,
-                        onSelect = { page -> scope.launch { pagerState.animateScrollToPage(page) } },
-                        modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 6.dp),
-                    )
                     HorizontalPager(
                         state = pagerState,
                         modifier = Modifier
@@ -586,22 +537,9 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             onClose = { showQueueSheet = false },
             onOpenSimilar = {
                 showQueueSheet = false
-                showSimilarSheet = true
+                moreSheets.showSimilarSongs = true
             },
         )
-    }
-
-    if (showSimilarSheet) {
-        LegacyModalBottomSheet(
-            onDismissRequest = { showSimilarSheet = false },
-            skipPartiallyExpanded = true,
-        ) {
-            SimilarSongsPanel(
-                seedTrackId = track.id,
-                onBack = { showSimilarSheet = false },
-                modifier = Modifier.padding(horizontal = 16.dp).fillMaxHeight(0.85f),
-            )
-        }
     }
 
     // 「更多」弹层 + 二级弹窗：宿主与动作实现全在共享组件 PlayerMoreSheets 里，
@@ -921,28 +859,18 @@ private fun MobilePlayerTabSelector(
     modifier: Modifier = Modifier,
 ) {
     val isDark = LocalIsDarkTheme.current
-    val tabs = remember {
-        listOf(
-            MobileTabItem("歌词", Icons.Filled.Lyrics),
-            MobileTabItem("歌曲", Icons.Filled.MusicNote),
-            MobileTabItem("评论", Icons.AutoMirrored.Filled.Comment),
-        )
-    }
+    val tabs = remember { listOf("歌词", "歌曲", "评论") }
     Surface(
         modifier = modifier,
-        shape = MaterialTheme.shapes.extraExtraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = if (isDark) 0.45f else 0.55f),
-        border = BorderStroke(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.18f else 0.28f),
-        ),
+        shape = androidx.compose.foundation.shape.CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = if (isDark) 0.35f else 0.45f),
     ) {
         Row(
             Modifier.padding(3.dp),
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            tabs.forEachIndexed { index, tab ->
+            tabs.forEachIndexed { index, title ->
                 val selected = currentPage == index
                 val containerColor by animateColorAsState(
                     targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer
@@ -958,22 +886,16 @@ private fun MobilePlayerTabSelector(
                 )
                 Surface(
                     onClick = { onSelect(index) },
-                    shape = MaterialTheme.shapes.large,
+                    shape = androidx.compose.foundation.shape.CircleShape,
                     color = containerColor,
                     contentColor = contentColor,
                 ) {
-                    Row(
-                        Modifier.padding(horizontal = 13.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp),
                     ) {
-                        Icon(
-                            imageVector = tab.icon,
-                            contentDescription = null,
-                            modifier = Modifier.size(15.dp),
-                        )
                         Text(
-                            text = tab.title,
+                            text = title,
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                         )
@@ -983,8 +905,6 @@ private fun MobilePlayerTabSelector(
         }
     }
 }
-
-private data class MobileTabItem(val title: String, val icon: ImageVector)
 
 @Composable
 private fun ProgressRow(
@@ -1102,14 +1022,20 @@ fun DesktopLyricsContent(
     onLikeClick: () -> Unit = {},
     onChangeSource: (() -> Unit)? = null,
 ) {
-    Box(Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
         cp.player.app.ui.component.LyricContent(
             state = state,
             showTranslation = showTranslation,
             onSeek = onSeek,
             onChangeSource = onChangeSource,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(vertical = 24.dp, horizontal = 12.dp),
+            modifier = Modifier
+                .widthIn(max = 640.dp)
+                .fillMaxWidth()
+                .fillMaxHeight(),
+            contentPadding = PaddingValues(vertical = 24.dp, horizontal = 16.dp),
         )
     }
 }

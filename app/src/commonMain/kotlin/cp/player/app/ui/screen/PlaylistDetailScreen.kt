@@ -1,10 +1,13 @@
 package cp.player.app.ui.screen
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,8 +21,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -37,6 +45,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
@@ -59,7 +68,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import cp.player.app.ui.component.cpBounceClickable
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -100,6 +113,7 @@ import cp.player.app.ui.component.SongMenuActions
 import cp.player.app.ui.component.SongOptionsSheet
 import cp.player.app.ui.component.SourceSongsSelectionSheet
 import cp.player.app.ui.component.TopBarAction
+import cp.player.app.ui.component.cpBounceClickable
 import cp.player.app.ui.component.playlistShareText
 import cp.player.app.ui.component.songContextMenuItems
 import cp.player.app.ui.component.songShareText
@@ -180,6 +194,11 @@ fun PlaylistDetailContent(
     var showQueueSelection by remember { mutableStateOf(false) }
     // 非 owner 歌单的收藏态（Screen 内简化维护）
     var playlistFavorite by remember { mutableStateOf(false) }
+
+    // 歌单内即时搜索过滤状态（对标 PixelPlayer）
+    var inPlaylistSearchQuery by remember { mutableStateOf("") }
+    var isSearchActive by remember { mutableStateOf(false) }
+
     // 破坏性操作（删除歌单 / 取消收藏 / 移除曲目）的二次确认。
     // 本页面有三个入口能触发删除（右键菜单、选项弹层、多选工具条），
     // 用一个挂起态保证它们共用同一份文案、且不会同时弹两个框。
@@ -193,13 +212,8 @@ fun PlaylistDetailContent(
     }
 
     // 曲目就绪后从 autoPlayIndex 开始播放（为 null 时只浏览不播放）
-    //
-    // ⚠️ 走 [PlaylistDetailScreenModel.autoPlayAt] 而不是直接 `playAt`：从播放页 pop 回来
-    // 时本页会重新进入组合，这个 LaunchedEffect 会重新执行，直接 playAt 会重建队列并
-    // 从起点重放 —— 也就是「退出大播放器之后播放被重置」。
     LaunchedEffect(autoPlayIndex, state.tracks) {
         val index = autoPlayIndex ?: return@LaunchedEffect
-        // 自动播放不是封面点击，不触发 CoverFlight（避免打断可能仍在飞行的过渡）。
         model.autoPlayAt(index, animateCover = false)
     }
 
@@ -207,6 +221,16 @@ fun PlaylistDetailContent(
     BackHandler(enabled = state.selectionMode) { model.exitSelection() }
 
     val displayTracks = remember(state.tracks, state.sortType) { model.displayTracks() }
+    val filteredDisplayTracks = remember(displayTracks, inPlaylistSearchQuery) {
+        val q = inPlaylistSearchQuery.trim()
+        if (q.isEmpty()) displayTracks
+        else displayTracks.filter { track ->
+            track.name.contains(q, ignoreCase = true) ||
+            track.artist.contains(q, ignoreCase = true) ||
+            (track.album?.contains(q, ignoreCase = true) == true)
+        }
+    }
+
     val totalDurationMs = remember(state.tracks) { state.tracks.sumOf { it.durationMs } }
     val summary = state.summary ?: playlist
     // 虚拟歌单没有"创建者"概念，一律按非本人处理，避免出现删除 / 添加等必然失败的操作
@@ -236,11 +260,7 @@ fun PlaylistDetailContent(
         }
     }
 
-    // 「删除歌单 / 取消收藏」的统一确认入口。
-    //
-    // 两个入口（右键菜单、选项弹层）此前都是**一键即生效**：删掉自己建的歌单
-    // 是不可恢复的服务端写操作，而菜单里它紧挨着「分享歌单」，一次误触就全没了。
-    // 取消收藏可再次收藏，故按非破坏性呈现（确认键不用 error 色）。
+    // 「删除歌单 / 取消收藏」的统一确认入口
     val confirmDeletePlaylist: () -> Unit = {
         confirm.request(
             title = if (isOwner) s.library.deletePlaylist else s.library.unfavoritePlaylist,
@@ -255,7 +275,7 @@ fun PlaylistDetailContent(
         )
     }
 
-    // 桌面端右键菜单：歌曲行动作集合与 SongOptionsSheet 完全对齐（一处动线两处入口）。
+    // 桌面端右键菜单：歌曲行动作集合与 SongOptionsSheet 完全对齐
     val buildSongMenu: @Composable (TrackSummary, Int) -> List<CpContextMenuItem> = { track, index ->
         songContextMenuItems(
             SongMenuActions(
@@ -286,8 +306,7 @@ fun PlaylistDetailContent(
         )
     }
 
-    // 桌面端歌单动作菜单：右键信息面板 + 宽屏左栏「更多」按钮共用同一份。
-    // 本地虚拟歌单没有服务端实体，分享 / 收藏 / 删除链接与接口都无效，不出菜单。
+    // 桌面端歌单动作菜单
     val playlistMenu: List<CpContextMenuItem>? = if (isLocalPlaylist) null else buildList {
         add(CpContextMenuItem(s.common.refresh, Icons.Filled.Refresh, onClick = { model.refresh() }))
         add(CpContextMenuItem(s.library.playAll, Icons.Filled.PlayArrow, onClick = { model.playAll() }))
@@ -297,8 +316,6 @@ fun PlaylistDetailContent(
         add(CpContextMenuItem(s.library.sharePlaylist, Icons.Filled.Share, onClick = {
             shareText(playlistShareText(playlist.id, summary.name))
         }))
-        // 与 PlaylistOptionsSheet 的收藏 / 删除可见性规则保持一致：
-        // 非 owner 才有收藏，owner 才有删除。
         if (!isOwner) {
             add(
                 CpContextMenuItem(
@@ -319,7 +336,7 @@ fun PlaylistDetailContent(
         }
     }
 
-    // 多选工具条的「从歌单移除」：同样是服务端写操作，移出去就得重新搜回来，先确认。
+    // 多选工具条的「从歌单移除」
     val confirmRemoveTracks: (List<String>) -> Unit = { ids ->
         if (ids.isNotEmpty()) {
             confirm.request(
@@ -331,16 +348,14 @@ fun PlaylistDetailContent(
         }
     }
 
-    // 桌面窗口标题栏的标题（内嵌成双栏详情栏时由宿主发布，见 LocalEmbeddedInPane）。
+    val onSharePlaylist: (() -> Unit)? = if (isLocalPlaylist) null else {
+        { shareText(playlistShareText(playlist.id, summary.name)) }
+    }
+
     if (!embedded) cp.player.app.ui.util.DesktopRouteTitle(summary.name)
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        // 走 CpBreakpoints 而不是内联 840：断点只此一份，改一次处处生效。
-        // ⚠️ 也不能读 LocalIsExpanded —— 本页是 push 出去的路由页，与提供它的
-        // MainScreen 是兄弟节点，读到的永远是默认 false（宽窗口上会错判成窄屏）。
         val isWide = cp.player.app.ui.component.CpBreakpoints.isExpanded(maxWidth)
-        // 桌面端（窗口 chrome 接管）不自绘返回键：返回入口统一在自绘标题栏上，
-        // 否则同一屏会出现两个返回键。判据是 LocalWindowChromeActive 而不是平台，理由见它的 KDoc。
         val canShowInlineBack = isWide && !embedded &&
             !cp.player.app.ui.component.LocalWindowChromeActive.current
         if (isWide) {
@@ -350,10 +365,22 @@ fun PlaylistDetailContent(
                 summary = summary,
                 playlist = playlist,
                 displayTracks = displayTracks,
+                filteredTracks = filteredDisplayTracks,
                 trackCount = trackCount,
                 durationStr = durationStr,
                 currentTrackId = currentTrackId,
                 isOwner = isOwner,
+                isFavorite = playlistFavorite,
+                onToggleFavorite = if (!isOwner && !isLocalPlaylist) togglePlaylistFavorite else null,
+                onShare = onSharePlaylist,
+                onDelete = if (isOwner) confirmDeletePlaylist else null,
+                searchQuery = inPlaylistSearchQuery,
+                onSearchQueryChange = { inPlaylistSearchQuery = it },
+                isSearchActive = isSearchActive,
+                onToggleSearch = {
+                    isSearchActive = !isSearchActive
+                    if (!isSearchActive) inPlaylistSearchQuery = ""
+                },
                 showBackButton = canShowInlineBack,
                 onBack = { if (embedded) onEmbeddedBack?.invoke() else navigator.popOrNotify() },
                 onSongOptions = { optionsTarget = it },
@@ -370,10 +397,22 @@ fun PlaylistDetailContent(
                 state = state,
                 summary = summary,
                 displayTracks = displayTracks,
+                filteredTracks = filteredDisplayTracks,
                 trackCount = trackCount,
                 durationStr = durationStr,
                 currentTrackId = currentTrackId,
                 isOwner = isOwner,
+                isFavorite = playlistFavorite,
+                onToggleFavorite = if (!isOwner && !isLocalPlaylist) togglePlaylistFavorite else null,
+                onShare = onSharePlaylist,
+                onDelete = if (isOwner) confirmDeletePlaylist else null,
+                searchQuery = inPlaylistSearchQuery,
+                onSearchQueryChange = { inPlaylistSearchQuery = it },
+                isSearchActive = isSearchActive,
+                onToggleSearch = {
+                    isSearchActive = !isSearchActive
+                    if (!isSearchActive) inPlaylistSearchQuery = ""
+                },
                 onBack = { if (embedded) onEmbeddedBack?.invoke() else navigator.popOrNotify() },
                 onSongOptions = { optionsTarget = it },
                 onOpenPlaylistSheet = { showPlaylistSheet = true },
@@ -395,12 +434,9 @@ fun PlaylistDetailContent(
             onAddToQueue = { model.queueAll() },
             onRefresh = if (isLocalPlaylist) null else { { model.refresh() } },
             onDelete = if (isOwner) confirmDeletePlaylist else null,
-            onShare = if (isLocalPlaylist) null else {
-                { shareText("「${summary.name}」 https://music.163.com/#/playlist?id=${playlist.id}") }
-            },
+            onShare = onSharePlaylist,
             coverUrl = summary.coverUrl,
             isFavorite = playlistFavorite,
-            // 本地生成的虚拟歌单没有服务端实体，收藏接口对负数 id 无效，故不展示
             onToggleFavorite = if (!isOwner && !isLocalPlaylist) togglePlaylistFavorite else null,
             currentSort = state.sortType,
             onSortChange = { model.setSort(it) },
@@ -415,7 +451,6 @@ fun PlaylistDetailContent(
             isFavorite = model.isLiked(track.id),
             isDownloaded = AppModel.isDownloaded(track.id),
             onDismiss = { optionsTarget = null },
-            // 点击时对当前列表重新求值索引，避免弹层组合时固化过期 index
             onPlay = {
                 val index = displayTracks.indexOf(track)
                 if (index >= 0) model.playAt(index)
@@ -451,7 +486,7 @@ fun PlaylistDetailContent(
         AddToPlaylistSheet(trackIds = ids, onDismiss = { addToPlaylistIds = null })
     }
 
-    // 添加歌曲：来源选项（移植旧项目"添加歌曲"弹层）
+    // 添加歌曲：来源选项
     if (showAddSongsOptions) {
         AddSongsOptionsSheet(
             onDismiss = { showAddSongsOptions = false },
@@ -466,7 +501,7 @@ fun PlaylistDetailContent(
         )
     }
 
-    // 从歌单导入：源歌单选择器（排除当前歌单）
+    // 从歌单导入：源歌单选择器
     if (showImportPicker) {
         PlaylistPickerSheet(
             title = s.library.importFromPlaylist,
@@ -497,7 +532,7 @@ fun PlaylistDetailContent(
         )
     }
 
-    // 从播放队列添加：队列歌曲多选
+    // 从播放队列添加
     if (showQueueSelection) {
         val queueTracks = playbackState.queue.map { item ->
             TrackSummary(
@@ -520,7 +555,7 @@ fun PlaylistDetailContent(
         )
     }
 
-    // INFO 弹窗（解析收敛在 MusicRepository.getSongDetailInfo，UI 只拿强类型结果）
+    // INFO 弹窗
     showInfoTarget?.let { track ->
         var info by remember(track.id) { mutableStateOf<SongDetailInfo?>(null) }
         LaunchedEffect(track.id) {
@@ -555,8 +590,6 @@ fun PlaylistDetailContent(
                 } else {
                     Text(
                         buildString {
-                            // 整段进剪贴板 ⇒ 逐行都是文案。`extra` 收「有值才出现」的那些行
-                            // （发行时间 / 评论数 / MV / 码率 / 付费类型），调用方只管判断有没有值。
                             append(
                                 s.library.shareTrack(
                                     name = current.name,
@@ -575,7 +608,6 @@ fun PlaylistDetailContent(
                                         current.commentCount?.let {
                                             append(s.library.songShareLine(s.library.commentCount, "$it"))
                                         }
-                                        // MV ID 是标识符，不翻译。
                                         current.mvId?.let { append(s.library.songShareLine("MV ID", "$it")) }
                                         current.maxBitrate?.let {
                                             append(
@@ -591,7 +623,6 @@ fun PlaylistDetailContent(
                                                     s.library.paidType,
                                                     when (fee) {
                                                         0 -> s.library.paidFree
-                                                        // 「VIP」是音源侧的等级名，两端一致，不翻译。
                                                         1 -> "VIP"
                                                         4 -> s.library.paidPurchased
                                                         8 -> s.library.paidLowQualityFree
@@ -603,7 +634,6 @@ fun PlaylistDetailContent(
                                     },
                                 ),
                             )
-                            // 「歌曲 ID」是标识符标签，两端都用 ID。
                             append(s.library.songShareLine("ID", current.songId))
                         }
                     )
@@ -615,7 +645,7 @@ fun PlaylistDetailContent(
         )
     }
 
-    // 二次确认框：与其余弹层同级，放在最后，避免被选项弹层盖住。
+    // 二次确认框
     cp.player.app.ui.component.CpConfirmHost(confirm)
 }
 
@@ -628,16 +658,24 @@ private fun NarrowLayout(
     state: PlaylistDetailUiState,
     summary: PlaylistSummary,
     displayTracks: List<TrackSummary>,
+    filteredTracks: List<TrackSummary>,
     trackCount: Int,
     durationStr: String,
     currentTrackId: String?,
     isOwner: Boolean,
+    isFavorite: Boolean,
+    onToggleFavorite: (() -> Unit)?,
+    onShare: (() -> Unit)?,
+    onDelete: (() -> Unit)?,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    isSearchActive: Boolean,
+    onToggleSearch: () -> Unit,
     onBack: () -> Unit,
     onSongOptions: (TrackSummary) -> Unit,
     onOpenPlaylistSheet: () -> Unit,
     onAddSelectedToPlaylist: () -> Unit,
     onAddTracks: () -> Unit,
-    /** 移除选中曲目；由宿主包一层二次确认后再落到 [model]。 */
     onRemoveSelected: (List<String>) -> Unit,
     buildSongMenu: @Composable (TrackSummary, Int) -> List<CpContextMenuItem>,
 ) {
@@ -691,60 +729,32 @@ private fun NarrowLayout(
             TrackList(
                 model = model,
                 state = state,
-                displayTracks = displayTracks,
+                allTracks = displayTracks,
+                displayTracks = filteredTracks,
                 currentTrackId = currentTrackId,
-                withHeader = false,
+                withHero = false,
+                summary = summary,
+                isOwner = isOwner,
+                isFavorite = isFavorite,
+                onToggleFavorite = onToggleFavorite,
+                onShare = onShare,
+                onDelete = onDelete,
+                searchQuery = searchQuery,
+                onSearchQueryChange = onSearchQueryChange,
+                isSearchActive = isSearchActive,
+                onToggleSearch = onToggleSearch,
                 onSongOptions = onSongOptions,
                 onSortClick = onOpenPlaylistSheet,
                 onAddTracks = onAddTracks,
+                onDownloadAll = { AppModel.downloadTracks(displayTracks) },
+                onEnterSelection = { },
+                onMore = onOpenPlaylistSheet,
                 buildSongMenu = buildSongMenu,
             )
         }
     } else {
         AppScaffold(
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(
-                        modifier = Modifier.size(56.dp)
-                            .coverFlightTarget(CoverFlight.TARGET_PLAYLIST_HEADER, 12.dp),
-                        shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shadowElevation = 2.dp,
-                    ) {
-                        // 封面飞行落点：飞行未落位前先隐藏，落位时由飞行器淡出交还。
-                        val hideCover = CoverFlight.isFlyingTo(CoverFlight.TARGET_PLAYLIST_HEADER)
-                        if (!summary.coverUrl.isNullOrBlank()) {
-                            AsyncImage(
-                                model = summary.coverUrl.resized(200),
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                                    .graphicsLayer { alpha = if (hideCover) 0f else 1f },
-                            )
-                        } else {
-                            CpCoverPlaceholder(
-                                modifier = Modifier.fillMaxSize()
-                                    .graphicsLayer { alpha = if (hideCover) 0f else 1f },
-                                corner = 12.dp,
-                                animated = false,
-                            )
-                        }
-                    }
-                    Spacer(Modifier.width(16.dp))
-                    Column {
-                        Text(
-                            text = summary.name,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = s.library.trackCountLabel(trackCount, durationStr),
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            },
+            title = summary.name,
             onBackPressed = onBack,
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
             topBarActions = listOf(
@@ -757,12 +767,28 @@ private fun NarrowLayout(
             TrackList(
                 model = model,
                 state = state,
-                displayTracks = displayTracks,
+                allTracks = displayTracks,
+                displayTracks = filteredTracks,
                 currentTrackId = currentTrackId,
-                withHeader = true,
+                withHero = true,
+                summary = summary,
+                isOwner = isOwner,
+                isFavorite = isFavorite,
+                onToggleFavorite = onToggleFavorite,
+                onShare = onShare,
+                onDelete = onDelete,
+                searchQuery = searchQuery,
+                onSearchQueryChange = onSearchQueryChange,
+                isSearchActive = isSearchActive,
+                onToggleSearch = onToggleSearch,
                 onSongOptions = onSongOptions,
                 onSortClick = onOpenPlaylistSheet,
                 onAddTracks = onAddTracks,
+                onDownloadAll = { AppModel.downloadTracks(displayTracks) },
+                onEnterSelection = {
+                    displayTracks.firstOrNull()?.let { model.enterSelection(it.id) }
+                },
+                onMore = onOpenPlaylistSheet,
                 buildSongMenu = buildSongMenu,
             )
         }
@@ -778,25 +804,34 @@ private fun WideLayout(
     summary: PlaylistSummary,
     playlist: PlaylistSummary,
     displayTracks: List<TrackSummary>,
+    filteredTracks: List<TrackSummary>,
     trackCount: Int,
     durationStr: String,
     currentTrackId: String?,
     isOwner: Boolean,
+    isFavorite: Boolean,
+    onToggleFavorite: (() -> Unit)?,
+    onShare: (() -> Unit)?,
+    onDelete: (() -> Unit)?,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    isSearchActive: Boolean,
+    onToggleSearch: () -> Unit,
     showBackButton: Boolean,
     onBack: () -> Unit,
     onSongOptions: (TrackSummary) -> Unit,
     onOpenPlaylistSheet: () -> Unit,
     onAddSelectedToPlaylist: () -> Unit,
     onAddTracks: () -> Unit,
-    /** 移除选中曲目；由宿主包一层二次确认后再落到 [model]。 */
     onRemoveSelected: (List<String>) -> Unit,
-    /** 左栏信息面板的右键菜单（桌面端）；null 时不启用。 */
     playlistMenu: List<CpContextMenuItem>?,
     buildSongMenu: @Composable (TrackSummary, Int) -> List<CpContextMenuItem>,
 ) {
     val s = cpStrings()
-    // 宽屏左栏的排序锚定菜单：排序方式只在这里切换，不再借道底部弹层；
-    // 「更多」按钮承载歌单级动作（分享 / 收藏 / 删除），两者职责分离不再冲突。
+    val windowChromeActive = LocalWindowChromeActive.current
+    var sortMenuExpanded by remember { mutableStateOf(false) }
+    var moreMenuExpanded by remember { mutableStateOf(false) }
+
     val sortMenuItems = listOf(
         CpContextMenuItem(
             s.library.sortDefault, Icons.AutoMirrored.Filled.List,
@@ -814,78 +849,154 @@ private fun WideLayout(
             isSelected = state.sortType == PlaylistSortType.ARTIST,
         ),
     )
+
     CpTwoPane(
         rail = { railModifier ->
-            // 左侧：歌单信息面板（整块右键可弹歌单菜单，见 playlistMenu）。
-            //
-            // 「返回上一级」只并进**右键**菜单，不进右边那个锚定的「更多」菜单 ——
-            // 后者是歌单动作（分享 / 收藏 / 删除），混一个导航项进去会让人找不到重点。
-            // 判据与动作与标题栏返回键同链，见 rememberBackContextMenuItem。
             val backItem = cp.player.app.ui.component.rememberBackContextMenuItem()
             val railMenu = playlistMenu?.let { items ->
                 if (backItem == null) items else listOf(backItem) + items
             }
             CpContextMenu(items = railMenu, modifier = railModifier) {
-            ScrollColumn(
-                modifier = Modifier.padding(20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-            Spacer(Modifier.height(16.dp))
-            Surface(
-                modifier = Modifier.size(176.dp)
-                    .coverFlightTarget(CoverFlight.TARGET_PLAYLIST_HEADER, 24.dp),
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shadowElevation = 8.dp,
-            ) {
-                // 封面飞行落点：飞行未落位前先隐藏，落位时由飞行器淡出交还。
-                val hideCover = CoverFlight.isFlyingTo(CoverFlight.TARGET_PLAYLIST_HEADER)
-                if (!summary.coverUrl.isNullOrBlank()) {
-                    AsyncImage(
-                        model = summary.coverUrl.resized(600),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                            .graphicsLayer { alpha = if (hideCover) 0f else 1f },
+                ScrollColumn(
+                    modifier = Modifier.padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Spacer(Modifier.height(16.dp))
+                    // 1. M3E 宽屏超大封面（188dp，extraLarge 28dp 圆角，8dp 阴影）
+                    Surface(
+                        modifier = Modifier.size(188.dp)
+                            .coverFlightTarget(CoverFlight.TARGET_PLAYLIST_HEADER, 28.dp),
+                        shape = MaterialTheme.shapes.extraLarge,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shadowElevation = 8.dp,
+                    ) {
+                        val hideCover = CoverFlight.isFlyingTo(CoverFlight.TARGET_PLAYLIST_HEADER)
+                        if (!summary.coverUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = summary.coverUrl.resized(600),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                                    .graphicsLayer { alpha = if (hideCover) 0f else 1f },
+                            )
+                        } else {
+                            CpCoverPlaceholder(
+                                modifier = Modifier.fillMaxSize()
+                                    .graphicsLayer { alpha = if (hideCover) 0f else 1f },
+                                corner = 28.dp,
+                                animated = true,
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        text = summary.name,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                     )
-                } else {
-                    CpCoverPlaceholder(
-                        modifier = Modifier.fillMaxSize()
-                            .graphicsLayer { alpha = if (hideCover) 0f else 1f },
-                        corner = 16.dp,
-                        animated = true,
+                    Spacer(Modifier.height(8.dp))
+
+                    // 2. 元数据药丸行
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (!summary.creatorName.isNullOrBlank()) {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(Icons.Filled.Person, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        text = summary.creatorName.orEmpty(),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                    )
+                                }
+                            }
+                        }
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Filled.MusicNote, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = s.library.playlistCountLabel(trackCount, durationStr),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(20.dp))
+
+                    // 3. PixelPlayer 标志性非对称双胶囊主播放操作组（撑满左栏）
+                    M3EPlayShufflePillGroup(
+                        onPlayAll = { model.playAll() },
+                        onShuffle = { model.playShuffle() },
+                        hasTracks = displayTracks.isNotEmpty(),
                     )
+
+                    Spacer(Modifier.height(14.dp))
+
+                    // 4. 次级快捷胶囊动作轨（包含分享、删除、取消收藏等）
+                    CpAnchoredMenu(
+                        expanded = sortMenuExpanded,
+                        onDismiss = { sortMenuExpanded = false },
+                        items = sortMenuItems,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        CpAnchoredMenu(
+                            expanded = moreMenuExpanded,
+                            onDismiss = { moreMenuExpanded = false },
+                            items = playlistMenu,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            M3ESecondaryActionsRail(
+                                isOwner = isOwner,
+                                onAdd = onAddTracks,
+                                isFavorite = isFavorite,
+                                onToggleFavorite = onToggleFavorite,
+                                onShare = onShare,
+                                onDelete = onDelete,
+                                searchActive = isSearchActive,
+                                onToggleSearch = onToggleSearch,
+                                currentSort = state.sortType,
+                                onSortClick = {
+                                    if (windowChromeActive) sortMenuExpanded = true
+                                    else onOpenPlaylistSheet()
+                                },
+                                onDownloadAll = { AppModel.downloadTracks(displayTracks) },
+                                selectionMode = state.selectionMode,
+                                onEnterSelection = {
+                                    displayTracks.firstOrNull()?.let { model.enterSelection(it.id) }
+                                },
+                                onOpenOptions = {
+                                    if (windowChromeActive && !playlistMenu.isNullOrEmpty()) moreMenuExpanded = true
+                                    else onOpenPlaylistSheet()
+                                },
+                                useFlowLayout = true,
+                            )
+                        }
+                    }
                 }
-            }
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = summary.name,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = s.library.playlistCountLabel(trackCount, durationStr),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(16.dp))
-            PlaylistHeader(
-                hasTracks = displayTracks.isNotEmpty(),
-                onPlayAll = { model.playAll() },
-                onShuffle = { model.playShuffle() },
-                onAdd = onAddTracks,
-                onSort = onOpenPlaylistSheet,
-                sortMenuItems = sortMenuItems,
-                onDownloadAll = { AppModel.downloadTracks(displayTracks) },
-                moreMenuItems = playlistMenu,
-                onMore = onOpenPlaylistSheet,
-            )
-            }
             }
         },
         detail = {
@@ -893,12 +1004,26 @@ private fun WideLayout(
             TrackList(
                 model = model,
                 state = state,
-                displayTracks = displayTracks,
+                allTracks = displayTracks,
+                displayTracks = filteredTracks,
                 currentTrackId = currentTrackId,
-                withHeader = false,
+                withHero = false,
+                summary = summary,
+                isOwner = isOwner,
+                isFavorite = isFavorite,
+                onToggleFavorite = onToggleFavorite,
+                onShare = onShare,
+                onDelete = onDelete,
+                searchQuery = searchQuery,
+                onSearchQueryChange = onSearchQueryChange,
+                isSearchActive = isSearchActive,
+                onToggleSearch = onToggleSearch,
                 onSongOptions = onSongOptions,
                 onSortClick = onOpenPlaylistSheet,
                 onAddTracks = onAddTracks,
+                onDownloadAll = { AppModel.downloadTracks(displayTracks) },
+                onEnterSelection = { },
+                onMore = onOpenPlaylistSheet,
                 buildSongMenu = buildSongMenu,
                 modifier = Modifier.widthIn(max = 980.dp).align(Alignment.TopCenter),
                 topContentPadding = if (showBackButton || state.selectionMode) topInset + 56.dp else 0.dp,
@@ -953,30 +1078,44 @@ private fun WideLayout(
     )
 }
 
-// ============ 歌曲列表 ============
+// ============ 歌曲列表与 M3E Header 组件 ============
 
 @Composable
 private fun TrackList(
     model: PlaylistDetailScreenModel,
     state: PlaylistDetailUiState,
+    allTracks: List<TrackSummary>,
     displayTracks: List<TrackSummary>,
     currentTrackId: String?,
-    withHeader: Boolean,
+    withHero: Boolean,
+    summary: PlaylistSummary,
+    isOwner: Boolean,
+    isFavorite: Boolean,
+    onToggleFavorite: (() -> Unit)?,
+    onShare: (() -> Unit)?,
+    onDelete: (() -> Unit)?,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    isSearchActive: Boolean,
+    onToggleSearch: () -> Unit,
     onSongOptions: (TrackSummary) -> Unit,
     onSortClick: () -> Unit,
     onAddTracks: () -> Unit,
+    onDownloadAll: () -> Unit,
+    onEnterSelection: () -> Unit,
+    onMore: () -> Unit,
     buildSongMenu: @Composable (TrackSummary, Int) -> List<CpContextMenuItem>,
     modifier: Modifier = Modifier,
     topContentPadding: Dp = 0.dp,
 ) {
     val s = cpStrings()
     when {
-        state.loading && displayTracks.isEmpty() -> {
-              Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                  cp.player.app.ui.component.CpLoadingIndicator(Modifier.size(40.dp))
-              }
+        state.loading && allTracks.isEmpty() -> {
+            Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                cp.player.app.ui.component.CpLoadingIndicator(Modifier.size(40.dp))
+            }
         }
-        state.error != null && displayTracks.isEmpty() -> {
+        state.error != null && allTracks.isEmpty() -> {
             Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -987,77 +1126,121 @@ private fun TrackList(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    // force：加载失败时 loadedPlaylistId 已置位，重试必须越过守卫。
                     TextButton(onClick = { state.summary?.let { model.load(it, force = true) } }) {
                         Text(s.library.retry)
                     }
                 }
             }
         }
-        else -> LazyScrollColumn(
-            modifier = modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = 20.dp,
-                end = 20.dp,
-                top = topContentPadding + 8.dp,
-                bottom = 96.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            if (withHeader) {
-                item(key = "__header__") {
-                    PlaylistHeader(
-                        hasTracks = displayTracks.isNotEmpty(),
-                        onPlayAll = { model.playAll() },
-                        onShuffle = { model.playShuffle() },
-                        onAdd = onAddTracks,
-                        onSort = onSortClick,
-                        onDownloadAll = { AppModel.downloadTracks(displayTracks) },
-                    )
+        else -> {
+            val listState = rememberLazyListState()
+            LaunchedEffect(isSearchActive) {
+                if (isSearchActive) {
+                    listState.animateScrollToItem(0)
                 }
             }
-            itemsIndexed(items = displayTracks, key = { _, track -> track.id }) { index, track ->
-                // 分页预取：接近末尾时加载下一页（存在分页错误时不自动重触发，由底部重试项接管）
-                if (index >= displayTracks.size - 5 && state.hasMore && !state.fetchingMore && state.loadMoreError == null) {
-                    LaunchedEffect(index) { model.loadMore() }
-                }
-                SongItem(
-                    track = track,
-                    index = index,
-                    total = displayTracks.size,
-                    isCurrentlyPlaying = track.id == currentTrackId,
-                    selectionMode = state.selectionMode,
-                    isSelected = track.id in state.selectedIds,
-                    // 桌面端右键菜单；多选模式下 SongItem 内部会忽略（长按语义冲突）。
-                    contextMenu = if (!state.selectionMode) buildSongMenu(track, index) else null,
-                    // 进入/退出多选、增删歌曲都会改变行的位置，这里给位移动画。
-                    modifier = Modifier.animateItem(),
-                    onClick = {
-                        if (state.selectionMode) model.toggleSelection(track.id)
-                        else model.playAt(index)
-                    },
-                    onOptionsClick = if (!state.selectionMode) {
-                        { onSongOptions(track) }
-                    } else null,
-                    onLongClick = if (!state.selectionMode) {
-                        { model.enterSelection(track.id) }
-                    } else null,
-                )
-            }
-            if (displayTracks.isEmpty()) {
-                item(key = "__empty__") {
-                    Box(
-                        Modifier.fillMaxWidth().padding(vertical = 48.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            s.library.playlistEmpty,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            LazyScrollColumn(
+                state = listState,
+                modifier = modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 20.dp,
+                    end = 20.dp,
+                    top = topContentPadding + 8.dp,
+                    bottom = 96.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                // 窄屏 Hero 头部
+                if (withHero) {
+                    item(key = "__hero_header__") {
+                        NarrowPlaylistHero(
+                            summary = summary,
+                            displayTracks = allTracks,
+                            isOwner = isOwner,
+                            isFavorite = isFavorite,
+                            onToggleFavorite = onToggleFavorite,
+                            onShare = onShare,
+                            onDelete = onDelete,
+                            searchQuery = searchQuery,
+                            onSearchQueryChange = onSearchQueryChange,
+                            isSearchActive = isSearchActive,
+                            onToggleSearch = onToggleSearch,
+                            currentSort = state.sortType,
+                            onSortClick = onSortClick,
+                            onPlayAll = { model.playAll() },
+                            onShuffle = { model.playShuffle() },
+                            onAdd = onAddTracks,
+                            onDownloadAll = onDownloadAll,
+                            onEnterSelection = onEnterSelection,
+                            onMore = onMore,
+                        )
+                    }
+                } else if (isSearchActive) {
+                    // 宽屏模式下若搜索展开，顶部渲染搜索栏
+                    item(key = "__inline_search__") {
+                        InPlaylistSearchBar(
+                            query = searchQuery,
+                            onQueryChange = onSearchQueryChange,
+                            onClose = onToggleSearch,
+                            resultCount = displayTracks.size,
+                            modifier = Modifier.padding(bottom = 8.dp),
                         )
                     }
                 }
-            }
+
+                itemsIndexed(items = displayTracks, key = { _, track -> track.id }) { index, track ->
+                    if (index >= displayTracks.size - 5 && state.hasMore && !state.fetchingMore && state.loadMoreError == null) {
+                        LaunchedEffect(index) { model.loadMore() }
+                    }
+                    SongItem(
+                        track = track,
+                        index = index,
+                        total = displayTracks.size,
+                        isCurrentlyPlaying = track.id == currentTrackId,
+                        selectionMode = state.selectionMode,
+                        isSelected = track.id in state.selectedIds,
+                        contextMenu = if (!state.selectionMode) buildSongMenu(track, index) else null,
+                        modifier = Modifier.animateItem(),
+                        onClick = {
+                            if (state.selectionMode) model.toggleSelection(track.id)
+                            else {
+                                val originalIndex = allTracks.indexOf(track).takeIf { it >= 0 } ?: index
+                                model.playAt(originalIndex)
+                            }
+                        },
+                        onOptionsClick = if (!state.selectionMode) {
+                            { onSongOptions(track) }
+                        } else null,
+                        onLongClick = if (!state.selectionMode) {
+                            { model.enterSelection(track.id) }
+                        } else null,
+                    )
+                }
+                if (displayTracks.isEmpty()) {
+                    item(key = "__empty__") {
+                        Box(
+                            Modifier.fillMaxWidth().padding(vertical = 48.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(
+                                    if (searchQuery.isNotBlank()) "未在歌单中找到与“$searchQuery”匹配的歌曲"
+                                    else s.library.playlistEmpty,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                if (searchQuery.isNotBlank()) {
+                                    TextButton(onClick = { onSearchQueryChange("") }) {
+                                        Text("清空搜索")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             if (state.fetchingMore) {
                 item(key = "__loading_more__") {
                     Box(
@@ -1100,113 +1283,489 @@ private fun TrackList(
         }
     }
 }
+}
 
-// ============ 歌单头部按钮区 ============
 
+
+/**
+ * 窄屏模式下的 M3E Hero 头部区。
+ * 包含沉浸式封面、歌单元数据药丸、双胶囊播放组、横向快捷动作轨以及即时搜索栏。
+ */
 @Composable
-private fun PlaylistHeader(
-    hasTracks: Boolean = true,
+private fun NarrowPlaylistHero(
+    summary: PlaylistSummary,
+    displayTracks: List<TrackSummary>,
+    isOwner: Boolean,
+    isFavorite: Boolean,
+    onToggleFavorite: (() -> Unit)?,
+    onShare: (() -> Unit)?,
+    onDelete: (() -> Unit)?,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    isSearchActive: Boolean,
+    onToggleSearch: () -> Unit,
+    currentSort: PlaylistSortType,
+    onSortClick: () -> Unit,
     onPlayAll: () -> Unit,
     onShuffle: () -> Unit,
     onAdd: () -> Unit,
-    onSort: () -> Unit,
     onDownloadAll: () -> Unit,
-    /**
-     * 排序锚定菜单项（桌面端）。非空时排序按钮点击直接在按钮下弹出排序菜单；
-     * 为 null（窄屏布局）时保持原行为：打开歌单选项弹层。
-     */
-    sortMenuItems: List<CpContextMenuItem>? = null,
-    moreMenuItems: List<CpContextMenuItem>? = null,
-    onMore: (() -> Unit)? = null,
+    onEnterSelection: () -> Unit,
+    onMore: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val s = cpStrings()
-    var sortMenuExpanded by remember { mutableStateOf(false) }
-    var moreMenuExpanded by remember { mutableStateOf(false) }
-    val windowChromeActive = LocalWindowChromeActive.current
-
-    val actions = remember(
-        hasTracks, sortMenuItems, moreMenuItems, windowChromeActive, s,
-        onPlayAll, onShuffle, onAdd, onSort, onDownloadAll, onMore,
+    Column(
+        modifier = modifier.fillMaxWidth().padding(bottom = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        buildList {
-            add(
-                CpActionGroupItem(
-                    label = s.library.play,
-                    icon = Icons.Filled.PlayArrow,
-                    onClick = onPlayAll,
-                    enabled = hasTracks,
-                )
-            )
-            add(
-                CpActionGroupItem(
-                    label = s.library.shuffle,
-                    icon = Icons.Filled.Shuffle,
-                    onClick = onShuffle,
-                    enabled = hasTracks,
-                )
-            )
-            add(
-                CpActionGroupItem(
-                    label = s.library.add,
-                    icon = Icons.Filled.PlaylistAdd,
-                    onClick = onAdd,
-                )
-            )
-            add(
-                CpActionGroupItem(
-                    label = s.library.sort,
-                    icon = Icons.AutoMirrored.Filled.Sort,
-                    onClick = {
-                        if (!sortMenuItems.isNullOrEmpty() && windowChromeActive) {
-                            sortMenuExpanded = true
-                        } else {
-                            onSort()
-                        }
-                    },
-                )
-            )
-            add(
-                CpActionGroupItem(
-                    label = s.library.downloadAll,
-                    icon = Icons.Filled.Download,
-                    onClick = onDownloadAll,
-                    enabled = hasTracks,
-                )
-            )
-            if (onMore != null) {
-                add(
-                    CpActionGroupItem(
-                        label = s.player.more,
-                        icon = Icons.Filled.MoreVert,
-                        onClick = {
-                            if (!moreMenuItems.isNullOrEmpty() && windowChromeActive) {
-                                moreMenuExpanded = true
-                            } else {
-                                onMore()
-                            }
-                        },
+        // 1. 沉浸式大封面
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            tonalElevation = 4.dp,
+            shadowElevation = 8.dp,
+            modifier = Modifier.size(152.dp),
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                if (summary.coverUrl.isNullOrBlank()) {
+                    CpCoverPlaceholder(modifier = Modifier.fillMaxSize(), corner = 24.dp)
+                } else {
+                    AsyncImage(
+                        model = summary.coverUrl,
+                        contentDescription = summary.name,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
                     )
-                )
+                }
             }
         }
-    }
 
-    CpAnchoredMenu(
-        expanded = sortMenuExpanded,
-        onDismiss = { sortMenuExpanded = false },
-        items = sortMenuItems,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-    ) {
-        CpAnchoredMenu(
-            expanded = moreMenuExpanded,
-            onDismiss = { moreMenuExpanded = false },
-            items = moreMenuItems,
-            modifier = Modifier.fillMaxWidth(),
+        Spacer(Modifier.height(16.dp))
+
+        // 2. 歌单标题与元数据
+        Text(
+            text = summary.name,
+            style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            CpActionButtonGroup(
-                items = actions,
-                modifier = Modifier.fillMaxWidth(),
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            ) {
+                Text(
+                    text = if (isOwner) "我创建的" else if (isFavorite) "已收藏" else "公开歌单",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                )
+            }
+            Text(
+                text = "${displayTracks.size} 首歌曲",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // 3. PixelPlayer 标志性非对称双胶囊主播放组
+        M3EPlayShufflePillGroup(
+            onPlayAll = onPlayAll,
+            onShuffle = onShuffle,
+            hasTracks = displayTracks.isNotEmpty(),
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Spacer(Modifier.height(14.dp))
+
+        // 4. 次级快捷动作轨（全圆角药丸胶囊）
+        M3ESecondaryActionsRail(
+            isOwner = isOwner,
+            onAdd = onAdd,
+            isFavorite = isFavorite,
+            onToggleFavorite = onToggleFavorite,
+            onShare = onShare,
+            onDelete = onDelete,
+            searchActive = isSearchActive,
+            onToggleSearch = onToggleSearch,
+            currentSort = currentSort,
+            onSortClick = onSortClick,
+            onDownloadAll = onDownloadAll,
+            selectionMode = false,
+            onEnterSelection = onEnterSelection,
+            onOpenOptions = onMore,
+            useFlowLayout = false,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        // 5. 若搜索激活，呈现即时搜索过滤胶囊栏
+        if (isSearchActive) {
+            Spacer(Modifier.height(12.dp))
+            InPlaylistSearchBar(
+                query = searchQuery,
+                onQueryChange = onSearchQueryChange,
+                onClose = onToggleSearch,
+                resultCount = displayTracks.size,
             )
         }
     }
 }
+
+/**
+ * PixelPlayer 风格的非对称咬合双胶囊主播放控制组。
+ * 左侧为饱满的 PrimaryContainer "播放全部" 胶囊，右侧为次级 SecondaryContainer "随机播放" 胶囊。
+ */
+@Composable
+private fun M3EPlayShufflePillGroup(
+    onPlayAll: () -> Unit,
+    onShuffle: () -> Unit,
+    hasTracks: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth().height(56.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // 主播放胶囊
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxSize()
+                .then(if (hasTracks) Modifier.cpBounceClickable(onClick = onPlayAll) else Modifier),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.PlayArrow,
+                    contentDescription = "播放全部",
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(26.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "全部播放",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+        }
+
+        // 随机播放胶囊
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            modifier = Modifier
+                .width(68.dp)
+                .fillMaxSize()
+                .then(if (hasTracks) Modifier.cpBounceClickable(onClick = onShuffle) else Modifier),
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Shuffle,
+                    contentDescription = "随机播放",
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * M3E 次级横向快捷操作轨。
+ * 包含添加、分享、删除（创建者红底）、取消收藏（非创建者红底）/收藏、搜索、排序、下载全部、多选、更多。
+ * 支持在宽屏侧边栏折行平铺（[useFlowLayout] = true），彻底解决按钮被截断隐藏的问题。
+ */
+@Composable
+private fun M3ESecondaryActionsRail(
+    isOwner: Boolean,
+    onAdd: () -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: (() -> Unit)?,
+    onShare: (() -> Unit)?,
+    onDelete: (() -> Unit)?,
+    searchActive: Boolean,
+    onToggleSearch: () -> Unit,
+    currentSort: PlaylistSortType,
+    onSortClick: () -> Unit,
+    onDownloadAll: () -> Unit,
+    selectionMode: Boolean,
+    onEnterSelection: () -> Unit,
+    onOpenOptions: () -> Unit,
+    useFlowLayout: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
+    val chips = @Composable {
+        // 1. 添加歌曲
+        ActionChip(
+            label = "添加",
+            icon = Icons.Filled.PlaylistAdd,
+            onClick = onAdd,
+        )
+
+        // 2. 分享歌单
+        if (onShare != null) {
+            ActionChip(
+                label = "分享",
+                icon = Icons.Filled.Share,
+                onClick = onShare,
+            )
+        }
+
+        // 3. 删除（创建者）/ 取消收藏（非创建者已收藏）/ 收藏
+        if (isOwner && onDelete != null) {
+            ActionChip(
+                label = "删除",
+                icon = Icons.Filled.Delete,
+                containerColor = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                onClick = onDelete,
+            )
+        } else if (onToggleFavorite != null) {
+            if (isFavorite) {
+                ActionChip(
+                    label = "取消收藏",
+                    icon = Icons.Filled.BookmarkRemove,
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    onClick = onToggleFavorite,
+                )
+            } else {
+                ActionChip(
+                    label = "收藏",
+                    icon = Icons.Filled.BookmarkAdd,
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                    onClick = onToggleFavorite,
+                )
+            }
+        }
+
+        // 4. 搜索
+        ActionChip(
+            label = "搜索",
+            icon = Icons.Filled.Search,
+            containerColor = if (searchActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = if (searchActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+            onClick = onToggleSearch,
+        )
+
+        // 5. 排序
+        val sortLabel = when (currentSort) {
+            PlaylistSortType.DEFAULT -> "默认"
+            PlaylistSortType.NAME -> "按名称"
+            PlaylistSortType.ARTIST -> "按歌手"
+        }
+        ActionChip(
+            label = sortLabel,
+            icon = Icons.AutoMirrored.Filled.Sort,
+            onClick = onSortClick,
+        )
+
+        // 6. 下载全部
+        ActionChip(
+            label = "下载全部",
+            icon = Icons.Filled.Download,
+            onClick = onDownloadAll,
+        )
+
+        // 7. 多选
+        ActionChip(
+            label = "多选",
+            icon = Icons.Filled.SelectAll,
+            containerColor = if (selectionMode) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = if (selectionMode) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+            onClick = onEnterSelection,
+        )
+
+        // 8. 更多
+        ActionChip(
+            label = "更多",
+            icon = Icons.Filled.MoreVert,
+            onClick = onOpenOptions,
+        )
+    }
+
+    if (useFlowLayout) {
+        FlowRow(
+            modifier = modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            chips()
+        }
+    } else {
+        Row(
+            modifier = modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            chips()
+        }
+    }
+}
+
+@Composable
+private fun ActionChip(
+    label: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    contentColor: Color = MaterialTheme.colorScheme.onSurface,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = CircleShape,
+        color = containerColor,
+        modifier = modifier
+            .height(38.dp)
+            .cpBounceClickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = contentColor,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+                color = contentColor,
+            )
+        }
+    }
+}
+
+/**
+ * 歌单内即时搜索过滤胶囊栏。
+ */
+@Composable
+private fun InPlaylistSearchBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onClose: () -> Unit,
+    resultCount: Int,
+    modifier: Modifier = Modifier,
+) {
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
+
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 2.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Search,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+            androidx.compose.foundation.text.BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(focusRequester),
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                    color = MaterialTheme.colorScheme.onSurface,
+                ),
+                singleLine = true,
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                decorationBox = { innerTextField ->
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        if (query.isEmpty()) {
+                            Text(
+                                text = "在歌单中搜索歌曲、歌手、专辑...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            )
+                        }
+                        innerTextField()
+                    }
+                },
+            )
+            if (query.isNotEmpty()) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                ) {
+                    Text(
+                        text = "$resultCount 首",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    )
+                }
+                Spacer(Modifier.width(6.dp))
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    modifier = Modifier.size(26.dp).clickable { onQueryChange("") },
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = "清除",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                }
+            } else {
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier.size(26.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = "关闭",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+

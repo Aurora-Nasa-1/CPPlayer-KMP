@@ -1,6 +1,10 @@
 package cp.player.app.ui.screen
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -80,6 +84,9 @@ import cp.player.app.AppModel
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.anim.coverFlightSource
 import cp.player.app.ui.component.CpLinearProgress
+import cp.player.app.ui.component.CpPlayingEqualizer
+import cp.player.app.ui.component.CpWavyProgress
+import cp.player.app.ui.component.cpBounceClickable
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.BentoCard
 import cp.player.app.ui.component.CpBackButton
@@ -109,6 +116,7 @@ import cp.player.app.ui.model.NewSongRegion
 import cp.player.app.ui.model.PlaylistDetailScreenModel
 import cp.player.app.ui.model.PlaylistSource
 import cp.player.app.ui.theme.CpMotion
+import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.formatTimeMs
 import cp.player.app.ui.util.resized
 import cp.player.core.BackendResult
@@ -332,6 +340,7 @@ private fun HomeScreenContent(model: HomeScreenModel) {
         // 而不是页面就近的 Navigator —— 桌面宽屏上后者是内容区的内嵌栈，
         // push 进去会把播放页塞进侧栏旁边渲染。
         onOpenPlayer = { rootNavigator?.push(PlayerScreen()) },
+        onTogglePlayPause = { AppModel.playback.togglePlayPause() },
     )
 
     if (loading) {
@@ -368,7 +377,12 @@ private fun HomeScreenContent(model: HomeScreenModel) {
                 actions = actions,
             )
         } else {
-            MobileHomeLayout(state = state, recentTracks = recentTracks, actions = actions)
+            MobileHomeLayout(
+                state = state,
+                recentTracks = recentTracks,
+                nowPlaying = nowPlaying,
+                actions = actions,
+            )
         }
     }
 
@@ -455,6 +469,8 @@ internal class HomeActions(
     val onTrackOptions: (TrackSummary) -> Unit,
     /** 点「继续收听」卡回到播放页（L1）。 */
     val onOpenPlayer: () -> Unit,
+    /** 快捷播放 / 暂停切换（M3E）。 */
+    val onTogglePlayPause: () -> Unit,
 )
 
 /**
@@ -573,6 +589,7 @@ internal fun DesktopHomeLayout(
                             positionMs = nowPlaying.positionMs,
                             durationMs = nowPlaying.durationMs,
                             onOpenPlayer = actions.onOpenPlayer,
+                            onTogglePlayPause = actions.onTogglePlayPause,
                             modifier = Modifier.weight(1f).fillMaxHeight(),
                         )
                     }
@@ -610,16 +627,18 @@ internal fun DesktopHomeLayout(
                         onOpenPlaylist = actions.onOpenDaily,
                         modifier = Modifier.fillMaxWidth(),
                         compact = true,
+                        nowPlaying = nowPlaying,
                     )
                 }
 
-                // ── 继续收听（横向条，替代原「最近播放」巨卡）──
+                // ── 继续收听（横向错落药丸条，PixelPlayer 风格）──
                 RecentPlaysRail(
                     tracks = recentItems,
                     onTrackClick = actions.onRecentTrackClick,
                     onTrackOptions = actions.onTrackOptions,
                     onOpenAll = actions.onOpenRecentPlays,
                     onPlayAll = actions.onRecentPlayAll,
+                    nowPlaying = nowPlaying,
                 )
 
                 if (state.visiblePlaylists.isNotEmpty() || state.playlistSourceLoading) {
@@ -664,9 +683,10 @@ internal fun DesktopHomeLayout(
                                 contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 12.dp),
                             ) {
                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    state.rankings.take(RANKING_ROWS).forEach { ranking ->
+                                    state.rankings.take(RANKING_ROWS).forEachIndexed { idx, ranking ->
                                         RankingRow(
                                             ranking = ranking,
+                                            index = idx,
                                             onClick = { actions.onOpenRanking(ranking) },
                                         )
                                     }
@@ -778,6 +798,7 @@ private val MobileBannerHeight = 168.dp
 private fun MobileHomeLayout(
     state: HomeUiState,
     recentTracks: List<TrackSummary>,
+    nowPlaying: NowPlayingSnapshot,
     actions: HomeActions,
 ) {
     LazyScrollColumn(
@@ -816,6 +837,7 @@ private fun MobileHomeLayout(
                     onSongClick = actions.onPlayDailyTrack,
                     onOpenPlaylist = actions.onOpenDaily,
                     modifier = Modifier.fillMaxWidth(),
+                    nowPlaying = nowPlaying,
                 )
             }
         }
@@ -942,33 +964,14 @@ private fun MobileHomeLayout(
 
         if (recentTracks.isNotEmpty()) {
             item {
-                SectionHeader(title = "最近播放") {
-                    FilledTonalButton(
-                        onClick = actions.onRecentPlayAll,
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                    ) {
-                        Text("播放", style = MaterialTheme.typography.labelLarge)
-                    }
-                }
-            }
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    recentTracks.take(5).forEachIndexed { index, track ->
-                        SongItem(
-                            track = track,
-                            index = index,
-                            total = recentTracks.take(5).size,
-                            onClick = { actions.onRecentTrackClick(track, index) },
-                            onOptionsClick = { actions.onTrackOptions(track) },
-                            contextMenu = songContextMenuItems(
-                                SongMenuActions(
-                                    onPlay = { actions.onRecentTrackClick(track, index) },
-                                    onShare = { shareText(songShareText(track)) },
-                                )
-                            ),
-                        )
-                    }
-                }
+                RecentPlaysRail(
+                    tracks = recentTracks.take(16),
+                    onTrackClick = actions.onRecentTrackClick,
+                    onTrackOptions = actions.onTrackOptions,
+                    onOpenAll = actions.onOpenRecentPlays,
+                    onPlayAll = actions.onRecentPlayAll,
+                    nowPlaying = nowPlaying,
+                )
             }
         }
 
@@ -1044,7 +1047,7 @@ internal fun BannerCarousel(
             var loaded by remember(banner.imageUrl) { mutableStateOf(false) }
             Surface(
                 onClick = { onClick(banner) },
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().cpBounceClickable { onClick(banner) },
                 shape = MaterialTheme.shapes.extraLarge,
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
             ) {
@@ -1190,6 +1193,7 @@ private fun HeroQuickPanel(
     positionMs: Long,
     durationMs: Long,
     onOpenPlayer: () -> Unit,
+    onTogglePlayPause: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // 走 BentoCard 而不是手写 Surface：多拿到两层东西 ——
@@ -1212,6 +1216,7 @@ private fun HeroQuickPanel(
                 isPlaying = isPlaying,
                 positionMs = positionMs,
                 durationMs = durationMs,
+                onTogglePlayPause = onTogglePlayPause,
             )
         } else {
             // 不套 fillMaxHeight：内容本来就靠上，撑满了反而会被 SpaceBetween 拉散。
@@ -1229,12 +1234,16 @@ private fun HeroQuickPanel(
                     icon = Icons.Filled.Radio,
                     title = "私人 FM",
                     subtitle = "连续播放，不用挑歌",
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    iconColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     onClick = onPlayPersonalFm,
                 )
                 HeroActionRow(
                     icon = Icons.Filled.Favorite,
                     title = "心动模式",
                     subtitle = if (enabled) "围绕今日推荐延展" else "需要先有每日推荐",
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    iconColor = MaterialTheme.colorScheme.onTertiaryContainer,
                     onClick = onOpenIntelligence,
                     enabled = enabled,
                 )
@@ -1242,6 +1251,8 @@ private fun HeroQuickPanel(
                     icon = Icons.Filled.History,
                     title = "最近播放",
                     subtitle = if (recentEnabled) "接着上次继续听" else "听过的歌会出现在这里",
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    iconColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     onClick = onOpenRecentPlays,
                     enabled = recentEnabled,
                 )
@@ -1251,18 +1262,10 @@ private fun HeroQuickPanel(
 }
 
 /**
- * 「继续收听」卡：当前在播曲目的标题 + 歌手 + 进度。
+ * 「继续收听」卡：当前在播曲目的标题 + 歌手 + 波形进度。
  *
- * 进度条走 [CpLinearProgress]（见 `AGENTS.md` §6：不许直接调 material3 的
- * Expressive 实验 API），与全局观感一致。
- *
- * ⚠️ **进度必须由调用方传入，这里不读 `AppModel`**：`AppModel.playback` 的 getter
- * 会取 `MusicBackend` 单例，未 `init()` 时**直接抛 `IllegalStateException`**
- * （离屏渲染实测）。而且这里读全局单例会让这个 Composable 无法独立测试。
- * 调用方（`DesktopHomeLayout`）负责把进度喂进来。
- *
- * ⚠️ **本组件只画内容，不负责点击与内边距** —— 那两层由外层 `BentoCard` 提供
- * （`HeroQuickPanel`）。要复用这块内容到别处时，记得自己补一个可点容器。
+ * M3 Expressive 风格：采用 [CpWavyProgress] 波形进度条，播放中流动律动；
+ * 右上角集成快捷播放/暂停药丸按钮。
  */
 @Composable
 private fun HeroNowPlaying(
@@ -1270,55 +1273,97 @@ private fun HeroNowPlaying(
     isPlaying: Boolean,
     positionMs: Long,
     durationMs: Long,
+    onTogglePlayPause: () -> Unit = {},
 ) {
-    // 进度只在拿到合法区间时才画：durationMs 为 0（流媒体还没探到时长）时
-    // 除法会得到 0/NaN，进度条要么空着要么直接崩。
     val progress = if (durationMs > 0L) {
         (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
     } else {
         0f
     }
 
-    // 点击与内边距都归外层 BentoCard 管：这里只负责内容。
-    // ⚠️ 必须 fillMaxHeight —— 下面那个 Spacer(weight(1f)) 要靠**有界高度**
-    // 才能把进度条推到卡片底部，否则它会紧贴着歌手名。
     Column(Modifier.fillMaxHeight()) {
         Row(
             Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                if (isPlaying) Icons.Filled.Equalizer else Icons.Filled.Pause,
-                null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(CpIconSize.inline),
-            )
-            Text(
-                if (isPlaying) "正在播放" else "已暂停",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    if (isPlaying) Icons.Filled.Equalizer else Icons.Filled.Pause,
+                    null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(CpIconSize.inline),
+                )
+                Text(
+                    if (isPlaying) "正在播放" else "已暂停",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            // M3E 快速播放/暂停控制按钮
+            Surface(
+                onClick = onTogglePlayPause,
+                modifier = Modifier.size(34.dp).cpBounceClickable(onClick = onTogglePlayPause),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(
+                        if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = if (isPlaying) "暂停" else "播放",
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
         }
         Spacer(Modifier.height(10.dp))
-        Text(
-            track.name,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            track.artist,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        // 占位把进度条推到卡片底部：上方文字行数变化时进度条不会跟着上下跳。
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(46.dp)) {
+                if (!track.coverUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = track.coverUrl.resized(180),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.medium),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    CpCoverPlaceholder(
+                        modifier = Modifier.fillMaxSize(),
+                        corner = 12.dp,
+                        animated = false,
+                    )
+                }
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    track.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    track.artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        // 占位把波形进度条推到卡片底部
         Spacer(Modifier.weight(1f))
-        CpLinearProgress(
+        CpWavyProgress(
             progress = progress,
+            waveFlowing = isPlaying,
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(6.dp))
@@ -1345,6 +1390,8 @@ private fun HeroActionRow(
     icon: ImageVector,
     title: String,
     subtitle: String,
+    containerColor: Color,
+    iconColor: Color,
     onClick: () -> Unit,
     enabled: Boolean = true,
 ) {
@@ -1352,7 +1399,7 @@ private fun HeroActionRow(
     Surface(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().cpBounceClickable(onClick = onClick),
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
@@ -1362,13 +1409,13 @@ private fun HeroActionRow(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Box(
-                Modifier.size(34.dp).clip(MaterialTheme.shapes.small)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
+                Modifier.size(36.dp).clip(MaterialTheme.shapes.medium)
+                    .background(containerColor),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     icon, null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = contentAlpha),
+                    tint = iconColor.copy(alpha = contentAlpha),
                     modifier = Modifier.size(CpIconSize.inline),
                 )
             }
@@ -1398,7 +1445,7 @@ private fun HeroActionRow(
     }
 }
 
-/** 移动端快捷电台：三张等宽紧凑卡。第三张是「最近播放」（原「相似歌曲」，已迁往播放页）。 */
+/** 移动端快捷电台：三张等宽紧凑卡，M3 Expressive 彩色图标容器与按压弹性。 */
 @Composable
 private fun HeroQuickRow(
     onPlayPersonalFm: () -> Unit,
@@ -1409,9 +1456,30 @@ private fun HeroQuickRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        HeroQuickTile(Icons.Filled.Radio, "私人 FM", onPlayPersonalFm, Modifier.weight(1f))
-        HeroQuickTile(Icons.Filled.Favorite, "心动模式", onOpenIntelligence, Modifier.weight(1f))
-        HeroQuickTile(Icons.Filled.History, "最近播放", onOpenRecentPlays, Modifier.weight(1f))
+        HeroQuickTile(
+            icon = Icons.Filled.Radio,
+            label = "私人 FM",
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            iconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            onClick = onPlayPersonalFm,
+            modifier = Modifier.weight(1f),
+        )
+        HeroQuickTile(
+            icon = Icons.Filled.Favorite,
+            label = "心动模式",
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            iconColor = MaterialTheme.colorScheme.onTertiaryContainer,
+            onClick = onOpenIntelligence,
+            modifier = Modifier.weight(1f),
+        )
+        HeroQuickTile(
+            icon = Icons.Filled.History,
+            label = "最近播放",
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            iconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            onClick = onOpenRecentPlays,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -1419,28 +1487,36 @@ private fun HeroQuickRow(
 private fun HeroQuickTile(
     icon: ImageVector,
     label: String,
+    containerColor: Color,
+    iconColor: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
         onClick = onClick,
-        modifier = modifier,
-        shape = MaterialTheme.shapes.large,
+        modifier = modifier.cpBounceClickable(onClick = onClick),
+        shape = MaterialTheme.shapes.largeIncreased,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
         Column(
             Modifier.fillMaxWidth().padding(vertical = 14.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Icon(
-                icon, null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(22.dp),
-            )
+            Box(
+                Modifier.size(42.dp).clip(CircleShape).background(containerColor),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    icon, null,
+                    tint = iconColor,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
             Text(
                 label,
                 style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -1699,7 +1775,7 @@ private fun CoverTile(
 ) {
     val overImage = !coverUrl.isNullOrBlank()
     Column(
-        modifier = modifier.fillMaxWidth().clickable { onClick() },
+        modifier = modifier.fillMaxWidth().cpBounceClickable(onClick = onClick),
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
             // 统一占位块永远铺在最底层。封面 URL 有值但图还没到 / 已经挂了时，
@@ -1739,9 +1815,6 @@ private fun CoverTile(
             ) {
                 Text(
                     title,
-                    // titleSmall 的字重规范就是 Medium(500)，这里原先又写了一遍
-                    // `fontWeight = FontWeight.Medium` —— 与 token 同值，纯噪声。
-                    // 删掉：以后改字阶只需要动 Type.kt 一处。
                     style = MaterialTheme.typography.titleSmall,
                     color = titleColor,
                     maxLines = 1,
@@ -1777,30 +1850,57 @@ private fun CoverTile(
     }
 }
 
-/** 榜单列表行（桌面侧栏用）。 */
+/** 榜单列表行（同步标准歌曲列表项样式：统一深浅底色、52dp 封面、规范内边距与文字排版）。 */
 @Composable
 private fun RankingRow(
     ranking: RankingSummary,
     onClick: () -> Unit,
+    index: Int = -1,
 ) {
+    val isDark = LocalIsDarkTheme.current
+    val containerColor = if (isDark) {
+        MaterialTheme.colorScheme.surfaceContainerHighest
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
+
     Surface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().cpBounceClickable(onClick = onClick),
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = containerColor,
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Box(Modifier.size(48.dp)) {
+            if (index >= 0) {
+                val isTop3 = index < 3
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (isTop3) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "${index + 1}",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = if (isTop3) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isTop3) MaterialTheme.colorScheme.onPrimaryContainer
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Box(Modifier.size(52.dp)) {
                 if (!ranking.coverUrl.isNullOrBlank()) {
                     AsyncImage(
                         model = ranking.coverUrl.resized(200),
                         contentDescription = null,
-                        // 缩略图圆角走 token（medium = 12dp），不要再写裸值 ——
-                        // 写裸值的话改刻度时这里会被漏掉，出现「同一页两种圆角」。
                         modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.medium),
                         contentScale = ContentScale.Crop,
                     )
@@ -1815,11 +1915,13 @@ private fun RankingRow(
             Column(Modifier.weight(1f)) {
                 Text(
                     ranking.name,
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
+                Spacer(Modifier.height(2.dp))
                 Text(
                     rankingSubtitle(ranking),
                     style = MaterialTheme.typography.bodySmall,
@@ -1829,7 +1931,8 @@ private fun RankingRow(
                 )
             }
             Icon(
-                Icons.AutoMirrored.Filled.TrendingUp, null,
+                Icons.AutoMirrored.Filled.TrendingUp,
+                contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(CpIconSize.inline),
             )
@@ -1886,7 +1989,7 @@ private fun ArtistTile(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier.clickable { onClick() },
+        modifier = modifier.cpBounceClickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
@@ -1978,20 +2081,11 @@ private fun NewSongGrid(
 }
 
 /**
- * 「继续收听」横向条（桌面）—— 替代原先的「最近播放」两列 12 行列表。
+ * 「继续收听」横向错落药丸条（PixelPlayer 经典 M3 Expressive 风格）。
  *
- * ### 为什么改成横条
- * 「最近播放」是**低频回溯**操作：用户打开首页多半是想看今天推荐了什么，
- * 而不是翻两周前听过什么。原来它和「每日推荐」并排成两块等高巨卡，
- * 占掉一半首屏宽度去铺 12 行列表；把它收成一条横向滚动条后，
- * 首屏腾出来的高度直接还给了「每日推荐」。
- *
- * 需要完整列表时走 trailing 的「更多」进 `RecentPlaysScreen()` —— 功能不缩水。
- *
- * ### 视觉
- * 刻意**不做成容器卡**（`contained = false` 的等价形态）：它上方是有封面的
- * 「每日推荐」大卡，这里再用一层同规格容器会把两个区块糊成一块。
- * 卡片自带封面轮廓，标题直接落在页面背景上、与其余无容器区块对齐。
+ * 将最近播放曲目按列交替分入两行，在一个平滑滚动的横向视口中并排错落展示。
+ * 每颗药丸包含圆形封面、歌曲标题、歌手，并在播放状态下平滑变换圆角与主题高亮底色，
+ * 伴随跳动的微型均衡器。
  */
 @Composable
 private fun RecentPlaysRail(
@@ -2000,118 +2094,208 @@ private fun RecentPlaysRail(
     onTrackOptions: (TrackSummary) -> Unit,
     onOpenAll: () -> Unit,
     onPlayAll: () -> Unit,
+    nowPlaying: NowPlayingSnapshot? = null,
+    modifier: Modifier = Modifier,
 ) {
-    // 没有最近播放时**整块不出现**：一条空态的横向条既占高度又没有信息，
-    // 而且它下方紧接着就是「发现歌单」——留着只会把首屏往后推。
     if (tracks.isEmpty()) return
 
-    Column(Modifier.fillMaxWidth()) {
-        // 标题行与 HomeSectionCard 的无容器形态同规格（start 22 / top 20），
-        // 保证和「发现歌单」「热门歌手」的标题左边缘落在同一条竖线上。
+    val sharedScrollState = rememberScrollState()
+    val row0Tracks = remember(tracks) { tracks.filterIndexed { idx, _ -> idx % 2 == 0 } }
+    val row1Tracks = remember(tracks) { tracks.filterIndexed { idx, _ -> idx % 2 == 1 } }
+
+    Column(modifier.fillMaxWidth()) {
         SectionTitleRow(
             title = "继续收听",
             subtitle = "接着上次继续听",
             trailing = {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = onOpenAll) { Text("更多") }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = onOpenAll) { Text("全部") }
                     FilledTonalButton(
                         onClick = onPlayAll,
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        shape = CircleShape,
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                     ) {
+                        Icon(
+                            Icons.Filled.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
                         Text("播放", style = MaterialTheme.typography.labelLarge)
                     }
                 }
             },
-            modifier = Modifier.padding(start = 22.dp, end = 22.dp, top = 20.dp),
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
         )
-        Spacer(Modifier.height(14.dp))
-        LazyScrollRow(
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 22.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        Spacer(Modifier.height(10.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(sharedScrollState)
+                .padding(vertical = 4.dp),
         ) {
-            itemsIndexed(tracks) { index, track ->
-                RecentPlayCard(
-                    track = track,
-                    onClick = { onTrackClick(track, index) },
-                    onOptionsClick = { onTrackOptions(track) },
-                )
+            Spacer(Modifier.width(4.dp))
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    row0Tracks.forEachIndexed { colIdx, track ->
+                        val originalIdx = colIdx * 2
+                        RecentPlayPill(
+                            track = track,
+                            isCurrentSong = nowPlaying?.track?.id == track.id,
+                            isPlaying = nowPlaying?.isPlaying == true && nowPlaying.track?.id == track.id,
+                            onClick = { onTrackClick(track, originalIdx) },
+                        )
+                    }
+                }
+                if (row1Tracks.isNotEmpty()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        row1Tracks.forEachIndexed { colIdx, track ->
+                            val originalIdx = colIdx * 2 + 1
+                            RecentPlayPill(
+                                track = track,
+                                isCurrentSong = nowPlaying?.track?.id == track.id,
+                                isPlaying = nowPlaying?.isPlaying == true && nowPlaying.track?.id == track.id,
+                                onClick = { onTrackClick(track, originalIdx) },
+                            )
+                        }
+                    }
+                }
             }
+            Spacer(Modifier.width(28.dp))
         }
     }
 }
 
 /**
- * 「继续收听」里的一张封面卡：1:1 封面 + 曲名 + 歌手。
+ * PixelPlayer 风格的错落药丸卡片。
  *
- * 宽度刻意做窄（160dp）：横向条一屏能露出 6–7 张，用户一眼就看出「可以往右滑」；
- * 卡片再宽就会看起来像「只有 3 张、右边没了」。
+ * 高度 52dp，左侧 38dp 圆形封面，中间双行文字，右侧正在播放跳动均衡器。
+ * 正在播放时圆角由 26dp 平滑收拢为 14dp，底色过渡为 primaryContainer。
  */
 @Composable
-private fun RecentPlayCard(
+private fun RecentPlayPill(
     track: TrackSummary,
+    isCurrentSong: Boolean,
+    isPlaying: Boolean,
     onClick: () -> Unit,
-    onOptionsClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = Modifier.width(160.dp).clickable { onClick() },
+    val isDark = LocalIsDarkTheme.current
+    val targetCorner = if (isCurrentSong) 14.dp else 26.dp
+    val animatedCorner by animateDpAsState(
+        targetValue = targetCorner,
+        animationSpec = tween(durationMillis = 280),
+        label = "recentPillCorner",
+    )
+    val defaultContainer = if (isDark) {
+        MaterialTheme.colorScheme.surfaceContainerHighest
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
+    val targetContainerColor = if (isCurrentSong) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        defaultContainer
+    }
+    val animatedContainer by animateColorAsState(
+        targetValue = targetContainerColor,
+        animationSpec = tween(durationMillis = 280),
+        label = "recentPillContainer",
+    )
+    val titleColor by animateColorAsState(
+        targetValue = if (isCurrentSong) {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        },
+        label = "recentPillTitle",
+    )
+    val artistColor by animateColorAsState(
+        targetValue = if (isCurrentSong) {
+            MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        label = "recentPillArtist",
+    )
+    val shape = RoundedCornerShape(animatedCorner)
+
+    Surface(
+        modifier = modifier
+            .width(218.dp)
+            .height(52.dp)
+            .cpBounceClickable(onClick = onClick),
+        shape = shape,
+        color = animatedContainer,
     ) {
-        Box(
-            modifier = Modifier.fillMaxWidth().aspectRatio(1f)
-                .coverFlightSource(CoverFlight.trackKey(track.id), 20.dp),
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(start = 7.dp, end = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            // 占位块常驻最底层，与 PlaylistCoverCard 同一套做法：
-            // URL 有值但图还没到时也要有东西可看。
-            CpCoverPlaceholder(
-                modifier = Modifier.fillMaxSize(),
-                corner = 20.dp,
-            )
-            if (!track.coverUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = track.coverUrl.resized(300),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(20.dp)),
-                    contentScale = ContentScale.Crop,
-                )
-            }
-            // 更多按钮压右上角：封面本身就占满整块，不覆盖上去就没有别的位置可放。
-            Surface(
-                onClick = onOptionsClick,
-                shape = CircleShape,
-                color = Color.Black.copy(alpha = 0.34f),
-                modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(28.dp),
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .coverFlightSource(CoverFlight.trackKey(track.id), 19.dp),
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Filled.MoreVert, "更多",
-                        tint = Color.White,
-                        modifier = Modifier.size(CpIconSize.inline),
+                CpCoverPlaceholder(
+                    modifier = Modifier.fillMaxSize(),
+                    corner = 19.dp,
+                    animated = false,
+                )
+                if (!track.coverUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = track.coverUrl.resized(120),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize().clip(CircleShape),
+                        contentScale = ContentScale.Crop,
                     )
                 }
             }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    text = track.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = titleColor,
+                )
+                Text(
+                    text = track.artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = artistColor,
+                )
+            }
+            if (isCurrentSong) {
+                CpPlayingEqualizer(
+                    isPlaying = isPlaying,
+                    barColor = MaterialTheme.colorScheme.primary,
+                    scrimColor = Color.Transparent,
+                    modifier = Modifier.padding(end = 2.dp),
+                )
+            }
         }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            track.name,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            track.artist,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 
 /**
- * 「每日推荐」大卡。
+ * 「每日推荐」大卡（PixelPlayer Expressive 风格）。
  *
- * @param compact 桌面主体左栏用 true：两列轨道、展示 10 首，高度与右栏「最近播放」齐平。
+ * 采用横向渐变头部、三几何形状重叠封面、圆润药丸操作条与带在播高亮的紧凑曲目卡片。
  */
 @Composable
 private fun DailyMixCard(
@@ -2120,108 +2304,143 @@ private fun DailyMixCard(
     onOpenPlaylist: () -> Unit,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    nowPlaying: NowPlayingSnapshot? = null,
 ) {
-    val cover = songs.firstOrNull()?.coverUrl
-    val hasCover = !cover.isNullOrBlank()
-    // ⚠️ 「有没有封面」不能只看 URL 非空。URL 有值但图还没到 / 已经挂了时，压在图上的
-    // 那套白字配色会落到浅色容器上 —— 浅色主题下标题、副标题、以及整排曲目卡会**全部消失**
-    // （离屏渲染实测，不是理论风险）。只有 AsyncImage 真的成功后才切到白字配色，
-    // 失败或加载中就老老实实用主题色。
-    var coverLoaded by remember(cover) { mutableStateOf(false) }
-    val overImage = hasCover && coverLoaded
-    val bgHeight = if (compact) 118.dp else 132.dp
-    val titleColor = if (overImage) Color.White else MaterialTheme.colorScheme.onSurface
-    val subtitleColor =
-        if (overImage) Color.White.copy(alpha = 0.76f) else MaterialTheme.colorScheme.onSurfaceVariant
-    val actionContainer =
-        if (overImage) Color.White.copy(alpha = 0.2f) else MaterialTheme.colorScheme.primaryContainer
-    val actionContent =
-        if (overImage) Color.White else MaterialTheme.colorScheme.onPrimaryContainer
-    // compact（桌面独占整行）走**四列轨道**：12 首 = 3 行。
-    // 原先 compact 是两列 10 首，与右栏「最近播放」的 6 行列表刻意保持等高；
-    // 改版后最近播放已挪走（见 L2 的「继续收听」横条），不再有对齐约束，
-    // 于是把列数提上来换更高的信息密度 —— 同样高度下多放 20% 的曲目。
     val previewTracks = if (compact) songs.take(DESKTOP_DAILY_COUNT) else songs.take(4)
+    val thumbnails = remember(songs) { songs.take(3) }
+    val isDark = LocalIsDarkTheme.current
+    val cardBackground = if (isDark) {
+        MaterialTheme.colorScheme.surfaceContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
 
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
-        color = if (overImage) MaterialTheme.colorScheme.surfaceContainerLow
-        else MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = cardBackground,
     ) {
-        Box(Modifier.fillMaxWidth()) {
-            if (hasCover) {
-                AsyncImage(
-                    model = cover.resized(600),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxWidth().height(bgHeight),
-                    contentScale = ContentScale.Crop,
-                    onSuccess = { coverLoaded = true },
-                    onError = { coverLoaded = false },
-                )
-            }
-            if (overImage) {
-                Box(
-                    Modifier.fillMaxWidth().height(bgHeight).background(
-                        Brush.verticalGradient(
-                            colorStops = arrayOf(
-                                0.0f to Color.Black.copy(alpha = 0.5f),
-                                0.38f to Color.Black.copy(alpha = 0.18f),
-                                0.72f to MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.45f),
-                                1.0f to MaterialTheme.colorScheme.surfaceContainerLow,
+        Column(Modifier.fillMaxWidth()) {
+            // ── PixelPlayer 风格渐变艺术头部 ──
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(84.dp)
+                    .background(
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(
+                                MaterialTheme.colorScheme.primary,
+                                MaterialTheme.colorScheme.tertiary,
                             ),
-                        )
+                        ),
                     ),
-                )
-            }
-            Column(Modifier.fillMaxWidth()) {
+                contentAlignment = Alignment.CenterStart,
+            ) {
                 Row(
-                    Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 18.dp, bottom = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Column(Modifier.weight(1f)) {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "每日推荐",
+                            text = "每日推荐",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
-                            color = titleColor,
+                            color = MaterialTheme.colorScheme.onPrimary,
                         )
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            if (compact) "${songs.size} 首 · 大屏展示更多可点歌曲"
-                            else "${songs.size} 首 · 根据你的口味生成",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = subtitleColor,
+                            text = if (compact) "${songs.size} 首 · 属于你的专属节奏"
+                            else "${songs.size} 首 · 根据收听口味精心挑选",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.82f),
                         )
                     }
-                    Surface(
-                        onClick = onOpenPlaylist,
-                        shape = MaterialTheme.shapes.medium,
-                        color = actionContainer,
+
+                    // ── PixelPlayer 标志性三几何形状重叠封面 + 移到顶部的「查看全部」胶囊 ──
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
-                        Row(
-                            Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        if (thumbnails.isNotEmpty()) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy((-14).dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                thumbnails.forEachIndexed { index, track ->
+                                    val (targetSize, targetShape) = when (index) {
+                                        0 -> 48.dp to MaterialTheme.shapes.largeIncreased
+                                        1 -> 42.dp to CircleShape
+                                        else -> 46.dp to MaterialTheme.shapes.medium
+                                    }
+                                    Surface(
+                                        modifier = Modifier.size(targetSize),
+                                        shape = targetShape,
+                                        color = MaterialTheme.colorScheme.surface,
+                                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.surface),
+                                    ) {
+                                        if (!track.coverUrl.isNullOrBlank()) {
+                                            AsyncImage(
+                                                model = track.coverUrl.resized(160),
+                                                contentDescription = null,
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentScale = ContentScale.Crop,
+                                            )
+                                        } else {
+                                            CpCoverPlaceholder(
+                                                modifier = Modifier.fillMaxSize(),
+                                                corner = 12.dp,
+                                                animated = false,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 移到顶部的「查看全部」操作胶囊
+                        Surface(
+                            shape = CircleShape,
+                            color = Color.White.copy(alpha = 0.22f),
+                            contentColor = Color.White,
+                            modifier = Modifier
+                                .height(38.dp)
+                                .cpBounceClickable(onClick = onOpenPlaylist),
                         ) {
-                            Icon(Icons.Filled.PlayArrow, null, tint = actionContent, modifier = Modifier.size(CpIconSize.inline))
-                            Text(
-                                "播放全部",
-                                // labelLarge 的字重规范就是 Medium(500)，原先是重复声明，已删。
-                                style = MaterialTheme.typography.labelLarge,
-                                color = actionContent,
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Icon(
+                                    Icons.Filled.PlayArrow,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Text(
+                                    "查看全部",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White,
+                                )
+                            }
                         }
                     }
                 }
-                DailySongRail(
-                    songs = previewTracks,
-                    onSongClick = onSongClick,
-                    // 桌面独占整行 ⇒ 4 列；窄屏（移动）仍是单列。
-                    columns = if (compact) DESKTOP_DAILY_COLUMNS else 1,
-                )
             }
+
+            Spacer(Modifier.height(10.dp))
+
+            // ── 曲目网格 / 列表 ──
+            DailySongRail(
+                songs = previewTracks,
+                onSongClick = onSongClick,
+                columns = if (compact) DESKTOP_DAILY_COLUMNS else 1,
+                nowPlaying = nowPlaying,
+            )
         }
     }
 }
@@ -2231,6 +2450,7 @@ private fun DailySongRail(
     songs: List<TrackSummary>,
     onSongClick: (TrackSummary) -> Unit,
     columns: Int,
+    nowPlaying: NowPlayingSnapshot? = null,
 ) {
     val safeColumns = columns.coerceAtLeast(1)
     Column(
@@ -2246,6 +2466,7 @@ private fun DailySongRail(
                     CompactTrackCard(
                         track = track,
                         onClick = { onSongClick(track) },
+                        nowPlaying = nowPlaying,
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -2256,25 +2477,49 @@ private fun DailySongRail(
 }
 
 /**
- * 「每日推荐」轨道里的紧凑曲目卡。
+ * 「每日推荐」紧凑曲目卡片。
  *
- * ⚠️ 一律用主题色，**不要**按「是否压在封面上」切白字：卡片的 Surface 底是自己的
- * （不透明），而它只有第一行上半截真正压在照片上、其余部分都落在渐变到浅色的
- * scrim / 卡片底色上 —— 浅色主题下白字放上去等于隐形（2026-10-04 实锤）。
- * 压图的那一小条由不透明卡片底自己遮住，不依赖文字配色。
+ * M3 Expressive 风格：带弹性按压触感，当处于正在播放时，底色过渡高亮、曲名强调，并显示动态均衡器。
  */
 @Composable
 private fun CompactTrackCard(
     track: TrackSummary,
     onClick: () -> Unit,
+    nowPlaying: NowPlayingSnapshot? = null,
     modifier: Modifier = Modifier,
 ) {
-    val titleColor = MaterialTheme.colorScheme.onSurface
-    val artistColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val isCurrent = nowPlaying?.track?.id == track.id
+    val isDark = LocalIsDarkTheme.current
+    val defaultContainer = if (isDark) {
+        MaterialTheme.colorScheme.surfaceContainerHighest
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
+    val containerColor by animateColorAsState(
+        targetValue = if (isCurrent) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.75f)
+        } else {
+            defaultContainer
+        },
+        label = "dailyCardContainer",
+    )
+    val titleColor by animateColorAsState(
+        targetValue = if (isCurrent) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        },
+        label = "dailyCardTitle",
+    )
+    val artistColor = if (isCurrent) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
     Surface(
-        modifier = modifier,
-        onClick = onClick,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        modifier = modifier.cpBounceClickable(onClick = onClick),
+        color = containerColor,
         shape = MaterialTheme.shapes.large,
     ) {
         Row(
@@ -2283,9 +2528,9 @@ private fun CompactTrackCard(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Box(
-                // 14dp 是历史遗留的**非标度值**（既不是 small/medium 也不是 large）。
-                // 收到 medium（12dp）：这个 46dp 的方形缩略图本来就该跟列表缩略图同一档。
-                modifier = Modifier.size(46.dp).clip(MaterialTheme.shapes.medium)
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(MaterialTheme.shapes.medium)
                     .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center,
             ) {
@@ -2308,6 +2553,7 @@ private fun CompactTrackCard(
                 Text(
                     text = track.name,
                     style = MaterialTheme.typography.titleSmall,
+                    fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Medium,
                     color = titleColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -2318,6 +2564,14 @@ private fun CompactTrackCard(
                     color = artistColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (isCurrent && nowPlaying != null) {
+                CpPlayingEqualizer(
+                    isPlaying = nowPlaying.isPlaying,
+                    barColor = MaterialTheme.colorScheme.primary,
+                    scrimColor = Color.Transparent,
+                    modifier = Modifier.padding(end = 4.dp),
                 )
             }
         }

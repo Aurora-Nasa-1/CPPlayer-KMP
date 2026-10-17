@@ -7,21 +7,30 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.AccessAlarm
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
@@ -70,6 +79,7 @@ fun PlayerMoreBottomSheet(
     sleepAfterTrack: Boolean,
     sleepTimerRemainingMs: Long?,
     onDismiss: () -> Unit,
+    onOpenSimilar: () -> Unit,
     onAddToPlaylist: () -> Unit,
     onDownload: () -> Unit,
     onSleepTimer: () -> Unit,
@@ -82,46 +92,48 @@ fun PlayerMoreBottomSheet(
     val s = cpStrings()
     LegacyModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            // PixelPlayer 风格顶部歌曲卡片：大圆角封面 + 歌名/艺术家 + 右侧圆形分享胶囊
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Box(
-                    Modifier.size(72.dp).clip(CircleShape)
+                    Modifier.size(76.dp).clip(RoundedCornerShape(20.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                     contentAlignment = Alignment.Center,
                 ) {
                     if (!track.coverUrl.isNullOrBlank()) {
                         AsyncImage(
-                            model = track.coverUrl.resized(200),
+                            model = track.coverUrl.resized(220),
                             contentDescription = null,
-                            modifier = Modifier.size(72.dp).clip(CircleShape),
+                            modifier = Modifier.size(76.dp).clip(RoundedCornerShape(20.dp)),
                             contentScale = ContentScale.Crop,
                         )
                     } else {
                         CpCoverPlaceholder(
                             modifier = Modifier.fillMaxSize(),
-                            corner = 36.dp,
+                            corner = 20.dp,
                             animated = false,
                         )
                     }
                 }
-                Spacer(Modifier.size(16.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
                         text = track.name,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    Spacer(Modifier.height(2.dp))
                     Text(
-                        text = track.artist,
-                        fontSize = 18.sp,
+                        text = track.artist + (track.album?.takeIf(String::isNotBlank)?.let { " · $it" } ?: ""),
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -129,8 +141,8 @@ fun PlayerMoreBottomSheet(
                 }
                 Surface(
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.size(48.dp).clickable {
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.8f),
+                    modifier = Modifier.size(44.dp).clickable {
                         onShare()
                         onDismiss()
                     },
@@ -139,27 +151,79 @@ fun PlayerMoreBottomSheet(
                         Icon(
                             imageVector = Icons.Filled.Share,
                             contentDescription = s.player.share,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(20.dp),
                         )
                     }
                 }
             }
 
+            // PixelPlayer 核心焦点行动点：探索相似歌曲推荐大胶囊卡片
+            Surface(
+                onClick = {
+                    onOpenSimilar()
+                    onDismiss()
+                },
+                shape = MaterialTheme.shapes.extraLarge,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(40.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Filled.AutoAwesome,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "探索相似歌曲",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                        Text(
+                            "基于在播曲目发现更多同风格好音乐",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                        )
+                    }
+                    Icon(
+                        Icons.Filled.PlayArrow,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+
+            // 动作胶囊按钮网格（PixelPlayer 风格流线型双列胶囊）
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     PlayerPillButton(
                         modifier = Modifier.weight(1f),
                         text = s.player.addToPlaylist,
                         icon = Icons.AutoMirrored.Filled.PlaylistAdd,
-                        bgColor = MaterialTheme.colorScheme.primaryContainer,
-                        textColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        bgColor = MaterialTheme.colorScheme.secondaryContainer,
+                        textColor = MaterialTheme.colorScheme.onSecondaryContainer,
                         onClick = {
                             onAddToPlaylist()
                             onDismiss()
@@ -169,8 +233,8 @@ fun PlayerMoreBottomSheet(
                         modifier = Modifier.weight(1f),
                         text = if (isDownloaded) s.player.downloaded else s.player.download,
                         icon = if (isDownloaded) Icons.Filled.DownloadDone else Icons.Filled.Download,
-                        bgColor = MaterialTheme.colorScheme.secondaryContainer,
-                        textColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        bgColor = MaterialTheme.colorScheme.tertiaryContainer,
+                        textColor = MaterialTheme.colorScheme.onTertiaryContainer,
                         onClick = {
                             if (!isDownloaded) onDownload()
                             onDismiss()
@@ -180,7 +244,7 @@ fun PlayerMoreBottomSheet(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     PlayerPillButton(
                         modifier = Modifier.weight(1f),
@@ -191,8 +255,8 @@ fun PlayerMoreBottomSheet(
                             else -> s.player.sleepTimer
                         },
                         icon = Icons.Filled.Timer,
-                        bgColor = MaterialTheme.colorScheme.tertiaryContainer,
-                        textColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                        bgColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        textColor = MaterialTheme.colorScheme.onSurface,
                         onClick = {
                             onSleepTimer()
                             onDismiss()
@@ -202,7 +266,7 @@ fun PlayerMoreBottomSheet(
                         modifier = Modifier.weight(1f),
                         text = s.player.dislike,
                         icon = Icons.Filled.Block,
-                        bgColor = MaterialTheme.colorScheme.errorContainer,
+                        bgColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.75f),
                         textColor = MaterialTheme.colorScheme.onErrorContainer,
                         onClick = {
                             onDislike()
@@ -211,18 +275,16 @@ fun PlayerMoreBottomSheet(
                     )
                 }
 
-                // 这一行是「设备间」类操作（与上面 2×2 的「本曲操作」不同类）：
-                // 一起听 = 社交入口；转移到设备 = 把播放交给局域网里的另一台本应用。
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     PlayerPillButton(
                         modifier = Modifier.weight(1f),
                         text = s.player.listenTogether,
                         icon = Icons.Filled.Headphones,
-                        bgColor = MaterialTheme.colorScheme.primaryContainer,
-                        textColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        bgColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        textColor = MaterialTheme.colorScheme.onSurface,
                         onClick = {
                             onListenTogether()
                             onDismiss()
@@ -232,8 +294,8 @@ fun PlayerMoreBottomSheet(
                         modifier = Modifier.weight(1f),
                         text = s.player.transferDevice,
                         icon = Icons.Filled.Cast,
-                        bgColor = MaterialTheme.colorScheme.secondaryContainer,
-                        textColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        bgColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        textColor = MaterialTheme.colorScheme.onSurface,
                         onClick = {
                             onHandoff()
                             onDismiss()
@@ -242,100 +304,107 @@ fun PlayerMoreBottomSheet(
                 }
             }
 
+            // PixelPlayer 风格详情信息分段卡片
             Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.55f),
+                shape = RoundedCornerShape(20.dp),
                 modifier = Modifier.fillMaxWidth().clickable {
                     onShowInfo()
                     onDismiss()
                 },
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Info,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurface,
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Text(
+                                text = s.player.songInfo,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
                         Text(
-                            text = s.player.songInfo,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            text = "查看完整元数据 →",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
                         )
                     }
-                    Spacer(Modifier.size(12.dp))
-                    Text(
-                        text = "ID: ${track.id}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    track.album?.takeIf(String::isNotBlank)?.let {
-                        Text(
-                            text = "${s.player.infoFormat}: $it",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+
+                    // 详情小胶囊分段
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        DetailChip(
+                            icon = Icons.Filled.AccessAlarm,
+                            label = formatTimeMs(track.durationMs),
+                            modifier = Modifier.weight(1f),
                         )
-                    }
-                    lyricsInfo?.let { info ->
-                        Spacer(Modifier.size(12.dp))
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        Spacer(Modifier.size(12.dp))
-                        Text(
-                            text = s.player.lyricInfo,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
+                        val qualityLabel = formatInfo?.qualityLabel ?: formatInfo?.codecName ?: "标准音质"
+                        DetailChip(
+                            icon = Icons.Filled.GraphicEq,
+                            label = qualityLabel,
+                            modifier = Modifier.weight(1f),
                         )
-                        Spacer(Modifier.size(8.dp))
-                        Text("${s.player.infoSource}: ${info.source}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("${s.player.infoFormat}: ${info.format}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(
-                            text = "${s.player.wordLevelLyrics}: " +
-                                if (info.hasWordLevel) s.player.yes else s.player.no,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (info.hasWordLevel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        val lyricStatus = if (lyricsInfo?.hasWordLevel == true) "逐字歌词" else "动态歌词"
+                        DetailChip(
+                            icon = Icons.Filled.Lyrics,
+                            label = lyricStatus,
+                            modifier = Modifier.weight(1f),
                         )
-                        if (info.hasTranslation) {
-                            Text("${s.player.infoTranslation}: ${s.player.yes}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                        }
-                        if (info.hasPhonetic) {
-                            Text("${s.player.infoPhonetic}: ${s.player.yes}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                    formatInfo?.let { info ->
-                        Spacer(Modifier.size(12.dp))
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        Spacer(Modifier.size(12.dp))
-                        Text(
-                            text = s.player.audioFormat,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(Modifier.size(8.dp))
-                        info.codecName?.takeIf(String::isNotBlank)?.let {
-                            Text("${s.player.infoCodec}: $it", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        info.sampleRate?.takeIf { it > 0 }?.let {
-                            Text("${s.player.infoSampleRate}: $it Hz", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        info.bitDepth?.takeIf { it > 0 }?.let {
-                            Text("${s.player.infoBitDepth}: $it bit", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        info.bitrate?.takeIf { it > 0 }?.let {
-                            Text("${s.player.infoBitrate}: ${it / 1000} kbps", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        info.channels?.takeIf { it > 0 }?.let {
-                            Text("${s.player.infoChannels}: $it", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun DetailChip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.65f),
+        modifier = modifier,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -350,21 +419,22 @@ private fun PlayerPillButton(
     onClick: () -> Unit,
 ) {
     Surface(
-        modifier = modifier,
-        shape = MaterialTheme.shapes.large,
+        modifier = modifier.heightIn(min = 54.dp),
+        shape = RoundedCornerShape(18.dp),
         color = bgColor,
         onClick = onClick,
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(icon, contentDescription = null, tint = textColor, modifier = Modifier.size(22.dp))
+            Icon(icon, contentDescription = null, tint = textColor, modifier = Modifier.size(20.dp))
             Text(
                 text = text,
                 color = textColor,
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -390,13 +460,14 @@ class PlayerMoreSheetState {
     var showSleepTimer by mutableStateOf(false)
     var showSongInfo by mutableStateOf(false)
     var showDevicePicker by mutableStateOf(false)
+    var showSimilarSongs by mutableStateOf(false)
 }
 
 @Composable
 fun rememberPlayerMoreSheetState(): PlayerMoreSheetState = remember { PlayerMoreSheetState() }
 
 /**
- * 「更多」弹层 + 三个二级弹窗（加入歌单 / 睡眠定时 / 歌曲信息）的宿主，
+ * 「更多」弹层 + 四个二级弹窗（加入歌单 / 睡眠定时 / 歌曲信息 / 相似歌曲）的宿主，
  * 以及**全部动作实现**（下载 / 分享 / 不感兴趣）的唯一一份。
  *
  * 背景：这套东西原先内联在 `PlayerScreenContent` 的 `PlayerPage` 调用点里，
@@ -434,6 +505,7 @@ fun PlayerMoreSheets(
             sleepAfterTrack = state.sleepAfterTrack,
             sleepTimerRemainingMs = state.sleepTimerRemainingMs,
             onDismiss = { sheets.showMoreMenu = false },
+            onOpenSimilar = { sheets.showSimilarSongs = true },
             onAddToPlaylist = { sheets.showAddToPlaylist = true },
             onDownload = { AppModel.downloadTrack(track) },
             onSleepTimer = { sheets.showSleepTimer = true },
@@ -457,6 +529,19 @@ fun PlayerMoreSheets(
                 }
             },
         )
+    }
+
+    if (sheets.showSimilarSongs) {
+        LegacyModalBottomSheet(
+            onDismissRequest = { sheets.showSimilarSongs = false },
+            skipPartiallyExpanded = true,
+        ) {
+            SimilarSongsPanel(
+                seedTrackId = track.id,
+                onBack = { sheets.showSimilarSongs = false },
+                modifier = Modifier.padding(horizontal = 16.dp).fillMaxHeight(0.85f),
+            )
+        }
     }
 
     if (sheets.showAddToPlaylist) {

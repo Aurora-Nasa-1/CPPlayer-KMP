@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -178,33 +179,17 @@ fun DesktopPlayerScreen(
         animationSpec = CpMotion.spatialSlow(),
         label = "desktopArtCorner",
     )
-    val cardShape = MaterialTheme.shapes.extraExtraLarge
-    val rimBorderBrush = remember(isDark) {
-        Brush.verticalGradient(
-            colors = if (isDark) {
-                listOf(
-                    Color.White.copy(alpha = 0.22f),
-                    Color.White.copy(alpha = 0.08f),
-                    Color.White.copy(alpha = 0.03f),
-                )
-            } else {
-                listOf(
-                    Color.White.copy(alpha = 0.65f),
-                    Color.White.copy(alpha = 0.30f),
-                    Color.White.copy(alpha = 0.10f),
-                )
-            }
-        )
-    }
-    val cardBorder = Modifier.border(
-        width = 1.dp,
-        brush = rimBorderBrush,
-        shape = cardShape,
-    )
-    val cardBg = if (isDark) MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f)
-    else MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
-
-    Box(Modifier.fillMaxSize().cpFluidBackground(enabled = fluidBackground, fallback = background).padding(24.dp)) {
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .cpFluidBackground(enabled = fluidBackground, fallback = background)
+            .padding(24.dp)
+    ) {
+        val isLargeWindow = maxWidth >= 1000.dp && maxHeight >= 720.dp
+        // 可用高度（扣除外层内边距、顶栏与间距等）
+        val availableHeight = maxHeight - 48.dp - 40.dp - 16.dp
+        // 大尺寸窗口固定封面大小为 360dp，较小窗口自适应收缩避免溢出
+        val coverSize = if (isLargeWindow) 360.dp else (availableHeight - 210.dp).coerceIn(240.dp, 360.dp)
         Column(Modifier.fillMaxSize()) {
             // 顶栏：左侧收起 + 专辑，右侧音质标识 + 音量控制胶囊 + 更多菜单
             Row(
@@ -358,149 +343,178 @@ fun DesktopPlayerScreen(
 
             Spacer(Modifier.height(16.dp))
 
-            // 核心工作区：双浮动表现力岛屿（左：大屏控制台，右：多功能展示区）
-            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                // 左侧播放控制岛
-                Surface(
-                    modifier = Modifier.weight(1.15f).fillMaxHeight().then(cardBorder),
-                    shape = cardShape,
-                    color = cardBg,
-                    shadowElevation = 0.dp,
+            // 核心工作区：左侧固定尺寸/位置封面与播放控制，右侧队列/歌词/评论（歌词界面拉伸有限度）
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(40.dp),
+            ) {
+                // 左侧播放控制区（封面与控件垂直对齐，大尺寸窗口固定大小与位置）
+                Column(
+                    modifier = Modifier
+                        .width(coverSize)
+                        .padding(start = 8.dp, top = if (isLargeWindow) 16.dp else 0.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Box(Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 24.dp), contentAlignment = Alignment.Center) {
-                        Column(
-                            Modifier.fillMaxWidth().widthIn(max = 560.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            // 封面保持 1:1，居中微光悬浮
-                            Box(
-                                modifier = Modifier.fillMaxWidth().weight(1f),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Artwork(
-                                    track.coverUrl,
-                                    Modifier.aspectRatio(1f).clip(RoundedCornerShape(artCorner)),
-                                )
-                            }
+                    // 封面保持 1:1，大尺寸窗口固定大小和相对位置
+                    Artwork(
+                        track.coverUrl,
+                        Modifier
+                            .size(coverSize)
+                            .clip(RoundedCornerShape(artCorner)),
+                    )
 
-                            // 歌曲标题与艺术家
-                            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    CpText(
-                                        text = track.name,
-                                        style = MaterialTheme.typography.headlineSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        emphasized = true,
-                                    )
-                                    TrackArtistText(
-                                        track = track,
-                                        onArtistClick = onArtistClick,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                    )
-                                }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    track.mvId?.takeIf { it > 0 }?.let { mvId ->
-                                        val nav = LocalNavigator.current
-                                        IconButton(
-                                            onClick = {
-                                                nav?.push(VideoPlayerScreen("netease://mv/$mvId"))
-                                            },
-                                        ) {
-                                            Icon(
-                                                Icons.Filled.SmartDisplay,
-                                                contentDescription = "播放 MV",
-                                                tint = MaterialTheme.colorScheme.primary,
-                                            )
-                                        }
-                                    }
-                                    IconButton(onClick = onLike) {
-                                        Icon(
-                                            if (state.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                                            "收藏",
-                                            tint = if (state.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                            }
-
-                            // 波形进度条
-                            CpSeekBar(
-                                positionMs = state.positionMs,
-                                durationMs = duration,
-                                onSeek = onSeek,
-                                enabled = seekable,
-                                waveFlowing = state.isPlaying,
-                                trackKey = track.id,
-                                modifier = Modifier.fillMaxWidth(),
+                    // 歌曲标题与艺术家
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            CpText(
+                                text = track.name,
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                emphasized = true,
                             )
-
-                            // 时间行与禁用原因
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                val formattedPosition = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
-                                Text(
-                                    formattedPosition,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Text(
-                                    SeekAvailability.durationLabel(duration),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            TrackArtistText(
+                                track = track,
+                                onArtistClick = onArtistClick,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                            )
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            track.mvId?.takeIf { it > 0 }?.let { mvId ->
+                                val nav = LocalNavigator.current
+                                IconButton(
+                                    onClick = {
+                                        nav?.push(VideoPlayerScreen("netease://mv/$mvId"))
+                                    },
+                                ) {
+                                    Icon(
+                                        Icons.Filled.SmartDisplay,
+                                        contentDescription = "播放 MV",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            }
+                            IconButton(onClick = onLike) {
+                                Icon(
+                                    if (state.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                                    "收藏",
+                                    tint = if (state.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                            SeekAvailability.disabledReason(duration, state.isLocalizing)?.let { reason ->
-                                Text(
-                                    reason,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-
-                            // M3E 播放控制组件
-                            PlayerControls(state, onTogglePlay, onSkipNext, onSkipPrev, onRepeat, onShuffle)
                         }
                     }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    // 波形进度条
+                    CpSeekBar(
+                        positionMs = state.positionMs,
+                        durationMs = duration,
+                        onSeek = onSeek,
+                        enabled = seekable,
+                        waveFlowing = state.isPlaying,
+                        trackKey = track.id,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    // 时间行与禁用原因
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        val formattedPosition = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
+                        Text(
+                            formattedPosition,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            SeekAvailability.durationLabel(duration),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    SeekAvailability.disabledReason(duration, state.isLocalizing)?.let { reason ->
+                        Text(
+                            reason,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    // M3E 播放控制组件
+                    PlayerControls(state, onTogglePlay, onSkipNext, onSkipPrev, onRepeat, onShuffle)
                 }
 
-                // 右侧沉浸展示岛
-                Surface(
-                    modifier = Modifier.weight(1f).fillMaxHeight().then(cardBorder),
-                    shape = cardShape,
-                    color = cardBg,
-                    shadowElevation = 0.dp,
+                // 右侧展示区（队列、歌词、评论，内容限宽居中）
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .padding(top = if (isLargeWindow) 16.dp else 0.dp, end = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Column(Modifier.fillMaxSize().padding(22.dp)) {
-                        // M3E 表现力胶囊页签切换组件（保留三个核心主栏：队列、歌词、评论）
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Center,
-                        ) {
-                            DesktopTabSelector(
-                                selectedTab = if (showSimilarOverlay) -1 else selectedTab,
-                                onTabSelect = {
-                                    selectedTab = it
-                                    showSimilarOverlay = false
-                                },
-                            )
+                    // M3E 表现力胶囊页签切换组件（保留三个核心主栏：队列、歌词、评论）+ 右侧歌词翻译快捷按钮
+                    Box(
+                        Modifier.widthIn(max = 640.dp).fillMaxWidth(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        DesktopTabSelector(
+                            selectedTab = if (showSimilarOverlay) -1 else selectedTab,
+                            onTabSelect = {
+                                selectedTab = it
+                                showSimilarOverlay = false
+                            },
+                        )
+
+                        if (!showSimilarOverlay && selectedTab == 1) {
+                            Surface(
+                                onClick = { showTranslation = !showTranslation },
+                                shape = androidx.compose.foundation.shape.CircleShape,
+                                color = if (showTranslation) MaterialTheme.colorScheme.primaryContainer
+                                else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+                                modifier = Modifier.align(Alignment.CenterEnd).size(34.dp),
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Translate,
+                                        contentDescription = "歌词翻译",
+                                        tint = if (showTranslation) MaterialTheme.colorScheme.onPrimaryContainer
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(17.dp),
+                                    )
+                                }
+                            }
                         }
-                        Spacer(Modifier.height(16.dp))
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    Box(
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         if (showSimilarOverlay) {
-                            SimilarSongsPanel(
-                                seedTrackId = track.id,
-                                onBack = { showSimilarOverlay = false },
-                            )
+                            Box(Modifier.widthIn(max = 640.dp).fillMaxSize()) {
+                                SimilarSongsPanel(
+                                    seedTrackId = track.id,
+                                    onBack = { showSimilarOverlay = false },
+                                )
+                            }
                         } else {
                             when (selectedTab) {
-                                0 -> QueueContent(
-                                    state = state,
-                                    scope = scope,
-                                    onPlayAt = onPlayAt,
-                                    onOpenSimilar = { showSimilarOverlay = true },
-                                )
+                                0 -> Box(Modifier.widthIn(max = 640.dp).fillMaxSize()) {
+                                    QueueContent(
+                                        state = state,
+                                        scope = scope,
+                                        onPlayAt = onPlayAt,
+                                        onOpenSimilar = { showSimilarOverlay = true },
+                                    )
+                                }
                                 1 -> DesktopLyricsContent(
                                     state = state,
                                     onSeek = onSeek,
@@ -509,7 +523,9 @@ fun DesktopPlayerScreen(
                                     onLikeClick = onLike,
                                     onChangeSource = onChangeLyricsSource,
                                 )
-                                else -> DesktopCommentContent(track.id)
+                                else -> Box(Modifier.widthIn(max = 640.dp).fillMaxSize()) {
+                                    DesktopCommentContent(track.id)
+                                }
                             }
                         }
                     }
@@ -529,32 +545,23 @@ private fun DesktopTabSelector(
     modifier: Modifier = Modifier,
 ) {
     val isDark = LocalIsDarkTheme.current
-    val tabs = remember {
-        listOf(
-            DesktopTabItem("队列", Icons.AutoMirrored.Filled.QueueMusic),
-            DesktopTabItem("歌词", Icons.Filled.Lyrics),
-            DesktopTabItem("评论", Icons.AutoMirrored.Filled.Comment),
-        )
-    }
+    val tabs = remember { listOf("队列", "歌词", "评论") }
+
     Surface(
         modifier = modifier,
-        shape = MaterialTheme.shapes.extraExtraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.55f),
-        border = BorderStroke(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.18f else 0.30f),
-        ),
+        shape = androidx.compose.foundation.shape.CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = if (isDark) 0.35f else 0.45f),
     ) {
         Row(
-            Modifier.padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            Modifier.padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            tabs.forEachIndexed { index, tab ->
+            tabs.forEachIndexed { index, title ->
                 val selected = selectedTab == index
                 val containerColor by animateColorAsState(
                     targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer
-                    else Color.Transparent,
+                    else androidx.compose.ui.graphics.Color.Transparent,
                     animationSpec = CpMotion.effects(),
                     label = "tabContainerColor",
                 )
@@ -566,22 +573,16 @@ private fun DesktopTabSelector(
                 )
                 Surface(
                     onClick = { onTabSelect(index) },
-                    shape = MaterialTheme.shapes.large,
+                    shape = androidx.compose.foundation.shape.CircleShape,
                     color = containerColor,
                     contentColor = contentColor,
                 ) {
-                    Row(
-                        Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 7.dp),
                     ) {
-                        Icon(
-                            imageVector = tab.icon,
-                            contentDescription = null,
-                            modifier = Modifier.size(17.dp),
-                        )
                         Text(
-                            text = tab.title,
+                            text = title,
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                         )
@@ -591,8 +592,6 @@ private fun DesktopTabSelector(
         }
     }
 }
-
-private data class DesktopTabItem(val title: String, val icon: ImageVector)
 
 @Composable
 private fun QueueContent(
