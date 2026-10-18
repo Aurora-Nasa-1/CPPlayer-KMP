@@ -43,6 +43,8 @@ interface WallStrings {
     // —— 海报 / 沉浸 ——
     val posterPlay: String
     val posterClose: String
+    val pause: String
+    val moreOptions: String
     val skipPrevious: String
     val skipNext: String
     val nowPlaying: String
@@ -66,6 +68,35 @@ interface WallStrings {
 
     /** 副标题：`歌手 · 年份 · 类型` 之类，缺项自动省略。 */
     fun subtitle(artist: String?, year: String?, kind: String): String
+
+    // —— Halcyon PosterWall 海报墙 ——
+    fun posterWallCount(count: Int): String
+    val posterWallQueue: String
+    val posterWallLibrary: String
+    val posterWallLiked: String
+    val posterWallLocal: String
+    val posterWallSearch: String
+    val posterWallInfinite: String
+    val posterWallFullscreen: String
+    val posterWallTheater: String
+    val posterWallZoomIn: String
+    val posterWallZoomOut: String
+    val posterWallGestureHint: String
+    val posterWallRemoteHint: String
+    val posterWallEmptyQueue: String
+    val posterWallEmptyLibrary: String
+    val posterWallNoResults: String
+    val posterWallLoading: String
+    val posterWallBrowseLibrary: String
+    val posterWallCurrent: String
+    val posterWallSelected: String
+    val posterWallRefresh: String
+    val posterWallLocate: String
+    val posterWallLyricsStyle: String
+    val styleOrbit: String
+    val styleClock: String
+    val styleColorField: String
+    val styleGlow: String
 }
 
 object WallStringsZh : WallStrings {
@@ -97,6 +128,8 @@ object WallStringsZh : WallStrings {
 
     override val posterPlay = "播放"
     override val posterClose = "收起"
+    override val pause = "暂停"
+    override val moreOptions = "更多选项"
     override val skipPrevious = "上一首"
     override val skipNext = "下一首"
     override val nowPlaying = "正在播放"
@@ -119,6 +152,34 @@ object WallStringsZh : WallStrings {
         year?.takeIf { it.isNotBlank() }?.let(::add)
         add(kind)
     }.joinToString(" · ")
+
+    override fun posterWallCount(count: Int) = "$count 张音乐海报"
+    override val posterWallQueue = "播放队列"
+    override val posterWallLibrary = "音乐库"
+    override val posterWallLiked = "我喜欢"
+    override val posterWallLocal = "本地歌曲"
+    override val posterWallSearch = "搜索歌曲、艺术家或专辑"
+    override val posterWallInfinite = "无限滚动"
+    override val posterWallFullscreen = "全屏海报墙"
+    override val posterWallTheater = "全屏歌词播放"
+    override val posterWallZoomIn = "放大海报"
+    override val posterWallZoomOut = "缩小海报"
+    override val posterWallGestureHint = "拖动浏览 · 双指/滚轮缩放 · 点击展开 · 长按更多"
+    override val posterWallRemoteHint = "方向键移动 · 确认展开 · 长按确认或菜单打开更多 · 返回关闭"
+    override val posterWallEmptyQueue = "播放队列还是空的"
+    override val posterWallEmptyLibrary = "音乐库里还没有歌曲"
+    override val posterWallNoResults = "没有找到匹配的音乐"
+    override val posterWallLoading = "正在展开你的音乐世界…"
+    override val posterWallBrowseLibrary = "浏览音乐库"
+    override val posterWallCurrent = "当前歌曲"
+    override val posterWallSelected = "音乐海报"
+    override val posterWallRefresh = "刷新排列"
+    override val posterWallLocate = "定位当前播放歌曲"
+    override val posterWallLyricsStyle = "歌词样式"
+    override val styleOrbit = "回环"
+    override val styleClock = "时计"
+    override val styleColorField = "凝彩"
+    override val styleGlow = "绘光"
 }
 
 object WallStringsEn : WallStrings {
@@ -150,6 +211,8 @@ object WallStringsEn : WallStrings {
 
     override val posterPlay = "Play"
     override val posterClose = "Collapse"
+    override val pause = "Pause"
+    override val moreOptions = "More options"
     override val skipPrevious = "Previous"
     override val skipNext = "Next"
     override val nowPlaying = "Now playing"
@@ -172,4 +235,32 @@ object WallStringsEn : WallStrings {
         year?.takeIf { it.isNotBlank() }?.let(::add)
         add(kind)
     }.joinToString(" · ")
+
+    override fun posterWallCount(count: Int) = "$count music posters"
+    override val posterWallQueue = "Queue"
+    override val posterWallLibrary = "Library"
+    override val posterWallLiked = "Liked"
+    override val posterWallLocal = "Local"
+    override val posterWallSearch = "Search songs, artists or albums"
+    override val posterWallInfinite = "Infinite scroll"
+    override val posterWallFullscreen = "Fullscreen wall"
+    override val posterWallTheater = "Theater player"
+    override val posterWallZoomIn = "Zoom in"
+    override val posterWallZoomOut = "Zoom out"
+    override val posterWallGestureHint = "Drag pan · Pinch/Scroll zoom · Tap expand · Long press more"
+    override val posterWallRemoteHint = "D-pad move · Confirm expand · Long-press or Menu for more · Back close"
+    override val posterWallEmptyQueue = "Playback queue is empty"
+    override val posterWallEmptyLibrary = "No songs in library yet"
+    override val posterWallNoResults = "No matching music found"
+    override val posterWallLoading = "Unfolding your music world…"
+    override val posterWallBrowseLibrary = "Browse library"
+    override val posterWallCurrent = "Current song"
+    override val posterWallSelected = "Music poster"
+    override val posterWallRefresh = "Shuffle posters"
+    override val posterWallLocate = "Locate playing song"
+    override val posterWallLyricsStyle = "Lyrics style"
+    override val styleOrbit = "Orbit"
+    override val styleClock = "Clock"
+    override val styleColorField = "Color field"
+    override val styleGlow = "Glow"
 }

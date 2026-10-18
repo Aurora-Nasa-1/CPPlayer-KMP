@@ -1,5 +1,6 @@
 package cp.player.app.ui.screen
 
+import cp.player.app.ui.component.CpText
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -98,7 +99,6 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
@@ -289,7 +289,7 @@ class MainScreen : Screen {
             DesktopPane.Tabs -> tabs[selectedIndex].label
             DesktopPane.Settings -> "设置"
             DesktopPane.Downloads -> "下载管理"
-            DesktopPane.LocalLibrary -> "本地音乐"
+            is DesktopPane.LocalLibrary -> if (pane.initialTab == 3) "我喜欢的音乐" else "本地音乐"
             DesktopPane.RecentPlays -> "最近播放"
             DesktopPane.Messages -> "消息"
             is DesktopPane.Playlist -> pane.playlist.name
@@ -470,7 +470,8 @@ class MainScreen : Screen {
                                 desktopPane = DesktopPane.Playlist(it)
                             },
                             onOpenDownloads = { desktopPane = DesktopPane.Downloads },
-                            onOpenLocalLibrary = { desktopPane = DesktopPane.LocalLibrary },
+                            onOpenLocalLibrary = { desktopPane = DesktopPane.LocalLibrary(0) },
+                            onOpenLocalFavorites = { desktopPane = DesktopPane.LocalLibrary(3) },
                             onOpenRecentPlays = { desktopPane = DesktopPane.RecentPlays },
                             onOpenMessages = {
                                 desktopPane = DesktopPane.Messages
@@ -610,8 +611,8 @@ class MainScreen : Screen {
                                                     // 或宽屏平板自己那条顶栏）—— 页内不再自绘，
                                                     // 否则同一屏会出现两条顶栏。
                                                     DownloadsScreen(embedded = true).Content()
-                                                DesktopPane.LocalLibrary ->
-                                                    LocalLibraryScreen(embedded = true).Content()
+                                                is DesktopPane.LocalLibrary ->
+                                                    LocalLibraryScreen(embedded = true, initialTab = current.initialTab).Content()
                                                 DesktopPane.RecentPlays ->
                                                     RecentPlaysScreen(embedded = true).Content()
                                                 DesktopPane.Messages ->
@@ -747,6 +748,7 @@ class MainScreen : Screen {
                             onShuffle = controller::toggleShuffle,
                             onLike = { scope.launch { controller.toggleFavorite() } },
                             onPlayAt = { idx -> scope.launch { controller.playAt(idx) } },
+                            onMove = { from, to -> scope.launch { controller.moveQueueItem(from, to) } },
                         )
                     } else PlayerScreenContent(
                         state = playbackState,
@@ -841,7 +843,7 @@ private fun AppTopBar(
     // 账号信息在这里读一次：最左的账号入口要用它（右侧动作不再需要）。
     val profile by AppModel.userProfileFlow.collectAsState()
     val titleBar: @Composable () -> Unit = {
-        Text(title, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        CpText(title, maxLines = 1)
     }
     // 最左槽位：路由页放返回键，三个 tab 放**账号入口** —— 任何页面这个位置都是同一颗
     // 填充圆钮（与 `CpBackButton` / `CpTopBarActionButton` 同族），位置与样式不再跟着
@@ -1133,6 +1135,7 @@ private fun DesktopSidebar(
     onOpenPlaylist: (PlaylistSummary) -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenLocalLibrary: () -> Unit,
+    onOpenLocalFavorites: () -> Unit = {},
     onOpenRecentPlays: () -> Unit,
     onOpenMessages: () -> Unit,
     onOpenAllPlaylists: () -> Unit,
@@ -1276,13 +1279,15 @@ private fun DesktopSidebar(
                 // 功能区：图标装在圆角方片里 —— 与下方歌单区的封面缩略图形成对照。
                 item { SidebarSection("我的音乐") }
                 item {
+                    val isLocalFav = selectedPane is DesktopPane.LocalLibrary && (selectedPane as DesktopPane.LocalLibrary).initialTab == 3
+                    val isOnlineFav = selectedPlaylistId != null &&
+                        selectedPlaylistId == homeState.likedPlaylist?.id
                     SidebarAction(
                         icon = Icons.Filled.FavoriteBorder,
                         label = "我喜欢的音乐",
-                        selected = selectedPlaylistId != null &&
-                            selectedPlaylistId == homeState.likedPlaylist?.id,
+                        selected = isOnlineFav || (homeState.likedPlaylist == null && isLocalFav),
                         onClick = {
-                            homeState.likedPlaylist?.let(onOpenPlaylist) ?: onSelect(2)
+                            homeState.likedPlaylist?.let(onOpenPlaylist) ?: onOpenLocalFavorites()
                         },
                     )
                 }
@@ -1418,19 +1423,17 @@ private fun SidebarHeader(profileName: String?, avatarUrl: String?) {
         }
         androidx.compose.foundation.layout.Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text(
+            CpText(
                 "CPPlayer",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
-            Text(
+            CpText(
                 profileName ?: "音乐空间",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -1481,12 +1484,11 @@ private fun SidebarAction(
             )
         }
         androidx.compose.foundation.layout.Spacer(Modifier.width(12.dp))
-        Text(
+        CpText(
             label,
             style = MaterialTheme.typography.bodyMedium,
             color = contentColor,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
         if (badge > 0) {
@@ -1549,13 +1551,12 @@ private fun SidebarPlaylistRow(
         }
         androidx.compose.foundation.layout.Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(
+            CpText(
                 playlist.name,
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
                 else MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 "${playlist.trackCount} 首",
@@ -1622,7 +1623,7 @@ private sealed interface DesktopPane {
     data object Tabs : DesktopPane
     data object Settings : DesktopPane
     data object Downloads : DesktopPane
-    data object LocalLibrary : DesktopPane
+    data class LocalLibrary(val initialTab: Int = 0) : DesktopPane
     data object RecentPlays : DesktopPane
     data object Messages : DesktopPane
     data class Playlist(val playlist: PlaylistSummary) : DesktopPane

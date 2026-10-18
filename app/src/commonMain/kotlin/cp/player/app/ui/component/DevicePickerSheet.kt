@@ -28,7 +28,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
@@ -86,12 +85,11 @@ fun DevicePickerSheet(
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            Text(
+            CpText(
                 text = nowPlayingName?.let { s.standby.pickerNowPlaying(it) } ?: s.standby.pickerNoTrack,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
 
             val online = peers.filter { it.isOnline(nowMs) }
@@ -127,21 +125,19 @@ fun DevicePickerSheet(
                                     modifier = Modifier.size(26.dp),
                                 )
                                 Column(Modifier.weight(1f)) {
-                                    Text(
+                                    CpText(
                                         text = peer.displayName,
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.onSurface,
                                         maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
                                     )
-                                    Text(
+                                    CpText(
                                         text = "${peer.address} · ${peer.platform}" +
                                             (peer.appVersion.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
                                     )
                                 }
                                 Icon(

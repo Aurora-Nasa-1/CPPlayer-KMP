@@ -36,6 +36,7 @@ import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsNoteEmphasis
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
+import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.SettingsTextInputItem
 import cp.player.app.ui.component.ltTtl
 import cp.player.app.ui.component.rememberConfirmState
@@ -75,6 +76,7 @@ class ListenTogetherScreen : Screen {
         val navigator = LocalNavigator.currentOrThrow
         val scope = rememberCoroutineScope()
         val state by AppModel.listenTogetherState.collectAsState()
+        val addNextOnPlay by AppModel.listenTogetherAddNextFlow.collectAsState()
         val confirm = rememberConfirmState()
         val s = cpStrings()
 
@@ -114,9 +116,11 @@ class ListenTogetherScreen : Screen {
                     joinContent(
                         strings = s,
                         busy = busy,
+                        addNextOnPlay = addNextOnPlay,
                         onRefresh = refresh,
                         onCreate = { scope.launch { AppModel.listenTogether.createRoom() } },
                         onJoin = { text -> scope.launch { AppModel.listenTogether.joinFromText(text) } },
+                        onAddNextOnPlayChange = { AppModel.setListenTogetherAddNext(it) },
                     )
                     return@SettingsPage
                 }
@@ -125,6 +129,7 @@ class ListenTogetherScreen : Screen {
                     strings = s,
                     state = state,
                     busy = busy,
+                    addNextOnPlay = addNextOnPlay,
                     onRefresh = refresh,
                     onShare = { link -> shareText(link) },
                     onLeave = {
@@ -136,6 +141,7 @@ class ListenTogetherScreen : Screen {
                             onConfirm = { scope.launch { AppModel.listenTogether.endRoom() } },
                         )
                     },
+                    onAddNextOnPlayChange = { AppModel.setListenTogetherAddNext(it) },
                 )
             }
         }
@@ -163,9 +169,11 @@ private fun ColumnScope.unsupportedContent(strings: CpStrings) {
 private fun ColumnScope.joinContent(
     strings: CpStrings,
     busy: Boolean,
+    addNextOnPlay: Boolean,
     onRefresh: () -> Unit,
     onCreate: () -> Unit,
     onJoin: (String) -> Unit,
+    onAddNextOnPlayChange: (Boolean) -> Unit,
 ) {
     val together = strings.social.together
     var inviteText by remember { mutableStateOf("") }
@@ -209,6 +217,17 @@ private fun ColumnScope.joinContent(
         text = together.inviteNote,
     )
 
+    SettingsSection(together.sectionSettings) {
+        SettingsSwitchItem(
+            title = together.addNextOnPlay,
+            subtitle = together.addNextOnPlayNote,
+            checked = addNextOnPlay,
+            onCheckedChange = onAddNextOnPlayChange,
+            index = 0,
+            total = 1,
+        )
+    }
+
     SettingsSection(together.sectionOther) {
         SettingsButtonItem(
             text = together.refreshRoomState,
@@ -228,9 +247,11 @@ private fun ColumnScope.roomContent(
     strings: CpStrings,
     state: ListenTogetherState,
     busy: Boolean,
+    addNextOnPlay: Boolean,
     onRefresh: () -> Unit,
     onShare: (String) -> Unit,
     onLeave: () -> Unit,
+    onAddNextOnPlayChange: (Boolean) -> Unit,
 ) {
     val together = strings.social.together
     val room = state.room
@@ -291,6 +312,17 @@ private fun ColumnScope.roomContent(
     SettingsNote(
         text = together.inviteUnavailableNote,
     )
+
+    SettingsSection(together.sectionSettings) {
+        SettingsSwitchItem(
+            title = together.addNextOnPlay,
+            subtitle = together.addNextOnPlayNote,
+            checked = addNextOnPlay,
+            onCheckedChange = onAddNextOnPlayChange,
+            index = 0,
+            total = 1,
+        )
+    }
 
     SettingsSection(together.sectionLeave) {
         SettingsButtonItem(

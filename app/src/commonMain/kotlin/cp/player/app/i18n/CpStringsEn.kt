@@ -88,6 +88,9 @@ object CpStringsEn : CpStrings {
         override val refresh = "Refresh"
         override val unsavedBlocked = "Not saved · fix the problem above first"
         override val unsavedHint = "Not saved · press Apply to keep it"
+        override val back = "Back"
+        override val close = "Close"
+        override val search = "Search"
     }
 
     override val messageNotify: MessageNotifyStrings = object : MessageNotifyStrings {
@@ -285,6 +288,8 @@ object CpStringsEn : CpStrings {
         override val lyricsProviderOnly = "Source API only"
         override val lyricsAmllFirst = "AMLL first"
         override val lyricsAmllOnly = "AMLL only"
+        override val showRubyLyrics = "Japanese Furigana"
+        override val showRubyLyricsSubtitle = "Show reading kana above kanji in Japanese lyrics"
 
         override val sectionSleepTimer = "Sleep timer"
         override val sleepTimer = "Sleep timer"
@@ -297,6 +302,11 @@ object CpStringsEn : CpStrings {
         override val keepLastPlaybackNote =
             "Restore your last queue and position on launch, without auto-playing; " +
                 "press play to resume where you left off"
+
+        override val sectionPreload = "Audio Preload"
+        override val preloadNext = "Preload Next Track"
+        override val preloadNextNote =
+            "Preload and buffer the next track in the background for instant switching and smooth transitions"
 
         override val sectionFade = "Fade in / out"
         override val fadeIn = "Fade in on start"
@@ -729,6 +739,11 @@ object CpStringsEn : CpStrings {
         override val shuffle = "Shuffle"
         override val like = "Like"
         override val unlike = "Remove like"
+        override val volume = "Volume"
+        override val mute = "Mute"
+        override val unmute = "Unmute"
+        override val quality = "Quality"
+        override val qualityGlobalNote = "Applies to every track loaded from now on; the current one is not interrupted"
         override fun sleepRemainingLabel(remaining: String) = "$remaining left"
         override val sleepEndsWithTrack = "Ends with this track"
 
@@ -750,6 +765,25 @@ object CpStringsEn : CpStrings {
         override val commentsLoadFailed = "Couldn't load comments"
         override val retry = "Retry"
         override val noComments = "No comments yet"
+
+        override val lyricOffset = "Lyric offset"
+        override val lyricOffsetTitle = "Lyric Timing Calibration"
+        override fun lyricOffsetSubtitle(ms: Long) = when {
+            ms > 0 -> "Lyrics advanced by ${ms / 1000f}s"
+            ms < 0 -> "Lyrics delayed by ${-ms / 1000f}s"
+            else -> "Not adjusted (Standard sync)"
+        }
+        override val lyricOffsetAdvance = "Advance (+)"
+        override val lyricOffsetDelay = "Delay (-)"
+        override val lyricOffsetReset = "Reset to 0"
+        override val lyricOffsetHint = "Click 'Advance' if lyrics lag behind audio; click 'Delay' if lyrics rush ahead. Automatically saved for this track."
+
+        override val miniMode = "Mini mode"
+        override val miniModeRestore = "Restore window"
+        override val miniModePin = "Always on top"
+        override val miniModeUnpin = "Unpin"
+
+        override val searchQueue = "Search queue…"
     }
 
     override val library: LibraryStrings = object : LibraryStrings {
@@ -800,6 +834,7 @@ object CpStringsEn : CpStrings {
         override fun selectedCount(count: Int) = "$count selected"
         override val exitSelection = "Exit selection"
         override val selectAll = "Select all"
+        override val deselectAll = "Deselect all"
 
         override val sortDefault = "Default order"
         override val sortByName = "By title"
@@ -857,6 +892,22 @@ object CpStringsEn : CpStrings {
             "No downloads yet. Tap Download in a track menu or on a playlist, and it'll show up here."
         override val openDownloads = "Open downloads"
 
+        override val searchLibrary = "Search library"
+        override val searchLibraryHint = "Search my playlists and local songs"
+        override val searchLibraryEmpty = "Type a keyword to search"
+        override val searchLibraryEmptyNote = "Searches your playlists plus downloaded / imported local songs"
+        override val searchPlaylistSection = "Playlists"
+        override val searchLocalSection = "Local music"
+        override fun searchOnlineHint(query: String) = "Search online for \"$query\""
+        override val noSearchResults = "No matches"
+        override val importPlaylist = "Import playlist"
+        override val importShort = "Import"
+
+        override val renamePlaylist = "Rename playlist"
+        override val renamePlaylistPlaceholder = "Enter a new playlist name"
+        override fun renamedPlaylist(name: String) = "Renamed to \"$name\""
+        override val renamePlaylistFailed = "Couldn't rename the playlist"
+
         override val play = "Play"
         override val shuffle = "Shuffle"
         override val add = "Add"
@@ -880,6 +931,7 @@ object CpStringsEn : CpStrings {
         override val shufflePlay = "Shuffle"
         override val liked = "Added to favorites"
         override val unliked = "Removed from favorites"
+        override val searchAlbum = "Search album tracks…"
     }
 
     override val playlistSheet: PlaylistSheetStrings = object : PlaylistSheetStrings {
@@ -912,6 +964,7 @@ object CpStringsEn : CpStrings {
         override fun created(name: String) = "Created \"$name\""
         override val cancel = "Cancel"
     }
+    override val playlistImport = PlaylistImportStringsEn
     override val account = AccountStringsEn
     override val downloads = DownloadStringsEn
     override val insights = InsightStringsEn

@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -18,8 +19,11 @@ import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import cp.player.app.ui.theme.localizedForLanguage
 
 /**
  * 文本溢出揭示策略。
@@ -134,13 +138,35 @@ fun CpText(
     ellipsisMode: CpEllipsisMode = CpEllipsisMode.Tail,
     emphasized: Boolean = false,
     marqueeEnabled: Boolean = true,
+    /**
+     * 行内对齐。**必须在这里而不是 `style.copy(textAlign = …)`**：`Text` 的 `textAlign`
+     * 是独立参数，写在 style 里在部分版本不参与测量（与 `fontWeight` 同一个坑）。
+     * null = 跟随 style（`Text` 的默认）。
+     */
+    textAlign: TextAlign? = null,
+    /** 最少行数（`Text` 的同名参数）；只在多行文本里用得到。 */
+    minLines: Int = 1,
+    /** 直接给字号（等价于 `style.copy(fontSize = …)`，但会参与测量）。null = 用 style 的。 */
+    fontSize: TextUnit? = null,
+    /** 外部布局回调；与组件内部的溢出检测**串联**，不覆盖。 */
+    onTextLayout: ((TextLayoutResult) -> Unit)? = null,
 ) {
-    // 字重参与测量（同一串字 Bold 比 Regular 宽），颜色不影响宽度 ⇒ 只合 fontWeight。
-    val resolvedStyle = if (fontWeight != null) style.copy(fontWeight = fontWeight) else style
+    // 字重 / 字号参与测量（同一串字 Bold 比 Regular 宽），颜色不影响宽度 ⇒ 只合这两项。
+    val merged = when {
+        fontWeight != null && fontSize != null -> style.copy(fontWeight = fontWeight, fontSize = fontSize)
+        fontWeight != null -> style.copy(fontWeight = fontWeight)
+        fontSize != null -> style.copy(fontSize = fontSize)
+        else -> style
+    }
+    // 含假名的文本自动换成日文字体 + `lang=ja`（见 JapaneseText.kt）。
+    val resolvedStyle = merged.localizedForLanguage(text)
 
     var overflow by remember(text, resolvedStyle, maxLines) { mutableStateOf(false) }
     var maxWidthPx by remember(text, resolvedStyle, maxLines) { mutableIntStateOf(0) }
 
+    // 外部回调走 rememberUpdatedState：不把它放进 remember 的 key，否则调用方每次重组
+    // 传进来的新 lambda 都会重建内部回调（并让下游的 Text 认为回调变了）。
+    val externalLayout = rememberUpdatedState(onTextLayout)
     val onLayout = remember(text, resolvedStyle, maxLines) {
         { layout: TextLayoutResult ->
             // ⚠️ 单向置位，见本组件 KDoc。宽度从 layoutInput 现取，不再额外测量一遍。
@@ -148,6 +174,8 @@ fun CpText(
                 maxWidthPx = layout.layoutInput.constraints.maxWidth
                 overflow = true
             }
+            val cb = externalLayout.value
+            if (cb != null) cb(layout)
         }
     }
 
@@ -194,6 +222,8 @@ fun CpText(
                 style = resolvedStyle,
                 color = color,
                 maxLines = maxLines,
+                minLines = minLines,
+                textAlign = textAlign,
                 overflow = TextOverflow.Ellipsis,
                 onTextLayout = onLayout,
             )
@@ -205,6 +235,8 @@ fun CpText(
             style = resolvedStyle,
             color = color,
             maxLines = maxLines,
+            minLines = minLines,
+            textAlign = textAlign,
             overflow = TextOverflow.Ellipsis,
             onTextLayout = onLayout,
         )

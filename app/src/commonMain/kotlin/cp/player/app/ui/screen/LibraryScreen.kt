@@ -1,5 +1,6 @@
 package cp.player.app.ui.screen
 
+import cp.player.app.ui.component.CpText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -33,7 +34,9 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
@@ -58,7 +61,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
@@ -92,6 +94,7 @@ import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.app.ui.model.DownloadsUiState
 import cp.player.app.ui.model.LibraryScreenModel
 import cp.player.app.ui.model.LibraryUiState
+import cp.player.app.ui.wall.PosterWallIcon
 import cp.player.core.music.PlaylistSummary
 import cp.player.core.provider.ProviderCapability
 import kotlinx.coroutines.launch
@@ -144,6 +147,9 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
     // 现在收敛到全应用统一的 [CpConfirmHost] —— 与歌单详情页、侧栏、用户主页同一份文案。
     val confirm = cp.player.app.ui.component.rememberConfirmState()
     var showCreateDialog by remember { mutableStateOf(false) }
+    // 重命名目标（只有 owner 能看到入口）。与「删除 / 取消收藏」共用同一个选项弹层，
+    // 但重命名不是破坏性操作，走独立的输入框而不是 CpConfirmHost。
+    var renameTarget by remember { mutableStateOf<PlaylistSummary?>(null) }
     val navigator = LocalNavigator.currentOrThrow
     val downloadsModel = remember { DownloadsScreenModel() }
     val downloadsState by downloadsModel.state.collectAsState()
@@ -204,6 +210,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
                     onDownloads = { navigator.push(DownloadsScreen()) },
                     onLocal = { navigator.push(LocalLibraryScreen()) },
                     onCloud = { navigator.push(CloudDriveScreen()) },
+                    onAlbumWall = { navigator.push(AlbumWallScreen()) },
                     onStorage = { navigator.push(StorageSettingsScreen()) },
                     onAppearance = { navigator.push(AppearanceSettingsScreen()) },
                     onPlayback = { navigator.push(PlaybackSettingsScreen()) },
@@ -225,6 +232,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
                         model.selectTab(0)
                         scrollToLibrary()
                     },
+                    onGoLocal = { model.selectTab(1) },
                 )
             }
 
@@ -237,7 +245,25 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
                             else -> s.library.libraryOffline
                         },
                         action = {
-                            // 放在标题行右侧而不是分段控件尾部：320dp 窄屏下三个分段 + 按钮会横向溢出。
+                            // 三个入口放在标题行右侧而不是分段控件尾部：320dp 窄屏下
+                            // 三个分段 + 三个按钮会横向溢出。
+                            androidx.compose.material3.IconButton(
+                                onClick = { navigator.push(LibrarySearchScreen()) },
+                                modifier = Modifier.size(40.dp),
+                            ) {
+                                Icon(Icons.Filled.Search, s.library.searchLibrary)
+                            }
+                            // 导入用带文字的按钮而不是纯图标：上传图标不如图标语义直观，
+                            // 而「导入外部歌单」六个字在 320dp 上放不下，用短标签。
+                            TextButton(onClick = { navigator.push(ImportPlaylistScreen()) }) {
+                                Icon(
+                                    Icons.Filled.FileUpload,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(s.library.importShort)
+                            }
                             FilledTonalIconButton(
                                 onClick = { showCreateDialog = true },
                                 colors = IconButtonDefaults.filledTonalIconButtonColors(
@@ -268,6 +294,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
                     isOwner = model::isOwner,
                     onPlaylistClick = { navigator.push(PlaylistDetailScreen(it)) },
                     onPlaylistOptions = { selectedPlaylist = it },
+                    onGoLocal = { model.selectTab(1) },
                 )
                 else -> item {
                     LocalLibrarySection(
@@ -291,6 +318,11 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
             onAddToQueue = { model.play(playlist, addOnly = true) },
             onShare = { shareText(playlistShareText(playlist.id, playlist.name)) },
             onDelete = { askDeleteOrUnsubscribe(playlist, model, confirm, s) },
+            onRename = if (model.isOwner(playlist)) {
+                { renameTarget = playlist }
+            } else {
+                null
+            },
             coverUrl = playlist.coverUrl,
             // 媒体库中的歌单均为已收藏/自建；非 owner 时复用同一个确认弹窗（文案按 owner 区分）
             isFavorite = true,
@@ -299,6 +331,18 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
     }
 
     cp.player.app.ui.component.CpConfirmHost(confirm)
+
+    renameTarget?.let { target ->
+        cp.player.app.ui.component.RenamePlaylistDialog(
+            playlistId = target.id,
+            currentName = target.name,
+            onDismiss = { renameTarget = null },
+            onRenamed = {
+                renameTarget = null
+                model.refresh()
+            },
+        )
+    }
 
     if (showCreateDialog) {
         cp.player.app.ui.component.CreatePlaylistDialog(
@@ -377,6 +421,7 @@ private fun LibraryDashboard(
     onDownloads: () -> Unit,
     onLocal: () -> Unit,
     onCloud: () -> Unit,
+    onAlbumWall: () -> Unit = {},
     onStorage: () -> Unit,
     onAppearance: () -> Unit,
     onPlayback: () -> Unit,
@@ -450,6 +495,7 @@ private fun LibraryDashboard(
             ) {
                 LibraryQuickEntry(s.downloads.tabLocalLibrary, Icons.Filled.FolderOpen, onLocal, Modifier.weight(1f))
                 LibraryQuickEntry(s.library.recentPlays, Icons.Filled.History, onRecentPlays, Modifier.weight(1f))
+                LibraryQuickEntry(s.wall.screenTitle, PosterWallIcon, onAlbumWall, Modifier.weight(1f))
                 if (supportsCloud) {
                     LibraryQuickEntry(s.library.cloudDrive, Icons.Filled.CloudQueue, onCloud, Modifier.weight(1f))
                 }
@@ -498,7 +544,11 @@ private fun LibraryDashboard(
         // ── 行 4：页脚胶囊行（低权重工具入口，仅 Expanded）──
         // 「存储管理」已回到行 3；窄屏连「关于」也一并移除（关于页从设置可达）。
         if (expanded) {
-            Box(Modifier.fillMaxWidth().padding(top = 4.dp), contentAlignment = Alignment.Center) {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
+            ) {
+                BentoPill(s.wall.screenTitle, PosterWallIcon, onAlbumWall)
                 BentoPill(s.library.aboutCpPlayer, Icons.Filled.Info, onAbout)
             }
         }
@@ -515,23 +565,21 @@ private fun LibraryGreeting(
 ) {
     Column(modifier) {
         if (showTitle) {
-            Text(
+            CpText(
                 title,
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
         if (showTitle) {
             Spacer(Modifier.height(6.dp))
         }
-        Text(
+        CpText(
             subtitle,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -654,6 +702,7 @@ private fun LazyListScope.playlistsSection(
     isOwner: (PlaylistSummary) -> Boolean,
     onPlaylistClick: (PlaylistSummary) -> Unit,
     onPlaylistOptions: (PlaylistSummary) -> Unit,
+    onGoLocal: () -> Unit,
 ) {
     when {
         state.loading -> item {
@@ -683,7 +732,16 @@ private fun LazyListScope.playlistsSection(
         }
         state.playlists.isEmpty() -> item {
             StateSurface {
-                ContentState(title = s.library.noPlaylists, message = s.library.noPlaylistsNote)
+                if (AppModel.activeProvider() == null) {
+                    ContentState(
+                        title = "本地音乐模式",
+                        message = "当前未导入在线音源插件。您可以在「本地与离线」中扫描或管理本地设备中的音乐文件。",
+                        actionLabel = "前往本地与离线",
+                        onAction = onGoLocal,
+                    )
+                } else {
+                    ContentState(title = s.library.noPlaylists, message = s.library.noPlaylistsNote)
+                }
             }
         }
         else -> items(state.playlists) { playlist ->
@@ -723,6 +781,7 @@ private fun PlaylistQuickGrid(
     error: String?,
     onPlaylistClick: (PlaylistSummary) -> Unit,
     onSeeAll: () -> Unit,
+    onGoLocal: () -> Unit,
 ) {
     val s = cpStrings()
     Column(Modifier.fillMaxWidth()) {
@@ -748,7 +807,16 @@ private fun PlaylistQuickGrid(
                 ContentState(title = s.library.libraryLoadFailed, message = error, error = true)
             }
             playlists.isEmpty() -> StateSurface {
-                ContentState(title = s.library.noPlaylists, message = s.library.noPlaylistsNote)
+                if (AppModel.activeProvider() == null) {
+                    ContentState(
+                        title = "本地音乐模式",
+                        message = "未接入音源插件，可切换到本地曲库浏览或扫描本地设备中的歌曲",
+                        actionLabel = "管理本地曲库",
+                        onAction = onGoLocal,
+                    )
+                } else {
+                    ContentState(title = s.library.noPlaylists, message = s.library.noPlaylistsNote)
+                }
             }
             else -> BoxWithConstraints(Modifier.fillMaxWidth()) {
                 // 窄屏固定 2 列（单列封面浪费、3 列在 360dp 手机上封面只有 ~100dp）；

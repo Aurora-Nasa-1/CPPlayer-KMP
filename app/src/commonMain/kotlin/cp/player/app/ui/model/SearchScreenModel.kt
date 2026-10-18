@@ -6,6 +6,12 @@ import cp.player.app.AppModel
 import cp.player.core.BackendResult
 import cp.player.app.repository.SearchType
 import cp.player.core.music.SearchResult
+import cp.player.core.music.TrackSummary
+import cp.player.core.music.AlbumSummary
+import cp.player.core.music.ArtistSummary
+import cp.player.core.media.MediaType
+import cp.player.core.local.LocalLibraryAggregator
+import cp.player.core.local.LocalGridSort
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -106,8 +112,13 @@ class SearchScreenModel(private val initialQuery: String = "") : ScreenModel {
         }
         suggestionJob = screenModelScope.launch {
             val requestedQuery = query.trim()
-            // 解析与防抖走共享实现，与桌面标题栏的全局搜索框同一份 —— 见 SearchSuggestions.kt。
-            val suggestions = loadSearchSuggestions(requestedQuery).orEmpty()
+            val suggestions = if (AppModel.activeProvider() == null) {
+                val localItems = AppModel.localMedia.items().value
+                    .filter { it.mediaType == MediaType.AUDIO }
+                LocalLibraryAggregator.search(localItems, requestedQuery).map { it.title }.distinct().take(10)
+            } else {
+                loadSearchSuggestions(requestedQuery).orEmpty()
+            }
             // 归属校验：`suggestionJob?.cancel()` 是协作式的，结果回来时关键词可能又变了。
             if (_state.value.query.trim() != requestedQuery) return@launch
             _state.value = _state.value.copy(suggestions = suggestions)
@@ -146,6 +157,48 @@ class SearchScreenModel(private val initialQuery: String = "") : ScreenModel {
         )
         screenModelScope.launch {
             _state.value = _state.value.copy(loading = true, error = null)
+            if (AppModel.activeProvider() == null) {
+                val localItems = AppModel.localMedia.items().value
+                    .filter { it.mediaType == MediaType.AUDIO }
+                val matchedSongs = LocalLibraryAggregator.search(localItems, finalKeyword).map { item ->
+                    TrackSummary(
+                        id = "local://audio/${item.path}",
+                        name = item.title,
+                        artist = item.artist ?: "未知歌手",
+                        album = item.album,
+                        coverUrl = item.coverUri,
+                        durationMs = item.durationMs,
+                    )
+                }
+                val matchedAlbums = LocalLibraryAggregator.albums(localItems, LocalGridSort.NAME, finalKeyword)
+                    .map { album ->
+                        AlbumSummary(
+                            id = album.name.hashCode().toLong(),
+                            name = album.name,
+                            artistName = album.artist,
+                            coverUrl = album.coverUri,
+                            trackCount = album.songCount,
+                        )
+                    }
+                val matchedArtists = LocalLibraryAggregator.artists(localItems, LocalGridSort.NAME, finalKeyword)
+                    .map { artist ->
+                        ArtistSummary(
+                            id = artist.name.hashCode().toLong(),
+                            name = artist.name,
+                            avatarUrl = artist.coverUri,
+                        )
+                    }
+                _state.value = _state.value.copy(
+                    result = SearchResult(
+                        songs = matchedSongs,
+                        playlists = emptyList(),
+                        artists = matchedArtists,
+                        albums = matchedAlbums,
+                    ),
+                    loading = false,
+                )
+                return@launch
+            }
             val response = runCatching { AppModel.musicRepository.search(finalKeyword, type) }
                 .getOrElse { BackendResult.Error(it.message ?: "搜索失败") }
             _state.value = when (response) {

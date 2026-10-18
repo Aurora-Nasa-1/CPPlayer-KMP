@@ -171,13 +171,13 @@ internal fun OnboardingContent(
             .padding(horizontal = if (expanded) 32.dp else 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // 顶部：跳过（重看时不需要）。没有音源时不许跳过 —— 音源是强制前置条件。
+        // 顶部：跳过（重看时不需要）。支持纯本地模式跳过。
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
             horizontalArrangement = Arrangement.End,
         ) {
             if (!replay) {
-                TextButton(onClick = onFinish, enabled = hasProvider) { Text("跳过") }
+                TextButton(onClick = onFinish) { Text("跳过") }
             }
         }
 
@@ -186,8 +186,7 @@ internal fun OnboardingContent(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                // 鼠标滚轮翻页：引导页在桌面端此前只能用底部圆点跳，
-                // 而滚轮落在页面上完全没反应 —— 用户会以为引导卡住了。
+                // 鼠标滚轮翻页
                 .desktopPagerMouseControl(
                     onScrollLeft = {
                         val target = (pagerState.currentPage - 1).coerceAtLeast(0)
@@ -197,11 +196,7 @@ internal fun OnboardingContent(
                     },
                     onScrollRight = {
                         val target = (pagerState.currentPage + 1).coerceAtMost(pages.lastIndex)
-                        // 强制约束同样要拦住滚轮：音源页没导入音源时，不许向前翻
-                        //（否则滚到最后一页点「开始使用」就能空着音源进主界面）。
-                        val blocked = !hasProvider &&
-                            pages[pagerState.currentPage] == OnboardingPages.Provider
-                        if (target != pagerState.currentPage && !blocked) {
+                        if (target != pagerState.currentPage) {
                             coroutineScope.launch { pagerState.animateScrollToPage(target) }
                         }
                     },
@@ -263,8 +258,6 @@ internal fun OnboardingContent(
                         coroutineScope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
                     }
                 },
-                // 首页的「跳过」同样受音源强制约束；重看模式的「返回」不受影响。
-                enabled = !(pagerState.currentPage == 0 && !replay) || hasProvider,
                 modifier = Modifier.weight(1f),
             ) {
                 Text(if (pagerState.currentPage == 0 && replay) "返回" else if (pagerState.currentPage == 0) "跳过" else "上一步")
@@ -277,8 +270,6 @@ internal fun OnboardingContent(
                         coroutineScope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
                     }
                 },
-                // 音源页是强制步骤：没导入至少一个音源前「下一步」不可用。
-                enabled = !onProviderPage || hasProvider,
                 modifier = Modifier.weight(1f),
             ) {
                 Text(if (pagerState.currentPage == lastIndex) {
@@ -413,12 +404,30 @@ private fun ProviderOnboardingPage(
             }
         } else {
             Spacer(Modifier.height(20.dp))
-            Text(
-                "还没有可用音源 —— 至少导入一个后才能继续。",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-                textAlign = TextAlign.Center,
-            )
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        "未导入音源时将以本地音乐模式运行",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "您可以直接管理与播放本机音频，随时可在设置中导入音源模块解锁在线曲库。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
         }
 
         Spacer(Modifier.height(8.dp))
@@ -440,12 +449,12 @@ private enum class OnboardingPages(
         body = "本地优先的播放器：歌单、红心、下载都在本机，音乐源只是「从哪台服务器拿歌」。" +
             "装几个音源都行，它们之间互不干扰。",
     ),
-    // 正文由 ProviderOnboardingPage 单独渲染（本页是强制步骤，版式不同）。
+    // 正文由 ProviderOnboardingPage 单独渲染。
     Provider(
         icon = Icons.Filled.Download,
         title = "导入一个音乐源",
-        body = "CPPlayer 通过可插拔的 Provider 模块连接音乐服务。" +
-            "首次使用必须先导入一个音源模块（.zip）才能进入主界面；" +
+        body = "CPPlayer 通过可插拔的 Provider 模块连接在线音乐服务。" +
+            "您可以导入音源模块（.zip）体验在线曲库，也可以跳过此步直接使用纯本地播放；" +
             "之后随时可以在「音源管理」里增删、切换。",
     ),
     Account(

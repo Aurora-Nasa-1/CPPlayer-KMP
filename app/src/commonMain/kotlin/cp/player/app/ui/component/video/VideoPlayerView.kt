@@ -1,5 +1,6 @@
 package cp.player.app.ui.component.video
 
+import cp.player.app.ui.component.CpText
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -64,7 +65,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cp.player.app.ui.theme.CpMotion
@@ -393,21 +393,19 @@ fun VideoPlayerView(
                             .weight(1f)
                             .padding(horizontal = 8.dp),
                     ) {
-                        Text(
+                        CpText(
                             text = title ?: state.currentMedia?.title ?: "视频播放",
                             color = Color.White,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                         state.currentMedia?.artist?.takeIf { it.isNotBlank() }?.let { artist ->
-                            Text(
+                            CpText(
                                 text = artist,
                                 color = Color.White.copy(alpha = 0.75f),
                                 fontSize = 12.sp,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
@@ -476,13 +474,12 @@ fun VideoPlayerView(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            Text(
+                            CpText(
                                 text = "正在播放: ${state.currentMedia?.title ?: "视频"}",
                                 color = Color.White,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
                             )
                             Text(
                                 text = "已解析画质: ${state.currentQuality?.label ?: "标准"} • Windows 建议使用系统播放器全硬解",

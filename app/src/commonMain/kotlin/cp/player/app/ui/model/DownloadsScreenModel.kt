@@ -341,6 +341,13 @@ class DownloadsScreenModel : ScreenModel {
         playQueue(playable, startIndex.coerceIn(0, playable.lastIndex))
     }
 
+    /** 随机播放当前列表中的全部音频。 */
+    fun shuffleAll(items: List<LocalMediaItem>) {
+        val playable = items.filter { it.mediaType == MediaType.AUDIO }
+        if (playable.isEmpty()) return
+        playQueue(playable.shuffled(), 0)
+    }
+
     private fun playQueue(items: List<LocalMediaItem>, startIndex: Int) {
         val mediaIds = items.map { "local://audio/${it.path}" }
         screenModelScope.launch {

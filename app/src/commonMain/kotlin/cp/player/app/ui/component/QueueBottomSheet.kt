@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.LocationSearching
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -58,7 +59,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.core.music.CPMediaId
@@ -92,11 +92,25 @@ fun QueueBottomSheet(
     // 列表型弹层跳过半展开档位。
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    var showSaveDialog by remember { mutableStateOf(false) }
+    var showSaveSheet by remember { mutableStateOf(false) }
     // 「清空队列」的二次确认：一键即生效的话，误触在底部工具行里太容易发生，
     // 而重建一份刚才的队列没有任何后悔药。
     val confirm = rememberConfirmState()
     val s = cpStrings()
+
+    var searchQuery by remember { mutableStateOf("") }
+    var isSearchActive by remember { mutableStateOf(false) }
+
+    // 保留原始下标，确保点击播放或移除时操作的是正确的队列项
+    val indexedQueue = remember(queue) { queue.mapIndexed { index, item -> index to item } }
+    val filteredQueue = remember(indexedQueue, searchQuery) {
+        val q = searchQuery.trim()
+        if (q.isEmpty()) indexedQueue
+        else indexedQueue.filter { (_, item) ->
+            item.title.contains(q, ignoreCase = true) ||
+            item.artist.contains(q, ignoreCase = true)
+        }
+    }
 
     LegacyModalBottomSheet(onDismissRequest = onClose, skipPartiallyExpanded = true) {
         Box(Modifier.fillMaxWidth()) {
@@ -107,7 +121,7 @@ fun QueueBottomSheet(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column {
+                    Column(Modifier.weight(1f)) {
                         Text(
                             // ⚠️ 此前这里是硬编码的英文 "Next up" —— 中文界面也显示英文，
                             // 属于漏译（不是有意的语言自称，那只适用于语言名）。
@@ -117,10 +131,80 @@ fun QueueBottomSheet(
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
-                            s.player.queueCount(queue.size),
+                            if (searchQuery.isNotBlank()) "${filteredQueue.size} / ${queue.size}" else s.player.queueCount(queue.size),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
+                    if (queue.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                isSearchActive = !isSearchActive
+                                if (!isSearchActive) searchQuery = ""
+                            },
+                        ) {
+                            Icon(
+                                imageVector = if (isSearchActive) Icons.Filled.Close else androidx.compose.material.icons.Icons.Filled.Search,
+                                contentDescription = s.player.searchQueue,
+                                tint = if (isSearchActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+
+                if (isSearchActive) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = androidx.compose.material.icons.Icons.Filled.Search,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            androidx.compose.foundation.text.BasicTextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                modifier = Modifier.weight(1f),
+                                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                ),
+                                singleLine = true,
+                                cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                                decorationBox = { innerTextField ->
+                                    if (searchQuery.isEmpty()) {
+                                        Text(
+                                            text = s.player.searchQueue,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        )
+                                    }
+                                    innerTextField()
+                                },
+                            )
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(
+                                    onClick = { searchQuery = "" },
+                                    modifier = Modifier.size(24.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Close,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -131,24 +215,24 @@ fun QueueBottomSheet(
                     state = listState,
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    itemsIndexed(queue, key = { _, it -> it.mediaId }) { i, item ->
-                        val isCurrent = i == currentIndex
+                    itemsIndexed(filteredQueue, key = { _, (_, it) -> it.mediaId }) { _, (originalIndex, item) ->
+                        val isCurrent = originalIndex == currentIndex
                         QueueRow(
                             item = item,
                             isCurrent = isCurrent,
-                            index = i,
+                            index = originalIndex,
                             queueSize = queue.size,
-                            onPlay = { onPlayAt(i) },
-                            onRemove = { onRemove(i) },
+                            onPlay = { onPlayAt(originalIndex) },
+                            onRemove = { onRemove(originalIndex) },
                             onMove = onMove,
                             // 桌面端右键菜单：动作与行内 More 菜单一致并补一个分享入口。
                             contextMenu = buildList {
-                                add(CpContextMenuItem(s.player.play, Icons.Filled.PlayArrow, onClick = { onPlayAt(i) }))
+                                add(CpContextMenuItem(s.player.play, Icons.Filled.PlayArrow, onClick = { onPlayAt(originalIndex) }))
                                 add(
                                     CpContextMenuItem(
                                         s.player.removeFromQueue,
                                         Icons.Filled.Close,
-                                        onClick = { onRemove(i) },
+                                        onClick = { onRemove(originalIndex) },
                                         danger = true,
                                     ),
                                 )
@@ -228,7 +312,7 @@ fun QueueBottomSheet(
                                 tint = MaterialTheme.colorScheme.onSurface,
                             )
                         }
-                        IconButton(onClick = { showSaveDialog = true }) {
+                        IconButton(onClick = { showSaveSheet = true }) {
                             Icon(
                                 Icons.AutoMirrored.Filled.PlaylistAdd,
                                 contentDescription = s.player.saveAsPlaylist,
@@ -259,27 +343,15 @@ fun QueueBottomSheet(
         }
     }
 
-    if (showSaveDialog) {
-        CreatePlaylistDialog(
-            onDismiss = { showSaveDialog = false },
-            onCreated = { newId ->
-                showSaveDialog = false
-                if (newId != null) {
-                    scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                        val ids = queue.mapNotNull {
-                            runCatching { cp.player.core.music.CPMediaId.parse(it.mediaId).resourceId }.getOrNull()
-                        }.filter { it.isNotBlank() }
-                        val ok = ids.isNotEmpty() && runCatching {
-                            cp.player.app.AppModel.musicRepository.addTracksToPlaylist(newId, ids)
-                        }.getOrDefault(false)
-                        if (ok) {
-                            cp.player.app.ui.util.UiEvents.notify(s.player.queueSaved)
-                        } else {
-                            cp.player.app.ui.util.UiEvents.notify(s.player.queueSaveFailed)
-                        }
-                    }
-                }
-            },
+    // 「另存为歌单」：新建歌单与「追加到已有歌单」是同一个动作的两种落点，
+    // 所以直接复用 AddToPlaylistSheet（顶部输入框 = 新建，下面列表 = 追加），
+    // 而不是先弹一个只能新建的对话框、再把「加到已有歌单」藏到别处。
+    // 队列里的本地条目会在该弹层里被过滤（本地路径不是音源侧的歌曲 id）。
+    if (showSaveSheet) {
+        AddToPlaylistSheet(
+            trackIds = queue.map { it.mediaId },
+            onDismiss = { showSaveSheet = false },
+            title = s.player.saveAsPlaylist,
         )
     }
 
@@ -420,20 +492,18 @@ private fun QueueRow(
                 }
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(
+                    CpText(
                         item.title,
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
                         color = titleColor,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
-                    Text(
+                    CpText(
                         item.artist,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }

@@ -88,6 +88,9 @@ interface CpStrings {
     val album: AlbumStrings
     val playlistSheet: PlaylistSheetStrings
 
+    /** 外部歌单导入（链接 / 文本解析 → 新建或追加歌单）。 */
+    val playlistImport: PlaylistImportStrings
+
     /** 账号与登录、用户/歌手主页、云盘。 */
     val account: AccountStrings
 
@@ -193,6 +196,9 @@ interface CommonStrings {
     val refresh: String
     val unsavedBlocked: String
     val unsavedHint: String
+    val back: String
+    val close: String
+    val search: String
 }
 
 // ---------------------------------------------------------------------------
@@ -400,6 +406,8 @@ interface PlaybackStrings {
     val lyricsProviderOnly: String
     val lyricsAmllFirst: String
     val lyricsAmllOnly: String
+    val showRubyLyrics: String get() = "Japanese Furigana"
+    val showRubyLyricsSubtitle: String get() = "Show furigana above kanji in Japanese lyrics"
 
     val sectionSleepTimer: String
     val sleepTimer: String
@@ -410,6 +418,10 @@ interface PlaybackStrings {
     val sectionLastPlayback: String
     val keepLastPlayback: String
     val keepLastPlaybackNote: String
+
+    val sectionPreload: String
+    val preloadNext: String
+    val preloadNextNote: String
 
     // ---- 淡入淡出 ----
     //
@@ -849,6 +861,26 @@ interface PlayerStrings {
     val shuffle: String
     val like: String
     val unlike: String
+
+    /**
+     * 音量控件（桌面迷你播放器的滑杆 / 静音按钮）。
+     *
+     * 与 [cp.player.app.i18n.PlayerStrings.quality] 一样属于「控件自身的名字」，
+     * 不是某首歌的属性 —— 所以放在 `player` 而不是 `playback`（后者是设置页的分组）。
+     */
+    val volume: String
+
+    /** 音量弹层里那颗静音键（点一下把音量归零）。 */
+    val mute: String
+
+    /** 已静音时那颗键的语义：点一下恢复静音前的音量。 */
+    val unmute: String
+
+    /** 音质档位选择器（迷你播放器的音质 chip、「更多」弹层的音质卡片）。 */
+    val quality: String
+
+    /** 音质卡片的说明：改的是全局设置、对后续加载的曲目生效。 */
+    val qualityGlobalNote: String
     fun sleepRemainingLabel(remaining: String): String
     val sleepEndsWithTrack: String
 
@@ -872,6 +904,24 @@ interface PlayerStrings {
     val commentsLoadFailed: String
     val retry: String
     val noComments: String
+
+    // —— 歌词时间轴微调 ——
+    val lyricOffset: String
+    val lyricOffsetTitle: String
+    fun lyricOffsetSubtitle(ms: Long): String
+    val lyricOffsetAdvance: String
+    val lyricOffsetDelay: String
+    val lyricOffsetReset: String
+    val lyricOffsetHint: String
+
+    // —— 桌面迷你模式 ——
+    val miniMode: String
+    val miniModeRestore: String
+    val miniModePin: String
+    val miniModeUnpin: String
+
+    // —— 队列搜索 ——
+    val searchQueue: String
 }
 
 /**
@@ -939,6 +989,7 @@ interface LibraryStrings {
     fun selectedCount(count: Int): String
     val exitSelection: String
     val selectAll: String
+    val deselectAll: String
 
     // —— 排序 ——
     val sortDefault: String
@@ -997,6 +1048,26 @@ interface LibraryStrings {
     val noDownloads: String
     val openDownloads: String
 
+    // —— 曲库检索 ——
+    val searchLibrary: String
+    val searchLibraryHint: String
+    val searchLibraryEmpty: String
+    val searchLibraryEmptyNote: String
+    val searchPlaylistSection: String
+    val searchLocalSection: String
+    fun searchOnlineHint(query: String): String
+    val noSearchResults: String
+    val importPlaylist: String
+
+    /** 标题行按钮上的短标签（「导入外部歌单」在窄屏放不下）。 */
+    val importShort: String
+
+    // —— 歌单管理 ——
+    val renamePlaylist: String
+    val renamePlaylistPlaceholder: String
+    fun renamedPlaylist(name: String): String
+    val renamePlaylistFailed: String
+
     // —— 歌单卡片 / 歌曲行 ——
     val play: String
     val shuffle: String
@@ -1026,6 +1097,7 @@ interface AlbumStrings {
     val shufflePlay: String
     val liked: String
     val unliked: String
+    val searchAlbum: String
 }
 
 // ---------------------------------------------------------------------------

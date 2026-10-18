@@ -52,6 +52,8 @@ import kotlinx.coroutines.withContext
 fun AddToPlaylistSheet(
     trackIds: List<String>,
     onDismiss: () -> Unit,
+    /** 覆盖标题（队列「另存为歌单」用它区分「添加到歌单」）。 */
+    title: String? = null,
 ) {
     val s = cpStrings()
     val scope = rememberCoroutineScope()
@@ -66,14 +68,24 @@ fun AddToPlaylistSheet(
         }
     }
 
-    fun extractRawId(fullId: String): String {
-        return runCatching { cp.player.core.music.CPMediaId.parse(fullId).resourceId }.getOrDefault(fullId)
+    fun extractRawId(fullId: String): String? {
+        // 只接受音源侧的歌曲 id：队列里可能混着本地文件（`local://audio/<path>`），
+        // 把路径塞进「加入歌单」请求只会让整批请求失败，还会把数量报成「成功」。
+        return runCatching { cp.player.core.music.CPMediaId.parse(fullId) }
+            .getOrNull()
+            ?.takeIf { it.resourceType == "song" }
+            ?.resourceId
+            ?.takeIf { it.isNotBlank() }
     }
 
     fun addTo(playlistId: Long) {
         if (busy) return
+        val ids = trackIds.mapNotNull(::extractRawId)
+        if (ids.isEmpty()) {
+            UiEvents.notify(s.playlistSheet.addToPlaylistFailed)
+            return
+        }
         busy = true
-        val ids = trackIds.map(::extractRawId)
         scope.launch(Dispatchers.IO) {
             val ok = runCatching {
                 AppModel.musicRepository.addTracksToPlaylist(playlistId, ids)
@@ -115,7 +127,7 @@ fun AddToPlaylistSheet(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
-                s.playlistSheet.addToPlaylistTitle,
+                title ?: s.playlistSheet.addToPlaylistTitle,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
             )

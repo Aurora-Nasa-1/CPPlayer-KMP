@@ -25,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import cp.player.app.ui.component.CpText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -105,6 +106,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
         val state by model.state.collectAsState()
         val scope = rememberCoroutineScope()
         val provider = AppModel.activeProviderId()
+        val toMediaId = { id: String -> if (id.contains("://")) id else "$provider://song/$id" }
         val navigator = LocalNavigator.currentOrThrow
 
         // 歌单搜索结果那一行右侧的「更多」需要一个动作来源：本页没有自己的
@@ -315,9 +317,9 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                             color = if (index < 3) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                         Column(Modifier.weight(1f)) {
-                                            Text(hot.keyword)
+                                            CpText(hot.keyword, maxLines = 1)
                                             if (hot.description.isNotBlank()) {
-                                                Text(hot.description, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                                                CpText(hot.description, style = MaterialTheme.typography.bodySmall, maxLines = 1)
                                             }
                                         }
                                         Icon(Icons.AutoMirrored.Filled.TrendingUp, null, tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
@@ -364,7 +366,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                             ) {
                                 item {
                                     SectionHeader(
-                                        title = "搜索结果",
+                                        title = if (AppModel.activeProvider() == null) "本地曲库搜索结果" else "搜索结果",
                                         supportingText = "$count 项",
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
                                     )
@@ -378,8 +380,9 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                             modifier = Modifier.animateItem(),
                                             onClick = {
                                                 CoverFlight.play(track.id, track.coverUrl)
-                                                AppModel.playTrackClicked("$provider://song/${track.id}") {
-                                                    AppModel.playback.playQueue(result.songs.map { "$provider://song/${it.id}" }, index)
+                                                val mediaId = toMediaId(track.id)
+                                                AppModel.playTrackClicked(mediaId) {
+                                                    AppModel.playback.playQueue(result.songs.map { toMediaId(it.id) }, index)
                                                 }
                                             },
                                             onOptionsClick = { selectedTrack = track },
@@ -388,7 +391,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                                 SongMenuActions(
                                                     onPlay = {
                                                         CoverFlight.play(track.id, track.coverUrl)
-                                                        scope.launch { AppModel.playback.playQueue(result.songs.map { "$provider://song/${it.id}" }, index) }
+                                                        scope.launch { AppModel.playback.playQueue(result.songs.map { toMediaId(it.id) }, index) }
                                                     },
                                                     onPlayMv = track.mvId?.takeIf { it > 0 }?.let { mvId ->
                                                         { navigator.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV")) }
@@ -397,16 +400,21 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                                     onToggleFavorite = {
                                                         scope.launch {
                                                             val target = track.id !in likedIds
-                                                            AppModel.playback.toggleFavoriteFor("$provider://song/${track.id}")
+                                                            val mediaId = toMediaId(track.id)
+                                                            if (mediaId.startsWith("local://")) {
+                                                                AppModel.toggleFavoriteOf(mediaId)
+                                                            } else {
+                                                                AppModel.playback.toggleFavoriteFor(mediaId)
+                                                            }
                                                             cp.player.app.ui.util.UiEvents.notify(if (target) "已收藏" else "已取消收藏")
                                                         }
                                                     },
                                                     onAddToQueue = {
-                                                        scope.launch { AppModel.playback.addToQueue("$provider://song/${track.id}") }
+                                                        scope.launch { AppModel.playback.addToQueue(toMediaId(track.id)) }
                                                         cp.player.app.ui.util.UiEvents.notify("已加入播放队列")
                                                     },
                                                     onPlayNext = {
-                                                        scope.launch { AppModel.playback.addNextToQueue("$provider://song/${track.id}") }
+                                                        scope.launch { AppModel.playback.addNextToQueue(toMediaId(track.id)) }
                                                         cp.player.app.ui.util.UiEvents.notify("将在下一首播放")
                                                     },
                                                     isDownloaded = AppModel.isDownloaded(track.id),

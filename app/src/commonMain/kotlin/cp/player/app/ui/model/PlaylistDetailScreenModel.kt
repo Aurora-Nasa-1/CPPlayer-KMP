@@ -322,9 +322,27 @@ class PlaylistDetailScreenModel : ScreenModel {
         }
     }
 
-    /** 全选当前已加载曲目。 */
+    /** 全选当前已加载曲目。若已全选，再次调用则取消全选（清空已选）。 */
     fun selectAll() {
-        _state.update { it.copy(selectionMode = true, selectedIds = it.tracks.mapTo(LinkedHashSet()) { t -> t.id }) }
+        toggleSelectAll()
+    }
+
+    /** 取消全选（清空已选，保留多选模式）。 */
+    fun deselectAll() {
+        _state.update { it.copy(selectedIds = emptySet()) }
+    }
+
+    /**
+     * 切换全选 / 取消全选：
+     * 若已全选当前所有已加载曲目，则清空已选（取消全选）；否则全选所有曲目。
+     */
+    fun toggleSelectAll() {
+        _state.update { s ->
+            val allIds = s.tracks.mapTo(LinkedHashSet()) { it.id }
+            val isAllSelected = allIds.isNotEmpty() && s.selectedIds.containsAll(allIds)
+            val next = if (isAllSelected) emptySet() else allIds
+            s.copy(selectionMode = true, selectedIds = next)
+        }
     }
 
     fun exitSelection() {

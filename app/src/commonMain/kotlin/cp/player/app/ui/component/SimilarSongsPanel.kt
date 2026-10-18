@@ -43,7 +43,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
@@ -300,19 +299,17 @@ fun SimilarSongsPanel(
                                 Spacer(Modifier.width(12.dp))
 
                                 Column(Modifier.weight(1f)) {
-                                    Text(
+                                    CpText(
                                         item.name,
                                         maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = if (playingSeed) FontWeight.Bold else FontWeight.Medium,
                                         color = if (playingSeed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                     )
                                     Spacer(Modifier.height(2.dp))
-                                    Text(
+                                    CpText(
                                         item.artist,
                                         maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -382,13 +379,12 @@ private fun PanelMessage(
         Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
         if (!message.isNullOrBlank()) {
             Spacer(Modifier.height(4.dp))
-            Text(
+            CpText(
                 message,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
                 maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
             )
         }
         content()

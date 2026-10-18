@@ -28,7 +28,6 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -43,7 +42,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import cp.player.app.ui.theme.CpMotion
@@ -114,12 +112,11 @@ fun CpSearchField(
                 Spacer(Modifier.width(if (compact) 8.dp else 10.dp))
                 Box(Modifier.weight(1f)) {
                     if (query.isEmpty()) {
-                        Text(
+                        CpText(
                             placeholder,
                             style = textStyle,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                     innerTextField()
@@ -222,11 +219,10 @@ private fun SuggestionRow(suggestion: String, onPick: (String) -> Unit) {
             modifier = Modifier.size(14.dp),
         )
         Spacer(Modifier.width(10.dp))
-        Text(
+        CpText(
             suggestion,
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
         )
     }
 }

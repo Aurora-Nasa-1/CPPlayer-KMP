@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.BookmarkRemove
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Info
@@ -49,11 +50,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.util.resized
 
 /** Playlist sort order shared by the playlist options sheet and screen models. */
@@ -133,20 +134,18 @@ fun SongOptionsSheet(
                     }
                     Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(
+                        CpText(
                             songName,
                             fontSize = 24.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
-                        Text(
+                        CpText(
                             artistName,
                             fontSize = 18.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -248,6 +247,8 @@ fun PlaylistOptionsSheet(
     onRefresh: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     onShare: (() -> Unit)? = null,
+    /** 仅 owner 提供：打开重命名对话框。 */
+    onRename: (() -> Unit)? = null,
     coverUrl: String? = null,
     isFavorite: Boolean = false,
     onToggleFavorite: (() -> Unit)? = null,
@@ -286,13 +287,12 @@ fun PlaylistOptionsSheet(
                     }
                     Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(
+                        CpText(
                             playlistName,
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                         Spacer(Modifier.height(4.dp))
                         Surface(
@@ -306,6 +306,17 @@ fun PlaylistOptionsSheet(
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
                             )
                         }
+                    }
+                    if (onRename != null) {
+                        Spacer(Modifier.width(10.dp))
+                        CircleAction(
+                            icon = Icons.Filled.Edit,
+                            label = cpStrings().library.renamePlaylist,
+                            size = 48.dp,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                            onClick = { onRename(); onDismiss() },
+                        )
                     }
                     if (onShare != null) {
                         Spacer(Modifier.width(10.dp))

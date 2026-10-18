@@ -36,12 +36,15 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -70,6 +73,11 @@ object AppModel {
 
     private val _initialized = MutableStateFlow(false)
     val initialized: StateFlow<Boolean> = _initialized.asStateFlow()
+
+    /** AppModel 内部协程域（资料/收藏刷新等后台任务）。 */
+    val modelScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default
+    )
 
     val backend: MusicBackend get() = MusicBackend.instance
 
@@ -278,10 +286,10 @@ object AppModel {
      */
     fun playTrackClicked(mediaId: String, defaultPlay: suspend () -> Unit) {
         val lt = listenTogetherState.value
-        if (lt.inRoom && listenTogether.followEnabled) {
+        if (lt.inRoom && listenTogether.followEnabled && _listenTogetherAddNext.value) {
             modelScope.launch {
                 runCatching { playback.addNextToQueue(mediaId) }
-                cp.player.app.ui.util.UiEvents.notify("一起听中：已添加到下一首播放")
+                cp.player.app.ui.util.UiEvents.notify(strings().social.together.addedToNextToast)
             }
         } else {
             modelScope.launch { defaultPlay() }
@@ -309,6 +317,7 @@ object AppModel {
     private val KEY_FLUID_BACKGROUND = "fluid_background"
     private val KEY_PLAYBACK_QUALITY = "playback_quality"
     private val KEY_METERED_PLAYBACK_QUALITY = "playback_quality_metered"
+    private val KEY_LISTEN_TOGETHER_ADD_NEXT = "listen_together_add_next"
 
     private val _themeMode = MutableStateFlow(themeMode())
     val themeModeFlow: StateFlow<cp.player.app.ui.theme.ThemeMode> = _themeMode.asStateFlow()
@@ -456,6 +465,45 @@ object AppModel {
         // 重新打开会恢复到一份早已过期的会话（期间可能换了音源 / 删了歌单）。
         if (!enabled) settings.remove(PlaybackSessionSettings.KEY_LAST_SESSION)
         _keepLastPlayback.value = enabled
+    }
+
+    // ============ 下一首歌曲预加载（持久化） ============
+
+    private val _preloadNext = MutableStateFlow(preloadNext())
+
+    /**
+     * 是否开启下一首歌曲后台预加载（默认开启）。
+     */
+    val preloadNextFlow: StateFlow<Boolean> = _preloadNext.asStateFlow()
+
+    fun preloadNext(): Boolean =
+        settings.getString(PlaybackSessionSettings.KEY_PRELOAD_NEXT)?.toBooleanStrictOrNull()
+            ?: PlaybackSessionSettings.DEFAULT_PRELOAD_NEXT
+
+    fun setPreloadNext(enabled: Boolean) {
+        settings.putString(PlaybackSessionSettings.KEY_PRELOAD_NEXT, enabled.toString())
+        _preloadNext.value = enabled
+        playback.setPreloadNext(enabled)
+    }
+
+    // ============ 一起听：添加歌曲时添加到下一首播放（持久化） ============
+
+    private val _listenTogetherAddNext = MutableStateFlow(listenTogetherAddNext())
+
+    /**
+     * 一起听进行中点歌/添加歌曲时，是否默认添加到下一首播放（默认开启）。
+     *
+     * 开启时：点歌 = `playback.addNextToQueue(mediaId)` 并弹出 Toast 提示；
+     * 关闭时：点歌 = 执行默认播放逻辑（直接播放，广播切歌打断房间）。
+     */
+    val listenTogetherAddNextFlow: StateFlow<Boolean> = _listenTogetherAddNext.asStateFlow()
+
+    fun listenTogetherAddNext(): Boolean =
+        settings.getString(KEY_LISTEN_TOGETHER_ADD_NEXT)?.toBooleanStrictOrNull() ?: true
+
+    fun setListenTogetherAddNext(enabled: Boolean) {
+        settings.putString(KEY_LISTEN_TOGETHER_ADD_NEXT, enabled.toString())
+        _listenTogetherAddNext.value = enabled
     }
 
     // ============ 播放内核 / 输出引擎（持久化） ============
@@ -671,6 +719,28 @@ object AppModel {
     fun setShowSongAlbum(enabled: Boolean) {
         settings.putString(KEY_SHOW_SONG_ALBUM, enabled.toString())
         _showSongAlbum.value = enabled
+    }
+
+    // ============ 日文汉字注音假名（振假名）设置 ============
+
+    private const val KEY_SHOW_RUBY_LYRICS = "show_ruby_lyrics"
+
+    private val _showRubyLyrics = MutableStateFlow(
+        settings.getString(KEY_SHOW_RUBY_LYRICS)?.toBooleanStrictOrNull() ?: true
+    )
+
+    /**
+     * 歌词中是否在日文汉字上方显示小字注音假名（振假名，默认开启）。
+     *
+     * 关闭时剥离歌词中的注音标记，仅显示纯净正文。
+     */
+    val showRubyLyricsFlow: StateFlow<Boolean> = _showRubyLyrics.asStateFlow()
+
+    fun showRubyLyrics(): Boolean = _showRubyLyrics.value
+
+    fun setShowRubyLyrics(enabled: Boolean) {
+        settings.putString(KEY_SHOW_RUBY_LYRICS, enabled.toString())
+        _showRubyLyrics.value = enabled
     }
 
     // ============ 首次使用引导（持久化） ============
@@ -1172,6 +1242,67 @@ object AppModel {
     /** 本地媒体源（扫描 / 导入 / 下载产物登记）。 */
     val localMedia get() = backend.localMedia
 
+    // ============ 本地模式（一个音源都没导入时的「勉强可用」态） ============
+    //
+    // 音源插件是可选的：本机曲库（扫描 / 导入 / 下载产物）不依赖任何音源即可播放。
+    // 但此前的路径把它做成了硬阻塞 —— 无音源时引导页不许进主界面，`startDestination`
+    // 又会把已跑过引导的用户反复弹回引导页。这里是 UI 侧统一判据：
+    // 首页 / 搜索 / 播放页据此退化到本地数据，而不是甩一片请求失败的红字。
+    //
+    // ⚠️ 与 `isFirstRun`（`getAvailableProviders().isEmpty()`）不同：那个是「**从未导入过**
+    // 任何音源文件」，即使已经全部删除；这里看的是**当前有没有可用音源**——启动恢复后
+    // 会由 NoProvider 迁移到 Ready，本地模式据此自动退出。
+
+    /** 当前是否处于本地模式（没有任何音源，只能播本机媒体）。 */
+    val isLocalOnlyFlow: StateFlow<Boolean> by lazy {
+        backend.activeProviderFlow
+            .map { it == null }
+            .distinctUntilChanged()
+            .stateIn(scope = modelScope, started = kotlinx.coroutines.flow.SharingStarted.Eagerly, initialValue = backend.activeProviderFlow.value == null)
+    }
+
+    /** 本地模式下的 mediaId → 文件路径；非本地 mediaId 返回 null。 */
+    fun localPathOfMediaId(mediaId: String?): String? {
+        if (mediaId.isNullOrBlank()) return null
+        val parsed = runCatching { cp.player.core.music.CPMediaId.parse(mediaId) }.getOrNull()
+            ?: return null
+        if (parsed.providerId != "local") return null
+        return parsed.resourceId
+    }
+
+    /**
+     * 当前曲目的「红心」状态，**本地曲按路径查本地收藏**（其余同播放页原逻辑）。
+     *
+     * 播放页的 `PlaybackState.isFavorite` 只反映音源的 `likeSong`；本地曲没有在线 id，
+     * 恒为 false —— 点红心毫无反应。这里把两套合并成一个流，UI 只读它即可。
+     */
+    val currentFavoriteFlow: StateFlow<Boolean> by lazy {
+        combine(
+            playback.state,
+            runCatching { localMedia.favorites.paths }.getOrElse { kotlinx.coroutines.flow.flowOf(emptySet()) },
+        ) { st, paths ->
+            val id = st.currentTrack?.id
+            val localPath = localPathOfMediaId(id)
+            if (localPath != null) localPath in paths else st.isFavorite
+        }.stateIn(scope = modelScope, started = kotlinx.coroutines.flow.SharingStarted.Eagerly, initialValue = playback.state.value.isFavorite)
+    }
+
+    /**
+     * 切换某条 mediaId 的红心：**本地曲写本地收藏，其余走音源**。
+     *
+     * 本地分支顺手发一条提示（音源分支由播放控制器自己提示）。
+     */
+    fun toggleFavoriteOf(mediaId: String?) {
+        val localPath = localPathOfMediaId(mediaId)
+        if (localPath != null) {
+            val now = runCatching { localMedia.favorites.toggle(localPath) }.getOrDefault(false)
+            cp.player.app.ui.util.UiEvents.notify(if (now) "已收藏" else "已取消收藏")
+            return
+        }
+        if (mediaId.isNullOrBlank()) return
+        modelScope.launch { playback.toggleFavoriteFor(mediaId) }
+    }
+
     // ============ 下载目录（持久化，key 与 DownloadConfig 保持一致） ============
 
     /** SettingsStorage key：自定义下载根目录（与 [cp.player.core.download.DownloadConfig.KEY_DOWNLOAD_ROOT_DIR] 同值）。 */
@@ -1275,10 +1406,6 @@ object AppModel {
     /** 在途的未读数刷新（见 [refreshUnreadMessages]）。 */
     private var unreadRefreshJob: kotlinx.coroutines.Job? = null
 
-    /** AppModel 内部协程域（资料/收藏刷新等后台任务）。 */
-    private val modelScope = kotlinx.coroutines.CoroutineScope(
-        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default
-    )
 
     /**
      * 拉取当前登录用户资料（uid/昵称/头像），并顺带刷新收藏列表。

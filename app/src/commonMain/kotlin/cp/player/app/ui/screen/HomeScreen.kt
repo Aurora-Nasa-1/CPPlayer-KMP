@@ -1,5 +1,6 @@
 package cp.player.app.ui.screen
 
+import cp.player.app.ui.component.CpText
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -41,6 +42,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Pause
@@ -48,6 +50,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -72,7 +75,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
@@ -297,6 +299,10 @@ private fun HomeScreenContent(model: HomeScreenModel) {
         },
         onPlayPersonalFm = model::playPersonalFm,
         onOpenIntelligence = {
+            if (AppModel.activeProvider() == null) {
+                navigator.push(LocalLibraryScreen())
+                return@HomeActions
+            }
             // 网易云的心动模式语义是「跟随当前播放列表」：`pid` = 队列的来源歌单，
             // 种子 = 正在播放的那首（eapi `type=fromPlayOne`）。队列没有歌单来源时
             // 按 收藏夹 → 第一个用户歌单 回退（旧项目同款回退链）。
@@ -470,7 +476,7 @@ internal class HomeActions(
     /** 点「继续收听」卡回到播放页（L1）。 */
     val onOpenPlayer: () -> Unit,
     /** 快捷播放 / 暂停切换（M3E）。 */
-    val onTogglePlayPause: () -> Unit,
+    val onTogglePlayPause: () -> Unit = {},
 )
 
 /**
@@ -594,11 +600,12 @@ internal fun DesktopHomeLayout(
                         )
                     }
                 } else {
+                    val isLocalMode = AppModel.activeProvider() == null
                     // 无焦点图时快捷电台**包进常规区块容器**，而不是三张裸卡横在页首 ——
                     // 裸卡会让顶端显得孤立、且与下方「每日推荐」的左边缘对不齐。
                     HomeSectionCard(
-                        title = "快捷电台",
-                        subtitle = "不用挑歌，直接开听",
+                        title = if (isLocalMode) "快捷入口" else "快捷电台",
+                        subtitle = if (isLocalMode) "本地音乐快速启航" else "不用挑歌，直接开听",
                     ) {
                         HeroQuickRow(
                             onPlayPersonalFm = actions.onPlayPersonalFm,
@@ -756,7 +763,7 @@ internal fun DesktopHomeLayout(
                     }
                 }
 
-                if (state.error != null) {
+                if (state.error != null && AppModel.activeProvider() != null) {
                     StateSurface {
                         ContentState(
                             title = "推荐内容未完全加载",
@@ -770,10 +777,19 @@ internal fun DesktopHomeLayout(
 
                 if (state.isEmptyHome) {
                     StateSurface {
-                        ContentState(
-                            title = "还没有个性化推荐",
-                            message = "登录账号后即可同步每日歌曲与歌单",
-                        )
+                        if (AppModel.activeProvider() == null) {
+                            ContentState(
+                                title = "本地音乐模式",
+                                message = "当前未导入在线音源插件。点击上方「本地随机」或「本地曲库」可直接播放或扫描本地设备中的音乐。",
+                                actionLabel = "打开本地曲库",
+                                onAction = actions.onOpenIntelligence,
+                            )
+                        } else {
+                            ContentState(
+                                title = "还没有个性化推荐",
+                                message = "登录账号后即可同步每日歌曲与歌单",
+                            )
+                        }
                     }
                 }
             }
@@ -975,7 +991,7 @@ private fun MobileHomeLayout(
             }
         }
 
-        if (state.error != null) {
+        if (state.error != null && AppModel.activeProvider() != null) {
             item {
                 StateSurface {
                     ContentState(
@@ -991,10 +1007,19 @@ private fun MobileHomeLayout(
         if (state.isEmptyHome) {
             item {
                 StateSurface {
-                    ContentState(
-                        title = "还没有个性化推荐",
-                        message = "登录账号后即可同步每日歌曲与歌单",
-                    )
+                    if (AppModel.activeProvider() == null) {
+                        ContentState(
+                            title = "本地音乐模式",
+                            message = "当前未导入在线音源插件。点击上方「本地随机」或「本地曲库」可直接播放或管理本地设备中的音乐。",
+                            actionLabel = "打开本地曲库",
+                            onAction = actions.onOpenIntelligence,
+                        )
+                    } else {
+                        ContentState(
+                            title = "还没有个性化推荐",
+                            message = "登录账号后即可同步每日歌曲与歌单",
+                        )
+                    }
                 }
             }
         }
@@ -1080,13 +1105,12 @@ internal fun BannerCarousel(
                         )
                     }
                     if (banner.title.isNotBlank()) {
-                        Text(
+                        CpText(
                             text = banner.title,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = if (loaded) Color.White else MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier
                                 .align(Alignment.BottomStart)
                                 .padding(
@@ -1224,28 +1248,29 @@ private fun HeroQuickPanel(
                 Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                val isLocalMode = AppModel.activeProvider() == null
                 Text(
-                    "快捷电台",
+                    if (isLocalMode) "快捷入口" else "快捷电台",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
                 )
                 HeroActionRow(
-                    icon = Icons.Filled.Radio,
-                    title = "私人 FM",
-                    subtitle = "连续播放，不用挑歌",
+                    icon = if (isLocalMode) Icons.Filled.Shuffle else Icons.Filled.Radio,
+                    title = if (isLocalMode) "本地随机" else "私人 FM",
+                    subtitle = if (isLocalMode) "随机畅听本地音乐" else "连续播放，不用挑歌",
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     iconColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     onClick = onPlayPersonalFm,
                 )
                 HeroActionRow(
-                    icon = Icons.Filled.Favorite,
-                    title = "心动模式",
-                    subtitle = if (enabled) "围绕今日推荐延展" else "需要先有每日推荐",
+                    icon = if (isLocalMode) Icons.Filled.FolderOpen else Icons.Filled.Favorite,
+                    title = if (isLocalMode) "本地曲库" else "心动模式",
+                    subtitle = if (isLocalMode) "浏览设备音乐文件" else (if (enabled) "围绕今日推荐延展" else "需要先有每日推荐"),
                     containerColor = MaterialTheme.colorScheme.tertiaryContainer,
                     iconColor = MaterialTheme.colorScheme.onTertiaryContainer,
                     onClick = onOpenIntelligence,
-                    enabled = enabled,
+                    enabled = if (isLocalMode) true else enabled,
                 )
                 HeroActionRow(
                     icon = Icons.Filled.History,
@@ -1343,19 +1368,17 @@ private fun HeroNowPlaying(
                 }
             }
             Column(Modifier.weight(1f)) {
-                Text(
+                CpText(
                     track.name,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                 )
-                Text(
+                CpText(
                     track.artist,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
@@ -1420,20 +1443,18 @@ private fun HeroActionRow(
                 )
             }
             Column(Modifier.weight(1f)) {
-                Text(
+                CpText(
                     title,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha),
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
-                Text(
+                CpText(
                     subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha),
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Icon(
@@ -1452,21 +1473,22 @@ private fun HeroQuickRow(
     onOpenIntelligence: () -> Unit,
     onOpenRecentPlays: () -> Unit,
 ) {
+    val isLocalMode = AppModel.activeProvider() == null
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         HeroQuickTile(
-            icon = Icons.Filled.Radio,
-            label = "私人 FM",
+            icon = if (isLocalMode) Icons.Filled.Shuffle else Icons.Filled.Radio,
+            label = if (isLocalMode) "本地随机" else "私人 FM",
             containerColor = MaterialTheme.colorScheme.primaryContainer,
             iconColor = MaterialTheme.colorScheme.onPrimaryContainer,
             onClick = onPlayPersonalFm,
             modifier = Modifier.weight(1f),
         )
         HeroQuickTile(
-            icon = Icons.Filled.Favorite,
-            label = "心动模式",
+            icon = if (isLocalMode) Icons.Filled.FolderOpen else Icons.Filled.Favorite,
+            label = if (isLocalMode) "本地曲库" else "心动模式",
             containerColor = MaterialTheme.colorScheme.tertiaryContainer,
             iconColor = MaterialTheme.colorScheme.onTertiaryContainer,
             onClick = onOpenIntelligence,
@@ -1513,12 +1535,11 @@ private fun HeroQuickTile(
                     modifier = Modifier.size(22.dp),
                 )
             }
-            Text(
+            CpText(
                 label,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -1813,20 +1834,18 @@ private fun CoverTile(
                 Modifier.align(Alignment.BottomStart)
                     .padding(start = 12.dp, end = 12.dp, bottom = 10.dp),
             ) {
-                Text(
+                CpText(
                     title,
                     style = MaterialTheme.typography.titleSmall,
                     color = titleColor,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 if (!subtitle.isNullOrBlank()) {
-                    Text(
+                    CpText(
                         subtitle,
                         style = MaterialTheme.typography.bodySmall,
                         color = subtitleColor,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -1913,21 +1932,19 @@ private fun RankingRow(
                 }
             }
             Column(Modifier.weight(1f)) {
-                Text(
+                CpText(
                     ranking.name,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(Modifier.height(2.dp))
-                Text(
+                CpText(
                     rankingSubtitle(ranking),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Icon(
@@ -2019,12 +2036,11 @@ private fun ArtistTile(
             }
         }
         Spacer(Modifier.height(8.dp))
-        Text(
+        CpText(
             artist.name,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -2264,19 +2280,17 @@ private fun RecentPlayPill(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.Center,
             ) {
-                Text(
+                CpText(
                     text = track.name,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                     color = titleColor,
                 )
-                Text(
+                CpText(
                     text = track.artist,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                     color = artistColor,
                 )
             }
@@ -2550,20 +2564,18 @@ private fun CompactTrackCard(
                 }
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text(
+                CpText(
                     text = track.name,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Medium,
                     color = titleColor,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
-                Text(
+                CpText(
                     text = track.artist,
                     style = MaterialTheme.typography.bodySmall,
                     color = artistColor,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
             if (isCurrent && nowPlaying != null) {

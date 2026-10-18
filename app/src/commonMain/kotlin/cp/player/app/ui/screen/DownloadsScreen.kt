@@ -1,5 +1,6 @@
 package cp.player.app.ui.screen
 
+import cp.player.app.ui.component.CpText
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -61,7 +62,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
@@ -352,19 +352,17 @@ private fun ActiveTaskCard(task: DownloadTask, model: DownloadsScreenModel) {
                 TaskCover(task.coverUrl, task.mediaType, Modifier.size(48.dp))
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(
+                    CpText(
                         task.title,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
-                    Text(
+                    CpText(
                         task.artist ?: s.downloads.unknownArtist,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 TaskActions(task = task, model = model)
@@ -379,13 +377,12 @@ private fun ActiveTaskCard(task: DownloadTask, model: DownloadsScreenModel) {
                 trackColor = MaterialTheme.colorScheme.surfaceVariant,
             )
             Spacer(Modifier.height(6.dp))
-            Text(
+            CpText(
                 statusText(task),
                 style = MaterialTheme.typography.bodySmall,
                 color = if (task.status == DownloadStatus.FAILED) MaterialTheme.colorScheme.error
                 else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -535,16 +532,15 @@ private fun CompletedTaskCard(
             TaskCover(task.coverUrl, task.mediaType, Modifier.size(48.dp))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(
+                CpText(
                     task.title,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 // 副标题刻意不显示本地绝对路径：那串字符对用户没有信息量，
                 // 而歌手 + 文件大小是能扫读的。
-                Text(
+                CpText(
                     buildString {
                         append(task.artist ?: "未知艺术家")
                         val size = task.totalBytes?.takeIf { it > 0 } ?: task.downloadedBytes
@@ -553,7 +549,6 @@ private fun CompletedTaskCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {

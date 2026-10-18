@@ -118,6 +118,12 @@ object DesktopTray {
         val strings = strings()
         return PopupMenu().apply {
             add(MenuItem(strings.trayShowWindow).apply { addActionListener { onShowWindow?.invoke() } })
+            add(MenuItem("切换迷你模式 / 完整模式").apply {
+                addActionListener {
+                    cp.player.app.ui.util.DesktopShell.isMiniMode = !cp.player.app.ui.util.DesktopShell.isMiniMode
+                    onShowWindow?.invoke()
+                }
+            })
             addSeparator()
             add(MenuItem(strings.trayExit).apply { addActionListener { onExit?.invoke() } })
         }

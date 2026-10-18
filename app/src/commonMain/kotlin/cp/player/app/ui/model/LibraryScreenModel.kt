@@ -74,6 +74,13 @@ class LibraryScreenModel : ScreenModel {
             if (!silent) _state.value = _state.value.copy(loading = true, error = null)
             _refreshing.value = true
             try {
+                // 无激活音源插件时直接返回空列表（本地曲库模式），不发起报错网络请求
+                if (AppModel.activeProviderId() == null) {
+                    if (gen == refreshGen) {
+                        _state.update { s -> s.copy(playlists = emptyList(), loading = false, error = null) }
+                    }
+                    return@launch
+                }
                 // ⚠️ IO 线程**只负责取数据**，不要在 IO 线程上读-改-写 `_state`：
                 // 那会和 Main 上的 selectTab / selectPlaylist 并发，把用户刚选的态覆盖回退。
                 val result = withContext(Dispatchers.IO) {

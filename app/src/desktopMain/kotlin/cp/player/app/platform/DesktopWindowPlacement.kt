@@ -104,6 +104,7 @@ internal class WindowMaximizer(private val window: Window) {
     }
 
     fun maximize() {
+        if (cp.player.app.ui.util.DesktopShell.isMiniMode) return
         restoreBounds = floatingBounds ?: window.bounds
         // ⚠️ 必须**先**置 isMaximized 再改 bounds：`setBounds` 会同步触发下面那个
         // componentResized 监听，此时若 isMaximized 还是 false，它会把自己刚记下的
@@ -149,6 +150,7 @@ internal class WindowMaximizer(private val window: Window) {
         }
         val stateListener = object : WindowAdapter() {
             override fun windowStateChanged(e: WindowEvent) {
+                if (cp.player.app.ui.util.DesktopShell.isMiniMode) return
                 val nativeMaximized =
                     (e.newState and Frame.MAXIMIZED_BOTH) == Frame.MAXIMIZED_BOTH
                 if (nativeMaximized) {

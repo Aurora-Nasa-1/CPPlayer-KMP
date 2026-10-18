@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.FilterNone
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -87,9 +88,9 @@ private val ChromeSeparatorWidth = 8.dp * 2 + 1.dp
  * 少算一格右侧就宽出去 44dp、搜索框整体左偏 22dp；多算一格则反过来。改动按钮组时
  * 数一遍 —— 这里曾经因为「消息」搬进来而差点漏掉（5 槽 → 6 槽）。
  *
- * 仅**无边框模式**使用；JBR 模式的右侧组 = 3 个业务槽 + JBR 原生窗口钮区（运行时取值）。
+ * 仅**无边框模式**使用；JBR 模式的右侧组 = 4 个业务槽 + JBR 原生窗口钮区（运行时取值）。
  */
-private val ChromeActionsWidth: Dp = ChromeSlotWidth * 6 + ChromeSeparatorWidth
+private val ChromeActionsWidth: Dp = ChromeSlotWidth * 7 + ChromeSeparatorWidth
 
 /**
  * 双击判定窗口（毫秒）。
@@ -202,6 +203,7 @@ fun DesktopTitleBar(
     onOpenAccount: () -> Unit,
     onOpenSettings: () -> Unit,
     onSearch: (String) -> Unit,
+    onToggleMiniMode: () -> Unit = { cp.player.app.ui.util.DesktopShell.isMiniMode = true },
     modifier: Modifier = Modifier,
 ) {
     val window = windowScope.window
@@ -225,8 +227,8 @@ fun DesktopTitleBar(
     // JBR 在客户区右上画原生窗口钮，右侧要给它们留位（px → dp，随 DPI 变化重取）。
     val density = LocalDensity.current
     val nativeControlsWidth = jbr?.let { with(density) { it.rightInsetPx.toDp() } } ?: 0.dp
-    // 右侧按钮组总宽：JBR 模式 = 账号 + 消息 + 设置 + 原生窗口钮区；无边框模式 = 全自绘 6 槽。
-    val rightGroupWidth = if (useJbr) ChromeSlotWidth * 3 + nativeControlsWidth else ChromeActionsWidth
+    // 右侧按钮组总宽：JBR 模式 = 账号 + 消息 + 迷你模式 + 设置 + 原生窗口钮区；无边框模式 = 全自绘 7 槽。
+    val rightGroupWidth = if (useJbr) ChromeSlotWidth * 4 + nativeControlsWidth else ChromeActionsWidth
 
     // 原生窗口钮的明暗跟随应用主题。判据用 surface 亮度而不是 isSystemInDarkTheme()：
     // 后者只反映系统设置，追不上应用内的主题覆盖（深色模式 / 纯黑等）。
@@ -337,6 +339,12 @@ fun DesktopTitleBar(
                 AccountSlot(onClick = onOpenAccount, modifier = Modifier.jbrClientZone(bridge, "account"))
                 MessageSlot(onClick = onOpenMessages, modifier = Modifier.jbrClientZone(bridge, "messages"))
                 ChromeSlot(
+                    onClick = onToggleMiniMode,
+                    modifier = Modifier.jbrClientZone(bridge, "mini_mode"),
+                ) {
+                    Icon(Icons.Filled.PictureInPictureAlt, "迷你模式", modifier = Modifier.size(18.dp))
+                }
+                ChromeSlot(
                     onClick = onOpenSettings,
                     modifier = Modifier.jbrClientZone(bridge, "settings"),
                 ) {
@@ -381,7 +389,7 @@ fun DesktopTitleBar(
  *
  * 纯 HashMap + 普通读写即可：登记（布局回调）与查询（指针回调）都发生在 EDT。
  */
-private class JbrHitTestBridge(val controller: JbrWindowChrome.Controller) {
+internal class JbrHitTestBridge(val controller: JbrWindowChrome.Controller) {
     var rootOrigin: Offset = Offset.Zero
     val clientRects = HashMap<String, Rect>()
 
@@ -397,7 +405,7 @@ private class JbrHitTestBridge(val controller: JbrWindowChrome.Controller) {
  * 标题栏上，否则空白区也会被判成客户区、原生拖拽就没了。
  */
 @Composable
-private fun Modifier.jbrClientZone(bridge: JbrHitTestBridge?, key: String): Modifier {
+internal fun Modifier.jbrClientZone(bridge: JbrHitTestBridge?, key: String): Modifier {
     if (bridge == null) return this
     // 控件离开组合（例如返回键消失）时注销，否则那块区域永远点不动窗口。
     DisposableEffect(key) {
@@ -415,7 +423,7 @@ private fun Modifier.jbrClientZone(bridge: JbrHitTestBridge?, key: String): Modi
  *
  * `bridge == null`（无边框模式）时是空操作。
  */
-private fun Modifier.jbrHitTest(bridge: JbrHitTestBridge?): Modifier {
+internal fun Modifier.jbrHitTest(bridge: JbrHitTestBridge?): Modifier {
     if (bridge == null) return this
     return onGloballyPositioned { coords ->
         bridge.rootOrigin = coords.positionInRoot()

@@ -2,15 +2,17 @@ package cp.player.app.ui.component
 
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
+import cp.player.app.ui.theme.localizedForLanguage
 import cp.player.core.music.ArtistSummary
 import cp.player.core.music.TrackSummary
 
@@ -49,39 +51,56 @@ fun TrackArtistText(
     maxLines: Int = 1,
 ) {
     val textStyle = style.copy(color = color)
+    val resolvedStyle = textStyle.localizedForLanguage(track.artist)
     val artists = track.artists
     // 退化 1 / 2 / 3：整串纯文本，连点击区都不挂。
     // 全都缺 id 时也一样挂不得 —— ClickableText 的点击区盖住整行，「点了没反应」。
     if (onArtistClick == null || artists.isEmpty() || artists.none { it.id != 0L }) {
-        Text(
+        CpText(
             text = track.artist,
             modifier = modifier,
-            style = textStyle,
+            style = resolvedStyle,
             maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis,
         )
         return
     }
     // 曲目换了才重算（歌手串不随播放进度变）。
     val annotated = remember(artists) { artistAnnotatedString(artists) }
-    ClickableText(
-        text = annotated,
-        modifier = modifier,
-        style = textStyle,
-        maxLines = maxLines,
-        overflow = TextOverflow.Ellipsis,
-        onClick = { offset ->
-            // 点在分隔符 / 行尾空白上取不到注解 —— 静默忽略，不跳。
-            val index = annotated
-                .getStringAnnotations(ARTIST_ANNOTATION, offset, offset)
-                .firstOrNull()
-                ?.item
-                ?.toIntOrNull()
-                ?: return@ClickableText
-            val artist = artists.getOrNull(index) ?: return@ClickableText
-            if (artist.id != 0L) onArtistClick(artist)
-        },
-    )
+    var overflow by remember(annotated, resolvedStyle, maxLines) { androidx.compose.runtime.mutableStateOf(false) }
+
+    val clickable = @Composable {
+        ClickableText(
+            text = annotated,
+            modifier = modifier,
+            style = resolvedStyle,
+            maxLines = maxLines,
+            overflow = TextOverflow.Ellipsis,
+            onTextLayout = { layout ->
+                if (!overflow && layout.hasVisualOverflow) {
+                    overflow = true
+                }
+            },
+            onClick = { offset ->
+                // 点在分隔符 / 行尾空白上取不到注解 —— 静默忽略，不跳。
+                val index = annotated
+                    .getStringAnnotations(ARTIST_ANNOTATION, offset, offset)
+                    .firstOrNull()
+                    ?.item
+                    ?.toIntOrNull()
+                    ?: return@ClickableText
+                val artist = artists.getOrNull(index) ?: return@ClickableText
+                if (artist.id != 0L) onArtistClick(artist)
+            },
+        )
+    }
+
+    if (overflow) {
+        CpHoverReveal(fullText = track.artist) {
+            clickable()
+        }
+    } else {
+        clickable()
+    }
 }
 
 /**

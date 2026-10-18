@@ -34,7 +34,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 /**
@@ -166,20 +165,18 @@ fun BentoHeroCard(
                 verticalArrangement = Arrangement.SpaceBetween,
             ) {
                 Column {
-                    Text(
+                    CpText(
                         title,
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                     Spacer(Modifier.height(4.dp))
-                    Text(
+                    CpText(
                         subtitle,
                         style = MaterialTheme.typography.bodyMedium,
                         color = contentColor.copy(alpha = 0.78f),
                         maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.fillMaxWidth(0.62f),
                     )
                 }
@@ -233,20 +230,18 @@ fun BentoActionCard(
             )
         }
         Column {
-            Text(
+            CpText(
                 title,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(2.dp))
-            Text(
+            CpText(
                 subtitle,
                 style = MaterialTheme.typography.bodySmall,
                 color = LocalContentColor.current.copy(alpha = 0.75f),
                 maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -298,12 +293,11 @@ fun BentoStatCard(
                         )
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
+                        CpText(
                             value,
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                         Text(
                             caption,
@@ -346,12 +340,11 @@ fun BentoMiniTile(
                 modifier = Modifier.size(24.dp),
             )
             Spacer(Modifier.height(6.dp))
-            Text(
+            CpText(
                 label,
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
     }

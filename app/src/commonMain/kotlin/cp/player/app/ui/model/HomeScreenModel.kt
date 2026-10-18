@@ -227,9 +227,23 @@ class HomeScreenModel(
         }
     }
 
-    /** 播放私人 FM：按批次连续拉取，补足一组可听队列。 */
+    /** 播放私人 FM：按批次连续拉取，补足一组可听队列；本地模式下自动回退为随机播放本地曲库。 */
     fun playPersonalFm() {
         screenModelScope.launch {
+            if (AppModel.activeProvider() == null) {
+                val localItems = AppModel.localMedia.items().value
+                    .filter { it.mediaType == cp.player.core.media.MediaType.AUDIO }
+                if (localItems.isEmpty()) {
+                    cp.player.app.ui.util.UiEvents.notify("本地曲库暂无音乐，请先扫描或导入")
+                    return@launch
+                }
+                AppModel.playback.playQueue(
+                    localItems.shuffled().map { "local://audio/${it.path}" },
+                    startIndex = 0,
+                    sourceId = "local_shuffle",
+                )
+                return@launch
+            }
             val result = withContext(Dispatchers.IO) {
                 safe { AppModel.musicRepository.getPersonalFmBatch(targetSize = 18) }
             }
@@ -453,6 +467,9 @@ class HomeScreenModel(
     // ======================== 加载 ========================
 
     private suspend fun loadUserLibraryOnly(): HomeUiState {
+        if (AppModel.activeProvider() == null) {
+            return HomeUiState(loading = false, error = null)
+        }
         val userResult = safe { AppModel.musicRepository.getCurrentUserPlaylists() }
         val user = userResult.dataOrEmpty()
         return HomeUiState(
@@ -463,7 +480,11 @@ class HomeScreenModel(
         )
     }
 
-    private suspend fun loadDiscoveryHome(): HomeUiState = coroutineScope {
+    private suspend fun loadDiscoveryHome(): HomeUiState {
+        if (AppModel.activeProvider() == null) {
+            return HomeUiState(loading = false, error = null)
+        }
+        return coroutineScope {
         // 首页一屏有 8 个互相独立的数据源。串行拉的话总延迟是八者之和，
         // 而它们之间没有任何依赖关系 —— 全部并发，总延迟取决于最慢的那个。
         val daily = async { safe { AppModel.musicRepository.getRecommendedSongs() } }
@@ -505,6 +526,7 @@ class HomeScreenModel(
             error = error,
         )
     }
+}
 
     /**
      * 挑出收藏夹歌单：先按 [isLikedPlaylistName] 精确匹配，匹配不到再退回宽松的

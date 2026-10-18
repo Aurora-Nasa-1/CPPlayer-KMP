@@ -104,6 +104,12 @@ object DesktopShell {
     /** 请求主壳层收起当前内嵌面板（标题栏上的返回键）。与 [settingsRequested] 同一协议。 */
     var backRequested by mutableStateOf(false)
 
+    /** 桌面端是否处于 Mini 迷你悬浮小窗模式。 */
+    var isMiniMode by mutableStateOf(false)
+
+    /** Mini 模式下是否始终置顶（窗口始终处于最上层）。默认开启。 */
+    var isMiniPinned by mutableStateOf(true)
+
     // —— 路由页标题（push 出去的页面）——
 
     /**

@@ -299,6 +299,25 @@ class CachedMusicApiServiceTest {
         f.api.logout()
         assertEquals(0, f.cache.size())
     }
+
+    @Test
+    fun `preloadSong预热URL详情与歌词缓存`() = runBlocking {
+        val f = Fixture()
+
+        f.api.preloadSong("123", "lossless")
+        assertEquals(1, f.calls.count { it == "getSongUrl" })
+        assertEquals(1, f.calls.count { it == "getSongDetail" })
+        assertEquals(1, f.calls.count { it == "getLyric" })
+
+        val callCountAfterPreload = f.calls.size
+
+        // 随后真正调用 getSongUrl / getSongDetail / getLyric 应该全部命中缓存，不再发起新的底层调用
+        f.api.getSongUrl("123", "lossless")
+        f.api.getSongDetail(listOf("123"))
+        f.api.getLyric("123")
+
+        assertEquals(callCountAfterPreload, f.calls.size)
+    }
 }
 
 // ======================== 断言辅助 ========================

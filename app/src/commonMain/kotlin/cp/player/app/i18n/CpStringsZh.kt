@@ -93,6 +93,9 @@ object CpStringsZh : CpStrings {
         override val refresh = "刷新"
         override val unsavedBlocked = "未保存 · 请先修正上面的问题"
         override val unsavedHint = "未保存 · 点「应用」生效"
+        override val back = "返回"
+        override val close = "关闭"
+        override val search = "搜索"
     }
 
     override val messageNotify: MessageNotifyStrings = object : MessageNotifyStrings {
@@ -273,6 +276,8 @@ object CpStringsZh : CpStrings {
         override val lyricsProviderOnly = "仅音源 API"
         override val lyricsAmllFirst = "AMLL 优先"
         override val lyricsAmllOnly = "仅 AMLL"
+        override val showRubyLyrics = "日文汉字注音"
+        override val showRubyLyricsSubtitle = "在日文歌词汉字上方显示小字假名（振假名）"
 
         override val sectionSleepTimer = "睡眠定时"
         override val sleepTimer = "定时关闭"
@@ -284,6 +289,11 @@ object CpStringsZh : CpStrings {
         override val keepLastPlayback = "保留上次播放"
         override val keepLastPlaybackNote =
             "启动时恢复上次的播放队列与进度，但不自动播放；点播放才从上次位置接着听"
+
+        override val sectionPreload = "音频预加载"
+        override val preloadNext = "预加载下一首歌曲"
+        override val preloadNextNote =
+            "在后台提前解析与缓冲下一首歌曲，实现切歌秒开与平滑过渡"
 
         override val sectionFade = "淡入淡出"
         override val fadeIn = "开始时淡入"
@@ -674,6 +684,11 @@ object CpStringsZh : CpStrings {
         override val shuffle = "随机播放"
         override val like = "点赞"
         override val unlike = "取消点赞"
+        override val volume = "音量"
+        override val mute = "静音"
+        override val unmute = "取消静音"
+        override val quality = "音质"
+        override val qualityGlobalNote = "全局设置：对之后加载的曲目生效，正在播放的这首不打断"
         override fun sleepRemainingLabel(remaining: String) = "剩余 $remaining"
         override val sleepEndsWithTrack = "本曲结束"
 
@@ -694,6 +709,25 @@ object CpStringsZh : CpStrings {
         override val commentsLoadFailed = "加载评论失败"
         override val retry = "重试"
         override val noComments = "暂无评论"
+
+        override val lyricOffset = "歌词微调"
+        override val lyricOffsetTitle = "歌词时间轴微调"
+        override fun lyricOffsetSubtitle(ms: Long) = when {
+            ms > 0 -> "歌词提前 ${ms / 1000f} 秒"
+            ms < 0 -> "歌词延后 ${-ms / 1000f} 秒"
+            else -> "未微调 (标准对齐)"
+        }
+        override val lyricOffsetAdvance = "提前 (+)"
+        override val lyricOffsetDelay = "延后 (-)"
+        override val lyricOffsetReset = "重置为 0"
+        override val lyricOffsetHint = "当歌词慢了（滞后）点击「提前」；歌词快了（抢跑）点击「延后」。设置将按歌曲自动记忆保存。"
+
+        override val miniMode = "迷你模式"
+        override val miniModeRestore = "还原窗口"
+        override val miniModePin = "始终置顶"
+        override val miniModeUnpin = "取消置顶"
+
+        override val searchQueue = "搜索播放队列…"
     }
 
     override val library: LibraryStrings = object : LibraryStrings {
@@ -743,6 +777,7 @@ object CpStringsZh : CpStrings {
         override fun selectedCount(count: Int) = "已选 $count 首"
         override val exitSelection = "退出多选"
         override val selectAll = "全选"
+        override val deselectAll = "取消全选"
 
         override val sortDefault = "默认顺序"
         override val sortByName = "按名称"
@@ -798,6 +833,22 @@ object CpStringsZh : CpStrings {
         override val noDownloads = "还没有下载任务。在歌曲菜单或歌单页点「下载」，任务会显示在这里。"
         override val openDownloads = "打开下载管理"
 
+        override val searchLibrary = "搜索曲库"
+        override val searchLibraryHint = "搜索我的歌单、本地歌曲"
+        override val searchLibraryEmpty = "输入关键词开始搜索"
+        override val searchLibraryEmptyNote = "可以搜索我的歌单，以及已下载 / 导入的本地歌曲"
+        override val searchPlaylistSection = "歌单"
+        override val searchLocalSection = "本地音乐"
+        override fun searchOnlineHint(query: String) = "在在线音乐中搜索「$query」"
+        override val noSearchResults = "没有找到匹配内容"
+        override val importPlaylist = "导入外部歌单"
+        override val importShort = "导入"
+
+        override val renamePlaylist = "重命名歌单"
+        override val renamePlaylistPlaceholder = "输入新的歌单名称"
+        override fun renamedPlaylist(name: String) = "已重命名为「$name」"
+        override val renamePlaylistFailed = "重命名失败"
+
         override val play = "播放"
         override val shuffle = "随机"
         override val add = "添加"
@@ -821,6 +872,7 @@ object CpStringsZh : CpStrings {
         override val shufflePlay = "打乱"
         override val liked = "已收藏"
         override val unliked = "已取消收藏"
+        override val searchAlbum = "搜索专辑曲目…"
     }
 
     override val playlistSheet: PlaylistSheetStrings = object : PlaylistSheetStrings {
@@ -852,6 +904,7 @@ object CpStringsZh : CpStrings {
         override fun created(name: String) = "已创建「$name」"
         override val cancel = "取消"
     }
+    override val playlistImport = PlaylistImportStringsZh
     override val account = AccountStringsZh
     override val downloads = DownloadStringsZh
     override val insights = InsightStringsZh

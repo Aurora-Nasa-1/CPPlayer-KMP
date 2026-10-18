@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowDecoration
+import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowScope
 import androidx.compose.ui.window.application
@@ -32,6 +33,7 @@ import cp.player.app.platform.WindowsWindowCorners
 import cp.player.app.platform.installDesktopImageCacheLimit
 import cp.player.app.ui.component.DesktopTitleBar
 import cp.player.app.ui.component.DesktopCloseDialog
+import cp.player.app.ui.component.DesktopMiniPlayer
 import cp.player.app.ui.component.TitleBarHeight
 import cp.player.app.ui.util.DesktopShell
 import cp.player.app.ui.util.next
@@ -65,6 +67,10 @@ import java.awt.Toolkit
  * 注意单位是**物理像素**：高 DPI 缩放 150% 时约等于 600dp 逻辑宽度，仍能容纳紧凑布局。
  */
 private val MinWindowSize = Dimension(900, 640)
+
+/** 迷你小窗模式的尺寸与下限 */
+private val MiniWindowSize = Dimension(380, 140)
+private val MiniWindowDpSize = DpSize(380.dp, 140.dp)
 
 /** 初始窗口尺寸：一次到位展开侧边栏 + 主内容，避免用户第一眼看到手机布局。 */
 private val DefaultWindowSize = DpSize(1320.dp, 860.dp)
@@ -160,6 +166,9 @@ fun main() {
             }
         }
 
+        val isMiniMode = DesktopShell.isMiniMode
+        val isMiniPinned = DesktopShell.isMiniPinned
+
         Window(
             onCloseRequest = {
                 when (closeBehavior) {
@@ -175,6 +184,8 @@ fun main() {
             state = windowState,
             title = "CPPlayer",
             icon = AppWindowIcon.painter,
+            alwaysOnTop = isMiniMode && isMiniPinned,
+            resizable = !isMiniMode,
             onKeyEvent = ::handleDesktopShortcut,
             // 两条装饰路线的选择，见上方 main() 的 KDoc。
             decoration = if (useJbrChrome) {
@@ -231,14 +242,76 @@ fun main() {
                     }
                 }
             }
+            // 记录进入 Mini 模式前的常规窗口尺寸与状态，以便还原
+            var previousNormalSize by remember { mutableStateOf<DpSize?>(null) }
+            var previousPlacement by remember { mutableStateOf<WindowPlacement?>(null) }
+
+            // 监听 Mini 模式切换：动态放宽/还原窗口 minimumSize，并切换窗口尺寸与置顶属性
+            LaunchedEffect(isMiniMode) {
+                val frame = window as? java.awt.Frame
+                if (isMiniMode) {
+                    previousPlacement = windowState.placement
+                    previousNormalSize = windowState.size
+
+                    // 1. 如果此前处于最大化或全屏状态，必须先退出，变回复位浮动状态
+                    if (windowState.placement != WindowPlacement.Floating) {
+                        windowState.placement = WindowPlacement.Floating
+                    }
+                    if (frame != null && (frame.extendedState and java.awt.Frame.MAXIMIZED_BOTH) != 0) {
+                        frame.extendedState = java.awt.Frame.NORMAL
+                    }
+
+                    // 2. 禁用窗口缩放（防止 Mini 模式下被系统或手势最大化/拉伸）
+                    frame?.isResizable = false
+
+                    // 3. 缩小窗口 minimumSize 并调整尺寸
+                    window.minimumSize = MiniWindowSize
+                    windowState.size = MiniWindowDpSize
+                    window.setSize(MiniWindowSize.width, MiniWindowSize.height)
+                } else {
+                    frame?.isResizable = true
+                    window.minimumSize = MinWindowSize
+                    previousNormalSize?.let { normalSize ->
+                        windowState.size = normalSize
+                        window.setSize(normalSize.width.value.toInt(), normalSize.height.value.toInt())
+                    }
+                    previousPlacement?.let { placement ->
+                        windowState.placement = placement
+                        if (placement == WindowPlacement.Maximized) {
+                            frame?.extendedState = java.awt.Frame.MAXIMIZED_BOTH
+                        }
+                    }
+                }
+            }
+
+            LaunchedEffect(isMiniMode, isMiniPinned) {
+                window.isAlwaysOnTop = isMiniMode && isMiniPinned
+            }
+
+            // 守护：在 Mini 模式期间，绝不允许 placement 变为 Maximized 或 Fullscreen
+            LaunchedEffect(isMiniMode, windowState.placement) {
+                if (isMiniMode && windowState.placement != WindowPlacement.Floating) {
+                    windowState.placement = WindowPlacement.Floating
+                    val frame = window as? java.awt.Frame
+                    if (frame != null && (frame.extendedState and java.awt.Frame.MAXIMIZED_BOTH) != 0) {
+                        frame.extendedState = java.awt.Frame.NORMAL
+                    }
+                    windowState.size = MiniWindowDpSize
+                    window.setSize(MiniWindowSize.width, MiniWindowSize.height)
+                }
+            }
+
             // 记住窗口尺寸：桌面端换一次显示器/改一次分辨率就丢布局，是很容易被抱怨的细节。
+            // ⚠️ 处于 Mini 模式时禁止落盘，避免覆盖正常的完整窗口尺寸。
             LaunchedEffect(Unit) {
                 snapshotFlow { windowState.size }
                     .drop(1) // 首帧就是刚恢复出来的值，不必回写
                     .distinctUntilChanged()
                     .collectLatest { size ->
-                        delay(WindowSizeSaveDelayMs)
-                        saveWindowSize(size)
+                        if (!DesktopShell.isMiniMode) {
+                            delay(WindowSizeSaveDelayMs)
+                            saveWindowSize(size)
+                        }
                     }
             }
             // 标题跟随当前曲目。不依赖 Window(title = ...) 的更新时机，直接写窗口属性。
@@ -270,14 +343,31 @@ fun main() {
             }
 
             val windowScope: WindowScope = this
-            App(
-                titleBar = { navigator ->
-                    DesktopTitleBar(
-                        windowScope = windowScope,
-                        windowState = windowState,
-                        // 非 null 时 DesktopTitleBar 切到 JBR 模式：不画窗口钮、拖拽 / 双击
-                        // 交给原生 hit-test（见 DesktopTitleBar 的「两种窗口模式」一节）。
-                        jbr = jbrChrome,
+            if (isMiniMode) {
+                DesktopMiniPlayer(
+                    windowScope = windowScope,
+                    jbr = jbrChrome,
+                    onRestore = { DesktopShell.isMiniMode = false },
+                    onClose = {
+                        when (closeBehavior) {
+                            DesktopCloseBehavior.EXIT -> exitApplication()
+                            DesktopCloseBehavior.TRAY -> hideToTray()
+                            DesktopCloseBehavior.ASK -> {
+                                dontAskAgain = false
+                                showCloseDialog = true
+                            }
+                        }
+                    },
+                )
+            } else {
+                App(
+                    titleBar = { navigator ->
+                        DesktopTitleBar(
+                            windowScope = windowScope,
+                            windowState = windowState,
+                            // 非 null 时 DesktopTitleBar 切到 JBR 模式：不画窗口钮、拖拽 / 双击
+                            // 交给原生 hit-test（见 DesktopTitleBar 的「两种窗口模式」一节）。
+                            jbr = jbrChrome,
                         // 标题：当前路由页自己声明的优先（`CpRouteScaffold` / `DesktopRouteTitle`），
                         // 没有声明时回落到 `MainScreen` 发布的主壳层标题。`MainScreen` 被 push 出去的
                         // 页面盖住后会离开组合、不再发布，所以没有这一层回落之外的上层来源，
@@ -352,6 +442,7 @@ fun main() {
                     )
                 },
             )
+            }
 
             // 关窗确认框（只可能出现在 `onCloseRequest` 走到 ASK 分支时）。
             // 它是独立窗口（M3 AlertDialog 在桌面的实现方式），所以与 App 平级摆放即可。

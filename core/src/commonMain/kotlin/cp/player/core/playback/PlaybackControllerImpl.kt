@@ -17,6 +17,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -253,6 +254,14 @@ class PlaybackControllerImpl(
     // ============ 音质 ============
 
     private var qualityLevel: String = "exhigh"
+
+    // ============ 预加载 ============
+
+    private var preloadNextEnabled: Boolean = playbackModeSettings?.let {
+        PlaybackSessionSettings.preloadNextEnabled(it)
+    } ?: PlaybackSessionSettings.DEFAULT_PRELOAD_NEXT
+    private var preloadJob: Job? = null
+    @Volatile private var preloadedKey: String? = null
 
     // ============ 睡眠定时 ============
 
@@ -571,6 +580,7 @@ class PlaybackControllerImpl(
             ensureValidOrder()
         }
         pushQueueState()
+        triggerPreloadNext()
         scope.launch { resolveEntry(_queue.lastIndex) }
     }
 
@@ -611,6 +621,7 @@ class PlaybackControllerImpl(
             insertAt
         }
         pushQueueState()
+        triggerPreloadNext()
         scope.launch { resolveEntry(insertedAt) }
     }
 
@@ -643,12 +654,16 @@ class PlaybackControllerImpl(
         if (_queue.isNotEmpty() && index <= _index && _index >= 0) {
             // 若移除了当前或之前的，按约定重新播放当前
             playCurrent()
+        } else {
+            triggerPreloadNext()
         }
     }
 
     override fun clearQueue() {
         // 队列即将清空：作废在途的后台解析，避免它继续写已失效的条目。
         resolveJob?.cancel()
+        preloadJob?.cancel()
+        preloadedKey = null
         queueGeneration++
         // 引擎即将被停掉：任何在途 seek 都失去意义，立刻失效避免落到下一队列上。
         engineReady = false
@@ -697,6 +712,7 @@ class PlaybackControllerImpl(
             ensureValidOrder()
         }
         pushQueueState()
+        triggerPreloadNext()
     }
 
     override suspend fun playAt(index: Int) {
@@ -941,6 +957,7 @@ class PlaybackControllerImpl(
         _repeat = mode
         updateState { it.copy(repeatMode = mode) }
         persistPlaybackModes()
+        triggerPreloadNext()
     }
 
     // ============ 收藏 ============
@@ -1027,8 +1044,105 @@ class PlaybackControllerImpl(
 
     override fun setQuality(level: String) {
         if (level.isBlank()) return
+        if (qualityLevel == level) return
         qualityLevel = level
         updateState { it.copy(qualityLevel = level) }
+        preloadedKey = null
+        triggerPreloadNext()
+    }
+
+    // ============ 预加载 ============
+
+    override fun setPreloadNext(enabled: Boolean) {
+        preloadNextEnabled = enabled
+        playbackModeSettings?.putString(PlaybackSessionSettings.KEY_PRELOAD_NEXT, enabled.toString())
+        if (!enabled) {
+            preloadJob?.cancel()
+            preloadJob = null
+            preloadedKey = null
+        } else {
+            triggerPreloadNext()
+        }
+    }
+
+    override fun preloadNext() {
+        triggerPreloadNext()
+    }
+
+    /**
+     * 在后台预加载下一首歌曲：
+     * 1. 计算下一首曲目索引（考虑单曲/列表循环/随机）；
+     * 2. 解析下一首的元数据（TrackSummary）；
+     * 3. 预热歌词；
+     * 4. 预拉取播放地址（存入读透缓存）；
+     * 5. 若为无损档位且平台支持落盘，后台提前落盘。
+     */
+    private fun triggerPreloadNext() {
+        if (!preloadNextEnabled) return
+        val currentGen = loadGeneration
+        preloadJob?.cancel()
+        preloadJob = scope.launch {
+            // 短暂防抖：避免切歌途中连续发起多次预加载
+            delay(1200)
+            if (loadGeneration != currentGen) return@launch
+
+            val nextIndex = navMutex.withLock {
+                computeNext(autoAdvance = true)
+            } ?: return@launch
+
+            if (nextIndex == _index) return@launch
+            val nextEntry = _queue.getOrNull(nextIndex) ?: return@launch
+            val nextMediaId = nextEntry.mediaId
+            val cacheKey = cacheKeyOf(nextMediaId, qualityLevel)
+            if (preloadedKey == cacheKey) return@launch
+
+            // 1. 确保 TrackSummary 就绪
+            if (nextEntry.summary == null) {
+                resolveEntry(nextIndex)
+            }
+            val summary = nextEntry.summary
+                ?: source.getTrackDetail(nextMediaId).getOrNull()?.also { nextEntry.summary = it }
+
+            if (loadGeneration != currentGen) return@launch
+
+            // 2. 预热歌词
+            runCatching {
+                val parsedId = cp.player.core.music.CPMediaId.parse(nextMediaId)
+                fetchLyricsFor(parsedId, nextEntry)
+            }
+
+            if (loadGeneration != currentGen) return@launch
+
+            // 3. 预加载播放地址（写入 CachedMusicApiService 缓存）
+            val urlResult = source.preloadTrack(nextMediaId, level = qualityLevel)
+            val songUrl = urlResult.getOrNull() ?: return@launch
+            if (songUrl.url.isBlank()) return@launch
+
+            val headers = buildMap {
+                songUrl.cookie?.takeIf { it.isNotBlank() }?.let { put("Cookie", it) }
+                if (!containsKey("Cookie")) {
+                    cookieProvider()?.takeIf { it.isNotBlank() }?.let { put("Cookie", it) }
+                }
+            }
+
+            if (loadGeneration != currentGen) return@launch
+
+            // 4. 无损档位预落盘
+            val localizing = streamLocalizer.isLocalizing(qualityLevel)
+            if (localizing && streamLocalizer.cachedPath(cacheKey) == null) {
+                val meta = summary?.let { SongCacheMeta(title = it.name, artist = it.artist) }
+                streamLocalizer.preload(
+                    url = songUrl.url,
+                    cacheKey = cacheKey,
+                    headers = headers,
+                    meta = meta,
+                )
+            }
+
+            if (loadGeneration == currentGen) {
+                preloadedKey = cacheKey
+            }
+        }
     }
 
     // ============ 睡眠定时 ============
@@ -1070,6 +1184,7 @@ class PlaybackControllerImpl(
         ensureValidOrder()
         updateState { it.copy(shuffleEnabled = _shuffle) }
         persistPlaybackModes()
+        triggerPreloadNext()
     }
 
     // ============ 歌词 ============
@@ -1271,6 +1386,9 @@ class PlaybackControllerImpl(
         userVolume = v
         fadeRunner.cancel()
         platform.setVolume(v)
+        // 同步进渲染状态：UI 上的音量条只认 `PlaybackUiState.volume`（见该字段 KDoc），
+        // 桌面播放页与底部迷你播放器因此能共用同一份事实源，不再各持一份本地镜像。
+        updateState { it.copy(volume = v) }
     }
 
     /**
@@ -1471,7 +1589,7 @@ class PlaybackControllerImpl(
         // 不先停就可能刚好砸在那个窗口上。
         fadeRunner.cancel()
         fadeOutStartedFor = null
-        scrobbleTickJob?.cancel(); scrobbleJob?.cancel(); lyricsJob?.cancel(); loadJob?.cancel()
+        scrobbleTickJob?.cancel(); scrobbleJob?.cancel(); lyricsJob?.cancel(); loadJob?.cancel(); preloadJob?.cancel()
         sleepTimerJob?.cancel(); favoritesLoadingJob?.cancel(); resolveJob?.cancel()
         queueGeneration++
         engineReady = false
@@ -1499,6 +1617,7 @@ class PlaybackControllerImpl(
         // 否则会被 load(startPositionMs = 0) 覆盖掉。
         engineReady = false
         loadJob?.cancel()
+        preloadJob?.cancel()
         scrobbleTickJob?.cancel(); scrobbleJob?.cancel()
         scrobbledSeconds = 0
         val gen = ++loadGeneration
@@ -1620,6 +1739,7 @@ class PlaybackControllerImpl(
                     )
                 }
                 refreshLyrics()
+                triggerPreloadNext()
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Throwable) {

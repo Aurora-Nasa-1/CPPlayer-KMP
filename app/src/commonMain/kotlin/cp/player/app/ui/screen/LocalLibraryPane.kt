@@ -1,5 +1,6 @@
 package cp.player.app.ui.screen
 
+import cp.player.app.ui.component.CpText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -76,7 +77,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
@@ -112,13 +112,20 @@ import cp.player.app.ui.util.resized
  *
  * 作为一等公民页面，支持手机端路由压栈（push）以及桌面端双栏面板嵌入（embedded = true）。
  */
-class LocalLibraryScreen(private val embedded: Boolean = false) : Screen {
+class LocalLibraryScreen(
+    private val embedded: Boolean = false,
+    private val initialTab: Int = 0,
+) : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.current
         val model = rememberScreenModel { DownloadsScreenModel() }
         val state by model.state.collectAsState()
         val s = cpStrings()
+
+        androidx.compose.runtime.LaunchedEffect(initialTab) {
+            if (initialTab != 0) model.setLibraryTab(initialTab)
+        }
 
         CpRouteScaffold(
             title = s.downloads.tabLocalLibrary,
@@ -258,6 +265,8 @@ internal fun LocalLibraryTab(
                     ContentState(
                         title = s.emptyLocalTitle,
                         message = s.emptyLocalNote,
+                        actionLabel = s.scanDevice,
+                        onAction = { model.startScan(strings) },
                     )
                 }
             }
@@ -629,17 +638,19 @@ private fun ColumnScope.SongList(
                 Modifier.fillMaxWidth().padding(horizontal = CpSpacing.pageHorizontal, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
+                CpText(
                     title ?: "${s.tabSongs} · ${songs.size}",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 if (songs.isNotEmpty()) {
                     IconButton(onClick = { model.playAll(songs) }) {
                         Icon(Icons.Filled.PlayArrow, contentDescription = s.playAll)
+                    }
+                    IconButton(onClick = { model.shuffleAll(songs) }) {
+                        Icon(Icons.Filled.Shuffle, contentDescription = "随机播放")
                     }
                 }
                 if (showSort) {
@@ -713,11 +724,10 @@ private fun LocalSongRow(
             )
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(
+                CpText(
                     song.title,
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 // 副标题：艺术家 · 音质标签（有元数据时）· 时长
                 val subtitle = buildList {
@@ -725,12 +735,11 @@ private fun LocalSongRow(
                     song.qualityLabel?.let { add(it) }
                     if (song.durationMs > 0) add(formatDuration(song.durationMs))
                 }.joinToString(" · ")
-                Text(
+                CpText(
                     subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
             var menuExpanded by remember { mutableStateOf(false) }
@@ -894,14 +903,13 @@ private fun AlbumCell(album: LocalAlbum, strings: CpStrings, onClick: () -> Unit
             )
         }
         Spacer(Modifier.height(6.dp))
-        Text(
+        CpText(
             album.name,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
         )
-        Text(
+        CpText(
             buildString {
                 append(album.artist ?: strings.downloads.unknownArtist)
                 append(" · ")
@@ -910,7 +918,6 @@ private fun AlbumCell(album: LocalAlbum, strings: CpStrings, onClick: () -> Unit
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -959,15 +966,14 @@ private fun ArtistCell(artist: LocalArtist, strings: CpStrings, onClick: () -> U
             )
         }
         Spacer(Modifier.height(6.dp))
-        Text(
+        CpText(
             artist.name,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
         )
-        Text(
+        CpText(
             buildString {
                 append(strings.downloads.itemCount(artist.songCount))
                 if (artist.albumCount > 1) {
@@ -978,7 +984,6 @@ private fun ArtistCell(artist: LocalArtist, strings: CpStrings, onClick: () -> U
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
         )
     }
@@ -1075,13 +1080,12 @@ private fun FolderRow(
             )
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(
+                CpText(
                     node.name,
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
-                Text(
+                CpText(
                     buildString {
                         append(s.itemCount(node.totalSongCount))
                         if (node.hasChildren && node.directSongCount > 0) {
@@ -1094,7 +1098,6 @@ private fun FolderRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
             IconButton(onClick = onOpen) {
@@ -1131,6 +1134,11 @@ private fun ColumnScope.LocalFolderDetail(
                 Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(s.playAll)
+            }
+            FilledTonalButton(onClick = { model.shuffleAll(tracks) }, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Filled.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("随机播放")
             }
         }
         LazyColumn(
@@ -1195,6 +1203,11 @@ private fun ColumnScope.LocalAlbumDetail(
                 Spacer(Modifier.width(8.dp))
                 Text(s.playAll)
             }
+            FilledTonalButton(onClick = { model.shuffleAll(tracks) }, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Filled.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("随机播放")
+            }
         }
         LazyColumn(
             Modifier.fillMaxSize(),
@@ -1257,6 +1270,11 @@ private fun ColumnScope.LocalArtistDetail(
                 Spacer(Modifier.width(8.dp))
                 Text(s.playAll)
             }
+            FilledTonalButton(onClick = { model.shuffleAll(tracks) }, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Filled.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("随机播放")
+            }
         }
         LazyColumn(
             Modifier.fillMaxSize(),
@@ -1290,19 +1308,17 @@ private fun DetailHeader(title: String, subtitle: String, onBack: () -> Unit) {
             Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
         }
         Column(Modifier.weight(1f)) {
-            Text(
+            CpText(
                 title,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
-            Text(
+            CpText(
                 subtitle,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
     }

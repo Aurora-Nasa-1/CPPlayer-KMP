@@ -56,4 +56,19 @@ object PlaybackSessionSettings {
     fun keepLastPlayback(storage: SettingsStorage): Boolean =
         storage.getString(KEY_KEEP_LAST_PLAYBACK)?.toBooleanStrictOrNull()
             ?: DEFAULT_KEEP_LAST_PLAYBACK
+
+    /**
+     * 下一首歌曲预加载开关键。
+     *
+     * 值语义：`"true"` / `"false"`。缺失时按 [DEFAULT_PRELOAD_NEXT] 处理。
+     */
+    const val KEY_PRELOAD_NEXT = "playback_preload_next"
+
+    /** 开关默认值：**开**。 */
+    const val DEFAULT_PRELOAD_NEXT = true
+
+    /** 读取下一首预加载开关；缺失或非法值回落到 [DEFAULT_PRELOAD_NEXT]。 */
+    fun preloadNextEnabled(storage: SettingsStorage): Boolean =
+        storage.getString(KEY_PRELOAD_NEXT)?.toBooleanStrictOrNull()
+            ?: DEFAULT_PRELOAD_NEXT
 }

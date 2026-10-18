@@ -22,14 +22,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -70,24 +68,22 @@ fun AlbumItem(
             )
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(
+                CpText(
                     album.name,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 // 副标题可能全空（歌手、曲目数、发行年份都没有）。那时**不画这一行** ——
                 // 画一个空 Text 会在标题下面留一条与行高同高的空白，整行看着像没对齐。
                 val subtitle = albumSubtitle(album)
                 if (subtitle.isNotEmpty()) {
                     Spacer(Modifier.height(2.dp))
-                    Text(
+                    CpText(
                         subtitle,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -139,24 +135,22 @@ fun AlbumCoverCard(
         Spacer(Modifier.height(8.dp))
         // 标题放在封面**下方**而不是压在图上：专辑名普遍比歌单名长（常带版本后缀），
         // 压在图里两行截断会把关键信息吃掉。
-        Text(
+        CpText(
             album.name,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Medium,
             maxLines = 2,
             minLines = 2,
-            overflow = TextOverflow.Ellipsis,
         )
         // 先存进局部变量再判空：`artistName` 是**跨模块的公开属性**，
         // Kotlin 不会对它做 smart cast（其它模块可能改成 var）。
         val artistName = album.artistName
         if (!artistName.isNullOrBlank()) {
-            Text(
+            CpText(
                 artistName,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
     }

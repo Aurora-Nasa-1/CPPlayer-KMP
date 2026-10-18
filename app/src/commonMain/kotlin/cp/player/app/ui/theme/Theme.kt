@@ -153,9 +153,14 @@ fun CpTheme(
     val fontFamily = googleSansFlexFamily(effectiveRoundness)
     val typography: Typography = remember(fontFamily) { AppTypography.withFontFamily(fontFamily) }
 
+    // 日文字体单独装一份，只在「文本含假名」时按需使用（见 JapaneseText.kt）。
+    // 它不进 [typography]：那会让中文也走日文字形（同码位不同写法，见 Font.kt 的注释）。
+    val japaneseFontFamily = notoSansJpFamily()
+
     CompositionLocalProvider(
         LocalThemeMode provides themeMode,
         LocalIsDarkTheme provides dark,
+        LocalJapaneseFontFamily provides japaneseFontFamily,
     ) {
         // Expressive 主题：相对普通 `MaterialTheme` 的差别就是注入 `MotionScheme`，
         // 让所有 material3 组件的默认动画从「匀速 tween」变成带回弹的 spring。

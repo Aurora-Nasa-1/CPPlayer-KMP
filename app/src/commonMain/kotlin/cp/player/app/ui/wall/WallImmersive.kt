@@ -1,5 +1,6 @@
 package cp.player.app.ui.wall
 
+import cp.player.app.ui.component.CpText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -44,7 +45,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -186,22 +186,20 @@ fun WallImmersive(
                     }
 
                     Spacer(Modifier.height(24.dp))
-                    Text(
+                    CpText(
                         track.name,
                         color = Color.White,
                         fontSize = 24.sp,
                         fontWeight = FontWeight.ExtraBold,
                         maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.widthIn(max = 560.dp),
                     )
                     Spacer(Modifier.height(6.dp))
-                    Text(
+                    CpText(
                         track.artist,
                         color = Color.White.copy(alpha = 0.78f),
                         fontSize = 14.sp,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.widthIn(max = 560.dp),
                     )
 

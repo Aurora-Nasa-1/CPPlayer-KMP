@@ -42,4 +42,16 @@ data class PlaybackUiState(
     val sleepTimerRemainingMs: Long? = null,
     /** 睡眠定时模式为"播完当前曲目后暂停"。 */
     val sleepAfterTrack: Boolean = false,
+    /**
+     * 用户音量（`[0,1]`），即**用户设定的那个值**。
+     *
+     * 淡入淡出期间引擎的实际音量会从 0 爬到它 —— 那段过程**不**写回这里，
+     * 否则淡出走完就成了「用户音量被清成 0」。UI 上的音量条读这个字段：
+     * 之前它只能读 [PlaybackController.currentVolume]（普通 getter，不参与重组），
+     * 于是桌面播放页与迷你播放器各持一份本地镜像，改动不会互相看见。
+     *
+     * 放在**参数表末尾**：这个 data class 有二十来项，新字段插在中间会让
+     * 「按位置传参」的既有构造点静默错位（编译器只在类型不同时才报错）。
+     */
+    val volume: Float = 1f,
 )

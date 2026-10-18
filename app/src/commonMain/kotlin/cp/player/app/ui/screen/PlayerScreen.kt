@@ -1,5 +1,6 @@
 package cp.player.app.ui.screen
 
+import cp.player.app.ui.component.CpText
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -94,7 +95,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
@@ -157,6 +157,9 @@ class PlayerScreen : Screen {
         val scope = rememberCoroutineScope()
         val onRepeat = { controller.setRepeatMode(state.repeatMode.next()) }
 
+        val isFav by AppModel.currentFavoriteFlow.collectAsState()
+        val effectiveState = remember(state, isFav) { state.copy(isFavorite = isFav) }
+
         // 桌面窗口标题栏的标题：播放页是全屏沉浸页，窗口 chrome 仍要能显示"现在在哪"。
         // 本页的「收起」是折叠语义（↓ / ✕），与「返回上一页」不是一回事，所以不参与返回键统一。
         state.currentTrack?.let { cp.player.app.ui.util.DesktopRouteTitle(it.name) }
@@ -174,7 +177,7 @@ class PlayerScreen : Screen {
             // 所以这里要显式排除空曲目，否则会先闪一帧空白。
             if (CpBreakpoints.isExpanded(maxWidth) && state.currentTrack != null) {
                 DesktopPlayerScreen(
-                    state = state,
+                    state = effectiveState,
                     onBack = { navigator.popOrNotify() },
                     onTogglePlay = controller::togglePlayPause,
                     onSeek = controller::seekTo,
@@ -182,8 +185,10 @@ class PlayerScreen : Screen {
                     onSkipPrev = controller::skipPrevious,
                     onRepeat = onRepeat,
                     onShuffle = controller::toggleShuffle,
-                    onLike = { scope.launch { controller.toggleFavorite() } },
+                    onLike = { AppModel.toggleFavoriteOf(state.currentTrack?.id) },
                     onPlayAt = { idx -> scope.launch { controller.playAt(idx) } },
+                    // PC 播放页的队列要能拖拽换位：与窄屏队列弹层共用同一个控制器动作。
+                    onMove = { from, to -> scope.launch { controller.moveQueueItem(from, to) } },
                 )
             } else {
                 // 共享转场走**复用**而不是自建：App 根部有一个罩住整棵根 Navigator 的
@@ -204,7 +209,7 @@ class PlayerScreen : Screen {
                 if (sharedScope != null && navAnimScope != null) {
                     with(sharedScope) {
                         PlayerScreenContent(
-                            state = state,
+                            state = effectiveState,
                             animatedVisibilityScope = navAnimScope,
                             onBack = onBack,
                             onTogglePlay = controller::togglePlayPause,
@@ -223,7 +228,7 @@ class PlayerScreen : Screen {
                     androidx.compose.animation.SharedTransitionLayout {
                         androidx.compose.animation.AnimatedVisibility(visible = true) {
                             PlayerScreenContent(
-                                state = state,
+                                state = effectiveState,
                                 animatedVisibilityScope = this,
                                 onBack = onBack,
                                 onTogglePlay = controller::togglePlayPause,
@@ -496,7 +501,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                 onSeek = onSeek,
                                 onRepeat = onRepeat,
                                 isFavorite = state.isFavorite,
-                                onLikeClick = { playerScope.launch { controller.toggleFavorite() } },
+                                onLikeClick = { AppModel.toggleFavoriteOf(track.id) },
                                 onChangeSource = onChangeLyricsSource,
                             )
                             1 -> PlayerPage(
@@ -508,7 +513,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                 onSeek = onSeek,
                                 onRepeat = onRepeat,
                                 onShuffle = onShuffle,
-                                onLikeClick = { playerScope.launch { controller.toggleFavorite() } },
+                                onLikeClick = { AppModel.toggleFavoriteOf(track.id) },
                                 onArtistClick = onArtistClick,
                                 // 弹层本体与全部动作实现已收进共享宿主 PlayerMoreSheets
                                 // （本页末尾调用），这里只传两个入口回调。
@@ -798,14 +803,13 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
 
             // 错误提示
             AnimatedVisibility(visible = !state.error.isNullOrBlank()) {
-                Text(
+                CpText(
                     state.error ?: "",
                     Modifier.fillMaxWidth().padding(horizontal = 24.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                     textAlign = TextAlign.Center,
                     maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
 
@@ -1021,9 +1025,10 @@ fun DesktopLyricsContent(
     onRepeat: () -> Unit = {},
     onLikeClick: () -> Unit = {},
     onChangeSource: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
 ) {
     Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
         cp.player.app.ui.component.LyricContent(
@@ -1032,7 +1037,7 @@ fun DesktopLyricsContent(
             onSeek = onSeek,
             onChangeSource = onChangeSource,
             modifier = Modifier
-                .widthIn(max = 640.dp)
+                .widthIn(max = 860.dp)
                 .fillMaxWidth()
                 .fillMaxHeight(),
             contentPadding = PaddingValues(vertical = 24.dp, horizontal = 16.dp),

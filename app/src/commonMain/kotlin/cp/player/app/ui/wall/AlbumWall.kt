@@ -1,5 +1,6 @@
 package cp.player.app.ui.wall
 
+import cp.player.app.ui.component.CpText
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -19,7 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,7 +42,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -364,13 +363,12 @@ internal fun WallTile(
                             Modifier.fillMaxSize().padding(7.dp),
                             verticalArrangement = Arrangement.Bottom,
                         ) {
-                            Text(
+                            CpText(
                                 item.title,
                                 color = Color.White.copy(alpha = tagAlpha),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
@@ -436,22 +434,20 @@ internal fun WallTile(
 @Composable
 private fun TileMeta(item: WallItem, color: Color, titleSize: TextUnit, subSize: TextUnit) {
     Column {
-        Text(
+        CpText(
             item.title,
             color = color,
             fontSize = titleSize,
             fontWeight = FontWeight.Bold,
             maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
         )
         item.subtitle?.takeIf { it.isNotBlank() }?.let {
             Spacer(Modifier.height(2.dp))
-            Text(
+            CpText(
                 it,
                 color = color.copy(alpha = 0.72f),
                 fontSize = subSize,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
     }

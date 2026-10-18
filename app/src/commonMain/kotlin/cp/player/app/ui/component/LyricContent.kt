@@ -8,13 +8,17 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -33,14 +37,21 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.roundToLong
 import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
+import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeAlignment
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeSyllable
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.KaraokeLyricsView
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.theme.CpMotion
+import cp.player.app.ui.theme.LocalJapaneseFontFamily
+import cp.player.app.ui.theme.containsKana
+import cp.player.app.ui.theme.withJapaneseTypography
+import cp.player.core.lyrics.RubySegment
+import cp.player.core.lyrics.RubyText
 import cp.player.core.playback.LyricsState
 import cp.player.core.playback.PlaybackUiState
+import cp.player.core.playback.SyncedLyricLine
 import kotlinx.coroutines.delay
 
 /** 沉浸歌词：无操作多久之后进入（毫秒）。 */
@@ -51,6 +62,14 @@ private const val ImmersivePollIntervalMs = 250L
 
 /** 沉浸态的歌词放大倍率。再大就会把当前行挤出视口、失去「读歌词」的本意。 */
 private const val ImmersiveFontScale = 1.25f
+
+/**
+ * 注音（振り仮名）相对正文的字号比例。
+ *
+ * 0.25 = 正文的 1/4。日文排版里注音常见 1/2，但这里的正文已经放大到 28sp、
+ * 且库把注音画在音节正上方（不占行高），1/4 才不会盖住上一行。
+ */
+private const val RubyFontRatio = 0.25f
 
 /**
  * 歌词显示组件（KMP 版使用官方 accompanist-lyrics-ui 移植）。
@@ -129,20 +148,42 @@ fun LyricContent(
         return
     }
 
-    val syncedLyrics = remember(lines) {
+    // 整首歌词是不是日语：含假名即算（见 `JapaneseText.kt`）。决定用哪套字体与断行规则。
+    val japaneseFamily = LocalJapaneseFontFamily.current
+    val japaneseLyrics = remember(lines) { lines.any { it.text.containsKana() } }
+    // 用户是否开启日文注音假名开关，以及歌词文本本身是否含有注音标记
+    val showRubySetting by cp.player.app.AppModel.showRubyLyricsFlow.collectAsState()
+    val rawHasRuby = remember(lines) { lines.any { RubyText.hasRuby(it.text) } }
+    val hasRuby = rawHasRuby && showRubySetting
+
+    val syncedLyrics = remember(lines, hasRuby, rawHasRuby) {
         val iLines: List<ISyncedLine> = lines.map { l ->
             val st = l.time.toInt()
             val en = (l.endTime ?: (l.time + 5000)).toInt()
-            if (l.words.isNotEmpty()) {
-                KaraokeLine.MainKaraokeLine(
+            val segments = if (hasRuby) RubyText.parse(l.text) else emptyList()
+            val ruby = segments.any { it.reading != null }
+            when {
+                // ① 有注音且开关开启：逐段切成音节，读音挂在音节上（库把它画在音节正上方）。
+                ruby -> KaraokeLine.MainKaraokeLine(
+                    syllables = rubySyllables(segments, st, en, l.words),
+                    translation = l.translation ?: "",
+                    alignment = KaraokeAlignment.Unspecified,
+                    start = st,
+                    end = en,
+                    phonetic = "",
+                    accompanimentLines = emptyList()
+                )
+                // ② 有逐字时间：沿用原来的逐字渲染（不显示罗马音）。若关闭了注音开关，剥离文本中标记。
+                l.words.isNotEmpty() -> KaraokeLine.MainKaraokeLine(
                     syllables = l.words.mapNotNull { w ->
-                        val st = w.beginTime.toInt()
-                        val en = w.endTime.toInt().coerceAtLeast(st)
+                        val wst = w.beginTime.toInt()
+                        val wen = w.endTime.toInt().coerceAtLeast(wst)
                         if (w.text.isBlank()) return@mapNotNull null
+                        val content = if (rawHasRuby) RubyText.strip(w.text) else w.text
                         com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeSyllable(
-                            content = w.text,
-                            start = st,
-                            end = en,
+                            content = content,
+                            start = wst,
+                            end = wen,
                             phonetic = ""
                         )
                     },
@@ -150,12 +191,12 @@ fun LyricContent(
                     alignment = com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeAlignment.Unspecified,
                     start = st,
                     end = en,
-                    phonetic = l.romanization ?: "",
+                    phonetic = "", // 不显示罗马音
                     accompanimentLines = emptyList()
                 )
-            } else {
-                SyncedLine(
-                    content = l.text,
+                // ③ 普通行：若关闭注音开关但歌词含注音标记，剥离标记显示纯正文。
+                else -> SyncedLine(
+                    content = if (rawHasRuby) RubyText.strip(l.text) else l.text,
                     translation = l.translation ?: "",
                     start = st,
                     end = en
@@ -222,32 +263,44 @@ fun LyricContent(
     )
 
     val currentTextStyle = MaterialTheme.typography.headlineMedium
-    val normalStyle = remember(currentTextStyle, fontScale) {
+    val normalStyle = remember(currentTextStyle, fontScale, japaneseLyrics, japaneseFamily) {
         currentTextStyle.copy(
             fontSize = (28 * fontScale).sp,
             fontWeight = FontWeight.Bold,
             lineHeight = (36 * fontScale).sp,
             textMotion = TextMotion.Animated,
-        )
+        ).let { if (japaneseLyrics) it.withJapaneseTypography(japaneseFamily) else it }
     }
 
-    val accompanimentStyle = remember(currentTextStyle, fontScale) {
+    val accompanimentStyle = remember(currentTextStyle, fontScale, japaneseLyrics, japaneseFamily) {
         currentTextStyle.copy(
             fontSize = (20 * fontScale).sp,
             fontWeight = FontWeight.Bold,
             textMotion = TextMotion.Animated,
-        )
+        ).let { if (japaneseLyrics) it.withJapaneseTypography(japaneseFamily) else it }
     }
 
-    val phoneticTextStyle = MaterialTheme.typography.bodyMedium.copy(
-        fontSize = (14 * fontScale).sp,
-        lineHeight = (20 * fontScale).sp,
-    )
+    // 注音（振り仮名）的字号：正文的 **1/4**，位置由库画在音节上方。
+    // 没有注音时这一档仍是「行级罗马音」的字号（正文的一半），两者不要混用同一个值。
+    val basePhoneticStyle = MaterialTheme.typography.bodyMedium
+    val phoneticTextStyle = remember(basePhoneticStyle, fontScale, hasRuby, japaneseLyrics, japaneseFamily) {
+        val size = if (hasRuby) RubyFontRatio else 0.5f
+        basePhoneticStyle.copy(
+            fontSize = (28 * fontScale * size).sp,
+            lineHeight = (28 * fontScale * if (hasRuby) 0.32f else 0.7f).sp,
+        ).let { if (japaneseLyrics) it.withJapaneseTypography(japaneseFamily) else it }
+    }
+
+    val currentTrackId = state.currentTrack?.id
+    val lyricOffsetMs = if (!currentTrackId.isNullOrBlank()) {
+        cp.player.app.ui.util.LyricOffsetManager.getOffset(currentTrackId)
+    } else 0L
+    var showOffsetDialog by remember { mutableStateOf(false) }
 
     // 读 [smoothPosition] 而不是直接读 positionSource：只有读 State 才能在绘制阶段
-    // 登记观察，让库每帧重绘。见 [smoothPosition] 的注释。
-    val currentPositionProvider = remember {
-        { smoothPosition.longValue.toInt() }
+    // 登记观察，让库每帧重绘。同时叠加当前歌曲的歌词偏移量。见 [smoothPosition] 的注释。
+    val currentPositionProvider = remember(smoothPosition, lyricOffsetMs) {
+        { (smoothPosition.longValue + lyricOffsetMs).toInt() }
     }
 
     Box(modifier.fillMaxSize().then(immersiveInteraction)) {
@@ -255,16 +308,55 @@ fun LyricContent(
             listState = listState,
             lyrics = syncedLyrics,
             currentPosition = currentPositionProvider,
-            onLineClicked = { line -> onSeek(line.start.toLong()) },
+            onLineClicked = { line -> onSeek((line.start.toLong() - lyricOffsetMs).coerceAtLeast(0L)) },
             onLinePressed = { },
             normalLineTextStyle = normalStyle,
             accompanimentLineTextStyle = accompanimentStyle,
             phoneticTextStyle = phoneticTextStyle,
             textColor = MaterialTheme.colorScheme.onSurface,
             showTranslation = showTranslation,
-            showPhonetic = true,
+            showPhonetic = hasRuby,
             useBlurEffect = false,
             modifier = Modifier.fillMaxSize()
+        )
+
+        // 若当前曲目设置了歌词偏移，且非沉浸模式下，在右上角提供轻量提示胶囊
+        if (lyricOffsetMs != 0L && !immersive) {
+            androidx.compose.material3.Surface(
+                onClick = { showOffsetDialog = true },
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.85f),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 16.dp, end = 16.dp),
+            ) {
+                androidx.compose.foundation.layout.Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp),
+                ) {
+                    androidx.compose.material3.Icon(
+                        androidx.compose.material.icons.Icons.Filled.MusicNote,
+                        contentDescription = null,
+                        modifier = Modifier.size(12.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    val sign = if (lyricOffsetMs > 0) "+" else ""
+                    Text(
+                        text = "偏移 $sign${lyricOffsetMs / 1000f}s",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+
+    val curTrack = state.currentTrack
+    if (showOffsetDialog && curTrack != null) {
+        LyricOffsetDialog(
+            track = curTrack,
+            onDismiss = { showOffsetDialog = false },
         )
     }
 }
@@ -345,6 +437,67 @@ private fun rememberImmersiveState(
 private class ImmersiveController {
     var lastInteractionNanos: Long = 0L
     var immersive by mutableStateOf(false)
+}
+
+/**
+ * 把注音分段切成逐字音节，并给每段算起止时间。
+ *
+ * ## 为什么注音行要走「逐音节」而不是行级文本
+ *
+ * 库把 `KaraokeSyllable.phonetic` 画在**该音节正上方**（见 `SyllableLayout.phoneticLayoutResult`
+ * 的绘制偏移），这正是假名注音要的位置；行级 `phonetic` 则画在整行下方，是罗马音的槽位。
+ * 所以注音必须落到音节上。
+ *
+ * ## 时间怎么来
+ *
+ * - 词级时间戳**可用**时（`words` 拼起来与去掉标记后的正文完全一致）按词内线性插值 ——
+ *   逐字高亮与注音的位置都对得上；
+ * - 否则按**字数均分**整行时长。注音歌词多半是普通 LRC（没有逐字时间），
+ *   这时均分已经是最合理的近似，而且比「整行同一时刻亮起」更像逐字。
+ *
+ * ⚠️ 不能直接拿 `words` 当分段：注音标记会占字符位，词边界与去标记后的正文对不上，
+ * 硬拼会错位。对不上就整行均分，绝不「大概对齐」。
+ */
+private fun rubySyllables(
+    segments: List<RubySegment>,
+    lineStart: Int,
+    lineEnd: Int,
+    words: List<SyncedLyricLine.SyncedWord>,
+): List<KaraokeSyllable> {
+    val visible = segments.filter { it.base.isNotEmpty() }
+    val total = visible.sumOf { it.base.length }
+    if (total == 0) return emptyList()
+    val span = (lineEnd - lineStart).coerceAtLeast(1)
+
+    val useWords = words.isNotEmpty() &&
+        words.joinToString("") { it.text } == visible.joinToString("") { it.base }
+
+    fun timeAt(offset: Int): Int {
+        if (!useWords) return lineStart + span * offset / total
+        var acc = 0
+        for (w in words) {
+            val len = w.text.length
+            if (len > 0 && offset < acc + len) {
+                val frac = (offset - acc).toFloat() / len
+                return (w.beginTime + (w.endTime - w.beginTime) * frac).toInt()
+            }
+            acc += len
+        }
+        return lineEnd
+    }
+
+    var acc = 0
+    return visible.map { seg ->
+        val start = timeAt(acc)
+        acc += seg.base.length
+        val end = timeAt(acc).coerceAtLeast(start)
+        KaraokeSyllable(
+            content = seg.base,
+            start = start,
+            end = end,
+            phonetic = seg.reading ?: "",
+        )
+    }
 }
 
 /**

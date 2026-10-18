@@ -8,6 +8,7 @@ import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import cp.player.app.resources.Res
 import cp.player.app.resources.google_sans_flex
+import cp.player.app.resources.noto_sans_jp
 import org.jetbrains.compose.resources.Font
 
 /**
@@ -68,4 +69,46 @@ private fun googleSansFlex(weight: Int, fontWeight: FontWeight, roundness: Int?)
     } else {
         FontVariation.Settings(FontVariation.weight(weight))
     },
+)
+
+/**
+ * Noto Sans JP —— 日文字体（只在文本被判为日语时使用，见 [localizedForLanguage]）。
+ *
+ * 字体文件：`app/src/commonMain/composeResources/font/noto_sans_jp.ttf`
+ * （`google/fonts` 的 `ofl/notosansjp/NotoSansJP[wght].ttf`，可变字体，wght 100–900，约 9.6 MB）。
+ *
+ * ## 为什么必须自带而不是靠系统回退
+ *
+ * 中日**共用码位**的汉字（`直` / `骨` / `次` / `海` …）在 Unicode 里是同一个字，
+ * 选哪个字形完全取决于字体：中文来源的字体给的是大陆写法，日文来源的给的是日本写法。
+ * 桌面端的 Skia 回退链按系统语言挑，中文系统上日语歌词就会整屏渲染成「中文字形」。
+ * 自带一份日文字体后，「这段文字是日语」这件事由我们自己决定，观感才稳定。
+ *
+ * ⚠️ 它同时含拉丁与假名，所以**整行**用它可以保持行内一致；但**不要**拿它当全局默认 ——
+ * 中文歌词会因此变成日文字形（同 `googleSansFlexFamily` 的注释：别为了统一观感钉死字体）。
+ */
+@Composable
+internal fun notoSansJpFamily(): FontFamily {
+    val light = notoSansJp(300, FontWeight.Light)
+    val normal = notoSansJp(400, FontWeight.Normal)
+    val medium = notoSansJp(500, FontWeight.Medium)
+    val semiBold = notoSansJp(600, FontWeight.SemiBold)
+    val bold = notoSansJp(700, FontWeight.Bold)
+    return remember(light, normal, medium, semiBold, bold) {
+        FontFamily(light, normal, medium, semiBold, bold)
+    }
+}
+
+/**
+ * 取 Noto Sans JP 的一个字重实例。
+ *
+ * 与 [googleSansFlex] 同理：它是**可变字体**，不显式给 `wght` 轴的话五个字重都是 400。
+ * 这里没有 `ROND` 之类的第二轴，所以不需要 `if` 分支。
+ */
+@Composable
+private fun notoSansJp(weight: Int, fontWeight: FontWeight) = Font(
+    Res.font.noto_sans_jp,
+    fontWeight,
+    FontStyle.Normal,
+    FontVariation.Settings(FontVariation.weight(weight)),
 )

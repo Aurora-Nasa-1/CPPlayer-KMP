@@ -51,7 +51,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.navigator.LocalNavigator
@@ -306,11 +305,10 @@ private fun CommentBody(comment: Comment, model: CommentScreenModel, compact: Bo
                 // `fill = false` 只取自身宽度，剩余空间就没被全部让给右侧 —— 点赞按钮的
                 // x 位置会随昵称长短浮动，多条评论之间对不齐。改成昵称吃满剩余宽度、
                 // 点赞按钮不参与权重，才能保证右侧始终贴边对齐。
-                Text(
+                CpText(
                     comment.user,
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
                         .weight(1f)
                         .let { if (onUserClick != null) it.clickable(onClick = onUserClick) else it },
@@ -442,12 +440,11 @@ private fun CommentComposer(state: CommentUiState, model: CommentScreenModel) {
                         modifier = Modifier.size(13.dp),
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
-                    Text(
+                    CpText(
                         s.replyTo(target.user),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
                     )
                     Box(

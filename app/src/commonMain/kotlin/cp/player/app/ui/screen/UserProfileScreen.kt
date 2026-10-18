@@ -1,5 +1,6 @@
 package cp.player.app.ui.screen
 
+import cp.player.app.ui.component.CpText
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,7 +31,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
@@ -452,23 +452,21 @@ private fun ProfileHero(
     ) {
         ArtistAvatar(url = bundle.avatarUrl, size = 112.dp)
         Spacer(Modifier.height(14.dp))
-        Text(
+        CpText(
             bundle.nickname.ifBlank { s.account.unknownUser },
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
             maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
         )
         bundle.signature?.takeIf { it.isNotBlank() }?.let { signature ->
             Spacer(Modifier.height(8.dp))
-            Text(
+            CpText(
                 signature,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
                 maxLines = 4,
-                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 24.dp),
             )
         }

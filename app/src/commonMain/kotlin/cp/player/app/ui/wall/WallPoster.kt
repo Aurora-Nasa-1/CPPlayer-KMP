@@ -1,5 +1,6 @@
 package cp.player.app.ui.wall
 
+import cp.player.app.ui.component.CpText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -34,7 +35,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -161,22 +161,20 @@ internal fun WallPosterOverlay(
                 .graphicsAlpha(bodyAlpha),
             verticalArrangement = Arrangement.Bottom,
         ) {
-            Text(
+            CpText(
                 item.title,
                 color = Color.White,
                 fontSize = 23.sp,
                 fontWeight = FontWeight.ExtraBold,
                 maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
             )
             item.subtitle?.takeIf { it.isNotBlank() }?.let {
                 Spacer(Modifier.height(6.dp))
-                Text(
+                CpText(
                     it,
                     color = Color.White.copy(alpha = 0.86f),
                     fontSize = 13.5.sp,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Spacer(Modifier.height(18.dp))

@@ -1,5 +1,6 @@
 package cp.player.app.ui.screen
 
+import cp.player.app.ui.component.CpText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -618,14 +619,13 @@ private fun MetricRow(metrics: List<Pair<String, String>>) {
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Text(
+                    CpText(
                         value,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Medium,
                         maxLines = 1,
-                        // 兜底省略号：即便文案仍偏长，也要看得出「这里还有内容」，
-                        // 而不是无声无息地裁掉半截。
-                        overflow = TextOverflow.Ellipsis,
+                        // 兜底省略号由 CpText 自己接管：溢出时桌面端悬停可看全，
+                        // 这里不再手写 `overflow`（CpText 固定用 Ellipsis）。
                     )
                 }
             }

@@ -1,5 +1,6 @@
 package cp.player.app.ui.screen
 
+import cp.player.app.ui.component.CpText
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -37,7 +38,9 @@ import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.BookmarkRemove
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
@@ -76,7 +79,6 @@ import cp.player.app.ui.component.cpBounceClickable
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
@@ -184,6 +186,7 @@ fun PlaylistDetailContent(
     val scope = rememberCoroutineScope()
 
     var showPlaylistSheet by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf(false) }
     var optionsTarget by remember { mutableStateOf<TrackSummary?>(null) }
     var showInfoTarget by remember { mutableStateOf<TrackSummary?>(null) }
     var addToPlaylistIds by remember { mutableStateOf<List<String>?>(null) }
@@ -328,6 +331,12 @@ fun PlaylistDetailContent(
         if (isOwner) {
             add(
                 CpContextMenuItem(
+                    s.library.renamePlaylist, Icons.Filled.Edit,
+                    onClick = { showRenameDialog = true },
+                )
+            )
+            add(
+                CpContextMenuItem(
                     s.library.deletePlaylist, Icons.Filled.Delete,
                     onClick = confirmDeletePlaylist,
                     danger = true,
@@ -435,6 +444,11 @@ fun PlaylistDetailContent(
             onRefresh = if (isLocalPlaylist) null else { { model.refresh() } },
             onDelete = if (isOwner) confirmDeletePlaylist else null,
             onShare = onSharePlaylist,
+            onRename = if (isOwner) {
+                { showRenameDialog = true }
+            } else {
+                null
+            },
             coverUrl = summary.coverUrl,
             isFavorite = playlistFavorite,
             onToggleFavorite = if (!isOwner && !isLocalPlaylist) togglePlaylistFavorite else null,
@@ -443,9 +457,20 @@ fun PlaylistDetailContent(
         )
     }
 
+    if (showRenameDialog) {
+        cp.player.app.ui.component.RenamePlaylistDialog(
+            playlistId = summary.id,
+            currentName = summary.name,
+            onDismiss = { showRenameDialog = false },
+            onRenamed = {
+                showRenameDialog = false
+                model.refresh()
+            },
+        )
+    }
+
     // 歌曲选项弹层
-    optionsTarget?.let { track ->
-        SongOptionsSheet(
+    optionsTarget?.let { track ->        SongOptionsSheet(
             songName = track.name,
             artistName = track.artist,
             isFavorite = model.isLiked(track.id),
@@ -577,7 +602,7 @@ fun PlaylistDetailContent(
         }
         AlertDialog(
             onDismissRequest = { showInfoTarget = null },
-            title = { Text(s.library.songDetails, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            title = { CpText(s.library.songDetails, maxLines = 1) },
             text = {
                 val current = info
                 if (current == null) {
@@ -681,6 +706,7 @@ private fun NarrowLayout(
 ) {
     val s = cpStrings()
     if (state.selectionMode) {
+        val allSelected = state.tracks.isNotEmpty() && state.tracks.all { it.id in state.selectedIds }
         AppScaffold(
             title = s.library.selectedCount(state.selectedIds.size),
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -690,7 +716,17 @@ private fun NarrowLayout(
                 }
             },
             topBarActions = buildList {
-                add(TopBarAction(icon = { Icon(Icons.Filled.SelectAll, contentDescription = s.library.selectAll) }, onClick = { model.selectAll() }))
+                add(
+                    TopBarAction(
+                        icon = {
+                            Icon(
+                                if (allSelected) Icons.Filled.Deselect else Icons.Filled.SelectAll,
+                                contentDescription = if (allSelected) s.library.deselectAll else s.library.selectAll,
+                            )
+                        },
+                        onClick = { model.toggleSelectAll() },
+                    )
+                )
                 add(
                     TopBarAction(
                         icon = { Icon(Icons.Filled.QueueMusic, contentDescription = s.library.addToQueue) },
@@ -705,8 +741,10 @@ private fun NarrowLayout(
                         icon = { Icon(Icons.Filled.Download, contentDescription = s.player.download) },
                         onClick = {
                             val selectedTracks = displayTracks.filter { it.id in state.selectedIds }
-                            AppModel.downloadTracks(selectedTracks)
-                            model.exitSelection()
+                            if (selectedTracks.isNotEmpty()) {
+                                AppModel.downloadTracks(selectedTracks)
+                                model.exitSelection()
+                            }
                         },
                     )
                 )
@@ -786,7 +824,11 @@ private fun NarrowLayout(
                 onAddTracks = onAddTracks,
                 onDownloadAll = { AppModel.downloadTracks(displayTracks) },
                 onEnterSelection = {
-                    displayTracks.firstOrNull()?.let { model.enterSelection(it.id) }
+                    if (state.selectionMode) {
+                        model.exitSelection()
+                    } else {
+                        displayTracks.firstOrNull()?.let { model.enterSelection(it.id) }
+                    }
                 },
                 onMore = onOpenPlaylistSheet,
                 buildSongMenu = buildSongMenu,
@@ -890,12 +932,11 @@ private fun WideLayout(
                     }
 
                     Spacer(Modifier.height(14.dp))
-                    Text(
+                    CpText(
                         text = summary.name,
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                     )
@@ -986,7 +1027,11 @@ private fun WideLayout(
                                 onDownloadAll = { AppModel.downloadTracks(displayTracks) },
                                 selectionMode = state.selectionMode,
                                 onEnterSelection = {
-                                    displayTracks.firstOrNull()?.let { model.enterSelection(it.id) }
+                                    if (state.selectionMode) {
+                                        model.exitSelection()
+                                    } else {
+                                        displayTracks.firstOrNull()?.let { model.enterSelection(it.id) }
+                                    }
                                 },
                                 onOpenOptions = {
                                     if (windowChromeActive && !playlistMenu.isNullOrEmpty()) moreMenuExpanded = true
@@ -1038,13 +1083,21 @@ private fun WideLayout(
                     }
                     if (state.selectionMode) {
                         if (showBackButton) Spacer(Modifier.width(12.dp))
+                        IconButton(onClick = { model.exitSelection() }) {
+                            Icon(Icons.Filled.Close, contentDescription = s.library.exitSelection)
+                        }
+                        Spacer(Modifier.width(4.dp))
                         Text(
                             text = s.library.selectedCount(state.selectedIds.size),
                             style = MaterialTheme.typography.titleMedium,
                         )
                         Spacer(Modifier.width(8.dp))
-                        IconButton(onClick = { model.selectAll() }) {
-                            Icon(Icons.Filled.SelectAll, contentDescription = s.library.selectAll)
+                        val allSelected = state.tracks.isNotEmpty() && state.tracks.all { it.id in state.selectedIds }
+                        IconButton(onClick = { model.toggleSelectAll() }) {
+                            Icon(
+                                if (allSelected) Icons.Filled.Deselect else Icons.Filled.SelectAll,
+                                contentDescription = if (allSelected) s.library.deselectAll else s.library.selectAll,
+                            )
                         }
                         IconButton(
                             onClick = {
@@ -1057,8 +1110,10 @@ private fun WideLayout(
                         IconButton(
                             onClick = {
                                 val selectedTracks = displayTracks.filter { it.id in state.selectedIds }
-                                AppModel.downloadTracks(selectedTracks)
-                                model.exitSelection()
+                                if (selectedTracks.isNotEmpty()) {
+                                    AppModel.downloadTracks(selectedTracks)
+                                    model.exitSelection()
+                                }
                             },
                         ) {
                             Icon(Icons.Filled.Download, contentDescription = s.player.download)
@@ -1342,12 +1397,11 @@ private fun NarrowPlaylistHero(
         Spacer(Modifier.height(16.dp))
 
         // 2. 歌单标题与元数据
-        Text(
+        CpText(
             text = summary.name,
             style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
         )

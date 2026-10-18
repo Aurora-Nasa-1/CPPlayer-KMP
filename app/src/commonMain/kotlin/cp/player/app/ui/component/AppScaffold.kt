@@ -10,7 +10,6 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
@@ -134,11 +133,9 @@ fun AppScaffold(
 ) {
     AppScaffold(
         title = {
-            Text(
+            CpText(
                 text = title,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-            )
+                maxLines = 1)
         },
         onBackPressed = onBackPressed,
         navigationIcon = navigationIcon,

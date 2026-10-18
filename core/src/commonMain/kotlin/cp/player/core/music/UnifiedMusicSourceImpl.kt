@@ -188,6 +188,27 @@ class UnifiedMusicSourceImpl(
         }
     }
 
+    override suspend fun preloadTrack(mediaId: String, level: String): MusicResult<SongUrl> {
+        val id = parseId(mediaId) ?: return BackendResult.Error("Invalid mediaId: $mediaId")
+        if (id.providerId == "local") {
+            return getSongUrl(mediaId, level)
+        }
+        runCatching { getTrackDetail(mediaId) }
+        return try {
+            val json = musicApiService.preloadSong(id.resourceId, level)
+            val url = extractUrl(json)
+            if (url != null && url.startsWith("http")) {
+                val sizeBytes = ((json as? JsonObject)?.get("size") as? JsonPrimitive)?.longOrNull
+                val cookie = ((json as? JsonObject)?.get("cookie") as? JsonPrimitive)?.contentOrNull
+                BackendResult.Success(SongUrl(url, level, sizeBytes, null, cookie))
+            } else {
+                getSongUrl(mediaId, level)
+            }
+        } catch (e: Exception) {
+            getSongUrl(mediaId, level)
+        }
+    }
+
     override suspend fun search(keywords: String, type: Int, providers: List<String>?): MusicResult<SearchResult> {
         checkProviderList(providers)?.let { return it }
         return MusicSourceFromApi.search(musicApiService, keywords, type)

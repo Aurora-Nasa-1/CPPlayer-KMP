@@ -58,9 +58,9 @@ import kotlinx.coroutines.flow.map
  *
  * 假定平台入口已在调用前完成 [MusicBackend.init]（由 androidMain/desktopMain 执行）。
  * 负责主题应用与 Voyager 根 Navigator 的初始路由判定：
- * - [BackendState.NoProvider] 或 Ready 且 `onboarding_done` 未置位 → [OnboardingScreen]
- *   （无音源与首启引导已合并为同一条流程，不再单设 Setup 欢迎页）
- * - 其余 Ready → [MainScreen]
+ * - `onboarding_done` 未置位 → [OnboardingScreen]（首次使用引导；音源导入是**可选**一步，
+ *   用户可以不导入音源、只播本机音乐）
+ * - 其余（含 `BackendState.NoProvider` 的本地模式）→ [MainScreen]
  *
  * 通过观察 [MusicBackend.stateFlow] 响应 Provider 增删导致的瞬态切换，
  * 根 Navigator 起点由首次组合决定；后续 Ready 状态变化通过 LaunchedEffect 自动导航。

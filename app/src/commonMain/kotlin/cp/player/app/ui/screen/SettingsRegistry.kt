@@ -270,6 +270,7 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
             "flick", "engine", "wasapi", "exclusive", "独占", "bit-perfect", "源码",
             "内核", "发烧", "dsd", "asio", "声卡", "音频", "输出", "dac",
             "音效", "均衡器", "均衡", "eq", "peq", "调音", "混音", "平衡", "响度",
+            "一起听", "点歌", "下一首", "添加到下一首", "listen together",
         ),
         subItems = listOf(
             SettingsSubItem(
@@ -322,6 +323,13 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 subtitleOf = { "倒计时停止播放或在当前歌曲播放完毕后自动退出" },
                 keywords = listOf("睡眠", "定时", "倒计时", "定时关闭", "自动停止", "播完停止", "sleep", "timer"),
                 sectionOf = { "定时与自动化" },
+            ),
+            SettingsSubItem(
+                id = "playback_listen_together_add_next",
+                titleOf = { it.social.together.addNextOnPlay },
+                subtitleOf = { it.social.together.addNextOnPlayNote },
+                keywords = listOf("一起听", "点歌", "下一首", "下一首播放", "添加到下一首", "listen together", "add next"),
+                sectionOf = { it.player.listenTogether },
             ),
         ),
         screen = { PlaybackSettingsScreen() },

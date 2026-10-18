@@ -246,7 +246,10 @@ class AlbumWallScreen : Screen {
 
     @Composable
     override fun Content() {
-        AlbumWallContent(rememberScreenModel { AlbumWallScreenModel() })
+        val navigator = LocalNavigator.currentOrThrow
+        cp.player.app.ui.wall.PosterWallScreen(
+            onBack = { navigator.popOrNotify() }
+        )
     }
 }
 

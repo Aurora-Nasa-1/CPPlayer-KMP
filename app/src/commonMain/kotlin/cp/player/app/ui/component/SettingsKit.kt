@@ -66,7 +66,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -289,24 +288,23 @@ private fun resolveContainer(containerColor: Color): Color =
 /** 行内标题：16sp Medium，**不设 maxLines** —— 大字号下允许换行撑高行，而不是截断。 */
 @Composable
 private fun RowTitle(text: String, color: Color) {
-    Text(
+    CpText(
         text = text,
         color = color,
         fontWeight = FontWeight.Medium,
         fontSize = 16.sp,
-        overflow = TextOverflow.Ellipsis,
+        maxLines = Int.MAX_VALUE,
     )
 }
 
 @Composable
 private fun RowSubtitle(text: String, color: Color) {
-    Text(
+    CpText(
         text = text,
         style = MaterialTheme.typography.bodyMedium,
         color = color,
         fontWeight = FontWeight.Normal,
         maxLines = 4,
-        overflow = TextOverflow.Ellipsis,
     )
 }
 
@@ -1262,12 +1260,11 @@ fun SettingsHeroCard(
                             )
                         }
                     }
-                    Text(
+                    CpText(
                         text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 action?.invoke()

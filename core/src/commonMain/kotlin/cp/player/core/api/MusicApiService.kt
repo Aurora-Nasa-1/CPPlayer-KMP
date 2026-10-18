@@ -231,6 +231,18 @@ interface MusicApiService {
      */
     suspend fun getSongDownloadUrl(songId: String, level: String = "standard"): JsonElement
 
+    /**
+     * 预加载单首歌曲的播放资源（URL、详情、歌词等），供下一首播放平滑过渡。
+     *
+     * 配合 [cp.player.core.cache.CachedMusicApiService]，预加载的数据会直接写入缓存，在真正播放时零等待命中。
+     * 默认实现通过 [getSongUrl] 进行 URL 预解析。
+     *
+     * @param songId 歌曲 ID
+     * @param level 音质等级
+     */
+    suspend fun preloadSong(songId: String, level: String = "standard"): JsonElement =
+        getSongUrl(songId, level)
+
     /** 获取歌曲详情（可批量） */
     suspend fun getSongDetail(ids: List<String>): JsonElement
 

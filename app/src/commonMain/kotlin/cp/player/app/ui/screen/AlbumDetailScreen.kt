@@ -1,5 +1,6 @@
 package cp.player.app.ui.screen
 
+import cp.player.app.ui.component.CpText
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -12,11 +13,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -31,7 +35,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
@@ -160,14 +163,26 @@ private fun AlbumDetailContent(
     // 「歌曲信息」的目标：与其余页面同款，走共享的 SongDetailInfoDialog。
     var showInfoTarget by remember { mutableStateOf<TrackSummary?>(null) }
 
+    var searchQuery by remember { mutableStateOf("") }
+    var isSearchActive by remember { mutableStateOf(false) }
+
     LaunchedEffect(albumId) { model.load(albumId, fallback) }
 
     val detail = state.detail
-    val tracks = detail?.tracks.orEmpty()
-    val mediaIds = tracks.map { "$provider://song/${it.id}" }
+    val allTracks = detail?.tracks.orEmpty()
+    val filteredTracks = remember(allTracks, searchQuery) {
+        val q = searchQuery.trim()
+        if (q.isEmpty()) allTracks
+        else allTracks.filter { track ->
+            track.name.contains(q, ignoreCase = true) ||
+            track.artist.contains(q, ignoreCase = true) ||
+            (track.album?.contains(q, ignoreCase = true) == true)
+        }
+    }
+    val mediaIds = filteredTracks.map { "$provider://song/${it.id}" }
 
     val playAt: (Int) -> Unit = { index ->
-        tracks.getOrNull(index)?.let { CoverFlight.play(it.id, it.coverUrl) }
+        filteredTracks.getOrNull(index)?.let { CoverFlight.play(it.id, it.coverUrl) }
         val clicked = mediaIds.getOrNull(index)
         if (clicked != null) {
             AppModel.playTrackClicked(clicked) {
@@ -218,40 +233,113 @@ private fun AlbumDetailContent(
                     item {
                         AlbumHeader(
                             detail = detail,
-                            trackCount = tracks.size,
-                            totalDurationMs = tracks.sumOf { it.durationMs },
+                            trackCount = allTracks.size,
+                            totalDurationMs = allTracks.sumOf { it.durationMs },
                             wide = isWide,
                             onPlayAll = { playAt(0) },
                             onShuffle = shufflePlay,
                             onAddToQueue = queueAll,
-                            onDownloadAll = { AppModel.downloadTracks(tracks) },
+                            onDownloadAll = { AppModel.downloadTracks(allTracks) },
                         )
                     }
                     item {
                         SectionHeader(
                             title = s.album.tracks,
-                            supportingText = if (tracks.isEmpty()) {
+                            supportingText = if (allTracks.isEmpty()) {
                                 detail?.let { state.error ?: s.album.noPlayableTracks }.orEmpty()
+                            } else if (searchQuery.isNotBlank()) {
+                                "${filteredTracks.size} / ${allTracks.size}"
                             } else {
-                                s.album.trackCount(tracks.size)
+                                s.album.trackCount(allTracks.size)
+                            },
+                            action = {
+                                if (allTracks.isNotEmpty()) {
+                                    androidx.compose.material3.IconButton(
+                                        onClick = {
+                                            isSearchActive = !isSearchActive
+                                            if (!isSearchActive) searchQuery = ""
+                                        },
+                                    ) {
+                                        androidx.compose.material3.Icon(
+                                            imageVector = if (isSearchActive) androidx.compose.material.icons.Icons.Filled.Close else androidx.compose.material.icons.Icons.Filled.Search,
+                                            contentDescription = s.album.searchAlbum,
+                                            tint = if (isSearchActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
                             },
                             modifier = Modifier.padding(top = 8.dp),
                         )
                     }
-                    if (tracks.isEmpty()) {
+                    if (isSearchActive) {
+                        item {
+                            androidx.compose.material3.Surface(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                shape = androidx.compose.foundation.shape.CircleShape,
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
+                                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                                ) {
+                                    androidx.compose.material3.Icon(
+                                        imageVector = androidx.compose.material.icons.Icons.Filled.Search,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    androidx.compose.foundation.text.BasicTextField(
+                                        value = searchQuery,
+                                        onValueChange = { searchQuery = it },
+                                        modifier = Modifier.weight(1f),
+                                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                        ),
+                                        singleLine = true,
+                                        cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                                        decorationBox = { innerTextField ->
+                                            if (searchQuery.isEmpty()) {
+                                                Text(
+                                                    text = s.album.searchAlbum,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                                )
+                                            }
+                                            innerTextField()
+                                        },
+                                    )
+                                    if (searchQuery.isNotEmpty()) {
+                                        androidx.compose.material3.IconButton(
+                                            onClick = { searchQuery = "" },
+                                            modifier = Modifier.size(24.dp),
+                                        ) {
+                                            androidx.compose.material3.Icon(
+                                                imageVector = androidx.compose.material.icons.Icons.Filled.Close,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(16.dp),
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (filteredTracks.isEmpty()) {
                         item {
                             ContentState(
-                                title = s.album.emptyTracks,
-                                message = state.error ?: s.album.emptyTracksNote,
+                                title = if (searchQuery.isNotBlank()) s.album.emptyTracks else s.album.emptyTracks,
+                                message = if (searchQuery.isNotBlank()) "没有匹配 \"$searchQuery\" 的曲目" else (state.error ?: s.album.emptyTracksNote),
                             )
                         }
                     } else {
-                        items(tracks.size, key = { tracks[it].id }) { index ->
-                            val track = tracks[index]
+                        items(filteredTracks.size, key = { filteredTracks[it].id }) { index ->
+                            val track = filteredTracks[index]
                             SongItem(
                                 track = track,
                                 index = index,
-                                total = tracks.size,
+                                total = filteredTracks.size,
                                 isCurrentlyPlaying = track.id == currentTrackId,
                                 modifier = Modifier.animateItem(),
                                 onClick = { playAt(index) },
@@ -302,7 +390,7 @@ private fun AlbumDetailContent(
             isDownloaded = AppModel.isDownloaded(track.id),
             onDismiss = { optionsTarget = null },
             onPlay = {
-                playAt(tracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0))
+                playAt(allTracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0))
                 optionsTarget = null
             },
             onToggleFavorite = {
@@ -439,13 +527,12 @@ private fun AlbumHeader(
  */
 @Composable
 private fun AlbumTitle(name: String, style: TextStyle) {
-    Text(
+    CpText(
         name,
         style = style,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.primary,
         maxLines = 3,
-        overflow = TextOverflow.Ellipsis,
     )
 }
 
@@ -463,12 +550,11 @@ private fun AlbumMetaLine(text: String) {
 /** 专辑说明。**不套卡片**：说明本身是长文，再包一层容器只会多一道边框和一层内边距。 */
 @Composable
 private fun AlbumDescription(text: String, maxLines: Int) {
-    Text(
+    CpText(
         text,
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = maxLines,
-        overflow = TextOverflow.Ellipsis,
     )
 }
 

@@ -103,6 +103,22 @@ interface PlaybackController {
     /** 设置在线播放音质等级（standard/exhigh/lossless/hires…），作用于后续加载的曲目。 */
     fun setQuality(level: String)
 
+    // ============ 预加载 ============
+
+    /**
+     * 设置是否开启下一首歌曲自动预加载。
+     *
+     * 默认空实现：测试假播放器与最小装配路径无需覆写。
+     */
+    fun setPreloadNext(enabled: Boolean) {}
+
+    /**
+     * 手动触发预加载下一首歌曲。
+     *
+     * 默认空实现。
+     */
+    fun preloadNext() {}
+
     // ============ 睡眠定时 ============
 
     /**

@@ -1,5 +1,6 @@
 package cp.player.app.ui.screen
 
+import cp.player.app.ui.component.CpText
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,7 +26,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
@@ -448,7 +448,7 @@ private fun CloudDriveHeader(
             )
             Column(Modifier.weight(1f)) {
                 Text("云盘", style = MaterialTheme.typography.titleLarge)
-                Text(
+                CpText(
                     when {
                         loading -> "正在同步…"
                         count == 0 -> "上传后可跨设备播放"
@@ -458,7 +458,6 @@ private fun CloudDriveHeader(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Button(onClick = onPlayAll, enabled = !loading && count > 0) {

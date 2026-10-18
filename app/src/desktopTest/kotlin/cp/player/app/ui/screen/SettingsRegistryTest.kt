@@ -220,6 +220,17 @@ class SettingsRegistryTest {
                 cacheSubItems.size >= 4,
                 "搜索「缓存」应当命中多个具体子项，实际命中：${cacheSubItems.map { it.id }}",
             )
+
+            // 搜索 "一起听"：能精准匹配到一起听点歌添加到下一首播放具体项
+            val ltSubItems = entries.flatMap { entry ->
+                entry.visibleSubItems().filter { subItem ->
+                    subItem.keywords.any { it.contains("一起听") } || subItem.titleOf(s).contains("一起听")
+                }
+            }
+            assertTrue(
+                ltSubItems.any { it.id == "playback_listen_together_add_next" },
+                "深度搜索未搜到「一起听点歌添加到下一首播放」具体设置项",
+            )
         }
     }
 }

@@ -55,6 +55,8 @@ class PlaybackSettingsScreen : Screen {
         val quality by AppModel.playbackQualityFlow.collectAsState()
         val meteredQuality by AppModel.meteredPlaybackQualityFlow.collectAsState()
         val keepLastPlayback by AppModel.keepLastPlaybackFlow.collectAsState()
+        val preloadNext by AppModel.preloadNextFlow.collectAsState()
+        val listenTogetherAddNext by AppModel.listenTogetherAddNextFlow.collectAsState()
         val playbackState by AppModel.playback.state.collectAsState()
         // 淡入淡出配置：拖动滑杆时只改本地 draft，松手才提交（与音效页同一节奏，
         // 因为 SettingsStorage 是全量文件回写，拖一次就写一次盘会很浪费）。
@@ -308,15 +310,21 @@ class PlaybackSettingsScreen : Screen {
                     )
                 }
                 SettingsSection(s.playback.sectionLyrics) {
-                    // 三档下拉已废弃：来源顺序改由「歌词来源」页的**有序列表**表达
-                    // （内置三源 + 插件可混排）。这里保留一行跳转而不是删掉整个分段 ——
-                    // 「播放与音质」是用户找歌词设置的主入口，直接删会让人以为功能没了。
+                    val showRuby by AppModel.showRubyLyricsFlow.collectAsState()
+                    SettingsSwitchItem(
+                        title = s.playback.showRubyLyrics,
+                        subtitle = s.playback.showRubyLyricsSubtitle,
+                        checked = showRuby,
+                        onCheckedChange = { AppModel.setShowRubyLyrics(it) },
+                        index = 0,
+                        total = 2,
+                    )
                     SettingsClickItem(
                         title = s.playback.lyricsSource,
                         subtitle = s.playback.lyricsSourceNote,
                         icon = Icons.Filled.ClosedCaption,
-                        index = 0,
-                        total = 1,
+                        index = 1,
+                        total = 2,
                         onClick = { navigator.push(LyricsPluginSettingsScreen()) },
                     )
                 }
@@ -343,6 +351,26 @@ class PlaybackSettingsScreen : Screen {
                         subtitle = s.playback.keepLastPlaybackNote,
                         checked = keepLastPlayback,
                         onCheckedChange = { AppModel.setKeepLastPlayback(it) },
+                        index = 0,
+                        total = 1,
+                    )
+                }
+                SettingsSection(s.playback.sectionPreload) {
+                    SettingsSwitchItem(
+                        title = s.playback.preloadNext,
+                        subtitle = s.playback.preloadNextNote,
+                        checked = preloadNext,
+                        onCheckedChange = { AppModel.setPreloadNext(it) },
+                        index = 0,
+                        total = 1,
+                    )
+                }
+                SettingsSection(s.player.listenTogether) {
+                    SettingsSwitchItem(
+                        title = s.social.together.addNextOnPlay,
+                        subtitle = s.social.together.addNextOnPlayNote,
+                        checked = listenTogetherAddNext,
+                        onCheckedChange = { AppModel.setListenTogetherAddNext(it) },
                         index = 0,
                         total = 1,
                     )

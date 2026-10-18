@@ -136,6 +136,21 @@ interface StreamLocalizer {
         meta: SongCacheMeta? = null,
     ): String?
 
+    /**
+     * 预加载指定音轨（无损流先落盘，已命中或无需落盘的流直接返回）。
+     *
+     * 默认实现：若本地已有副本则直接返回，否则调用 [localize] 执行落盘。
+     */
+    suspend fun preload(
+        url: String,
+        cacheKey: String,
+        headers: Map<String, String>,
+        meta: SongCacheMeta? = null,
+    ): String? {
+        if (cachedPath(cacheKey) != null) return cachedPath(cacheKey)
+        return localize(url, cacheKey, headers, meta)
+    }
+
     // ======================== 管理面 ========================
     //
     // 这一组**全部带默认实现**：安卓（ExoPlayer 能定位 HTTP FLAC，从不落盘）与测试替身

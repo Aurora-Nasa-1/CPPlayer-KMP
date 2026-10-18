@@ -82,6 +82,12 @@ interface SocialStrings {
         val leaveConfirmTitle: String
         val leaveConfirmMessage: String
 
+        // —— 偏好设置 ——
+        val sectionSettings: String
+        val addNextOnPlay: String
+        val addNextOnPlayNote: String
+        val addedToNextToast: String
+
         /** 小播放器那条向右箭头的无障碍说明。 */
         val openRoom: String
     }
@@ -241,9 +247,13 @@ object SocialStringsZh : SocialStrings {
         override val leaveRoom = "退出房间"
         override val leaveRoomNote = "退出后房间立即结束，无法恢复"
         override val leaveConfirmTitle = "退出一起听房间？"
-        // 同上：`**无法恢复**` 是 Markdown，改成「」。
         override val leaveConfirmMessage =
             "退出后房间立即结束且「无法恢复」。如果你是房主，对方也会同时断开。"
+
+        override val sectionSettings = "偏好设置"
+        override val addNextOnPlay = "点歌添加到下一首播放"
+        override val addNextOnPlayNote = "在房间内点击添加歌曲时插入到下一首播放，避免打断当前音乐"
+        override val addedToNextToast = "一起听中：已添加到下一首播放"
 
         override val openRoom = "进入一起听房间"
     }
@@ -386,6 +396,11 @@ object SocialStringsEn : SocialStrings {
         override val leaveConfirmMessage =
             "The room ends the moment you leave and \"cannot be restored\". If you're the host, " +
                 "the other person is disconnected as well."
+
+        override val sectionSettings = "Preferences"
+        override val addNextOnPlay = "Play added songs next"
+        override val addNextOnPlayNote = "Insert songs chosen during Listen together to play next, avoiding interrupting the current track"
+        override val addedToNextToast = "Listen together: added to play next"
 
         override val openRoom = "Open the Listen together room"
     }

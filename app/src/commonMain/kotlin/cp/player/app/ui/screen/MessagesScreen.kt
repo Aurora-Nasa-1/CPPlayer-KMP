@@ -1,5 +1,6 @@
 package cp.player.app.ui.screen
 
+import cp.player.app.ui.component.CpText
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -28,7 +29,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
@@ -257,13 +257,12 @@ internal fun ContactRow(
         leadingContent = { ArtistAvatar(url = contact.avatarUrl, size = 52.dp) },
         headlineContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
+                CpText(
                     contact.nickname.ifBlank { strings.social.messages.unknownUser },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium,
                     color = contentColor,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
                 val timeStr = contact.lastMessageTime?.let(::formatChatTime).orEmpty()
@@ -278,12 +277,11 @@ internal fun ContactRow(
             }
         },
         supportingContent = {
-            Text(
+            CpText(
                 contact.lastMessage.orEmpty().ifBlank { strings.social.messages.noPreview },
                 style = MaterialTheme.typography.bodyMedium,
                 color = secondaryContentColor,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         },
         trailingContent = {

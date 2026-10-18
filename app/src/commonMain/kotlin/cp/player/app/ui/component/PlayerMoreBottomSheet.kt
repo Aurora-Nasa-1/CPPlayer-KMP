@@ -2,6 +2,8 @@ package cp.player.app.ui.component
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,7 +55,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
@@ -88,11 +90,22 @@ fun PlayerMoreBottomSheet(
     onDislike: () -> Unit,
     onListenTogether: () -> Unit,
     onHandoff: () -> Unit,
+    onLyricOffset: () -> Unit = {},
+    /** 当前全局音质档位（落盘 level，不是展示名）—— 由 [PlayerMoreSheets] 从 AppModel 传入。 */
+    qualityLevel: String = "",
+    onSelectQuality: (String) -> Unit = {},
 ) {
     val s = cpStrings()
     LegacyModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp),
+            // 可滚动：加入「音质」卡片后这一屏在 640dp 级的手机上会顶到窗口底，
+            // 而 ModalBottomSheet 不会自己给内容套滚动 —— 不加就是**底部被裁掉**，
+            // 用户看不到最后那张详情卡，也不知道下面还有东西。
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             // PixelPlayer 风格顶部歌曲卡片：大圆角封面 + 歌名/艺术家 + 右侧圆形分享胶囊
@@ -122,21 +135,19 @@ fun PlayerMoreBottomSheet(
                     }
                 }
                 Column(Modifier.weight(1f)) {
-                    Text(
+                    CpText(
                         text = track.name,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                     Spacer(Modifier.height(2.dp))
-                    Text(
+                    CpText(
                         text = track.artist + (track.album?.takeIf(String::isNotBlank)?.let { " · $it" } ?: ""),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 Surface(
@@ -304,6 +315,12 @@ fun PlayerMoreBottomSheet(
                 }
             }
 
+            // 音质：档位是**全局设置**（写盘 + 同步给控制器），不是「只对这首生效」。
+            // 放在动作胶囊之后、详情卡之前：它是设置而不是动作，但比「查看元数据」更常改。
+            if (qualityLevel.isNotBlank()) {
+                QualitySectionCard(level = qualityLevel, onSelect = onSelectQuality)
+            }
+
             // PixelPlayer 风格详情信息分段卡片
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.55f),
@@ -363,10 +380,20 @@ fun PlayerMoreBottomSheet(
                             modifier = Modifier.weight(1f),
                         )
                         val lyricStatus = if (lyricsInfo?.hasWordLevel == true) "逐字歌词" else "动态歌词"
+                        val currentOffset = cp.player.app.ui.util.LyricOffsetManager.getOffset(track.id)
+                        val lyricLabel = if (currentOffset != 0L) {
+                            val sign = if (currentOffset > 0) "+" else ""
+                            "$lyricStatus (${sign}${currentOffset / 1000f}s)"
+                        } else {
+                            "$lyricStatus · 微调"
+                        }
                         DetailChip(
                             icon = Icons.Filled.Lyrics,
-                            label = lyricStatus,
-                            modifier = Modifier.weight(1f),
+                            label = lyricLabel,
+                            modifier = Modifier.weight(1f).clickable {
+                                onLyricOffset()
+                                onDismiss()
+                            },
                         )
                     }
                 }
@@ -398,12 +425,11 @@ private fun DetailChip(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.width(4.dp))
-            Text(
+            CpText(
                 label,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -430,13 +456,12 @@ private fun PlayerPillButton(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Icon(icon, contentDescription = null, tint = textColor, modifier = Modifier.size(20.dp))
-            Text(
+            CpText(
                 text = text,
                 color = textColor,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -461,6 +486,7 @@ class PlayerMoreSheetState {
     var showSongInfo by mutableStateOf(false)
     var showDevicePicker by mutableStateOf(false)
     var showSimilarSongs by mutableStateOf(false)
+    var showLyricOffset by mutableStateOf(false)
 }
 
 @Composable
@@ -486,6 +512,9 @@ fun PlayerMoreSheets(
     val track = state.currentTrack ?: return
     val scope = rememberCoroutineScope()
     val s = cpStrings()
+    // 音质是**全局设置**（落盘 + 同步给控制器），与迷你播放器那个 chip 读写同一份。
+    // 订阅放在顶层而不是弹层分支里：它是纯设置流，不碰后端，随时可读。
+    val qualityLevel by AppModel.playbackQualityFlow.collectAsState()
 
     // ⚠️ controller 只在弹层 / 弹窗真正打开的分支里解析，**不要**提到函数顶层：
     // AppModel.playback → MusicBackend.instance 在后端未 init 的环境（desktopTest 的
@@ -528,6 +557,9 @@ fun PlayerMoreSheets(
                     controller.skipNext()
                 }
             },
+            onLyricOffset = { sheets.showLyricOffset = true },
+            qualityLevel = qualityLevel,
+            onSelectQuality = AppModel::setPlaybackQuality,
         )
     }
 
@@ -576,6 +608,13 @@ fun PlayerMoreSheets(
             onDismiss = { sheets.showSongInfo = false },
         )
     }
+
+    if (sheets.showLyricOffset) {
+        LyricOffsetDialog(
+            track = track,
+            onDismiss = { sheets.showLyricOffset = false },
+        )
+    }
 }
 
 /** 歌曲信息弹窗（「更多」弹层信息卡的展开版，含 MIME 行）。 */
@@ -589,7 +628,7 @@ fun SongInfoDialog(
     val s = cpStrings()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(s.player.songInfo, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        title = { CpText(s.player.songInfo, maxLines = 1) },
         text = {
             val info = formatInfo
             Text(

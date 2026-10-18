@@ -161,6 +161,13 @@ class CachedMusicApiService(
             delegate.getSongDownloadUrl(songId, level)
         }
 
+    override suspend fun preloadSong(songId: String, level: String): JsonElement {
+        val url = getSongUrl(songId, level)
+        runCatching { getSongDetail(listOf(songId)) }
+        runCatching { getLyric(songId) }
+        return url
+    }
+
     override suspend fun getSongDetail(ids: List<String>): JsonElement =
         read(MusicApiMethod.SONG_DETAIL, mapOf("ids" to ids.joinToString(","))) {
             delegate.getSongDetail(ids)

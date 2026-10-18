@@ -38,7 +38,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
@@ -97,11 +96,10 @@ fun PlaylistPickerRow(
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(
+                CpText(
                     playlist.name,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 val subtitle = buildString {
                     if (!playlist.creatorName.isNullOrBlank()) append(playlist.creatorName)
@@ -110,12 +108,11 @@ fun PlaylistPickerRow(
                         append(s.playlistSheet.trackCount(playlist.trackCount))
                     }
                 }
-                Text(
+                CpText(
                     subtitle.ifEmpty { s.playlistSheet.playlistFallbackTitle },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }

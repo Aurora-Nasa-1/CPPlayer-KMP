@@ -23,6 +23,14 @@ interface UnifiedMusicSource {
     suspend fun getSongUrl(mediaId: String, level: String = "standard"): MusicResult<SongUrl>
 
     /**
+     * 预加载指定媒体（音源 URL、详情等），供下一首播放预热。
+     *
+     * 默认实现直接委托至 [getSongUrl]。
+     */
+    suspend fun preloadTrack(mediaId: String, level: String = "standard"): MusicResult<SongUrl> =
+        getSongUrl(mediaId, level)
+
+    /**
      * 搜索 (支持跨多个 provider 搜索并聚合)
      * @param keywords 关键词
      * @param providers 指定要在哪些 providerId 进行搜索，为 null 时搜索所有已加载的

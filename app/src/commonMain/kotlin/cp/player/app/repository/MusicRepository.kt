@@ -273,6 +273,18 @@ class MusicRepository(private val api: MusicApiService) {
         return ok
     }
 
+    /**
+     * 重命名自己创建的歌单。
+     *
+     * ⚠️ 走 `playlist/name/update`（只改名），不要用 `playlist/update` ——
+     * 后者要求同时带上 `desc` / `tags`，漏传会把歌单简介与标签清空。
+     */
+    suspend fun renamePlaylist(playlistId: Long, name: String): Boolean {
+        val ok = isApiSuccess(api.updatePlaylistName(playlistId, name))
+        if (ok) AppModel.notifyPlaylistChanged(playlistId)
+        return ok
+    }
+
     suspend fun removeTracksFromPlaylist(playlistId: Long, ids: List<String>): Boolean {
         val ok = isApiSuccess(api.removeTracksFromPlaylist(playlistId, ids))
         if (ok) AppModel.notifyPlaylistChanged(playlistId)
