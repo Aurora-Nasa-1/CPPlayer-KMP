@@ -33,7 +33,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -820,30 +819,35 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
         val screenHeight = maxHeight
         val isUltraCompact = screenHeight < 620.dp
         val isCompact = screenHeight in 620.dp..760.dp
-        val isTall = screenHeight > 820.dp
+        // 标准现代手机（20:9 上下，dp 高约 780~915）就该算长屏：阈值不能定得太苛刻，
+        // 否则主流机型全掉进 else 分支，「长屏专属」的控件加高永远不生效。
+        val isTall = screenHeight > 780.dp
 
         val horizontalPadding = if (isUltraCompact) 14.dp else 18.dp
         val topPadding = if (isUltraCompact) 2.dp else 6.dp
         val bottomPadding = when {
             isUltraCompact -> 6.dp
             isCompact -> 12.dp
-            isTall -> 20.dp
-            else -> 16.dp
+            isTall -> 28.dp
+            else -> 18.dp
         }
+        // 长屏主控件「变胖」：按钮条更高、图标同步放大，与更宽的屏宽成比例
         val controlsHeight = when {
             isUltraCompact -> 54.dp
             isCompact -> 64.dp
-            isTall -> 72.dp
+            isTall -> 84.dp
             else -> 68.dp
         }
         val sideIconSize = when {
             isUltraCompact -> 24.dp
             isCompact -> 30.dp
+            isTall -> 38.dp
             else -> 34.dp
         }
         val centerIconSize = when {
             isUltraCompact -> 28.dp
             isCompact -> 34.dp
+            isTall -> 44.dp
             else -> 38.dp
         }
 
@@ -928,6 +932,11 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                 }
             }
 
+            // 长屏的剩余高度**全部**由封面与信息行之间的这条弹性空隙吸收：
+            // 封面贴顶、控制区与底部工具条贴底成组，多余高度不再堆在主控件
+            // 与底部工具条之间（旧写法那里是一条 weight(1f)，长屏上能拉开一大截）。
+            Spacer(Modifier.weight(1f))
+
             Spacer(Modifier.height(artToInfoGap))
 
             // 歌曲信息行：标题 / 歌手 / 喜欢
@@ -1007,8 +1016,9 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                 centerIconSize = centerIconSize,
             )
 
-            // 弹性吸收长屏剩余高度：自然舒展拉开主控区与底部辅助工具区
-            Spacer(Modifier.weight(1f).heightIn(min = 6.dp))
+            // 主控件与底部工具条之间只留一小段固定间距：长屏多余高度已由
+            // 封面下方的弹性空隙吸收，这里再放 weight 会把两者撑得老远。
+            Spacer(Modifier.height(if (isUltraCompact) 6.dp else 10.dp))
 
             // 错误提示
             AnimatedVisibility(visible = !state.error.isNullOrBlank()) {
