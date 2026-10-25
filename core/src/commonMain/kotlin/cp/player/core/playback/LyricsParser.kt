@@ -26,9 +26,12 @@ object LyricsParser {
     private val autoParser = AutoParser()
 
     /**
+     * @param durationMs 曲目时长（毫秒），用于判定时间戳方言是否与时长相容。0 = 未知。
+     *   只有 [LyricsTimeRepair] 用它 —— 见那里的说明（`[mm:ss:cc]` 被读成 `h:mm:ss`
+     *   会让整首歌的歌词都被推到约 60 倍之后，UI 因此整首停在「前奏」）。
      * @return 已按时间升序、去重的歌词行；无可用歌词返回空列表。
      */
-    fun parse(json: JsonElement): List<SyncedLyricLine> {
+    fun parse(json: JsonElement, durationMs: Long = 0L): List<SyncedLyricLine> {
         val obj = json as? JsonObject ?: return emptyList()
         val data = obj["data"] as? JsonObject
 
@@ -83,25 +86,58 @@ object LyricsParser {
 
         if (lyricRaw.isNullOrBlank()) return emptyList()
 
-        if (lyricRaw.trimStart().startsWith("<tt") || lyricRaw.trimStart().startsWith("<?xml")) {
-            val lines = parseTtml(lyricRaw)
+        // BOM 统一在这里剥掉：带 BOM 时行首时间戳（以及下面的 TTML 前缀判定）都对不上，
+        // 症状是**第一行歌词静默丢失**。
+        val lyricText = LyricsTimeRepair.stripBom(lyricRaw)
+
+        if (lyricText.trimStart().startsWith("<tt") || lyricText.trimStart().startsWith("<?xml")) {
+            val lines = parseTtml(lyricText)
             if (lines.isNotEmpty()) return finalize(lines)
         }
 
-        val mainLines = parseEnhancedLrc(lyricRaw)
+        // 时间戳方言修复：`[mm:ss:cc]` 必须按百分秒读，否则整份歌词被推到约 60 倍之后
+        // （UI 表现为「整首都停在前奏」）。翻译 / 罗马音同一份文件、同一种方言，一起修。
+        val mainRaw = LyricsTimeRepair.repairColonDialect(
+            lyricText,
+            durationMs,
+            ::parseEnhancedLrc,
+        )
+        val mainLines = parseEnhancedLrc(mainRaw)
         if (mainLines.isEmpty()) return emptyList()
 
-        val merged = mergeTranslation(mainLines, tlyricRaw, romalrcRaw)
+        val merged = mergeTranslation(
+            mainLines,
+            tlyricRaw?.let { LyricsTimeRepair.repairColonDialect(LyricsTimeRepair.stripBom(it), durationMs, ::parseEnhancedLrc) },
+            romalrcRaw?.let { LyricsTimeRepair.repairColonDialect(LyricsTimeRepair.stripBom(it), durationMs, ::parseEnhancedLrc) },
+        )
         return finalize(merged)
     }
 
     /**
      * 智能识别单文本歌词格式并解析（支持 TTML、YRC、KRC、Enhanced LRC、LRC、Lyricify）。
+     *
+     * ⚠️ 这条路的 `AutoParser` **只认标准方言**，实测两种常见写法会直接返回 0 行
+     * （边车 `.lrc` 于是静默落空、转去在线来源，用户看到的是「本地歌词文件没生效」）：
+     * - `[mm:ss]`（**没有百分秒**）—— `AutoParser.canParse` 要求 `\d{2}\.\d{2,3}`；
+     * - `[mm:ss:cc]`（百分秒用冒号）—— 同上。
+     *
+     * 所以这里按代价从低到高兜两刀：
+     * 1. 冒号方言且有**硬证据**（第三段 ≥ 60）⇒ 改写成 `mm:ss.cc` 再走 `AutoParser`；
+     * 2. 否则退回行级解析器 [parseEnhancedLrc]（它认无百分秒的写法）。
+     *    ⚠️ 必须排在 ① 之后：冒号方言它也能解析，但会按 `h:mm:ss` 读成错误的 60 倍时间。
      */
     fun parseText(raw: String): List<SyncedLyricLine> {
-        if (raw.isBlank()) return emptyList()
-        val parsed = autoParser.parse(raw)
-        return finalize(parsed.toSyncedLyricLines())
+        val text = LyricsTimeRepair.stripBom(raw)
+        if (text.isBlank()) return emptyList()
+        val parsed = finalize(autoParser.parse(text).toSyncedLyricLines())
+        if (parsed.isNotEmpty()) return parsed
+        if (LyricsTimeRepair.hasImpossibleSeconds(text)) {
+            val repaired = finalize(
+                autoParser.parse(LyricsTimeRepair.rewriteColonAsCentiseconds(text)).toSyncedLyricLines(),
+            )
+            if (repaired.isNotEmpty()) return repaired
+        }
+        return finalize(parseEnhancedLrc(text))
     }
 
     // ============ Core 委托解析 ============
@@ -125,9 +161,17 @@ object LyricsParser {
     }
 
     internal fun parseEnhancedLrc(raw: String): List<SyncedLyricLine> {
-        return runCatching {
-            EnhancedLrcParser.parse(raw).toSyncedLyricLines()
-        }.getOrDefault(emptyList())
+        val text = LyricsTimeRepair.stripBom(raw)
+        val parsed = runCatching { EnhancedLrcParser.parse(text).toSyncedLyricLines() }
+            .getOrDefault(emptyList())
+        if (parsed.isNotEmpty()) return parsed
+        // 兜底：库遇到**逆序**时间戳会抛异常（"Failed requirement."），而外层 runCatching
+        // 会把整份歌词吞成空列表 —— 上层于是以为「没有歌词」，转去打别的来源。
+        // 按行首时间戳重排一次通常就能救回来；已经有序时它原样返回，不做第二次解析。
+        val sorted = LyricsTimeRepair.sortLinesByLeadingTimestamp(text)
+        if (sorted == text) return emptyList()
+        return runCatching { EnhancedLrcParser.parse(sorted).toSyncedLyricLines() }
+            .getOrDefault(emptyList())
     }
 
     internal fun parseLrc(raw: String): List<SyncedLyricLine> {

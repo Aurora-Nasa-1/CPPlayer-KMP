@@ -129,7 +129,9 @@ internal class ProviderLyricsSource(
         if (targetMediaId == null || targetMediaId.providerId == "local") return null
         val songId = targetMediaId.resourceId
         val json = api.getLyric(songId)
-        val lines = LyricsParser.parse(json)
+        // 带上时长：`[mm:ss:cc]` 方言是否被误读要看它（见 `LyricsTimeRepair`）。
+        // 时长只是判据，缺了也能解析 —— 只是那一类方言改不过来。
+        val lines = LyricsParser.parse(json, durationMs = request.durationMs)
         if (lines.isEmpty()) return null
         return LyricsSourceResult(lines = lines)
     }
