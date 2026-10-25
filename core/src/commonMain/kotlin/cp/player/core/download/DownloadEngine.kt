@@ -295,6 +295,7 @@ class DownloadEngine(
         val partPath = "$targetPath.part"
         val resumeBytes = if (PlatformSupport.exists(partPath)) PlatformSupport.fileSize(partPath) else 0L
         val headers = buildMap {
+            songUrl.headers?.let { putAll(it) }
             songUrl.cookie?.takeIf { it.isNotBlank() }?.let { put("Cookie", it) }
             if (resumeBytes > 0L) put("Range", "bytes=$resumeBytes-")
         }

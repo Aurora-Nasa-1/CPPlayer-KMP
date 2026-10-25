@@ -242,9 +242,17 @@ class MusicRepository(private val api: MusicApiService) {
         val uid = extractUidFromLoginStatus(api.getLoginStatus())
             ?: return BackendResult.Error("未登录或登录已过期")
         val json = api.getLikeList(uid)
-        val array = (json as? JsonObject)?.get("ids") as? JsonArray ?: JsonArray(emptyList())
+        val root = json as? JsonObject ?: return BackendResult.Success(emptySet())
+        val array = (root["ids"]
+            ?: (root["data"] as? JsonObject)?.get("ids")
+            ?: (root["data"] as? JsonArray)
+            ?: (root["data"] as? JsonObject)?.get("trackIds")) as? JsonArray
+            ?: JsonArray(emptyList())
         return BackendResult.Success(
-            array.mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank) }.toSet()
+            array.mapNotNull { el ->
+                (el as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank)
+                    ?: ((el as? JsonObject)?.get("id") as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank)
+            }.toSet()
         )
     }
 

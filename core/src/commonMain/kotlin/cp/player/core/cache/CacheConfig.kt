@@ -11,6 +11,6 @@ package cp.player.core.cache
 data class CacheConfig(
     val freshTtlMs: Long = 5 * 60 * 1000L,
     val maxEntries: Int = 64,
-    val enableFallback: Boolean = true,
+    val enableFallback: Boolean = false,
     val enableCache: Boolean = true
 )

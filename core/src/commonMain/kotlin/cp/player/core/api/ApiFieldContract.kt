@@ -197,7 +197,15 @@ internal object ApiFieldContract {
     val ALIASES: Map<String, List<String>> = mapOf(
         MusicApiMethod.AUTH_LOGIN_STATUS to listOf("profile", "account"),
         MusicApiMethod.AUTH_WEBVIEW_URL to listOf("data", "verifyUrl", "webUrl"),
-        MusicApiMethod.AUTH_VERIFY_URL to listOf("data", "verifyUrl", "captchaUrl")
+        MusicApiMethod.AUTH_VERIFY_URL to listOf("data", "verifyUrl", "captchaUrl"),
+        MusicApiMethod.SONG_DETAIL to listOf("tracks", "data"),
+        MusicApiMethod.LYRIC_NEW to listOf("data", "lyric"),
+        MusicApiMethod.USER_PLAYLIST to listOf("playlists", "data"),
+        MusicApiMethod.PLAYLIST_DETAIL to listOf("data"),
+        MusicApiMethod.PLAYLIST_TRACK_ALL to listOf("tracks", "data"),
+        MusicApiMethod.SEARCH_CLOUD to listOf("data", "tracks"),
+        MusicApiMethod.TOPLIST to listOf("data", "charts"),
+        MusicApiMethod.TOPLIST_DETAIL to listOf("data", "charts"),
     )
 
     /** 该方法声明的主字段；未声明（不校验数据字段）时返回 null。 */

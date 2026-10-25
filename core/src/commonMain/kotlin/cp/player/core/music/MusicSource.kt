@@ -135,6 +135,7 @@ data class SongUrl(
     val sizeBytes: Long?,
     val expireAt: Long?,
     val cookie: String? = null,
+    val headers: Map<String, String>? = null,
 )
 
 /**

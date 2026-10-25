@@ -80,7 +80,7 @@ class UnifiedMusicSourceImpl(
         }
         return try {
             val json = musicApiService.getSongDetail(listOf(id.resourceId))
-            val songs = (json as? JsonObject)?.get("songs")?.jsonArray
+            val songs = extractSongsArray(json)
             if (songs != null && songs.isNotEmpty()) {
                 val track = songs[0].jsonObject
                 BackendResult.Success(track.toTrackSummary(mediaId))
@@ -134,13 +134,14 @@ class UnifiedMusicSourceImpl(
                 totalChunks++
                 try {
                     val json = musicApiService.getSongDetail(chunk.map { it.resourceId })
-                    val songs = (json as? JsonObject)?.get("songs")?.jsonArray
+                    val songs = extractSongsArray(json)
                     // Bolt: Optimize O(N^2) lookup to O(N) by using a hash map
                     val chunkMap = chunk.associateBy { it.resourceId }
+                    val chunkMapLower = chunk.associateBy { it.resourceId.lowercase() }
                     songs?.forEach { songJson ->
                         val trackObj = songJson.jsonObject
                         val rid = rawTrackId(trackObj).ifEmpty { return@forEach }
-                        val matchedApiId = chunkMap[rid]
+                        val matchedApiId = chunkMap[rid] ?: chunkMapLower[rid.lowercase()]
                         if (matchedApiId != null) {
                             summaries.add(trackObj.toTrackSummary(matchedApiId.toString()))
                         }
@@ -165,6 +166,49 @@ class UnifiedMusicSourceImpl(
         return BackendResult.Success(summaries)
     }
 
+    private fun extractSongsArray(json: kotlinx.serialization.json.JsonElement?): JsonArray? {
+        val obj = json as? JsonObject ?: return null
+        return (obj["songs"] as? JsonArray)
+            ?: (obj["tracks"] as? JsonArray)
+            ?: ((obj["data"] as? JsonObject)?.get("tracks") as? JsonArray)
+            ?: ((obj["data"] as? JsonObject)?.get("songs") as? JsonArray)
+            ?: (obj["data"] as? JsonArray)
+    }
+
+    private fun extractSizeBytes(body: kotlinx.serialization.json.JsonElement): Long? {
+        val obj = body as? JsonObject ?: return null
+        val direct = (obj["size"] as? JsonPrimitive)?.longOrNull
+        if (direct != null && direct > 0) return direct
+        val dataObj = obj["data"] as? JsonObject
+        val dataSize = (dataObj?.get("size") as? JsonPrimitive)?.longOrNull
+        if (dataSize != null && dataSize > 0) return dataSize
+        val dataArray = obj["data"] as? JsonArray
+        val firstItem = dataArray?.firstOrNull() as? JsonObject
+        return (firstItem?.get("size") as? JsonPrimitive)?.longOrNull
+    }
+
+    private fun extractCookie(body: kotlinx.serialization.json.JsonElement): String? {
+        val obj = body as? JsonObject ?: return null
+        val direct = (obj["cookie"] as? JsonPrimitive)?.contentOrNull
+        if (!direct.isNullOrBlank()) return direct
+        val dataObj = obj["data"] as? JsonObject
+        val dataCookie = (dataObj?.get("cookie") as? JsonPrimitive)?.contentOrNull
+        if (!dataCookie.isNullOrBlank()) return dataCookie
+        val headers = extractHeaders(body)
+        return headers?.get("Cookie") ?: headers?.get("cookie")
+    }
+
+    private fun extractHeaders(body: kotlinx.serialization.json.JsonElement): Map<String, String>? {
+        val obj = body as? JsonObject ?: return null
+        val headersObj = (obj["headers"] as? JsonObject)
+            ?: ((obj["data"] as? JsonObject)?.get("headers") as? JsonObject)
+        if (headersObj == null || headersObj.isEmpty()) return null
+        return headersObj.mapNotNull { (k, v) ->
+            val str = (v as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+            k to str
+        }.toMap().takeIf { it.isNotEmpty() }
+    }
+
     override suspend fun getSongUrl(mediaId: String, level: String): MusicResult<SongUrl> {
         val id = parseId(mediaId) ?: return BackendResult.Error("Invalid mediaId: $mediaId")
         if (id.providerId == "local") {
@@ -177,9 +221,10 @@ class UnifiedMusicSourceImpl(
             val json = musicApiService.getSongUrl(id.resourceId, level)
             val url = extractUrl(json)
             if (url != null && url.startsWith("http")) {
-                val sizeBytes = ((json as? JsonObject)?.get("size") as? JsonPrimitive)?.longOrNull
-                val cookie = ((json as? JsonObject)?.get("cookie") as? JsonPrimitive)?.contentOrNull
-                BackendResult.Success(SongUrl(url, level, sizeBytes, null, cookie))
+                val sizeBytes = extractSizeBytes(json)
+                val cookie = extractCookie(json)
+                val headers = extractHeaders(json)
+                BackendResult.Success(SongUrl(url, level, sizeBytes, null, cookie, headers))
             } else {
                 BackendResult.Error("No valid URL returned for $mediaId")
             }
@@ -198,9 +243,10 @@ class UnifiedMusicSourceImpl(
             val json = musicApiService.preloadSong(id.resourceId, level)
             val url = extractUrl(json)
             if (url != null && url.startsWith("http")) {
-                val sizeBytes = ((json as? JsonObject)?.get("size") as? JsonPrimitive)?.longOrNull
-                val cookie = ((json as? JsonObject)?.get("cookie") as? JsonPrimitive)?.contentOrNull
-                BackendResult.Success(SongUrl(url, level, sizeBytes, null, cookie))
+                val sizeBytes = extractSizeBytes(json)
+                val cookie = extractCookie(json)
+                val headers = extractHeaders(json)
+                BackendResult.Success(SongUrl(url, level, sizeBytes, null, cookie, headers))
             } else {
                 getSongUrl(mediaId, level)
             }
@@ -228,6 +274,9 @@ class UnifiedMusicSourceImpl(
     private fun extractUrl(body: kotlinx.serialization.json.JsonElement): String? {
         if (body !is JsonObject) return null
         (body["redirectUrl"] as? JsonPrimitive)?.contentOrNull?.let { if (it.startsWith("http")) return it }
+        val dataObj = body["data"] as? JsonObject
+        (dataObj?.get("url") as? JsonPrimitive)?.contentOrNull?.let { if (it.startsWith("http")) return it }
+        (body["url"] as? JsonPrimitive)?.contentOrNull?.let { if (it.startsWith("http")) return it }
         return findUrlRecursive(body)
     }
 

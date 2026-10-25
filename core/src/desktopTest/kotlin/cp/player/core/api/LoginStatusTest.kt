@@ -65,6 +65,21 @@ class LoginStatusTest {
     }
 
     @Test
+    fun `Standard 与多源形状 - 从 data 直接解析 userId 或 userid`() {
+        val body1 = json("""{"code":200,"data":{"userId":88888,"nickname":"KugouUser"}}""")
+        assertEquals(88888L, extractUidFromLoginStatus(body1))
+        assertTrue(isLoggedInStatus(body1))
+
+        val body2 = json("""{"code":200,"data":{"userid":99999,"nickname":"KugouUser"}}""")
+        assertEquals(99999L, extractUidFromLoginStatus(body2))
+        assertTrue(isLoggedInStatus(body2))
+
+        val body3 = json("""{"code":200,"data":{"profile":{"id":77777}}}""")
+        assertEquals(77777L, extractUidFromLoginStatus(body3))
+        assertTrue(isLoggedInStatus(body3))
+    }
+
+    @Test
     fun `非对象响应一律返回 null`() {
         assertNull(extractUidFromLoginStatus(null))
         assertNull(extractUidFromLoginStatus(json("""[]""")))

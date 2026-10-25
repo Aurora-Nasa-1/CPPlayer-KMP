@@ -219,7 +219,10 @@ class CachedMusicApiServiceTest {
 
     @Test
     fun `当前 Provider 失败时回退到其它 Provider 并写回缓存`() = runBlocking {
-        val f = Fixture(providers = listOf(fakeProvider("p2", ok("from-p2"))))
+        val f = Fixture(
+            config = CacheConfig(enableFallback = true),
+            providers = listOf(fakeProvider("p2", ok("from-p2")))
+        )
         f.next = err(500)
 
         assertEquals("from-p2", tagOf(f.api.getPlaylistDetail(1L)))

@@ -241,6 +241,253 @@ class UnifiedMusicSourceContractTest {
         assertEquals(0, result.getOrNull()?.size)
     }
 
+    @Test
+    fun `Standard v3 - 支持从 data_tracks 解析曲目详情与批量详情`() = runBlocking {
+        val standardJson = Json.parseToJsonElement(
+            """
+            {
+              "code": 0,
+              "data": {
+                "tracks": [{
+                  "id": "c138da64149fa469e8020942ff903c72",
+                  "title": "晴天",
+                  "artist": "周杰伦",
+                  "album": "叶惠美",
+                  "duration": 269,
+                  "coverUrl": "https://img.kugou.com/cover.jpg"
+                }]
+              }
+            }
+            """
+        )
+        val s = source(api = detailApi(standardJson))
+
+        val single = s.getTrackDetail("kugou-music-rs://song/c138da64149fa469e8020942ff903c72").getOrNull()
+        assertEquals("晴天", single?.name)
+        assertEquals("周杰伦", single?.artist)
+        assertEquals("叶惠美", single?.album)
+        assertEquals(269000L, single?.durationMs)
+
+        val batch = s.getTrackDetails(listOf("kugou-music-rs://song/c138da64149fa469e8020942ff903c72")).getOrNull()
+        assertEquals(1, batch?.size)
+        assertEquals("晴天", batch?.first()?.name)
+    }
+
+    @Test
+    fun `Standard v3 - 支持从 data 提取播放直链、大小与请求头`() = runBlocking {
+        val standardUrlJson = Json.parseToJsonElement(
+            """
+            {
+              "code": 0,
+              "data": {
+                "url": "https://stream.example.com/audio/track_1001.flac",
+                "format": "flac",
+                "quality": "lossless",
+                "size": 25165824,
+                "headers": {
+                  "User-Agent": "CPPlayer/1.6",
+                  "Referer": "https://example.com"
+                }
+              }
+            }
+            """
+        )
+        val s = source(api = songUrlApi(standardUrlJson))
+        val result = s.getSongUrl("kugou-music-rs://song/track_1001", "lossless").getOrNull()
+            ?: fail("应成功解析 Standard v3 播放地址")
+
+        assertEquals("https://stream.example.com/audio/track_1001.flac", result.url)
+        assertEquals("lossless", result.level)
+        assertEquals(25165824L, result.sizeBytes)
+        assertEquals("CPPlayer/1.6", result.headers?.get("User-Agent"))
+        assertEquals("https://example.com", result.headers?.get("Referer"))
+    }
+
+    @Test
+    fun `Standard v3 - 支持从 data 解析歌曲信息弹窗与详情`() {
+        val detailJson = Json.parseToJsonElement(
+            """
+            {
+              "code": 0,
+              "data": {
+                "tracks": [{
+                  "id": "1001",
+                  "title": "夜曲",
+                  "artist": "周杰伦",
+                  "album": "十一月的萧邦",
+                  "duration": 226,
+                  "coverUrl": "https://img/cover.jpg",
+                  "publishTime": 1130774400000,
+                  "bitrate": 320000
+                }]
+              }
+            }
+            """
+        )
+        val info = MusicSourceFromApi.parseSongDetailInfo(detailJson).getOrNull()
+            ?: fail("应成功解析 Standard v3 歌曲详情信息")
+        assertEquals("夜曲", info.name)
+        assertEquals("周杰伦", info.artist)
+        assertEquals("十一月的萧邦", info.album)
+        assertEquals(226000L, info.durationMs)
+        assertEquals(1130774400000L, info.publishTimeMs)
+        assertEquals(320000, info.maxBitrate)
+    }
+
+    @Test
+    fun `Standard v3 - 支持扁平歌单与歌单详情曲目`() {
+        val playlistJson = Json.parseToJsonElement(
+            """
+            {
+              "code": 0,
+              "data": {
+                "id": 9999,
+                "title": "经典华语流行",
+                "coverUrl": "https://img/pl_cover.jpg",
+                "total": 50,
+                "author": "官方编辑",
+                "tracks": [{
+                  "id": "t1",
+                  "title": "晴天",
+                  "artist": "周杰伦",
+                  "album": "叶惠美",
+                  "duration": 269
+                }]
+              }
+            }
+            """
+        )
+        val detail = MusicSourceFromApi.parsePlaylistDetail(playlistJson).getOrNull()
+            ?: fail("应成功解析 Standard v3 歌单详情")
+        assertEquals(9999L, detail.summary.id)
+        assertEquals("经典华语流行", detail.summary.name)
+        assertEquals("https://img/pl_cover.jpg", detail.summary.coverUrl)
+        assertEquals(50, detail.summary.trackCount)
+        assertEquals("官方编辑", detail.summary.creatorName)
+        assertEquals(1, detail.tracks.size)
+        assertEquals("晴天", detail.tracks.first().name)
+    }
+
+    @Test
+    fun `Standard v3 - 支持扁平歌手主页资料与歌手专辑列表`() {
+        val artistJson = Json.parseToJsonElement(
+            """
+            {
+              "code": 0,
+              "data": {
+                "id": 6452,
+                "name": "周杰伦",
+                "avatar": "https://img/jay.jpg",
+                "briefDesc": "华语流行音乐天王",
+                "alias": ["Jay Chou"],
+                "fans": 12000000
+              }
+            }
+            """
+        )
+        val profile = MusicSourceFromApi.parseArtistProfile(artistJson)
+            ?: fail("应成功解析 Standard v3 扁平歌手资料")
+        assertEquals(6452L, profile.id)
+        assertEquals("周杰伦", profile.name)
+        assertEquals("https://img/jay.jpg", profile.avatarUrl)
+        assertEquals("华语流行音乐天王", profile.briefDesc)
+        assertEquals(listOf("Jay Chou"), profile.alias)
+        assertEquals(12000000, profile.followeds)
+
+        val albumsJson = Json.parseToJsonElement(
+            """
+            {
+              "code": 0,
+              "data": [
+                {
+                  "id": 101,
+                  "title": "叶惠美",
+                  "cover": "https://img/album.jpg",
+                  "artist": "周杰伦",
+                  "publishDate": 1058284800000
+                }
+              ]
+            }
+            """
+        )
+        val albums = MusicSourceFromApi.parseArtistAlbums(albumsJson).getOrNull()
+            ?: fail("应成功从 Standard v3 data 数组解析专辑列表")
+        assertEquals(1, albums.size)
+        assertEquals(101L, albums.first().id)
+        assertEquals("叶惠美", albums.first().name)
+        assertEquals("https://img/album.jpg", albums.first().coverUrl)
+    }
+
+    @Test
+    fun `Standard v3 - 支持扁平专辑详情与嵌套 tracks`() {
+        val albumDetailJson = Json.parseToJsonElement(
+            """
+            {
+              "code": 0,
+              "data": {
+                "id": 101,
+                "title": "叶惠美",
+                "cover": "https://img/album.jpg",
+                "artist": "周杰伦",
+                "tracks": [
+                  {
+                    "id": "t_101_1",
+                    "title": "以父之名",
+                    "artist": "周杰伦",
+                    "duration": 342
+                  }
+                ]
+              }
+            }
+            """
+        )
+        val album = MusicSourceFromApi.parseAlbumDetail(albumDetailJson).getOrNull()
+            ?: fail("应成功解析 Standard v3 专辑详情")
+        assertEquals(101L, album.id)
+        assertEquals("叶惠美", album.name)
+        assertEquals("https://img/album.jpg", album.coverUrl)
+        assertEquals("周杰伦", album.artistName)
+        assertEquals(1, album.tracks.size)
+        assertEquals("以父之名", album.tracks.first().name)
+    }
+
+    @Test
+    fun `Standard v3 - 支持评论解析 name 与 avatar 字段`() {
+        val commentsJson = Json.parseToJsonElement(
+            """
+            {
+              "code": 0,
+              "data": {
+                "totalCount": 1,
+                "hasMore": false,
+                "comments": [
+                  {
+                    "id": 8888,
+                    "content": "前奏一响，青春回来了",
+                    "time": 1700000000000,
+                    "likedCount": 99,
+                    "user": {
+                      "userId": 5555,
+                      "name": "杰迷小明",
+                      "avatar": "https://img/avatar.jpg"
+                    }
+                  }
+                ]
+              }
+            }
+            """
+        )
+        val page = MusicSourceFromApi.parseComments(commentsJson).getOrNull()
+            ?: fail("应成功解析 Standard v3 评论")
+        assertEquals(1, page.comments.size)
+        val comment = page.comments.first()
+        assertEquals(8888L, comment.id)
+        assertEquals("前奏一响，青春回来了", comment.content)
+        assertEquals("杰迷小明", comment.user)
+        assertEquals("https://img/avatar.jpg", comment.avatar)
+        assertEquals(99, comment.likedCount)
+    }
+
     // ============ 4. 本地曲目白名单（安全边界） ============
 
     @Test
@@ -321,6 +568,10 @@ class UnifiedMusicSourceContractTest {
 
         fun searchApi(json: JsonElement) = object : MusicApiService by throwingApi() {
             override suspend fun search(keywords: String, type: Int): JsonElement = json
+        }
+
+        fun songUrlApi(json: JsonElement) = object : MusicApiService by throwingApi() {
+            override suspend fun getSongUrl(songId: String, level: String): JsonElement = json
         }
 
         /**

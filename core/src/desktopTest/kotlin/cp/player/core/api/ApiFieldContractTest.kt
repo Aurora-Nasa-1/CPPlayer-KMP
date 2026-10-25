@@ -94,6 +94,18 @@ class ApiFieldContractTest {
         assertTrue(satisfied(MusicApiMethod.AUTH_VERIFY_CHECK, """{"code":200}"""))
     }
 
+    @Test
+    fun `Standard v3 契约端点命中主字段或别名`() {
+        assertTrue(satisfied(MusicApiMethod.SONG_DETAIL, """{"code":0,"data":{"tracks":[]}}"""))
+        assertTrue(satisfied(MusicApiMethod.SONG_DETAIL, """{"code":0,"tracks":[]}"""))
+        assertTrue(satisfied(MusicApiMethod.LYRIC_NEW, """{"code":0,"data":{"lyric":"..."}}"""))
+        assertTrue(satisfied(MusicApiMethod.USER_PLAYLIST, """{"code":0,"data":[]}"""))
+        assertTrue(satisfied(MusicApiMethod.USER_PLAYLIST, """{"code":0,"playlists":[]}"""))
+        assertTrue(satisfied(MusicApiMethod.PLAYLIST_DETAIL, """{"code":0,"data":{"id":1}}"""))
+        assertTrue(satisfied(MusicApiMethod.PLAYLIST_TRACK_ALL, """{"code":0,"tracks":[]}"""))
+        assertTrue(satisfied(MusicApiMethod.SEARCH_CLOUD, """{"code":0,"data":{"tracks":[]}}"""))
+    }
+
     // ---------- 表的自洽 ----------
 
 

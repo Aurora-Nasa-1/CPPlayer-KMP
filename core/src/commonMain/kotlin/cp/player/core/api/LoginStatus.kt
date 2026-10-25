@@ -56,6 +56,11 @@ fun extractUidFromLoginStatus(status: JsonElement?): Long? {
     val profile = (data["profile"] as? JsonObject) ?: account
     return (account?.get("id") as? JsonPrimitive)?.longOrNull
         ?: (profile?.get("userId") as? JsonPrimitive)?.longOrNull
+        ?: (profile?.get("id") as? JsonPrimitive)?.longOrNull
+        ?: (data["userId"] as? JsonPrimitive)?.longOrNull
+        ?: (data["userid"] as? JsonPrimitive)?.longOrNull
+        ?: (data["id"] as? JsonPrimitive)?.longOrNull
+        ?: (data["uid"] as? JsonPrimitive)?.longOrNull
 }
 
 /**
