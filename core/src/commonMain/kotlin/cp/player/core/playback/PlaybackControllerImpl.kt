@@ -940,7 +940,7 @@ class PlaybackControllerImpl(
         val seqAtEntry = navigationSeq
         scope.launch {
             // 3 秒内回到上一首；超过 3 秒回退到本曲开头
-            if (platform.positionMs.value > 3_000L) {
+            if (_state.value.positionMs > 3_000L) {
                 requestSeek(0L)
                 return@launch
             }
