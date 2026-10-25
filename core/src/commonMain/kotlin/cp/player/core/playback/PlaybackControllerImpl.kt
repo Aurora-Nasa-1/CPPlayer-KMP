@@ -443,7 +443,13 @@ class PlaybackControllerImpl(
             if (!restored) return@launch
             // ⚠️ 先写 positionMs、再 pushQueueState：后者会顺带落盘快照，
             // 顺序反过来时快照里的进度会被此刻仍是 0 的 state 覆盖掉（恢复当场丢失进度）。
-            updateState { it.copy(sourceId = session.sourceId, positionMs = session.positionMs) }
+            updateState {
+                it.copy(
+                    sourceId = session.sourceId,
+                    positionMs = session.positionMs,
+                    activeLyricIndex = computeLyricIndex(it.lyrics, session.positionMs),
+                )
+            }
             pushQueueState()
             resolveQueueInBackground(startFrom = _index)
         }
@@ -466,7 +472,7 @@ class PlaybackControllerImpl(
                 it.copy(
                     isPlaying = playing,
                     isBuffering = buffering,
-                    error = error ?: it.error,
+                    error = if (playing || ps == PlatformPlaybackState.Ready) null else (error ?: it.error),
                 )
             }
             if (ended) onTrackEnded()
@@ -788,7 +794,7 @@ class PlaybackControllerImpl(
         val target = clampSeek(positionMs)
         if (!engineReady) {
             deferredSeek = mediaId to target
-            updateState { it.copy(positionMs = target) }
+            updateState { it.copy(positionMs = target, activeLyricIndex = computeLyricIndex(it.lyrics, target)) }
             return
         }
         // 无损流：本地副本已就绪、但引擎还在放流 ⇒ 先切到本地文件再 seek。
@@ -803,7 +809,7 @@ class PlaybackControllerImpl(
             engineReady = false
             deferredSeek = null
             // 乐观回写：load 期间引擎位置还是 0，不接管滑条会先弹回再跳过去。
-            updateState { it.copy(positionMs = target) }
+            updateState { it.copy(positionMs = target, activeLyricIndex = computeLyricIndex(it.lyrics, target)) }
             scope.launch { switchToLocal(mediaId, local, target) }
             return
         }
@@ -1210,7 +1216,7 @@ class PlaybackControllerImpl(
             } catch (e: Throwable) {
                 LyricsState.Error(e.message ?: "歌词获取失败") to null
             }
-            val pos = platform.positionMs.value
+            val pos = _state.value.positionMs
             updateState {
                 it.copy(
                     lyrics = parsed.first,
@@ -1630,13 +1636,15 @@ class PlaybackControllerImpl(
             val mediaId = entry.mediaId
             if (entry.summary == null) resolveEntry(_index)
             val summary = entry.summary ?: source.getTrackDetail(mediaId).getOrNull()?.also { entry.summary = it }
+            val currentLyrics = _state.value.lyrics
+            val sameSong = _state.value.currentTrack?.id == summary?.id && currentLyrics is LyricsState.Success
             emit(
                 _state.value.copy(
                     currentTrack = summary,
                     currentIndex = _index,
                     sourceId = _sourceId,
-                    lyrics = LyricsState.Loading,
-                    activeLyricIndex = -1,
+                    lyrics = if (sameSong) currentLyrics else LyricsState.Loading,
+                    activeLyricIndex = if (sameSong) computeLyricIndex(currentLyrics, _state.value.positionMs) else -1,
                     durationMs = summary?.durationMs?.takeIf { d -> d > 0 } ?: 0L,
                     error = if (summary == null) "无法获取曲目信息" else null,
                     isBuffering = summary != null,
@@ -1742,7 +1750,9 @@ class PlaybackControllerImpl(
                         meta = SongCacheMeta(title = summary.name, artist = summary.artist),
                     )
                 }
-                refreshLyrics()
+                if (!sameSong) {
+                    refreshLyrics()
+                }
                 triggerPreloadNext()
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -1979,6 +1989,9 @@ class PlaybackControllerImpl(
                         entry.summary = summary
                         if (idx == _index) {
                             updateState { it.copy(currentTrack = summary, currentIndex = _index, durationMs = summary.durationMs.takeIf { d -> d > 0 } ?: it.durationMs) }
+                            if (_state.value.lyrics is LyricsState.Idle) {
+                                refreshLyrics()
+                            }
                         }
                         changed = true
                     }
@@ -1997,6 +2010,9 @@ class PlaybackControllerImpl(
             entry.summary = summary
             if (index == _index) {
                 updateState { it.copy(currentTrack = summary, currentIndex = _index, durationMs = summary.durationMs.takeIf { d -> d > 0 } ?: it.durationMs) }
+                if (_state.value.lyrics is LyricsState.Idle) {
+                    refreshLyrics()
+                }
             }
             pushQueueState()
         }

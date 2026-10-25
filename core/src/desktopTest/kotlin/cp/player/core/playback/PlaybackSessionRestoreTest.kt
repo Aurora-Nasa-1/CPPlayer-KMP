@@ -223,6 +223,19 @@ class PlaybackSessionRestoreTest {
         val c = controller(FakePlatformPlayer(), FakeSource(), settings)
         assertTrue(c.state.value.queue.isEmpty())
     }
+
+    @Test
+    fun `playing state clears any previous error`() = runBlocking {
+        val settings = MapSettings()
+        val platform = FakePlatformPlayer()
+        val c = controller(platform, FakeSource(), settings)
+
+        platform.state.value = PlatformPlaybackState.Error("seek error: test")
+        assertEquals("seek error: test", c.state.value.error)
+
+        platform.state.value = PlatformPlaybackState.Playing
+        assertNull(c.state.value.error, "播放态应自动清理历史错误提示")
+    }
 }
 
 private fun mid(n: Int) = "netease://song/$n"
