@@ -447,8 +447,23 @@ internal fun DesktopPlayerLayout(
         // 版式刻度：全屏 / 窄窗 / 矮窗都从这一处推，自适应各种屏幕规格（见 playerMetrics）。
         // 沉浸态要从内容区扣掉标题栏让出的那一条（背景不受影响，它画在最外层），
         // 刻度也必须按**剩下的**高度算 —— 否则封面会按整窗高度定尺寸，把音量滑条顶出可视区。
-        val metrics = remember(maxWidth, maxHeight, topChromeInset) {
-            playerMetrics(maxWidth, (maxHeight - topChromeInset).coerceAtLeast(200.dp))
+
+        val rawEffectiveHeight = (maxHeight - topChromeInset).coerceAtLeast(200.dp)
+        var effectiveHeight by remember { mutableStateOf(rawEffectiveHeight) }
+
+        LaunchedEffect(rawEffectiveHeight) {
+            // 沉浸态动画期间（400ms），maxHeight（布局）和 topChromeInset（状态）的更新存在微小相位差，
+            // 导致两者之差发生抖动。在这里使用 40ms 的防抖来过滤掉这个抖动，彻底消除进入全屏时「弹一下」的视觉闪烁。
+            if (kotlin.math.abs(rawEffectiveHeight.value - effectiveHeight.value) > 2f) {
+                kotlinx.coroutines.delay(40)
+                effectiveHeight = rawEffectiveHeight
+            } else {
+                effectiveHeight = rawEffectiveHeight
+            }
+        }
+
+        val metrics = remember(maxWidth, effectiveHeight) {
+            playerMetrics(maxWidth, effectiveHeight)
         }
         val leftColumnWidth = metrics.leftColumnWidth
 
