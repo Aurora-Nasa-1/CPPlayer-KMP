@@ -180,6 +180,18 @@ interface PlaybackController {
     /** 当前生效的淡入淡出配置（设置页用来回填控件）。默认关闭。 */
     fun fadeConfiguration(): FadeConfig = FadeConfig.OFF
 
+    // ============ 智能逐字歌词 (Beta) ============
+
+    /**
+     * 开启/关闭针对无逐字的标准 LRC 歌词的智能逐字合成 (Beta)。
+     *
+     * 默认空实现：支持该特性的控制器覆写。
+     */
+    fun setSmartKaraokeLrcEnabled(enabled: Boolean) {}
+
+    /** 当前是否开启无逐字的标准 LRC 歌词智能逐字合成 (Beta)。默认关闭。 */
+    val isSmartKaraokeLrcEnabled: Boolean get() = false
+
     // ============ 其它 ============
 
     val currentVolume: Float get() = 1f

@@ -6,6 +6,7 @@ import cp.player.core.api.MusicApiService
 import cp.player.core.api.extractUidFromLoginStatus
 import cp.player.core.music.TrackSummary
 import cp.player.core.music.UnifiedMusicSource
+import cp.player.core.lyrics.SmartKaraokeLrcSynthesizer
 import cp.player.core.model.LyricsInfo
 import cp.player.core.util.SettingsStorage
 import kotlinx.serialization.json.Json
@@ -16,6 +17,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +28,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlin.random.Random
 
 /**
@@ -1240,6 +1243,14 @@ class PlaybackControllerImpl(
         id: cp.player.core.music.CPMediaId,
         entry: Entry?,
     ): Pair<LyricsState, LyricsInfo?> {
+        val outcome = fetchLyricsForInternal(id, entry)
+        return applySmartKaraokeIfEnabled(outcome)
+    }
+
+    private suspend fun fetchLyricsForInternal(
+        id: cp.player.core.music.CPMediaId,
+        entry: Entry?,
+    ): Pair<LyricsState, LyricsInfo?> {
         // 统一来源体系：顺序由用户排序决定，首个命中即胜出。
         lyricsSourceRegistry?.let { registry ->
             val engine = cp.player.core.lyrics.LyricsEngine(registry)
@@ -1462,6 +1473,73 @@ class PlaybackControllerImpl(
     }
 
     override fun fadeConfiguration(): FadeConfig = fadeConfig
+
+    // ============ 智能逐字歌词 (Beta) ============
+
+    private var smartKaraokeLrcEnabled: Boolean = false
+
+    override val isSmartKaraokeLrcEnabled: Boolean
+        get() = smartKaraokeLrcEnabled
+
+    override fun setSmartKaraokeLrcEnabled(enabled: Boolean) {
+        if (smartKaraokeLrcEnabled != enabled) {
+            smartKaraokeLrcEnabled = enabled
+            scope.launch { refreshLyrics() }
+        }
+    }
+
+    /**
+     * 把行级歌词升级成逐字（Beta）。
+     *
+     * ⚠️ 这里跑在 `Dispatchers.Default` 上：`backendScope` 是 `Dispatchers.Main`，
+     * 整首歌词的 tokenize + 配平放在主线程会和歌词刷新的那一帧抢时间。
+     *
+     * 逐行降级：**已经带 words 的行原样保留**，只补没有的那几行 ——
+     * 混源歌词（部分 yrc + 部分 lrc）不该整首放弃。
+     */
+    private suspend fun applySmartKaraokeIfEnabled(
+        result: Pair<LyricsState, LyricsInfo?>,
+    ): Pair<LyricsState, LyricsInfo?> {
+        if (!smartKaraokeLrcEnabled) return result
+        val (state, info) = result
+        if (state !is LyricsState.Success) return result
+        val lines = state.lines
+        if (lines.isEmpty()) return result
+        if (lines.all { it.words.isNotEmpty() }) return result
+
+        val key = "${state.hashCode()}#${lines.size}#${lines.first().time}#${lines.last().time}#${lines.hashCode()}"
+        val synthesized = withContext(Dispatchers.Default) {
+            karaokeCacheMutex.withLock { karaokeCache[key] } ?: run {
+                val computed = SmartKaraokeLrcSynthesizer.synthesize(lines)
+                karaokeCacheMutex.withLock { karaokeCache[key] = computed }
+                computed
+            }
+        }
+        val addedWordLevel = synthesized.count { it.words.isNotEmpty() } > lines.count { it.words.isNotEmpty() }
+        val updatedInfo = info?.copy(
+            format = if (addedWordLevel) {
+                if (info.format.isNotBlank()) "${info.format} (智能逐字 Beta)" else "智能逐字 (Beta)"
+            } else {
+                info.format
+            },
+            hasWordLevel = info.hasWordLevel || addedWordLevel,
+        )
+        return LyricsState.Success(synthesized) to updatedInfo
+    }
+
+    /**
+     * 合成结果缓存（LRU 8 首）。
+     *
+     * 切歌来回 / 反复开关设置都会重新走刷新链路，没有缓存就要重算整首；
+     * `accessOrder = true` 让最近用过的留在队列尾。
+     */
+    private val karaokeCacheMutex = Mutex()
+    private val karaokeCache = object : LinkedHashMap<String, List<cp.player.core.playback.SyncedLyricLine>>(
+        /* initialCapacity = */ 8, /* loadFactor = */ 0.75f, /* accessOrder = */ true,
+    ) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<SyncedLyricLine>>): Boolean =
+            size > 8
+    }
 
     /**
      * 起一段淡入（切歌 / 开始播放）。

@@ -768,6 +768,32 @@ object AppModel {
         _lyricsWordSegmentation.value = enabled
     }
 
+    // ============ 行级歌词智能逐字 (Beta) ============
+
+    private const val KEY_SMART_KARAOKE_LRC = "smart_karaoke_lrc_enabled"
+
+    private val _smartKaraokeLrc = MutableStateFlow(
+        settings.getString(KEY_SMART_KARAOKE_LRC)?.toBooleanStrictOrNull() ?: false
+    )
+
+    /**
+     * 无逐字歌词的标准 LRC 是否开启智能逐字合成 (Beta)。默认关闭。
+     */
+    val smartKaraokeLrcFlow: StateFlow<Boolean> = _smartKaraokeLrc.asStateFlow()
+
+    fun smartKaraokeLrc(): Boolean = _smartKaraokeLrc.value
+
+    fun setSmartKaraokeLrc(enabled: Boolean) {
+        settings.putString(KEY_SMART_KARAOKE_LRC, enabled.toString())
+        _smartKaraokeLrc.value = enabled
+        playback.setSmartKaraokeLrcEnabled(enabled)
+    }
+
+    /** 启动时把持久化的智能逐字歌词开关同步给播放控制器。 */
+    fun syncSmartKaraokeLrc() {
+        runCatching { playback.setSmartKaraokeLrcEnabled(smartKaraokeLrc()) }
+    }
+
     // ============ 首次使用引导（持久化） ============
 
     private const val KEY_ONBOARDING_DONE = "onboarding_done"

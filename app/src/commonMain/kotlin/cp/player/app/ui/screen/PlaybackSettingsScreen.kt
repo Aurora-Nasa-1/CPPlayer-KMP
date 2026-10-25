@@ -7,7 +7,6 @@ import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -43,6 +42,7 @@ import cp.player.core.license.VipLicenseManager
 import cp.player.core.playback.PlaybackSessionSettings
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import cp.player.app.ui.component.CpText
 
 /**
  * 播放与音质设置页面。
@@ -199,7 +199,7 @@ class PlaybackSettingsScreen : Screen {
                             total = 4,
                             onClick = { showVipDialog = true },
                             trailingContent = {
-                                Text(
+                                CpText(
                                     text = if (vipInfo.isActivated) "更换卡密" else "激活特权",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.primary,
@@ -225,7 +225,7 @@ class PlaybackSettingsScreen : Screen {
                             navigator.push(AudioEffectSettingsScreen())
                         },
                         trailingContent = {
-                            Text(
+                            CpText(
                                 text = "调音台",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary,
@@ -312,13 +312,14 @@ class PlaybackSettingsScreen : Screen {
                 SettingsSection(s.playback.sectionLyrics) {
                     val showRuby by AppModel.showRubyLyricsFlow.collectAsState()
                     val wordSeg by AppModel.lyricsWordSegmentationFlow.collectAsState()
+                    val smartKaraoke by AppModel.smartKaraokeLrcFlow.collectAsState()
                     SettingsSwitchItem(
                         title = s.playback.showRubyLyrics,
                         subtitle = s.playback.showRubyLyricsSubtitle,
                         checked = showRuby,
                         onCheckedChange = { AppModel.setShowRubyLyrics(it) },
                         index = 0,
-                        total = 3,
+                        total = 4,
                     )
                     SettingsSwitchItem(
                         title = s.playback.lyricsWordSegmentation,
@@ -326,14 +327,22 @@ class PlaybackSettingsScreen : Screen {
                         checked = wordSeg,
                         onCheckedChange = { AppModel.setLyricsWordSegmentation(it) },
                         index = 1,
-                        total = 3,
+                        total = 4,
+                    )
+                    SettingsSwitchItem(
+                        title = s.playback.smartKaraokeLrc,
+                        subtitle = s.playback.smartKaraokeLrcSubtitle,
+                        checked = smartKaraoke,
+                        onCheckedChange = { AppModel.setSmartKaraokeLrc(it) },
+                        index = 2,
+                        total = 4,
                     )
                     SettingsClickItem(
                         title = s.playback.lyricsSource,
                         subtitle = s.playback.lyricsSourceNote,
                         icon = Icons.Filled.ClosedCaption,
-                        index = 2,
-                        total = 3,
+                        index = 3,
+                        total = 4,
                         onClick = { navigator.push(LyricsPluginSettingsScreen()) },
                     )
                 }

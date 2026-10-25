@@ -95,6 +95,7 @@ fun App(
         AppModel.syncPlaybackQuality()
         AppModel.syncAudioEffect()
         AppModel.syncFade()
+        AppModel.syncSmartKaraokeLrc()
         AppModel.restoreLocalServer()
         AppModel.restoreLyricPush()
         AppModel.restoreAggressiveStandby()

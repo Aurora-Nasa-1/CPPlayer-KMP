@@ -303,6 +303,8 @@ object CpStringsZh : CpStrings {
         override val showRubyLyricsSubtitle = "在日文歌词汉字上方显示小字假名（振假名）"
         override val lyricsWordSegmentation = "歌词智能分词"
         override val lyricsWordSegmentationSubtitle = "根据语言断句分词折行排版（如日文），关闭后按整句原始排版"
+        override val smartKaraokeLrc = "行级歌词智能逐字 (Beta)"
+        override val smartKaraokeLrcSubtitle = "无逐字歌词时，结合节拍网格与声学词汇权重模拟逐字高亮效果"
 
         override val sectionSleepTimer = "睡眠定时"
         override val sleepTimer = "定时关闭"

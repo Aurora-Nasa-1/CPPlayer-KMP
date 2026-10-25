@@ -459,6 +459,8 @@ interface PlaybackStrings {
     val showRubyLyricsSubtitle: String get() = "Show furigana above kanji in Japanese lyrics"
     val lyricsWordSegmentation: String get() = "Lyric Word Segmentation"
     val lyricsWordSegmentationSubtitle: String get() = "Wrap and segment lyrics by language word boundaries (e.g. Japanese)"
+    val smartKaraokeLrc: String get() = "Smart Karaoke for LRC (Beta)"
+    val smartKaraokeLrcSubtitle: String get() = "Synthesize syllable-level highlight using beat grid and language weights when karaoke data is unavailable"
 
     val sectionSleepTimer: String
     val sleepTimer: String

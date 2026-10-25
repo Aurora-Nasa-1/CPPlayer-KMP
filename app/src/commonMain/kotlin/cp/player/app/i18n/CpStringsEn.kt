@@ -316,6 +316,8 @@ object CpStringsEn : CpStrings {
         override val showRubyLyricsSubtitle = "Show reading kana above kanji in Japanese lyrics"
         override val lyricsWordSegmentation = "Lyric Word Segmentation"
         override val lyricsWordSegmentationSubtitle = "Wrap and segment lyrics by language word boundaries (e.g. Japanese)"
+        override val smartKaraokeLrc = "Smart Karaoke for LRC (Beta)"
+        override val smartKaraokeLrcSubtitle = "Synthesize syllable-level highlight using beat grid and language weights when karaoke data is unavailable"
 
         override val sectionSleepTimer = "Sleep timer"
         override val sleepTimer = "Sleep timer"
