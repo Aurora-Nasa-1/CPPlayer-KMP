@@ -4,6 +4,7 @@ import cp.player.app.ui.component.CpText
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.clickable
@@ -803,6 +804,23 @@ private fun NarrowLayout(
             }
         }
 
+        // 搜索展开 / 收起的时序编排（两段式，不许同时动）：
+        // 展开 —— 右侧按钮先淡出完成，搜索框随后才开始宽度动画；
+        // 收起 —— 搜索框先收完宽度，右侧按钮再淡入。
+        var searchButtonsVisible by remember { mutableStateOf(!isSearchActive) }
+        var searchBarExpanded by remember { mutableStateOf(isSearchActive) }
+        LaunchedEffect(isSearchActive) {
+            if (isSearchActive) {
+                searchButtonsVisible = false
+                kotlinx.coroutines.delay(SearchButtonsFadeMs.toLong())
+                searchBarExpanded = true
+            } else {
+                searchBarExpanded = false
+                kotlinx.coroutines.delay(SearchCollapseSettleMs.toLong())
+                searchButtonsVisible = true
+            }
+        }
+
         AppScaffold(
             title = {
                 Row(
@@ -850,7 +868,7 @@ private fun NarrowLayout(
                             } else {
                                 MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                             },
-                            maxLines = if (collapsedFraction > 0.4f) 1 else 2,
+                            maxLines = if (collapsedFraction > 0.4f || isSearchActive || searchBarExpanded) 1 else 2,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         if (coverFraction > 0.1f) {
@@ -895,13 +913,14 @@ private fun NarrowLayout(
                     onToggleActive = onToggleSearch,
                     resultCount = filteredTracks.size,
                     expandedWidth = searchExpandedWidth,
+                    expanded = searchBarExpanded,
                 )
 
                 // 2. 多选按钮（参与搜索动画：搜索展开时渐隐淡出，收起时渐现淡入）
                 AnimatedVisibility(
-                    visible = !isSearchActive,
-                    enter = fadeIn(CpMotion.effects()),
-                    exit = fadeOut(CpMotion.effectsFast()),
+                    visible = searchButtonsVisible,
+                    enter = fadeIn(tween(SearchButtonsFadeMs)),
+                    exit = fadeOut(tween(SearchButtonsFadeMs)),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Spacer(Modifier.width(4.dp))
@@ -924,9 +943,9 @@ private fun NarrowLayout(
 
                 // 3. 更多选项按钮（参与搜索动画：搜索展开时渐隐淡出，收起时渐现淡入）
                 AnimatedVisibility(
-                    visible = !isSearchActive,
-                    enter = fadeIn(CpMotion.effects()),
-                    exit = fadeOut(CpMotion.effectsFast()),
+                    visible = searchButtonsVisible,
+                    enter = fadeIn(tween(SearchButtonsFadeMs)),
+                    exit = fadeOut(tween(SearchButtonsFadeMs)),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Spacer(Modifier.width(4.dp))
@@ -1982,12 +2001,21 @@ private fun ActionChip(
     }
 }
 
+/** 右侧按钮淡出 / 淡入时长（tween，保证「先淡完再动宽度」的节拍是确定的）。 */
+private const val SearchButtonsFadeMs = 180
+
+/** 收起时宽度弹簧的收尾等待，之后右侧按钮才开始淡入。 */
+private const val SearchCollapseSettleMs = 420
+
 /**
  * 顶栏无缝伸缩搜索栏（对标 Material 3 Expressive 动画）。
  *
  * 未激活时：作为一个普通的 40dp 纯图标圆钮嵌入顶栏右侧动作区；
  * 点击激活时：通过空间弹簧动画（CpMotion.spatial）自动向左拉伸扩展成带输入框、
  * 清空按钮、结果计数徽标与关闭按钮的完整搜索栏；搜索图标平滑滑向最左侧。
+ *
+ * [isActive] 是用户的即时意图（图标变色、对齐等立即响应）；
+ * [expanded] 才驱动宽度与内容淡入 —— 时序编排（按钮先淡出再展开宽度）由调用方控制。
  */
 @Composable
 private fun PlaylistTopBarSearchBar(
@@ -1997,23 +2025,24 @@ private fun PlaylistTopBarSearchBar(
     onToggleActive: () -> Unit,
     resultCount: Int,
     expandedWidth: Dp,
+    expanded: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val width by animateDpAsState(
-        targetValue = if (isActive) expandedWidth else 40.dp,
+        targetValue = if (expanded) expandedWidth else 40.dp,
         animationSpec = CpMotion.spatial(),
         label = "searchBarWidth",
     )
     val contentAlpha by animateFloatAsState(
-        targetValue = if (isActive) 1f else 0f,
-        animationSpec = if (isActive) CpMotion.effects() else CpMotion.effectsFast(),
+        targetValue = if (expanded) 1f else 0f,
+        animationSpec = if (expanded) CpMotion.effects() else CpMotion.effectsFast(),
         label = "searchContentAlpha",
     )
     val focusRequester = remember { FocusRequester() }
 
-    LaunchedEffect(isActive) {
-        if (isActive) {
-            kotlinx.coroutines.delay(120)
+    LaunchedEffect(expanded) {
+        if (expanded) {
+            kotlinx.coroutines.delay(220)
             try {
                 focusRequester.requestFocus()
             } catch (_: Exception) {}
