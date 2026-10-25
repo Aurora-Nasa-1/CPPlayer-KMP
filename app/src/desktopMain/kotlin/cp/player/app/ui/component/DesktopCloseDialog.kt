@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -45,15 +44,15 @@ fun DesktopCloseDialog(
     val strings = cpStrings().messageNotify
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(strings.closeDialogTitle) },
+        title = { CpText(strings.closeDialogTitle) },
         text = {
             Column {
-                Text(strings.closeDialogMessage)
+                CpText(strings.closeDialogMessage, maxLines = Int.MAX_VALUE)
                 Spacer(Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = dontAskAgain, onCheckedChange = onDontAskAgainChange)
                     Spacer(Modifier.width(4.dp))
-                    Text(
+                    CpText(
                         strings.closeDialogDontAsk,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -64,9 +63,9 @@ fun DesktopCloseDialog(
         confirmButton = {
             Row {
                 TextButton(onClick = onExit) {
-                    Text(strings.closeDialogExit, color = MaterialTheme.colorScheme.error)
+                    CpText(strings.closeDialogExit, color = MaterialTheme.colorScheme.error)
                 }
-                TextButton(onClick = onMinimizeToTray) { Text(strings.closeDialogMinimize) }
+                TextButton(onClick = onMinimizeToTray) { CpText(strings.closeDialogMinimize) }
             }
         },
     )

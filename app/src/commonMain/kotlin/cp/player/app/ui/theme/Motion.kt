@@ -25,6 +25,22 @@ import androidx.compose.runtime.ReadOnlyComposable
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 object CpMotion {
 
+    /**
+     * 播放页展开 / 收起的**基准节拍**（毫秒）。
+     *
+     * 沉浸态是一组**必须同拍**的动画，不是一个独立动画：
+     *
+     * - `MainScreen`：播放页覆盖层的淡入 / 淡出（AnimatedContent）；
+     * - `App`：窗口顶栏占位高度的涨落（背景因此铺到 / 退出窗口顶边）；
+     * - `DesktopTitleBar`：标题栏除窗口钮外全部内容的淡出 / 淡入。
+     *
+     * 三处钉在同一个数上，读起来才是「一次交接」：顶栏让位的同时页面长出来。
+     * 各自用各自习惯的时长（第一版：顶栏 200ms、背景 300ms、页面 400ms）就会出现
+     * 「中间有一段顶栏是空的，页面才姗姗来迟」的时序错位 —— 这正是用户点名的那处。
+     * ⚠️ 改这里之前先读上面三个调用点的注释。
+     */
+    const val PlayerExpandMs = 400
+
     /** 常规位移：大多数位置 / 尺寸变化的默认值。 */
     @Composable
     @ReadOnlyComposable

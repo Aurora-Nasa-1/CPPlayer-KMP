@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -25,12 +26,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -60,8 +59,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
+import cp.player.app.platform.BackHandler
 import cp.player.app.ui.component.AddToPlaylistSheet
+import cp.player.app.ui.component.LocalMiniPlayerTailSpace
+import cp.player.app.ui.component.LocalWindowChromeActive
 import cp.player.app.ui.component.SongOptionsSheet
+import cp.player.app.ui.util.DesktopRouteTitle
 import cp.player.app.ui.util.UiEvents
 import cp.player.core.BackendResult
 import kotlinx.coroutines.Dispatchers
@@ -69,6 +72,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
+import cp.player.app.ui.component.CpText
 
 @Composable
 fun PosterWallScreen(
@@ -82,6 +86,20 @@ fun PosterWallScreen(
     val focusManager = LocalFocusManager.current
     val playback by AppModel.playback.state.collectAsState()
     val recentTracks by AppModel.recentTracksFlow.collectAsState()
+
+    // ⚠️ `PlaybackUiState` 里的 positionMs 每几百毫秒都在变 —— 在本页组合作用域里直接读
+    // `playback.xxx` 会把整页（包括海报墙画布与全部瓦片）绑到这个频率上反复重组 +
+    // 全量 remeasure。本页真正关心的只有「在播哪首 / 队列是什么」，全部包进
+    // derivedStateOf，只在结果真的变化时才通知；歌词 / 进度条这些真正要看 position
+    // 的，留在展开卡的 lambda 里读（它们在各自的重组作用域里，不会打穿整页）。
+    val playbackQueue by remember { derivedStateOf { playback.queue } }
+    val currentSongId by remember { derivedStateOf { playback.currentTrack?.id } }
+    val queueIndex by remember { derivedStateOf { playback.currentIndex } }
+
+    val windowChromeActive = LocalWindowChromeActive.current
+    if (windowChromeActive) {
+        DesktopRouteTitle(s.wall.screenTitle)
+    }
 
     var queueSongs by remember { mutableStateOf<List<PosterSong>>(emptyList()) }
     var librarySongs by remember { mutableStateOf<List<PosterSong>>(emptyList()) }
@@ -102,7 +120,7 @@ fun PosterWallScreen(
     }
 
     // Observe queue
-    LaunchedEffect(playback.queue) {
+    LaunchedEffect(playbackQueue) {
         queueSongs = playback.queue.mapIndexed { index, item ->
             PosterSong(
                 id = item.mediaId,
@@ -264,6 +282,20 @@ fun PosterWallScreen(
     PosterWallPositioning(wall, items, geometry, currentIndex, locateRequest)
     DisposableEffect(wall) { onDispose { wall.stop() } }
 
+    val hasBackOverride = lyricTheater || expanded != null || wallFullscreen || search || query.isNotBlank()
+    BackHandler(enabled = hasBackOverride) {
+        when {
+            lyricTheater -> lyricTheater = false
+            expanded != null -> expanded = null
+            wallFullscreen -> wallFullscreen = false
+            search || query.isNotBlank() -> {
+                search = false
+                query = ""
+                focusManager.clearFocus()
+            }
+        }
+    }
+
     fun playPoster(poster: ExpandedPoster) {
         scope.launch {
             if (source == "queue") {
@@ -301,6 +333,7 @@ fun PosterWallScreen(
 
     val density = LocalDensity.current.density
     var canvasOrigin by remember { mutableStateOf(Offset.Zero) }
+    val miniPlayerTail = LocalMiniPlayerTailSpace.current
 
     BoxWithConstraints(
         modifier
@@ -329,132 +362,140 @@ fun PosterWallScreen(
                 } else false
             }
     ) {
-        val focusViewport = PosterRect(0f, 0f, maxWidth.value, maxHeight.value)
+        val focusViewport = PosterRect(
+            0f,
+            0f,
+            maxWidth.value,
+            (maxHeight - miniPlayerTail).value.coerceAtLeast(0f)
+        )
 
         Column(Modifier.fillMaxSize()) {
             if (!wallFullscreen) {
-                // Top header bar
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(start = 12.dp, end = 12.dp, top = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    PosterIconButton(s.common.back, onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Default.ArrowBack,
-                            contentDescription = s.common.back,
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    Column(Modifier.weight(1f).padding(start = 8.dp)) {
-                        Text(
-                            s.wall.screenTitle,
-                            color = Color.White,
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            s.wall.posterWallCount(items.size),
-                            color = PosterMuted,
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(top = 2.dp)
-                        )
-                    }
-                    PosterIconButton(s.wall.posterWallRefresh, {
-                        wall.stop()
-                        expanded = null
-                        focusManager.clearFocus()
-                        val seed = shuffleSeed
-                        scope.launch {
-                            val next = withContext(Dispatchers.Default) { nextPosterWallShuffleSeed(items, seed) }
-                            if (shuffleSeed == seed) shuffleSeed = next
-                        }
-                    }) {
-                        Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = s.wall.posterWallRefresh,
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    PosterIconButton(s.wall.posterWallFullscreen, {
-                        focusManager.clearFocus()
-                        search = false
-                        expanded = null
-                        wallFullscreen = true
-                    }) {
-                        Icon(
-                            PosterFullscreenIcon,
-                            contentDescription = s.wall.posterWallFullscreen,
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    PosterIconButton(s.common.search, {
-                        search = !search
-                        if (!search) {
-                            query = ""
-                            focusManager.clearFocus()
-                        }
-                    }) {
-                        Icon(
-                            Icons.Default.Search,
-                            contentDescription = s.common.search,
-                            tint = if (search) MaterialTheme.colorScheme.primary else Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    PosterIconButton(s.wall.posterWallLocate, {
-                        focusManager.clearFocus()
-                        query = ""
-                        locateRequest++
-                    }) {
-                        Icon(
-                            Icons.Default.MyLocation,
-                            contentDescription = s.wall.posterWallLocate,
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                }
-
-                // Sources row
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val sources = listOf(
+                val sources = remember(s) {
+                    listOf(
                         "queue" to s.wall.posterWallQueue,
                         "recent" to s.library.recentPlays,
                         "library" to s.wall.posterWallLibrary,
                         "liked" to s.wall.posterWallLiked,
                         "local" to s.wall.posterWallLocal
                     )
-                    sources.forEach { (id, label) ->
-                        val selected = source == id
-                        Text(
-                            text = label,
-                            color = if (selected) Color.White else PosterMuted,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(if (selected) PosterPanel else Color.Transparent)
-                                .border(0.5.dp, if (selected) Color.White.copy(alpha = 0.2f) else Color.Transparent, CircleShape)
-                                .clickable {
-                                    source = id
-                                    expanded = null
-                                    query = ""
-                                    focusManager.clearFocus()
-                                }
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                }
+                val onSelectSource: (String) -> Unit = { id ->
+                    source = id
+                    expanded = null
+                    query = ""
+                    focusManager.clearFocus()
+                }
+                val onShuffle: (Int) -> Unit = { seed ->
+                    wall.stop()
+                    expanded = null
+                    focusManager.clearFocus()
+                    scope.launch {
+                        val next = withContext(Dispatchers.Default) { nextPosterWallShuffleSeed(items, seed) }
+                        if (shuffleSeed == seed) shuffleSeed = next
+                    }
+                }
+                val onToggleFullscreen: () -> Unit = {
+                    focusManager.clearFocus()
+                    search = false
+                    expanded = null
+                    wallFullscreen = true
+                }
+                val onToggleSearch: () -> Unit = {
+                    search = !search
+                    if (!search) {
+                        query = ""
+                        focusManager.clearFocus()
+                    }
+                }
+                val onLocate: () -> Unit = {
+                    focusManager.clearFocus()
+                    query = ""
+                    locateRequest++
+                }
+
+                if (windowChromeActive) {
+                    // 桌面端：原生窗口标题栏承接返回键与页面标题（DesktopRouteTitle）。
+                    // 不再自绘重复大标题与返回键，将分类标签、数量统计与操作按钮整合成精致的一行工具栏。
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        PosterWallSourcesRow(
+                            sources = sources,
+                            selectedSource = source,
+                            onSelectSource = onSelectSource
+                        )
+                        CpText(
+                            s.wall.posterWallCount(items.size),
+                            color = PosterMuted,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(start = 10.dp)
+                        )
+                        Spacer(Modifier.weight(1f))
+                        PosterWallActionsRow(
+                            s = s,
+                            shuffleSeed = shuffleSeed,
+                            search = search,
+                            onShuffle = onShuffle,
+                            onToggleFullscreen = onToggleFullscreen,
+                            onToggleSearch = onToggleSearch,
+                            onLocate = onLocate
                         )
                     }
+                } else {
+                    // 移动端/无自绘标题栏模式：保持完整的顶栏（返回键、标题、数量与操作按钮）
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(start = 12.dp, end = 12.dp, top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        PosterIconButton(s.common.back, onBack) {
+                            Icon(
+                                Icons.AutoMirrored.Default.ArrowBack,
+                                contentDescription = s.common.back,
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                            CpText(
+                                s.wall.screenTitle,
+                                color = Color.White,
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            CpText(
+                                s.wall.posterWallCount(items.size),
+                                color = PosterMuted,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
+                        PosterWallActionsRow(
+                            s = s,
+                            shuffleSeed = shuffleSeed,
+                            search = search,
+                            onShuffle = onShuffle,
+                            onToggleFullscreen = onToggleFullscreen,
+                            onToggleSearch = onToggleSearch,
+                            onLocate = onLocate
+                        )
+                    }
+
+                    // Sources row
+                    PosterWallSourcesRow(
+                        sources = sources,
+                        selectedSource = source,
+                        onSelectSource = onSelectSource,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
+                    )
                 }
 
                 if (search) {
@@ -517,104 +558,26 @@ fun PosterWallScreen(
                     )
 
                     if (!wallFullscreen) {
-                        Column(
-                            Modifier
-                                .align(Alignment.BottomCenter)
-                                .navigationBarsPadding()
-                                .padding(bottom = 12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(
-                                    Modifier
-                                        .clip(CircleShape)
-                                        .background(PosterPanel.copy(alpha = 0.92f))
-                                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        s.wall.posterWallStacked,
-                                        color = Color.White,
-                                        fontSize = 12.sp,
-                                        modifier = Modifier.padding(end = 8.dp)
-                                    )
-                                    Switch(
-                                        checked = stacked,
-                                        onCheckedChange = {
-                                            expanded = null
-                                            stacked = it
-                                        },
-                                        colors = SwitchDefaults.colors(
-                                            checkedThumbColor = Color.White,
-                                            checkedTrackColor = MaterialTheme.colorScheme.primary
-                                        )
-                                    )
-                                }
-                                Row(
-                                    Modifier
-                                        .clip(CircleShape)
-                                        .background(PosterPanel.copy(alpha = 0.92f))
-                                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        s.wall.posterWallInfinite,
-                                        color = Color.White,
-                                        fontSize = 12.sp,
-                                        modifier = Modifier.padding(end = 8.dp)
-                                    )
-                                    Switch(
-                                        checked = infinite,
-                                        onCheckedChange = { infinite = it },
-                                        colors = SwitchDefaults.colors(
-                                            checkedThumbColor = Color.White,
-                                            checkedTrackColor = MaterialTheme.colorScheme.primary
-                                        )
-                                    )
-                                }
-                                Row(
-                                    Modifier
-                                        .clip(CircleShape)
-                                        .background(PosterPanel.copy(alpha = 0.92f))
-                                        .border(0.5.dp, Color.White.copy(alpha = 0.15f), CircleShape),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    fun zoom(factor: Float) {
-                                        wall.stop()
-                                        wall.transform(Offset.Zero, factor, wall.viewport / 2f, geometry)
-                                    }
-                                    PosterIconButton(s.wall.posterWallZoomOut, { zoom(0.85f) }) {
-                                        Text("−", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                    val percent by remember(wall) {
-                                        derivedStateOf { (wall.camera.scale * 100).roundToInt() }
-                                    }
-                                    Text(
-                                        "$percent%",
-                                        color = PosterMuted,
-                                        fontSize = 11.sp,
-                                        modifier = Modifier.width(42.dp),
-                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                    )
-                                    PosterIconButton(s.wall.posterWallZoomIn, { zoom(1.18f) }) {
-                                        Text("+", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }
-                            Text(
-                                if (stacked) s.wall.posterWallStackGestureHint else s.wall.posterWallGestureHint,
-                                color = Color.White.copy(alpha = 0.7f),
-                                fontSize = 10.sp,
-                                modifier = Modifier
-                                    .padding(top = 6.dp)
-                                    .clip(CircleShape)
-                                    .background(PosterInk.copy(alpha = 0.65f))
-                                    .padding(horizontal = 10.dp, vertical = 3.dp)
-                            )
-                        }
+                        // 底部那一排「叠放 / 无限 / 缩放」。抽成 [PosterWallBottomOptions]
+                        // 是为了能**离屏出图**核对它与浮层小播放器的关系 —— 浮层与出图夹具
+                        // 必须是**同一份代码**：各写一份就会像当年的 `WallChrome` 一样漂掉，
+                        // 出图给的"通过"是假的。
+                        PosterWallBottomOptions(
+                            stacked = stacked,
+                            onStackedChange = {
+                                // 换叠放会改变墙的构图，展开的卡片必须收掉（它的 stackKey 已失效）。
+                                expanded = null
+                                stacked = it
+                            },
+                            infinite = infinite,
+                            onInfiniteChange = { infinite = it },
+                            zoomPercent = { (wall.camera.scale * 100).roundToInt() },
+                            onZoom = { factor ->
+                                wall.stop()
+                                wall.transform(Offset.Zero, factor, wall.viewport / 2f, geometry)
+                            },
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                        )
                     }
                 } else {
                     Column(
@@ -627,7 +590,7 @@ fun PosterWallScreen(
                             tint = PosterMuted.copy(alpha = 0.4f),
                             modifier = Modifier.size(54.dp)
                         )
-                        Text(
+                        CpText(
                             text = if (!ready) s.wall.posterWallLoading
                             else if (query.isNotBlank()) s.wall.posterWallNoResults
                             else if (source == "queue") s.wall.posterWallEmptyQueue
@@ -637,7 +600,7 @@ fun PosterWallScreen(
                             modifier = Modifier.padding(top = 18.dp)
                         )
                         if (ready && source == "queue" && query.isBlank()) {
-                            Text(
+                            CpText(
                                 s.wall.posterWallBrowseLibrary,
                                 color = Color.White,
                                 fontSize = 14.sp,
@@ -768,6 +731,203 @@ fun PosterWallScreen(
             AddToPlaylistSheet(
                 trackId = trackId,
                 onDismiss = { addToPlaylistSongId = null }
+            )
+        }
+    }
+}
+
+/**
+ * 墙底部那一排选项：**叠放模式 / 无限滚动 / 缩放百分比**，外加一行手势提示。
+ *
+ * 从 [PosterWallScreen] 里抽出来的唯一理由是**可出图**：它是全屏浮层里唯一贴着
+ * 屏幕底边的一排控件，而底边还坐着**壳层的小播放器**（`MiniPlayer`，浮在内容之上、
+ * 横跨整个窗口）。两者重叠过一次 —— 宽屏（桌面）没下发 `LocalMiniPlayerTailSpace`，
+ * 这里读到的永远是 0，于是这排选项正好压在小播放器上。
+ *
+ * 出图夹具（`PosterWallBottomPreviewTest`）与页面共用**这一份**代码 —— 各写一份就会
+ * 漂，出图给的"通过"是假的（`WallChrome` 当年就是这么翻的车）。
+ *
+ * @param zoomPercent 以 lambda 传：读的是 `wall.camera` 这个快照状态，让重组只发生在
+ *   这一小块。直接在 [PosterWallScreen] 里读会把整页（含画布）绑到每次缩放上。
+ */
+@Composable
+internal fun PosterWallBottomOptions(
+    stacked: Boolean,
+    onStackedChange: (Boolean) -> Unit,
+    infinite: Boolean,
+    onInfiniteChange: (Boolean) -> Unit,
+    zoomPercent: () -> Int,
+    onZoom: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val s = cpStrings()
+    val percent = zoomPercent()
+    Column(
+        // ⚠️ 底距里的尾留白是**壳层**下发的，不能自己拍一个数：小播放器是浮层，
+        // 高度随内容变化（「一起听」条出现时更高），页面自己猜必然对不上。
+        // 也**不能**给内容区裁短换留白（那会让小播放器坐进一条空白带，看起来像它自带背景）。
+        modifier
+            .navigationBarsPadding()
+            .padding(bottom = 12.dp + LocalMiniPlayerTailSpace.current.coerceAtLeast(0.dp)),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                Modifier
+                    .clip(CircleShape)
+                    .background(PosterPanel.copy(alpha = 0.92f))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CpText(
+                    s.wall.posterWallStacked,
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+                Switch(
+                    checked = stacked,
+                    onCheckedChange = onStackedChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = MaterialTheme.colorScheme.primary
+                    )
+                )
+            }
+            Row(
+                Modifier
+                    .clip(CircleShape)
+                    .background(PosterPanel.copy(alpha = 0.92f))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CpText(
+                    s.wall.posterWallInfinite,
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+                Switch(
+                    checked = infinite,
+                    onCheckedChange = onInfiniteChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = MaterialTheme.colorScheme.primary
+                    )
+                )
+            }
+            Row(
+                Modifier
+                    .clip(CircleShape)
+                    .background(PosterPanel.copy(alpha = 0.92f))
+                    .border(0.5.dp, Color.White.copy(alpha = 0.15f), CircleShape),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                PosterIconButton(s.wall.posterWallZoomOut, { onZoom(0.85f) }) {
+                    CpText("−", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                }
+                CpText(
+                    "$percent%",
+                    color = PosterMuted,
+                    fontSize = 11.sp,
+                    modifier = Modifier.width(42.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+                PosterIconButton(s.wall.posterWallZoomIn, { onZoom(1.18f) }) {
+                    CpText("+", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        CpText(
+            if (stacked) s.wall.posterWallStackGestureHint else s.wall.posterWallGestureHint,
+            color = Color.White.copy(alpha = 0.7f),
+            fontSize = 10.sp,
+            modifier = Modifier
+                .padding(top = 6.dp)
+                .clip(CircleShape)
+                .background(PosterInk.copy(alpha = 0.65f))
+                .padding(horizontal = 10.dp, vertical = 3.dp)
+        )
+    }
+}
+
+@Composable
+private fun PosterWallActionsRow(
+    s: cp.player.app.i18n.CpStrings,
+    shuffleSeed: Int,
+    search: Boolean,
+    onShuffle: (Int) -> Unit,
+    onToggleFullscreen: () -> Unit,
+    onToggleSearch: () -> Unit,
+    onLocate: () -> Unit,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        PosterIconButton(s.wall.posterWallRefresh, { onShuffle(shuffleSeed) }) {
+            Icon(
+                Icons.Default.Refresh,
+                contentDescription = s.wall.posterWallRefresh,
+                tint = Color.White,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+        PosterIconButton(s.wall.posterWallFullscreen, onToggleFullscreen) {
+            Icon(
+                PosterFullscreenIcon,
+                contentDescription = s.wall.posterWallFullscreen,
+                tint = Color.White,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+        PosterIconButton(s.common.search, onToggleSearch) {
+            Icon(
+                Icons.Default.Search,
+                contentDescription = s.common.search,
+                tint = if (search) MaterialTheme.colorScheme.primary else Color.White,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+        PosterIconButton(s.wall.posterWallLocate, onLocate) {
+            Icon(
+                Icons.Default.MyLocation,
+                contentDescription = s.wall.posterWallLocate,
+                tint = Color.White,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun PosterWallSourcesRow(
+    sources: List<Pair<String, String>>,
+    selectedSource: String,
+    onSelectSource: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        sources.forEach { (id, label) ->
+            val selected = selectedSource == id
+            CpText(
+                text = label,
+                color = if (selected) Color.White else PosterMuted,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(if (selected) PosterPanel else Color.Transparent)
+                    .border(0.5.dp, if (selected) Color.White.copy(alpha = 0.2f) else Color.Transparent, CircleShape)
+                    .clickable { onSelectSource(id) }
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
             )
         }
     }

@@ -814,6 +814,7 @@ object CpStringsEn : CpStrings {
             ms < 0 -> "Lyrics delayed by ${-ms / 1000f}s"
             else -> "Not adjusted (Standard sync)"
         }
+        override fun lyricOffsetBadge(ms: Long) = "Offset " + (if (ms > 0) "+" else "") + "${ms / 1000f}s"
         override val lyricOffsetAdvance = "Advance (+)"
         override val lyricOffsetDelay = "Delay (-)"
         override val lyricOffsetReset = "Reset to 0"
@@ -1004,6 +1005,14 @@ object CpStringsEn : CpStrings {
         override val playlistNamePlaceholder = "Playlist name"
         override fun created(name: String) = "Created \"$name\""
         override val cancel = "Cancel"
+
+        override val addToLocalPlaylistTitle = "Add to local playlist"
+        override val newLocalPlaylistPlaceholder = "New local playlist…"
+        override val noCustomLocalPlaylists = "No local playlists yet — enter a name to create one"
+        override fun createdAndAddedTo(name: String) = "Created and added to \"$name\""
+        override fun addedToPlaylist(count: Int, name: String) =
+            if (count > 0) "Added $count track(s) to \"$name\"" else "Already in \"$name\""
+        override fun alreadyInPlaylist(name: String) = "Already in \"$name\""
     }
     override val playlistImport = PlaylistImportStringsEn
     override val account = AccountStringsEn
@@ -1013,5 +1022,37 @@ object CpStringsEn : CpStrings {
     override val lyricsPlugin = LyricsPluginStringsEn
     override val lyricPush = LyricPushStringsEn
     override val wall = WallStringsEn
+
+    override val about: AboutStrings = object : AboutStrings {
+        override val screenTitle = "About & Support"
+        override val appSubtitle = "Compose Multiplatform Music Player"
+        override val changelog = "Changelog"
+        override val versionSection = "Version Info"
+        override val commitSha = "Commit Hash"
+        override val checkUpdate = "Check for updates"
+        override val checkingUpdate = "Checking for updates..."
+        override fun foundUpdate(v: String) = "New version found: v$v"
+        override val alreadyLatest = "Up to date"
+        override val projectSection = "Project"
+        override val githubProject = "GitHub Repository"
+        override val licensesAndThanks = "Open Source Licenses & Credits"
+        override val licensesAndThanksSubtitle = "Apache-2.0 · Special thanks to moss-apps/Flick and open source projects"
+        override val maintainerSection = "Maintainer"
+        override val maintainerRole = "Creator & Primary Maintainer"
+        override val supportSection = "Support"
+        override val supportProject = "Support this project"
+        override val supportProjectSubtitle = "View guidelines and ways to support on project homepage"
+        override val footerNote = "CPPlayer · Compose Multiplatform"
+    }
+
+    override val update: AppUpdateStrings = object : AppUpdateStrings {
+        override val title = "New Version Available"
+        override val changelogTitle = "What's New & Release Notes"
+        override val defaultChangelog = "This release includes routine experience optimizations, performance improvements, and bug fixes.\nKeeping updated is recommended for the best experience."
+        override val viewDiffOnGithub = "View complete code diff on GitHub"
+        override val downloadNow = "Download update now"
+        override val releasePage = "Releases"
+        override val later = "Later"
+    }
 
 }

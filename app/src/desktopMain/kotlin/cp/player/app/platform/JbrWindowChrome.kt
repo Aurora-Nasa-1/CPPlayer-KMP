@@ -105,6 +105,7 @@ object JbrWindowChrome {
                 window = window,
                 api = a,
                 titleBar = bar,
+                setHeightMethod = setHeight,
                 forceHitTest = findMethod(bar.javaClass, "forceHitTest", paramCount = 1),
                 putProperty = findMethod(bar.javaClass, "putProperty", paramCount = 2),
                 getRightInset = findMethod(bar.javaClass, "getRightInset", paramCount = 0),
@@ -119,16 +120,40 @@ object JbrWindowChrome {
         private val window: Frame,
         private val api: WindowDecorationsApi,
         private val titleBar: Any,
+        private val setHeightMethod: Method?,
         private val forceHitTest: Method?,
         private val putProperty: Method?,
         private val getRightInset: Method?,
     ) {
 
-        /** 原生窗口钮区宽度（像素）：JBR 画的最小化 / 最大化 / 关闭占据的右侧空间，布局要给它留位。 */
+        /**
+         * 原生窗口钮区逻辑宽度（dp / Swing 逻辑像素）：
+         * JBR 画的最小化 / 最大化 / 关闭占据的右侧逻辑空间，布局要给它留位。
+         * ⚠️ 注意：JBR API 返回的已经是 Swing 逻辑像素（即 Compose 的 dp），
+         * 绝不能再除以 density（否则高 DPI 缩放下一除就会变小，导致留白不足与原生最小化按钮重叠）。
+         * Windows 上标准 3 按钮逻辑宽度约为 138~141dp，保底不少于 141dp。
+         */
+        val rightInsetDp: Float
+            get() {
+                val raw = getRightInset?.let { m ->
+                    runCatching { m.invoke(titleBar) as? Float }.getOrNull()
+                } ?: 0f
+                return if (raw > 0f) raw.coerceAtLeast(141f) else 141f
+            }
+
+        /** 原生窗口钮区宽度（Swing 逻辑像素）：同 [rightInsetDp]，保留此命名以兼容旧调用。 */
         val rightInsetPx: Float
-            get() = getRightInset?.let { m ->
-                runCatching { m.invoke(titleBar) as? Float }.getOrNull()
-            } ?: 0f
+            get() = rightInsetDp
+
+        /**
+         * 动态调整标题栏高度（单位：Swing 逻辑像素 / dp）。
+         * 常规桌面窗口为 48dp，手机版预览为 34dp，迷你播放器为 26dp。
+         */
+        fun setHeight(heightDp: Float) {
+            val m = setHeightMethod ?: return
+            if (heightDp <= 0f) return
+            runCatching { m.invoke(titleBar, heightDp) }
+        }
 
         /**
          * 回应 hit-test：`true` = 这一片是客户区（交互归应用），`false` = 交给原生

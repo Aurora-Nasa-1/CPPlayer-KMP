@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -24,7 +25,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -37,6 +41,7 @@ import cafe.adriel.voyager.core.stack.StackEvent
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.transitions.ScreenTransition
 import cp.player.app.ui.anim.CoverFlightHost
+import cp.player.app.ui.component.CpTitleBarHeight
 import cp.player.app.ui.component.MiniPlayer
 import cp.player.app.ui.component.ProvideIsExpanded
 import cp.player.app.ui.screen.BackendErrorScreen
@@ -47,6 +52,7 @@ import cp.player.app.ui.screen.OnboardingScreen
 import cp.player.app.ui.screen.PlaylistDetailScreen
 import cp.player.app.ui.screen.PlayerScreen
 import cp.player.app.ui.screen.StartupScreen
+import cp.player.app.ui.theme.CpMotion
 import cp.player.app.platform.PlatformMediaControlsEffect
 import cp.player.app.ui.util.popToMainShell
 import cp.player.core.MusicBackend
@@ -219,126 +225,193 @@ fun App(
                 // 但 push 出去的路由页与 MainScreen 是 Navigator 里的兄弟节点，拿不到它，
                 // 于是设置 / 账号 / 引导这些页面在宽窗口上也会读到默认 false（手机布局）。
                 ProvideIsExpanded {
-                    Column(Modifier.fillMaxSize()) {
-                        // 桌面自绘窗口标题栏。必须在 ScreenTransition 之前、且在 Navigator 作用域内：
-                        // 前者保证 push 任何页面都不会盖住它（无边框窗口只能靠它移动 / 关闭），
-                        // 后者让它能拿到 navigator 去跳账号页 / 设置页。详见 App 的 KDoc。
-                        titleBar?.invoke(navigator)
+                    // ── 播放页沉浸态（见 LocalWindowImmersive / LocalPlayerTopInset）──
+                    //
+                    // 三件事同时成立才算：注入了自绘标题栏（桌面端）、窗口是 Expanded 宽度、
+                    // **有桌面播放页在显示**。
+                    //
+                    // ⚠️ 播放页的「是否在显示」有两条来源，**都要**算上：
+                    // - `MainScreen` 的展开覆盖层（用户点底栏小播放器，最常用的入口）——
+                    //   它由壳层自己登记（`DesktopPlayerStage`，见 MainScreen 里的注释），
+                    //   根栈顶始终是 `MainScreen`，判路由永远判不中；
+                    // - 根栈上的 `PlayerScreen` 路由（主壳层之外点小播放器 / 首页播放按钮）。
+                    //   这条直接看栈顶即可：push / pop 都在**那一帧**翻转，不用登记。
+                    val immersive = titleBar != null &&
+                        cp.player.app.ui.component.LocalIsExpanded.current &&
+                        (cp.player.app.ui.component.isPlayerStageActive ||
+                            navigator.lastItem is PlayerScreen)
+                    // 标题栏为内容让出的高度：沉浸时收到 0 ⇒ 页面区域长高 44dp，
+                    // 播放页的流体背景于是铺到**窗口顶边**（连标题栏底下那一条也盖住）。
+                    //
+                    // ⚠️ 这里刻意用 tween 而不是 spatial 的 spring：这个值同时决定「页面区域
+                    // 从这里开始」和「播放页补多少内边距」，两者之和必须恒等于 44dp。
+                    // spring 会**过冲**（44 → 0 冲到负数、回程冲过 44），钳位之后两端各自
+                    // 夹在 0 与 44，那个瞬间和就不再是 44 —— 内容会上下跳几 dp。
+                    // ⚠️ 时长必须等于 [CpMotion.PlayerExpandMs]（播放页淡入淡出的节拍），
+                    // 三个动画同拍才不会出现「顶栏先空了一条，页面才长出来」。
+                    val topInset by animateDpAsState(
+                        targetValue = if (immersive) 0.dp else CpTitleBarHeight,
+                        animationSpec = tween(
+                            durationMillis = CpMotion.PlayerExpandMs,
+                            easing = FastOutSlowInEasing,
+                        ),
+                        label = "playerImmersiveTopInset",
+                    )
+                    // 仍钳一道：换动效规格（或将来有人改回 spring）时不至于抛异常。
+                    val clampedTopInset = topInset.coerceAtLeast(0.dp)
+                    Box(Modifier.fillMaxSize()) {
+                        Column(Modifier.fillMaxSize()) {
+                            // 标题栏的**占位**（不是标题栏本身）：它和下面的内容同处一个 Column，
+                            // 所以非沉浸态的内容位置与改造前完全一致；沉浸态收成 0，
+                            // 内容才真的顶到窗口上沿、让背景铺满。
+                            if (titleBar != null) {
+                                Spacer(Modifier.height(clampedTopInset))
+                            }
 
-                        // 把「窗口级顶栏是否已接管账号 / 设置入口」告诉下层。
-                        // 判据是**槽位是否被注入**，不是「是不是桌面」—— 展开态分支的条件是宽度，
-                        // 宽屏平板也走同一套顶栏；而且将来若给无边框加「回退到系统标题栏」的开关，
-                        // 那时 isDesktop 仍为 true 但并没有标题栏。理由详见 LocalWindowChromeActive。
-                        androidx.compose.runtime.CompositionLocalProvider(
-                            cp.player.app.ui.component.LocalWindowChromeActive provides (titleBar != null),
-                            // 根 Navigator 下发给整棵树：桌面宽屏的内容区里有内嵌 Navigator，
-                            // 页面读 LocalNavigator 拿到的是内嵌那一条；要整窗路由（播放页）
-                            // 的调用点必须显式用这一条。见 LocalRootNavigator 的 KDoc。
-                            cp.player.app.ui.util.LocalRootNavigator provides navigator,
-                        ) {
-                            // 整窗「空白处右键 → 返回上一级」兜底。
-                            //
-                            // 为什么不放在各页面里：桌面的返回有**四条**来源（根栈出栈 /
-                            // 内容区内嵌栈出栈 / 收起内嵌面板 / 页面自己的处理器），
-                            // 而设置面板、歌单面板、播放页这些页面**看不到全部四条**，
-                            // 页面自己判就只能判到一部分 —— 用户遇到的就是「在设置页 /
-                            // 歌单页右键，菜单里没有返回」。判据与动作由
-                            // `rememberBackContextMenuItem` 与标题栏返回键逐字同链。
-                            //
-                            // `passive = true`：页面里自己的右键菜单（歌曲行 / 卡片 /
-                            // 页面级「刷新」）都是**后代**节点，先于这里收到 Main 阶段的 Press
-                            // ⇒ 只有它们都没接手的空白 / 纯文本区域才弹这一层
-                            // （默认的 Initial 模式会让父子同时弹两个菜单）。
-                            //
-                            // ⚠️ 已经自带空白处右键容器的页面（`CpRefreshablePage`）
-                            // 不会被这里覆盖 —— 它的菜单在内层先消费，且它自己也并进了
-                            // 同一个「返回上一级」项，不会出现两种菜单。
-                            val backItem = cp.player.app.ui.component.rememberBackContextMenuItem()
-                            cp.player.app.ui.component.CpContextMenu(
-                                items = backItem?.let { listOf(it) },
-                                modifier = Modifier.fillMaxSize().weight(1f),
-                                passive = true,
+                            // 把「窗口级顶栏是否已接管账号 / 设置入口」告诉下层。
+                            // 判据是**槽位是否被注入**，不是「是不是桌面」—— 展开态分支的条件是宽度，
+                            // 宽屏平板也走同一套顶栏；而且将来若给无边框加「回退到系统标题栏」的开关，
+                            // 那时 isDesktop 仍为 true 但并没有标题栏。理由详见 LocalWindowChromeActive。
+                            androidx.compose.runtime.CompositionLocalProvider(
+                                cp.player.app.ui.component.LocalWindowChromeActive provides (titleBar != null),
+                                // 根 Navigator 下发给整棵树：桌面宽屏的内容区里有内嵌 Navigator，
+                                // 页面读 LocalNavigator 拿到的是内嵌那一条；要整窗路由（播放页）
+                                // 的调用点必须显式用这一条。见 LocalRootNavigator 的 KDoc。
+                                cp.player.app.ui.util.LocalRootNavigator provides navigator,
+                                // 播放页要补回来的顶部内边距 = 标题栏让出的量（见 LocalPlayerTopInset）。
+                                // 两者之和恒等于 CpTitleBarHeight ⇒ 内容不动，只有背景在长高。
+                                cp.player.app.ui.component.LocalPlayerTopInset provides
+                                    if (titleBar == null) 0.dp
+                                    else (CpTitleBarHeight - clampedTopInset).coerceAtLeast(0.dp),
                             ) {
-                                // ⚠️ 整个根 Navigator 只此一个 SharedTransitionLayout，且必须同时
-                                // 罩住「页面转场」与「全局 MiniPlayer」两端：共享元素只有在
-                                // **同一个** SharedTransitionScope 里才能配对。此前 MiniPlayer
-                                // 自带一个独立的 SharedTransitionLayout、而路由版 PlayerScreen
-                                // 又自建一个 —— 三方互不相识，从歌单等其它页面点 MiniPlayer
-                                // 展开播放页时配不上对，展开动画直接消失（tab 页里正常，
-                                // 因为那一对走的是 MainScreen 自己的 scope）。
-                                SharedTransitionLayout(Modifier.fillMaxSize()) {
-                                    CompositionLocalProvider(
-                                        cp.player.app.ui.anim.LocalSharedTransitionScope provides this,
-                                    ) {
-                                        // MainScreen already owns this overlay; all other pages get the
-                                        // same controller here so playback remains accessible globally.
-                                        //
-                                        // ⚠️ 页面（ScreenTransition）必须留在宿主**里面**（pageContent）：
-                                        // 小播放器的尾留白（LocalMiniPlayerTailSpace）由宿主 provide，
-                                        // 各页滚动容器的 contentPadding 读的就是它 —— 页面若在 provider
-                                        // 外面（曾经的写法），读到的永远是默认 0，整页路由（一起听 /
-                                        // 歌单详情 / 账号 / 设置 …）的列表末尾就会被浮层小播放器压住。
-                                        // 安卓上所有非 tab 页面都推在这条根栈上，症状最明显。
-                                        GlobalMiniPlayerHost(
-                                            // 聊天页（窄屏整页）也让位：那一页底部是固定输入栏，
-                                            // 小播放器浮层会把它盖住并吞掉点击。
-                                            // 桌面宽屏的对话在 `MessagesPane` 右栏里、不在这条根栈上，
-                                            // 由 `MainScreen` 自己那份宿主处理。
-                                            show = startDestination is AppStartDestination.Main &&
-                                                navigator.lastItem !is MainScreen &&
-                                                navigator.lastItem !is PlayerScreen &&
-                                                navigator.lastItem !is ChatScreen &&
-                                                navigator.lastItem !is cp.player.app.ui.screen.VideoPlayerScreen,
-                                            onClick = { navigator.push(PlayerScreen()) },
+                                // 整窗「空白处右键 → 返回上一级」兜底。
+                                //
+                                // 为什么不放在各页面里：桌面的返回有**四条**来源（根栈出栈 /
+                                // 内容区内嵌栈出栈 / 收起内嵌面板 / 页面自己的处理器），
+                                // 而设置面板、歌单面板、播放页这些页面**看不到全部四条**，
+                                // 页面自己判就只能判到一部分 —— 用户遇到的就是「在设置页 /
+                                // 歌单页右键，菜单里没有返回」。判据与动作由
+                                // `rememberBackContextMenuItem` 与标题栏返回键逐字同链。
+                                //
+                                // `passive = true`：页面里自己的右键菜单（歌曲行 / 卡片 /
+                                // 页面级「刷新」）都是**后代**节点，先于这里收到 Main 阶段的 Press
+                                // ⇒ 只有它们都没接手的空白 / 纯文本区域才弹这一层
+                                // （默认的 Initial 模式会让父子同时弹两个菜单）。
+                                //
+                                // ⚠️ 已经自带空白处右键容器的页面（`CpRefreshablePage`）
+                                // 不会被这里覆盖 —— 它的菜单在内层先消费，且它自己也并进了
+                                // 同一个「返回上一级」项，不会出现两种菜单。
+                                val backItem = cp.player.app.ui.component.rememberBackContextMenuItem()
+                                cp.player.app.ui.component.CpContextMenu(
+                                    items = backItem?.let { listOf(it) },
+                                    modifier = Modifier.fillMaxSize().weight(1f),
+                                    passive = true,
+                                ) {
+                                    // ⚠️ 整个根 Navigator 只此一个 SharedTransitionLayout，且必须同时
+                                    // 罩住「页面转场」与「全局 MiniPlayer」两端：共享元素只有在
+                                    // **同一个** SharedTransitionScope 里才能配对。此前 MiniPlayer
+                                    // 自带一个独立的 SharedTransitionLayout、而路由版 PlayerScreen
+                                    // 又自建一个 —— 三方互不相识，从歌单等其它页面点 MiniPlayer
+                                    // 展开播放页时配不上对，展开动画直接消失（tab 页里正常，
+                                    // 因为那一对走的是 MainScreen 自己的 scope）。
+                                    SharedTransitionLayout(Modifier.fillMaxSize()) {
+                                        CompositionLocalProvider(
+                                            cp.player.app.ui.anim.LocalSharedTransitionScope provides this,
                                         ) {
-                                            ScreenTransition(
-                                                navigator = navigator,
-                                                transition = {
-                                                    // 播放页路由（从全局 MiniPlayer 展开）：fade，
-                                                    // 让 sharedBounds 的「小卡片长成全屏」形变唱主角 ——
-                                                    // 叠一层 slide 会和形变抢戏。
-                                                    if (targetState is PlayerScreen ||
-                                                        initialState is PlayerScreen
-                                                    ) {
-                                                        fadeIn(tween(300)) togetherWith fadeOut(tween(300))
-                                                    } else if (targetState is PlaylistDetailScreen ||
-                                                        targetState is HomeGeneratedPlaylistScreen
-                                                    ) {
-                                                        // 歌单打开：fade 交叉淡入（目标位置静态，飞行器叠加其上，
-                                                        // 见 CoverFlight）；返回 tab 时仍走下方 slide，保持「返回」的方向感。
-                                                        fadeIn(tween(300)) togetherWith fadeOut(tween(220))
-                                                    } else {
-                                                        // 复刻 Voyager SlideTransition 默认值：spring + Push/Pop 方向。
-                                                        val spec = spring<IntOffset>(
-                                                            stiffness = 400f,
-                                                            visibilityThreshold = IntOffset.VisibilityThreshold,
-                                                        )
-                                                        if (navigator.lastEvent == StackEvent.Pop) {
-                                                            slideInHorizontally(spec) { -it } togetherWith
-                                                                slideOutHorizontally(spec) { it }
+                                            // MainScreen already owns this overlay; all other pages get the
+                                            // same controller here so playback remains accessible globally.
+                                            //
+                                            // ⚠️ 页面（ScreenTransition）必须留在宿主**里面**（pageContent）：
+                                            // 小播放器的尾留白（LocalMiniPlayerTailSpace）由宿主 provide，
+                                            // 各页滚动容器的 contentPadding 读的就是它 —— 页面若在 provider
+                                            // 外面（曾经的写法），读到的永远是默认 0，整页路由（一起听 /
+                                            // 歌单详情 / 账号 / 设置 …）的列表末尾就会被浮层小播放器压住。
+                                            // 安卓上所有非 tab 页面都推在这条根栈上，症状最明显。
+                                            GlobalMiniPlayerHost(
+                                                // 聊天页（窄屏整页）也让位：那一页底部是固定输入栏，
+                                                // 小播放器浮层会把它盖住并吞掉点击。
+                                                // 桌面宽屏的对话在 `MessagesPane` 右栏里、不在这条根栈上，
+                                                // 由 `MainScreen` 自己那份宿主处理。
+                                                show = startDestination is AppStartDestination.Main &&
+                                                    navigator.lastItem !is MainScreen &&
+                                                    navigator.lastItem !is PlayerScreen &&
+                                                    navigator.lastItem !is ChatScreen &&
+                                                    navigator.lastItem !is cp.player.app.ui.screen.VideoPlayerScreen,
+                                                onClick = { navigator.push(PlayerScreen()) },
+                                            ) {
+                                                ScreenTransition(
+                                                    navigator = navigator,
+                                                    transition = {
+                                                        // 播放页路由（从全局 MiniPlayer 展开）：fade，
+                                                        // 让 sharedBounds 的「小卡片长成全屏」形变唱主角 ——
+                                                        // 叠一层 slide 会和形变抢戏。
+                                                        if (targetState is PlayerScreen ||
+                                                            initialState is PlayerScreen
+                                                        ) {
+                                                            // ⚠️ 时长 = 沉浸态的基准节拍：这条路由进 / 出播放页时，
+                                                            // 窗口顶栏的背景涨落与标题栏淡出也钉在同一拍上
+                                                            // （第一版 300ms，比节拍短 100ms，退出时页面先落完、
+                                                            // 背景还在撤，看得出一道错位）。
+                                                            fadeIn(tween(CpMotion.PlayerExpandMs)) togetherWith
+                                                                fadeOut(tween(CpMotion.PlayerExpandMs))
+                                                        } else if (targetState is PlaylistDetailScreen ||
+                                                            targetState is HomeGeneratedPlaylistScreen
+                                                        ) {
+                                                            // 歌单打开：fade 交叉淡入（目标位置静态，飞行器叠加其上，
+                                                            // 见 CoverFlight）；返回 tab 时仍走下方 slide，保持「返回」的方向感。
+                                                            fadeIn(tween(300)) togetherWith fadeOut(tween(220))
                                                         } else {
-                                                            slideInHorizontally(spec) { it } togetherWith
-                                                                slideOutHorizontally(spec) { -it }
+                                                            // 复刻 Voyager SlideTransition 默认值：spring + Push/Pop 方向。
+                                                            val spec = spring<IntOffset>(
+                                                                stiffness = 400f,
+                                                                visibilityThreshold = IntOffset.VisibilityThreshold,
+                                                            )
+                                                            if (navigator.lastEvent == StackEvent.Pop) {
+                                                                slideInHorizontally(spec) { -it } togetherWith
+                                                                    slideOutHorizontally(spec) { it }
+                                                            } else {
+                                                                slideInHorizontally(spec) { it } togetherWith
+                                                                    slideOutHorizontally(spec) { -it }
+                                                            }
                                                         }
-                                                    }
-                                                },
-                                                // 每个页面（进 / 退场双方）各自拿到本次转场的
-                                                // AnimatedVisibilityScope —— 路由页的 sharedBounds
-                                                // 靠它挂到同一条转场时间线上。
-                                                content = { screen ->
-                                                    CompositionLocalProvider(
-                                                        cp.player.app.ui.anim.LocalNavAnimatedVisibilityScope provides this,
-                                                    ) {
-                                                        screen.Content()
-                                                    }
-                                                },
-                                            )
+                                                    },
+                                                    // 每个页面（进 / 退场双方）各自拿到本次转场的
+                                                    // AnimatedVisibilityScope —— 路由页的 sharedBounds
+                                                    // 靠它挂到同一条转场时间线上。
+                                                    content = { screen ->
+                                                        CompositionLocalProvider(
+                                                            cp.player.app.ui.anim.LocalNavAnimatedVisibilityScope provides this,
+                                                        ) {
+                                                            screen.Content()
+                                                        }
+                                                    },
+                                                )
+                                            }
                                         }
                                     }
-                                }
 
-                                // 封面飞行器：必须压在所有页面与 MiniPlayer 之上（最后绘制）。
-                                CoverFlightHost()
+                                    // 封面飞行器：必须压在所有页面与 MiniPlayer 之上（最后绘制）。
+                                    CoverFlightHost()
+                                }
+                            }
+                        }
+
+                        // 桌面自绘窗口标题栏。**覆盖在内容之上**（不是 Column 里的第一行）：
+                        // 只有这样播放页的背景才能长到窗口顶边、从标题栏底下透上来，
+                        // 而常规态由上面那条 [Spacer] 占住同样的高度，版式与改造前一致。
+                        //
+                        // 仍在 ScreenTransition 之前、且在 Navigator 作用域内：前者保证 push
+                        // 任何页面都不会盖住它（无边框窗口只能靠它移动 / 关闭），后者让它能拿到
+                        // navigator 去跳账号页 / 设置页。详见 App 的 KDoc。
+                        if (titleBar != null) {
+                            // 标题栏**不在**上面那个 provider 里（它是 Box 的另一个孩子），
+                            // 沉浸态要单独下发一次，值同源、只此一处。
+                            androidx.compose.runtime.CompositionLocalProvider(
+                                cp.player.app.ui.component.LocalWindowImmersive provides immersive,
+                            ) {
+                                Box(Modifier.align(Alignment.TopCenter).fillMaxWidth()) {
+                                    titleBar.invoke(navigator)
+                                }
                             }
                         }
                     }

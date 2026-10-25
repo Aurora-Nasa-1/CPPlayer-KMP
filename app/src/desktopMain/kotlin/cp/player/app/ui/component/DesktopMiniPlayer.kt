@@ -1,6 +1,7 @@
 package cp.player.app.ui.component
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -33,15 +34,18 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -81,12 +85,26 @@ fun DesktopMiniPlayer(
     val isDark = LocalIsDarkTheme.current
     val density = LocalDensity.current
     val useJbr = jbr != null
-    val nativeControlsWidth = jbr?.let { with(density) { it.rightInsetPx.toDp() } } ?: 0.dp
+    val nativeControlsWidth = if (useJbr) jbr.rightInsetDp.dp else 0.dp
     val bridge = remember(jbr) { jbr?.let { JbrHitTestBridge(it) } }
 
     val playbackState by AppModel.playback.state.collectAsState()
     val controller = AppModel.playback
     val track = playbackState.currentTrack
+
+    // 入场动画的一次性开关（见 Surface 上的 graphicsLayer）。
+    var entered by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { entered = true }
+    val enterScale by animateFloatAsState(
+        targetValue = if (entered) 1f else 0.94f,
+        animationSpec = CpMotion.spatialSlow(),
+        label = "miniPlayerEnterScale",
+    )
+    val enterAlpha by animateFloatAsState(
+        targetValue = if (entered) 1f else 0f,
+        animationSpec = CpMotion.effects(),
+        label = "miniPlayerEnterAlpha",
+    )
 
     val trackId = track?.id.orEmpty()
     val lyricOffset = if (trackId.isNotBlank()) LyricOffsetManager.getOffset(trackId) else 0L
@@ -104,7 +122,14 @@ fun DesktopMiniPlayer(
     }
 
     Surface(
-        modifier = modifier.fillMaxSize().jbrHitTest(bridge),
+        modifier = modifier.fillMaxSize().jbrHitTest(bridge).graphicsLayer {
+            // 缩进迷你窗时窗口尺寸是**系统级跳变**（AWT setBounds，做不了逐帧动画而不抖），
+            // 所以让内容替它接住这一步：淡入 + 一点点从 0.94 放大回 1。
+            // 只有第一次进入会跑（`entered` 不随播放状态变化），不会干扰后续互动。
+            scaleX = enterScale
+            scaleY = enterScale
+            alpha = enterAlpha
+        },
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         border = BorderStroke(
@@ -145,7 +170,7 @@ fun DesktopMiniPlayer(
                                 )
                             }
                         }
-                        Text(
+                        CpText(
                             text = "CPPlayer Mini",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,

@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -39,7 +38,7 @@ fun SleepTimerDialog(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = MaterialTheme.shapes.extraLarge,
         title = {
-            Text(
+            CpText(
                 s.playback.timerDialogTitle,
                 style = MaterialTheme.typography.headlineSmall,
             )
@@ -47,7 +46,7 @@ fun SleepTimerDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 if (activeRemainingMs != null || afterTrackActive) {
-                    Text(
+                    CpText(
                         // ⚠️ `+ 1` 留在文案函数里而不是这里：这是向上取整到分钟的
                         // 显示规则（中英都成立），但两边的措辞不同，调用方拼就散了。
                         text = if (afterTrackActive) {
@@ -59,7 +58,7 @@ fun SleepTimerDialog(
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
-                Text(s.playback.timerPrompt, style = MaterialTheme.typography.bodyMedium)
+                CpText(s.playback.timerPrompt, style = MaterialTheme.typography.bodyMedium)
                 // 分块换行：5 个 chip 排一行在 360dp 窄屏上会横向溢出。
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     options.chunked(3).forEach { chunk ->
@@ -86,12 +85,12 @@ fun SleepTimerDialog(
         confirmButton = {
             if (activeRemainingMs != null || afterTrackActive) {
                 TextButton(onClick = { onCancelTimer(); onDismiss() }) {
-                    Text(s.playback.timerCancel, color = MaterialTheme.colorScheme.error)
+                    CpText(s.playback.timerCancel, color = MaterialTheme.colorScheme.error)
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(s.playback.timerClose) }
+            TextButton(onClick = onDismiss) { CpText(s.playback.timerClose) }
         },
     )
 }

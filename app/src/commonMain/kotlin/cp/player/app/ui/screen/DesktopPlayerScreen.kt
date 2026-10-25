@@ -60,6 +60,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
@@ -78,7 +79,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
@@ -180,6 +180,9 @@ fun DesktopPlayerScreen(
     // 收在这一层是为了让 [DesktopPlayerLayout] 保持无 AppModel 依赖，能离屏渲染核对版式。
     val playback = AppModel.playback
     var volume by remember { mutableStateOf(playback.currentVolume) }
+    // ⚠️ 沉浸态的登记**不在这里**（见 DesktopPlayerStage 的 KDoc）：退场时本组件要在
+    // 转场里多活一个节拍才被摘掉，登记在它身上会让窗口顶栏等它淡完才开始回落。
+    // 由「决定显示播放页的人」登记：壳层是 `MainScreen`，路由是 `App` 看栈顶。
     DesktopPlayerLayout(
         state = state,
         volume = volume,
@@ -199,6 +202,9 @@ fun DesktopPlayerScreen(
         onMove = onMove,
         onRemoveQueue = onRemoveQueue,
         onClearQueue = onClearQueue,
+        // 沉浸态下标题栏把高度让给了背景，内容这一侧要补回来（见 LocalPlayerTopInset）。
+        // 桌面之外没人提供它，默认 0。
+        topChromeInset = cp.player.app.ui.component.LocalPlayerTopInset.current,
     )
 }
 
@@ -387,6 +393,14 @@ internal fun DesktopPlayerLayout(
     onMove: (Int, Int) -> Unit,
     onRemoveQueue: (Int) -> Unit = {},
     onClearQueue: () -> Unit = {},
+    /**
+     * 沉浸态下标题栏让出的高度，由 [cp.player.app.ui.component.LocalPlayerTopInset] 在调用点读出。
+     *
+     * 这里**只加顶部内边距**，背景（最外层 `cpFluidBackground`）不加 —— 背景要铺到窗口顶边，
+     * 内容则必须留在原来的高度上（那一条正是 JBR 画最小化 / 最大化 / 关闭的位置）。
+     * 默认 0：离屏渲染核对版式时不带沉浸态。
+     */
+    topChromeInset: Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
     val track = state.currentTrack ?: return
@@ -431,7 +445,11 @@ internal fun DesktopPlayerLayout(
     ) {
         val windowMaxWidth = maxWidth
         // 版式刻度：全屏 / 窄窗 / 矮窗都从这一处推，自适应各种屏幕规格（见 playerMetrics）。
-        val metrics = remember(maxWidth, maxHeight) { playerMetrics(maxWidth, maxHeight) }
+        // 沉浸态要从内容区扣掉标题栏让出的那一条（背景不受影响，它画在最外层），
+        // 刻度也必须按**剩下的**高度算 —— 否则封面会按整窗高度定尺寸，把音量滑条顶出可视区。
+        val metrics = remember(maxWidth, maxHeight, topChromeInset) {
+            playerMetrics(maxWidth, (maxHeight - topChromeInset).coerceAtLeast(200.dp))
+        }
         val leftColumnWidth = metrics.leftColumnWidth
 
         // 标题与歌手字号自适应
@@ -624,6 +642,8 @@ internal fun DesktopPlayerLayout(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    // 沉浸态把标题栏让出的高度补回来，内容因此**纹丝不动**（见 topChromeInset）。
+                    .padding(top = topChromeInset)
                     .padding(horizontal = metrics.horizontalPadding, vertical = metrics.verticalPadding),
                 contentAlignment = Alignment.TopCenter,
             ) {
@@ -766,19 +786,19 @@ internal fun DesktopPlayerLayout(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 val formattedPosition = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
-                                Text(
+                                CpText(
                                     formattedPosition,
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
-                                Text(
+                                CpText(
                                     SeekAvailability.durationLabel(duration),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                             SeekAvailability.disabledReason(duration, state.isLocalizing)?.let { reason ->
-                                Text(
+                                CpText(
                                     reason,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -845,7 +865,7 @@ internal fun DesktopPlayerLayout(
                                             capability = ProviderCapability.COMMENTS,
                                             fallback = {
                                                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                                    Text("当前音源暂不支持评论功能", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                    CpText("当前音源暂不支持评论功能", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                                 }
                                             }
                                         ) {
@@ -907,6 +927,18 @@ internal fun DesktopPlayerLayout(
                                         onClick = { showTranslation = !showTranslation },
                                     )
                                 }
+                                // 「缩成迷你播放器」：**只有桌面端才有**（迷你模式是窗口级能力），
+                                // 也只在这里提供 —— 标题栏上那颗 `PictureInPictureAlt` 在沉浸态
+                                // 和其余业务入口一起淡出了，而沉浸态正是用户最想要「把播放页缩走」
+                                // 的时候（一边工作一边听）。入口若只剩托盘菜单，等于没有。
+                                if (!cp.player.app.platform.isAndroidPlatform()) {
+                                    PlayerTopToolButton(
+                                        icon = Icons.Filled.PictureInPictureAlt,
+                                        label = "迷你播放器",
+                                        active = false,
+                                        onClick = { cp.player.app.ui.util.DesktopShell.isMiniMode = true },
+                                    )
+                                }
                                 PlayerTopToolButton(
                                     icon = Icons.Filled.MoreVert,
                                     label = "更多",
@@ -921,11 +953,13 @@ internal fun DesktopPlayerLayout(
                 }
             }
 
-            // 顶端中央横杠抓手：悬停平滑旋转交叉成 ✕，点击收起关闭播放页
+            // 顶端中央横杠抓手：悬停平滑旋转交叉成 ✕，点击收起关闭播放页。
+            // 沉浸态跟着内容一起下移同样的量：它正落在窗口顶栏那一条上，而标题栏此时虽然
+            // 透明、命中测试仍在（淡出的搜索框在 Initial pass 上吃掉指针），抓手会被点不到。
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = 8.dp),
+                    .padding(top = 8.dp + topChromeInset),
             ) {
                 PlayerSheetGrabber(onClick = onBack)
             }
@@ -1142,7 +1176,7 @@ private fun PlayerMetaChip(
 ) {
     val shape = MaterialTheme.shapes.small
     val label: @Composable () -> Unit = {
-        Text(
+        CpText(
             text = text,
             style = MaterialTheme.typography.labelSmall,
             color = content,

@@ -245,15 +245,15 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
 
             // JBR 路：装自定义标题栏。窗口 peer 可能还没就绪，带重试；试满就放弃，
             // 放弃后的表现是窗口保留系统标题栏（功能完好，只是丑），绝不能因此挡住启动。
-            // 高度用 Swing 像素（JBR 的口径），由 Compose density 换算 —— 密度变化
-            // （拖去另一块缩放不同的屏幕）会重跑本协程，顺手按新 DPI 重装一次。
-            // ⚠️ `LocalDensity.current` 是组合期读取，必须放在协程外面。
-            val density = LocalDensity.current
-            LaunchedEffect(window, density) {
+            // 高度单位是 Swing 逻辑像素（JBR 的口径，即 Compose 的 dp）。
+            LaunchedEffect(window) {
                 if (!useJbrChrome) return@LaunchedEffect
-                val titleBarHeightPx = with(density) { TitleBarHeight.toPx() }
+                val initialHeight = when {
+                    mobilePreview -> 34f
+                    else -> TitleBarHeight.value
+                }
                 repeat(WindowRetryAttempts) {
-                    val installed = JbrWindowChrome.install(window, titleBarHeightPx)
+                    val installed = JbrWindowChrome.install(window, initialHeight)
                     if (installed != null) {
                         jbrChrome = installed
                         return@LaunchedEffect
@@ -261,6 +261,16 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
                     delay(WindowRetryDelayMs)
                 }
                 println("[CPPlayer] JBR 自定义标题栏安装失败，窗口保留系统标题栏")
+            }
+
+            // 监听窗口模式动态同步 JBR 标题栏高度（常规 48dp / 手机预览 34dp / 迷你播放器 26dp）
+            LaunchedEffect(isMiniMode, isMobileMode, jbrChrome) {
+                val targetHeight = when {
+                    isMiniMode -> 26f
+                    isMobileMode -> 34f
+                    else -> TitleBarHeight.value
+                }
+                jbrChrome?.setHeight(targetHeight)
             }
 
             // 无边框路专属：Win11 的 DWM 圆角。纯 WS_POPUP 吃不到系统的自动圆角，
@@ -436,7 +446,7 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
                     if (isMobileMode) {
                         cp.player.app.ui.component.MobilePreviewTitleBar(
                             windowScope = windowScope,
-                            useJbr = (jbrChrome != null),
+                            jbr = jbrChrome,
                             onRestoreDesktop = { DesktopShell.isMobileMode = false },
                             onMinimize = { windowState.isMinimized = true },
                             onClose = {

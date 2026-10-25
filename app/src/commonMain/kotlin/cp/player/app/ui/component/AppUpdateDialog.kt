@@ -36,7 +36,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -50,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.desktopPlatform
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.openUrl
@@ -86,6 +86,7 @@ fun AppUpdateDialog(
     } else {
         MaterialTheme.colorScheme.surfaceContainerLow
     }
+    val s = cpStrings().update
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -116,8 +117,8 @@ fun AppUpdateDialog(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(
-                    text = "发现新版本",
+                CpText(
+                    text = s.title,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -175,8 +176,8 @@ fun AppUpdateDialog(
                 }
 
                 // 更新日志区域
-                Text(
-                    text = "更新内容与说明",
+                CpText(
+                    text = s.changelogTitle,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -200,16 +201,17 @@ fun AppUpdateDialog(
                     ) {
                         val parsedEntries = parseChangelogContent(result.changelog)
                         if (parsedEntries.isEmpty()) {
-                            Text(
-                                text = "此版本包含常规体验优化、性能改进与问题修复。\n建议保持更新以获得最佳使用体验。",
+                            CpText(
+                                text = s.defaultChangelog,
                                 style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = Int.MAX_VALUE,
                             )
                         } else {
                             for (entry in parsedEntries) {
                                 when (entry) {
                                     is ChangelogEntry.Header -> {
-                                        Text(
+                                        CpText(
                                             text = entry.title,
                                             style = MaterialTheme.typography.titleSmall,
                                             fontWeight = FontWeight.Bold,
@@ -256,10 +258,11 @@ fun AppUpdateDialog(
                                         }
                                     }
                                     is ChangelogEntry.Paragraph -> {
-                                        Text(
+                                        CpText(
                                             text = entry.text,
                                             style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
                                             color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = Int.MAX_VALUE,
                                         )
                                     }
                                     is ChangelogEntry.CompareLink -> {
@@ -277,8 +280,8 @@ fun AppUpdateDialog(
                                                 modifier = Modifier.size(16.dp),
                                             )
                                             Spacer(Modifier.width(6.dp))
-                                            Text(
-                                                text = "在 GitHub 上查看完整代码差异对比",
+                                            CpText(
+                                                text = s.viewDiffOnGithub,
                                                 style = MaterialTheme.typography.labelMedium,
                                                 color = MaterialTheme.colorScheme.primary,
                                                 fontWeight = FontWeight.Medium,
@@ -308,8 +311,8 @@ fun AppUpdateDialog(
                     modifier = Modifier.size(CpIconSize.inline),
                 )
                 Spacer(Modifier.width(6.dp))
-                Text(
-                    text = "立即下载更新",
+                CpText(
+                    text = s.downloadNow,
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -331,8 +334,8 @@ fun AppUpdateDialog(
                         modifier = Modifier.size(CpIconSize.inline),
                     )
                     Spacer(Modifier.width(4.dp))
-                    Text(
-                        text = "发布页",
+                    CpText(
+                        text = s.releasePage,
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }
@@ -341,8 +344,8 @@ fun AppUpdateDialog(
                     shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.height(42.dp),
                 ) {
-                    Text(
-                        text = "稍后再说",
+                    CpText(
+                        text = s.later,
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }
@@ -362,7 +365,7 @@ private fun VersionBadge(
         shape = MaterialTheme.shapes.small,
         color = containerColor,
     ) {
-        Text(
+        CpText(
             text = text,
             style = MaterialTheme.typography.labelLarge,
             fontWeight = if (isBold) FontWeight.Bold else FontWeight.Medium,
@@ -434,13 +437,14 @@ private fun FormattedChangelogText(
         }
     }
 
-    Text(
+    CpText(
         text = annotated,
         style = MaterialTheme.typography.bodyMedium.copy(
             lineHeight = 22.sp,
             fontSize = 14.sp,
         ),
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+        maxLines = Int.MAX_VALUE,
         modifier = modifier,
     )
 }

@@ -20,7 +20,6 @@ import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -88,7 +87,7 @@ fun MobilePreviewTitleBar(
                         modifier = Modifier.size(13.dp),
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
-                    Text(
+                    CpText(
                         text = "手机版预览",
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -117,7 +116,7 @@ fun MobilePreviewTitleBar(
                             modifier = Modifier.size(13.dp),
                             tint = MaterialTheme.colorScheme.primary,
                         )
-                        Text(
+                        CpText(
                             text = "桌面端",
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.primary,

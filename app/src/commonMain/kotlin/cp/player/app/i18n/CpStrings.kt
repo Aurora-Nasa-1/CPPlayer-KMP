@@ -98,6 +98,12 @@ interface CpStrings {
     /** 账号与登录、用户/歌手主页、云盘。 */
     val account: AccountStrings
 
+    /** 关于与支持。 */
+    val about: AboutStrings
+
+    /** 软件更新弹窗。 */
+    val update: AppUpdateStrings
+
     /** 下载管理。 */
     val downloads: DownloadStrings
 
@@ -985,6 +991,7 @@ interface PlayerStrings {
     val lyricOffset: String
     val lyricOffsetTitle: String
     fun lyricOffsetSubtitle(ms: Long): String
+    fun lyricOffsetBadge(ms: Long): String = "偏移 " + (if (ms > 0) "+" else "") + "${ms / 1000f}s"
     val lyricOffsetAdvance: String
     val lyricOffsetDelay: String
     val lyricOffsetReset: String
@@ -1208,6 +1215,45 @@ interface PlaylistSheetStrings {
     val playlistNamePlaceholder: String
     fun created(name: String): String
     val cancel: String
+
+    val addToLocalPlaylistTitle: String
+    val newLocalPlaylistPlaceholder: String
+    val noCustomLocalPlaylists: String
+    fun createdAndAddedTo(name: String): String
+    fun addedToPlaylist(count: Int, name: String): String
+    fun alreadyInPlaylist(name: String): String
+}
+
+interface AboutStrings {
+    val screenTitle: String
+    val appSubtitle: String
+    val changelog: String
+    val versionSection: String
+    val commitSha: String
+    val checkUpdate: String
+    val checkingUpdate: String
+    fun foundUpdate(v: String): String
+    val alreadyLatest: String
+    val projectSection: String
+    val githubProject: String
+    val licensesAndThanks: String
+    val licensesAndThanksSubtitle: String
+    val maintainerSection: String
+    val maintainerRole: String
+    val supportSection: String
+    val supportProject: String
+    val supportProjectSubtitle: String
+    val footerNote: String
+}
+
+interface AppUpdateStrings {
+    val title: String
+    val changelogTitle: String
+    val defaultChangelog: String
+    val viewDiffOnGithub: String
+    val downloadNow: String
+    val releasePage: String
+    val later: String
 }
 
 // ---------------------------------------------------------------------------

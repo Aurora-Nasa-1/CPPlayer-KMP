@@ -1,6 +1,8 @@
 package cp.player.app.ui.component
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
@@ -48,6 +50,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -71,8 +74,13 @@ import cp.player.app.platform.WindowMaximizer
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.version.AppVersion
 
-/** 自绘标题栏高度。留得下 32dp 以上的点击目标，同时不侵占正文。 */
-internal val TitleBarHeight = 44.dp
+/**
+ * 自绘标题栏高度。留得下 32dp 以上的点击目标，同时不侵占正文。
+ *
+ * 数值本身定义在 `commonMain` 的 [CpTitleBarHeight] —— `App` 要按同一个数给内容让位
+ * （播放页沉浸态时让它动画收缩到 0），两个模块各写一个 44 迟早会漂。
+ */
+internal val TitleBarHeight: Dp = CpTitleBarHeight
 
 /** 标题栏里每个可点区块的宽度。窗口控制与账号 / 设置共用同一档，保证点击目标一致。 */
 private val ChromeSlotWidth = 44.dp
@@ -121,6 +129,24 @@ private val DoubleClickIntervalMs: Long =
  * 3. **全局入口**：搜索、消息、账号、设置。四个都是「跟当前页面无关」的动作，
  *    放在窗口 chrome 上才够得到任意页面 —— 消息从侧栏搬过来就是这条理由
  *    （侧栏会被 push 出去的路由页盖住，而私信角标是不该被盖住的）。
+ *
+ * ## 播放页沉浸态（[LocalWindowImmersive]）
+ *
+ * 当窗口停在全屏播放页时，`App` 把本组件的占位高度动画收到 0，播放页的流体背景于是
+ * 铺到窗口顶边；本组件同时把**除最小化 / 最大化 / 关闭三颗窗口钮以外**的一切
+ * （返回、标题、搜索、账号、消息、迷你模式、设置、底色、分隔线）淡到全透明。
+ *
+ * 三条硬约束，改动时都会踩到：
+ * 1. **高度不变**，只淡颜色。顶栏一旦跟着变矮，三颗窗口钮就会跟着窗口顶边跑；
+ * 2. **宽度不变**：淡出期间元素仍占着原来的位置（搜索框是这一排唯一的 `weight(1f)`），
+ *    淡完立刻换成**等宽留白**。直接摘掉会让窗口钮左移，一直留着则见第 3 条；
+ * 3. **淡完必须真的把节点摘掉**，不能只靠 `alpha = 0` + 消费指针（第一版就是这样，
+ *    用户当场发现「只是隐藏，鼠标指针还在」）：hover 小手、搜索框的 I 形文本光标、
+ *    键盘焦点都跟着**节点**走，`graphicsLayer(alpha = 0)` 全都挡不住，
+ *    甚至 `Initial` pass 上消费指针也挡不住光标（`pointerHoverIcon` 是独立链路）。
+ *
+ * 播放页自己会用 `LocalPlayerTopInset` 把让出的高度补成内边距，内容位置全程不动 ——
+ * 那一条正是窗口钮所在的位置，内容要是跟着顶上去就会撞在一起。
  *
  * ## 两种窗口模式（[jbr] 决定）
  *
@@ -211,9 +237,26 @@ fun DesktopTitleBar(
 ) {
     val window = windowScope.window
     val useJbr = jbr != null
+    // 播放页沉浸态：背景让给页面自己的流体渐变，除窗口钮外全部淡出（见 LocalWindowImmersive）。
+    val immersive = LocalWindowImmersive.current
+    val chromeAlpha by animateFloatAsState(
+        targetValue = if (immersive) 0f else 1f,
+        // ⚠️ 必须钉在 [CpMotion.PlayerExpandMs] 上（播放页淡入淡出的节拍）：三个动画同拍
+        // 才是「一次交接」。第一版用 `effects()` 的默认时长（约 200ms），页面要 400ms 才
+        // 长出来 —— 中间那 200ms 顶栏是空的，正是用户点名的「时序不太对」。
+        animationSpec = tween(durationMillis = CpMotion.PlayerExpandMs),
+        label = "titleBarChromeAlpha",
+    )
+    // 淡完之后**把内容从组合里摘掉**（结构见下面 Row 的 else 分支）。
+    // 判据用「不是沉浸态」或「alpha 还没走到 0」：摘得太早会看不到淡出，摘得太晚
+    // 会留下一排看不见但仍可悬停 / 可点的控件（光标与小手的来源）。
+    val showChrome = !immersive || chromeAlpha > 0.01f
     // JBR 模式的命中注册表：可交互控件把自己的窗口内矩形登记进来，桥接层据此决定
     // 每个鼠标事件回「客户区」还是「标题栏」。随 controller 重建（重装 / 换 DPI）。
     val bridge = remember(jbr) { jbr?.let { JbrHitTestBridge(it) } }
+    // 沉浸态下这些槽位已经不画了，命中注册也要一起撤掉 —— 否则 JBR 模式里那块「看不见
+    // 但还在」的矩形仍然被判成客户区，用户想在窗口顶边拖动窗口会发现一片死区。
+    val chromeBridge = if (immersive) null else bridge
 
     val maximizer = remember(window) { WindowMaximizer(window) }
     // JBR 模式下最大化走原生 extendedState，WindowMaximizer 的「按工作区设 bounds」
@@ -244,122 +287,193 @@ fun DesktopTitleBar(
         modifier = modifier
             .fillMaxWidth()
             .height(TitleBarHeight)
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            // 沉浸态把底色淡到全透明：窗口顶边露出的是播放页的流体渐变，而不是一块死板的面板色。
+            // ⚠️ 这里只淡**颜色**，高度始终是 TitleBarHeight —— 顶栏一旦跟着变矮，
+            // 右侧窗口钮就会跟着窗口顶边移动，而它们必须是全程钉死的。
+            .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = chromeAlpha))
             .zIndex(1f)
             .jbrHitTest(bridge),
     ) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                // 返回键：**窗口 chrome 是桌面端唯一的返回入口** —— 页面内一律不自绘
-                // （见 `AppScaffold` / `CpRouteScaffold`）。是否可返回由调用方（`Main.kt`）
-                // 依据 Navigator 栈与内嵌面板状态算好，这里只负责画。
-                // 必须在拖拽区**外面**（JBR 模式由注册表豁免，无边框模式见下面的说明）。
-                if (canGoBack) {
-                    ChromeSlot(onClick = onBack, modifier = Modifier.jbrClientZone(bridge, "back")) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回",
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                }
-
-                // 标题 + 左侧拖拽空白。
-                //
-                // 宽度 = 右侧按钮组宽度（若显示了返回键就减掉它占的那格）—— 两侧等宽，中间的
-                // 搜索框才是**真正居中**。标题是纯 Text，不吃指针事件，可以待在拖拽区里。
-                //
-                // JBR 模式：这块空白不需要任何拖拽代码 —— 命中桥接对未注册的区域回
-                // `forceClient(false)`，原生侧自动获得拖拽 / 双击最大化 / 右键系统菜单。
-                if (useJbr) {
-                    Box(
-                        Modifier
-                            .width(rightGroupWidth - if (canGoBack) ChromeSlotWidth else 0.dp)
-                            .fillMaxHeight(),
-                        contentAlignment = Alignment.CenterStart,
-                    ) {
-                        // CpText 而不是 Text：页面标题（"每日推荐 · 2026 年 10 月" 这类）
-                        // 被左侧固定宽度的拖拽区挤断后仍可读全。
-                        CpText(
-                            text = title,
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            modifier = Modifier.padding(start = CpSpacing.pageHorizontal),
-                        )
-                    }
-                } else {
-                    WindowDragRegion(
-                        windowScope = windowScope,
-                        enabled = !maximized,
-                        modifier = Modifier
-                            .width(ChromeActionsWidth - if (canGoBack) ChromeSlotWidth else 0.dp)
-                            .fillMaxHeight()
-                            .onTitleBarDoubleClick(toggleMaximize),
-                    ) {
-                        CpText(
-                            text = title,
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            modifier = Modifier.padding(start = CpSpacing.pageHorizontal),
-                        )
-                    }
-                }
-
-                // 搜索框占满剩余宽度，内部再居中一个上限 420dp 的框 ⇒ 落在整条标题栏的正中。
-                //
-                // ⚠️ 为什么不是「给搜索框一个更宽的槽位、让它自己在里面居中」：槽位比框宽出来的
-                // 那部分如果不属于任何拖拽区，就成了**拖不动的死区**（第一版就是这样）。
-                // 所以空白必须拆成两块、与框首尾相接、互不重叠 —— 见 [TitleBarSearch]。
-                // JBR 模式下 `dragArea` 退化为普通 Box（原生拖拽覆盖），搜索框本体注册成客户区。
-                TitleBarSearch(
-                    onSearch = onSearch,
-                    fieldModifier = Modifier.jbrClientZone(bridge, "search"),
-                    dragArea = { searchDragModifier ->
-                        if (useJbr) {
-                            Box(searchDragModifier)
-                        } else {
-                            WindowDragRegion(
-                                windowScope = windowScope,
-                                enabled = !maximized,
-                                modifier = searchDragModifier,
+                if (showChrome) {
+                    // 返回键：**窗口 chrome 是桌面端唯一的返回入口** —— 页面内一律不自绘
+                    // （见 `AppScaffold` / `CpRouteScaffold`）。是否可返回由调用方（`Main.kt`）
+                    // 依据 Navigator 栈与内嵌面板状态算好，这里只负责画。
+                    // 必须在拖拽区**外面**（JBR 模式由注册表豁免，无边框模式见下面的说明）。
+                    if (canGoBack) {
+                        ChromeSlot(
+                            onClick = onBack,
+                            modifier = Modifier
+                                .chromeFade(chromeAlpha, interactive = !immersive)
+                                .jbrClientZone(chromeBridge, "back"),
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "返回",
+                                modifier = Modifier.size(18.dp),
                             )
                         }
-                    },
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                )
-
-                // 账号 / 消息 / 设置：从 `MainScreen` 的 AppTopBar 与 DesktopSidebar 迁来。
-                //
-                // 「消息」是 2026-10-02 从侧栏搬进来的：消息是**全局**入口（不该被 push 出去的
-                // 路由页盖住），而侧栏只在 MainScreen 里。与「设置」同一处境。
-                //
-                // ⚠️ 顺序（2026-10-02 调整）：**消息排在设置左边** —— 越靠右离窗口控制越近，
-                // 而「设置」是最常点的一个，紧贴分隔线比被夹在中间更好找。窗口控制组
-                // 永远固定在最右，别往它们左边塞业务入口（JBR 模式下窗口控制组是 JBR 画的
-                // 原生钮，位于 `nativeControlsWidth` 那格 spacer 的右边）。
-                AccountSlot(onClick = onOpenAccount, modifier = Modifier.jbrClientZone(bridge, "account"))
-                MessageSlot(onClick = onOpenMessages, modifier = Modifier.jbrClientZone(bridge, "messages"))
-                if (AppVersion.isDebugBuild) {
-                    ChromeSlot(
-                        onClick = onToggleMobileMode,
-                        modifier = Modifier.jbrClientZone(bridge, "mobile_mode"),
-                    ) {
-                        Icon(Icons.Filled.PhoneAndroid, "手机版界面预览", modifier = Modifier.size(18.dp))
                     }
-                }
-                ChromeSlot(
-                    onClick = onToggleMiniMode,
-                    modifier = Modifier.jbrClientZone(bridge, "mini_mode"),
-                ) {
-                    Icon(Icons.Filled.PictureInPictureAlt, "迷你模式", modifier = Modifier.size(18.dp))
-                }
-                ChromeSlot(
-                    onClick = onOpenSettings,
-                    modifier = Modifier.jbrClientZone(bridge, "settings"),
-                ) {
-                    Icon(Icons.Filled.Settings, "设置", modifier = Modifier.size(18.dp))
+
+                    // 标题 + 左侧拖拽空白。
+                    //
+                    // 宽度 = 右侧按钮组宽度（若显示了返回键就减掉它占的那格）—— 两侧等宽，中间的
+                    // 搜索框才是**真正居中**。标题是纯 Text，不吃指针事件，可以待在拖拽区里。
+                    //
+                    // JBR 模式：这块空白不需要任何拖拽代码 —— 命中桥接对未注册的区域回
+                    // `forceClient(false)`，原生侧自动获得拖拽 / 双击最大化 / 右键系统菜单。
+                    if (useJbr) {
+                        Box(
+                            Modifier
+                                .width(rightGroupWidth - if (canGoBack) ChromeSlotWidth else 0.dp)
+                                .fillMaxHeight()
+                                .chromeFade(chromeAlpha, interactive = !immersive),
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
+                            // CpText 而不是 Text：页面标题（"每日推荐 · 2026 年 10 月" 这类）
+                            // 被左侧固定宽度的拖拽区挤断后仍可读全。
+                            CpText(
+                                text = title,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                modifier = Modifier.padding(start = CpSpacing.pageHorizontal),
+                            )
+                        }
+                    } else {
+                        WindowDragRegion(
+                            windowScope = windowScope,
+                            enabled = !maximized,
+                            modifier = Modifier
+                                .width(ChromeActionsWidth - if (canGoBack) ChromeSlotWidth else 0.dp)
+                                .fillMaxHeight()
+                                // ⚠️ 拖拽**不**跟着淡出：AWT 的 MouseListener 不吃 Compose 的命中测试，
+                                // 沉浸态里这 300 多 dp 的顶边还能拖窗口，是用户最顺手的抓取位置。
+                                .chromeFade(chromeAlpha, interactive = !immersive)
+                                .onTitleBarDoubleClick(toggleMaximize),
+                        ) {
+                            CpText(
+                                text = title,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                modifier = Modifier.padding(start = CpSpacing.pageHorizontal),
+                            )
+                        }
+                    }
+
+                    // 搜索框占满剩余宽度，内部再居中一个上限 420dp 的框 ⇒ 落在整条标题栏的正中。
+                    //
+                    // ⚠️ 为什么不是「给搜索框一个更宽的槽位、让它自己在里面居中」：槽位比框宽出来的
+                    // 那部分如果不属于任何拖拽区，就成了**拖不动的死区**（第一版就是这样）。
+                    // 所以空白必须拆成两块、与框首尾相接、互不重叠 —— 见 [TitleBarSearch]。
+                    // JBR 模式下 `dragArea` 退化为普通 Box（原生拖拽覆盖），搜索框本体注册成客户区。
+                    TitleBarSearch(
+                        onSearch = onSearch,
+                        fieldModifier = Modifier.jbrClientZone(chromeBridge, "search"),
+                        dragArea = { searchDragModifier ->
+                            if (useJbr) {
+                                Box(searchDragModifier)
+                            } else {
+                                WindowDragRegion(
+                                    windowScope = windowScope,
+                                    enabled = !maximized,
+                                    modifier = searchDragModifier,
+                                )
+                            }
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            // 搜索框本体跟着淡出，但**宽度不动**：它是这一排里唯一的 weight(1f)，
+                            // 一旦摘掉，右边的账号 / 消息 / 设置与三颗窗口钮会整体左移。
+                            .chromeFade(chromeAlpha, interactive = !immersive),
+                    )
+
+                    // 账号 / 消息 / 设置：从 `MainScreen` 的 AppTopBar 与 DesktopSidebar 迁来。
+                    //
+                    // 「消息」是 2026-10-02 从侧栏搬进来的：消息是**全局**入口（不该被 push 出去的
+                    // 路由页盖住），而侧栏只在 MainScreen 里。与「设置」同一处境。
+                    //
+                    // ⚠️ 顺序（2026-10-02 调整）：**消息排在设置左边** —— 越靠右离窗口控制越近，
+                    // 而「设置」是最常点的一个，紧贴分隔线比被夹在中间更好找。窗口控制组
+                    // 永远固定在最右，别往它们左边塞业务入口（JBR 模式下窗口控制组是 JBR 画的
+                    // 原生钮，位于 `nativeControlsWidth` 那格 spacer 的右边）。
+                    AccountSlot(
+                        onClick = onOpenAccount,
+                        modifier = Modifier
+                            .chromeFade(chromeAlpha, interactive = !immersive)
+                            .jbrClientZone(chromeBridge, "account"),
+                    )
+                    MessageSlot(
+                        onClick = onOpenMessages,
+                        modifier = Modifier
+                            .chromeFade(chromeAlpha, interactive = !immersive)
+                            .jbrClientZone(chromeBridge, "messages"),
+                    )
+                    if (AppVersion.isDebugBuild) {
+                        ChromeSlot(
+                            onClick = onToggleMobileMode,
+                            modifier = Modifier
+                                .chromeFade(chromeAlpha, interactive = !immersive)
+                                .jbrClientZone(chromeBridge, "mobile_mode"),
+                        ) {
+                            Icon(Icons.Filled.PhoneAndroid, "手机版界面预览", modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    ChromeSlot(
+                        onClick = onToggleMiniMode,
+                        modifier = Modifier
+                            .chromeFade(chromeAlpha, interactive = !immersive)
+                            .jbrClientZone(chromeBridge, "mini_mode"),
+                    ) {
+                        Icon(Icons.Filled.PictureInPictureAlt, "迷你模式", modifier = Modifier.size(18.dp))
+                    }
+                    ChromeSlot(
+                        onClick = onOpenSettings,
+                        modifier = Modifier
+                            .chromeFade(chromeAlpha, interactive = !immersive)
+                            .jbrClientZone(chromeBridge, "settings"),
+                    ) {
+                        Icon(Icons.Filled.Settings, "设置", modifier = Modifier.size(18.dp))
+                    }
+                } else {
+                    // 沉浸态兜底：**把内容从组合里摘掉**，换成等宽留白。
+                    //
+                    // ⚠️ 只把 alpha 淡到 0 是不够的（第一版就这样，用户当场看出来：
+                    // 「好像只是隐藏，还有鼠标指针呢」）：看不见的账号 / 消息 / 设置
+                    // 仍然是可点目标 —— 悬停出小手与 hover 高亮；更烦的是搜索框，
+                    // 它的 I 形文本光标照样出现，还能点进去打字。
+                    // `graphicsLayer(alpha = 0)` 挡不住、在 Initial pass 消费指针也挡不住
+                    // （hover 光标走 `pointerHoverIcon` 这条独立链路，不认消费）。
+                    // 所以淡完之后直接把节点摘掉：命中测试、光标、焦点随之一起消失。
+                    //
+                    // 摘掉就必须自己把宽度补回来 —— 这一段决定了右侧三颗窗口钮的横向位置。
+                    // 左侧块 = 右侧按钮组宽度（JBR：业务槽 + 原生钮区；无边框：ChromeActionsWidth），
+                    // 中间是原来的 weight(1f)，右侧业务槽按 slotsCount 补。
+                    if (useJbr) {
+                        // 原生 hit-test 对未注册区域回 forceClient(false) ⇒ 空白处照样拖窗口。
+                        Spacer(Modifier.width(rightGroupWidth).fillMaxHeight())
+                        Spacer(Modifier.weight(1f).fillMaxHeight())
+                    } else {
+                        // 无边框模式就剩 AWT 的 MouseListener 这一条拖拽链路，得留住：
+                        // 沉浸态下窗口顶边是用户最顺手的抓取位置。
+                        WindowDragRegion(
+                            windowScope = windowScope,
+                            enabled = !maximized,
+                            modifier = Modifier.width(ChromeActionsWidth).fillMaxHeight(),
+                        )
+                        WindowDragRegion(
+                            windowScope = windowScope,
+                            enabled = !maximized,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .onTitleBarDoubleClick(toggleMaximize),
+                        )
+                    }
+                    Spacer(Modifier.width(ChromeSlotWidth * slotsCount))
                 }
 
                 if (useJbr) {
@@ -367,7 +481,9 @@ fun DesktopTitleBar(
                     // 浮层全部由 JBR 原生处理，本组件不画、不拦。
                     Spacer(Modifier.width(nativeControlsWidth))
                 } else {
-                    ChromeSeparator()
+                    // 分隔线跟着一起淡：它划的是「业务入口 ↔ 窗口钮」的分界，业务入口没了，
+                    // 只剩一条孤零零的竖线压在窗口钮左边，比没有更显脏。
+                    ChromeSeparator(Modifier.chromeFade(chromeAlpha, interactive = true))
 
                     // ⚠️ 刻意用 `Remove`（居中横线）而不是 `Minimize`：后者的横线贴在该字形框
                     // 底部，与相邻的 CropSquare / Close 不在同一条水平线上（实测低了约 5px，
@@ -382,9 +498,10 @@ fun DesktopTitleBar(
                 }
             }
             // 标题栏与正文在浅色主题下都接近白色，靠 1dp 分隔线划出层次。
+            // 沉浸态跟着底栏一起淡掉：留一条灰线压在播放页的渐变上，比什么都没有更显脏。
             Box(
                 Modifier.fillMaxWidth().height(1.dp)
-                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f * chromeAlpha)),
             )
         }
     }
@@ -557,11 +674,47 @@ private fun AccountSlot(onClick: () -> Unit, modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * 标题栏里「沉浸播放时淡出」的通用处理：**只动 alpha 与命中测试，绝对不动尺寸**。
+ *
+ * 尺寸由调用方保证（宽度原样留着）；**节点本身在淡完之后会被摘掉**（见 Row 里的 else 分支），
+ * 那一步才是解决「看不见的按钮还能悬停、搜索框还有 I 形光标」的地方 —— 这里只能让
+ * 淡出那一两百毫秒里点不动、也弹不出 hover 高亮。
+ *
+ * ## 为什么不能把这几个区块提前从布局里摘掉
+ *
+ * 标题栏的横向定位靠的是「左右两侧等宽」：左侧（返回键 + 标题 + 两段拖拽空白）刻意
+ * 与右侧按钮组取同一个宽度 [ChromeActionsWidth]，中间的搜索框才因此在**整条标题栏**
+ * 里居中（见 [ChromeActionsWidth] 的说明）。一旦把左边收掉，Row 后段的账号 / 消息 /
+ * 设置与三颗窗口钮会整体左移 —— 而窗口钮必须是全程钉死的（用户靠肌肉记忆点它，
+ * 位置一跳就会点空）。
+ *
+ * ## 为什么还要在 `Initial` pass 上吃指针
+ *
+ * 淡出过程中元素仍在布局里，[interactive] 为假时把指针事件全部吃掉：`clickable` /
+ * 输入框都走 `Main` pass 且要求事件未被消费，所以这 200ms 里的误触不会真的点下去。
+ * （它**挡不住**光标形状，那要等节点被摘掉。）
+ *
+ * ⚠️ AWT 层的 `WindowDraggableArea` **不受影响**（它不认 Compose 的命中测试）——
+ * 沉浸态下窗口顶边仍然可以拖动，这正是我们想要的。
+ */
+private fun Modifier.chromeFade(alpha: Float, interactive: Boolean): Modifier {
+    val faded = graphicsLayer { this.alpha = alpha }
+    if (interactive) return faded
+    return faded.pointerInput(Unit) {
+        awaitPointerEventScope {
+            while (true) {
+                awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+            }
+        }
+    }
+}
+
 /** 账号 / 设置与窗口控制之间的竖向分隔线，避免两组按钮在视觉上连成一排。 */
 @Composable
-private fun ChromeSeparator() {
+private fun ChromeSeparator(modifier: Modifier = Modifier) {
     Box(
-        Modifier.fillMaxHeight().width(ChromeSeparatorWidth),
+        modifier.fillMaxHeight().width(ChromeSeparatorWidth),
         contentAlignment = Alignment.Center,
     ) {
         Box(

@@ -17,7 +17,6 @@ import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -32,12 +31,14 @@ import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
+import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.downloadUpdate
 import cp.player.app.platform.openUrl
 import cp.player.app.ui.component.CpIconSize
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.component.CpText
 import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.component.AppUpdateDialog
 import cp.player.app.ui.component.SettingsClickItem
@@ -55,6 +56,7 @@ class AboutScreen : Screen {
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     override fun Content() {
+        val s = cpStrings().about
         val navigator = LocalNavigator.currentOrThrow
         val scope = rememberCoroutineScope()
 
@@ -72,28 +74,28 @@ class AboutScreen : Screen {
         }
 
         CpRouteScaffold(
-            title = "关于与支持",
+            title = s.screenTitle,
             onBack = { navigator.popOrNotify() },
         ) { pageModifier ->
             SettingsPage(pageModifier) {
-                AboutHero()
-                SettingsSection("版本信息") {
+                AboutHero(s)
+                SettingsSection(s.versionSection) {
                     SettingsClickItem(
                         index = 0,
                         total = 2,
                         icon = Icons.Default.Code,
-                        title = "提交哈希",
+                        title = s.commitSha,
                         subtitle = AppVersion.shortSha,
                     )
                     SettingsClickItem(
                         index = 1,
                         total = 2,
                         icon = if (isChecking) null else Icons.Default.SystemUpdate,
-                        title = "检查更新",
+                        title = s.checkUpdate,
                         subtitle = when {
-                            isChecking -> "正在检查..."
-                            updateResult != null -> "发现新版本: v${updateResult!!.versionName}"
-                            else -> "已是最新版本"
+                            isChecking -> s.checkingUpdate
+                            updateResult != null -> s.foundUpdate(updateResult!!.versionName)
+                            else -> s.alreadyLatest
                         },
                         enabled = !isChecking,
                         trailingContent = if (isChecking) {
@@ -117,12 +119,12 @@ class AboutScreen : Screen {
                     )
                 }
 
-                SettingsSection("项目信息") {
+                SettingsSection(s.projectSection) {
                     SettingsClickItem(
                         index = 0,
                         total = 2,
                         icon = Icons.Default.Link,
-                        title = "GitHub 项目",
+                        title = s.githubProject,
                         subtitle = "${AppVersion.REPO_OWNER}/${AppVersion.REPO_NAME}",
                         onClick = { openUrl("https://github.com/${AppVersion.REPO_OWNER}/${AppVersion.REPO_NAME}") },
                     )
@@ -130,35 +132,35 @@ class AboutScreen : Screen {
                         index = 1,
                         total = 2,
                         icon = Icons.Default.Info,
-                        title = "开源许可与致谢",
-                        subtitle = "Apache-2.0 · 核心致谢 moss-apps/Flick 等开源项目",
+                        title = s.licensesAndThanks,
+                        subtitle = s.licensesAndThanksSubtitle,
                         onClick = { openUrl("https://github.com/${AppVersion.REPO_OWNER}/${AppVersion.REPO_NAME}/blob/main/THIRD_PARTY_LICENSES.md") },
                     )
                 }
 
-                SettingsSection("维护者") {
+                SettingsSection(s.maintainerSection) {
                     SettingsClickItem(
                         index = 0,
                         total = 1,
                         icon = Icons.Default.Info,
                         title = "Aurora-Nasa-1",
-                        subtitle = "创建者 & 主要维护者",
+                        subtitle = s.maintainerRole,
                         onClick = { openUrl("https://github.com/Aurora-Nasa-1") },
                     )
                 }
 
-                SettingsSection("支持项目") {
+                SettingsSection(s.supportSection) {
                     SettingsClickItem(
                         index = 0,
                         total = 1,
                         icon = Icons.Default.Link,
-                        title = "支持本项目",
-                        subtitle = "在项目主页查看说明与支持方式",
+                        title = s.supportProject,
+                        subtitle = s.supportProjectSubtitle,
                         onClick = { openUrl("https://github.com/Aurora-Nasa-1/CPPlayer-KMP") },
                     )
                 }
 
-                SettingsNote("CPPlayer · Compose Multiplatform")
+                SettingsNote(s.footerNote)
             }
         }
 
@@ -181,7 +183,7 @@ class AboutScreen : Screen {
  * 「关于」页顶部 Hero 区域：展示应用标识、版本号与更新日志入口。
  */
 @Composable
-private fun AboutHero() {
+private fun AboutHero(s: cp.player.app.i18n.AboutStrings) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -192,20 +194,20 @@ private fun AboutHero() {
             ),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(
+        CpText(
             text = "CPPlayer",
             style = MaterialTheme.typography.displaySmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
         )
-        Text(
+        CpText(
             text = AppVersion.fullVersion,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(6.dp))
-        Text(
-            text = "Compose Multiplatform 音乐播放器",
+        CpText(
+            text = s.appSubtitle,
             style = MaterialTheme.typography.bodyLarge,
         )
         Spacer(Modifier.height(4.dp))
@@ -215,7 +217,7 @@ private fun AboutHero() {
             onClick = { openUrl(AppVersion.RELEASES_PAGE) },
             contentPadding = PaddingValues(horizontal = 0.dp, vertical = 8.dp),
         ) {
-            Text("更新日志")
+            CpText(s.changelog)
         }
     }
 }

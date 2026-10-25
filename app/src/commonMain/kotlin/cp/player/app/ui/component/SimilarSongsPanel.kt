@@ -27,7 +27,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import cp.player.app.ui.theme.LocalIsDarkTheme
 import androidx.compose.runtime.LaunchedEffect
@@ -166,14 +165,14 @@ fun SimilarSongsPanel(
                     }
                 }
                 Column {
-                    Text(
+                    CpText(
                         "相似歌曲",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                     )
-                    Text(
+                    CpText(
                         if (tracks.isNotEmpty()) "${tracks.size} 首相似好歌 · 点击即播" else "基于在播歌曲探索推荐",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -206,7 +205,7 @@ fun SimilarSongsPanel(
                             modifier = Modifier.size(16.dp),
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
-                        Text(
+                        CpText(
                             "全部播放",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
@@ -238,7 +237,7 @@ fun SimilarSongsPanel(
                     message = errorMessage,
                 ) {
                     Button(onClick = { refreshToken++ }, modifier = Modifier.padding(top = 16.dp)) {
-                        Text("重试")
+                        CpText("重试")
                     }
                 }
             }
@@ -253,7 +252,7 @@ fun SimilarSongsPanel(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    itemsIndexed(tracks) { index, item ->
+                    itemsIndexed(tracks, key = { _, item -> item.id }) { index, item ->
                         val playingSeed = item.id == seed
                         Surface(
                             onClick = {
@@ -376,7 +375,7 @@ private fun PanelMessage(
             modifier = Modifier.size(32.dp),
         )
         Spacer(Modifier.height(10.dp))
-        Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+        CpText(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
         if (!message.isNullOrBlank()) {
             Spacer(Modifier.height(4.dp))
             CpText(

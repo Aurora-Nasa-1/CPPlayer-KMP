@@ -754,6 +754,7 @@ object CpStringsZh : CpStrings {
             ms < 0 -> "歌词延后 ${-ms / 1000f} 秒"
             else -> "未微调 (标准对齐)"
         }
+        override fun lyricOffsetBadge(ms: Long) = "偏移 " + (if (ms > 0) "+" else "") + "${ms / 1000f}s"
         override val lyricOffsetAdvance = "提前 (+)"
         override val lyricOffsetDelay = "延后 (-)"
         override val lyricOffsetReset = "重置为 0"
@@ -940,6 +941,14 @@ object CpStringsZh : CpStrings {
         override val playlistNamePlaceholder = "歌单名称"
         override fun created(name: String) = "已创建「$name」"
         override val cancel = "取消"
+
+        override val addToLocalPlaylistTitle = "添加到本地歌单"
+        override val newLocalPlaylistPlaceholder = "新建本地歌单…"
+        override val noCustomLocalPlaylists = "暂无自定义本地歌单，输入名称即可新建"
+        override fun createdAndAddedTo(name: String) = "已创建并添加到「$name」"
+        override fun addedToPlaylist(count: Int, name: String) =
+            if (count > 0) "已将 $count 首歌曲添加到「$name」" else "歌曲已在「$name」中"
+        override fun alreadyInPlaylist(name: String) = "歌曲已在「$name」中"
     }
     override val playlistImport = PlaylistImportStringsZh
     override val account = AccountStringsZh
@@ -949,5 +958,37 @@ object CpStringsZh : CpStrings {
     override val social = SocialStringsZh
     override val lyricsPlugin = LyricsPluginStringsZh
     override val lyricPush = LyricPushStringsZh
+
+    override val about: AboutStrings = object : AboutStrings {
+        override val screenTitle = "关于与支持"
+        override val appSubtitle = "Compose Multiplatform 音乐播放器"
+        override val changelog = "更新日志"
+        override val versionSection = "版本信息"
+        override val commitSha = "提交哈希"
+        override val checkUpdate = "检查更新"
+        override val checkingUpdate = "正在检查..."
+        override fun foundUpdate(v: String) = "发现新版本: v$v"
+        override val alreadyLatest = "已是最新版本"
+        override val projectSection = "项目信息"
+        override val githubProject = "GitHub 项目"
+        override val licensesAndThanks = "开源许可与致谢"
+        override val licensesAndThanksSubtitle = "Apache-2.0 · 核心致谢 moss-apps/Flick 等开源项目"
+        override val maintainerSection = "维护者"
+        override val maintainerRole = "创建者 & 主要维护者"
+        override val supportSection = "支持项目"
+        override val supportProject = "支持本项目"
+        override val supportProjectSubtitle = "在项目主页查看说明与支持方式"
+        override val footerNote = "CPPlayer · Compose Multiplatform"
+    }
+
+    override val update: AppUpdateStrings = object : AppUpdateStrings {
+        override val title = "发现新版本"
+        override val changelogTitle = "更新内容与说明"
+        override val defaultChangelog = "此版本包含常规体验优化、性能改进与问题修复。\n建议保持更新以获得最佳使用体验。"
+        override val viewDiffOnGithub = "在 GitHub 上查看完整代码差异对比"
+        override val downloadNow = "立即下载更新"
+        override val releasePage = "发布页"
+        override val later = "稍后再说"
+    }
 
 }

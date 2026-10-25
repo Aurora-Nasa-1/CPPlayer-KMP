@@ -58,7 +58,6 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -884,7 +883,7 @@ private fun MobileHomeLayout(
                     }
                 } else {
                     LazyScrollRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        items(state.visiblePlaylists.take(20)) { playlist ->
+                        items(state.visiblePlaylists.take(20), key = { it.id }) { playlist ->
                             PlaylistCoverCard(
                                 playlist = playlist,
                                 onClick = { actions.onOpenPlaylist(playlist) },
@@ -899,7 +898,7 @@ private fun MobileHomeLayout(
             item { SectionHeader(title = "排行榜", supportingText = "点击进入榜单曲目") }
             item {
                 LazyScrollRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(state.rankings) { ranking ->
+                    items(state.rankings, key = { it.id }) { ranking ->
                         RankingTile(
                             ranking = ranking,
                             onClick = { actions.onOpenRanking(ranking) },
@@ -914,7 +913,7 @@ private fun MobileHomeLayout(
             item { SectionHeader(title = "新碟上架", supportingText = "点击查看专辑曲目") }
             item {
                 LazyScrollRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(state.newAlbums.take(12)) { album ->
+                    items(state.newAlbums.take(12), key = { it.id }) { album ->
                         CoverTile(
                             coverUrl = album.coverUrl,
                             title = album.name,
@@ -932,7 +931,7 @@ private fun MobileHomeLayout(
             item { SectionHeader(title = "热门歌手", supportingText = "点击查看歌手曲目") }
             item {
                 LazyScrollRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(state.hotArtists.take(12)) { artist ->
+                    items(state.hotArtists.take(12), key = { it.id }) { artist ->
                         ArtistTile(
                             artist = artist,
                             onClick = { actions.onOpenArtist(artist) },
@@ -1254,7 +1253,7 @@ private fun HeroQuickPanel(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 val isLocalMode = AppModel.activeProvider() == null
-                Text(
+                CpText(
                     if (isLocalMode) "快捷入口" else "快捷电台",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
@@ -1329,7 +1328,7 @@ private fun HeroNowPlaying(
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(CpIconSize.inline),
                 )
-                Text(
+                CpText(
                     if (isPlaying) "正在播放" else "已暂停",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
@@ -1401,12 +1400,12 @@ private fun HeroNowPlaying(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(
+            CpText(
                 formatTimeMs(positionMs),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(
+            CpText(
                 if (durationMs > 0L) formatTimeMs(durationMs) else "--:--",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1630,7 +1629,7 @@ private fun SectionTitleRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            Text(
+            CpText(
                 title,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
@@ -1638,7 +1637,7 @@ private fun SectionTitleRow(
             )
             if (!subtitle.isNullOrBlank()) {
                 Spacer(Modifier.height(2.dp))
-                Text(
+                CpText(
                     subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1948,7 +1947,7 @@ private fun RankingRow(
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
+                    CpText(
                         text = "${index + 1}",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = if (isTop3) FontWeight.Bold else FontWeight.Medium,
@@ -2193,7 +2192,7 @@ private fun RecentPlaysRail(
                             modifier = Modifier.size(18.dp),
                         )
                     }
-                    TextButton(onClick = onOpenAll) { Text("全部") }
+                    TextButton(onClick = onOpenAll) { CpText("全部") }
                     FilledTonalButton(
                         onClick = onPlayAll,
                         shape = CircleShape,
@@ -2205,7 +2204,7 @@ private fun RecentPlaysRail(
                             modifier = Modifier.size(16.dp),
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("播放", style = MaterialTheme.typography.labelLarge)
+                        CpText("播放", style = MaterialTheme.typography.labelLarge)
                     }
                 }
             },
@@ -2423,14 +2422,14 @@ private fun DailyMixCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(
+                        CpText(
                             text = "每日推荐",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimary,
                         )
                         Spacer(Modifier.height(2.dp))
-                        Text(
+                        CpText(
                             text = if (compact) "${songs.size} 首 · 属于你的专属节奏"
                             else "${songs.size} 首 · 根据收听口味精心挑选",
                             style = MaterialTheme.typography.bodyMedium,
@@ -2499,7 +2498,7 @@ private fun DailyMixCard(
                                     tint = Color.White,
                                     modifier = Modifier.size(16.dp),
                                 )
-                                Text(
+                                CpText(
                                     "查看全部",
                                     style = MaterialTheme.typography.labelLarge,
                                     fontWeight = FontWeight.SemiBold,
@@ -2666,469 +2665,3 @@ private fun responsiveFloat(width: Float, min: Float, max: Float, start: Float, 
 private fun responsiveDp(width: Float, min: Float, max: Float, start: Float, end: Float) =
     responsiveFloat(width, min, max, start, end).dp
 
-// ============================================================ 附属页面
-
-enum class HomeGeneratedPlaylistKind {
-    Static,
-    IntelligenceFromDaily,
-}
-
-class HomeGeneratedPlaylistScreen(
-    private val playlist: PlaylistSummary,
-    private val initialTracks: List<TrackSummary>,
-    /**
-     * 进入后自动播放的曲目下标；**null（默认）表示只浏览、不播放**。
-     *
-     * 只有「点击某一首曲目」的入口才传具体下标（`HomeScreen.onPlayDailyTrack`）；
-     * 「打开歌单」的入口一律不传 —— 点开每日推荐就自动出声是打扰，用户此时多半
-     * 只是想看看今天推荐了什么。原先默认值是 `0`，于是「打开日推」等价于「播放第 1 首」。
-     */
-    private val startIndex: Int? = null,
-    private val kind: HomeGeneratedPlaylistKind = HomeGeneratedPlaylistKind.Static,
-    /** 拉取心动歌曲的种子曲目 id（这类页面本身不携带曲目，种子必须由调用方传入）。 */
-    private val seedTrackId: String? = null,
-    /**
-     * 心动模式的 `pid`（歌单上下文，约定传「我喜欢的音乐」收藏夹 id）。
-     * 上游把 `pid=0` 当非法请求 —— 没有收藏夹时该入口拿不到推荐，属于正常降级。
-     */
-    private val seedPlaylistId: Long? = null,
-    private val instanceToken: Long = cp.player.core.util.currentTimeMillis(),
-) : Screen {
-    override val key: cafe.adriel.voyager.core.screen.ScreenKey =
-        "HomeGeneratedPlaylist_${playlist.id}_${kind}_${seedTrackId}_${instanceToken}"
-
-    @Composable
-    override fun Content() {
-        val model = rememberScreenModel { PlaylistDetailScreenModel() }
-        val sourceTracks by rememberUpdatedState(initialTracks)
-        LaunchedEffect(kind, playlist.id, seedTrackId, seedPlaylistId, sourceTracks.firstOrNull()?.id) {
-            when (kind) {
-                HomeGeneratedPlaylistKind.Static -> Unit
-                HomeGeneratedPlaylistKind.IntelligenceFromDaily -> {
-                    val seed = seedTrackId ?: sourceTracks.firstOrNull()?.id
-                    if (seed == null) {
-                        // 没有种子就没有请求可发：必须退出加载态并说明原因，
-                        // 否则页面永远停在转圈（loadingOverride 只在首次 loadLocal 生效）。
-                        cp.player.app.ui.util.UiEvents.notify(
-                            "心动模式暂无推荐：需要有红心歌曲（登录并收藏过歌曲）"
-                        )
-                        model.loadLocal(playlist, emptyList(), loading = false, force = true)
-                        return@LaunchedEffect
-                    }
-                    val result = try {
-                        AppModel.musicRepository.getIntelligenceSongs(seed, seedPlaylistId ?: 0L)
-                    } catch (e: Exception) {
-                        BackendResult.Error(e.message ?: "获取心动歌曲失败", cause = e)
-                    }
-                    val tracks = (result as? BackendResult.Success)?.data.orEmpty()
-                    if (tracks.isEmpty()) {
-                        // 空结果必须给出原因：恒空会显得像按钮坏了，而真实原因
-                        // 可能是音源不支持 / 上游报错 / 账号还没有红心歌曲。
-                        cp.player.app.ui.util.UiEvents.notify(
-                            when (result) {
-                                is BackendResult.Unsupported -> "当前音源不支持心动模式"
-                                is BackendResult.Error -> result.message
-                                else -> "心动模式暂无推荐：需要有红心歌曲（登录并收藏过歌曲）"
-                            }
-                        )
-                    }
-                    // 拉完**原地**换数据，不再 navigator.replace 到新实例：
-                    // Voyager 默认 Screen.key 是「类名」（getUniqueScreenKey，javap 核实），
-                    // 与实例无关 ⇒ replace 出的新实例 key 相同，会**复用同一个**
-                    // PlaylistDetailScreenModel；loadLocal 的 loadedPlaylistId 守卫
-                    // 直接拦下更新，state 停在 tracks=[] + loading=true ⇒ 永久转圈。
-                    model.loadLocal(playlist, tracks, loading = false, force = true)
-                }
-            }
-        }
-        PlaylistDetailContent(
-            playlist = playlist,
-            model = model,
-            embedded = false,
-            onEmbeddedBack = null,
-            initialOverrideTracks = initialTracks,
-            autoPlayIndex = startIndex,
-            isLocalPlaylist = true,
-            // 心动模式要先按种子拉取再填充，拉取期间保持加载态，
-            // 否则会先闪一屏「歌单暂无歌曲」。
-            loadingOverride = kind != HomeGeneratedPlaylistKind.Static,
-        )
-    }
-}
-
-/**
- * 最近播放的**行**，铺进调用方的 [LazyListScope]。
- *
- * ### 为什么不直接把 [RecentPlaysScreen] 整个塞进别的列表
- * 本页正文自带一个 `LazyColumn` + `fillMaxSize`（它要能当独立整页用）。把它当
- * `item { RecentPlaysScreen(embedded = true).Content() }` 塞进「听歌报告」的列表里会崩：
- * `LazyColumn` 的 item 高度约束是**无界的**，内层滚动容器拿到 `maxHeight = Infinity`
- * ⇒ Compose 直接抛
- * `IllegalStateException: Vertically scrollable component was measured with an
- * infinity maximum height constraints`（离屏探针实测，桌面与安卓同一份代码）。
- *
- * ### 为什么 [columns] 由调用方算好传进来
- * `LazyScrollColumn` 的 content lambda 是 `LazyListScope.() -> Unit`、**不是** `@Composable`，
- * 所以这个扩展里读不了任何 composable 状态（`LocalIsExpanded` 也不行）。
- * 列数判据（`BoxWithConstraints` 里的 `maxWidth >= 900.dp`）必须留在 `@Composable` 那一层。
- */
-fun LazyListScope.recentPlaysRows(
-    tracks: List<TrackSummary>,
-    columns: Int,
-    onPlay: (Int) -> Unit,
-    onOptions: (TrackSummary) -> Unit,
-    contextMenu: @Composable (TrackSummary) -> List<CpContextMenuItem>,
-) {
-    require(columns >= 1) { "columns 必须 ≥ 1，实际 $columns" }
-    // 宽屏两列：一整行只放一首歌时，「歌名」和右端的「更多」按钮相隔上千 dp，
-    // 视线要来回跳；两列之后每列 ≈700dp，与歌单详情页的曲目宽度相近。
-    val rows = if (columns == 1) tracks.map { listOf(it) } else tracks.chunked(columns)
-    itemsIndexed(rows) { rowIndex, row ->
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            row.forEachIndexed { columnIndex, track ->
-                val index = rowIndex * columns + columnIndex
-                SongItem(
-                    track = track,
-                    index = index,
-                    total = tracks.size,
-                    onClick = { onPlay(index) },
-                    onOptionsClick = { onOptions(track) },
-                    contextMenu = contextMenu(track),
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            // 末尾一行是奇数时补等宽空位，否则最后一条会被单独拉满整行。
-            repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
-        }
-    }
-}
-
-/**
- * 最近播放完整列表。
- *
- * @param embedded 是否内嵌在桌面右侧面板里，或作为 tab 段落被别的页面收纳。
- *   为真时不画页内返回键 —— 那种形态下标题与返回都由窗口标题栏 / 宿主提供，
- *   而且 `pop()` 会退出 [MainScreen] 本身。
- */
-class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
-    @Composable
-    override fun Content() {
-        val recentTracks by AppModel.recentTracksFlow.collectAsState()
-        val scope = rememberCoroutineScope()
-        val provider = AppModel.activeProviderId()
-        var selectedTrack by remember { mutableStateOf<TrackSummary?>(null) }
-        // ⚠️ 「更多」弹层里点「歌单 / 歌曲信息」会**先回调动作、再自行关闭**弹层
-        // （见 SongOptionsSheet 的 onClick）。所以这两个二级弹层的目标必须由**本层**
-        // 持有 —— 交给弹层宿主自己 remember 的话，弹层一关宿主就被卸载，目标状态
-        // 跟着丢，二级弹层永远不出现。
-        var addToPlaylistTrack by remember { mutableStateOf<TrackSummary?>(null) }
-        var addToLocalPlaylistPath by remember { mutableStateOf<String?>(null) }
-        var showInfoTarget by remember { mutableStateOf<TrackSummary?>(null) }
-        val likedIds by AppModel.playback.likedIds.collectAsState()
-        val localFavoritePaths by AppModel.localMedia.favorites.paths.collectAsState()
-        val toMediaId = { id: String -> if (id.contains("://")) id else "$provider://song/$id" }
-        val navigator = LocalNavigator.current
-        val expanded = LocalIsExpanded.current
-
-        val topBarActions = remember(recentTracks) {
-            if (recentTracks.isNotEmpty()) {
-                listOf(
-                    TopBarAction(
-                        icon = { Icon(Icons.Default.PlayArrow, contentDescription = "播放全部") },
-                        onClick = {
-                            recentTracks.firstOrNull()?.let { CoverFlight.play(it.id, it.coverUrl) }
-                            scope.launch {
-                                AppModel.playback.playQueue(recentTracks.map { toMediaId(it.id) }, startIndex = 0)
-                            }
-                        }
-                    )
-                )
-            } else emptyList()
-        }
-
-        CpRouteScaffold(
-            title = "最近播放",
-            onBack = if (embedded) null else ({ navigator?.pop() }),
-            embedded = embedded,
-            topBarActions = topBarActions,
-        ) { pageModifier ->
-            Box(pageModifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-                if (recentTracks.isEmpty()) {
-                    StateSurface(
-                        modifier = Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth()
-                            .padding(horizontal = CpSpacing.pageHorizontal, vertical = 16.dp),
-                    ) {
-                        ContentState(
-                            title = "还没有最近播放",
-                            message = "播放歌曲后会显示在这里",
-                        )
-                    }
-                } else {
-                    // 宽屏两列：一整行只放一首歌时，「歌名」和右端的「更多」按钮相隔上千 dp，
-                    // 视线要来回跳；两列之后每列 ≈700dp，与歌单详情页的曲目宽度相近。
-                    BoxWithConstraints(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.TopCenter,
-                    ) {
-                        // 列数只能在这一层算：`LazyScrollColumn` 的 content lambda 不是
-                        // @Composable，里面的扩展函数读不到 `LocalIsExpanded`。
-                        val columns = if (maxWidth >= 900.dp) 2 else 1
-                        val navInsetDp = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-                        LazyScrollColumn(
-                            modifier = Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize(),
-                            contentPadding = PaddingValues(
-                                start = CpSpacing.pageHorizontal,
-                                end = CpSpacing.pageHorizontal,
-                                top = 8.dp,
-                                // 宽屏的 MiniPlayer 浮在底部，末尾要给它留一条安全带；安卓窄屏下考虑导航栏与浮动 MiniPlayer。
-                                bottom = if (expanded) 96.dp else (navInsetDp + 84.dp),
-                            ),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            recentPlaysRows(
-                                tracks = recentTracks,
-                                columns = columns,
-                                onPlay = { index ->
-                                    val track = recentTracks[index]
-                                    CoverFlight.play(track.id, track.coverUrl)
-                                    AppModel.playTrackClicked(toMediaId(track.id)) {
-                                        AppModel.playback.playQueue(
-                                            recentTracks.map { toMediaId(it.id) },
-                                            startIndex = index,
-                                        )
-                                    }
-                                },
-                                onOptions = { selectedTrack = it },
-                                contextMenu = { track ->
-                                    val isLocal = track.id.startsWith("local://")
-                                    val cloudId = track.originalMediaId ?: (if (!isLocal) track.id else null)
-                                    val cloudFavId = cloudId?.let { runCatching { cp.player.core.music.CPMediaId.parse(it).resourceId }.getOrDefault(it) }
-                                    val isCloudFav = cloudFavId != null && cloudFavId in likedIds
-                                    val localPath = if (isLocal) track.id.removePrefix("local://audio/").removePrefix("local://video/") else null
-                                    val isLocalFav = localPath != null && localPath in localFavoritePaths
-                                    val isFav = if (cloudId != null) isCloudFav else isLocalFav
-
-                                    songContextMenuItems(
-                                        SongMenuActions(
-                                            onPlay = {
-                                                CoverFlight.play(track.id, track.coverUrl)
-                                                scope.launch {
-                                                    AppModel.playback.playQueue(
-                                                        recentTracks.map { toMediaId(it.id) },
-                                                        startIndex = recentTracks.indexOf(track),
-                                                    )
-                                                }
-                                            },
-                                            isFavorite = isFav,
-                                            onToggleFavorite = if (cloudId != null) {
-                                                {
-                                                    scope.launch {
-                                                        val target = cloudFavId !in likedIds
-                                                        AppModel.playback.toggleFavoriteFor(cloudId)
-                                                        cp.player.app.ui.util.UiEvents.notify(if (target) "已收藏到云端" else "已取消云端收藏")
-                                                    }
-                                                }
-                                            } else if (localPath != null) {
-                                                {
-                                                    val now = AppModel.localMedia.favorites.toggle(localPath)
-                                                    cp.player.app.ui.util.UiEvents.notify(if (now) "已添加到本地喜欢" else "已从本地喜欢移除")
-                                                }
-                                            } else null,
-                                            favoriteLabel = if (cloudId != null) {
-                                                if (isCloudFav) "取消云端收藏" else "云端收藏"
-                                            } else {
-                                                if (isLocalFav) "取消喜欢" else "喜欢"
-                                            },
-                                            onAddToQueue = {
-                                                scope.launch { AppModel.playback.addToQueue(toMediaId(track.id)) }
-                                                cp.player.app.ui.util.UiEvents.notify("已加入播放队列")
-                                            },
-                                            onPlayNext = {
-                                                scope.launch { AppModel.playback.addNextToQueue(toMediaId(track.id)) }
-                                                cp.player.app.ui.util.UiEvents.notify("将在下一首播放")
-                                            },
-                                            isDownloaded = cloudId != null && (isLocal || AppModel.isDownloaded(cloudId)),
-                                            onDownload = if (cloudId != null && !isLocal) {
-                                                { AppModel.downloadTrack(track) }
-                                            } else null,
-                                            onAddToPlaylist = if (cloudId != null) {
-                                                { addToPlaylistTrack = track }
-                                            } else null,
-                                            onAddToLocalPlaylist = if (localPath != null) {
-                                                { addToLocalPlaylistPath = localPath }
-                                            } else null,
-                                            onOpenInFileManager = if (localPath != null) {
-                                                { cp.player.app.platform.openInFileManager(localPath) }
-                                            } else null,
-                                            onShare = if (cloudId != null) {
-                                                { shareText(songShareText(track)) }
-                                            } else null,
-                                            onShowInfo = { showInfoTarget = track },
-                                        )
-                                    )
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        selectedTrack?.let { track ->
-            RecentPlaysOptionsHost(
-                track = track,
-                onDismiss = { selectedTrack = null },
-                onAddToPlaylist = { addToPlaylistTrack = it },
-                onShowInfo = { showInfoTarget = it },
-                onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
-            )
-        }
-
-        addToPlaylistTrack?.let { track ->
-            val targetId = track.originalMediaId ?: track.id
-            cp.player.app.ui.component.AddToPlaylistSheet(
-                trackIds = listOf(targetId),
-                onDismiss = { addToPlaylistTrack = null },
-            )
-        }
-
-        addToLocalPlaylistPath?.let { path ->
-            cp.player.app.ui.component.AddToLocalPlaylistDialog(
-                trackPaths = listOf(path),
-                onDismiss = { addToLocalPlaylistPath = null },
-            )
-        }
-
-        showInfoTarget?.let { track ->
-            cp.player.app.ui.component.SongDetailInfoDialog(
-                track = track,
-                onDismiss = { showInfoTarget = null },
-            )
-        }
-    }
-}
-
-/**
- * 「最近播放」行的选项弹层宿主。
- *
- * 独立整页与听歌报告的「最近」tab 共用同一份 —— 两处各写一遍的话，
- * 收藏判定与文案迟早会漂。
- *
- * ⚠️ 这里只负责**弹层本身**；弹层里的「歌单 / 歌曲信息」二级弹层的目标由调用方持有，
- * 经 [onAddToPlaylist] / [onShowInfo] 回调出去。原因见调用点的注释 —— 弹层会先回调
- * 动作、再自行 `onDismiss`，宿主随之卸载，状态放这里会被一起丢掉。
- */
-@Composable
-fun RecentPlaysOptionsHost(
-    track: cp.player.core.music.TrackSummary?,
-    onDismiss: () -> Unit,
-    onAddToPlaylist: (cp.player.core.music.TrackSummary) -> Unit,
-    onShowInfo: (cp.player.core.music.TrackSummary) -> Unit,
-    onAddToLocalPlaylist: ((String) -> Unit)? = null,
-) {
-    if (track == null) return
-    val scope = rememberCoroutineScope()
-    val provider = AppModel.activeProviderId()
-    val likedIds by AppModel.playback.likedIds.collectAsState()
-    val localFavorites by AppModel.localMedia.favorites.paths.collectAsState()
-    val toMediaId = { id: String -> if (id.contains("://")) id else "$provider://song/$id" }
-
-    val isLocal = track.id.startsWith("local://")
-    val cloudId = track.originalMediaId ?: (if (!isLocal) track.id else null)
-    val cloudFavId = cloudId?.let { runCatching { cp.player.core.music.CPMediaId.parse(it).resourceId }.getOrDefault(it) }
-    val localPath = if (isLocal) track.id.removePrefix("local://audio/").removePrefix("local://video/") else null
-    val isLocalFav = localPath != null && localPath in localFavorites
-    val isCloudFav = cloudFavId != null && cloudFavId in likedIds
-    val isFav = if (cloudId != null) isCloudFav else isLocalFav
-
-    SongOptionsSheet(
-        songName = track.name,
-        artistName = track.artist,
-        coverUrl = track.coverUrl,
-        isFavorite = isFav,
-        isDownloaded = cloudId != null && (isLocal || AppModel.isDownloaded(cloudId)),
-        onDismiss = onDismiss,
-        onPlay = {
-            CoverFlight.play(track.id, track.coverUrl)
-            scope.launch {
-                AppModel.playback.playQueue(listOf(toMediaId(track.id)), startIndex = 0)
-            }
-        },
-        onToggleFavorite = {
-            if (cloudId != null) {
-                scope.launch {
-                    val target = cloudFavId !in likedIds
-                    AppModel.playback.toggleFavoriteFor(cloudId)
-                    cp.player.app.ui.util.UiEvents.notify(if (target) "已收藏到云端" else "已取消云端收藏")
-                }
-            } else if (localPath != null) {
-                val now = AppModel.localMedia.favorites.toggle(localPath)
-                cp.player.app.ui.util.UiEvents.notify(if (now) "已添加到本地喜欢" else "已从本地喜欢移除")
-            }
-        },
-        onAddToQueue = {
-            scope.launch { AppModel.playback.addToQueue(toMediaId(track.id)) }
-            cp.player.app.ui.util.UiEvents.notify("已加入播放队列")
-        },
-        onPlayNext = {
-            scope.launch { AppModel.playback.addNextToQueue(toMediaId(track.id)) }
-            cp.player.app.ui.util.UiEvents.notify("将在下一首播放")
-        },
-        onAddToPlaylist = {
-            if (cloudId != null) {
-                onAddToPlaylist(track)
-            } else if (localPath != null) {
-                onAddToLocalPlaylist?.invoke(localPath)
-            }
-        },
-        onDownload = {
-            if (cloudId != null && !isLocal) {
-                AppModel.downloadTrack(track)
-            }
-        },
-        onShowInfo = { onShowInfo(track) },
-        onShare = {
-            if (cloudId != null) {
-                shareText(songShareText(track))
-            } else {
-                cp.player.app.ui.util.UiEvents.notify("本地歌曲无在线分享链接")
-            }
-        },
-    )
-}
-
-@Composable
-private fun PageTitleBar(
-    title: String,
-    subtitle: String,
-    onBack: (() -> Unit)? = null,
-    action: @Composable (() -> Unit)? = null,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(
-            start = CpSpacing.pageHorizontal,
-            end = CpSpacing.pageHorizontal,
-            top = CpSpacing.pageTop,
-            bottom = 8.dp,
-        ),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        if (onBack != null) {
-            CpBackButton(onClick = onBack)
-        }
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        action?.invoke()
-    }
-}

@@ -42,7 +42,6 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -79,7 +78,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.graphicsLayer
@@ -135,6 +137,16 @@ import cp.player.core.music.PlaylistSummary
 private const val SIDEBAR_PLAYLIST_LIMIT = 8
 
 /**
+ * 宽屏（桌面 / 宽平板）小播放器离窗口底边的固定距离。
+ *
+ * 宽屏没有底栏、也没有系统导航栏 inset 可躲，小播放器就靠这 24dp 悬在窗口底边上。
+ * 它**必须**同时进 [LocalMiniPlayerTailSpace] 的计算（见宽屏那一处 `provide`）：
+ * 内容区是一路铺到窗口底边的，页面自己不知道这条底距，留白里不算就会差这 24dp，
+ * 页面底部控件（专辑墙的「叠放 / 无限 / 缩放」、侧栏列表末尾 …）被压住半截。
+ */
+private val WideMiniPlayerBottomGap = 24.dp
+
+/**
  * 「上次的扫码登录还没扫完」的启动提示**每个进程只给一次**。
  *
  * ⚠️ 必须是进程级、不能放 composable 的 `remember`：MainScreen 在手机端会被账号 /
@@ -159,6 +171,9 @@ private val MAIN_TABS = listOf(
     TabItem(SearchScreen(), "搜索", Icons.Filled.Search, Icons.Outlined.Search),
     TabItem(LibraryScreen(), "我的", Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic),
 )
+
+private val LocalDesktopTabIndex = compositionLocalOf { 0 }
+private val LocalDesktopVisitedTabs = compositionLocalOf<List<Int>> { listOf(0) }
 
 /** Responsive application shell for the four primary destinations. */
 class MainScreen : Screen {
@@ -191,9 +206,6 @@ class MainScreen : Screen {
         // ① 发布 pageCanGoBack；② 消费标题栏的返回 / 账号 / 搜索指令；③ 切 tab 时弹回栈根。
         // 窄屏分支不装配内嵌 Navigator，此引用恒为 null，所有 `?.` 都是空操作。
         var contentNavigator by remember { mutableStateOf<Navigator?>(null) }
-        val contentRootScreen = remember(tabs) {
-            DesktopContentRootScreen(tabs, visitedTabs, selectedIndexState)
-        }
         val playbackState by AppModel.playback.state.collectAsState()
         val controller = AppModel.playback
         // 宽屏 / 窄屏两套播放页共用同一个循环切换。原先这段 when 在两处各写了一份，
@@ -206,7 +218,9 @@ class MainScreen : Screen {
         //
         // 注意「面板」与「内容区路由」是两层：desktopPane 只管盖在内容层上的**面板**；
         // 详情页路由走内嵌 Navigator，不经过这里。
-        var desktopPane by remember { mutableStateOf<DesktopPane>(DesktopPane.Tabs) }
+        //
+        // ⚠️ 必须是 saveable：当从深层设置子页面返回时保留所开面板，避免状态意外重置；切 tab 时自动收起。
+        var desktopPane by rememberSaveable(stateSaver = DesktopPaneSaver) { mutableStateOf<DesktopPane>(DesktopPane.Tabs) }
         // 消息面板右栏是否已经打开了某个会话（= 屏幕底部多了一条固定输入栏）。
         // 由 `MessagesPane` 上报：小播放器与输入栏抢同一块底部空间时让位给输入栏 ——
         // 与窄屏 `ChatScreen` 同一条规则（那条在 `App.kt` 的全局宿主里判
@@ -444,9 +458,36 @@ class MainScreen : Screen {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val expanded = cp.player.app.ui.component.CpBreakpoints.isExpanded(maxWidth)
 
+            // 沉浸播放态的登记（窗口顶栏让位给播放页背景，见 DesktopPlayerStage）。
+            //
+            // ⚠️ 必须挂在 **`AnimatedContent` 外面、跟着 `isPlayerExpanded` 这个开关走**，
+            // 不能塞进播放页本体（`DesktopPlayerScreen`）：收起播放页时，退场方要在转场里
+            // 多活整整 400ms 才被摘掉 —— 登记在它身上，窗口顶栏就得等它淡完才开始回落，
+            // 于是主界面会先被顶高 44dp、再滑下来，正是「时序不对」的那一下。
+            // 挂在开关上，点击的那一帧登记/注销同时发生，背景的涨落和播放页的淡入淡出
+            // 才能落在同一条时间线上。窄窗（<840dp）走手机版播放页，不登记。
+            if (isPlayerExpanded && expanded) {
+                cp.player.app.ui.component.DesktopPlayerStage()
+            }
+
             CompositionLocalProvider(
                 cp.player.app.ui.component.LocalIsExpanded provides expanded,
                 cp.player.app.ui.component.LocalActiveProvider provides activeProvider,
+                // ⚠️ 小播放器的尾留白**宽屏也必须下发**。此前只有窄屏那条分支 provide，
+                // 宽屏（桌面 / 宽平板）读到的永远是默认 0 —— 而小播放器在宽屏同样是
+                // **整个窗口**底部的浮层（`MiniPlayer` 是 fillMaxWidth，横跨侧栏 + 内容区），
+                // 于是内容区里所有"贴着底边放东西"的页面都被它压住：专辑墙底部的
+                // 「叠放模式 / 无限滚动 / 缩放」一排选项、侧栏列表末尾、内嵌详情页列表末尾。
+                //
+                // 量 = 实测高度 + [WideMiniPlayerBottomGap] + 12dp 呼吸缝：宽屏的小播放器
+                // 底距是**固定**的 24dp（见下方渲染处的 bottomPadding），而内容区一直铺到
+                // 窗口底边、页面自己不知道这条底距 —— 不算进留白里就会差这 24dp。
+                // （窄屏那一条相反：底距是系统导航栏 / 底栏的动态值，由各页自己的
+                // navigationBarsPadding / 底栏 padding 承担，所以只给 高度 + 12dp。）
+                cp.player.app.ui.component.LocalMiniPlayerTailSpace provides
+                    if (playbackState.currentTrack != null && !messagesChatOpen) {
+                        (miniPlayerReserved + WideMiniPlayerBottomGap).coerceAtLeast(0.dp)
+                    } else 0.dp,
             ) {
             // 主内容，应用缩放和变暗
             Box(Modifier.fillMaxSize().graphicsLayer {
@@ -534,44 +575,49 @@ class MainScreen : Screen {
                             // 面板层：desktopPane 非 Tabs 时盖在内容层上，跨淡入淡出切换。
                             // Tabs 时是透明占位 —— 空 Box 没有 pointer input，点击穿透到内容层。
                             Box(Modifier.fillMaxSize().padding(padding)) {
-                                Navigator(contentRootScreen) { nav ->
-                                    // 捕获内嵌 Navigator 引用（见上）—— 供返回链 / 指令消费 /
-                                    // pageCanGoBack 发布使用。
-                                    //
-                                    // ⚠️ 必须用 DisposableEffect，不能是 SideEffect：内嵌 Navigator
-                                    // 只在 **expanded（≥840dp）** 分支装配，窗口拖窄到 <840dp 时
-                                    // 整支被 dispose，而 SideEffect 不会把引用置回 null ⇒ 悬空到
-                                    // 已销毁的栈。此后窄分支点底栏切 tab（selectTab 的 popUntilRoot）
-                                    // 或点标题栏返回，都在操作一个已 dispose 的 Navigator（幽灵返回键 /
-                                    // 最坏抛异常）。onDispose 只在仍是自己时置回，避免与后来者互踩。
-                                    androidx.compose.runtime.DisposableEffect(nav) {
-                                        contentNavigator = nav
-                                        onDispose { if (contentNavigator === nav) contentNavigator = null }
-                                    }
-                                    ScreenTransition(
-                                        navigator = nav,
-                                        transition = {
-                                            // 与根 Navigator（App.kt）同一套动效约定：歌单详情
-                                            // fade（配合封面飞行器），其余按 Push/Pop 方向 slide。
-                                            if (targetState is PlaylistDetailScreen ||
-                                                targetState is HomeGeneratedPlaylistScreen
-                                            ) {
-                                                fadeIn(tween(300)) togetherWith fadeOut(tween(220))
-                                            } else {
-                                                val spec = spring<IntOffset>(
-                                                    stiffness = 400f,
-                                                    visibilityThreshold = IntOffset.VisibilityThreshold,
-                                                )
-                                                if (nav.lastEvent == StackEvent.Pop) {
-                                                    slideInHorizontally(spec) { -it } togetherWith
-                                                        slideOutHorizontally(spec) { it }
+                                CompositionLocalProvider(
+                                    LocalDesktopTabIndex provides selectedIndex,
+                                    LocalDesktopVisitedTabs provides visitedTabs.toList(),
+                                ) {
+                                    Navigator(DesktopContentRootScreen) { nav ->
+                                        // 捕获内嵌 Navigator 引用（见上）—— 供返回链 / 指令消费 /
+                                        // pageCanGoBack 发布使用。
+                                        //
+                                        // ⚠️ 必须用 DisposableEffect，不能是 SideEffect：内嵌 Navigator
+                                        // 只在 **expanded（≥840dp）** 分支装配，窗口拖窄到 <840dp 时
+                                        // 整支被 dispose，而 SideEffect 不会把引用置回 null ⇒ 悬空到
+                                        // 已销毁的栈。此后窄分支点底栏切 tab（selectTab 的 popUntilRoot）
+                                        // 或点标题栏返回，都在操作一个已 dispose 的 Navigator（幽灵返回键 /
+                                        // 最坏抛异常）。onDispose 只在仍是自己时置回，避免与后来者互踩。
+                                        androidx.compose.runtime.DisposableEffect(nav) {
+                                            contentNavigator = nav
+                                            onDispose { if (contentNavigator === nav) contentNavigator = null }
+                                        }
+                                        ScreenTransition(
+                                            navigator = nav,
+                                            transition = {
+                                                // 与根 Navigator（App.kt）同一套动效约定：歌单详情
+                                                // fade（配合封面飞行器），其余按 Push/Pop 方向 slide。
+                                                if (targetState is PlaylistDetailScreen ||
+                                                    targetState is HomeGeneratedPlaylistScreen
+                                                ) {
+                                                    fadeIn(tween(300)) togetherWith fadeOut(tween(220))
                                                 } else {
-                                                    slideInHorizontally(spec) { it } togetherWith
-                                                        slideOutHorizontally(spec) { -it }
+                                                    val spec = spring<IntOffset>(
+                                                        stiffness = 400f,
+                                                        visibilityThreshold = IntOffset.VisibilityThreshold,
+                                                    )
+                                                    if (nav.lastEvent == StackEvent.Pop) {
+                                                        slideInHorizontally(spec) { -it } togetherWith
+                                                            slideOutHorizontally(spec) { it }
+                                                    } else {
+                                                        slideInHorizontally(spec) { it } togetherWith
+                                                            slideOutHorizontally(spec) { -it }
+                                                    }
                                                 }
-                                            }
-                                        },
-                                    )
+                                            },
+                                        )
+                                    }
                                 }
                                 AnimatedContent(
                                     targetState = desktopPane,
@@ -734,7 +780,12 @@ class MainScreen : Screen {
                 AnimatedContent(
                     targetState = isPlayerExpanded,
                     transitionSpec = {
-                        fadeIn(animationSpec = tween(400)) togetherWith fadeOut(animationSpec = tween(400))
+                        // ⚠️ 这 400ms 是沉浸态的**基准节拍**（CpMotion.PlayerExpandMs）：
+                        // 窗口顶栏的背景涨落（App.kt）与标题栏内容的淡出（DesktopTitleBar）
+                        // 都钉在同一个时长上。这里一改，那两处必须跟着改，否则会出现
+                        // 「顶栏先空了一条 / 背景晚一拍」的错位 —— 第一版就是这么被用户点名的。
+                        fadeIn(animationSpec = tween(CpMotion.PlayerExpandMs)) togetherWith
+                            fadeOut(animationSpec = tween(CpMotion.PlayerExpandMs))
                     },
                     label = "PlayerTransition",
                     modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter)
@@ -793,7 +844,11 @@ class MainScreen : Screen {
                             }
                             val navInsetDp = WindowInsets.navigationBars
                                 .asPaddingValues().calculateBottomPadding()
-                            val bottomPadding = if (expanded) 24.dp
+                            // 宽屏用的是固定常量，而宽屏那份尾留白
+                            // （`LocalMiniPlayerTailSpace`，见上方 provide）算的**就是它** ——
+                            // 两处必须同源：改这里就等于改"内容让出多少"，不会出现
+                            // 「让了位小播放器却没动」或反过来。
+                            val bottomPadding = if (expanded) WideMiniPlayerBottomGap
                             else maxOf(navVisibleDp, navInsetDp) + 12.dp
                             Box(
                                 Modifier.align(androidx.compose.ui.Alignment.BottomCenter)
@@ -982,7 +1037,8 @@ private fun TabContent(
     selectedIndex: Int,
     modifier: Modifier = Modifier,
 ) {
-    val retainedIndices = visitedTabs.sorted()
+    // 防御性合并：无论状态同步是否存在瞬间时差，选中的 tab 绝对常驻保留集合中，避免布局放置落空致页面全白。
+    val retainedIndices = (visitedTabs + selectedIndex).distinct().sorted()
     val switchStates = remember { mutableStateMapOf<Int, TabSwitchState>() }
     var lastSelected by remember { mutableStateOf(selectedIndex) }
     val effectsSpec = CpMotion.effects<Float>()
@@ -990,7 +1046,13 @@ private fun TabContent(
     val slideDistance = with(LocalDensity.current) { 32.dp.toPx() }
 
     LaunchedEffect(selectedIndex) {
-        if (selectedIndex == lastSelected) return@LaunchedEffect
+        if (selectedIndex == lastSelected) {
+            switchStates[selectedIndex]?.let {
+                it.alpha.snapTo(1f)
+                it.slide.snapTo(0f)
+            }
+            return@LaunchedEffect
+        }
         val direction = if (selectedIndex > lastSelected) 1f else -1f
         val leaving = switchStates[lastSelected]
         lastSelected = selectedIndex
@@ -1117,7 +1179,7 @@ private fun AppNavigationBar(
                         },
                     )
                 },
-                label = { Text(tab.label) },
+                label = { CpText(tab.label) },
                 colors = NavigationBarItemDefaults.colors(
                     indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
                 ),
@@ -1270,7 +1332,7 @@ private fun DesktopSidebar(
                     // 否则「右侧已经是下载管理了，左边还亮着『我的』」看起来像没切过去。
                     val selected = selectedIndex == index && selectedPane is DesktopPane.Tabs
                     androidx.compose.material3.NavigationDrawerItem(
-                        label = { Text(tab.label) },
+                        label = { CpText(tab.label) },
                         selected = selected,
                         onClick = { onSelect(index) },
                         icon = { Icon(if (selected) tab.selectedIcon else tab.unselectedIcon, tab.label) },
@@ -1387,7 +1449,7 @@ private fun DesktopSidebar(
 /** 侧栏分组标题。 */
 @Composable
 private fun SidebarSection(label: String) {
-    Text(
+    CpText(
         label,
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1503,7 +1565,7 @@ private fun SidebarAction(
                 shape = cp.player.app.ui.theme.CpShapes.full,
                 color = MaterialTheme.colorScheme.primary,
             ) {
-                Text(
+                CpText(
                     if (badge > 99) "99+" else badge.toString(),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onPrimary,
@@ -1565,7 +1627,7 @@ private fun SidebarPlaylistRow(
                 else MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
             )
-            Text(
+            CpText(
                 "${playlist.trackCount} 首",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1636,24 +1698,61 @@ private sealed interface DesktopPane {
     data class Playlist(val playlist: PlaylistSummary) : DesktopPane
 }
 
+private val DesktopPaneSaver: Saver<DesktopPane, Any> = run {
+    mapSaver(
+        save = { pane ->
+            when (pane) {
+                DesktopPane.Tabs -> mapOf("type" to "tabs")
+                DesktopPane.Settings -> mapOf("type" to "settings")
+                DesktopPane.Downloads -> mapOf("type" to "downloads")
+                is DesktopPane.LocalLibrary -> mapOf("type" to "localLibrary", "tab" to pane.initialTab)
+                DesktopPane.RecentPlays -> mapOf("type" to "recentPlays")
+                DesktopPane.Messages -> mapOf("type" to "messages")
+                is DesktopPane.Playlist -> mapOf(
+                    "type" to "playlist",
+                    "id" to pane.playlist.id,
+                    "name" to pane.playlist.name,
+                    "coverUrl" to pane.playlist.coverUrl,
+                    "trackCount" to pane.playlist.trackCount,
+                    "creatorName" to pane.playlist.creatorName,
+                )
+            }
+        },
+        restore = { map ->
+            when (map["type"] as? String) {
+                "settings" -> DesktopPane.Settings
+                "downloads" -> DesktopPane.Downloads
+                "localLibrary" -> DesktopPane.LocalLibrary((map["tab"] as? Int) ?: 0)
+                "recentPlays" -> DesktopPane.RecentPlays
+                "messages" -> DesktopPane.Messages
+                "playlist" -> {
+                    val id = (map["id"] as? Number)?.toLong() ?: 0L
+                    val name = map["name"] as? String ?: ""
+                    val coverUrl = map["coverUrl"] as? String
+                    val trackCount = (map["trackCount"] as? Number)?.toInt() ?: 0
+                    val creatorName = map["creatorName"] as? String
+                    DesktopPane.Playlist(PlaylistSummary(id, name, coverUrl, trackCount, creatorName))
+                }
+                else -> DesktopPane.Tabs
+            }
+        }
+    )
+}
+
 /**
  * 内容区内嵌 Navigator 的**根页**：三个 tab 的宿主（[TabContent]）。
  *
- * 持有的全是宿主（`MainScreen`）传进来的**状态引用**—— tab 列表、已访问集合、选中索引的
- * 状态本体。自己不拥有状态：切 tab 只改 [selectedIndexState]，根页实例不变、内嵌栈的根
- * 保持稳定，不会因为 tab 切换就把整条栈重置。
- *
- * tab 页面（首页 / 搜索 / 曲库）从 `LocalNavigator` 读到的就是内嵌 Navigator 本身，
- * 它们的一切 `push`（专辑详情、歌手页、搜索结果 …）自然落进内容区 —— 这正是
- * 「大部分操作保留左侧导航栏」的实现机制，各页面**零改动**。
+ * 通过 [LocalDesktopTabIndex] 和 [LocalDesktopVisitedTabs] 从外层 `MainScreen`
+ * 响应式消费最新的选中项和访问历史，自己不持有任何易失字段或陈旧状态引用。
+ * 即使 `MainScreen` 被根栈 push 覆盖并弹出恢复后，内嵌 Navigator 复用此根页实例，
+ * 其 `Content()` 也能立即根据最新的 CompositionLocal 渲染出正确的 tab 内容，
+ * 绝不会因为闭包中保留了旧引用而导致搜索和我的页面变空白。
  */
-private class DesktopContentRootScreen(
-    private val tabs: List<TabItem>,
-    private val visitedTabs: SnapshotStateList<Int>,
-    private val selectedIndexState: MutableIntState,
-) : Screen {
+private data object DesktopContentRootScreen : Screen {
     @Composable
     override fun Content() {
-        TabContent(tabs, visitedTabs, selectedIndexState.intValue, Modifier.fillMaxSize())
+        val selectedIndex = LocalDesktopTabIndex.current
+        val visitedTabs = LocalDesktopVisitedTabs.current
+        TabContent(MAIN_TABS, visitedTabs, selectedIndex, Modifier.fillMaxSize())
     }
 }

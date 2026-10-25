@@ -25,7 +25,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -39,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.util.UiEvents
 
 /**
@@ -49,6 +49,7 @@ fun AddToLocalPlaylistDialog(
     trackPaths: List<String>,
     onDismiss: () -> Unit,
 ) {
+    val s = cpStrings()
     val playlists by AppModel.localMedia.playlists.playlists.collectAsState()
     var newPlaylistName by remember { mutableStateOf("") }
     var isCreating by remember { mutableStateOf(false) }
@@ -56,8 +57,8 @@ fun AddToLocalPlaylistDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(
-                "添加到本地歌单",
+            CpText(
+                s.playlistSheet.addToLocalPlaylistTitle,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -76,7 +77,7 @@ fun AddToLocalPlaylistDialog(
                     OutlinedTextField(
                         value = newPlaylistName,
                         onValueChange = { newPlaylistName = it },
-                        placeholder = { Text("新建本地歌单…") },
+                        placeholder = { CpText(s.playlistSheet.newLocalPlaylistPlaceholder) },
                         singleLine = true,
                         shape = MaterialTheme.shapes.medium,
                         modifier = Modifier.weight(1f),
@@ -87,7 +88,7 @@ fun AddToLocalPlaylistDialog(
                             if (name.isNotEmpty()) {
                                 val pl = AppModel.localMedia.playlists.createPlaylist(name)
                                 AppModel.localMedia.playlists.addTracks(pl.id, trackPaths)
-                                UiEvents.notify("已创建并添加到「${pl.name}」")
+                                UiEvents.notify(s.playlistSheet.createdAndAddedTo(pl.name))
                                 onDismiss()
                             }
                         },
@@ -96,7 +97,7 @@ fun AddToLocalPlaylistDialog(
                     ) {
                         Icon(Icons.Filled.Add, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("新建")
+                        CpText(s.playlistSheet.createShort)
                     }
                 }
 
@@ -105,10 +106,11 @@ fun AddToLocalPlaylistDialog(
                         Modifier.fillMaxWidth().padding(vertical = 24.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(
-                            "暂无自定义本地歌单，输入名称即可新建",
+                        CpText(
+                            s.playlistSheet.noCustomLocalPlaylists,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
                         )
                     }
                 } else {
@@ -120,10 +122,7 @@ fun AddToLocalPlaylistDialog(
                             Surface(
                                 onClick = {
                                     val count = AppModel.localMedia.playlists.addTracks(pl.id, trackPaths)
-                                    UiEvents.notify(
-                                        if (count > 0) "已将 $count 首歌曲添加到「${pl.name}」"
-                                        else "歌曲已在「${pl.name}」中"
-                                    )
+                                    UiEvents.notify(s.playlistSheet.addedToPlaylist(count, pl.name))
                                     onDismiss()
                                 },
                                 shape = MaterialTheme.shapes.medium,
@@ -149,14 +148,14 @@ fun AddToLocalPlaylistDialog(
                                         )
                                     }
                                     Column(Modifier.weight(1f)) {
-                                        Text(
+                                        CpText(
                                             pl.name,
                                             style = MaterialTheme.typography.bodyLarge,
                                             fontWeight = FontWeight.Medium,
                                             maxLines = 1,
                                         )
-                                        Text(
-                                            "${pl.trackPaths.size} 首歌曲",
+                                        CpText(
+                                            s.playlistSheet.trackCount(pl.trackPaths.size),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
@@ -171,7 +170,7 @@ fun AddToLocalPlaylistDialog(
         confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                CpText(s.playlistSheet.cancel)
             }
         },
     )
