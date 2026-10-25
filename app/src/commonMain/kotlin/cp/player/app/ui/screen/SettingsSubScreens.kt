@@ -40,7 +40,7 @@ import cp.player.app.ui.component.SettingsSliderItem
 import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.model.SONG_CACHE_CAPACITY_OPTIONS
 import cp.player.app.ui.model.StorageSettingsModel
-import cp.player.app.ui.model.formatBytes
+import cp.player.app.ui.util.formatBytes
 import cp.player.app.ui.model.songCacheCapacityIndex
 import cp.player.app.ui.theme.ColorSource
 import cp.player.app.ui.theme.ThemeMode

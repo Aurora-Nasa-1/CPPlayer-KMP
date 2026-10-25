@@ -428,6 +428,29 @@ interface SongCacheStrings {
     fun deleted(name: String, freed: String): String
     val deleteFailed: String
 
+    // ---- 缓存 → 下载（不联网，直接搬运已落盘的完整副本）----
+
+    /** 一键把全部可转条目转为下载。 */
+    val convertAll: String
+
+    /** 转换进行中（按钮禁用时的文案）。 */
+    val converting: String
+
+    /** 一键转换按钮下方的说明：讲清「不重新下载」与「哪些会被跳过」。 */
+    val convertAllNote: String
+
+    /** 单条转换按钮的无障碍描述（读屏念的是「把 X 的缓存转为下载」）。 */
+    fun convertEntry(name: String): String
+
+    /** 转换结果：成功 [count] 条，跳过 [skipped] 条（跳过为 0 时不要拼出「跳过 0 首」）。 */
+    fun converted(count: Int, skipped: Int): String
+
+    /** 当前一个能转的都没有（全是缺音源/音质信息的旧缓存，或列表已空）。 */
+    val nothingToConvert: String
+
+    /** 转换整体失败（本轮一条都没成功且不是「跳过」导致）。 */
+    val convertFailed: String
+
     val timeUnknown: String
     val timeJustNow: String
     fun timeMinutesAgo(minutes: Long): String

@@ -1399,7 +1399,7 @@ object AppModel {
     /** 下载单首歌曲（解析 mediaId/title/artist/coverUrl，AUDIO 入队）并提示「已加入下载」。 */
     fun downloadTrack(track: cp.player.core.music.TrackSummary, level: String = playbackQuality()) {
         modelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val ok = runCatching {
+            val task = runCatching {
                 downloads.enqueue(
                     mediaId = resolveDownloadMediaId(track.id),
                     title = track.name,
@@ -1408,9 +1408,15 @@ object AppModel {
                     mediaType = cp.player.core.media.MediaType.AUDIO,
                     level = level,
                 )
-            }.isSuccess
+            }.getOrNull()
+            // 命中同音质缓存时 enqueue 会直接返回一个「已完成、来自缓存」的任务：
+            // 这时说「已加入下载」会让人以为还在后台排队，得说清它已经好了。
             cp.player.app.platform.sendPlatformToast(
-                if (ok) "已加入下载" else "加入下载失败"
+                when {
+                    task == null -> "加入下载失败"
+                    task.fromCache -> "已从歌曲缓存转为下载"
+                    else -> "已加入下载"
+                }
             )
         }
     }
@@ -1423,8 +1429,9 @@ object AppModel {
         }
         modelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             var count = 0
+            var fromCache = 0
             tracks.forEach { track ->
-                val ok = runCatching {
+                val task = runCatching {
                     downloads.enqueue(
                         mediaId = resolveDownloadMediaId(track.id),
                         title = track.name,
@@ -1433,11 +1440,17 @@ object AppModel {
                         mediaType = cp.player.core.media.MediaType.AUDIO,
                         level = level,
                     )
-                }.isSuccess
-                if (ok) count++
+                }.getOrNull()
+                if (task != null) {
+                    count++
+                    // 命中同音质缓存的那些已经直接落地了，单独报一句，
+                    // 否则用户会以为这 N 首都在排队等网络。
+                    if (task.fromCache) fromCache++
+                }
             }
-            cp.player.app.platform.sendPlatformToast("已加入 $count 首下载")
-            cp.player.app.ui.util.UiEvents.notify("已加入 $count 首下载")
+            val message = if (fromCache > 0) "已加入 $count 首下载（$fromCache 首来自缓存）" else "已加入 $count 首下载"
+            cp.player.app.platform.sendPlatformToast(message)
+            cp.player.app.ui.util.UiEvents.notify(message)
         }
     }
 

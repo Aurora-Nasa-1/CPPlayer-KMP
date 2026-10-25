@@ -37,7 +37,10 @@
 - `playback/`：`PlaybackController`（播放队列、seek、切歌、歌词同步）、`PlatformPlayer` 抽象。
 - `control/`：本地 HTTP 流媒体服务与局域网推送（`LocalServer`、`ExternalPusher`）。
 - `integration/`：跨软件标准 API 契约导出（`/api/v1/...`）。
-- `download/`：多任务媒体下载管理。
+- `download/`：多任务媒体下载管理。**与 `playback/` 的歌曲缓存打通**：无损档位边播边落盘的那份完整音频
+  （见 `StreamLocalizer`）可以直接「转成下载」—— `MediaDownloadManager.importFromSongCache()` 一键批量搬，
+  `enqueue()` 在入队前也会先查同音质缓存并直接搬运，命中就不联网。匹配只认 `mediaId + 音质`
+  （mediaId 带 `{providerId}://` 前缀），**不按歌名/歌手兜底** —— 不同音源的同名曲是不同音频。
 - `local/` / `media/`：本地音频文件扫描与媒体标签元数据解析。
 - `music/`：跨音源统一领域模型（`TrackSummary`、`PlaylistSummary`、`CPMediaId`）。
 - `MusicBackend.kt`：**后端统一对外的单例入口**。

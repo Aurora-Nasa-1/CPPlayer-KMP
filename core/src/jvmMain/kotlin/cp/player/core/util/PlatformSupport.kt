@@ -205,6 +205,21 @@ actual object PlatformSupport {
         }
     }
 
+    actual fun copyFile(src: String, dest: String): Boolean = try {
+        val source = File(src)
+        val target = File(dest)
+        if (!source.isFile) {
+            false
+        } else {
+            target.parentFile?.mkdirs()
+            source.copyTo(target, overwrite = true)
+            // 字节数必须对上：半截拷贝（磁盘满 / 进程被杀）当成成功会让缓存转下载产出坏文件
+            target.length() == source.length()
+        }
+    } catch (e: Exception) {
+        false
+    }
+
     actual fun writeTextFile(path: String, content: String): Boolean = try {
         val file = File(path)
         file.parentFile?.mkdirs()

@@ -275,6 +275,16 @@ object CpStringsZh : CpStrings {
         override fun deleted(name: String, freed: String) = "已删除「$name」的缓存，释放了 $freed"
         override val deleteFailed = "删除失败，文件可能正在播放"
 
+        override val convertAll = "一键转为下载"
+        override val converting = "正在转换…"
+        override val convertAllNote = "把缓存里完整的歌曲直接转为正式下载，不再重新下载一遍；" +
+            "只转换已记录音源与音质的缓存，同一首歌已有下载时跳过。"
+        override fun convertEntry(name: String) = "把「$name」的缓存转为下载"
+        override fun converted(count: Int, skipped: Int) =
+            if (skipped > 0) "已把 $count 首缓存转为下载，跳过 $skipped 首" else "已把 $count 首缓存转为下载"
+        override val nothingToConvert = "没有可转换的缓存（缺少音源或音质信息的旧缓存无法转换）"
+        override val convertFailed = "转换失败，请稍后重试"
+
         override val timeUnknown = "时间未知"
         override val timeJustNow = "刚刚"
         override fun timeMinutesAgo(minutes: Long) = "$minutes 分钟前"

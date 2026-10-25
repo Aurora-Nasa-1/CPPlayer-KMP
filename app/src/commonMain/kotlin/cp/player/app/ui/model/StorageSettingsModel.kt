@@ -4,6 +4,7 @@ import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
 import cp.player.app.ui.util.UiEvents
+import cp.player.app.ui.util.formatBytes
 import cp.player.core.media.LocalMediaOrigin
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -211,17 +212,7 @@ class StorageSettingsModel : ScreenModel {
     }
 }
 
-/**
- * 字节数的人类可读格式（本文件专用；下载页有独立实现，行为保持一致）。
- * commonMain 无 String.format / java.util.Locale，用 `roundToInt()` 手工取整。
- */
-internal fun formatBytes(bytes: Long): String {
-    if (bytes < 0L) return "未知"
-    if (bytes < 1024) return "$bytes B"
-    val kb = bytes / 1024.0
-    if (kb < 1024) return "${kb.roundToInt()} KB"
-    val mb = kb / 1024.0
-    if (mb < 1024) return "${(mb * 10).roundToInt() / 10.0} MB"
-    val gb = mb / 1024.0
-    return "${(gb * 100).roundToInt() / 100.0} GB"
-}
+/** 兼容旧代码引用，统一委托至 [cp.player.app.ui.util.formatBytes] */
+fun formatBytes(bytes: Long): String = cp.player.app.ui.util.formatBytes(bytes)
+
+

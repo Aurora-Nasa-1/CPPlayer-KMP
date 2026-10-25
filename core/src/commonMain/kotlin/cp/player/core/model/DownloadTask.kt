@@ -64,5 +64,13 @@ data class DownloadTask(
     /** 失败时的错误信息 */
     val error: String? = null,
     /** 任务创建时间戳（毫秒） */
-    val createdAt: Long
+    val createdAt: Long,
+    /**
+     * 本条是不是**由歌曲缓存转成的下载**（没有走过网络）。
+     *
+     * 只用于展示与排查：转下载的成品文件来自 `stream-cache`，若用户反馈「文件有问题」，
+     * 这个标记能把「缓存里那份本来就是坏的」与「下载链路出错」区分开。
+     * 新字段一律放参数表末尾（见 AGENTS.md）：插在中间会让按位置传参的旧构造点静默错位。
+     */
+    val fromCache: Boolean = false,
 )

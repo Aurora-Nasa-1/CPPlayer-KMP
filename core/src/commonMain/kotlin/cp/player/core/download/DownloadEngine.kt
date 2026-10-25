@@ -29,6 +29,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 
 /**
  * 下载编排核心（commonMain，全程 Dispatchers.IO）。
@@ -201,6 +202,64 @@ class DownloadEngine(
         scope.cancel()
     }
 
+    /**
+     * 用一份**已经完整的本地文件**（歌曲缓存）产出「已完成」任务，全程不联网。
+     *
+     * 顺序刻意是「复制到 `.part` → 核对字节数 → 原子改名」：
+     * 缓存目录与下载目录可能不同卷（跨卷 rename 直接失败），中途磁盘满也会留下半截文件。
+     * 只有字节数对上才算成功，否则清理并返回 null，由调用方退回正常下载。
+     *
+     * @param task 待登记的任务（id 已定，通常就是 mediaId）
+     * @param sourcePath 缓存里那份完整文件的绝对路径
+     * @return 登记后的已完成任务；源文件读不到 / 复制失败 / 字节数不符时 null
+     */
+    suspend fun adoptFromLocalFile(task: DownloadTask, sourcePath: String): DownloadTask? {
+        val sourceBytes = PlatformSupport.fileSize(sourcePath)
+        if (sourceBytes <= 0L) return null
+        val targetPath = pathMutex.withLock {
+            val reserved = allocatePathLocked(task.title, task.artist, sourceExtension(sourcePath))
+            // 在临界区里先落一个空 `.part` 占位：否则并发的另一次转换 / 下载看不见这条预订，
+            // 会算出同一个目标文件名（同名不同曲），后写的会把先写的那份整个覆盖掉。
+            PlatformSupport.writeTextFile("$reserved.part", "")
+            reserved
+        }
+        return withContext(Dispatchers.IO) {
+            val parentDir = targetPath.substringBeforeLast('/', "")
+            if (parentDir.isNotBlank()) PlatformSupport.ensureDir(parentDir)
+            val partPath = "$targetPath.part"
+            // 目标文件以「复制到 .part → 核对字节数 → 原子改名」的顺序落地：
+            // 中途磁盘满 / 进程被杀只会留下 .part，绝不会出现一个「看起来完整」的坏文件。
+            if (!PlatformSupport.copyFile(sourcePath, partPath) ||
+                PlatformSupport.fileSize(partPath) != sourceBytes ||
+                !PlatformSupport.moveFile(partPath, targetPath)
+            ) {
+                PlatformSupport.deleteRecursively(partPath)
+                return@withContext null
+            }
+            val completed = task.copy(
+                status = DownloadStatus.COMPLETED,
+                progress = 1f,
+                downloadedBytes = sourceBytes,
+                totalBytes = sourceBytes,
+                localPath = targetPath,
+                error = null,
+                fromCache = true,
+            )
+            // 同 id 的旧记录（FAILED / CANCELLED / 文件丢失的 COMPLETED）由新记录顶掉。
+            _tasks.update { list ->
+                if (list.any { it.id == completed.id }) {
+                    list.map { if (it.id == completed.id) completed else it }
+                } else {
+                    list + completed
+                }
+            }
+            persist()
+            progressMutex.withLock { lastProgressEmit.remove(completed.id) }
+            onTaskCompleted?.invoke(completed)
+            completed
+        }
+    }
+
     // ============ 内部实现 ============
 
     private suspend fun requeue(id: String, fromStatuses: Set<DownloadStatus>) {
@@ -282,7 +341,11 @@ class DownloadEngine(
                 if (locked != null) {
                     locked
                 } else {
-                    val resolved = resolveTargetPath(task, songUrl.url)
+                    val resolved = allocatePathLocked(
+                        task.title,
+                        task.artist,
+                        inferExtension(songUrl.url, task.mediaType),
+                    )
                     updateTask(task.id) { it.copy(localPath = resolved) }
                     resolved
                 }
@@ -372,13 +435,17 @@ class DownloadEngine(
         throw DownloadFailedException(lastError ?: "取直链失败")
     }
 
-    /** 解析目标文件路径：`标题 - 艺术家.ext`，清洗非法字符，同名冲突追加 (2)/(3)。 */
-    private fun resolveTargetPath(task: DownloadTask, url: String): String {
+    /**
+     * 解析目标文件路径：`标题 - 艺术家.ext`，清洗非法字符，同名冲突追加 (2)/(3)。
+     *
+     * ⚠️ 调用方**必须已持有 [pathMutex]**（[kotlinx.coroutines.sync.Mutex] 不可重入，
+     * 这里再锁一次会死等）。对外的加锁版本是 [allocatePath]。
+     */
+    private fun allocatePathLocked(title: String, artist: String?, ext: String): String {
         val root = config.rootDir
-        val ext = inferExtension(url, task.mediaType)
         val base = buildString {
-            append(sanitizeFileName(task.title))
-            task.artist?.takeIf { it.isNotBlank() }?.let { append(" - ").append(sanitizeFileName(it)) }
+            append(sanitizeFileName(title))
+            artist?.takeIf { it.isNotBlank() }?.let { append(" - ").append(sanitizeFileName(it)) }
         }.ifBlank { "download" }
         val taken = _tasks.value.mapNotNull { it.localPath }.toSet()
         var candidate = "$base.$ext"
@@ -391,6 +458,12 @@ class DownloadEngine(
             ordinal++
         }
         return "$root/$candidate"
+    }
+
+    /** 缓存文件的扩展名（缓存端按 magic bytes 定过，比 URL 后缀可信）；异常时退 `.bin`。 */
+    private fun sourceExtension(path: String): String {
+        val ext = path.substringAfterLast('.', "").lowercase().filter { it.isLetterOrDigit() }
+        return if (ext.isNotBlank() && ext.length <= 5) ext else "bin"
     }
 
     /** 扩展名推断：优先 URL 路径后缀，其次按 [MediaType] 缺省。 */

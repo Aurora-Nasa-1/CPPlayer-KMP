@@ -37,6 +37,21 @@ data class SongCacheEntry(
     val lastAccessMs: Long = 0L,
 ) {
     /**
+     * 能否一键转成正式下载。
+     *
+     * 判据是「索引里既有 mediaId 又有音质」。**缺一不可**：
+     * - 没有 `mediaId` 的旧缓存（哈希文件名即可，索引没记）根本认不出它属于哪首歌，
+     *   更认不出属于哪个音源 —— 按歌名猜会把 A 音源的《晴天》当成 B 音源的《晴天》，
+     *   那是**另一份音频**，属于静默的错误交付；
+     * - 没有音质则无法和下载任务做「同音质」比对（见 `MediaDownloadManager.enqueue`）。
+     *
+     * 这就是「区分 provider」在这里的落点：mediaId 自带 `{providerId}://` 前缀，
+     * 转下载/匹配下载全程只认它，不拿标题-歌手做任何兜底匹配。
+     */
+    val isConvertibleToDownload: Boolean
+        get() = !mediaId.isNullOrBlank() && !qualityLevel.isNullOrBlank()
+
+    /**
      * 管理页的搜索匹配：曲名 / 歌手 / mediaId / 音质 / 文件名，任一命中即可。
      *
      * 关键字为空视为「全部命中」，调用方无需在外层再判一次空串。
@@ -194,6 +209,19 @@ interface StreamLocalizer {
      * 实现方**应当**在缩小上限后立刻按 LRU 淘汰到位，否则用户设完看不到变化。
      */
     fun setCapacityBytes(bytes: Long) {}
+
+    /**
+     * 按 [SongCacheEntry.id]（文件名）取出该缓存的**完整文件**绝对路径；没有则 `null`。
+     *
+     * 给「缓存转下载」用：缓存文件本身就是一份完整音频，搬成正式下载即可，
+     * 不必再走一遍网络（无损单曲几十 MB，重下纯浪费流量与时间）。
+     *
+     * 默认 `null`（安卓不落盘 / 测试替身）。实现方**必须**把 [id] 当不可信输入校验
+     * （只允许缓存目录的直接子项），否则 `../settings.json` 这种 id 能读到目录之外。
+     *
+     * 返回的路径可能在被读取前消失（并发清理 / 用户手工删除），调用方按失败处理。
+     */
+    fun entryPath(id: String): String? = null
 
     /**
      * 缓存目录的绝对路径；null = 该平台没有磁盘缓存目录。

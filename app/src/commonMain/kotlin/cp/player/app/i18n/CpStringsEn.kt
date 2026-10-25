@@ -283,6 +283,19 @@ object CpStringsEn : CpStrings {
             "Deleted the cached copy of \"$name\", freeing $freed"
         override val deleteFailed = "Couldn't delete it — the file may be playing right now"
 
+        override val convertAll = "Convert all to downloads"
+        override val converting = "Converting…"
+        override val convertAllNote =
+            "Turns the complete tracks in the cache into real downloads without fetching them again. " +
+                "Only entries with a known source and quality are converted; tracks already downloaded are skipped."
+        override fun convertEntry(name: String) = "Convert the cached copy of \"$name\" into a download"
+        override fun converted(count: Int, skipped: Int) =
+            if (skipped > 0) "Converted $count cached tracks to downloads, skipped $skipped"
+            else "Converted $count cached tracks to downloads"
+        override val nothingToConvert =
+            "Nothing to convert — older cache entries without source or quality info can't be converted"
+        override val convertFailed = "Conversion failed, please try again later"
+
         override val timeUnknown = "Time unknown"
         override val timeJustNow = "Just now"
         // 英文里数量词在名词之后（"5 min ago"），中文在之前（"5 分钟前"）——

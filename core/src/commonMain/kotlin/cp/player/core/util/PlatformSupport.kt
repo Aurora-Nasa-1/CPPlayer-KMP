@@ -92,6 +92,18 @@ expect object PlatformSupport {
     /** 移动/重命名单个文件（优先原子 rename，失败降级普通替换） */
     fun moveFile(src: String, dest: String): Boolean
 
+    /**
+     * 复制单个文件（覆盖目标；父目录不存在时自动创建）。
+     *
+     * 为什么需要它而不是「[moveFile] 过去」：`stream-cache` 与下载目录**可能不在同一卷**
+     * （缓存默认在 `~/.cpplayer`，下载目录在用户自定义的 D 盘），跨卷 rename 会直接失败；
+     * 而缓存转下载要求「搬走」而不是「删掉」，复制 + 校验字节数才是安全顺序。
+     *
+     * @return true 表示复制完成**且目标字节数与源一致**（不一致按失败处理，
+     *   调用方会清理半成品，绝不把一个截断文件当成下载成品）
+     */
+    fun copyFile(src: String, dest: String): Boolean
+
     /** 写文本文件（自动创建父目录）；返回是否成功 */
     fun writeTextFile(path: String, content: String): Boolean
 

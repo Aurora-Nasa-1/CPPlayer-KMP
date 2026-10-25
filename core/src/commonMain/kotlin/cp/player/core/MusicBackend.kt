@@ -242,6 +242,9 @@ class MusicBackend private constructor(
             source = unifiedSource,
             settings = settings,
             context = context,
+            // 歌曲缓存（无损流落盘那份）交给下载侧做「同音质缓存直接转下载」。
+            // 必须是播放器/管理页共用的同一个实例，否则读到的是另一份索引。
+            cache = songCache,
             onCompleted = { _, item -> localMedia.addExternalItems(listOf(item)) },
         ).also { manager ->
             // 引擎内部自建 IO 协程域；此处仅在 backendScope 上触发一次持久化任务恢复

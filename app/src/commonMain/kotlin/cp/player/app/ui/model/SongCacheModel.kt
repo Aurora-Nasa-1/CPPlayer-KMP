@@ -5,6 +5,7 @@ import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.ui.util.UiEvents
+import cp.player.app.ui.util.formatBytes
 import cp.player.core.playback.SongCacheEntry
 import cp.player.core.util.currentTimeMillis
 import kotlinx.coroutines.Dispatchers
@@ -29,6 +30,8 @@ data class SongCacheUiState(
     val totalBytes: Long = 0L,
     val capacityBytes: Long = 0L,
     val query: String = "",
+    /** 一次「缓存转下载」正在进行（按钮/行内按钮统一禁用，避免重复搬运）。 */
+    val converting: Boolean = false,
 ) {
     /**
      * 过滤后的条目。
@@ -41,6 +44,17 @@ data class SongCacheUiState(
         get() = if (query.isBlank()) entries else entries.filter { it.matches(query) }
 
     val isFiltering: Boolean get() = query.isNotBlank()
+
+    /**
+     * 能一键转成下载的条目数。
+     *
+     * 与 `importFromSongCache` 的判据同源（[SongCacheEntry.isConvertibleToDownload]）：
+     * 界面显示的数字必须等于「点了之后真的会转」的数量，两处各写一套判断迟早漂。
+     */
+    val convertibleCount: Int get() = entries.count { it.isConvertibleToDownload }
+
+    /** 「一键转下载」是否可点：有可转条目、且没有正在进行的转换。 */
+    val canConvertAll: Boolean get() = !loading && !converting && convertibleCount > 0
 
     /** 三种「空」必须分开表达，否则用户分不清是自己的搜索没命中还是缓存真的空。 */
     val isEmptyCache: Boolean get() = !loading && entries.isEmpty()
@@ -67,19 +81,66 @@ class SongCacheModel : ScreenModel {
         _state.value = _state.value.copy(query = value)
     }
 
-    /** 重新读取条目与占用。删除后与进入页面时都走它。 */
+    /** 重新读取条目与占用。删除 / 转换后与进入页面时都走它。 */
     fun refresh() {
+        screenModelScope.launch(Dispatchers.IO) { reload() }
+    }
+
+    /**
+     * 读取磁盘状态并写回 UI 状态（**调用方须已在 IO 线程**）。
+     *
+     * 从 [refresh] 里拆出来是为了让「转换 → 重新读盘 → 复位 converting」在**同一个协程里**
+     * 顺序执行：拆成两次 `launch` 时，读盘那次可能在 `converting = false` 之前落地，
+     * 于是按钮先亮起来、列表还是旧的。
+     */
+    private suspend fun reload() {
+        val entries = runCatching { cache.entries() }.getOrDefault(emptyList())
+        val stats = runCatching { cache.stats() }.getOrNull()
+        _state.value = _state.value.copy(
+            loading = false,
+            supported = stats?.supported ?: true,
+            entries = entries,
+            // 占用以 stats 为准（它和列表来自同一次枚举口径）；取不到时退回列表求和。
+            totalBytes = stats?.bytes ?: entries.sumOf { it.bytes },
+            capacityBytes = stats?.capacityBytes ?: 0L,
+        )
+    }
+
+    /**
+     * 一键把全部可转条目转为正式下载。
+     *
+     * 「转换」= 把缓存里那份完整文件搬进下载目录并登记任务，全程不联网
+     * （无损单曲几十 MB，重下纯浪费）。成功后缓存副本随之删除，所以本页列表会变短。
+     *
+     * @param strings 由调用方（组合上下文）传入，理由同 [remove]。
+     */
+    fun convertAll(strings: CpStrings) {
+        convert(_state.value.entries.filter { it.isConvertibleToDownload }, strings)
+    }
+
+    /** 单条转换（行尾按钮）。 */
+    fun convert(entry: SongCacheEntry, strings: CpStrings) {
+        convert(listOf(entry), strings)
+    }
+
+    private fun convert(targets: List<SongCacheEntry>, strings: CpStrings) {
+        if (_state.value.converting) return
+        if (targets.isEmpty()) {
+            UiEvents.notify(strings.songCache.nothingToConvert)
+            return
+        }
         screenModelScope.launch(Dispatchers.IO) {
-            val entries = runCatching { cache.entries() }.getOrDefault(emptyList())
-            val stats = runCatching { cache.stats() }.getOrNull()
-            _state.value = _state.value.copy(
-                loading = false,
-                supported = stats?.supported ?: true,
-                entries = entries,
-                // 占用以 stats 为准（它和列表来自同一次枚举口径）；取不到时退回列表求和。
-                totalBytes = stats?.bytes ?: entries.sumOf { it.bytes },
-                capacityBytes = stats?.capacityBytes ?: 0L,
-            )
+            _state.value = _state.value.copy(converting = true)
+            val summary = runCatching { AppModel.downloads.importFromSongCache(targets) }.getOrNull()
+            reload()
+            _state.value = _state.value.copy(converting = false)
+            val message = when {
+                summary == null -> strings.songCache.convertFailed
+                summary.converted > 0 -> strings.songCache.converted(summary.converted, summary.skipped)
+                summary.failed > 0 -> strings.songCache.convertFailed
+                else -> strings.songCache.nothingToConvert
+            }
+            withContext(Dispatchers.Main) { UiEvents.notify(message) }
         }
     }
 
@@ -95,7 +156,7 @@ class SongCacheModel : ScreenModel {
     fun remove(entry: SongCacheEntry, strings: CpStrings) {
         screenModelScope.launch(Dispatchers.IO) {
             val ok = runCatching { cache.remove(entry.id) }.getOrDefault(false)
-            refresh()
+            reload()
             val name = entry.displayName(strings)
             withContext(Dispatchers.Main) {
                 UiEvents.notify(

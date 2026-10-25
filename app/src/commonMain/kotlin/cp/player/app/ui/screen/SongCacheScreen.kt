@@ -1,18 +1,23 @@
 package cp.player.app.ui.screen
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -32,20 +37,29 @@ import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.model.SongCacheModel
 import cp.player.app.ui.model.SongCacheUiState
 import cp.player.app.ui.model.displayName
-import cp.player.app.ui.model.formatBytes
+import cp.player.app.ui.util.formatBytes
 import cp.player.app.ui.model.qualityLabel
 import cp.player.app.ui.model.relativeTime
 import cp.player.app.ui.util.popOrNotify
 import cp.player.core.playback.SongCacheEntry
+import cp.player.app.ui.component.CpText
 
 /**
- * 歌曲缓存明细页：**看看缓存里到底有什么，并删掉某几首**。
+ * 歌曲缓存明细页：**看看缓存里到底有什么，删掉某几首，或把整批转成正式下载**。
  *
  * ### 职责边界（刻意窄）
  *
- * 本页只做「浏览 / 搜索 / 删单条」。**批量清理不在这里** —— 它属于上一页
+ * 本页做「浏览 / 搜索 / 删单条 / 转下载」。**批量清理不在这里** —— 它属于上一页
  * 「下载与存储」，那里已经有「清理图片缓存」这个先例。同一个破坏性动作开两个入口，
  * 只会让用户不确定哪个才是「真的全清了」。
+ *
+ * ### 为什么要有「转下载」
+ *
+ * 缓存是**可淘汰**的（LRU + 容量上限），用户把某首歌单曲循环一个月，也不代表它
+ * 会一直在；而下载是永久的。既然缓存里那份已经是一份完整无损音频，把它「转正」
+ * 只需一次文件搬运 —— 让用户为此再走一遍网络（几十 MB）纯属浪费。
+ * 转换只认「索引里既有 mediaId 又有音质」的条目，理由见
+ * [cp.player.core.playback.SongCacheEntry.isConvertibleToDownload]（provider 必须可确定）。
  *
  * ### 为什么必须有搜索
  *
@@ -71,6 +85,33 @@ private fun SongCacheContent(
 ) {
     val state by model.state.collectAsState()
     val s = cpStrings()
+    SongCacheBody(
+        state = state,
+        onBack = onBack,
+        onQueryChange = model::setQuery,
+        onConvertAll = { model.convertAll(s) },
+        onDelete = { entry -> model.remove(entry, s) },
+        onConvert = { entry -> model.convert(entry, s) },
+    )
+}
+
+/**
+ * 无状态页面主体：状态从外面喂进来，动作往外抛。
+ *
+ * 拆出来的唯一目的是**可离屏渲染**（[cp.player.app.ui.screen.SongCacheScreen] 依赖
+ * ScreenModel / AppModel 单例，离屏渲染拿不到）。版式改动靠编译和单测量不出来，
+ * 必须真的渲一张图看对齐 —— 见 AGENTS.md「改版式不能只靠编译 + 单测」。
+ */
+@Composable
+internal fun SongCacheBody(
+    state: SongCacheUiState,
+    onBack: () -> Unit,
+    onQueryChange: (String) -> Unit,
+    onConvertAll: () -> Unit,
+    onDelete: (SongCacheEntry) -> Unit,
+    onConvert: (SongCacheEntry) -> Unit,
+) {
+    val s = cpStrings()
 
     CpRouteScaffold(title = s.songCache.screenTitle, onBack = onBack) { pageModifier ->
         if (!state.loading && !state.supported) {
@@ -82,7 +123,13 @@ private fun SongCacheContent(
         } else {
             SettingsLazyPage(
                 pageModifier = pageModifier,
-                header = { SongCacheHeader(state = state, onQueryChange = model::setQuery) },
+                header = {
+                    SongCacheHeader(
+                        state = state,
+                        onQueryChange = onQueryChange,
+                        onConvertAll = onConvertAll,
+                    )
+                },
             ) {
                 when {
                     state.loading -> item {
@@ -102,7 +149,9 @@ private fun SongCacheContent(
                             entry = entry,
                             index = index,
                             total = state.visibleEntries.size,
-                            onDelete = { model.remove(entry, s) },
+                            converting = state.converting,
+                            onDelete = { onDelete(entry) },
+                            onConvert = { onConvert(entry) },
                         )
                     }
                 }
@@ -121,9 +170,10 @@ private fun SongCacheContent(
 private fun ColumnScope.SongCacheHeader(
     state: SongCacheUiState,
     onQueryChange: (String) -> Unit,
+    onConvertAll: () -> Unit,
 ) {
     val s = cpStrings()
-    Text(
+    CpText(
         text = if (state.loading) {
             s.songCache.measuringShort
         } else if (state.isEmptyCache) {
@@ -154,9 +204,40 @@ private fun ColumnScope.SongCacheHeader(
                 }
             }
         },
-        placeholder = { Text(s.songCache.searchPlaceholder) },
+        placeholder = { CpText(s.songCache.searchPlaceholder) },
         modifier = Modifier.fillMaxWidth(),
     )
+    // 缓存有内容才显示「转下载」区：空缓存时这排按钮没有任何意义，
+    // 只会把「播放无损会自动缓存」那句说明挤下去。
+    if (state.entries.isNotEmpty()) {
+        Column(verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap)) {
+            Button(
+                onClick = onConvertAll,
+                // 转换中保持「按下态」样式（模型侧会直接拒掉重复点击）：
+                // 变成禁用灰底加一个转圈，看着像坏了而不是在进行。
+                enabled = state.canConvertAll || state.converting,
+            ) {
+                if (state.converting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        // 按钮底色是 primary，指示器必须用 onPrimary 才看得见
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                    CpText(s.songCache.converting, modifier = Modifier.padding(start = 6.dp))
+                } else {
+                    Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    CpText(s.songCache.convertAll, modifier = Modifier.padding(start = 6.dp))
+                }
+            }
+            CpText(
+                text = s.songCache.convertAllNote,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
 }
 
 /**
@@ -171,7 +252,9 @@ private fun SongCacheRow(
     entry: SongCacheEntry,
     index: Int,
     total: Int,
+    converting: Boolean,
     onDelete: () -> Unit,
+    onConvert: () -> Unit,
 ) {
     val s = cpStrings()
     val name = entry.displayName(s)
@@ -187,9 +270,16 @@ private fun SongCacheRow(
         subtitle = subtitle,
         index = index,
         total = total,
-        // 行尾是独立可操作的删除按钮 —— 合并语义会让读屏用户点不到它。
+        // 行尾是独立可操作的按钮 —— 合并语义会让读屏用户点不到它。
         mergeSemantics = false,
         trailingContent = {
+            // 旧缓存（索引没记 mediaId / 音质）认不出属于哪个音源，转下载无从谈起：
+            // 直接不显示这个按钮，比显示一个点了没反应的按钮诚实。
+            if (entry.isConvertibleToDownload) {
+                IconButton(onClick = onConvert, enabled = !converting) {
+                    Icon(Icons.Filled.Download, contentDescription = s.songCache.convertEntry(name))
+                }
+            }
             IconButton(onClick = onDelete) {
                 Icon(Icons.Filled.Delete, contentDescription = s.songCache.deleteEntry(name))
             }
@@ -206,7 +296,7 @@ private fun SongCacheRow(
  */
 @Composable
 private fun SongCacheHint(text: String) {
-    Text(
+    CpText(
         text = text,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -253,6 +253,15 @@ class DesktopStreamLocalizer(
         return deleted
     }
 
+    /**
+     * 缓存条目 → 真实文件路径（「缓存转下载」的入口）。
+     *
+     * 走 [fileFor]：它已经做了「只允许缓存目录直接子项、拒绝 `..` / 分隔符」的校验，
+     * 这里再判一次「不是索引文件」。**不做副作用**（不触碰访问时间、不改索引）——
+     * 调用方搬成功后会用 [remove] 清掉这条。
+     */
+    override fun entryPath(id: String): String? = fileFor(id)?.absolutePath
+
     override fun clear(): Int {
         // 连 `.part` 残渣一起清：它们只在进程被杀时才会残留，留着纯占空间。
         // 但**不动索引文件本身** —— 容量设置存在里面，清缓存不该顺手把用户的偏好也清掉。
