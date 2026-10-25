@@ -119,8 +119,8 @@ class KaraokeTimelinePreviewTest {
             svg.append(renderSvg(sample, result))
         }
 
-        // 单字不超过 2.4 秒（再长就是「拖住不动」而不是「唱」）
-        assertTrue(worstWord <= 2_400L, "存在过长的字：$worstWord ms")
+        // 单字不超过 2.6 秒（慢歌末字 = 基础份额 + 1.2s 延长音，再长就像卡住）
+        assertTrue(worstWord <= 2_600L, "存在过长的字：$worstWord ms")
         // 相邻字时长比 >4 的占比要很低（促音/末字延音会造成个别极端值）
         val outlierRatio = outlierPairs.toFloat() / totalPairs.coerceAtLeast(1)
         assertTrue(outlierRatio <= 0.12f, "相邻字时长比过于悬殊：$outlierPairs/$totalPairs = $outlierRatio")

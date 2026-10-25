@@ -195,18 +195,23 @@ object SmartKaraokeLrcSynthesizer {
      *
      * ## 为什么不能直接用「下一行时间 − 这一行时间」
      * 行跨度里混着三种东西：**唱的、换气的、伴奏的**。副歌前那段 8 秒过门会把
-     * 「三个字」的跨度撑到 8 秒 —— 按跨度均分，这三个字就变成每个两秒的慢动作，
-     * 而真实情况是唱完 1 秒、后面 7 秒全是空的。
+     * 「三个字」的跨度撑到 8 秒 —— 按跨度均分，这三个字就变成每个两秒的慢动作。
      *
-     * 所以先用**全曲语速**算出「这句应有的时长」[expected]，再拿跨度去比：
-     * - 跨度 ≈ 应有 ⇒ 正常行，沿用生理气口（[legacySingingDuration]）；
-     * - 跨度是应有的 2~3 倍 ⇒ 有一大截尾巴 ⇒ 唱到 1.35 倍就停，剩下的留白（末字延长）；
-     * - 跨度是应有的 3 倍以上 ⇒ 几乎肯定是间奏/过门 ⇒ 唱到 1.05 倍就停。
+     * ## 为什么也不能拿「典型语速」去截（上一版的教训）
+     * 真实演唱的语速波动远比想象大：慢速乐句能到全曲典型值的 1.5~2 倍，
+     * 拿「典型 × 1.05 / 1.35」当上限，结果就是**每句都比真实唱提前结束** —— 高亮停了，
+     * 歌还在唱。截断阈值必须比「典型」高得多，高到只有**物理上不可能**是唱的跨度才会触发。
      *
-     * ## 情绪 / BPM 怎么进来
-     * 慢歌（[SongTempo] 每音节 ≥480ms）里「长跨度」很可能是真的把尾音拖长了，
-     * 所以容忍度更高（2.9 倍）；快歌 / rap 里长间隔几乎一定是伴奏，容忍度压到 1.8 倍。
-     * 这条阈值就是「不同情绪、不同 BPM」在本算法里的全部含义 —— 不假装懂情感标签。
+     * ## 现在的模型：物理上限内尽量填满
+     * ```
+     * 上限 cap   = 音节数 × r_max        // r_max ≈ 全曲 70 分位语速 × 1.5，钳在 300~900ms
+     * 歌唱时长   = min(跨度 − 换气, cap)
+     * ```
+     * - 正常行 / 慢速行：跨度 ≤ cap ⇒ **唱满**（扣一点换气），不再提前结束；
+     * - 间奏 / 过门：跨度 > cap ⇒ 唱到 cap 为止，剩下的留白。
+     *
+     * 多出来的时间怎么分：一半让**整句匀速变慢**（真实演唱里整句拖慢很常见），
+     * 一半给**末字延长**（上限 1.2s）—— 全摊开是慢动作，全给末字像卡住。
      */
     private fun planLineDuration(
         span: Long,
@@ -214,29 +219,29 @@ object SmartKaraokeLrcSynthesizer {
         density: Float,
         tempo: SongTempo,
     ): LinePlan {
-        val rate = tempo.msPerSyllable
+        val typical = tempo.typicalMs
             ?: return legacySingingDuration(span, syllableCount, density).let { LinePlan(it, it) }
+        val maxRate = tempo.maxMs ?: return legacySingingDuration(span, syllableCount, density)
+            .let { LinePlan(it, it) }
 
-        val expected = (syllableCount * rate).toLong().coerceAtLeast(200L)
-        val allow = max(120L, span - SAFE_TAIL_MS)
-        val ratio = allow.toFloat() / expected
-        val tolerance = when {
-            rate >= 480f -> 2.9f
-            rate >= 300f -> 2.3f
-            else -> 1.8f
-        }
-        return when {
-            ratio >= tolerance * 1.6f -> LinePlan(expected, (expected * 1.05f).toLong())
-            ratio >= tolerance -> LinePlan(expected, (expected * 1.35f).toLong())
-            else -> legacySingingDuration(span, syllableCount, density).let { LinePlan(it, it) }
-        }
+        val breath = breathFor(span)
+        val allow = max(120L, span - breath)
+        val cap = (syllableCount * maxRate).toLong()
+        val singing = min(allow, cap).coerceAtLeast(min(MIN_SINGING_MS, allow))
+
+        val excess = singing - (syllableCount * typical).toLong()
+        val tail = (excess * 0.5f).toLong().coerceIn(0L, MAX_TAIL_MS)
+        return LinePlan(singing - tail, singing)
     }
+
+    /** 行间换气：按跨度比例取，短行少喘、长行多喘，但都有限。 */
+    private fun breathFor(span: Long): Long = (span * 0.07f).toLong().coerceIn(150L, 450L)
 
     /**
      * 慢歌末字拖得更长、快歌收得更干脆 —— 逐字渲染里最容易被听出「假」的地方。
      */
     private fun lineEndLiftOf(tempo: SongTempo): Float {
-        val rate = tempo.msPerSyllable ?: return 1.55f
+        val rate = tempo.typicalMs ?: return 1.55f
         return when {
             rate >= 480f -> 1.75f
             rate >= 300f -> 1.55f
@@ -282,13 +287,15 @@ object SmartKaraokeLrcSynthesizer {
     }
 
     /**
-     * 全曲语速（每音节毫秒）。
+     * 全曲语速的两个统计量。
      *
-     * 关键在**用什么统计量**：行跨度只可能被「额外的空白」抬高，绝不会被压低
-     * （唱得再慢也是占着时间的）。也就是说误差是**单侧**的 ⇒ 取低分位（30%）
-     * 比取平均/中位数更接近真实语速，中位数会被大量尾部空白带偏。
+     * 行跨度只可能被「额外的空白」抬高，绝不会被压低 —— 误差是**单侧**的，所以：
+     * - [typicalMs]（50 分位）代表「这句典型唱多快」，用来算末字延长的分摊；
+     * - [maxMs]（70 分位 × 1.5，钳 300~900ms）是**物理上限**：一个字再拖也就这个量级，
+     *   跨度超过 `音节数 × maxMs` 的部分只可能是伴奏，而不是唱得慢。
+     *   上一版拿「典型 × 1.05 / 1.35」当上限，等于假设歌手永远匀速 —— 结果每句都提前唱完。
      *
-     * 少于 5 行样本时不下结论（返回 null，让 [legacySingingDuration] 兜底）：
+     * 少于 5 行样本时不下结论（两个字段都是 null，让 [legacySingingDuration] 兜底）：
      * 两行歌词足够构造出任何离谱的「语速」。
      */
     private fun estimateSongTempo(lines: List<SyncedLyricLine>): SongTempo {
@@ -299,16 +306,20 @@ object SmartKaraokeLrcSynthesizer {
             if (span < 400L || span > 30_000L) continue
             val syllables = tokenize(lines[index].text).count { it.isPronounced }
             if (syllables < 2) continue
-            perSyllable += (span - 300L).coerceAtLeast(200L).toFloat() / syllables
+            perSyllable += (span - breathFor(span)).coerceAtLeast(200L).toFloat() / syllables
         }
-        if (perSyllable.size < 5) return SongTempo(null)
+        if (perSyllable.size < 5) return SongTempo(null, null)
         val sorted = perSyllable.sorted()
-        val index = (sorted.size * 0.30f).toInt().coerceIn(0, sorted.size - 1)
-        return SongTempo(sorted[index].coerceIn(140f, 900f))
+        val typical = sorted[(sorted.size * 0.50f).toInt().coerceIn(0, sorted.size - 1)]
+        val upper = sorted[(sorted.size * 0.70f).toInt().coerceIn(0, sorted.size - 1)]
+        return SongTempo(
+            typicalMs = typical.coerceIn(140f, 900f),
+            maxMs = (upper * 1.5f).coerceIn(300f, 900f),
+        )
     }
 
-    /** 全曲语速：`null` 表示样本不足，不要拿它做判断。 */
-    private data class SongTempo(val msPerSyllable: Float?)
+    /** 全曲语速；字段为 `null` 表示样本不足，不要拿它做判断。 */
+    private data class SongTempo(val typicalMs: Float?, val maxMs: Float?)
 
     /**
      * 把 [total] 毫秒**整数**分配给各权重，保证：
