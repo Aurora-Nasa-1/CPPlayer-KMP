@@ -1,24 +1,22 @@
 {
   "name": "cpplayer-promo",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "CPPlayer 产品宣传片（Remotion · Material 3 Expressive）",
+  "description": "CPPlayer 60s product promo video (Remotion)",
   "scripts": {
-    "studio": "remotion studio",
-    "typecheck": "tsc --noEmit",
-    "render": "remotion render CPPlayerPromo out/cpplayer-promo.mp4",
-    "render:scene": "remotion render",
-    "still": "remotion still"
+    "dev": "remotion studio",
+    "render": "remotion render CpplayerPromo out/cpplayer-promo.mp4",
+    "still": "remotion still CpplayerPromo out/poster.png --frame=90"
   },
   "dependencies": {
-    "@remotion/cli": "4.0.532",
-    "@remotion/transitions": "4.0.532",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
-    "remotion": "4.0.532"
+    "@remotion/cli": "4.0.538",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "remotion": "4.0.538"
   },
   "devDependencies": {
-    "@types/react": "^19.1.0",
-    "typescript": "^5.8.2"
+    "@types/react": "19.0.0",
+    "@types/react-dom": "19.0.0",
+    "typescript": "5.7.2"
   }
 }
