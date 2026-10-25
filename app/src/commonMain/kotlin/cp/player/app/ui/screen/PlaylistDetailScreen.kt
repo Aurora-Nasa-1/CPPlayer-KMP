@@ -105,6 +105,7 @@ import cp.player.app.platform.BackHandler
 import cp.player.app.platform.shareText
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.anim.coverFlightTarget
+import cp.player.app.ui.util.formatPublishDate
 import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.AddSongsOptionsSheet
 import cp.player.app.ui.component.AppScaffold
@@ -165,19 +166,6 @@ class PlaylistDetailScreen(
             onEmbeddedBack = onEmbeddedBack,
         )
     }
-}
-
-/**
- * 将发行时间毫秒时间戳格式化为 yyyy-MM-dd。
- *
- * 走 `cp.player.core.util.localDateTimeOf`（expect/actual，jvm 侧用 java.time），
- * **不要用 kotlinx-datetime**：运行时类路径上是 0.7.x，`kotlinx.datetime.Instant`
- * 已变成指向 `kotlin.time.Instant` 的 typealias（无类文件），一碰就是
- * `NoClassDefFoundError`（2026-10-02 真实崩溃）。
- */
-private fun formatPublishDate(ms: Long): String {
-    val dt = localDateTimeOf(ms)
-    return "%04d-%02d-%02d".format(dt.year, dt.month, dt.day)
 }
 
 @Composable

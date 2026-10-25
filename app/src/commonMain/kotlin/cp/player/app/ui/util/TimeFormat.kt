@@ -66,3 +66,32 @@ fun formatChatTime(ms: Long): String {
         }
     }
 }
+
+/**
+ * 将发行时间毫秒时间戳格式化为 yyyy-MM-dd。
+ *
+ * 走 [localDateTimeOf]（expect/actual），不依赖 kotlinx-datetime，全平台安全。
+ */
+fun formatPublishDate(ms: Long): String {
+    if (ms <= 0L) return ""
+    val dt = runCatching { localDateTimeOf(ms) }.getOrNull() ?: return ""
+    val yyyy = dt.year.toString().padStart(4, '0')
+    val mm = dt.month.toString().padStart(2, '0')
+    val dd = dt.day.toString().padStart(2, '0')
+    return "$yyyy-$mm-$dd"
+}
+
+/**
+ * 字节数的人类可读格式。
+ * commonMain 无 String.format / java.util.Locale，用 roundToInt() 手工取整。
+ */
+fun formatBytes(bytes: Long): String {
+    if (bytes < 0L) return "未知"
+    if (bytes < 1024) return "$bytes B"
+    val kb = bytes / 1024.0
+    if (kb < 1024) return "${kotlin.math.round(kb).toLong()} KB"
+    val mb = kb / 1024.0
+    if (mb < 1024) return "${(kotlin.math.round(mb * 10) / 10.0)} MB"
+    val gb = mb / 1024.0
+    return "${(kotlin.math.round(gb * 100) / 100.0)} GB"
+}

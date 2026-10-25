@@ -40,6 +40,7 @@ import cp.player.app.ui.component.CpContextMenu
 import cp.player.app.ui.component.SongMenuActions
 import cp.player.app.ui.component.songContextMenuItems
 import cp.player.app.ui.util.UiEvents
+import cp.player.app.ui.util.formatBytes
 import cp.player.core.music.CPMediaId
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -740,13 +741,3 @@ private fun statusText(task: DownloadTask): String {
     }
 }
 
-/** 字节数可读格式（commonMain 无 String.format，手工实现）。 */
-private fun formatBytes(bytes: Long): String {
-    if (bytes < 1024) return "$bytes B"
-    val kb = bytes / 1024.0
-    if (kb < 1024) return "${kb.roundToInt()} KB"
-    val mb = kb / 1024.0
-    if (mb < 1024) return "${(mb * 10).roundToInt() / 10.0} MB"
-    val gb = mb / 1024.0
-    return "${(gb * 100).roundToInt() / 100.0} GB"
-}
