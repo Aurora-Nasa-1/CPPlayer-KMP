@@ -322,10 +322,13 @@ kotlin {
                 implementation(compose.runtime)
                 implementation(compose.foundation)
                 implementation(compose.material3)
-                // 把 material3 顶到 1.11.0-alpha07（插件的 compose.material3 只有 1.9.0，
-                // 缺少 M3 Expressive 的 MaterialShapes / 波形进度条 / 变形加载指示器 等）。
+                // 把 material3 顶到 1.12.0-alpha03（插件的 compose.material3 只有 1.9.0，
+                // 缺少 M3 Expressive 的 MaterialShapes / 波形进度条 / 变形加载指示器 / SplitButton / 浮动工具栏等）。
                 // 版本冲突时 Gradle 取高者，所以这一行足以覆盖插件给的 1.9.0。
                 implementation(libs.material3)
+                implementation(libs.compose.material3.adaptive)
+                implementation(libs.compose.material3.adaptive.layout)
+                implementation(libs.compose.material3.adaptive.navigation)
                 implementation(compose.materialIconsExtended)
                 implementation(libs.compose.components.resources)
                 implementation(libs.kotlinx.coroutines.core)
@@ -367,6 +370,7 @@ kotlin {
                 implementation(libs.jmtc)
                 implementation(libs.jna.platform)
                 implementation(libs.ktor.client.okhttp)
+                implementation(libs.sentry.core)
             }
         }
         val desktopTest by getting {
@@ -383,6 +387,21 @@ kotlin {
 compose.resources {
     packageOfResClass = "cp.player.app.resources"
 }
+
+val desktopCommonJvmArgs = listOf(
+    "--enable-native-access=ALL-UNNAMED",
+    "-Xms128m",
+    "-Xmx512m",
+    "-XX:SoftMaxHeapSize=256m",
+    "-XX:MinHeapFreeRatio=10",
+    "-XX:MaxHeapFreeRatio=30",
+    "-XX:G1PeriodicGCInterval=180000",
+    "-XX:+UseStringDeduplication",
+    "-Dcp.player.versionName=$appVersionName",
+    "-Dcp.player.versionCode=$appVersionCode",
+    "-Dcp.player.releaseChannel=$appReleaseChannel",
+    "-Dcp.player.gitSha=$gitSha",
+)
 
 compose.desktop {
     application {
@@ -427,20 +446,7 @@ compose.desktop {
         //     配合上面两个 ratio 让「放歌暂停后内存缓慢回落」成立（G1 没有它就不收缩）。
         //   -XX:+UseStringDeduplication —— G1 免费午餐：歌单里海量重复字符串
         //     （歌手名 / 来源 / URL 前缀）共享同一份 char[]，省堆且几乎零成本。
-        jvmArgs += listOf(
-            "--enable-native-access=ALL-UNNAMED",
-            "-Xms128m",
-            "-Xmx512m",
-            "-XX:SoftMaxHeapSize=256m",
-            "-XX:MinHeapFreeRatio=10",
-            "-XX:MaxHeapFreeRatio=30",
-            "-XX:G1PeriodicGCInterval=180000",
-            "-XX:+UseStringDeduplication",
-            "-Dcp.player.versionName=$appVersionName",
-            "-Dcp.player.versionCode=$appVersionCode",
-            "-Dcp.player.releaseChannel=$appReleaseChannel",
-            "-Dcp.player.gitSha=$gitSha",
-        )
+        jvmArgs += desktopCommonJvmArgs
         nativeDistributions {
             // ⚠️ 故意没有 TargetFormat.Msi：Windows 安装包改由 Velopack 从 app-image 打
             // （见文件末尾的 `packageWindowsVelopack`）。jpackage 的 MSI 是内置 WiX 模板
