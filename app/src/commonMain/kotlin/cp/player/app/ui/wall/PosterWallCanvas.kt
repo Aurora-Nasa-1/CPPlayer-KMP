@@ -112,6 +112,16 @@ internal fun PosterWallCanvas(
         derivedStateOf { geometry.visiblePosters(state.camera.bounds(state.viewport.x, state.viewport.y)) }
     }.value
 
+    // ⚠️ 选中键绝不能在 content 组合里直接 `activeSelection()` 算出来：它要读
+    // `state.camera`，而相机在平移 / 缩放 / 惯性滚动时**每一帧**都在变 ⇒ 画布内容
+    // （几十块瓦片，每块带 shadow / clip / border / 渐变 / 文字 / AsyncImage）跟着
+    // 每个相机帧全量重组，`Layout` 的 content 一重组还会连带**全量 remeasure** ——
+    // 这是专辑墙掉到 20fps 的主因（单核与 GPU 都不高：时间烧在重组与文字测量上）。
+    // 包进 derivedStateOf 后，只有「选中的海报真的换了」才向下游发通知。
+    val selectedKey = remember(items, geometry, currentIndex, remoteEnabled) {
+        derivedStateOf { if (remoteEnabled && hasFocus) activeSelection()?.key else null }
+    }.value
+
     val foreground = if (!geometry.stacked) emptySet() else visible.groupBy(geometry::stackGroupKey).values.map { group ->
         (group.firstOrNull { remoteEnabled && hasFocus && it.key == selection?.key }
             ?: group.maxBy { geometry.depth(it.index) }).key
@@ -160,6 +170,8 @@ internal fun PosterWallCanvas(
     }
 
     // Dotted grid background
+    // ⚠️ 颜色必须在组合期取好（绘制 lambda 不是 composable，不能在里面读语义色）。
+    val gridDot = PosterOnInk.copy(alpha = 0.045f)
     Canvas(Modifier.fillMaxSize()) {
         val stride = 32 * density * state.camera.scale
         if (stride > 0f) {
@@ -169,7 +181,7 @@ internal fun PosterWallCanvas(
             while (x < size.width) {
                 var y = phaseY
                 while (y < size.height) {
-                    drawCircle(Color.White.copy(alpha = 0.045f), 0.7f * density, Offset(x, y))
+                    drawCircle(gridDot, 0.7f * density, Offset(x, y))
                     y += stride
                 }
                 x += stride
@@ -284,7 +296,7 @@ internal fun PosterWallCanvas(
                 }
             },
         content = {
-            val selectedKey = if (remoteEnabled && hasFocus) activeSelection()?.key else null
+            // selectedKey 已在上面用 derivedStateOf 收敛（见其注释）——不要在这里读相机。
             visible.forEach { placement ->
                 val index = placement.index
                 val item = items.getOrNull(index)

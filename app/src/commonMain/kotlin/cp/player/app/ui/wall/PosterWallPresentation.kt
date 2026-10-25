@@ -60,8 +60,8 @@ internal fun PosterWallSearch(
             modifier = Modifier
                 .weight(1f)
                 .padding(horizontal = 10.dp),
-            textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
-            cursorBrush = SolidColor(Color.White),
+            textStyle = TextStyle(color = PosterOnInk, fontSize = 14.sp),
+            cursorBrush = SolidColor(PosterOnInk),
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = {

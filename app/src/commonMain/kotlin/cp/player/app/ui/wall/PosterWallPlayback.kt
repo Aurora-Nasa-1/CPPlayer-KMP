@@ -85,7 +85,7 @@ internal fun PosterPlayerLyrics(
                         is LyricsState.NoLyrics -> s.player.lyricsEmpty
                         else -> s.player.lyricsIdle
                     },
-                    color = PosterMuted,
+                    color = Color.White.copy(alpha = 0.65f),
                     fontSize = 16.sp,
                     textAlign = TextAlign.Center
                 )
@@ -131,12 +131,13 @@ internal fun PosterPlayerProgress(
                 val displayMs = if (draggingPosition >= 0f) (draggingPosition * duration).toLong() else position
                 CpText(
                     formatTimeMs(displayMs),
-                    color = PosterMuted,
+                    // 压在封面图的黑渐变上，不跟主题走（浅色下深灰会压黑底不可读）。
+                    color = Color.White.copy(alpha = 0.65f),
                     fontSize = 11.sp
                 )
                 CpText(
                     formatTimeMs(duration),
-                    color = PosterMuted,
+                    color = Color.White.copy(alpha = 0.65f),
                     fontSize = 11.sp
                 )
             }

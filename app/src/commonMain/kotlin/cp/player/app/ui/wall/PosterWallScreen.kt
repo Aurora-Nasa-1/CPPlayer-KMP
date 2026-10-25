@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -207,9 +208,6 @@ fun PosterWallScreen(
     var expanded by remember { mutableStateOf<ExpandedPoster?>(null) }
     var actionSong by remember { mutableStateOf<PosterSong?>(null) }
     var addToPlaylistSongId by remember { mutableStateOf<String?>(null) }
-
-    val currentSongId = playback.currentTrack?.id
-    val queueIndex = playback.currentIndex
 
     val sourceSongs = when (source) {
         "queue" -> queueSongs
@@ -458,14 +456,14 @@ fun PosterWallScreen(
                             Icon(
                                 Icons.AutoMirrored.Default.ArrowBack,
                                 contentDescription = s.common.back,
-                                tint = Color.White,
+                                tint = PosterOnInk,
                                 modifier = Modifier.size(22.dp)
                             )
                         }
                         Column(Modifier.weight(1f).padding(start = 8.dp)) {
                             CpText(
                                 s.wall.screenTitle,
-                                color = Color.White,
+                                color = PosterOnInk,
                                 fontSize = 22.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -600,9 +598,9 @@ fun PosterWallScreen(
                             modifier = Modifier.padding(top = 18.dp)
                         )
                         if (ready && source == "queue" && query.isBlank()) {
-                            CpText(
-                                s.wall.posterWallBrowseLibrary,
-                                color = Color.White,
+                                CpText(
+                                    s.wall.posterWallBrowseLibrary,
+                                    color = PosterOnInk,
                                 fontSize = 14.sp,
                                 modifier = Modifier
                                     .padding(top = 18.dp)
@@ -784,7 +782,7 @@ internal fun PosterWallBottomOptions(
             ) {
                 CpText(
                     s.wall.posterWallStacked,
-                    color = Color.White,
+                    color = PosterOnInk,
                     fontSize = 12.sp,
                     modifier = Modifier.padding(end = 8.dp)
                 )
@@ -792,7 +790,7 @@ internal fun PosterWallBottomOptions(
                     checked = stacked,
                     onCheckedChange = onStackedChange,
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
+                        checkedThumbColor = PosterOnInk,
                         checkedTrackColor = MaterialTheme.colorScheme.primary
                     )
                 )
@@ -806,7 +804,7 @@ internal fun PosterWallBottomOptions(
             ) {
                 CpText(
                     s.wall.posterWallInfinite,
-                    color = Color.White,
+                    color = PosterOnInk,
                     fontSize = 12.sp,
                     modifier = Modifier.padding(end = 8.dp)
                 )
@@ -814,7 +812,7 @@ internal fun PosterWallBottomOptions(
                     checked = infinite,
                     onCheckedChange = onInfiniteChange,
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
+                        checkedThumbColor = PosterOnInk,
                         checkedTrackColor = MaterialTheme.colorScheme.primary
                     )
                 )
@@ -823,11 +821,11 @@ internal fun PosterWallBottomOptions(
                 Modifier
                     .clip(CircleShape)
                     .background(PosterPanel.copy(alpha = 0.92f))
-                    .border(0.5.dp, Color.White.copy(alpha = 0.15f), CircleShape),
+                    .border(0.5.dp, PosterOnInk.copy(alpha = 0.15f), CircleShape),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 PosterIconButton(s.wall.posterWallZoomOut, { onZoom(0.85f) }) {
-                    CpText("−", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    CpText("−", color = PosterOnInk, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 }
                 CpText(
                     "$percent%",
@@ -837,13 +835,13 @@ internal fun PosterWallBottomOptions(
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
                 PosterIconButton(s.wall.posterWallZoomIn, { onZoom(1.18f) }) {
-                    CpText("+", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    CpText("+", color = PosterOnInk, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
         CpText(
             if (stacked) s.wall.posterWallStackGestureHint else s.wall.posterWallGestureHint,
-            color = Color.White.copy(alpha = 0.7f),
+            color = PosterOnInk.copy(alpha = 0.7f),
             fontSize = 10.sp,
             modifier = Modifier
                 .padding(top = 6.dp)
@@ -872,7 +870,7 @@ private fun PosterWallActionsRow(
             Icon(
                 Icons.Default.Refresh,
                 contentDescription = s.wall.posterWallRefresh,
-                tint = Color.White,
+                tint = PosterOnInk,
                 modifier = Modifier.size(22.dp)
             )
         }
@@ -880,7 +878,7 @@ private fun PosterWallActionsRow(
             Icon(
                 PosterFullscreenIcon,
                 contentDescription = s.wall.posterWallFullscreen,
-                tint = Color.White,
+                tint = PosterOnInk,
                 modifier = Modifier.size(22.dp)
             )
         }
@@ -888,7 +886,7 @@ private fun PosterWallActionsRow(
             Icon(
                 Icons.Default.Search,
                 contentDescription = s.common.search,
-                tint = if (search) MaterialTheme.colorScheme.primary else Color.White,
+                tint = if (search) MaterialTheme.colorScheme.primary else PosterOnInk,
                 modifier = Modifier.size(22.dp)
             )
         }
@@ -896,7 +894,7 @@ private fun PosterWallActionsRow(
             Icon(
                 Icons.Default.MyLocation,
                 contentDescription = s.wall.posterWallLocate,
-                tint = Color.White,
+                tint = PosterOnInk,
                 modifier = Modifier.size(22.dp)
             )
         }
@@ -919,13 +917,13 @@ private fun PosterWallSourcesRow(
             val selected = selectedSource == id
             CpText(
                 text = label,
-                color = if (selected) Color.White else PosterMuted,
+                color = if (selected) PosterOnInk else PosterMuted,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier
                     .clip(CircleShape)
                     .background(if (selected) PosterPanel else Color.Transparent)
-                    .border(0.5.dp, if (selected) Color.White.copy(alpha = 0.2f) else Color.Transparent, CircleShape)
+                    .border(0.5.dp, if (selected) PosterOnInk.copy(alpha = 0.2f) else Color.Transparent, CircleShape)
                     .clickable { onSelectSource(id) }
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             )
