@@ -544,10 +544,18 @@ internal fun DesktopPlayerLayout(
                 )
                 add(
                     CpContextMenuItem(
-                        label = "显示评论",
-                        icon = Icons.AutoMirrored.Filled.Comment,
+                        label = "显示队列",
+                        icon = Icons.AutoMirrored.Filled.QueueMusic,
                         isSelected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
+                    )
+                )
+                add(
+                    CpContextMenuItem(
+                        label = "显示评论",
+                        icon = Icons.AutoMirrored.Filled.Comment,
+                        isSelected = selectedTab == 2,
+                        onClick = { selectedTab = 2 },
                     )
                 )
                 if (selectedTab == 0) {
@@ -860,6 +868,17 @@ internal fun DesktopPlayerLayout(
                                         onLikeClick = onLike,
                                         onChangeSource = onChangeLyricsSource,
                                     )
+                                    // 队列：复用 QueueContent（与小播放条的弹层同一份列表交互），
+                                    // 回调就是版式签名里早已串好、此前一直没人用的那几个。
+                                    1 -> QueueContent(
+                                        queue = state.queue,
+                                        currentIndex = state.currentIndex,
+                                        onPlayAt = onPlayAt,
+                                        onRemove = onRemoveQueue,
+                                        onMove = onMove,
+                                        onClear = onClearQueue,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
                                     else -> Box(Modifier.fillMaxSize()) {
                                         ProviderFeatureGate(
                                             capability = ProviderCapability.COMMENTS,
@@ -1033,8 +1052,11 @@ internal fun DesktopTabSelector(
 ) {
     val isDark = LocalIsDarkTheme.current
     val supportsComments = rememberActiveProviderSupports(ProviderCapability.COMMENTS)
+    // 页签：歌词 / 队列 / 评论（评论按音源能力显隐）。
+    // 队列从底部小播放条搬进来（小播放条在播放页展开时根本不可见，此前桌面播放页
+    // 完全没有队列入口）；内容复用 QueueContent，回调就是本函数已有的那几个。
     val tabs = remember(supportsComments) {
-        if (supportsComments) listOf("歌词", "评论") else listOf("歌词")
+        if (supportsComments) listOf("歌词", "队列", "评论") else listOf("歌词", "队列")
     }
 
     Row(
@@ -1063,7 +1085,11 @@ internal fun DesktopTabSelector(
                 animationSpec = CpMotion.effects(),
                 label = "desktopTabContent$index",
             )
-            val icon = if (index == 0) Icons.Filled.Lyrics else Icons.AutoMirrored.Filled.Comment
+            val icon = when (index) {
+                0 -> Icons.Filled.Lyrics
+                1 -> Icons.AutoMirrored.Filled.QueueMusic
+                else -> Icons.AutoMirrored.Filled.Comment
+            }
 
             Surface(
                 onClick = { onTabSelect(index) },

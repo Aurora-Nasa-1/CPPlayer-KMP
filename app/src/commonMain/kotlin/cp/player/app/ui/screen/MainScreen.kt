@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -445,11 +446,12 @@ class MainScreen : Screen {
             label = "miniPlayerReserved",
         )
 
-        // 展开播放页的进度：走主题的 spatial 动效（带回弹），打开/收起时背景会有
-        // 一点「过冲再回落」，比原来的 LinearEasing 匀速有生气得多。
+        // 展开播放页的进度（压暗幕布）。⚠️ 刻意用 tween 而不是 spatial 的 spring：
+        // spring 会过冲 —— 进度冲过 1 再回落，幕布（以及它上面的一切）就跟着
+        // 「弹一下」，正是展开动画收尾时那一下多余的晃动。时长对齐转场节拍。
         val expandProgress by animateFloatAsState(
             targetValue = if (isPlayerExpanded) 1f else 0f,
-            animationSpec = cp.player.app.ui.theme.CpMotion.spatialSlow(),
+            animationSpec = tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing),
             label = "expandProgress"
         )
 
