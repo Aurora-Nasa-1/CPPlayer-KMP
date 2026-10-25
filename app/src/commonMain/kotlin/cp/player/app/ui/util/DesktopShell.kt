@@ -107,6 +107,9 @@ object DesktopShell {
     /** 桌面端是否处于 Mini 迷你悬浮小窗模式。 */
     var isMiniMode by mutableStateOf(false)
 
+    /** 桌面端是否处于手机版界面预览模式（412×892 Compact 紧凑手机布局）。 */
+    var isMobileMode by mutableStateOf(false)
+
     /** Mini 模式下是否始终置顶（窗口始终处于最上层）。默认开启。 */
     var isMiniPinned by mutableStateOf(true)
 

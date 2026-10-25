@@ -741,6 +741,35 @@ val packageWindowsVelopack = tasks.register<Exec>("packageWindowsVelopack") {
 }
 
 // ---------------------------------------------------------------------------
+// 桌面端手机版界面预览运行任务（desktopRunMobile / runMobile）
+// ---------------------------------------------------------------------------
+val desktopRunMobile = tasks.register<JavaExec>("desktopRunMobile") {
+    group = "compose desktop"
+    description = "以手机版界面（窄屏 / 手机布局）在桌面端运行应用（基于 desktopMain classes 与 runtimeClasspath）"
+    classpath(
+        tasks.named("desktopMainClasses"),
+        configurations.named("desktopRuntimeClasspath"),
+    )
+    mainClass.set("cp.player.app.MainMobileKt")
+    args("--mobile")
+    jvmArgs(desktopCommonJvmArgs)
+    jvmArgs("-Dcp.player.mobilePreview=true")
+}
+
+val runMobile = tasks.register<JavaExec>("runMobile") {
+    group = "compose desktop"
+    description = "以手机版界面（窄屏 / 手机布局）在桌面端运行应用（别名）"
+    classpath(
+        tasks.named("desktopMainClasses"),
+        configurations.named("desktopRuntimeClasspath"),
+    )
+    mainClass.set("cp.player.app.MainMobileKt")
+    args("--mobile")
+    jvmArgs(desktopCommonJvmArgs)
+    jvmArgs("-Dcp.player.mobilePreview=true")
+}
+
+// ---------------------------------------------------------------------------
 // 本地开发运行 = debug 构建。
 //
 // `AppVersion.isDebugBuild` 的判定是「releaseChannel != stable」，而上面的 jvmArgs
@@ -779,8 +808,10 @@ afterEvaluate {
     }
     val runFamilyTaskNames = listOf(
         "run",
+        "runMobile",
         "runRelease",
         "desktopRun",
+        "desktopRunMobile",
         "desktopRunHot", // hotRunDesktop 的废弃别名，留着以防旧脚本/IDE 配置还在用
         "hotRunDesktop",
         "hotRunDesktopAsync",

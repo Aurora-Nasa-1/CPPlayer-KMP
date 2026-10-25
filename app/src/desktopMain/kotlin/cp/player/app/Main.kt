@@ -1,5 +1,6 @@
 package cp.player.app
 
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -68,12 +69,18 @@ import java.awt.Toolkit
  */
 private val MinWindowSize = Dimension(900, 640)
 
+/** 手机预览模式窗口最小尺寸：允许开发者自由拉伸测试小屏与紧凑布局。 */
+private val MobilePreviewMinWindowSize = Dimension(360, 520)
+
 /** 迷你小窗模式的尺寸与下限 */
 private val MiniWindowSize = Dimension(380, 140)
 private val MiniWindowDpSize = DpSize(380.dp, 140.dp)
 
 /** 初始窗口尺寸：一次到位展开侧边栏 + 主内容，避免用户第一眼看到手机布局。 */
 private val DefaultWindowSize = DpSize(1320.dp, 860.dp)
+
+/** 手机版界面预览默认尺寸：现代主流手机屏幕比例（约 20:9，如 412x892dp），处于 Compact 紧凑宽度。 */
+private val MobilePreviewDefaultWindowSize = DpSize(412.dp, 892.dp)
 
 /** 方向键快进/快退步长。 */
 private const val SeekStepMs = 5_000L
@@ -106,7 +113,23 @@ private const val WindowRetryDelayMs = 100L
  *   抓手厚度**：默认等价 8dp，那圈抓手会压住贴着窗口边缘的控件。
  */
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
-fun main() {
+fun main(args: Array<String> = emptyArray()) {
+    runDesktopApp(args)
+}
+
+/**
+ * 桌面端统一应用入口。
+ *
+ * @param args 命令行参数（支持 `--mobile` 或 `-m` 进入手机版界面预览）
+ * @param isMobilePreview 显式指定是否开启手机版界面预览模式
+ */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean = false) {
+    val mobilePreview = isMobilePreview ||
+        System.getProperty("cp.player.mobilePreview") == "true" ||
+        args.contains("--mobile") ||
+        args.contains("-m")
+
     // 必须最先执行：Skiko 在创建渲染器时首次读取 skiko.* 属性并固化，
     // 晚于这一步再写就不生效了。见 DesktopRenderTuning 的时序约束说明。
     DesktopRenderTuning.applyBeforeSkikoInit()
@@ -129,12 +152,17 @@ fun main() {
         WindowDecorChoice.Mode.JBR -> JbrWindowChrome.isSupported
         WindowDecorChoice.Mode.AUTO -> JbrWindowChrome.isSupported
     }
-    println("[CPPlayer] 窗口装饰 = $decorMode（来源：${WindowDecorChoice.lastSource}）→ " +
-        if (useJbrChrome) "JBR 路（系统边框 + 自定义标题栏，原生贴边吸附）" else "无边框自绘路")
-    if (decorMode == WindowDecorChoice.Mode.JBR && !JbrWindowChrome.isSupported) {
-        println("[CPPlayer] 显式指定了 JBR 路，但当前运行时不支持（需跑在 JBR 上，Windows/macOS），回退无边框方案")
-    } else if (!useJbrChrome) {
-        println("[CPPlayer] 未走 JBR 自定义标题栏，窗口走自绘无边框方案")
+    if (mobilePreview) {
+        DesktopShell.isMobileMode = true
+        println("[CPPlayer] 启动模式 = 手机版界面预览 (Mobile Preview，412×892 Compact 布局)")
+    } else {
+        println("[CPPlayer] 窗口装饰 = $decorMode（来源：${WindowDecorChoice.lastSource}）→ " +
+            if (useJbrChrome) "JBR 路（系统边框 + 自定义标题栏，原生贴边吸附）" else "无边框自绘路")
+        if (decorMode == WindowDecorChoice.Mode.JBR && !JbrWindowChrome.isSupported) {
+            println("[CPPlayer] 显式指定了 JBR 路，但当前运行时不支持（需跑在 JBR 上，Windows/macOS），回退无边框方案")
+        } else if (!useJbrChrome) {
+            println("[CPPlayer] 未走 JBR 自定义标题栏，窗口走自绘无边框方案")
+        }
     }
 
     application {
@@ -143,7 +171,7 @@ fun main() {
         // 不会被算到渲染后端头上，导致下次启动无端回退用户的设置。
         DesktopRenderTuning.beginStartupProbe()
         val windowState = rememberWindowState(
-            size = remember { loadWindowSize() },
+            size = remember { if (mobilePreview) loadMobileWindowSize() else loadWindowSize() },
             position = WindowPosition(Alignment.Center),
         )
 
@@ -168,6 +196,7 @@ fun main() {
 
         val isMiniMode = DesktopShell.isMiniMode
         val isMiniPinned = DesktopShell.isMiniPinned
+        val isMobileMode = DesktopShell.isMobileMode
 
         Window(
             onCloseRequest = {
@@ -182,13 +211,14 @@ fun main() {
                 }
             },
             state = windowState,
-            title = "CPPlayer",
+            title = if (isMobileMode) "CPPlayer (手机版预览)" else "CPPlayer",
             icon = AppWindowIcon.painter,
             alwaysOnTop = isMiniMode && isMiniPinned,
             resizable = !isMiniMode,
             onKeyEvent = ::handleDesktopShortcut,
             // 两条装饰路线的选择，见上方 main() 的 KDoc。
-            decoration = if (useJbrChrome) {
+            // 手机预览模式使用原生边框与标题栏，供拖动与关闭窗口。
+            decoration = if (isMobileMode || useJbrChrome) {
                 WindowDecoration.SystemDefault
             } else {
                 // 无边框：系统标题栏整体交给 DesktopTitleBar 自绘。
@@ -208,7 +238,9 @@ fun main() {
             // DesktopTitleBar 据此在「原生窗口钮」与「自绘窗口钮」两套 chrome 间切换。
             var jbrChrome by remember { mutableStateOf<JbrWindowChrome.Controller?>(null) }
             // 最小尺寸只能命令式设置：WindowState 没有 minSize 字段。
-            LaunchedEffect(Unit) { window.minimumSize = MinWindowSize }
+            LaunchedEffect(Unit) {
+                window.minimumSize = if (mobilePreview) MobilePreviewMinWindowSize else MinWindowSize
+            }
 
             // JBR 路：装自定义标题栏。窗口 peer 可能还没就绪，带重试；试满就放弃，
             // 放弃后的表现是窗口保留系统标题栏（功能完好，只是丑），绝不能因此挡住启动。
@@ -233,8 +265,8 @@ fun main() {
             // 无边框路专属：Win11 的 DWM 圆角。纯 WS_POPUP 吃不到系统的自动圆角，
             // 手动 opt-in。窗口此刻可能还没真正 map 出来（IsWindowVisible 为假就找不到
             // 句柄），所以带重试；试满就放弃，圆角只是外观。
-            // ⚠️ JBR 路不需要：窗口带边框，Win11 圆角由系统自动给。
-            if (!useJbrChrome) {
+            // ⚠️ JBR 路与手机原生窗口不需要：窗口带边框，Win11 圆角由系统自动给。
+            if (!useJbrChrome && !mobilePreview) {
                 LaunchedEffect(Unit) {
                     repeat(WindowRetryAttempts) {
                         if (WindowsWindowCorners.applyRoundCorners()) return@LaunchedEffect
@@ -242,9 +274,43 @@ fun main() {
                     }
                 }
             }
-            // 记录进入 Mini 模式前的常规窗口尺寸与状态，以便还原
+            // 记录进入 Mini / Mobile 模式前的常规窗口尺寸与状态，以便还原
             var previousNormalSize by remember { mutableStateOf<DpSize?>(null) }
             var previousPlacement by remember { mutableStateOf<WindowPlacement?>(null) }
+
+            // 监听手机版预览模式动态切换
+            LaunchedEffect(isMobileMode) {
+                if (DesktopShell.isMiniMode) return@LaunchedEffect
+                val frame = window as? java.awt.Frame
+                if (isMobileMode) {
+                    previousPlacement = windowState.placement
+                    previousNormalSize = windowState.size
+
+                    if (windowState.placement != WindowPlacement.Floating) {
+                        windowState.placement = WindowPlacement.Floating
+                    }
+                    if (frame != null && (frame.extendedState and java.awt.Frame.MAXIMIZED_BOTH) != 0) {
+                        frame.extendedState = java.awt.Frame.NORMAL
+                    }
+
+                    window.minimumSize = MobilePreviewMinWindowSize
+                    val targetSize = loadMobileWindowSize()
+                    windowState.size = targetSize
+                    window.setSize(targetSize.width.value.toInt(), targetSize.height.value.toInt())
+                } else {
+                    window.minimumSize = MinWindowSize
+                    previousNormalSize?.let { normalSize ->
+                        windowState.size = normalSize
+                        window.setSize(normalSize.width.value.toInt(), normalSize.height.value.toInt())
+                    }
+                    previousPlacement?.let { placement ->
+                        windowState.placement = placement
+                        if (placement == WindowPlacement.Maximized) {
+                            frame?.extendedState = java.awt.Frame.MAXIMIZED_BOTH
+                        }
+                    }
+                }
+            }
 
             // 监听 Mini 模式切换：动态放宽/还原窗口 minimumSize，并切换窗口尺寸与置顶属性
             LaunchedEffect(isMiniMode) {
@@ -270,7 +336,7 @@ fun main() {
                     window.setSize(MiniWindowSize.width, MiniWindowSize.height)
                 } else {
                     frame?.isResizable = true
-                    window.minimumSize = MinWindowSize
+                    window.minimumSize = if (DesktopShell.isMobileMode) MobilePreviewMinWindowSize else MinWindowSize
                     previousNormalSize?.let { normalSize ->
                         windowState.size = normalSize
                         window.setSize(normalSize.width.value.toInt(), normalSize.height.value.toInt())
@@ -303,6 +369,7 @@ fun main() {
 
             // 记住窗口尺寸：桌面端换一次显示器/改一次分辨率就丢布局，是很容易被抱怨的细节。
             // ⚠️ 处于 Mini 模式时禁止落盘，避免覆盖正常的完整窗口尺寸。
+            // 手机预览模式独立落盘到专属 key，不覆盖常规桌面端尺寸。
             LaunchedEffect(Unit) {
                 snapshotFlow { windowState.size }
                     .drop(1) // 首帧就是刚恢复出来的值，不必回写
@@ -310,7 +377,11 @@ fun main() {
                     .collectLatest { size ->
                         if (!DesktopShell.isMiniMode) {
                             delay(WindowSizeSaveDelayMs)
-                            saveWindowSize(size)
+                            if (DesktopShell.isMobileMode) {
+                                saveMobileWindowSize(size)
+                            } else {
+                                saveWindowSize(size)
+                            }
                         }
                     }
             }
@@ -319,9 +390,9 @@ fun main() {
             // 刻意**不**在组合里 collect 整份 playback.state：它每 ~200ms 就因位置刷新
             // 发射一次，会让这层窗口内容每秒重组 5 次，而标题其实只有换歌时才变。
             // 这里把它彻底移出组合 —— 先收敛成标题字符串，重组次数为 0。
-            LaunchedEffect(window) {
+            LaunchedEffect(window, isMobileMode) {
                 AppModel.playback.state
-                    .map { windowTitleOf(it.currentTrack) }
+                    .map { windowTitleOf(it.currentTrack, isMobileMode) }
                     .distinctUntilChanged()
                     .collect { window.title = it }
             }
@@ -360,88 +431,110 @@ fun main() {
                     },
                 )
             } else {
-                App(
-                    titleBar = { navigator ->
-                        DesktopTitleBar(
+                androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.fillMaxSize()) {
+                    if (isMobileMode) {
+                        cp.player.app.ui.component.MobilePreviewTitleBar(
                             windowScope = windowScope,
-                            windowState = windowState,
-                            // 非 null 时 DesktopTitleBar 切到 JBR 模式：不画窗口钮、拖拽 / 双击
-                            // 交给原生 hit-test（见 DesktopTitleBar 的「两种窗口模式」一节）。
-                            jbr = jbrChrome,
-                        // 标题：当前路由页自己声明的优先（`CpRouteScaffold` / `DesktopRouteTitle`），
-                        // 没有声明时回落到 `MainScreen` 发布的主壳层标题。`MainScreen` 被 push 出去的
-                        // 页面盖住后会离开组合、不再发布，所以没有这一层回落之外的上层来源，
-                        // 窗口标题会停在旧值（从标题栏点账号，标题却还写着「首页」）。
-                        title = DesktopShell.routeTitle ?: DesktopShell.pageTitle,
-                        // 可返回 = 「Navigator 还能出栈」**或**「主壳层开着内嵌面板」。
-                        // 只判后者（曾经如此）会让所有 push 出去的路由页在标题栏上没有返回键。
-                        //
-                        // ⚠️ 只有**真的有事可做**时才为真。三种情况各对应一条真实存在的退路：
-                        //   1. `navigator.size > 1` —— 有 push 出去的路由页可以出栈；
-                        //   2. `DesktopShell.pageCanGoBack` —— 主壳层开着内嵌面板（设置 / 歌单 /…）；
-                        //   3. `DesktopBackDispatcher` —— 有页面注册了处理器（播放页展开态、歌单多选）。
-                        // 漏掉第 3 条会让「播放页展开着但 Navigator 只有一页」时标题栏**没有返回键**
-                        // —— 那时 Esc 能退、标题栏却不能，正是「同一个动作两条链路」的漂移。
-                        // （此处的 `hasHandlers` 是快照读；它是快照状态，注册/注销会触发重组。）
-                        canGoBack = navigator.size > 1 ||
-                            DesktopShell.pageCanGoBack ||
-                            DesktopBackDispatcher.hasHandlers,
-                        onBack = {
-                            // 与 Esc 走**同一条链路**：先让页面自己的处理器拿到
-                            // （播放页展开态、歌单多选），没人处理再退化为出栈 / 收起内嵌面板。
-                            // 两处各写一套判据的话，「Esc 能退、点返回键不能退」这类漂移迟早出现。
-                            if (!DesktopBackDispatcher.dispatch()) {
-                                if (navigator.size > 1) navigator.pop()
-                                else if (DesktopShell.pageCanGoBack) DesktopShell.backRequested = true
-                                // 走到这里说明上面三条都为假 —— 也就是「没有返回键」的情况。
-                                // 理论上按不到（`canGoBack` 已经拦住了），但保留分支是为了将来的
-                                // 快捷键 / 手势入口：静默什么都不做才是真正的问题。
-                            }
-                        },
-                        // ⚠️ `onClose` 只有无边框模式的自绘关闭钮在用；JBR 模式的关闭是
-                        // 原生窗口钮 → windowClosing → `onCloseRequest`，不走这里。
-                        onClose = ::exitApplication,
-                        // ⚠️ 下面三个入口**都必须先 `popToMainShell()`**，理由一致，写在
-                        // `Navigation.popToMainShell` 的 KDoc 里，这里只说结论：
-                        //
-                        // 它们都由 `MainScreen` 消费（两个是内嵌面板、一个是内容区路由），
-                        // 消费动作靠 `MainScreen` 里的 `LaunchedEffect` 读取 `DesktopShell`
-                        // 的单向指令。而 `MainScreen` 是根 Navigator 的起点，一旦 push 到
-                        // 别处（播放页 / 引导 …）它就**离开组合了** —— 那时发指令**没人消费**：
-                        //   ① 点击完全没有反应（用户报的「在歌单页点设置没弹出」）；
-                        //   ② 指令残留 true，等退回主壳层时面板又**自己弹出来**。
-                        // 所以先弹回主壳层，再发指令：两步都在同一帧同步发生，
-                        // 重组时 MainScreen 既在栈顶、又读得到这条指令。
-                        //
-                        // 「消息」同样是右侧内嵌面板，与设置走同一条单向指令通道。
-                        onOpenMessages = {
-                            navigator.popToMainShell()
-                            DesktopShell.messagesRequested = true
-                        },
-                        // 「账号」是**内容区路由页**不是全屏面板：MainScreen 把 AccountScreen
-                        // push 进内容区的内嵌 Navigator，左侧导航栏保留、返回还能回到原处。
-                        // 账号页内部的二级跳转（我的主页 / 消息 / 切换音源）也落同一条栈。
-                        onOpenAccount = {
-                            navigator.popToMainShell()
-                            DesktopShell.accountRequested = true
-                        },
-                        // 「设置」在桌面是**右侧内嵌面板**（左导航 + 右界面），开关是
-                        // MainScreen 的局部状态，标题栏隔着 Navigator 够不到 ⇒
-                        // 走 DesktopShell 这条单向指令 + 先弹回主壳层。
-                        onOpenSettings = {
-                            navigator.popToMainShell()
-                            DesktopShell.settingsRequested = true
-                        },
-                        // 搜索同样走指令通道：切到搜索 tab 由 MainScreen 做，关键词由
-                        // SearchScreen 消费并喂给它自己的 ScreenModel。
-                        // 同理必须先回主壳层，否则在别的路由页里搜索也毫无反应。
-                        onSearch = {
-                            navigator.popToMainShell()
-                            DesktopShell.pendingSearchQuery = it
+                            useJbr = (jbrChrome != null),
+                            onRestoreDesktop = { DesktopShell.isMobileMode = false },
+                            onMinimize = { windowState.isMinimized = true },
+                            onClose = {
+                                when (closeBehavior) {
+                                    DesktopCloseBehavior.EXIT -> exitApplication()
+                                    DesktopCloseBehavior.TRAY -> hideToTray()
+                                    DesktopCloseBehavior.ASK -> {
+                                        dontAskAgain = false
+                                        showCloseDialog = true
+                                    }
+                                }
+                            },
+                        )
+                    }
+                    App(
+                        // 手机版预览模式下不注入桌面自绘标题栏，由顶部抓手栏提供拖拽与切回桌面支持，
+                        // 内部自动激活 LocalWindowChromeActive = false，呈现原汁原味的手机版界面与顶栏
+                        titleBar = if (isMobileMode) null else { navigator ->
+                            DesktopTitleBar(
+                                windowScope = windowScope,
+                                windowState = windowState,
+                                // 非 null 时 DesktopTitleBar 切到 JBR 模式：不画窗口钮、拖拽 / 双击
+                                // 交给原生 hit-test（见 DesktopTitleBar 的「两种窗口模式」一节）。
+                                jbr = jbrChrome,
+                                // 标题：当前路由页自己声明的优先（`CpRouteScaffold` / `DesktopRouteTitle`），
+                                // 没有声明时回落到 `MainScreen` 发布的主壳层标题。`MainScreen` 被 push 出去的
+                                // 页面盖住后会离开组合、不再发布，所以没有这一层回落之外的上层来源，
+                                // 窗口标题会停在旧值（从标题栏点账号，标题却还写着「首页」）。
+                                title = DesktopShell.routeTitle ?: DesktopShell.pageTitle,
+                                // 可返回 = 「Navigator 还能出栈」**或**「主壳层开着内嵌面板」。
+                                // 只判后者（曾经如此）会让所有 push 出去的路由页在标题栏上没有返回键。
+                                //
+                                // ⚠️ 只有**真的有事可做**时才为真。三种情况各对应一条真实存在的退路：
+                                //   1. `navigator.size > 1` —— 有 push 出去的路由页可以出栈；
+                                //   2. `DesktopShell.pageCanGoBack` —— 主壳层开着内嵌面板（设置 / 歌单 /…）；
+                                //   3. `DesktopBackDispatcher` —— 有页面注册了处理器（播放页展开态、歌单多选）。
+                                // 漏掉第 3 条会让「播放页展开着但 Navigator 只有一页」时标题栏**没有返回键**
+                                // —— 那时 Esc 能退、标题栏却不能，正是「同一个动作两条链路」的漂移。
+                                // （此处的 `hasHandlers` 是快照读；它是快照状态，注册/注销会触发重组。）
+                                canGoBack = navigator.size > 1 ||
+                                    DesktopShell.pageCanGoBack ||
+                                    DesktopBackDispatcher.hasHandlers,
+                                onBack = {
+                                    // 与 Esc 走**同一条链路**：先让页面自己的处理器拿到
+                                    // （播放页展开态、歌单多选），没人处理再退化为出栈 / 收起内嵌面板。
+                                    // 两处各写一套判据的话，「Esc 能退、点返回键不能退」这类漂移迟早出现。
+                                    if (!DesktopBackDispatcher.dispatch()) {
+                                        if (navigator.size > 1) navigator.pop()
+                                        else if (DesktopShell.pageCanGoBack) DesktopShell.backRequested = true
+                                        // 走到这里说明上面三条都为假 —— 也就是「没有返回键」的情况。
+                                        // 理论上按不到（`canGoBack` 已经拦住了），但保留分支是为了将来的
+                                        // 快捷键 / 手势入口：静默什么都不做才是真正的问题。
+                                    }
+                                },
+                                // ⚠️ `onClose` 只有无边框模式的自绘关闭钮在用；JBR 模式的关闭是
+                                // 原生窗口钮 → windowClosing → `onCloseRequest`，不走这里。
+                                onClose = ::exitApplication,
+                                // ⚠️ 下面三个入口**都必须先 `popToMainShell()`**，理由一致，写在
+                                // `Navigation.popToMainShell` 的 KDoc 里，这里只说结论：
+                                //
+                                // 它们都由 `MainScreen` 消费（两个是内嵌面板、一个是内容区路由），
+                                // 消费动作靠 `MainScreen` 里的 `LaunchedEffect` 读取 `DesktopShell`
+                                // 的单向指令。而 `MainScreen` 是根 Navigator 的起点，一旦 push 到
+                                // 别处（播放页 / 引导 …）它就**离开组合了** —— 那时发指令**没人消费**：
+                                //   ① 点击完全没有反应（用户报的「在歌单页点设置没弹出」）；
+                                //   ② 指令残留 true，等退回主壳层时面板又**自己弹出来**。
+                                // 所以先弹回主壳层，再发指令：两步都在同一帧同步发生，
+                                // 重组时 MainScreen 既在栈顶、又读得到这条指令。
+                                //
+                                // 「消息」同样是右侧内嵌面板，与设置走同一条单向指令通道。
+                                onOpenMessages = {
+                                    navigator.popToMainShell()
+                                    DesktopShell.messagesRequested = true
+                                },
+                                // 「账号」是**内容区路由页**不是全屏面板：MainScreen 把 AccountScreen
+                                // push 进内容区的内嵌 Navigator，左侧导航栏保留、返回还能回到原处。
+                                // 账号页内部的二级跳转（我的主页 / 消息 / 切换音源）也落同一条栈。
+                                onOpenAccount = {
+                                    navigator.popToMainShell()
+                                    DesktopShell.accountRequested = true
+                                },
+                                // 「设置」在桌面是**右侧内嵌面板**（左导航 + 右界面），开关是
+                                // MainScreen 的局部状态，标题栏隔着 Navigator 够不到 ⇒
+                                // 走 DesktopShell 这条单向指令 + 先弹回主壳层。
+                                onOpenSettings = {
+                                    navigator.popToMainShell()
+                                    DesktopShell.settingsRequested = true
+                                },
+                                // 搜索同样走指令通道：切到搜索 tab 由 MainScreen 做，关键词由
+                                // SearchScreen 消费并喂给它自己的 ScreenModel。
+                                // 同理必须先回主壳层，否则在别的路由页里搜索也毫无反应。
+                                onSearch = {
+                                    navigator.popToMainShell()
+                                    DesktopShell.pendingSearchQuery = it
+                                },
+                            )
                         },
                     )
-                },
-            )
+                }
             }
 
             // 关窗确认框（只可能出现在 `onCloseRequest` 走到 ASK 分支时）。
@@ -514,12 +607,39 @@ private fun saveWindowSize(size: DpSize) {
 }
 
 private const val WINDOW_SIZE_KEY = "desktop.window.size"
+private const val MOBILE_WINDOW_SIZE_KEY = "desktop.mobile_window.size"
+
+/**
+ * 恢复上次手机预览模式的窗口尺寸。
+ */
+private fun loadMobileWindowSize(): DpSize {
+    val raw = runCatching { windowSettings().getString(MOBILE_WINDOW_SIZE_KEY) }.getOrNull()
+        ?: return MobilePreviewDefaultWindowSize
+    val parts = raw.split('x')
+    if (parts.size != 2) return MobilePreviewDefaultWindowSize
+    val width = parts[0].toFloatOrNull() ?: return MobilePreviewDefaultWindowSize
+    val height = parts[1].toFloatOrNull() ?: return MobilePreviewDefaultWindowSize
+    if (width < 320 || height < 400) return MobilePreviewDefaultWindowSize
+    val work = runCatching { DesktopWindowPlacement.primaryWorkArea() }.getOrNull()
+        ?: return DpSize(width.dp, height.dp)
+    return DpSize(
+        width.coerceAtMost(work.width.toFloat()).dp,
+        height.coerceAtMost(work.height.toFloat()).dp,
+    )
+}
+
+private fun saveMobileWindowSize(size: DpSize) {
+    runCatching {
+        windowSettings().putString(MOBILE_WINDOW_SIZE_KEY, "${size.width.value}x${size.height.value}")
+    }
+}
 
 /** 窗口标题：有曲目时显示「曲名 - 歌手 · CPPlayer」，便于在任务栏/Alt+Tab 里辨认。 */
-private fun windowTitleOf(track: TrackSummary?): String {
-    if (track == null) return "CPPlayer"
+private fun windowTitleOf(track: TrackSummary?, isMobilePreview: Boolean = false): String {
+    val suffix = if (isMobilePreview) " (手机版预览)" else ""
+    if (track == null) return "CPPlayer$suffix"
     val artist = track.artist.trim()
-    return if (artist.isEmpty()) "${track.name} · CPPlayer" else "${track.name} - $artist · CPPlayer"
+    return if (artist.isEmpty()) "${track.name} · CPPlayer$suffix" else "${track.name} - $artist · CPPlayer$suffix"
 }
 
 /**

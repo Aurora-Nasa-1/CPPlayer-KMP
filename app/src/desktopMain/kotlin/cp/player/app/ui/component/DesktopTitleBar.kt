@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.FilterNone
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Settings
@@ -68,6 +69,7 @@ import cp.player.app.AppModel
 import cp.player.app.platform.JbrWindowChrome
 import cp.player.app.platform.WindowMaximizer
 import cp.player.app.ui.theme.CpMotion
+import cp.player.app.version.AppVersion
 
 /** 自绘标题栏高度。留得下 32dp 以上的点击目标，同时不侵占正文。 */
 internal val TitleBarHeight = 44.dp
@@ -204,6 +206,7 @@ fun DesktopTitleBar(
     onOpenSettings: () -> Unit,
     onSearch: (String) -> Unit,
     onToggleMiniMode: () -> Unit = { cp.player.app.ui.util.DesktopShell.isMiniMode = true },
+    onToggleMobileMode: () -> Unit = { cp.player.app.ui.util.DesktopShell.isMobileMode = true },
     modifier: Modifier = Modifier,
 ) {
     val window = windowScope.window
@@ -224,11 +227,11 @@ fun DesktopTitleBar(
     val maximized = maximizer.isMaximized
     val toggleMaximize: () -> Unit = { maximizer.toggle() }
 
-    // JBR 在客户区右上画原生窗口钮，右侧要给它们留位（px → dp，随 DPI 变化重取）。
-    val density = LocalDensity.current
-    val nativeControlsWidth = jbr?.let { with(density) { it.rightInsetPx.toDp() } } ?: 0.dp
-    // 右侧按钮组总宽：JBR 模式 = 账号 + 消息 + 迷你模式 + 设置 + 原生窗口钮区；无边框模式 = 全自绘 7 槽。
-    val rightGroupWidth = if (useJbr) ChromeSlotWidth * 4 + nativeControlsWidth else ChromeActionsWidth
+    // JBR 在客户区右上画原生窗口钮，右侧要给它们留位（Swing 逻辑像素即 dp，保底不少于 141dp）。
+    val nativeControlsWidth = if (useJbr) jbr.rightInsetDp.dp else 0.dp
+    // 右侧按钮组总宽：JBR 模式 = 账号 + 消息 + (Debug手机预览) + 迷你模式 + 设置 + 原生窗口钮区；无边框模式 = 全自绘。
+    val slotsCount = if (AppVersion.isDebugBuild) 5 else 4
+    val rightGroupWidth = if (useJbr) ChromeSlotWidth * slotsCount + nativeControlsWidth else ChromeActionsWidth
 
     // 原生窗口钮的明暗跟随应用主题。判据用 surface 亮度而不是 isSystemInDarkTheme()：
     // 后者只反映系统设置，追不上应用内的主题覆盖（深色模式 / 纯黑等）。
@@ -338,6 +341,14 @@ fun DesktopTitleBar(
                 // 原生钮，位于 `nativeControlsWidth` 那格 spacer 的右边）。
                 AccountSlot(onClick = onOpenAccount, modifier = Modifier.jbrClientZone(bridge, "account"))
                 MessageSlot(onClick = onOpenMessages, modifier = Modifier.jbrClientZone(bridge, "messages"))
+                if (AppVersion.isDebugBuild) {
+                    ChromeSlot(
+                        onClick = onToggleMobileMode,
+                        modifier = Modifier.jbrClientZone(bridge, "mobile_mode"),
+                    ) {
+                        Icon(Icons.Filled.PhoneAndroid, "手机版界面预览", modifier = Modifier.size(18.dp))
+                    }
+                }
                 ChromeSlot(
                     onClick = onToggleMiniMode,
                     modifier = Modifier.jbrClientZone(bridge, "mini_mode"),

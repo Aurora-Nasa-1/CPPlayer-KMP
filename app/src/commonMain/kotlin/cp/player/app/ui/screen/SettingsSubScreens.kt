@@ -8,6 +8,7 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Storage
@@ -201,6 +202,24 @@ class AppearanceSettingsScreen : Screen {
                 }
                 SettingsNote(s.appearance.roundnessNote)
                 SettingsNote(colorSource.description(s, platformAvailable))
+
+                if (!cp.player.app.platform.isAndroidPlatform() && cp.player.app.version.AppVersion.isDebugBuild) {
+                    SettingsSection("布局与视图预览") {
+                        SettingsSwitchItem(
+                            title = "手机版界面预览 (412×892)",
+                            subtitle = if (cp.player.app.ui.util.DesktopShell.isMobileMode) {
+                                "当前为手机版紧凑视图，点击恢复桌面端大窗口"
+                            } else {
+                                "切换为 412×892 紧凑手机版布局、底部导航栏与手机顶栏"
+                            },
+                            icon = Icons.Filled.PhoneAndroid,
+                            checked = cp.player.app.ui.util.DesktopShell.isMobileMode,
+                            onCheckedChange = { cp.player.app.ui.util.DesktopShell.isMobileMode = it },
+                            index = 0,
+                            total = 1,
+                        )
+                    }
+                }
             }
         }
 
