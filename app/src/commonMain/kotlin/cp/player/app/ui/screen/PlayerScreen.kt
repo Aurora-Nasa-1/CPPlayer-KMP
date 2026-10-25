@@ -19,6 +19,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,21 +48,32 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Comment
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.AccessAlarm
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.SmartDisplay
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.Translate
+import cp.player.app.ui.component.CpContextMenu
+import cp.player.app.ui.component.CpContextMenuItem
+import cp.player.app.ui.component.CpContextMenuSeparator
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
@@ -116,8 +128,10 @@ import cp.player.app.ui.component.LegacyModalBottomSheet
 import cp.player.app.ui.component.cpFluidBackground
 import cp.player.app.ui.component.desktopPagerMouseControl
 import cp.player.app.ui.component.PlayerMoreSheets
+import cp.player.app.ui.component.ProviderFeatureGate
 import cp.player.app.ui.component.QueueBottomSheet
 import cp.player.app.ui.component.SimilarSongsPanel
+import cp.player.app.ui.component.rememberActiveProviderSupports
 import cp.player.app.ui.component.rememberPlayerMoreSheetState
 import cp.player.app.ui.model.CommentScreenModel
 import cp.player.app.ui.theme.CpMotion
@@ -130,6 +144,7 @@ import cp.player.app.ui.util.pushOrNotify
 import cp.player.core.music.Comment
 import cp.player.core.playback.LyricsState
 import cp.player.core.playback.RepeatMode
+import cp.player.core.provider.ProviderCapability
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -164,17 +179,7 @@ class PlayerScreen : Screen {
         // 本页的「收起」是折叠语义（↓ / ✕），与「返回上一页」不是一回事，所以不参与返回键统一。
         state.currentTrack?.let { cp.player.app.ui.util.DesktopRouteTitle(it.name) }
 
-        // 宽屏 / 窄屏两套播放页的分叉点。
-        //
-        // ⚠️ 判据必须是**本页自身的可用宽度**，不能读 `LocalIsExpanded` —— 那个 local 只在
-        // `MainScreen` 内部被 provide，而本页是 push 出去的路由页、与 `MainScreen` 在
-        // Navigator 里是兄弟节点，读到的永远是默认值 false。后果就是：从「每日推荐」
-        // 这类子页里点 MiniPlayer 进播放页时，宽窗口上照样给手机布局。
-        // 路由页自己占满窗口，按自身 `maxWidth` 判定与按窗口宽度判定等价，
-        // 与 `PlaylistDetailScreen` 里已有的 `isWide` 判据同源。
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            // 桌面播放页开头就 `state.currentTrack ?: return`（无曲目时什么都不画），
-            // 所以这里要显式排除空曲目，否则会先闪一帧空白。
             if (CpBreakpoints.isExpanded(maxWidth) && state.currentTrack != null) {
                 DesktopPlayerScreen(
                     state = effectiveState,
@@ -187,31 +192,19 @@ class PlayerScreen : Screen {
                     onShuffle = controller::toggleShuffle,
                     onLike = { AppModel.toggleFavoriteOf(state.currentTrack?.id) },
                     onPlayAt = { idx -> scope.launch { controller.playAt(idx) } },
-                    // PC 播放页的队列要能拖拽换位：与窄屏队列弹层共用同一个控制器动作。
                     onMove = { from, to -> scope.launch { controller.moveQueueItem(from, to) } },
+                    onRemoveQueue = { idx -> scope.launch { controller.removeQueueItem(idx) } },
+                    onClearQueue = controller::clearQueue,
                 )
             } else {
-                // 共享转场走**复用**而不是自建：App 根部有一个罩住整棵根 Navigator 的
-                // SharedTransitionLayout（含全局 MiniPlayer），经两个 local 下发 scope 与
-                // 本次页面转场的 AnimatedVisibilityScope。本页的 sharedBounds
-                // （player-container / cover / title / artist）只有挂到那对 scope 上，
-                // 才能和 MiniPlayer 的同名 sharedBounds 配对 —— 此前本页自建
-                // SharedTransitionLayout，两个 scope 永远配不上对，「从歌单等其它页面
-                // 点 MiniPlayer 展开播放页没有动画」就是它造成的。
-                // 回退分支：脱离 App 树使用（读不到 local）时才自建一对自洽的 scope。
                 val sharedScope = LocalSharedTransitionScope.current
                 val navAnimScope = LocalNavAnimatedVisibilityScope.current
-                // 显式标注 Unit：否则 val 推断成 (…) -> Job/Boolean，与参数类型不符。
-                val onBack: () -> Unit = { navigator.popOrNotify() }
-                val onPlayAt: (Int) -> Unit = { idx -> scope.launch { controller.playAt(idx) } }
-                val onRemoveQueue: (Int) -> Unit = { idx -> scope.launch { controller.removeQueueItem(idx) } }
-                val onMoveQueue: (Int, Int) -> Unit = { from, to -> scope.launch { controller.moveQueueItem(from, to) } }
                 if (sharedScope != null && navAnimScope != null) {
                     with(sharedScope) {
                         PlayerScreenContent(
                             state = effectiveState,
                             animatedVisibilityScope = navAnimScope,
-                            onBack = onBack,
+                            onBack = { navigator.popOrNotify() },
                             onTogglePlay = controller::togglePlayPause,
                             onSeek = controller::seekTo,
                             onSkipNext = controller::skipNext,
@@ -219,9 +212,9 @@ class PlayerScreen : Screen {
                             onRepeat = onRepeat,
                             onShuffle = controller::toggleShuffle,
                             onClearQueue = controller::clearQueue,
-                            onPlayAt = onPlayAt,
-                            onRemoveQueue = onRemoveQueue,
-                            onMoveQueue = onMoveQueue,
+                            onPlayAt = { idx -> scope.launch { controller.playAt(idx) } },
+                            onRemoveQueue = { idx -> scope.launch { controller.removeQueueItem(idx) } },
+                            onMoveQueue = { from, to -> scope.launch { controller.moveQueueItem(from, to) } },
                         )
                     }
                 } else {
@@ -230,7 +223,7 @@ class PlayerScreen : Screen {
                             PlayerScreenContent(
                                 state = effectiveState,
                                 animatedVisibilityScope = this,
-                                onBack = onBack,
+                                onBack = { navigator.popOrNotify() },
                                 onTogglePlay = controller::togglePlayPause,
                                 onSeek = controller::seekTo,
                                 onSkipNext = controller::skipNext,
@@ -238,9 +231,9 @@ class PlayerScreen : Screen {
                                 onRepeat = onRepeat,
                                 onShuffle = controller::toggleShuffle,
                                 onClearQueue = controller::clearQueue,
-                                onPlayAt = onPlayAt,
-                                onRemoveQueue = onRemoveQueue,
-                                onMoveQueue = onMoveQueue,
+                                onPlayAt = { idx -> scope.launch { controller.playAt(idx) } },
+                                onRemoveQueue = { idx -> scope.launch { controller.removeQueueItem(idx) } },
+                                onMoveQueue = { from, to -> scope.launch { controller.moveQueueItem(from, to) } },
                             )
                         }
                     }
@@ -305,8 +298,10 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
         }
     }
 
-    // 手机端三页 Pager：0=歌词，1=播放器/歌曲，2=评论（相似歌曲由顶栏独立按钮与队列入口呼出）
-    val pagerState = rememberPagerState(initialPage = 1) { 3 }
+    // 手机端 Pager：0=歌词，1=播放器/歌曲，2=评论（若音源支持能力）
+    val supportsComments = rememberActiveProviderSupports(ProviderCapability.COMMENTS)
+    val pageCount = if (supportsComments) 3 else 2
+    val pagerState = rememberPagerState(initialPage = 1) { pageCount }
     val scope = rememberCoroutineScope()
 
     // 下拉关闭手势（仅播放器页启用）
@@ -346,6 +341,185 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
     }
     val fluidBackground by AppModel.fluidBackgroundFlow.collectAsState()
 
+    val contextMenuItems = remember(
+        state.isPlaying,
+        state.isFavorite,
+        state.shuffleEnabled,
+        state.repeatMode,
+        pagerState.currentPage,
+        showTranslation,
+        track,
+    ) {
+        buildList {
+            // 走带控制
+            add(
+                CpContextMenuItem(
+                    label = if (state.isPlaying) "暂停" else "播放",
+                    icon = if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    onClick = onTogglePlay,
+                )
+            )
+            add(
+                CpContextMenuItem(
+                    label = "下一首",
+                    icon = Icons.Filled.SkipNext,
+                    onClick = onSkipNext,
+                )
+            )
+            add(
+                CpContextMenuItem(
+                    label = "上一首",
+                    icon = Icons.Filled.SkipPrevious,
+                    onClick = onSkipPrev,
+                )
+            )
+            add(
+                CpContextMenuItem(
+                    label = if (state.isFavorite) "取消收藏" else "收藏歌曲",
+                    icon = if (state.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                    isSelected = state.isFavorite,
+                    onClick = { AppModel.toggleFavoriteOf(track.id) },
+                )
+            )
+            add(
+                CpContextMenuItem(
+                    label = if (state.shuffleEnabled) "关闭随机播放" else "开启随机播放",
+                    icon = Icons.Filled.Shuffle,
+                    isSelected = state.shuffleEnabled,
+                    onClick = onShuffle,
+                )
+            )
+            add(
+                CpContextMenuItem(
+                    label = when (state.repeatMode) {
+                        RepeatMode.ONE -> "单曲循环"
+                        RepeatMode.ALL -> "列表循环"
+                        RepeatMode.OFF -> "顺序播放"
+                    },
+                    icon = if (state.repeatMode == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
+                    isSelected = state.repeatMode != RepeatMode.OFF,
+                    onClick = onRepeat,
+                )
+            )
+
+            add(CpContextMenuSeparator)
+
+            // 视图切换
+            add(
+                CpContextMenuItem(
+                    label = "显示歌词",
+                    icon = Icons.Filled.Lyrics,
+                    isSelected = pagerState.currentPage == 0,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
+                )
+            )
+            add(
+                CpContextMenuItem(
+                    label = "播放主界面",
+                    icon = Icons.Filled.MusicNote,
+                    isSelected = pagerState.currentPage == 1,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
+                )
+            )
+            add(
+                CpContextMenuItem(
+                    label = "显示评论",
+                    icon = Icons.AutoMirrored.Filled.Comment,
+                    isSelected = pagerState.currentPage == 2,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(2) } },
+                )
+            )
+            if (pagerState.currentPage == 0) {
+                add(
+                    CpContextMenuItem(
+                        label = if (showTranslation) "隐藏歌词翻译" else "显示歌词翻译",
+                        icon = Icons.Filled.Translate,
+                        isSelected = showTranslation,
+                        onClick = { showTranslation = !showTranslation },
+                    )
+                )
+            }
+            onChangeLyricsSource?.let { changeSource ->
+                add(
+                    CpContextMenuItem(
+                        label = "歌词插件设置",
+                        icon = Icons.Filled.AutoAwesome,
+                        onClick = changeSource,
+                    )
+                )
+            }
+            track.mvId?.takeIf { it > 0 }?.let { mvId ->
+                add(
+                    CpContextMenuItem(
+                        label = "播放 MV",
+                        icon = Icons.Filled.SmartDisplay,
+                        onClick = { navigator?.push(VideoPlayerScreen("netease://mv/$mvId")) },
+                    )
+                )
+            }
+
+            add(CpContextMenuSeparator)
+
+            // 队列与歌曲操作
+            add(
+                CpContextMenuItem(
+                    label = "当前播放队列",
+                    icon = Icons.AutoMirrored.Filled.QueueMusic,
+                    onClick = { showQueueSheet = true },
+                )
+            )
+            add(
+                CpContextMenuItem(
+                    label = "添加到歌单...",
+                    icon = Icons.AutoMirrored.Filled.PlaylistAdd,
+                    onClick = { moreSheets.showAddToPlaylist = true },
+                )
+            )
+            add(
+                CpContextMenuItem(
+                    label = "歌曲详情...",
+                    icon = Icons.Filled.Info,
+                    onClick = { moreSheets.showSongInfo = true },
+                )
+            )
+            add(
+                CpContextMenuItem(
+                    label = "设备接力 / 投送...",
+                    icon = Icons.Filled.Cast,
+                    onClick = { moreSheets.showDevicePicker = true },
+                )
+            )
+            add(
+                CpContextMenuItem(
+                    label = "定时关闭...",
+                    icon = Icons.Filled.AccessAlarm,
+                    onClick = { moreSheets.showSleepTimer = true },
+                )
+            )
+            add(
+                CpContextMenuItem(
+                    label = "复制歌曲信息",
+                    icon = Icons.Filled.ContentCopy,
+                    onClick = {
+                        val info = "${track.name} - ${track.artist}"
+                        cp.player.app.platform.shareText(info)
+                    },
+                )
+            )
+
+            add(CpContextMenuSeparator)
+
+            // 收起
+            add(
+                CpContextMenuItem(
+                    label = "收起播放页",
+                    icon = Icons.Filled.KeyboardArrowDown,
+                    onClick = onBack,
+                )
+            )
+        }
+    }
+
     Box(
         Modifier
             .fillMaxSize()
@@ -356,8 +530,12 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             .cpFluidBackground(enabled = fluidBackground, fallback = bgBrush)
             .windowInsetsPadding(WindowInsets.systemBars)
     ) {
-
-        Surface(
+        CpContextMenu(
+            items = contextMenuItems,
+            modifier = Modifier.fillMaxSize(),
+            passive = true,
+        ) {
+            Surface(
             modifier = Modifier
                 .fillMaxSize()
                 .then(
@@ -393,6 +571,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
         ) {
             Scaffold(
                 containerColor = Color.Transparent,
+                contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 topBar = {
                     CenterAlignedTopAppBar(
                         title = {
@@ -530,6 +709,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             }
         }
     }
+}
 
     if (showQueueSheet) {
         QueueBottomSheet(
@@ -641,18 +821,21 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
         val screenHeight = maxHeight
         val isUltraCompact = screenHeight < 620.dp
         val isCompact = screenHeight in 620.dp..760.dp
+        val isTall = screenHeight > 820.dp
 
-        val verticalGap = when {
+        val horizontalPadding = if (isUltraCompact) 14.dp else 18.dp
+        val topPadding = if (isUltraCompact) 2.dp else 6.dp
+        val bottomPadding = when {
             isUltraCompact -> 6.dp
-            isCompact -> 10.dp
+            isCompact -> 12.dp
+            isTall -> 20.dp
             else -> 16.dp
         }
-        val horizontalPadding = if (isUltraCompact) 16.dp else 24.dp
-        val bottomPadding = if (isUltraCompact) 6.dp else 12.dp
         val controlsHeight = when {
             isUltraCompact -> 54.dp
-            isCompact -> 62.dp
-            else -> 70.dp
+            isCompact -> 64.dp
+            isTall -> 72.dp
+            else -> 68.dp
         }
         val sideIconSize = when {
             isUltraCompact -> 24.dp
@@ -665,15 +848,41 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
             else -> 38.dp
         }
 
+        // 精确黄金间距：解决标准长屏下封面居中导致上下空隙巨大、下半部紧贴底边的严重失衡
+        val artToInfoGap = when {
+            isUltraCompact -> 6.dp
+            isCompact -> 12.dp
+            isTall -> 20.dp
+            else -> 16.dp
+        }
+        val infoToProgressGap = when {
+            isUltraCompact -> 4.dp
+            isCompact -> 8.dp
+            isTall -> 16.dp
+            else -> 12.dp
+        }
+        val progressToControlsGap = when {
+            isUltraCompact -> 6.dp
+            isCompact -> 10.dp
+            isTall -> 18.dp
+            else -> 14.dp
+        }
+
+        // 封面尺寸预算：扣除底部所有控件所需的基础高度，矮屏下自动收缩，标准长屏吃满可用宽度
+        val bottomControlsBudget = if (isUltraCompact) 230.dp else if (isCompact) 270.dp else 300.dp
+        val maxArtByHeight = (screenHeight - bottomControlsBudget).coerceAtLeast(160.dp)
+        val artSize = minOf(maxWidth, maxArtByHeight)
+
         Column(
-            Modifier.fillMaxSize().padding(horizontal = horizontalPadding).padding(bottom = bottomPadding),
-            verticalArrangement = Arrangement.spacedBy(verticalGap),
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = horizontalPadding)
+                .padding(bottom = bottomPadding),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // 封面区域：支持根据屏幕高度自适应伸缩，避免在 16:9 或矮屏上挤压控制控件。
-            //
-            // Expressive 的「呼吸」感：播放时圆角收紧 + 阴影加深，暂停时松开 —— 都走主题的
-            // spatial 动效（带回弹），所以切播放/暂停时封面会「弹」一下，而不是硬切。
+            Spacer(Modifier.height(topPadding))
+
+            // 封面区域：长屏直接充满整个屏幕可用宽度，紧贴顶栏下方，视觉沉浸饱满
             val coverCorner by animateDpAsState(
                 targetValue = if (state.isPlaying) 22.dp else 34.dp,
                 animationSpec = cp.player.app.ui.theme.CpMotion.spatialSlow(),
@@ -689,48 +898,42 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                 animationSpec = tween(260),
                 label = "coverScale",
             )
-            Box(
-                Modifier
-                    .weight(1f, fill = false)
-                    .heightIn(max = if (isUltraCompact) 200.dp else if (isCompact) 280.dp else 360.dp)
-                    .fillMaxWidth(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(coverCorner),
-                    modifier = Modifier.aspectRatio(1f)
-                        .fillMaxWidth(if (isUltraCompact) 0.82f else 0.95f)
-                        .sharedBounds(
-                            sharedContentState = rememberSharedContentState(key = "cover-${track.id}"),
-                            animatedVisibilityScope = animatedVisibilityScope
-                        )
-                        .graphicsLayer {
-                            scaleX = coverScale
-                            scaleY = coverScale
-                        }
-                        .clip(RoundedCornerShape(coverCorner)),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    shadowElevation = coverElevation,
-                ) {
-                    if (!track.coverUrl.isNullOrBlank()) {
-                        AsyncImage(
-                            model = track.coverUrl,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    } else {
-                        cp.player.app.ui.component.CpCoverPlaceholder(
-                            modifier = Modifier.fillMaxSize(),
-                            corner = coverCorner,
-                        )
+            Surface(
+                shape = RoundedCornerShape(coverCorner),
+                modifier = Modifier
+                    .size(artSize)
+                    .sharedBounds(
+                        sharedContentState = rememberSharedContentState(key = "cover-${track.id}"),
+                        animatedVisibilityScope = animatedVisibilityScope
+                    )
+                    .graphicsLayer {
+                        scaleX = coverScale
+                        scaleY = coverScale
                     }
+                    .clip(RoundedCornerShape(coverCorner)),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                shadowElevation = coverElevation,
+            ) {
+                if (!track.coverUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = track.coverUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    cp.player.app.ui.component.CpCoverPlaceholder(
+                        modifier = Modifier.fillMaxSize(),
+                        corner = coverCorner,
+                    )
                 }
             }
 
+            Spacer(Modifier.height(artToInfoGap))
+
             // 歌曲信息行：标题 / 歌手 / 喜欢
             Row(
-                Modifier.fillMaxWidth().padding(top = if (isUltraCompact) 0.dp else 4.dp),
+                Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -782,8 +985,12 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                 }
             }
 
+            Spacer(Modifier.height(infoToProgressGap))
+
             // 进度条（含中央音质 chip）
             ProgressRow(state, onSeek)
+
+            Spacer(Modifier.height(progressToControlsGap))
 
             // 主控件（prev / play-pause / next）：自适应按键高度
             cp.player.app.ui.component.PlaybackControls(
@@ -801,11 +1008,14 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                 centerIconSize = centerIconSize,
             )
 
+            // 弹性吸收长屏剩余高度：自然舒展拉开主控区与底部辅助工具区
+            Spacer(Modifier.weight(1f).heightIn(min = 6.dp))
+
             // 错误提示
             AnimatedVisibility(visible = !state.error.isNullOrBlank()) {
                 CpText(
                     state.error ?: "",
-                    Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 6.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                     textAlign = TextAlign.Center,
@@ -815,7 +1025,7 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
 
             // 底部工具行：随机 / 循环 / 睡眠定时 / 更多
             cp.player.app.ui.component.CpFloatingToolbar(
-                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = if (isUltraCompact) 0.dp else 4.dp),
+                modifier = Modifier.align(Alignment.CenterHorizontally),
             ) {
                 cp.player.app.ui.component.CpModeToggle(
                     active = state.shuffleEnabled,
@@ -847,7 +1057,6 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                     )
                 }
             }
-            Spacer(Modifier.height(4.dp))
         }
     }
 }
@@ -856,6 +1065,14 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
 // ui/component/PlayerMoreBottomSheet.kt —— 桌面播放页（DesktopPlayerScreen）与
 // 窄屏布局共用同一宿主，SongInfoDialog 作为其二级弹窗必须同处一处。
 
+/**
+ * 手机端顶栏页面指示器：极简圆角胶囊形态。
+ *
+ * 将原先占用较大面积的「歌词 / 歌曲 / 评论」大文本胶囊收敛为精致灵动的微型指示条：
+ * - 紧凑磨砂胶囊外壳，视觉轻盈、不抢封面与全屏背景视线；
+ * - 选中的页面胶囊自然伸展为指示条，未选中为微圆点，伴随平滑弹簧动效；
+ * - 保留直接点击切换能力与无障碍语义（歌词 / 歌曲 / 评论），让用户一眼可知有三个界面可滑动切换。
+ */
 @Composable
 private fun MobilePlayerTabSelector(
     currentPage: Int,
@@ -863,47 +1080,59 @@ private fun MobilePlayerTabSelector(
     modifier: Modifier = Modifier,
 ) {
     val isDark = LocalIsDarkTheme.current
-    val tabs = remember { listOf("歌词", "歌曲", "评论") }
+    val supportsComments = rememberActiveProviderSupports(ProviderCapability.COMMENTS)
+    val tabs = remember(supportsComments) {
+        if (supportsComments) listOf("歌词", "歌曲", "评论") else listOf("歌词", "歌曲")
+    }
     Surface(
         modifier = modifier,
-        shape = androidx.compose.foundation.shape.CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = if (isDark) 0.35f else 0.45f),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = if (isDark) 0.30f else 0.40f),
+        border = BorderStroke(
+            width = 0.5.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.15f else 0.25f),
+        ),
     ) {
         Row(
-            Modifier.padding(3.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             tabs.forEachIndexed { index, title ->
                 val selected = currentPage == index
-                val containerColor by animateColorAsState(
-                    targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer
-                    else Color.Transparent,
-                    animationSpec = CpMotion.effects(),
-                    label = "mobileTabContainerColor$index",
+                val indicatorWidth by animateDpAsState(
+                    targetValue = if (selected) 18.dp else 5.dp,
+                    animationSpec = CpMotion.spatial(),
+                    label = "mobileIndicatorWidth$index",
                 )
-                val contentColor by animateColorAsState(
-                    targetValue = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                val indicatorColor by animateColorAsState(
+                    targetValue = if (selected) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (isDark) 0.35f else 0.45f)
+                    },
                     animationSpec = CpMotion.effects(),
-                    label = "mobileTabContentColor$index",
+                    label = "mobileIndicatorColor$index",
                 )
-                Surface(
-                    onClick = { onSelect(index) },
-                    shape = androidx.compose.foundation.shape.CircleShape,
-                    color = containerColor,
-                    contentColor = contentColor,
+
+                Box(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClickLabel = "切换到$title",
+                        ) { onSelect(index) }
+                        .padding(vertical = 3.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
                     Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp),
-                    ) {
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                        )
-                    }
+                        modifier = Modifier
+                            .height(4.5.dp)
+                            .width(indicatorWidth)
+                            .clip(CircleShape)
+                            .background(indicatorColor)
+                    )
                 }
             }
         }

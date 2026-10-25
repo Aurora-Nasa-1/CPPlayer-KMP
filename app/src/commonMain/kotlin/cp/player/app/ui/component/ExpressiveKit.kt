@@ -25,11 +25,13 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -44,10 +46,16 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.ButtonColors
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonGroup
 import androidx.compose.material3.ButtonGroupDefaults
+import androidx.compose.material3.CircularWavyProgressIndicator
+import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FloatingToolbarDefaults
+import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LinearWavyProgressIndicator
@@ -56,10 +64,13 @@ import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SplitButtonDefaults
+import androidx.compose.material3.SplitButtonLayout
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
+import androidx.compose.material3.VerticalFloatingToolbar
 import androidx.compose.material3.WavyProgressIndicatorDefaults
 import androidx.compose.material3.toPath
 import androidx.compose.runtime.Composable
@@ -260,6 +271,62 @@ fun CpLoadingIndicator(
     color: Color = MaterialTheme.colorScheme.primary,
 ) {
     LoadingIndicator(modifier = modifier, color = color)
+}
+
+/**
+ * 具有容器底色的变形加载指示器（ContainedLoadingIndicator）。
+ *
+ * 在高对比表面或浮层中使用，容器形状自动适配 Expressive 几何风格。
+ */
+@Composable
+fun CpContainedLoadingIndicator(
+    modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    indicatorColor: Color = MaterialTheme.colorScheme.primary,
+) {
+    ContainedLoadingIndicator(
+        modifier = modifier,
+        containerColor = containerColor,
+        indicatorColor = indicatorColor,
+    )
+}
+
+/**
+ * Expressive 圆形波浪进度指示器（CircularWavyProgressIndicator）。
+ *
+ * 确定进度版本：圆环边缘呈有机水波状推进，适合音轨缓冲与环形下载进度。
+ */
+@Composable
+fun CpCircularWavyProgress(
+    progress: Float,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary,
+    trackColor: Color = MaterialTheme.colorScheme.surfaceVariant,
+) {
+    CircularWavyProgressIndicator(
+        progress = { progress.coerceIn(0f, 1f) },
+        modifier = modifier,
+        color = color,
+        trackColor = trackColor,
+    )
+}
+
+/**
+ * Expressive 圆形波浪不确定进度指示器。
+ *
+ * 无限流转的波浪动效，用于单曲缓冲或局部异步请求。
+ */
+@Composable
+fun CpCircularWavyProgressIndeterminate(
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary,
+    trackColor: Color = MaterialTheme.colorScheme.surfaceVariant,
+) {
+    CircularWavyProgressIndicator(
+        modifier = modifier,
+        color = color,
+        trackColor = trackColor,
+    )
 }
 
 /**
@@ -856,38 +923,147 @@ fun CpCoverPlaceholder(
 }
 
 /**
- * Expressive 浮动工具条：**按内容宽度**、居中、带抬升的一枚胶囊。
+ * Expressive 浮动工具条：利用官方 [HorizontalFloatingToolbar] 打造的悬浮操控胶囊。
  *
- * 与「整宽 `Surface(CircleShape)`」的差别就是它**不长满一行**。M3 Expressive 里
- * 次级工具（随机 / 循环 / 睡眠 / 更多）是一枚**浮在内容之上**的胶囊，而不是又一条工具栏。
+ * M3 Expressive 规范中，次级工具（随机 / 循环 / 睡眠 / 更多）悬浮于主视觉流之上，
+ * 具有弹性容器外形和自动层级抬升。
  *
- * 此前播放页有两枚**等宽**全宽胶囊上下叠着（主控件 + 工具行），看起来像两条工具栏，
- * 层级全丢；而歌词页那枚只有两个按钮却铺满整宽，`SpaceEvenly` 把两者推到 1/4 与 3/4 处，
- * 中间空出一大块，像「少了两个按钮」。
- *
- * 用法：`CpFloatingToolbar(Modifier.align(Alignment.CenterHorizontally)) { … }`
+ * @param expanded 是否保持展开状态。
+ * @param containerColor 工具栏容器背景颜色。
+ * @param content 工具条内的按钮或图标元素。
  */
 @Composable
 fun CpFloatingToolbar(
     modifier: Modifier = Modifier,
+    expanded: Boolean = true,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
     content: @Composable RowScope.() -> Unit,
 ) {
-    Surface(
+    HorizontalFloatingToolbar(
+        expanded = expanded,
         modifier = modifier,
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        // 层级靠**色阶**（surfaceContainerHigh 比页面背景高一档）表达，不靠阴影。
-        // 此前 tonal + shadow 各 3dp 同时拉满：tonal 把容器提亮、shadow 再压一圈黑边，
-        // 两者叠加的结果是边缘发脏 —— 阴影只在"真的浮在内容之上"时才有意义，
-        // 而工具条本身已经有更高的容器色阶了。
-        tonalElevation = 3.dp,
-        shadowElevation = 0.dp,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            content = content,
+        colors = FloatingToolbarDefaults.standardFloatingToolbarColors(
+            toolbarContainerColor = containerColor,
+        ),
+        content = content,
+    )
+}
+
+/**
+ * Expressive 拆分组合按钮（SplitButton）。
+ *
+ * 左侧为主动作触发区（如播放全部），右侧为次要扩展/下拉触发区（如随机播放或更多选项）。
+ * 左右两半遵循 M3 Expressive 标志性的外圆内平自适应变形过渡与按压物理反馈。
+ */
+@Composable
+fun CpSplitButton(
+    onLeadingClick: () -> Unit,
+    leadingContent: @Composable RowScope.() -> Unit,
+    onTrailingClick: () -> Unit,
+    trailingContent: @Composable RowScope.() -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    trailingWidth: Dp? = null,
+    colors: ButtonColors = ButtonDefaults.buttonColors(
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+    ),
+) {
+    val spacing = SplitButtonDefaults.Spacing
+    BoxWithConstraints(modifier = modifier) {
+        val totalWidth = maxWidth
+        val isFullWidth = totalWidth > 0.dp && totalWidth != Dp.Infinity
+        val actualTrailingWidth = trailingWidth ?: if (totalWidth >= 300.dp) 76.dp else 64.dp
+        val leadingModifier = if (isFullWidth) {
+            Modifier.width((totalWidth - actualTrailingWidth - spacing).coerceAtLeast(0.dp)).fillMaxHeight()
+        } else {
+            Modifier.fillMaxHeight()
+        }
+        val trailingModifier = if (isFullWidth) {
+            Modifier.width(actualTrailingWidth).fillMaxHeight()
+        } else {
+            Modifier.fillMaxHeight()
+        }
+
+        SplitButtonLayout(
+            leadingButton = {
+                SplitButtonDefaults.LeadingButton(
+                    onClick = onLeadingClick,
+                    enabled = enabled,
+                    modifier = leadingModifier,
+                    colors = colors,
+                ) {
+                    leadingContent()
+                }
+            },
+            trailingButton = {
+                SplitButtonDefaults.TrailingButton(
+                    onClick = onTrailingClick,
+                    enabled = enabled,
+                    modifier = trailingModifier,
+                    colors = colors,
+                ) {
+                    trailingContent()
+                }
+            },
+            spacing = spacing,
+        )
+    }
+}
+
+/**
+ * Tonal 色彩变体的 Expressive 拆分按钮。
+ */
+@Composable
+fun CpTonalSplitButton(
+    onLeadingClick: () -> Unit,
+    leadingContent: @Composable RowScope.() -> Unit,
+    onTrailingClick: () -> Unit,
+    trailingContent: @Composable RowScope.() -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    trailingWidth: Dp? = null,
+    colors: ButtonColors = ButtonDefaults.filledTonalButtonColors(),
+) {
+    val spacing = SplitButtonDefaults.Spacing
+    BoxWithConstraints(modifier = modifier) {
+        val totalWidth = maxWidth
+        val isFullWidth = totalWidth > 0.dp && totalWidth != Dp.Infinity
+        val actualTrailingWidth = trailingWidth ?: if (totalWidth >= 300.dp) 76.dp else 64.dp
+        val leadingModifier = if (isFullWidth) {
+            Modifier.width((totalWidth - actualTrailingWidth - spacing).coerceAtLeast(0.dp)).fillMaxHeight()
+        } else {
+            Modifier.fillMaxHeight()
+        }
+        val trailingModifier = if (isFullWidth) {
+            Modifier.width(actualTrailingWidth).fillMaxHeight()
+        } else {
+            Modifier.fillMaxHeight()
+        }
+
+        SplitButtonLayout(
+            leadingButton = {
+                SplitButtonDefaults.TonalLeadingButton(
+                    onClick = onLeadingClick,
+                    enabled = enabled,
+                    modifier = leadingModifier,
+                    colors = colors,
+                ) {
+                    leadingContent()
+                }
+            },
+            trailingButton = {
+                SplitButtonDefaults.TonalTrailingButton(
+                    checked = false,
+                    onCheckedChange = { onTrailingClick() },
+                    enabled = enabled,
+                    modifier = trailingModifier,
+                    colors = colors,
+                ) {
+                    trailingContent()
+                }
+            },
+            spacing = spacing,
         )
     }
 }

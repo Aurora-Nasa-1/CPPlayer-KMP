@@ -1,6 +1,11 @@
 package cp.player.app.ui.screen
 
 import cp.player.app.ui.component.CpText
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +19,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -55,12 +61,16 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -75,6 +85,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.Placeable
+import androidx.compose.ui.layout.SubcomposeLayout
+import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.component.cpBounceClickable
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -104,6 +117,7 @@ import cp.player.app.ui.component.CpContextMenu
 import cp.player.app.ui.component.CpContextMenuItem
 import cp.player.app.ui.component.CpContextMenuSeparator
 import cp.player.app.ui.component.LocalWindowChromeActive
+import cp.player.app.ui.component.CpSplitButton
 import cp.player.app.ui.component.CpTwoPane
 import cp.player.app.ui.component.PlaylistSortType
 import cp.player.app.ui.component.LazyScrollColumn
@@ -115,6 +129,7 @@ import cp.player.app.ui.component.SongMenuActions
 import cp.player.app.ui.component.SongOptionsSheet
 import cp.player.app.ui.component.SourceSongsSelectionSheet
 import cp.player.app.ui.component.TopBarAction
+import cp.player.app.ui.component.CpTopBarActionButton
 import cp.player.app.ui.component.cpBounceClickable
 import cp.player.app.ui.component.playlistShareText
 import cp.player.app.ui.component.songContextMenuItems
@@ -195,8 +210,8 @@ fun PlaylistDetailContent(
     var showImportPicker by remember { mutableStateOf(false) }
     var importSource by remember { mutableStateOf<PlaylistSummary?>(null) }
     var showQueueSelection by remember { mutableStateOf(false) }
-    // 非 owner 歌单的收藏态（Screen 内简化维护）
-    var playlistFavorite by remember { mutableStateOf(false) }
+    // 非 owner 歌单的收藏态（由 Model 统一拉取与维护）
+    val playlistFavorite = state.isFavorite
 
     // 歌单内即时搜索过滤状态（对标 PixelPlayer）
     var inPlaylistSearchQuery by remember { mutableStateOf("") }
@@ -222,6 +237,11 @@ fun PlaylistDetailContent(
 
     // 多选模式下返回键退出多选
     BackHandler(enabled = state.selectionMode) { model.exitSelection() }
+    // 搜索模式下返回键退出搜索
+    BackHandler(enabled = isSearchActive && !state.selectionMode) {
+        isSearchActive = false
+        inPlaylistSearchQuery = ""
+    }
 
     val displayTracks = remember(state.tracks, state.sortType) { model.displayTracks() }
     val filteredDisplayTracks = remember(displayTracks, inPlaylistSearchQuery) {
@@ -249,18 +269,7 @@ fun PlaylistDetailContent(
     }
 
     val togglePlaylistFavorite: () -> Unit = {
-        val target = !playlistFavorite
-        scope.launch {
-            val ok = withContext(Dispatchers.IO) {
-                runCatching { AppModel.musicRepository.subscribePlaylist(playlist.id, target) }.getOrDefault(false)
-            }
-            if (ok) {
-                playlistFavorite = target
-                UiEvents.notify(if (target) s.library.favorited else s.library.unfavorited)
-            } else {
-                UiEvents.notify(s.library.operationFailed)
-            }
-        }
+        model.togglePlaylistFavorite()
     }
 
     // 「删除歌单 / 取消收藏」的统一确认入口
@@ -429,6 +438,7 @@ fun PlaylistDetailContent(
                 onAddTracks = openAddSongs,
                 onRemoveSelected = confirmRemoveTracks,
                 buildSongMenu = buildSongMenu,
+                maxWidth = maxWidth,
             )
         }
     }
@@ -703,6 +713,7 @@ private fun NarrowLayout(
     onAddTracks: () -> Unit,
     onRemoveSelected: (List<String>) -> Unit,
     buildSongMenu: @Composable (TrackSummary, Int) -> List<CpContextMenuItem>,
+    maxWidth: Dp = 360.dp,
 ) {
     val s = cpStrings()
     if (state.selectionMode) {
@@ -791,16 +802,164 @@ private fun NarrowLayout(
             )
         }
     } else {
+        val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+        val collapsedFraction = scrollBehavior.state.collapsedFraction
+        // 滑动开始时封面与副信息逐步淡出并缩减，滚动超 40% 深度时完全收缩取消封面
+        val coverFraction = (1f - collapsedFraction * 2.5f).coerceIn(0f, 1f)
+        val canShowBackButton = !LocalWindowChromeActive.current
+        val searchExpandedWidth = (maxWidth - (if (canShowBackButton) 52.dp else 12.dp) - 8.dp).coerceAtLeast(160.dp)
+        val onToggleEnterSelection: () -> Unit = {
+            if (state.selectionMode) {
+                model.exitSelection()
+            } else {
+                displayTracks.firstOrNull()?.let { model.enterSelection(it.id) }
+            }
+        }
+
         AppScaffold(
-            title = summary.name,
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().padding(end = 8.dp),
+                ) {
+                    if (coverFraction > 0.01f) {
+                        Surface(
+                            modifier = Modifier
+                                .size(56.dp * coverFraction)
+                                .graphicsLayer { alpha = coverFraction }
+                                .coverFlightTarget(CoverFlight.TARGET_PLAYLIST_HEADER, 12.dp),
+                            shape = RoundedCornerShape(12.dp * coverFraction),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shadowElevation = (2 * coverFraction).dp,
+                        ) {
+                            val hideCover = CoverFlight.isFlyingTo(CoverFlight.TARGET_PLAYLIST_HEADER)
+                            if (!summary.coverUrl.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = summary.coverUrl.resized(200),
+                                    contentDescription = summary.name,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                        .graphicsLayer { alpha = if (hideCover) 0f else 1f },
+                                )
+                            } else {
+                                CpCoverPlaceholder(
+                                    modifier = Modifier.fillMaxSize()
+                                        .graphicsLayer { alpha = if (hideCover) 0f else 1f },
+                                    corner = 12.dp,
+                                    animated = false,
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(14.dp * coverFraction))
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        CpText(
+                            text = summary.name,
+                            style = if (collapsedFraction > 0.4f) {
+                                MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+                            } else {
+                                MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                            },
+                            maxLines = if (collapsedFraction > 0.4f) 1 else 2,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        if (coverFraction > 0.1f) {
+                            Spacer(Modifier.height(2.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.graphicsLayer { alpha = coverFraction },
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                ) {
+                                    Text(
+                                        text = if (isOwner) "我创建的" else if (isFavorite) "已收藏" else "公开歌单",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    )
+                                }
+                                Text(
+                                    text = s.library.trackCountLabel(trackCount, durationStr),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                }
+            },
             onBackPressed = onBack,
+            scrollBehavior = scrollBehavior,
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            topBarActions = listOf(
-                TopBarAction(
-                    icon = { Icon(Icons.Filled.MoreVert, contentDescription = s.library.moreOptions) },
-                    onClick = onOpenPlaylistSheet,
+            actions = {
+                // 1. 伸缩搜索框（默认未激活时为标准 40dp 纯图标圆钮）
+                PlaylistTopBarSearchBar(
+                    query = searchQuery,
+                    onQueryChange = onSearchQueryChange,
+                    isActive = isSearchActive,
+                    onToggleActive = onToggleSearch,
+                    resultCount = filteredTracks.size,
+                    expandedWidth = searchExpandedWidth,
                 )
-            ),
+
+                // 2. 多选按钮（参与搜索动画：搜索展开时渐隐淡出，收起时渐现淡入）
+                AnimatedVisibility(
+                    visible = !isSearchActive,
+                    enter = fadeIn(CpMotion.effects()),
+                    exit = fadeOut(CpMotion.effectsFast()),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Spacer(Modifier.width(4.dp))
+                        FilledIconButton(
+                            onClick = onToggleEnterSelection,
+                            modifier = Modifier.size(40.dp),
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                            ),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.SelectAll,
+                                contentDescription = s.library.selectAll,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                }
+
+                // 3. 更多选项按钮（参与搜索动画：搜索展开时渐隐淡出，收起时渐现淡入）
+                AnimatedVisibility(
+                    visible = !isSearchActive,
+                    enter = fadeIn(CpMotion.effects()),
+                    exit = fadeOut(CpMotion.effectsFast()),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Spacer(Modifier.width(4.dp))
+                        FilledIconButton(
+                            onClick = onOpenPlaylistSheet,
+                            modifier = Modifier.size(40.dp),
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                            ),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.MoreVert,
+                                contentDescription = s.library.moreOptions,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                }
+            },
         ) { _ ->
             TrackList(
                 model = model,
@@ -823,13 +982,7 @@ private fun NarrowLayout(
                 onSortClick = onOpenPlaylistSheet,
                 onAddTracks = onAddTracks,
                 onDownloadAll = { AppModel.downloadTracks(displayTracks) },
-                onEnterSelection = {
-                    if (state.selectionMode) {
-                        model.exitSelection()
-                    } else {
-                        displayTracks.firstOrNull()?.let { model.enterSelection(it.id) }
-                    }
-                },
+                onEnterSelection = onToggleEnterSelection,
                 onMore = onOpenPlaylistSheet,
                 buildSongMenu = buildSongMenu,
             )
@@ -892,22 +1045,28 @@ private fun WideLayout(
         ),
     )
 
-    CpTwoPane(
-        rail = { railModifier ->
-            val backItem = cp.player.app.ui.component.rememberBackContextMenuItem()
-            val railMenu = playlistMenu?.let { items ->
-                if (backItem == null) items else listOf(backItem) + items
-            }
-            CpContextMenu(items = railMenu, modifier = railModifier) {
-                ScrollColumn(
-                    modifier = Modifier.padding(20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Spacer(Modifier.height(16.dp))
-                    // 1. M3E 宽屏超大封面（188dp，extraLarge 28dp 圆角，8dp 阴影）
-                    Surface(
-                        modifier = Modifier.size(188.dp)
-                            .coverFlightTarget(CoverFlight.TARGET_PLAYLIST_HEADER, 28.dp),
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val isExpandedDesktop = maxWidth >= 1200.dp
+        val railWidth = if (isExpandedDesktop) 380.dp else 340.dp
+        val coverSize = if (isExpandedDesktop) 240.dp else 208.dp
+
+        CpTwoPane(
+            railWidth = railWidth,
+            rail = { railModifier ->
+                val backItem = cp.player.app.ui.component.rememberBackContextMenuItem()
+                val railMenu = playlistMenu?.let { items ->
+                    if (backItem == null) items else listOf(backItem) + items
+                }
+                CpContextMenu(items = railMenu, modifier = railModifier) {
+                    ScrollColumn(
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Spacer(Modifier.height(16.dp))
+                        // 1. M3E 宽屏超大封面（桌面端 240dp / 中屏 208dp，extraLarge 28dp 圆角，8dp 阴影）
+                        Surface(
+                            modifier = Modifier.size(coverSize)
+                                .coverFlightTarget(CoverFlight.TARGET_PLAYLIST_HEADER, 28.dp),
                         shape = MaterialTheme.shapes.extraLarge,
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         shadowElevation = 8.dp,
@@ -988,11 +1147,12 @@ private fun WideLayout(
 
                     Spacer(Modifier.height(20.dp))
 
-                    // 3. PixelPlayer 标志性非对称双胶囊主播放操作组（撑满左栏）
+                    // 3. PixelPlayer 标志性非对称双胶囊主播放操作组（撑满左栏，桌面端更大）
                     M3EPlayShufflePillGroup(
                         onPlayAll = { model.playAll() },
                         onShuffle = { model.playShuffle() },
                         hasTracks = displayTracks.isNotEmpty(),
+                        isDesktopWide = true,
                     )
 
                     Spacer(Modifier.height(14.dp))
@@ -1070,7 +1230,7 @@ private fun WideLayout(
                 onEnterSelection = { },
                 onMore = onOpenPlaylistSheet,
                 buildSongMenu = buildSongMenu,
-                modifier = Modifier.widthIn(max = 980.dp).align(Alignment.TopCenter),
+                modifier = Modifier.fillMaxSize(),
                 topContentPadding = if (showBackButton || state.selectionMode) topInset + 56.dp else 0.dp,
             )
             if (showBackButton || state.selectionMode) {
@@ -1131,6 +1291,7 @@ private fun WideLayout(
             }
         }
     )
+}
 }
 
 // ============ 歌曲列表与 M3E Header 组件 ============
@@ -1370,69 +1531,10 @@ private fun NarrowPlaylistHero(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier.fillMaxWidth().padding(bottom = 12.dp),
+        modifier = modifier.fillMaxWidth().padding(bottom = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // 1. 沉浸式大封面
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            tonalElevation = 4.dp,
-            shadowElevation = 8.dp,
-            modifier = Modifier.size(152.dp),
-        ) {
-            Box(Modifier.fillMaxSize()) {
-                if (summary.coverUrl.isNullOrBlank()) {
-                    CpCoverPlaceholder(modifier = Modifier.fillMaxSize(), corner = 24.dp)
-                } else {
-                    AsyncImage(
-                        model = summary.coverUrl,
-                        contentDescription = summary.name,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                }
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        // 2. 歌单标题与元数据
-        CpText(
-            text = summary.name,
-            style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 2,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        )
-
-        Spacer(Modifier.height(8.dp))
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            ) {
-                Text(
-                    text = if (isOwner) "我创建的" else if (isFavorite) "已收藏" else "公开歌单",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
-                )
-            }
-            Text(
-                text = "${displayTracks.size} 首歌曲",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        Spacer(Modifier.height(20.dp))
-
-        // 3. PixelPlayer 标志性非对称双胶囊主播放组
+        // 1. PixelPlayer / M3E 风格 SplitButton 主播放组（全部播放 + 随机播放）
         M3EPlayShufflePillGroup(
             onPlayAll = onPlayAll,
             onShuffle = onShuffle,
@@ -1440,9 +1542,9 @@ private fun NarrowPlaylistHero(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(10.dp))
 
-        // 4. 次级快捷动作轨（全圆角药丸胶囊）
+        // 2. 次级快捷动作轨：全平铺展开，无横向滚动条，完整展现所有操作
         M3ESecondaryActionsRail(
             isOwner = isOwner,
             onAdd = onAdd,
@@ -1452,93 +1554,220 @@ private fun NarrowPlaylistHero(
             onDelete = onDelete,
             searchActive = isSearchActive,
             onToggleSearch = onToggleSearch,
+            showSearch = false, // 搜索按钮已移至顶栏并支持无缝拉伸
+            showSelect = false, // 多选按钮已移至顶栏并参与搜索伸缩动画
             currentSort = currentSort,
             onSortClick = onSortClick,
             onDownloadAll = onDownloadAll,
             selectionMode = false,
             onEnterSelection = onEnterSelection,
             onOpenOptions = onMore,
-            useFlowLayout = false,
+            useFlowLayout = true,
             modifier = Modifier.fillMaxWidth(),
         )
-
-        // 5. 若搜索激活，呈现即时搜索过滤胶囊栏
-        if (isSearchActive) {
-            Spacer(Modifier.height(12.dp))
-            InPlaylistSearchBar(
-                query = searchQuery,
-                onQueryChange = onSearchQueryChange,
-                onClose = onToggleSearch,
-                resultCount = displayTracks.size,
-            )
-        }
     }
 }
 
 /**
- * PixelPlayer 风格的非对称咬合双胶囊主播放控制组。
- * 左侧为饱满的 PrimaryContainer "播放全部" 胶囊，右侧为次级 SecondaryContainer "随机播放" 胶囊。
+ * Material 3 Expressive 风格的非对称双胶囊主播放控制组（全部播放 + 随机播放）。
+ *
+ * 饱满填满左右两侧：
+ * - 左侧为 PrimaryContainer 的“全部播放”大胶囊（weight 1f 占满剩余宽度）；
+ * - 右侧为 SecondaryContainer 的“随机播放”胶囊；
+ * - 桌面端双栏模式下进一步放大尺寸（高度 64dp，图标 28dp/26dp），视觉分量感显著提升。
  */
 @Composable
 private fun M3EPlayShufflePillGroup(
     onPlayAll: () -> Unit,
     onShuffle: () -> Unit,
     hasTracks: Boolean,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+    isDesktopWide: Boolean = false,
+) {
+    val height = if (isDesktopWide) 64.dp else 54.dp
+    val playIconSize = if (isDesktopWide) 28.dp else 24.dp
+    val shuffleIconSize = if (isDesktopWide) 26.dp else 22.dp
+    val trailingWidth = if (isDesktopWide) 80.dp else 66.dp
+
+    CpSplitButton(
+        onLeadingClick = onPlayAll,
+        leadingContent = {
+            Icon(
+                imageVector = Icons.Filled.PlayArrow,
+                contentDescription = "播放全部",
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(playIconSize),
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = "全部播放",
+                style = if (isDesktopWide) {
+                    MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                } else {
+                    MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                },
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        },
+        onTrailingClick = onShuffle,
+        trailingContent = {
+            Icon(
+                imageVector = Icons.Filled.Shuffle,
+                contentDescription = "随机播放",
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(shuffleIconSize),
+            )
+        },
+        enabled = hasTracks,
+        trailingWidth = trailingWidth,
+        modifier = modifier
+            .fillMaxWidth()
+            .height(height),
+    )
+}
+
+/**
+ * M3E 次级横向快捷操作轨。
+ * 包含添加、分享、删除（创建者红底）、取消收藏（非创建者红底）/收藏、搜索、排序、下载全部、多选、更多。
+ * 支持在宽屏侧边栏折行平铺（[useFlowLayout] = true），彻底解决按钮被截断隐藏的问题。
+ */
+private data class SecondaryActionItem(
+    val id: String,
+    val label: String,
+    val icon: ImageVector,
+    val onClick: () -> Unit,
+    val containerColor: Color? = null,
+    val contentColor: Color? = null,
+)
+
+/**
+ * 响应式动作胶囊流式布局：
+ * 若折成两行且第二行仅多出 1 个或 2 个选项时，将“更多”按钮的文字去掉（变为紧凑圆形胶囊），
+ * 并自动塞入上一行（第一行末尾）。
+ */
+@Composable
+private fun AdaptiveSecondaryActionsFlow(
+    items: List<SecondaryActionItem>,
+    moreItem: SecondaryActionItem,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth().height(56.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // 主播放胶囊
-        Surface(
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.primaryContainer,
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxSize()
-                .then(if (hasTracks) Modifier.cpBounceClickable(onClick = onPlayAll) else Modifier),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.PlayArrow,
-                    contentDescription = "播放全部",
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(26.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "全部播放",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+    SubcomposeLayout(modifier = modifier.fillMaxWidth()) { constraints ->
+        val maxW = constraints.maxWidth
+        val spacing = 8.dp.roundToPx()
+        val rowGap = 8.dp.roundToPx()
+
+        // 1. 测量全部常规选项 + 标准带字样的"更多"按钮
+        val normalPlaceables = subcompose("normal_items") {
+            items.forEach { item ->
+                ActionChip(
+                    label = item.label,
+                    icon = item.icon,
+                    onClick = item.onClick,
+                    containerColor = item.containerColor ?: MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = item.contentColor ?: MaterialTheme.colorScheme.onSurface,
                 )
             }
-        }
+        }.map { it.measure(constraints.copy(minWidth = 0, minHeight = 0)) }
 
-        // 随机播放胶囊
-        Surface(
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.secondaryContainer,
-            modifier = Modifier
-                .width(68.dp)
-                .fillMaxSize()
-                .then(if (hasTracks) Modifier.cpBounceClickable(onClick = onShuffle) else Modifier),
-        ) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Shuffle,
-                    contentDescription = "随机播放",
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.size(24.dp),
+        val standardMorePlaceable = subcompose("standard_more") {
+            ActionChip(
+                label = moreItem.label,
+                icon = moreItem.icon,
+                onClick = moreItem.onClick,
+                containerColor = moreItem.containerColor ?: MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentColor = moreItem.contentColor ?: MaterialTheme.colorScheme.onSurface,
+            )
+        }.first().measure(constraints.copy(minWidth = 0, minHeight = 0))
+
+        val allStandard = normalPlaceables + standardMorePlaceable
+
+        // 模拟标准折行
+        val rows = mutableListOf<MutableList<Placeable>>()
+        var curRow = mutableListOf<Placeable>()
+        var curRowW = 0
+
+        for (p in allStandard) {
+            val needed = if (curRow.isEmpty()) p.width else spacing + p.width
+            if (curRow.isNotEmpty() && curRowW + needed > maxW) {
+                rows.add(curRow)
+                curRow = mutableListOf(p)
+                curRowW = p.width
+            } else {
+                curRow.add(p)
+                curRowW += needed
+            }
+        }
+        if (curRow.isNotEmpty()) rows.add(curRow)
+
+        // 判断：如果变成两行，且第二行多出来 1 个或 2 个
+        val secondRowExtraCount = if (rows.size == 2) rows[1].size else 0
+        val shouldCompactMore = rows.size == 2 && (secondRowExtraCount == 1 || secondRowExtraCount == 2)
+
+        if (!shouldCompactMore) {
+            val totalHeight = rows.indices.sumOf { r -> rows[r].maxOf { it.height } } + (rows.size - 1).coerceAtLeast(0) * rowGap
+            layout(maxW, totalHeight) {
+                var y = 0
+                for (row in rows) {
+                    var x = 0
+                    val rowH = row.maxOf { it.height }
+                    for (p in row) {
+                        p.placeRelative(x, y + (rowH - p.height) / 2)
+                        x += p.width + spacing
+                    }
+                    y += rowH + rowGap
+                }
+            }
+        } else {
+            // 需要紧凑化：更多按钮去掉"更多"字样（纯图标圆形胶囊），塞进上一行
+            val compactMorePlaceable = subcompose("compact_more") {
+                ActionChip(
+                    label = "", // 去掉"更多"字样
+                    icon = moreItem.icon,
+                    onClick = moreItem.onClick,
+                    containerColor = moreItem.containerColor ?: MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = moreItem.contentColor ?: MaterialTheme.colorScheme.onSurface,
                 )
+            }.first().measure(constraints.copy(minWidth = 0, minHeight = 0))
+
+            val row1Items = mutableListOf<Placeable>()
+            val row2Items = mutableListOf<Placeable>()
+
+            val origRow1Count = rows[0].size
+            for (i in 0 until origRow1Count) {
+                row1Items.add(normalPlaceables[i])
+            }
+
+            if (secondRowExtraCount == 1) {
+                // 第二行只有 1 个（即更多）：直接去掉文字塞进第一行末尾，第二行清空消除
+                row1Items.add(compactMorePlaceable)
+            } else if (secondRowExtraCount == 2) {
+                // 第二行有 2 个（例如多选 + 更多）
+                val secondRowNormalItem = normalPlaceables.last()
+                val row1WidthWithBoth = row1Items.sumOf { it.width } + secondRowNormalItem.width + compactMorePlaceable.width + (row1Items.size + 1) * spacing
+                if (row1WidthWithBoth <= maxW) {
+                    // 第一行剩余空间能够同时容纳两者：全部收敛进第一行
+                    row1Items.add(secondRowNormalItem)
+                    row1Items.add(compactMorePlaceable)
+                } else {
+                    // 更多按钮塞进第一行末尾，剩余 1 个在第二行
+                    row1Items.add(compactMorePlaceable)
+                    row2Items.add(secondRowNormalItem)
+                }
+            }
+
+            val finalRows = listOf(row1Items, row2Items).filter { it.isNotEmpty() }
+            val totalHeight = finalRows.indices.sumOf { r -> finalRows[r].maxOf { it.height } } + (finalRows.size - 1).coerceAtLeast(0) * rowGap
+            layout(maxW, totalHeight) {
+                var y = 0
+                for (row in finalRows) {
+                    var x = 0
+                    val rowH = row.maxOf { it.height }
+                    for (p in row) {
+                        p.placeRelative(x, y + (rowH - p.height) / 2)
+                        x += p.width + spacing
+                    }
+                    y += rowH + rowGap
+                }
             }
         }
     }
@@ -1547,7 +1776,8 @@ private fun M3EPlayShufflePillGroup(
 /**
  * M3E 次级横向快捷操作轨。
  * 包含添加、分享、删除（创建者红底）、取消收藏（非创建者红底）/收藏、搜索、排序、下载全部、多选、更多。
- * 支持在宽屏侧边栏折行平铺（[useFlowLayout] = true），彻底解决按钮被截断隐藏的问题。
+ * 支持在宽屏侧边栏折行平铺（[useFlowLayout] = true）。
+ * 移动端若折成两行且第二行多出 1 或 2 个选项时，自适应将“更多”文字去掉变为紧凑图标圆钮并塞入上一行。
  */
 @Composable
 private fun M3ESecondaryActionsRail(
@@ -1559,6 +1789,8 @@ private fun M3ESecondaryActionsRail(
     onDelete: (() -> Unit)?,
     searchActive: Boolean,
     onToggleSearch: () -> Unit,
+    showSearch: Boolean = true,
+    showSelect: Boolean = true,
     currentSort: PlaylistSortType,
     onSortClick: () -> Unit,
     onDownloadAll: () -> Unit,
@@ -1568,60 +1800,80 @@ private fun M3ESecondaryActionsRail(
     useFlowLayout: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    val chips = @Composable {
+    val items = buildList {
         // 1. 添加歌曲
-        ActionChip(
-            label = "添加",
-            icon = Icons.Filled.PlaylistAdd,
-            onClick = onAdd,
+        add(
+            SecondaryActionItem(
+                id = "add",
+                label = "添加",
+                icon = Icons.Filled.PlaylistAdd,
+                onClick = onAdd,
+            )
         )
 
         // 2. 分享歌单
         if (onShare != null) {
-            ActionChip(
-                label = "分享",
-                icon = Icons.Filled.Share,
-                onClick = onShare,
+            add(
+                SecondaryActionItem(
+                    id = "share",
+                    label = "分享",
+                    icon = Icons.Filled.Share,
+                    onClick = onShare,
+                )
             )
         }
 
         // 3. 删除（创建者）/ 取消收藏（非创建者已收藏）/ 收藏
         if (isOwner && onDelete != null) {
-            ActionChip(
-                label = "删除",
-                icon = Icons.Filled.Delete,
-                containerColor = MaterialTheme.colorScheme.errorContainer,
-                contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                onClick = onDelete,
+            add(
+                SecondaryActionItem(
+                    id = "delete",
+                    label = "删除",
+                    icon = Icons.Filled.Delete,
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    onClick = onDelete,
+                )
             )
         } else if (onToggleFavorite != null) {
             if (isFavorite) {
-                ActionChip(
-                    label = "取消收藏",
-                    icon = Icons.Filled.BookmarkRemove,
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                    onClick = onToggleFavorite,
+                add(
+                    SecondaryActionItem(
+                        id = "unfavorite",
+                        label = "取消收藏",
+                        icon = Icons.Filled.BookmarkRemove,
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                        onClick = onToggleFavorite,
+                    )
                 )
             } else {
-                ActionChip(
-                    label = "收藏",
-                    icon = Icons.Filled.BookmarkAdd,
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                    onClick = onToggleFavorite,
+                add(
+                    SecondaryActionItem(
+                        id = "favorite",
+                        label = "收藏",
+                        icon = Icons.Filled.BookmarkAdd,
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                        onClick = onToggleFavorite,
+                    )
                 )
             }
         }
 
-        // 4. 搜索
-        ActionChip(
-            label = "搜索",
-            icon = Icons.Filled.Search,
-            containerColor = if (searchActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-            contentColor = if (searchActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-            onClick = onToggleSearch,
-        )
+        // 4. 搜索（仅在未提升至顶栏时在快捷轨展现）
+        if (showSearch) {
+            add(
+                SecondaryActionItem(
+                    id = "search",
+                    label = "搜索",
+                    icon = Icons.Filled.Search,
+                    containerColor = if (searchActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = if (searchActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                    onClick = onToggleSearch,
+                )
+            )
+        }
 
         // 5. 排序
         val sortLabel = when (currentSort) {
@@ -1629,44 +1881,53 @@ private fun M3ESecondaryActionsRail(
             PlaylistSortType.NAME -> "按名称"
             PlaylistSortType.ARTIST -> "按歌手"
         }
-        ActionChip(
-            label = sortLabel,
-            icon = Icons.AutoMirrored.Filled.Sort,
-            onClick = onSortClick,
+        add(
+            SecondaryActionItem(
+                id = "sort",
+                label = sortLabel,
+                icon = Icons.AutoMirrored.Filled.Sort,
+                onClick = onSortClick,
+            )
         )
 
         // 6. 下载全部
-        ActionChip(
-            label = "下载全部",
-            icon = Icons.Filled.Download,
-            onClick = onDownloadAll,
+        add(
+            SecondaryActionItem(
+                id = "download",
+                label = "下载全部",
+                icon = Icons.Filled.Download,
+                onClick = onDownloadAll,
+            )
         )
 
         // 7. 多选
-        ActionChip(
-            label = "多选",
-            icon = Icons.Filled.SelectAll,
-            containerColor = if (selectionMode) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-            contentColor = if (selectionMode) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-            onClick = onEnterSelection,
-        )
-
-        // 8. 更多
-        ActionChip(
-            label = "更多",
-            icon = Icons.Filled.MoreVert,
-            onClick = onOpenOptions,
-        )
+        if (showSelect) {
+            add(
+                SecondaryActionItem(
+                    id = "select",
+                    label = "多选",
+                    icon = Icons.Filled.SelectAll,
+                    containerColor = if (selectionMode) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = if (selectionMode) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                    onClick = onEnterSelection,
+                )
+            )
+        }
     }
 
+    val moreItem = SecondaryActionItem(
+        id = "more",
+        label = "更多",
+        icon = Icons.Filled.MoreVert,
+        onClick = onOpenOptions,
+    )
+
     if (useFlowLayout) {
-        FlowRow(
-            modifier = modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            chips()
-        }
+        AdaptiveSecondaryActionsFlow(
+            items = items,
+            moreItem = moreItem,
+            modifier = modifier,
+        )
     } else {
         Row(
             modifier = modifier
@@ -1675,7 +1936,22 @@ private fun M3ESecondaryActionsRail(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            chips()
+            items.forEach { item ->
+                ActionChip(
+                    label = item.label,
+                    icon = item.icon,
+                    onClick = item.onClick,
+                    containerColor = item.containerColor ?: MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = item.contentColor ?: MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            ActionChip(
+                label = moreItem.label,
+                icon = moreItem.icon,
+                onClick = moreItem.onClick,
+                containerColor = moreItem.containerColor ?: MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentColor = moreItem.contentColor ?: MaterialTheme.colorScheme.onSurface,
+            )
         }
     }
 }
@@ -1693,26 +1969,169 @@ private fun ActionChip(
         shape = CircleShape,
         color = containerColor,
         modifier = modifier
-            .height(38.dp)
+            .height(36.dp)
             .cpBounceClickable(onClick = onClick),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = if (label.isEmpty()) 9.dp else 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
             Icon(
                 imageVector = icon,
-                contentDescription = label,
+                contentDescription = label.ifEmpty { "更多" },
                 tint = contentColor,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(if (label.isEmpty()) 18.dp else 16.dp),
             )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
-                color = contentColor,
+            if (label.isNotEmpty()) {
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+                    color = contentColor,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 顶栏无缝伸缩搜索栏（对标 Material 3 Expressive 动画）。
+ *
+ * 未激活时：作为一个普通的 40dp 纯图标圆钮嵌入顶栏右侧动作区；
+ * 点击激活时：通过空间弹簧动画（CpMotion.spatial）自动向左拉伸扩展成带输入框、
+ * 清空按钮、结果计数徽标与关闭按钮的完整搜索栏；搜索图标平滑滑向最左侧。
+ */
+@Composable
+private fun PlaylistTopBarSearchBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    isActive: Boolean,
+    onToggleActive: () -> Unit,
+    resultCount: Int,
+    expandedWidth: Dp,
+    modifier: Modifier = Modifier,
+) {
+    val width by animateDpAsState(
+        targetValue = if (isActive) expandedWidth else 40.dp,
+        animationSpec = CpMotion.spatial(),
+        label = "searchBarWidth",
+    )
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (isActive) 1f else 0f,
+        animationSpec = if (isActive) CpMotion.effects() else CpMotion.effectsFast(),
+        label = "searchContentAlpha",
+    )
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(isActive) {
+        if (isActive) {
+            kotlinx.coroutines.delay(120)
+            try {
+                focusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
+    }
+
+    Surface(
+        modifier = modifier
+            .width(width)
+            .height(40.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        onClick = {
+            if (!isActive) onToggleActive()
+        },
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = if (isActive) Alignment.CenterStart else Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Search,
+                contentDescription = if (isActive) null else "搜索",
+                tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .then(if (isActive) Modifier.padding(start = 12.dp) else Modifier)
+                    .size(20.dp),
             )
+
+            if (width > 80.dp) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(start = 38.dp, end = 6.dp)
+                        .graphicsLayer { alpha = contentAlpha },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    androidx.compose.foundation.text.BasicTextField(
+                        value = query,
+                        onValueChange = onQueryChange,
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusRequester(focusRequester),
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurface,
+                        ),
+                        singleLine = true,
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        decorationBox = { innerTextField ->
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.CenterStart,
+                            ) {
+                                if (query.isEmpty()) {
+                                    Text(
+                                        text = "搜索歌曲、歌手、专辑...",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        maxLines = 1,
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        },
+                    )
+
+                    if (query.isNotEmpty()) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ) {
+                            Text(
+                                text = "$resultCount 首",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
+                        }
+                        Spacer(Modifier.width(4.dp))
+                        IconButton(
+                            onClick = { onQueryChange("") },
+                            modifier = Modifier.size(28.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "清除",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onToggleActive,
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = "关闭搜索",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+            }
         }
     }
 }

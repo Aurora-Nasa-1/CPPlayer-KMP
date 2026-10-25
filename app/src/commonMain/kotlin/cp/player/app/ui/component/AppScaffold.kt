@@ -2,6 +2,7 @@ package cp.player.app.ui.component
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -55,6 +56,7 @@ fun AppScaffold(
     onBackPressed: (() -> Unit)? = null,
     navigationIcon: @Composable (() -> Unit)? = null,
     topBarActions: List<TopBarAction> = emptyList(),
+    actions: (@Composable RowScope.() -> Unit)? = null,
     floatingActionButton: @Composable () -> Unit = {},
     isLoading: Boolean = false,
     scrollBehavior: TopAppBarScrollBehavior? = null,
@@ -93,7 +95,7 @@ fun AppScaffold(
                         )
                     }
                 },
-                actions = {
+                actions = actions ?: {
                     topBarActions.forEach { action ->
                         CpTopBarActionButton(action)
                     }
@@ -123,6 +125,7 @@ fun AppScaffold(
     onBackPressed: (() -> Unit)? = null,
     navigationIcon: @Composable (() -> Unit)? = null,
     topBarActions: List<TopBarAction> = emptyList(),
+    actions: (@Composable RowScope.() -> Unit)? = null,
     floatingActionButton: @Composable () -> Unit = {},
     isLoading: Boolean = false,
     scrollBehavior: TopAppBarScrollBehavior? = null,
@@ -140,6 +143,7 @@ fun AppScaffold(
         onBackPressed = onBackPressed,
         navigationIcon = navigationIcon,
         topBarActions = topBarActions,
+        actions = actions,
         floatingActionButton = floatingActionButton,
         isLoading = isLoading,
         scrollBehavior = scrollBehavior,

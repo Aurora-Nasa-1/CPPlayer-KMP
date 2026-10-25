@@ -1,16 +1,20 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.hoverable
@@ -35,26 +39,39 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Comment
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.VolumeDown
 import androidx.compose.material.icons.automirrored.filled.VolumeMute
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.AccessAlarm
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.SmartDisplay
 import androidx.compose.material.icons.filled.Translate
+import cp.player.app.ui.component.CpContextMenu
+import cp.player.app.ui.component.CpContextMenuItem
+import cp.player.app.ui.component.CpContextMenuSeparator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -69,6 +86,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -94,26 +112,39 @@ import androidx.compose.ui.util.lerp
 import cafe.adriel.voyager.navigator.LocalNavigator
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
+import cp.player.app.i18n.cpStrings
+import cp.player.app.platform.shareText
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpSeekBar
 import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.MorphingShape
+import cp.player.app.ui.component.PlayerMoreContent
 import cp.player.app.ui.component.PlayerMoreSheets
+import cp.player.app.ui.component.PlayerMoreSheetState
+import cp.player.app.ui.component.ProviderFeatureGate
+import cp.player.app.ui.component.QueueContent
+import cp.player.app.ui.component.QueueBottomSheet
 import cp.player.app.ui.component.SimilarSongsPanel
 import cp.player.app.ui.component.TrackArtistText
 import cp.player.app.ui.component.cpFluidBackground
 import cp.player.app.ui.component.cpPressScale
+import cp.player.app.ui.component.rememberActiveProviderSupports
 import cp.player.app.ui.component.rememberPlayerMoreSheetState
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.SeekAvailability
+import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.formatTimeMs
 import cp.player.app.ui.util.pushOrNotify
 import cp.player.app.ui.util.resized
 import cp.player.core.music.ArtistSummary
+import cp.player.core.music.CPMediaId
+import cp.player.core.music.TrackSummary
 import cp.player.core.playback.PlaybackUiState
 import cp.player.core.playback.RepeatMode
+import cp.player.core.provider.ProviderCapability
+import kotlinx.coroutines.launch
 
 /**
  * 桌面 / 平板播放页：左侧封面 + 控件，右侧队列 / 歌词 / 评论。
@@ -142,6 +173,8 @@ fun DesktopPlayerScreen(
     onLike: () -> Unit,
     onPlayAt: (Int) -> Unit,
     onMove: (Int, Int) -> Unit,
+    onRemoveQueue: (Int) -> Unit = {},
+    onClearQueue: () -> Unit = {},
 ) {
     // 音量真值在引擎里，UI 只持一份镜像（与旧实现一致：拖动即写回）。
     // 收在这一层是为了让 [DesktopPlayerLayout] 保持无 AppModel 依赖，能离屏渲染核对版式。
@@ -164,6 +197,8 @@ fun DesktopPlayerScreen(
         onLike = onLike,
         onPlayAt = onPlayAt,
         onMove = onMove,
+        onRemoveQueue = onRemoveQueue,
+        onClearQueue = onClearQueue,
     )
 }
 
@@ -264,10 +299,11 @@ private fun playerMetrics(maxWidth: Dp, maxHeight: Dp): PlayerMetrics {
     val tabRowHeight = if (isShort) 36.dp else 42.dp
     val tabToContent = if (isShort) 8.dp else 14.dp
 
-    // 垂直预算推导封面最大尺寸：包含 M3 标准音量滑条高度（约 40dp）
-    val gapsBudget = if (isVeryShort) 28.dp else if (isShort) 38.dp else 52.dp
+    // 垂直预算推导封面最大尺寸：包含 M3 标准音量滑条高度（约 40dp）。
+    // 去除顶部固定横梁与页签行后，顶栏预算降为 0，释放出的高度全部让给封面与歌词。
+    val gapsBudget = if (isVeryShort) 24.dp else if (isShort) 32.dp else 44.dp
     val controlsHeightBudget = 52.dp + 44.dp + (58.dp * transportScale) + 40.dp + gapsBudget
-    val topChromeBudget = 20.dp + tabRowHeight + tabToContent
+    val topChromeBudget = 0.dp
     val maxArtByHeight = (availableHeight - topChromeBudget - controlsHeightBudget).coerceAtLeast(140.dp)
 
     val maxArtworkSize = minOf(leftColumnWidth, maxArtByHeight, if (isWide) 500.dp else 420.dp)
@@ -349,6 +385,8 @@ internal fun DesktopPlayerLayout(
     onLike: () -> Unit,
     onPlayAt: (Int) -> Unit,
     onMove: (Int, Int) -> Unit,
+    onRemoveQueue: (Int) -> Unit = {},
+    onClearQueue: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val track = state.currentTrack ?: return
@@ -364,9 +402,8 @@ internal fun DesktopPlayerLayout(
         }
     }
     val moreSheets = rememberPlayerMoreSheetState()
-    var selectedTab by remember { mutableIntStateOf(1) }
+    var selectedTab by remember { mutableIntStateOf(0) }
     var showTranslation by remember { mutableStateOf(true) }
-    var showSimilarOverlay by remember { mutableStateOf(false) }
     val duration = state.durationMs.coerceAtLeast(0L)
     val seekable = SeekAvailability.isSeekable(duration, state.isLocalizing)
 
@@ -392,6 +429,7 @@ internal fun DesktopPlayerLayout(
             .fillMaxSize()
             .cpFluidBackground(enabled = fluidBackground, fallback = background)
     ) {
+        val windowMaxWidth = maxWidth
         // 版式刻度：全屏 / 窄窗 / 矮窗都从这一处推，自适应各种屏幕规格（见 playerMetrics）。
         val metrics = remember(maxWidth, maxHeight) { playerMetrics(maxWidth, maxHeight) }
         val leftColumnWidth = metrics.leftColumnWidth
@@ -409,79 +447,191 @@ internal fun DesktopPlayerLayout(
             else -> MaterialTheme.typography.titleMedium
         }
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = metrics.horizontalPadding, vertical = metrics.verticalPadding),
-            contentAlignment = Alignment.TopCenter,
+        val scope = rememberCoroutineScope()
+        val s = cpStrings()
+        val qualityLevel by AppModel.playbackQualityFlow.collectAsState()
+
+        // 播放界面全功能右键菜单（支持页面任意空白/内容区域右键唤起）
+        val contextMenuItems = remember(
+            state.isPlaying,
+            state.isFavorite,
+            state.shuffleEnabled,
+            state.repeatMode,
+            selectedTab,
+            showTranslation,
+            track,
         ) {
-            Column(
+            buildList {
+                // 1. 播放与走带控制
+                add(
+                    CpContextMenuItem(
+                        label = if (state.isPlaying) "暂停" else "播放",
+                        icon = if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        onClick = onTogglePlay,
+                    )
+                )
+                add(
+                    CpContextMenuItem(
+                        label = "下一首",
+                        icon = Icons.Filled.SkipNext,
+                        onClick = onSkipNext,
+                    )
+                )
+                add(
+                    CpContextMenuItem(
+                        label = "上一首",
+                        icon = Icons.Filled.SkipPrevious,
+                        onClick = onSkipPrev,
+                    )
+                )
+                add(
+                    CpContextMenuItem(
+                        label = if (state.isFavorite) "取消收藏" else "收藏歌曲",
+                        icon = if (state.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                        isSelected = state.isFavorite,
+                        onClick = onLike,
+                    )
+                )
+                add(
+                    CpContextMenuItem(
+                        label = if (state.shuffleEnabled) "关闭随机播放" else "开启随机播放",
+                        icon = Icons.Filled.Shuffle,
+                        isSelected = state.shuffleEnabled,
+                        onClick = onShuffle,
+                    )
+                )
+                add(
+                    CpContextMenuItem(
+                        label = when (state.repeatMode) {
+                            RepeatMode.ONE -> "单曲循环"
+                            RepeatMode.ALL -> "列表循环"
+                            RepeatMode.OFF -> "顺序播放"
+                        },
+                        icon = if (state.repeatMode == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
+                        isSelected = state.repeatMode != RepeatMode.OFF,
+                        onClick = onRepeat,
+                    )
+                )
+
+                add(CpContextMenuSeparator)
+
+                // 2. 界面视图与工具切换
+                add(
+                    CpContextMenuItem(
+                        label = "显示歌词",
+                        icon = Icons.Filled.Lyrics,
+                        isSelected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                    )
+                )
+                add(
+                    CpContextMenuItem(
+                        label = "显示评论",
+                        icon = Icons.AutoMirrored.Filled.Comment,
+                        isSelected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                    )
+                )
+                if (selectedTab == 0) {
+                    add(
+                        CpContextMenuItem(
+                            label = if (showTranslation) "隐藏歌词翻译" else "显示歌词翻译",
+                            icon = Icons.Filled.Translate,
+                            isSelected = showTranslation,
+                            onClick = { showTranslation = !showTranslation },
+                        )
+                    )
+                }
+                onChangeLyricsSource?.let { changeSource ->
+                    add(
+                        CpContextMenuItem(
+                            label = "歌词插件设置",
+                            icon = Icons.Filled.AutoAwesome,
+                            onClick = changeSource,
+                        )
+                    )
+                }
+                track.mvId?.takeIf { it > 0 }?.let { mvId ->
+                    add(
+                        CpContextMenuItem(
+                            label = "播放 MV",
+                            icon = Icons.Filled.SmartDisplay,
+                            onClick = { navigator?.push(VideoPlayerScreen("netease://mv/$mvId")) },
+                        )
+                    )
+                }
+
+                add(CpContextMenuSeparator)
+
+                // 3. 歌曲管理与操作（全面连通二级弹层）
+                add(
+                    CpContextMenuItem(
+                        label = "添加到歌单...",
+                        icon = Icons.AutoMirrored.Filled.PlaylistAdd,
+                        onClick = { moreSheets.showAddToPlaylist = true },
+                    )
+                )
+                add(
+                    CpContextMenuItem(
+                        label = "歌曲详情...",
+                        icon = Icons.Filled.Info,
+                        onClick = { moreSheets.showSongInfo = true },
+                    )
+                )
+                add(
+                    CpContextMenuItem(
+                        label = "设备接力 / 投送...",
+                        icon = Icons.Filled.Cast,
+                        onClick = { moreSheets.showDevicePicker = true },
+                    )
+                )
+                add(
+                    CpContextMenuItem(
+                        label = "定时关闭...",
+                        icon = Icons.Filled.AccessAlarm,
+                        onClick = { moreSheets.showSleepTimer = true },
+                    )
+                )
+                add(
+                    CpContextMenuItem(
+                        label = "复制歌曲信息",
+                        icon = Icons.Filled.ContentCopy,
+                        onClick = {
+                            val info = "${track.name} - ${track.artist}"
+                            cp.player.app.platform.shareText(info)
+                        },
+                    )
+                )
+
+                add(CpContextMenuSeparator)
+
+                // 4. 界面收起
+                add(
+                    CpContextMenuItem(
+                        label = "收起播放页",
+                        icon = Icons.Filled.KeyboardArrowDown,
+                        onClick = onBack,
+                    )
+                )
+            }
+        }
+
+        CpContextMenu(
+            items = contextMenuItems,
+            modifier = Modifier.fillMaxSize(),
+            passive = true,
+        ) {
+            Box(
                 modifier = Modifier
-                    .width(metrics.contentWidth)
-                    .fillMaxHeight(),
+                    .fillMaxSize()
+                    .padding(horizontal = metrics.horizontalPadding, vertical = metrics.verticalPadding),
+                contentAlignment = Alignment.TopCenter,
             ) {
-                // ── 顶部抓手：Apple Music 式轻盈小横条，悬停旋成 ✕，点击收起 ──
-                Box(Modifier.fillMaxWidth().height(20.dp), contentAlignment = Alignment.Center) {
-                    PlayerSheetGrabber(onClick = onBack)
-                }
-
-                Spacer(Modifier.height(if (metrics.isShort) 2.dp else 4.dp))
-
-                // ── 顶部页签行：左侧返回/收起，右侧页签选择与动作工具 ──
+                // ── 核心工作区：左侧封面与控件，右侧展示面板与悬浮双栏 ──
                 Row(
-                    modifier = Modifier.fillMaxWidth().height(metrics.tabRowHeight),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    // 左侧区域留空（宽度与左列一致），保持右侧页签居中对齐
-                    Spacer(Modifier.width(leftColumnWidth))
-
-                    Spacer(Modifier.width(metrics.columnGap))
-
-                    // 右侧区域（宽度与右栏一致）：页签居中，工具靠右
-                    Row(
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(
-                            modifier = Modifier.weight(1f).fillMaxHeight(),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            DesktopTabSelector(
-                                selectedTab = if (showSimilarOverlay) -1 else selectedTab,
-                                onTabSelect = {
-                                    selectedTab = it
-                                    showSimilarOverlay = false
-                                },
-                            )
-                        }
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            if (!showSimilarOverlay && selectedTab == 1) {
-                                PlayerTopToolButton(
-                                    icon = Icons.Filled.Translate,
-                                    label = if (showTranslation) "关闭歌词翻译" else "歌词翻译",
-                                    active = showTranslation,
-                                    onClick = { showTranslation = !showTranslation },
-                                )
-                            }
-                            PlayerTopToolButton(
-                                icon = Icons.Filled.MoreVert,
-                                label = "更多",
-                                active = false,
-                                onClick = { moreSheets.showMoreMenu = true },
-                            )
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(metrics.tabToContent))
-
-                // ── 核心工作区：左侧封面与控件，右侧展示面板 ──
-                Row(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    modifier = Modifier
+                        .width(metrics.contentWidth)
+                        .fillMaxHeight(),
                     horizontalArrangement = Arrangement.spacedBy(metrics.columnGap),
                 ) {
                     // 左列：封面 + 控件（以统一 contentTopPadding 与右侧对齐顶部基准线）
@@ -661,50 +811,128 @@ internal fun DesktopPlayerLayout(
                         }
                     }
 
-                    // 右侧展示区（队列、歌词、评论）：与左侧封面顶部完全对齐，绝不高过左侧
+                    // 右侧展示区
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .fillMaxHeight()
-                            .padding(top = metrics.contentTopPadding),
+                            .fillMaxHeight(),
                     ) {
-                        if (showSimilarOverlay) {
-                            Box(Modifier.fillMaxSize()) {
-                                SimilarSongsPanel(
-                                    seedTrackId = track.id,
-                                    onBack = { showSimilarOverlay = false },
-                                )
-                            }
-                        } else {
-                            when (selectedTab) {
-                                0 -> Box(Modifier.fillMaxSize()) {
-                                    QueueContent(
+                        // 1. 底层主展示区（歌词、评论）—— 适当提升歌词高度（顶部间距从 46dp 收窄至 16dp）
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(top = 16.dp),
+                        ) {
+                            AnimatedContent(
+                                targetState = selectedTab,
+                                transitionSpec = {
+                                    fadeIn(tween(220)) togetherWith fadeOut(tween(160))
+                                },
+                                label = "desktopTabContent",
+                                modifier = Modifier.fillMaxSize(),
+                            ) { tabIndex ->
+                                when (tabIndex) {
+                                    0 -> DesktopLyricsContent(
                                         state = state,
-                                        onPlayAt = onPlayAt,
-                                        onMove = onMove,
-                                        onOpenSimilar = { showSimilarOverlay = true },
+                                        onSeek = onSeek,
+                                        showTranslation = showTranslation,
+                                        onRepeat = onRepeat,
+                                        onLikeClick = onLike,
+                                        onChangeSource = onChangeLyricsSource,
+                                    )
+                                    else -> Box(Modifier.fillMaxSize()) {
+                                        ProviderFeatureGate(
+                                            capability = ProviderCapability.COMMENTS,
+                                            fallback = {
+                                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                                    Text("当前音源暂不支持评论功能", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+                                            }
+                                        ) {
+                                            DesktopCommentContent(track.id)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 2. 右上角水滴浮岛控制条：超薄微透直通底层流动渐变背景，四周柔和微外晕与微光细边框
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(top = 4.dp, end = 6.dp)
+                                .shadow(
+                                    elevation = 10.dp,
+                                    shape = CircleShape,
+                                    spotColor = Color.Black.copy(alpha = 0.20f),
+                                    ambientColor = Color.Black.copy(alpha = 0.12f),
+                                ),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.15f), // 极轻薄直通流动背景
+                            border = BorderStroke(
+                                width = 1.dp,
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(
+                                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.10f),
+                                    )
+                                ),
+                            ),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                // 双标签分段按钮组（歌词 / 评论）
+                                DesktopTabSelector(
+                                    selectedTab = selectedTab,
+                                    onTabSelect = { selectedTab = it },
+                                )
+
+                                // 晶莹微细分隔线
+                                Box(
+                                    modifier = Modifier
+                                        .height(18.dp)
+                                        .width(1.dp)
+                                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.30f))
+                                )
+
+                                // 工具按钮组
+                                if (selectedTab == 0) {
+                                    PlayerTopToolButton(
+                                        icon = Icons.Filled.Translate,
+                                        label = if (showTranslation) "关闭歌词翻译" else "歌词翻译",
+                                        active = showTranslation,
+                                        onClick = { showTranslation = !showTranslation },
                                     )
                                 }
-                                1 -> DesktopLyricsContent(
-                                    state = state,
-                                    onSeek = onSeek,
-                                    showTranslation = showTranslation,
-                                    onRepeat = onRepeat,
-                                    onLikeClick = onLike,
-                                    onChangeSource = onChangeLyricsSource,
+                                PlayerTopToolButton(
+                                    icon = Icons.Filled.MoreVert,
+                                    label = "更多",
+                                    active = moreSheets.showMoreMenu,
+                                    onClick = {
+                                        moreSheets.showMoreMenu = true
+                                    },
                                 )
-                                else -> Box(Modifier.fillMaxSize()) {
-                                    DesktopCommentContent(track.id)
-                                }
                             }
+                        }
                     }
                 }
             }
+
+            // 顶端中央横杠抓手：悬停平滑旋转交叉成 ✕，点击收起关闭播放页
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 8.dp),
+            ) {
+                PlayerSheetGrabber(onClick = onBack)
+            }
         }
     }
-}
 
-    // 「更多」弹层 + 二级弹窗宿主：与窄屏播放页共用同一组件（PlayerMoreSheets）。
+    // 「更多」弹层关联的二级弹窗宿主（添加到歌单、歌曲详情、设备接力、定时关闭等）
     PlayerMoreSheets(state = state, sheets = moreSheets)
 }
 
@@ -734,8 +962,8 @@ private fun PlayerSheetGrabber(
     }
     Box(
         modifier = modifier
-            .width(56.dp)
-            .height(20.dp)
+            .width(68.dp)
+            .height(24.dp)
             .hoverable(interaction)
             .clickable(
                 interactionSource = interaction,
@@ -746,8 +974,8 @@ private fun PlayerSheetGrabber(
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.fillMaxSize()) {
-            val barLength = lerp(34.dp.toPx(), 15.dp.toPx(), morph)
-            val thickness = 3.dp.toPx()
+            val barLength = lerp(38.dp.toPx(), 16.dp.toPx(), morph)
+            val thickness = 3.5.dp.toPx()
             val angle = 45f * morph
             val center = Offset(size.width / 2f, size.height / 2f)
             val topLeft = Offset(center.x - barLength / 2f, center.y - thickness / 2f)
@@ -764,54 +992,62 @@ private fun PlayerSheetGrabber(
 }
 
 @Composable
-private fun DesktopTabSelector(
+internal fun DesktopTabSelector(
     selectedTab: Int,
     onTabSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val isDark = LocalIsDarkTheme.current
-    val tabs = remember { listOf("队列", "歌词", "评论") }
+    val supportsComments = rememberActiveProviderSupports(ProviderCapability.COMMENTS)
+    val tabs = remember(supportsComments) {
+        if (supportsComments) listOf("歌词", "评论") else listOf("歌词")
+    }
 
-    Surface(
+    Row(
         modifier = modifier,
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = if (isDark) 0.35f else 0.45f),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            Modifier.padding(3.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            tabs.forEachIndexed { index, title ->
-                val selected = selectedTab == index
-                val containerColor by animateColorAsState(
-                    targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer
-                    else Color.Transparent,
-                    animationSpec = CpMotion.effects(),
-                    label = "tabContainerColor",
-                )
-                val contentColor by animateColorAsState(
-                    targetValue = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                    animationSpec = CpMotion.effects(),
-                    label = "tabContentColor",
-                )
-                Surface(
-                    onClick = { onTabSelect(index) },
-                    shape = CircleShape,
-                    color = containerColor,
-                    contentColor = contentColor,
-                ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 7.dp),
-                    ) {
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                        )
-                    }
+        tabs.forEachIndexed { index, title ->
+            val selected = selectedTab == index
+            val interaction = remember { MutableInteractionSource() }
+            val hovered by interaction.collectIsHoveredAsState()
+
+            val containerColor by animateColorAsState(
+                targetValue = when {
+                    selected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
+                    hovered -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.45f)
+                    else -> Color.Transparent
+                },
+                animationSpec = CpMotion.effects(),
+                label = "desktopTabBg$index",
+            )
+            val contentColor by animateColorAsState(
+                targetValue = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                else if (hovered) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                animationSpec = CpMotion.effects(),
+                label = "desktopTabContent$index",
+            )
+            val icon = if (index == 0) Icons.Filled.Lyrics else Icons.AutoMirrored.Filled.Comment
+
+            Surface(
+                onClick = { onTabSelect(index) },
+                shape = CircleShape,
+                color = containerColor,
+                contentColor = contentColor,
+                interactionSource = interaction,
+                modifier = Modifier
+                    .size(38.dp)
+                    .hoverable(interaction),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = title,
+                        modifier = Modifier.size(20.dp),
+                        tint = contentColor,
+                    )
                 }
             }
         }
@@ -820,7 +1056,7 @@ private fun DesktopTabSelector(
 
 /** 顶栏右侧的圆形工具按钮（翻译 / 更多）。桌面端补一层悬停底色。 */
 @Composable
-private fun PlayerTopToolButton(
+internal fun PlayerTopToolButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     active: Boolean,
@@ -831,15 +1067,20 @@ private fun PlayerTopToolButton(
     val container by animateColorAsState(
         targetValue = when {
             active -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
-            hovered -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.75f)
+            hovered -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.45f)
             else -> Color.Transparent
         },
         animationSpec = CpMotion.effectsFast(),
         label = "topToolContainer",
     )
+    val contentColor by animateColorAsState(
+        targetValue = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = CpMotion.effectsFast(),
+        label = "topToolContentColor",
+    )
     Surface(
         onClick = onClick,
-        modifier = Modifier.size(36.dp).hoverable(interaction),
+        modifier = Modifier.size(38.dp).hoverable(interaction),
         shape = CircleShape,
         color = container,
         interactionSource = interaction,
@@ -848,9 +1089,8 @@ private fun PlayerTopToolButton(
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                modifier = Modifier.size(19.dp),
-                tint = if (active) MaterialTheme.colorScheme.onPrimaryContainer
-                else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+                tint = contentColor,
             )
         }
     }
@@ -858,10 +1098,11 @@ private fun PlayerTopToolButton(
 
 /** 曲名右侧的小动作（MV / 收藏）：32dp 触达区，悬停才出底。 */
 @Composable
-private fun PlayerInlineAction(
+internal fun PlayerInlineAction(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     active: Boolean = false,
+    tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant,
     onClick: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -922,7 +1163,7 @@ private fun PlayerMetaChip(
  * 与上方的进度条和下方的音量控制形成完全一致的边界对齐。
  */
 @Composable
-private fun PlayerTransportRow(
+internal fun PlayerTransportRow(
     state: PlaybackUiState,
     onTogglePlay: () -> Unit,
     onSkipNext: () -> Unit,
@@ -1101,7 +1342,7 @@ private fun PlayerPlayPauseButton(
  * 保持严格的水平基准线对齐，解决视觉重心右移与单侧不平衡问题。
  */
 @Composable
-private fun DesktopVolumeControl(
+internal fun DesktopVolumeControl(
     volume: Float,
     onVolumeChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
@@ -1194,210 +1435,7 @@ private fun DesktopVolumeControl(
 }
 
 @Composable
-private fun QueueContent(
-    state: PlaybackUiState,
-    onPlayAt: (Int) -> Unit,
-    onMove: (Int, Int) -> Unit,
-    onOpenSimilar: (() -> Unit)? = null,
-) {
-    val isDark = LocalIsDarkTheme.current
-    LazyScrollColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        itemsIndexed(state.queue, key = { _, item -> item.mediaId }) { index, item ->
-            DesktopQueueRow(
-                item = item,
-                index = index,
-                queueSize = state.queue.size,
-                isCurrent = index == state.currentIndex,
-                onPlay = { onPlayAt(index) },
-                onMove = onMove,
-                // 拖拽重排 / 切歌时的位移与淡出。队列是桌面播放页里唯一能真正
-                // 改变顺序的列表，没有这层动画的话每次重排都是一次「集体瞬移」。
-                modifier = Modifier.animateItem(),
-            )
-        }
-        if (onOpenSimilar != null) {
-            item {
-                Surface(
-                    onClick = onOpenSimilar,
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.50f),
-                    border = BorderStroke(
-                        width = 1.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.15f else 0.25f),
-                    ),
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        Icon(
-                            Icons.Filled.AutoAwesome,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(17.dp),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            "基于在播曲目探索相似歌曲",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Medium,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * 桌面队列行：悬停时序号位置换成拖拽把手，按住把手上下拖动即可**自由换位**。
- *
- * 与队列弹层（[cp.player.app.ui.component.QueueBottomSheet]）同一套「跨过一行就真移一位」
- * 的算法：`pos` 是本地即时推进的下标，`onMove` 每跨一行发一次 —— 这样拖动过程中
- * 列表是逐格跟手的，松手时无需再补一次最终位置。
- *
- * ⚠️ 不要用闭包里的 [index] 做移动基准：行按 `mediaId` 复用后 index 是旧值，
- * 会出现「拖多远都只换一格」。必须用 `pos` + `rememberUpdatedState`。
- */
-@Composable
-private fun DesktopQueueRow(
-    item: cp.player.core.playback.QueueItem,
-    index: Int,
-    queueSize: Int,
-    isCurrent: Boolean,
-    onPlay: () -> Unit,
-    onMove: (Int, Int) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-    val density = LocalDensity.current
-    val latestMove by rememberUpdatedState(onMove)
-    val latestSize by rememberUpdatedState(queueSize)
-    var dragging by remember { mutableStateOf(false) }
-    var dragAccum by remember { mutableStateOf(0f) }
-    var pos by remember { mutableStateOf(index) }
-    SideEffect { if (!dragging) pos = index }
-
-    val background by animateColorAsState(
-        targetValue = when {
-            isCurrent -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
-            hovered || dragging -> MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.8f)
-            else -> Color.Transparent
-        },
-        animationSpec = CpMotion.effectsFast(),
-        label = "desktopQueueRowBg",
-    )
-
-    Surface(
-        onClick = onPlay,
-        shape = MaterialTheme.shapes.large,
-        color = background,
-        interactionSource = interaction,
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 14.dp, top = 6.dp, bottom = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // 序号 / 拖拽把手共用同一个 24dp 槽位：不悬停时是序号，悬停时换成把手，
-            // 这样既不给每行常驻一根把手（列表会很吵），也不会因为出现把手而让行内容位移。
-            Box(
-                modifier = Modifier
-                    .width(24.dp)
-                    .height(44.dp)
-                    .pointerInput(Unit) {
-                        detectDragGestures(
-                            onDragStart = {
-                                dragAccum = 0f
-                                dragging = true
-                            },
-                            onDrag = { change, dragAmount ->
-                                change.consume()
-                                dragAccum += dragAmount.y
-                                // 一行 = 封面 44 + 上下内边距 12 + 行距 6 ≈ 62dp。
-                                val threshold = with(density) { 62.dp.toPx() }
-                                while (dragAccum > threshold) {
-                                    val target = pos + 1
-                                    if (target >= latestSize) {
-                                        dragAccum = 0f
-                                        break
-                                    }
-                                    latestMove(pos, target)
-                                    pos = target
-                                    dragAccum -= threshold
-                                }
-                                while (dragAccum < -threshold) {
-                                    val target = pos - 1
-                                    if (target < 0) {
-                                        dragAccum = 0f
-                                        break
-                                    }
-                                    latestMove(pos, target)
-                                    pos = target
-                                    dragAccum += threshold
-                                }
-                            },
-                            onDragEnd = {
-                                dragAccum = 0f
-                                dragging = false
-                            },
-                            onDragCancel = {
-                                dragAccum = 0f
-                                dragging = false
-                            },
-                        )
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                when {
-                    hovered || dragging -> Icon(
-                        Icons.Filled.DragIndicator,
-                        contentDescription = "拖动排序",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    isCurrent -> Icon(
-                        Icons.Filled.GraphicEq,
-                        contentDescription = "正在播放",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    else -> Text(
-                        "${index + 1}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            Spacer(Modifier.width(4.dp))
-            Artwork(
-                item.coverUrl,
-                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)),
-            )
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                CpText(
-                    item.title,
-                    maxLines = 1,
-                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
-                    color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                )
-                CpText(
-                    item.artist,
-                    maxLines = 1,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun Artwork(url: String?, modifier: Modifier) {
+internal fun Artwork(url: String?, modifier: Modifier) {
     if (!url.isNullOrBlank()) {
         AsyncImage(model = url.resized(900), contentDescription = null, modifier = modifier, contentScale = ContentScale.Crop)
     } else {

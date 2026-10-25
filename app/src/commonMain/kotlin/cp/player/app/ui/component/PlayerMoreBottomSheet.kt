@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.AccessAlarm
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.GraphicEq
@@ -95,19 +96,74 @@ fun PlayerMoreBottomSheet(
     qualityLevel: String = "",
     onSelectQuality: (String) -> Unit = {},
 ) {
-    val s = cpStrings()
     LegacyModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            // 可滚动：加入「音质」卡片后这一屏在 640dp 级的手机上会顶到窗口底，
-            // 而 ModalBottomSheet 不会自己给内容套滚动 —— 不加就是**底部被裁掉**，
-            // 用户看不到最后那张详情卡，也不知道下面还有东西。
-            Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
+        PlayerMoreContent(
+            track = track,
+            isDownloaded = isDownloaded,
+            formatInfo = formatInfo,
+            lyricsInfo = lyricsInfo,
+            sleepAfterTrack = sleepAfterTrack,
+            sleepTimerRemainingMs = sleepTimerRemainingMs,
+            onDismiss = onDismiss,
+            onOpenSimilar = onOpenSimilar,
+            onAddToPlaylist = onAddToPlaylist,
+            onDownload = onDownload,
+            onSleepTimer = onSleepTimer,
+            onShare = onShare,
+            onShowInfo = onShowInfo,
+            onDislike = onDislike,
+            onListenTogether = onListenTogether,
+            onHandoff = onHandoff,
+            onLyricOffset = onLyricOffset,
+            qualityLevel = qualityLevel,
+            onSelectQuality = onSelectQuality,
+            onClose = onDismiss,
+        )
+    }
+}
+
+/**
+ * 「更多」操作面板内容本体。
+ *
+ * 既供移动端 [PlayerMoreBottomSheet] 作为底部抽屉承载，
+ * 又供桌面端作为悬浮双栏面板使用。
+ */
+@Composable
+fun PlayerMoreContent(
+    track: TrackSummary,
+    isDownloaded: Boolean,
+    formatInfo: AudioFormatInfo?,
+    lyricsInfo: LyricsInfo?,
+    sleepAfterTrack: Boolean,
+    sleepTimerRemainingMs: Long?,
+    onDismiss: () -> Unit,
+    onOpenSimilar: () -> Unit,
+    onAddToPlaylist: () -> Unit,
+    onDownload: () -> Unit,
+    onSleepTimer: () -> Unit,
+    onShare: () -> Unit,
+    onShowInfo: () -> Unit,
+    onDislike: () -> Unit,
+    onListenTogether: () -> Unit,
+    onHandoff: () -> Unit,
+    onLyricOffset: () -> Unit = {},
+    qualityLevel: String = "",
+    onSelectQuality: (String) -> Unit = {},
+    onClose: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    val s = cpStrings()
+    Column(
+        // 可滚动：加入「音质」卡片后这一屏在 640dp 级的手机上会顶到窗口底，
+        // 而 ModalBottomSheet 不会自己给内容套滚动 —— 不加就是**底部被裁掉**，
+        // 用户看不到最后那张详情卡，也不知道下面还有东西。
+        modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
             // PixelPlayer 风格顶部歌曲卡片：大圆角封面 + 歌名/艺术家 + 右侧圆形分享胶囊
             Row(
                 Modifier.fillMaxWidth(),
@@ -165,6 +221,22 @@ fun PlayerMoreBottomSheet(
                             tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(20.dp),
                         )
+                    }
+                }
+                if (onClose != null) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.8f),
+                        modifier = Modifier.size(44.dp).clickable { onClose() },
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "关闭",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -400,7 +472,6 @@ fun PlayerMoreBottomSheet(
             }
         }
     }
-}
 
 @Composable
 private fun DetailChip(

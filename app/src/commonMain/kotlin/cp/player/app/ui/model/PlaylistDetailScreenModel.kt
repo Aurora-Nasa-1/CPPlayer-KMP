@@ -35,6 +35,7 @@ data class PlaylistDetailUiState(
     val selectionMode: Boolean = false,
     val selectedIds: Set<String> = emptySet(),
     val likedIds: Set<String> = emptySet(),
+    val isFavorite: Boolean = false,
 )
 
 /**
@@ -139,6 +140,7 @@ class PlaylistDetailScreenModel : ScreenModel {
             _state.value = PlaylistDetailUiState(summary = summary)
         }
         loadLiked()
+        checkSubscribed(summary.id)
         screenModelScope.launch {
             val results = withContext(Dispatchers.IO) {
                 runCatching {
@@ -237,6 +239,7 @@ class PlaylistDetailScreenModel : ScreenModel {
             nextOffset = distinct.size,
         )
         loadLiked()
+        checkSubscribed(summary.id)
     }
 
     /** 加载下一页曲目（追加、按 id 去重保序）。 */
@@ -571,5 +574,35 @@ class PlaylistDetailScreenModel : ScreenModel {
     }
 
     fun isLiked(trackId: String): Boolean = _state.value.likedIds.contains(trackId)
+
+    /** 检查当前歌单是否已被当前用户收藏（订阅）。 */
+    private fun checkSubscribed(playlistId: Long) {
+        if (playlistId <= 0) return
+        screenModelScope.launch {
+            val userPlaylists = runCatching { AppModel.musicRepository.getCurrentUserPlaylists() }.getOrNull()
+            if (userPlaylists is BackendResult.Success && fetchingPlaylistId == playlistId) {
+                val favorited = userPlaylists.data.any { it.id == playlistId }
+                _state.update { it.copy(isFavorite = favorited) }
+            }
+        }
+    }
+
+    /** 切换歌单收藏（订阅）状态。 */
+    fun togglePlaylistFavorite() {
+        val current = _state.value.isFavorite
+        val target = !current
+        val playlistId = _state.value.summary?.id ?: return
+        screenModelScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching { AppModel.musicRepository.subscribePlaylist(playlistId, target) }.getOrDefault(false)
+            }
+            if (ok) {
+                _state.update { it.copy(isFavorite = target) }
+                UiEvents.notify(if (target) "已收藏歌单" else "已取消收藏")
+            } else {
+                UiEvents.notify("操作失败")
+            }
+        }
+    }
 
 }

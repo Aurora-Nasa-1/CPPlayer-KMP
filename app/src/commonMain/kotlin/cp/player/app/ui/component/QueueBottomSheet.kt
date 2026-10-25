@@ -90,6 +90,38 @@ fun QueueBottomSheet(
 ) {
     // 统一走 LegacyModalBottomSheet 外壳（形状 / 拖拽手柄 / 容器色与其他弹层一致），
     // 列表型弹层跳过半展开档位。
+    LegacyModalBottomSheet(onDismissRequest = onClose, skipPartiallyExpanded = true) {
+        QueueContent(
+            queue = queue,
+            currentIndex = currentIndex,
+            onPlayAt = onPlayAt,
+            onRemove = onRemove,
+            onMove = onMove,
+            onClear = onClear,
+            onClose = onClose,
+            onOpenSimilar = onOpenSimilar,
+        )
+    }
+}
+
+/**
+ * 播放队列内容本体：提供可复用的列表、搜索、定位与清空交互。
+ *
+ * 在移动端由 [QueueBottomSheet] 作为底部抽屉承载；
+ * 在桌面宽屏播放页中作为悬浮在歌词上方的浮动双栏面板承载。
+ */
+@Composable
+fun QueueContent(
+    queue: List<QueueItem>,
+    currentIndex: Int,
+    onPlayAt: (Int) -> Unit,
+    onRemove: (Int) -> Unit,
+    onMove: (Int, Int) -> Unit,
+    onClear: () -> Unit,
+    onClose: (() -> Unit)? = null,
+    onOpenSimilar: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var showSaveSheet by remember { mutableStateOf(false) }
@@ -112,30 +144,28 @@ fun QueueBottomSheet(
         }
     }
 
-    LegacyModalBottomSheet(onDismissRequest = onClose, skipPartiallyExpanded = true) {
-        Box(Modifier.fillMaxWidth()) {
-            Column(Modifier.fillMaxWidth()) {
-                // Header
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            // ⚠️ 此前这里是硬编码的英文 "Next up" —— 中文界面也显示英文，
-                            // 属于漏译（不是有意的语言自称，那只适用于语言名）。
-                            s.player.queueUpNext,
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(
-                            if (searchQuery.isNotBlank()) "${filteredQueue.size} / ${queue.size}" else s.player.queueCount(queue.size),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+    Box(modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth()) {
+            // Header
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        s.player.queueUpNext,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        if (searchQuery.isNotBlank()) "${filteredQueue.size} / ${queue.size}" else s.player.queueCount(queue.size),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     if (queue.isNotEmpty()) {
                         IconButton(
                             onClick = {
@@ -150,193 +180,202 @@ fun QueueBottomSheet(
                             )
                         }
                     }
-                }
-
-                if (isSearchActive) {
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp),
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
+                    if (onClose != null) {
+                        IconButton(onClick = onClose) {
                             Icon(
-                                imageVector = androidx.compose.material.icons.Icons.Filled.Search,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp),
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "关闭",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            Spacer(Modifier.width(8.dp))
-                            androidx.compose.foundation.text.BasicTextField(
-                                value = searchQuery,
-                                onValueChange = { searchQuery = it },
-                                modifier = Modifier.weight(1f),
-                                textStyle = MaterialTheme.typography.bodyMedium.copy(
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                ),
-                                singleLine = true,
-                                cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
-                                decorationBox = { innerTextField ->
-                                    if (searchQuery.isEmpty()) {
-                                        Text(
-                                            text = s.player.searchQueue,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                        )
-                                    }
-                                    innerTextField()
-                                },
-                            )
-                            if (searchQuery.isNotEmpty()) {
-                                IconButton(
-                                    onClick = { searchQuery = "" },
-                                    modifier = Modifier.size(24.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Close,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                }
-                            }
                         }
                     }
                 }
+            }
 
-                Spacer(Modifier.height(8.dp))
-
-                LazyScrollColumn(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    state = listState,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    itemsIndexed(filteredQueue, key = { _, (_, it) -> it.mediaId }) { _, (originalIndex, item) ->
-                        val isCurrent = originalIndex == currentIndex
-                        QueueRow(
-                            item = item,
-                            isCurrent = isCurrent,
-                            index = originalIndex,
-                            queueSize = queue.size,
-                            onPlay = { onPlayAt(originalIndex) },
-                            onRemove = { onRemove(originalIndex) },
-                            onMove = onMove,
-                            // 桌面端右键菜单：动作与行内 More 菜单一致并补一个分享入口。
-                            contextMenu = buildList {
-                                add(CpContextMenuItem(s.player.play, Icons.Filled.PlayArrow, onClick = { onPlayAt(originalIndex) }))
-                                add(
-                                    CpContextMenuItem(
-                                        s.player.removeFromQueue,
-                                        Icons.Filled.Close,
-                                        onClick = { onRemove(originalIndex) },
-                                        danger = true,
-                                    ),
-                                )
-                                add(CpContextMenuItem(s.player.share, Icons.Filled.Share, onClick = {
-                                    val rid = runCatching { CPMediaId.parse(item.mediaId).resourceId }.getOrDefault(item.mediaId)
-                                    shareText("「${item.title}」 https://music.163.com/#/song?id=$rid")
-                                }))
-                            },
-                            // 拖拽重排 / 移除时的位移与淡出。队列是全应用唯一能真正改变
-                            // 顺序的列表，没有这层动画的话每次重排都是一次「集体瞬移」。
-                            modifier = Modifier.animateItem(),
-                        )
-                    }
-
-                    if (onOpenSimilar != null) {
-                        item {
-                            androidx.compose.material3.Surface(
-                                onClick = onOpenSimilar,
-                                shape = MaterialTheme.shapes.large,
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                            ) {
-                                Row(
-                                    Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                ) {
-                                    Icon(
-                                        Icons.Filled.AutoAwesome,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                    Column(Modifier.weight(1f)) {
-                                        Text(
-                                            "探索相似歌曲",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.SemiBold,
-                                        )
-                                        Text(
-                                            "基于当前播放队列与在播曲目探索更多",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                    Icon(
-                                        Icons.AutoMirrored.Filled.ArrowForwardIos,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(14.dp),
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // 底部工具行：居中浮动胶囊条，与播放页视觉语言统一
-                Box(
+            if (isSearchActive) {
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    contentAlignment = Alignment.Center,
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ) {
-                    CpFloatingToolbar {
-                        IconButton(
-                            onClick = {
-                                scope.launch {
-                                    if (currentIndex in queue.indices) listState.animateScrollToItem(currentIndex)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = androidx.compose.material.icons.Icons.Filled.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        androidx.compose.foundation.text.BasicTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            modifier = Modifier.weight(1f),
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                color = MaterialTheme.colorScheme.onSurface,
+                            ),
+                            singleLine = true,
+                            cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                            decorationBox = { innerTextField ->
+                                if (searchQuery.isEmpty()) {
+                                    Text(
+                                        text = s.player.searchQueue,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    )
                                 }
+                                innerTextField()
                             },
-                        ) {
-                            Icon(
-                                Icons.Filled.LocationSearching,
-                                contentDescription = s.player.locateCurrent,
-                                tint = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                        IconButton(onClick = { showSaveSheet = true }) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.PlaylistAdd,
-                                contentDescription = s.player.saveAsPlaylist,
-                                tint = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                        IconButton(
-                            onClick = {
-                                if (queue.isEmpty()) return@IconButton
-                                confirm.request(
-                                    title = s.player.queueClearTitle,
-                                    message = s.player.queueClearMessage(queue.size),
-                                    confirmLabel = s.player.clearQueue,
-                                    onConfirm = onClear,
+                        )
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(
+                                onClick = { searchQuery = "" },
+                                modifier = Modifier.size(24.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Close,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp),
                                 )
-                            },
-                            enabled = queue.isNotEmpty(),
-                        ) {
-                            Icon(
-                                Icons.Filled.DeleteSweep,
-                                contentDescription = s.player.clearQueue,
-                                tint = if (queue.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                            )
+                            }
                         }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            LazyScrollColumn(
+                Modifier.fillMaxWidth().weight(1f, fill = false).padding(horizontal = 16.dp),
+                state = listState,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                itemsIndexed(filteredQueue, key = { _, (_, it) -> it.mediaId }) { _, (originalIndex, item) ->
+                    val isCurrent = originalIndex == currentIndex
+                    QueueRow(
+                        item = item,
+                        isCurrent = isCurrent,
+                        index = originalIndex,
+                        queueSize = queue.size,
+                        onPlay = { onPlayAt(originalIndex) },
+                        onRemove = { onRemove(originalIndex) },
+                        onMove = onMove,
+                        // 桌面端右键菜单：动作与行内 More 菜单一致并补一个分享入口。
+                        contextMenu = buildList {
+                            add(CpContextMenuItem(s.player.play, Icons.Filled.PlayArrow, onClick = { onPlayAt(originalIndex) }))
+                            add(
+                                CpContextMenuItem(
+                                    s.player.removeFromQueue,
+                                    Icons.Filled.Close,
+                                    onClick = { onRemove(originalIndex) },
+                                    danger = true,
+                                ),
+                            )
+                            add(CpContextMenuItem(s.player.share, Icons.Filled.Share, onClick = {
+                                val rid = runCatching { CPMediaId.parse(item.mediaId).resourceId }.getOrDefault(item.mediaId)
+                                shareText("「${item.title}」 https://music.163.com/#/song?id=$rid")
+                            }))
+                        },
+                        // 拖拽重排 / 移除时的位移与淡出。队列是全应用唯一能真正改变
+                        // 顺序的列表，没有这层动画的话每次重排都是一次「集体瞬移」。
+                        modifier = Modifier.animateItem(),
+                    )
+                }
+
+                if (onOpenSimilar != null) {
+                    item {
+                        androidx.compose.material3.Surface(
+                            onClick = onOpenSimilar,
+                            shape = MaterialTheme.shapes.large,
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        ) {
+                            Row(
+                                Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                Icon(
+                                    Icons.Filled.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        "探索相似歌曲",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Text(
+                                        "基于当前播放队列与在播曲目探索更多",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Icon(
+                                    Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 底部工具行：居中浮动胶囊条，与播放页视觉语言统一
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                CpFloatingToolbar {
+                    IconButton(
+                        onClick = {
+                            scope.launch {
+                                if (currentIndex in queue.indices) listState.animateScrollToItem(currentIndex)
+                            }
+                        },
+                    ) {
+                        Icon(
+                            Icons.Filled.LocationSearching,
+                            contentDescription = s.player.locateCurrent,
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                    IconButton(onClick = { showSaveSheet = true }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.PlaylistAdd,
+                            contentDescription = s.player.saveAsPlaylist,
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            if (queue.isEmpty()) return@IconButton
+                            confirm.request(
+                                title = s.player.queueClearTitle,
+                                message = s.player.queueClearMessage(queue.size),
+                                confirmLabel = s.player.clearQueue,
+                                onConfirm = onClear,
+                            )
+                        },
+                        enabled = queue.isNotEmpty(),
+                    ) {
+                        Icon(
+                            Icons.Filled.DeleteSweep,
+                            contentDescription = s.player.clearQueue,
+                            tint = if (queue.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                        )
                     }
                 }
             }

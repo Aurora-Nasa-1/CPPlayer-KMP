@@ -59,6 +59,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -168,9 +169,10 @@ fun SharedTransitionScope.MiniPlayer(
             // 留白会自动跟着变，不会出现「条把列表最后一行压住」。
             ListenTogetherStrip()
 
+            val isFavorite by AppModel.currentFavoriteFlow.collectAsState()
+            val qualityLevel by AppModel.playbackQualityFlow.collectAsState()
+
             if (desktop) {
-                val isFavorite by AppModel.currentFavoriteFlow.collectAsState()
-                val qualityLevel by AppModel.playbackQualityFlow.collectAsState()
                 MiniPlayerDesktopBar(
                     state = state,
                     isFavorite = isFavorite,
@@ -195,9 +197,8 @@ fun SharedTransitionScope.MiniPlayer(
                             titleStyle = MaterialTheme.typography.titleSmall,
                             secondLineStyle = MaterialTheme.typography.bodySmall,
                             animatedVisibilityScope = animatedVisibilityScope,
-                            // 桌面底栏第二行用「悬停浮出」而不是跑马灯：一屏同时跑两条
-                            // 滚动文字太吵，而桌面上指针本来就在（见 CpTextReveal）。
-                            secondLineEmphasized = false,
+                            // 桌面底栏过长歌词允许跑马灯（与手机端一致响应用户诉求）
+                            secondLineEmphasized = true,
                         )
                     },
                     onTogglePlay = onTogglePlay,
@@ -228,42 +229,67 @@ fun SharedTransitionScope.MiniPlayer(
                         size = 48.dp,
                         contentScale = ContentScale.Crop,
                     )
-                    Box(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                        MiniTrackInfo(
+                    BoxWithConstraints(
+                        Modifier.weight(1f).padding(horizontal = 8.dp),
+                    ) {
+                        val stableWidth = rememberStableTrackInfoWidth(
                             track = track,
-                            isPlaying = state.isPlaying,
-                            lyricText = currentLyricLine(state),
+                            lyrics = state.lyrics,
+                            maxLimit = maxWidth,
                             titleStyle = MaterialTheme.typography.titleSmall,
-                            secondLineStyle = MaterialTheme.typography.bodySmall,
-                            animatedVisibilityScope = animatedVisibilityScope,
-                            // 手机上两条都跑（与治理前一致）：没有悬停，且底栏是唯一的
-                            // 「现在在放什么」，跑马灯是唯一能读全的途径。
-                            secondLineEmphasized = true,
-                            // 手机上第二行有歌词时用主色（「正在唱这句」），没有歌词时是歌手名。
-                            lyricHighlight = true,
+                            lyricStyle = MaterialTheme.typography.bodySmall,
                         )
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(Modifier.widthIn(max = stableWidth)) {
+                                MiniTrackInfo(
+                                    track = track,
+                                    isPlaying = state.isPlaying,
+                                    lyricText = currentLyricLine(state),
+                                    titleStyle = MaterialTheme.typography.titleSmall,
+                                    secondLineStyle = MaterialTheme.typography.bodySmall,
+                                    animatedVisibilityScope = animatedVisibilityScope,
+                                    secondLineEmphasized = true,
+                                    lyricHighlight = true,
+                                )
+                            }
+                            Spacer(Modifier.weight(1f))
+                        }
                     }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        MiniBarIconButton(
+                            icon = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                            contentDescription = if (isFavorite) s.player.unlike else s.player.like,
+                            onClick = { AppModel.toggleFavoriteOf(track.id) },
+                            active = isFavorite,
+                            size = 36.dp,
+                            iconSize = 20.dp,
+                        )
                         MiniBarIconButton(
                             icon = Icons.Filled.SkipPrevious,
                             contentDescription = s.player.previousTrack,
                             onClick = onSkipPrev,
-                            size = 40.dp,
-                            iconSize = 24.dp,
+                            size = 36.dp,
+                            iconSize = 22.dp,
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
                         CpPlayPauseButton(
                             isPlaying = state.isPlaying,
                             onClick = onTogglePlay,
-                            size = 40.dp,
+                            size = 38.dp,
                             isLoading = state.isBuffering,
                         )
                         MiniBarIconButton(
                             icon = Icons.Filled.SkipNext,
                             contentDescription = s.player.nextTrack,
                             onClick = onSkipNext,
-                            size = 40.dp,
-                            iconSize = 24.dp,
+                            size = 36.dp,
+                            iconSize = 22.dp,
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
                     }
@@ -404,19 +430,40 @@ internal fun MiniPlayerDesktopBar(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // ── 左区：封面 + 曲目信息（限宽）+ 喜欢 ──
+            // ── 左区：封面 + 曲目信息（80% 稳态限宽）+ 右对齐固定位置的收藏按钮 ──
             //
-            // 文字块的宽度**算出来**而不是靠 weight 抢：weight + fillMaxWidth 会把本区
-            // 剩余宽度吃干，后面的「喜欢」就被挤出本区（720dp 下实测把心形顶到走带下面）。
-            // 这里显式减掉封面 / 间距 / 心形，再夹到 [MINI_INFO_MAX_WIDTH]：
-            // 短歌名不会让心形跳位（块宽固定），长歌名也不会把心形推出去（绝不超算）。
+            // 收藏（喜欢）按钮通过 Spacer(weight(1f)) 右对齐锚定在左区最右侧，
+            // 永久固定不动（不随单句歌词或歌名长短发生哪怕 1 像素位移）；
+            // 文本区域最大宽度由 [rememberStableTrackInfoWidth] 计算出的稳态宽度控制：
+            // - 未显示歌词：完整显示作者与歌名，不截断；
+            // - 有歌词：按标题与全部歌词的 80% 分位数定宽，极端长歌词平滑滚动。
             BoxWithConstraints(Modifier.weight(1f)) {
-                val textWidth = (maxWidth - 48.dp - 12.dp - 32.dp)
+                val maxTextWidth = (maxWidth - 48.dp - 12.dp - 16.dp - MiniBarButtonSize)
                     .coerceAtLeast(0.dp)
                     .coerceAtMost(MINI_INFO_MAX_WIDTH)
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                val track = state.currentTrack
+                val stableWidth = if (track != null) {
+                    rememberStableTrackInfoWidth(
+                        track = track,
+                        lyrics = state.lyrics,
+                        maxLimit = maxTextWidth,
+                        titleStyle = MaterialTheme.typography.titleSmall,
+                        lyricStyle = MaterialTheme.typography.bodySmall,
+                    )
+                } else maxTextWidth
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     cover()
-                    Box(Modifier.padding(start = 12.dp).width(textWidth)) { info() }
+                    Box(
+                        modifier = Modifier
+                            .padding(start = 12.dp)
+                            .widthIn(max = stableWidth),
+                    ) {
+                        info()
+                    }
+                    Spacer(Modifier.weight(1f))
                     MiniBarIconButton(
                         icon = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                         contentDescription = if (isFavorite) s.player.unlike else s.player.like,
@@ -782,7 +829,7 @@ private fun SharedTransitionScope.MiniTrackInfo(
     lyricHighlight: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.Center) {
+    Column(modifier, verticalArrangement = Arrangement.Center) {
         CpText(
             text = track.name,
             style = titleStyle,
@@ -812,5 +859,64 @@ private fun SharedTransitionScope.MiniTrackInfo(
                 animatedVisibilityScope = animatedVisibilityScope,
             )
         )
+    }
+}
+
+/**
+ * 稳态曲目信息宽度计算器。
+ *
+ * 为保证底栏「收藏」按钮与各控制按钮位置绝对稳定、不随当前播放到的单句歌词长短而抖动，
+ * 此处对当前曲目的整套文本环境进行稳态宽度测算：
+ *
+ * 1. 未显示歌词（无歌词 / 纯音乐 / 加载中 / 歌词行全空）：
+ *    宽度完整容下标题与作者：max(measure(title), measure(artist))。
+ * 2. 有歌词状态：
+ *    遍历整首歌所有有效歌词行，取第 80 百分位长度（P80），并与标题宽度取 max：
+ *    max(measure(title), lyricP80Width)。
+ *    - 80% 的歌词行小于等于此长度，静态靠左清晰呈现，不触发滚动；
+ *    - 超过此长度的极端长歌词行在当前宽度限制下触发跑马灯平滑滚动；
+ *    - 无论播放到哪一句，计算出的宽度在单曲生命周期内完全恒定，保证外部容器稳定不动。
+ */
+@Composable
+internal fun rememberStableTrackInfoWidth(
+    track: TrackSummary,
+    lyrics: LyricsState,
+    maxLimit: Dp,
+    titleStyle: TextStyle,
+    lyricStyle: TextStyle,
+    minLimit: Dp = 60.dp,
+): Dp {
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+
+    return remember(track.id, lyrics, maxLimit, titleStyle, lyricStyle) {
+        with(density) {
+            val titleWidth = textMeasurer.measure(track.name, titleStyle).size.width.toDp()
+
+            val success = lyrics as? LyricsState.Success
+            val validLines = success?.lines?.mapNotNull { line ->
+                val text = line.text.trim().ifEmpty { line.translation?.trim().orEmpty() }
+                text.ifBlank { null }
+            }.orEmpty()
+
+            val effectiveMax = maxLimit.coerceAtLeast(0.dp)
+            val effectiveMin = minLimit.coerceAtMost(effectiveMax)
+
+            if (validLines.isEmpty()) {
+                // 状态一：未显示歌词，完整显示作者/标题
+                val artistWidth = textMeasurer.measure(track.artist, lyricStyle).size.width.toDp()
+                maxOf(titleWidth, artistWidth).coerceIn(effectiveMin, effectiveMax)
+            } else {
+                // 状态二：有歌词，计算全部歌词大约平均的 80% 长度（第 80 百分位数）
+                val sortedLyricWidths = validLines
+                    .map { text -> textMeasurer.measure(text, lyricStyle).size.width.toDp() }
+                    .sorted()
+
+                val p80Index = ((sortedLyricWidths.size - 1) * 0.8f).roundToInt()
+                val lyricP80Width = sortedLyricWidths.getOrElse(p80Index) { 0.dp }
+
+                maxOf(titleWidth, lyricP80Width).coerceIn(effectiveMin, effectiveMax)
+            }
+        }
     }
 }
