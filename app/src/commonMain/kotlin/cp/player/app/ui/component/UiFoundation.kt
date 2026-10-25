@@ -25,6 +25,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
+import androidx.compose.material3.adaptive.WindowAdaptiveInfo
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
+import androidx.window.core.layout.WindowWidthSizeClass
+import androidx.window.core.layout.WindowHeightSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -39,6 +44,10 @@ import androidx.compose.ui.unit.dp
 
 /** 当前窗口是否处于 Expanded 宽度（≥840dp），由 [ProvideIsExpanded] 在根 Navigator 之上提供。 */
 val LocalIsExpanded = staticCompositionLocalOf { false }
+
+/** 基于 Compose Material 3 Adaptive 的窗口自适应信息，包含 WindowSizeClass 与设备铰链姿态。 */
+@OptIn(ExperimentalMaterial3AdaptiveApi::class)
+val LocalWindowAdaptiveInfo = staticCompositionLocalOf<WindowAdaptiveInfo?> { null }
 
 /**
  * 当前组合是否正被渲染成**双栏布局的详情栏**（右栏）。
@@ -62,11 +71,16 @@ val LocalEmbeddedInPane = staticCompositionLocalOf { false }
  * ⚠️ 这**不能**替代"路由页自己判宽屏"：宽度可能因为内嵌面板、`BoxWithConstraints`
  * 局部约束而与窗口不同，需要按自身可用宽度决策的页面仍应自己读 `maxWidth`。
  */
+@OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
 fun ProvideIsExpanded(content: @Composable () -> Unit) {
+    val adaptiveInfo = currentWindowAdaptiveInfo()
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val expanded = CpBreakpoints.isExpanded(maxWidth)
-        CompositionLocalProvider(LocalIsExpanded provides expanded) {
+        CompositionLocalProvider(
+            LocalIsExpanded provides expanded,
+            LocalWindowAdaptiveInfo provides adaptiveInfo,
+        ) {
             content()
         }
     }
@@ -208,6 +222,11 @@ object CpBreakpoints {
 
     /** 是否进入「桌面式」双栏布局。取代原先内联的 `maxWidth >= 840.dp`。 */
     fun isExpanded(width: Dp): Boolean = width >= medium
+
+    /** 基于 M3 Adaptive 的标准判定：宽度达到 EXPANDED 断点时进入桌面宽屏/双栏模式。 */
+    @OptIn(ExperimentalMaterial3AdaptiveApi::class)
+    fun isExpanded(info: WindowAdaptiveInfo?): Boolean =
+        info?.windowSizeClass?.isWidthAtLeastBreakpoint(androidx.window.core.layout.WindowSizeClass.WIDTH_DP_EXPANDED_LOWER_BOUND) == true
 
     enum class Level { COMPACT, MEDIUM, EXPANDED }
 
