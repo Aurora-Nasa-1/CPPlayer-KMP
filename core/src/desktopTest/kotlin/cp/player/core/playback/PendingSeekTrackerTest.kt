@@ -248,4 +248,59 @@ class PendingSeekTrackerTest {
             "放弃后必须交还引擎真实位置，绝不能把乐观值永久挂着（否则进度条冻结）",
         )
     }
+
+    // ============ 6. 发起方：起始位置失败不许报成「用户拖动失败」 ============
+
+    /**
+     * 最典型的误报现场：**启动恢复上次进度**。
+     *
+     * 恢复出来的 3:42 是随 `load(startPositionMs = …)` 一起下发的，用户一次都没拖过；
+     * 可无损流在落盘完成前根本定位不了 ⇒ 宽限期过后 GaveUp ⇒
+     * 旧行为让 `MainScreen` 弹「无法定位到 3:42，该音源可能不支持拖动进度」。
+     * 用户看到这条只会以为音源坏了，而进度条旁边其实还写着「正在缓存无损音质…」。
+     *
+     * 所以发起方必须随 GaveUp 一起透出来，让平台层决定**不出声**。
+     */
+    @Test
+    fun `a start-position seek that gives up is tagged as start-position`() {
+        val engine = FakeEngine(initialPositionMs = 0L)
+        val clock = TestClock()
+        val tracker = trackerOf(engine, clock)
+
+        // 引擎始终不接受这次定位（rodio 对 FLAC over HTTP 就是静默空操作）。
+        tracker.request(222_000L, engineReady = true, origin = SeekOrigin.START_POSITION)
+        engine.positionMs = 400L // 已经开始播放，位置离开基线
+
+        val gaveUp = (0 until 20).map {
+            clock.advance(200)
+            tracker.tick(engine.positionMs, engineReady = true, engineLoading = false)
+        }.filterIsInstance<PendingSeekTracker.Tick.GaveUp>().firstOrNull()
+
+        assertEquals(
+            SeekOrigin.START_POSITION,
+            gaveUp?.origin,
+            "起始位置失败必须带上 START_POSITION，平台层才会保持静默（否则就是启动即弹「该音源不支持拖动进度」）",
+        )
+    }
+
+    @Test
+    fun `a user seek defaults to the user origin`() {
+        val engine = FakeEngine(initialPositionMs = 0L)
+        val clock = TestClock()
+        val tracker = trackerOf(engine, clock)
+
+        tracker.request(90_000L, engineReady = true)
+        engine.positionMs = 400L
+
+        val gaveUp = (0 until 20).map {
+            clock.advance(200)
+            tracker.tick(engine.positionMs, engineReady = true, engineLoading = false)
+        }.filterIsInstance<PendingSeekTracker.Tick.GaveUp>().firstOrNull()
+
+        assertEquals(
+            SeekOrigin.USER,
+            gaveUp?.origin,
+            "用户拖动失败仍然必须提示 —— 静默失效正是「拖了没反应」的老毛病",
+        )
+    }
 }

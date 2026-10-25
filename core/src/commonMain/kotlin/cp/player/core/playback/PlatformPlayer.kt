@@ -207,7 +207,16 @@ class AudioPlayerImpl : PlatformPlayer {
     init {
         player.setOnErrorListener(object : io.github.kdroidfilter.composemediaplayer.audio.ErrorListener {
             override fun onError(message: String?) {
-                _state.value = PlatformPlaybackState.Error(message ?: "Unknown Error")
+                val msg = message ?: "Unknown Error"
+                if (msg.contains("seek", ignoreCase = true)) {
+                    // 起始位置（恢复上次进度 / 切本地副本的目标）落不了地是**我们自己**下的指令，
+                    // 用户没拖过任何东西 ⇒ 不许变成「该音源不支持拖动进度」的提示。见 [SeekOrigin]。
+                    if (pendingSeek.pendingOrigin != SeekOrigin.START_POSITION) {
+                        _seekFailures.tryEmit(SeekFailure(pendingSeek.targetMs ?: _positionMs.value, _positionMs.value))
+                    }
+                    return
+                }
+                _state.value = PlatformPlaybackState.Error(msg)
             }
         })
         startPolling()
@@ -239,7 +248,8 @@ class AudioPlayerImpl : PlatformPlayer {
                 )
                 // 宽限期过完仍没追上 ⇒ 上报失败，让 UI 能提示用户，
                 // 而不是让进度条静默弹回原位（那正是「拖了没反应」的观感）。
-                if (tick is PendingSeekTracker.Tick.GaveUp) {
+                // ⚠️ 只有**用户发起**的那次才上报：起始位置（恢复上次进度）失败是误报 —— 见 [SeekOrigin]。
+                if (tick is PendingSeekTracker.Tick.GaveUp && tick.origin == SeekOrigin.USER) {
                     _seekFailures.tryEmit(SeekFailure(tick.targetMs, tick.actualMs))
                 }
                 _positionMs.value = pendingSeek.displayMs() ?: pos
@@ -291,7 +301,10 @@ class AudioPlayerImpl : PlatformPlayer {
             // 若不接管，进度条会先显示 0 再跳到目标。
             // 刚发起 load()，rodio 的 player 还没建好 ⇒ engineReady = false，
             // 这次下发多半是空操作，由轮询在引擎就绪后补发。
-            pendingSeek.request(startPositionMs, engineReady = false)
+            //
+            // ⚠️ 发起方是 [SeekOrigin.START_POSITION]（不是用户拖动）：这条起始位置在
+            // 「无损流还没落盘」等场景下注定落不了地，失败绝不能弹「该音源不支持拖动进度」。
+            pendingSeek.request(startPositionMs, engineReady = false, origin = SeekOrigin.START_POSITION)
             _positionMs.value = startPositionMs
         }
     }

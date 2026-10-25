@@ -344,7 +344,8 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
                 // 不接管的话进度条会先显示 0 再跳到目标。
                 // 刚 setMediaSource + prepare，media item 虽已设入但还没准备好，
                 // 这里按「未就绪」处理，交给轮询补发更稳。
-                pendingSeek.request(startPositionMs, engineReady = false)
+                // ⚠️ 发起方是 [SeekOrigin.START_POSITION]：恢复上次进度落不了地时不能弹提示。
+                pendingSeek.request(startPositionMs, engineReady = false, origin = SeekOrigin.START_POSITION)
                 _position.value = startPositionMs
             } else {
                 // 从头播放不需要乐观值（目标就是引擎当前位置），直接定位即可。
@@ -492,7 +493,8 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
         )
         // 宽限期过完仍没追上 ⇒ 上报失败，让 UI 能提示用户，
         // 而不是让进度条静默弹回原位（那正是「拖了没反应」的观感）。
-        if (tick is PendingSeekTracker.Tick.GaveUp) {
+        // ⚠️ 只有**用户发起**的那次才上报：起始位置（恢复上次进度）失败是误报 —— 见 [SeekOrigin]。
+        if (tick is PendingSeekTracker.Tick.GaveUp && tick.origin == SeekOrigin.USER) {
             _seekFailures.tryEmit(SeekFailure(tick.targetMs, tick.actualMs))
         }
         _position.value = pendingSeek.displayMs() ?: actual

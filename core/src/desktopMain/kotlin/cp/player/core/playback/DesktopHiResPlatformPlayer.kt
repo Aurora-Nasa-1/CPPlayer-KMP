@@ -60,7 +60,9 @@ class DesktopHiResPlatformPlayer(
     private val seekTracker = PendingSeekTracker(
         enginePositionMs = { lastReportedEnginePositionMs },
         dispatchSeek = { target ->
-            DesktopHiResEngine.seek(target / 1000.0)
+            scope.launch(DesktopHiResEngine.engineDispatcher) {
+                DesktopHiResEngine.seek(target / 1000.0)
+            }
             true
         },
     )
@@ -120,7 +122,10 @@ class DesktopHiResPlatformPlayer(
             is PendingSeekTracker.Tick.Reached -> _positionMs.value = actualPosMs
             is PendingSeekTracker.Tick.GaveUp -> {
                 _positionMs.value = tick.actualMs
-                _seekFailures.tryEmit(SeekFailure(tick.targetMs, tick.actualMs))
+                // 起始位置（恢复上次进度）失败是误报，不打扰用户 —— 见 [SeekOrigin]。
+                if (tick.origin == SeekOrigin.USER) {
+                    _seekFailures.tryEmit(SeekFailure(tick.targetMs, tick.actualMs))
+                }
             }
             PendingSeekTracker.Tick.Idle -> _positionMs.value = actualPosMs
         }
@@ -141,6 +146,14 @@ class DesktopHiResPlatformPlayer(
     }
 
     private fun handleError(message: String) {
+        if (message.contains("seek", ignoreCase = true)) {
+            logger.warning("Desktop Hi-Res seek error (non-fatal): $message")
+            // 起始位置（恢复上次进度）失败是误报，不打扰用户 —— 见 [SeekOrigin]。
+            if (seekTracker.pendingOrigin != SeekOrigin.START_POSITION) {
+                _seekFailures.tryEmit(SeekFailure(seekTracker.targetMs ?: lastReportedEnginePositionMs, lastReportedEnginePositionMs))
+            }
+            return
+        }
         logger.severe("Desktop Hi-Res engine error: $message")
         _state.value = PlatformPlaybackState.Error(message)
     }
@@ -165,7 +178,8 @@ class DesktopHiResPlatformPlayer(
                 println("[CPPlayer Hi-Res Player] FAILED to open audio track: $playablePath")
                 _state.value = PlatformPlaybackState.Error("Failed to open audio track in Desktop Hi-Res engine: $playablePath")
             } else if (startPositionMs > 0L) {
-                DesktopHiResEngine.seek(startPositionMs / 1000.0)
+                // 发起方是 [SeekOrigin.START_POSITION]：恢复上次进度落不了地时不能弹「该音源不支持拖动」。
+                seekTracker.request(startPositionMs, engineReady = false, origin = SeekOrigin.START_POSITION)
             }
         }
     }

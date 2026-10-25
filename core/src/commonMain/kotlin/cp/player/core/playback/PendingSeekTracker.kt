@@ -40,6 +40,16 @@ internal class PendingSeekTracker(
     var targetMs: Long? = null
         private set
 
+    /**
+     * 当前待定 seek 的**发起方**。没有待定 seek 时为 null。
+     *
+     * 它只影响「失败要不要打扰用户」，不影响补发与落定 —— 判定逻辑与发起方无关。
+     * 详见 [SeekOrigin]。
+     */
+    @Volatile
+    var pendingOrigin: SeekOrigin? = null
+        private set
+
     /** 发起 seek 那一刻的引擎位置：判断「引擎有没有动」的基线。 */
     private var fromMs = 0L
 
@@ -62,11 +72,14 @@ internal class PendingSeekTracker(
      *
      * @param engineReady 发起这一刻引擎是否已经就绪。已就绪则本次下发即算数；
      *   未就绪则本次多半是空操作，由 [tick] 在就绪后补发。
+     * @param origin 谁发起的这次 seek。**只有 [SeekOrigin.USER] 的失败才该提示用户** ——
+     *   见 [SeekOrigin] 的说明。
      */
-    fun request(target: Long, engineReady: Boolean) {
+    fun request(target: Long, engineReady: Boolean, origin: SeekOrigin = SeekOrigin.USER) {
         val targetCoerced = target.coerceAtLeast(0L)
         fromMs = enginePositionMs()
         targetMs = targetCoerced
+        pendingOrigin = origin
         val now = clockMs()
         startedAtMs = now
         lastDispatchAtMs = now
@@ -77,6 +90,7 @@ internal class PendingSeekTracker(
     /** 放弃待定 seek（换曲 / stop / release）：残留的目标值会把进度条冻在旧位置。 */
     fun cancel() {
         targetMs = null
+        pendingOrigin = null
     }
 
     /**
@@ -117,11 +131,13 @@ internal class PendingSeekTracker(
 
         val elapsedMs = nowMs - startedAtMs
         if (SeekSettle.isSettled(enginePositionMs, target, fromMs, elapsedMs, engineLoading)) {
+            val origin = pendingOrigin ?: SeekOrigin.USER
             targetMs = null
+            pendingOrigin = null
             return if (kotlin.math.abs(enginePositionMs - target) <= SeekSettle.TOLERANCE_MS) {
                 Tick.Reached
             } else {
-                Tick.GaveUp(targetMs = target, actualMs = enginePositionMs)
+                Tick.GaveUp(targetMs = target, actualMs = enginePositionMs, origin = origin)
             }
         }
 
@@ -163,8 +179,16 @@ internal class PendingSeekTracker(
          *
          * 引擎不支持 seek、或目标落在流媒体无法定位的区间时会出现。
          * 这是**失败信号**，不是静默回弹——调用方应据此决定是否提示用户。
+         *
+         * @param origin 这是谁发起的 seek。**只有 [SeekOrigin.USER] 才该变成提示**：
+         *   装载曲目时随 `load(startPositionMs = …)` 一起下发的起始位置失败时，
+         *   用户根本没有做出任何「拖动」的动作，把它报成「该音源不支持拖动进度」是误报。
          */
-        data class GaveUp(val targetMs: Long, val actualMs: Long) : Tick
+        data class GaveUp(
+            val targetMs: Long,
+            val actualMs: Long,
+            val origin: SeekOrigin = SeekOrigin.USER,
+        ) : Tick
     }
 
     private companion object {
@@ -176,4 +200,36 @@ internal class PendingSeekTracker(
          */
         const val RETRY_INTERVAL_MS = 600L
     }
+}
+
+/**
+ * 一次 seek 是谁发起的 —— 决定**失败要不要打扰用户**。
+ *
+ * ### 为什么需要它（真实事故）
+ * 桌面引擎定位不了 FLAC over HTTP（见 `StreamLocalizer` 的说明），这是已知的、
+ * **由我们自己选择接受**的限制：无损曲在落盘完成前，引擎放的就是不可定位的流。
+ *
+ * 而「保留上次播放」的恢复路径恰好会把这个限制变成一条**误报**：用户上次听到 3:42，
+ * 启动后点播放，`playCurrent` 会把 3:42 当作 `startPositionMs` 交给引擎
+ * → 那个位置根本没法落地 → 宽限期过后
+ * `MainScreen` 弹「无法定位到 3:42，该音源可能不支持拖动进度」。
+ *
+ * 问题是：**用户这一次根本没有拖动过任何东西**。这条提示会让他以为是音源坏了，
+ * 而实际上（a）这是我们自己下的起始位置，(b) 进度条在落盘期间本来就显示
+ * 「正在缓存无损音质，完成后可拖动进度…」——两句话还互相矛盾。
+ *
+ * 所以「起始位置」这一类 seek 失败必须**静默**：进度条回到引擎真实位置即可。
+ * 用户在落盘完成后真的动手拖一次，那次才走 [USER]，失败照常提示。
+ */
+internal enum class SeekOrigin {
+    /** 用户主动发起（拖动进度条 / 快捷键 / 点击歌词跳转）—— 失败必须告诉用户。 */
+    USER,
+
+    /**
+     * 装载曲目时随 `load(startPositionMs = …)` 一起下发的起始位置
+     * （「保留上次播放」恢复的进度、切到本地副本时的目标位置）。
+     *
+     * 失败**不提示**：用户没有做任何动作，提示只会变成误报。
+     */
+    START_POSITION,
 }
