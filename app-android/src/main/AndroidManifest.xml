@@ -172,6 +172,11 @@
           SuperLyric 的 meta-data（`superlyricapi` / 版本号）由它的 AAR 清单自动合并，
           这里不需要重复声明。
         -->
+
+        <!-- 禁用 Sentry 的 ContentProvider 自动初始化，避免因为未配置 DSN 导致应用启动崩溃 -->
+        <meta-data
+            android:name="io.sentry.auto-init"
+            android:value="false" />
     </application>
 
 </manifest>
