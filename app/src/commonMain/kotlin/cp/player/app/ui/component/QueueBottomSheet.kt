@@ -42,7 +42,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -153,13 +152,13 @@ fun QueueContent(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text(
+                    CpText(
                         s.player.queueUpNext,
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
-                    Text(
+                    CpText(
                         if (searchQuery.isNotBlank()) "${filteredQueue.size} / ${queue.size}" else s.player.queueCount(queue.size),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -222,7 +221,7 @@ fun QueueContent(
                             cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
                             decorationBox = { innerTextField ->
                                 if (searchQuery.isEmpty()) {
-                                    Text(
+                                    CpText(
                                         text = s.player.searchQueue,
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
@@ -307,12 +306,12 @@ fun QueueContent(
                                     modifier = Modifier.size(20.dp),
                                 )
                                 Column(Modifier.weight(1f)) {
-                                    Text(
+                                    CpText(
                                         "探索相似歌曲",
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.SemiBold,
                                     )
-                                    Text(
+                                    CpText(
                                         "基于当前播放队列与在播曲目探索更多",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -555,7 +554,7 @@ private fun QueueRow(
                     onDismissRequest = { showMenu = false },
                 ) {
                     androidx.compose.material3.DropdownMenuItem(
-                        text = { Text(s.player.removeFromQueue) },
+                        text = { CpText(s.player.removeFromQueue) },
                         onClick = {
                             showMenu = false
                             onRemove()

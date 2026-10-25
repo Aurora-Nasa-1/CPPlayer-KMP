@@ -16,7 +16,6 @@ import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -79,7 +78,7 @@ fun DevicePickerSheet(
             Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
+            CpText(
                 text = s.standby.pickerTitle,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
@@ -157,7 +156,7 @@ fun DevicePickerSheet(
 
             handoffState?.let { state ->
                 Spacer(Modifier.height(2.dp))
-                Text(
+                CpText(
                     text = state.textOf(s),
                     style = MaterialTheme.typography.bodySmall,
                     // 成败看状态类型而非文案（旧版 `startsWith("转移失败")` 改文案就失配）。
@@ -174,7 +173,7 @@ fun DevicePickerSheet(
 
 @Composable
 private fun SheetHint(text: String) {
-    Text(
+    CpText(
         text = text,
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,

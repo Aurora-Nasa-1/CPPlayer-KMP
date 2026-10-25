@@ -174,8 +174,31 @@ object CpStringsZh : CpStrings {
         override val roundnessDefaultTag = " · 默认"
         override val resetPlatformDefault = "恢复平台默认"
         override val resetPlatformDefaultNote = "清除自定义值，回到当前平台的默认圆滑度"
-        override val roundnessNote = "字体圆滑度改动即时生效，会应用到整个界面的拉丁字符；" +
-            "中文字形来自系统回退字体，不受此设置影响。"
+        override val roundnessNote = "字体圆滑度即时生效，只作用于 Google Sans Flex 的拉丁字符与数字；" +
+            "中文与日文字体（MiSans / Noto Sans JP）没有 ROND 轴，不受此设置影响。"
+    }
+
+    override val fontPacks: FontPackStrings = object : FontPackStrings {
+        override val sectionTitle = "字库"
+        override val intro = "中文与日文由 MiSans / Noto Sans JP 渲染，拉丁字母与数字用 Google Sans Flex。" +
+            "桌面端三款字体随安装包内置；安卓端为控制安装包体积，中日文字体需要按需下载。"
+        override val unsupported = "当前系统版本不支持字体的可变字重（需要 Android 8.0 及以上），" +
+            "中文与日文将继续使用系统字体。"
+        override val japaneseTitle = "Noto Sans JP（日文）"
+        override val japaneseNote = "日文歌词、日文标题的假名与汉字写法"
+        override val misansTitle = "MiSans（中文）"
+        override val misansNote = "中文、全角标点与其余文字，含 300–700 五档字重"
+        override val stateInstalled = "已安装"
+        override val stateMissing = "未下载"
+        override fun stateDownloading(percent: Int) = "下载中 $percent%"
+        override fun stateFailed(reason: String) = "下载失败：$reason"
+        override val actionDownload = "下载"
+        override val actionRetry = "重试"
+        override val actionDelete = "删除"
+        override val deleteConfirm = "删除后中文 / 日文会回到系统字体，可以随时重新下载。"
+        override val cancel = "取消"
+        override val sourceNote = "字体文件从本项目的 GitHub Release 下载，保存在应用私有目录，" +
+            "卸载应用时一并清除。"
     }
 
     override val storage: StorageStrings = object : StorageStrings {

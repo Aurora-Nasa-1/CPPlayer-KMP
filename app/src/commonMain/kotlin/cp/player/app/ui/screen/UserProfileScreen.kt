@@ -17,7 +17,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -279,7 +278,7 @@ private fun UserProfileContent(
                                 onClick = { songsExpanded = !songsExpanded },
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
-                                Text(if (songsExpanded) s.player.collapse else s.account.expandAllSongs(songs.size))
+                                CpText(if (songsExpanded) s.player.collapse else s.account.expandAllSongs(songs.size))
                             }
                         }
                     }
@@ -406,7 +405,7 @@ private fun UserProfileContent(
                 ) {
                     menuItems.forEach { item ->
                         androidx.compose.material3.DropdownMenuItem(
-                            text = { Text(item.label) },
+                            text = { CpText(item.label) },
                             onClick = {
                                 playlistOptionsTarget = null
                                 item.onClick()
@@ -490,7 +489,7 @@ private fun ProfileHero(
             TextButton(onClick = { onOpenChat(bundle.nickname) }) {
                 Icon(Icons.Filled.Email, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text(s.account.sendMessage)
+                CpText(s.account.sendMessage)
             }
         }
     }
@@ -499,12 +498,12 @@ private fun ProfileHero(
 @Composable
 private fun ProfileStat(count: Int, label: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
+        CpText(
             count.toString(),
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold,
         )
-        Text(
+        CpText(
             label,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

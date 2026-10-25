@@ -14,7 +14,6 @@ import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -42,6 +41,7 @@ import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.settingsRowContainer
 import cp.player.core.playback.PlaybackSessionSettings
+import cp.player.app.ui.component.CpText
 
 /**
  * 「音频输出与硬件独占」独立设置页。
@@ -129,7 +129,7 @@ class AudioEngineSettingsScreen : Screen {
                             total = 4,
                             onClick = {},
                             trailingContent = {
-                                Text(
+                                CpText(
                                     text = "已启用",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.primary,
@@ -144,7 +144,7 @@ class AudioEngineSettingsScreen : Screen {
                             total = 4,
                             onClick = {},
                             trailingContent = {
-                                Text(
+                                CpText(
                                     text = "自动自适应",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.primary,
@@ -159,7 +159,7 @@ class AudioEngineSettingsScreen : Screen {
                             total = 4,
                             onClick = {},
                             trailingContent = {
-                                Text(
+                                CpText(
                                     text = "内置支持",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.primary,
@@ -176,7 +176,7 @@ class AudioEngineSettingsScreen : Screen {
                                 navigator?.push(AudioEffectSettingsScreen())
                             },
                             trailingContent = {
-                                Text(
+                                CpText(
                                     text = "前往调节",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.primary,
@@ -204,7 +204,7 @@ class AudioEngineSettingsScreen : Screen {
                                 }
                             },
                             trailingContent = {
-                                Text(
+                                CpText(
                                     text = if (vipInfo.isActivated) "一键启用" else "解锁特权",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.primary,
@@ -224,7 +224,7 @@ class AudioEngineSettingsScreen : Screen {
                             showVipDialog = true
                         },
                         trailingContent = {
-                            Text(
+                            CpText(
                                 text = if (vipInfo.isActivated) "更换卡密" else "激活特权",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary,
@@ -273,14 +273,14 @@ private fun EngineStatusBanner(isFlickEngine: Boolean) {
                 tint = if (isFlickEngine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
             )
             Column(modifier = Modifier.weight(1f)) {
-                Text(
+                CpText(
                     text = if (isFlickEngine) "FlickEngine Hi-Res 发烧引擎运行中" else "当前使用系统默认共享音频通道",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(Modifier.height(4.dp))
-                Text(
+                CpText(
                     text = if (isFlickEngine) {
                         "原生 64 位浮点架构 · 独占模式已就绪 · 支持 DSD / FLAC / Hi-Res 无损直出"
                     } else {
@@ -295,7 +295,7 @@ private fun EngineStatusBanner(isFlickEngine: Boolean) {
                     shape = MaterialTheme.shapes.small,
                     color = MaterialTheme.colorScheme.primaryContainer,
                 ) {
-                    Text(
+                    CpText(
                         text = "VIP / Hi-Res",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,

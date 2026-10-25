@@ -2,7 +2,6 @@ package cp.player.app.ui.wall
 
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.key
@@ -22,6 +21,7 @@ import cp.player.core.playback.SyncedLyricLine
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
+import cp.player.app.ui.component.CpText
 
 @Composable
 internal fun PosterSpatialLyrics(
@@ -80,7 +80,7 @@ internal fun PosterSpatialLyrics(
                 val alphaVal = if (isLit) 1f else 0.42f
                 val wordWidth = with(density) { sizes.getOrNull(index)?.width?.toDp() ?: 40.dp }
 
-                Text(
+                CpText(
                     text = token.text,
                     color = Color.White.copy(alpha = alphaVal),
                     fontSize = (desiredSize * fit).sp,

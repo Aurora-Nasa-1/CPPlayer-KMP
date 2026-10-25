@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -17,6 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.component.CpText
 
 /**
  * 墙的**构图方式**（排序）。
@@ -137,7 +137,7 @@ private fun WallSortChips(
                     contentColor = if (on) MaterialTheme.colorScheme.onSecondaryContainer
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                 ) {
-                    Text(
+                    CpText(
                         label,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,

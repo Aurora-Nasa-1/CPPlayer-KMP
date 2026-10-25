@@ -176,8 +176,33 @@ object CpStringsEn : CpStrings {
         override val resetPlatformDefault = "Restore platform default"
         override val resetPlatformDefaultNote = "Clear the custom value and go back to this platform's default"
         override val roundnessNote =
-            "Roundness applies immediately to Latin glyphs across the whole interface. " +
-                "Chinese glyphs come from the system fallback font and are not affected."
+            "Roundness applies immediately to Latin glyphs and digits in Google Sans Flex. " +
+                "The Chinese and Japanese fonts (MiSans / Noto Sans JP) have no ROND axis and are unaffected."
+    }
+
+    override val fontPacks: FontPackStrings = object : FontPackStrings {
+        override val sectionTitle = "Font packs"
+        override val intro = "Chinese and Japanese are rendered with MiSans / Noto Sans JP, while Latin " +
+            "letters and digits use Google Sans Flex. On desktop all three ship inside the installer; " +
+            "on Android the CJK fonts are downloaded on demand to keep the APK small."
+        override val unsupported = "This Android version cannot apply variable font weights (Android 8.0 " +
+            "or newer is required), so Chinese and Japanese will keep using the system font."
+        override val japaneseTitle = "Noto Sans JP (Japanese)"
+        override val japaneseNote = "Kana and Japanese kanji forms for Japanese lyrics and titles"
+        override val misansTitle = "MiSans (Chinese)"
+        override val misansNote = "Chinese, full-width punctuation and other scripts, with weights 300–700"
+        override val stateInstalled = "Installed"
+        override val stateMissing = "Not downloaded"
+        override fun stateDownloading(percent: Int) = "Downloading $percent%"
+        override fun stateFailed(reason: String) = "Download failed: $reason"
+        override val actionDownload = "Download"
+        override val actionRetry = "Retry"
+        override val actionDelete = "Delete"
+        override val deleteConfirm =
+            "After deleting, Chinese / Japanese fall back to the system font. You can download again anytime."
+        override val cancel = "Cancel"
+        override val sourceNote = "Fonts are downloaded from this project's GitHub releases and stored in the " +
+            "app's private storage; they are removed when the app is uninstalled."
     }
 
     override val storage: StorageStrings = object : StorageStrings {

@@ -15,7 +15,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -50,7 +49,7 @@ internal fun MessageNotifySheet(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Notifications, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(12.dp))
-                Text(
+                CpText(
                     text = contactName.ifBlank { strings.sheetTitle },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium,
@@ -59,14 +58,14 @@ internal fun MessageNotifySheet(
                 Switch(checked = enabled, onCheckedChange = onToggle)
             }
             Spacer(Modifier.height(8.dp))
-            Text(
+            CpText(
                 strings.sheetBody,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(12.dp))
             TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
-                Text(cpStrings().common.dismiss)
+                CpText(cpStrings().common.dismiss)
             }
         }
     }
@@ -103,21 +102,21 @@ internal fun MessageNotifyGuideSheet(
                     )
                 }
                 Spacer(Modifier.width(12.dp))
-                Text(
+                CpText(
                     text = strings.guideTitle,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium,
                 )
             }
             Spacer(Modifier.height(12.dp))
-            Text(
+            CpText(
                 strings.guideBody,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(16.dp))
             TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
-                Text(strings.guideConfirm)
+                CpText(strings.guideConfirm)
             }
         }
     }

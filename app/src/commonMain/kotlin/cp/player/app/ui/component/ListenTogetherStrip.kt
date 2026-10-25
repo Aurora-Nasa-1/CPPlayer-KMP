@@ -16,7 +16,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -109,14 +108,14 @@ internal fun ListenTogetherStripContent(
             }
         }
 
-        Text(
+        CpText(
             // 与更多面板里的「一起听」入口同一条文案（player.listenTogether）。
             text = s.player.listenTogether,
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface,
         )
-        Text(
+        CpText(
             text = buildString {
                 append(together.memberCount(room.members.size))
                 if (state.isOwner()) append(together.ownerTag)

@@ -33,7 +33,6 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -60,6 +59,7 @@ import cp.player.app.ui.component.desktopPagerMouseControl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import cp.player.app.ui.component.CpText
 
 /**
  * 首次使用引导（应用唯一的「欢迎」页）。
@@ -177,7 +177,7 @@ internal fun OnboardingContent(
             horizontalArrangement = Arrangement.End,
         ) {
             if (!replay) {
-                TextButton(onClick = onFinish) { Text("跳过") }
+                TextButton(onClick = onFinish) { CpText("跳过") }
             }
         }
 
@@ -260,7 +260,7 @@ internal fun OnboardingContent(
                 },
                 modifier = Modifier.weight(1f),
             ) {
-                Text(if (pagerState.currentPage == 0 && replay) "返回" else if (pagerState.currentPage == 0) "跳过" else "上一步")
+                CpText(if (pagerState.currentPage == 0 && replay) "返回" else if (pagerState.currentPage == 0) "跳过" else "上一步")
             }
             Button(
                 onClick = {
@@ -272,7 +272,7 @@ internal fun OnboardingContent(
                 },
                 modifier = Modifier.weight(1f),
             ) {
-                Text(if (pagerState.currentPage == lastIndex) {
+                CpText(if (pagerState.currentPage == lastIndex) {
                     if (replay) "完成" else "开始使用"
                 } else "下一步")
                 if (pagerState.currentPage < lastIndex) {
@@ -322,14 +322,14 @@ private fun ProviderOnboardingPage(
             }
         }
         Spacer(Modifier.height(32.dp))
-        Text(
+        CpText(
             text = "导入一个音乐源",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(12.dp))
-        Text(
+        CpText(
             text = body,
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -340,14 +340,14 @@ private fun ProviderOnboardingPage(
         Button(onClick = onPickZip, enabled = !isImporting) {
             Icon(Icons.Filled.FolderZip, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
-            Text("导入音源模块 (.zip)")
+            CpText("导入音源模块 (.zip)")
         }
 
         if (isImporting) {
             Spacer(Modifier.height(20.dp))
             CpLoadingIndicator(Modifier.size(40.dp))
             Spacer(Modifier.height(8.dp))
-            Text(
+            CpText(
                 "正在导入模块…",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
@@ -358,7 +358,7 @@ private fun ProviderOnboardingPage(
             Spacer(Modifier.height(12.dp))
             val isError = it.contains("失败") || it.contains("错误") || it.contains("异常")
                 || it.contains("不支持") || it.contains("无法") || it.contains("未就绪")
-            Text(
+            CpText(
                 it,
                 style = MaterialTheme.typography.bodySmall,
                 color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
@@ -374,7 +374,7 @@ private fun ProviderOnboardingPage(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(Modifier.padding(16.dp)) {
-                    Text(
+                    CpText(
                         "已加载的音源",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
@@ -383,8 +383,8 @@ private fun ProviderOnboardingPage(
                     Spacer(Modifier.height(8.dp))
                     loadedProviders.forEach { row ->
                         ListItem(
-                            headlineContent = { Text(row.name, fontWeight = FontWeight.Medium) },
-                            supportingContent = { Text(row.meta) },
+                            headlineContent = { CpText(row.name, fontWeight = FontWeight.Medium) },
+                            supportingContent = { CpText(row.meta) },
                             trailingContent = {
                                 if (row.active) {
                                     Icon(
@@ -413,14 +413,14 @@ private fun ProviderOnboardingPage(
                     modifier = Modifier.padding(14.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text(
+                    CpText(
                         "未导入音源时将以本地音乐模式运行",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(4.dp))
-                    Text(
+                    CpText(
                         "您可以直接管理与播放本机音频，随时可在设置中导入音源模块解锁在线曲库。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
@@ -432,7 +432,7 @@ private fun ProviderOnboardingPage(
 
         Spacer(Modifier.height(8.dp))
         TextButton(onClick = onOpenProviderManagement, enabled = !isImporting) {
-            Text("前往音源管理（增删、切换、更新）")
+            CpText("前往音源管理（增删、切换、更新）")
         }
     }
 }
@@ -493,14 +493,14 @@ private fun OnboardingPageContent(page: OnboardingPages, onAction: () -> Unit) {
             }
         }
         Spacer(Modifier.height(32.dp))
-        Text(
+        CpText(
             text = page.title,
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(12.dp))
-        Text(
+        CpText(
             text = page.body,
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -509,7 +509,7 @@ private fun OnboardingPageContent(page: OnboardingPages, onAction: () -> Unit) {
         )
         if (page.actionLabel != null) {
             Spacer(Modifier.height(24.dp))
-            OutlinedButton(onClick = onAction) { Text(page.actionLabel) }
+            OutlinedButton(onClick = onAction) { CpText(page.actionLabel) }
         }
     }
 }

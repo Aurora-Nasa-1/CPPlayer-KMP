@@ -9,7 +9,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -48,7 +47,7 @@ fun CreatePlaylistDialog(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = MaterialTheme.shapes.extraLarge,
         title = {
-            Text(
+            CpText(
                 s.playlistSheet.createDialogTitle,
                 style = MaterialTheme.typography.headlineSmall,
             )
@@ -58,7 +57,7 @@ fun CreatePlaylistDialog(
                 value = name,
                 onValueChange = { name = it },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text(s.playlistSheet.playlistNamePlaceholder) },
+                placeholder = { CpText(s.playlistSheet.playlistNamePlaceholder) },
                 singleLine = true,
                 enabled = !busy,
                 shape = MaterialTheme.shapes.large,
@@ -95,12 +94,12 @@ fun CreatePlaylistDialog(
                         )
                         Spacer(Modifier.width(8.dp))
                     }
-                    Text(if (busy) s.playlistSheet.creating else s.playlistSheet.createShort)
+                    CpText(if (busy) s.playlistSheet.creating else s.playlistSheet.createShort)
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !busy) { Text(s.playlistSheet.cancel) }
+            TextButton(onClick = onDismiss, enabled = !busy) { CpText(s.playlistSheet.cancel) }
         },
     )
 }

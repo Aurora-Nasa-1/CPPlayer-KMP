@@ -16,7 +16,6 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material3.Badge
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -272,7 +271,7 @@ internal fun ContactRow(
                 val timeStr = contact.lastMessageTime?.let(::formatChatListTime).orEmpty()
                 if (timeStr.isNotEmpty()) {
                     Spacer(Modifier.width(8.dp))
-                    Text(
+                    CpText(
                         timeStr,
                         style = MaterialTheme.typography.labelSmall,
                         color = secondaryContentColor,
@@ -303,7 +302,7 @@ internal fun ContactRow(
                         containerColor = MaterialTheme.colorScheme.error,
                         contentColor = MaterialTheme.colorScheme.onError,
                     ) {
-                        Text(
+                        CpText(
                             if (contact.unreadCount > 99) "99+" else contact.unreadCount.toString(),
                             style = MaterialTheme.typography.labelSmall,
                         )

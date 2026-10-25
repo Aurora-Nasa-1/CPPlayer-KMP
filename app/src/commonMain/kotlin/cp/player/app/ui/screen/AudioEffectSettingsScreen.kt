@@ -7,7 +7,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
@@ -34,6 +33,7 @@ import cp.player.core.playback.LevelingConfig
 import cp.player.core.playback.MixerConfig
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import cp.player.app.ui.component.CpText
 
 /**
  * 音效设置页（PEQ / 混音 / 音量均衡）。
@@ -118,7 +118,7 @@ class AudioEffectSettingsScreen : Screen {
                                     navigator.push(AudioEngineSettingsScreen())
                                 },
                                 trailingContent = {
-                                    Text(
+                                    CpText(
                                         text = "前往设置",
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.primary,

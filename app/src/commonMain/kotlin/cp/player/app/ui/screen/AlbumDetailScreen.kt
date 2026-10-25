@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -300,7 +299,7 @@ private fun AlbumDetailContent(
                                         cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
                                         decorationBox = { innerTextField ->
                                             if (searchQuery.isEmpty()) {
-                                                Text(
+                                                CpText(
                                                     text = s.album.searchAlbum,
                                                     style = MaterialTheme.typography.bodyMedium,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
@@ -540,7 +539,7 @@ private fun AlbumTitle(name: String, style: TextStyle) {
 @Composable
 private fun AlbumMetaLine(text: String) {
     if (text.isBlank()) return
-    Text(
+    CpText(
         text,
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -35,7 +35,6 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -75,6 +74,7 @@ import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import cp.player.app.ui.component.CpText
 
 internal val PosterInk = Color(0xFF10131B)
 internal val PosterPanel = Color(0xFF1D2230)
@@ -136,7 +136,7 @@ internal fun PosterArtwork(
                 modifier = Modifier.fillMaxSize()
             )
         } else {
-            Text(
+            CpText(
                 song.title.take(1).uppercase(),
                 color = Color.White.copy(alpha = 0.15f),
                 fontSize = if (large) 112.sp else 64.sp,
@@ -200,7 +200,7 @@ internal fun PosterTile(
                 )
         )
         if (dropTarget) {
-            Text(
+            CpText(
                 if (dropBefore) s.wall.posterWallInsertBelow else s.wall.posterWallInsertAbove,
                 color = MaterialTheme.colorScheme.onPrimary,
                 fontSize = 12.sp,
@@ -212,7 +212,7 @@ internal fun PosterTile(
             )
         }
         if (showInfo && stackSize > 1) {
-            Text(
+            CpText(
                 "$stackSize / $MAX_POSTER_STACK_SIZE",
                 color = Color.White,
                 fontSize = 11.sp,
@@ -241,7 +241,7 @@ internal fun PosterTile(
                         .background(MaterialTheme.colorScheme.onPrimary)
                 )
                 if (!small) {
-                    Text(
+                    CpText(
                         s.wall.posterWallCurrent,
                         color = MaterialTheme.colorScheme.onPrimary,
                         fontSize = 10.sp,
@@ -257,7 +257,7 @@ internal fun PosterTile(
                     .align(Alignment.BottomStart)
                     .padding(if (small) 11.dp else 16.dp)
             ) {
-                Text(
+                CpText(
                     song.title.ifBlank { song.id },
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
@@ -267,7 +267,7 @@ internal fun PosterTile(
                     overflow = TextOverflow.Ellipsis
                 )
                 if (!small || rect.height > 140f) {
-                    Text(
+                    CpText(
                         song.artist.ifBlank { s.downloads.unknownArtist },
                         color = Color.White.copy(alpha = 0.7f),
                         fontSize = 12.sp,
@@ -506,7 +506,7 @@ internal fun PosterExpandedCard(
                             stackPosition
                         ).joinToString(" · ")
                     }
-                    Text(
+                    CpText(
                         headerTitle,
                         color = Color.White.copy(alpha = if (compact) 1f else 0.72f),
                         fontSize = if (compact) 20.sp else 12.sp,
@@ -550,7 +550,7 @@ internal fun PosterExpandedCard(
                 }
 
                 if (!compact) {
-                    Text(
+                    CpText(
                         poster.song.title,
                         color = Color.White,
                         fontSize = 24.sp,
@@ -560,7 +560,7 @@ internal fun PosterExpandedCard(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                Text(
+                CpText(
                     poster.song.artist.ifBlank { s.downloads.unknownArtist },
                     color = PosterMuted,
                     fontSize = 14.sp,
@@ -607,7 +607,7 @@ internal fun PosterExpandedCard(
                                     tint = PosterInk,
                                     modifier = Modifier.size(20.dp)
                                 )
-                                Text(
+                                CpText(
                                     s.wall.posterPlay,
                                     color = PosterInk,
                                     fontSize = 14.sp,

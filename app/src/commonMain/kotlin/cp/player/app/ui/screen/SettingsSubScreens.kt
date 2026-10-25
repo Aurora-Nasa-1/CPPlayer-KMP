@@ -201,6 +201,9 @@ class AppearanceSettingsScreen : Screen {
                     }
                 }
                 SettingsNote(s.appearance.roundnessNote)
+                // 字库：桌面端展示内置的三款字体，Android 提供中日文字体的下载 / 删除。
+                // 与上面的「字体圆滑度」同属「字体长什么样」，所以放在同一页而不是单开一页。
+                FontPacksSection()
                 SettingsNote(colorSource.description(s, platformAvailable))
 
                 if (!cp.player.app.platform.isAndroidPlatform() && cp.player.app.version.AppVersion.isDebugBuild) {

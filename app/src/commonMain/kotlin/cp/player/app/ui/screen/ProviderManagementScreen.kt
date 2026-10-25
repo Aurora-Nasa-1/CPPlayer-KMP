@@ -26,7 +26,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -64,6 +63,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import cp.player.app.ui.component.CpText
 
 /**
  * 音源管理：导入、切换、更新、导出与删除音源模块。
@@ -175,7 +175,7 @@ class ProviderManagementScreen : Screen {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             CpLoadingIndicator(Modifier.size(40.dp))
                             Spacer(Modifier.height(8.dp))
-                            Text(label)
+                            CpText(label)
                         }
                     }
                 }
@@ -362,7 +362,7 @@ private fun ProviderRow(
                     ) {
                         if (!provider.settingsSchema.isNullOrEmpty() && onOpenSettings != null) {
                             DropdownMenuItem(
-                                text = { Text("音源配置") },
+                                text = { CpText("音源配置") },
                                 leadingIcon = { Icon(Icons.Filled.Tune, null) },
                                 onClick = {
                                     menuOpen = false
@@ -371,7 +371,7 @@ private fun ProviderRow(
                             )
                         }
                         DropdownMenuItem(
-                            text = { Text("导出模块") },
+                            text = { CpText("导出模块") },
                             leadingIcon = { Icon(Icons.Filled.FileUpload, null) },
                             onClick = {
                                 menuOpen = false
@@ -379,7 +379,7 @@ private fun ProviderRow(
                             },
                         )
                         DropdownMenuItem(
-                            text = { Text("更新模块") },
+                            text = { CpText("更新模块") },
                             leadingIcon = { Icon(Icons.Filled.Sync, null) },
                             onClick = {
                                 menuOpen = false
@@ -387,7 +387,7 @@ private fun ProviderRow(
                             },
                         )
                         DropdownMenuItem(
-                            text = { Text("删除模块") },
+                            text = { CpText("删除模块") },
                             leadingIcon = { Icon(Icons.Filled.DeleteOutline, null) },
                             onClick = {
                                 menuOpen = false

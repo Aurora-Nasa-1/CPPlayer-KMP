@@ -24,7 +24,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -271,7 +270,7 @@ fun BentoStatCard(
             Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(
+            CpText(
                 label,
                 style = MaterialTheme.typography.labelLarge,
                 color = contentColor.copy(alpha = 0.72f),
@@ -299,7 +298,7 @@ fun BentoStatCard(
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
                         )
-                        Text(
+                        CpText(
                             caption,
                             style = MaterialTheme.typography.labelMedium,
                             color = contentColor.copy(alpha = 0.7f),
@@ -379,7 +378,7 @@ fun BentoPill(
                     modifier = Modifier.size(18.dp),
                 )
             }
-            Text(text, style = MaterialTheme.typography.labelLarge)
+            CpText(text, style = MaterialTheme.typography.labelLarge)
         }
     }
 }

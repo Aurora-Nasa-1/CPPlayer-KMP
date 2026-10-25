@@ -25,7 +25,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -51,6 +50,7 @@ import cp.player.app.i18n.cpStrings
 import cp.player.core.playback.LyricsState
 import cp.player.core.playback.PlaybackUiState
 import kotlinx.coroutines.delay
+import cp.player.app.ui.component.CpText
 
 @Composable
 internal fun PosterLyricTheaterScreen(
@@ -144,7 +144,7 @@ internal fun PosterLyricTheaterScreen(
                             modifier = Modifier.size(24.dp)
                         )
                     }
-                    Text(
+                    CpText(
                         playback.currentTrack?.name.orEmpty(),
                         color = Color.White.copy(alpha = 0.85f),
                         fontSize = 15.sp,
@@ -163,7 +163,7 @@ internal fun PosterLyricTheaterScreen(
                             .padding(horizontal = 14.dp, vertical = 7.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
+                        CpText(
                             text = when (style) {
                                 PosterLyricStyle.Orbit -> s.wall.styleOrbit
                                 PosterLyricStyle.Clock -> s.wall.styleClock
@@ -214,7 +214,7 @@ internal fun PosterLyricTheaterScreen(
             )
             AlertDialog(
                 onDismissRequest = { stylePicker = false },
-                title = { Text(s.wall.posterWallLyricsStyle) },
+                title = { CpText(s.wall.posterWallLyricsStyle) },
                 text = {
                     Column {
                         styleOptions.forEach { (index, label) ->
@@ -238,7 +238,7 @@ internal fun PosterLyricTheaterScreen(
                                         controlsVisible = true
                                     }
                                 )
-                                Text(
+                                CpText(
                                     text = label,
                                     fontSize = 15.sp,
                                     modifier = Modifier.padding(start = 8.dp)
@@ -249,7 +249,7 @@ internal fun PosterLyricTheaterScreen(
                 },
                 confirmButton = {
                     TextButton(onClick = { stylePicker = false }) {
-                        Text(s.common.close)
+                        CpText(s.common.close)
                     }
                 }
             )

@@ -12,7 +12,6 @@ import com.mocharealm.accompanist.lyrics.ui.composable.list.rememberLyricsLazyLi
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -26,6 +25,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextMotion
@@ -41,8 +42,10 @@ import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.KaraokeLyricsView
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.theme.CpMotion
-import cp.player.app.ui.theme.LocalJapaneseFontFamily
+import cp.player.app.ui.theme.LocalAppFontFamilies
+import cp.player.app.ui.theme.containsHan
 import cp.player.app.ui.theme.containsKana
+import cp.player.app.ui.theme.withCjkTypography
 import cp.player.app.ui.theme.withJapaneseTypography
 import cp.player.core.lyrics.RubySegment
 import cp.player.core.lyrics.RubyText
@@ -79,9 +82,9 @@ fun LyricContent(
 ) {
     val lyricState = state.lyrics
     val lines = (lyricState as? LyricsState.Success)?.lines.orEmpty()
+    val s = cpStrings()
 
     if (lines.isEmpty()) {
-        val s = cpStrings()
         val label = when (lyricState) {
             LyricsState.Loading -> s.player.lyricsLoading
             LyricsState.NoLyrics -> s.player.lyricsEmpty
@@ -90,7 +93,7 @@ fun LyricContent(
         }
         Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
+                CpText(
                     label,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -100,7 +103,7 @@ fun LyricContent(
                 if (lyricState is LyricsState.NoLyrics && onChangeSource != null) {
                     Spacer(Modifier.height(12.dp))
                     TextButton(onClick = onChangeSource) {
-                        Text(s.lyricsPlugin.changeSourceAction)
+                        CpText(s.lyricsPlugin.changeSourceAction)
                     }
                 }
             }
@@ -108,9 +111,17 @@ fun LyricContent(
         return
     }
 
-    // 整首歌词是不是日语：含假名即算（见 `JapaneseText.kt`）。决定用哪套字体与断行规则。
-    val japaneseFamily = LocalJapaneseFontFamily.current
+    // 整首歌词是什么语言：含假名即日语（见 `JapaneseText.kt`）；不含假名但有汉字即中文。
+    // 决定用哪套字体与断行规则 —— 歌词是按**行**交给歌词库渲染的，
+    // 拿不到逐 run 的 AnnotatedString，所以这里只能整行换家族（见 FontStack.kt 的说明）。
+    val appFonts = LocalAppFontFamilies.current
+    val japaneseFamily = appFonts.japanese
+    val cjkFamily = appFonts.misans
     val japaneseLyrics = remember(lines) { lines.any { it.text.containsKana() } }
+    // 日文优先：日文行的汉字也全是"汉字"，判据必须用假名而不是汉字。
+    val cjkLyrics = remember(lines, japaneseLyrics) {
+        !japaneseLyrics && lines.any { it.text.containsHan() }
+    }
     // 用户是否开启日文注音假名开关，以及歌词文本本身是否含有注音标记
     val showRubySetting by cp.player.app.AppModel.showRubyLyricsFlow.collectAsState()
     val wordSegmentation by cp.player.app.AppModel.lyricsWordSegmentationFlow.collectAsState()
@@ -203,51 +214,43 @@ fun LyricContent(
         }
     }
 
+    // 暂停中 / 未起播（如启动时恢复会话、暂停中拖动进度条）：
+    // 当位置发生变化时，立即同步至 smoothPosition，避免歌词卡在初始 0ms 的前奏状态。
+    LaunchedEffect(state.positionMs, state.isPlaying) {
+        if (!state.isPlaying) {
+            smoothPosition.longValue = positionSource.currentMs()
+        }
+    }
+
     val currentTextStyle = MaterialTheme.typography.headlineMedium
-    val normalStyle = remember(currentTextStyle, japaneseLyrics, japaneseFamily) {
+    val normalStyle = remember(currentTextStyle, japaneseLyrics, cjkLyrics, japaneseFamily, cjkFamily, wordSegmentation) {
         currentTextStyle.copy(
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
             lineHeight = 36.sp,
             textMotion = TextMotion.Animated,
-        ).let {
-            if (japaneseLyrics) {
-                if (wordSegmentation) it.withJapaneseTypography(japaneseFamily)
-                else if (japaneseFamily != null) it.copy(fontFamily = japaneseFamily)
-                else it
-            } else it
-        }
+        ).forLyricLanguage(japaneseLyrics, cjkLyrics, japaneseFamily, cjkFamily, wordSegmentation)
     }
 
-    val accompanimentStyle = remember(currentTextStyle, japaneseLyrics, japaneseFamily, wordSegmentation) {
+    val accompanimentStyle = remember(currentTextStyle, japaneseLyrics, cjkLyrics, japaneseFamily, cjkFamily, wordSegmentation) {
         currentTextStyle.copy(
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
             textMotion = TextMotion.Animated,
-        ).let {
-            if (japaneseLyrics) {
-                if (wordSegmentation) it.withJapaneseTypography(japaneseFamily)
-                else if (japaneseFamily != null) it.copy(fontFamily = japaneseFamily)
-                else it
-            } else it
-        }
+        ).forLyricLanguage(japaneseLyrics, cjkLyrics, japaneseFamily, cjkFamily, wordSegmentation)
     }
 
     // 注音（振り仮名）的字号：正文的 **1/4**，位置由库画在音节上方。
     // 没有注音时这一档仍是「行级罗马音」的字号（正文的一半），两者不要混用同一个值。
     val basePhoneticStyle = MaterialTheme.typography.bodyMedium
-    val phoneticTextStyle = remember(basePhoneticStyle, hasRuby, japaneseLyrics, japaneseFamily, wordSegmentation) {
+    val phoneticTextStyle = remember(
+        basePhoneticStyle, hasRuby, japaneseLyrics, cjkLyrics, japaneseFamily, cjkFamily, wordSegmentation,
+    ) {
         val size = if (hasRuby) RubyFontRatio else 0.5f
         basePhoneticStyle.copy(
             fontSize = (28 * size).sp,
             lineHeight = (28 * if (hasRuby) 0.32f else 0.7f).sp,
-        ).let {
-            if (japaneseLyrics) {
-                if (wordSegmentation) it.withJapaneseTypography(japaneseFamily)
-                else if (japaneseFamily != null) it.copy(fontFamily = japaneseFamily)
-                else it
-            } else it
-        }
+        ).forLyricLanguage(japaneseLyrics, cjkLyrics, japaneseFamily, cjkFamily, wordSegmentation)
     }
 
     val currentTrackId = state.currentTrack?.id
@@ -300,9 +303,8 @@ fun LyricContent(
                         modifier = Modifier.size(12.dp),
                         tint = MaterialTheme.colorScheme.primary,
                     )
-                    val sign = if (lyricOffsetMs > 0) "+" else ""
-                    Text(
-                        text = "偏移 $sign${lyricOffsetMs / 1000f}s",
+                    CpText(
+                        text = s.player.lyricOffsetBadge(lyricOffsetMs),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -318,6 +320,31 @@ fun LyricContent(
             onDismiss = { showOffsetDialog = false },
         )
     }
+}
+
+/**
+ * 按整首歌词的语言，给歌词样式换上对应字体。
+ *
+ * 歌词是**按行**交给歌词库渲染的（`KaraokeLyricsView` 拿的是 `TextStyle`，不是
+ * `AnnotatedString`）—— 所以这里做不到 `CpText` 那种逐 run 切换，只能整行换家族。
+ * 这也是为什么判定用的是**整首**语言而不是逐行：同一首歌的行间字体不一致比
+ * 「全中文用中文字体、全日文用日文字体」难看得多。
+ *
+ * - 日语 → Noto Sans JP（[wordSegmentation] 时连 `palt` 与 `lang=ja` 一起给）
+ * - 中文 / 其它 CJK → MiSans
+ * - 都不是（纯英文歌词）→ 不动，沿用默认的 Google Sans Flex
+ */
+private fun TextStyle.forLyricLanguage(
+    japanese: Boolean,
+    cjk: Boolean,
+    japaneseFamily: FontFamily?,
+    cjkFamily: FontFamily?,
+    wordSegmentation: Boolean,
+): TextStyle = when {
+    japanese && wordSegmentation -> withJapaneseTypography(japaneseFamily)
+    japanese -> if (japaneseFamily != null) copy(fontFamily = japaneseFamily) else this
+    cjk -> withCjkTypography(cjkFamily)
+    else -> this
 }
 
 /**

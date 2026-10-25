@@ -46,7 +46,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -127,7 +126,7 @@ import cp.player.app.ui.theme.LocalIsDarkTheme
 @Composable
 fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
+        CpText(
             text = title,
             // labelLarge 的字重规范就是 Medium(500)，原先又写了一遍 —— 与 token 同值，纯噪声。
             // 但下面的 `letterSpacing = 0.5.sp` 是**真覆盖**（labelLarge 规范是 0.1sp），保留。
@@ -179,10 +178,11 @@ fun SettingsNote(
     color: Color = Color.Unspecified,
 ) {
     if (emphasis == SettingsNoteEmphasis.INFO) {
-        Text(
+        CpText(
             text = text,
             style = MaterialTheme.typography.bodySmall,
             color = if (color == Color.Unspecified) MaterialTheme.colorScheme.onSurfaceVariant else color,
+            maxLines = Int.MAX_VALUE,
             modifier = modifier
                 .fillMaxWidth()
                 .padding(horizontal = CpSpacing.formHorizontal, vertical = 4.dp),
@@ -220,10 +220,11 @@ fun SettingsNote(
                 tint = onContainer,
                 modifier = Modifier.size(CpIconSize.inline),
             )
-            Text(
+            CpText(
                 text = text,
                 style = MaterialTheme.typography.bodySmall,
                 color = onContainer,
+                maxLines = Int.MAX_VALUE,
             )
         }
     }
@@ -634,7 +635,7 @@ private fun SegmentedControl(
                         onClick = { onSelect(optionIndex) },
                     ),
             ) {
-                Text(
+                CpText(
                     text = label,
                     style = MaterialTheme.typography.labelLarge,
                     textAlign = TextAlign.Center,
@@ -697,7 +698,7 @@ fun SettingsSliderItem(
                 titleColor = MaterialTheme.colorScheme.onSurface,
                 subtitleColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 trailingContent = valueLabel?.let { label -> {
-                    Text(
+                    CpText(
                         text = label,
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
@@ -768,7 +769,7 @@ fun SettingsDropdownItem(
 
     if (showSheet) {
         LegacyModalBottomSheet(onDismissRequest = { showSheet = false }) {
-            Text(
+            CpText(
                 text = title,
                 // 弹层标题要压过下面的选项，所以取 Emphasized 档而不是裸 titleLarge
                 // （titleLarge 规范是 Regular(400)，直接用会显得"标题没立住"）。
@@ -810,7 +811,7 @@ fun SettingsDropdownItem(
                         ) {
                             RadioButton(selected = isSelected, onClick = null)
                             Spacer(Modifier.width(16.dp))
-                            Text(option, style = MaterialTheme.typography.bodyLarge)
+                            CpText(option, style = MaterialTheme.typography.bodyLarge)
                         }
                     }
                 }
@@ -886,9 +887,9 @@ fun SettingsTextInputItem(
                     enabled = enabled,
                     singleLine = true,
                     isError = error != null,
-                    placeholder = placeholder?.let { hint -> { Text(hint) } },
+                    placeholder = placeholder?.let { hint -> { CpText(hint) } },
                     keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-                    supportingText = error?.let { msg -> { Text(msg) } },
+                    supportingText = error?.let { msg -> { CpText(msg) } },
                     modifier = Modifier.weight(1f),
                 )
                 if (dirty) {
@@ -896,12 +897,12 @@ fun SettingsTextInputItem(
                         onClick = { onCommit(draft) },
                         enabled = enabled && error == null,
                     ) {
-                        Text(strings.common.apply)
+                        CpText(strings.common.apply)
                     }
                 }
             }
             if (dirty) {
-                Text(
+                CpText(
                     text = if (error != null) strings.common.unsavedBlocked else strings.common.unsavedHint,
                     style = MaterialTheme.typography.bodySmall,
                     color = if (error != null) {
@@ -1008,8 +1009,8 @@ fun SettingsConfirmItem(
     if (showDialog) {
         AlertDialog(
             onDismissRequest = { showDialog = false },
-            title = { Text(confirmTitle) },
-            text = { Text(confirmMessage) },
+            title = { CpText(confirmTitle) },
+            text = { CpText(confirmMessage) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -1017,7 +1018,7 @@ fun SettingsConfirmItem(
                         onConfirm()
                     },
                 ) {
-                    Text(
+                    CpText(
                         text = confirmLabel ?: strings.common.confirm,
                         color = if (destructive) MaterialTheme.colorScheme.error else Color.Unspecified,
                     )
@@ -1025,7 +1026,7 @@ fun SettingsConfirmItem(
             },
             dismissButton = {
                 TextButton(onClick = { showDialog = false }) {
-                    Text(dismissLabel ?: strings.common.dismiss)
+                    CpText(dismissLabel ?: strings.common.dismiss)
                 }
             },
         )
@@ -1185,7 +1186,7 @@ fun SettingsBadge(
         contentColor = contentColor,
         modifier = modifier,
     ) {
-        Text(
+        CpText(
             text = text,
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Medium,
@@ -1246,7 +1247,7 @@ fun SettingsHeroCard(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text(
+                        CpText(
                             text = title,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
@@ -1309,7 +1310,7 @@ fun SettingsSearchBar(
                 contentAlignment = Alignment.CenterStart,
             ) {
                 if (query.isEmpty()) {
-                    Text(
+                    CpText(
                         text = placeholder,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),

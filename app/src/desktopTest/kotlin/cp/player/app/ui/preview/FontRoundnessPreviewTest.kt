@@ -55,8 +55,8 @@ class FontRoundnessPreviewTest {
                 }
             }
             SettingsNote(
-                "字体圆滑度改动即时生效，会应用到整个界面的拉丁字符；" +
-                    "中文字形来自系统回退字体，不受此设置影响。"
+                "字体圆滑度即时生效，只作用于 Google Sans Flex 的拉丁字符与数字；" +
+                    "中文与日文字体（MiSans / Noto Sans JP）没有 ROND 轴，不受此设置影响。"
             )
         }
     }

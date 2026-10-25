@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -88,7 +87,7 @@ fun SongDetailInfoDialog(
                     CpLoadingIndicator(Modifier.size(32.dp))
                 }
             } else {
-                Text(
+                CpText(
                     buildString {
                         // 整段进剪贴板 ⇒ 逐行都是文案。`extra` 收「有值才出现」的那些行
                         // （发行时间 / 评论数 / MV / 码率 / 付费类型），调用方只管判断有没有值。

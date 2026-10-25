@@ -25,7 +25,6 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -48,6 +47,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import cp.player.app.ui.component.CpText
 
 /**
  * 后端初始化失败页。
@@ -160,11 +160,11 @@ internal fun BackendErrorContent(
             modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(
+            CpText(
                 text = "后端初始化失败",
                 style = MaterialTheme.typography.headlineSmall,
             )
-            Text(
+            CpText(
                 text = message,
                 modifier = Modifier.padding(top = 12.dp),
                 style = MaterialTheme.typography.bodyLarge,
@@ -174,19 +174,19 @@ internal fun BackendErrorContent(
                 Spacer(Modifier.height(20.dp))
                 cp.player.app.ui.component.CpLoadingIndicator(Modifier.size(40.dp))
                 Spacer(Modifier.height(8.dp))
-                Text(busy, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                CpText(busy, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
             } else {
                 Row(
                     modifier = Modifier.padding(top = 20.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Button(onClick = onRetry) {
-                        Text("重试")
+                        CpText("重试")
                     }
                     OutlinedButton(onClick = onImport) {
                         Icon(Icons.Filled.FolderZip, null, Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("导入新音源")
+                        CpText("导入新音源")
                     }
                 }
             }
@@ -195,7 +195,7 @@ internal fun BackendErrorContent(
                 Spacer(Modifier.height(12.dp))
                 val isError = it.contains("失败") || it.contains("错误") || it.contains("异常")
                     || it.contains("不支持") || it.contains("无法") || it.contains("未就绪")
-                Text(
+                CpText(
                     it,
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
@@ -211,13 +211,13 @@ internal fun BackendErrorContent(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.Start) {
-                        Text(
+                        CpText(
                             "已安装的音源",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Text(
+                        CpText(
                             "若某个音源反复导致初始化失败，可在此删除后再重试",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -226,8 +226,8 @@ internal fun BackendErrorContent(
                         Spacer(Modifier.height(12.dp))
                         providers.forEach { provider ->
                             ListItem(
-                                headlineContent = { Text(provider.name, fontWeight = FontWeight.Medium) },
-                                supportingContent = { Text("${provider.type.name} · v${provider.version} · ${provider.id}") },
+                                headlineContent = { CpText(provider.name, fontWeight = FontWeight.Medium) },
+                                supportingContent = { CpText("${provider.type.name} · v${provider.version} · ${provider.id}") },
                                 trailingContent = {
                                     IconButton(onClick = { onDelete(provider.id) }) {
                                         Icon(

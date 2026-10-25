@@ -9,7 +9,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -52,13 +51,13 @@ fun RenamePlaylistDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = MaterialTheme.shapes.extraLarge,
-        title = { Text(s.library.renamePlaylist, style = MaterialTheme.typography.headlineSmall) },
+        title = { CpText(s.library.renamePlaylist, style = MaterialTheme.typography.headlineSmall) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text(s.library.renamePlaylistPlaceholder) },
+                placeholder = { CpText(s.library.renamePlaylistPlaceholder) },
                 singleLine = true,
                 enabled = !busy,
                 shape = MaterialTheme.shapes.large,
@@ -94,12 +93,12 @@ fun RenamePlaylistDialog(
                         )
                         Spacer(Modifier.width(8.dp))
                     }
-                    Text(s.common.confirm)
+                    CpText(s.common.confirm)
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !busy) { Text(s.playlistSheet.cancel) }
+            TextButton(onClick = onDismiss, enabled = !busy) { CpText(s.playlistSheet.cancel) }
         },
     )
 }

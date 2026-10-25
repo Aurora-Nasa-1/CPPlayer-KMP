@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -47,6 +46,7 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
+import cp.player.app.ui.component.CpText
 
 internal enum class PosterLyricStyle {
     Orbit, Clock, ColorField, Glow;
@@ -94,7 +94,7 @@ internal fun PosterLyricScene(
         if (style == PosterLyricStyle.ColorField) {
             val bgChar = line?.text?.firstOrNull { it.isLetterOrDigit() }?.toString().orEmpty()
             if (bgChar.isNotBlank()) {
-                Text(
+                CpText(
                     text = bgChar,
                     color = Color.White.copy(alpha = 0.085f),
                     fontSize = 210.sp,
@@ -115,7 +115,7 @@ internal fun PosterLyricScene(
         val clockCaptionWidth = minOf(maxWidth * 0.62f, maxHeight * (0.20f / sin(14f * PI.toFloat() / 180f)))
 
         previous?.text?.takeIf { it.isNotBlank() && !detachedCaption }?.let { text ->
-            Text(
+            CpText(
                 text = text,
                 color = Color.White.copy(alpha = 0.46f),
                 fontSize = 16.sp,
@@ -138,7 +138,7 @@ internal fun PosterLyricScene(
         }
 
         next?.text?.takeIf { it.isNotBlank() && !detachedCaption }?.let { text ->
-            Text(
+            CpText(
                 text = text,
                 color = Color.White.copy(alpha = 0.20f),
                 fontSize = 19.sp,
@@ -206,7 +206,7 @@ internal fun PosterLyricScene(
                     label = "posterSceneLyric"
                 ) { activeLine ->
                     if (activeLine == null) {
-                        Text(
+                        CpText(
                             text = fallbackTitle,
                             color = Color.White,
                             fontSize = 32.sp,
@@ -219,7 +219,7 @@ internal fun PosterLyricScene(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalAlignment = if (style == PosterLyricStyle.Clock) Alignment.Start else Alignment.CenterHorizontally
                         ) {
-                            Text(
+                            CpText(
                                 text = activeLine.text,
                                 color = if (style == PosterLyricStyle.Glow) Color(0xFFFFF6DC) else Color.White,
                                 fontSize = when (style) {
@@ -234,7 +234,7 @@ internal fun PosterLyricScene(
                             )
                             val activeTrans = activeLine.translation
                             if (!activeTrans.isNullOrBlank()) {
-                                Text(
+                                CpText(
                                     text = activeTrans,
                                     color = Color.White.copy(alpha = 0.58f),
                                     fontSize = 16.sp,
@@ -250,7 +250,7 @@ internal fun PosterLyricScene(
 
         val lineTrans = line?.translation
         if (detachedCaption && lineTrans != null && lineTrans.isNotBlank()) {
-            Text(
+            CpText(
                 text = lineTrans,
                 color = Color.White.copy(alpha = 0.58f),
                 fontSize = 16.sp,

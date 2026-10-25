@@ -22,7 +22,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -56,6 +55,7 @@ import cp.player.core.model.Message
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import cp.player.app.ui.component.CpText
 
 /**
  * 一对一私信页。
@@ -275,7 +275,7 @@ internal fun ChatContent(
                         value = draft,
                         onValueChange = { draft = it },
                         modifier = Modifier.weight(1f),
-                        placeholder = { Text(chat.inputPlaceholder, style = MaterialTheme.typography.bodyMedium) },
+                        placeholder = { CpText(chat.inputPlaceholder, style = MaterialTheme.typography.bodyMedium) },
                         shape = MaterialTheme.shapes.large,
                         maxLines = 4,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
@@ -330,7 +330,7 @@ private fun MessageBubble(message: Message, emptyText: String) {
         }
         Column(horizontalAlignment = if (isMe) Alignment.End else Alignment.Start) {
             Surface(color = bubbleColor, shape = bubbleShape) {
-                Text(
+                CpText(
                     message.text.ifBlank { emptyText },
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                     style = MaterialTheme.typography.bodyLarge,
@@ -339,7 +339,7 @@ private fun MessageBubble(message: Message, emptyText: String) {
             }
             val timeStr = remember(message.time) { formatChatTime(message.time) }
             if (timeStr.isNotEmpty()) {
-                Text(
+                CpText(
                     timeStr,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

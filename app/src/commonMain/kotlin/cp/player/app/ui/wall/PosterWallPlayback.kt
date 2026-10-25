@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -27,6 +26,7 @@ import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.util.formatTimeMs
 import cp.player.core.playback.LyricsState
 import cp.player.core.playback.PlaybackUiState
+import cp.player.app.ui.component.CpText
 
 @Composable
 internal fun PosterPlayerLyrics(
@@ -57,7 +57,7 @@ internal fun PosterPlayerLyrics(
             modifier = Modifier.padding(horizontal = 12.dp)
         ) {
             if (activeLine != null) {
-                Text(
+                CpText(
                     text = activeLine.text,
                     color = Color.White,
                     fontSize = 22.sp,
@@ -68,7 +68,7 @@ internal fun PosterPlayerLyrics(
                 )
                 val trans = activeLine.translation
                 if (!trans.isNullOrBlank()) {
-                    Text(
+                    CpText(
                         text = trans,
                         color = Color.White.copy(alpha = 0.65f),
                         fontSize = 14.sp,
@@ -79,7 +79,7 @@ internal fun PosterPlayerLyrics(
                     )
                 }
             } else {
-                Text(
+                CpText(
                     text = when (lyricsState) {
                         is LyricsState.Loading -> s.player.lyricsLoading
                         is LyricsState.NoLyrics -> s.player.lyricsEmpty
@@ -129,12 +129,12 @@ internal fun PosterPlayerProgress(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 val displayMs = if (draggingPosition >= 0f) (draggingPosition * duration).toLong() else position
-                Text(
+                CpText(
                     formatTimeMs(displayMs),
                     color = PosterMuted,
                     fontSize = 11.sp
                 )
-                Text(
+                CpText(
                     formatTimeMs(duration),
                     color = PosterMuted,
                     fontSize = 11.sp

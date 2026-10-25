@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -36,6 +35,7 @@ import cp.player.app.ui.util.popOrNotify
 import cp.player.core.sync.SYNC_HTTP_PORT
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import cp.player.app.ui.component.CpText
 
 /**
  * 「激进保活」与局域网设备（仅 Android 出现入口，见 `SettingsRegistry.androidOnly`）。
@@ -231,7 +231,7 @@ class StandbySettingsScreen : Screen {
                 SettingsSection(s.standby.sectionLanDevices) {
                     if (online.isEmpty()) {
                         // 组内塞非分段文本会打断分段圆角，这里用说明行承载空态。
-                        Text(
+                        CpText(
                             text = if (running) s.standby.discovering else s.standby.discoveryNotStarted,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -313,12 +313,12 @@ class StandbySettingsScreen : Screen {
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(
+            CpText(
                 label,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(
+            CpText(
                 value,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = if (highlight) FontWeight.Medium else FontWeight.Normal,

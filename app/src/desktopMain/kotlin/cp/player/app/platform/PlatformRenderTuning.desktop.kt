@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,6 +22,7 @@ import cp.player.app.ui.component.SettingsFieldGroup
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
+import cp.player.app.ui.component.CpText
 
 /**
  * 「渲染后端」设置页（仅桌面端）。
@@ -129,12 +129,12 @@ actual fun PlatformRenderTuningContent() {
                             else -> "skiko.vsync.enabled=${DesktopRenderTuning.effectiveVsyncOverride()}"
                         },
                     )
-                    Text(
+                    CpText(
                         text = "「实际采用」才是对照实验的依据：Skiko 在本机不支持所选后端时会静默回退，请求值不一定等于实际值。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Text(
+                    CpText(
                         text = "安全模式：选了跑不起来的后端（启动即崩或窗口不出现）时，下次启动会自动改回「自动」，" +
                             "不会让你卡在进不去设置页的状态。若要手工干预，可用 " +
                             "-Dcp.player.renderApi=AUTO 启动，或删除下方文件里的 " +
@@ -142,7 +142,7 @@ actual fun PlatformRenderTuningContent() {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Text(
+                    CpText(
                         text = DesktopRenderTuning.storageHint(),
                         style = MaterialTheme.typography.bodySmall,
                         fontFamily = FontFamily.Monospace,
@@ -166,12 +166,12 @@ private fun EffectiveLine(label: String, value: String) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
+        CpText(
             text = label,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Text(
+        CpText(
             text = value,
             style = MaterialTheme.typography.bodySmall,
             fontFamily = FontFamily.Monospace,

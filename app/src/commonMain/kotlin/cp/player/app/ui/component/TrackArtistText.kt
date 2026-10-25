@@ -12,6 +12,11 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
+import cp.player.app.ui.theme.AppFontFace
+import cp.player.app.ui.theme.AppFontFamilies
+import cp.player.app.ui.theme.LocalAppFontFamilies
+import cp.player.app.ui.theme.appendAppFontRuns
+import cp.player.app.ui.theme.cjkFaceFor
 import cp.player.app.ui.theme.localizedForLanguage
 import cp.player.core.music.ArtistSummary
 import cp.player.core.music.TrackSummary
@@ -65,7 +70,10 @@ fun TrackArtistText(
         return
     }
     // 曲目换了才重算（歌手串不随播放进度变）。
-    val annotated = remember(artists) { artistAnnotatedString(artists) }
+    // 字体家族由主题提供；Android 上下载完字体会换身份 ⇒ 一并参与 remember。
+    val families = LocalAppFontFamilies.current
+    val cjkFace = remember(artists, families) { cjkFaceFor(track.artist, families) }
+    val annotated = remember(artists, families, cjkFace) { artistAnnotatedString(artists, families, cjkFace) }
     var overflow by remember(annotated, resolvedStyle, maxLines) { androidx.compose.runtime.mutableStateOf(false) }
 
     val clickable = @Composable {
@@ -107,13 +115,31 @@ fun TrackArtistText(
  * 把歌手表拼成一个带「第几位」注解的串。
  *
  * 按下标而非名字做注解：合唱里同名不同 id 时用名字会串到第一个人身上。
+ *
+ * 字体按脚本逐段套上（见 `theme/FontStack.kt` 的字体声明）：歌手名多为中文 / 日文，
+ * 拉丁字母（feat. 之类的英文名）仍然留在 Google Sans Flex 上。
+ *
+ * @param cjkFace 整行共用的 CJK 字体身份（`cjkFaceFor`）；null = 不切换，走平台回退
  */
-private fun artistAnnotatedString(artists: List<ArtistSummary>): AnnotatedString = buildAnnotatedString {
-    artists.forEachIndexed { index, artist ->
-        if (index > 0) append(ARTIST_SEPARATOR)
-        val start = length
-        append(artist.name)
-        // 退化 3：没有 id 的那一位不注册注解 ⇒ 点它不跳转。
-        if (artist.id != 0L) addStringAnnotation(ARTIST_ANNOTATION, index.toString(), start, length)
+private fun artistAnnotatedString(
+    artists: List<ArtistSummary>,
+    families: AppFontFamilies,
+    cjkFace: AppFontFace?,
+): AnnotatedString {
+    val cjkFamily = when (cjkFace) {
+        AppFontFace.NOTO_SANS_JP -> families.japanese
+        AppFontFace.MISANS -> families.misans
+        else -> null
+    }
+    return buildAnnotatedString {
+        artists.forEachIndexed { index, artist ->
+            if (index > 0) {
+                appendAppFontRuns(ARTIST_SEPARATOR, cjkFace ?: AppFontFace.MISANS, cjkFamily, families.misans)
+            }
+            val start = length
+            appendAppFontRuns(artist.name, cjkFace ?: AppFontFace.MISANS, cjkFamily, families.misans)
+            // 退化 3：没有 id 的那一位不注册注解 ⇒ 点它不跳转。
+            if (artist.id != 0L) addStringAnnotation(ARTIST_ANNOTATION, index.toString(), start, length)
+        }
     }
 }

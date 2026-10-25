@@ -26,7 +26,6 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -242,7 +241,7 @@ fun WallImmersive(
                         Modifier.fillMaxWidth().padding(bottom = 24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Text(
+                        CpText(
                             s.wall.immersiveQueue,
                             color = Color.White.copy(alpha = 0.5f),
                             fontSize = 10.5.sp,
@@ -269,7 +268,7 @@ fun WallImmersive(
                                             contentScale = ContentScale.Crop,
                                         )
                                     }
-                                    Text(
+                                    CpText(
                                         "${index + 1}",
                                         color = Color.White,
                                         fontSize = 10.sp,
@@ -355,8 +354,8 @@ private fun ImmersiveProgress(
             )
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(formatTimeMs(positionMs), color = Color.White.copy(alpha = 0.62f), fontSize = 11.sp)
-            Text(formatTimeMs(durationMs), color = Color.White.copy(alpha = 0.62f), fontSize = 11.sp)
+            CpText(formatTimeMs(positionMs), color = Color.White.copy(alpha = 0.62f), fontSize = 11.sp)
+            CpText(formatTimeMs(durationMs), color = Color.White.copy(alpha = 0.62f), fontSize = 11.sp)
         }
     }
 }

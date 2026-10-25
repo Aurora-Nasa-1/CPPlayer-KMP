@@ -60,7 +60,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -630,14 +629,14 @@ private fun LocalLibraryToolbar(
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text(
+                    CpText(
                         state.scanProgress?.let { s.scanningFound(it.scanned) } ?: s.scanning,
                         maxLines = 1,
                     )
                 } else {
                     Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(s.scanDevice, maxLines = 1)
+                    CpText(s.scanDevice, maxLines = 1)
                 }
             }
             FilledTonalButton(
@@ -651,11 +650,11 @@ private fun LocalLibraryToolbar(
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text(s.importing, maxLines = 1)
+                    CpText(s.importing, maxLines = 1)
                 } else {
                     Icon(Icons.Filled.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(s.importFolder, maxLines = 1)
+                    CpText(s.importFolder, maxLines = 1)
                 }
             }
         }
@@ -668,7 +667,7 @@ private fun LocalLibraryToolbar(
                     value = state.libraryQuery,
                     onValueChange = { model.setLibraryQuery(it) },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text(s.librarySearchHint) },
+                    placeholder = { CpText(s.librarySearchHint) },
                     leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                     trailingIcon = {
                         if (state.libraryQuery.isNotEmpty()) {
@@ -723,7 +722,7 @@ private fun LibraryFilterMenu(
             if (!filter.isDefault) {
                 HorizontalDivider()
                 DropdownMenuItem(
-                    text = { Text("清除筛选") },
+                    text = { CpText("清除筛选") },
                     onClick = {
                         expanded = false
                         model.clearLibraryFilter()
@@ -733,7 +732,7 @@ private fun LibraryFilterMenu(
             HorizontalDivider()
             DropdownMenuItem(
                 text = {
-                    Text(
+                    CpText(
                         buildString {
                             append("扫描设置")
                             if (state.scanSettings.activeRuleCount > 0) {
@@ -765,7 +764,7 @@ private fun LibraryFilterMenu(
 @Composable
 private fun FilterToggle(label: String, checked: Boolean, onToggle: () -> Unit) {
     DropdownMenuItem(
-        text = { Text(label) },
+        text = { CpText(label) },
         trailingIcon = {
             Checkbox(checked = checked, onCheckedChange = { onToggle() })
         },
@@ -785,10 +784,10 @@ private fun ScanSettingsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("扫描设置") },
+        title = { CpText("扫描设置") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
+                CpText(
                     "改动会在下一次扫描时生效，并同步清理已从规则中排除的条目。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -796,20 +795,20 @@ private fun ScanSettingsDialog(
                 OutlinedTextField(
                     value = minDuration,
                     onValueChange = { minDuration = it.filter(Char::isDigit).take(4) },
-                    label = { Text("最短时长（秒），0 表示不过滤") },
+                    label = { CpText("最短时长（秒），0 表示不过滤") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = filterVideo, onCheckedChange = { filterVideo = it })
                     Spacer(Modifier.width(4.dp))
-                    Text("扫描时跳过视频文件")
+                    CpText("扫描时跳过视频文件")
                 }
                 OutlinedTextField(
                     value = excludeText,
                     onValueChange = { excludeText = it },
-                    label = { Text("排除目录（每行一个）") },
-                    placeholder = { Text("/storage/emulated/0/Music/Recordings") },
+                    label = { CpText("排除目录（每行一个）") },
+                    placeholder = { CpText("/storage/emulated/0/Music/Recordings") },
                     minLines = 3,
                     maxLines = 6,
                     modifier = Modifier.fillMaxWidth(),
@@ -830,10 +829,10 @@ private fun ScanSettingsDialog(
                         ),
                     )
                 },
-            ) { Text("保存") }
+            ) { CpText("保存") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { CpText("取消") }
         },
     )
 }
@@ -1120,7 +1119,7 @@ private fun ColumnScope.LocalPlaylistGrid(
             FilledTonalButton(onClick = onCreatePlaylist) {
                 Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("新建歌单")
+                CpText("新建歌单")
             }
         }
         val itemsByPath = remember(items) { items.associateBy { it.path } }
@@ -1217,7 +1216,7 @@ private fun LocalPlaylistCell(
                 }
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                     DropdownMenuItem(
-                        text = { Text("播放歌单") },
+                        text = { CpText("播放歌单") },
                         leadingIcon = { Icon(Icons.Filled.PlayArrow, null) },
                         onClick = {
                             menuExpanded = false
@@ -1225,7 +1224,7 @@ private fun LocalPlaylistCell(
                         },
                     )
                     DropdownMenuItem(
-                        text = { Text("重命名") },
+                        text = { CpText("重命名") },
                         leadingIcon = { Icon(Icons.Filled.Edit, null) },
                         onClick = {
                             menuExpanded = false
@@ -1233,7 +1232,7 @@ private fun LocalPlaylistCell(
                         },
                     )
                     DropdownMenuItem(
-                        text = { Text("删除歌单", color = MaterialTheme.colorScheme.error) },
+                        text = { CpText("删除歌单", color = MaterialTheme.colorScheme.error) },
                         leadingIcon = { Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error) },
                         onClick = {
                             menuExpanded = false
@@ -1297,12 +1296,12 @@ private fun ColumnScope.LocalPlaylistDetail(
                 FilledTonalButton(onClick = { model.playAll(tracks) }, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(strings.downloads.playAll)
+                    CpText(strings.downloads.playAll)
                 }
                 FilledTonalButton(onClick = { model.shuffleAll(tracks) }, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Filled.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("随机播放")
+                    CpText("随机播放")
                 }
             }
             LazyColumn(
@@ -1356,12 +1355,12 @@ private fun CreateLocalPlaylistDialog(
     var name by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("新建本地歌单") },
+        title = { CpText("新建本地歌单") },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("歌单名称") },
+                label = { CpText("歌单名称") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -1373,10 +1372,10 @@ private fun CreateLocalPlaylistDialog(
                     if (trimmed.isNotEmpty()) onConfirm(trimmed)
                 },
                 enabled = name.isNotBlank(),
-            ) { Text("创建") }
+            ) { CpText("创建") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { CpText("取消") }
         },
     )
 }
@@ -1390,12 +1389,12 @@ private fun RenameLocalPlaylistDialog(
     var name by remember { mutableStateOf(currentName) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("重命名歌单") },
+        title = { CpText("重命名歌单") },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("歌单名称") },
+                label = { CpText("歌单名称") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -1407,10 +1406,10 @@ private fun RenameLocalPlaylistDialog(
                     if (trimmed.isNotEmpty()) onConfirm(trimmed)
                 },
                 enabled = name.isNotBlank() && name != currentName,
-            ) { Text("确定") }
+            ) { CpText("确定") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { CpText("取消") }
         },
     )
 }
@@ -1684,12 +1683,12 @@ private fun ColumnScope.LocalFolderDetail(
             FilledTonalButton(onClick = { model.playAll(tracks) }, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(s.playAll)
+                CpText(s.playAll)
             }
             FilledTonalButton(onClick = { model.shuffleAll(tracks) }, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Filled.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("随机播放")
+                CpText("随机播放")
             }
         }
         LazyColumn(
@@ -1770,12 +1769,12 @@ private fun ColumnScope.LocalAlbumDetail(
             FilledTonalButton(onClick = { model.playAll(tracks) }, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(s.playAll)
+                CpText(s.playAll)
             }
             FilledTonalButton(onClick = { model.shuffleAll(tracks) }, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Filled.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("随机播放")
+                CpText("随机播放")
             }
         }
         LazyColumn(
@@ -1855,12 +1854,12 @@ private fun ColumnScope.LocalArtistDetail(
             FilledTonalButton(onClick = { model.playAll(tracks) }, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(s.playAll)
+                CpText(s.playAll)
             }
             FilledTonalButton(onClick = { model.shuffleAll(tracks) }, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Filled.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("随机播放")
+                CpText("随机播放")
             }
         }
         LazyColumn(
@@ -1979,7 +1978,7 @@ private fun SortMenu(
             LocalLibrarySort.entries.forEach { option ->
                 DropdownMenuItem(
                     text = {
-                        Text(
+                        CpText(
                             if (option == current) {
                                 "${option.label} ${if (descending) "↓" else "↑"}"
                             } else {

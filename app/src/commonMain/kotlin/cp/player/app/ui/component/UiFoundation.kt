@@ -24,7 +24,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
 import androidx.compose.material3.adaptive.WindowAdaptiveInfo
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
@@ -283,9 +282,9 @@ fun SectionHeader(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleLarge)
+            CpText(title, style = MaterialTheme.typography.titleLarge)
             if (!supportingText.isNullOrBlank()) {
-                Text(
+                CpText(
                     supportingText,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -325,10 +324,10 @@ fun ContentState(
             )
         }
         Spacer(Modifier.height(16.dp))
-        Text(title, style = MaterialTheme.typography.titleMedium)
+        CpText(title, style = MaterialTheme.typography.titleMedium)
         if (!message.isNullOrBlank()) {
             Spacer(Modifier.height(6.dp))
-            Text(
+            CpText(
                 message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -336,7 +335,7 @@ fun ContentState(
         }
         if (actionLabel != null && onAction != null) {
             Spacer(Modifier.height(20.dp))
-            Button(onClick = onAction) { Text(actionLabel) }
+            Button(onClick = onAction) { CpText(actionLabel) }
         }
     }
 }

@@ -32,7 +32,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -145,7 +144,7 @@ private fun CommentSortRow(selected: Int, totalCount: Long, onSelect: (Int) -> U
         }
         Spacer(Modifier.weight(1f))
         if (totalCount > 0L) {
-            Text(
+            CpText(
                 s.totalCount(totalCount),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -174,7 +173,7 @@ private fun CommentList(state: CommentUiState, model: CommentScreenModel) {
                     CpLoadingIndicator(Modifier.size(24.dp))
                 }
                 state.hasMore -> FooterAction(s.loadMore) { model.loadMore() }
-                else -> Text(
+                else -> CpText(
                     s.noMore,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -189,7 +188,7 @@ private fun CommentList(state: CommentUiState, model: CommentScreenModel) {
 @Composable
 private fun FooterAction(label: String, onClick: () -> Unit) {
     Box(Modifier.fillMaxWidth(), Alignment.Center) {
-        Text(
+        CpText(
             label,
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
@@ -233,7 +232,7 @@ private fun FloorSection(comment: Comment, floor: CommentFloorUi?, model: Commen
                 .clickable { model.toggleFloor(comment) }
                 .padding(horizontal = 10.dp, vertical = 5.dp),
         ) {
-            Text(
+            CpText(
                 text = if (expanded) s.collapseReplies else s.expandReplies(count),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -258,12 +257,12 @@ private fun FloorSection(comment: Comment, floor: CommentFloorUi?, model: Commen
                     floor.replies.isEmpty() && floor.loading -> Box(Modifier.fillMaxWidth(), Alignment.Center) {
                         CpLoadingIndicator(Modifier.size(20.dp))
                     }
-                    floor.replies.isEmpty() && floor.error != null -> Text(
+                    floor.replies.isEmpty() && floor.error != null -> CpText(
                         s.repliesFailed,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
                     )
-                    floor.hasMore -> Text(
+                    floor.hasMore -> CpText(
                         s.moreReplies,
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary,
@@ -319,7 +318,7 @@ private fun CommentBody(comment: Comment, model: CommentScreenModel, compact: Bo
                         color = MaterialTheme.colorScheme.errorContainer,
                         shape = MaterialTheme.shapes.extraSmall,
                     ) {
-                        Text(
+                        CpText(
                             s.hotBadge,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onErrorContainer,
@@ -335,7 +334,7 @@ private fun CommentBody(comment: Comment, model: CommentScreenModel, compact: Bo
                 comment.ipLocation.takeIf { it.isNotBlank() },
             ).joinToString(" · ")
             if (meta.isNotBlank()) {
-                Text(
+                CpText(
                     meta,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -343,7 +342,7 @@ private fun CommentBody(comment: Comment, model: CommentScreenModel, compact: Bo
             }
             Spacer(Modifier.height(4.dp))
             CommentText(comment, s.replyTo(comment.replyToNickname ?: ""))
-            Text(
+            CpText(
                 s.reply,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
@@ -364,11 +363,11 @@ private fun CommentBody(comment: Comment, model: CommentScreenModel, compact: Bo
 private fun CommentText(comment: Comment, replyPrefix: String) {
     val target = comment.replyToNickname
     if (target.isNullOrBlank()) {
-        Text(comment.content, style = MaterialTheme.typography.bodyMedium)
+        CpText(comment.content, style = MaterialTheme.typography.bodyMedium)
         return
     }
     val primary = MaterialTheme.colorScheme.primary
-    Text(
+    CpText(
         buildAnnotatedString {
             withStyle(SpanStyle(color = primary)) { append(replyPrefix) }
             append("  ")
@@ -397,7 +396,7 @@ private fun LikeButton(comment: Comment, model: CommentScreenModel) {
         )
         if (comment.likedCount > 0) {
             Spacer(Modifier.width(4.dp))
-            Text(
+            CpText(
                 comment.likedCount.toString(),
                 style = MaterialTheme.typography.labelSmall,
                 color = if (comment.liked) MaterialTheme.colorScheme.primary
@@ -486,7 +485,7 @@ private fun CommentComposer(state: CommentUiState, model: CommentScreenModel) {
                     onValueChange = model::updateDraft,
                     modifier = Modifier.weight(1f).focusRequester(focus),
                     placeholder = {
-                        Text(
+                        CpText(
                             s.inputPlaceholder,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.60f),
@@ -503,7 +502,7 @@ private fun CommentComposer(state: CommentUiState, model: CommentScreenModel) {
                 )
 
                 if (state.draft.length >= COMMENT_MAX_LENGTH - 30) {
-                    Text(
+                    CpText(
                         text = "${state.draft.length}/$COMMENT_MAX_LENGTH",
                         style = MaterialTheme.typography.labelSmall,
                         color = if (state.draftTooLong) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -545,7 +544,7 @@ private fun CommentComposer(state: CommentUiState, model: CommentScreenModel) {
 
         val hint = state.sendError ?: if (state.draftTooLong) s.tooLong(COMMENT_MAX_LENGTH) else null
         if (hint != null) {
-            Text(
+            CpText(
                 hint,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.error,

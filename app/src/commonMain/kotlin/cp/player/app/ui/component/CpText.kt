@@ -3,6 +3,7 @@ package cp.player.app.ui.component
 import androidx.compose.foundation.MarqueeAnimationMode
 import androidx.compose.foundation.MarqueeSpacing
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -14,15 +15,21 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import cp.player.app.ui.theme.LocalAppFontFamilies
+import cp.player.app.ui.theme.buildAppStyledText
 import cp.player.app.ui.theme.localizedForLanguage
 
 /**
@@ -138,30 +145,40 @@ fun CpText(
     ellipsisMode: CpEllipsisMode = CpEllipsisMode.Tail,
     emphasized: Boolean = false,
     marqueeEnabled: Boolean = true,
-    /**
-     * 行内对齐。**必须在这里而不是 `style.copy(textAlign = …)`**：`Text` 的 `textAlign`
-     * 是独立参数，写在 style 里在部分版本不参与测量（与 `fontWeight` 同一个坑）。
-     * null = 跟随 style（`Text` 的默认）。
-     */
     textAlign: TextAlign? = null,
-    /** 最少行数（`Text` 的同名参数）；只在多行文本里用得到。 */
     minLines: Int = 1,
-    /** 直接给字号（等价于 `style.copy(fontSize = …)`，但会参与测量）。null = 用 style 的。 */
     fontSize: TextUnit? = null,
-    /** 外部布局回调；与组件内部的溢出检测**串联**，不覆盖。 */
     onTextLayout: ((TextLayoutResult) -> Unit)? = null,
+    overflow: TextOverflow = TextOverflow.Ellipsis,
+    softWrap: Boolean = true,
+    lineHeight: TextUnit = TextUnit.Unspecified,
+    letterSpacing: TextUnit = TextUnit.Unspecified,
+    fontStyle: FontStyle? = null,
+    textDecoration: TextDecoration? = null,
+    fontFamily: FontFamily? = null,
 ) {
-    // 字重 / 字号参与测量（同一串字 Bold 比 Regular 宽），颜色不影响宽度 ⇒ 只合这两项。
+    // 字重 / 字号 / 行距等参与测量，颜色不影响宽度 ⇒ 合入样式。
     val merged = when {
         fontWeight != null && fontSize != null -> style.copy(fontWeight = fontWeight, fontSize = fontSize)
         fontWeight != null -> style.copy(fontWeight = fontWeight)
         fontSize != null -> style.copy(fontSize = fontSize)
         else -> style
+    }.let { s ->
+        var cur = s
+        if (fontStyle != null) cur = cur.copy(fontStyle = fontStyle)
+        if (fontFamily != null) cur = cur.copy(fontFamily = fontFamily)
+        if (letterSpacing != TextUnit.Unspecified) cur = cur.copy(letterSpacing = letterSpacing)
+        if (lineHeight != TextUnit.Unspecified) cur = cur.copy(lineHeight = lineHeight)
+        if (textDecoration != null) cur = cur.copy(textDecoration = textDecoration)
+        cur
     }
-    // 含假名的文本自动换成日文字体 + `lang=ja`（见 JapaneseText.kt）。
+    // 含假名的文本自动补上 `lang=ja` + `palt`（见 JapaneseText.kt）。
     val resolvedStyle = merged.localizedForLanguage(text)
+    // 字体按字符脚本逐 run 切换：拉丁 / 数字 → Google Sans Flex，假名 → Noto Sans JP，
+    // 汉字 / 全角标点 → MiSans（声明与路由见 theme/FontStack.kt）。
+    val families = LocalAppFontFamilies.current
 
-    var overflow by remember(text, resolvedStyle, maxLines) { mutableStateOf(false) }
+    var hasVisualOverflow by remember(text, resolvedStyle, maxLines) { mutableStateOf(false) }
     var maxWidthPx by remember(text, resolvedStyle, maxLines) { mutableIntStateOf(0) }
 
     // 外部回调走 rememberUpdatedState：不把它放进 remember 的 key，否则调用方每次重组
@@ -170,9 +187,9 @@ fun CpText(
     val onLayout = remember(text, resolvedStyle, maxLines) {
         { layout: TextLayoutResult ->
             // ⚠️ 单向置位，见本组件 KDoc。宽度从 layoutInput 现取，不再额外测量一遍。
-            if (!overflow && layout.hasVisualOverflow) {
+            if (!hasVisualOverflow && layout.hasVisualOverflow) {
                 maxWidthPx = layout.layoutInput.constraints.maxWidth
-                overflow = true
+                hasVisualOverflow = true
             }
             val cb = externalLayout.value
             if (cb != null) cb(layout)
@@ -181,12 +198,22 @@ fun CpText(
 
     val measurer = rememberTextMeasurer()
     // 智能省略只对**单行**做：多行要按行切分，那属于「本来就该换行」的另一类问题。
-    val smartEnabled = overflow && maxLines == 1 &&
+    val smartEnabled = hasVisualOverflow && maxLines == 1 &&
         ellipsisMode != CpEllipsisMode.Tail &&
         maxWidthPx > 0 && maxWidthPx != Int.MAX_VALUE
-    val shown = remember(measurer, text, resolvedStyle, maxWidthPx, ellipsisMode, smartEnabled) {
-        if (smartEnabled) fitText(measurer, text, resolvedStyle, maxWidthPx, ellipsisMode) else text
+    val shown = remember(measurer, text, resolvedStyle, families, maxWidthPx, ellipsisMode, smartEnabled) {
+        if (smartEnabled) {
+            // ⚠️ 测量时必须用**切好 run 的**文本：中文字符在 MiSans 与系统回退字体里的
+            // 宽度不同，拿纯字符串量出来的宽度对不上真实渲染 ⇒ 省略号落点会偏。
+            fitText(measurer, text, resolvedStyle, maxWidthPx, ellipsisMode) {
+                buildAppStyledText(it, families)
+            }
+        } else {
+            text
+        }
     }
+    // 截断之后再切 run：截断是按字符数二分出来的，先切再多段截会破坏 span 边界。
+    val styled = remember(shown, families) { buildAppStyledText(shown, families) }
 
     val effective = when (reveal) {
         CpTextReveal.None -> CpTextReveal.None
@@ -198,7 +225,7 @@ fun CpText(
             if (emphasized && marqueeEnabled) CpTextReveal.Marquee else CpTextReveal.Hover
     }
 
-    val marquee = if (overflow && effective == CpTextReveal.Marquee) {
+    val marquee = if (hasVisualOverflow && maxLines == 1 && effective == CpTextReveal.Marquee) {
         Modifier.basicMarquee(
             iterations = Int.MAX_VALUE,
             // Immediately 而不是 WhileFocused：桌面端没有「焦点在这个文本上」这回事，
@@ -214,30 +241,145 @@ fun CpText(
         Modifier
     }
 
-    if (overflow && effective == CpTextReveal.Hover) {
+    if (hasVisualOverflow && effective == CpTextReveal.Hover) {
         CpHoverReveal(fullText = text) {
             Text(
-                text = shown,
+                text = styled,
                 modifier = modifier.then(marquee),
                 style = resolvedStyle,
                 color = color,
                 maxLines = maxLines,
                 minLines = minLines,
                 textAlign = textAlign,
-                overflow = TextOverflow.Ellipsis,
+                overflow = overflow,
+                softWrap = softWrap,
                 onTextLayout = onLayout,
             )
         }
     } else {
         Text(
-            text = shown,
+            text = styled,
             modifier = modifier.then(marquee),
             style = resolvedStyle,
             color = color,
             maxLines = maxLines,
             minLines = minLines,
             textAlign = textAlign,
-            overflow = TextOverflow.Ellipsis,
+            overflow = overflow,
+            softWrap = softWrap,
+            onTextLayout = onLayout,
+        )
+    }
+}
+
+/**
+ * [AnnotatedString] 版 [CpText]：保留原有样式注解并叠加字体栈与揭示治理。
+ */
+@Composable
+fun CpText(
+    text: AnnotatedString,
+    modifier: Modifier = Modifier,
+    style: TextStyle = LocalTextStyle.current,
+    color: Color = Color.Unspecified,
+    fontWeight: FontWeight? = null,
+    maxLines: Int = 1,
+    reveal: CpTextReveal = CpTextReveal.Auto,
+    ellipsisMode: CpEllipsisMode = CpEllipsisMode.Tail,
+    emphasized: Boolean = false,
+    marqueeEnabled: Boolean = true,
+    textAlign: TextAlign? = null,
+    minLines: Int = 1,
+    fontSize: TextUnit? = null,
+    onTextLayout: ((TextLayoutResult) -> Unit)? = null,
+    overflow: TextOverflow = TextOverflow.Ellipsis,
+    softWrap: Boolean = true,
+    lineHeight: TextUnit = TextUnit.Unspecified,
+    letterSpacing: TextUnit = TextUnit.Unspecified,
+    fontStyle: FontStyle? = null,
+    textDecoration: TextDecoration? = null,
+    fontFamily: FontFamily? = null,
+    inlineContent: Map<String, InlineTextContent> = mapOf(),
+) {
+    val rawText = text.text
+    val merged = when {
+        fontWeight != null && fontSize != null -> style.copy(fontWeight = fontWeight, fontSize = fontSize)
+        fontWeight != null -> style.copy(fontWeight = fontWeight)
+        fontSize != null -> style.copy(fontSize = fontSize)
+        else -> style
+    }.let { s ->
+        var cur = s
+        if (fontStyle != null) cur = cur.copy(fontStyle = fontStyle)
+        if (fontFamily != null) cur = cur.copy(fontFamily = fontFamily)
+        if (letterSpacing != TextUnit.Unspecified) cur = cur.copy(letterSpacing = letterSpacing)
+        if (lineHeight != TextUnit.Unspecified) cur = cur.copy(lineHeight = lineHeight)
+        if (textDecoration != null) cur = cur.copy(textDecoration = textDecoration)
+        cur
+    }
+    val resolvedStyle = merged.localizedForLanguage(rawText)
+    val families = LocalAppFontFamilies.current
+
+    var hasVisualOverflow by remember(text, resolvedStyle, maxLines) { mutableStateOf(false) }
+
+    val externalLayout = rememberUpdatedState(onTextLayout)
+    val onLayout = remember(text, resolvedStyle, maxLines) {
+        { layout: TextLayoutResult ->
+            if (!hasVisualOverflow && layout.hasVisualOverflow) {
+                hasVisualOverflow = true
+            }
+            val cb = externalLayout.value
+            if (cb != null) cb(layout)
+        }
+    }
+
+    val styled = remember(text, families) { buildAppStyledText(text, families) }
+
+    val effective = when (reveal) {
+        CpTextReveal.None -> CpTextReveal.None
+        CpTextReveal.Hover -> CpTextReveal.Hover
+        CpTextReveal.Marquee -> if (marqueeEnabled) CpTextReveal.Marquee else CpTextReveal.Hover
+        CpTextReveal.Auto -> if (emphasized && marqueeEnabled) CpTextReveal.Marquee else CpTextReveal.Hover
+    }
+
+    val marquee = if (hasVisualOverflow && maxLines == 1 && effective == CpTextReveal.Marquee) {
+        Modifier.basicMarquee(
+            iterations = Int.MAX_VALUE,
+            animationMode = MarqueeAnimationMode.Immediately,
+            repeatDelayMillis = 1_200,
+            spacing = MarqueeSpacing.fractionOfContainer(0.25f),
+            velocity = 30.dp,
+        )
+    } else {
+        Modifier
+    }
+
+    if (hasVisualOverflow && effective == CpTextReveal.Hover) {
+        CpHoverReveal(fullText = rawText) {
+            Text(
+                text = styled,
+                modifier = modifier.then(marquee),
+                style = resolvedStyle,
+                color = color,
+                maxLines = maxLines,
+                minLines = minLines,
+                textAlign = textAlign,
+                overflow = overflow,
+                softWrap = softWrap,
+                inlineContent = inlineContent,
+                onTextLayout = onLayout,
+            )
+        }
+    } else {
+        Text(
+            text = styled,
+            modifier = modifier.then(marquee),
+            style = resolvedStyle,
+            color = color,
+            maxLines = maxLines,
+            minLines = minLines,
+            textAlign = textAlign,
+            overflow = overflow,
+            softWrap = softWrap,
+            inlineContent = inlineContent,
             onTextLayout = onLayout,
         )
     }
@@ -257,6 +399,8 @@ fun CpText(
  * 让 [Text] 自己截 —— 绝不递归再算。
  *
  * @return 缩短后的文本；原本就放得下时原样返回。
+ * @param annotate 把候选文本包成真正要渲染的 `AnnotatedString`（按脚本切字体 run）。
+ *   默认不包 —— 纯字符串测量在「整段只有拉丁」时与带 run 的结果一致。
  */
 fun fitText(
     measurer: TextMeasurer,
@@ -264,20 +408,21 @@ fun fitText(
     style: TextStyle,
     maxWidthPx: Int,
     mode: CpEllipsisMode,
+    annotate: (String) -> AnnotatedString = { AnnotatedString(it) },
 ): String {
     if (text.isBlank()) return text
-    if (measurer.measure(text, style, maxLines = 1).size.width <= maxWidthPx) return text
+    if (measurer.measure(annotate(text), style, maxLines = 1).size.width <= maxWidthPx) return text
 
     var lo = 0
     var hi = text.length
     while (lo < hi) {
         val mid = (lo + hi + 1) / 2
-        val width = measurer.measure(ellipsize(text, mid, mode), style, maxLines = 1).size.width
+        val width = measurer.measure(annotate(ellipsize(text, mid, mode)), style, maxLines = 1).size.width
         if (width <= maxWidthPx) lo = mid else hi = mid - 1
     }
     val result = ellipsize(text, lo, mode)
     return result.takeIf {
-        measurer.measure(it, style, maxLines = 1).size.width <= maxWidthPx
+        measurer.measure(annotate(it), style, maxLines = 1).size.width <= maxWidthPx
     } ?: text
 }
 

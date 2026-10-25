@@ -48,7 +48,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -250,7 +249,7 @@ fun VideoPlayerView(
                         modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Text(
+                        CpText(
                             text = state.errorMessage ?: "播放失败",
                             color = MaterialTheme.colorScheme.error,
                             fontSize = 14.sp,
@@ -266,7 +265,7 @@ fun VideoPlayerView(
                                     onClick = onBackClick,
                                     shape = RoundedCornerShape(50),
                                 ) {
-                                    Text("返回", fontSize = 13.sp)
+                                    CpText("返回", fontSize = 13.sp)
                                 }
                             }
                             FilledTonalButton(
@@ -275,7 +274,7 @@ fun VideoPlayerView(
                             ) {
                                 Icon(Icons.Filled.Refresh, contentDescription = "重试", modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("重试", fontSize = 13.sp)
+                                CpText("重试", fontSize = 13.sp)
                             }
                         }
                     }
@@ -304,7 +303,7 @@ fun VideoPlayerView(
                         }
                         Icon(icon, contentDescription = "音量", tint = Color.White)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(
+                        CpText(
                             text = "${(currentVolumeValue * 100).toInt()}%",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
@@ -329,7 +328,7 @@ fun VideoPlayerView(
                         modifier = Modifier.padding(horizontal = 24.dp, vertical = 14.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Text(
+                        CpText(
                             text = "${formatVideoMs(seekPreviewMs)} / ${formatVideoMs(state.durationMs)}",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
@@ -483,7 +482,7 @@ fun VideoPlayerView(
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
                             )
-                            Text(
+                            CpText(
                                 text = "已解析画质: ${state.currentQuality?.label ?: "标准"} • Windows 建议使用系统播放器全硬解",
                                 color = Color.White.copy(alpha = 0.75f),
                                 fontSize = 12.sp,
@@ -507,7 +506,7 @@ fun VideoPlayerView(
                                 ) {
                                     Icon(Icons.AutoMirrored.Filled.OpenInNew, null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(6.dp))
-                                    Text("系统播放器打开 (PotPlayer/推荐)", fontSize = 13.sp)
+                                    CpText("系统播放器打开 (PotPlayer/推荐)", fontSize = 13.sp)
                                 }
 
                                 FilledTonalButton(
@@ -519,7 +518,7 @@ fun VideoPlayerView(
                                     },
                                     shape = RoundedCornerShape(50),
                                 ) {
-                                    Text(if (copied) "已复制直链" else "复制播放直链", fontSize = 13.sp)
+                                    CpText(if (copied) "已复制直链" else "复制播放直链", fontSize = 13.sp)
                                 }
                             }
                         }
@@ -574,7 +573,7 @@ fun VideoPlayerView(
 
                             // 播放时间 / 总时长
                             val durText = if (state.durationMs > 0L) formatVideoMs(state.durationMs) else "--:--"
-                            Text(
+                            CpText(
                                 text = "${formatVideoMs(state.positionMs)} / $durText",
                                 color = Color.White.copy(alpha = 0.85f),
                                 fontSize = 12.sp,
@@ -593,7 +592,7 @@ fun VideoPlayerView(
                                     onClick = { qualityMenuExpanded = true },
                                     modifier = Modifier.padding(horizontal = 6.dp),
                                 ) {
-                                    Text(
+                                    CpText(
                                         text = qualityLabel,
                                         color = Color.White,
                                         fontSize = 12.sp,
@@ -610,7 +609,7 @@ fun VideoPlayerView(
                                         val isSelected = option.id == state.currentQuality?.id
                                         DropdownMenuItem(
                                             text = {
-                                                Text(
+                                                CpText(
                                                     text = option.label,
                                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                                     color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,

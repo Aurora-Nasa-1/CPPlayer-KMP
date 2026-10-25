@@ -83,7 +83,6 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -1175,7 +1174,7 @@ private fun ProgressRow(
             // （这里 0.6、顶栏 0.6、歌词页 0.6、评论区 0.7、迷你播放器 0.8），
             // 这正是「浅色主题看着不精致」最主要的来源。
             val formattedPosition = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
-            Text(
+            CpText(
                 formattedPosition,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1196,7 +1195,7 @@ private fun ProgressRow(
                     )
                     Spacer(Modifier.width(4.dp))
                     val formattedSleepRemaining = remember(sleepRemainingMs / 1000) { formatTimeMs(sleepRemainingMs) }
-                    Text(
+                    CpText(
                         text = if (sleepRemainingMs > 0) {
                             s.player.sleepRemainingLabel(formattedSleepRemaining)
                         } else {
@@ -1208,14 +1207,14 @@ private fun ProgressRow(
                 }
             } else {
                 state.formatInfo?.let { info ->
-                    Text(
+                    CpText(
                         info.qualityLabel,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
-            Text(
+            CpText(
                 SeekAvailability.durationLabel(duration),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1224,7 +1223,7 @@ private fun ProgressRow(
         // 禁用滑条必须给出原因：静默失效的观感就是「拖了没反应」。
         // 两种原因互斥呈现（落盘优先），由 SeekAvailability 统一决定。
         SeekAvailability.disabledReason(duration, state.isLocalizing)?.let { reason ->
-            Text(
+            CpText(
                 reason,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

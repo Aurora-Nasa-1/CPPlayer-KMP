@@ -67,7 +67,6 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.SplitButtonDefaults
 import androidx.compose.material3.SplitButtonLayout
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.VerticalFloatingToolbar
@@ -483,7 +482,7 @@ fun CpSeekBar(
                             IntOffset(dx.coerceIn(-maxDx, maxDx).roundToInt(), 0)
                         },
                 ) {
-                    Text(
+                    CpText(
                         text = formatTimeMs(shown.toLong()),
                         modifier = Modifier.padding(horizontal = 7.dp),
                         style = MaterialTheme.typography.labelSmall,
@@ -1102,7 +1101,7 @@ private fun RowScope.ChipContent(icon: ImageVector?, label: String) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
     }
-    Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+    CpText(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
 }
 
 // ---------------------------------------------------------------- 动作组
@@ -1179,7 +1178,7 @@ fun CpActionButtonGroup(
                         modifier = Modifier.size(CpIconSize.inline),
                         tint = contentColor.copy(alpha = if (item.enabled) 1f else 0.38f),
                     )
-                    Text(
+                    CpText(
                         text = item.label,
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = if (isPrimary) FontWeight.SemiBold else FontWeight.Medium,

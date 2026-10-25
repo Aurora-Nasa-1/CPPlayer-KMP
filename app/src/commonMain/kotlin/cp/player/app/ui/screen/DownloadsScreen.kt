@@ -55,7 +55,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
@@ -272,7 +271,7 @@ private fun ActiveDownloadsTab(state: DownloadsUiState, model: DownloadsScreenMo
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Text(
+                        CpText(
                             "队列任务 (${tasks.size})",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
@@ -290,7 +289,7 @@ private fun ActiveDownloadsTab(state: DownloadsUiState, model: DownloadsScreenMo
                                 ) {
                                     Icon(Icons.Filled.Pause, null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(4.dp))
-                                    Text("全部暂停", style = MaterialTheme.typography.labelMedium)
+                                    CpText("全部暂停", style = MaterialTheme.typography.labelMedium)
                                 }
                             }
                             if (hasPaused) {
@@ -301,7 +300,7 @@ private fun ActiveDownloadsTab(state: DownloadsUiState, model: DownloadsScreenMo
                                 ) {
                                     Icon(Icons.Filled.PlayArrow, null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(4.dp))
-                                    Text("全部继续", style = MaterialTheme.typography.labelMedium)
+                                    CpText("全部继续", style = MaterialTheme.typography.labelMedium)
                                 }
                             }
                             OutlinedButton(
@@ -314,7 +313,7 @@ private fun ActiveDownloadsTab(state: DownloadsUiState, model: DownloadsScreenMo
                             ) {
                                 Icon(Icons.Filled.Close, null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text("全部取消", style = MaterialTheme.typography.labelMedium)
+                                CpText("全部取消", style = MaterialTheme.typography.labelMedium)
                             }
                         }
                     }

@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -135,7 +134,7 @@ fun MonthListeningCalendar(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             s.insights.calendar.weekdayLabels.forEach { label ->
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    Text(
+                    CpText(
                         label,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -169,7 +168,7 @@ fun MonthListeningCalendar(
                                 },
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text(
+                            CpText(
                                 text = cell.dateKey.substringAfterLast('-').trimStart('0'),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -195,7 +194,7 @@ fun ListeningCalendarLegend(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(
+        CpText(
             s.insights.calendar.legendLess,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -212,7 +211,7 @@ fun ListeningCalendarLegend(
                     .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant, CellShape),
             )
         }
-        Text(
+        CpText(
             s.insights.calendar.legendMore,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

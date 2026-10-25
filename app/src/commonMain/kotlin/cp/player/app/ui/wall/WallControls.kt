@@ -18,7 +18,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -39,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.component.CpText
 
 /** 命名层的中文名。做成函数而不是顶层 `val`：顶层属性在类加载时求值，那时还没有语言状态。 */
 internal fun WallLevel.label(s: CpStrings): String = when (this) {
@@ -185,7 +185,7 @@ internal fun WallZoomLadder(
                     }
                     if (!compact) {
                         Spacer(Modifier.width(10.dp))
-                        Text(
+                        CpText(
                             level.label(s),
                             fontSize = 12.sp,
                             fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
@@ -271,7 +271,7 @@ internal fun WallCrown(
                     )
                 }
             }
-            Text(
+            CpText(
                 s.wall.crownLabel,
                 fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,
@@ -311,7 +311,7 @@ internal fun WallHud(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
+            CpText(
                 "${s.wall.hudZoom} ${WallZoomMath.levelOf(zoom).label(s)}",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.ExtraBold,
@@ -349,7 +349,7 @@ private fun HudDivider() {
 
 @Composable
 private fun HudNumber(text: String) {
-    Text(
+    CpText(
         text,
         fontSize = 11.5.sp,
         fontWeight = FontWeight.Medium,

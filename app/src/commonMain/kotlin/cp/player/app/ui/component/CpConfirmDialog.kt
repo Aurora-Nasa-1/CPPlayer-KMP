@@ -2,7 +2,6 @@ package cp.player.app.ui.component
 
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -124,11 +123,11 @@ fun CpConfirmDialog(
     val strings = cpStrings()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = { Text(message) },
+        title = { CpText(title) },
+        text = { CpText(message, maxLines = Int.MAX_VALUE) },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text(
+                CpText(
                     text = confirmLabel ?: strings.common.confirm,
                     // 破坏性操作的确认键用 error 色 —— 与菜单里的 danger 项同一语义。
                     color = if (destructive) MaterialTheme.colorScheme.error else Color.Unspecified,
@@ -136,7 +135,7 @@ fun CpConfirmDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(dismissLabel ?: strings.common.dismiss) }
+            TextButton(onClick = onDismiss) { CpText(dismissLabel ?: strings.common.dismiss) }
         },
     )
 }

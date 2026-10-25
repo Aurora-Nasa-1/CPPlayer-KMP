@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -33,6 +32,7 @@ import cp.player.app.ui.component.SettingsSearchBar
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.settingsRowContainer
 import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.component.CpText
 
 /**
  * 设置根页面。
@@ -273,7 +273,7 @@ private fun SettingsSubItemRow(
                 shape = MaterialTheme.shapes.small,
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
             ) {
-                Text(
+                CpText(
                     text = breadcrumb,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

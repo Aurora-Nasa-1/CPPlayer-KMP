@@ -1,5 +1,6 @@
 package cp.player.app.ui.theme
 
+import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.text.font.FontFamily
@@ -8,14 +9,32 @@ import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import cp.player.app.resources.Res
 import cp.player.app.resources.google_sans_flex
-import cp.player.app.resources.noto_sans_jp
 import org.jetbrains.compose.resources.Font
 
 /**
- * Google Sans Flex —— 应用默认字体。
+ * 应用使用的五档字重（可变字体里就是 `wght` 轴的取值）。
+ *
+ * 三款字体全部**共享这一张表**：Google Sans Flex 与 MiSans VF 都是可变字体，
+ * 不给每档显式带 `wght` 的话，五档拿到的都是默认实例（渲染出来一模一样）。
+ * 放在这里是为了「加一档」时三处一起动，不会出现某个字体少一档。
+ *
+ * 300 Light · 400 Normal · 500 Medium · 600 SemiBold · 700 Bold
+ * （M3 字阶只用到 400 / 500 / 700，300 与 600 是给 `CpText` 的自定义字重留的）
+ */
+internal val AppFontWeights: List<Pair<Int, FontWeight>> = listOf(
+    300 to FontWeight.Light,
+    400 to FontWeight.Normal,
+    500 to FontWeight.Medium,
+    600 to FontWeight.SemiBold,
+    700 to FontWeight.Bold,
+)
+
+/**
+ * Google Sans Flex —— 应用默认字体（[AppFontFace.GOOGLE_SANS_FLEX]）。
  *
  * 字体文件：`app/src/commonMain/composeResources/font/google_sans_flex.ttf`
  * （与旧版 `reference/cp-player-legacy` 用的是同一个文件，从那儿原样搬过来的）。
+ * **两端都内置**：它是拉丁 / 数字的默认字体，没有它整个界面就没有骨架。
  *
  * ⚠️ **它是可变字体，不是静态字重集合。**
  * 六个轴：`opsz` / `wdth` / `wght` / `GRAD` / `ROND` / `slnt`，其中 `wght` 范围 1–1000。
@@ -24,9 +43,9 @@ import org.jetbrains.compose.resources.Font
  * 默认实例（wght=400），渲染出来一模一样 —— 加了字重却看不出字重。
  *
  * ⚠️ **它不含 CJK 字形**：整套只有 682 个字形，覆盖拉丁 / 希腊 / 西里尔 + 符号。
- * 中文走系统回退字体（Android 的字体回退、桌面 Skia 的 `FontCollection.setDefaultFontManager`
- * 两条路都有），这是预期行为，旧版也是这样。**不要**为了"统一观感"把中文也钉成这个字体，
- * 那会整屏渲染成豆腐块。
+ * 中日文由 [AppFontFace.NOTO_SANS_JP] / [AppFontFace.MISANS] 承担 ——
+ * 见 `FontStack.kt` 的声明与 `buildAppStyledText` 的路由。
+ * **不要**为了「统一观感」把中文也钉成这个字体，那会整屏渲染成豆腐块。
  */
 @Composable
 internal fun googleSansFlexFamily(roundness: Int?): FontFamily {
@@ -71,44 +90,17 @@ private fun googleSansFlex(weight: Int, fontWeight: FontWeight, roundness: Int?)
     },
 )
 
-/**
- * Noto Sans JP —— 日文字体（只在文本被判为日语时使用，见 [localizedForLanguage]）。
- *
- * 字体文件：`app/src/commonMain/composeResources/font/noto_sans_jp.ttf`
- * （`google/fonts` 的 `ofl/notosansjp/NotoSansJP[wght].ttf`，可变字体，wght 100–900，约 9.6 MB）。
- *
- * ## 为什么必须自带而不是靠系统回退
- *
- * 中日**共用码位**的汉字（`直` / `骨` / `次` / `海` …）在 Unicode 里是同一个字，
- * 选哪个字形完全取决于字体：中文来源的字体给的是大陆写法，日文来源的给的是日本写法。
- * 桌面端的 Skia 回退链按系统语言挑，中文系统上日语歌词就会整屏渲染成「中文字形」。
- * 自带一份日文字体后，「这段文字是日语」这件事由我们自己决定，观感才稳定。
- *
- * ⚠️ 它同时含拉丁与假名，所以**整行**用它可以保持行内一致；但**不要**拿它当全局默认 ——
- * 中文歌词会因此变成日文字形（同 `googleSansFlexFamily` 的注释：别为了统一观感钉死字体）。
- */
-@Composable
-internal fun notoSansJpFamily(): FontFamily {
-    val light = notoSansJp(300, FontWeight.Light)
-    val normal = notoSansJp(400, FontWeight.Normal)
-    val medium = notoSansJp(500, FontWeight.Medium)
-    val semiBold = notoSansJp(600, FontWeight.SemiBold)
-    val bold = notoSansJp(700, FontWeight.Bold)
-    return remember(light, normal, medium, semiBold, bold) {
-        FontFamily(light, normal, medium, semiBold, bold)
-    }
-}
+
 
 /**
- * 取 Noto Sans JP 的一个字重实例。
+ * 当前平台可用的中日文字体（[AppFontFamilies]）。
  *
- * 与 [googleSansFlex] 同理：它是**可变字体**，不显式给 `wght` 轴的话五个字重都是 400。
- * 这里没有 `ROND` 之类的第二轴，所以不需要 `if` 分支。
+ * - **桌面端**：随安装包内置（`app/src/desktopMain/resources/fonts/`），直接读 classpath。
+ * - **Android**：默认**不内置**（两款加起来 30 MB，装进 APK 对谁都不划算），
+ *   由用户在「设置 → 外观 → 字库」里从 GitHub 下载（见 `FontPacks`）。
+ *   没下载时返回 null，文本自动回到平台回退字体 —— 不会有豆腐块。
+ *
+ * ⚠️ 这是 `@Composable` 而不是普通函数：Android 侧要读下载状态并在下载完成后重组。
  */
 @Composable
-private fun notoSansJp(weight: Int, fontWeight: FontWeight) = Font(
-    Res.font.noto_sans_jp,
-    fontWeight,
-    FontStyle.Normal,
-    FontVariation.Settings(FontVariation.weight(weight)),
-)
+expect fun rememberAppFontFamilies(): AppFontFamilies

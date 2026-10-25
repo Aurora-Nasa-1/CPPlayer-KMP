@@ -10,7 +10,6 @@ import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -36,6 +35,7 @@ import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.util.popOrNotify
 import cp.player.core.provider.ProviderSettingItemSchema
 import cp.player.core.util.defaultSettingsStorage
+import cp.player.app.ui.component.CpText
 
 /**
  * 声明式音源自定义设置页面。
@@ -153,11 +153,11 @@ class ProviderCustomSettingsScreen(
             val isPassword = item.type.equals("password", ignoreCase = true)
             AlertDialog(
                 onDismissRequest = { editingItem = null },
-                title = { Text(text = "编辑 ${item.label}") },
+                title = { CpText(text = "编辑 ${item.label}") },
                 text = {
                     Column {
                         item.description?.let {
-                            Text(
+                            CpText(
                                 text = it,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -167,8 +167,8 @@ class ProviderCustomSettingsScreen(
                         OutlinedTextField(
                             value = editingText,
                             onValueChange = { editingText = it },
-                            label = { Text(item.label) },
-                            placeholder = item.placeholder?.let { { Text(it) } },
+                            label = { CpText(item.label) },
+                            placeholder = item.placeholder?.let { { CpText(it) } },
                             singleLine = true,
                             visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
                             keyboardOptions = if (isPassword) KeyboardOptions(keyboardType = KeyboardType.Password) else KeyboardOptions.Default,
@@ -184,12 +184,12 @@ class ProviderCustomSettingsScreen(
                             editingItem = null
                         }
                     ) {
-                        Text("保存")
+                        CpText("保存")
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { editingItem = null }) {
-                        Text("取消")
+                        CpText("取消")
                     }
                 }
             )

@@ -26,7 +26,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -97,7 +96,7 @@ fun LyricOffsetDialog(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(
+                CpText(
                     text = s.player.lyricOffsetTitle,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
@@ -153,14 +152,14 @@ fun LyricOffsetDialog(
                     ) {
                         val offsetSeconds = offsetMs / 1000f
                         val sign = if (offsetSeconds > 0) "+" else ""
-                        Text(
+                        CpText(
                             text = "$sign${offsetSeconds}s",
                             fontSize = 32.sp,
                             fontWeight = FontWeight.Bold,
                             color = badgeContentColor,
                         )
                         Spacer(Modifier.height(2.dp))
-                        Text(
+                        CpText(
                             text = s.player.lyricOffsetSubtitle(offsetMs),
                             style = MaterialTheme.typography.labelMedium,
                             color = badgeContentColor.copy(alpha = 0.85f),
@@ -185,14 +184,14 @@ fun LyricOffsetDialog(
                         ) {
                             Icon(Icons.Filled.FastRewind, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("-0.5s")
+                            CpText("-0.5s")
                         }
                         FilledTonalButton(
                             onClick = { adjustBy(500L) },
                             shape = MaterialTheme.shapes.medium,
                             modifier = Modifier.weight(1f),
                         ) {
-                            Text("+0.5s")
+                            CpText("+0.5s")
                             Spacer(Modifier.width(4.dp))
                             Icon(Icons.Filled.FastForward, contentDescription = null, modifier = Modifier.size(16.dp))
                         }
@@ -208,14 +207,14 @@ fun LyricOffsetDialog(
                             shape = MaterialTheme.shapes.medium,
                             modifier = Modifier.weight(1f),
                         ) {
-                            Text("-0.1s")
+                            CpText("-0.1s")
                         }
                         OutlinedButton(
                             onClick = { adjustBy(100L) },
                             shape = MaterialTheme.shapes.medium,
                             modifier = Modifier.weight(1f),
                         ) {
-                            Text("+0.1s")
+                            CpText("+0.1s")
                         }
                         if (offsetMs != 0L) {
                             FilledTonalIconButton(
@@ -233,7 +232,7 @@ fun LyricOffsetDialog(
                 }
 
                 // 说明提示
-                Text(
+                CpText(
                     text = s.player.lyricOffsetHint,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
@@ -247,7 +246,7 @@ fun LyricOffsetDialog(
                 onClick = onDismiss,
                 shape = MaterialTheme.shapes.medium,
             ) {
-                Text(
+                CpText(
                     text = "完成",
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,

@@ -41,7 +41,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
@@ -732,7 +731,7 @@ internal fun MiniVolumePopupCard(
                     inactiveTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                 ),
             )
-            Text(
+            CpText(
                 // 数字用 ASCII 百分号：跟着数值走，不需要翻译。
                 text = "${(volume * 100).roundToInt()}%",
                 style = MaterialTheme.typography.labelMedium,

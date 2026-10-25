@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -15,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.MorphingShape
+import cp.player.app.ui.component.CpText
 
 class StartupScreen(private val message: String) : Screen {
     @Composable
@@ -35,7 +35,7 @@ class StartupScreen(private val message: String) : Screen {
                 modifier = Modifier.padding(top = 20.dp).size(44.dp),
                 color = MaterialTheme.colorScheme.primary,
             )
-            Text(
+            CpText(
                 text = message,
                 modifier = Modifier.padding(top = 16.dp),
                 style = MaterialTheme.typography.bodyLarge,

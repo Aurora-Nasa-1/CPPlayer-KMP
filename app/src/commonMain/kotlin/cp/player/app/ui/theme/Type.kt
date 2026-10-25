@@ -192,7 +192,7 @@ object CpText {
  * **播放器的刚需**：比例数字下 `0:09` → `0:10` 的宽度会变，进度时间行会肉眼可见地
  * "抽"一下。开启 `tnum` 后每个数字占同样宽度，跳动就消失了。
  *
- * 用法：`Text(formatTimeMs(ms), style = CpText.timecode(MaterialTheme.typography.labelMedium))`
+ * 用法：`CpText(formatTimeMs(ms), style = CpTypography.timecode(MaterialTheme.typography.labelMedium))`
  */
 object CpTypography {
     /**

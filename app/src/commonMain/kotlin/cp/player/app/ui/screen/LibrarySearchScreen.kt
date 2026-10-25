@@ -17,7 +17,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -218,7 +217,7 @@ private fun LibrarySearchContent(
                                     contentDescription = null,
                                     modifier = Modifier.size(18.dp),
                                 )
-                                Text(
+                                CpText(
                                     s.library.searchOnlineHint(keyword),
                                     modifier = Modifier.padding(start = 6.dp),
                                 )

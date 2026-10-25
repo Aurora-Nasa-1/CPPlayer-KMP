@@ -67,7 +67,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.ui.text.style.TextOverflow
@@ -611,7 +610,7 @@ fun PlaylistDetailContent(
                         cp.player.app.ui.component.CpLoadingIndicator(Modifier.size(32.dp))
                     }
                 } else {
-                    Text(
+                    CpText(
                         buildString {
                             append(
                                 s.library.shareTrack(
@@ -663,7 +662,7 @@ fun PlaylistDetailContent(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showInfoTarget = null }) { Text(s.common.dismiss) }
+                TextButton(onClick = { showInfoTarget = null }) { CpText(s.common.dismiss) }
             },
         )
     }
@@ -865,14 +864,14 @@ private fun NarrowLayout(
                                     shape = CircleShape,
                                     color = MaterialTheme.colorScheme.surfaceContainerHighest,
                                 ) {
-                                    Text(
+                                    CpText(
                                         text = if (isOwner) "我创建的" else if (isFavorite) "已收藏" else "公开歌单",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                     )
                                 }
-                                Text(
+                                CpText(
                                     text = s.library.trackCountLabel(trackCount, durationStr),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1105,7 +1104,7 @@ private fun WideLayout(
                                 ) {
                                     Icon(Icons.Filled.Person, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                     Spacer(Modifier.width(4.dp))
-                                    Text(
+                                    CpText(
                                         text = summary.creatorName.orEmpty(),
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1124,7 +1123,7 @@ private fun WideLayout(
                             ) {
                                 Icon(Icons.Filled.MusicNote, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Spacer(Modifier.width(4.dp))
-                                Text(
+                                CpText(
                                     text = s.library.playlistCountLabel(trackCount, durationStr),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1235,7 +1234,7 @@ private fun WideLayout(
                             Icon(Icons.Filled.Close, contentDescription = s.library.exitSelection)
                         }
                         Spacer(Modifier.width(4.dp))
-                        Text(
+                        CpText(
                             text = s.library.selectedCount(state.selectedIds.size),
                             style = MaterialTheme.typography.titleMedium,
                         )
@@ -1325,13 +1324,13 @@ private fun TrackList(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text(
+                    CpText(
                         text = state.error,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     TextButton(onClick = { state.summary?.let { model.load(it, force = true) } }) {
-                        Text(s.library.retry)
+                        CpText(s.library.retry)
                     }
                 }
             }
@@ -1430,7 +1429,7 @@ private fun TrackList(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                Text(
+                                CpText(
                                     if (searchQuery.isNotBlank()) "未在歌单中找到与“$searchQuery”匹配的歌曲"
                                     else s.library.playlistEmpty,
                                     style = MaterialTheme.typography.bodyMedium,
@@ -1438,7 +1437,7 @@ private fun TrackList(
                                 )
                                 if (searchQuery.isNotBlank()) {
                                     TextButton(onClick = { onSearchQueryChange("") }) {
-                                        Text("清空搜索")
+                                        CpText("清空搜索")
                                     }
                                 }
                             }
@@ -1470,12 +1469,12 @@ private fun TrackList(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            Text(
+                            CpText(
                                 s.library.loadFailedRetry,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
-                            Text(
+                            CpText(
                                 state.loadMoreError.orEmpty(),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1587,7 +1586,7 @@ private fun M3EPlayShufflePillGroup(
                 modifier = Modifier.size(playIconSize),
             )
             Spacer(Modifier.width(10.dp))
-            Text(
+            CpText(
                 text = "全部播放",
                 style = if (isDesktopWide) {
                     MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
@@ -1973,7 +1972,7 @@ private fun ActionChip(
             )
             if (label.isNotEmpty()) {
                 Spacer(Modifier.width(6.dp))
-                Text(
+                CpText(
                     text = label,
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
                     color = contentColor,
@@ -2069,7 +2068,7 @@ private fun PlaylistTopBarSearchBar(
                                 contentAlignment = Alignment.CenterStart,
                             ) {
                                 if (query.isEmpty()) {
-                                    Text(
+                                    CpText(
                                         text = "搜索歌曲、歌手、专辑...",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
@@ -2086,7 +2085,7 @@ private fun PlaylistTopBarSearchBar(
                             shape = CircleShape,
                             color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         ) {
-                            Text(
+                            CpText(
                                 text = "$resultCount 首",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2176,7 +2175,7 @@ private fun InPlaylistSearchBar(
                         contentAlignment = Alignment.CenterStart,
                     ) {
                         if (query.isEmpty()) {
-                            Text(
+                            CpText(
                                 text = "在歌单中搜索歌曲、歌手、专辑...",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
@@ -2191,7 +2190,7 @@ private fun InPlaylistSearchBar(
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.surfaceContainerHighest,
                 ) {
-                    Text(
+                    CpText(
                         text = "$resultCount 首",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

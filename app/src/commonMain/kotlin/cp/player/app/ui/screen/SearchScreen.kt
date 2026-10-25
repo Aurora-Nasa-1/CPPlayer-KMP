@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import cp.player.app.ui.component.CpText
 import androidx.compose.runtime.Composable
@@ -279,7 +278,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                                     confirmLabel = "清空",
                                                     onConfirm = model::clearHistory,
                                                 )
-                                            }) { Text("清空") }
+                                            }) { CpText("清空") }
                                         },
                                     )
                                 }
@@ -291,7 +290,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                     ) {
                                         Icon(Icons.Filled.History, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                         Spacer(Modifier.width(12.dp))
-                                        Text(keyword)
+                                        CpText(keyword)
                                     }
                                 }
                             }
@@ -310,7 +309,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                         Modifier.fillMaxWidth().clickable { model.search(hot.keyword) }.padding(vertical = 8.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Text(
+                                        CpText(
                                             "${index + 1}",
                                             modifier = Modifier.width(28.dp),
                                             style = MaterialTheme.typography.titleMedium,
@@ -558,7 +557,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                     ) {
                         menuItems.forEach { item ->
                             androidx.compose.material3.DropdownMenuItem(
-                                text = { Text(item.label) },
+                                text = { CpText(item.label) },
                                 onClick = {
                                     // 与 CpContextMenuPanel 同一顺序：先收面板再执行动作。
                                     playlistOptionsTarget = null

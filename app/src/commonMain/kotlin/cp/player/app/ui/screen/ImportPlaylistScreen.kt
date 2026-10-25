@@ -22,7 +22,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -55,6 +54,7 @@ import cp.player.app.ui.model.ImportPlaylistScreenModel
 import cp.player.app.ui.model.ImportPlaylistUiState
 import cp.player.app.ui.util.popOrNotify
 import cp.player.core.music.PlaylistSummary
+import cp.player.app.ui.component.CpText
 
 /**
  * 外部歌单导入页。
@@ -157,7 +157,7 @@ internal fun ImportPlaylistContent(
 
                 if (state.unmatched.isNotEmpty()) {
                     item {
-                        Text(
+                        CpText(
                             s.playlistImport.unmatchedTitle,
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -165,7 +165,7 @@ internal fun ImportPlaylistContent(
                         )
                     }
                     items(state.unmatched) { line ->
-                        Text(
+                        CpText(
                             "· $line",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -230,7 +230,7 @@ private fun InputCard(
                 onValueChange = onRawChange,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp),
                 placeholder = {
-                    Text(
+                    CpText(
                         s.playlistImport.inputPlaceholder,
                         style = MaterialTheme.typography.bodyMedium,
                     )
@@ -249,7 +249,7 @@ private fun InputCard(
                 TextButton(onClick = onPaste, enabled = !state.importing) {
                     Icon(Icons.Filled.ContentPaste, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text(s.playlistImport.pasteFromClipboard)
+                    CpText(s.playlistImport.pasteFromClipboard)
                 }
                 TextButton(
                     onClick = { onRawChange("") },
@@ -257,7 +257,7 @@ private fun InputCard(
                 ) {
                     Icon(Icons.Filled.DeleteSweep, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text(s.playlistImport.clear)
+                    CpText(s.playlistImport.clear)
                 }
                 Spacer(Modifier.weight(1f))
                 Button(
@@ -265,7 +265,7 @@ private fun InputCard(
                     enabled = state.raw.isNotBlank() && !state.analyzing && !state.importing,
                     shape = MaterialTheme.shapes.large,
                 ) {
-                    Text(s.playlistImport.analyze)
+                    CpText(s.playlistImport.analyze)
                 }
             }
         }
@@ -287,7 +287,7 @@ private fun AnalyzingCard(state: ImportPlaylistUiState) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CpLoadingIndicator(Modifier.size(20.dp))
                 Spacer(Modifier.width(10.dp))
-                Text(
+                CpText(
                     if (state.progressTotal > 0) {
                         s.playlistImport.progress(state.progressDone, state.progressTotal)
                     } else {
@@ -313,27 +313,27 @@ private fun ResultSummary(state: ImportPlaylistUiState) {
         modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Text(
+        CpText(
             s.playlistImport.recognized(state.tracks.size),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
         )
         state.sourcePlaylist?.let { source ->
-            Text(
+            CpText(
                 s.playlistImport.fromPlaylist(source.name),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         if (state.unmatched.isNotEmpty()) {
-            Text(
+            CpText(
                 s.playlistImport.unmatchedCount(state.unmatched.size),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         if (state.unsupportedLinks > 0) {
-            Text(
+            CpText(
                 s.playlistImport.unsupportedLinks(state.unsupportedLinks),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
@@ -354,7 +354,7 @@ private fun NameCard(state: ImportPlaylistUiState, onNameChange: (String) -> Uni
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
+            CpText(
                 s.playlistImport.nameLabel,
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -363,7 +363,7 @@ private fun NameCard(state: ImportPlaylistUiState, onNameChange: (String) -> Uni
                 value = state.name,
                 onValueChange = onNameChange,
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text(s.playlistImport.namePlaceholder) },
+                placeholder = { CpText(s.playlistImport.namePlaceholder) },
                 singleLine = true,
                 shape = MaterialTheme.shapes.medium,
                 enabled = !state.importing,
@@ -372,7 +372,7 @@ private fun NameCard(state: ImportPlaylistUiState, onNameChange: (String) -> Uni
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CpLoadingIndicator(Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(
+                    CpText(
                         s.playlistImport.importProgress(state.importDone, state.importTotal),
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -413,7 +413,7 @@ private fun ImportActions(
             ) {
                 Icon(Icons.Filled.PlaylistAdd, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(s.playlistImport.importToNew)
+                CpText(s.playlistImport.importToNew)
             }
             FilledTonalButton(
                 onClick = onImportExisting,
@@ -421,10 +421,10 @@ private fun ImportActions(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.large,
             ) {
-                Text(s.playlistImport.importToExisting)
+                CpText(s.playlistImport.importToExisting)
             }
             if (state.selectedCount == 0) {
-                Text(
+                CpText(
                     s.playlistImport.emptySelection,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
@@ -448,16 +448,16 @@ private fun PreviewHeader(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
+            CpText(
                 s.playlistImport.previewTitle,
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = onSelectAll) { Text(s.playlistImport.selectAll) }
-            TextButton(onClick = onDeselectAll) { Text(s.playlistImport.deselectAll) }
+            TextButton(onClick = onSelectAll) { CpText(s.playlistImport.selectAll) }
+            TextButton(onClick = onDeselectAll) { CpText(s.playlistImport.deselectAll) }
         }
-        Text(
+        CpText(
             s.playlistImport.previewHint,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -485,21 +485,21 @@ private fun OutcomeCard(state: ImportPlaylistUiState, onOpen: () -> Unit) {
                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
             )
             Column(Modifier.weight(1f)) {
-                Text(
+                CpText(
                     s.playlistImport.importSuccess(outcome.added, outcome.playlistName),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 if (outcome.partial) {
-                    Text(
+                    CpText(
                         s.playlistImport.partialFailure,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
             }
-            TextButton(onClick = onOpen) { Text(s.playlistImport.openPlaylist) }
+            TextButton(onClick = onOpen) { CpText(s.playlistImport.openPlaylist) }
         }
     }
 }

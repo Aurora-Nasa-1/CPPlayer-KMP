@@ -68,7 +68,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -321,7 +320,7 @@ class AccountScreen : Screen {
                             onClick = { model.loginAnonymous() },
                             enabled = !isLoading,
                         ) {
-                            Text(
+                            CpText(
                                 s.account.guestLogin,
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -431,14 +430,14 @@ class AccountScreen : Screen {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text(
+                                CpText(
                                     s.account.addAccount,
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                                 TextButton(onClick = { model.cancelAddAccount() }) {
-                                    Text(s.account.removeLabel.takeIf { false } ?: "收起")
+                                    CpText(s.account.removeLabel.takeIf { false } ?: "收起")
                                 }
                             }
 
@@ -527,7 +526,7 @@ class AccountScreen : Screen {
                             onClick = { navigator.push(ProviderManagementScreen()) },
                             trailingContent = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
+                                    CpText(
                                         s.account.switchProvider,
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.primary,
@@ -600,7 +599,7 @@ class AccountScreen : Screen {
                                     modifier = Modifier.size(CpIconSize.inline),
                                 )
                                 Spacer(Modifier.width(8.dp))
-                                Text(
+                                CpText(
                                     s.account.logout,
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
@@ -659,7 +658,7 @@ private fun LoginBrandHeader(
                 }
             }
             Spacer(Modifier.height(16.dp))
-            Text(
+            CpText(
                 text = providerName?.let { "登录 $it 账号" } ?: s.account.loginMethod,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
@@ -667,7 +666,7 @@ private fun LoginBrandHeader(
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.height(6.dp))
-            Text(
+            CpText(
                 text = s.account.loginBenefitsNote,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -689,7 +688,7 @@ private fun LoginBrandHeader(
                         modifier = Modifier.size(CpIconSize.inline),
                     )
                     Spacer(Modifier.width(6.dp))
-                    Text(
+                    CpText(
                         text = providerName?.let { "切换音源 (当前: $it)" } ?: s.account.switchProvider,
                         style = MaterialTheme.typography.labelMedium,
                     )
@@ -706,7 +705,7 @@ private fun LoginBrandHeader(
                             modifier = Modifier.size(CpIconSize.inline),
                         )
                         Spacer(Modifier.width(6.dp))
-                        Text(
+                        CpText(
                             text = "音源配置",
                             style = MaterialTheme.typography.labelMedium,
                         )
@@ -854,7 +853,7 @@ private fun QrLoginPanel(
         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
+        CpText(
             text = s.qrHint,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -878,7 +877,7 @@ private fun QrLoginPanel(
                 when {
                     isLoading -> CpLoadingIndicator(Modifier.size(44.dp))
                     qrUrl != null -> QrCodeImage(qrUrl, Modifier.size(200.dp))
-                    else -> Text(
+                    else -> CpText(
                         s.qrLoadFailed,
                         color = Color.Gray,
                         style = MaterialTheme.typography.bodyMedium,
@@ -900,7 +899,7 @@ private fun QrLoginPanel(
             ) {
                 Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(CpIconSize.inline))
                 Spacer(Modifier.width(6.dp))
-                Text(s.refreshQr)
+                CpText(s.refreshQr)
             }
             if (qrImgBase64 != null) {
                 OutlinedButton(
@@ -910,7 +909,7 @@ private fun QrLoginPanel(
                 ) {
                     Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(CpIconSize.inline))
                     Spacer(Modifier.width(6.dp))
-                    Text(s.saveQr)
+                    CpText(s.saveQr)
                 }
             }
         }
@@ -924,7 +923,7 @@ private fun QrLoginPanel(
             ) {
                 Icon(Icons.AutoMirrored.Filled.OpenInNew, null, Modifier.size(CpIconSize.inline))
                 Spacer(Modifier.width(8.dp))
-                Text(
+                CpText(
                     if (targetAppInstalled) {
                         s.openApp(targetAppName)
                     } else {
@@ -957,7 +956,7 @@ private fun EmailLoginPanel(
         OutlinedTextField(
             value = email,
             onValueChange = onEmailChange,
-            label = { Text(s.emailLabel) },
+            label = { CpText(s.emailLabel) },
             leadingIcon = { Icon(Icons.Filled.Email, null) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
@@ -966,7 +965,7 @@ private fun EmailLoginPanel(
         OutlinedTextField(
             value = password,
             onValueChange = onPasswordChange,
-            label = { Text(s.passwordLabel) },
+            label = { CpText(s.passwordLabel) },
             leadingIcon = { Icon(Icons.Filled.Lock, null) },
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -974,7 +973,7 @@ private fun EmailLoginPanel(
             singleLine = true,
             shape = MaterialTheme.shapes.medium,
         )
-        Text(
+        CpText(
             text = s.passwordNote,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -989,9 +988,9 @@ private fun EmailLoginPanel(
             if (isLoading) {
                 CpLoadingIndicator(Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(s.loggingIn)
+                CpText(s.loggingIn)
             } else {
-                Text(s.channelEmail, style = MaterialTheme.typography.titleSmall)
+                CpText(s.channelEmail, style = MaterialTheme.typography.titleSmall)
             }
         }
     }
@@ -1022,7 +1021,7 @@ private fun PhoneLoginPanel(
         OutlinedTextField(
             value = phone,
             onValueChange = onPhoneChange,
-            label = { Text(s.phoneLabel) },
+            label = { CpText(s.phoneLabel) },
             leadingIcon = { Icon(Icons.Filled.Phone, null) },
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
@@ -1038,7 +1037,7 @@ private fun PhoneLoginPanel(
                 OutlinedTextField(
                     value = imageCaptcha,
                     onValueChange = onImageCaptchaChange,
-                    label = { Text(s.imageCaptchaLabel) },
+                    label = { CpText(s.imageCaptchaLabel) },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     shape = MaterialTheme.shapes.medium,
@@ -1072,7 +1071,7 @@ private fun PhoneLoginPanel(
             OutlinedTextField(
                 value = captcha,
                 onValueChange = onCaptchaChange,
-                label = { Text(s.captchaOrPassword) },
+                label = { CpText(s.captchaOrPassword) },
                 modifier = Modifier.weight(1f),
                 singleLine = true,
                 shape = MaterialTheme.shapes.medium,
@@ -1083,7 +1082,7 @@ private fun PhoneLoginPanel(
                 shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.height(54.dp),
             ) {
-                Text(s.sendCaptcha)
+                CpText(s.sendCaptcha)
             }
         }
         Spacer(Modifier.height(4.dp))
@@ -1096,9 +1095,9 @@ private fun PhoneLoginPanel(
             if (isLoading) {
                 CpLoadingIndicator(Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(s.loggingIn)
+                CpText(s.loggingIn)
             } else {
-                Text(s.channelPhone, style = MaterialTheme.typography.titleSmall)
+                CpText(s.channelPhone, style = MaterialTheme.typography.titleSmall)
             }
         }
     }
@@ -1134,9 +1133,9 @@ private fun CookieLoginPanel(
             if (isLoading) {
                 CpLoadingIndicator(Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(s.loggingIn)
+                CpText(s.loggingIn)
             } else {
-                Text(s.channelCookie, style = MaterialTheme.typography.titleSmall)
+                CpText(s.channelCookie, style = MaterialTheme.typography.titleSmall)
             }
         }
     }
@@ -1156,18 +1155,18 @@ internal fun CookieLoginForm(
         OutlinedTextField(
             value = raw,
             onValueChange = onRawChange,
-            label = { Text(s.cookieLabel) },
+            label = { CpText(s.cookieLabel) },
             leadingIcon = { Icon(Icons.Filled.Key, null) },
-            placeholder = { Text(s.cookiePlaceholder) },
+            placeholder = { CpText(s.cookiePlaceholder) },
             modifier = Modifier.fillMaxWidth().heightIn(min = 104.dp),
             minLines = 3,
             maxLines = 6,
             singleLine = false,
             shape = MaterialTheme.shapes.medium,
             isError = raw.isNotBlank() && normalized == null,
-            supportingText = { Text(cookieHint(s, raw, normalized)) },
+            supportingText = { CpText(cookieHint(s, raw, normalized)) },
         )
-        Text(
+        CpText(
             text = s.cookieHowTo,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1207,7 +1206,7 @@ private fun SecurityVerificationCard(
                     tint = MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(22.dp),
                 )
-                Text(
+                CpText(
                     text = s.verifyRequiredTitle,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
@@ -1227,7 +1226,7 @@ private fun SecurityVerificationCard(
                 }
             }
 
-            Text(
+            CpText(
                 text = s.verifyUrlHint,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1244,7 +1243,7 @@ private fun SecurityVerificationCard(
                 ) {
                     Icon(Icons.Filled.Language, null, Modifier.size(CpIconSize.inline))
                     Spacer(Modifier.width(6.dp))
-                    Text(s.openVerifyUrl)
+                    CpText(s.openVerifyUrl)
                 }
                 OutlinedButton(
                     onClick = onCopyUrl,
@@ -1253,7 +1252,7 @@ private fun SecurityVerificationCard(
                 ) {
                     Icon(Icons.Filled.ContentCopy, null, Modifier.size(CpIconSize.inline))
                     Spacer(Modifier.width(4.dp))
-                    Text(s.copyVerifyUrl)
+                    CpText(s.copyVerifyUrl)
                 }
             }
         }
@@ -1295,14 +1294,14 @@ private fun WebviewLoginPanel(
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp),
                     )
-                    Text(
+                    CpText(
                         s.webviewLoginTitle,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
-                Text(
+                CpText(
                     s.webviewLoginHint,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1321,7 +1320,7 @@ private fun WebviewLoginPanel(
             ) {
                 Icon(Icons.AutoMirrored.Filled.OpenInNew, null, Modifier.size(CpIconSize.inline))
                 Spacer(Modifier.width(8.dp))
-                Text(s.openWebviewLogin, style = MaterialTheme.typography.titleSmall)
+                CpText(s.openWebviewLogin, style = MaterialTheme.typography.titleSmall)
             }
         } else {
             Button(
@@ -1333,11 +1332,11 @@ private fun WebviewLoginPanel(
                 if (isLoading) {
                     CpLoadingIndicator(Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(s.webviewUrlLoading)
+                    CpText(s.webviewUrlLoading)
                 } else {
                     Icon(Icons.Filled.Language, null, Modifier.size(CpIconSize.inline))
                     Spacer(Modifier.width(8.dp))
-                    Text(s.fetchWebviewUrl, style = MaterialTheme.typography.titleSmall)
+                    CpText(s.fetchWebviewUrl, style = MaterialTheme.typography.titleSmall)
                 }
             }
         }
@@ -1400,7 +1399,7 @@ private fun AccountHeroCard(
 
             Spacer(Modifier.height(14.dp))
 
-            Text(
+            CpText(
                 text = nickname.orEmpty().ifBlank { s.account.loggedIn },
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
@@ -1415,7 +1414,7 @@ private fun AccountHeroCard(
                 color = MaterialTheme.colorScheme.surfaceContainerHighest,
                 modifier = Modifier.padding(vertical = 4.dp),
             ) {
-                Text(
+                CpText(
                     text = buildString {
                         append(providerName)
                         if (uid != null) {
@@ -1442,7 +1441,7 @@ private fun AccountHeroCard(
                 ) {
                     Icon(Icons.Filled.Person, contentDescription = null, modifier = Modifier.size(CpIconSize.inline))
                     Spacer(Modifier.width(6.dp))
-                    Text(s.account.myProfile, style = MaterialTheme.typography.labelLarge)
+                    CpText(s.account.myProfile, style = MaterialTheme.typography.labelLarge)
                 }
                 FilledTonalButton(
                     onClick = onOpenMessages,
@@ -1451,7 +1450,7 @@ private fun AccountHeroCard(
                 ) {
                     Icon(Icons.AutoMirrored.Filled.Message, contentDescription = null, modifier = Modifier.size(CpIconSize.inline))
                     Spacer(Modifier.width(6.dp))
-                    Text(s.account.messages, style = MaterialTheme.typography.labelLarge)
+                    CpText(s.account.messages, style = MaterialTheme.typography.labelLarge)
                 }
             }
         }

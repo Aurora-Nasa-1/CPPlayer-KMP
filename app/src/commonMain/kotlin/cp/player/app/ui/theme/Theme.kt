@@ -153,14 +153,18 @@ fun CpTheme(
     val fontFamily = googleSansFlexFamily(effectiveRoundness)
     val typography: Typography = remember(fontFamily) { AppTypography.withFontFamily(fontFamily) }
 
-    // 日文字体单独装一份，只在「文本含假名」时按需使用（见 JapaneseText.kt）。
-    // 它不进 [typography]：那会让中文也走日文字形（同码位不同写法，见 Font.kt 的注释）。
-    val japaneseFontFamily = notoSansJpFamily()
+    // 中日文字体（日文 = Noto Sans JP，中文 = MiSans）。
+    // ⚠️ 它们不进 [typography]：字阶是全局共享的，分不清这一段内容是中文还是日文。
+    // 按脚本切换发生在文本层（`buildAppStyledText`，见 FontStack.kt），
+    // 这里只负责把「当前可用的字体家族」装进 CompositionLocal。
+    // 桌面端随安装包内置、同步加载；Android 端由用户下载，下载完成后这里会因为
+    // 状态变化重新组合，文本随之换字体 —— 不需要重启。
+    val appFontFamilies = rememberAppFontFamilies()
 
     CompositionLocalProvider(
         LocalThemeMode provides themeMode,
         LocalIsDarkTheme provides dark,
-        LocalJapaneseFontFamily provides japaneseFontFamily,
+        LocalAppFontFamilies provides appFontFamilies,
     ) {
         // Expressive 主题：相对普通 `MaterialTheme` 的差别就是注入 `MotionScheme`，
         // 让所有 material3 组件的默认动画从「匀速 tween」变成带回弹的 spring。

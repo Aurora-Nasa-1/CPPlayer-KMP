@@ -19,7 +19,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -302,7 +301,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
                     }
                 },
             ) {
-                Text(strings.library.playAll)
+                CpText(strings.library.playAll)
             }
         }
     }
@@ -419,7 +418,7 @@ private fun InsightsTabs(selected: Int, labels: List<String>, onSelect: (Int) ->
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
             ) {
-                Text(
+                CpText(
                     label,
                     style = MaterialTheme.typography.labelLarge,
                     maxLines = 1,
@@ -533,7 +532,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTab(
                 ListeningCalendarLegend(classicGreen = green)
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = onToggleGreen) {
-                    Text(strings.insights.paletteLabel(green))
+                    CpText(strings.insights.paletteLabel(green))
                 }
             }
         }
@@ -557,7 +556,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTab(
     if (daily.isNotEmpty()) {
         item {
             Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.Center) {
-                TextButton(onClick = onClear) { Text(strings.insights.clearTitle) }
+                TextButton(onClick = onClear) { CpText(strings.insights.clearTitle) }
             }
         }
     }
@@ -588,25 +587,25 @@ private fun SelectedDayCard(
         modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
+            CpText(
                 dayLabel,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Medium,
             )
-            Text(
+            CpText(
                 strings.insights.daySummary(formatDurationShort(totalMs, strings), dayRecords.size),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             dayRecords.forEach { r ->
                 Row(Modifier.fillMaxWidth().padding(top = 2.dp)) {
-                    Text(
+                    CpText(
                         r.name,
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1,
                         modifier = Modifier.weight(1f),
                     )
-                    Text(
+                    CpText(
                         formatDurationShort(r.playedMs, strings),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -679,7 +678,7 @@ private fun MetricRow(metrics: List<Pair<String, String>>) {
                 modifier = Modifier.weight(1f),
             ) {
                 Column(Modifier.padding(14.dp)) {
-                    Text(
+                    CpText(
                         label,
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -704,13 +703,13 @@ private fun RankRow(item: RankItem, maxMs: Long, strings: CpStrings) {
     val fraction = if (maxMs <= 0L) 0f else (item.playedMs.toFloat() / maxMs).coerceIn(0f, 1f)
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
+            CpText(
                 item.label,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 modifier = Modifier.weight(1f),
             )
-            Text(
+            CpText(
                 formatDurationShort(item.playedMs, strings),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -763,7 +762,7 @@ private fun BarChart(values: List<Long>, labels: List<String>) {
                         .clip(MaterialTheme.shapes.extraSmall)
                         .background(MaterialTheme.colorScheme.primary),
                 )
-                Text(
+                CpText(
                     labels.getOrElse(index) { "" },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

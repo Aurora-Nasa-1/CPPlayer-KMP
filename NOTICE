@@ -42,3 +42,33 @@ Lyrico Plugin Specification Acknowledgement & Attribution:
 ========================================================================
 This product implements the plugin host specification defined by
 Lyrico (https://github.com/Replica0110/Lyrico), licensed under the Apache License 2.0.
+
+========================================================================
+Fonts Acknowledgement & Attribution:
+========================================================================
+This product bundles or downloads the following font families.
+
+1) Google Sans Flex
+   Copyright (c) Google LLC. Distributed with this application as the
+   default UI font for Latin letters, digits and symbols.
+   The font files are not covered by this project's LICENSE.
+
+2) Noto Sans JP
+   Copyright (c) The Noto Project Authors.
+   Licensed under the SIL Open Font License, Version 1.1:
+   https://openfontlicense.org/open-font-license-official-text/
+   Used for Japanese text (kana and Japanese kanji forms).
+   Bundled with the desktop build; downloaded on demand on Android.
+
+3) MiSans / MiSans VF
+   Copyright (c) Xiaomi Inc.
+   Distributed under the MiSans Font Intellectual Property License
+   (free of charge for personal and commercial use):
+   https://hyperos.mi.com/font/
+   Used for Chinese text, full-width punctuation and other scripts.
+   Bundled with the desktop build; downloaded on demand on Android.
+
+Android builds download (2) and (3) from this project's GitHub release
+"fonts-v1" at the user's request and store them in the app's private
+storage; deleting them (Settings > Appearance > Font packs) restores the
+platform fallback font.

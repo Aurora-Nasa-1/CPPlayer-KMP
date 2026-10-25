@@ -24,7 +24,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -112,7 +111,7 @@ fun QualityMenuChip(
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             AppModel.qualityLevels.forEach { candidate ->
                 DropdownMenuItem(
-                    text = { Text(s.quality.labelOf(candidate)) },
+                    text = { CpText(s.quality.labelOf(candidate)) },
                     trailingIcon = {
                         if (candidate == level) {
                             Icon(
@@ -166,13 +165,13 @@ fun QualitySectionCard(
                     modifier = Modifier.size(18.dp),
                 )
                 Column(Modifier.weight(1f)) {
-                    Text(
+                    CpText(
                         text = s.player.quality,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
-                    Text(
+                    CpText(
                         text = s.player.qualityGlobalNote,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

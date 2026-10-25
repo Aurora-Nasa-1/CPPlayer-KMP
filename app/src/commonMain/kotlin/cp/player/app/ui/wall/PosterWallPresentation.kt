@@ -14,7 +14,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,6 +27,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.component.CpText
 
 @Composable
 internal fun PosterWallSearch(
@@ -70,7 +70,7 @@ internal fun PosterWallSearch(
             }),
             decorationBox = { innerTextField ->
                 if (query.isEmpty()) {
-                    Text(
+                    CpText(
                         s.wall.posterWallSearch,
                         color = PosterMuted.copy(alpha = 0.6f),
                         fontSize = 14.sp

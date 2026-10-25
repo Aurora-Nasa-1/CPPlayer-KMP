@@ -18,7 +18,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -447,7 +446,7 @@ private fun CloudDriveHeader(
                 modifier = Modifier.size(28.dp),
             )
             Column(Modifier.weight(1f)) {
-                Text("云盘", style = MaterialTheme.typography.titleLarge)
+                CpText("云盘", style = MaterialTheme.typography.titleLarge)
                 CpText(
                     when {
                         loading -> "正在同步…"
@@ -466,7 +465,7 @@ private fun CloudDriveHeader(
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                 )
-                Text("全部播放", modifier = Modifier.padding(start = 6.dp))
+                CpText("全部播放", modifier = Modifier.padding(start = 6.dp))
             }
         }
     }

@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -191,7 +190,7 @@ internal fun WallPosterOverlay(
                     ) {
                         Icon(Icons.Filled.PlayArrow, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text(s.wall.posterPlay, fontSize = 14.5.sp, fontWeight = FontWeight.ExtraBold)
+                        CpText(s.wall.posterPlay, fontSize = 14.5.sp, fontWeight = FontWeight.ExtraBold)
                     }
                 }
                 Spacer(Modifier.width(14.dp))

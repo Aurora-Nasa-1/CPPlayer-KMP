@@ -24,7 +24,6 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -155,7 +154,7 @@ fun PlaylistPickerSheet(
 
     LegacyModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(bottom = 32.dp)) {
-            Text(
+            CpText(
                 text = title,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
@@ -171,7 +170,7 @@ fun PlaylistPickerSheet(
                     Modifier.fillMaxWidth().height(120.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
+                    CpText(
                         s.playlistSheet.noPlaylists,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -216,7 +215,7 @@ fun AddSongsOptionsSheet(
                 .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
+            CpText(
                 text = s.playlistSheet.addTracksTitle,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
@@ -239,7 +238,7 @@ fun AddSongsOptionsSheet(
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text(
+                    CpText(
                         s.playlistSheet.importFrom,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                         fontWeight = FontWeight.SemiBold,
@@ -263,7 +262,7 @@ fun AddSongsOptionsSheet(
                         tint = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text(
+                    CpText(
                         s.playlistSheet.addFromQueue,
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                         fontWeight = FontWeight.SemiBold,
@@ -315,13 +314,13 @@ fun SourceSongsSelectionSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column {
-                    Text(
+                    CpText(
                         s.playlistSheet.selectTracks,
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
-                    Text(
+                    CpText(
                         s.playlistSheet.fromSource(sourceName),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -333,7 +332,7 @@ fun SourceSongsSelectionSheet(
                         selectedIds = if (allSelected) emptySet()
                         else songs!!.mapTo(LinkedHashSet()) { it.id }
                     }) {
-                        Text(if (allSelected) s.playlistSheet.deselectAll else s.playlistSheet.selectAll)
+                        CpText(if (allSelected) s.playlistSheet.deselectAll else s.playlistSheet.selectAll)
                     }
                 }
             }
@@ -347,7 +346,7 @@ fun SourceSongsSelectionSheet(
                     Modifier.fillMaxWidth().height(200.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
+                    CpText(
                         s.playlistSheet.noTracksFound,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -391,7 +390,7 @@ fun SourceSongsSelectionSheet(
                     ) {
                         Icon(Icons.Filled.Add, null, tint = MaterialTheme.colorScheme.onPrimary)
                         Spacer(Modifier.width(8.dp))
-                        Text(
+                        CpText(
                             s.playlistSheet.addCount(selectedIds.size),
                             color = MaterialTheme.colorScheme.onPrimary,
                             fontWeight = FontWeight.SemiBold,

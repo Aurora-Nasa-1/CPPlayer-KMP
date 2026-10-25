@@ -26,7 +26,6 @@ import cp.player.app.ui.screen.VideoPlayerScreen
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -131,7 +130,7 @@ fun SongItem(
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                 if (showIndex) {
-                    Text(
+                    CpText(
                         text = "${index + 1}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (isCurrentlyPlaying) MaterialTheme.colorScheme.primary
@@ -200,7 +199,7 @@ fun SongItem(
                             nav?.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV"))
                         },
                     ) {
-                        Text(
+                        CpText(
                             text = "MV",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,

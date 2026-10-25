@@ -18,7 +18,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -126,7 +125,7 @@ fun AddToPlaylistSheet(
             Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(
+            CpText(
                 title ?: s.playlistSheet.addToPlaylistTitle,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
@@ -142,14 +141,14 @@ fun AddToPlaylistSheet(
                     value = newName,
                     onValueChange = { newName = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text(s.playlistSheet.newPlaylistNamePlaceholder) },
+                    placeholder = { CpText(s.playlistSheet.newPlaylistNamePlaceholder) },
                     singleLine = true,
                     shape = RoundedCornerShape(percent = 50),
                 )
                 TextButton(onClick = { createAndAdd() }, enabled = newName.isNotBlank() && !busy) {
                     Icon(Icons.Filled.Add, null, Modifier.size(18.dp))
                     Spacer(Modifier.size(4.dp))
-                    Text(s.playlistSheet.createShort)
+                    CpText(s.playlistSheet.createShort)
                 }
             }
 
@@ -159,7 +158,7 @@ fun AddToPlaylistSheet(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                 ) { CpLoadingIndicator(Modifier.size(40.dp)) }
-                playlists!!.isEmpty() -> Text(
+                playlists!!.isEmpty() -> CpText(
                     s.playlistSheet.noPlaylistsHint,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

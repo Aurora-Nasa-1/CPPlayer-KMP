@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -56,6 +55,7 @@ import cp.player.app.ui.component.SettingsLazyPage
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.component.CpText
 
 /**
  * 快捷键设置页面（桌面端专属）：自定义全局与应用内快捷键。
@@ -193,7 +193,7 @@ internal fun ShortcutKeyChip(binding: ShortcutBinding?, conflicted: Boolean, str
         else -> MaterialTheme.colorScheme.onSecondaryContainer
     }
     Surface(shape = MaterialTheme.shapes.small, color = container) {
-        Text(
+        CpText(
             text = binding?.displayName(strings) ?: strings.shortcuts.unbound,
             style = MaterialTheme.typography.labelLarge,
             color = content,
@@ -276,12 +276,12 @@ private fun ShortcutRecorderDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(s.shortcuts.recorderTitle) },
+        title = { CpText(s.shortcuts.recorderTitle) },
         text = {
             Column(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text(
+                CpText(
                     text = s.shortcuts.recorderTarget(actionLabel),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -305,7 +305,7 @@ private fun ShortcutRecorderDialog(
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
+                    CpText(
                         text = draft?.displayName(s) ?: s.shortcuts.recorderWaiting,
                         style = MaterialTheme.typography.titleMedium,
                         color = if (draft == null) {
@@ -316,13 +316,13 @@ private fun ShortcutRecorderDialog(
                         textAlign = TextAlign.Center,
                     )
                 }
-                Text(
+                CpText(
                     text = if (waiting) s.shortcuts.recorderWaitingHint else s.shortcuts.recorderRecordedHint,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (conflicts.isNotEmpty()) {
-                    Text(
+                    CpText(
                         text = s.shortcuts.recorderConflict(
                             conflicts.joinToString("、") { it.labelOf(s) },
                         ),
@@ -340,7 +340,7 @@ private fun ShortcutRecorderDialog(
                 },
                 enabled = draft != null,
             ) {
-                Text(s.shortcuts.recorderSave)
+                CpText(s.shortcuts.recorderSave)
             }
         },
         dismissButton = {
@@ -351,7 +351,7 @@ private fun ShortcutRecorderDialog(
                         onDismiss()
                     },
                 ) {
-                    Text(s.shortcuts.recorderReset)
+                    CpText(s.shortcuts.recorderReset)
                 }
                 TextButton(
                     onClick = {
@@ -360,12 +360,12 @@ private fun ShortcutRecorderDialog(
                     },
                     enabled = current != null,
                 ) {
-                    Text(
+                    CpText(
                         text = s.shortcuts.recorderClear,
                         color = if (current != null) MaterialTheme.colorScheme.error else Color.Unspecified,
                     )
                 }
-                TextButton(onClick = onDismiss) { Text(s.common.dismiss) }
+                TextButton(onClick = onDismiss) { CpText(s.common.dismiss) }
             }
         },
     )

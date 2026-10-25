@@ -41,7 +41,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
@@ -271,13 +270,13 @@ fun PlayerMoreContent(
                         }
                     }
                     Column(Modifier.weight(1f)) {
-                        Text(
+                        CpText(
                             "探索相似歌曲",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
-                        Text(
+                        CpText(
                             "基于在播曲目发现更多同风格好音乐",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
@@ -421,14 +420,14 @@ fun PlayerMoreContent(
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(18.dp),
                             )
-                            Text(
+                            CpText(
                                 text = s.player.songInfo,
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
                         }
-                        Text(
+                        CpText(
                             text = "查看完整元数据 →",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
@@ -702,7 +701,7 @@ fun SongInfoDialog(
         title = { CpText(s.player.songInfo, maxLines = 1) },
         text = {
             val info = formatInfo
-            Text(
+            CpText(
                 buildString {
                     // 整段进剪贴板，**逐行**都是文案 —— 中英的行标签与分隔符都不同
                     // （中文「歌手：」无空格，英文 "Artist: " 带空格），不能在调用方拼。
@@ -751,7 +750,7 @@ fun SongInfoDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text(s.common.dismiss) }
+            TextButton(onClick = onDismiss) { CpText(s.common.dismiss) }
         },
     )
 }

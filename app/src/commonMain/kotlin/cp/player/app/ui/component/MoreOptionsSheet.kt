@@ -43,7 +43,6 @@ import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -303,7 +302,7 @@ fun PlaylistOptionsSheet(
                             shape = CircleShape,
                             color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         ) {
-                            Text(
+                            CpText(
                                 if (isOwner) "我创建的歌单" else if (isFavorite) "已收藏歌单" else "公开歌单",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -421,7 +420,7 @@ fun PlaylistOptionsSheet(
 
                 // 排序选项
                 if (currentSort != null) {
-                    Text(
+                    CpText(
                         "排序方式",
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -493,7 +492,7 @@ private fun ActionTile(
         ) {
             Icon(icon, null, tint = contentColor, modifier = Modifier.size(28.dp))
             Spacer(Modifier.width(8.dp))
-            Text(label, color = contentColor, style = MaterialTheme.typography.titleMedium)
+            CpText(label, color = contentColor, style = MaterialTheme.typography.titleMedium)
         }
     }
 }
@@ -542,7 +541,7 @@ private fun ActionPill(
         ) {
             Icon(icon, null, tint = contentColor, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(8.dp))
-            Text(label, color = contentColor, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+            CpText(label, color = contentColor, style = MaterialTheme.typography.labelLarge, maxLines = 1)
         }
     }
 }
@@ -575,7 +574,7 @@ private fun SortPill(
                 modifier = Modifier.size(20.dp),
             )
             Spacer(Modifier.width(6.dp))
-            Text(
+            CpText(
                 label,
                 color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
                 else MaterialTheme.colorScheme.onSurfaceVariant,

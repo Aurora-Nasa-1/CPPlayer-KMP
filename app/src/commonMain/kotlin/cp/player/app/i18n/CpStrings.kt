@@ -48,6 +48,10 @@ interface CpStrings {
     val messageNotify: MessageNotifyStrings
 
     val appearance: AppearanceStrings
+
+    /** 字库（中日文字体包：桌面端内置，Android 下载）。 */
+    val fontPacks: FontPackStrings
+
     val storage: StorageStrings
     val songCache: SongCacheStrings
     val playback: PlaybackStrings
@@ -298,6 +302,51 @@ interface AppearanceStrings {
     val resetPlatformDefault: String
     val resetPlatformDefaultNote: String
     val roundnessNote: String
+}
+
+// ---------------------------------------------------------------------------
+// 字库（中日文字体包）
+// ---------------------------------------------------------------------------
+
+/**
+ * 「字库」设置区的文案。
+ *
+ * 三款字体的**身份**不在这里（那是 `AppFontFace` 的 `label` / `covers`，
+ * 属于技术声明，不做翻译）。这里只放用户可见的动作与状态。
+ */
+interface FontPackStrings {
+    val sectionTitle: String
+
+    /** 整段说明：桌面端内置 / Android 下载。 */
+    val intro: String
+
+    /** 平台不支持时的说明（Android 7 及以下没有字体可变轴）。 */
+    val unsupported: String
+
+    val japaneseTitle: String
+    val japaneseNote: String
+    val misansTitle: String
+    val misansNote: String
+
+    val stateInstalled: String
+    val stateMissing: String
+
+    /** @param percent 0–100 */
+    fun stateDownloading(percent: Int): String
+
+    /** @param reason 原始错误信息（诊断用，不翻译） */
+    fun stateFailed(reason: String): String
+
+    val actionDownload: String
+    val actionRetry: String
+    val actionDelete: String
+
+    /** 删除前的二次确认。 */
+    val deleteConfirm: String
+    val cancel: String
+
+    /** 下载来源说明（GitHub Release）。 */
+    val sourceNote: String
 }
 
 // ---------------------------------------------------------------------------

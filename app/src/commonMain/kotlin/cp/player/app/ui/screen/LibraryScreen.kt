@@ -45,7 +45,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -605,7 +604,7 @@ private fun LibraryQuickEntry(
                 )
             }
         }
-        Text(
+        CpText(
             label,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -631,7 +630,7 @@ private fun LibraryPreferenceCard(
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         contentPadding = PaddingValues(18.dp),
     ) {
-        Text(
+        CpText(
             s.library.preferences,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
@@ -682,7 +681,7 @@ private fun LibrarySegmentedTabs(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Icon(filter.icon, null, modifier = Modifier.size(18.dp))
-                    Text(filter.label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                    CpText(filter.label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
                 }
             }
         }
@@ -709,7 +708,7 @@ private fun LazyListScope.playlistsSection(
             // 页面看起来是在**长出来**而不是重画一遍（见 CpSongRowSkeleton）。
             // 文案保留一行 —— 用户仍然知道在等什么，而不是对着会动的灰块猜。
             Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                Text(
+                CpText(
                     text = s.library.syncingLibraryNote,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -793,7 +792,7 @@ private fun PlaylistQuickGrid(
             modifier = Modifier.padding(top = 8.dp),
             action = {
                 if (playlists.isNotEmpty()) {
-                    TextButton(onClick = onSeeAll) { Text(s.library.seeAll) }
+                    TextButton(onClick = onSeeAll) { CpText(s.library.seeAll) }
                 }
             },
         )
@@ -903,12 +902,12 @@ private fun LocalLibrarySection(
                     }
                     Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(
+                        CpText(
                             s.downloads.tabLocalLibrary,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                         )
-                        Text(
+                        CpText(
                             "共 $localCount 首本地歌曲",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -919,7 +918,7 @@ private fun LocalLibrarySection(
                     onClick = onOpenLocal,
                     modifier = Modifier.padding(start = 12.dp),
                 ) {
-                    Text("浏览曲库")
+                    CpText("浏览曲库")
                 }
             }
         }
@@ -945,7 +944,7 @@ private fun LocalLibrarySection(
                         modifier = Modifier.size(20.dp),
                     )
                     Spacer(Modifier.width(12.dp))
-                    Text(
+                    CpText(
                         s.library.offlineDownloads,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
@@ -956,7 +955,7 @@ private fun LocalLibrarySection(
                             shape = CircleShape,
                             color = MaterialTheme.colorScheme.primary,
                         ) {
-                            Text(
+                            CpText(
                                 "$activeCount 下载中",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimary,
@@ -965,7 +964,7 @@ private fun LocalLibrarySection(
                         }
                     }
                 }
-                Text(
+                CpText(
                     "已下载 $completedCount 首",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

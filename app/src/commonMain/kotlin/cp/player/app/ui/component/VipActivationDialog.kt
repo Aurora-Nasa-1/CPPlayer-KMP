@@ -11,7 +11,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -43,14 +42,14 @@ fun VipActivationDialog(
             )
         },
         title = {
-            Text(
+            CpText(
                 text = "解锁 Hi-Res 发烧友专有特权",
                 style = MaterialTheme.typography.titleLarge,
             )
         },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
+                CpText(
                     text = "FlickEngine 提供专有的 WASAPI 硬件独占（Windows）与 USB DAC 免驱直通（Android），绕开操作系统混音器，实现零损耗 Bit-Perfect 源码输出与 DSD 原生解码。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -62,10 +61,10 @@ fun VipActivationDialog(
                         inputCode = it
                         errorMessage = null
                     },
-                    label = { Text("请输入特权卡密") },
-                    placeholder = { Text("输入 16 位激活卡密") },
+                    label = { CpText("请输入特权卡密") },
+                    placeholder = { CpText("输入 16 位激活卡密") },
                     isError = errorMessage != null,
-                    supportingText = errorMessage?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
+                    supportingText = errorMessage?.let { { CpText(it, color = MaterialTheme.colorScheme.error) } },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -83,12 +82,12 @@ fun VipActivationDialog(
                     }
                 }
             ) {
-                Text("立即激活")
+                CpText("立即激活")
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("暂不激活")
+                CpText("暂不激活")
             }
         },
     )
