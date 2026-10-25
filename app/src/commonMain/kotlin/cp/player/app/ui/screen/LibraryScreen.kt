@@ -86,6 +86,7 @@ import cp.player.app.platform.shareText
 import cp.player.app.ui.component.PlaylistCoverCard
 import cp.player.app.ui.component.PlaylistItem
 import cp.player.app.ui.component.PlaylistOptionsSheet
+import cp.player.app.ui.component.ProviderFeatureGate
 import cp.player.app.ui.component.SectionHeader
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.playlistShareText
@@ -253,19 +254,15 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
                             ) {
                                 Icon(Icons.Filled.Search, s.library.searchLibrary)
                             }
-                            // 导入用带文字的按钮而不是纯图标：上传图标不如图标语义直观，
-                            // 而「导入外部歌单」六个字在 320dp 上放不下，用短标签。
-                            TextButton(onClick = { navigator.push(ImportPlaylistScreen()) }) {
-                                Icon(
-                                    Icons.Filled.FileUpload,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                Text(s.library.importShort)
+                            androidx.compose.material3.IconButton(
+                                onClick = { navigator.push(ImportPlaylistScreen()) },
+                                modifier = Modifier.size(40.dp),
+                            ) {
+                                Icon(Icons.Filled.FileUpload, s.library.importPlaylist)
                             }
                             FilledTonalIconButton(
                                 onClick = { showCreateDialog = true },
+                                modifier = Modifier.size(40.dp),
                                 colors = IconButtonDefaults.filledTonalIconButtonColors(
                                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -491,12 +488,12 @@ private fun LibraryDashboard(
             // 手机端：一排快捷圆形入口（本地曲库 / 最近播放 / 云盘（按需） / 下载）。
             Row(
                 Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(BentoGap),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 LibraryQuickEntry(s.downloads.tabLocalLibrary, Icons.Filled.FolderOpen, onLocal, Modifier.weight(1f))
                 LibraryQuickEntry(s.library.recentPlays, Icons.Filled.History, onRecentPlays, Modifier.weight(1f))
                 LibraryQuickEntry(s.wall.screenTitle, PosterWallIcon, onAlbumWall, Modifier.weight(1f))
-                if (supportsCloud) {
+                ProviderFeatureGate(ProviderCapability.CLOUD_DRIVE) {
                     LibraryQuickEntry(s.library.cloudDrive, Icons.Filled.CloudQueue, onCloud, Modifier.weight(1f))
                 }
                 LibraryQuickEntry(s.library.tabDownloads, Icons.Filled.Download, onDownloads, Modifier.weight(1f))
@@ -520,7 +517,7 @@ private fun LibraryDashboard(
                     onProviders = onProviders,
                     modifier = Modifier.weight(2f).fillMaxHeight(),
                 )
-                if (supportsCloud) {
+                ProviderFeatureGate(ProviderCapability.CLOUD_DRIVE) {
                     BentoActionCard(
                         title = s.library.cloudDrive,
                         subtitle = s.library.cloudDriveNote,
@@ -597,23 +594,25 @@ private fun LibraryQuickEntry(
             onClick = onClick,
             shape = CircleShape,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            modifier = Modifier.size(56.dp),
+            modifier = Modifier.size(48.dp),
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     icon,
                     contentDescription = label,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp),
+                    modifier = Modifier.size(22.dp),
                 )
             }
         }
         Text(
             label,
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
-            modifier = Modifier.padding(top = 6.dp),
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            softWrap = false,
+            modifier = Modifier.padding(top = 4.dp),
         )
     }
 }

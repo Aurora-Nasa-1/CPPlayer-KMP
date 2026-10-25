@@ -54,6 +54,9 @@ class AndroidLocalMediaSource(private val context: Context) : LocalMediaSource {
     override val favorites: LocalFavorites =
         LocalFavorites(File(dataDir, "favorites.json").absolutePath)
 
+    override val playlists: LocalPlaylistsStore =
+        LocalPlaylistsStore(File(dataDir, "playlists.json").absolutePath)
+
     override val scanSettings: LocalScanSettingsStore =
         LocalScanSettingsStore(File(dataDir, "scan-settings.json").absolutePath)
 
@@ -151,6 +154,7 @@ class AndroidLocalMediaSource(private val context: Context) : LocalMediaSource {
                 index.save()
             }
         }
+        runCatching { playlists.removeAll(listOf(item.path)) }
     }
 
     override fun addExternalItems(items: List<LocalMediaItem>) {

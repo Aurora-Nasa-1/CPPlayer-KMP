@@ -141,7 +141,10 @@ private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
     // 「更多」弹层里的二级弹层目标必须由**本层**持有：弹层先回调动作、再自行关闭，
     // 宿主随之卸载，状态放宿主里会被一起丢掉（详见 RecentPlaysOptionsHost 的 KDoc）。
     var recentAddToPlaylist by remember { mutableStateOf<cp.player.core.music.TrackSummary?>(null) }
+    var recentAddToLocalPlaylist by remember { mutableStateOf<String?>(null) }
     var recentShowInfo by remember { mutableStateOf<cp.player.core.music.TrackSummary?>(null) }
+    val likedIds by AppModel.playback.likedIds.collectAsState()
+    val localFavoritePaths by AppModel.localMedia.favorites.paths.collectAsState()
     val confirm = rememberConfirmState()
 
     CpRouteScaffold(title = s.insights.screenTitle, onBack = onBack) { pageModifier ->
@@ -205,6 +208,11 @@ private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
                         scope = recentScope,
                         toMediaId = recentToMediaId,
                         onSelectionChange = { recentSelection = it },
+                        likedIds = likedIds,
+                        localFavoritePaths = localFavoritePaths,
+                        onAddToPlaylist = { recentAddToPlaylist = it },
+                        onAddToLocalPlaylist = { recentAddToLocalPlaylist = it },
+                        onShowInfo = { recentShowInfo = it },
                     )
                 }
             }
@@ -216,11 +224,19 @@ private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
         onDismiss = { recentSelection = null },
         onAddToPlaylist = { recentAddToPlaylist = it },
         onShowInfo = { recentShowInfo = it },
+        onAddToLocalPlaylist = { recentAddToLocalPlaylist = it },
     )
     recentAddToPlaylist?.let { track ->
+        val targetId = track.originalMediaId ?: track.id
         cp.player.app.ui.component.AddToPlaylistSheet(
-            trackId = track.id,
+            trackIds = listOf(targetId),
             onDismiss = { recentAddToPlaylist = null },
+        )
+    }
+    recentAddToLocalPlaylist?.let { path ->
+        cp.player.app.ui.component.AddToLocalPlaylistDialog(
+            trackPaths = listOf(path),
+            onDismiss = { recentAddToLocalPlaylist = null },
         )
     }
     recentShowInfo?.let { track ->
@@ -250,6 +266,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
     scope: kotlinx.coroutines.CoroutineScope,
     toMediaId: (String) -> String,
     onSelectionChange: (cp.player.core.music.TrackSummary?) -> Unit,
+    likedIds: Set<String>,
+    localFavoritePaths: Set<String>,
+    onAddToPlaylist: (cp.player.core.music.TrackSummary) -> Unit,
+    onAddToLocalPlaylist: (String) -> Unit,
+    onShowInfo: (cp.player.core.music.TrackSummary) -> Unit,
 ) {
     if (recentTracks.isEmpty()) {
         item {
@@ -298,6 +319,14 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
         },
         onOptions = onSelectionChange,
         contextMenu = { track ->
+            val isLocal = track.id.startsWith("local://")
+            val cloudId = track.originalMediaId ?: (if (!isLocal) track.id else null)
+            val cloudFavId = cloudId?.let { runCatching { cp.player.core.music.CPMediaId.parse(it).resourceId }.getOrDefault(it) }
+            val isCloudFav = cloudFavId != null && cloudFavId in likedIds
+            val localPath = if (isLocal) track.id.removePrefix("local://audio/").removePrefix("local://video/") else null
+            val isLocalFav = localPath != null && localPath in localFavoritePaths
+            val isFav = if (cloudId != null) isCloudFav else isLocalFav
+
             songContextMenuItems(
                 SongMenuActions(
                     onPlay = {
@@ -309,6 +338,26 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
                             )
                         }
                     },
+                    isFavorite = isFav,
+                    onToggleFavorite = if (cloudId != null) {
+                        {
+                            scope.launch {
+                                val target = cloudFavId !in likedIds
+                                AppModel.playback.toggleFavoriteFor(cloudId)
+                                cp.player.app.ui.util.UiEvents.notify(if (target) "已收藏到云端" else "已取消云端收藏")
+                            }
+                        }
+                    } else if (localPath != null) {
+                        {
+                            val now = AppModel.localMedia.favorites.toggle(localPath)
+                            cp.player.app.ui.util.UiEvents.notify(if (now) "已添加到本地喜欢" else "已从本地喜欢移除")
+                        }
+                    } else null,
+                    favoriteLabel = if (cloudId != null) {
+                        if (isCloudFav) "取消云端收藏" else "云端收藏"
+                    } else {
+                        if (isLocalFav) "取消喜欢" else "喜欢"
+                    },
                     onAddToQueue = {
                         scope.launch { AppModel.playback.addToQueue(toMediaId(track.id)) }
                         cp.player.app.ui.util.UiEvents.notify(strings.library.queuedToPlay)
@@ -317,7 +366,23 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
                         scope.launch { AppModel.playback.addNextToQueue(toMediaId(track.id)) }
                         cp.player.app.ui.util.UiEvents.notify(strings.library.playNext)
                     },
-                    onShare = { shareText(songShareText(track)) },
+                    isDownloaded = cloudId != null && (isLocal || AppModel.isDownloaded(cloudId)),
+                    onDownload = if (cloudId != null && !isLocal) {
+                        { AppModel.downloadTrack(track) }
+                    } else null,
+                    onAddToPlaylist = if (cloudId != null) {
+                        { onAddToPlaylist(track) }
+                    } else null,
+                    onAddToLocalPlaylist = if (localPath != null) {
+                        { onAddToLocalPlaylist(localPath) }
+                    } else null,
+                    onOpenInFileManager = if (localPath != null) {
+                        { cp.player.app.platform.openInFileManager(localPath) }
+                    } else null,
+                    onShare = if (cloudId != null) {
+                        { shareText(songShareText(track)) }
+                    } else null,
+                    onShowInfo = { onShowInfo(track) },
                 )
             )
         },

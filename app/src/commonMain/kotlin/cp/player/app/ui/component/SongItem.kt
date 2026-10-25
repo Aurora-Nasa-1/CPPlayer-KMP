@@ -78,6 +78,10 @@ fun SongItem(
      * 是否在副标题显示所属专辑。传 null 时跟随系统全局设置 [AppModel.showSongAlbumFlow]（默认关闭）。
      */
     showAlbum: Boolean? = null,
+    /**
+     * 自定义副标题文本（非空时覆盖默认的 "歌手 · 专辑" 格式，用于本地歌曲的时长/码率展示）。
+     */
+    supportingText: String? = null,
 ) {
     val globalShowAlbum by AppModel.showSongAlbumFlow.collectAsState()
     val actualShowAlbum = showAlbum ?: globalShowAlbum
@@ -209,7 +213,7 @@ fun SongItem(
         },
         supportingContent = {
             CpText(
-                text = buildString {
+                text = supportingText ?: buildString {
                     append(track.artist)
                     if (actualShowAlbum && !track.album.isNullOrBlank()) {
                         append(" · ")

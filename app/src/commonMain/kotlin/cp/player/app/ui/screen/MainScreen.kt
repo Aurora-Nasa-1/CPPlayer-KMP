@@ -289,7 +289,11 @@ class MainScreen : Screen {
             DesktopPane.Tabs -> tabs[selectedIndex].label
             DesktopPane.Settings -> "设置"
             DesktopPane.Downloads -> "下载管理"
-            is DesktopPane.LocalLibrary -> if (pane.initialTab == 3) "我喜欢的音乐" else "本地音乐"
+            is DesktopPane.LocalLibrary -> when (pane.initialTab) {
+                3 -> "本地喜欢"
+                4 -> "本地歌单"
+                else -> "本地音乐"
+            }
             DesktopPane.RecentPlays -> "最近播放"
             DesktopPane.Messages -> "消息"
             is DesktopPane.Playlist -> pane.playlist.name
@@ -1471,17 +1475,20 @@ private fun SidebarAction(
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
     ) {
         Surface(
+            modifier = Modifier.size(36.dp),
             shape = MaterialTheme.shapes.small,
             color = if (selected) MaterialTheme.colorScheme.primaryContainer
             else MaterialTheme.colorScheme.surfaceContainerHighest,
         ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(16.dp).padding(8.dp),
-            )
+            Box(contentAlignment = androidx.compose.ui.Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
         androidx.compose.foundation.layout.Spacer(Modifier.width(12.dp))
         CpText(

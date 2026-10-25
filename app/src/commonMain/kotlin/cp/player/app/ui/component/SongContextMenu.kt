@@ -3,6 +3,8 @@ package cp.player.app.ui.component
 import cp.player.app.i18n.cpStrings
 import androidx.compose.runtime.Composable
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.BookmarkRemove
 import androidx.compose.material.icons.filled.Close
@@ -11,10 +13,9 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SmartDisplay
@@ -32,18 +33,29 @@ data class SongMenuActions(
     val onPlayMv: (() -> Unit)? = null,
     val isFavorite: Boolean = false,
     val onToggleFavorite: (() -> Unit)? = null,
+    val favoriteLabel: String? = null,
     val onAddToQueue: (() -> Unit)? = null,
     /** 「下一首播放」：插到当前曲目之后（电台/长队列里追加到末尾基本听不到）。 */
     val onPlayNext: (() -> Unit)? = null,
     val isDownloaded: Boolean = false,
     val onDownload: (() -> Unit)? = null,
+    /** 添加到云端歌单（或通用歌单） */
     val onAddToPlaylist: (() -> Unit)? = null,
+    /** 添加到本地自定义歌单（纯本地或本地曲库场景） */
+    val onAddToLocalPlaylist: (() -> Unit)? = null,
+    /** 在文件管理器中定位并打开 */
+    val onOpenInFileManager: (() -> Unit)? = null,
     val onShare: (() -> Unit)? = null,
     val onShowInfo: (() -> Unit)? = null,
     /** 从队列移除（仅队列场景）。 */
     val onRemoveFromQueue: (() -> Unit)? = null,
-    /** 从云盘删除（仅云盘场景）。破坏性动作，调用方负责先走 CpConfirmHost 二次确认。 */
+    /** 从歌单移除（歌单场景）。 */
+    val onRemoveFromPlaylist: (() -> Unit)? = null,
+    /** 从本地曲库移除（不删磁盘文件）。 */
+    val onRemoveFromLibrary: (() -> Unit)? = null,
+    /** 删除操作（云盘删除 / 彻底删除本地文件 / 删除下载记录等）。 */
     val onDelete: (() -> Unit)? = null,
+    val deleteLabel: String? = null,
 )
 
 /**
@@ -57,52 +69,65 @@ data class SongMenuActions(
 fun songContextMenuItems(actions: SongMenuActions): List<CpContextMenuItem> {
     val s = cpStrings()
     return buildList {
-    actions.onPlay?.let {
-        add(CpContextMenuItem(s.library.play, Icons.Filled.PlayArrow, it))
-    }
-    actions.onPlayMv?.let {
-        add(CpContextMenuItem("播放 MV", Icons.Filled.SmartDisplay, it))
-    }
-    actions.onRemoveFromQueue?.let {
-        add(CpContextMenuItem(s.player.removeFromQueue, Icons.Filled.Close, it, danger = true))
-    }
-    if (actions.onToggleFavorite != null) {
-        add(
-            CpContextMenuItem(
-                if (actions.isFavorite) s.library.unfavoritePlaylist else s.library.favoritePlaylist,
-                if (actions.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                actions.onToggleFavorite,
+        actions.onPlay?.let {
+            add(CpContextMenuItem(s.library.play, Icons.Filled.PlayArrow, it))
+        }
+        actions.onPlayMv?.let {
+            add(CpContextMenuItem("播放 MV", Icons.Filled.SmartDisplay, it))
+        }
+        actions.onRemoveFromQueue?.let {
+            add(CpContextMenuItem(s.player.removeFromQueue, Icons.Filled.Close, it, danger = true))
+        }
+        actions.onRemoveFromPlaylist?.let {
+            add(CpContextMenuItem(s.library.removeFromPlaylist, Icons.Filled.Close, it, danger = true))
+        }
+        if (actions.onToggleFavorite != null) {
+            val label = actions.favoriteLabel ?: if (actions.isFavorite) s.library.unfavoritePlaylist else s.library.favoritePlaylist
+            add(
+                CpContextMenuItem(
+                    label,
+                    if (actions.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                    actions.onToggleFavorite,
+                )
             )
-        )
-    }
-    actions.onAddToQueue?.let {
-        add(CpContextMenuItem(s.library.addToQueue, Icons.Filled.QueueMusic, it))
-    }
-    actions.onPlayNext?.let {
-        add(CpContextMenuItem(s.library.playNext, Icons.Filled.SkipNext, it))
-    }
-    if (actions.onDownload != null) {
-        add(
-            CpContextMenuItem(
-                if (actions.isDownloaded) s.player.downloaded else s.player.download,
-                if (actions.isDownloaded) Icons.Filled.DownloadDone else Icons.Filled.Download,
-                actions.onDownload,
-                enabled = !actions.isDownloaded,
+        }
+        actions.onAddToQueue?.let {
+            add(CpContextMenuItem(s.library.addToQueue, Icons.AutoMirrored.Filled.QueueMusic, it))
+        }
+        actions.onPlayNext?.let {
+            add(CpContextMenuItem(s.library.playNext, Icons.Filled.SkipNext, it))
+        }
+        if (actions.onDownload != null) {
+            add(
+                CpContextMenuItem(
+                    if (actions.isDownloaded) s.player.downloaded else s.player.download,
+                    if (actions.isDownloaded) Icons.Filled.DownloadDone else Icons.Filled.Download,
+                    actions.onDownload,
+                    enabled = !actions.isDownloaded,
+                )
             )
-        )
-    }
-    actions.onAddToPlaylist?.let {
-        add(CpContextMenuItem(s.player.addToPlaylist, Icons.Filled.PlaylistAdd, it))
-    }
-    actions.onShare?.let {
-        add(CpContextMenuItem(s.player.share, Icons.Filled.Share, it))
-    }
-    actions.onShowInfo?.let {
-        add(CpContextMenuItem(s.player.songInfo, Icons.Filled.Info, it))
-    }
-    actions.onDelete?.let {
-        add(CpContextMenuItem(s.library.removeFromCloud, Icons.Filled.Delete, it, danger = true))
-    }
+        }
+        actions.onAddToPlaylist?.let {
+            add(CpContextMenuItem(s.player.addToPlaylist, Icons.AutoMirrored.Filled.PlaylistAdd, it))
+        }
+        actions.onAddToLocalPlaylist?.let {
+            add(CpContextMenuItem("添加到本地歌单", Icons.AutoMirrored.Filled.PlaylistAdd, it))
+        }
+        actions.onShare?.let {
+            add(CpContextMenuItem(s.player.share, Icons.Filled.Share, it))
+        }
+        actions.onOpenInFileManager?.let {
+            add(CpContextMenuItem("在文件管理器中打开", Icons.Filled.FolderOpen, it))
+        }
+        actions.onShowInfo?.let {
+            add(CpContextMenuItem(s.player.songInfo, Icons.Filled.Info, it))
+        }
+        actions.onRemoveFromLibrary?.let {
+            add(CpContextMenuItem(s.downloads.removeFromLibrary, Icons.Filled.Close, it, danger = true))
+        }
+        actions.onDelete?.let {
+            add(CpContextMenuItem(actions.deleteLabel ?: s.library.removeFromCloud, Icons.Filled.Delete, it, danger = true))
+        }
     }
 }
 
@@ -152,30 +177,30 @@ data class PlaylistMenuActions(
 fun playlistContextMenuItems(actions: PlaylistMenuActions): List<CpContextMenuItem> {
     val s = cpStrings()
     return buildList {
-    actions.onPlay?.let {
-        add(CpContextMenuItem(s.library.playAll, Icons.Filled.PlayArrow, it))
-    }
-    actions.onAddToQueue?.let {
-        add(CpContextMenuItem(s.library.addToQueue, Icons.Filled.QueueMusic, it))
-    }
-    actions.onDownload?.let {
-        add(CpContextMenuItem(s.library.downloadAll, Icons.Filled.Download, it))
-    }
-    actions.onShare?.let {
-        add(CpContextMenuItem(s.library.sharePlaylist, Icons.Filled.Share, it))
-    }
-    // 收藏与删除是互斥的一对：owner 才有「删除歌单」，其余只能「取消收藏」。
-    if (!actions.isOwner && actions.onToggleFavorite != null) {
-        add(
-            CpContextMenuItem(
-                if (actions.isFavorite) s.library.unfavoritePlaylist else s.library.favoritePlaylist,
-                if (actions.isFavorite) Icons.Filled.BookmarkRemove else Icons.Filled.BookmarkAdd,
-                actions.onToggleFavorite,
+        actions.onPlay?.let {
+            add(CpContextMenuItem(s.library.playAll, Icons.Filled.PlayArrow, it))
+        }
+        actions.onAddToQueue?.let {
+            add(CpContextMenuItem(s.library.addToQueue, Icons.AutoMirrored.Filled.QueueMusic, it))
+        }
+        actions.onDownload?.let {
+            add(CpContextMenuItem(s.library.downloadAll, Icons.Filled.Download, it))
+        }
+        actions.onShare?.let {
+            add(CpContextMenuItem(s.library.sharePlaylist, Icons.Filled.Share, it))
+        }
+        // 收藏与删除是互斥的一对：owner 才有「删除歌单」，其余只能「取消收藏」。
+        if (!actions.isOwner && actions.onToggleFavorite != null) {
+            add(
+                CpContextMenuItem(
+                    if (actions.isFavorite) s.library.unfavoritePlaylist else s.library.favoritePlaylist,
+                    if (actions.isFavorite) Icons.Filled.BookmarkRemove else Icons.Filled.BookmarkAdd,
+                    actions.onToggleFavorite,
+                )
             )
-        )
-    }
-    if (actions.isOwner && actions.onDelete != null) {
-        add(CpContextMenuItem(s.library.deletePlaylist, Icons.Filled.Delete, actions.onDelete, danger = true))
-    }
+        }
+        if (actions.isOwner && actions.onDelete != null) {
+            add(CpContextMenuItem(s.library.deletePlaylist, Icons.Filled.Delete, actions.onDelete, danger = true))
+        }
     }
 }

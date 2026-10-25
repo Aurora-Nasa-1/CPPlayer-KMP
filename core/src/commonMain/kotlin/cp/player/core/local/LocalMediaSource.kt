@@ -53,6 +53,11 @@ interface LocalMediaSource {
     val favorites: LocalFavorites
 
     /**
+     * 自定义本地歌单存储。
+     */
+    val playlists: LocalPlaylistsStore get() = NoopLocalPlaylistsStore
+
+    /**
      * 扫描过滤规则（最短时长 / 排除目录 / 是否含视频）。
      *
      * 规则在 [scan] 阶段生效并**影响索引内容**：改完规则需重扫一次才会体现。

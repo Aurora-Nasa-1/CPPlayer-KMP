@@ -10,6 +10,7 @@ import cp.player.app.ui.util.UiEvents
 import cp.player.core.local.LocalGridSort
 import cp.player.core.local.LocalLibraryFilter
 import cp.player.core.local.LocalLibrarySort
+import cp.player.core.local.LocalPlaylist
 import cp.player.core.local.LocalScanSettings
 import cp.player.core.local.ScanProgress
 import cp.player.core.media.LocalMediaItem
@@ -52,6 +53,7 @@ data class DownloadsUiState(
     val songSortDescending: Boolean = false,
     val gridSort: LocalGridSort = LocalGridSort.NAME,
     val favoritePaths: Set<String> = emptySet(),
+    val localPlaylists: List<LocalPlaylist> = emptyList(),
     val scanSettings: LocalScanSettings = LocalScanSettings(),
     val libraryFilter: LocalLibraryFilter = LocalLibraryFilter(),
 ) {
@@ -122,6 +124,12 @@ class DownloadsScreenModel : ScreenModel {
                 _state.value = _state.value.copy(favoritePaths = paths)
             }
         }
+        // 自定义本地歌单
+        screenModelScope.launch {
+            AppModel.localMedia.playlists.playlists.collect { playlists ->
+                _state.value = _state.value.copy(localPlaylists = playlists)
+            }
+        }
         // 扫描过滤规则（最短时长 / 排除目录 / 是否含视频）
         screenModelScope.launch {
             AppModel.localMedia.scanSettings.settings.collect { settings ->
@@ -190,6 +198,42 @@ class DownloadsScreenModel : ScreenModel {
         UiEvents.notify(
             if (nowFavorite) strings.downloads.addedToFavorites else strings.downloads.removedFromFavorites
         )
+    }
+
+    // ============ 自定义本地歌单操作 ============
+
+    fun createLocalPlaylist(name: String): LocalPlaylist {
+        val pl = AppModel.localMedia.playlists.createPlaylist(name)
+        UiEvents.notify("已创建歌单「${pl.name}」")
+        return pl
+    }
+
+    fun deleteLocalPlaylist(id: String) {
+        val pl = AppModel.localMedia.playlists.getPlaylist(id)
+        if (AppModel.localMedia.playlists.deletePlaylist(id)) {
+            UiEvents.notify("已删除本地歌单「${pl?.name ?: id}」")
+        }
+    }
+
+    fun renameLocalPlaylist(id: String, newName: String) {
+        if (AppModel.localMedia.playlists.renamePlaylist(id, newName)) {
+            UiEvents.notify("歌单已重命名为「$newName」")
+        }
+    }
+
+    fun addTracksToLocalPlaylist(playlistId: String, paths: List<String>) {
+        val count = AppModel.localMedia.playlists.addTracks(playlistId, paths)
+        val pl = AppModel.localMedia.playlists.getPlaylist(playlistId)
+        UiEvents.notify(
+            if (count > 0) "已将 $count 首歌曲添加到「${pl?.name ?: "本地歌单"}」"
+            else "所选歌曲已在歌单中"
+        )
+    }
+
+    fun removeTrackFromLocalPlaylist(playlistId: String, path: String) {
+        if (AppModel.localMedia.playlists.removeTracks(playlistId, listOf(path))) {
+            UiEvents.notify("已从歌单移出")
+        }
     }
 
     // ============ 下载任务操作 ============

@@ -25,13 +25,22 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import cp.player.app.AppModel
+import cp.player.app.ui.component.AddToLocalPlaylistDialog
+import cp.player.app.ui.component.AddToPlaylistSheet
+import cp.player.app.ui.component.CpAnchoredMenu
+import cp.player.app.ui.component.CpContextMenu
+import cp.player.app.ui.component.SongMenuActions
+import cp.player.app.ui.component.songContextMenuItems
 import cp.player.app.ui.util.UiEvents
+import cp.player.core.music.CPMediaId
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -433,6 +442,8 @@ private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScree
     // 「删除文件与记录」的二次确认：删掉的是已下载的本体文件，重新下要花流量与时间。
     // 挂起态放在 tab 层而不是每张卡片一份 —— 卡片可能有几十张。
     var confirmDeleteTarget by remember { mutableStateOf<DownloadTask?>(null) }
+    var addToCloudTarget by remember { mutableStateOf<String?>(null) }
+    var addToLocalPathTarget by remember { mutableStateOf<String?>(null) }
     val s = cpStrings()
     if (tasks.isEmpty()) {
         DownloadsPageBox {
@@ -469,6 +480,8 @@ private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScree
                             strings = s,
                             modifier = Modifier.weight(1f),
                             onDelete = { confirmDeleteTarget = task },
+                            onAddToCloudPlaylist = { addToCloudTarget = it },
+                            onAddToLocalPlaylist = { addToLocalPathTarget = it },
                         )
                     }
                     // 最后一行为奇数时补一个等宽空位，否则那条卡片会被拉满整行。
@@ -476,6 +489,20 @@ private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScree
                 }
             }
         }
+    }
+
+    addToCloudTarget?.let { cloudId ->
+        AddToPlaylistSheet(
+            trackIds = listOf(cloudId),
+            onDismiss = { addToCloudTarget = null },
+        )
+    }
+
+    addToLocalPathTarget?.let { path ->
+        AddToLocalPlaylistDialog(
+            trackPaths = listOf(path),
+            onDismiss = { addToLocalPathTarget = null },
+        )
     }
 
     confirmDeleteTarget?.let { task ->
@@ -498,6 +525,8 @@ private fun CompletedTaskCard(
     modifier: Modifier = Modifier,
     /** 请求删除（文件 + 记录）；由宿主弹二次确认后再真正执行。 */
     onDelete: () -> Unit = { model.remove(task, deleteFile = true, strings) },
+    onAddToCloudPlaylist: (String) -> Unit = {},
+    onAddToLocalPlaylist: (String) -> Unit = {},
 ) {
     val navigator = cafe.adriel.voyager.navigator.LocalNavigator.current
     var menuExpanded by remember { mutableStateOf(false) }
@@ -507,133 +536,136 @@ private fun CompletedTaskCard(
         if (isVideo) "local://video/$path" else "local://audio/$path"
     }
 
-    Surface(
-        onClick = {
-            if (isVideo) {
-                task.localPath?.let { path ->
-                    navigator?.push(VideoPlayerScreen("local://video/$path", title = task.title))
-                }
-            } else {
-                mediaId?.let { id ->
-                    AppModel.playTrackClicked(id) {
-                        AppModel.playback.playQueue(listOf(id), startIndex = 0)
-                    }
+    val likedIds by AppModel.playback.likedIds.collectAsState()
+    val cloudFavId = remember(task.mediaId) {
+        runCatching { CPMediaId.parse(task.mediaId).resourceId }.getOrDefault(task.mediaId)
+    }
+    val isCloudFav = cloudFavId in likedIds
+
+    val handlePlay: () -> Unit = {
+        if (isVideo) {
+            task.localPath?.let { path ->
+                navigator?.push(VideoPlayerScreen("local://video/$path", title = task.title))
+            }
+        } else {
+            mediaId?.let { id ->
+                AppModel.playTrackClicked(id) {
+                    AppModel.playback.playQueue(listOf(id), startIndex = 0)
                 }
             }
-        },
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = modifier,
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        }
+    }
+
+    val contextMenu = songContextMenuItems(
+        SongMenuActions(
+            onPlay = handlePlay,
+            isFavorite = isCloudFav,
+            onToggleFavorite = {
+                scope.launch {
+                    val target = cloudFavId !in likedIds
+                    AppModel.playback.toggleFavoriteFor(task.mediaId)
+                    UiEvents.notify(if (target) "已收藏到云端" else "已取消云端收藏")
+                }
+            },
+            favoriteLabel = if (isCloudFav) "取消云端收藏" else "云端收藏",
+            onAddToQueue = if (!isVideo && mediaId != null) {
+                {
+                    scope.launch {
+                        AppModel.playback.addToQueue(mediaId)
+                        UiEvents.notify("已加入播放队列")
+                    }
+                }
+            } else null,
+            onPlayNext = if (!isVideo && mediaId != null) {
+                {
+                    scope.launch {
+                        AppModel.playback.addNextToQueue(mediaId)
+                        UiEvents.notify("已添加为下一首播放")
+                    }
+                }
+            } else null,
+            onAddToPlaylist = {
+                onAddToCloudPlaylist(task.mediaId)
+            },
+            onAddToLocalPlaylist = task.localPath?.let { path ->
+                { onAddToLocalPlaylist(path) }
+            },
+            onOpenInFileManager = task.localPath?.let { path ->
+                { cp.player.app.platform.openInFileManager(path) }
+            },
+            onDelete = onDelete,
+            deleteLabel = "删除文件与记录",
+        )
+    )
+
+    CpContextMenu(items = contextMenu, modifier = modifier) {
+        Surface(
+            onClick = handlePlay,
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            TaskCover(task.coverUrl, task.mediaType, Modifier.size(48.dp))
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                CpText(
-                    task.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                )
-                // 副标题刻意不显示本地绝对路径：那串字符对用户没有信息量，
-                // 而歌手 + 文件大小是能扫读的。
-                CpText(
-                    buildString {
-                        append(task.artist ?: "未知艺术家")
-                        val size = task.totalBytes?.takeIf { it > 0 } ?: task.downloadedBytes
-                        if (size > 0) append(" · ").append(formatBytes(size))
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (isVideo) {
-                    IconButton(onClick = {
-                        task.localPath?.let { path ->
-                            navigator?.push(VideoPlayerScreen("local://video/$path", title = task.title))
-                        }
-                    }) {
-                        Icon(
-                            Icons.Filled.PlayArrow,
-                            contentDescription = "播放视频",
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                } else if (mediaId != null) {
-                    IconButton(onClick = {
-                        scope.launch {
-                            AppModel.playback.addNextToQueue(mediaId)
-                            UiEvents.notify("已添加为下一首播放")
-                        }
-                    }) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.QueueMusic,
-                            contentDescription = "下一首播放",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+            Row(
+                Modifier.fillMaxWidth().padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TaskCover(task.coverUrl, task.mediaType, Modifier.size(48.dp))
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    CpText(
+                        task.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                    )
+                    // 副标题刻意不显示本地绝对路径：那串字符对用户没有信息量，
+                    // 而歌手 + 文件大小是能扫读的。
+                    CpText(
+                        buildString {
+                            append(task.artist ?: "未知艺术家")
+                            val size = task.totalBytes?.takeIf { it > 0 } ?: task.downloadedBytes
+                            if (size > 0) append(" · ").append(formatBytes(size))
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
                 }
-                Box {
-                    IconButton(onClick = { menuExpanded = true }) {
-                        Icon(
-                            Icons.Filled.MoreVert,
-                            contentDescription = "更多操作",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false },
-                    ) {
-                        if (isVideo) {
-                            task.localPath?.let { path ->
-                                DropdownMenuItem(
-                                    text = { Text("播放视频") },
-                                    leadingIcon = { Icon(Icons.Filled.PlayArrow, null) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        navigator?.push(VideoPlayerScreen("local://video/$path", title = task.title))
-                                    },
-                                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isVideo) {
+                        IconButton(onClick = handlePlay) {
+                            Icon(
+                                Icons.Filled.PlayArrow,
+                                contentDescription = "播放视频",
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    } else if (mediaId != null) {
+                        IconButton(onClick = {
+                            scope.launch {
+                                AppModel.playback.addNextToQueue(mediaId)
+                                UiEvents.notify("已添加为下一首播放")
                             }
-                        } else if (mediaId != null) {
-                            DropdownMenuItem(
-                                text = { Text("加入播放队列") },
-                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null) },
-                                onClick = {
-                                    menuExpanded = false
-                                    scope.launch {
-                                        AppModel.playback.addToQueue(mediaId)
-                                        UiEvents.notify("已加入播放队列")
-                                    }
-                                },
+                        }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.QueueMusic,
+                                contentDescription = "下一首播放",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        task.localPath?.let { path ->
-                            DropdownMenuItem(
-                                text = { Text("在文件管理器中打开") },
-                                leadingIcon = { Icon(Icons.Filled.FolderOpen, null) },
-                                onClick = {
-                                    menuExpanded = false
-                                    cp.player.app.platform.openInFileManager(path)
-                                },
+                    }
+                    CpAnchoredMenu(
+                        expanded = menuExpanded,
+                        onDismiss = { menuExpanded = false },
+                        items = contextMenu,
+                    ) {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(
+                                Icons.Filled.MoreVert,
+                                contentDescription = "更多操作",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        DropdownMenuItem(
-                            text = { Text("删除文件与记录", color = MaterialTheme.colorScheme.error) },
-                            leadingIcon = {
-                                Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error)
-                            },
-                            onClick = {
-                                menuExpanded = false
-                                onDelete()
-                            },
-                        )
                     }
                 }
             }

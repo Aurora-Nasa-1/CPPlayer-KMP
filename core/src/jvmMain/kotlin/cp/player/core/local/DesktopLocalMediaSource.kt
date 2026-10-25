@@ -78,6 +78,9 @@ class DesktopLocalMediaSource(dataDir: String? = null) : LocalMediaSource {
     override val favorites: LocalFavorites =
         LocalFavorites(File(dataDirFile, "favorites.json").absolutePath)
 
+    override val playlists: LocalPlaylistsStore =
+        LocalPlaylistsStore(File(dataDirFile, "playlists.json").absolutePath)
+
     override val scanSettings: LocalScanSettingsStore =
         LocalScanSettingsStore(File(dataDirFile, "scan-settings.json").absolutePath)
 
@@ -181,6 +184,7 @@ class DesktopLocalMediaSource(dataDir: String? = null) : LocalMediaSource {
                 index.save()
             }
         }
+        runCatching { playlists.removeAll(listOf(item.path)) }
     }
 
     override fun addExternalItems(items: List<LocalMediaItem>) {

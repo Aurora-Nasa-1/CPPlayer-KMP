@@ -1,10 +1,8 @@
 package cp.player.app.ui.screen
 
-import cp.player.app.ui.component.CpText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,18 +24,19 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
-import cp.player.app.AppModel
-import cp.player.app.ui.util.UiEvents
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FilterList
@@ -63,8 +62,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import cp.player.app.ui.component.CpToggleChip
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -78,34 +77,49 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
-import kotlinx.coroutines.launch
-import cp.player.app.i18n.CpStrings
-import cp.player.app.platform.rememberDirectoryPicker
-import cp.player.app.ui.component.ContentState
-import cp.player.app.ui.component.CpCoverPlaceholder
-import cp.player.app.ui.component.CpLoadingIndicator
-import cp.player.app.ui.component.CpSpacing
-import cp.player.app.ui.component.StateSurface
-import cp.player.app.ui.model.DownloadsScreenModel
-import cp.player.app.ui.model.DownloadsUiState
-import androidx.compose.runtime.collectAsState
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
+import coil3.compose.AsyncImage
+import cp.player.app.AppModel
+import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
+import cp.player.app.platform.rememberDirectoryPicker
+import cp.player.app.ui.anim.CoverFlight
+import cp.player.app.ui.component.AddToLocalPlaylistDialog
+import cp.player.app.ui.component.AddToPlaylistSheet
+import cp.player.app.ui.component.ContentState
+import cp.player.app.ui.component.CpConfirmDialog
+import cp.player.app.ui.component.CpConfirmHost
+import cp.player.app.ui.component.CpCoverPlaceholder
+import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.component.CpSpacing
+import cp.player.app.ui.component.CpText
+import cp.player.app.ui.component.CpToggleChip
+import cp.player.app.ui.component.SongDetailInfoDialog
+import cp.player.app.ui.component.SongItem
+import cp.player.app.ui.component.SongMenuActions
+import cp.player.app.ui.component.StateSurface
+import cp.player.app.ui.component.rememberConfirmState
+import cp.player.app.ui.component.songContextMenuItems
+import cp.player.app.ui.model.DownloadsScreenModel
+import cp.player.app.ui.model.DownloadsUiState
+import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.util.resized
 import cp.player.core.local.LocalAlbum
 import cp.player.core.local.LocalArtist
 import cp.player.core.local.LocalFolderNode
 import cp.player.core.local.LocalFolderTree
-import cp.player.core.local.LocalGridSort
 import cp.player.core.local.LocalLibraryAggregator
 import cp.player.core.local.LocalLibrarySort
+import cp.player.core.local.LocalPlaylist
 import cp.player.core.local.LocalScanSettings
 import cp.player.core.media.LocalMediaItem
-import cp.player.app.ui.util.resized
+import cp.player.core.media.LocalMediaOrigin
+import cp.player.core.music.TrackSummary
+import kotlinx.coroutines.launch
 
 /**
  * 本地音乐库独立页面。
@@ -147,12 +161,13 @@ class LocalLibraryScreen(
 /**
  * 本地曲库浏览面板（下载页 Tab 3 / 本地音乐独立页核心）。
  *
- * 相对早期的「两个分组平铺所有文件」，这里把它升级成一个真正的**音乐库**：
- * 歌曲 / 专辑 / 艺术家 / 收藏四个子页，配搜索框与排序菜单。
- *
- * 专辑与艺术家点进去用**页内二级视图**而不是 push 新路由：本地库的数据全部来自
- * 已经在内存里的 [LocalMediaItem] 列表，没有网络请求，页内切换比压栈更轻，
- * 也不会在返回时丢掉搜索词与滚动位置。
+ * 子页结构：
+ * 0: 全部歌曲 (`songs`)
+ * 1: 专辑 (`albums`)
+ * 2: 艺术家 (`artists`)
+ * 3: 本地喜欢 (`pureLocalFavorites`，仅展示纯本地收藏，与云端喜欢隔离)
+ * 4: 本地歌单 (`localPlaylists`，自定义本地歌单体系)
+ * 5: 文件夹 (`folders`)
  */
 @Composable
 internal fun LocalLibraryTab(
@@ -161,50 +176,30 @@ internal fun LocalLibraryTab(
     strings: CpStrings,
 ) {
     val s = strings.downloads
+    val scope = rememberCoroutineScope()
+    val confirm = rememberConfirmState()
     val pickFolder = rememberDirectoryPicker { path ->
         if (path != null) model.importFolder(path, strings)
     }
+
     var openedAlbum by remember { mutableStateOf<LocalAlbum?>(null) }
     var openedArtist by remember { mutableStateOf<LocalArtist?>(null) }
+    var openedFolder by remember { mutableStateOf<LocalFolderNode?>(null) }
+    var openedLocalPlaylist by remember { mutableStateOf<LocalPlaylist?>(null) }
 
-    // 页面内二级视图（专辑 / 艺术家详情）优先于列表视图
-    val album = openedAlbum
-    if (album != null) {
-        // 二级视图自己就是 ColumnScope 扩展，这里补一层同构容器（宽度收口与列表视图一致）
-        Column(
-            Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            LocalAlbumDetail(
-                album = album,
-                items = state.localAudioItems,
-                model = model,
-                strings = strings,
-                onBack = { openedAlbum = null },
-            )
-        }
-        return
-    }
-    val artist = openedArtist
-    if (artist != null) {
-        Column(
-            Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            LocalArtistDetail(
-                artist = artist,
-                items = state.localAudioItems,
-                model = model,
-                strings = strings,
-                onBack = { openedArtist = null },
-            )
-        }
-        return
-    }
+    // 交互弹窗状态
+    var showCreatePlaylistDialog by remember { mutableStateOf(false) }
+    var renamePlaylistTarget by remember { mutableStateOf<LocalPlaylist?>(null) }
+    var addToCloudPlaylistTrack by remember { mutableStateOf<TrackSummary?>(null) }
+    var addToLocalPlaylistPath by remember { mutableStateOf<String?>(null) }
+    var deleteTargetSong by remember { mutableStateOf<LocalMediaItem?>(null) }
+    var showInfoTrack by remember { mutableStateOf<TrackSummary?>(null) }
 
-    // 聚合结果：以 localItems 为 key，避免每次重组重算（get() 每次返回新 list）。
-    // 浏览筛选（只看无损 / 重复 / 缺封面 / 缺标签）在最前面应用 —— 筛完之后
-    // 专辑与艺术家的计数也要跟着变，否则「3 张专辑」点进去只有 1 张。
+    val likedIds by AppModel.playback.likedIds.collectAsState()
+    val playbackState by AppModel.playback.state.collectAsState()
+    val currentPlayingTrackId = playbackState.currentTrack?.id
+
+    // 聚合过滤与搜索
     val query = state.libraryQuery
     val filter = state.libraryFilter
     val base = remember(state.localItems, filter) {
@@ -223,14 +218,169 @@ internal fun LocalLibraryTab(
     val artists = remember(base, query, state.gridSort) {
         LocalLibraryAggregator.artists(base, state.gridSort, query)
     }
-    val favorites = remember(base, state.favoritePaths, state.songSort, state.songSortDescending) {
+    // 纯本地喜欢：仅保留纯本地导入且在 favoritePaths 中的曲目
+    val pureLocalFavorites = remember(base, state.favoritePaths, state.songSort, state.songSortDescending) {
+        val pure = base.filter {
+            it.path in state.favoritePaths &&
+                (it.source == LocalMediaOrigin.IMPORTED || it.originalMediaId.isNullOrBlank())
+        }
         LocalLibraryAggregator.sortSongs(
-            base.filter { it.path in state.favoritePaths },
+            pure,
             state.songSort,
             state.songSortDescending,
         )
     }
     val folders = remember(base) { LocalFolderTree.build(base) }
+
+    // 页面内二级视图：专辑 / 艺术家 / 文件夹 / 本地歌单详情
+    val album = openedAlbum
+    if (album != null) {
+        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+            LocalAlbumDetail(
+                album = album,
+                items = state.localAudioItems,
+                model = model,
+                strings = strings,
+                onBack = { openedAlbum = null },
+                currentPlayingId = currentPlayingTrackId,
+                likedIds = likedIds,
+                favoritePaths = state.favoritePaths,
+                onToggleCloudFav = { cloudId ->
+                    scope.launch {
+                        val cloudFavId = runCatching { cp.player.core.music.CPMediaId.parse(cloudId).resourceId }.getOrDefault(cloudId)
+                        val target = cloudFavId !in likedIds
+                        AppModel.playback.toggleFavoriteFor(cloudId)
+                        UiEvents.notify(if (target) "已收藏到云端" else "已取消云端收藏")
+                    }
+                },
+                onToggleLocalFav = { path ->
+                    val now = AppModel.localMedia.favorites.toggle(path)
+                    UiEvents.notify(if (now) "已添加到本地喜欢" else "已从本地喜欢移除")
+                },
+                onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
+                onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
+                onDeleteSong = { deleteTargetSong = it },
+                onShowInfo = { showInfoTrack = it },
+            )
+        }
+        return
+    }
+
+    val artist = openedArtist
+    if (artist != null) {
+        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+            LocalArtistDetail(
+                artist = artist,
+                items = state.localAudioItems,
+                model = model,
+                strings = strings,
+                onBack = { openedArtist = null },
+                currentPlayingId = currentPlayingTrackId,
+                likedIds = likedIds,
+                favoritePaths = state.favoritePaths,
+                onToggleCloudFav = { cloudId ->
+                    scope.launch {
+                        val cloudFavId = runCatching { cp.player.core.music.CPMediaId.parse(cloudId).resourceId }.getOrDefault(cloudId)
+                        val target = cloudFavId !in likedIds
+                        AppModel.playback.toggleFavoriteFor(cloudId)
+                        UiEvents.notify(if (target) "已收藏到云端" else "已取消云端收藏")
+                    }
+                },
+                onToggleLocalFav = { path ->
+                    val now = AppModel.localMedia.favorites.toggle(path)
+                    UiEvents.notify(if (now) "已添加到本地喜欢" else "已从本地喜欢移除")
+                },
+                onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
+                onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
+                onDeleteSong = { deleteTargetSong = it },
+                onShowInfo = { showInfoTrack = it },
+            )
+        }
+        return
+    }
+
+    val openedFolderNode = openedFolder
+    if (openedFolderNode != null) {
+        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+            LocalFolderDetail(
+                node = openedFolderNode,
+                items = base,
+                model = model,
+                strings = strings,
+                onBack = { openedFolder = null },
+                currentPlayingId = currentPlayingTrackId,
+                likedIds = likedIds,
+                favoritePaths = state.favoritePaths,
+                onToggleCloudFav = { cloudId ->
+                    scope.launch {
+                        val cloudFavId = runCatching { cp.player.core.music.CPMediaId.parse(cloudId).resourceId }.getOrDefault(cloudId)
+                        val target = cloudFavId !in likedIds
+                        AppModel.playback.toggleFavoriteFor(cloudId)
+                        UiEvents.notify(if (target) "已收藏到云端" else "已取消云端收藏")
+                    }
+                },
+                onToggleLocalFav = { path ->
+                    val now = AppModel.localMedia.favorites.toggle(path)
+                    UiEvents.notify(if (now) "已添加到本地喜欢" else "已从本地喜欢移除")
+                },
+                onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
+                onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
+                onDeleteSong = { deleteTargetSong = it },
+                onShowInfo = { showInfoTrack = it },
+            )
+        }
+        return
+    }
+
+    val currentPlaylist = openedLocalPlaylist
+    if (currentPlaylist != null) {
+        val latestPlaylist = state.localPlaylists.find { it.id == currentPlaylist.id } ?: currentPlaylist
+        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+            LocalPlaylistDetail(
+                playlist = latestPlaylist,
+                items = state.localAudioItems,
+                model = model,
+                strings = strings,
+                onBack = { openedLocalPlaylist = null },
+                onRename = { renamePlaylistTarget = latestPlaylist },
+                onDelete = {
+                    confirm.request(
+                        title = "删除本地歌单",
+                        message = "确定要删除本地歌单《${latestPlaylist.name}》吗？歌单内的本地音频文件不会被删除。",
+                        confirmLabel = "删除",
+                        destructive = true,
+                        onConfirm = {
+                            model.deleteLocalPlaylist(latestPlaylist.id)
+                            openedLocalPlaylist = null
+                        },
+                    )
+                },
+                onRemoveSong = { path ->
+                    model.removeTrackFromLocalPlaylist(latestPlaylist.id, path)
+                },
+                currentPlayingId = currentPlayingTrackId,
+                likedIds = likedIds,
+                favoritePaths = state.favoritePaths,
+                onToggleCloudFav = { cloudId ->
+                    scope.launch {
+                        val cloudFavId = runCatching { cp.player.core.music.CPMediaId.parse(cloudId).resourceId }.getOrDefault(cloudId)
+                        val target = cloudFavId !in likedIds
+                        AppModel.playback.toggleFavoriteFor(cloudId)
+                        UiEvents.notify(if (target) "已收藏到云端" else "已取消云端收藏")
+                    }
+                },
+                onToggleLocalFav = { path ->
+                    val now = AppModel.localMedia.favorites.toggle(path)
+                    UiEvents.notify(if (now) "已添加到本地喜欢" else "已从本地喜欢移除")
+                },
+                onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
+                onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
+                onDeleteSong = { deleteTargetSong = it },
+                onShowInfo = { showInfoTrack = it },
+            )
+        }
+        return
+    }
 
     Column(
         Modifier.fillMaxSize(),
@@ -244,14 +394,14 @@ internal fun LocalLibraryTab(
             onImport = { pickFolder() },
         )
 
-        // 子页切换：有内容时才显示，空库时直接给空态更清爽
         if (state.localAudioItems.isNotEmpty() || query.isNotBlank()) {
             LocalLibrarySubTabs(
                 selected = state.libraryTab,
-                favoriteCount = favorites.size,
                 songCount = songs.size,
                 albumCount = albums.size,
                 artistCount = artists.size,
+                favoriteCount = pureLocalFavorites.size,
+                playlistCount = state.localPlaylists.size,
                 folderCount = folders.size,
                 strings = strings,
                 onSelect = { model.setLibraryTab(it) },
@@ -259,7 +409,6 @@ internal fun LocalLibraryTab(
         }
 
         when {
-            // 整库为空且没有搜索词 —— 引导扫描 / 导入
             state.localItems.isEmpty() -> {
                 StateSurface(Modifier.padding(CpSpacing.pageHorizontal)) {
                     ContentState(
@@ -271,11 +420,22 @@ internal fun LocalLibraryTab(
                 }
             }
 
-            state.libraryTab == 3 && favorites.isEmpty() -> {
+            state.libraryTab == 3 && pureLocalFavorites.isEmpty() -> {
                 StateSurface(Modifier.padding(CpSpacing.pageHorizontal)) {
                     ContentState(
-                        title = s.emptyFavoritesTitle,
-                        message = s.emptyFavoritesNote,
+                        title = "暂无本地喜欢歌曲",
+                        message = "纯本地歌曲可在菜单中选择「喜欢」，将其收录至此列表",
+                    )
+                }
+            }
+
+            state.libraryTab == 4 && state.localPlaylists.isEmpty() -> {
+                StateSurface(Modifier.padding(CpSpacing.pageHorizontal)) {
+                    ContentState(
+                        title = "暂无本地歌单",
+                        message = "可创建自定义本地歌单，将不同本地歌曲分类归纳",
+                        actionLabel = "新建本地歌单",
+                        onAction = { showCreatePlaylistDialog = true },
                     )
                 }
             }
@@ -300,32 +460,145 @@ internal fun LocalLibraryTab(
                     onClick = { openedArtist = it },
                 )
                 3 -> SongList(
-                    title = s.favoriteSongs,
-                    songs = favorites,
+                    title = "本地喜欢 · ${pureLocalFavorites.size}",
+                    songs = pureLocalFavorites,
                     model = model,
                     strings = strings,
-                    favorites = state.favoritePaths,
                     showSort = true,
                     state = state,
+                    currentPlayingId = currentPlayingTrackId,
+                    likedIds = likedIds,
+                    favoritePaths = state.favoritePaths,
+                    onToggleCloudFav = { cloudId ->
+                        scope.launch {
+                            val cloudFavId = runCatching { cp.player.core.music.CPMediaId.parse(cloudId).resourceId }.getOrDefault(cloudId)
+                            val target = cloudFavId !in likedIds
+                            AppModel.playback.toggleFavoriteFor(cloudId)
+                            UiEvents.notify(if (target) "已收藏到云端" else "已取消云端收藏")
+                        }
+                    },
+                    onToggleLocalFav = { path ->
+                        val now = AppModel.localMedia.favorites.toggle(path)
+                        UiEvents.notify(if (now) "已添加到本地喜欢" else "已从本地喜欢移除")
+                    },
+                    onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
+                    onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
+                    onDeleteSong = { deleteTargetSong = it },
+                    onShowInfo = { showInfoTrack = it },
                 )
-                // 文件夹树只认「当前筛选后的曲目」，与歌曲页保持同一份数据视角
-                4 -> FolderTreeView(
+                4 -> LocalPlaylistGrid(
+                    playlists = state.localPlaylists,
+                    items = state.localAudioItems,
+                    model = model,
+                    strings = strings,
+                    onCreatePlaylist = { showCreatePlaylistDialog = true },
+                    onClick = { openedLocalPlaylist = it },
+                    onRename = { renamePlaylistTarget = it },
+                    onDelete = { pl ->
+                        confirm.request(
+                            title = "删除本地歌单",
+                            message = "确定要删除本地歌单《${pl.name}》吗？",
+                            confirmLabel = "删除",
+                            destructive = true,
+                            onConfirm = { model.deleteLocalPlaylist(pl.id) },
+                        )
+                    },
+                )
+                5 -> FolderTreeView(
                     nodes = folders,
                     items = base,
                     model = model,
                     strings = strings,
+                    onOpenFolder = { openedFolder = it },
                 )
                 else -> SongList(
                     title = null,
                     songs = songs,
                     model = model,
                     strings = strings,
-                    favorites = state.favoritePaths,
                     showSort = true,
                     state = state,
+                    currentPlayingId = currentPlayingTrackId,
+                    likedIds = likedIds,
+                    favoritePaths = state.favoritePaths,
+                    onToggleCloudFav = { cloudId ->
+                        scope.launch {
+                            val cloudFavId = runCatching { cp.player.core.music.CPMediaId.parse(cloudId).resourceId }.getOrDefault(cloudId)
+                            val target = cloudFavId !in likedIds
+                            AppModel.playback.toggleFavoriteFor(cloudId)
+                            UiEvents.notify(if (target) "已收藏到云端" else "已取消云端收藏")
+                        }
+                    },
+                    onToggleLocalFav = { path ->
+                        val now = AppModel.localMedia.favorites.toggle(path)
+                        UiEvents.notify(if (now) "已添加到本地喜欢" else "已从本地喜欢移除")
+                    },
+                    onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
+                    onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
+                    onDeleteSong = { deleteTargetSong = it },
+                    onShowInfo = { showInfoTrack = it },
                 )
             }
         }
+    }
+
+    CpConfirmHost(confirm)
+
+    if (showCreatePlaylistDialog) {
+        CreateLocalPlaylistDialog(
+            onDismiss = { showCreatePlaylistDialog = false },
+            onConfirm = { name ->
+                showCreatePlaylistDialog = false
+                model.createLocalPlaylist(name)
+            },
+        )
+    }
+
+    renamePlaylistTarget?.let { pl ->
+        RenameLocalPlaylistDialog(
+            currentName = pl.name,
+            onDismiss = { renamePlaylistTarget = null },
+            onConfirm = { newName ->
+                renamePlaylistTarget = null
+                model.renameLocalPlaylist(pl.id, newName)
+            },
+        )
+    }
+
+    addToCloudPlaylistTrack?.let { track ->
+        val cloudId = track.originalMediaId ?: track.id
+        AddToPlaylistSheet(
+            trackIds = listOf(cloudId),
+            onDismiss = { addToCloudPlaylistTrack = null },
+        )
+    }
+
+    addToLocalPlaylistPath?.let { path ->
+        AddToLocalPlaylistDialog(
+            trackPaths = listOf(path),
+            onDismiss = { addToLocalPlaylistPath = null },
+        )
+    }
+
+    deleteTargetSong?.let { song ->
+        CpConfirmDialog(
+            title = "彻底删除本地文件",
+            message = "确定要将《${song.title}》从磁盘彻底删除吗？此操作无法撤销。",
+            confirmLabel = "彻底删除",
+            destructive = true,
+            onConfirm = {
+                model.deleteLocalFile(song, strings)
+                deleteTargetSong = null
+            },
+            onDismiss = { deleteTargetSong = null },
+        )
+    }
+
+    showInfoTrack?.let { track ->
+        SongDetailInfoDialog(
+            track = track,
+            onDismiss = { showInfoTrack = null },
+        )
     }
 }
 
@@ -386,7 +659,6 @@ private fun LocalLibraryToolbar(
                 }
             }
         }
-        // 有内容才给搜索框：空库放一个搜不到东西的输入框只会让人困惑
         if (state.localItems.isNotEmpty()) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -413,12 +685,6 @@ private fun LocalLibraryToolbar(
     }
 }
 
-/**
- * 筛选入口：浏览期开关（只看无损 / 重复 / 缺封面 / 缺标签）+ 扫描规则对话框。
- *
- * 两类开关放在同一个菜单里，是因为用户心里想的是同一件事 ——「这个曲库健不健康」。
- * 但语义上要区分清楚：上面的开关只影响当前视图，下面那个会影响下次扫描的结果。
- */
 @Composable
 private fun LibraryFilterMenu(
     state: DownloadsUiState,
@@ -507,12 +773,6 @@ private fun FilterToggle(label: String, checked: Boolean, onToggle: () -> Unit) 
     )
 }
 
-/**
- * 扫描规则对话框。
- *
- * 关键提示语：这些规则**改变的是索引内容**，所以要重扫才生效 —— 不写清楚的话，
- * 用户改完设置看着列表没变化，会以为功能坏了。
- */
 @Composable
 private fun ScanSettingsDialog(
     current: LocalScanSettings,
@@ -587,6 +847,7 @@ private fun LocalLibrarySubTabs(
     albumCount: Int,
     artistCount: Int,
     favoriteCount: Int,
+    playlistCount: Int,
     folderCount: Int,
     strings: CpStrings,
     onSelect: (Int) -> Unit,
@@ -596,7 +857,8 @@ private fun LocalLibrarySubTabs(
         s.tabSongs to songCount,
         s.tabAlbums to albumCount,
         s.tabArtists to artistCount,
-        s.tabFavorites to favoriteCount,
+        "本地喜欢" to favoriteCount,
+        "本地歌单" to playlistCount,
         s.tabFolders to folderCount,
     )
     Row(
@@ -627,9 +889,17 @@ private fun ColumnScope.SongList(
     songs: List<LocalMediaItem>,
     model: DownloadsScreenModel,
     strings: CpStrings,
-    favorites: Set<String>,
     showSort: Boolean,
     state: DownloadsUiState,
+    currentPlayingId: String?,
+    likedIds: Set<String>,
+    favoritePaths: Set<String>,
+    onToggleCloudFav: (String) -> Unit,
+    onToggleLocalFav: (String) -> Unit,
+    onAddToCloudPlaylist: (TrackSummary) -> Unit,
+    onAddToLocalPlaylist: (String) -> Unit,
+    onDeleteSong: (LocalMediaItem) -> Unit,
+    onShowInfo: (TrackSummary) -> Unit,
 ) {
     val s = strings.downloads
     Column(Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth().weight(1f)) {
@@ -672,12 +942,218 @@ private fun ColumnScope.SongList(
             verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
         ) {
             items(songs, key = { it.path }) { song ->
+                val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
+                val mediaId = if (isVideo) "local://video/${song.path}" else "local://audio/${song.path}"
                 LocalSongRow(
                     song = song,
-                    isFavorite = song.path in favorites,
+                    isCurrentlyPlaying = currentPlayingId == mediaId,
+                    likedIds = likedIds,
+                    favoritePaths = favoritePaths,
                     model = model,
                     strings = strings,
                     onPlay = { model.playAll(songs, songs.indexOf(song)) },
+                    onToggleCloudFav = onToggleCloudFav,
+                    onToggleLocalFav = onToggleLocalFav,
+                    onAddToCloudPlaylist = onAddToCloudPlaylist,
+                    onAddToLocalPlaylist = onAddToLocalPlaylist,
+                    onDeleteSong = onDeleteSong,
+                    onShowInfo = onShowInfo,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 统一标准样式的本地歌曲条目。
+ *
+ * 接入标准 [SongItem] 及右键菜单 [songContextMenuItems]，
+ * 区分已下载云端曲目（联动云端收藏与云端歌单）与纯本地曲目（本地喜欢与本地歌单），
+ * 同时完整支持本地能力（在文件管理器中打开、移出曲库、彻底删除）。
+ */
+@Composable
+private fun LocalSongRow(
+    song: LocalMediaItem,
+    isCurrentlyPlaying: Boolean,
+    likedIds: Set<String>,
+    favoritePaths: Set<String>,
+    model: DownloadsScreenModel,
+    strings: CpStrings,
+    onPlay: () -> Unit,
+    onRemoveFromLocalPlaylist: (() -> Unit)? = null,
+    onToggleCloudFav: (String) -> Unit,
+    onToggleLocalFav: (String) -> Unit,
+    onAddToCloudPlaylist: (TrackSummary) -> Unit,
+    onAddToLocalPlaylist: (String) -> Unit,
+    onDeleteSong: (LocalMediaItem) -> Unit,
+    onShowInfo: (TrackSummary) -> Unit,
+) {
+    val navigator = LocalNavigator.current
+    val scope = rememberCoroutineScope()
+    val s = strings.downloads
+    val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
+    val mediaId = if (isVideo) "local://video/${song.path}" else "local://audio/${song.path}"
+
+    val isDownloaded = song.source == LocalMediaOrigin.DOWNLOADED || !song.originalMediaId.isNullOrBlank()
+    val cloudMediaId = song.originalMediaId
+    val cloudFavId = cloudMediaId?.let { runCatching { cp.player.core.music.CPMediaId.parse(it).resourceId }.getOrDefault(it) }
+    val isCloudFav = cloudFavId != null && cloudFavId in likedIds
+    val isLocalFav = song.path in favoritePaths
+    val isFav = if (isDownloaded && cloudMediaId != null) isCloudFav else isLocalFav
+
+    val handlePlay: () -> Unit = {
+        if (isVideo) {
+            navigator?.push(VideoPlayerScreen(mediaId, title = song.title))
+        } else {
+            onPlay()
+        }
+    }
+
+    val trackSummary = remember(song) {
+        TrackSummary(
+            id = mediaId,
+            name = song.title,
+            artist = song.artist ?: s.unknownArtist,
+            album = song.album,
+            coverUrl = song.coverUri,
+            durationMs = song.durationMs,
+            originalMediaId = song.originalMediaId,
+        )
+    }
+
+    val subtitle = remember(song) {
+        buildList {
+            add(song.artist ?: s.unknownArtist)
+            song.qualityLabel?.let { add(it) }
+            if (song.durationMs > 0) add(formatDuration(song.durationMs))
+        }.joinToString(" · ")
+    }
+
+    val menuActions = SongMenuActions(
+        onPlay = handlePlay,
+        isFavorite = isFav,
+        onToggleFavorite = if (isDownloaded && cloudMediaId != null) {
+            { onToggleCloudFav(cloudMediaId) }
+        } else {
+            { onToggleLocalFav(song.path) }
+        },
+        favoriteLabel = if (isDownloaded && cloudMediaId != null) {
+            if (isCloudFav) "取消云端收藏" else "云端收藏"
+        } else {
+            if (isLocalFav) "取消喜欢" else "喜欢"
+        },
+        onAddToQueue = if (!isVideo) {
+            {
+                scope.launch {
+                    AppModel.playback.addToQueue(mediaId)
+                    UiEvents.notify("已加入播放队列")
+                }
+            }
+        } else null,
+        onPlayNext = if (!isVideo) {
+            {
+                scope.launch {
+                    AppModel.playback.addNextToQueue(mediaId)
+                    UiEvents.notify("将在下一首播放")
+                }
+            }
+        } else null,
+        isDownloaded = true,
+        onAddToPlaylist = if (isDownloaded && cloudMediaId != null) {
+            { onAddToCloudPlaylist(trackSummary) }
+        } else null,
+        onAddToLocalPlaylist = {
+            onAddToLocalPlaylist(song.path)
+        },
+        onRemoveFromPlaylist = onRemoveFromLocalPlaylist,
+        onOpenInFileManager = {
+            cp.player.app.platform.openInFileManager(song.path)
+        },
+        onRemoveFromLibrary = {
+            model.removeLocalItem(song, strings)
+        },
+        onDelete = {
+            onDeleteSong(song)
+        },
+        deleteLabel = "彻底删除本地文件",
+        onShowInfo = {
+            onShowInfo(trackSummary)
+        },
+    )
+
+    val menuItems = songContextMenuItems(menuActions)
+
+    SongItem(
+        track = trackSummary,
+        onClick = handlePlay,
+        isCurrentlyPlaying = isCurrentlyPlaying,
+        contextMenu = menuItems,
+        supportingText = subtitle,
+    )
+}
+
+// ============ 本地歌单网格与详情 ============
+
+@Composable
+private fun ColumnScope.LocalPlaylistGrid(
+    playlists: List<LocalPlaylist>,
+    items: List<LocalMediaItem>,
+    model: DownloadsScreenModel,
+    strings: CpStrings,
+    onCreatePlaylist: () -> Unit,
+    onClick: (LocalPlaylist) -> Unit,
+    onRename: (LocalPlaylist) -> Unit,
+    onDelete: (LocalPlaylist) -> Unit,
+) {
+    Column(Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth().weight(1f)) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = CpSpacing.pageHorizontal, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CpText(
+                "本地歌单 · ${playlists.size}",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+            )
+            FilledTonalButton(onClick = onCreatePlaylist) {
+                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("新建歌单")
+            }
+        }
+        val itemsByPath = remember(items) { items.associateBy { it.path } }
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 140.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = CpSpacing.pageHorizontal,
+                end = CpSpacing.pageHorizontal,
+                bottom = 96.dp,
+                top = 8.dp,
+            ),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(playlists, key = { it.id }) { pl ->
+                val coverUri = remember(pl, itemsByPath) {
+                    pl.trackPaths.firstNotNullOfOrNull { itemsByPath[it]?.coverUri }
+                }
+                val totalDurationMs = remember(pl, itemsByPath) {
+                    pl.trackPaths.sumOf { itemsByPath[it]?.durationMs ?: 0L }
+                }
+                LocalPlaylistCell(
+                    playlist = pl,
+                    coverUri = coverUri,
+                    totalDurationMs = totalDurationMs,
+                    onClick = { onClick(pl) },
+                    onPlay = {
+                        val tracks = pl.trackPaths.mapNotNull { itemsByPath[it] }
+                        if (tracks.isNotEmpty()) model.playAll(tracks)
+                    },
+                    onRename = { onRename(pl) },
+                    onDelete = { onDelete(pl) },
                 )
             }
         }
@@ -685,178 +1161,258 @@ private fun ColumnScope.SongList(
 }
 
 @Composable
-private fun LocalSongRow(
-    song: LocalMediaItem,
-    isFavorite: Boolean,
-    model: DownloadsScreenModel,
-    strings: CpStrings,
+private fun LocalPlaylistCell(
+    playlist: LocalPlaylist,
+    coverUri: String?,
+    totalDurationMs: Long,
+    onClick: () -> Unit,
     onPlay: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
 ) {
-    val navigator = cafe.adriel.voyager.navigator.LocalNavigator.current
-    val s = strings.downloads
-    val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
-    val handlePlay: () -> Unit = {
-        if (isVideo) {
-            navigator?.push(VideoPlayerScreen("local://video/${song.path}", title = song.title))
-        } else {
-            onPlay()
-        }
-    }
-
-    Surface(
-        onClick = handlePlay,
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f),
-        modifier = Modifier.fillMaxWidth(),
+    var menuExpanded by remember { mutableStateOf(false) }
+    Column(
+        Modifier.clip(MaterialTheme.shapes.medium).clickable(onClick = onClick),
     ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Box(
+            Modifier.fillMaxWidth().aspectRatio(1f).clip(MaterialTheme.shapes.medium),
+            contentAlignment = Alignment.Center,
         ) {
             LocalCover(
-                coverUri = song.coverUri,
-                fallbackIcon = if (isVideo) {
-                    Icons.Filled.VideoLibrary
-                } else {
-                    Icons.Filled.MusicNote
-                },
-                modifier = Modifier.size(44.dp),
+                coverUri = coverUri,
+                fallbackIcon = Icons.AutoMirrored.Filled.QueueMusic,
+                modifier = Modifier.fillMaxSize(),
             )
-            Spacer(Modifier.width(12.dp))
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Column(Modifier.weight(1f)) {
                 CpText(
-                    song.title,
-                    style = MaterialTheme.typography.titleSmall,
+                    playlist.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
                     maxLines = 1,
                 )
-                // 副标题：艺术家 · 音质标签（有元数据时）· 时长
-                val subtitle = buildList {
-                    add(song.artist ?: s.unknownArtist)
-                    song.qualityLabel?.let { add(it) }
-                    if (song.durationMs > 0) add(formatDuration(song.durationMs))
-                }.joinToString(" · ")
                 CpText(
-                    subtitle,
+                    buildString {
+                        append("${playlist.trackPaths.size} 首歌曲")
+                        if (totalDurationMs > 0) append(" · ").append(formatDuration(totalDurationMs))
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                 )
             }
-            var menuExpanded by remember { mutableStateOf(false) }
-            var showDeleteConfirm by remember { mutableStateOf(false) }
-            val scope = rememberCoroutineScope()
-            val mediaId = "local://audio/${song.path}"
-
-            IconButton(onClick = { model.toggleFavorite(song.path, strings) }) {
-                Icon(
-                    if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                    contentDescription = s.favorite,
-                    tint = if (isFavorite) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
-            if (isVideo) {
-                IconButton(onClick = handlePlay) {
-                    Icon(
-                        Icons.Filled.PlayArrow,
-                        contentDescription = "播放视频",
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            } else {
-                IconButton(onClick = {
-                    scope.launch {
-                        AppModel.playback.addNextToQueue(mediaId)
-                        UiEvents.notify("已添加为下一首播放")
-                    }
-                }) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.QueueMusic,
-                        contentDescription = "下一首播放",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
             Box {
-                IconButton(onClick = { menuExpanded = true }) {
+                IconButton(onClick = { menuExpanded = true }, modifier = Modifier.size(32.dp)) {
                     Icon(
                         Icons.Filled.MoreVert,
-                        contentDescription = "更多操作",
+                        contentDescription = "歌单选项",
+                        modifier = Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false },
-                ) {
-                    if (isVideo) {
-                        DropdownMenuItem(
-                            text = { Text("播放视频") },
-                            leadingIcon = { Icon(Icons.Filled.PlayArrow, null) },
-                            onClick = {
-                                menuExpanded = false
-                                handlePlay()
-                            },
-                        )
-                    } else {
-                        DropdownMenuItem(
-                            text = { Text("加入播放队列") },
-                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null) },
-                            onClick = {
-                                menuExpanded = false
-                                scope.launch {
-                                    AppModel.playback.addToQueue(mediaId)
-                                    UiEvents.notify("已加入播放队列")
-                                }
-                            },
-                        )
-                    }
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                     DropdownMenuItem(
-                        text = { Text("在文件管理器中打开") },
-                        leadingIcon = { Icon(Icons.Filled.FolderOpen, null) },
+                        text = { Text("播放歌单") },
+                        leadingIcon = { Icon(Icons.Filled.PlayArrow, null) },
                         onClick = {
                             menuExpanded = false
-                            cp.player.app.platform.openInFileManager(song.path)
+                            onPlay()
                         },
                     )
                     DropdownMenuItem(
-                        text = { Text("从本地曲库移除") },
-                        leadingIcon = { Icon(Icons.Filled.Close, null) },
+                        text = { Text("重命名") },
+                        leadingIcon = { Icon(Icons.Filled.Edit, null) },
                         onClick = {
                             menuExpanded = false
-                            model.removeLocalItem(song, strings)
+                            onRename()
                         },
                     )
                     DropdownMenuItem(
-                        text = { Text("彻底删除本地文件", color = MaterialTheme.colorScheme.error) },
-                        leadingIcon = {
-                            Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error)
-                        },
+                        text = { Text("删除歌单", color = MaterialTheme.colorScheme.error) },
+                        leadingIcon = { Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error) },
                         onClick = {
                             menuExpanded = false
-                            showDeleteConfirm = true
+                            onDelete()
                         },
                     )
                 }
             }
+        }
+    }
+}
 
-            if (showDeleteConfirm) {
-                cp.player.app.ui.component.CpConfirmDialog(
-                    title = "彻底删除本地文件",
-                    message = "确定要将《${song.title}》从磁盘彻底删除吗？此操作无法撤销。",
-                    confirmLabel = "彻底删除",
-                    onConfirm = {
-                        model.deleteLocalFile(song, strings)
-                        showDeleteConfirm = false
-                    },
-                    onDismiss = { showDeleteConfirm = false },
+@Composable
+private fun ColumnScope.LocalPlaylistDetail(
+    playlist: LocalPlaylist,
+    items: List<LocalMediaItem>,
+    model: DownloadsScreenModel,
+    strings: CpStrings,
+    onBack: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+    onRemoveSong: (String) -> Unit,
+    currentPlayingId: String?,
+    likedIds: Set<String>,
+    favoritePaths: Set<String>,
+    onToggleCloudFav: (String) -> Unit,
+    onToggleLocalFav: (String) -> Unit,
+    onAddToCloudPlaylist: (TrackSummary) -> Unit,
+    onAddToLocalPlaylist: (String) -> Unit,
+    onDeleteSong: (LocalMediaItem) -> Unit,
+    onShowInfo: (TrackSummary) -> Unit,
+) {
+    val itemsByPath = remember(items) { items.associateBy { it.path } }
+    val tracks = remember(playlist.trackPaths, itemsByPath) {
+        playlist.trackPaths.mapNotNull { itemsByPath[it] }
+    }
+    val totalDurationMs = remember(tracks) { tracks.sumOf { it.durationMs } }
+
+    Column(Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth().weight(1f)) {
+        DetailHeader(
+            title = playlist.name,
+            subtitle = buildString {
+                append("${tracks.size} 首歌曲")
+                if (totalDurationMs > 0) append(" · ").append(formatDuration(totalDurationMs))
+            },
+            onBack = onBack,
+            trailingActions = {
+                IconButton(onClick = onRename) {
+                    Icon(Icons.Filled.Edit, contentDescription = "重命名歌单")
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Filled.Delete, contentDescription = "删除歌单", tint = MaterialTheme.colorScheme.error)
+                }
+            },
+        )
+        if (tracks.isNotEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = CpSpacing.pageHorizontal, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                FilledTonalButton(onClick = { model.playAll(tracks) }, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(strings.downloads.playAll)
+                }
+                FilledTonalButton(onClick = { model.shuffleAll(tracks) }, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Filled.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("随机播放")
+                }
+            }
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = CpSpacing.pageHorizontal,
+                    end = CpSpacing.pageHorizontal,
+                    bottom = 96.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
+            ) {
+                items(tracks, key = { it.path }) { song ->
+                    val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
+                    val mediaId = if (isVideo) "local://video/${song.path}" else "local://audio/${song.path}"
+                    LocalSongRow(
+                        song = song,
+                        isCurrentlyPlaying = currentPlayingId == mediaId,
+                        likedIds = likedIds,
+                        favoritePaths = favoritePaths,
+                        model = model,
+                        strings = strings,
+                        onPlay = { model.playAll(tracks, tracks.indexOf(song)) },
+                        onRemoveFromLocalPlaylist = { onRemoveSong(song.path) },
+                        onToggleCloudFav = onToggleCloudFav,
+                        onToggleLocalFav = onToggleLocalFav,
+                        onAddToCloudPlaylist = onAddToCloudPlaylist,
+                        onAddToLocalPlaylist = onAddToLocalPlaylist,
+                        onDeleteSong = onDeleteSong,
+                        onShowInfo = onShowInfo,
+                    )
+                }
+            }
+        } else {
+            StateSurface(Modifier.padding(CpSpacing.pageHorizontal)) {
+                ContentState(
+                    title = "此歌单暂无歌曲",
+                    message = "可在本地音乐或其他歌曲菜单中选择「添加到本地歌单」",
                 )
             }
         }
     }
+}
+
+// ============ 对话框：新建与重命名本地歌单 ============
+
+@Composable
+private fun CreateLocalPlaylistDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("新建本地歌单") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("歌单名称") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val trimmed = name.trim()
+                    if (trimmed.isNotEmpty()) onConfirm(trimmed)
+                },
+                enabled = name.isNotBlank(),
+            ) { Text("创建") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    )
+}
+
+@Composable
+private fun RenameLocalPlaylistDialog(
+    currentName: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var name by remember { mutableStateOf(currentName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("重命名歌单") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("歌单名称") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val trimmed = name.trim()
+                    if (trimmed.isNotEmpty()) onConfirm(trimmed)
+                },
+                enabled = name.isNotBlank() && name != currentName,
+            ) { Text("确定") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    )
 }
 
 // ============ 专辑网格 ============
@@ -997,24 +1553,11 @@ private fun ColumnScope.FolderTreeView(
     items: List<LocalMediaItem>,
     model: DownloadsScreenModel,
     strings: CpStrings,
+    onOpenFolder: (LocalFolderNode) -> Unit,
 ) {
-    val s = strings.downloads
     var expanded by remember { mutableStateOf(emptySet<String>()) }
-    var openedFolder by remember { mutableStateOf<LocalFolderNode?>(null) }
-
-    val opened = openedFolder
-    if (opened != null) {
-        LocalFolderDetail(
-            node = opened,
-            items = items,
-            model = model,
-            strings = strings,
-            onBack = { openedFolder = null },
-        )
-        return
-    }
-
     val visible = remember(nodes, expanded) { LocalFolderTree.visibleNodes(nodes, expanded) }
+
     LazyColumn(
         Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize().weight(1f),
         contentPadding = PaddingValues(
@@ -1033,7 +1576,7 @@ private fun ColumnScope.FolderTreeView(
                     expanded = if (node.path in expanded) expanded - node.path else expanded + node.path
                 },
                 onOpen = { model.playAll(LocalFolderTree.allSongs(items, node)) },
-                onShowDetail = { openedFolder = node },
+                onShowDetail = { onOpenFolder(node) },
             )
         }
     }
@@ -1056,7 +1599,6 @@ private fun FolderRow(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
-            // 用 depth 做缩进：树形结构靠左内边距表达层级，比画连接线更省空间
             Modifier.fillMaxWidth()
                 .padding(start = (12 + (node.depth - 1) * 16).dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -1114,6 +1656,15 @@ private fun ColumnScope.LocalFolderDetail(
     model: DownloadsScreenModel,
     strings: CpStrings,
     onBack: () -> Unit,
+    currentPlayingId: String?,
+    likedIds: Set<String>,
+    favoritePaths: Set<String>,
+    onToggleCloudFav: (String) -> Unit,
+    onToggleLocalFav: (String) -> Unit,
+    onAddToCloudPlaylist: (TrackSummary) -> Unit,
+    onAddToLocalPlaylist: (String) -> Unit,
+    onDeleteSong: (LocalMediaItem) -> Unit,
+    onShowInfo: (TrackSummary) -> Unit,
 ) {
     val s = strings.downloads
     val tracks = remember(items, node.path) { LocalFolderTree.allSongs(items, node) }
@@ -1151,12 +1702,22 @@ private fun ColumnScope.LocalFolderDetail(
             verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
         ) {
             items(tracks, key = { it.path }) { song ->
+                val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
+                val mediaId = if (isVideo) "local://video/${song.path}" else "local://audio/${song.path}"
                 LocalSongRow(
                     song = song,
-                    isFavorite = song.path in model.state.value.favoritePaths,
+                    isCurrentlyPlaying = currentPlayingId == mediaId,
+                    likedIds = likedIds,
+                    favoritePaths = favoritePaths,
                     model = model,
                     strings = strings,
                     onPlay = { model.playAll(tracks, tracks.indexOf(song)) },
+                    onToggleCloudFav = onToggleCloudFav,
+                    onToggleLocalFav = onToggleLocalFav,
+                    onAddToCloudPlaylist = onAddToCloudPlaylist,
+                    onAddToLocalPlaylist = onAddToLocalPlaylist,
+                    onDeleteSong = onDeleteSong,
+                    onShowInfo = onShowInfo,
                 )
             }
         }
@@ -1172,10 +1733,18 @@ private fun ColumnScope.LocalAlbumDetail(
     model: DownloadsScreenModel,
     strings: CpStrings,
     onBack: () -> Unit,
+    currentPlayingId: String?,
+    likedIds: Set<String>,
+    favoritePaths: Set<String>,
+    onToggleCloudFav: (String) -> Unit,
+    onToggleLocalFav: (String) -> Unit,
+    onAddToCloudPlaylist: (TrackSummary) -> Unit,
+    onAddToLocalPlaylist: (String) -> Unit,
+    onDeleteSong: (LocalMediaItem) -> Unit,
+    onShowInfo: (TrackSummary) -> Unit,
 ) {
     val s = strings.downloads
     val pathSet = album.paths.toSet()
-    // 保持专辑内的「碟号 → 轨号 → 标题」顺序，而不是按当前列表排序
     val tracks = remember(items, album.id) {
         items.filter { it.path in pathSet }
             .sortedWith(
@@ -1219,12 +1788,22 @@ private fun ColumnScope.LocalAlbumDetail(
             verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
         ) {
             items(tracks, key = { it.path }) { song ->
+                val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
+                val mediaId = if (isVideo) "local://video/${song.path}" else "local://audio/${song.path}"
                 LocalSongRow(
                     song = song,
-                    isFavorite = song.path in model.state.value.favoritePaths,
+                    isCurrentlyPlaying = currentPlayingId == mediaId,
+                    likedIds = likedIds,
+                    favoritePaths = favoritePaths,
                     model = model,
                     strings = strings,
                     onPlay = { model.playAll(tracks, tracks.indexOf(song)) },
+                    onToggleCloudFav = onToggleCloudFav,
+                    onToggleLocalFav = onToggleLocalFav,
+                    onAddToCloudPlaylist = onAddToCloudPlaylist,
+                    onAddToLocalPlaylist = onAddToLocalPlaylist,
+                    onDeleteSong = onDeleteSong,
+                    onShowInfo = onShowInfo,
                 )
             }
         }
@@ -1238,12 +1817,20 @@ private fun ColumnScope.LocalArtistDetail(
     model: DownloadsScreenModel,
     strings: CpStrings,
     onBack: () -> Unit,
+    currentPlayingId: String?,
+    likedIds: Set<String>,
+    favoritePaths: Set<String>,
+    onToggleCloudFav: (String) -> Unit,
+    onToggleLocalFav: (String) -> Unit,
+    onAddToCloudPlaylist: (TrackSummary) -> Unit,
+    onAddToLocalPlaylist: (String) -> Unit,
+    onDeleteSong: (LocalMediaItem) -> Unit,
+    onShowInfo: (TrackSummary) -> Unit,
 ) {
     val s = strings.downloads
     val tracks = remember(items, artist.name) {
         items.filter { (it.artist?.takeIf { v -> v.isNotBlank() } ?: s.unknownArtist) == artist.name }
             .sortedWith(
-                // 带 comparator 的 compareBy 有两个类型参数（T, K），只写 T 会匹配失败
                 compareBy<LocalMediaItem, String>(String.CASE_INSENSITIVE_ORDER) {
                     it.album ?: s.unknownAlbum
                 }
@@ -1286,12 +1873,22 @@ private fun ColumnScope.LocalArtistDetail(
             verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
         ) {
             items(tracks, key = { it.path }) { song ->
+                val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
+                val mediaId = if (isVideo) "local://video/${song.path}" else "local://audio/${song.path}"
                 LocalSongRow(
                     song = song,
-                    isFavorite = song.path in model.state.value.favoritePaths,
+                    isCurrentlyPlaying = currentPlayingId == mediaId,
+                    likedIds = likedIds,
+                    favoritePaths = favoritePaths,
                     model = model,
                     strings = strings,
                     onPlay = { model.playAll(tracks, tracks.indexOf(song)) },
+                    onToggleCloudFav = onToggleCloudFav,
+                    onToggleLocalFav = onToggleLocalFav,
+                    onAddToCloudPlaylist = onAddToCloudPlaylist,
+                    onAddToLocalPlaylist = onAddToLocalPlaylist,
+                    onDeleteSong = onDeleteSong,
+                    onShowInfo = onShowInfo,
                 )
             }
         }
@@ -1299,7 +1896,12 @@ private fun ColumnScope.LocalArtistDetail(
 }
 
 @Composable
-private fun DetailHeader(title: String, subtitle: String, onBack: () -> Unit) {
+private fun DetailHeader(
+    title: String,
+    subtitle: String,
+    onBack: () -> Unit,
+    trailingActions: (@Composable () -> Unit)? = null,
+) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1321,18 +1923,14 @@ private fun DetailHeader(title: String, subtitle: String, onBack: () -> Unit) {
                 maxLines = 1,
             )
         }
+        if (trailingActions != null) {
+            trailingActions()
+        }
     }
 }
 
 // ============ 通用零件 ============
 
-/**
- * 本地封面。
- *
- * 之所以不复用任务封面的 `TaskCover`：那个组件带下载进度语义，且尺寸写死。
- * 这里只关心「有图显示图 / 无图给图标占位」，并复用在线封面那套 [resized]
- * （它对 `file://` / `content://` 会原样返回，不会把本地路径拼坏）。
- */
 @Composable
 private fun LocalCover(
     coverUri: String?,
@@ -1383,7 +1981,6 @@ private fun SortMenu(
                     text = {
                         Text(
                             if (option == current) {
-                                // 给当前项标出方向，省得用户不确定点第二次会发生什么
                                 "${option.label} ${if (descending) "↓" else "↑"}"
                             } else {
                                 option.label
@@ -1401,7 +1998,7 @@ private fun SortMenu(
     }
 }
 
-/** 时长格式化：`3:45` / `1:02:03`。commonMain 无 String.format，手工补零。 */
+/** 时长格式化：`3:45` / `1:02:03`。 */
 private fun formatDuration(ms: Long): String {
     val totalSeconds = (ms / 1000).coerceAtLeast(0)
     val hours = totalSeconds / 3600
