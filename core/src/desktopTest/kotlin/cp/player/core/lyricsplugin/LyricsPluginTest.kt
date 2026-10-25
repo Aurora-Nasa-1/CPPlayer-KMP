@@ -179,6 +179,43 @@ class LyricsPluginTest {
     }
 
     @Test
+    fun `service passes mediaId to searchSongs and getLyrics`() {
+        val root = tempDir("lyrico-mediaid")
+        writePlugin(
+            root = root,
+            id = "mediaid-test",
+            manifest = pluginManifest("mediaid-test"),
+            script = """
+                globalThis.searchSongs = function (request) {
+                  return [{ id: '1', title: request.keyword, artist: 'Singer', album: 'Album', duration: 1000, internal: { reqMediaId: request.mediaId || '' } }];
+                };
+                globalThis.getLyrics = function (request) {
+                  var mId = request.mediaId || (request.song && request.song.mediaId) || '';
+                  return { type: 'rawPlainLrc', rawPlainLrc: '[00:01.00]' + mId };
+                };
+            """.trimIndent(),
+        )
+        val service = LyricoLyricsPluginService(root, null)
+        try {
+            kotlinx.coroutines.runBlocking { service.setEnabled("mediaid-test", true) }
+            val outcome = kotlinx.coroutines.runBlocking {
+                service.fetchLyricsFrom(
+                    id = "mediaid-test",
+                    title = "hello",
+                    artist = "Singer",
+                    album = "Album",
+                    durationMs = 1000L,
+                    mediaId = "netease://song/9999",
+                )
+            }
+            assertNotNull(outcome)
+            assertEquals("netease://song/9999", outcome.lines.firstOrNull()?.text)
+        } finally {
+            service.close()
+        }
+    }
+
+    @Test
     fun `unsupported plugin api version is rejected at load time`() {
         val root = tempDir("lyrico-bad")
         writePlugin(

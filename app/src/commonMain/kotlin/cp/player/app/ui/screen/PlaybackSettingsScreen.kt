@@ -311,20 +311,29 @@ class PlaybackSettingsScreen : Screen {
                 }
                 SettingsSection(s.playback.sectionLyrics) {
                     val showRuby by AppModel.showRubyLyricsFlow.collectAsState()
+                    val wordSeg by AppModel.lyricsWordSegmentationFlow.collectAsState()
                     SettingsSwitchItem(
                         title = s.playback.showRubyLyrics,
                         subtitle = s.playback.showRubyLyricsSubtitle,
                         checked = showRuby,
                         onCheckedChange = { AppModel.setShowRubyLyrics(it) },
                         index = 0,
-                        total = 2,
+                        total = 3,
+                    )
+                    SettingsSwitchItem(
+                        title = s.playback.lyricsWordSegmentation,
+                        subtitle = s.playback.lyricsWordSegmentationSubtitle,
+                        checked = wordSeg,
+                        onCheckedChange = { AppModel.setLyricsWordSegmentation(it) },
+                        index = 1,
+                        total = 3,
                     )
                     SettingsClickItem(
                         title = s.playback.lyricsSource,
                         subtitle = s.playback.lyricsSourceNote,
                         icon = Icons.Filled.ClosedCaption,
-                        index = 1,
-                        total = 2,
+                        index = 2,
+                        total = 3,
                         onClick = { navigator.push(LyricsPluginSettingsScreen()) },
                     )
                 }

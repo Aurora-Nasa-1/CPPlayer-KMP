@@ -21,6 +21,7 @@ data class PluginSearchSongsRequest(
     val pageSize: Int = 20,
     val separator: String = "/",
     val config: Map<String, String> = emptyMap(),
+    val mediaId: String? = null,
 )
 
 @Serializable
@@ -29,6 +30,7 @@ data class PluginGetLyricsRequest(
     val page: Int = 1,
     val pageSize: Int = 20,
     val config: Map<String, String> = emptyMap(),
+    val mediaId: String? = null,
 )
 
 @Serializable
@@ -38,6 +40,7 @@ data class PluginSearchCoversRequest(
     val page: Int = 1,
     val pageSize: Int = 5,
     val config: Map<String, String> = emptyMap(),
+    val mediaId: String? = null,
 )
 
 /** 插件侧看到的歌曲对象（`getLyrics` 入参的 `song`）。 */
@@ -53,6 +56,7 @@ data class PluginSongRequest(
     val pluginId: String,
     val fields: Map<String, String> = emptyMap(),
     val internal: Map<String, String> = emptyMap(),
+    val mediaId: String? = null,
 )
 
 /** 插件 `searchSongs` 返回的一条候选（已解析、宿主侧模型）。 */

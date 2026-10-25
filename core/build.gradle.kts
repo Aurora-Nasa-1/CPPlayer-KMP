@@ -47,6 +47,7 @@ kotlin {
         }
 
         commonMain.dependencies {
+            implementation(libs.accompanist.lyrics.core)
             implementation(libs.composemediaplayer.audio)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)

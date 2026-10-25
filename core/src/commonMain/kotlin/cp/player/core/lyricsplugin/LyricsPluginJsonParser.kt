@@ -10,7 +10,6 @@ package cp.player.core.lyricsplugin
 
 import cp.player.core.playback.LyricsParser
 import cp.player.core.playback.SyncedLyricLine
-import cp.player.core.playback.TtmlParser
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -149,7 +148,7 @@ class LyricsPluginJsonParser(private val json: Json = pluginJson) {
                 // TTML 走 TTML 解析器；增强 / 逐字 LRC 走逐字解析器（不丢词级时间戳）；
                 // 其余按行级 LRC 解析。
                 return when (result.payloadType) {
-                    PluginLyricsPayloadType.RAW_TTML -> TtmlParser.parse(raw)
+                    PluginLyricsPayloadType.RAW_TTML -> LyricsParser.parseTtml(raw)
                     PluginLyricsPayloadType.RAW_ENHANCED_LRC,
                     PluginLyricsPayloadType.RAW_VERBATIM_LRC,
                     PluginLyricsPayloadType.RAW_MULTI_PERSON_ENHANCED_LRC,
@@ -175,7 +174,7 @@ class LyricsPluginJsonParser(private val json: Json = pluginJson) {
     }
 }
 
-fun PluginSongSearchResult.toPluginSongRequest(): PluginSongRequest =
+fun PluginSongSearchResult.toPluginSongRequest(mediaId: String? = null): PluginSongRequest =
     PluginSongRequest(
         id = id,
         title = title,
@@ -187,6 +186,7 @@ fun PluginSongSearchResult.toPluginSongRequest(): PluginSongRequest =
         pluginId = pluginId,
         fields = fields,
         internal = internal,
+        mediaId = mediaId,
     )
 
 private fun List<PluginLyricsLine>?.nearestLine(start: Long): PluginLyricsLine? =

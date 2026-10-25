@@ -743,6 +743,28 @@ object AppModel {
         _showRubyLyrics.value = enabled
     }
 
+    // ============ 歌词智能分词设置 ============
+
+    private const val KEY_LYRICS_WORD_SEGMENTATION = "lyrics_word_segmentation"
+
+    private val _lyricsWordSegmentation = MutableStateFlow(
+        settings.getString(KEY_LYRICS_WORD_SEGMENTATION)?.toBooleanStrictOrNull() ?: true
+    )
+
+    /**
+     * 歌词是否按语言分词切分排版（例如日语文节分词折行，默认开启）。
+     *
+     * 关闭时跳过语言分词，按原始单行整句排版。
+     */
+    val lyricsWordSegmentationFlow: StateFlow<Boolean> = _lyricsWordSegmentation.asStateFlow()
+
+    fun lyricsWordSegmentation(): Boolean = _lyricsWordSegmentation.value
+
+    fun setLyricsWordSegmentation(enabled: Boolean) {
+        settings.putString(KEY_LYRICS_WORD_SEGMENTATION, enabled.toString())
+        _lyricsWordSegmentation.value = enabled
+    }
+
     // ============ 首次使用引导（持久化） ============
 
     private const val KEY_ONBOARDING_DONE = "onboarding_done"

@@ -46,7 +46,7 @@ internal object SidecarLyrics {
  */
 internal object SidecarLyricLoader {
 
-    private val EXTENSIONS = listOf("lrc", "ttml", "elrc")
+    private val EXTENSIONS = listOf("lrc", "ttml", "elrc", "krc", "yrc", "lys")
 
     /**
      * @param audioPath 音频文件绝对路径（即 `CPMediaId.resourceId`）
@@ -70,7 +70,7 @@ internal object SidecarLyricLoader {
                 val raw = PlatformSupport.readTextFile(candidate) ?: continue
                 // .lrc 也可能是增强 LRC（带 <mm:ss.xx> 词级标签）：parseEnhancedLrc 在
                 // 没有词级标签时会退化成行级，与 parseLrc 结果一致，因此统一走它。
-                val lines = if (extension == "ttml") TtmlParser.parse(raw) else LyricsParser.parseEnhancedLrc(raw)
+                val lines = LyricsParser.parseText(raw)
                 if (lines.isEmpty()) continue
                 return lines to LyricsInfo(
                     source = "Sidecar .$extension",

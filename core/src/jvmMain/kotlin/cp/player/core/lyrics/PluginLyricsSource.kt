@@ -39,12 +39,14 @@ internal class PluginLyricsSource(
 
     override suspend fun fetch(request: LyricsRequest): LyricsSourceResult? {
         val sanitized = cp.player.core.util.MusicSearchSanitizer.sanitize(request.title, request.artist)
+        val targetMediaId = request.platformMediaId ?: request.mediaId
         val outcome: PluginLyricsOutcome = service.fetchLyricsFrom(
             id = id,
             title = sanitized.title,
             artist = sanitized.artist,
             album = request.album,
             durationMs = request.durationMs,
+            mediaId = targetMediaId?.toString(),
         ) ?: return null
         if (outcome.lines.isEmpty()) return null
         return LyricsSourceResult(lines = outcome.lines, hasWordLevel = outcome.hasWordLevel)

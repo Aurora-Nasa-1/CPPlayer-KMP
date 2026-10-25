@@ -121,6 +121,7 @@ class FileLyricsSourceRegistry(
     }
 
     override suspend fun reload() {
+        loadedOnce = false
         pluginSources = emptyList()
         refreshPluginSources()
     }

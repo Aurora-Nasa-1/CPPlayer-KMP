@@ -241,8 +241,7 @@ object CpStringsEn : CpStrings {
 
     override val songCache: SongCacheStrings = object : SongCacheStrings {
         override val screenTitle = "Song cache"
-        override val unsupported =
-            "This platform does not use disk audio caching (local streaming cache is available on desktop only)."
+        override val unsupported = "This platform does not support audio caching."
         override val measuring = "Measuring the cache…"
         override val empty = "Nothing cached yet. Lossless tracks are cached locally as you play them."
         override val measuringShort = "Measuring…"
@@ -290,6 +289,8 @@ object CpStringsEn : CpStrings {
         override val lyricsAmllOnly = "AMLL only"
         override val showRubyLyrics = "Japanese Furigana"
         override val showRubyLyricsSubtitle = "Show reading kana above kanji in Japanese lyrics"
+        override val lyricsWordSegmentation = "Lyric Word Segmentation"
+        override val lyricsWordSegmentationSubtitle = "Wrap and segment lyrics by language word boundaries (e.g. Japanese)"
 
         override val sectionSleepTimer = "Sleep timer"
         override val sleepTimer = "Sleep timer"

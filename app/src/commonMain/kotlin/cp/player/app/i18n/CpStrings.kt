@@ -408,6 +408,8 @@ interface PlaybackStrings {
     val lyricsAmllOnly: String
     val showRubyLyrics: String get() = "Japanese Furigana"
     val showRubyLyricsSubtitle: String get() = "Show furigana above kanji in Japanese lyrics"
+    val lyricsWordSegmentation: String get() = "Lyric Word Segmentation"
+    val lyricsWordSegmentationSubtitle: String get() = "Wrap and segment lyrics by language word boundaries (e.g. Japanese)"
 
     val sectionSleepTimer: String
     val sleepTimer: String

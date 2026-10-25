@@ -46,7 +46,7 @@ class LyricsSourceRegistryTest {
     }
 
     private class FakePlugins(
-        private val entries: List<LyricsPluginSourceInfo> = emptyList(),
+        var entries: List<LyricsPluginSourceInfo> = emptyList(),
     ) : LyricsPluginService {
         override suspend fun listSources() = entries
         override fun listSourcesSync() = entries
@@ -56,9 +56,9 @@ class LyricsSourceRegistryTest {
         override suspend fun pluginConfig(id: String) = emptyMap<String, String>()
         override suspend fun setPluginConfigValue(id: String, key: String, value: String) = Unit
         @Suppress("DEPRECATION")
-        override suspend fun fetchLyrics(title: String, artist: String, album: String, durationMs: Long): PluginLyricsOutcome? = null
+        override suspend fun fetchLyrics(title: String, artist: String, album: String, durationMs: Long, mediaId: String?): PluginLyricsOutcome? = null
         override suspend fun fetchLyricsFrom(
-            id: String, title: String, artist: String, album: String, durationMs: Long,
+            id: String, title: String, artist: String, album: String, durationMs: Long, mediaId: String?,
         ): PluginLyricsOutcome? = null
         override fun close() = Unit
     }
@@ -227,6 +227,22 @@ class LyricsSourceRegistryTest {
             listOf(BuiltinLyricsSourceIds.PROVIDER, BuiltinLyricsSourceIds.SIDECAR, BuiltinLyricsSourceIds.EMBEDDED, BuiltinLyricsSourceIds.AMLL),
             r.allSources().map { it.id },
         )
+    }
+
+    @Test
+    fun `reload re-reads plugins after initial load`() = runBlocking {
+        val fakePlugins = FakePlugins(emptyList())
+        val r = FileLyricsSourceRegistry(
+            rootDir = tempDir(),
+            plugins = fakePlugins,
+            amllClient = FakeAmll,
+            api = FakeApi,
+            legacySettings = MemorySettings(),
+        )
+        assertEquals(false, r.allSources().any { it.id == "new-plugin" })
+        fakePlugins.entries = listOf(plugin("new-plugin"))
+        r.reload()
+        assertEquals(true, r.allSources().any { it.id == "new-plugin" })
     }
 
     @Test

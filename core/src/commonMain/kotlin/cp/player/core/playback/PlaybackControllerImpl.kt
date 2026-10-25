@@ -1119,6 +1119,7 @@ class PlaybackControllerImpl(
             if (songUrl.url.isBlank()) return@launch
 
             val headers = buildMap {
+                songUrl.headers?.let { putAll(it) }
                 songUrl.cookie?.takeIf { it.isNotBlank() }?.let { put("Cookie", it) }
                 if (!containsKey("Cookie")) {
                     cookieProvider()?.takeIf { it.isNotBlank() }?.let { put("Cookie", it) }
@@ -1330,6 +1331,8 @@ class PlaybackControllerImpl(
                 title = title,
                 artist = summary.artist.orEmpty(),
                 album = summary.album.orEmpty(),
+                durationMs = summary.durationMs,
+                mediaId = summary.originalMediaId ?: summary.id,
             )
         }.getOrNull() ?: return null
         if (outcome.lines.isEmpty()) return null
@@ -1356,7 +1359,7 @@ class PlaybackControllerImpl(
             artist = sanitized.artist.ifBlank { null },
             album = summary?.album?.ifBlank { null },
         ) ?: return null
-        val lines = TtmlParser.parse(ttml)
+        val lines = LyricsParser.parseTtml(ttml)
         if (lines.isEmpty()) return null
         val hasWords = lines.any { it.words.isNotEmpty() }
         val info = LyricsInfo(
@@ -1666,6 +1669,7 @@ class PlaybackControllerImpl(
                 return@launch
             }
             val headers = buildMap {
+                songUrl.headers?.let { putAll(it) }
                 songUrl.cookie?.takeIf { it.isNotBlank() }?.let { put("Cookie", it) }
                 if (!containsKey("Cookie")) {
                     cookieProvider()?.takeIf { it.isNotBlank() }?.let { put("Cookie", it) }
@@ -1771,6 +1775,7 @@ class PlaybackControllerImpl(
             val fallback = source.getSongUrl(mediaId, level = "standard").getOrNull() ?: return false
             if (fallback.url.isBlank()) return false
             val headers = buildMap {
+                fallback.headers?.let { putAll(it) }
                 fallback.cookie?.takeIf { it.isNotBlank() }?.let { put("Cookie", it) }
                 if (!containsKey("Cookie")) cookieProvider()?.takeIf { it.isNotBlank() }?.let { put("Cookie", it) }
             }

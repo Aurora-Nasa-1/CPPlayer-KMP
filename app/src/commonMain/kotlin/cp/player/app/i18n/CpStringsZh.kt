@@ -236,7 +236,7 @@ object CpStringsZh : CpStrings {
 
     override val songCache: SongCacheStrings = object : SongCacheStrings {
         override val screenTitle = "歌曲缓存"
-        override val unsupported = "当前平台不使用歌曲音频缓存（仅桌面端支持本地音频流缓存）。"
+        override val unsupported = "当前平台不支持音频缓存。"
         override val measuring = "正在统计缓存…"
         override val empty = "还没有缓存内容。播放无损音质的歌曲时会自动缓存到本地。"
         override val measuringShort = "正在统计…"
@@ -278,6 +278,8 @@ object CpStringsZh : CpStrings {
         override val lyricsAmllOnly = "仅 AMLL"
         override val showRubyLyrics = "日文汉字注音"
         override val showRubyLyricsSubtitle = "在日文歌词汉字上方显示小字假名（振假名）"
+        override val lyricsWordSegmentation = "歌词智能分词"
+        override val lyricsWordSegmentationSubtitle = "根据语言断句分词折行排版（如日文），关闭后按整句原始排版"
 
         override val sectionSleepTimer = "睡眠定时"
         override val sleepTimer = "定时关闭"

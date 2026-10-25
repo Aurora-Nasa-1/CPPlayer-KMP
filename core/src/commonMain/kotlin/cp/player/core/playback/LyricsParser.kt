@@ -1,137 +1,140 @@
 package cp.player.core.playback
 
+import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
+import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
+import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
+import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
+import com.mocharealm.accompanist.lyrics.core.parser.AutoParser
+import com.mocharealm.accompanist.lyrics.core.parser.EnhancedLrcParser
+import com.mocharealm.accompanist.lyrics.core.parser.KugouKrcParser
+import com.mocharealm.accompanist.lyrics.core.parser.NeteaseYrcParser
+import com.mocharealm.accompanist.lyrics.core.parser.TTMLParser
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlin.math.roundToInt
 
 /**
- * 歌词解析器：把后端 `lyric/new` 返回的 JSON 转成统一的 [SyncedLyricLine] 列表。
+ * 歌词解析与装配器：
+ * 将音源 JSON 负载、多轨流媒体响应及独立文本文件装配解析为统一的 [SyncedLyricLine] 列表。
  *
- * 覆盖网易云常见的三种结构：
- * 1. 行级 LRC：`lrc.lyric` 时间标签 `[mm:ss.xxx]` + 文本。
- * 2. 翻译：`tlyric.lyric` 同样的时间标签体系，按时间对齐合并到主歌词。
- * 3. 逐字（YRC / yrc）：`yrc.lyric`，含 `[start,offset]` 词级时间戳。
- *
- * 解析失败或无歌词时返回空列表，由控制器映射为 [LyricsState.NoLyrics]。
+ * 语法与文本解析全面委托给官方 [com.mocharealm.accompanist.lyrics.core.parser]，
+ * 本类负责多轨合并（如网易云 yrc/lrc 与分离的 tlyric/romalrc 缝合）以及业务数据投影。
  */
 object LyricsParser {
+
+    private val autoParser = AutoParser()
 
     /**
      * @return 已按时间升序、去重的歌词行；无可用歌词返回空列表。
      */
     fun parse(json: JsonElement): List<SyncedLyricLine> {
         val obj = json as? JsonObject ?: return emptyList()
+        val data = obj["data"] as? JsonObject
 
-        // 1. 优先逐字 YRC
-        val yrc = (obj["yrc"] as? JsonObject)?.let { (it["lyric"] as? JsonPrimitive)?.contentOrNull }
-        if (!yrc.isNullOrBlank()) {
-            val lines = parseYrc(yrc)
+        // 0. TTML 格式（支持 data.ttml 或根层 ttml）
+        val ttml = ((obj["ttml"] ?: data?.get("ttml")) as? JsonPrimitive)?.contentOrNull
+        if (!ttml.isNullOrBlank()) {
+            val lines = parseTtml(ttml)
             if (lines.isNotEmpty()) return finalize(lines)
         }
 
-        // 2. 行级 LRC + 翻译
-        val lyricRaw = (obj["lrc"] as? JsonObject)?.let { (it["lyric"] as? JsonPrimitive)?.contentOrNull }
+        // 1. 酷狗逐字 KRC（支持明文）
+        val krc = ((obj["krc"] as? JsonObject) ?: (data?.get("krc") as? JsonObject))
+            ?.let { (it["lyric"] as? JsonPrimitive)?.contentOrNull }
+            ?: (obj["krc"] as? JsonPrimitive)?.contentOrNull
+            ?: (data?.get("krc") as? JsonPrimitive)?.contentOrNull
+        if (!krc.isNullOrBlank()) {
+            val lines = parseKrc(krc)
+            if (lines.isNotEmpty()) return finalize(lines)
+        }
+
+        // 2. 优先逐字 YRC
+        val yrc = ((obj["yrc"] as? JsonObject) ?: (data?.get("yrc") as? JsonObject))
+            ?.let { (it["lyric"] as? JsonPrimitive)?.contentOrNull }
+            ?: (obj["yrc"] as? JsonPrimitive)?.contentOrNull
+            ?: (data?.get("yrc") as? JsonPrimitive)?.contentOrNull
+
+        val tlyricRaw = ((obj["tlyric"] as? JsonObject) ?: (data?.get("tlyric") as? JsonObject))
+            ?.let { (it["lyric"] as? JsonPrimitive)?.contentOrNull }
+            ?: (obj["tlyric"] as? JsonPrimitive)?.contentOrNull
+            ?: (data?.get("tlyric") as? JsonPrimitive)?.contentOrNull
+
+        val romalrcRaw = ((obj["romalrc"] as? JsonObject) ?: (data?.get("romalrc") as? JsonObject))
+            ?.let { (it["lyric"] as? JsonPrimitive)?.contentOrNull }
+            ?: (obj["romalrc"] as? JsonPrimitive)?.contentOrNull
+            ?: (data?.get("romalrc") as? JsonPrimitive)?.contentOrNull
+
+        if (!yrc.isNullOrBlank()) {
+            val yrcLines = parseYrc(yrc)
+            if (yrcLines.isNotEmpty()) {
+                val merged = mergeTranslation(yrcLines, tlyricRaw, romalrcRaw)
+                return finalize(merged)
+            }
+        }
+
+        // 3. 行级 / 增强型 LRC + 翻译
+        val lyricRaw = ((obj["lrc"] as? JsonObject) ?: (data?.get("lrc") as? JsonObject))
+            ?.let { (it["lyric"] as? JsonPrimitive)?.contentOrNull }
             ?: (obj["lyric"] as? JsonPrimitive)?.contentOrNull
-            ?: (obj["klyric"] as? JsonObject)?.let { (it["lyric"] as? JsonPrimitive)?.contentOrNull }
+            ?: (data?.get("lyric") as? JsonPrimitive)?.contentOrNull
+            ?: ((obj["klyric"] as? JsonObject) ?: (data?.get("klyric") as? JsonObject))
+                ?.let { (it["lyric"] as? JsonPrimitive)?.contentOrNull }
 
         if (lyricRaw.isNullOrBlank()) return emptyList()
 
-        val mainLines = parseLrc(lyricRaw)
-        if (mainLines.isEmpty()) return emptyList()
+        if (lyricRaw.trimStart().startsWith("<tt") || lyricRaw.trimStart().startsWith("<?xml")) {
+            val lines = parseTtml(lyricRaw)
+            if (lines.isNotEmpty()) return finalize(lines)
+        }
 
-        val tlyricRaw = (obj["tlyric"] as? JsonObject)?.let { (it["lyric"] as? JsonPrimitive)?.contentOrNull }
-        val romalrcRaw = (obj["romalrc"] as? JsonObject)?.let { (it["lyric"] as? JsonPrimitive)?.contentOrNull }
+        val mainLines = parseEnhancedLrc(lyricRaw)
+        if (mainLines.isEmpty()) return emptyList()
 
         val merged = mergeTranslation(mainLines, tlyricRaw, romalrcRaw)
         return finalize(merged)
     }
 
-    // ============ LRC 行级 ============
+    /**
+     * 智能识别单文本歌词格式并解析（支持 TTML、YRC、KRC、Enhanced LRC、LRC、Lyricify）。
+     */
+    fun parseText(raw: String): List<SyncedLyricLine> {
+        if (raw.isBlank()) return emptyList()
+        val parsed = autoParser.parse(raw)
+        return finalize(parsed.toSyncedLyricLines())
+    }
 
-    private val LRC_LINE_TAG = Regex("""\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?]""")
+    // ============ Core 委托解析 ============
+
+    internal fun parseTtml(raw: String): List<SyncedLyricLine> {
+        return runCatching {
+            TTMLParser().parse(raw).toSyncedLyricLines()
+        }.getOrDefault(emptyList())
+    }
+
+    internal fun parseYrc(raw: String): List<SyncedLyricLine> {
+        return runCatching {
+            NeteaseYrcParser.parse(raw).toSyncedLyricLines()
+        }.getOrDefault(emptyList())
+    }
+
+    internal fun parseKrc(raw: String): List<SyncedLyricLine> {
+        return runCatching {
+            KugouKrcParser.parse(raw).toSyncedLyricLines()
+        }.getOrDefault(emptyList())
+    }
+
+    internal fun parseEnhancedLrc(raw: String): List<SyncedLyricLine> {
+        return runCatching {
+            EnhancedLrcParser.parse(raw).toSyncedLyricLines()
+        }.getOrDefault(emptyList())
+    }
 
     internal fun parseLrc(raw: String): List<SyncedLyricLine> {
-        val out = mutableListOf<SyncedLyricLine>()
-        raw.lineSequence().forEach { line ->
-            // 一行可能有多个时间标签（如 [00:01][00:30]同一句）
-            val tags = LRC_LINE_TAG.findAll(line).toList()
-            if (tags.isEmpty()) return@forEach
-            val text = line.substring(tags.last().range.last + 1).trim()
-            tags.forEach { m ->
-                val min = m.groupValues[1].toIntOrNull() ?: 0
-                val sec = m.groupValues[2].toIntOrNull() ?: 0
-                val msPart = m.groupValues[3]
-                val ms = when {
-                    msPart.isBlank() -> 0
-                    msPart.length == 1 -> msPart.toInt() * 100
-                    msPart.length == 2 -> msPart.toInt() * 10
-                    else -> msPart.take(3).toInt()
-                }
-                val time = (min * 60_000L) + (sec * 1_000L) + ms
-                out.add(SyncedLyricLine(time = time, text = text))
-            }
-        }
-        return out
+        return parseEnhancedLrc(raw)
     }
 
-    // ============ 增强 LRC / ELRC 逐字 ============
-
-    /** 词级标签 `<mm:ss.xx>`（增强 LRC / ELRC）。 */
-    private val ENHANCED_WORD_TAG = Regex("""<(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?>""")
-
-    /**
-     * 增强 LRC / ELRC 逐字解析：`[mm:ss.xx]<mm:ss.xx>词<mm:ss.xx>词…`
-     *
-     * 与 [parseLrc] 的差别只在**行内**：带 `<…>` 词级标签时产出 [SyncedLyricLine.words]，
-     * 不带时退化为行级。这样 `.elrc` 边车文件与插件返回的 `rawEnhancedLrc` 都不会丢逐字信息
-     * —— [parseLrc] 只认行级标签，词级标签会被当成正文文本一起读进来。
-     */
-    internal fun parseEnhancedLrc(raw: String): List<SyncedLyricLine> {
-        val out = mutableListOf<SyncedLyricLine>()
-        raw.lineSequence().forEach { line ->
-            val lineTags = LRC_LINE_TAG.findAll(line).toList()
-            if (lineTags.isEmpty()) return@forEach
-            val body = line.substring(lineTags.last().range.last + 1)
-            val wordTags = ENHANCED_WORD_TAG.findAll(body).toList()
-            if (wordTags.isEmpty()) {
-                lineTags.forEach { out.add(SyncedLyricLine(time = lrcTagMillis(it), text = body.trim())) }
-                return@forEach
-            }
-            val words = wordTags.mapIndexedNotNull { index, match ->
-                val start = lrcTagMillis(match)
-                val next = wordTags.getOrNull(index + 1)
-                val end = next?.let { lrcTagMillis(it) } ?: start
-                val text = body.substring(match.range.last + 1, next?.range?.first ?: body.length)
-                if (text.isEmpty()) null else SyncedLyricLine.SyncedWord(text, start, end)
-            }
-            if (words.isEmpty()) return@forEach
-            val text = words.joinToString("") { it.text }.trim()
-            val endTime = words.last().endTime
-            // 一行可挂多个行级时间标签（同一句重复出现）。
-            lineTags.forEach {
-                out.add(SyncedLyricLine(time = lrcTagMillis(it), text = text, endTime = endTime, words = words))
-            }
-        }
-        return out
-    }
-
-    /** `[mm:ss.xx]` / `<mm:ss.xx>` 标签 → 毫秒（与 [parseLrc] 同一套进位规则）。 */
-    private fun lrcTagMillis(match: MatchResult): Long {
-        val min = match.groupValues[1].toIntOrNull() ?: 0
-        val sec = match.groupValues[2].toIntOrNull() ?: 0
-        val msPart = match.groupValues[3]
-        val ms = when {
-            msPart.isBlank() -> 0
-            msPart.length == 1 -> msPart.toInt() * 100
-            msPart.length == 2 -> msPart.toInt() * 10
-            else -> msPart.take(3).toInt()
-        }
-        return (min * 60_000L) + (sec * 1_000L) + ms
-    }
+    // ============ 多轨合并与辅助 ============
 
     /** 按时间戳把翻译/罗马音合并到主歌词（时间近似相等即合并）。 */
     private fun mergeTranslation(
@@ -140,52 +143,14 @@ object LyricsParser {
         romalrcRaw: String?,
     ): List<SyncedLyricLine> {
         if (tlyricRaw.isNullOrBlank() && romalrcRaw.isNullOrBlank()) return main
-        val trans = if (!tlyricRaw.isNullOrBlank()) parseLrc(tlyricRaw) else emptyList()
-        val roma = if (!romalrcRaw.isNullOrBlank()) parseLrc(romalrcRaw) else emptyList()
+        val trans = if (!tlyricRaw.isNullOrBlank()) parseEnhancedLrc(tlyricRaw) else emptyList()
+        val roma = if (!romalrcRaw.isNullOrBlank()) parseEnhancedLrc(romalrcRaw) else emptyList()
         return main.map { line ->
             line.copy(
-                translation = trans.firstOrNull { kotlin.math.abs(it.time - line.time) <= 500 }?.text,
-                romanization = roma.firstOrNull { kotlin.math.abs(it.time - line.time) <= 500 }?.text,
+                translation = line.translation ?: trans.firstOrNull { kotlin.math.abs(it.time - line.time) <= 500 }?.text,
+                romanization = line.romanization ?: roma.firstOrNull { kotlin.math.abs(it.time - line.time) <= 500 }?.text,
             )
         }
-    }
-
-    // ============ YRC 逐字 ============
-
-    // 行头形如 [开始ms,持续ms]  词级 [开始-ms,结束-ms,0]词
-    private val YRC_HEADER = Regex("""\[(\d+),(\d+)\]""")
-    private val YRC_WORD = Regex("""\((\d+),(\d+),\d+\)([^\(\)\[\]]+)""")
-
-    internal fun parseYrc(raw: String): List<SyncedLyricLine> {
-        val out = mutableListOf<SyncedLyricLine>()
-        raw.lineSequence().forEach { line ->
-            if (line.isBlank()) return@forEach
-            val header = YRC_HEADER.find(line) ?: return@forEach
-            val lineStart = header.groupValues[1].toLong()
-            val lineDur = (header.groupValues[2].toLongOrNull() ?: 0L).coerceAtLeast(0L)
-            val words = mutableListOf<SyncedLyricLine.SyncedWord>()
-            val plainText = StringBuilder()
-            var lastEnd = lineStart
-            for (m in YRC_WORD.findAll(line)) {
-                val ws = m.groupValues[1].toLong()
-                val we = m.groupValues[2].toLong()
-                val wText = m.groupValues[3]
-                if (wText.isBlank()) continue
-                words.add(SyncedLyricLine.SyncedWord(wText, ws, we))
-                plainText.append(wText)
-                lastEnd = we
-            }
-            if (words.isEmpty()) return@forEach
-            out.add(
-                SyncedLyricLine(
-                    time = lineStart,
-                    text = plainText.toString(),
-                    endTime = maxOf(lineStart + lineDur, lastEnd),
-                    words = words,
-                )
-            )
-        }
-        return out
     }
 
     // ============ 后处理 ============
@@ -202,6 +167,68 @@ object LyricsParser {
             }
         }
     }
+}
 
-    private fun JsonPrimitive.contentOrBlank(): String = contentOrNull ?: ""
+/** 将 Core 的 [SyncedLyrics] 映射为播放器统一的 [SyncedLyricLine] 列表。 */
+fun SyncedLyrics.toSyncedLyricLines(): List<SyncedLyricLine> {
+    return lines.mapNotNull { it.toSyncedLyricLine() }
+}
+
+/** 将 Core 的单行 [ISyncedLine] 转换为 [SyncedLyricLine]。 */
+fun ISyncedLine.toSyncedLyricLine(): SyncedLyricLine? {
+    return when (this) {
+        is KaraokeLine.MainKaraokeLine -> {
+            val isSingleCoveringWholeLine = syllables.size == 1 &&
+                syllables.first().start == start &&
+                syllables.first().end == end
+            val words = if (isSingleCoveringWholeLine) {
+                emptyList()
+            } else {
+                syllables.map {
+                    SyncedLyricLine.SyncedWord(
+                        text = it.content,
+                        beginTime = it.start.toLong(),
+                        endTime = it.end.toLong(),
+                    )
+                }
+            }
+            val lineText = syllables.joinToString("") { it.content }
+            SyncedLyricLine(
+                time = start.toLong(),
+                endTime = end.toLong(),
+                text = lineText,
+                words = words,
+                translation = translation?.takeIf { it.isNotBlank() },
+                romanization = phonetic?.takeIf { it.isNotBlank() },
+            )
+        }
+        is SyncedLine -> {
+            SyncedLyricLine(
+                time = start.toLong(),
+                endTime = end.toLong(),
+                text = content,
+                words = emptyList(),
+                translation = translation?.takeIf { it.isNotBlank() },
+                romanization = phonetic?.takeIf { it.isNotBlank() },
+            )
+        }
+        is KaraokeLine.AccompanimentKaraokeLine -> {
+            val words = syllables.map {
+                SyncedLyricLine.SyncedWord(
+                    text = it.content,
+                    beginTime = it.start.toLong(),
+                    endTime = it.end.toLong(),
+                )
+            }
+            SyncedLyricLine(
+                time = start.toLong(),
+                endTime = end.toLong(),
+                text = syllables.joinToString("") { it.content },
+                words = words,
+                translation = null,
+                romanization = null,
+            )
+        }
+        else -> null
+    }
 }

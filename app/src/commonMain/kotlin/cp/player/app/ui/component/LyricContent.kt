@@ -1,6 +1,5 @@
 package cp.player.app.ui.component
 
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -9,7 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.rememberLazyListState
+import com.mocharealm.accompanist.lyrics.ui.composable.list.rememberLyricsLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.MaterialTheme
@@ -27,8 +26,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextMotion
@@ -54,15 +51,6 @@ import cp.player.core.playback.PlaybackUiState
 import cp.player.core.playback.SyncedLyricLine
 import kotlinx.coroutines.delay
 
-/** 沉浸歌词：无操作多久之后进入（毫秒）。 */
-private const val ImmersiveTimeoutMs = 6_000L
-
-/** 沉浸歌词的检测间隔。250ms 足够跟手，又比逐帧轮询便宜得多。 */
-private const val ImmersivePollIntervalMs = 250L
-
-/** 沉浸态的歌词放大倍率。再大就会把当前行挤出视口、失去「读歌词」的本意。 */
-private const val ImmersiveFontScale = 1.25f
-
 /**
  * 注音（振り仮名）相对正文的字号比例。
  *
@@ -74,25 +62,8 @@ private const val RubyFontRatio = 0.25f
 /**
  * 歌词显示组件（KMP 版使用官方 accompanist-lyrics-ui 移植）。
  *
- * ## 沉浸模式（影院模式）
- *
- * 无操作 [ImmersiveTimeoutMs] 之后自动进入：**歌词放大 1.25×**，并通过
- * [onImmersiveChange] 让宿主把控件（底部工具条、进度条等）收起来 —— 屏幕上只剩
- * 歌词本身。任意指针交互立刻复位。
- *
- * 三个设计取舍：
- * 1. **只在播放中进入**。暂停时进沉浸会让「想操作却找不到按钮」，而且暂停本来
- *    就是用户要动手的时刻。
- * 2. **不做上下渐变遮罩**。遮罩要么用固定色（但播放页背景是一条竖向渐变，固定色
- *    会在中间出现一条色带），要么用 `DstIn` 把内容本身淡出（但那要求
- *    `CompositingStrategy.Offscreen` —— 而歌词本来就在逐帧重绘，再套一层全尺寸
- *    离屏缓冲是实打实的开销）。两害相权，先不做。
- * 3. **交互检测写纯字段，不写 Compose 状态**。指针事件每帧都可能来，写 State 会
- *    让整棵歌词子树每帧重组；写字段则零成本，沉浸与否由后台轮询统一决定
- *    （见 [ImmersiveController]）。
- *
- * @param immersiveEnabled 是否允许自动进入沉浸模式。
- * @param onImmersiveChange 沉浸态变化回调；宿主据此隐藏 / 恢复自己的控件。
+ * @param immersiveEnabled 兼容保留参数（已停用自动放大）。
+ * @param onImmersiveChange 沉浸态变化回调。
  */
 @Composable
 fun LyricContent(
@@ -103,22 +74,11 @@ fun LyricContent(
     contentPadding: PaddingValues = PaddingValues(vertical = 60.dp, horizontal = 8.dp),
     /** 无歌词时的换源入口（跳「歌词来源」页）。null = 不显示入口。 */
     onChangeSource: (() -> Unit)? = null,
-    immersiveEnabled: Boolean = true,
+    immersiveEnabled: Boolean = false,
     onImmersiveChange: ((Boolean) -> Unit)? = null,
 ) {
     val lyricState = state.lyrics
     val lines = (lyricState as? LyricsState.Success)?.lines.orEmpty()
-
-    val immersiveController = remember { ImmersiveController() }
-    val immersive = rememberImmersiveState(
-        controller = immersiveController,
-        enabled = immersiveEnabled,
-        isPlaying = state.isPlaying,
-        onImmersiveChange = onImmersiveChange,
-    )
-    val immersiveInteraction = remember(immersiveController) {
-        immersiveInteractionModifier(immersiveController)
-    }
 
     if (lines.isEmpty()) {
         val s = cpStrings()
@@ -153,6 +113,7 @@ fun LyricContent(
     val japaneseLyrics = remember(lines) { lines.any { it.text.containsKana() } }
     // 用户是否开启日文注音假名开关，以及歌词文本本身是否含有注音标记
     val showRubySetting by cp.player.app.AppModel.showRubyLyricsFlow.collectAsState()
+    val wordSegmentation by cp.player.app.AppModel.lyricsWordSegmentationFlow.collectAsState()
     val rawHasRuby = remember(lines) { lines.any { RubyText.hasRuby(it.text) } }
     val hasRuby = rawHasRuby && showRubySetting
 
@@ -175,20 +136,9 @@ fun LyricContent(
                 )
                 // ② 有逐字时间：沿用原来的逐字渲染（不显示罗马音）。若关闭了注音开关，剥离文本中标记。
                 l.words.isNotEmpty() -> KaraokeLine.MainKaraokeLine(
-                    syllables = l.words.mapNotNull { w ->
-                        val wst = w.beginTime.toInt()
-                        val wen = w.endTime.toInt().coerceAtLeast(wst)
-                        if (w.text.isBlank()) return@mapNotNull null
-                        val content = if (rawHasRuby) RubyText.strip(w.text) else w.text
-                        com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeSyllable(
-                            content = content,
-                            start = wst,
-                            end = wen,
-                            phonetic = ""
-                        )
-                    },
+                    syllables = formatSyllablesWithSpacing(l.words, l.text, rawHasRuby),
                     translation = l.translation ?: "",
-                    alignment = com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeAlignment.Unspecified,
+                    alignment = KaraokeAlignment.Unspecified,
                     start = st,
                     end = en,
                     phonetic = "", // 不显示罗马音
@@ -206,7 +156,7 @@ fun LyricContent(
         SyncedLyrics(lines = iLines)
     }
 
-    val listState = rememberLazyListState()
+    val listState = rememberLyricsLazyListState()
 
     // ⚠️ 逐字（Karaoke）动画的帧率**完全由这个位置源决定**。这里有两件事要同时做对，
     // 缺一件就只剩 5 Hz：
@@ -253,42 +203,51 @@ fun LyricContent(
         }
     }
 
-    // 沉浸态的字体放大。改的是**真实字号**而不是 graphicsLayer 缩放：后者是把已栅格化
-    // 的文字层拉大，中文会发糊。代价是放大过程中歌词会重新测量排版 —— 只发生在
-    // 切换的那 ~400ms，且只有视口内十来行。
-    val fontScale by animateFloatAsState(
-        targetValue = if (immersive) ImmersiveFontScale else 1f,
-        animationSpec = CpMotion.spatialSlow(),
-        label = "immersiveFontScale",
-    )
-
     val currentTextStyle = MaterialTheme.typography.headlineMedium
-    val normalStyle = remember(currentTextStyle, fontScale, japaneseLyrics, japaneseFamily) {
+    val normalStyle = remember(currentTextStyle, japaneseLyrics, japaneseFamily) {
         currentTextStyle.copy(
-            fontSize = (28 * fontScale).sp,
+            fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
-            lineHeight = (36 * fontScale).sp,
+            lineHeight = 36.sp,
             textMotion = TextMotion.Animated,
-        ).let { if (japaneseLyrics) it.withJapaneseTypography(japaneseFamily) else it }
+        ).let {
+            if (japaneseLyrics) {
+                if (wordSegmentation) it.withJapaneseTypography(japaneseFamily)
+                else if (japaneseFamily != null) it.copy(fontFamily = japaneseFamily)
+                else it
+            } else it
+        }
     }
 
-    val accompanimentStyle = remember(currentTextStyle, fontScale, japaneseLyrics, japaneseFamily) {
+    val accompanimentStyle = remember(currentTextStyle, japaneseLyrics, japaneseFamily, wordSegmentation) {
         currentTextStyle.copy(
-            fontSize = (20 * fontScale).sp,
+            fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
             textMotion = TextMotion.Animated,
-        ).let { if (japaneseLyrics) it.withJapaneseTypography(japaneseFamily) else it }
+        ).let {
+            if (japaneseLyrics) {
+                if (wordSegmentation) it.withJapaneseTypography(japaneseFamily)
+                else if (japaneseFamily != null) it.copy(fontFamily = japaneseFamily)
+                else it
+            } else it
+        }
     }
 
     // 注音（振り仮名）的字号：正文的 **1/4**，位置由库画在音节上方。
     // 没有注音时这一档仍是「行级罗马音」的字号（正文的一半），两者不要混用同一个值。
     val basePhoneticStyle = MaterialTheme.typography.bodyMedium
-    val phoneticTextStyle = remember(basePhoneticStyle, fontScale, hasRuby, japaneseLyrics, japaneseFamily) {
+    val phoneticTextStyle = remember(basePhoneticStyle, hasRuby, japaneseLyrics, japaneseFamily, wordSegmentation) {
         val size = if (hasRuby) RubyFontRatio else 0.5f
         basePhoneticStyle.copy(
-            fontSize = (28 * fontScale * size).sp,
-            lineHeight = (28 * fontScale * if (hasRuby) 0.32f else 0.7f).sp,
-        ).let { if (japaneseLyrics) it.withJapaneseTypography(japaneseFamily) else it }
+            fontSize = (28 * size).sp,
+            lineHeight = (28 * if (hasRuby) 0.32f else 0.7f).sp,
+        ).let {
+            if (japaneseLyrics) {
+                if (wordSegmentation) it.withJapaneseTypography(japaneseFamily)
+                else if (japaneseFamily != null) it.copy(fontFamily = japaneseFamily)
+                else it
+            } else it
+        }
     }
 
     val currentTrackId = state.currentTrack?.id
@@ -303,7 +262,7 @@ fun LyricContent(
         { (smoothPosition.longValue + lyricOffsetMs).toInt() }
     }
 
-    Box(modifier.fillMaxSize().then(immersiveInteraction)) {
+    Box(modifier.fillMaxSize()) {
         KaraokeLyricsView(
             listState = listState,
             lyrics = syncedLyrics,
@@ -320,8 +279,8 @@ fun LyricContent(
             modifier = Modifier.fillMaxSize()
         )
 
-        // 若当前曲目设置了歌词偏移，且非沉浸模式下，在右上角提供轻量提示胶囊
-        if (lyricOffsetMs != 0L && !immersive) {
+        // 若当前曲目设置了歌词偏移，在右上角提供轻量提示胶囊
+        if (lyricOffsetMs != 0L) {
             androidx.compose.material3.Surface(
                 onClick = { showOffsetDialog = true },
                 shape = MaterialTheme.shapes.small,
@@ -362,81 +321,58 @@ fun LyricContent(
 }
 
 /**
- * 「观察但不消费」的指针交互检测。
+ * 为逐字音节构建 [KaraokeSyllable] 列表，并确保英文/拉丁词间空格不丢失。
  *
- * 走 `PointerEventPass.Initial` 且**不 consume**：手势照常传给下面的歌词列表，
- * 我们只是搭个便车记录时间戳。写成普通函数（不是 @Composable）—— 它只是造一个
- * modifier，没有任何组合期依赖。
+ * AMLL / Apple Music TTML 等格式中，词间空格可能作为单独的 XML 节点或者保留在整行文本中。
+ * 若 syllables 之间缺少空格，渲染器会直接将单词粘连（如 "See you again" 变成 "Seeyouagain"）。
+ * 此处根据词自身尾随空格、整行文本 [lineText] 的空格分布以及词界进行自动对齐与补偿。
  */
-private fun immersiveInteractionModifier(controller: ImmersiveController): Modifier =
-    Modifier.pointerInput(Unit) {
-        awaitPointerEventScope {
-            while (true) {
-                awaitPointerEvent(PointerEventPass.Initial)
-                controller.lastInteractionNanos = System.nanoTime()
+private fun formatSyllablesWithSpacing(
+    words: List<SyncedLyricLine.SyncedWord>,
+    lineText: String,
+    rawHasRuby: Boolean,
+): List<KaraokeSyllable> {
+    if (words.isEmpty()) return emptyList()
+    val fullLine = lineText.trim()
+    var searchCursor = 0
+
+    return words.mapIndexedNotNull { index, w ->
+        val wst = w.beginTime.toInt()
+        val wen = w.endTime.toInt().coerceAtLeast(wst)
+        if (w.text.isBlank()) return@mapIndexedNotNull null
+        var text = if (rawHasRuby) RubyText.strip(w.text) else w.text
+
+        // 若不是行尾最后一词，且当前词末尾尚未携带空格：
+        if (index < words.lastIndex && !text.endsWith(" ")) {
+            val trimmed = text.trim()
+            val pos = fullLine.indexOf(trimmed, searchCursor)
+            if (pos >= 0) {
+                val afterPos = pos + trimmed.length
+                searchCursor = afterPos
+                if (afterPos < fullLine.length && fullLine[afterPos] == ' ') {
+                    text = "$text "
+                }
+            } else {
+                // 词末与下一词首若均为字母/数字（如英文词），自动补偿词间空格
+                val nextText = words[index + 1].text.trimStart()
+                val lastChar = text.lastOrNull()
+                val nextFirstChar = nextText.firstOrNull()
+                if (lastChar != null && nextFirstChar != null &&
+                    ((lastChar in 'a'..'z' || lastChar in 'A'..'Z' || lastChar in '0'..'9') &&
+                     (nextFirstChar in 'a'..'z' || nextFirstChar in 'A'..'Z' || nextFirstChar in '0'..'9'))
+                ) {
+                    text = "$text "
+                }
             }
         }
-    }
 
-/**
- * 沉浸歌词的超时判定。
- *
- * ## 为什么交互时间戳是**纯字段**而不是 Compose 状态
- *
- * 指针事件（尤其拖动滚动）每帧都可能来。若把时间戳写成 `mutableStateOf`，
- * 每次指针事件都会让读它的 composable 重组 —— 一秒 60 次。写成普通字段则零成本，
- * 而「是否沉浸」由一个后台轮询统一决定：只有它翻转时才重组
- * （见 [ImmersiveController.immersive]）。
- *
- * ## 轮询而不是 `delay(timeout)` 一次性定时
- *
- * 一次性定时在「已经沉浸、用户又碰了一下屏幕」时无法重新计时（协程早就结束了）。
- * 轮询每 [ImmersivePollIntervalMs] 比较一次空闲时长，进入 / 退出两个方向都能覆盖，
- * 而且同值写入不会触发重组。
- */
-@Composable
-private fun rememberImmersiveState(
-    controller: ImmersiveController,
-    enabled: Boolean,
-    isPlaying: Boolean,
-    onImmersiveChange: ((Boolean) -> Unit)?,
-): Boolean {
-    LaunchedEffect(enabled, isPlaying) {
-        if (!enabled || !isPlaying) {
-            controller.immersive = false
-            return@LaunchedEffect
-        }
-        controller.lastInteractionNanos = System.nanoTime()
-        controller.immersive = false
-        while (true) {
-            delay(ImmersivePollIntervalMs)
-            val idleMs = (System.nanoTime() - controller.lastInteractionNanos) / 1_000_000
-            controller.immersive = idleMs >= ImmersiveTimeoutMs
-        }
+        KaraokeSyllable(
+            content = text,
+            start = wst,
+            end = wen,
+            phonetic = "",
+        )
     }
-
-    LaunchedEffect(controller.immersive) {
-        onImmersiveChange?.invoke(controller.immersive)
-    }
-    // 离开歌词页时恢复宿主控件 —— 否则沉浸态会「粘」到别的页面上。
-    DisposableEffect(Unit) {
-        onDispose { onImmersiveChange?.invoke(false) }
-    }
-
-    return controller.immersive
-}
-
-/**
- * 沉浸歌词的运行时状态。
- *
- * @property lastInteractionNanos 最近一次指针交互的单调时钟读数（纳秒）。
- *   **纯字段** —— 写它不触发重组，见 [rememberImmersiveState] 的 KDoc。
- * @property immersive 是否处于沉浸态。这是**唯一**的 Compose 状态：
- *   只有它翻转时才需要重组。
- */
-private class ImmersiveController {
-    var lastInteractionNanos: Long = 0L
-    var immersive by mutableStateOf(false)
 }
 
 /**

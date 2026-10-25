@@ -94,6 +94,7 @@ class LyricoLyricsPluginService(
         artist: String,
         album: String,
         durationMs: Long,
+        mediaId: String?,
     ): PluginLyricsOutcome? = withContext(dispatcher) {
         if (title.isBlank()) return@withContext null
         val enabledIds = store.enabledIds()
@@ -106,7 +107,7 @@ class LyricoLyricsPluginService(
             val capabilities = source.manifest.capabilities.ifEmpty { setOf(PluginCapability.SEARCH_SONGS) }
             if (PluginCapability.GET_LYRICS !in capabilities) continue
             val outcome = runCatching {
-                fetchFromSource(source, keyword, durationMs)
+                fetchFromSource(source, keyword, durationMs, mediaId)
             }.getOrElse { throwable ->
                 if (throwable is CancellationException) throw throwable
                 null
@@ -128,13 +129,14 @@ class LyricoLyricsPluginService(
         artist: String,
         album: String,
         durationMs: Long,
+        mediaId: String?,
     ): PluginLyricsOutcome? = withContext(dispatcher) {
         if (title.isBlank()) return@withContext null
         val source = store.loadSources().firstOrNull { it.manifest.id == id } ?: return@withContext null
         val capabilities = source.manifest.capabilities.ifEmpty { setOf(PluginCapability.SEARCH_SONGS) }
         if (PluginCapability.GET_LYRICS !in capabilities) return@withContext null
         val keyword = listOf(title, artist).filter { it.isNotBlank() }.joinToString(" ")
-        runCatching { fetchFromSource(source, keyword, durationMs) }.getOrElse { throwable ->
+        runCatching { fetchFromSource(source, keyword, durationMs, mediaId) }.getOrElse { throwable ->
             if (throwable is CancellationException) throw throwable
             null
         }
@@ -144,6 +146,7 @@ class LyricoLyricsPluginService(
         source: LyricoPluginSource,
         keyword: String,
         durationMs: Long,
+        mediaId: String? = null,
     ): PluginLyricsOutcome? {
         val runtime = runtimeFor(source)
         val config = store.pluginConfig(source.manifest.id)
@@ -154,7 +157,13 @@ class LyricoLyricsPluginService(
 
         var hits = emptyList<PluginSongSearchResult>()
         for (kw in candidateKeywords) {
-            val searchRequest = PluginSearchSongsRequest(keyword = kw, page = 1, pageSize = 5, config = config)
+            val searchRequest = PluginSearchSongsRequest(
+                keyword = kw,
+                page = 1,
+                pageSize = 5,
+                config = config,
+                mediaId = mediaId,
+            )
             val parsedHits = parser.parseSongResults(
                 rawJson = runtime.call("searchSongs", pluginJson.encodeToString(searchRequest)),
                 pluginId = source.manifest.id,
@@ -174,7 +183,11 @@ class LyricoLyricsPluginService(
             hits.first()
         }
 
-        val lyricsRequest = PluginGetLyricsRequest(song = hit.toPluginSongRequest(), config = config)
+        val lyricsRequest = PluginGetLyricsRequest(
+            song = hit.toPluginSongRequest(mediaId = mediaId),
+            config = config,
+            mediaId = mediaId,
+        )
         val raw = runtime.call(
             "getLyrics",
             pluginJson.encodeToString(lyricsRequest),

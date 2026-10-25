@@ -5,7 +5,6 @@ import cp.player.core.api.MusicApiService
 import cp.player.core.api.amllPlatformFor
 import cp.player.core.playback.LyricsParser
 import cp.player.core.playback.SidecarLyricLoader
-import cp.player.core.playback.TtmlParser
 import cp.player.core.playback.SyncedLyricLine
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -101,7 +100,7 @@ internal class AmllLyricsSource(
             artist = sanitized.artist.ifBlank { null },
             album = request.album.ifBlank { null },
         ) ?: return null
-        val lines = TtmlParser.parse(ttml)
+        val lines = LyricsParser.parseTtml(ttml)
         if (lines.isEmpty()) return null
         return LyricsSourceResult(lines = lines)
     }
@@ -138,14 +137,26 @@ internal class ProviderLyricsSource(
     /** 音源 JSON → 展示用 [cp.player.core.model.LyricsInfo]（保留改造前 `extractLyricsInfo` 的判据）。 */
     internal fun infoOf(json: JsonElement, lines: List<SyncedLyricLine>): ProviderLyricsInfo {
         val obj = json as? JsonObject
+        val data = obj?.get("data") as? JsonObject
         val yrc = ((obj?.get("yrc") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
+            ?: ((data?.get("yrc") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
+            ?: (obj?.get("yrc") as? JsonPrimitive)?.contentOrNull
+            ?: (data?.get("yrc") as? JsonPrimitive)?.contentOrNull
         val tlyric = ((obj?.get("tlyric") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
+            ?: ((data?.get("tlyric") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
         val romalrc = ((obj?.get("romalrc") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
+            ?: ((data?.get("romalrc") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
         val lrc = ((obj?.get("lrc") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
+            ?: ((data?.get("lrc") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
             ?: (obj?.get("lyric") as? JsonPrimitive)?.contentOrNull
+            ?: (data?.get("lyric") as? JsonPrimitive)?.contentOrNull
             ?: ((obj?.get("klyric") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
+            ?: ((data?.get("klyric") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
+        val ttml = (obj?.get("ttml") as? JsonPrimitive)?.contentOrNull
+            ?: (data?.get("ttml") as? JsonPrimitive)?.contentOrNull
         return ProviderLyricsInfo(
             format = when {
+                !ttml.isNullOrBlank() || lrc?.trimStart()?.startsWith("<tt") == true || lrc?.trimStart()?.startsWith("<?xml") == true -> "TTML"
                 !yrc.isNullOrBlank() -> "YRC"
                 !lrc.isNullOrBlank() -> "LRC"
                 else -> "Unknown"

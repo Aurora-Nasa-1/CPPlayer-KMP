@@ -51,7 +51,8 @@ interface LyricsPluginService {
         artist: String,
         album: String,
         durationMs: Long = 0L,
-    ): PluginLyricsOutcome?
+        mediaId: String? = null,
+    ): PluginLyricsOutcome? = null
 
     /**
      * 用**指定插件**检索歌词（统一来源体系的入口）。
@@ -64,7 +65,8 @@ interface LyricsPluginService {
         artist: String,
         album: String,
         durationMs: Long = 0L,
-    ): PluginLyricsOutcome?
+        mediaId: String? = null,
+    ): PluginLyricsOutcome? = null
 
     /**
      * [listSources] 的**同步**版本。
