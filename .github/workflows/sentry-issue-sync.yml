@@ -1,0 +1,91 @@
+name: Sync Sentry Issues to GitHub
+
+on:
+  schedule:
+    # 每天定期间隔检测（例如每 2 小时检查一次未解决崩溃，完全免费，不消耗 runner 额度）
+    - cron: "0 */2 * * *"
+  workflow_dispatch: # 支持手动点击运行同步
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch and Sync Unresolved Sentry Issues
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: aurora-9i
+          SENTRY_PROJECT: cpplayer-kmp
+          SENTRY_HOST: de.sentry.io
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SENTRY_AUTH_TOKEN:-}" ]; then
+            echo "SENTRY_AUTH_TOKEN 未配置，跳过同步。"
+            exit 0
+          fi
+
+          echo "正在从 Sentry 获取未解决的 Issues..."
+          ISSUES_JSON=$(curl -s -f -H "Authorization: Bearer ${SENTRY_AUTH_TOKEN}" \
+            "https://${SENTRY_HOST}/api/0/projects/${SENTRY_ORG}/${SENTRY_PROJECT}/issues/?query=is:unresolved&limit=20" || echo "[]")
+
+          COUNT=$(echo "$ISSUES_JSON" | jq '. | length')
+          echo "发现 $COUNT 个未解决的 Sentry Issues"
+
+          if [ "$COUNT" -eq 0 ]; then
+            exit 0
+          fi
+
+          # 获取仓库中已由 Sentry 创建过的 Issues 标题列表（用于绝对去重）
+          EXISTING_TITLES=$(gh issue list --state all --label sentry --limit 100 --json title --jq '.[].title' || true)
+
+          echo "$ISSUES_JSON" | jq -c '.[]' | while read -r item; do
+            ISSUE_ID=$(echo "$item" | jq -r '.id')
+            SHORT_ID=$(echo "$item" | jq -r '.shortId // ""')
+            CULPRIT=$(echo "$item" | jq -r '.culprit // "Unknown"')
+            TITLE=$(echo "$item" | jq -r '.title // "Crash Report"')
+            PERMALINK=$(echo "$item" | jq -r '.permalink // ""')
+            EVENTS_COUNT=$(echo "$item" | jq -r '.count // "1"')
+            USERS_COUNT=$(echo "$item" | jq -r '.userCount // "1"')
+            FIRST_SEEN=$(echo "$item" | jq -r '.firstSeen // ""')
+            LAST_SEEN=$(echo "$item" | jq -r '.lastSeen // ""')
+
+            IDENTIFIER="[Sentry ${SHORT_ID:-$ISSUE_ID}]"
+            FULL_TITLE="${IDENTIFIER} ${TITLE}"
+
+            # 去重判断：如果现有任何 issue 标题包含该标识符，则跳过
+            if echo "$EXISTING_TITLES" | grep -qF "$IDENTIFIER"; then
+              echo "Issue $IDENTIFIER 已存在于 GitHub，跳过。"
+              continue
+            fi
+
+            echo "正在同步新 Issue 到 GitHub: $FULL_TITLE"
+
+            BODY=$(cat <<EOF
+### 🚨 Sentry 自动捕获崩溃上报
+
+- **Sentry 详情**: [查看 Sentry 完整堆栈](${PERMALINK})
+- **触发位置**: \`${CULPRIT}\`
+- **累计发生次数**: ${EVENTS_COUNT}
+- **受影响用户数**: ${USERS_COUNT}
+- **首次发生时间**: ${FIRST_SEEN}
+- **最近发生时间**: ${LAST_SEEN}
+
+---
+> 本 Issue 由 Sentry 同步机器人自动生成。在 Sentry 标记为已解决或在 commit 中注明 \`Fixes ${SHORT_ID}\` 即可自动联动。
+EOF
+            )
+
+            # 确保 sentry 标签存在
+            gh label create sentry --color "e03e2f" --description "Issues synced from Sentry" --force || true
+
+            # 创建 GitHub Issue
+            gh issue create \
+              --title "$FULL_TITLE" \
+              --body "$BODY" \
+              --label "sentry,bug"
+          done

@@ -99,3 +99,8 @@ scripts/*vip*
 scripts/*license*
 scripts/*keygen*
 
+
+# Sentry Config File
+sentry.properties
+# Sentry 官方引导工具（下载物，86MB，不入库）
+sentry-wizard.exe

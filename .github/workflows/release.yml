@@ -93,6 +93,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: |
           ./gradlew :app-android:assembleRelease --no-daemon \
             -Papp.versionName="${{ steps.meta.outputs.version }}" \
@@ -119,3 +120,15 @@ jobs:
           prerelease: false
           body_path: ${{ runner.temp }}/RELEASE_NOTES.md
           files: CPPlayer-${{ steps.meta.outputs.version }}-android.apk
+
+      - name: Create Sentry release
+        if: ${{ env.SENTRY_AUTH_TOKEN != '' }}
+        uses: getsentry/action-release@v1
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: aurora-9i
+          SENTRY_PROJECT: cpplayer-kmp
+          SENTRY_URL: https://de.sentry.io/
+        with:
+          version: cp.player@${{ steps.meta.outputs.version }}
+          environment: production

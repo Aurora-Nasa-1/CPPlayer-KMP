@@ -32,6 +32,7 @@ import cp.player.app.platform.JbrWindowChrome
 import cp.player.app.platform.WindowDecorChoice
 import cp.player.app.platform.WindowsWindowCorners
 import cp.player.app.platform.installDesktopImageCacheLimit
+import cp.player.app.monitoring.DesktopMonitoring
 import cp.player.app.ui.component.DesktopTitleBar
 import cp.player.app.ui.component.DesktopCloseDialog
 import cp.player.app.ui.component.DesktopMiniPlayer
@@ -763,6 +764,10 @@ private fun ensureBackendInitialized() {
             gitSha = BuildInfo.GIT_SHA,
             isDesktop = true,
             releaseChannel = BuildInfo.RELEASE_CHANNEL,
+        )
+        DesktopMonitoring.init(
+            versionName = BuildInfo.VERSION_NAME,
+            isDebug = BuildInfo.RELEASE_CHANNEL != "stable",
         )
         backendReady = true
     }

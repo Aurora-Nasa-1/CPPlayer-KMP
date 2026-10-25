@@ -1,3 +1,5 @@
+import java.util.Properties
+
 // 版本元数据只有一处实现：根 build.gradle.kts。这里只做取值，**不要再自己算**。
 // 曾经本文件自带一份 `getGitSha()` + `appVersionCode.orElse("1")`，
 // 与 CI 的 `-Papp.versionCode=${GITHUB_RUN_NUMBER}`、`scripts/release.ps1` 的
@@ -11,6 +13,17 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
+
+val localProps: Properties = Properties().apply {
+    val localFile = rootProject.file("local.properties")
+    if (localFile.exists()) {
+        localFile.inputStream().use { load(it) }
+    }
+}
+val sentryDsn: String = System.getenv("SENTRY_DSN")
+    ?: providers.gradleProperty("sentry.dsn").orNull
+    ?: localProps.getProperty("sentry.dsn")
+    ?: ""
 
 android {
     namespace = "cp.player.app"
@@ -31,6 +44,7 @@ android {
         versionName = appVersionName
         buildConfigField("String", "GIT_SHA", "\"$gitSha\"")
         buildConfigField("String", "RELEASE_CHANNEL", "\"$appReleaseChannel\"")
+        buildConfigField("String", "SENTRY_DSN", "\"$sentryDsn\"")
     }
     signingConfigs {
         create("release") {
@@ -104,6 +118,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.sentry.android)
     // 核心库脱糖的运行时实现（java.time 等被改写成这些类的调用）。
     // 与 compileOptions.isCoreLibraryDesugaringEnabled 是一对，缺任何一个都不生效：
     // 只开开关不引依赖 → AGP 报 "coreLibraryDesugaring configuration contains no dependencies"。
