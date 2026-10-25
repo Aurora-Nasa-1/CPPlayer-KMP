@@ -344,6 +344,8 @@ private fun MessageBubble(message: Message, emptyText: String) {
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp),
+                    maxLines = 1,
+                    softWrap = false,
                 )
             }
         }

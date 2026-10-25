@@ -53,6 +53,7 @@ import cp.player.app.ui.component.MessageNotifyGuideSheet
 import cp.player.app.ui.component.MessageNotifySheet
 import cp.player.app.ui.component.NotifyBellIndicator
 import cp.player.app.ui.component.rememberMessageNotifyGuide
+import cp.player.app.ui.util.formatChatListTime
 import cp.player.app.ui.util.formatChatTime
 import cp.player.core.BackendResult
 import cp.player.core.model.Contact
@@ -256,7 +257,10 @@ internal fun ContactRow(
         containerColor = containerColor,
         leadingContent = { ArtistAvatar(url = contact.avatarUrl, size = 52.dp) },
         headlineContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 CpText(
                     contact.nickname.ifBlank { strings.social.messages.unknownUser },
                     style = MaterialTheme.typography.titleMedium,
@@ -265,13 +269,15 @@ internal fun ContactRow(
                     maxLines = 1,
                     modifier = Modifier.weight(1f),
                 )
-                val timeStr = contact.lastMessageTime?.let(::formatChatTime).orEmpty()
+                val timeStr = contact.lastMessageTime?.let(::formatChatListTime).orEmpty()
                 if (timeStr.isNotEmpty()) {
                     Spacer(Modifier.width(8.dp))
                     Text(
                         timeStr,
                         style = MaterialTheme.typography.labelSmall,
                         color = secondaryContentColor,
+                        maxLines = 1,
+                        softWrap = false,
                     )
                 }
             }
