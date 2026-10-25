@@ -87,6 +87,7 @@ fun SongDetailInfoDialog(
                     CpLoadingIndicator(Modifier.size(32.dp))
                 }
             } else {
+                // 整段多行文本：CpText 默认 maxLines=1 会只剩第一行（歌曲名），必须放开。
                 CpText(
                     buildString {
                         // 整段进剪贴板 ⇒ 逐行都是文案。`extra` 收「有值才出现」的那些行
@@ -139,9 +140,9 @@ fun SongDetailInfoDialog(
                         )
                         // 「歌曲 ID」是标识符标签，两端都用 ID。
                         append(s.library.songShareLine("ID", current.songId))
-                    }
-                )
-            }
+                    },
+                    maxLines = Int.MAX_VALUE,
+                )            }
         },
         confirmButton = {
             TextButton(onClick = onDismiss) { CpText(s.common.dismiss) }

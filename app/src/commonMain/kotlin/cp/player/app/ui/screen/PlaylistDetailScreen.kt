@@ -658,7 +658,8 @@ fun PlaylistDetailContent(
                                 ),
                             )
                             append(s.library.songShareLine("ID", current.songId))
-                        }
+                        },
+                        maxLines = Int.MAX_VALUE,
                     )
                 }
             },

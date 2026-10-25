@@ -701,6 +701,7 @@ fun SongInfoDialog(
         title = { CpText(s.player.songInfo, maxLines = 1) },
         text = {
             val info = formatInfo
+            // 整段多行文本：CpText 默认 maxLines=1 会只剩第一行（歌曲名），必须放开。
             CpText(
                 buildString {
                     // 整段进剪贴板，**逐行**都是文案 —— 中英的行标签与分隔符都不同
@@ -747,6 +748,7 @@ fun SongInfoDialog(
                         info.mimeType?.takeIf(String::isNotBlank)?.let { append("\nMIME: ").append(it) }
                     }
                 },
+                maxLines = Int.MAX_VALUE,
             )
         },
         confirmButton = {
