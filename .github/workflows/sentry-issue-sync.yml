@@ -65,20 +65,18 @@ jobs:
 
             echo "正在同步新 Issue 到 GitHub: $FULL_TITLE"
 
-            BODY=$(cat <<EOF
-### 🚨 Sentry 自动捕获崩溃上报
+            BODY="### 🚨 Sentry 自动捕获崩溃上报
 
-- **Sentry 详情**: [查看 Sentry 完整堆栈](${PERMALINK})
-- **触发位置**: \`${CULPRIT}\`
-- **累计发生次数**: ${EVENTS_COUNT}
-- **受影响用户数**: ${USERS_COUNT}
-- **首次发生时间**: ${FIRST_SEEN}
-- **最近发生时间**: ${LAST_SEEN}
+            - **Sentry 详情**: [查看 Sentry 完整堆栈](${PERMALINK})
+            - **触发位置**: \`${CULPRIT}\`
+            - **累计发生次数**: ${EVENTS_COUNT}
+            - **受影响用户数**: ${USERS_COUNT}
+            - **首次发生时间**: ${FIRST_SEEN}
+            - **最近发生时间**: ${LAST_SEEN}
 
----
-> 本 Issue 由 Sentry 同步机器人自动生成。在 Sentry 标记为已解决或在 commit 中注明 \`Fixes ${SHORT_ID}\` 即可自动联动。
-EOF
-            )
+            ---
+            > 本 Issue 由 Sentry 同步机器人自动生成。在 Sentry 标记为已解决或在 commit 中注明 \`Fixes ${SHORT_ID}\` 即可自动联动。"
+            BODY=$(echo "$BODY" | sed 's/^[ \t]*//')
 
             # 确保 sentry 标签存在
             gh label create sentry --color "e03e2f" --description "Issues synced from Sentry" --force || true
