@@ -74,41 +74,42 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.cpPressScale
-import cp.player.app.ui.theme.LocalIsDarkTheme
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import cp.player.app.ui.component.CpText
 
 /**
- * 海报墙的四个画布语义色。做成 **@Composable getter**（所有调用点都在组合期，
- * 不在绘制 lambda 里），跟随 [LocalIsDarkTheme]：
+ * 海报墙的四个画布语义色，全部直接取 **M3 色彩角色**（做成 `@get:Composable`
+ * getter，所有调用点都在组合期，不在绘制 lambda 里）：
  *
- * - 深色主题沿用原来的沉浸墨色（数值不变，老观感逐像素保留）；
- * - 浅色主题翻成纸面 / 近黑墨水 —— 此前整面墙写死深色，浅色主题下白字直接消失。
+ * - `PosterInk` = `surface`：画布底色，自动跟随动态取色（封面种子色）与纯黑模式；
+ * - `PosterOnInk` = `onSurface`：画布上的**前景**（文字 / 图标 / 选中描边）；
+ * - `PosterMuted` = `onSurfaceVariant`：次级文字 / 图标；
+ * - `PosterPanel` = `surfaceContainerHigh`：浮层面板（搜索框 / 选项胶囊 / 展开卡）。
  *
- * ⚠️ 语义分工：`PosterInk` 是**画布底色**，`PosterOnInk` 是画布上的**前景**
- * （文字 / 图标 / 选中描边），两者互补 —— 播放按钮用「OnInk 做容器、Ink 做图标」
- * 正好得到自动反转。压在**封面图 + 黑渐变**上的内容（瓦片信息、展开卡正文）不归
- * 这套语义管，恒用白色，两个主题下都可读。
+ * 四个角色两两配对在 M3 里天然保证对比度，无需再按明暗分叉写死色值。
+ *
+ * ⚠️ 压在**封面图 + 黑渐变**上的内容（瓦片信息、展开卡正文）不归这套语义管，
+ * 恒用白色——渐变底永远是暗的，浅色角色压上去会不可读。
  */
 @get:Composable
 internal val PosterInk: Color
-    get() = if (LocalIsDarkTheme.current) Color(0xFF10131B) else Color(0xFFF6F5F1)
+    get() = MaterialTheme.colorScheme.surface
 
 /** 画布上的浮层面板（搜索框 / 底部选项胶囊 / 展开卡）。 */
 @get:Composable
 internal val PosterPanel: Color
-    get() = if (LocalIsDarkTheme.current) Color(0xFF1D2230) else Color(0xFFFFFFFF)
+    get() = MaterialTheme.colorScheme.surfaceContainerHigh
 
 /** 画布上的次级文字 / 图标。 */
 @get:Composable
 internal val PosterMuted: Color
-    get() = if (LocalIsDarkTheme.current) Color(0xFFB5BED0) else Color(0xFF5C6270)
+    get() = MaterialTheme.colorScheme.onSurfaceVariant
 
 /** 画布上的前景（文字 / 图标 / 描边）：深色下是白，浅色下是近黑。 */
 @get:Composable
 internal val PosterOnInk: Color
-    get() = if (LocalIsDarkTheme.current) Color.White else Color(0xFF1B1D24)
+    get() = MaterialTheme.colorScheme.onSurface
 
 val PosterWallIcon: ImageVector by lazy {
     ImageVector.Builder("PosterWall", 24.dp, 24.dp, 24f, 24f).apply {
