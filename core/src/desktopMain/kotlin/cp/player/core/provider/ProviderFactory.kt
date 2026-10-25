@@ -1,7 +1,7 @@
 package cp.player.core.provider
 
 actual fun createJniProvider(manifest: ModuleManifest, soPath: String): BackendProvider? {
-    return JniProvider(
+    return DesktopJniProvider(
         id = manifest.id,
         name = manifest.name,
         version = manifest.version,
@@ -12,5 +12,7 @@ actual fun createJniProvider(manifest: ModuleManifest, soPath: String): BackendP
         loginMethods = manifest.loginMethods,
         capabilities = manifest.knownCapabilities.ifEmpty { null },
         apiVersion = manifest.resolvedApiVersion,
+        contract = manifest.contract,
+        settingsSchema = manifest.settingsSchema,
     )
 }

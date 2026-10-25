@@ -119,11 +119,19 @@ sealed class BackendResult<out T> {
  */
 sealed class ImportResult {
 
-    /** 导入并已自动激活（此前无活跃 Provider）。 */
-    data class Activated(val provider: BackendProvider) : ImportResult()
+    /** 导入并已自动激活（此前无活跃 Provider，或更新了当前活跃 Provider）。 */
+    data class Activated(
+        val provider: BackendProvider,
+        val isUpdate: Boolean = false,
+        val replacedProviderId: String? = null
+    ) : ImportResult()
 
     /** 导入成功，但已有其他 Provider 处于活跃状态，未切换。 */
-    data class Loaded(val provider: BackendProvider) : ImportResult()
+    data class Loaded(
+        val provider: BackendProvider,
+        val isUpdate: Boolean = false,
+        val replacedProviderId: String? = null
+    ) : ImportResult()
 
     /** 导入失败。 */
     data class Failed(val message: String) : ImportResult()

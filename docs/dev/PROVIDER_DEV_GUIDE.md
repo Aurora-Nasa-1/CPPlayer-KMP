@@ -122,9 +122,21 @@ Content-Type: application/json
 | 属性           | 说明                                                     |
 | ------------ | ------------------------------------------------------ |
 | `type`       | `"binary"`                                             |
-| `entryPoint` | 可执行文件名，如 `"ncm-server"`                                |
-| 通信方式         | HTTP POST `http://127.0.0.1:{port}/api/{mappedMethod}` |
-| 启动方式         | CPPlayer 自动启动 `./entryPoint --port {port}`             |
+| `entryPoint` | 可执行文件名，如 `"ncm-server"` 或 `"ncm-server.exe"`        |
+| 支持平台     | **仅 Desktop（Windows / Linux / macOS）**               |
+| 通信方式     | HTTP POST `http://127.0.0.1:{port}/api/{mappedMethod}` |
+| 启动方式     | CPPlayer 自动启动 `./entryPoint --port {port}`             |
+
+> ⚠️ **Android 平台限制与规范说明**：  
+> Android 系统的安全机制（W^X、SELinux、私有数据目录挂载 `noexec`）严格禁止在应用数据目录下执行任何独立二进制文件（`ProcessBuilder` / `exec` 均会被系统拦截并报 `error=13 Permission denied`）。  
+> 因此 **Android 端不支持运行独立 binary**。  
+> **Android 原生模块规范已全面提升至运行 `.so`（通过 JNI 动态加载）**。  
+> 
+> **自动规范提升机制**：  
+> 若跨平台模块在 `manifest.json` 中声明为 `type: "binary"`，宿主在 Android 端（或入口为动态库时）会自动提升该模块规范至运行 `.so`：  
+> 1. 加载器优先探测当前设备 ABI 对应的 `.so` 动态库（支持 `lib<entryPoint>.so`、`<entryPoint>.so` 或 `lib/<abi>/` 下的动态库）；  
+> 2. 若找到兼容的 `.so`，自动转换为 `JniProvider` 运行并加载入进程（若该 `.so` 导出了 `startNativeServer` 启动 HTTP 端口且未实现 `nativeCallApi`，宿主亦会自动降级走 HTTP 回环）；  
+> 3. 若 Android 端未找到任何兼容架构的 `.so` 动态库，则明确拦截并报错提示，防止无意义的进程启动崩溃。
 
 **要求：**
 
@@ -360,19 +372,29 @@ Java_cp_player_core_provider_JniProvider_analyzeAudioFile(
         "lyric": "[00:00.00]歌曲名 - 歌手\n[00:05.00]第一行歌词\n"
     },
     "yrc": {
-        "lyric": "[00:00.00,0](0,500,0)逐(500,300,0)字\n"
+        "lyric": "[12580,3470](12580,250,0)逐(12830,300,0)字\n"
     },
+    "krc": {
+        "lyric": "[1000,3000]<0,1000,0>酷<1000,1000,0>狗<2000,1000,0>逐字\n"
+    },
+    "ttml": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div><p begin=\"00:01.000\" end=\"00:04.000\"><span begin=\"00:01.000\" end=\"00:02.000\">逐</span><span begin=\"00:02.000\" end=\"00:03.000\">字</span></p></div></body></tt>",
     "tlyric": {
         "lyric": "[00:05.00]翻译歌词\n"
+    },
+    "romalrc": {
+        "lyric": "[00:05.00]fan yi ge ci\n"
     }
 }
 ```
 
-| 字段             | 说明                      | 必须 |
-| -------------- | ----------------------- | -- |
-| `lrc.lyric`    | 行级 LRC 歌词               | ✅  |
-| `yrc.lyric`    | 逐字 YRC 歌词（AMLL TTML 格式） | 推荐 |
-| `tlyric.lyric` | 翻译歌词                    | 推荐 |
+| 字段             | 说明                                                                  | 必须 |
+| -------------- | ------------------------------------------------------------------- | -- |
+| `lrc.lyric`    | 行级标准 LRC 歌词或增强逐字 ELRC（`<mm:ss.xx>词`）                          | ✅  |
+| `yrc.lyric`    | 网易云 YRC 逐字歌词（`[start,dur](start,dur,0)字`）                     | 推荐 |
+| `krc.lyric`    | 酷狗 KRC 明文逐字歌词（支持伴唱轨 `[bg:...]` 与 `[language:...]` 翻译）      | 可选 |
+| `ttml`         | 原生 Apple Music / AMLL 规范 TTML 逐字 XML（支持角色、声轨与音节级高亮）      | 可选 |
+| `tlyric.lyric` | 翻译歌词（自动按时间戳与主歌词对齐注入）                                           | 推荐 |
+| `romalrc.lyric`| 罗马音/注音歌词（自动按时间戳与主歌词对齐注入）                                     | 可选 |
 
 ### `song/detail` — 歌曲详情
 
@@ -2591,27 +2613,25 @@ my-provider.zip
 └── manifest.json
 ```
 
-**Binary Provider:**
+**Binary Provider（仅桌面端）:**
 ```
 my-provider.zip
 ├── manifest.json
-├── my-binary              (可执行文件)
-└── lib/
-    ├── arm64-v8a/
-    │   └── libfoo.so      (可选依赖库)
-    └── armeabi-v7a/
-        └── libfoo.so
+└── my-binary              (可执行文件，如 ncm-server.exe 或 ncm-server)
 ```
 
-**JNI Provider:**
+**JNI Provider（Android 全平台 + 桌面端推荐）:**
 ```
 my-provider.zip
 ├── manifest.json
 └── lib/
     ├── arm64-v8a/
-    │   └── libmyapi.so
-    └── armeabi-v7a/
-        └── libmyapi.so
+    │   └── libmyapi.so    (Android 64位主流架构)
+    ├── armeabi-v7a/
+    │   └── libmyapi.so    (Android 32位兼容)
+    └── x86_64/
+        ├── libmyapi.so    (Linux / Android 模拟器)
+        └── myapi.dll      (Windows)
 ```
 
 ### 10.2 更新

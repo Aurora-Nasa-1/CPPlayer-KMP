@@ -12,9 +12,14 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -39,6 +44,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Lock
@@ -218,10 +224,15 @@ class AccountScreen : Screen {
 
                 if (!isLogged) {
                     // ================= 未登录态：明确为登录界面 =================
+                    val currentProvider = provider
+                    val unloggedHasSettings = !currentProvider?.settingsSchema.isNullOrEmpty()
                     LoginBrandHeader(
-                        providerName = provider?.name,
-                        providerType = provider?.type?.name,
+                        providerName = currentProvider?.name,
+                        providerType = currentProvider?.type?.name,
                         onSwitchProvider = { navigator.push(ProviderManagementScreen()) },
+                        onOpenSettings = if (unloggedHasSettings && currentProvider != null) {
+                            { navigator.push(ProviderCustomSettingsScreen(currentProvider.id, currentProvider.name, currentProvider.settingsSchema!!)) }
+                        } else null,
                     )
 
                     Spacer(Modifier.height(8.dp))
@@ -503,6 +514,8 @@ class AccountScreen : Screen {
                     }
 
                     // 当前音源信息
+                    val hasCustomConfig = !provider?.settingsSchema.isNullOrEmpty()
+                    val providerTotalItems = if (hasCustomConfig) 2 else 1
                     SettingsSection(s.account.currentProvider) {
                         SettingsClickItem(
                             title = provider?.name ?: s.account.noProvider,
@@ -510,7 +523,7 @@ class AccountScreen : Screen {
                                 ?: s.account.noProviderNote,
                             icon = Icons.Filled.Extension,
                             index = 0,
-                            total = 1,
+                            total = providerTotalItems,
                             onClick = { navigator.push(ProviderManagementScreen()) },
                             trailingContent = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -528,6 +541,28 @@ class AccountScreen : Screen {
                                 }
                             },
                         )
+                        val currentProvider = provider
+                        if (hasCustomConfig && currentProvider != null) {
+                            val schema = currentProvider.settingsSchema!!
+                            SettingsClickItem(
+                                title = "音源专属配置",
+                                subtitle = "自定义 ${currentProvider.name} 的各项参数与高级选项",
+                                icon = Icons.Filled.Tune,
+                                index = 1,
+                                total = providerTotalItems,
+                                onClick = {
+                                    navigator.push(ProviderCustomSettingsScreen(currentProvider.id, currentProvider.name, schema))
+                                },
+                                trailingContent = {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.ArrowForward,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(CpIconSize.inline),
+                                    )
+                                },
+                            )
+                        }
                     }
 
                     // 账号退出操作
@@ -595,6 +630,7 @@ private fun LoginBrandHeader(
     providerName: String?,
     providerType: String?,
     onSwitchProvider: () -> Unit,
+    onOpenSettings: (() -> Unit)? = null,
 ) {
     val s = cpStrings()
     Surface(
@@ -638,21 +674,44 @@ private fun LoginBrandHeader(
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(14.dp))
-            OutlinedButton(
-                onClick = onSwitchProvider,
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                shape = MaterialTheme.shapes.medium,
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    Icons.Filled.SwapHoriz,
-                    contentDescription = null,
-                    modifier = Modifier.size(CpIconSize.inline),
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = providerName?.let { "切换音源 (当前: $it)" } ?: s.account.switchProvider,
-                    style = MaterialTheme.typography.labelMedium,
-                )
+                OutlinedButton(
+                    onClick = onSwitchProvider,
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Icon(
+                        Icons.Filled.SwapHoriz,
+                        contentDescription = null,
+                        modifier = Modifier.size(CpIconSize.inline),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = providerName?.let { "切换音源 (当前: $it)" } ?: s.account.switchProvider,
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+                if (onOpenSettings != null) {
+                    OutlinedButton(
+                        onClick = onOpenSettings,
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                        shape = MaterialTheme.shapes.medium,
+                    ) {
+                        Icon(
+                            Icons.Filled.Tune,
+                            contentDescription = null,
+                            modifier = Modifier.size(CpIconSize.inline),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "音源配置",
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
+                }
             }
         }
     }
@@ -660,6 +719,12 @@ private fun LoginBrandHeader(
 
 /**
  * M3E 登录通道胶囊分段单选控件。
+ *
+ * 手机界面或窄屏下，5 个标签（扫码、手机号、邮箱、Cookie、WebView）若强行 weight(1f) 均分
+ * 会导致单项宽度不足（仅 ~55-60dp），使图标与文字严重挤压甚至截断。
+ * 此处采用响应式布局：
+ * - 宽屏（>= 96dp * channels.size）时均分铺满，保证对称平整；
+ * - 窄屏（手机端）时自动切换为流畅横向滚动的胶囊条，单项具有舒适的呼吸空间，并支持自动平滑滚动对焦到当前选中项。
  */
 @Composable
 private fun LoginChannelSelector(
@@ -668,57 +733,104 @@ private fun LoginChannelSelector(
     onSelect: (LoginChannel) -> Unit,
 ) {
     val s = cpStrings()
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val minRequiredWidth = 96.dp * channels.size
+        val canFitAll = maxWidth >= minRequiredWidth
+
+        Surface(
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                .clip(MaterialTheme.shapes.large),
         ) {
-            channels.forEach { channel ->
-                val isSelected = channel == selected
-                val icon = when (channel) {
-                    LoginChannel.QR -> Icons.Filled.QrCode2
-                    LoginChannel.PHONE -> Icons.Filled.Phone
-                    LoginChannel.EMAIL -> Icons.Filled.Email
-                    LoginChannel.COOKIE -> Icons.Filled.Key
-                    LoginChannel.WEBVIEW -> Icons.Filled.Language
-                }
-
-                Surface(
-                    shape = MaterialTheme.shapes.medium,
-                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+            if (canFitAll) {
+                Row(
                     modifier = Modifier
-                        .weight(1f)
-                        .clip(MaterialTheme.shapes.medium)
-                        .clickable { onSelect(channel) },
+                        .fillMaxWidth()
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Row(
-                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            icon,
-                            contentDescription = null,
-                            tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp),
+                    channels.forEach { channel ->
+                        LoginChannelTabItem(
+                            channel = channel,
+                            isSelected = channel == selected,
+                            label = channel.labelOf(s),
+                            modifier = Modifier.weight(1f),
+                            onClick = { onSelect(channel) },
                         )
-                        Spacer(Modifier.width(6.dp))
-                        CpText(
-                            text = channel.labelOf(s),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
+                    }
+                }
+            } else {
+                val listState = rememberLazyListState()
+                val selectedIndex = channels.indexOf(selected)
+                LaunchedEffect(selected) {
+                    if (selectedIndex in channels.indices) {
+                        listState.animateScrollToItem(selectedIndex)
+                    }
+                }
+                LazyRow(
+                    state = listState,
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    items(channels, key = { it.name }) { channel ->
+                        LoginChannelTabItem(
+                            channel = channel,
+                            isSelected = channel == selected,
+                            label = channel.labelOf(s),
+                            onClick = { onSelect(channel) },
                         )
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun LoginChannelTabItem(
+    channel: LoginChannel,
+    isSelected: Boolean,
+    label: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val icon = when (channel) {
+        LoginChannel.QR -> Icons.Filled.QrCode2
+        LoginChannel.PHONE -> Icons.Filled.Phone
+        LoginChannel.EMAIL -> Icons.Filled.Email
+        LoginChannel.COOKIE -> Icons.Filled.Key
+        LoginChannel.WEBVIEW -> Icons.Filled.Language
+    }
+
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        modifier = modifier
+            .clip(MaterialTheme.shapes.medium)
+            .clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(vertical = 10.dp, horizontal = 12.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            CpText(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
         }
     }
 }
@@ -1424,8 +1536,26 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
 
     init {
         screenModelScope.launch {
-            var first = true
+            var lastProviderId: String? = null
             activeProvider.collect { provider ->
+                val currentProviderId = provider?.id
+                val isProviderSwitched = lastProviderId != null && lastProviderId != currentProviderId
+                lastProviderId = currentProviderId
+
+                if (isProviderSwitched) {
+                    cancelQrPolling()
+                    qrUrl.value = null
+                    qrImgBase64.value = null
+                    qrRestored.value = false
+                    webviewLoginUrl.value = null
+                    captchaImage.value = null
+                    captchaSessionCookie = null
+                    verifyUrl.value = null
+                    message.value = null
+                    isLogged.value = false
+                    accounts.value = emptyList()
+                }
+
                 val pkg = provider?.targetAppPackage
                 if (!pkg.isNullOrEmpty()) {
                     targetAppName.value = provider.name
@@ -1452,18 +1582,17 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                 }
                 supportsCaptchaImage.value = declared?.contains("captchaimage") == true
                 if (method.value !in loginChannels.value) {
-                    setChannel(loginChannels.value.first())
+                    method.value = loginChannels.value.first()
                 }
                 checkLoginStatus()
-                if (first) {
-                    first = false
-                    if (!isLogged.value && LoginChannel.QR in loginChannels.value) restoreOrFetchQrCode()
+                if (!isLogged.value && method.value == LoginChannel.QR && LoginChannel.QR in loginChannels.value) {
+                    restoreOrFetchQrCode()
                 }
             }
         }
     }
 
-    fun providerId(): String = AppModel.activeProviderId()
+    fun providerId(): String = activeProvider.value?.id ?: AppModel.activeProviderId()
 
     fun setChannel(channel: LoginChannel) {
         method.value = channel
@@ -1541,7 +1670,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
         val stored = AccountStore.list(providerId)
         val profile = AppModel.userProfileFlow.value
         val currentUid = profile?.uid?.toString()
-        val merged = if (profile != null && stored.none { it.uid == currentUid }) {
+        val merged = if (isLogged.value && profile != null && stored.none { it.uid == currentUid }) {
             stored + AccountStore.SavedAccount(
                 uid = currentUid ?: "",
                 nickname = profile.nickname,
@@ -1673,14 +1802,15 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                 }
             } else {
                 consecutiveFailures = 0
-                when (resp.asCode()) {
-                    801 -> message.value = account.qrWaiting
-                    802 -> message.value = account.qrScanned
-                    803 -> {
+                when (resolveQrStatus(resp)) {
+                    QrStatusKind.WAITING -> message.value = account.qrWaiting
+                    QrStatusKind.SCANNED -> message.value = account.qrScanned
+                    QrStatusKind.SUCCESS -> {
                         onLoginSucceeded(resp.uniCookie())
                         return QrPollResult.LOGGED_IN
                     }
-                    800 -> return QrPollResult.EXPIRED
+                    QrStatusKind.EXPIRED -> return QrPollResult.EXPIRED
+                    QrStatusKind.UNKNOWN -> Unit
                 }
             }
             if (isLogged.value) return QrPollResult.LOGGED_IN
@@ -2007,4 +2137,43 @@ private fun JsonElement.uniCookie(): String? {
     val data = obj["data"] as? JsonObject ?: return null
     (data["cookie"] as? JsonPrimitive)?.contentOrNull?.let { if (it.isNotBlank()) return it }
     return null
+}
+
+private enum class QrStatusKind {
+    WAITING,
+    SCANNED,
+    SUCCESS,
+    EXPIRED,
+    UNKNOWN
+}
+
+private fun resolveQrStatus(resp: JsonElement?): QrStatusKind {
+    if (resp == null) return QrStatusKind.UNKNOWN
+    val obj = resp as? JsonObject
+    val data = obj?.get("data") as? JsonObject
+
+    val code = (obj?.get("code") as? JsonPrimitive)?.intOrNull
+        ?: (data?.get("code") as? JsonPrimitive)?.intOrNull
+    val status = (obj?.get("status") as? JsonPrimitive)?.intOrNull
+        ?: (data?.get("status") as? JsonPrimitive)?.intOrNull
+    val statusStr = (obj?.get("status") as? JsonPrimitive)?.contentOrNull?.uppercase()
+        ?: (data?.get("status") as? JsonPrimitive)?.contentOrNull?.uppercase()
+        ?: (obj?.get("state") as? JsonPrimitive)?.contentOrNull?.uppercase()
+        ?: (data?.get("state") as? JsonPrimitive)?.contentOrNull?.uppercase()
+
+    if (code == 803 || status == 803 || status == 2 || status == 4 ||
+        statusStr in setOf("SUCCESS", "CONFIRMED", "LOGGED_IN", "FINISH") ||
+        (!resp.uniCookie().isNullOrBlank() && (code == 200 || code == 0))) {
+        return QrStatusKind.SUCCESS
+    }
+    if (code == 802 || status == 802 || status == 1 || statusStr in setOf("SCANNED", "WAITING_CONFIRM")) {
+        return QrStatusKind.SCANNED
+    }
+    if (code == 800 || status == 800 || status == 3 || statusStr in setOf("EXPIRED", "TIMEOUT")) {
+        return QrStatusKind.EXPIRED
+    }
+    if (code == 801 || status == 801 || status == 0 || statusStr in setOf("WAITING", "WAITING_SCAN")) {
+        return QrStatusKind.WAITING
+    }
+    return QrStatusKind.UNKNOWN
 }

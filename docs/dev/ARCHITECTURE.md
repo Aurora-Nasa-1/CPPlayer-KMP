@@ -31,7 +31,7 @@
 负责全部音乐领域能力的跨平台实现。**规则：严禁包含任何 UI 代码（Compose 组件、Screen、ScreenModel 等）。**
 
 - `api/`：音乐 API 契约常量、`MusicApiService` 容灾调度。
-- `provider/`：音源插件系统（`BackendProvider`、`ModuleManifest`、`ProviderManager`、`ModuleManager`，支持 HTTP / Binary / JNI）。
+- `provider/`：音源插件系统（`BackendProvider`、`ModuleManifest`、`ProviderManager`、`ModuleManager`，支持 HTTP / Binary / JNI；Android 端不支持独立 binary，原生模块规范提升至运行 `.so`）。
 - `lyrics/` / `lyricsplugin/`：歌词引擎与 Lyrico 歌词插件系统。
 - `cache/`：`CachedMusicApiService`（读透缓存 + 写失效 + 多 Provider 容灾）、`Fingerprinter`、`ApiCache`。
 - `playback/`：`PlaybackController`（播放队列、seek、切歌、歌词同步）、`PlatformPlayer` 抽象。

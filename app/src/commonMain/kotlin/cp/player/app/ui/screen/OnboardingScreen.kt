@@ -100,8 +100,8 @@ class OnboardingScreen(private val replay: Boolean = false) : Screen {
                 val result = withContext(Dispatchers.IO) { AppModel.importModule(zipPath) }
                 isImporting = false
                 importMessage = when (result) {
-                    is ImportResult.Activated -> "已导入并自动激活 ${result.provider.name}"
-                    is ImportResult.Loaded -> "已导入 ${result.provider.name}（当前仍使用 ${activeProvider?.name ?: "无"}）"
+                    is ImportResult.Activated -> if (result.isUpdate) "已自动更新并激活 ${result.provider.name}" else "已导入并自动激活 ${result.provider.name}"
+                    is ImportResult.Loaded -> if (result.isUpdate) "已自动更新 ${result.provider.name}（当前仍使用 ${activeProvider?.name ?: "无"}）" else "已导入 ${result.provider.name}（当前仍使用 ${activeProvider?.name ?: "无"}）"
                     is ImportResult.Failed -> result.message
                 }
             }

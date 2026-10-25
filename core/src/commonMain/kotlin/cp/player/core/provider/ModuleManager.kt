@@ -2,6 +2,7 @@ package cp.player.core.provider
 
 import cp.player.core.util.PlatformContext
 import cp.player.core.util.PlatformSupport
+import cp.player.core.util.PlatformInfo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -78,16 +79,28 @@ class ModuleManager(
         }
     }
 
+    data class ModuleImportSuccess(
+        val provider: BackendProvider,
+        val isUpdate: Boolean,
+        val replacedProviderId: String? = null,
+    )
+
     /** 导入 zip 模块包。 */
-    fun importModule(zipPath: String): Boolean = importZip(zipPath, expectedId = null)
+    fun importModule(zipPath: String): Boolean = importZip(zipPath, expectedId = null) != null
 
     /**
      * 用 zip 模块包**更新**已有模块：包内 manifest.id 必须与 [targetId] 一致，
      * 否则拒绝 —— 防止把 A 模块的包覆盖到 B 的目录上。
      */
-    fun updateModule(zipPath: String, targetId: String): Boolean = importZip(zipPath, expectedId = targetId)
+    fun updateModule(zipPath: String, targetId: String): Boolean = importZip(zipPath, expectedId = targetId) != null
 
-    private fun importZip(zipPath: String, expectedId: String?): Boolean {
+    /** 导入 zip 模块包，返回具体导入结果（包含准确的 Provider 实例、是否更新、被替换的旧 ID）。 */
+    fun importModuleDetails(zipPath: String): ModuleImportSuccess? = importZip(zipPath, expectedId = null)
+
+    /** 更新已有模块，返回具体更新结果。 */
+    fun updateModuleDetails(zipPath: String, targetId: String): ModuleImportSuccess? = importZip(zipPath, expectedId = targetId)
+
+    private fun importZip(zipPath: String, expectedId: String?): ModuleImportSuccess? {
         lastLoadError = null
         // tempDir 提到 try 外：catch 分支必须能清理它 —— 解压中途失败（zip-slip / 磁盘满）
         // 会留下「已解压出 manifest.json」的半成品目录，被下次 scanAndLoadAll 当成真实模块。
@@ -96,13 +109,13 @@ class ModuleManager(
             if (!PlatformSupport.unzipTo(zipPath, tempDir)) {
                 PlatformSupport.deleteRecursively(tempDir)
                 lastLoadError = "解压失败"
-                return false
+                return null
             }
             val manifestPath = "$tempDir/manifest.json"
             if (!PlatformSupport.exists(manifestPath)) {
                 PlatformSupport.deleteRecursively(tempDir)
                 lastLoadError = "模块包中缺少 manifest.json"
-                return false
+                return null
             }
             val manifestText = PlatformSupport.readTextFile(manifestPath) ?: ""
             val manifest = json.decodeFromString(ModuleManifest.serializer(), manifestText)
@@ -114,14 +127,30 @@ class ModuleManager(
                 if (actual == null || !actual.equals(expected, ignoreCase = true)) {
                     PlatformSupport.deleteRecursively(tempDir)
                     lastLoadError = if (actual == null) "无法读取模块包以校验完整性" else "模块包完整性校验失败（sha256 不匹配）"
-                    return false
+                    return null
                 }
             }
-            if (expectedId != null && manifest.id != expectedId) {
+
+            // 自动检查同 ID 或同名模块：优先按 ID，其次按音源显示名称匹配已安装模块
+            val existingById = providers[manifest.id]
+            val existingByName = providers.values.find {
+                it.name.trim().equals(manifest.name.trim(), ignoreCase = true)
+            }
+            val targetExisting = if (expectedId != null) {
+                providers[expectedId] ?: existingById ?: existingByName
+            } else {
+                existingById ?: existingByName
+            }
+
+            if (expectedId != null && manifest.id != expectedId && targetExisting?.id != expectedId) {
                 PlatformSupport.deleteRecursively(tempDir)
                 lastLoadError = "模块包不匹配：包内 id 为 ${manifest.id}，无法更新 $expectedId"
-                return false
+                return null
             }
+
+            val isUpdate = targetExisting != null
+            val replacedId = targetExisting?.id
+
             // API 版本闸门：包声明的最低宿主版本高于本宿主 ⇒ 拒绝，且必须**明确说原因**。
             // 放行的话会以旧代码执行新契约，失败点落在插件内部，用户只会看到「这个音源坏了」。
             // 判据只用 minHostApiVersion（不是 apiVersion）—— 见 ModuleManifest 的 KDoc。
@@ -129,29 +158,57 @@ class ModuleManager(
                 PlatformSupport.deleteRecursively(tempDir)
                 lastLoadError = "此音源需要更高版本的应用" +
                     "（需要 API ${manifest.resolvedMinHostApiVersion}，当前支持 ${HOST_PROVIDER_API_VERSION}）"
-                return false
+                return null
             }
+
+            // 若更新已有模块，先停止旧 Provider 的服务进程以释放文件锁（尤其是 Windows 上的 dll / exe）
+            if (targetExisting != null) {
+                runCatching { targetExisting.stopServer() }
+            }
+
+            // 若音源重名但 ID 变更（例如 kugou-music-rs 更新为 kugou），清理旧 ID 目录及缓存注册
+            if (targetExisting != null && targetExisting.id != manifest.id) {
+                val oldDir = "$modulesDir/${targetExisting.id}"
+                if (PlatformSupport.exists(oldDir)) {
+                    PlatformSupport.deleteRecursively(oldDir)
+                }
+                providers.remove(targetExisting.id)
+            }
+
             val targetDir = "$modulesDir/${manifest.id}"
             // 旧目录清理失败（典型：Windows 上活跃 jni 模块的 dll 被占用）必须中止，
             // 否则 moveDir 语义未定义、旧文件半新半旧。
             if (PlatformSupport.exists(targetDir) && !PlatformSupport.deleteRecursively(targetDir)) {
                 PlatformSupport.deleteRecursively(tempDir)
                 lastLoadError = "无法清理旧版本目录（模块文件可能正被占用）"
-                return false
+                return null
             }
             if (!PlatformSupport.moveDir(tempDir, targetDir)) {
                 PlatformSupport.deleteRecursively(tempDir)
                 lastLoadError = "移动临时目录失败"
-                return false
+                return null
             }
             val ok = loadModuleIfExists(targetDir)
-            if (ok) updateProvidersFlow() else PlatformSupport.deleteRecursively(targetDir)
-            ok
+            if (!ok) {
+                PlatformSupport.deleteRecursively(targetDir)
+                return null
+            }
+            updateProvidersFlow()
+            val loadedProvider = providers[manifest.id]
+            if (loadedProvider == null) {
+                lastLoadError = "模块加载成功但未登记 Provider [${manifest.id}]"
+                return null
+            }
+            ModuleImportSuccess(
+                provider = loadedProvider,
+                isUpdate = isUpdate,
+                replacedProviderId = if (isUpdate) replacedId else null,
+            )
         } catch (e: Exception) {
             // 任何异常都不能把半成品暂存目录留在 modules 目录里（同上）。
             PlatformSupport.deleteRecursively(tempDir)
             lastLoadError = "导入失败: ${e.message}"
-            false
+            null
         }
     }
 
@@ -174,7 +231,11 @@ class ModuleManager(
             if (provider == null) {
                 val reason = when (manifest.type) {
                     "jni" -> "缺少与当前平台 ABI 匹配的 native 库文件"
-                    "binary" -> "二进制入口文件不存在或与当前平台 ABI 不匹配"
+                    "binary" -> if (PlatformInfo.isAndroid) {
+                        "Android 端不支持独立二进制可执行文件 (binary)，需规范提升至与当前架构匹配的 .so 动态库"
+                    } else {
+                        "二进制入口文件不存在或与当前平台 ABI 不匹配"
+                    }
                     else -> "不支持的模块类型: ${manifest.type}"
                 }
                 lastLoadError = "Provider 创建失败 [${manifest.id}]: $reason"

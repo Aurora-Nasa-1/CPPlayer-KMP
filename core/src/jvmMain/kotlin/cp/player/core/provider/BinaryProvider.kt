@@ -1,8 +1,11 @@
 package cp.player.core.provider
 
 import cp.player.core.util.PlatformContext
+import cp.player.core.util.PlatformInfo
 import cp.player.core.util.PlatformSupport
 import cp.player.core.util.createHttpClient
+import cp.player.core.util.defaultSettingsStorage
+import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
@@ -15,7 +18,12 @@ import kotlinx.serialization.json.put
 import java.io.File
 
 /**
- * 独立可执行文件 Provider（JVM 共享：Android + Desktop）。
+ * 独立可执行文件 Provider（仅适用于 Desktop 端：Windows / Linux / macOS）。
+ *
+ * ⚠️ **平台限制与规范说明（Android 端）**：
+ * Android 系统的安全模型（W^X、`noexec`）严格禁止在应用私有数据目录执行二进制程序，
+ * `ProcessBuilder` / `exec` 均会被系统拦截并报 `Permission denied`。
+ * 因此 Android 端不支持 binary，规范已全面提升至运行 `.so`（通过 [JniProvider] 加载）。
  *
  * - 启动：[ProcessBuilder] 运行二进制 `--port <port>`
  * - 通信：HTTP POST 到 `http://127.0.0.1:port/api/<method>`
@@ -32,7 +40,9 @@ class BinaryProvider(
     override val targetAppPackage: String? = null,
     override val loginMethods: List<String>? = null,
     override val capabilities: List<String>? = null,
-    override val apiVersion: Int = 1
+    override val apiVersion: Int = 1,
+    override val contract: String? = null,
+    override val settingsSchema: List<ProviderSettingItemSchema>? = null
 ) : BackendProvider {
 
     override val type: ProviderType = ProviderType.BINARY
@@ -40,21 +50,28 @@ class BinaryProvider(
     private var process: Process? = null
     private var port: Int = 3000
     private val client = createHttpClient()
-    private var loadError: String? = null
+    override var loadError: String? = null
+    private val configStorage by lazy { defaultSettingsStorage("provider_config_$id") }
 
     init {
-        val file = File(binaryPath)
-        if (!file.exists()) {
-            loadError = "二进制文件不存在: $binaryPath"
+        if (PlatformInfo.isAndroid) {
+            loadError = "Android 端不支持运行独立二进制可执行文件 (binary)，规范已提升至运行 .so 原生库"
+        } else {
+            val file = File(binaryPath)
+            if (!file.exists()) {
+                loadError = "二进制文件不存在: $binaryPath"
+            }
         }
     }
 
     override fun isReady(): Boolean = loadError == null
 
-    /** 获取加载失败的错误信息 */
-    fun getLoadError(): String? = loadError
-
     override fun startServer(context: PlatformContext, port: Int) {
+        if (PlatformInfo.isAndroid) {
+            val err = "Android 端不支持运行独立二进制可执行文件 (binary)，规范已提升至运行 .so 原生库"
+            loadError = err
+            throw IllegalStateException(err)
+        }
         if (loadError != null) throw IllegalStateException("Binary not ready: $loadError")
         this.port = port
         val file = File(binaryPath)
@@ -85,7 +102,12 @@ class BinaryProvider(
     }
 
     override fun stopServer() {
-        process?.destroy()
+        process?.let { proc ->
+            try {
+                proc.destroyForcibly()
+                proc.waitFor(500, java.util.concurrent.TimeUnit.MILLISECONDS)
+            } catch (ignored: Throwable) {}
+        }
         process = null
     }
 
@@ -110,14 +132,43 @@ class BinaryProvider(
     }
 
     override fun callApi(method: String, params: Map<String, String>): String {
-        if (loadError != null) return """{"code": 500, "msg": "Binary not ready: $loadError"}"""
+        if (loadError != null && process == null) return """{"code": 500, "msg": "Binary not ready: $loadError"}"""
+        if (process != null && !process!!.isAlive) {
+            val exitCode = runCatching { process?.exitValue() }.getOrNull()
+            println("[BinaryProvider-$id] 子进程已退出 (exitCode=$exitCode)，尝试自愈重启...")
+            try {
+                startServer(PlatformContext(), port)
+            } catch (e: Throwable) {
+                return """{"code": 500, "msg": "Binary exited ($exitCode) and restart failed: ${e.message?.replace("\"", "\\\"")}"}"""
+            }
+        }
+        val configJson = settingsSchema?.let { schema ->
+            buildJsonObject {
+                schema.forEach { item ->
+                    val value = configStorage.getString(item.key) ?: item.default
+                    if (value != null) {
+                        put(item.key, JsonPrimitive(value))
+                    }
+                }
+            }
+        }
         val body = buildJsonObject {
+            settingsSchema?.forEach { item ->
+                val value = configStorage.getString(item.key) ?: item.default
+                if (value != null) put(item.key, JsonPrimitive(value))
+            }
             params.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
+            if (configJson != null && configJson.isNotEmpty()) {
+                put("config", configJson)
+            }
         }.toString()
         return try {
             runBlocking {
                 val resp = client.post("http://127.0.0.1:$port/api/$method") {
                     contentType(ContentType.Application.Json)
+                    if (configJson != null && configJson.isNotEmpty()) {
+                        header("X-Provider-Config", configJson.toString())
+                    }
                     setBody(body)
                 }
                 resp.bodyAsText()
@@ -128,6 +179,19 @@ class BinaryProvider(
     }
 
     override fun analyzeAudio(path: String): String = """{"code": 500}"""
+
+    override fun getDiagnostics(): Map<String, String> = buildMap {
+        put("id", id)
+        put("type", "BINARY")
+        put("binaryPath", binaryPath)
+        put("port", port.toString())
+        val p = process
+        put("running", (p?.isAlive == true).toString())
+        if (p != null && !p.isAlive) {
+            put("exitCode", runCatching { p.exitValue().toString() }.getOrDefault("unknown"))
+        }
+        loadError?.let { put("loadError", it) }
+    }
 
     /** 停掉子进程并释放 Ktor 客户端（连接池 + 后台线程）。 */
     override fun close() {

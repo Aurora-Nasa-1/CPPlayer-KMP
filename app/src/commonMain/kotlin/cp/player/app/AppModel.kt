@@ -84,15 +84,18 @@ object AppModel {
     /** 后端状态流（UI 渲染决策用——NoProvider → Setup，Ready → Main）。 */
     val backendState: StateFlow<BackendState> get() = backend.stateFlow
 
+    private val fallbackActiveProviderFlow = MutableStateFlow<BackendProvider?>(null)
+
     /** 当前活跃 Provider 流（顶部标题/登录页等）。 */
-    val activeProviderFlow: StateFlow<BackendProvider?> get() = backend.activeProviderFlow
+    val activeProviderFlow: StateFlow<BackendProvider?>
+        get() = runCatching { backend.activeProviderFlow }.getOrDefault(fallbackActiveProviderFlow)
 
     /**
      * 判断当前活跃音源是否支持某项能力（[cp.player.core.provider.ProviderCapability]）。
      * 若未加载音源或音源未显式声明能力，保守返回 true；若音源声明了能力，以声明为准。
      */
     fun activeProviderSupports(capability: String): Boolean =
-        backend.activeProvider()?.isFeatureAvailable(capability) ?: true
+        activeProvider()?.isFeatureAvailable(capability) ?: true
 
     /**
      * 「音源代际」：每次**用户主动**切换音源成功后 +1。
@@ -201,7 +204,7 @@ object AppModel {
     val sleepAfterTrack: Int get() = PlaybackController.SLEEP_AFTER_TRACK
 
     /** 当前活跃 Provider 唯一 ID（无活跃时返回 "default"）。 */
-    fun activeProviderId(): String = backend.activeProviderId()
+    fun activeProviderId(): String = runCatching { backend.activeProviderId() }.getOrDefault("default")
 
     val health: HealthMonitor get() = backend.health
 
@@ -1435,6 +1438,7 @@ object AppModel {
      */
     fun refreshUserProfile() {
         profileRefreshJob?.cancel()
+        _userProfile.value = null
         profileRefreshJob = modelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             refreshUserProfileAwait()
         }
@@ -1454,10 +1458,15 @@ object AppModel {
             val data = unwrapLoginStatusData(root) ?: return@runCatching null
             val prof = (data["profile"] as? kotlinx.serialization.json.JsonObject)
                 ?: (data["account"] as? kotlinx.serialization.json.JsonObject)
+                ?: data
             UserProfile(
                 uid = uid,
-                nickname = (prof?.get("nickname") as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "",
-                avatarUrl = (prof?.get("avatarUrl") as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "",
+                nickname = (prof["nickname"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                    ?: (prof["name"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                    ?: (prof["userName"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "",
+                avatarUrl = (prof["avatarUrl"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                    ?: (prof["avatar"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                    ?: (prof["headImg"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "",
             )
         }.getOrNull()
         val previousUid = _userProfile.value?.uid
@@ -1715,6 +1724,9 @@ object AppModel {
                         put("album", kotlinx.serialization.json.JsonPrimitive(t.album ?: ""))
                         put("coverUrl", kotlinx.serialization.json.JsonPrimitive(t.coverUrl ?: ""))
                         put("durationMs", kotlinx.serialization.json.JsonPrimitive(t.durationMs))
+                        if (!t.originalMediaId.isNullOrBlank()) {
+                            put("originalMediaId", kotlinx.serialization.json.JsonPrimitive(t.originalMediaId))
+                        }
                     })
                 }
             }
@@ -1741,6 +1753,7 @@ object AppModel {
                     coverUrl = str("coverUrl").ifBlank { null },
                     durationMs = (obj["durationMs"] as? kotlinx.serialization.json.JsonPrimitive)
                         ?.let { runCatching { it.content.toLong() }.getOrNull() } ?: 0L,
+                    originalMediaId = str("originalMediaId").ifBlank { null },
                 )
             }
         }.getOrDefault(emptyList())
@@ -2531,11 +2544,16 @@ object AppModel {
 
     fun availableProviders(): List<BackendProvider> = backend.getAvailableProviders()
 
-    fun activeProvider(): BackendProvider? = backend.activeProvider()
+    fun activeProvider(): BackendProvider? = runCatching { backend.activeProvider() }.getOrNull()
 
     fun switchProvider(provider: BackendProvider): BackendResult<Unit> {
         val result = backend.switchProvider(provider)
-        if (result is BackendResult.Success) bumpSourceGeneration()
+        if (result is BackendResult.Success) {
+            bumpSourceGeneration()
+            if (isolationSwitchAccount()) {
+                refreshUserProfile()
+            }
+        }
         return result
     }
 
@@ -2558,21 +2576,62 @@ object AppModel {
         return result.isSuccess
     }
 
-    /** 导入模块，自动激活（此前无活跃时），返回 [ImportResult]。 */
+    fun migrateProviderData(oldId: String?, newId: String) {
+        if (oldId.isNullOrBlank() || oldId == newId) return
+        runCatching {
+            val oldCookie = cookieStorage.getCookie(oldId)
+            if (!oldCookie.isNullOrEmpty() && cookieStorage.getCookie(newId).isNullOrEmpty()) {
+                cookieStorage.saveCookie(newId, oldCookie)
+            }
+            val oldAccounts = settings.getString("saved_accounts_$oldId")
+            if (!oldAccounts.isNullOrEmpty() && settings.getString("saved_accounts_$newId").isNullOrEmpty()) {
+                settings.putString("saved_accounts_$newId", oldAccounts)
+            }
+            val oldActiveUid = settings.getString("active_account_$oldId")
+            if (!oldActiveUid.isNullOrEmpty() && settings.getString("active_account_$newId").isNullOrEmpty()) {
+                settings.putString("active_account_$newId", oldActiveUid)
+            }
+        }
+    }
+
+    /** 导入模块，自动检查同名/同 ID 自动更新，此前无活跃或更新当前活跃时自动激活，返回 [ImportResult]。 */
     fun importModule(zipPath: String): ImportResult {
         val result = backend.importModule(zipPath)
-        // 导入自动激活等价于一次用户切换：页面数据要跟着换源刷新。
-        if (result is ImportResult.Activated) bumpSourceGeneration()
+        when (result) {
+            is ImportResult.Activated -> {
+                migrateProviderData(result.replacedProviderId, result.provider.id)
+                bumpSourceGeneration()
+                if (isolationSwitchAccount()) {
+                    refreshUserProfile()
+                }
+            }
+            is ImportResult.Loaded -> {
+                migrateProviderData(result.replacedProviderId, result.provider.id)
+            }
+            is ImportResult.Failed -> Unit
+        }
         return result
     }
 
     /**
-     * 用 zip 包更新已安装模块（包内 manifest.id 必须与 [targetId] 一致），
+     * 用 zip 包更新已安装模块（支持包内 manifest.id 或名称匹配目标音源），
      * 更新活跃 Provider 时自动重新激活新实例，返回 [ImportResult]。
      */
     fun updateModule(zipPath: String, targetId: String): ImportResult {
         val result = backend.updateModule(zipPath, targetId)
-        if (result is ImportResult.Activated) bumpSourceGeneration()
+        when (result) {
+            is ImportResult.Activated -> {
+                migrateProviderData(result.replacedProviderId, result.provider.id)
+                bumpSourceGeneration()
+                if (isolationSwitchAccount()) {
+                    refreshUserProfile()
+                }
+            }
+            is ImportResult.Loaded -> {
+                migrateProviderData(result.replacedProviderId, result.provider.id)
+            }
+            is ImportResult.Failed -> Unit
+        }
         return result
     }
 
@@ -2581,7 +2640,17 @@ object AppModel {
         backend.exportModule(providerId, zipPath)
 
     /** 删除模块，返回 [BackendResult]。 */
-    fun deleteProvider(id: String): BackendResult<Unit> = backend.deleteModule(id)
+    fun deleteProvider(id: String): BackendResult<Unit> {
+        val wasActive = activeProviderId() == id
+        val result = backend.deleteModule(id)
+        if (result is BackendResult.Success && wasActive) {
+            bumpSourceGeneration()
+            if (isolationSwitchAccount()) {
+                refreshUserProfile()
+            }
+        }
+        return result
+    }
 
     val lastLoadError: String? get() = backend.lastLoadError
 }

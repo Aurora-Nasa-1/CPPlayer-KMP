@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -200,14 +201,14 @@ class ProviderManagementModel : ScreenModel {
             val result = withContext(Dispatchers.IO) { AppModel.importModule(zipPath) }
             busy.value = null
             message.value = when (result) {
-                is ImportResult.Activated -> "已导入并自动激活 ${result.provider.name}"
-                is ImportResult.Loaded -> "已导入 ${result.provider.name}（当前仍使用 ${AppModel.activeProvider()?.name ?: "无"}）"
+                is ImportResult.Activated -> if (result.isUpdate) "已自动更新并激活 ${result.provider.name}" else "已导入并自动激活 ${result.provider.name}"
+                is ImportResult.Loaded -> if (result.isUpdate) "已自动更新 ${result.provider.name}（当前仍使用 ${AppModel.activeProvider()?.name ?: "无"}）" else "已导入 ${result.provider.name}（当前仍使用 ${AppModel.activeProvider()?.name ?: "无"}）"
                 is ImportResult.Failed -> result.message
             }
         }
     }
 
-    /** 行菜单「更新」：用新 zip 包替换指定模块（包内 manifest.id 必须一致）。 */
+    /** 行菜单「更新」：用新 zip 包替换指定模块（支持按 ID 或按音源名称匹配）。 */
     fun updateModule(provider: BackendProvider, zipPath: String?) {
         if (zipPath == null) { message.value = "未选择文件"; return }
         screenModelScope.launch {
@@ -298,8 +299,10 @@ private fun ProviderRow(
     // API v1 是历史默认值，不显示（每个老包都是 v1，写出来只是噪声）；
     // 只有真正用了新契约的音源才值得占这段字。
     val apiText = if (provider.apiVersion > 1) " · API v${provider.apiVersion}" else ""
+    val hasConfig = !provider.settingsSchema.isNullOrEmpty()
+    val configText = if (hasConfig) " · 支持自定义配置" else ""
     val subtitle = buildString {
-        append("${provider.type.name} · v${provider.version} · ${provider.id}$apiText")
+        append("${provider.type.name} · v${provider.version} · ${provider.id}$apiText$configText")
         if (capabilityText.isNotEmpty()) append("\n$capabilityText")
     }
 
@@ -317,6 +320,24 @@ private fun ProviderRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (isActive) {
                     Icon(Icons.Filled.CheckCircle, "当前音源", tint = trailingTint)
+                    Spacer(Modifier.width(8.dp))
+                }
+                if (hasConfig && onOpenSettings != null) {
+                    IconButton(
+                        onClick = onOpenSettings,
+                        colors = IconButtonDefaults.iconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ),
+                        modifier = Modifier.size(40.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.Tune,
+                            contentDescription = "音源配置 ${provider.name}",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(6.dp))
                 }
                 // 更多按钮样式对齐歌曲列表的 SongItem：40dp 圆形、surfaceContainerHigh 底。
                 // 按钮自带头色底座，图标统一用 onSurfaceVariant，不再随行高亮变色。

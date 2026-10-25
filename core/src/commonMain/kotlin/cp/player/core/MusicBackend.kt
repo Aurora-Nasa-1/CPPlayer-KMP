@@ -31,7 +31,9 @@ import cp.player.core.integration.createIntegrationDescriptorWriter
 import cp.player.core.integration.createIntegrationRoutes
 import cp.player.core.local.LocalFavorites
 import cp.player.core.local.LocalMediaSource
+import cp.player.core.local.LocalPlaylistsStore
 import cp.player.core.local.LocalScanSettingsStore
+import cp.player.core.local.NoopLocalPlaylistsStore
 import cp.player.core.local.ScanProgress
 import cp.player.core.local.createLocalMediaSource
 import cp.player.core.media.LocalMediaItem
@@ -278,7 +280,7 @@ class MusicBackend private constructor(
      * 同样走 lazy：桌面实现构造期会创建 `~/.cpplayer/stream-cache/`，
      * 不在 [init] 里提前落地 —— 测试与「从没放过歌」的会话不该平白多一个目录。
      */
-    private val streamLocalizerLazy = lazy { createStreamLocalizer() }
+    private val streamLocalizerLazy = lazy { createStreamLocalizer(context) }
 
     /**
      * AMLL TTML 歌词客户端（惰性创建）。
@@ -722,14 +724,14 @@ class MusicBackend private constructor(
     /** 当前活跃 Provider 流（响应式，UI 顶部标题/登录页等用）。 */
     val activeProviderFlow: StateFlow<BackendProvider?> = providerManager.currentProviderFlow
 
-    /** 当前活跃 Provider（便捷快照；变更请使用 [stateFlow]）。 */
-    fun activeProvider(): BackendProvider? = state.activeProvider
+    /** 当前活跃 Provider（便捷快照；变更请使用 [stateFlow] 或 [activeProviderFlow]）。 */
+    fun activeProvider(): BackendProvider? = providerManager.currentProvider ?: state.activeProvider
 
     /** Provider 名称（UI 标题用，无活跃时返回占位串）。 */
-    fun activeProviderName(): String = activeProvider()?.name ?: "未选择音源"
+    fun activeProviderName(): String = providerManager.getCurrentProviderName()
 
     /** Provider 唯一 ID（设置持久化用，无活跃时返回 "default"）。 */
-    fun activeProviderId(): String = activeProvider()?.id ?: "default"
+    fun activeProviderId(): String = providerManager.getCurrentProviderId()
 
     /**
      * 导入 zip 模块包并**自动激活**（此前无活跃 Provider 时）。
@@ -741,42 +743,56 @@ class MusicBackend private constructor(
      * @return 导入结果（[ImportResult.Activated] / [ImportResult.Loaded] / [ImportResult.Failed]）
      */
     fun importModule(zipPath: String): ImportResult {
-        val ok = moduleManager.importModule(zipPath)
-        if (!ok) return ImportResult.Failed(moduleManager.lastLoadError ?: "导入失败")
-        val provider = moduleManager.getAvailableProviders().lastOrNull()
-            ?: return ImportResult.Failed("导入成功但未找到 Provider（异常）")
-        if (activeProvider() == null || !activeProvider()!!.isReady()) {
-            // 无活跃 Provider 或当前活跃不可用：自动激活（修复旧版"导入后仍显示未加载"的 bug）
-            val result = switchProviderInternal(provider, save = true)
-            return when (result) {
-                is BackendResult.Success -> ImportResult.Activated(provider)
-                is BackendResult.Error -> ImportResult.Failed(result.message)
-                is BackendResult.Unsupported -> ImportResult.Failed(result.message)
-            }
-        }
-        return ImportResult.Loaded(provider)
-    }
+        val details = moduleManager.importModuleDetails(zipPath)
+            ?: return ImportResult.Failed(moduleManager.lastLoadError ?: "导入失败")
+        val provider = details.provider
+        val isUpdate = details.isUpdate
+        val replacedId = details.replacedProviderId
 
-    /**
-     * 用 zip 模块包**更新**已安装模块（包内 manifest.id 必须与 [targetId] 一致）。
-     *
-     * 与 [importModule] 的差异：只接受 id 匹配的包，且更新的是**活跃** Provider 时
-     * 会自动重新激活新实例（旧引用已被替换，不重开的话播放会继续打到旧对象上）。
-     */
-    fun updateModule(zipPath: String, targetId: String): ImportResult {
-        val ok = moduleManager.updateModule(zipPath, targetId)
-        if (!ok) return ImportResult.Failed(moduleManager.lastLoadError ?: "更新失败")
-        val provider = moduleManager.getProvider(targetId)
-            ?: return ImportResult.Failed("更新成功但未找到 Provider（异常）")
         val active = activeProvider()
-        return if (active == null || active.id == targetId || !active.isReady()) {
-            when (val result = switchProviderInternal(provider, save = true)) {
-                is BackendResult.Success -> ImportResult.Activated(provider)
+        val shouldActivate = active == null ||
+            !active.isReady() ||
+            (isUpdate && (active.id == provider.id || active.id == replacedId))
+
+        return if (shouldActivate) {
+            val result = switchProviderInternal(provider, save = true)
+            when (result) {
+                is BackendResult.Success -> ImportResult.Activated(provider, isUpdate = isUpdate, replacedProviderId = replacedId)
                 is BackendResult.Error -> ImportResult.Failed(result.message)
                 is BackendResult.Unsupported -> ImportResult.Failed(result.message)
             }
         } else {
-            ImportResult.Loaded(provider)
+            ImportResult.Loaded(provider, isUpdate = isUpdate, replacedProviderId = replacedId)
+        }
+    }
+
+    /**
+     * 用 zip 模块包**更新**已安装模块（包内 manifest.id 或名称与 [targetId] 一致）。
+     *
+     * 与 [importModule] 的差异：指定了目标模块，更新的是**活跃** Provider 时
+     * 会自动重新激活新实例（旧引用已被替换，不重开的话播放会继续打到旧对象上）。
+     */
+    fun updateModule(zipPath: String, targetId: String): ImportResult {
+        val details = moduleManager.updateModuleDetails(zipPath, targetId)
+            ?: return ImportResult.Failed(moduleManager.lastLoadError ?: "更新失败")
+        val provider = details.provider
+        val replacedId = details.replacedProviderId
+
+        val active = activeProvider()
+        val shouldActivate = active == null ||
+            !active.isReady() ||
+            active.id == targetId ||
+            active.id == provider.id ||
+            active.id == replacedId
+
+        return if (shouldActivate) {
+            when (val result = switchProviderInternal(provider, save = true)) {
+                is BackendResult.Success -> ImportResult.Activated(provider, isUpdate = true, replacedProviderId = replacedId)
+                is BackendResult.Error -> ImportResult.Failed(result.message)
+                is BackendResult.Unsupported -> ImportResult.Failed(result.message)
+            }
+        } else {
+            ImportResult.Loaded(provider, isUpdate = true, replacedProviderId = replacedId)
         }
     }
 
@@ -884,7 +900,7 @@ class MusicBackend private constructor(
         return try {
             val ok = providerManager.switchProvider(provider, context, save = save)
             if (!ok) {
-                val msg = extractProviderError(provider) ?: "Provider 切换失败"
+                val msg = providerManager.lastSwitchError ?: extractProviderError(provider) ?: "Provider 切换失败"
                 _stateFlow.value = BackendState.Error(msg)
                 return BackendResult.Error(msg)
             }
@@ -909,11 +925,10 @@ class MusicBackend private constructor(
 
     /**
      * 尝试从 Provider 提取加载/启动失败的错误描述。
-     * JNI Provider 有 [JniProvider.getLoadError]；其他类型返回 null。
+     * 优先读取 [BackendProvider.loadError]；反射兜底旧版本。
      */
     private fun extractProviderError(provider: BackendProvider): String? {
-        // 反射避免 commonMain 直接依赖 androidMain 的 JniProvider
-        return runCatching {
+        return provider.loadError ?: runCatching {
             val m = provider.javaClass.getMethod("getLoadError")
             m.invoke(provider) as? String
         }.getOrNull()
@@ -959,8 +974,8 @@ class MusicBackend private constructor(
                     delegate = impl,
                     cache = effectiveCache,
                     providerManager = providerManager,
-                    allProviders = { moduleManager.getAvailableProviders() },
-                    config = cacheConfig,
+                    allProviders = { listOfNotNull(providerManager.currentProvider) },
+                    config = cacheConfig.copy(enableFallback = false),
                 )
                 val backend = MusicBackend(
                     context = context,
@@ -971,6 +986,19 @@ class MusicBackend private constructor(
                     cachedMusicApi = cached,
                     cache = effectiveCache,
                 )
+                // 监听 Provider 切换，同步后端状态机
+                providerManager.addOnProviderChangedListener { p ->
+                    if (p != null) {
+                        if (p.isReady()) {
+                            backend._stateFlow.value = BackendState.Ready(p)
+                        } else {
+                            val msg = backend.extractProviderError(p) ?: "Provider 服务未就绪"
+                            backend._stateFlow.value = BackendState.Error(msg)
+                        }
+                    } else if (moduleManager.getAvailableProviders().isEmpty()) {
+                        backend._stateFlow.value = BackendState.NoProvider
+                    }
+                }
                 // 初始化完成后计算终态
                 backend.stateFromInit()
                 // 读取持久化输出配置：playbackController 首次创建时据此决定是否静默
@@ -1012,6 +1040,7 @@ object NoopLocalMusicSource : LocalMediaSource {
     private val emptyScanning = MutableStateFlow(false)
     // 装配前不应该有人读写收藏 / 扫描规则；给空文件名的实例，读写都会被 runCatching 吞掉
     override val favorites: LocalFavorites = LocalFavorites("")
+    override val playlists: LocalPlaylistsStore = NoopLocalPlaylistsStore
     override val scanSettings: LocalScanSettingsStore = LocalScanSettingsStore("")
 
     override suspend fun scan(): Flow<ScanProgress> = emptyFlow()

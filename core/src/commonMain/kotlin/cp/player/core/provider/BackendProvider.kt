@@ -1,6 +1,7 @@
 package cp.player.core.provider
 
 import cp.player.core.util.PlatformContext
+import cp.player.core.util.defaultSettingsStorage
 
 /**
  * 音乐后端 Provider 接口（KMP 版）。
@@ -87,6 +88,72 @@ interface BackendProvider {
 
     /** 声明式自定义设置项规范（可选） */
     val settingsSchema: List<ProviderSettingItemSchema>? get() = null
+
+    /**
+     * 加载或运行时的错误信息（若有）。
+     * 正常就绪时为 null；失败时返回具体错误原因，供状态机与健康诊断界面展示。
+     */
+    val loadError: String? get() = null
+
+    /**
+     * Provider 运行诊断信息（键值对，可选）。
+     * 例如端口、子进程状态、库路径等，供健康与诊断界面查询。
+     */
+    fun getDiagnostics(): Map<String, String> = emptyMap()
+
+    /** 是否包含自定义配置项（根据 [settingsSchema] 判定） */
+    val hasCustomSettings: Boolean get() = !settingsSchema.isNullOrEmpty()
+
+    /**
+     * 获取当前音源持久化的所有自定义配置值（若用户未配置则取 schema 默认值）。
+     */
+    fun getCustomSettings(): Map<String, String> {
+        val schema = settingsSchema ?: return emptyMap()
+        val storage = defaultSettingsStorage("provider_config_$id")
+        return schema.associate { item ->
+            item.key to (storage.getString(item.key) ?: item.default.orEmpty())
+        }
+    }
+
+    /**
+     * 读取单个自定义配置项的值。
+     */
+    fun getCustomSetting(key: String): String? {
+        val storage = defaultSettingsStorage("provider_config_$id")
+        return storage.getString(key) ?: settingsSchema?.firstOrNull { it.key == key }?.default
+    }
+
+    /**
+     * 保存或更新单个自定义配置项。
+     */
+    fun updateCustomSetting(key: String, value: String) {
+        defaultSettingsStorage("provider_config_$id").putString(key, value)
+    }
+
+    /**
+     * 批量更新自定义配置项。
+     */
+    fun updateCustomSettings(settings: Map<String, String>) {
+        val storage = defaultSettingsStorage("provider_config_$id")
+        settings.forEach { (k, v) ->
+            storage.putString(k, v)
+        }
+    }
+
+    /**
+     * 重置所有自定义配置项为默认值。
+     */
+    fun resetCustomSettings() {
+        val schema = settingsSchema ?: return
+        val storage = defaultSettingsStorage("provider_config_$id")
+        schema.forEach { item ->
+            if (item.default != null) {
+                storage.putString(item.key, item.default)
+            } else {
+                storage.remove(item.key)
+            }
+        }
+    }
 
     /**
      * 判定当前 Provider 是否支持某特定能力。

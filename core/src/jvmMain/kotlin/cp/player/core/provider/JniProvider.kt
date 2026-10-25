@@ -2,26 +2,43 @@ package cp.player.core.provider
 
 import cp.player.core.util.PlatformContext
 import cp.player.core.util.PlatformSupport
+import cp.player.core.util.createHttpClient
+import cp.player.core.util.defaultSettingsStorage
+import io.ktor.client.HttpClient
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import java.io.File
 
-class JniProvider(
+open class JniProvider(
     override val id: String,
     override val name: String,
     override val version: String,
-    private val soPath: String,
+    protected val soPath: String,
     override val apiMap: Map<String, String>? = null,
     override val updateUrl: String? = null,
     override val targetAppPackage: String? = null,
     override val loginMethods: List<String>? = null,
     override val capabilities: List<String>? = null,
-    override val apiVersion: Int = 1
+    override val apiVersion: Int = 1,
+    override val contract: String? = null,
+    override val settingsSchema: List<ProviderSettingItemSchema>? = null
 ) : BackendProvider {
 
     override val type: ProviderType = ProviderType.JNI
     private var isLoaded = false
-    private var loadError: String? = null
+    override var loadError: String? = null
+        protected set
+    private var serverStarted = false
+    private var serverPort = 3000
+    private var httpClient: HttpClient? = null
+    private val configStorage by lazy { defaultSettingsStorage("provider_config_$id") }
 
     init {
         val soFile = File(soPath)
@@ -31,30 +48,28 @@ class JniProvider(
         }
     }
 
-    override fun isReady(): Boolean = loadError == null
-
-    fun getLoadError(): String? = loadError
+    open override fun isReady(): Boolean = loadError == null
 
     external fun startNativeServer(host: String, port: Int)
     external fun nativeCallApi(method: String, paramsJson: String): String
     external fun analyzeAudioFile(path: String): String
 
-    override fun startServer(context: PlatformContext, port: Int) {
+    open override fun startServer(context: PlatformContext, port: Int) {
         log("startServer 开始: soPath=$soPath, port=$port")
         loadNativeLibrary()
         if (!isLoaded) {
             log("startServer 失败: JNI 库加载失败: $loadError")
             throw IllegalStateException("JNI 库加载失败: $loadError")
         }
+        this.serverPort = port
         try {
             startNativeServer("127.0.0.1", port)
+            serverStarted = true
             log("JNI 服务启动成功: $soPath, port=$port")
         } catch (e: UnsatisfiedLinkError) {
-            // 库能 load、但方法找不到 —— 几乎总是模块的导出符号前缀与宿主包名不一致。
-            isLoaded = false
-            loadError = "JNI 服务启动崩溃: ${e.message} —— ${symbolMismatchHint("startNativeServer")}"
-            log(loadError!!)
-            throw e
+            // startNativeServer 在规范中为可选导出（部分模块仅提供 in-process nativeCallApi）。
+            // 如果 native 库未导出 startNativeServer，记录日志但不中断启动，后续 callApi 调用 nativeCallApi。
+            log("startNativeServer 未导出（可选）: ${e.message}，降级为直接 JNI 内存调用")
         } catch (e: Throwable) {
             isLoaded = false
             loadError = "JNI 服务启动崩溃: ${e.message}"
@@ -63,18 +78,58 @@ class JniProvider(
         }
     }
 
-    override fun stopServer() {
+    open override fun stopServer() {
         isLoaded = false
+        serverStarted = false
     }
 
-    override fun callApi(method: String, params: Map<String, String>): String {
+    private fun getOrCreateHttpClient(): HttpClient {
+        return httpClient ?: createHttpClient().also { httpClient = it }
+    }
+
+    private fun callApiViaHttp(method: String, body: String, configJsonStr: String?): String {
+        return try {
+            runBlocking {
+                val client = getOrCreateHttpClient()
+                val resp = client.post("http://127.0.0.1:$serverPort/api/$method") {
+                    contentType(ContentType.Application.Json)
+                    if (configJsonStr != null && configJsonStr.isNotEmpty()) {
+                        header("X-Provider-Config", configJsonStr)
+                    }
+                    setBody(body)
+                }
+                resp.bodyAsText()
+            }
+        } catch (e: Exception) {
+            errorJson("JNI HTTP fallback failed: ${e.message}")
+        }
+    }
+
+    open override fun callApi(method: String, params: Map<String, String>): String {
         if (!isLoaded) {
             log("callApi 被调用但 JNI 未加载: method=$method, loadError=$loadError")
             return errorJson("JNI not loaded: ${loadError ?: "unknown"}")
         }
+        val configJson = settingsSchema?.let { schema ->
+            buildJsonObject {
+                schema.forEach { item ->
+                    val value = configStorage.getString(item.key) ?: item.default
+                    if (value != null) {
+                        put(item.key, JsonPrimitive(value))
+                    }
+                }
+            }
+        }
         // 用 buildJsonObject 构造参数 JSON，自动转义 cookie 等值中的 " \ 等特殊字符
         val json = buildJsonObject {
+            settingsSchema?.forEach { item ->
+                val value = configStorage.getString(item.key) ?: item.default
+                if (value != null) put(item.key, JsonPrimitive(value))
+            }
             params.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
+            if (configJson != null && configJson.isNotEmpty()) {
+                put("config", configJson)
+            }
         }.toString()
         log("callApi -> nativeCallApi: method=$method, params={${maskParamsForLog(params)}}")
         return try {
@@ -83,10 +138,17 @@ class JniProvider(
             log("callApi <- nativeCallApi: method=$method, resultLen=${result.length}")
             result
         } catch (e: UnsatisfiedLinkError) {
-            isLoaded = false
-            loadError = "JNI 调用崩溃: ${e.message} —— ${symbolMismatchHint("nativeCallApi")}"
-            log(loadError!!)
-            errorJson(loadError!!)
+            if (serverStarted) {
+                // 如果该 .so 是由 binary 提升而来、通过 startNativeServer 启动了本地 HTTP 服务，
+                // 但未实现 nativeCallApi 符号，则降级走 HTTP 回环调用
+                log("nativeCallApi 未导出但本地服务已就绪，降级走 HTTP: $method")
+                callApiViaHttp(method, json, configJson?.toString())
+            } else {
+                isLoaded = false
+                loadError = "JNI 调用崩溃: ${e.message} —— ${symbolMismatchHint("nativeCallApi")}"
+                log(loadError!!)
+                errorJson(loadError!!)
+            }
         } catch (e: Throwable) {
             isLoaded = false
             loadError = "JNI 调用崩溃: ${e.message}"
@@ -95,7 +157,7 @@ class JniProvider(
         }
     }
 
-    override fun analyzeAudio(path: String): String {
+    open override fun analyzeAudio(path: String): String {
         if (!isLoaded) return errorJson("JNI not loaded: ${loadError ?: "unknown"}")
         return try {
             analyzeAudioFile(path)
@@ -194,6 +256,22 @@ class JniProvider(
         params.entries.joinToString(", ") { (k, v) ->
             if (k.lowercase() in SENSITIVE_PARAM_KEYS) "$k=***(${v.length})" else "$k=$v"
         }
+
+    open override fun getDiagnostics(): Map<String, String> = buildMap {
+        put("id", id)
+        put("type", "JNI")
+        put("soPath", soPath)
+        put("isLoaded", isLoaded.toString())
+        put("serverStarted", serverStarted.toString())
+        put("serverPort", serverPort.toString())
+        loadError?.let { put("loadError", it) }
+    }
+
+    open override fun close() {
+        stopServer()
+        httpClient?.close()
+        httpClient = null
+    }
 
     private companion object {
         /** 值等价于凭据的参数键，绝不落日志。 */

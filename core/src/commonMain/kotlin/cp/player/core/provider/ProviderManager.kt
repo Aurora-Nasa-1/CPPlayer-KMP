@@ -77,16 +77,25 @@ class ProviderManager(
      *
      * @param save 是否持久化用户选择（自动选择首模块时应传 false）
      */
+    var lastSwitchError: String? = null
+        private set
+
     fun switchProvider(provider: BackendProvider?, context: PlatformContext? = null, port: Int = DEFAULT_PORT, save: Boolean = true): Boolean {
-        if (provider?.id == currentProvider?.id) return true
-        if (provider != null && !provider.isReady()) return false
+        if (provider != null && provider === currentProvider && provider.isReady()) return true
+        if (provider != null && !provider.isReady()) {
+            lastSwitchError = provider.loadError ?: "音源未就绪"
+            return false
+        }
 
         val previousProvider = currentProvider
-        try { previousProvider?.stopServer() } catch (_: Throwable) {}
+        if (previousProvider !== provider) {
+            try { previousProvider?.stopServer() } catch (_: Throwable) {}
+        }
 
         if (provider != null && context != null) {
             val actualPort = PlatformSupport.findAvailablePort(port, MAX_PORT_ATTEMPTS)
             if (actualPort == null) {
+                lastSwitchError = "找不到可用端口 (尝试了 $MAX_PORT_ATTEMPTS 次)"
                 currentProvider = previousProvider
                 _currentProviderFlow.value = previousProvider
                 return false
@@ -95,6 +104,7 @@ class ProviderManager(
             try {
                 provider.startServer(context, actualPort)
             } catch (e: Throwable) {
+                lastSwitchError = provider.loadError ?: e.message ?: "startServer 启动失败"
                 currentProvider = previousProvider
                 _currentProviderFlow.value = previousProvider
                 return false
@@ -105,6 +115,7 @@ class ProviderManager(
         _currentProviderFlow.value = provider
         if (save && provider != null) settings.putString(KEY_LAST_PROVIDER_ID, provider.id)
         changeListeners.forEach { runCatching { it(provider) } }
+        lastSwitchError = null
         return true
     }
 

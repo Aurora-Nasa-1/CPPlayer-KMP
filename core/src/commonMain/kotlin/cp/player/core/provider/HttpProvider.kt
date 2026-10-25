@@ -46,14 +46,15 @@ class HttpProvider(
     override fun stopServer() {}
 
     override fun callApi(method: String, params: Map<String, String>): String {
-        val configJson = settingsSchema?.let { schema ->
+        val configJsonObject = settingsSchema?.let { schema ->
             buildJsonObject {
                 schema.forEach { item ->
                     val v = configStorage.getString(item.key) ?: item.default
                     if (v != null) put(item.key, JsonPrimitive(v))
                 }
-            }.toString()
+            }
         }
+        val configJson = configJsonObject?.toString()
 
         val body = buildJsonObject {
             // 先注入用户在音源配置项中的值（作为基础上下文）
@@ -63,6 +64,9 @@ class HttpProvider(
             }
             // 运行时实际调用的业务参数（覆盖同名字段）
             params.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
+            if (configJsonObject != null && configJsonObject.isNotEmpty()) {
+                put("config", configJsonObject)
+            }
         }.toString()
 
         return try {
@@ -83,6 +87,12 @@ class HttpProvider(
     }
 
     override fun analyzeAudio(path: String): String = """{"code": 500, "msg": "Not supported"}"""
+
+    override fun getDiagnostics(): Map<String, String> = mapOf(
+        "id" to id,
+        "type" to "HTTP",
+        "baseUrl" to baseUrl
+    )
 
     /** 释放 Ktor 客户端（连接池 + 后台线程）；Provider 重载 / 后端 reset 时不释放会持续泄漏。 */
     override fun close() {
