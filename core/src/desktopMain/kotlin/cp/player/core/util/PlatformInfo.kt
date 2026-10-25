@@ -1,6 +1,7 @@
 package cp.player.core.util
 
 actual object PlatformInfo {
+    actual val isAndroid: Boolean = false
     // Desktop JVM 仅运行 x86_64；声明顺序供模块入口解析参考
     actual val supportedAbis: List<String> = listOf("x86_64", "amd64", "x86")
 

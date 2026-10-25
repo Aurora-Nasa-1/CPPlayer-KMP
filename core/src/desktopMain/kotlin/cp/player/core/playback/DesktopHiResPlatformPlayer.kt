@@ -19,7 +19,9 @@ import java.util.logging.Logger
  *
  * 作为桌面端未来的专有付费高级功能或 Hi-Fi 发烧友特权模式。
  */
-class DesktopHiResPlatformPlayer : PlatformPlayer {
+class DesktopHiResPlatformPlayer(
+    private val localizer: StreamLocalizer = DesktopStreamLocalizer(),
+) : PlatformPlayer {
 
     companion object {
         private val logger = Logger.getLogger("DesktopHiResPlatformPlayer")
@@ -177,85 +179,21 @@ class DesktopHiResPlatformPlayer : PlatformPlayer {
             return url
         }
 
-        val cacheDir = java.io.File(System.getProperty("user.home"), ".cpplayer/stream-cache")
-        if (!cacheDir.exists()) cacheDir.mkdirs()
+        val cacheKey = metadata?.cacheKey?.takeIf { it.isNotBlank() } ?: url
 
-        val stem = metadata?.cacheKey?.let { sanitizeCacheKey(it) } ?: ("url_" + url.hashCode().toUInt().toString(16))
-
-        val existing = cacheDir.listFiles()?.firstOrNull { file ->
-            file.isFile && file.nameWithoutExtension == stem && file.length() > 64 * 1024 && !file.name.endsWith(".part")
-        }
-        if (existing != null) {
-            logger.info("Using cached local audio file: ${existing.absolutePath}")
-            return existing.absolutePath
+        val cached = localizer.cachedPath(cacheKey)
+        if (cached != null) {
+            logger.info("Using cached local audio file: $cached")
+            return cached
         }
 
-        return withContext(Dispatchers.IO) {
-            try {
-                val partFile = java.io.File(cacheDir, "$stem.part")
-                partFile.delete()
-
-                val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
-                    connectTimeout = 8000
-                    readTimeout = 15000
-                    instanceFollowRedirects = true
-                    headers.forEach { (k, v) -> setRequestProperty(k, v) }
-                }
-
-                if (conn.responseCode in 200..299) {
-                    conn.inputStream.use { input ->
-                        partFile.outputStream().use { output ->
-                            val buf = ByteArray(32 * 1024)
-                            var read: Int
-                            while (input.read(buf).also { read = it } != -1) {
-                                output.write(buf, 0, read)
-                            }
-                        }
-                    }
-                    val ext = detectAudioExtension(partFile)
-                    val targetFile = java.io.File(cacheDir, "$stem.$ext")
-                    partFile.renameTo(targetFile)
-                    logger.info("Stream successfully buffered to Hi-Res local file: ${targetFile.absolutePath}")
-                    targetFile.absolutePath
-                } else {
-                    url
-                }
-            } catch (t: Throwable) {
-                logger.warning("Failed buffering stream to local file: ${t.message}")
-                url
-            }
+        val meta = SongCacheMeta(title = metadata?.title, artist = metadata?.artist)
+        val localized = localizer.localize(url, cacheKey, headers, meta)
+        if (localized != null) {
+            logger.info("Stream successfully buffered to Hi-Res local file: $localized")
+            return localized
         }
-    }
-
-    private fun sanitizeCacheKey(key: String): String =
-        "stream_" + key.hashCode().toUInt().toString(16)
-
-    private fun detectAudioExtension(file: java.io.File): String {
-        if (!file.exists() || file.length() < 4) return "flac"
-        try {
-            val header = ByteArray(4)
-            file.inputStream().use { it.read(header) }
-            if (header[0] == 0x66.toByte() && header[1] == 0x4C.toByte() && header[2] == 0x61.toByte() && header[3] == 0x43.toByte()) {
-                return "flac"
-            }
-            if (header[0] == 0x44.toByte() && header[1] == 0x53.toByte() && header[2] == 0x44.toByte()) {
-                return "dsf"
-            }
-            if (header[0] == 0x46.toByte() && header[1] == 0x52.toByte() && header[2] == 0x4D.toByte() && header[3] == 0x38.toByte()) {
-                return "dff"
-            }
-            if (header[0] == 0x49.toByte() && header[1] == 0x44.toByte() && header[2] == 0x33.toByte()) {
-                return "mp3"
-            }
-            if (header[0] == 0xFF.toByte() && (header[1].toInt() and 0xE0) == 0xE0) {
-                return "mp3"
-            }
-            if (header[0] == 0x52.toByte() && header[1] == 0x49.toByte() && header[2] == 0x46.toByte() && header[3] == 0x46.toByte()) {
-                return "wav"
-            }
-        } catch (_: Throwable) {
-        }
-        return "flac"
+        return url
     }
 
     override fun play() {

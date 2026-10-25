@@ -42,16 +42,19 @@ import kotlinx.coroutines.launch
 /** Shared process player used by PlaybackController and MediaSessionService. */
 object SharedMedia3Player {
     /** 音频流磁盘缓存目录（位于 `cacheDir/media`，系统清理缓存时可能被回收）。 */
-    private const val CACHE_DIR_NAME = "media"
+    const val CACHE_DIR_NAME = "media"
 
     /** 磁盘缓存上限：512 MiB，按 LRU 淘汰。 */
-    private const val CACHE_SIZE_BYTES = 512L * 1024L * 1024L
+    const val CACHE_SIZE_BYTES = 512L * 1024L * 1024L
 
     @Volatile
     private var instance: ExoPlayer? = null
 
     @Volatile
     private var mediaCache: SimpleCache? = null
+
+    @Volatile
+    private var cacheIndex: StreamCacheIndex? = null
 
     /**
      * 音频流磁盘缓存。
@@ -67,6 +70,26 @@ object SharedMedia3Player {
             LeastRecentlyUsedCacheEvictor(CACHE_SIZE_BYTES),
             StandaloneDatabaseProvider(context.applicationContext),
         ).also { mediaCache = it }
+
+    @Synchronized
+    internal fun getIndex(context: android.content.Context): StreamCacheIndex =
+        cacheIndex ?: StreamCacheIndex(
+            File(File(context.cacheDir, CACHE_DIR_NAME), "index.json")
+        ).also { cacheIndex = it }
+
+    fun recordMetadata(context: android.content.Context, key: String, metadata: PlaybackMetadata?) {
+        val level = key.substringAfterLast('@', "").takeIf { it.isNotBlank() && it != key }
+        val mediaId = metadata?.id ?: if (level != null) key.substringBeforeLast('@') else null
+        getIndex(context).put(
+            key,
+            StreamCacheMetaRecord(
+                mediaId = mediaId,
+                qualityLevel = level,
+                title = metadata?.title,
+                artist = metadata?.artist,
+            )
+        )
+    }
 
     @Synchronized
     fun get(context: android.content.Context): ExoPlayer = instance ?: ExoPlayer.Builder(
@@ -307,6 +330,10 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
             }
             .setMediaMetadata(mediaMetadata ?: MediaMetadata.Builder().build())
             .build()
+        if (isRemote) {
+            val key = metadata?.cacheKey?.takeIf { it.isNotBlank() } ?: url
+            SharedMedia3Player.recordMetadata(appContext, key, metadata)
+        }
         val mediaSource = DefaultMediaSourceFactory(dataSource).createMediaSource(mediaItem)
 
         runOnMainThread {

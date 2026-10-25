@@ -1,14 +1,14 @@
 package cp.player.core.playback
 
 import cp.player.core.cache.stableHash64
+import cp.player.core.download.DownloadExecutor
+import cp.player.core.download.ResumeNotSupportedException
+import cp.player.core.download.defaultDownloadExecutor
+import cp.player.core.media.AudioMetadataReader
 import cp.player.core.util.DesktopDataDir
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -38,6 +38,7 @@ class DesktopStreamLocalizer(
      * 参数名保持 `maxCacheBytes` 是为了不动既有测试与调用点。
      */
     private val maxCacheBytes: Long = DEFAULT_MAX_CACHE_BYTES,
+    private val executor: DownloadExecutor = defaultDownloadExecutor(),
 ) : StreamLocalizer {
 
     /**
@@ -105,38 +106,34 @@ class DesktopStreamLocalizer(
         }
 
         val part = File(cacheDir, "$stem.part")
-        part.delete()
-        var expected = -1L
+        val resumeBytes = if (part.isFile && part.length() > 0L) part.length() else 0L
+
+        var finalTotal: Long? = null
         try {
-            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-                connectTimeout = CONNECT_TIMEOUT_MS
-                readTimeout = READ_TIMEOUT_MS
-                instanceFollowRedirects = true
-                headers.forEach { (k, v) -> setRequestProperty(k, v) }
+            val reqHeaders = headers.toMutableMap()
+            if (resumeBytes > 0L) {
+                reqHeaders["Range"] = "bytes=$resumeBytes-"
             }
             try {
-                if (conn.responseCode !in 200..299) return@withLock null
-                expected = conn.contentLengthLong
-                conn.inputStream.use { input ->
-                    part.outputStream().use { output ->
-                        val buf = ByteArray(BUFFER_BYTES)
-                        while (true) {
-                            // 每轮都查一次取消：后台落盘是**可被换曲取消**的任务，
-                            // 不查的话用户切歌后旧下载会一直跑到整曲下完，白占带宽。
-                            currentCoroutineContext().ensureActive()
-                            val n = input.read(buf)
-                            if (n < 0) break
-                            output.write(buf, 0, n)
-                        }
-                    }
+                executor.download(url, reqHeaders, part.absolutePath, resumeBytes) { _, total ->
+                    if (total != null) finalTotal = total
                 }
-            } finally {
-                runCatching { conn.disconnect() }
+            } catch (_: ResumeNotSupportedException) {
+                // 服务端不支持续传（返回 200 或 416）：清空 .part，重头下载
+                part.delete()
+                val retryHeaders = headers.filterKeys { !it.equals("Range", ignoreCase = true) }
+                executor.download(url, retryHeaders, part.absolutePath, 0L) { _, total ->
+                    if (total != null) finalTotal = total
+                }
             }
 
-            if (part.length() <= 0L) return@withLock null
+            if (!part.exists() || part.length() <= 0L) return@withLock null
             // 长度对不上 ⇒ 响应被截断，不能当缓存用。
-            if (expected > 0L && part.length() != expected) return@withLock null
+            val totalBytes = finalTotal
+            if (totalBytes != null && totalBytes > 0L && part.length() != totalBytes) {
+                part.delete()
+                return@withLock null
+            }
 
             val target = File(cacheDir, "$stem${extensionFor(part)}")
             target.delete()
@@ -145,11 +142,13 @@ class DesktopStreamLocalizer(
             recordMeta(target.name, cacheKey, meta)
             evictIfNeeded(keep = target)
             target.absolutePath
+        } catch (ce: CancellationException) {
+            // 切歌/换曲等结构化取消：保留已下载的 .part 供下次续传，重新抛出取消异常
+            throw ce
         } catch (_: Exception) {
+            // 失败退回流播放；若文件为空则清掉
+            if (part.length() <= 0L) part.delete()
             null
-        } finally {
-            // 无论成败都清掉半成品。
-            part.delete()
         }
     }
 
@@ -217,11 +216,26 @@ class DesktopStreamLocalizer(
         index.retainOnly(files.mapTo(mutableSetOf()) { it.name })
         return files
             .map { file ->
-                val record = index.metaOf(file.name)
+                var record = index.metaOf(file.name)
+                val inferredQuality = record?.qualityLevel ?: if (file.name.startsWith("stream_")) "hires" else null
+                // 兜底扫描：老缓存或未索引的音频（如历史留存的 stream_*.flac），尝试从文件音频标签提取歌名/歌手并回写索引
+                if (record?.title == null || (record.qualityLevel == null && inferredQuality != null)) {
+                    val tagInfo = AudioMetadataReader.read(file.absolutePath)
+                    if (tagInfo?.title != null || tagInfo?.artist != null || inferredQuality != null) {
+                        val updated = StreamCacheMetaRecord(
+                            mediaId = record?.mediaId,
+                            qualityLevel = inferredQuality,
+                            title = tagInfo?.title ?: record?.title,
+                            artist = tagInfo?.artist ?: record?.artist,
+                        )
+                        index.put(file.name, updated)
+                        record = updated
+                    }
+                }
                 SongCacheEntry(
                     id = file.name,
                     mediaId = record?.mediaId,
-                    qualityLevel = record?.qualityLevel,
+                    qualityLevel = record?.qualityLevel ?: inferredQuality,
                     title = record?.title,
                     artist = record?.artist,
                     bytes = file.length(),

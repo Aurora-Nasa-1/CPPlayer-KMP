@@ -8,7 +8,7 @@ package cp.player.core.util
  *
  * 通过 [androidContext] / 工厂在平台源集中访问真实上下文。
  */
-expect class PlatformContext {
+expect class PlatformContext() {
     /** 平台原始对象引用（Android: Context；Desktop: null） */
     val raw: Any?
 }

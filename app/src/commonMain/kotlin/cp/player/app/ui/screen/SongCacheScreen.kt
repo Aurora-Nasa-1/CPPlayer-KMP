@@ -74,7 +74,7 @@ private fun SongCacheContent(
 
     CpRouteScaffold(title = s.songCache.screenTitle, onBack = onBack) { pageModifier ->
         if (!state.loading && !state.supported) {
-            // 安卓走这一支：ExoPlayer 能定位 HTTP FLAC，本来就不落盘。
+            // 不支持音频缓存的平台走这一支。
             // 给一句明确解释，比显示「0 首 / 共 0 B」强 —— 后者会被当成 bug 来报。
             SettingsPage(pageModifier) {
                 SettingsNote(s.songCache.unsupported)

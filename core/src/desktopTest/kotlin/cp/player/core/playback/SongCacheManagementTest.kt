@@ -89,6 +89,19 @@ class SongCacheManagementTest {
     }
 
     @Test
+    fun `Hi-Res 遗留缓存自动推断音质档位`() = runBlocking {
+        val localizer = newLocalizer()
+        val legacy = File(cacheDir, "stream_abcd1234.flac")
+        legacy.writeBytes(flacBody(512))
+
+        val entries = localizer.entries()
+        assertEquals(1, entries.size)
+        val entry = entries.single()
+        assertEquals("stream_abcd1234.flac", entry.id)
+        assertEquals("hires", entry.qualityLevel)
+    }
+
+    @Test
     fun `entries 按最后访问时间从新到旧`() = runBlocking {
         val srv = start(flacBody(512))
         val localizer = newLocalizer()

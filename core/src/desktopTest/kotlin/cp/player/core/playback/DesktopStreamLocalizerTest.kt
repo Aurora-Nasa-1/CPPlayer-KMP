@@ -172,6 +172,26 @@ class DesktopStreamLocalizerTest {
         assertTrue(remaining.size <= 2, "超出上限时应按 LRU 淘汰：$remaining")
     }
 
+    @Test
+    fun `resumes from existing partial file when server supports range`() = runBlocking {
+        val flac = FLAC_HEADER + ByteArray(4096) { (it % 251).toByte() }
+        val srv = start(flac)
+        val localizer = newLocalizer()
+        val key = "cp_api://song/resume@lossless"
+
+        val safe = key.map { if (it.isLetterOrDigit() || it == '-' || it == '_') it else '_' }.joinToString("").take(96)
+        val stem = "$safe-${cp.player.core.cache.stableHash64(key)}"
+        val part = File(cacheDir, "$stem.part")
+        part.writeBytes(flac.copyOfRange(0, 1000))
+
+        val path = localizer.localize(srv.url(), key, emptyMap())
+        assertNotNull(path)
+        val file = File(path)
+        assertTrue(file.isFile)
+        assertEquals(flac.size.toLong(), file.length())
+        kotlin.test.assertFalse(part.exists(), "下载完成后临时 .part 文件必须被重命名")
+    }
+
     private companion object {
         /** 只用来让扩展名判定走到 `.flac` 分支，不需要是完整可解码的 FLAC。 */
         val FLAC_HEADER = "fLaC".toByteArray(Charsets.US_ASCII)
@@ -194,6 +214,18 @@ class DesktopStreamLocalizerTest {
                     exchange.sendResponseHeaders(status, -1)
                     exchange.close()
                     return@createContext
+                }
+                val range = exchange.requestHeaders.getFirst("Range")
+                if (range != null && range.startsWith("bytes=")) {
+                    val startOffset = range.removePrefix("bytes=").substringBefore('-').toIntOrNull() ?: 0
+                    if (startOffset in body.indices) {
+                        val endOffset = body.size - 1
+                        val len = body.size - startOffset
+                        exchange.responseHeaders.add("Content-Range", "bytes $startOffset-$endOffset/${body.size}")
+                        exchange.sendResponseHeaders(206, len.toLong())
+                        exchange.responseBody.use { it.write(body, startOffset, len) }
+                        return@createContext
+                    }
                 }
                 val declared = (body.size + declaredLengthOffset).toLong()
                 exchange.responseHeaders.add("Content-Type", "audio/mpeg") // 故意谎报，模拟上游

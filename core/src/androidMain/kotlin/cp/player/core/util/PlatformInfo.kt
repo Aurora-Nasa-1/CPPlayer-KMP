@@ -5,6 +5,7 @@ import android.os.Environment
 import java.io.File
 
 actual object PlatformInfo {
+    actual val isAndroid: Boolean = true
     actual val supportedAbis: List<String> = Build.SUPPORTED_ABIS.toList()
 
     actual fun modulesDirectory(context: PlatformContext): String {

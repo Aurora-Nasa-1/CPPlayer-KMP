@@ -10,6 +10,9 @@ import cp.player.core.util.PlatformContext
  */
 expect object PlatformInfo {
     /** 当前平台支持的 ABI 列表（按优先级） */
+    /** 是否运行于 Android 平台 */
+    val isAndroid: Boolean
+
     val supportedAbis: List<String>
 
     /**

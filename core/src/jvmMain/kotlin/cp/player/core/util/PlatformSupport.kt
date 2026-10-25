@@ -233,18 +233,60 @@ actual object PlatformSupport {
         false
     }
 
+    private fun entryPointCandidates(entryPoint: String): List<String> {
+        val candidates = linkedSetOf(entryPoint)
+        val base = entryPoint
+            .removeSuffix(".exe")
+            .removeSuffix(".dll")
+            .removeSuffix(".so")
+            .removeSuffix(".dylib")
+        if (base.isNotEmpty()) {
+            candidates.add(base)
+            candidates.add("$base.so")
+            candidates.add("lib$base.so")
+            candidates.add("lib${base.replace('-', '_')}.so")
+            candidates.add("${base.replace('-', '_')}.so")
+        }
+        return candidates.toList()
+    }
+
     actual fun resolveEntryPoint(moduleDir: String, entryPoint: String, supportedAbis: List<String>?): String {
         val dir = File(moduleDir)
-        // 多 ABI 格式：按平台 ABI 顺序查找
-        for (abi in PlatformInfo.supportedAbis) {
-            val abiFile = File(dir, "lib/$abi/$entryPoint")
-            if (abiFile.exists()) return abiFile.absolutePath
+        val candidates = entryPointCandidates(entryPoint)
+        val checkAbis = buildList {
+            addAll(PlatformInfo.supportedAbis)
+            if (supportedAbis != null) {
+                addAll(supportedAbis.intersect(PlatformInfo.supportedAbis.toSet()))
+            }
+        }.distinct()
+
+        // 1. 多 ABI 格式目录优先：lib/<abi>/<candidate>
+        for (abi in checkAbis) {
+            val abiDir = File(dir, "lib/$abi")
+            if (abiDir.isDirectory) {
+                for (cand in candidates) {
+                    val candFile = File(abiDir, cand)
+                    if (candFile.exists()) return candFile.absolutePath
+                }
+                // 在 Android 平台若无同名命中，探测该 ABI 目录下唯一的 .so 动态库（规范提升容错）
+                if (PlatformInfo.isAndroid) {
+                    val soFiles = abiDir.listFiles { f -> f.isFile && f.name.endsWith(".so") }
+                    if (soFiles != null && soFiles.size == 1) {
+                        return soFiles[0].absolutePath
+                    }
+                }
+            }
         }
-        // manifest 显式声明 ABI 时，取与平台 ABI 的交集优先匹配
-        if (supportedAbis != null) {
-            for (abi in supportedAbis.intersect(PlatformInfo.supportedAbis)) {
-                val abiFile = File(dir, "lib/$abi/$entryPoint")
-                if (abiFile.exists()) return abiFile.absolutePath
+
+        // 2. 模块根目录探测
+        for (cand in candidates) {
+            val candFile = File(dir, cand)
+            if (candFile.exists()) return candFile.absolutePath
+        }
+        if (PlatformInfo.isAndroid) {
+            val soFiles = dir.listFiles { f -> f.isFile && f.name.endsWith(".so") }
+            if (soFiles != null && soFiles.size == 1) {
+                return soFiles[0].absolutePath
             }
         }
         return File(dir, entryPoint).absolutePath

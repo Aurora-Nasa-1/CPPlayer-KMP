@@ -62,6 +62,9 @@ class JvmDownloadExecutor : DownloadExecutor {
 
         val statement = client.prepareGet(url) {
             headers.forEach { (key, value) -> header(key, value) }
+            if (resumeBytes > 0L && !headers.keys.any { it.equals(HttpHeaders.Range, ignoreCase = true) }) {
+                header(HttpHeaders.Range, "bytes=$resumeBytes-")
+            }
         }
         return statement.execute { resp ->
             when {

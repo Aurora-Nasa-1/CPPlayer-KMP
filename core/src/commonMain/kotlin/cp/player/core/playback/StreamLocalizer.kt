@@ -1,5 +1,7 @@
 package cp.player.core.playback
 
+import cp.player.core.util.PlatformContext
+
 /**
  * 落盘时一并记下的曲目信息，**仅供管理页展示**（不参与播放判定）。
  *
@@ -223,5 +225,5 @@ object NoOpStreamLocalizer : StreamLocalizer {
     // 管理面全部走接口默认值：stats() 的 capacityBytes = 0 ⇒ 管理 UI 整块隐藏。
 }
 
-/** 平台默认实现：桌面走真实下载，安卓是空实现。 */
-expect fun createStreamLocalizer(): StreamLocalizer
+/** 平台默认实现：桌面走真实下载，安卓管理 ExoPlayer 媒体缓存。 */
+expect fun createStreamLocalizer(context: PlatformContext = PlatformContext()): StreamLocalizer

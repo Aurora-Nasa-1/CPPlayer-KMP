@@ -4,6 +4,7 @@ import android.content.Context
 
 /** Android：包装 [Context]。 */
 actual class PlatformContext(val androidContext: Context? = null) {
+    actual constructor() : this(null)
     actual val raw: Any? = androidContext
 }
 
