@@ -10,8 +10,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -72,17 +74,32 @@ import kotlin.math.roundToInt
 fun PosterWallScreen(
     onBack: () -> Unit,
     onOpenPlayer: () -> Unit = {},
+    initialSource: String = "queue",
     modifier: Modifier = Modifier
 ) {
     val s = cpStrings()
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
     val playback by AppModel.playback.state.collectAsState()
+    val recentTracks by AppModel.recentTracksFlow.collectAsState()
 
     var queueSongs by remember { mutableStateOf<List<PosterSong>>(emptyList()) }
     var librarySongs by remember { mutableStateOf<List<PosterSong>>(emptyList()) }
     var likedSongs by remember { mutableStateOf<List<PosterSong>>(emptyList()) }
     var localSongs by remember { mutableStateOf<List<PosterSong>>(emptyList()) }
+    val recentSongs = remember(recentTracks) {
+        recentTracks.map { tr ->
+            PosterSong(
+                id = tr.id,
+                title = tr.name,
+                artist = tr.artist,
+                album = tr.album.orEmpty(),
+                coverUrl = tr.coverUrl,
+                durationMs = tr.durationMs,
+                sourceKind = "recent"
+            )
+        }
+    }
 
     // Observe queue
     LaunchedEffect(playback.queue) {
@@ -159,10 +176,12 @@ fun PosterWallScreen(
     }
 
     var infinite by rememberSaveable { mutableStateOf(false) }
+    var stacked by rememberSaveable { mutableStateOf(false) }
+    var stackLayoutSaved by rememberSaveable { mutableStateOf("") }
     var wallFullscreen by rememberSaveable { mutableStateOf(false) }
     var lyricTheater by rememberSaveable { mutableStateOf(false) }
 
-    var source by rememberSaveable { mutableStateOf("queue") }
+    var source by rememberSaveable { mutableStateOf(initialSource) }
     var query by rememberSaveable { mutableStateOf("") }
     var search by rememberSaveable { mutableStateOf(false) }
     var locateRequest by remember { mutableIntStateOf(0) }
@@ -176,6 +195,7 @@ fun PosterWallScreen(
 
     val sourceSongs = when (source) {
         "queue" -> queueSongs
+        "recent" -> if (recentSongs.isNotEmpty()) recentSongs else queueSongs
         "liked" -> if (likedSongs.isNotEmpty()) likedSongs else queueSongs
         "local" -> if (localSongs.isNotEmpty()) localSongs else queueSongs
         else -> if (librarySongs.isNotEmpty()) librarySongs else queueSongs
@@ -194,8 +214,17 @@ fun PosterWallScreen(
 
     val ready = dataset?.let { it.source == source && it.query == query } == true
     val items = if (ready) dataset?.items.orEmpty() else emptyList()
-    val geometry = remember(items.size, infinite) { PosterWallGeometry(items.size, infinite = infinite) }
-    val wall = rememberSaveable(source, query, saver = PosterWallState.Saver) { PosterWallState() }
+    val stackLayout = remember(items, stackLayoutSaved) { PosterStackLayout.resolve(items, stackLayoutSaved) }
+    val geometry = remember(items.size, infinite, stacked, stackLayout) {
+        PosterWallGeometry(
+            items.size,
+            infinite = infinite,
+            stacked = stacked,
+            stackGroups = if (stacked) stackLayout.indices(items) else null,
+            stackKeys = items.map { it.stackKey }
+        )
+    }
+    val wall = rememberSaveable(source, query, stacked, saver = PosterWallState.Saver) { PosterWallState() }
 
     val currentIndex = remember(items, currentSongId, queueIndex, source) {
         if (source == "queue") {
@@ -203,6 +232,33 @@ fun PosterWallScreen(
         } else {
             items.indexOfFirst { it.song.id == currentSongId }
         }
+    }
+
+    val stackKeys = if (stacked && expanded?.stackKey != null) {
+        stackLayout.members(expanded!!.stackKey!!)
+    } else emptyList()
+    val stackSongs = remember(stackKeys, items) {
+        val byKey = items.associateBy { it.stackKey }
+        stackKeys.mapNotNull { byKey[it]?.song }
+    }
+    fun swipeStack(direction: Int) {
+        val currentExpanded = expanded ?: return
+        val currentKey = currentExpanded.stackKey ?: return
+        val members = stackLayout.members(currentKey)
+        if (members.size < 2) return
+        val currentIdx = members.indexOf(currentKey)
+        if (currentIdx < 0) return
+        val nextIdx = (currentIdx + direction + members.size) % members.size
+        val nextKey = members[nextIdx]
+        val targetItem = items.firstOrNull { it.stackKey == nextKey } ?: return
+        expanded = ExpandedPoster(
+            song = targetItem.song,
+            sourceIndex = targetItem.sourceIndex,
+            origin = currentExpanded.origin,
+            originCornerRadius = currentExpanded.originCornerRadius,
+            stackKey = nextKey,
+            originRotation = geometry.rotation(targetItem.sourceIndex)
+        )
     }
 
     PosterWallPositioning(wall, items, geometry, currentIndex, locateRequest)
@@ -223,13 +279,20 @@ fun PosterWallScreen(
                 val albumId = poster.song.id.toLongOrNull()
                 if (albumId != null) {
                     val detail = runCatching { AppModel.musicRepository.getAlbumDetail(albumId) }.getOrNull()
-                    val ids = (detail as? BackendResult.Success)?.data?.tracks?.map { it.id }.orEmpty()
+                    val provider = AppModel.activeProviderId()
+                    val ids = (detail as? BackendResult.Success)?.data?.tracks?.map {
+                        if (it.id.contains("://")) it.id else "$provider://song/${it.id}"
+                    }.orEmpty()
                     if (ids.isNotEmpty()) {
                         AppModel.playback.playQueue(ids, startIndex = 0, sourceId = albumId.toString())
                     }
                 }
             } else {
-                val songIds = items.map { it.song.id }
+                val provider = AppModel.activeProviderId()
+                val songIds = items.map {
+                    val id = it.song.id
+                    if (id.contains("://")) id else "$provider://song/$id"
+                }
                 val idx = items.indexOfFirst { it.song.id == poster.song.id }.coerceAtLeast(0)
                 AppModel.playback.playQueue(songIds, startIndex = idx)
             }
@@ -274,6 +337,7 @@ fun PosterWallScreen(
                 Row(
                     Modifier
                         .fillMaxWidth()
+                        .statusBarsPadding()
                         .padding(start = 12.dp, end = 12.dp, top = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -366,6 +430,7 @@ fun PosterWallScreen(
                 ) {
                     val sources = listOf(
                         "queue" to s.wall.posterWallQueue,
+                        "recent" to s.library.recentPlays,
                         "library" to s.wall.posterWallLibrary,
                         "liked" to s.wall.posterWallLiked,
                         "local" to s.wall.posterWallLocal
@@ -434,19 +499,28 @@ fun PosterWallScreen(
                                 item.song,
                                 item.sourceIndex,
                                 rect.copy(x = rect.x + canvasOrigin.x, y = rect.y + canvasOrigin.y),
-                                13f * wall.camera.scale
+                                13f * wall.camera.scale,
+                                stackKey = if (stacked) item.stackKey else null,
+                                originRotation = geometry.rotation(index)
                             )
                         },
                         onMore = { actionSong = it },
                         remoteEnabled = expanded == null && !lyricTheater && actionSong == null,
                         fullscreen = wallFullscreen,
-                        searching = search
+                        searching = search,
+                        onMoveStack = { fromIndex, targetIndex, before ->
+                            val from = items.getOrNull(fromIndex)?.stackKey ?: return@PosterWallCanvas
+                            val target = items.getOrNull(targetIndex)?.stackKey ?: return@PosterWallCanvas
+                            val next = stackLayout.move(from, target, before) ?: return@PosterWallCanvas
+                            stackLayoutSaved = next.encode()
+                        }
                     )
 
                     if (!wallFullscreen) {
                         Column(
                             Modifier
                                 .align(Alignment.BottomCenter)
+                                .navigationBarsPadding()
                                 .padding(bottom = 12.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
@@ -454,6 +528,31 @@ fun PosterWallScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                Row(
+                                    Modifier
+                                        .clip(CircleShape)
+                                        .background(PosterPanel.copy(alpha = 0.92f))
+                                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        s.wall.posterWallStacked,
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        modifier = Modifier.padding(end = 8.dp)
+                                    )
+                                    Switch(
+                                        checked = stacked,
+                                        onCheckedChange = {
+                                            expanded = null
+                                            stacked = it
+                                        },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color.White,
+                                            checkedTrackColor = MaterialTheme.colorScheme.primary
+                                        )
+                                    )
+                                }
                                 Row(
                                     Modifier
                                         .clip(CircleShape)
@@ -506,7 +605,7 @@ fun PosterWallScreen(
                                 }
                             }
                             Text(
-                                s.wall.posterWallGestureHint,
+                                if (stacked) s.wall.posterWallStackGestureHint else s.wall.posterWallGestureHint,
                                 color = Color.White.copy(alpha = 0.7f),
                                 fontSize = 10.sp,
                                 modifier = Modifier
@@ -581,7 +680,11 @@ fun PosterWallScreen(
                         expanded = null
                     },
                     onClosed = { expanded = null },
-                    onFullscreen = if (isCurrent) ({ lyricTheater = true }) else null
+                    onFullscreen = if (isCurrent) ({ lyricTheater = true }) else null,
+                    onStackSwipe = if (stacked && poster.stackKey != null) ({ direction -> swipeStack(direction) }) else null,
+                    stackPosition = poster.stackKey?.let { key -> "${stackKeys.indexOf(key) + 1} / ${stackKeys.size}" },
+                    stackSongs = stackSongs,
+                    stackIndex = stackKeys.indexOf(poster.stackKey).coerceAtLeast(0)
                 )
             }
         }
@@ -601,7 +704,14 @@ fun PosterWallScreen(
         // More options sheet & Add to playlist sheet
         actionSong?.let { song ->
             val likedIds by AppModel.playback.likedIds.collectAsState()
-            val songTrackUri = if (song.sourceKind == "local") "local://audio/${song.id}" else song.id
+            val provider = AppModel.activeProviderId()
+            val songTrackUri = if (song.sourceKind == "local") {
+                "local://audio/${song.id}"
+            } else if (song.id.contains("://")) {
+                song.id
+            } else {
+                "$provider://song/${song.id}"
+            }
             SongOptionsSheet(
                 songName = song.title,
                 artistName = song.artist,

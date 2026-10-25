@@ -93,6 +93,11 @@ interface WallStrings {
     val posterWallRefresh: String
     val posterWallLocate: String
     val posterWallLyricsStyle: String
+    val posterWallStacked: String
+    val posterWallStackGestureHint: String
+    val posterWallInsertAbove: String
+    val posterWallInsertBelow: String
+    val posterWallExpand: String
     val styleOrbit: String
     val styleClock: String
     val styleColorField: String
@@ -176,6 +181,11 @@ object WallStringsZh : WallStrings {
     override val posterWallRefresh = "刷新排列"
     override val posterWallLocate = "定位当前播放歌曲"
     override val posterWallLyricsStyle = "歌词样式"
+    override val posterWallStacked = "叠放模式"
+    override val posterWallStackGestureHint = "长按拖拽整理叠放 · 展开左右滑动切换"
+    override val posterWallInsertAbove = "置于上方"
+    override val posterWallInsertBelow = "置于下方"
+    override val posterWallExpand = "展开海报"
     override val styleOrbit = "回环"
     override val styleClock = "时计"
     override val styleColorField = "凝彩"
@@ -259,6 +269,11 @@ object WallStringsEn : WallStrings {
     override val posterWallRefresh = "Shuffle posters"
     override val posterWallLocate = "Locate playing song"
     override val posterWallLyricsStyle = "Lyrics style"
+    override val posterWallStacked = "Stacked"
+    override val posterWallStackGestureHint = "Long press to organize stacks · Swipe to switch"
+    override val posterWallInsertAbove = "Insert above"
+    override val posterWallInsertBelow = "Insert below"
+    override val posterWallExpand = "Expand poster"
     override val styleOrbit = "Orbit"
     override val styleClock = "Clock"
     override val styleColorField = "Color field"

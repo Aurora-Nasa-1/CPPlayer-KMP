@@ -128,4 +128,44 @@ class PosterWallGeometryTest {
         val camera = PosterCamera().centeredOn(target, 412f, 640f).clamped(large, 412f, 640f)
         assertTrue(target.intersects(camera.bounds(412f, 640f)))
     }
+
+    @Test
+    fun stackedGeometryCalculatesGroupIndicesAndDepthRotations() {
+        val stackKeys = listOf("album-1", "album-1", "album-1", "album-2", "album-2")
+        val geometry = PosterWallGeometry(5, stackKeys = stackKeys, stacked = true)
+        assertEquals(3, geometry.groupIndices(0).size)
+        assertEquals(listOf(0, 1, 2), geometry.groupIndices(0))
+        assertEquals(listOf(0, 1, 2), geometry.groupIndices(1))
+        assertEquals(listOf(3, 4), geometry.groupIndices(4))
+        assertEquals(0, geometry.depth(0))
+        assertEquals(1, geometry.depth(1))
+        assertEquals(2, geometry.depth(2))
+        assertEquals(0, geometry.depth(3))
+        assertEquals(1, geometry.depth(4))
+        assertTrue(geometry.rotation(0) in -13f..13f)
+        assertTrue(geometry.rotation(1) in -13f..13f)
+        val singleGeom = PosterWallGeometry(1, stackKeys = listOf("single"), stacked = true)
+        assertEquals(0f, singleGeom.rotation(0), 0.001f)
+        assertEquals(geometry.rect(0), geometry.rect(1))
+        assertEquals(geometry.rect(0), geometry.rect(2))
+        val p0 = PosterPlacement(0, geometry.rect(0), "0:0:0")
+        val p3 = PosterPlacement(3, geometry.rect(3), "0:1:0")
+        assertEquals("0", geometry.stackGroupKey(p0))
+        assertEquals("1", geometry.stackGroupKey(p3))
+    }
+
+    @Test
+    fun posterStackLayoutEncodesResolvesAndMovesCorrectly() {
+        val keys = listOf("k0", "k1", "k2", "k3", "k4")
+        val initial = PosterStackLayout(keys.map { listOf(it) })
+        assertEquals(5, initial.groups.size)
+        val moved = requireNotNull(initial.move("k1", "k0", before = false))
+        assertEquals(4, moved.groups.size)
+        assertEquals(listOf("k0", "k1"), moved.groups.first())
+        val json = moved.encode()
+        val dummySong = PosterSong(id = "1", title = "T", artist = "A", album = "Al", coverUrl = "")
+        val dummyItems = keys.map { PosterWallItem(song = dummySong, sourceIndex = 0, key = it, stackKey = it) }
+        val restored = PosterStackLayout.resolve(dummyItems, json)
+        assertEquals(listOf("k0", "k1"), restored.groups.first())
+    }
 }

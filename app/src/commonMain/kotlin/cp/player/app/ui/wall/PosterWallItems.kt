@@ -16,9 +16,23 @@ internal data class PosterSong(
     fun playlistIdentityKey(): String = "$sourceKind:$rawId"
 }
 
-internal data class PosterWallItem(val song: PosterSong, val sourceIndex: Int, val key: String)
+internal data class PosterWallItem(
+    val song: PosterSong,
+    val sourceIndex: Int,
+    val key: String,
+    val stackKey: String = key
+)
 
-internal data class PosterWallDataset(val source: String, val query: String, val items: List<PosterWallItem>, val shuffleSeed: Int = 0)
+internal data class PosterWallDataset(
+    val source: String,
+    val query: String,
+    val items: List<PosterWallItem>,
+    val shuffleSeed: Int = 0,
+    val stackLayout: PosterStackLayout? = null,
+    val allItems: List<PosterWallItem> = items
+) {
+    val itemsByStackKey = allItems.associateBy { it.stackKey }
+}
 
 /** Shuffle only the presentation, retaining source indices and duplicate queue occurrences. */
 internal fun rearrangePosterWallItems(items: List<PosterWallItem>, seed: Int): List<PosterWallItem> {
@@ -54,3 +68,7 @@ internal fun resolvePosterQueueIndex(queue: List<PosterSong>, song: PosterSong, 
     if (matches(queue.getOrNull(hint))) return hint
     return queue.indexOfFirst(::matches)
 }
+
+/** A stale player emission must not replace a card the user has just swiped to. */
+internal fun posterPlaybackConfirmed(pending: Pair<String, Int>?, identity: String, queueIndex: Int): Boolean =
+    pending == null || (pending.first == identity && (pending.second < 0 || pending.second == queueIndex))

@@ -2,10 +2,12 @@ package cp.player.app.ui.wall
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,10 +17,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,8 +40,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -52,6 +58,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.input.pointer.pointerInput
@@ -66,6 +73,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 internal val PosterInk = Color(0xFF10131B)
@@ -98,7 +106,9 @@ internal data class ExpandedPoster(
     val song: PosterSong,
     val sourceIndex: Int,
     val origin: PosterRect,
-    val originCornerRadius: Float = 13f
+    val originCornerRadius: Float = 13f,
+    val stackKey: String? = null,
+    val originRotation: Float = 0f
 )
 
 @Composable
@@ -144,8 +154,13 @@ internal fun PosterTile(
     current: Boolean,
     artwork: @Composable (PosterSong, Modifier) -> Unit,
     onExpand: () -> Unit,
-    onMore: () -> Unit,
-    selected: Boolean = false
+    onMore: (() -> Unit)?,
+    selected: Boolean = false,
+    showInfo: Boolean = true,
+    modifier: Modifier = Modifier,
+    stackSize: Int = 0,
+    dropTarget: Boolean = false,
+    dropBefore: Boolean = false
 ) {
     val accent = MaterialTheme.colorScheme.primary
     val shape = RoundedCornerShape(13.dp)
@@ -155,7 +170,7 @@ internal fun PosterTile(
     Box(
         Modifier
             .fillMaxSize()
-            .shadow(if (current) 12.dp else 3.dp, shape)
+            .shadow(if (current) 12.dp else if (showInfo) 3.dp else 0.dp, shape)
             .clip(shape)
             .focusProperties { canFocus = false }
             .combinedClickable(
@@ -164,8 +179,10 @@ internal fun PosterTile(
                 onLongClickLabel = s.wall.moreOptions,
                 onLongClick = onMore
             )
+            .then(modifier)
             .then(
                 when {
+                    dropTarget -> Modifier.border(4.dp, accent, shape)
                     selected -> Modifier.border(4.dp, Color.White, shape)
                     current -> Modifier.border(2.dp, accent.copy(alpha = 0.9f), shape)
                     else -> Modifier.border(0.6.dp, Color.White.copy(alpha = 0.12f), shape)
@@ -182,7 +199,32 @@ internal fun PosterTile(
                     )
                 )
         )
-        if (current) {
+        if (dropTarget) {
+            Text(
+                if (dropBefore) s.wall.posterWallInsertBelow else s.wall.posterWallInsertAbove,
+                color = MaterialTheme.colorScheme.onPrimary,
+                fontSize = 12.sp,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .clip(CircleShape)
+                    .background(accent)
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            )
+        }
+        if (showInfo && stackSize > 1) {
+            Text(
+                "$stackSize / $MAX_POSTER_STACK_SIZE",
+                color = Color.White,
+                fontSize = 11.sp,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(10.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            )
+        }
+        if (current && showInfo) {
             Row(
                 Modifier
                     .align(Alignment.TopStart)
@@ -209,29 +251,31 @@ internal fun PosterTile(
                 }
             }
         }
-        Column(
-            Modifier
-                .align(Alignment.BottomStart)
-                .padding(if (small) 11.dp else 16.dp)
-        ) {
-            Text(
-                song.title.ifBlank { song.id },
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = if (small) 15.sp else 22.sp,
-                lineHeight = if (small) 19.sp else 27.sp,
-                maxLines = if (rect.height > 140f) 2 else 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (!small || rect.height > 140f) {
+        if (showInfo) {
+            Column(
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(if (small) 11.dp else 16.dp)
+            ) {
                 Text(
-                    song.artist.ifBlank { s.downloads.unknownArtist },
-                    color = Color.White.copy(alpha = 0.7f),
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 5.dp)
+                    song.title.ifBlank { song.id },
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = if (small) 15.sp else 22.sp,
+                    lineHeight = if (small) 19.sp else 27.sp,
+                    maxLines = if (rect.height > 140f) 2 else 1,
+                    overflow = TextOverflow.Ellipsis
                 )
+                if (!small || rect.height > 140f) {
+                    Text(
+                        song.artist.ifBlank { s.downloads.unknownArtist },
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 5.dp)
+                    )
+                }
             }
         }
     }
@@ -324,16 +368,26 @@ internal fun PosterExpandedCard(
     onPlay: () -> Unit,
     onMore: () -> Unit,
     onClosed: () -> Unit,
-    onFullscreen: (() -> Unit)? = null
+    onFullscreen: (() -> Unit)? = null,
+    onStackSwipe: ((Int) -> Unit)? = null,
+    stackPosition: String? = null,
+    stackSongs: List<PosterSong> = emptyList(),
+    stackIndex: Int = 0
 ) {
-    val progress = remember(poster) { Animatable(0f) }
-    var closing by remember(poster) { mutableStateOf(false) }
+    val progress = remember(poster.origin) { Animatable(0f) }
+    var closing by remember(poster.origin) { mutableStateOf(false) }
     val closed by rememberUpdatedState(onClosed)
     val animation = spring<Float>(dampingRatio = 1f, stiffness = 320f, visibilityThreshold = 0.01f)
     val density = LocalDensity.current.density
     val s = cpStrings()
 
-    LaunchedEffect(poster) { progress.animateTo(1f, animation) }
+    var swipeOffset by remember(poster.origin) { mutableFloatStateOf(0f) }
+    val swipe by rememberUpdatedState(onStackSwipe)
+    val scope = rememberCoroutineScope()
+    var releasing by remember(poster.origin) { mutableStateOf(false) }
+    val canSwipe = onStackSwipe != null && stackSongs.size > 1
+
+    LaunchedEffect(poster.origin) { progress.animateTo(1f, animation) }
     LaunchedEffect(closing) {
         if (closing) {
             progress.animateTo(0f, animation)
@@ -351,6 +405,32 @@ internal fun PosterExpandedCard(
     val rect = frame.rect
     val shape = RoundedCornerShape(frame.cornerRadius.dp)
 
+    fun settle(commit: Boolean, widthPx: Float) {
+        if (releasing) return
+        releasing = true
+        val start = swipeOffset
+        scope.launch {
+            try {
+                val motion = Animatable(start)
+                if (commit && kotlin.math.abs(start) >= 48f * density) {
+                    motion.animateTo(if (start < 0f) -widthPx * 1.25f else widthPx * 1.25f, tween(160)) {
+                        swipeOffset = value
+                    }
+                    if (!closing) {
+                        swipe?.invoke(if (start < 0f) 1 else -1)
+                    }
+                } else {
+                    motion.animateTo(0f, spring(dampingRatio = 0.82f, stiffness = 420f)) {
+                        swipeOffset = value
+                    }
+                }
+            } finally {
+                swipeOffset = 0f
+                releasing = false
+            }
+        }
+    }
+
     // Backdrop
     Box(
         Modifier
@@ -366,8 +446,30 @@ internal fun PosterExpandedCard(
             .offset { IntOffset((rect.x * density).roundToInt(), (rect.y * density).roundToInt()) }
             .wrapContentSize(Alignment.TopStart, unbounded = true)
             .requiredSize(rect.width.dp, rect.height.dp)
-            .shadow(3.dp + 29.dp * progress.value, shape)
-            .clip(shape)
+            .graphicsLayer {
+                val currentFrame = posterMorphFrame(poster.origin, target, poster.originCornerRadius, progress.value)
+                translationX = (currentFrame.rect.centerX - target.centerX) * density + swipeOffset
+                translationY = (currentFrame.rect.centerY - target.centerY) * density
+                scaleX = currentFrame.rect.width / target.width
+                scaleY = currentFrame.rect.height / target.height
+                this.shape = RoundedCornerShape(currentFrame.cornerRadius.dp / maxOf(scaleX, scaleY))
+                clip = true
+                shadowElevation = (3f + 29f * progress.value) * density
+                rotationZ = poster.originRotation * (1f - progress.value) + (swipeOffset / (width * density)).coerceIn(-1f, 1f) * 12f
+            }
+            .then(
+                if (!canSwipe || !controlsReady || releasing) Modifier
+                else Modifier.pointerInput(poster.origin, width, density) {
+                    detectHorizontalDragGestures(
+                        onDragCancel = { settle(false, width * density) },
+                        onDragEnd = { settle(true, width * density) },
+                        onHorizontalDrag = { change, amount ->
+                            change.consume()
+                            swipeOffset += amount
+                        }
+                    )
+                }
+            )
             .background(PosterPanel)
             .pointerInput(Unit) { detectTapGestures(onTap = {}) }
     ) {
@@ -389,11 +491,23 @@ internal fun PosterExpandedCard(
                     .fillMaxSize()
                     .padding(if (compact) 14.dp else 22.dp)
             ) {
-                // Top header row
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // Top header row with status bar padding for edge-to-edge
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val headerTitle = if (compact) {
+                        poster.song.title
+                    } else {
+                        listOfNotNull(
+                            if (current) s.wall.posterWallCurrent else s.wall.posterWallSelected,
+                            stackPosition
+                        ).joinToString(" · ")
+                    }
                     Text(
-                        if (compact) poster.song.title
-                        else if (current) s.wall.posterWallCurrent else s.wall.posterWallSelected,
+                        headerTitle,
                         color = Color.White.copy(alpha = if (compact) 1f else 0.72f),
                         fontSize = if (compact) 20.sp else 12.sp,
                         fontWeight = FontWeight.Bold,
@@ -461,8 +575,11 @@ internal fun PosterExpandedCard(
                     Spacer(Modifier.height(10.dp))
                 }
 
+                // Bottom control row with navigation bar padding for edge-to-edge
                 Row(
-                    Modifier.fillMaxWidth(),
+                    Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {

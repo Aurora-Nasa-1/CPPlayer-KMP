@@ -181,7 +181,10 @@ class AlbumWallScreenModel : ScreenModel {
         val id = albumId.toLongOrNull() ?: return false.also { notifyPlayFailed() }
         val detail = safe { AppModel.musicRepository.getAlbumDetail(id) }
             .let { (it as? BackendResult.Success)?.data }
-        val ids = detail?.tracks?.map { it.id }.orEmpty()
+        val provider = AppModel.activeProviderId()
+        val ids = detail?.tracks?.map {
+            if (it.id.contains("://")) it.id else "$provider://song/${it.id}"
+        }.orEmpty()
         if (ids.isEmpty()) return false.also { notifyPlayFailed() }
         AppModel.playback.playQueue(ids, startIndex = 0, sourceId = albumId)
         return true
@@ -191,9 +194,11 @@ class AlbumWallScreenModel : ScreenModel {
         val songs = wallItems.filter { it.kind == WallKind.SONG }.mapNotNull { it.sourceId }
         val index = songs.indexOf(clicked.sourceId).coerceAtLeast(0)
         if (songs.isEmpty()) return false.also { notifyPlayFailed() }
-        val mediaId = songs[index]
+        val provider = AppModel.activeProviderId()
+        val mediaIds = songs.map { if (it.contains("://")) it else "$provider://song/$it" }
+        val mediaId = mediaIds[index]
         AppModel.playTrackClicked(mediaId) {
-            AppModel.playback.playQueue(songs, startIndex = index)
+            AppModel.playback.playQueue(mediaIds, startIndex = index)
         }
         return true
     }
@@ -242,12 +247,13 @@ private fun isLikedPlaylistName(name: String): Boolean =
     name.contains("喜欢的音乐") || name.contains("我喜欢的") ||
         name.contains("喜欢", ignoreCase = true) || name.contains("Like", ignoreCase = true)
 
-class AlbumWallScreen : Screen {
+class AlbumWallScreen(private val initialSource: String = "queue") : Screen {
 
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         cp.player.app.ui.wall.PosterWallScreen(
+            initialSource = initialSource,
             onBack = { navigator.popOrNotify() }
         )
     }
