@@ -28,6 +28,15 @@ class PlaybackMediaSessionService : MediaSessionService() {
     override fun onCreate() {
         (application as? CPPlayerApplication)?.backend
         super.onCreate()
+        // ⚠️ 预热磁盘缓存（SimpleCache 首次构造要开 SQLite，是主线程 IO 大头）。
+        // 同步在 onCreate（主线程）做的话，首次播放那一下会被拖住；
+        // 放 IO 线程预热，等下面 ControllerForwardingPlayer 真正 get() 时多半已就绪。
+        Thread {
+            runCatching { SharedMedia3Player.getCache(this) }
+        }.apply {
+            isDaemon = true
+            name = "media-cache-prewarm"
+        }.start()
         // 会话的 Player 不是裸 ExoPlayer：切歌/seek 必须转交应用控制器。
         // 裸 ExoPlayer 只持有单个 media item，队列在控制器里，
         // 直接用它会导致通知栏/锁屏/耳机切歌无效。

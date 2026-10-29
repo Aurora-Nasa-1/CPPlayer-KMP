@@ -207,8 +207,15 @@ class PlaybackControllerNavigationTest {
         assertEquals(listOf(12_345L), platform.seekCalls)
     }
 
+    /**
+     * 「上一曲」是**纯索引运算**：不管播到第几秒，都退到上一首。
+     *
+     * 旧契约「超过 3 秒回本曲开头」读的是 `platform.positionMs` —— 那是一条与索引
+     * 不同步的时间线（seek 乐观写入、装载窗口内还是上一首的值），同一个手势时好时坏，
+     * 症状正是「上一曲变成了当前这首的开头」。回到本曲开头改由 seek 到 0 承担。
+     */
     @Test
-    fun `skipPrevious restarts the current track when past three seconds`() = runBlocking {
+    fun `skipPrevious goes to the previous track regardless of position`() = runBlocking {
         val platform = FakePlatformPlayer()
         val c = controller(platform, FakeSource())
         c.playQueue(listOf(mid(1), mid(2)), startIndex = 1)
@@ -216,8 +223,8 @@ class PlaybackControllerNavigationTest {
         platform.positionMs.value = 10_000L
         c.skipPrevious()
 
-        assertEquals(1, c.state.value.currentIndex, "超过 3 秒应回到本曲开头，而不是上一首")
-        assertTrue(platform.seekCalls.contains(0L))
+        assertEquals(0, c.state.value.currentIndex, "上一曲必须退到上一首，不能被进度劫持")
+        assertTrue(platform.seekCalls.isEmpty(), "上一曲不应额外下发 seek")
     }
 
     @Test
@@ -236,16 +243,16 @@ class PlaybackControllerNavigationTest {
     // ============ 第二组：边界与重复导航 ============
 
     @Test
-    fun `skipPrevious within three seconds goes to the previous track`() = runBlocking {
+    fun `skipPrevious at the first track seeks to zero`() = runBlocking {
         val platform = FakePlatformPlayer()
         val c = controller(platform, FakeSource())
-        c.playQueue(listOf(mid(1), mid(2)), startIndex = 1)
+        c.playQueue(listOf(mid(1), mid(2)), startIndex = 0)
 
-        platform.positionMs.value = 1_000L
+        platform.positionMs.value = 30_000L
         c.skipPrevious()
 
-        assertEquals(0, c.state.value.currentIndex, "3 秒内应切到上一首")
-        assertTrue(platform.seekCalls.isEmpty(), "3 秒内不应回退本曲开头")
+        assertEquals(0, c.state.value.currentIndex, "队列首曲没有上一首，索引不动")
+        assertTrue(platform.seekCalls.contains(0L), "没有上一首时退到本曲开头")
     }
 
     @Test
@@ -314,6 +321,41 @@ class PlaybackControllerNavigationTest {
             c.state.value.currentIndex in 0..1,
             "移除当前曲目后 currentIndex 必须落在新队列范围内，实际=${c.state.value.currentIndex}",
         )
+    }
+
+    /** 移除当前曲目 ⇒ 装载**新的**当前曲（队列前进一首）。 */
+    @Test
+    fun `removing the current track reloads from the next one`() = runBlocking {
+        val platform = FakePlatformPlayer()
+        val c = controller(platform, FakeSource())
+        c.playQueue(listOf(mid(1), mid(2), mid(3)), startIndex = 1)
+
+        val loadsBefore = platform.loadedUrls.size
+        c.removeQueueItem(1)
+
+        assertEquals(loadsBefore + 1, platform.loadedUrls.size, "移除当前曲应装载新的当前曲")
+        assertEquals(mid(3), c.state.value.currentTrack?.id)
+    }
+
+    /**
+     * 移除「当前曲之前」的条目**不得**打断正在播的歌。
+     *
+     * 旧条件的 `index <= _index` 把「移除当前曲之前的条目」也判进重载分支，
+     * 而引擎里装的仍是同一首 —— 于是删掉队列里另一首歌，正在听的歌却从头重来。
+     * 队列弹层的删除入口按下标传参，这个场景在用户整理队列时很常见。
+     */
+    @Test
+    fun `removing a track before the current one does not restart playback`() = runBlocking {
+        val platform = FakePlatformPlayer()
+        val c = controller(platform, FakeSource())
+        c.playQueue(listOf(mid(1), mid(2), mid(3)), startIndex = 1)
+
+        val loadsBefore = platform.loadedUrls.size
+        c.removeQueueItem(0)
+
+        assertEquals(loadsBefore, platform.loadedUrls.size, "移除当前曲之前的条目不应重新装载")
+        assertEquals(0, c.state.value.currentIndex, "当前曲下标应随删除前移")
+        assertEquals(mid(2), c.state.value.currentTrack?.id)
     }
 
     @Test
@@ -480,6 +522,40 @@ class PlaybackControllerNavigationTest {
             c.state.value.queue.map { it.mediaId },
             "已在队列里的歌不应被再次追加",
         )
+    }
+
+    /**
+     * 整队入队也要去重：队列弹层以 mediaId 做 LazyColumn 的 key，重复条目会直接崩掉
+     * （IllegalArgumentException: key was already used），同一首还会连播两遍。
+     * 单条 [PlaybackController.addToQueue] 的去重挡不住「整队替换带重复 id」的路径。
+     */
+    @Test
+    fun `playQueue deduplicates repeated ids and keeps the selected track`() = runBlocking {
+        val c = controller(FakePlatformPlayer(), FakeSource())
+        // 第 2、4 项重复：去重后队列应为 1,2,3。
+        c.playQueue(listOf(mid(1), mid(2), mid(3), mid(2)), startIndex = 3)
+
+        assertEquals(
+            listOf(mid(1), mid(2), mid(3)),
+            c.state.value.queue.map { it.mediaId },
+            "整队入队应去掉重复 id",
+        )
+        assertEquals(1, c.state.value.currentIndex, "选中重复项应定位到它首次出现的位置")
+    }
+
+    @Test
+    fun `setQueue deduplicates repeated ids`() = runBlocking {
+        val c = controller(FakePlatformPlayer(), FakeSource())
+        // startIndex=2 选的是 mediaIds[2] = mid(2)（重复项的后者）：
+        // 去重后应落到它首次出现的位置（下标 1），而不是按下标硬套（那会指到 mid(3)）。
+        c.setQueue(listOf(mid(1), mid(2), mid(2), mid(3)), startIndex = 2)
+
+        assertEquals(
+            listOf(mid(1), mid(2), mid(3)),
+            c.state.value.queue.map { it.mediaId },
+        )
+        assertEquals(1, c.state.value.currentIndex)
+        assertEquals(mid(2), c.state.value.queue[c.state.value.currentIndex].mediaId)
     }
 
     /** 电台/长队列场景：加进来的歌必须本曲播完就轮到，而不是排在几十首之后。 */
