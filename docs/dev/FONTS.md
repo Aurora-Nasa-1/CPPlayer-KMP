@@ -45,7 +45,28 @@
 
 - `CpText`（全仓统一文本入口，含省略 / 悬停 / 跑马灯治理）
 - `TrackArtistText`（歌手行，本来就是 `AnnotatedString`，逐段套）
-- `LyricContent`（歌词按**行**交给歌词库渲染，拿不到 `AnnotatedString`，所以整行换家族）
+- `LyricContent`（**逐 run**：经 `ScriptFontLyricsProfile` 在歌词库内部切成带 `SpanStyle` 的 layout）
+
+### 歌词界面：为什么必须走 profile
+
+歌词库 `KaraokeLyricsView` 对外只收一个 `TextStyle`，拿不到 `AnnotatedString`。
+**改造前** `LyricContent` 因此整行 `copy(fontFamily = Noto Sans JP)` —— 后果是
+一句日语歌词里的 `Tokyo` / `03:45` / `Go!` 全是 Noto 的拉丁字形。
+`TextScript.LATIN` 的语义是「**不套 span**，沿用样式的默认家族」，整行换家族把那个默认值
+从 Google Sans Flex 改成了 Noto，等于绕过了整张路由表。
+
+正解是 `app/src/commonMain/.../ui/component/ScriptFontLyricsProfile.kt`：
+
+- 实现 `LyricsProfile`，`matches` 只接**含汉字或假名**的音节（纯拉丁行仍走内置 `LatinProfile`）；
+- `groups` / `wrap` / `effects` **委派给内置 `CjkProfile`**，别抄一份（ICU 词界 + 均衡折行
+  是库里最复杂的部分，抄了以后每次升版本都要重新对）；
+- 唯一的自有逻辑在 `prepare(line, group, measurer, style)`：用 `buildAppStyledText` 生成带
+  font span 的 `AnnotatedString`，`measure` 成 layout 后再交回 `CjkProfile`。
+  `DefaultLyricsProfile.draw` 是直接 `drawText(unit.layout)` 的，所以 span 能原样穿透。
+- 量不出任何 span（如 Android 未下载日文字体）时**原样委派**，不凭空多量一次。
+
+`LyricContent` 那边因此**不再换 fontFamily**，`forLyricLanguage` 只保留
+`lang=ja` + `palt`（`withJapaneseTypesetting`）。
 
 ⚠️ **裸 `Text(...)` 仍是系统 CJK 字体**。想让某处也走 MiSans、Noto，把它换成 `CpText`
 即可获得全部字体路由（注意 `CpText` 的 `maxLines` 默认是 1，多行文本要显式传）。
@@ -77,3 +98,17 @@ Android 不内置这两款（合计约 30 MB，每个用户都要为它付包体
 3. 日文 vs 中文：必须不同。
 
 另外会出一张对照图 `app/build-fonts/preview/font-stack-board.png`，肉眼核对四行文本。
+
+### 歌词逐 run 路由的回归断言
+
+`app/src/desktopTest/.../preview/ScriptFontRoutingPixelTest.kt`，四条：
+
+1. 日英混排（`Tokyo の夜 03:45 Go!`）：「整行钉日文字体」与「逐 run 路由」必须**不同**
+   ⇒ 拉丁真的换回 Google Sans Flex了；
+2. 纯拉丁：套 span 与不套 span 必须**逐字节相同** ⇒ `TextScript.LATIN` 没有偷偷替换；
+3. 出对照图 `app/build-scriptfont2/routing/routing-whole-noto.png` / `routing-per-run.png`；
+4. 桌面端日文字体确实加载（否则上面几条会在「字体缺位」时静默失效）。
+
+⚠️ 量这条**不能走 `LyricContent` 的离屏出图**：它经过歌词库的滚动 / reveal / 行时钟，
+离屏单帧下当前行可能不显示，会把「渲染路径没跑起来」误判成「字体没生效」。
+直接分两次 `measure` + `drawText(layout)` 比像素即可，那正是 `DefaultLyricsProfile.draw` 做的事。

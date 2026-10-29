@@ -77,6 +77,14 @@ fun TextStyle.withJapaneseTypography(japaneseFamily: FontFamily?): TextStyle {
 }
 
 /**
+ * 只打日语排版：`lang=ja-JP` + `palt`，**不换字体**。
+ *
+ * 与 [withJapaneseTypography] 的区别就是家族：字体要逐 run 路由（同一句里的拉丁与假名
+ * 本就是两家字体）时用这个，交给 `buildAppStyledText` 的 span 决定家族。
+ */
+fun TextStyle.withJapaneseTypesetting(): TextStyle = withJapaneseLocale()
+
+/**
  * 整段中文（或其它非日文 CJK 文本）换到 [cjkFamily]（MiSans）。
  *
  * 与 [withJapaneseTypography] 对称，**不带** `ja` 语言标签与 `palt` ——

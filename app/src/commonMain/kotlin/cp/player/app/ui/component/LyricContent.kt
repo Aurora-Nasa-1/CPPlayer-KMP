@@ -26,7 +26,6 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextMotion
@@ -43,16 +42,16 @@ import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.KaraokeLyricsView
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.LocalAppFontFamilies
-import cp.player.app.ui.theme.containsHan
+import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.theme.containsKana
-import cp.player.app.ui.theme.withCjkTypography
-import cp.player.app.ui.theme.withJapaneseTypography
+import cp.player.app.ui.theme.withJapaneseTypesetting
 import cp.player.core.lyrics.RubySegment
 import cp.player.core.lyrics.RubyText
 import cp.player.core.playback.LyricsState
 import cp.player.core.playback.PlaybackUiState
 import cp.player.core.playback.SyncedLyricLine
 import kotlinx.coroutines.delay
+import androidx.compose.ui.graphics.BlendMode
 
 /**
  * 注音（振り仮名）相对正文的字号比例。
@@ -111,17 +110,11 @@ fun LyricContent(
         return
     }
 
-    // 整首歌词是什么语言：含假名即日语（见 `JapaneseText.kt`）；不含假名但有汉字即中文。
-    // 决定用哪套字体与断行规则 —— 歌词是按**行**交给歌词库渲染的，
-    // 拿不到逐 run 的 AnnotatedString，所以这里只能整行换家族（见 FontStack.kt 的说明）。
+    // 整首歌词是什么语言：含假名即日语（见 `JapaneseText.kt`）。
+    // **只决定排版语言标签**（`lang=ja` + `palt` + 断行），不再决定字体：
+    // 字体由 [ScriptFontLyricsProfile] 逐 run 路由（见下方样式装配处的说明）。
     val appFonts = LocalAppFontFamilies.current
-    val japaneseFamily = appFonts.japanese
-    val cjkFamily = appFonts.misans
     val japaneseLyrics = remember(lines) { lines.any { it.text.containsKana() } }
-    // 日文优先：日文行的汉字也全是"汉字"，判据必须用假名而不是汉字。
-    val cjkLyrics = remember(lines, japaneseLyrics) {
-        !japaneseLyrics && lines.any { it.text.containsHan() }
-    }
     // 用户是否开启日文注音假名开关，以及歌词文本本身是否含有注音标记
     val showRubySetting by cp.player.app.AppModel.showRubyLyricsFlow.collectAsState()
     val wordSegmentation by cp.player.app.AppModel.lyricsWordSegmentationFlow.collectAsState()
@@ -167,7 +160,15 @@ fun LyricContent(
         SyncedLyrics(lines = iLines)
     }
 
+    val currentTrackId = state.currentTrack?.id
     val listState = rememberLyricsLazyListState()
+
+    // 曲目切换时重置列表滚动至顶部，避免继承上一首歌的滚动偏移
+    LaunchedEffect(currentTrackId) {
+        if (currentTrackId != null) {
+            runCatching { listState.scrollToItem(0) }
+        }
+    }
 
     // ⚠️ 逐字（Karaoke）动画的帧率**完全由这个位置源决定**。这里有两件事要同时做对，
     // 缺一件就只剩 5 Hz：
@@ -175,24 +176,11 @@ fun LyricContent(
     // ① **位置要平滑**：见 [SmoothPositionSource]。
     // ② **位置要被 Compose 观察到**：见下方 [smoothPosition] 与那段 ticker。
     //
-    // 库的 `KaraokeLyricsView` 把 `currentPosition` 当**每帧回调**用：逐字渐变、
-    // 行滚动弹簧、呼吸点全部在 `drawLyricsLine` 里按该值算进度。它本来是为
-    // 「音频帧级位置」设计的（上游 Android 版本直接喂 ExoPlayer 的毫秒位置）。
-    val positionSource = remember { SmoothPositionSource() }
+    // 以 currentTrackId 为 key，曲目切换时立即建立全新时钟源，彻底重置旧曲外推状态。
+    val positionSource = remember(currentTrackId) { SmoothPositionSource() }
     positionSource.update(state.positionMs, state.isPlaying)
 
-    // 「可被 Compose 观察到的」平滑位置。
-    //
-    // ⚠️ **为什么必须有一个 State，光有 ① 不够**：库自己**不会主动请求重绘**。
-    // Compose 的重绘条件是「上一次绘制里读过的 State 变了」—— provider 是个普通
-    // lambda，若它读的是纯字段（[SmoothPositionSource] 就是），绘制阶段就**没有任何
-    // State 被登记观察**，Compose 判定这个节点永远不必重画。
-    // 于是歌词只在 `state.positionMs` 变化（200 ms 一次，**5 Hz**）时重绘一次，
-    // 逐字高亮就「一格一格跳」。这是本问题**真正的根因**。
-    //
-    // 上游 Android 版本正常，是因为它的 provider 里读的是 ExoPlayer 推进的
-    // `State<Long>` —— 绘制阶段读 State 会登记观察者，位置一变即重绘。
-    val smoothPosition = remember { mutableLongStateOf(state.positionMs) }
+    val smoothPosition = remember(currentTrackId) { mutableLongStateOf(state.positionMs) }
 
     // 播放中逐帧把外推位置写进 [smoothPosition]。
     //
@@ -222,38 +210,45 @@ fun LyricContent(
         }
     }
 
+    // ⚠️ 这里**不再**按整首歌词换 fontFamily：字体是逐 run 的事，由
+    // [ScriptFontLyricsProfile] 在库内部按脚本切 span（拉丁 → 样式默认家族 Google Sans Flex，
+    // 假名 → Noto Sans JP，汉字 → 本段语言的 CJK 字体）。
+    // 整行换家族会把同一句里的英文 / 数字 / ASCII 标点也一起拖进 Noto 或 MiSans 的字形。
+    // 样式在这里只负责字号 / 字重 / 行高，以及 `lang=ja` + `palt`（见 JapaneseText.kt）。
     val currentTextStyle = MaterialTheme.typography.headlineMedium
-    val normalStyle = remember(currentTextStyle, japaneseLyrics, cjkLyrics, japaneseFamily, cjkFamily, wordSegmentation) {
+    val normalStyle = remember(currentTextStyle, japaneseLyrics, wordSegmentation) {
         currentTextStyle.copy(
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
             lineHeight = 36.sp,
             textMotion = TextMotion.Animated,
-        ).forLyricLanguage(japaneseLyrics, cjkLyrics, japaneseFamily, cjkFamily, wordSegmentation)
+        ).forLyricLanguage(japaneseLyrics, wordSegmentation)
     }
 
-    val accompanimentStyle = remember(currentTextStyle, japaneseLyrics, cjkLyrics, japaneseFamily, cjkFamily, wordSegmentation) {
+    val accompanimentStyle = remember(currentTextStyle, japaneseLyrics, wordSegmentation) {
         currentTextStyle.copy(
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
             textMotion = TextMotion.Animated,
-        ).forLyricLanguage(japaneseLyrics, cjkLyrics, japaneseFamily, cjkFamily, wordSegmentation)
+        ).forLyricLanguage(japaneseLyrics, wordSegmentation)
     }
 
     // 注音（振り仮名）的字号：正文的 **1/4**，位置由库画在音节上方。
     // 没有注音时这一档仍是「行级罗马音」的字号（正文的一半），两者不要混用同一个值。
     val basePhoneticStyle = MaterialTheme.typography.bodyMedium
     val phoneticTextStyle = remember(
-        basePhoneticStyle, hasRuby, japaneseLyrics, cjkLyrics, japaneseFamily, cjkFamily, wordSegmentation,
+        basePhoneticStyle, hasRuby, japaneseLyrics, wordSegmentation,
     ) {
         val size = if (hasRuby) RubyFontRatio else 0.5f
         basePhoneticStyle.copy(
             fontSize = (28 * size).sp,
             lineHeight = (28 * if (hasRuby) 0.32f else 0.7f).sp,
-        ).forLyricLanguage(japaneseLyrics, cjkLyrics, japaneseFamily, cjkFamily, wordSegmentation)
+        ).forLyricLanguage(japaneseLyrics, wordSegmentation)
     }
 
-    val currentTrackId = state.currentTrack?.id
+    // 逐 run 的字体路由（唯一实例：库按它切分组，每次重组新建会让整份歌词重新测量）。
+    val scriptProfiles = remember(appFonts) { listOf(ScriptFontLyricsProfile(appFonts)) }
+
     val lyricOffsetMs = if (!currentTrackId.isNullOrBlank()) {
         cp.player.app.ui.util.LyricOffsetManager.getOffset(currentTrackId)
     } else 0L
@@ -264,6 +259,8 @@ fun LyricContent(
     val currentPositionProvider = remember(smoothPosition, lyricOffsetMs) {
         { (smoothPosition.longValue + lyricOffsetMs).toInt() }
     }
+
+    val isDark = LocalIsDarkTheme.current
 
     Box(modifier.fillMaxSize()) {
         KaraokeLyricsView(
@@ -276,9 +273,12 @@ fun LyricContent(
             accompanimentLineTextStyle = accompanimentStyle,
             phoneticTextStyle = phoneticTextStyle,
             textColor = MaterialTheme.colorScheme.onSurface,
+            blendMode = if (isDark) BlendMode.Plus else BlendMode.SrcOver,
             showTranslation = showTranslation,
             showPhonetic = hasRuby,
             useBlurEffect = false,
+            // 逐 run 字体路由：与内置 CJK / 拉丁 profile 并存，只接含汉字或假名的音节。
+            renderProfiles = scriptProfiles,
             modifier = Modifier.fillMaxSize()
         )
 
@@ -323,29 +323,27 @@ fun LyricContent(
 }
 
 /**
- * 按整首歌词的语言，给歌词样式换上对应字体。
+ * 按整首歌词的**语言**补上排版标签，**不动字体**。
  *
- * 歌词是**按行**交给歌词库渲染的（`KaraokeLyricsView` 拿的是 `TextStyle`，不是
- * `AnnotatedString`）—— 所以这里做不到 `CpText` 那种逐 run 切换，只能整行换家族。
- * 这也是为什么判定用的是**整首**语言而不是逐行：同一首歌的行间字体不一致比
- * 「全中文用中文字体、全日文用日文字体」难看得多。
+ * 字体是逐 run 的事：交给 [ScriptFontLyricsProfile] 在歌词库内部按脚本切 span，
+ * 同一句里的 `Tokyo 東京` 才能是两家字体。这里只做 `TextStyle` 装得下的那一件事 ——
+ * 语言标签与 OpenType 特性：
  *
- * - 日语 → Noto Sans JP（[wordSegmentation] 时连 `palt` 与 `lang=ja` 一起给）
- * - 中文 / 其它 CJK → MiSans
- * - 都不是（纯英文歌词）→ 不动，沿用默认的 Google Sans Flex
+ * - 日语（开关打开时）→ `lang=ja-JP` + `palt`（禁则处理与假名比例排版）
+ * - 其余 → 原样
+ *
+ * ⚠️ 这里**不要**再 `copy(fontFamily = …)`。改造前是整行换家族的，后果是日语歌词里的
+ * 英文、数字、ASCII 标点全部落到 Noto Sans JP 的字形（`buildAppStyledText` 里
+ * `TextScript.LATIN` 的语义是「沿用样式的默认家族」）—— 那正是本次要修的 bug。
+ *
+ * 注音（`phoneticTextStyle`）也走这里：假名的注音串本身含假名，会命中
+ * `containsKana` 拿到 `palt`；它的字体同样由 span 路由。
  */
 private fun TextStyle.forLyricLanguage(
     japanese: Boolean,
-    cjk: Boolean,
-    japaneseFamily: FontFamily?,
-    cjkFamily: FontFamily?,
     wordSegmentation: Boolean,
-): TextStyle = when {
-    japanese && wordSegmentation -> withJapaneseTypography(japaneseFamily)
-    japanese -> if (japaneseFamily != null) copy(fontFamily = japaneseFamily) else this
-    cjk -> withCjkTypography(cjkFamily)
-    else -> this
-}
+): TextStyle =
+    if (japanese && wordSegmentation) withJapaneseTypesetting() else this
 
 /**
  * 为逐字音节构建 [KaraokeSyllable] 列表，并确保英文/拉丁词间空格不丢失。
@@ -583,10 +581,19 @@ internal class SmoothPositionSource(
         val elapsedMs = (nowNanos() - sampledAtNanos) / 1_000_000.0
         val clamped = elapsedMs.coerceIn(0.0, MaxExtrapolationMs.toDouble())
         val correction = correctionMs * kotlin.math.exp(-clamped / DecayTauMs)
-        return authoritativeMs + clamped + correction
+        val leadOffset = if (playing) LeadCompensationMs else 0.0
+        return authoritativeMs + clamped + correction + leadOffset
     }
 
     private companion object {
+        /**
+         * 音画同步超前量补偿（毫秒）：
+         * 抵消「底层音频引擎 200ms 轮询 + 协程派发 + Compose 重绘」管线时延
+         * 与系统 DAC 硬件音频缓冲输出延迟（通常 40~60ms）。
+         * 使视觉扫光精准对齐人耳听到的声音，消除智能逐字整体偏慢感（【L6】）。
+         */
+        const val LeadCompensationMs = 50.0
+
         /** 外推上限：200ms 轮询周期 + 100ms 余量。 */
         const val MaxExtrapolationMs = 300L
 
