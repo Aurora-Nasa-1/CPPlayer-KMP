@@ -4,7 +4,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
@@ -14,9 +17,12 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cp.player.app.AppModel
 import cp.player.app.platform.shareText
 import cp.player.app.ui.anim.CoverFlight
+import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpRefreshablePage
+import cp.player.app.ui.component.SongDetailInfoDialog
 import cp.player.app.ui.component.SongItem
+import cp.player.app.ui.component.SongOptionsSheet
 import cp.player.app.ui.component.SongMenuActions
 import cp.player.app.ui.component.TrackEmptySpec
 import cp.player.app.ui.component.TrackListShell
@@ -259,6 +265,9 @@ private fun CloudDriveContent(
     val currentTrackId = playbackState.currentTrack?.id
     val likedIds by AppModel.playback.likedIds.collectAsState()
     val scope = rememberCoroutineScope()
+    var optionsTarget by remember { mutableStateOf<TrackSummary?>(null) }
+    var addToPlaylistTarget by remember { mutableStateOf<TrackSummary?>(null) }
+    var infoTarget by remember { mutableStateOf<TrackSummary?>(null) }
 
     val confirm = cp.player.app.ui.component.rememberConfirmState()
     val askDelete: (TrackSummary) -> Unit = { track ->
@@ -294,6 +303,7 @@ private fun CloudDriveContent(
                 isCurrentlyPlaying = track.id == currentTrackId,
                 modifier = rowModifier,
                 onClick = { model.play(index) },
+                onOptionsClick = { optionsTarget = track },
                 contextMenu = songContextMenuItems(
                     SongMenuActions(
                         onPlay = { model.play(index) },
@@ -354,6 +364,38 @@ private fun CloudDriveContent(
             },
             applyStatusBarInset = !embedded,
         )
+    }
+
+    optionsTarget?.let { track ->
+        val index = state.songs.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+        SongOptionsSheet(
+            songName = track.name,
+            artistName = track.artist,
+            coverUrl = track.coverUrl,
+            isFavorite = track.id in likedIds,
+            isDownloaded = AppModel.isDownloaded(track.id),
+            onDismiss = { optionsTarget = null },
+            onPlay = { model.play(index) },
+            onToggleFavorite = {
+                scope.launch {
+                    val target = track.id !in likedIds
+                    AppModel.playback.toggleFavoriteFor("${AppModel.activeProviderId()}://song/${track.id}")
+                    UiEvents.notify(if (target) "已收藏" else "已取消收藏")
+                }
+            },
+            onAddToQueue = { model.addToQueue(track) },
+            onPlayNext = { model.playNext(track) },
+            onAddToPlaylist = { addToPlaylistTarget = track },
+            onDownload = { AppModel.downloadTrack(track) },
+            onShowInfo = { infoTarget = track },
+            onShare = { shareText(songShareText(track)) },
+        )
+    }
+    addToPlaylistTarget?.let { track ->
+        AddToPlaylistSheet(trackId = track.id, onDismiss = { addToPlaylistTarget = null })
+    }
+    infoTarget?.let { track ->
+        SongDetailInfoDialog(track = track, onDismiss = { infoTarget = null })
     }
 
     CpConfirmHost(confirm)
