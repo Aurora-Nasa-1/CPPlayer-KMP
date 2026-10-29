@@ -4,7 +4,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.10-purple.svg)](https://kotlinlang.org)
-[![Compose Multiplatform](https://img.shields.io/badge/Compose%20Multiplatform-1.11.1-blue.svg)](https://www.jetbrains.com/lp/compose-multiplatform/)
+[![Compose Multiplatform](https://img.shields.io/badge/Compose%20Multiplatform-1.12.2-blue.svg)](https://www.jetbrains.com/lp/compose-multiplatform/)
 
 ---
 
@@ -22,8 +22,8 @@
 - **现代化插件系统 (Standard v3)**：
   - 极简契约：仅需实现“搜索”与“获取音频直链” 2 个接口即可快速接入新音源。
   - 原生声明式设置：音源在 `manifest.json` 中声明配置字段，客户端自动渲染 Material 3 原生设置面板。
-  - UI 动态自适应：根据音源声明的 `capabilities` 自动展示或隐藏云盘、评论、推荐等功能区。
-  - 多类型插件生态：支持 Standard v3 / Legacy 音源插件、Lyrico 歌词插件系统与本地边车歌词。
+  - UI 能力声明：音源以 `capabilities` 声明支持的能力（当前实际门控评论 / 云盘 / 推荐入口，其余展示能力徽标；未声明不做限制）。
+  - 多类型插件生态：Standard v3 / Legacy 音源插件、[Lyrico 歌词插件](docs/dev/LYRICS_PLUGIN_DEV_GUIDE.md)与本地边车歌词。
 - **发烧级音频解码引擎**：
   - 支持 WASAPI Exclusive 硬件独占直通推流、DSD 解码与无损流落盘缓存。
   - 10 频段参数均衡器 (PEQ)、声道平衡、响度归一化与防爆音削顶。
@@ -55,7 +55,7 @@ app-android ──▶ app ──▶ core
 
 ### 环境要求
 - JDK 21+（推荐使用 JetBrains Runtime 21）
-- Android SDK (API 34+)
+- Android SDK (API 35+)
 
 ### 常用命令
 
