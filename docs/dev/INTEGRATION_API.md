@@ -33,6 +33,18 @@
 | `POST /api/v1/playback/{action}` | ✅ 可用（需开「远程播控」；`stop` 刻意不做，见 §13） |
 | `GET /api/v1/events` | ✅ 可用（SSE） |
 | `GET /stream` | ✅ 可用（媒体面，早于数据面就存在） |
+| `GET /health` | ✅ 可用（**不经 `/api/v1` 前缀**：存活探测用 `{"status":"ok"}`，见 §1.1） |
+
+### 1.1 `GET /health`
+
+最轻量的存活探测端点（与端口上的服务实现同在 `LocalServer.jvm.kt`，不走令牌、
+不走 `/api/v1` 前缀）。返回：
+
+```json
+{ "code": 200, "status": "ok", "streamPort": 8080 }
+```
+
+`streamPort` 回显当前流端口（对多实例部署排查有用）。用途：自动化脚本 / 开机自启拉起前的 `curl` 探活（与「流输出」设置页的连通性测试同源）。
 
 > **`404` 与 `403` 的区别**：`404` 表示端点**根本不存在**（还没实现，等升级）；
 > `403` 表示端点存在但**当前配置下不可用**（开关关着，引导用户去开开关）。
@@ -249,7 +261,7 @@ Authorization: Bearer <accessToken>     ← 推荐，日志友好
 | `id` | 音源标识；`mediaId` 里的命名空间就是它 |
 | `name` | 显示名 |
 | `version` | 音源版本 |
-| `type` | 实现类型：`JNI` / `BINARY` / `WEBSOCKET` / `HTTP` |
+| `type` | 实现类型：`JNI` / `BINARY` / `HTTP` / `SCRIPT`（`BackendProvider.ProviderType` 枚举直接透传；另有 `WEBSOCKET` 为预留枚举值，当前不会产生） |
 | `active` | 是否为当前活跃音源；**最多一个**为 `true` |
 
 ---

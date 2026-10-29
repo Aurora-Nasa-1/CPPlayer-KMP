@@ -141,7 +141,8 @@ Content-Type: application/json
 **要求：**
 
 - 可执行文件必须支持 `--port` 参数
-- 必须实现 `POST /api/{method}` 和 `POST /{method}` 端点（兼容两种路径风格）
+- 必须实现 `POST /api/{method}`（宿主 BinaryProvider 的**唯一**调用路径，`BinaryProvider.kt` 写死了 `/api/` 前缀）。
+  同一个二进制再兼开 `POST /{method}`（不带 `/api/`）**不是宿主的要求**，参考实现 netease-module-rust 这么做只是为了被其它宿主复用——只喂 CPPlayer 时实现 `/api/{method}` 即可。
 - 建议实现 `GET /health` 返回 `{"code":200,"status":"ok"}`
 
 ### 3.3 JNI Provider
@@ -196,6 +197,9 @@ Java_cp_player_core_provider_JniProvider_analyzeAudioFile(
 ## 4. manifest.json 规范
 
 ```jsonc
+// ⚠️ 这是「带注释的演示」（jsonc）。真实的 manifest.json 必须是**合法 JSON**：
+// 任何 // 注释、尾逗号、单引号都会让宿主解析立即失败（「导入失败」，无任何提示具体到字段）——
+// 落盘前请把这里所有的注释删干净。
 {
     // === 必填字段 ===
     "id": "my-provider",            // 唯一标识，小写字母+连字符
@@ -211,7 +215,7 @@ Java_cp_player_core_provider_JniProvider_analyzeAudioFile(
         "cloudsearch": "search",
         "like": "unsupported"
     },
-    "contract": "standard",         // "standard" | "legacy" (默认)
+    "contract": "standard",         // "standard" | "netease-legacy" | null —— 当前仅为元数据（见下）
     "capabilities": ["search", "playback", "webviewLogin"],
     "loginMethods": ["qr", "phone", "email", "cookie", "webview"],
     "settingsSchema": [ ... ],
@@ -230,13 +234,16 @@ Java_cp_player_core_provider_JniProvider_analyzeAudioFile(
 | `version`          | 是  | 语义化版本                                                                                                              |
 | `type`             | 是  | Provider 类型：`"http"` / `"binary"` / `"jni"`                                                                        |
 | `entryPoint`       | 是  | URL、文件名或 .so 名                                                                                                     |
-| `contract`         | 否  | 契约模型规范：`"standard"`（Standard v3 扁平模型）或 `"legacy"`（网易云传统模型，默认）                                                |
-| `capabilities`     | 否  | 显式能力声明列表，如 `["search", "playback", "webviewLogin"]`。未声明的能力将在 UI 中自动物理隐藏                                    |
-| `loginMethods`     | 否  | 支持的登录方式：`["qr", "phone", "email", "cookie", "webview"]`（或 `"web"`）                                           |
+| `contract`         | 否  | 标记响应模型的风格：`"standard"`（Standard v3 扁平模型）或 `"netease-legacy"`（网易云传统模型）。⚠️ **当前是纯元数据**：宿主解析器本就同时兼容两种形状，没有任何代码按它分支行为。填了不会改任何解析路径，新包仍写明，避免将来启用时歧义。 |
+| `apiVersion`       | 否（缺省 `1`） | 插件自身实现的**插件 API 版本**（宿主当前支持到 `3`）。缺省 1 = 历史行为（所有老包都是 v1，永远可加载）。**不要**在这里照抄 `3` 然后以为就能用 v3 特性——版本由你打算用的契约决定。 |
+| `minHostApiVersion` | 否（缺省 `1`） | **加载的唯一闸门**：> 宿主当前 API 版本（`3`）时直接**拒装**并提示「请升级应用」。需要宿主侧能力时再把数字抬上去。 |
+| `sha256`           | 否  | 整包（原始 ZIP 字节）的 SHA-256 十六进制。填了则导入时**逐字节校验**，不匹配即拒装（jni/binary 这种跑原生代码的包应当启用）；`sha256sum my-provider.zip` 生成。 |
+| `capabilities`     | 否  | 显式能力声明列表，如 `["search", "playback", "webviewLogin"]`。语义：**写了数组**则未声明项在 UI 上隐藏入口（当前真正做 UI 门控的仅 `comments` / `cloudDrive` / `recommend` 三项）；**完全不写该字段**则不隐藏任何入口（老包行为）。 |
+| `loginMethods`     | 否  | 支持的登录方式：`["qr", "sms", "email", "cookie", "captchaImage", "webview"]`（或 `"web"`）。缺省=展示全部常见方式。 |
 | `settingsSchema`   | 否  | 声明式原生配置表单定义列表，供应用内渲染原生设置面板并无状态携带配置                                                              |
 | `apiMap`           | 否  | API 方法名映射表                                                                                                         |
 | `updateUrl`        | 否  | 检查更新 URL，指向返回最新版本信息的 JSON 端点                                                                                       |
-| `supportedAbis`    | 否  | 支持的 CPU 架构列表，如 `["arm64-v8a", "armeabi-v7a"]`                                                                      |
+| `supportedAbis`    | 否  | 支持的 CPU 架构列表，如 `["arm64-v8a", "armeabi-v7a"]`。加载时优先 `lib/<abi>/`，回退根目录。                                                                      |
 | `targetAppPackage` | 否  | 目标 App 的 **Android 包名**。用于登录页"打开目标 App"按钮，供用户一键跳转到音源对应的官方 App 扫码登录（如网易云音乐 `com.netease.cloudmusic`）。仅 Android 端生效。 |
 
 ### apiMap 详解
@@ -2544,46 +2551,102 @@ CPPlayer 内置 API 健康监控系统，自动对每次调用进行兼容性检
 
 ### 期望字段表
 
+> 真实表来自 `core/.../api/ApiFieldContract.kt`，判定是**三级命中**：主字段 → 该方法专属 `ALIASES` → 全局容器键 `FALLBACK_FIELDS`（`data/result/playlist/songs/albums/artists/comments/msgs/hotData/list`），任一存在即通过。表中列出**主字段**；端点专属等价主字段（如 `login/status` 可平铺 `profile`/`account`、`lyric/new` 可平铺 `data`/`lyric`）由 ALIASES 一并兜住，不用费心选「哪种形状算正确」——响应里有一个就够了。
+>
+> ⚠️ 对**全局回退**键的命中收紧：键存在且值非 `null` 才算（`{"code":200,"data":null}` 不能被当成有数据）；主字段/专属别名则键存在即可，**值允许是 JSON `null`**（未登录的 `login/status` 就是 `{"account":null,"profile":null}`，合法业务响应，不应误报缺字段）。
+
 | API 方法 | 期望字段 |
 |---------|---------|
 | `cloudsearch` | `result` |
+| `search/hot/detail` | `data` |
+| `search/suggest` | `result` |
+| `song/url/v1`, `song/url/v1/302`, `song/download/url/v1` | `data` → `.url` |
+| `song/detail` | `songs` |
+| `lyric/new` | `lrc` → `.lyric` |
 | `user/playlist`, `user/playlist/create`, `user/playlist/collect` | `playlist` |
 | `user/detail` | `profile` |
+| `user/account` | `profile` |
 | `user/cloud` | `data` |
-| `likelist` | `ids` |
-| `recommend/songs` | `data` |
-| `recommend/resource` | `recommend` |
-| `playlist/detail` | `playlist` |
-| `playlist/track/all` | `songs` |
-| `album` | `album` |
-| `artist/detail` | `data` |
-| `artist/songs` | `songs` |
-| `artist/album` | `hotAlbums` |
-| `song/detail` | `songs` |
-| `song/url/v1`, `song/url/v1/302` | `data` → `.url` |
-| `lyric/new` | `lrc` → `.lyric` |
-| `comment/*` | `comments` |
-| `msg/private`, `msg/private/history` | `msgs` |
-| `pl/count` | `msg` |
-| `login/status` | `data`（平铺形状为 `profile` / `account`） |
-| `mv/detail`, `mv/url` | `data` |
-| `dj/program` | `programs` |
-| `dj/hot`, `dj/recommend` | `djRadios` |
-| `toplist`, `toplist_detail` | `list` |
-| `top_playlist`, `top_playlist_highquality` | `playlists` |
-| `banner` | `banners` |
+| `user/cloud/del`, `cloud/import`, `cloud/match` | `data` |
 | `user/record` | `allData` |
 | `user/follows` | `follow` |
 | `user/followeds` | `followeds` |
 | `user/event`, `event` | `events` |
-| `artist/top/song` | `songs` |
-| `artist/mv` | `mvs` |
-| `artist/list` | `artists` |
-| `album/new`, `album/newest` | `albums` |
+| `user/update` | `data` |
+| `user/dj` | `data` |
+| `likelist` | `ids` |
+| `like` | `songs` |
+| `recommend/songs` | `data` |
+| `recommend/resource` | `recommend` |
+| `recommend/dislike` | `data` |
+| `playlist/detail` | `playlist` |
+| `playlist/track/all` | `songs` |
+| `playlist/tracks`（增删歌单曲目） | `body` |
+| `playlist/create` | `playlist` |
+| `playlist/update`, `playlist/tags/update`, `playlist/desc/update`, `playlist/name/update` | `data` |
 | `playlist/catlist` | `categories` |
 | `playlist/hot` | `tags` |
 | `playlist/subscribers` | `subscribers` |
+| `playlist/highquality/tags` | `tags` |
+| `album` | `album` |
+| `artist/detail` | `data` |
+| `artist/songs` | `songs` |
+| `artist/album` | `hotAlbums` |
+| `artist/top/song` | `songs` |
+| `artist/mv` | `mvs` |
+| `artist/list` | `artists` |
+| `artist/follow/count` | `data` |
+| `album/new`, `album/newest` | `albums` |
+| `album/sublist` | `data` |
+| `album/list` | `products` |
+| `comment/new`, `comment/floor`, `comment/music`, `comment/playlist`, `comment/album`, `comment/mv`, `comment/dj`, `comment/video` | `comments` |
+| `comment/like` | `data` |
+| `comment`（发表/回复） | `comment` |
+| `msg/private`, `msg/private/history` | `msgs` |
+| `msg/recentcontact` | `data` |
+| `msg/unread/count` | `msg`（就**在根层**：`{"code":200,"msg":5}`） |
+| `msg/mark/read` | `data` |
+| `msg/send/text` | `msg` |
+| `login/qr/key`, `login/qr/create`, `login/qr/check` | `data` |
+| `login/status` | `data`（平铺形状为 `profile` / `account`，键存在即命中、值允许 `null`） |
+| `login`（用户名密码）, `login/phone` | `profile` |
+| `login/refresh` | `profile` |
+| `captcha/sent` | `data` |
+| `logout`, `register/anonimous`（仅看 code） | `code` |
+| `login/webview/url` | `url` |
+| `verify/url` | `url` |
+| `verify/check` | `code` |
+| `mv/detail`, `mv/url`, `mv/all`, `mv/first`, `mv/sublist` | `data` |
+| `video/detail` | `data` |
+| `video/url` | `urls` |
+| `video/group` | `data` |
+| `video/timeline/all` | `datas` |
+| `dj/program` | `programs` |
+| `dj/program/detail` | `program` |
+| `dj/hot`, `dj/recommend`, `dj/sublist`, `dj/sublist/full` | `djRadios` |
+| `dj/toplist` | `toplist` |
+| `toplist`, `toplist_detail` | `list` |
+| `top/song` | `data` |
+| `top/album` | `albums` |
+| `top/artists` | `artists` |
+| `top/playlist`, `top/playlist/highquality` | `playlists` |
+| `personalized` | `result` |
+| `personalized/newsong` | `result` |
+| `personal/fm` | `data` |
+| `playmode/intelligence/list` | `data` |
+| `scrobble` | `data` |
+| `banner` | `banners` |
+| `simi/song`, `simi/artist`, `simi/playlist` | `songs` / `artists` / `playlists` |
+| `check/music` | `success` |
+| `batch` | `data` |
+| `api`（通用透传） | `data` |
+| `calendar` | `data` |
+| `event/del`, `event/forward`, `share/resource` | `data` |
+| `history/recommend/songs`, `history/recommend/songs/detail` | `data` |
 | `record/recent/song` | `data` |
+| `daily_signin` | `data` |
+
+> 未在上表出现的方法一律**不校验数据字段**（只看 `code`），例如 `playlist/delete`、`playlist/subscribe`、`comment/like`。
 
 ### 开发建议
 
@@ -2647,7 +2710,10 @@ my-provider.zip
 }
 ```
 
-更新时，`user_data/` 子目录会被保留（用于存储用户配置）。
+> ⚠️ **更新是「先删旧目录、再移入新目录」**（`ModuleManager.updateModule`）。包内的任何
+> 运行时数据子目录**一律不被保留**（包括此前文档错误声称会保留的 `user_data/`）——
+> 用户级持久化（配置、登录态、会话）必须放在宿主侧 `settingsSchema`（`provider_config_<id>`
+> 命名空间）里，那部分与模块目录解耦、更新不受影响。**别把用户数据写进模块 zip 目录。**
 
 ---
 
@@ -2664,28 +2730,33 @@ my-provider.zip
 ### 快速测试脚本
 
 ```bash
+# 这里的端点统一用 §2 快速开始 manifest 里的映射后效果：
+#   cloudsearch → search,  song/url/v1 → song/url,  song/detail → song/detail,  lyric/new → lyric
+# （宿主 BinaryProvider 唯一走的路径是 /api/{方法}，HTTP Provider 是 {entryPoint}/{方法}；
+#   下面按「你自己写的端点」示范，签中签约方/ curl 需与二选一。）
+
 # 测试根路径
 curl http://localhost:3000/
 
-# 测试必选 API
-curl -X POST http://localhost:3000/song/url/v1 \
+# 测试必选 API（宿主会发的是 POST /song/url，body {id, level}）
+curl -X POST http://localhost:3000/song/url \
   -H "Content-Type: application/json" \
   -d '{"id":"123456","level":"standard"}'
 
-# 测试歌词
-curl -X POST http://localhost:3000/lyric/new \
+# 测试搜索（宿主发的是 POST /search，body 只有 keywords + type）
+curl -X POST http://localhost:3000/search \
   -H "Content-Type: application/json" \
-  -d '{"id":"123456"}'
+  -d '{"keywords":"周杰伦","type":1}'
 
-# 测试歌曲详情
+# 测试歌曲详情（宿主发 ids 逗号串）
 curl -X POST http://localhost:3000/song/detail \
   -H "Content-Type: application/json" \
   -d '{"ids":"123456,789012"}'
 
-# 测试 /api/ 前缀路由（BinaryProvider 兼容）
-curl -X POST http://localhost:3000/api/song/url/v1 \
+# 测试歌词
+curl -X POST http://localhost:3000/lyric \
   -H "Content-Type: application/json" \
-  -d '{"id":"123456","level":"standard"}'
+  -d '{"id":"123456"}'
 
 # 测试健康检查
 curl http://localhost:3000/health
