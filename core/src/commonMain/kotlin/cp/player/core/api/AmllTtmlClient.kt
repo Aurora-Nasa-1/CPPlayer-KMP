@@ -1,5 +1,6 @@
 package cp.player.core.api
 
+import cp.player.core.lyrics.LyricsMatchScorer
 import cp.player.core.util.SettingsStorage
 import cp.player.core.util.createHttpClient
 import io.ktor.client.HttpClient
@@ -136,6 +137,7 @@ class AmllTtmlClient(
         name: String?,
         artist: String?,
         album: String?,
+        durationMs: Long = 0L,
     ): String? = withContext(Dispatchers.IO) {
         val platform = amllPlatformFor(providerId)
 
@@ -143,7 +145,7 @@ class AmllTtmlClient(
         if (platform != null && !songId.isNullOrBlank()) {
             val key = "p:${platform.name}:$songId"
             cachedTtml(key)?.let { return@withContext it }
-            if (isNotFound(key)) return@withContext searchFallback(platform, songId, name, artist, album)
+            if (isNotFound(key)) return@withContext searchFallback(platform, songId, name, artist, album, durationMs)
             getByPlatform(platform, songId)?.let { item ->
                 val ttml = item.lyrics?.takeIf { it.isNotBlank() }
                 if (ttml != null) {
@@ -151,14 +153,14 @@ class AmllTtmlClient(
                     diskPut(key, ttml)
                 }
                 return@withContext ttml
-                    ?: searchFallback(platform, songId, name, artist, album)
+                    ?: searchFallback(platform, songId, name, artist, album, durationMs)
             }
             notFoundAdd(key)
-            return@withContext searchFallback(platform, songId, name, artist, album)
+            return@withContext searchFallback(platform, songId, name, artist, album, durationMs)
         }
 
         // 2) 无平台 ID：只走搜索
-        searchFallback(platform, songId, name, artist, album)
+        searchFallback(platform, songId, name, artist, album, durationMs)
     }
 
     /** 搜索回退：标题/歌手/专辑命中后按 id 精确取全文。 */
@@ -168,6 +170,7 @@ class AmllTtmlClient(
         name: String?,
         artist: String?,
         album: String?,
+        durationMs: Long = 0L,
     ): String? {
         if (name.isNullOrBlank()) return null
         // ⚠️ 搜索键必须带歌手：本地曲目 platform / songId 都是 null，只按歌名会撞车 ——
@@ -181,7 +184,23 @@ class AmllTtmlClient(
             if (!album.isNullOrBlank()) add("albumName" to album)
         }
         val items = search(params) ?: return null
-        val hit = items.firstOrNull() ?: run {
+        val target = LyricsMatchScorer.Target(
+            title = name,
+            artist = artist,
+            album = album,
+            durationMs = durationMs,
+        )
+        val hit = LyricsMatchScorer.findBestMatch(
+            target = target,
+            candidates = items,
+        ) { item ->
+            LyricsMatchScorer.Candidate(
+                titles = item.musicNames.ifEmpty { listOfNotNull(item.filename) },
+                artists = item.artistNames,
+                albums = item.albumNames,
+                durationMs = 0L,
+            )
+        } ?: run {
             notFoundAdd(searchKey)
             return null
         }

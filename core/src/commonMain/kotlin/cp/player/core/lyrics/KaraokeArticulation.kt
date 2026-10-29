@@ -90,7 +90,7 @@ internal object KaraokeArticulation {
         val out = mutableListOf<ArticulatedToken>()
 
         for ((idx, token) in tokens.withIndex()) {
-            val pause = (token.pauseAfterMs * rate).roundToLong()
+            val pause = token.pauseAfterMs
             when {
                 !token.isPronounced ->
                     out += ArticulatedToken(token.text, 0L, 0L, 0f, pause)
@@ -106,7 +106,7 @@ internal object KaraokeArticulation {
                     // 假名 / 长音符：一拍，不改暗区
                     out += ArticulatedToken(token.text, 0L, 0L, 1f, pause)
                 language == KaraokeLanguage.ZH && token.kind == TokenKind.HAN ->
-                    out += chineseHan(token.text, pause)
+                    out += chineseHan(token.text, pause, rate)
                 else ->
                     out += ArticulatedToken(token.text, 0L, 0L, 1f, pause)
             }
@@ -123,9 +123,11 @@ internal object KaraokeArticulation {
 
     // ============ 汉语 ============
 
-    private fun chineseHan(token: String, pause: Long): ArticulatedToken {
+    private fun chineseHan(token: String, pause: Long, rate: Float = 1f): ArticulatedToken {
         val ch = token.first()
-        val onset = ZH_ONSET_MS[PinyinTimingTable.initialClass(ch)]
+        val rawOnset = ZH_ONSET_MS[PinyinTimingTable.initialClass(ch)]
+        // 快歌（rate > 1.0）压缩辅音起音，避免暗区挤占过多元音发音窗口
+        val onset = if (rate > 1.0f) (rawOnset / rate).roundToLong().coerceAtLeast(15L) else rawOnset
         var weight = ZH_FINAL_WEIGHT[PinyinTimingTable.finalClass(ch)]
         // 三声最长（低平调可拖），四声略短（降调收得快），轻声最弱
         weight *= when (PinyinTimingTable.tone(ch)) {
@@ -168,21 +170,23 @@ internal object KaraokeArticulation {
      * **切分结果拼回去必须等于原文**，否则整体退化成一段。
      */
     private fun englishWord(raw: String, pause: Long): List<ArticulatedToken> {
+        val lexical = raw.trim()
+        val trailing = raw.substring(lexical.length)
         // 词典命中用词典权重（重读/弱读差一倍以上），否则退回音节数估算
-        val total = PhoneticPriors.lexiconWeight(raw)
-            ?: maxOf(PhoneticPriors.estimateEnglishSyllables(raw).toFloat() * 1.05f, 1f)
-        val pieces = splitEnglishPieces(raw)
+        val total = PhoneticPriors.lexiconWeight(lexical)
+            ?: maxOf(PhoneticPriors.estimateEnglishSyllables(lexical).toFloat() * 1.05f, 1f)
+        val pieces = splitEnglishPieces(lexical)
         if (pieces.size <= 1) {
-            return listOf(ArticulatedToken(raw, 0L, codaMs(raw), total, pause))
+            return listOf(ArticulatedToken(lexical + trailing, 0L, codaMs(lexical), total, pause))
         }
         // 词总权重由音节数给出，再按「首音节重读」分配
         val ratios = List(pieces.size) { if (it == 0) 1f else 0.72f }
         val ratioSum = ratios.sum()
-        val coda = codaMs(raw)
+        val coda = codaMs(lexical)
         return pieces.mapIndexed { i, piece ->
             val last = i == pieces.lastIndex
             ArticulatedToken(
-                text = piece,
+                text = if (last) piece + trailing else piece,
                 onsetMs = 0L,
                 releaseMs = if (last) coda else 0L,
                 weight = total * ratios[i] / ratioSum,

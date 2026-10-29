@@ -213,6 +213,19 @@ class SmartKaraokeLrcSynthesizerTest {
     }
 
     @Test
+    fun `completed line stays focused until next line starts without extending word highlight`() {
+        val input = listOf(
+            SyncedLyricLine(time = 1_000L, endTime = 2_000L, text = "说走就走"),
+            SyncedLyricLine(time = 6_000L, endTime = 8_000L, text = "下一句"),
+        )
+
+        val first = SmartKaraokeLrcSynthesizer.synthesize(input)[0]
+
+        assertEquals(6_000L, first.endTime, "行焦点应保持到下一行真正起唱")
+        assertTrue(first.words.last().endTime < first.endTime!!, "最后一字应先结束，演唱空隙不能继续扫光")
+    }
+
+    @Test
     fun `long interlude line truncates singing duration reasonably`() {
         val input = listOf(
             SyncedLyricLine(time = 10_000L, text = "说走就走"),
@@ -246,6 +259,56 @@ class SmartKaraokeLrcSynthesizerTest {
         assertTrue(average in 90L..200L, "高语速密集行单字平均耗时应紧凑（实际 $average）")
     }
 
+    @Test
+    fun `real word anchors pull synthesized duration toward observed singing rate`() {
+        val anchors = listOf(
+            SyncedLyricLine(
+                time = 1_000L,
+                text = "海风吹拂",
+                words = listOf(
+                    SyncedWord("海", 1_000L, 1_250L), SyncedWord("风", 1_250L, 1_500L),
+                    SyncedWord("吹", 1_500L, 1_750L), SyncedWord("拂", 1_750L, 2_000L),
+                ),
+            ),
+            SyncedLyricLine(
+                time = 3_000L,
+                text = "灯火阑珊",
+                words = listOf(
+                    SyncedWord("灯", 3_000L, 3_250L), SyncedWord("火", 3_250L, 3_500L),
+                    SyncedWord("阑", 3_500L, 3_750L), SyncedWord("珊", 3_750L, 4_000L),
+                ),
+            ),
+            SyncedLyricLine(
+                time = 5_000L,
+                text = "月光如水",
+                words = listOf(
+                    SyncedWord("月", 5_000L, 5_250L), SyncedWord("光", 5_250L, 5_500L),
+                    SyncedWord("如", 5_500L, 5_750L), SyncedWord("水", 5_750L, 6_000L),
+                ),
+            ),
+            SyncedLyricLine(time = 7_000L, text = "梦里花开"),
+            SyncedLyricLine(time = 13_000L, text = "下一句"),
+        )
+
+        val synthesized = SmartKaraokeLrcSynthesizer.synthesize(anchors)[3].words
+        val duration = synthesized.last().endTime - synthesized.first().beginTime
+        assertTrue(duration < 3_500L, "真逐字锚点应阻止四字句吸收六秒跨度（实际 $duration ms）")
+        assertEquals("梦里花开", synthesized.joinToString("") { it.text })
+    }
+
+    @Test
+    fun `sparse signals preserve articulation instead of flattening every syllable`() {
+        val result = SmartKaraokeLrcSynthesizer.synthesize(
+            listOf(
+                SyncedLyricLine(time = 1_000L, text = "光雨风吹"),
+                SyncedLyricLine(time = 101_000L, text = "下一句"),
+            ),
+        )[0].words
+        val durations = result.map { it.endTime - it.beginTime }
+        assertTrue(durations.distinct().size > 2, "证据稀疏也应保留韵母、虚词与句尾节奏差异：$durations")
+        assertTrue(durations[0] > durations[1], "开口韵光应长于闭口韵雨：$durations")
+    }
+
     // ============ 气口 / 切分守恒 ============
 
     @Test
@@ -264,6 +327,25 @@ class SmartKaraokeLrcSynthesizerTest {
         for (sample in samples) {
             assertEquals(sample, SmartKaraokeLrcSynthesizer.tokenize(sample).joinToString("") { it.text }, "切分必须守恒：[$sample]")
         }
+    }
+
+    @Test
+    fun `single word space creates a subtle gap and repeated spaces create a phrase break`() {
+        fun gap(text: String): Long {
+            val words = SmartKaraokeLrcSynthesizer.synthesize(
+                listOf(
+                    SyncedLyricLine(time = 1_000L, text = text),
+                    SyncedLyricLine(time = 5_000L, text = "next"),
+                ),
+            )[0].words
+            val boundary = words.indexOfFirst { it.text.lastOrNull()?.isWhitespace() == true }
+            return words[boundary + 1].beginTime - words[boundary].endTime
+        }
+
+        val single = gap("hello world")
+        val repeated = gap("hello  world")
+        assertTrue(single in 8L..160L, "英文单空格应有轻微分词气口（实际 ${single}ms，tokens=${SmartKaraokeLrcSynthesizer.tokenize("hello world")}）")
+        assertTrue(repeated >= single + 80L, "连续空格应表达更强的乐句停顿：单空格=$single，双空格=$repeated")
     }
 
     @Test

@@ -99,6 +99,7 @@ internal class AmllLyricsSource(
             name = sanitized.title.ifBlank { null },
             artist = sanitized.artist.ifBlank { null },
             album = request.album.ifBlank { null },
+            durationMs = request.durationMs,
         ) ?: return null
         val lines = LyricsParser.parseTtml(ttml)
         if (lines.isEmpty()) return null

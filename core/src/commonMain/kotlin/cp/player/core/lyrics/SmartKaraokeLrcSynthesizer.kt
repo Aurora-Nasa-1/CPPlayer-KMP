@@ -81,39 +81,64 @@ object SmartKaraokeLrcSynthesizer {
 
         // 窗口上限：行尾永远要给下一行留出安全距离（短跨度时宁可挤，也不越界）
         val maxWindow = (span - SAFE_TAIL_MS).coerceAtLeast(120L)
-        val plan = planLineDuration(span, syllableCount, density, tempo)
-        var window = plan.singMs
-        // 同曲真逐字行给出的语速锚点：宁可留白，也不要把一个字拖到两秒
-        if (anchorMsPerToken != null) {
-            val low = (syllableCount * anchorMsPerToken * 0.55f).toLong()
-            val high = (syllableCount * anchorMsPerToken * 1.90f).toLong()
-            window = window.coerceIn(min(low, high), max(low, high))
-        }
-        window = window.coerceIn(min(MIN_SINGING_MS, maxWindow), maxWindow)
+        val durationEstimate = estimateLineDuration(
+            span = span,
+            syllableCount = syllableCount,
+            density = density,
+            tempo = tempo,
+            anchorMsPerToken = anchorMsPerToken,
+            hasPhraseBoundary = tokens.any { it.pauseAfterMs > 0L },
+        )
+        val window = durationEstimate.durationMs.coerceIn(min(MIN_SINGING_MS, maxWindow), maxWindow)
 
-        // ⚠️ 只有 [LinePlan.coreMs] 参与「按权重分配」；剩下的那截是**末字的延长音**。
-        // 把多出来的时间摊到每个字上，会把整句唱成慢动作；真实的唱法是只有最后一个字被拖长。
-        val tailMs = (window - plan.coreMs).coerceIn(0L, MAX_TAIL_MS)
-        val coreWindow = window - tailMs
+        // 【L1】句中长停顿/呼吸口识别与富余时间分配：
+        // 算出正常发音基准，多出的时间若有标点气口则优先充入行内停顿，让进度在停顿处驻留停留
+        val typicalRate = tempo.typicalMs ?: 340f
+        val expectedSingMs = (syllableCount * typicalRate).toLong()
+        val totalExcess = (window - expectedSingMs).coerceAtLeast(0L)
 
-        // 语速系数只压缩辅音与气口，不动元音之间的相对比例
-        val rate = (coreWindow.toFloat() / syllableCount / 420f).coerceIn(0.6f, 1.8f)
+        val expandablePauseTokens = tokens.count { it.pauseAfterMs >= CAESURA_STANDARD_MS }
+        val extraPauseTotal = if (expandablePauseTokens > 0 && totalExcess > 100L) {
+            (totalExcess * 0.55f).toLong().coerceIn(0L, expandablePauseTokens * 1000L)
+        } else 0L
+        val extraPauseEach = if (expandablePauseTokens > 0) extraPauseTotal / expandablePauseTokens else 0L
+
+        // 末字延长音分配（剩余富余时间的一半，上限 1200ms）
+        val remainingExcess = totalExcess - extraPauseTotal
+        val tailMs = (remainingExcess * 0.5f).toLong().coerceIn(0L, MAX_TAIL_MS)
+        val coreWindow = (window - tailMs - extraPauseTotal).coerceAtLeast(syllableCount * 60L)
+
+        // 语速系数：全曲典型音节耗时约为 360ms。
+        // msPerSyllable 越小，rate 越大（越大越快），用于压缩辅音暗区与微气口
+        val msPerSyllable = (coreWindow.toFloat() / syllableCount).coerceAtLeast(50f)
+        val rate = (360f / msPerSyllable).coerceIn(0.5f, 2.5f)
         val language = KaraokeArticulation.languageOf(line.text)
         var parts = KaraokeArticulation.articulate(tokens, language, rate, lineEndLiftOf(tempo))
 
-        // ---- 预算：固定项（暗区 + 气口）先扣，剩下按权重分 ----
-        fun fixedMs() = parts.sumOf { it.onsetMs + it.pauseMs }
+        if (extraPauseEach > 0L) {
+            parts = parts.map { part ->
+                if (part.pauseMs >= CAESURA_STANDARD_MS) part.copy(pauseMs = part.pauseMs + extraPauseEach) else part
+            }
+        }
+
+        val minVisible = if (rate >= 1.3f) {
+            (MIN_VISIBLE_MS / (rate * 0.8f)).toLong().coerceIn(40L, MIN_VISIBLE_MS)
+        } else {
+            MIN_VISIBLE_MS
+        }
+
+        // ---- 预算：固定项（气口）先扣，剩下按权重分 ----
+        fun fixedMs() = parts.sumOf { it.pauseMs }
         val mins = parts.map { part ->
-            if (part.silent || part.weight <= 0f) 0L else MIN_VISIBLE_MS + part.releaseMs
+            if (part.silent || part.weight <= 0f) 0L else minVisible
         }
         var elastic = coreWindow - fixedMs()
         if (elastic < mins.sum()) {
-            // 固定项吃光了窗口（超快 rap / 一行全是标点）：按比例压暗区与气口，元件不动
             val target = (coreWindow - mins.sum()).coerceAtLeast(0L)
             val fixed = fixedMs()
             val k = if (fixed > 0) target.toFloat() / fixed else 1f
             parts = parts.map {
-                it.copy(onsetMs = (it.onsetMs * k).toLong(), pauseMs = (it.pauseMs * k).toLong())
+                it.copy(pauseMs = (it.pauseMs * k).toLong())
             }
             elastic = coreWindow - fixedMs()
         }
@@ -124,7 +149,6 @@ object SmartKaraokeLrcSynthesizer {
         var cursor = start
         for (i in parts.indices) {
             val part = parts[i]
-            cursor += part.onsetMs
             val allocated = durations[i]
             when {
                 part.silent -> {
@@ -138,10 +162,12 @@ object SmartKaraokeLrcSynthesizer {
                 }
 
                 part.weight > 0f -> {
+                    // 【L6】首字严格从 start 开始，消除起音迟钝；【L8】连续音节首尾相接，杜绝人工制造的字间空转死区
                     val begin = cursor
-                    val visibleEnd = max(begin + MIN_VISIBLE_MS, cursor + allocated - part.releaseMs)
-                    words += SyncedLyricLine.SyncedWord(part.text, begin, visibleEnd)
-                    cursor += allocated
+                    val dur = allocated.coerceAtLeast(1L)
+                    val end = begin + dur
+                    words += SyncedLyricLine.SyncedWord(part.text, begin, end)
+                    cursor = end
                 }
 
                 else -> {
@@ -153,28 +179,45 @@ object SmartKaraokeLrcSynthesizer {
                     }
                 }
             }
+            // 【L1】行内气口/停顿：拉开停顿区间，使高亮在此驻留停顿
             cursor += part.pauseMs
         }
 
         // 末字延长音：把「本该留白前的那截」全部给最后一个有字的段，
-        // 视觉上就是那个字一直亮着被拖长，而不是整句均匀变慢。
+        // 视觉上就是那个字一直亮着被拖长，而不是整句均匀变慢。上限钳制在 2200ms 内，防止发呆卡顿。
         if (tailMs > 0L && words.isNotEmpty()) {
             val lastIndex = words.lastIndex
             val last = words[lastIndex]
-            words[lastIndex] = last.copy(endTime = last.endTime + tailMs)
+            val lastBaseDur = last.endTime - last.beginTime
+            val effectiveTail = min(tailMs, (2_200L - lastBaseDur).coerceAtLeast(0L))
+            words[lastIndex] = last.copy(endTime = last.endTime + effectiveTail)
         }
 
-        // 兜底钳制：末字绝不允许压到下一行头上。只允许收缩 end，不许把 begin 往前挪
-        // （往前挪会破坏 begin 的单调性，进而让渲染器整行错位）。
+        // 兜底钳制：末字绝不允许压到下一行头上。
         if (words.isNotEmpty()) {
             val limit = nextStart - 40L
             val last = words.last()
-            if (last.endTime > limit) {
-                words[words.lastIndex] = last.copy(endTime = max(last.beginTime + 1L, limit))
+            if (last.endTime > limit && limit > start) {
+                if (last.beginTime >= limit) {
+                    val totalSpan = (limit - start).coerceAtLeast(words.size.toLong())
+                    var c = start
+                    val oldTotal = (last.endTime - start).coerceAtLeast(1L)
+                    for (i in words.indices) {
+                        val w = words[i]
+                        val wDur = maxOf(1L, (w.endTime - w.beginTime) * totalSpan / oldTotal)
+                        words[i] = w.copy(beginTime = c, endTime = c + wDur)
+                        c += wDur
+                    }
+                } else {
+                    words[words.lastIndex] = last.copy(endTime = max(last.beginTime + 1L, limit))
+                }
             }
         }
 
-        return line.copy(words = words, endTime = line.endTime ?: (start + span))
+        // 与 AMLL 的 TTML 呈现一致：最后一个字扫完后，列表焦点提前移动到下一行，
+        // 但下一行逐字动画仍严格等到它自己的 start 才开始。
+        val singingEnd = words.lastOrNull()?.endTime ?: line.endTime ?: (start + span)
+        return line.copy(words = words, endTime = singingEnd)
     }
 
     private fun beginOfLast(words: List<SyncedLyricLine.SyncedWord>, fallback: Long): Long =
@@ -189,6 +232,51 @@ object SmartKaraokeLrcSynthesizer {
      * @param singMs 整行实际占用（= coreMs + 末字延长）
      */
     private data class LinePlan(val coreMs: Long, val singMs: Long)
+
+    private data class DurationSignal(val durationMs: Long, val weight: Float)
+
+    private data class DurationEstimate(val durationMs: Long)
+
+    /**
+     * 融合行跨度、全曲语速、同曲真逐字锚点与乐句边界，得到歌唱时长。
+     *
+     * 权重代表该信号在当前歌曲里的可信度，不是固定平均：真逐字锚点最强；样本充分的
+     * 全曲语速次之；只有行起点时主要依赖跨度规划。
+     */
+    private fun estimateLineDuration(
+        span: Long,
+        syllableCount: Int,
+        density: Float,
+        tempo: SongTempo,
+        anchorMsPerToken: Float?,
+        hasPhraseBoundary: Boolean,
+    ): DurationEstimate {
+        val planned = planLineDuration(span, syllableCount, density, tempo).singMs
+        val signals = mutableListOf(DurationSignal(planned, if (tempo.typicalMs != null) 0.55f else 0.35f))
+
+        tempo.typicalMs?.let { typical ->
+            signals += DurationSignal(
+                durationMs = (syllableCount * typical).toLong(),
+                weight = 0.65f,
+            )
+        }
+        anchorMsPerToken?.let { anchor ->
+            signals += DurationSignal(
+                durationMs = (syllableCount * anchor).toLong(),
+                weight = 1f,
+            )
+        }
+        if (hasPhraseBoundary) {
+            signals += DurationSignal(
+                durationMs = (span - breathFor(span, density)).coerceAtLeast(MIN_SINGING_MS),
+                weight = 0.25f,
+            )
+        }
+
+        val weightSum = signals.sumOf { it.weight.toDouble() }.toFloat().coerceAtLeast(0.01f)
+        val duration = signals.sumOf { it.durationMs.toDouble() * it.weight } / weightSum
+        return DurationEstimate(durationMs = duration.toLong().coerceAtLeast(MIN_SINGING_MS))
+    }
 
     /**
      * 这一行到底唱多久。
@@ -224,7 +312,7 @@ object SmartKaraokeLrcSynthesizer {
         val maxRate = tempo.maxMs ?: return legacySingingDuration(span, syllableCount, density)
             .let { LinePlan(it, it) }
 
-        val breath = breathFor(span)
+        val breath = breathFor(span, density)
         val allow = max(120L, span - breath)
         val cap = (syllableCount * maxRate).toLong()
         val singing = min(allow, cap).coerceAtLeast(min(MIN_SINGING_MS, allow))
@@ -234,8 +322,13 @@ object SmartKaraokeLrcSynthesizer {
         return LinePlan(singing - tail, singing)
     }
 
-    /** 行间换气：按跨度比例取，短行少喘、长行多喘，但都有限。 */
-    private fun breathFor(span: Long): Long = (span * 0.07f).toLong().coerceIn(150L, 450L)
+    /** 行间换气：按跨度比例取，短行少喘、长行多喘，快歌（【L4】）适当压窄气口避免挤占歌唱。 */
+    private fun breathFor(span: Long, density: Float = 2.5f): Long {
+        val factor = if (density >= 3.6f) 0.045f else 0.07f
+        val minB = if (density >= 3.6f) 80L else 150L
+        val maxB = if (density >= 3.6f) 220L else 450L
+        return (span * factor).toLong().coerceIn(minB, maxB)
+    }
 
     /**
      * 慢歌末字拖得更长、快歌收得更干脆 —— 逐字渲染里最容易被听出「假」的地方。
@@ -424,8 +517,17 @@ object SmartKaraokeLrcSynthesizer {
 
     // ============ 切分 ============
 
-    /** 行内微气口的触发字符（句末停顿交给行跨度，不在这里算）。 */
-    private val CAESURA_PUNCT = setOf('，', ',', '、', '；', ';', '：', ':', '…', '—', '－', '-')
+    /** 标准行内气口（逗号/顿号/分号/冒号/斜杠/竖线）。 */
+    private val CAESURA_STANDARD_PUNCT = setOf('，', ',', '、', '；', ';', '：', ':', '|', '/')
+
+    /** 强气口（省略号/破折号/长音符）。 */
+    private val CAESURA_STRONG_PUNCT = setOf('…', '—', '－', '-', '~', '～')
+
+    private const val CAESURA_STANDARD_MS = 150L
+    private const val CAESURA_STRONG_MS = 240L
+    private const val CAESURA_CJK_SPACE_MS = 90L
+    private const val CAESURA_WORD_SPACE_MS = 35L
+    private const val CAESURA_LONG_SPACE_MS = 170L
 
     /**
      * 把行文本切成歌唱 token。
@@ -468,13 +570,27 @@ object SmartKaraokeLrcSynthesizer {
             val c = text[i]
             when {
                 c.isWhitespace() -> {
+                    val from = i
+                    while (i < len && text[i].isWhitespace()) i++
+                    val spaces = text.substring(from, i)
                     if (out.isEmpty()) {
-                        pending.append(c)
+                        pending.append(spaces)
                     } else {
                         val last = out.removeAt(out.lastIndex)
-                        out += last.copy(text = last.text + c)
+                        val previousCjk = last.text.any { isCjkLyricChar(it) }
+                        val nextChar = text.getOrNull(i)
+                        val nextCjk = nextChar != null && isCjkLyricChar(nextChar)
+                        val pauseMs = when {
+                            spaces.length >= 2 -> CAESURA_LONG_SPACE_MS + (spaces.length - 2) * 45L
+                            previousCjk || nextCjk -> CAESURA_CJK_SPACE_MS
+                            nextChar != null -> CAESURA_WORD_SPACE_MS
+                            else -> 0L
+                        }
+                        out += last.copy(
+                            text = last.text + spaces,
+                            pauseAfterMs = max(last.pauseAfterMs, pauseMs),
+                        )
                     }
-                    i++
                 }
 
                 c.isLetterOrDigit() && c.code < 0x3000 -> {
@@ -512,8 +628,13 @@ object SmartKaraokeLrcSynthesizer {
                     i++
                 }
 
-                c in CAESURA_PUNCT -> {
-                    attachToPrevious(c, CAESURA_MS)
+                c in CAESURA_STRONG_PUNCT -> {
+                    attachToPrevious(c, CAESURA_STRONG_MS)
+                    i++
+                }
+
+                c in CAESURA_STANDARD_PUNCT -> {
+                    attachToPrevious(c, CAESURA_STANDARD_MS)
                     i++
                 }
 
@@ -526,6 +647,10 @@ object SmartKaraokeLrcSynthesizer {
         if (pending.isNotEmpty()) out += LyricToken(pending.toString(), TokenKind.PUNCT)
         return out
     }
+
+    private fun isCjkLyricChar(c: Char): Boolean =
+        c in '\u4E00'..'\u9FFF' || c in '\u3400'..'\u4DBF' ||
+            c in '\uAC00'..'\uD7A3' || PhoneticPriors.isJapaneseKana(c)
 }
 
 /** 歌唱 token 的类别：决定时间怎么算，不影响渲染。 */

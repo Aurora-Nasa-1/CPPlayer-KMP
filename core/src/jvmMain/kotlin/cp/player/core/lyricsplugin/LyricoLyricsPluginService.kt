@@ -1,5 +1,6 @@
 package cp.player.core.lyricsplugin
 
+import cp.player.core.lyrics.LyricsMatchScorer
 import cp.player.core.playback.SyncedLyricLine
 import cp.player.core.util.PlatformContext
 import cp.player.core.util.PlatformSupport
@@ -107,7 +108,7 @@ class LyricoLyricsPluginService(
             val capabilities = source.manifest.capabilities.ifEmpty { setOf(PluginCapability.SEARCH_SONGS) }
             if (PluginCapability.GET_LYRICS !in capabilities) continue
             val outcome = runCatching {
-                fetchFromSource(source, keyword, durationMs, mediaId)
+                fetchFromSource(source, title, artist, album, durationMs, mediaId)
             }.getOrElse { throwable ->
                 if (throwable is CancellationException) throw throwable
                 null
@@ -135,8 +136,7 @@ class LyricoLyricsPluginService(
         val source = store.loadSources().firstOrNull { it.manifest.id == id } ?: return@withContext null
         val capabilities = source.manifest.capabilities.ifEmpty { setOf(PluginCapability.SEARCH_SONGS) }
         if (PluginCapability.GET_LYRICS !in capabilities) return@withContext null
-        val keyword = listOf(title, artist).filter { it.isNotBlank() }.joinToString(" ")
-        runCatching { fetchFromSource(source, keyword, durationMs, mediaId) }.getOrElse { throwable ->
+        runCatching { fetchFromSource(source, title, artist, album, durationMs, mediaId) }.getOrElse { throwable ->
             if (throwable is CancellationException) throw throwable
             null
         }
@@ -144,23 +144,26 @@ class LyricoLyricsPluginService(
 
     private fun fetchFromSource(
         source: LyricoPluginSource,
-        keyword: String,
+        title: String,
+        artist: String,
+        album: String,
         durationMs: Long,
         mediaId: String? = null,
     ): PluginLyricsOutcome? {
         val runtime = runtimeFor(source)
         val config = store.pluginConfig(source.manifest.id)
 
+        val rawKeyword = listOf(title, artist).filter { it.isNotBlank() }.joinToString(" ")
         // 优先使用清洗后的关键词；如果没搜到且原词不同，用原词再试一次
-        val sanitized = cp.player.core.util.MusicSearchSanitizer.sanitize(keyword)
-        val candidateKeywords = listOf(sanitized.cleanKeyword, keyword).distinct().filter { it.isNotBlank() }
+        val sanitized = cp.player.core.util.MusicSearchSanitizer.sanitize(rawKeyword)
+        val candidateKeywords = listOf(sanitized.cleanKeyword, rawKeyword).distinct().filter { it.isNotBlank() }
 
         var hits = emptyList<PluginSongSearchResult>()
         for (kw in candidateKeywords) {
             val searchRequest = PluginSearchSongsRequest(
                 keyword = kw,
                 page = 1,
-                pageSize = 5,
+                pageSize = 10,
                 config = config,
                 mediaId = mediaId,
             )
@@ -176,12 +179,24 @@ class LyricoLyricsPluginService(
         }
         if (hits.isEmpty()) return null
 
-        // 优先挑时长最接近的候选，减少同名曲误配。
-        val hit = if (durationMs > 0) {
-            hits.minByOrNull { kotlin.math.abs(it.duration - durationMs) } ?: hits.first()
-        } else {
-            hits.first()
-        }
+        // 利用打分器综合评定歌名、歌手、时长及负向惩罚（伴奏/翻唱/Live），挑选最高置信度候选
+        val target = LyricsMatchScorer.Target(
+            title = title,
+            artist = artist.takeIf { it.isNotBlank() },
+            album = album.takeIf { it.isNotBlank() },
+            durationMs = durationMs,
+        )
+        val hit = LyricsMatchScorer.findBestMatch(
+            target = target,
+            candidates = hits,
+        ) { song ->
+            LyricsMatchScorer.Candidate(
+                titles = listOf(song.title),
+                artists = listOf(song.artist),
+                albums = listOf(song.album),
+                durationMs = song.duration,
+            )
+        } ?: return null
 
         val lyricsRequest = PluginGetLyricsRequest(
             song = hit.toPluginSongRequest(mediaId = mediaId),
