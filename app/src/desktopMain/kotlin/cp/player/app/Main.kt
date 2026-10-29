@@ -2,6 +2,7 @@ package cp.player.app
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +28,7 @@ import cp.player.app.platform.DesktopBackDispatcher
 import cp.player.app.platform.DesktopCloseBehavior
 import cp.player.app.platform.DesktopRenderTuning
 import cp.player.app.platform.DesktopTray
+import cp.player.app.platform.TrayMenuPopup
 import cp.player.app.platform.DesktopWindowPlacement
 import cp.player.app.platform.JbrWindowChrome
 import cp.player.app.platform.WindowDecorChoice
@@ -183,6 +185,32 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
         var dontAskAgain by remember { mutableStateOf(false) }
         // 关窗回调定义在 `Window(...)` 的参数位置上，那里拿不到 `window`，所以先把窗口存起来。
         val windowRef = remember { mutableStateOf<java.awt.Window?>(null) }
+
+        // 接管托盘的右键。**必须尽早注入**：`DesktopTray` 一旦看到有接管方就不再装
+        // AWT 原生菜单（两者并存会让右键同时弹两个菜单），所以这段放在
+        // `Window(...)` 之前 —— 通知订阅那条路径可能在窗口建好之前就把图标装上了。
+        //
+        // ⚠️ 菜单是**纯 AWT**（`TrayMenuPopup`），不经过 Compose 的组合与渲染循环。
+        // 之前用 Compose 独立窗口做过一版：事件收到了、窗口也建了，但内容是空的
+        // （窗口不可见时 Compose 不跑渲染），而且任务栏还多一个图标。托盘菜单最典型的
+        // 使用场景恰恰是主窗口隐藏着 —— 它不能依赖任何一条会随窗口可见性停摆的链路。
+        DisposableEffect(Unit) {
+            DesktopTray.onContextMenu = { x, y -> TrayMenuPopup.show(java.awt.Point(x, y)) }
+            DesktopTray.refreshMenu()
+            onDispose {
+                DesktopTray.onContextMenu = null
+                TrayMenuPopup.dismiss()
+            }
+        }
+
+        // 把窗口捞回来。托盘左键、托盘菜单「显示主界面」、迷你模式切换都走这一条 ——
+        // 三处各写一遍的话，「隐藏后唤不回」这类问题会变成要找三个地方才开始查。
+        val showMainWindow: () -> Unit = {
+            windowRef.value?.let { w ->
+                w.isVisible = true
+                w.toFront()
+            }
+        }
 
         // 隐藏到托盘。⚠️ 托盘装不上时必须**退回真退出** —— 否则窗口藏了、又没有图标能把它
         // 叫回来，应用就变成一个人间蒸发的僵尸进程（任务栏里也找不到，只能去杀进程）。
@@ -415,12 +443,7 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
             // `windowRef` 也要在这里补上 —— 关窗回调在 Window 之外，拿不到 window 对象。
             LaunchedEffect(window) {
                 windowRef.value = window
-                DesktopTray.onShowWindow = {
-                    windowRef.value?.let { w ->
-                        w.isVisible = true
-                        w.toFront()
-                    }
-                }
+                DesktopTray.onShowWindow = showMainWindow
                 DesktopTray.onExit = { exitApplication() }
             }
 

@@ -6,9 +6,14 @@ import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.MessageNotifyStrings
 import java.awt.Image
 import java.awt.MenuItem
+import java.awt.MouseInfo
+import java.awt.Point
 import java.awt.PopupMenu
 import java.awt.SystemTray
 import java.awt.TrayIcon
+import java.awt.event.InputEvent
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
 import javax.imageio.ImageIO
 
 /**
@@ -23,6 +28,20 @@ import javax.imageio.ImageIO
  *
  * 所以图标**懒创建**：只有「有人被订阅推送」或「用户选了最小化到托盘」时才装，
  * 两种情况都消失时由 [remove] 摘掉 —— 平时不占托盘位，不改变老用户的观感。
+ *
+ * ## 右键菜单：自绘接管，AWT 菜单只做兜底
+ *
+ * AWT 的 `PopupMenu` 是**原生菜单**，样式、图标、状态一无所能（连勾选态都只能是
+ * 系统那套灰蓝高亮）。所以「右键」这条链路由上层自绘接管：
+ *
+ * - 有人注入了 [onContextMenu] ⇒ 图标**不装**原生菜单，右键改为回调上层
+ *   （`Main.kt` 在光标处弹一个 AWT 自绘小窗，见 `TrayMenuPopup`）；
+ * - 没人接管（例如只用了通知、还没接线）⇒ 退回 [buildFallbackMenu]，
+ *   保证「至少能退出」，不会出现右键毫无反应的死局。
+ *
+ * ⚠️ **两者不能并存**：设了原生 `popupMenu` 的话，右键会同时弹出原生菜单和自绘菜单。
+ * 所以 [applyMenu] 每次都按 [onContextMenu] 是否为空重新决定 —— 这也是注入之后
+ * 必须调一次 [refreshMenu] 的原因。
  *
  * ## 为什么菜单要能重建
  *
@@ -44,6 +63,14 @@ object DesktopTray {
     var onNotificationClick: ((providerId: String, peerUid: Long, title: String) -> Unit)? = null
 
     /**
+     * 右键菜单请求：参数是**光标在屏幕上的位置**（AWT 用户坐标，与 Compose 的 px 同口径）。
+     *
+     * 非空即代表「右键交给自绘」，此时不会再给图标装原生 `PopupMenu`。
+     * 注入后请调一次 [refreshMenu]：图标可能早就装好了（通知订阅会先把它装上）。
+     */
+    var onContextMenu: ((x: Int, y: Int) -> Unit)? = null
+
+    /**
      * 最近一条气泡对应的会话。
      *
      * ⚠️ AWT 的气泡点击**不带任何 payload**（`ActionListener` 没有参数），
@@ -51,6 +78,14 @@ object DesktopTray {
      * 这是 AWT 的硬限制，接受它。
      */
     private var lastNotification: Triple<String, Long, String>? = null
+
+    /**
+     * 上一次派发右键的时间。
+     *
+     * Windows 在 **release** 时才让 `isPopupTrigger` 为真，部分 X11 在 **press** 就为真；
+     * 两个回调都接才跨平台，代价是同一手势可能进来两次 —— 用时间窗去抖掉第二次。
+     */
+    private var lastContextMenuAt = 0L
 
     val isSupported: Boolean get() = runCatching { SystemTray.isSupported() }.getOrDefault(false)
 
@@ -66,19 +101,34 @@ object DesktopTray {
         if (!isSupported) return false
         val existing = trayIcon
         if (existing != null) {
-            existing.popupMenu = buildMenu()
+            applyMenu(existing)
             return true
         }
         return runCatching {
             val icon = TrayIcon(trayImage(), "CPPlayer").apply {
                 isImageAutoSize = true
-                popupMenu = buildMenu()
+                applyMenu(this)
                 addActionListener { dispatchClick() }
+                addMouseListener(object : MouseAdapter() {
+                    // 右键＝自绘菜单入口。两个回调都挂，理由见 [lastContextMenuAt]。
+                    override fun mousePressed(e: MouseEvent) = dispatchContextMenu(e)
+                    override fun mouseReleased(e: MouseEvent) = dispatchContextMenu(e)
+                })
             }
             SystemTray.getSystemTray().add(icon)
             trayIcon = icon
             true
         }.getOrDefault(false)
+    }
+
+    /**
+     * 按当前的 [onContextMenu] / 语言重算托盘菜单。
+     *
+     * 注入自绘右键之后必须调一次：图标可能已经被通知订阅先装上了，
+     * 那时装的还是原生菜单，不刷新的话右键会同时弹两个。
+     */
+    fun refreshMenu() {
+        trayIcon?.let(::applyMenu)
     }
 
     /** 摘掉托盘图标（订阅清零且不再常驻时调用）。 */
@@ -114,11 +164,45 @@ object DesktopTray {
         if (routed == null) onShowWindow?.invoke()
     }
 
-    private fun buildMenu(): PopupMenu {
-        val strings = strings()
+    /**
+     * 右键的分发。**只认右键**：左键仍由 `ActionListener` 负责唤回窗口。
+     *
+     * 判定同时看 `isPopupTrigger`（Windows 在 release 置位）、`button`（多数平台会给
+     * `BUTTON3`）与 `BUTTON3_DOWN_MASK`（按下时的修饰位）—— 三者任一成立即算右键，
+     * 单看任何一个都会在某个平台上漏掉。
+     */
+    private fun dispatchContextMenu(e: MouseEvent) {
+        val handler = onContextMenu ?: return
+        val isRight = e.isPopupTrigger ||
+            e.button == MouseEvent.BUTTON3 ||
+            (e.modifiersEx and InputEvent.BUTTON3_DOWN_MASK) != 0
+        if (!isRight) return
+        val now = System.currentTimeMillis()
+        if (now - lastContextMenuAt < CONTEXT_MENU_DEBOUNCE_MS) return
+        lastContextMenuAt = now
+        // 事件自带的 x/y 是「图标内的相对坐标」，对定位菜单毫无用处；要的是屏幕光标。
+        val at = runCatching { MouseInfo.getPointerInfo()?.location }.getOrNull() ?: Point(0, 0)
+        // 留一行日志：托盘右键「没反应」时，先确认事件到底有没有走到这里。
+        // 这条链路一旦断在前半段（事件没派发），后面的窗口代码再对也看不出问题。
+        println("[CPPlayer] 托盘右键 at ${at.x},${at.y}")
+        handler(at.x, at.y)
+    }
+
+    private fun applyMenu(icon: TrayIcon) {
+        icon.popupMenu = if (onContextMenu == null) buildFallbackMenu() else null
+    }
+
+    /**
+     * AWT 原生兜底菜单。
+     *
+     * 只在**没人接管**右键时使用 —— 它的价值是「保证托盘图标始终有退出入口」，
+     * 不是视觉效果。正常路径下用户看到的是 `TrayMenuPopup` 那套自绘菜单。
+     */
+    private fun buildFallbackMenu(): PopupMenu {
+        val strings = stringsForTray()
         return PopupMenu().apply {
             add(MenuItem(strings.trayShowWindow).apply { addActionListener { onShowWindow?.invoke() } })
-            add(MenuItem("切换迷你模式 / 完整模式").apply {
+            add(MenuItem(strings.trayMiniMode).apply {
                 addActionListener {
                     cp.player.app.ui.util.DesktopShell.isMiniMode = !cp.player.app.ui.util.DesktopShell.isMiniMode
                     onShowWindow?.invoke()
@@ -139,8 +223,11 @@ object DesktopTray {
      * 而那是 **CompositionLocal**（`@Composable`），组合外调用会直接抛。
      * 这里对 `SYSTEM` 自己按 JVM 默认 locale 判一次 —— 与 `of()` 的
      * 「命中英文才用英文，其余中文」是同一条规则。
+     *
+     * 对 `TrayMenuPopup` 开放（internal）：自绘菜单和兜底菜单必须用同一套文案，
+     * 各写一份的话，改文案时漏掉一处就会出现「中文界面里混一句英文」。
      */
-    private fun strings(): MessageNotifyStrings = when (AppModel.appLanguageFlow.value) {
+    internal fun stringsForTray(): MessageNotifyStrings = when (AppModel.appLanguageFlow.value) {
         AppLanguage.ENGLISH -> CpStrings.en
         AppLanguage.ZH_HANS -> CpStrings.zh
         AppLanguage.SYSTEM ->
@@ -167,4 +254,8 @@ object DesktopTray {
         java.awt.image.BufferedImage(16, 16, java.awt.image.BufferedImage.TYPE_INT_ARGB)
 
     private const val RESOURCE = "/cpplayer/icon.png"
+
+    /** 右键去抖窗口：够盖住同一次手势的 press + release，又不至于吃掉连按。 */
+    private const val CONTEXT_MENU_DEBOUNCE_MS = 350L
 }
+
