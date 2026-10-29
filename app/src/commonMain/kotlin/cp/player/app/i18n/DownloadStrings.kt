@@ -48,7 +48,7 @@ interface DownloadStrings {
     /** @param title 任务（曲目）名。 */
     fun deleteConfirmMessage(title: String): String
 
-    // —— 「下载中」页签顶部的批量操作条 ——
+    // —— 「下载中」与「已完成」批量/多选操作条 ——
 
     /**
      * 批量操作条的标题。
@@ -57,21 +57,37 @@ interface DownloadStrings {
      * 「3 queued tasks」），在调用方拼就译不了（同本文件头部的说明）。
      */
     fun queueTasks(count: Int): String
+    fun completedTasks(count: Int): String
 
     val pauseAll: String
     val resumeAll: String
     val cancelAll: String
+    val deleteAll: String
+
+    val selectMode: String
+    val deleteSelected: String
+    val pauseSelected: String
+    val resumeSelected: String
 
     /** 单条取消（取消任务按钮 / 语义描述）。 */
     val cancel: String
 
-    // —— 取消下载的二次确认（破坏性：会丢掉未完成的临时文件）——
+    // —— 二次确认（破坏性：会丢掉临时文件或已下载文件）——
     val cancelAllConfirmTitle: String
     val cancelAllConfirmMessage: String
     val cancelConfirmTitle: String
 
     /** @param title 任务（曲目）名。 */
     fun cancelConfirmMessage(title: String): String
+
+    val deleteAllActiveConfirmTitle: String
+    val deleteAllActiveConfirmMessage: String
+    val deleteAllCompletedConfirmTitle: String
+    val deleteAllCompletedConfirmMessage: String
+
+    val deleteSelectedConfirmTitle: String
+    fun deleteSelectedActiveConfirmMessage(count: Int): String
+    fun deleteSelectedCompletedConfirmMessage(count: Int): String
 
     /** 已完成任务卡片的操作提示（列表行尾 / 右键菜单）。 */
     val playVideo: String
@@ -241,9 +257,15 @@ object DownloadStringsZh : DownloadStrings {
         "确定删除「$title」吗？已下载的文件与记录会被一并移除。"
 
     override fun queueTasks(count: Int) = "队列任务（$count）"
+    override fun completedTasks(count: Int) = "已完成（$count）"
     override val pauseAll = "全部暂停"
     override val resumeAll = "全部继续"
     override val cancelAll = "全部取消"
+    override val deleteAll = "全部删除"
+    override val selectMode = "多选"
+    override val deleteSelected = "删除所选"
+    override val pauseSelected = "暂停"
+    override val resumeSelected = "继续"
     override val cancel = "取消任务"
     override val cancelAllConfirmTitle = "取消全部下载"
     override val cancelAllConfirmMessage =
@@ -251,6 +273,19 @@ object DownloadStringsZh : DownloadStrings {
     override val cancelConfirmTitle = "取消下载"
     override fun cancelConfirmMessage(title: String) =
         "确定取消「$title」的下载吗？已下载的临时部分会被清除，之后需要重新下载。"
+
+    override val deleteAllActiveConfirmTitle = "清空全部任务"
+    override val deleteAllActiveConfirmMessage =
+        "确定删除全部进行中的下载任务吗？正在下载的任务将被取消，未完成的临时文件将被清除。"
+    override val deleteAllCompletedConfirmTitle = "删除全部已完成任务"
+    override val deleteAllCompletedConfirmMessage =
+        "确定删除全部已完成的下载任务吗？已下载的文件与记录将被一并移除。"
+
+    override val deleteSelectedConfirmTitle = "删除所选任务"
+    override fun deleteSelectedActiveConfirmMessage(count: Int) =
+        "确定删除所选的 $count 个下载任务吗？正在下载的任务将被取消，未完成的临时文件将被清除。"
+    override fun deleteSelectedCompletedConfirmMessage(count: Int) =
+        "确定删除所选的 $count 个已完成任务吗？已下载的文件与记录将被一并移除。"
 
     override val playVideo = "播放视频"
     override val addToLocalPlaylist = "添加到本地歌单"
@@ -380,9 +415,15 @@ object DownloadStringsEn : DownloadStrings {
         "Delete \"$title\"? The downloaded file and its record will both be removed."
 
     override fun queueTasks(count: Int) = if (count == 1) "1 queued task" else "$count queued tasks"
+    override fun completedTasks(count: Int) = if (count == 1) "1 completed" else "$count completed"
     override val pauseAll = "Pause all"
     override val resumeAll = "Resume all"
     override val cancelAll = "Cancel all"
+    override val deleteAll = "Delete all"
+    override val selectMode = "Select"
+    override val deleteSelected = "Delete selected"
+    override val pauseSelected = "Pause"
+    override val resumeSelected = "Resume"
     override val cancel = "Cancel download"
     override val cancelAllConfirmTitle = "Cancel all downloads"
     override val cancelAllConfirmMessage =
@@ -390,6 +431,21 @@ object DownloadStringsEn : DownloadStrings {
     override val cancelConfirmTitle = "Cancel download"
     override fun cancelConfirmMessage(title: String) =
         "Cancel downloading \"$title\"? The partial file will be removed and you'll need to start over."
+
+    override val deleteAllActiveConfirmTitle = "Clear all tasks"
+    override val deleteAllActiveConfirmMessage =
+        "Delete all active download tasks? Downloads in progress will be cancelled and incomplete temporary files removed."
+    override val deleteAllCompletedConfirmTitle = "Delete all completed tasks"
+    override val deleteAllCompletedConfirmMessage =
+        "Delete all completed download tasks? Downloaded files and records will both be removed."
+
+    override val deleteSelectedConfirmTitle = "Delete selected tasks"
+    override fun deleteSelectedActiveConfirmMessage(count: Int) =
+        if (count == 1) "Delete the selected download task? Downloads in progress will be cancelled and temporary files removed."
+        else "Delete the $count selected download tasks? Downloads in progress will be cancelled and temporary files removed."
+    override fun deleteSelectedCompletedConfirmMessage(count: Int) =
+        if (count == 1) "Delete the selected completed task? The downloaded file and record will both be removed."
+        else "Delete the $count selected completed tasks? Downloaded files and records will both be removed."
 
     override val playVideo = "Play video"
     override val addToLocalPlaylist = "Add to local playlist"

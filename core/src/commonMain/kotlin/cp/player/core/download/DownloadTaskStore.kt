@@ -61,13 +61,13 @@ class DownloadTaskStore(private val filePath: String) {
 
     /** 超限裁剪：COMPLETED 优先保留（最近优先），其余按 createdAt 从旧到新丢弃。 */
     private fun trimToLimit(tasks: List<DownloadTask>): List<DownloadTask> {
-        if (tasks.size <= MAX_RECORDS) return tasks
+        if (tasks.size <= MAX_RECORDS) return tasks.sortedBy { it.createdAt }
         val byNewest = tasks.sortedByDescending { it.createdAt }
         val completed = byNewest.filter { it.status == DownloadStatus.COMPLETED }
         val others = byNewest.filter { it.status != DownloadStatus.COMPLETED }
         val keptCompleted = completed.take(MAX_RECORDS)
         val remainingSlots = (MAX_RECORDS - keptCompleted.size).coerceAtLeast(0)
-        return (keptCompleted + others.take(remainingSlots)).sortedByDescending { it.createdAt }
+        return (keptCompleted + others.take(remainingSlots)).sortedBy { it.createdAt }
     }
 
     companion object {

@@ -101,6 +101,11 @@ interface MediaDownloadManager {
     fun remove(id: String, deleteFile: Boolean = false)
 
     /** 该 mediaId 是否已下载完成且文件仍存在。 */
+    /** 批量移除任务记录；[deleteFile] 为 true 时删除已下载文件与临时文件。 */
+    fun removeTasks(ids: Collection<String>, deleteFile: Boolean = false) {
+        ids.forEach { remove(it, deleteFile) }
+    }
+
     fun isDownloaded(mediaId: String): Boolean
 
     /** 关闭（取消所有下载协程）。 */
@@ -344,6 +349,7 @@ class MediaDownloadManagerImpl(
     override fun retry(id: String) = engine.retry(id)
 
     override fun remove(id: String, deleteFile: Boolean) = engine.remove(id, deleteFile)
+    override fun removeTasks(ids: Collection<String>, deleteFile: Boolean) = engine.removeTasks(ids, deleteFile)
 
     override fun isDownloaded(mediaId: String): Boolean =
         engine.tasksFlow.value.any { task ->

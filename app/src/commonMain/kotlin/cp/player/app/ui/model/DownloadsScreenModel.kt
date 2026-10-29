@@ -57,7 +57,7 @@ data class DownloadsUiState(
     val scanSettings: LocalScanSettings = LocalScanSettings(),
     val libraryFilter: LocalLibraryFilter = LocalLibraryFilter(),
 ) {
-    /** 进行中任务：等待 / 下载中 / 暂停 / 失败 / 已取消。 */
+    /** 进行中任务：按下载顺序从上往下排布（正在下载 > 等待中 > 已暂停 > 失败/取消，组内按创建时间升序）。 */
     val activeTasks: List<DownloadTask>
         get() = tasks.filter {
             it.status == DownloadStatus.PENDING ||
@@ -65,11 +65,26 @@ data class DownloadsUiState(
                 it.status == DownloadStatus.PAUSED ||
                 it.status == DownloadStatus.FAILED ||
                 it.status == DownloadStatus.CANCELLED
-        }
+        }.sortedWith(
+            compareBy(
+                { task ->
+                    when (task.status) {
+                        DownloadStatus.DOWNLOADING -> 0
+                        DownloadStatus.PENDING -> 1
+                        DownloadStatus.PAUSED -> 2
+                        DownloadStatus.FAILED -> 3
+                        DownloadStatus.CANCELLED -> 4
+                        DownloadStatus.COMPLETED -> 5
+                    }
+                },
+                { it.createdAt }
+            )
+        )
 
-    /** 已完成任务。 */
+    /** 已完成任务：按下载顺序从上往下（创建时间升序）。 */
     val completedTasks: List<DownloadTask>
         get() = tasks.filter { it.status == DownloadStatus.COMPLETED }
+            .sortedBy { it.createdAt }
 
     /** 本地库：下载产物分组。 */
     val downloadedItems: List<LocalMediaItem>
@@ -268,6 +283,48 @@ class DownloadsScreenModel : ScreenModel {
         UiEvents.notify(
             if (deleteFile) strings.downloads.fileAndRecordDeleted else strings.downloads.recordRemoved
         )
+    }
+
+    /** 批量暂停任务（仅对下载中/等待中生效）。 */
+    fun pauseTasks(tasks: List<DownloadTask>) {
+        tasks.forEach { task ->
+            if (task.status == DownloadStatus.DOWNLOADING || task.status == DownloadStatus.PENDING) {
+                pause(task)
+            }
+        }
+    }
+
+    /** 批量恢复任务（仅对已暂停生效）。 */
+    fun resumeTasks(tasks: List<DownloadTask>) {
+        tasks.forEach { task ->
+            if (task.status == DownloadStatus.PAUSED) {
+                resume(task)
+            }
+        }
+    }
+
+    /** 批量移除任务记录；[deleteFiles] 为 true 时连同已下载文件与 .part 一并删除。 */
+    fun removeTasks(tasks: List<DownloadTask>, deleteFiles: Boolean, strings: CpStrings) {
+        if (tasks.isEmpty()) return
+        val ids = tasks.map { it.id }
+        runCatching { AppModel.downloads.removeTasks(ids, deleteFiles) }
+        UiEvents.notify(
+            if (deleteFiles) strings.downloads.fileAndRecordDeleted else strings.downloads.recordRemoved
+        )
+    }
+
+    /** 清空全部进行中任务（连同未完成的临时文件）。 */
+    fun removeAllActiveTasks(strings: CpStrings) {
+        val active = _state.value.activeTasks
+        if (active.isEmpty()) return
+        removeTasks(active, deleteFiles = true, strings = strings)
+    }
+
+    /** 清空全部已完成任务（删除本地文件与记录）。 */
+    fun removeAllCompletedTasks(strings: CpStrings) {
+        val completed = _state.value.completedTasks
+        if (completed.isEmpty()) return
+        removeTasks(completed, deleteFiles = true, strings = strings)
     }
 
     // ============ 本地媒体库操作 ============

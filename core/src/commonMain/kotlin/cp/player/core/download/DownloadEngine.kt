@@ -197,6 +197,36 @@ class DownloadEngine(
         }
     }
 
+    /** 批量移除任务记录；[deleteFile] 为 true 时连同已下载文件与 .part 一并删除。 */
+    fun removeTasks(ids: Collection<String>, deleteFile: Boolean = false) {
+        if (ids.isEmpty()) return
+        scope.launch {
+            val idSet = ids.toSet()
+            val jobsToJoin = mutableListOf<Job>()
+            jobsMutex.withLock {
+                idSet.forEach { id ->
+                    jobs.remove(id)?.let {
+                        it.cancel()
+                        jobsToJoin.add(it)
+                    }
+                }
+            }
+            jobsToJoin.forEach { it.join() }
+            if (deleteFile) {
+                val targets = _tasks.value.filter { it.id in idSet }
+                targets.forEach { task ->
+                    task.localPath?.let {
+                        PlatformSupport.deleteRecursively(it)
+                        PlatformSupport.deleteRecursively("$it.part")
+                    }
+                }
+            }
+            _tasks.update { list -> list.filterNot { it.id in idSet } }
+            progressMutex.withLock { idSet.forEach { lastProgressEmit.remove(it) } }
+            persist()
+        }
+    }
+
     /** 关闭引擎（取消所有任务协程）。 */
     fun shutdown() {
         scope.cancel()

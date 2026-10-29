@@ -1,5 +1,8 @@
 package cp.player.app.ui.screen
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -22,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.FolderOpen
@@ -29,7 +33,9 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -39,6 +45,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,6 +66,7 @@ import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
+import cp.player.app.platform.BackHandler
 import cp.player.app.ui.component.AddToLocalPlaylistDialog
 import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.ContentState
@@ -232,6 +240,23 @@ private fun ActiveDownloadsTab(state: DownloadsUiState, model: DownloadsScreenMo
     // 单条取消与「全部取消」共用同一个挂起态，文案不会漂成两套（见 AGENTS.md §6）。
     val confirm = rememberConfirmState()
 
+    var selectionMode by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf(emptySet<String>()) }
+
+    LaunchedEffect(tasks) {
+        if (tasks.isEmpty()) {
+            selectionMode = false
+            selectedIds = emptySet()
+        } else {
+            selectedIds = selectedIds.filter { id -> tasks.any { it.id == id } }.toSet()
+        }
+    }
+
+    BackHandler(enabled = selectionMode) {
+        selectionMode = false
+        selectedIds = emptySet()
+    }
+
     if (tasks.isEmpty()) {
         DownloadsPageBox {
             StateSurface(emptyStateModifier()) {
@@ -259,22 +284,56 @@ private fun ActiveDownloadsTab(state: DownloadsUiState, model: DownloadsScreenMo
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item(key = "batch_controls") {
-                BatchControlBar(
-                    total = tasks.size,
-                    hasRunning = hasRunning,
-                    hasPaused = hasPaused,
-                    onPauseAll = { model.pauseAll() },
-                    onResumeAll = { model.resumeAll() },
-                    onCancelAll = {
-                        confirm.request(
-                            title = s.downloads.cancelAllConfirmTitle,
-                            message = s.downloads.cancelAllConfirmMessage,
-                            confirmLabel = s.downloads.cancelAll,
-                            destructive = true,
-                            onConfirm = { model.cancelAll(s) },
-                        )
-                    },
-                )
+                if (selectionMode) {
+                    val selectedTasks = tasks.filter { it.id in selectedIds }
+                    SelectionControlBar(
+                        selectedCount = selectedIds.size,
+                        allSelected = tasks.isNotEmpty() && selectedIds.size == tasks.size,
+                        onToggleAll = {
+                            selectedIds = if (selectedIds.size == tasks.size) emptySet() else tasks.map { it.id }.toSet()
+                        },
+                        onExit = {
+                            selectionMode = false
+                            selectedIds = emptySet()
+                        },
+                        canPause = selectedTasks.any { it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.PENDING },
+                        onPause = { model.pauseTasks(selectedTasks) },
+                        canResume = selectedTasks.any { it.status == DownloadStatus.PAUSED },
+                        onResume = { model.resumeTasks(selectedTasks) },
+                        canDelete = selectedTasks.isNotEmpty(),
+                        onDelete = {
+                            confirm.request(
+                                title = s.downloads.deleteSelectedConfirmTitle,
+                                message = s.downloads.deleteSelectedActiveConfirmMessage(selectedTasks.size),
+                                confirmLabel = s.downloads.delete,
+                                destructive = true,
+                                onConfirm = {
+                                    model.removeTasks(selectedTasks, deleteFiles = true, s)
+                                    selectionMode = false
+                                    selectedIds = emptySet()
+                                },
+                            )
+                        },
+                    )
+                } else {
+                    ActiveBatchControlBar(
+                        total = tasks.size,
+                        hasRunning = hasRunning,
+                        hasPaused = hasPaused,
+                        onPauseAll = { model.pauseAll() },
+                        onResumeAll = { model.resumeAll() },
+                        onSelectMode = { selectionMode = true },
+                        onDeleteAll = {
+                            confirm.request(
+                                title = s.downloads.deleteAllActiveConfirmTitle,
+                                message = s.downloads.deleteAllActiveConfirmMessage,
+                                confirmLabel = s.downloads.deleteAll,
+                                destructive = true,
+                                onConfirm = { model.removeAllActiveTasks(s) },
+                            )
+                        },
+                    )
+                }
             }
             items(tasks, key = { it.id }) { task ->
                 // animateItem：任务完成 / 取消后卡片是**淡出并让下一条补位**，
@@ -283,6 +342,15 @@ private fun ActiveDownloadsTab(state: DownloadsUiState, model: DownloadsScreenMo
                     ActiveTaskCard(
                         task = task,
                         model = model,
+                        selectionMode = selectionMode,
+                        isSelected = task.id in selectedIds,
+                        onToggleSelect = {
+                            selectedIds = if (task.id in selectedIds) selectedIds - task.id else selectedIds + task.id
+                        },
+                        onLongClick = {
+                            selectionMode = true
+                            selectedIds = setOf(task.id)
+                        },
                         onCancelRequest = {
                             confirm.request(
                                 title = s.downloads.cancelConfirmTitle,
@@ -311,26 +379,17 @@ private fun emptyStateModifier(): Modifier =
     Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth().padding(CpSpacing.pageHorizontal)
 
 /**
- * 队列标题 + 批量操作条。
- *
- * 三条纪律：
- * 1. 底色取 [settingsRowContainer]（深色 `surfaceContainerHighest` / 浅色 `surfaceContainerLow`），
- *    与全应用「卡片浮在页面之上」的那一档一致。此前这里写的是
- *    `surfaceContainerHigh.copy(alpha = 0.7f)` —— 浅色下比正文卡片更亮、还带半透明，
- *    在 `surfaceContainerLow` 的面板底色上看起来像一块没渲染完的蒙层。
- * 2. 「全部取消」用 [TextButton] + error 色：它是这一行里唯一的破坏性动作，
- *    不该和两个恢复性动作（暂停 / 继续）长得一样（此前是 OutlinedButton，同宽同重）。
- * 3. 三个按钮都取 `CpShapes.full`（胶囊）而不是裸 `RoundedCornerShape(50)`：
- *    刻度改版时裸值不会跟着改（AGENTS.md §6）。
+ * 进行中下载的批量控制条。
  */
 @Composable
-private fun BatchControlBar(
+private fun ActiveBatchControlBar(
     total: Int,
     hasRunning: Boolean,
     hasPaused: Boolean,
     onPauseAll: () -> Unit,
     onResumeAll: () -> Unit,
-    onCancelAll: () -> Unit,
+    onSelectMode: () -> Unit,
+    onDeleteAll: () -> Unit,
 ) {
     val s = cpStrings()
     Surface(
@@ -352,7 +411,7 @@ private fun BatchControlBar(
             )
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 if (hasRunning) {
                     BatchButton(
@@ -368,22 +427,190 @@ private fun BatchControlBar(
                         onClick = onResumeAll,
                     )
                 }
+                BatchButton(
+                    icon = Icons.Filled.SelectAll,
+                    label = s.downloads.selectMode,
+                    onClick = onSelectMode,
+                )
                 TextButton(
-                    onClick = onCancelAll,
+                    onClick = onDeleteAll,
                     shape = CpShapes.full,
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 ) {
                     Icon(
-                        Icons.Filled.Close,
+                        Icons.Filled.Delete,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.error,
                     )
                     Spacer(Modifier.width(4.dp))
                     CpText(
-                        s.downloads.cancelAll,
+                        s.downloads.deleteAll,
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 已完成下载的批量控制条。
+ */
+@Composable
+private fun CompletedBatchControlBar(
+    total: Int,
+    onSelectMode: () -> Unit,
+    onDeleteAll: () -> Unit,
+) {
+    val s = cpStrings()
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = settingsRowContainer(),
+        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            CpText(
+                s.downloads.completedTasks(total),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                BatchButton(
+                    icon = Icons.Filled.SelectAll,
+                    label = s.downloads.selectMode,
+                    onClick = onSelectMode,
+                )
+                TextButton(
+                    onClick = onDeleteAll,
+                    shape = CpShapes.full,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.Delete,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    CpText(
+                        s.downloads.deleteAll,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 多选模式悬浮/操作条。
+ */
+@Composable
+private fun SelectionControlBar(
+    selectedCount: Int,
+    allSelected: Boolean,
+    onToggleAll: () -> Unit,
+    onExit: () -> Unit,
+    canPause: Boolean = false,
+    onPause: (() -> Unit)? = null,
+    canResume: Boolean = false,
+    onResume: (() -> Unit)? = null,
+    canDelete: Boolean = false,
+    onDelete: () -> Unit,
+) {
+    val s = cpStrings()
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.weight(1f, fill = false),
+            ) {
+                IconButton(onClick = onExit, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = s.library.exitSelection,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                CpText(
+                    s.library.selectedCount(selectedCount),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                TextButton(
+                    onClick = onToggleAll,
+                    shape = CpShapes.full,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    Icon(
+                        if (allSelected) Icons.Filled.Deselect else Icons.Filled.SelectAll,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    CpText(
+                        if (allSelected) s.library.deselectAll else s.library.selectAll,
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+                if (canPause && onPause != null) {
+                    BatchButton(
+                        icon = Icons.Filled.Pause,
+                        label = s.downloads.pauseSelected,
+                        onClick = onPause,
+                    )
+                }
+                if (canResume && onResume != null) {
+                    BatchButton(
+                        icon = Icons.Filled.PlayArrow,
+                        label = s.downloads.resumeSelected,
+                        onClick = onResume,
+                    )
+                }
+                TextButton(
+                    onClick = onDelete,
+                    enabled = canDelete,
+                    shape = CpShapes.full,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.Delete,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = if (canDelete) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    CpText(
+                        s.downloads.deleteSelected,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (canDelete) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                     )
                 }
             }
@@ -406,23 +633,74 @@ private fun BatchButton(icon: ImageVector, label: String, onClick: () -> Unit) {
 }
 
 /**
+ * 任务状态 Expressive 徽标。
+ */
+@Composable
+private fun TaskStatusBadge(task: DownloadTask) {
+    val s = cpStrings()
+    val (badgeText, badgeContainerColor, badgeContentColor) = when (task.status) {
+        DownloadStatus.DOWNLOADING -> Triple(
+            s.library.downloading,
+            MaterialTheme.colorScheme.primaryContainer,
+            MaterialTheme.colorScheme.onPrimaryContainer,
+        )
+        DownloadStatus.PENDING -> Triple(
+            s.downloads.statusPending,
+            MaterialTheme.colorScheme.surfaceContainerHighest,
+            MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        DownloadStatus.PAUSED -> Triple(
+            s.downloads.pause,
+            MaterialTheme.colorScheme.secondaryContainer,
+            MaterialTheme.colorScheme.onSecondaryContainer,
+        )
+        DownloadStatus.FAILED -> Triple(
+            s.player.retry,
+            MaterialTheme.colorScheme.errorContainer,
+            MaterialTheme.colorScheme.onErrorContainer,
+        )
+        DownloadStatus.CANCELLED -> Triple(
+            s.downloads.statusCancelled,
+            MaterialTheme.colorScheme.surfaceContainerHighest,
+            MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        DownloadStatus.COMPLETED -> Triple(
+            s.library.completed,
+            MaterialTheme.colorScheme.primaryContainer,
+            MaterialTheme.colorScheme.onPrimaryContainer,
+        )
+    }
+    Surface(
+        shape = MaterialTheme.shapes.extraSmall,
+        color = badgeContainerColor,
+        contentColor = badgeContentColor,
+    ) {
+        CpText(
+            badgeText,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+        )
+    }
+}
+
+/**
  * 进行中任务卡片。
  *
- * 与改造前的三处差别：
- * 1. **进度条换成 [CpLinearProgress]**（Expressive 的直线形态：圆头 + 末端 stop indicator），
- *    替换裸 `LinearProgressIndicator`。不选波形条的**理由写在 [cp.player.app.ui.component.CpWavyProgress]
- *    的性能纪律里**：波形流动会按 `waveSpeed` 逐帧重绘所在层，而下载页同时挂着 N 张卡片
- *    （N 可能是几十），常驻流动等于把整页钉在满帧空转。直线条同样带 Expressive 的圆头与
- *    进度动画（走 [CpMotion]），但不自驱重绘。
- * 2. **主操作改成 FilledIconButton**（暂停 / 继续）：它是一条任务的主动作，
- *    与全应用其它「主操作」的视觉权重一致；取消 / 重试 / 删除仍是普通 IconButton。
- * 3. 卡片形状取 `shapes.largeIncreased`、底色取 [settingsRowContainer]，
- *    与「我的」页卡片、设置行同一套刻度与色阶。
+ * 视觉与交互规范：
+ * 1. 进度条采用 [CpLinearProgress]（M3 Expressive 圆头 + stop indicator）。
+ * 2. 状态徽标采用 M3 Expressive 彩色角标，清晰区分下载中、等待中、已暂停、失败状态。
+ * 3. 支持多选态与单选勾选，长按进入多选模式。
+ * 4. 等待中的任务同样支持手动暂停。
  */
 @Composable
 private fun ActiveTaskCard(
     task: DownloadTask,
     model: DownloadsScreenModel,
+    selectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onToggleSelect: () -> Unit = {},
+    onLongClick: () -> Unit = {},
     /** 请求取消：由宿主弹二次确认后再真正执行（见 [ActiveDownloadsTab]）。 */
     onCancelRequest: () -> Unit,
 ) {
@@ -430,16 +708,32 @@ private fun ActiveTaskCard(
     val failed = task.status == DownloadStatus.FAILED || task.status == DownloadStatus.CANCELLED
     val fraction = taskFraction(task)
 
+    val targetColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else settingsRowContainer()
+    val animatedColor by animateColorAsState(targetColor, animationSpec = CpMotion.effects())
+
     Surface(
         shape = MaterialTheme.shapes.largeIncreased,
-        color = settingsRowContainer(),
-        modifier = Modifier.fillMaxWidth(),
+        color = animatedColor,
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = {
+                    if (selectionMode) onToggleSelect()
+                },
+                onLongClick = {
+                    if (!selectionMode) onLongClick()
+                },
+            ),
     ) {
-        // 水平内边距 16dp = 队列条 / 设置行的行内边距（`CpSpacing.formRowHorizontal`）。
-        // 此前这里是 14dp：卡片里的封面左边缘比上方队列条的标题**多缩进 2dp**，
-        // 视觉上「同一列的东西没对齐」—— 单看一张卡片发现不了，连着队列条一起看就很明显。
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (selectionMode) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = { onToggleSelect() },
+                        modifier = Modifier.padding(end = 6.dp),
+                    )
+                }
                 TaskCover(task.coverUrl, task.mediaType, Modifier.size(52.dp))
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
@@ -448,8 +742,6 @@ private fun ActiveTaskCard(
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
-                        // 「正在下载的那一条」是这一页的焦点位：歌名允许跑马灯。
-                        // 焦点位在一次渲染里天然只有一个，等于自带限流（见 CpTextReveal）。
                         emphasized = task.status == DownloadStatus.DOWNLOADING,
                         marqueeEnabled = task.status == DownloadStatus.DOWNLOADING,
                     )
@@ -460,11 +752,11 @@ private fun ActiveTaskCard(
                         maxLines = 1,
                     )
                 }
-                TaskActions(task = task, model = model, onCancelRequest = onCancelRequest)
+                AnimatedVisibility(visible = !selectionMode) {
+                    TaskActions(task = task, model = model, onCancelRequest = onCancelRequest)
+                }
             }
             Spacer(Modifier.height(10.dp))
-            // 失败 / 已取消的任务不画那条「永远停在 60%」的进度：它已经不在推进了，
-            // 画出来只会让人以为还能继续（此时的动作是「重试」）。
             if (!failed && task.status != DownloadStatus.PENDING) {
                 CpLinearProgress(
                     progress = fraction,
@@ -474,7 +766,11 @@ private fun ActiveTaskCard(
                 )
                 Spacer(Modifier.height(6.dp))
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                TaskStatusBadge(task)
                 CpText(
                     statusText(task),
                     style = MaterialTheme.typography.bodySmall,
@@ -483,9 +779,6 @@ private fun ActiveTaskCard(
                     maxLines = 1,
                     modifier = Modifier.weight(1f),
                 )
-                // 百分比只在这一处显示一次。⛔ 别再让 `statusText` 也带一个 ——
-                // 曾经左边「下载中 62% · …」、右边又单独一个「62%」，同一个数字读两遍。
-                // 因此状态行用的是**只有体积**的那条文案（见 `statusText`）。
                 if (!failed && task.status != DownloadStatus.PENDING) {
                     CpText(
                         "${(fraction * 100).roundToInt()}%",
@@ -507,54 +800,67 @@ private fun TaskActions(
     onCancelRequest: () -> Unit,
 ) {
     val s = cpStrings()
-    when (task.status) {
-        DownloadStatus.DOWNLOADING -> {
-            IconButton(
-                onClick = { model.pause(task) },
-                colors = IconButtonDefaults.iconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                ),
-            ) {
-                Icon(Icons.Filled.Pause, contentDescription = s.downloads.pause)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        when (task.status) {
+            DownloadStatus.DOWNLOADING -> {
+                IconButton(
+                    onClick = { model.pause(task) },
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    ),
+                ) {
+                    Icon(Icons.Filled.Pause, contentDescription = s.downloads.pause)
+                }
+                IconButton(onClick = onCancelRequest) {
+                    Icon(Icons.Filled.Close, contentDescription = s.downloads.cancel)
+                }
             }
-            IconButton(onClick = onCancelRequest) {
-                Icon(Icons.Filled.Close, contentDescription = s.downloads.cancel)
+            DownloadStatus.PENDING -> {
+                IconButton(
+                    onClick = { model.pause(task) },
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    ),
+                ) {
+                    Icon(Icons.Filled.Pause, contentDescription = s.downloads.pause)
+                }
+                IconButton(onClick = onCancelRequest) {
+                    Icon(Icons.Filled.Close, contentDescription = s.downloads.cancel)
+                }
             }
+            DownloadStatus.PAUSED -> {
+                IconButton(
+                    onClick = { model.resume(task) },
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                ) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = s.downloads.resume)
+                }
+                IconButton(onClick = onCancelRequest) {
+                    Icon(Icons.Filled.Close, contentDescription = s.downloads.cancel)
+                }
+            }
+            DownloadStatus.FAILED, DownloadStatus.CANCELLED -> {
+                IconButton(
+                    onClick = { model.retry(task) },
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                ) {
+                    Icon(Icons.Filled.Replay, contentDescription = s.player.retry)
+                }
+                IconButton(onClick = { model.remove(task, deleteFile = false, s) }) {
+                    Icon(Icons.Filled.Delete, contentDescription = s.downloads.deleteRecord)
+                }
+            }
+            DownloadStatus.COMPLETED -> Unit
         }
-        DownloadStatus.PENDING -> {
-            IconButton(onClick = onCancelRequest) {
-                Icon(Icons.Filled.Close, contentDescription = s.downloads.cancel)
-            }
-        }
-        DownloadStatus.PAUSED -> {
-            IconButton(
-                onClick = { model.resume(task) },
-                colors = IconButtonDefaults.iconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ),
-            ) {
-                Icon(Icons.Filled.PlayArrow, contentDescription = s.downloads.resume)
-            }
-            IconButton(onClick = onCancelRequest) {
-                Icon(Icons.Filled.Close, contentDescription = s.downloads.cancel)
-            }
-        }
-        DownloadStatus.FAILED, DownloadStatus.CANCELLED -> {
-            IconButton(
-                onClick = { model.retry(task) },
-                colors = IconButtonDefaults.iconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ),
-            ) {
-                Icon(Icons.Filled.Replay, contentDescription = s.player.retry)
-            }
-            IconButton(onClick = { model.remove(task, deleteFile = false, s) }) {
-                Icon(Icons.Filled.Delete, contentDescription = s.downloads.deleteRecord)
-            }
-        }
-        DownloadStatus.COMPLETED -> Unit
     }
 }
 
@@ -569,6 +875,24 @@ private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScree
     var addToCloudTarget by remember { mutableStateOf<String?>(null) }
     var addToLocalPathTarget by remember { mutableStateOf<String?>(null) }
     val s = cpStrings()
+
+    var selectionMode by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf(emptySet<String>()) }
+
+    LaunchedEffect(tasks) {
+        if (tasks.isEmpty()) {
+            selectionMode = false
+            selectedIds = emptySet()
+        } else {
+            selectedIds = selectedIds.filter { id -> tasks.any { it.id == id } }.toSet()
+        }
+    }
+
+    BackHandler(enabled = selectionMode) {
+        selectionMode = false
+        selectedIds = emptySet()
+    }
+
     if (tasks.isEmpty()) {
         DownloadsPageBox {
             StateSurface(emptyStateModifier()) {
@@ -605,6 +929,50 @@ private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScree
             ),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            item(key = "completed_batch_controls") {
+                if (selectionMode) {
+                    val selectedTasks = tasks.filter { it.id in selectedIds }
+                    SelectionControlBar(
+                        selectedCount = selectedIds.size,
+                        allSelected = tasks.isNotEmpty() && selectedIds.size == tasks.size,
+                        onToggleAll = {
+                            selectedIds = if (selectedIds.size == tasks.size) emptySet() else tasks.map { it.id }.toSet()
+                        },
+                        onExit = {
+                            selectionMode = false
+                            selectedIds = emptySet()
+                        },
+                        canDelete = selectedTasks.isNotEmpty(),
+                        onDelete = {
+                            confirm.request(
+                                title = s.downloads.deleteSelectedConfirmTitle,
+                                message = s.downloads.deleteSelectedCompletedConfirmMessage(selectedTasks.size),
+                                confirmLabel = s.downloads.delete,
+                                destructive = true,
+                                onConfirm = {
+                                    model.removeTasks(selectedTasks, deleteFiles = true, s)
+                                    selectionMode = false
+                                    selectedIds = emptySet()
+                                },
+                            )
+                        },
+                    )
+                } else {
+                    CompletedBatchControlBar(
+                        total = tasks.size,
+                        onSelectMode = { selectionMode = true },
+                        onDeleteAll = {
+                            confirm.request(
+                                title = s.downloads.deleteAllCompletedConfirmTitle,
+                                message = s.downloads.deleteAllCompletedConfirmMessage,
+                                confirmLabel = s.downloads.deleteAll,
+                                destructive = true,
+                                onConfirm = { model.removeAllCompletedTasks(s) },
+                            )
+                        },
+                    )
+                }
+            }
             items(rows, key = { it.first().id }) { row ->
                 Row(
                     Modifier.fillMaxWidth().animateItem(),
@@ -615,6 +983,15 @@ private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScree
                             task = task,
                             model = model,
                             strings = s,
+                            selectionMode = selectionMode,
+                            isSelected = task.id in selectedIds,
+                            onToggleSelect = {
+                                selectedIds = if (task.id in selectedIds) selectedIds - task.id else selectedIds + task.id
+                            },
+                            onLongClick = {
+                                selectionMode = true
+                                selectedIds = setOf(task.id)
+                            },
                             modifier = Modifier.weight(1f),
                             onDelete = {
                                 confirm.request(
@@ -659,8 +1036,7 @@ private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScree
  * 视觉与 [ActiveTaskCard] 同一套（`shapes.largeIncreased` + [settingsRowContainer]），
  * 只把「进度区」换成「歌手 · 大小」一行 —— 两张卡片在页签之间切换时读起来是同一族。
  *
- * 行尾保留**两个**入口：播放（视频）或「下一首播放」（音频），以及「更多」锚定菜单。
- * 多选 / 批量删除不在这里：本页的批量动作只有队列上的「全部暂停 / 继续 / 取消」。
+ * 支持多选选中状态与长按进入多选。
  */
 @Composable
 private fun CompletedTaskCard(
@@ -668,6 +1044,10 @@ private fun CompletedTaskCard(
     model: DownloadsScreenModel,
     /** 提示语的语言：协程里读不到 CompositionLocal，由宿主传进来。 */
     strings: CpStrings,
+    selectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onToggleSelect: () -> Unit = {},
+    onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     /** 请求删除（文件 + 记录）；由宿主弹二次确认后再真正执行。 */
     onDelete: () -> Unit = { model.remove(task, deleteFile = true, strings) },
@@ -745,17 +1125,35 @@ private fun CompletedTaskCard(
         )
     )
 
+    val targetColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else settingsRowContainer()
+    val animatedColor by animateColorAsState(targetColor, animationSpec = CpMotion.effects())
+
     CpContextMenu(items = contextMenu, modifier = modifier) {
         Surface(
-            onClick = handlePlay,
             shape = MaterialTheme.shapes.largeIncreased,
-            color = settingsRowContainer(),
-            modifier = Modifier.fillMaxWidth(),
+            color = animatedColor,
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = {
+                        if (selectionMode) onToggleSelect() else handlePlay()
+                    },
+                    onLongClick = {
+                        if (!selectionMode) onLongClick()
+                    },
+                ),
         ) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (selectionMode) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = { onToggleSelect() },
+                        modifier = Modifier.padding(end = 6.dp),
+                    )
+                }
                 TaskCover(task.coverUrl, task.mediaType, Modifier.size(52.dp))
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
@@ -778,42 +1176,44 @@ private fun CompletedTaskCard(
                         maxLines = 1,
                     )
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (isVideo) {
-                        IconButton(
-                            onClick = handlePlay,
-                            colors = IconButtonDefaults.iconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            ),
-                        ) {
-                            Icon(Icons.Filled.PlayArrow, contentDescription = s.playVideo)
-                        }
-                    } else if (mediaId != null) {
-                        IconButton(onClick = {
-                            scope.launch {
-                                AppModel.playback.addNextToQueue(mediaId)
-                                UiEvents.notify(strings.library.playNext)
+                AnimatedVisibility(visible = !selectionMode) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isVideo) {
+                            IconButton(
+                                onClick = handlePlay,
+                                colors = IconButtonDefaults.iconButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                ),
+                            ) {
+                                Icon(Icons.Filled.PlayArrow, contentDescription = s.playVideo)
                             }
-                        }) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.QueueMusic,
-                                contentDescription = s.playNext,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                        } else if (mediaId != null) {
+                            IconButton(onClick = {
+                                scope.launch {
+                                    AppModel.playback.addNextToQueue(mediaId)
+                                    UiEvents.notify(strings.library.playNext)
+                                }
+                            }) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.QueueMusic,
+                                    contentDescription = s.playNext,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
-                    }
-                    CpAnchoredMenu(
-                        expanded = menuExpanded,
-                        onDismiss = { menuExpanded = false },
-                        items = contextMenu,
-                    ) {
-                        IconButton(onClick = { menuExpanded = true }) {
-                            Icon(
-                                Icons.Filled.MoreVert,
-                                contentDescription = strings.library.moreOptions,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                        CpAnchoredMenu(
+                            expanded = menuExpanded,
+                            onDismiss = { menuExpanded = false },
+                            items = contextMenu,
+                        ) {
+                            IconButton(onClick = { menuExpanded = true }) {
+                                Icon(
+                                    Icons.Filled.MoreVert,
+                                    contentDescription = strings.library.moreOptions,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 }
