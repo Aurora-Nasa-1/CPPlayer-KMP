@@ -1357,7 +1357,7 @@ private fun HeroNowPlaying(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(Modifier.size(46.dp)) {
+            Box(Modifier.size(46.dp).aspectRatio(1f)) {
                 if (!track.coverUrl.isNullOrBlank()) {
                     AsyncImage(
                         model = track.coverUrl.resized(180),
@@ -2430,8 +2430,7 @@ private fun DailyMixCard(
                         )
                         Spacer(Modifier.height(2.dp))
                         CpText(
-                            text = if (compact) "${songs.size} 首 · 属于你的专属节奏"
-                            else "${songs.size} 首 · 根据收听口味精心挑选",
+                            text = "${songs.size} 首",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.82f),
                         )
@@ -2608,6 +2607,7 @@ private fun CompactTrackCard(
             Box(
                 modifier = Modifier
                     .size(46.dp)
+                    .aspectRatio(1f)
                     .clip(MaterialTheme.shapes.medium)
                     .background(MaterialTheme.colorScheme.surfaceVariant)
                     .coverFlightSource(CoverFlight.trackKey(track.id), 12.dp),

@@ -6,10 +6,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -57,8 +53,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -116,7 +110,6 @@ import cp.player.app.auth.QrLoginStore
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.shareText
 import cp.player.app.ui.component.CpCoverPlaceholder
-import cp.player.app.ui.component.MiniPlayer
 import cp.player.app.ui.component.CpBackButton
 import cp.player.app.ui.component.CpContextMenu
 import cp.player.app.ui.component.CpContextMenuItem
@@ -125,7 +118,6 @@ import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.observeBottomBarDrag
 import cp.player.app.ui.component.playlistShareText
-import cp.player.app.ui.util.next
 import cp.player.app.ui.util.resized
 import cp.player.core.music.PlaylistSummary
 
@@ -136,16 +128,6 @@ import cp.player.core.music.PlaylistSummary
  * 那里才有完整的增删改。
  */
 private const val SIDEBAR_PLAYLIST_LIMIT = 8
-
-/**
- * 宽屏（桌面 / 宽平板）小播放器离窗口底边的固定距离。
- *
- * 宽屏没有底栏、也没有系统导航栏 inset 可躲，小播放器就靠这 24dp 悬在窗口底边上。
- * 它**必须**同时进 [LocalMiniPlayerTailSpace] 的计算（见宽屏那一处 `provide`）：
- * 内容区是一路铺到窗口底边的，页面自己不知道这条底距，留白里不算就会差这 24dp，
- * 页面底部控件（专辑墙的「叠放 / 无限 / 缩放」、侧栏列表末尾 …）被压住半截。
- */
-private val WideMiniPlayerBottomGap = 24.dp
 
 /**
  * 「上次的扫码登录还没扫完」的启动提示**每个进程只给一次**。
@@ -178,7 +160,7 @@ private val LocalDesktopVisitedTabs = compositionLocalOf<List<Int>> { listOf(0) 
 
 /** Responsive application shell for the four primary destinations. */
 class MainScreen : Screen {
-    @OptIn(ExperimentalSharedTransitionApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
+    @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
     @Composable
     override fun Content() {
         // 文案层（本页其余字面量属 I18N.md 批次 6，尚未迁移）。
@@ -207,11 +189,7 @@ class MainScreen : Screen {
         // ① 发布 pageCanGoBack；② 消费标题栏的返回 / 账号 / 搜索指令；③ 切 tab 时弹回栈根。
         // 窄屏分支不装配内嵌 Navigator，此引用恒为 null，所有 `?.` 都是空操作。
         var contentNavigator by remember { mutableStateOf<Navigator?>(null) }
-        val playbackState by AppModel.playback.state.collectAsState()
         val controller = AppModel.playback
-        // 宽屏 / 窄屏两套播放页共用同一个循环切换。原先这段 when 在两处各写了一份，
-        // 现在收敛到 RepeatMode.next()（见 ui/util/RepeatModeCycle.kt）。
-        val cycleRepeat = { controller.setRepeatMode(playbackState.repeatMode.next()) }
         val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
         // 宽屏右侧面板的当前形态。原本是「desktopPlaylist + desktopSettingsOpen」两个
         // 独立状态，再加「下载管理 / 最近播放」两个面板就会变成四份状态彼此清理 ——
@@ -232,6 +210,15 @@ class MainScreen : Screen {
         // 那期间小播放器缺席、表现为收起消息面板后的一次闪动。这里在 desktopPane 变化的同一帧复位。
         androidx.compose.runtime.LaunchedEffect(desktopPane) {
             if (desktopPane != DesktopPane.Messages) messagesChatOpen = false
+        }
+        androidx.compose.runtime.SideEffect {
+            cp.player.app.ui.util.DesktopShell.miniPlayerBlockedByChat = messagesChatOpen
+        }
+        androidx.compose.runtime.DisposableEffect(Unit) {
+            onDispose {
+                cp.player.app.ui.util.DesktopShell.miniPlayerBlockedByChat = false
+                cp.player.app.ui.util.DesktopShell.miniPlayerBottomBarVisiblePx = 0f
+            }
         }
         val selectTab: (Int) -> Unit = { index ->
             desktopPane = DesktopPane.Tabs
@@ -377,7 +364,6 @@ class MainScreen : Screen {
             }
         }
 
-        var isPlayerExpanded by rememberSaveable { mutableStateOf(false) }
         val scope = rememberCoroutineScope()
 
         // 输入焦点不能比它所在的那一屏活得久 —— 搜索框的光标 / 文本选择手柄必须随页面一起离开。
@@ -400,14 +386,9 @@ class MainScreen : Screen {
         // 回来时才显得「还记得」）—— 要打字点一下输入框即可。**进页面时的自动聚焦不受影响**：
         // 那条在 `SearchScreen` 自己的 `LaunchedEffect(Unit)` 里，页面重新进组合时照常请求焦点。
         val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
-        LaunchedEffect(selectedIndex, desktopPane, isPlayerExpanded) {
+        LaunchedEffect(selectedIndex, desktopPane) {
             focusManager.clearFocus()
         }
-
-        // 播放页展开态的返回处理器**刻意不在这里注册**：桌面 `DesktopBackDispatcher` 是
-        // 「后注册优先」，放在 Content 顶部会排到最底层 —— 宽屏同时开着面板 / 内嵌详情页
-        // 并展开播放页时，Esc 会先退**被播放页盖住**的层级，与视觉层级相反。
-        // 它注册在播放页覆盖层自己那一段（见下方 SharedTransitionLayout 之前）。
 
         // 窄屏底栏「上滑自动隐藏」：状态 + 设置项接线。手势由内容区上的
         // `observeBottomBarDrag` 直接喂进来 —— **不走嵌套滚动**（理由见
@@ -428,79 +409,21 @@ class MainScreen : Screen {
             bottomBarHide.enabled = bottomBarAutoHide
             if (!bottomBarAutoHide) bottomBarHide.reset()
         }
-
-        // 小播放器的实测高度（px）→ 内容区末尾据此动态留白：有歌时列表最后一项
-        // 不再被小播放器盖住。留白量 = 卡片实测高度 + 12dp 呼吸缝，随播放状态动画
-        // 进出（无歌归零、出歌恢复）；高度来自 onSizeChanged，卡片改版这里自动跟随。
-        //
-        // ⚠️ 它只能加在**滚动内容的末尾**（经 `LocalMiniPlayerTailSpace` 下发给
-        // `LazyScrollColumn` / `ScrollColumn` 的 contentPadding），**不能**给内容区挂
-        // `padding(bottom = …)` —— 那是把内容区裁短，屏幕底部会空出一条，而小播放器
-        // 恰好坐在那条空白里，看起来像它自带了背景。理由详见 LocalMiniPlayerTailSpace。
-        val density = LocalDensity.current
-        var miniPlayerHeightPx by remember { mutableIntStateOf(0) }
-        val miniPlayerReserved by animateDpAsState(
-            targetValue = if (playbackState.currentTrack != null && miniPlayerHeightPx > 0)
-                with(density) { miniPlayerHeightPx.toDp() } + 12.dp else 0.dp,
-            animationSpec = cp.player.app.ui.theme.CpMotion.spatial(),
-            label = "miniPlayerReserved",
-        )
-
-        // 展开播放页的进度（压暗幕布）。⚠️ 刻意用 tween 而不是 spatial 的 spring：
-        // spring 会过冲 —— 进度冲过 1 再回落，幕布（以及它上面的一切）就跟着
-        // 「弹一下」，正是展开动画收尾时那一下多余的晃动。时长对齐转场节拍。
-        val expandProgress by animateFloatAsState(
-            targetValue = if (isPlayerExpanded) 1f else 0f,
-            animationSpec = tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing),
-            label = "expandProgress"
-        )
+        androidx.compose.runtime.SideEffect {
+            cp.player.app.ui.util.DesktopShell.miniPlayerBottomBarVisiblePx =
+                bottomBarHide.barHeightPx * (1f - bottomBarHide.fraction)
+        }
 
         val activeProvider by AppModel.activeProviderFlow.collectAsState()
 
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val expanded = cp.player.app.ui.component.CpBreakpoints.isExpanded(maxWidth)
 
-            // 沉浸播放态的登记（窗口顶栏让位给播放页背景，见 DesktopPlayerStage）。
-            //
-            // ⚠️ 必须挂在 **`AnimatedContent` 外面、跟着 `isPlayerExpanded` 这个开关走**，
-            // 不能塞进播放页本体（`DesktopPlayerScreen`）：收起播放页时，退场方要在转场里
-            // 多活整整 400ms 才被摘掉 —— 登记在它身上，窗口顶栏就得等它淡完才开始回落，
-            // 于是主界面会先被顶高 44dp、再滑下来，正是「时序不对」的那一下。
-            // 挂在开关上，点击的那一帧登记/注销同时发生，背景的涨落和播放页的淡入淡出
-            // 才能落在同一条时间线上。窄窗（<840dp）走手机版播放页，不登记。
-            if (isPlayerExpanded && expanded) {
-                cp.player.app.ui.component.DesktopPlayerStage()
-            }
-
             CompositionLocalProvider(
                 cp.player.app.ui.component.LocalIsExpanded provides expanded,
                 cp.player.app.ui.component.LocalActiveProvider provides activeProvider,
-                // ⚠️ 小播放器的尾留白**宽屏也必须下发**。此前只有窄屏那条分支 provide，
-                // 宽屏（桌面 / 宽平板）读到的永远是默认 0 —— 而小播放器在宽屏同样是
-                // **整个窗口**底部的浮层（`MiniPlayer` 是 fillMaxWidth，横跨侧栏 + 内容区），
-                // 于是内容区里所有"贴着底边放东西"的页面都被它压住：专辑墙底部的
-                // 「叠放模式 / 无限滚动 / 缩放」一排选项、侧栏列表末尾、内嵌详情页列表末尾。
-                //
-                // 量 = 实测高度 + [WideMiniPlayerBottomGap] + 12dp 呼吸缝：宽屏的小播放器
-                // 底距是**固定**的 24dp（见下方渲染处的 bottomPadding），而内容区一直铺到
-                // 窗口底边、页面自己不知道这条底距 —— 不算进留白里就会差这 24dp。
-                // （窄屏那一条相反：底距是系统导航栏 / 底栏的动态值，由各页自己的
-                // navigationBarsPadding / 底栏 padding 承担，所以只给 高度 + 12dp。）
-                cp.player.app.ui.component.LocalMiniPlayerTailSpace provides
-                    if (playbackState.currentTrack != null && !messagesChatOpen) {
-                        (miniPlayerReserved + WideMiniPlayerBottomGap).coerceAtLeast(0.dp)
-                    } else 0.dp,
             ) {
-            // 主内容，应用缩放和变暗
-            Box(Modifier.fillMaxSize().graphicsLayer {
-                // Desktop keeps the window layout stable; only compact player expansion scales.
-                if (!expanded) {
-                    val scale = 1f - expandProgress * 0.03f
-                    scaleX = scale
-                    scaleY = scale
-                    translationY = expandProgress * 8f
-                }
-            }) {
+            Box(Modifier.fillMaxSize()) {
                 val scrollBehavior = androidx.compose.material3.TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
                 
                 if (expanded) {
@@ -713,55 +636,23 @@ class MainScreen : Screen {
                         },
                         containerColor = Color.Transparent
                     ) { padding ->
-                        // padding.bottom 已随底栏隐藏比例收缩（AppNavigationBar 上报收缩后的
-                        // 高度）；小播放器的留白**不下发成内容区的 padding**，而是经
-                        // `LocalMiniPlayerTailSpace` 交给各页滚动容器的 contentPadding
-                        // —— 内容一直铺到屏幕底，小播放器浮在它上面（浮层观感）。
-                        //
-                        // 判据与下面真正渲染小播放器的那一处**完全一致**（会话里没开对话），
-                        // 否则会出现「内容让了位、小播放器却没出现」的空白。
-                        androidx.compose.runtime.CompositionLocalProvider(
-                            // ⚠️ 钳非负：miniPlayerReserved 是 spring 动画值，小播放器消失
-                            // 回落 0 时下冲穿负，负值进下游 PaddingValues 直接崩
-                            // （「Padding must be non-negative」，Android 实锤）。
-                            // 与 App.GlobalMiniPlayerHost 同一处修复。
-                            cp.player.app.ui.component.LocalMiniPlayerTailSpace provides
-                                if (playbackState.currentTrack != null && !messagesChatOpen) {
-                                    miniPlayerReserved.coerceAtLeast(0.dp)
-                                } else 0.dp,
-                        ) {
-                            TabContent(
-                                tabs, visitedTabs, selectedIndex,
-                                Modifier.fillMaxSize()
-                                    .padding(padding)
-                                    // 底栏自动隐藏的手势来源：只读观察内容区上的纵向位移，
-                                    // 不消费事件（内容照常滚动）—— 理由见 BottomBarHideState。
-                                    .observeBottomBarDrag(bottomBarHide),
-                            )
-                        }
+                        TabContent(
+                            tabs, visitedTabs, selectedIndex,
+                            Modifier.fillMaxSize()
+                                .padding(padding)
+                                // 底栏自动隐藏的手势来源：只读观察内容区上的纵向位移，
+                                // 不消费事件（内容照常滚动）—— 理由见 BottomBarHideState。
+                                .observeBottomBarDrag(bottomBarHide),
+                        )
                     }
                 }
-            }
-
-            if (expandProgress > 0.01f) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = expandProgress * 0.3f))
-                        // 播放页展开期间整屏拦截穿透点击：变暗层只有背景没有指针处理器，
-                        // 播放页的空白处也一样（背景不算 hit-test 目标）——不拦的话，
-                        // 点播放页没按钮的地方，底下壳层的歌单/卡片会被点开。
-                        // 这里挂在这层修饰符上是安全的：它没有任何子内容（播放页是
-                        // 叠在它上方的兄弟），不会误伤 —— 铁律见 blockClicksThrough 的 KDoc。
-                        .blockClicksThrough()
-                )
             }
 
             // 全局 Snackbar（操作反馈）
             androidx.compose.material3.SnackbarHost(
                 hostState = snackbarHostState,
                 modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter)
-                    .padding(bottom = if (playbackState.currentTrack != null) 180.dp else 96.dp),
+                    .padding(bottom = 96.dp),
             ) { data ->
                 androidx.compose.material3.Snackbar(
                     snackbarData = data,
@@ -770,109 +661,6 @@ class MainScreen : Screen {
                     contentColor = MaterialTheme.colorScheme.inverseOnSurface,
                 )
             }
-
-            // 播放页展开态的返回处理器：注册在**内容层 / 面板层之后**，因此最后注册、
-            // 最先被派发（DesktopBackDispatcher 后注册优先）—— 与「播放页盖在最上层」的
-            // 视觉层级一致。放在 Content 顶部就会被下面的面板 / 内嵌路由页抢走（N4）。
-            cp.player.app.platform.BackHandler(enabled = isPlayerExpanded) {
-                isPlayerExpanded = false
-            }
-
-            SharedTransitionLayout(Modifier.fillMaxSize()) {
-                AnimatedContent(
-                    targetState = isPlayerExpanded,
-                    transitionSpec = {
-                        // ⚠️ 这 400ms 是沉浸态的**基准节拍**（CpMotion.PlayerExpandMs）：
-                        // 窗口顶栏的背景涨落（App.kt）与标题栏内容的淡出（DesktopTitleBar）
-                        // 都钉在同一个时长上。这里一改，那两处必须跟着改，否则会出现
-                        // 「顶栏先空了一条 / 背景晚一拍」的错位 —— 第一版就是这么被用户点名的。
-                        fadeIn(animationSpec = tween(CpMotion.PlayerExpandMs)) togetherWith
-                            fadeOut(animationSpec = tween(CpMotion.PlayerExpandMs))
-                    },
-                    label = "PlayerTransition",
-                    modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter)
-                ) { isExpanded ->
-                    if (isExpanded) {
-                    if (expanded) {
-                        DesktopPlayerScreen(
-                            state = playbackState,
-                            onBack = { isPlayerExpanded = false },
-                            onTogglePlay = controller::togglePlayPause,
-                            onSeek = controller::seekTo,
-                            onSkipNext = controller::skipNext,
-                            onSkipPrev = controller::skipPrevious,
-                            onRepeat = cycleRepeat,
-                            onShuffle = controller::toggleShuffle,
-                            onLike = { scope.launch { controller.toggleFavorite() } },
-                            onPlayAt = { idx -> scope.launch { controller.playAt(idx) } },
-                            onMove = { from, to -> scope.launch { controller.moveQueueItem(from, to) } },
-                        )
-                    } else PlayerScreenContent(
-                        state = playbackState,
-                        animatedVisibilityScope = this@AnimatedContent,
-                        onBack = { isPlayerExpanded = false },
-                        onTogglePlay = controller::togglePlayPause,
-                        onSeek = controller::seekTo,
-                        onSkipNext = controller::skipNext,
-                        onSkipPrev = controller::skipPrevious,
-                        onRepeat = cycleRepeat,
-                        onShuffle = controller::toggleShuffle,
-                        onClearQueue = controller::clearQueue,
-                        onPlayAt = { idx -> scope.launch { controller.playAt(idx) } },
-                        onRemoveQueue = { idx -> scope.launch { controller.removeQueueItem(idx) } },
-                        onMoveQueue = { from, to -> scope.launch { controller.moveQueueItem(from, to) } },
-                    )
-                } else {
-                    Box(Modifier.fillMaxSize()) {
-                        // 在底部渲染 MiniPlayer。出现时淡入（约 150ms），让封面飞行有柔和的承接；
-                        // 消失时 currentTrack 已被清空、内容无法再渲染，保持即时移除。
-                        val miniAlpha by animateFloatAsState(
-                            targetValue = if (playbackState.currentTrack != null) 1f else 0f,
-                            animationSpec = cp.player.app.ui.theme.CpMotion.effectsFast(),
-                            label = "miniPlayerAlpha",
-                        )
-                        // 消息面板右栏开着对话时不画小播放器：它会盖住对话输入栏，
-                        // 其 Surface 还会把输入栏的点击一起吞掉。窄屏那一屏由 `App.kt` 的全局宿主
-                        // 按 `lastItem !is ChatScreen` 让位；桌面宽屏的对话在面板右栏里，
-                        // 只有这里知道 —— 判据是 `MessagesPane` 上报的 messagesChatOpen，
-                        // 而它只可能为真于展开态（消息面板只在展开态渲染），所以无需再判 expanded。
-                        if (playbackState.currentTrack != null && !messagesChatOpen) {
-                            // 底距动态适配：max(底栏可见高度, 系统导航栏 inset) + 12dp 呼吸缝。
-                            // 底栏收起时 navVisible 逐帧变小，小播放器贴合下移 —— 与底栏由
-                            // 同一个 fraction 驱动，同帧移动；底栏全收后由系统导航栏 inset
-                            // 兜底，不会顶到屏幕边。桌面宽屏没有底栏，维持固定 24dp。
-                            val navVisibleDp = with(density) {
-                                (bottomBarHide.barHeightPx * (1f - bottomBarHide.fraction)).toDp()
-                            }
-                            val navInsetDp = WindowInsets.navigationBars
-                                .asPaddingValues().calculateBottomPadding()
-                            // 宽屏用的是固定常量，而宽屏那份尾留白
-                            // （`LocalMiniPlayerTailSpace`，见上方 provide）算的**就是它** ——
-                            // 两处必须同源：改这里就等于改"内容让出多少"，不会出现
-                            // 「让了位小播放器却没动」或反过来。
-                            val bottomPadding = if (expanded) WideMiniPlayerBottomGap
-                            else maxOf(navVisibleDp, navInsetDp) + 12.dp
-                            Box(
-                                Modifier.align(androidx.compose.ui.Alignment.BottomCenter)
-                                    .padding(bottom = bottomPadding)
-                                    // 实测高度回传给内容区的动态预留（见 miniPlayerReserved）。
-                                    .onSizeChanged { miniPlayerHeightPx = it.height }
-                                    .graphicsLayer { alpha = miniAlpha },
-                            ) {
-                                MiniPlayer(
-                                    state = playbackState,
-                                    animatedVisibilityScope = this@AnimatedContent,
-                                    onClick = { isPlayerExpanded = true },
-                                    onTogglePlay = controller::togglePlayPause,
-                                    onSkipPrev = controller::skipPrevious,
-                                    onSkipNext = controller::skipNext,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        } // End of SharedTransitionLayout
         } // End of CompositionLocalProvider
         } // End of BoxWithConstraints
     }

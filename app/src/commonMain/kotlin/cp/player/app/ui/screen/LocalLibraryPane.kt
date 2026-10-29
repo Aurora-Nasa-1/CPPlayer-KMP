@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -27,28 +28,23 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -71,10 +67,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
@@ -84,15 +82,16 @@ import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.rememberDirectoryPicker
-import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.AddToLocalPlaylistDialog
 import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.ContentState
+import cp.player.app.ui.component.CpBackButton
 import cp.player.app.ui.component.CpConfirmDialog
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpCoverPlaceholder
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.component.CpSearchField
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.CpToggleChip
@@ -100,7 +99,9 @@ import cp.player.app.ui.component.SongDetailInfoDialog
 import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.SongMenuActions
 import cp.player.app.ui.component.StateSurface
+import cp.player.app.ui.component.cpBounceClickable
 import cp.player.app.ui.component.rememberConfirmState
+import cp.player.app.ui.component.settingsRowContainer
 import cp.player.app.ui.component.songContextMenuItems
 import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.app.ui.model.DownloadsUiState
@@ -111,6 +112,7 @@ import cp.player.core.local.LocalAlbum
 import cp.player.core.local.LocalArtist
 import cp.player.core.local.LocalFolderNode
 import cp.player.core.local.LocalFolderTree
+import cp.player.core.local.LocalGridSort
 import cp.player.core.local.LocalLibraryAggregator
 import cp.player.core.local.LocalLibrarySort
 import cp.player.core.local.LocalPlaylist
@@ -192,11 +194,39 @@ internal fun LocalLibraryTab(
     var addToCloudPlaylistTrack by remember { mutableStateOf<TrackSummary?>(null) }
     var addToLocalPlaylistPath by remember { mutableStateOf<String?>(null) }
     var deleteTargetSong by remember { mutableStateOf<LocalMediaItem?>(null) }
+    var removeTargetSong by remember { mutableStateOf<LocalMediaItem?>(null) }
     var showInfoTrack by remember { mutableStateOf<TrackSummary?>(null) }
 
     val likedIds by AppModel.playback.likedIds.collectAsState()
     val playbackState by AppModel.playback.state.collectAsState()
     val currentPlayingTrackId = playbackState.currentTrack?.id
+
+    /**
+     * 四个二级视图（专辑 / 艺术家 / 文件夹 / 本地歌单详情）共用的**行内动作**。
+     *
+     * 此前这四组闭包在调用点上**逐字复制了四份**（每份六行）—— 改一处措辞就得改四处，
+     * 漏一处就是「同一个动作在两个详情页提示不一样」。提到这里只此一份。
+     * 它们不依赖任何二级视图的状态，所以可以直接在组合里建一次、四处复用。
+     *
+     * `remember(likedIds)`：闭包里判的是「收藏前后的目标态」，拿到的必须是**最新**的
+     * 收藏集合；不换 key 会读到过期的 likedIds —— 连点两次会两次都判成「收藏」。
+     */
+    val toggleCloudFav: (String) -> Unit = remember(likedIds) {
+        { cloudId: String ->
+            scope.launch {
+                val cloudFavId = runCatching {
+                    cp.player.core.music.CPMediaId.parse(cloudId).resourceId
+                }.getOrDefault(cloudId)
+                val target = cloudFavId !in likedIds
+                AppModel.playback.toggleFavoriteFor(cloudId)
+                UiEvents.notify(strings.downloads.favoriteCloudDone(target))
+            }
+        }
+    }
+    val toggleLocalFav: (String) -> Unit = {
+        val now = AppModel.localMedia.favorites.toggle(it)
+        UiEvents.notify(if (now) s.addedToFavorites else s.removedFromFavorites)
+    }
 
     // 聚合过滤与搜索
     val query = state.libraryQuery
@@ -244,20 +274,11 @@ internal fun LocalLibraryTab(
                 currentPlayingId = currentPlayingTrackId,
                 likedIds = likedIds,
                 favoritePaths = state.favoritePaths,
-                onToggleCloudFav = { cloudId ->
-                    scope.launch {
-                        val cloudFavId = runCatching { cp.player.core.music.CPMediaId.parse(cloudId).resourceId }.getOrDefault(cloudId)
-                        val target = cloudFavId !in likedIds
-                        AppModel.playback.toggleFavoriteFor(cloudId)
-                        UiEvents.notify(if (target) "已收藏到云端" else "已取消云端收藏")
-                    }
-                },
-                onToggleLocalFav = { path ->
-                    val now = AppModel.localMedia.favorites.toggle(path)
-                    UiEvents.notify(if (now) "已添加到本地喜欢" else "已从本地喜欢移除")
-                },
+                onToggleCloudFav = toggleCloudFav,
+                onToggleLocalFav = toggleLocalFav,
                 onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
                 onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
+                onRemoveSong = { removeTargetSong = it },
                 onDeleteSong = { deleteTargetSong = it },
                 onShowInfo = { showInfoTrack = it },
             )
@@ -277,20 +298,11 @@ internal fun LocalLibraryTab(
                 currentPlayingId = currentPlayingTrackId,
                 likedIds = likedIds,
                 favoritePaths = state.favoritePaths,
-                onToggleCloudFav = { cloudId ->
-                    scope.launch {
-                        val cloudFavId = runCatching { cp.player.core.music.CPMediaId.parse(cloudId).resourceId }.getOrDefault(cloudId)
-                        val target = cloudFavId !in likedIds
-                        AppModel.playback.toggleFavoriteFor(cloudId)
-                        UiEvents.notify(if (target) "已收藏到云端" else "已取消云端收藏")
-                    }
-                },
-                onToggleLocalFav = { path ->
-                    val now = AppModel.localMedia.favorites.toggle(path)
-                    UiEvents.notify(if (now) "已添加到本地喜欢" else "已从本地喜欢移除")
-                },
+                onToggleCloudFav = toggleCloudFav,
+                onToggleLocalFav = toggleLocalFav,
                 onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
                 onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
+                onRemoveSong = { removeTargetSong = it },
                 onDeleteSong = { deleteTargetSong = it },
                 onShowInfo = { showInfoTrack = it },
             )
@@ -310,20 +322,11 @@ internal fun LocalLibraryTab(
                 currentPlayingId = currentPlayingTrackId,
                 likedIds = likedIds,
                 favoritePaths = state.favoritePaths,
-                onToggleCloudFav = { cloudId ->
-                    scope.launch {
-                        val cloudFavId = runCatching { cp.player.core.music.CPMediaId.parse(cloudId).resourceId }.getOrDefault(cloudId)
-                        val target = cloudFavId !in likedIds
-                        AppModel.playback.toggleFavoriteFor(cloudId)
-                        UiEvents.notify(if (target) "已收藏到云端" else "已取消云端收藏")
-                    }
-                },
-                onToggleLocalFav = { path ->
-                    val now = AppModel.localMedia.favorites.toggle(path)
-                    UiEvents.notify(if (now) "已添加到本地喜欢" else "已从本地喜欢移除")
-                },
+                onToggleCloudFav = toggleCloudFav,
+                onToggleLocalFav = toggleLocalFav,
                 onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
                 onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
+                onRemoveSong = { removeTargetSong = it },
                 onDeleteSong = { deleteTargetSong = it },
                 onShowInfo = { showInfoTrack = it },
             )
@@ -344,9 +347,9 @@ internal fun LocalLibraryTab(
                 onRename = { renamePlaylistTarget = latestPlaylist },
                 onDelete = {
                     confirm.request(
-                        title = "删除本地歌单",
-                        message = "确定要删除本地歌单《${latestPlaylist.name}》吗？歌单内的本地音频文件不会被删除。",
-                        confirmLabel = "删除",
+                        title = strings.library.deletePlaylist,
+                        message = s.deleteLocalPlaylistMessage(latestPlaylist.name),
+                        confirmLabel = s.delete,
                         destructive = true,
                         onConfirm = {
                             model.deleteLocalPlaylist(latestPlaylist.id)
@@ -354,26 +357,17 @@ internal fun LocalLibraryTab(
                         },
                     )
                 },
-                onRemoveSong = { path ->
+                onRemoveFromPlaylist = { path ->
                     model.removeTrackFromLocalPlaylist(latestPlaylist.id, path)
                 },
                 currentPlayingId = currentPlayingTrackId,
                 likedIds = likedIds,
                 favoritePaths = state.favoritePaths,
-                onToggleCloudFav = { cloudId ->
-                    scope.launch {
-                        val cloudFavId = runCatching { cp.player.core.music.CPMediaId.parse(cloudId).resourceId }.getOrDefault(cloudId)
-                        val target = cloudFavId !in likedIds
-                        AppModel.playback.toggleFavoriteFor(cloudId)
-                        UiEvents.notify(if (target) "已收藏到云端" else "已取消云端收藏")
-                    }
-                },
-                onToggleLocalFav = { path ->
-                    val now = AppModel.localMedia.favorites.toggle(path)
-                    UiEvents.notify(if (now) "已添加到本地喜欢" else "已从本地喜欢移除")
-                },
+                onToggleCloudFav = toggleCloudFav,
+                onToggleLocalFav = toggleLocalFav,
                 onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
                 onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
+                onRemoveSong = { removeTargetSong = it },
                 onDeleteSong = { deleteTargetSong = it },
                 onShowInfo = { showInfoTrack = it },
             )
@@ -408,58 +402,55 @@ internal fun LocalLibraryTab(
         }
 
         when {
-            state.localItems.isEmpty() -> {
-                StateSurface(Modifier.padding(CpSpacing.pageHorizontal)) {
-                    ContentState(
-                        title = s.emptyLocalTitle,
-                        message = s.emptyLocalNote,
-                        actionLabel = s.scanDevice,
-                        onAction = { model.startScan(strings) },
-                    )
-                }
+            // 四块空态共用同一份**度量**，只是文案不同 —— 此前四个分支各写一遍
+            // `StateSurface(Modifier.padding(CpSpacing.pageHorizontal))`，页尾那个
+            // 「此歌单暂无歌曲」也是同一种写法：五处必须一起改才不出偏差，所以收成一个槽。
+            state.localItems.isEmpty() -> LibraryEmptyState {
+                ContentState(
+                    title = s.emptyLocalTitle,
+                    message = s.emptyLocalNote,
+                    actionLabel = s.scanDevice,
+                    onAction = { model.startScan(strings) },
+                )
             }
 
-            state.libraryTab == 3 && pureLocalFavorites.isEmpty() -> {
-                StateSurface(Modifier.padding(CpSpacing.pageHorizontal)) {
-                    ContentState(
-                        title = "暂无本地喜欢歌曲",
-                        message = "纯本地歌曲可在菜单中选择「喜欢」，将其收录至此列表",
-                    )
-                }
+            state.libraryTab == 3 && pureLocalFavorites.isEmpty() -> LibraryEmptyState {
+                ContentState(
+                    title = s.emptyLocalFavoritesTitle,
+                    message = s.emptyLocalFavoritesNote,
+                )
             }
 
-            state.libraryTab == 4 && state.localPlaylists.isEmpty() -> {
-                StateSurface(Modifier.padding(CpSpacing.pageHorizontal)) {
-                    ContentState(
-                        title = "暂无本地歌单",
-                        message = "可创建自定义本地歌单，将不同本地歌曲分类归纳",
-                        actionLabel = "新建本地歌单",
-                        onAction = { showCreatePlaylistDialog = true },
-                    )
-                }
+            state.libraryTab == 4 && state.localPlaylists.isEmpty() -> LibraryEmptyState {
+                ContentState(
+                    title = s.emptyLocalPlaylistsTitle,
+                    message = s.emptyLocalPlaylistsNote,
+                    actionLabel = s.newLocalPlaylist,
+                    onAction = { showCreatePlaylistDialog = true },
+                )
             }
 
-            query.isNotBlank() && songs.isEmpty() && albums.isEmpty() && artists.isEmpty() -> {
-                StateSurface(Modifier.padding(CpSpacing.pageHorizontal)) {
-                    ContentState(title = s.emptySearchTitle, message = "")
-                }
+            query.isNotBlank() && songs.isEmpty() && albums.isEmpty() && artists.isEmpty() -> LibraryEmptyState {
+                ContentState(title = s.emptySearchTitle, message = "")
             }
 
             else -> when (state.libraryTab) {
                 1 -> AlbumGrid(
                     albums = albums,
-                    model = model,
+                    gridSort = state.gridSort,
+                    onSort = model::setGridSort,
                     strings = strings,
                     onClick = { openedAlbum = it },
                 )
                 2 -> ArtistGrid(
                     artists = artists,
-                    model = model,
+                    gridSort = state.gridSort,
+                    onSort = model::setGridSort,
                     strings = strings,
                     onClick = { openedArtist = it },
                 )
                 3 -> SongList(
-                    title = "本地喜欢 · ${pureLocalFavorites.size}",
+                    title = "${s.tabLocalFavorites} · ${pureLocalFavorites.size}",
                     songs = pureLocalFavorites,
                     model = model,
                     strings = strings,
@@ -468,20 +459,11 @@ internal fun LocalLibraryTab(
                     currentPlayingId = currentPlayingTrackId,
                     likedIds = likedIds,
                     favoritePaths = state.favoritePaths,
-                    onToggleCloudFav = { cloudId ->
-                        scope.launch {
-                            val cloudFavId = runCatching { cp.player.core.music.CPMediaId.parse(cloudId).resourceId }.getOrDefault(cloudId)
-                            val target = cloudFavId !in likedIds
-                            AppModel.playback.toggleFavoriteFor(cloudId)
-                            UiEvents.notify(if (target) "已收藏到云端" else "已取消云端收藏")
-                        }
-                    },
-                    onToggleLocalFav = { path ->
-                        val now = AppModel.localMedia.favorites.toggle(path)
-                        UiEvents.notify(if (now) "已添加到本地喜欢" else "已从本地喜欢移除")
-                    },
+                    onToggleCloudFav = toggleCloudFav,
+                    onToggleLocalFav = toggleLocalFav,
                     onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
                     onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
+                    onRemoveSong = { removeTargetSong = it },
                     onDeleteSong = { deleteTargetSong = it },
                     onShowInfo = { showInfoTrack = it },
                 )
@@ -495,9 +477,9 @@ internal fun LocalLibraryTab(
                     onRename = { renamePlaylistTarget = it },
                     onDelete = { pl ->
                         confirm.request(
-                            title = "删除本地歌单",
-                            message = "确定要删除本地歌单《${pl.name}》吗？",
-                            confirmLabel = "删除",
+                            title = strings.library.deletePlaylist,
+                            message = s.deleteLocalPlaylistMessage(pl.name),
+                            confirmLabel = s.delete,
                             destructive = true,
                             onConfirm = { model.deleteLocalPlaylist(pl.id) },
                         )
@@ -520,20 +502,11 @@ internal fun LocalLibraryTab(
                     currentPlayingId = currentPlayingTrackId,
                     likedIds = likedIds,
                     favoritePaths = state.favoritePaths,
-                    onToggleCloudFav = { cloudId ->
-                        scope.launch {
-                            val cloudFavId = runCatching { cp.player.core.music.CPMediaId.parse(cloudId).resourceId }.getOrDefault(cloudId)
-                            val target = cloudFavId !in likedIds
-                            AppModel.playback.toggleFavoriteFor(cloudId)
-                            UiEvents.notify(if (target) "已收藏到云端" else "已取消云端收藏")
-                        }
-                    },
-                    onToggleLocalFav = { path ->
-                        val now = AppModel.localMedia.favorites.toggle(path)
-                        UiEvents.notify(if (now) "已添加到本地喜欢" else "已从本地喜欢移除")
-                    },
+                    onToggleCloudFav = toggleCloudFav,
+                    onToggleLocalFav = toggleLocalFav,
                     onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
                     onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
+                    onRemoveSong = { removeTargetSong = it },
                     onDeleteSong = { deleteTargetSong = it },
                     onShowInfo = { showInfoTrack = it },
                 )
@@ -545,6 +518,7 @@ internal fun LocalLibraryTab(
 
     if (showCreatePlaylistDialog) {
         CreateLocalPlaylistDialog(
+            strings = strings,
             onDismiss = { showCreatePlaylistDialog = false },
             onConfirm = { name ->
                 showCreatePlaylistDialog = false
@@ -556,6 +530,7 @@ internal fun LocalLibraryTab(
     renamePlaylistTarget?.let { pl ->
         RenameLocalPlaylistDialog(
             currentName = pl.name,
+            strings = strings,
             onDismiss = { renamePlaylistTarget = null },
             onConfirm = { newName ->
                 renamePlaylistTarget = null
@@ -579,11 +554,25 @@ internal fun LocalLibraryTab(
         )
     }
 
+    removeTargetSong?.let { song ->
+        CpConfirmDialog(
+            title = s.removeConfirmTitle,
+            message = s.removeConfirmMessage(song.title),
+            confirmLabel = s.removeFromLibrary,
+            destructive = false,
+            onConfirm = {
+                model.removeLocalItem(song, strings)
+                removeTargetSong = null
+            },
+            onDismiss = { removeTargetSong = null },
+        )
+    }
+
     deleteTargetSong?.let { song ->
         CpConfirmDialog(
-            title = "彻底删除本地文件",
-            message = "确定要将《${song.title}》从磁盘彻底删除吗？此操作无法撤销。",
-            confirmLabel = "彻底删除",
+            title = s.deleteLocalFile,
+            message = s.deleteLocalFileMessage(song.title),
+            confirmLabel = s.delete,
             destructive = true,
             onConfirm = {
                 model.deleteLocalFile(song, strings)
@@ -603,6 +592,16 @@ internal fun LocalLibraryTab(
 
 // ============ 顶部工具行 ============
 
+/**
+ * 顶部工具行：扫描 / 导入 + 搜索 + 筛选。
+ *
+ * 三条与全应用对齐的约定：
+ * 1. **水平内边距取 [CpSpacing.pageHorizontal]**（栅格页标准 20dp），不是裸 16dp ——
+ *    本页正文（歌曲列表 / 专辑栅格 / 文件夹树）都是 20dp，工具行用 16dp 会让
+ *    「扫描设备」按钮比列表左缘缩进一格。
+ * 2. **搜索框用 [CpSearchField]**（全应用唯一入口），而不是就地拼 `OutlinedTextField`。
+ * 3. 间距与计数一律取自 `s`（`CpStrings`），不在页面里写死中文 —— 见 `I18N.md`。
+ */
 @Composable
 private fun LocalLibraryToolbar(
     state: DownloadsUiState,
@@ -613,8 +612,10 @@ private fun LocalLibraryToolbar(
 ) {
     val s = strings.downloads
     Column(
+        // 水平内边距取 `CpSpacing.pageHorizontal`（栅格页标准 20dp），不是裸 16dp：
+        // 本页正文（列表 / 栅格）都是 20dp，工具行用 16dp 会让扫描按钮比列表左缘缩进一格。
         Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = CpSpacing.pageHorizontal, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -663,20 +664,19 @@ private fun LocalLibraryToolbar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                OutlinedTextField(
-                    value = state.libraryQuery,
-                    onValueChange = { model.setLibraryQuery(it) },
+                // 搜索框走全应用唯一的 [CpSearchField]（标题栏那条 40dp 与页面里 52dp 的
+                // 都是它）。就地拼 `OutlinedTextField` 的话：高度 56dp 比别处高一档、
+                // 聚焦态容器色不过渡、清除按钮的落点也与其它页面不同。
+                // 筛选按钮留在框**外面**：它是独立动作，塞进 trailingIcon 会与「清除」抢槽位。
+                CpSearchField(
+                    query = state.libraryQuery,
+                    onQueryChange = { model.setLibraryQuery(it) },
+                    // 本地库是**即时筛选**（不是远端搜索）：回车无需再做别的，
+                    // 保留 IME 的「搜索」动作键只是让键盘上那一下有落点。
+                    onSubmit = {},
                     modifier = Modifier.weight(1f),
-                    placeholder = { CpText(s.librarySearchHint) },
-                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                    trailingIcon = {
-                        if (state.libraryQuery.isNotEmpty()) {
-                            IconButton(onClick = { model.setLibraryQuery("") }) {
-                                Icon(Icons.Filled.Close, contentDescription = "清除")
-                            }
-                        }
-                    },
-                    singleLine = true,
+                    placeholder = s.librarySearchHint,
+                    textStyle = MaterialTheme.typography.bodyMedium,
                 )
                 LibraryFilterMenu(state = state, model = model, strings = strings)
             }
@@ -697,32 +697,35 @@ private fun LibraryFilterMenu(
 
     Box {
         IconButton(onClick = { expanded = true }) {
-            Icon(Icons.Filled.FilterList, contentDescription = "筛选与扫描设置")
+            Icon(Icons.Filled.FilterList, contentDescription = strings.downloads.filterAndScanSettings)
             if (badge > 0) {
+                // 角标画在**右下**而不是右上：右侧紧邻搜索框，右上角那 8dp
+                // 会被输入框的圆角吃掉一半，看起来像落错了位置。
                 Box(
-                    Modifier.size(8.dp).clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary)
-                        .align(Alignment.TopEnd),
+                    Modifier.align(Alignment.BottomEnd)
+                        .padding(end = 10.dp, bottom = 10.dp)
+                        .size(8.dp).clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
                 )
             }
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            FilterToggle("只看无损音频", filter.losslessOnly) {
+            FilterToggle(strings.downloads.losslessOnly, filter.losslessOnly) {
                 model.toggleLibraryFilter { it.copy(losslessOnly = !it.losslessOnly) }
             }
-            FilterToggle("只看重复曲目", filter.duplicatesOnly) {
+            FilterToggle(strings.downloads.duplicatesOnly, filter.duplicatesOnly) {
                 model.toggleLibraryFilter { it.copy(duplicatesOnly = !it.duplicatesOnly) }
             }
-            FilterToggle("只看缺少封面", filter.missingCoverOnly) {
+            FilterToggle(strings.downloads.missingCoverOnly, filter.missingCoverOnly) {
                 model.toggleLibraryFilter { it.copy(missingCoverOnly = !it.missingCoverOnly) }
             }
-            FilterToggle("只看标签残缺", filter.missingTagsOnly) {
+            FilterToggle(strings.downloads.missingTagsOnly, filter.missingTagsOnly) {
                 model.toggleLibraryFilter { it.copy(missingTagsOnly = !it.missingTagsOnly) }
             }
             if (!filter.isDefault) {
                 HorizontalDivider()
                 DropdownMenuItem(
-                    text = { CpText("清除筛选") },
+                    text = { CpText(strings.downloads.clearFilters) },
                     onClick = {
                         expanded = false
                         model.clearLibraryFilter()
@@ -734,9 +737,10 @@ private fun LibraryFilterMenu(
                 text = {
                     CpText(
                         buildString {
-                            append("扫描设置")
+                            append(strings.downloads.scanSettings)
                             if (state.scanSettings.activeRuleCount > 0) {
-                                append(" · ${state.scanSettings.activeRuleCount} 条规则")
+                                append(" · ")
+                                append(strings.downloads.scanRuleCount(state.scanSettings.activeRuleCount))
                             }
                         },
                     )
@@ -752,6 +756,7 @@ private fun LibraryFilterMenu(
     if (showScanSettings) {
         ScanSettingsDialog(
             current = state.scanSettings,
+            strings = strings,
             onDismiss = { showScanSettings = false },
             onConfirm = {
                 model.updateScanSettings(it)
@@ -775,6 +780,7 @@ private fun FilterToggle(label: String, checked: Boolean, onToggle: () -> Unit) 
 @Composable
 private fun ScanSettingsDialog(
     current: LocalScanSettings,
+    strings: CpStrings,
     onDismiss: () -> Unit,
     onConfirm: (LocalScanSettings) -> Unit,
 ) {
@@ -784,30 +790,30 @@ private fun ScanSettingsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { CpText("扫描设置") },
+        title = { CpText(strings.downloads.scanSettings) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 CpText(
-                    "改动会在下一次扫描时生效，并同步清理已从规则中排除的条目。",
+                    strings.downloads.scanSettingsNote,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedTextField(
                     value = minDuration,
                     onValueChange = { minDuration = it.filter(Char::isDigit).take(4) },
-                    label = { CpText("最短时长（秒），0 表示不过滤") },
+                    label = { CpText(strings.downloads.minimumDuration) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = filterVideo, onCheckedChange = { filterVideo = it })
                     Spacer(Modifier.width(4.dp))
-                    CpText("扫描时跳过视频文件")
+                    CpText(strings.downloads.skipVideoFiles)
                 }
                 OutlinedTextField(
                     value = excludeText,
                     onValueChange = { excludeText = it },
-                    label = { CpText("排除目录（每行一个）") },
+                    label = { CpText(strings.downloads.excludedFolders) },
                     placeholder = { CpText("/storage/emulated/0/Music/Recordings") },
                     minLines = 3,
                     maxLines = 6,
@@ -829,10 +835,10 @@ private fun ScanSettingsDialog(
                         ),
                     )
                 },
-            ) { CpText("保存") }
+            ) { CpText(strings.downloads.save) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { CpText("取消") }
+            TextButton(onClick = onDismiss) { CpText(strings.common.dismiss) }
         },
     )
 }
@@ -856,8 +862,8 @@ private fun LocalLibrarySubTabs(
         s.tabSongs to songCount,
         s.tabAlbums to albumCount,
         s.tabArtists to artistCount,
-        "本地喜欢" to favoriteCount,
-        "本地歌单" to playlistCount,
+        s.tabLocalFavorites to favoriteCount,
+        s.tabLocalPlaylists to playlistCount,
         s.tabFolders to folderCount,
     )
     Row(
@@ -870,11 +876,14 @@ private fun LocalLibrarySubTabs(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         labels.forEachIndexed { index, (label, count) ->
-            val text = if (count > 0) "$label $count" else label
+            // 计数走 `badge` 槽位而不是拼进标签：拼进去之后计数与标题同字号、同颜色，
+            // 「本地喜欢 12」读起来像名字的一部分；徽标退一档，扫读时才分得清。
+            // 计数为 0 的页签不显徽标 —— 「本地歌单 0」比「本地歌单」更像出错。
             CpToggleChip(
                 checked = selected == index,
                 onCheckedChange = { if (it) onSelect(index) },
-                label = text,
+                label = label,
+                badge = if (count > 0) "$count" else null,
             )
         }
     }
@@ -897,6 +906,7 @@ private fun ColumnScope.SongList(
     onToggleLocalFav: (String) -> Unit,
     onAddToCloudPlaylist: (TrackSummary) -> Unit,
     onAddToLocalPlaylist: (String) -> Unit,
+    onRemoveSong: (LocalMediaItem) -> Unit,
     onDeleteSong: (LocalMediaItem) -> Unit,
     onShowInfo: (TrackSummary) -> Unit,
 ) {
@@ -919,7 +929,7 @@ private fun ColumnScope.SongList(
                         Icon(Icons.Filled.PlayArrow, contentDescription = s.playAll)
                     }
                     IconButton(onClick = { model.shuffleAll(songs) }) {
-                        Icon(Icons.Filled.Shuffle, contentDescription = "随机播放")
+                        Icon(Icons.Filled.Shuffle, contentDescription = s.shuffleAll)
                     }
                 }
                 if (showSort) {
@@ -955,6 +965,7 @@ private fun ColumnScope.SongList(
                     onToggleLocalFav = onToggleLocalFav,
                     onAddToCloudPlaylist = onAddToCloudPlaylist,
                     onAddToLocalPlaylist = onAddToLocalPlaylist,
+                    onRemoveSong = onRemoveSong,
                     onDeleteSong = onDeleteSong,
                     onShowInfo = onShowInfo,
                 )
@@ -984,6 +995,7 @@ private fun LocalSongRow(
     onToggleLocalFav: (String) -> Unit,
     onAddToCloudPlaylist: (TrackSummary) -> Unit,
     onAddToLocalPlaylist: (String) -> Unit,
+    onRemoveSong: (LocalMediaItem) -> Unit,
     onDeleteSong: (LocalMediaItem) -> Unit,
     onShowInfo: (TrackSummary) -> Unit,
 ) {
@@ -1037,15 +1049,15 @@ private fun LocalSongRow(
             { onToggleLocalFav(song.path) }
         },
         favoriteLabel = if (isDownloaded && cloudMediaId != null) {
-            if (isCloudFav) "取消云端收藏" else "云端收藏"
+            if (isCloudFav) s.unfavoriteCloud else s.favoriteCloud
         } else {
-            if (isLocalFav) "取消喜欢" else "喜欢"
+            if (isLocalFav) s.removedFromFavorites else s.favorite
         },
         onAddToQueue = if (!isVideo) {
             {
                 scope.launch {
                     AppModel.playback.addToQueue(mediaId)
-                    UiEvents.notify("已加入播放队列")
+                    UiEvents.notify(strings.library.queuedToPlay)
                 }
             }
         } else null,
@@ -1053,7 +1065,7 @@ private fun LocalSongRow(
             {
                 scope.launch {
                     AppModel.playback.addNextToQueue(mediaId)
-                    UiEvents.notify("将在下一首播放")
+                    UiEvents.notify(strings.library.playNext)
                 }
             }
         } else null,
@@ -1069,12 +1081,12 @@ private fun LocalSongRow(
             cp.player.app.platform.openInFileManager(song.path)
         },
         onRemoveFromLibrary = {
-            model.removeLocalItem(song, strings)
+            onRemoveSong(song)
         },
         onDelete = {
             onDeleteSong(song)
         },
-        deleteLabel = "彻底删除本地文件",
+        deleteLabel = s.deleteLocalFile,
         onShowInfo = {
             onShowInfo(trackSummary)
         },
@@ -1110,7 +1122,7 @@ private fun ColumnScope.LocalPlaylistGrid(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             CpText(
-                "本地歌单 · ${playlists.size}",
+                "${strings.downloads.tabLocalPlaylists} · ${playlists.size}",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
@@ -1119,49 +1131,63 @@ private fun ColumnScope.LocalPlaylistGrid(
             FilledTonalButton(onClick = onCreatePlaylist) {
                 Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                CpText("新建歌单")
+                CpText(strings.downloads.newLocalPlaylist)
             }
         }
         val itemsByPath = remember(items) { items.associateBy { it.path } }
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 140.dp),
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = CpSpacing.pageHorizontal,
-                end = CpSpacing.pageHorizontal,
-                bottom = 96.dp,
-                top = 8.dp,
-            ),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            items(playlists, key = { it.id }) { pl ->
-                val coverUri = remember(pl, itemsByPath) {
-                    pl.trackPaths.firstNotNullOfOrNull { itemsByPath[it]?.coverUri }
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val columns = CpSpacing.gridColumns(maxWidth - CpSpacing.pageHorizontal * 2)
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(columns),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = CpSpacing.pageHorizontal,
+                    end = CpSpacing.pageHorizontal,
+                    bottom = 96.dp,
+                    top = 8.dp,
+                ),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                items(playlists, key = { it.id }) { pl ->
+                    val coverUri = remember(pl, itemsByPath) {
+                        pl.trackPaths.firstNotNullOfOrNull { itemsByPath[it]?.coverUri }
+                    }
+                    val totalDurationMs = remember(pl, itemsByPath) {
+                        pl.trackPaths.sumOf { itemsByPath[it]?.durationMs ?: 0L }
+                    }
+                    LocalPlaylistCell(
+                        playlist = pl,
+                        strings = strings,
+                        coverUri = coverUri,
+                        totalDurationMs = totalDurationMs,
+                        onClick = { onClick(pl) },
+                        onPlay = {
+                            val tracks = pl.trackPaths.mapNotNull { itemsByPath[it] }
+                            if (tracks.isNotEmpty()) model.playAll(tracks)
+                        },
+                        onRename = { onRename(pl) },
+                        onDelete = { onDelete(pl) },
+                    )
                 }
-                val totalDurationMs = remember(pl, itemsByPath) {
-                    pl.trackPaths.sumOf { itemsByPath[it]?.durationMs ?: 0L }
-                }
-                LocalPlaylistCell(
-                    playlist = pl,
-                    coverUri = coverUri,
-                    totalDurationMs = totalDurationMs,
-                    onClick = { onClick(pl) },
-                    onPlay = {
-                        val tracks = pl.trackPaths.mapNotNull { itemsByPath[it] }
-                        if (tracks.isNotEmpty()) model.playAll(tracks)
-                    },
-                    onRename = { onRename(pl) },
-                    onDelete = { onDelete(pl) },
-                )
             }
         }
     }
 }
 
+/**
+ * 本地歌单格子：方形封面 + 名称 + 「N 首歌曲 · 时长」+ 行尾「更多」。
+ *
+ * 封面走 [LocalCover] 且**圆角按格子尺寸给 20dp**（见那里的说明）；
+ * 整格用 `cpBounceClickable`，与专辑 / 艺术家格子同一手感。
+ *
+ * ⚠️ 行尾的「更多」是**独立可点**控件：所以整格用 `clickable` 而不是
+ * `Surface(onClick)` —— 后者会把子按钮的动作并进父节点，读屏用户就点不到它。
+ */
 @Composable
 private fun LocalPlaylistCell(
     playlist: LocalPlaylist,
+    strings: CpStrings,
     coverUri: String?,
     totalDurationMs: Long,
     onClick: () -> Unit,
@@ -1171,16 +1197,17 @@ private fun LocalPlaylistCell(
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     Column(
-        Modifier.clip(MaterialTheme.shapes.medium).clickable(onClick = onClick),
+        Modifier.clip(MaterialTheme.shapes.largeIncreased).cpBounceClickable(onClick = onClick),
     ) {
         Box(
-            Modifier.fillMaxWidth().aspectRatio(1f).clip(MaterialTheme.shapes.medium),
+            Modifier.fillMaxWidth().aspectRatio(1f).clip(MaterialTheme.shapes.largeIncreased),
             contentAlignment = Alignment.Center,
         ) {
             LocalCover(
                 coverUri = coverUri,
                 fallbackIcon = Icons.AutoMirrored.Filled.QueueMusic,
                 modifier = Modifier.fillMaxSize(),
+                corner = 20.dp,
             )
         }
         Spacer(Modifier.height(6.dp))
@@ -1197,7 +1224,7 @@ private fun LocalPlaylistCell(
                 )
                 CpText(
                     buildString {
-                        append("${playlist.trackPaths.size} 首歌曲")
+                        append(strings.downloads.playlistTrackCount(playlist.trackPaths.size))
                         if (totalDurationMs > 0) append(" · ").append(formatDuration(totalDurationMs))
                     },
                     style = MaterialTheme.typography.bodySmall,
@@ -1209,14 +1236,14 @@ private fun LocalPlaylistCell(
                 IconButton(onClick = { menuExpanded = true }, modifier = Modifier.size(32.dp)) {
                     Icon(
                         Icons.Filled.MoreVert,
-                        contentDescription = "歌单选项",
+                        contentDescription = strings.downloads.playlistOptions,
                         modifier = Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                     DropdownMenuItem(
-                        text = { CpText("播放歌单") },
+                        text = { CpText(strings.downloads.playPlaylist) },
                         leadingIcon = { Icon(Icons.Filled.PlayArrow, null) },
                         onClick = {
                             menuExpanded = false
@@ -1224,7 +1251,7 @@ private fun LocalPlaylistCell(
                         },
                     )
                     DropdownMenuItem(
-                        text = { CpText("重命名") },
+                        text = { CpText(strings.downloads.rename) },
                         leadingIcon = { Icon(Icons.Filled.Edit, null) },
                         onClick = {
                             menuExpanded = false
@@ -1232,7 +1259,7 @@ private fun LocalPlaylistCell(
                         },
                     )
                     DropdownMenuItem(
-                        text = { CpText("删除歌单", color = MaterialTheme.colorScheme.error) },
+                        text = { CpText(strings.library.deletePlaylist, color = MaterialTheme.colorScheme.error) },
                         leadingIcon = { Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error) },
                         onClick = {
                             menuExpanded = false
@@ -1254,7 +1281,7 @@ private fun ColumnScope.LocalPlaylistDetail(
     onBack: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
-    onRemoveSong: (String) -> Unit,
+    onRemoveFromPlaylist: (String) -> Unit,
     currentPlayingId: String?,
     likedIds: Set<String>,
     favoritePaths: Set<String>,
@@ -1262,6 +1289,7 @@ private fun ColumnScope.LocalPlaylistDetail(
     onToggleLocalFav: (String) -> Unit,
     onAddToCloudPlaylist: (TrackSummary) -> Unit,
     onAddToLocalPlaylist: (String) -> Unit,
+    onRemoveSong: (LocalMediaItem) -> Unit,
     onDeleteSong: (LocalMediaItem) -> Unit,
     onShowInfo: (TrackSummary) -> Unit,
 ) {
@@ -1275,35 +1303,25 @@ private fun ColumnScope.LocalPlaylistDetail(
         DetailHeader(
             title = playlist.name,
             subtitle = buildString {
-                append("${tracks.size} 首歌曲")
+                append(strings.downloads.playlistTrackCount(tracks.size))
                 if (totalDurationMs > 0) append(" · ").append(formatDuration(totalDurationMs))
             },
             onBack = onBack,
             trailingActions = {
                 IconButton(onClick = onRename) {
-                    Icon(Icons.Filled.Edit, contentDescription = "重命名歌单")
+                    Icon(Icons.Filled.Edit, contentDescription = strings.library.renamePlaylist)
                 }
                 IconButton(onClick = onDelete) {
-                    Icon(Icons.Filled.Delete, contentDescription = "删除歌单", tint = MaterialTheme.colorScheme.error)
+                    Icon(Icons.Filled.Delete, contentDescription = strings.library.deletePlaylist, tint = MaterialTheme.colorScheme.error)
                 }
             },
         )
         if (tracks.isNotEmpty()) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = CpSpacing.pageHorizontal, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                FilledTonalButton(onClick = { model.playAll(tracks) }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    CpText(strings.downloads.playAll)
-                }
-                FilledTonalButton(onClick = { model.shuffleAll(tracks) }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    CpText("随机播放")
-                }
-            }
+            LocalPlayAllRow(
+                playAllLabel = strings.downloads.playAll,
+                onPlayAll = { model.playAll(tracks) },
+                onShuffle = { model.shuffleAll(tracks) },
+            )
             LazyColumn(
                 Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
@@ -1324,21 +1342,22 @@ private fun ColumnScope.LocalPlaylistDetail(
                         model = model,
                         strings = strings,
                         onPlay = { model.playAll(tracks, tracks.indexOf(song)) },
-                        onRemoveFromLocalPlaylist = { onRemoveSong(song.path) },
+                        onRemoveFromLocalPlaylist = { onRemoveFromPlaylist(song.path) },
                         onToggleCloudFav = onToggleCloudFav,
                         onToggleLocalFav = onToggleLocalFav,
                         onAddToCloudPlaylist = onAddToCloudPlaylist,
                         onAddToLocalPlaylist = onAddToLocalPlaylist,
+                        onRemoveSong = onRemoveSong,
                         onDeleteSong = onDeleteSong,
                         onShowInfo = onShowInfo,
                     )
                 }
             }
         } else {
-            StateSurface(Modifier.padding(CpSpacing.pageHorizontal)) {
+            LibraryEmptyState {
                 ContentState(
-                    title = "此歌单暂无歌曲",
-                    message = "可在本地音乐或其他歌曲菜单中选择「添加到本地歌单」",
+                    title = strings.downloads.emptyPlaylistTitle,
+                    message = strings.downloads.emptyPlaylistNote,
                 )
             }
         }
@@ -1349,18 +1368,19 @@ private fun ColumnScope.LocalPlaylistDetail(
 
 @Composable
 private fun CreateLocalPlaylistDialog(
+    strings: CpStrings,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { CpText("新建本地歌单") },
+        title = { CpText(strings.downloads.newLocalPlaylist) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { CpText("歌单名称") },
+                label = { CpText(strings.downloads.playlistName) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -1372,10 +1392,10 @@ private fun CreateLocalPlaylistDialog(
                     if (trimmed.isNotEmpty()) onConfirm(trimmed)
                 },
                 enabled = name.isNotBlank(),
-            ) { CpText("创建") }
+            ) { CpText(strings.playlistSheet.createShort) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { CpText("取消") }
+            TextButton(onClick = onDismiss) { CpText(strings.common.dismiss) }
         },
     )
 }
@@ -1383,18 +1403,19 @@ private fun CreateLocalPlaylistDialog(
 @Composable
 private fun RenameLocalPlaylistDialog(
     currentName: String,
+    strings: CpStrings,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
     var name by remember { mutableStateOf(currentName) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { CpText("重命名歌单") },
+        title = { CpText(strings.library.renamePlaylist) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { CpText("歌单名称") },
+                label = { CpText(strings.downloads.playlistName) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -1406,55 +1427,141 @@ private fun RenameLocalPlaylistDialog(
                     if (trimmed.isNotEmpty()) onConfirm(trimmed)
                 },
                 enabled = name.isNotBlank() && name != currentName,
-            ) { CpText("确定") }
+            ) { CpText(strings.common.confirm) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { CpText("取消") }
+            TextButton(onClick = onDismiss) { CpText(strings.common.dismiss) }
         },
     )
 }
 
-// ============ 专辑网格 ============
+// ============ 专辑 / 艺术家网格 ============
 
 @Composable
-private fun ColumnScope.AlbumGrid(
-    albums: List<LocalAlbum>,
-    model: DownloadsScreenModel,
+private fun GridHeader(
+    title: String,
+    current: LocalGridSort,
     strings: CpStrings,
-    onClick: (LocalAlbum) -> Unit,
+    onSelect: (LocalGridSort) -> Unit,
 ) {
-    val gridState = rememberLazyGridState()
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 132.dp),
-        state = gridState,
-        modifier = Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize().weight(1f),
-        contentPadding = PaddingValues(
-            start = CpSpacing.pageHorizontal,
-            end = CpSpacing.pageHorizontal,
-            bottom = 96.dp,
-        ),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+    Row(
+        Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth()
+            .padding(horizontal = CpSpacing.pageHorizontal, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        items(albums, key = { it.id }) { album ->
-            AlbumCell(album = album, strings = strings, onClick = { onClick(album) })
-        }
+        CpText(
+            title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+        )
+        GridSortMenu(current = current, strings = strings, onSelect = onSelect)
     }
 }
 
 @Composable
+private fun GridSortMenu(
+    current: LocalGridSort,
+    strings: CpStrings,
+    onSelect: (LocalGridSort) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(
+                Icons.AutoMirrored.Filled.Sort,
+                contentDescription = strings.downloads.sortOrder,
+                tint = if (current == LocalGridSort.NAME) MaterialTheme.colorScheme.onSurfaceVariant
+                else MaterialTheme.colorScheme.primary,
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            LocalGridSort.entries.forEach { option ->
+                val label = when (option) {
+                    LocalGridSort.NAME -> strings.downloads.sortName
+                    LocalGridSort.COUNT -> strings.downloads.sortCount
+                    LocalGridSort.RECENT -> strings.downloads.sortRecent
+                }
+                DropdownMenuItem(
+                    text = { CpText(label) },
+                    onClick = {
+                        expanded = false
+                        onSelect(option)
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 专辑栅格。
+ *
+ * 列数按**本容器可用宽度**走 [CpSpacing.gridColumns]（与首页 / 曲库 / 本地歌单栅格同一套换算），
+ * 不再是 `GridCells.Adaptive(minSize = 132.dp)`：那只保证「每格不低于 132dp」，
+ * 于是宽窗口上会铺出一堆贴着下限的窄封面 —— 正文早已被 `pageMaxWidth`（1400dp）钳住，
+ * 列数本身不会涨，问题只是每格被压到最窄。换算后每列落在 180–210dp 的舒适区。
+ */
+@Composable
+private fun ColumnScope.AlbumGrid(
+    albums: List<LocalAlbum>,
+    gridSort: LocalGridSort,
+    onSort: (LocalGridSort) -> Unit,
+    strings: CpStrings,
+    onClick: (LocalAlbum) -> Unit,
+) {
+    val gridState = rememberLazyGridState()
+    GridHeader(
+        title = "${strings.downloads.tabAlbums} · ${albums.size}",
+        current = gridSort,
+        strings = strings,
+        onSelect = onSort,
+    )
+    BoxWithConstraints(
+        Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize().weight(1f),
+    ) {
+        val columns = CpSpacing.gridColumns(maxWidth - CpSpacing.pageHorizontal * 2)
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(columns),
+            state = gridState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = CpSpacing.pageHorizontal,
+                end = CpSpacing.pageHorizontal,
+                bottom = 96.dp,
+            ),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(albums, key = { it.id }) { album ->
+                AlbumCell(album = album, strings = strings, onClick = { onClick(album) })
+            }
+        }
+    }
+}
+
+/**
+ * 专辑格子：方形封面 + 标题 + 「艺人 · N 项」。
+ *
+ * 封面圆角取 20dp（= `shapes.largeIncreased`）而不是原 `medium`（12dp）：
+ * 12dp 是**列表缩略图**那一档，用在 180dp 的封面块上显得过方。
+ * 点击给 `cpBounceClickable`（按下轻微收缩）—— 与首页 / 曲库的封面卡同一手感。
+ */
+@Composable
 private fun AlbumCell(album: LocalAlbum, strings: CpStrings, onClick: () -> Unit) {
     Column(
-        Modifier.clip(MaterialTheme.shapes.medium).clickable(onClick = onClick),
+        Modifier.cpBounceClickable(onClick = onClick),
     ) {
         Box(
-            Modifier.fillMaxWidth().aspectRatio(1f).clip(MaterialTheme.shapes.medium),
+            Modifier.fillMaxWidth().aspectRatio(1f).clip(MaterialTheme.shapes.largeIncreased),
             contentAlignment = Alignment.Center,
         ) {
             LocalCover(
                 coverUri = album.coverUri,
                 fallbackIcon = Icons.Filled.Album,
                 modifier = Modifier.fillMaxSize(),
+                corner = 20.dp,
             )
         }
         Spacer(Modifier.height(6.dp))
@@ -1479,26 +1586,39 @@ private fun AlbumCell(album: LocalAlbum, strings: CpStrings, onClick: () -> Unit
 
 // ============ 艺术家网格 ============
 
+/** 艺术家栅格。列数换算与 [AlbumGrid] 同一套（见那里的 KDoc）。 */
 @Composable
 private fun ColumnScope.ArtistGrid(
     artists: List<LocalArtist>,
-    model: DownloadsScreenModel,
+    gridSort: LocalGridSort,
+    onSort: (LocalGridSort) -> Unit,
     strings: CpStrings,
     onClick: (LocalArtist) -> Unit,
 ) {
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 132.dp),
-        modifier = Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize().weight(1f),
-        contentPadding = PaddingValues(
-            start = CpSpacing.pageHorizontal,
-            end = CpSpacing.pageHorizontal,
-            bottom = 96.dp,
-        ),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+    GridHeader(
+        title = "${strings.downloads.tabArtists} · ${artists.size}",
+        current = gridSort,
+        strings = strings,
+        onSelect = onSort,
+    )
+    BoxWithConstraints(
+        Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize().weight(1f),
     ) {
-        items(artists, key = { it.name }) { artist ->
-            ArtistCell(artist = artist, strings = strings, onClick = { onClick(artist) })
+        val columns = CpSpacing.gridColumns(maxWidth - CpSpacing.pageHorizontal * 2)
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(columns),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = CpSpacing.pageHorizontal,
+                end = CpSpacing.pageHorizontal,
+                bottom = 96.dp,
+            ),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(artists, key = { it.name }) { artist ->
+                ArtistCell(artist = artist, strings = strings, onClick = { onClick(artist) })
+            }
         }
     }
 }
@@ -1506,7 +1626,7 @@ private fun ColumnScope.ArtistGrid(
 @Composable
 private fun ArtistCell(artist: LocalArtist, strings: CpStrings, onClick: () -> Unit) {
     Column(
-        Modifier.clip(MaterialTheme.shapes.medium).clickable(onClick = onClick),
+        Modifier.clip(MaterialTheme.shapes.largeIncreased).cpBounceClickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
@@ -1581,6 +1701,17 @@ private fun ColumnScope.FolderTreeView(
     }
 }
 
+/**
+ * 文件夹行（树的一行）。
+ *
+ * 底色取 [settingsRowContainer]（深色 `surfaceContainerHighest` / 浅色 `surfaceContainerLow`），
+ * 与本地库其它卡片（专辑 / 艺术家 / 歌单格子）同一档。此前是
+ * `surfaceContainerHigh.copy(alpha = 0.6f)`：半透明叠在页面底色上，实际颜色随背景漂移，
+ * 与相邻的歌曲行（`SongItem`）差一档 —— 同一页里两种卡片深度。
+ *
+ * 缩进 `12dp + (depth-1) * 16dp` 是**允许的裸值**：它表达的是「树的层级」这一结构，
+ * 服务的是任意深度的树，而非页面栅格（那组令牌在 `CpSpacing` 里）。
+ */
 @Composable
 private fun FolderRow(
     node: LocalFolderNode,
@@ -1594,7 +1725,7 @@ private fun FolderRow(
     Surface(
         onClick = onShowDetail,
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f),
+        color = settingsRowContainer(),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
@@ -1662,6 +1793,7 @@ private fun ColumnScope.LocalFolderDetail(
     onToggleLocalFav: (String) -> Unit,
     onAddToCloudPlaylist: (TrackSummary) -> Unit,
     onAddToLocalPlaylist: (String) -> Unit,
+    onRemoveSong: (LocalMediaItem) -> Unit,
     onDeleteSong: (LocalMediaItem) -> Unit,
     onShowInfo: (TrackSummary) -> Unit,
 ) {
@@ -1676,21 +1808,11 @@ private fun ColumnScope.LocalFolderDetail(
             },
             onBack = onBack,
         )
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = CpSpacing.pageHorizontal, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            FilledTonalButton(onClick = { model.playAll(tracks) }, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                CpText(s.playAll)
-            }
-            FilledTonalButton(onClick = { model.shuffleAll(tracks) }, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Filled.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                CpText("随机播放")
-            }
-        }
+        LocalPlayAllRow(
+            playAllLabel = s.playAll,
+            onPlayAll = { model.playAll(tracks) },
+            onShuffle = { model.shuffleAll(tracks) },
+        )
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
@@ -1715,6 +1837,7 @@ private fun ColumnScope.LocalFolderDetail(
                     onToggleLocalFav = onToggleLocalFav,
                     onAddToCloudPlaylist = onAddToCloudPlaylist,
                     onAddToLocalPlaylist = onAddToLocalPlaylist,
+                    onRemoveSong = onRemoveSong,
                     onDeleteSong = onDeleteSong,
                     onShowInfo = onShowInfo,
                 )
@@ -1739,6 +1862,7 @@ private fun ColumnScope.LocalAlbumDetail(
     onToggleLocalFav: (String) -> Unit,
     onAddToCloudPlaylist: (TrackSummary) -> Unit,
     onAddToLocalPlaylist: (String) -> Unit,
+    onRemoveSong: (LocalMediaItem) -> Unit,
     onDeleteSong: (LocalMediaItem) -> Unit,
     onShowInfo: (TrackSummary) -> Unit,
 ) {
@@ -1762,21 +1886,11 @@ private fun ColumnScope.LocalAlbumDetail(
             },
             onBack = onBack,
         )
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = CpSpacing.pageHorizontal, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            FilledTonalButton(onClick = { model.playAll(tracks) }, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                CpText(s.playAll)
-            }
-            FilledTonalButton(onClick = { model.shuffleAll(tracks) }, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Filled.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                CpText("随机播放")
-            }
-        }
+        LocalPlayAllRow(
+            playAllLabel = s.playAll,
+            onPlayAll = { model.playAll(tracks) },
+            onShuffle = { model.shuffleAll(tracks) },
+        )
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
@@ -1801,6 +1915,7 @@ private fun ColumnScope.LocalAlbumDetail(
                     onToggleLocalFav = onToggleLocalFav,
                     onAddToCloudPlaylist = onAddToCloudPlaylist,
                     onAddToLocalPlaylist = onAddToLocalPlaylist,
+                    onRemoveSong = onRemoveSong,
                     onDeleteSong = onDeleteSong,
                     onShowInfo = onShowInfo,
                 )
@@ -1823,6 +1938,7 @@ private fun ColumnScope.LocalArtistDetail(
     onToggleLocalFav: (String) -> Unit,
     onAddToCloudPlaylist: (TrackSummary) -> Unit,
     onAddToLocalPlaylist: (String) -> Unit,
+    onRemoveSong: (LocalMediaItem) -> Unit,
     onDeleteSong: (LocalMediaItem) -> Unit,
     onShowInfo: (TrackSummary) -> Unit,
 ) {
@@ -1847,21 +1963,11 @@ private fun ColumnScope.LocalArtistDetail(
             },
             onBack = onBack,
         )
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = CpSpacing.pageHorizontal, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            FilledTonalButton(onClick = { model.playAll(tracks) }, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                CpText(s.playAll)
-            }
-            FilledTonalButton(onClick = { model.shuffleAll(tracks) }, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Filled.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                CpText("随机播放")
-            }
-        }
+        LocalPlayAllRow(
+            playAllLabel = s.playAll,
+            onPlayAll = { model.playAll(tracks) },
+            onShuffle = { model.shuffleAll(tracks) },
+        )
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
@@ -1886,6 +1992,7 @@ private fun ColumnScope.LocalArtistDetail(
                     onToggleLocalFav = onToggleLocalFav,
                     onAddToCloudPlaylist = onAddToCloudPlaylist,
                     onAddToLocalPlaylist = onAddToLocalPlaylist,
+                    onRemoveSong = onRemoveSong,
                     onDeleteSong = onDeleteSong,
                     onShowInfo = onShowInfo,
                 )
@@ -1894,6 +2001,14 @@ private fun ColumnScope.LocalArtistDetail(
     }
 }
 
+/**
+ * 页内二级视图的头部（专辑 / 艺术家 / 文件夹 / 本地歌单详情）。
+ *
+ * ⚠️ 返回键用 [CpBackButton] 而不是裸 `IconButton { Icon(ArrowBack) }`：
+ * AGENTS.md §6 明确「返回键只认 CpBackButton」—— 这一处是最后残留的裸图标之一，
+ * 于是从本地库列表进详情时，返回按钮会突然从填充圆钮变成一根细箭头。
+ * 因此水平内边距只留 8dp：填充圆钮自带 40dp 的视觉块，再加 20dp 会把它推得离边太远。
+ */
 @Composable
 private fun DetailHeader(
     title: String,
@@ -1902,12 +2017,11 @@ private fun DetailHeader(
     trailingActions: (@Composable () -> Unit)? = null,
 ) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+        Modifier.fillMaxWidth().padding(start = 8.dp, end = 12.dp, top = 6.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onBack) {
-            Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
-        }
+        CpBackButton(onClick = onBack)
+        Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             CpText(
                 title,
@@ -1930,15 +2044,98 @@ private fun DetailHeader(
 
 // ============ 通用零件 ============
 
+/**
+ * 本地库**唯一**的空态容器。
+ *
+ * 与列表同宽（[CpSpacing.pageMaxWidth]）+ 水平 [CpSpacing.pageHorizontal]：不收这两样的话，
+ * 宽屏下空态卡片会贴着窗口最左，和上方的工具行 / 子页签明显错开。
+ *
+ * 收成一个槽而不是每个分支各写一遍 [StateSurface]：五个空态共用同一份度量。
+ */
+@Composable
+private fun LibraryEmptyState(content: @Composable () -> Unit) {
+    StateSurface(
+        Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth()
+            .padding(horizontal = CpSpacing.pageHorizontal, vertical = 8.dp),
+    ) {
+        content()
+    }
+}
+
+/**
+ * 「播放全部 / 随机播放」并排两格。
+ *
+ * 抽出来的理由：这一对按钮在四个二级视图（本地歌单 / 文件夹 / 专辑 / 艺术家详情）
+ * 里逐字写了四遍，任何一处改动（比如把「随机播放」换成本地化文案）都要改四遍。
+ * 两格等宽是刻意的：文案长度随语言变，不定宽的话英文下两个按钮会被挤成不同宽度。
+ */
+@Composable
+private fun LocalPlayAllRow(
+    playAllLabel: String,
+    onPlayAll: () -> Unit,
+    onShuffle: () -> Unit,
+) {
+    val s = cpStrings()
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = CpSpacing.pageHorizontal, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        FilledTonalButton(onClick = onPlayAll, modifier = Modifier.weight(1f)) {
+            Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            CpText(playAllLabel)
+        }
+        FilledTonalButton(onClick = onShuffle, modifier = Modifier.weight(1f)) {
+            Icon(Icons.Filled.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            CpText(s.downloads.shuffleAll)
+        }
+    }
+}
+
+/**
+ * 本地曲库的封面块（列表缩略图 / 栅格封面 / 文件夹图标共用的唯一实现）。
+ *
+ * @param corner 方角圆角（`Dp`）。**栅格封面传 20dp**（= `shapes.largeIncreased`）：
+ *   大块封面用 8dp 显得过方，而列表行 40–60dp 的缩略图用 20dp 又显得过圆 ——
+ *   同一个组件两种尺寸，圆角必须由调用方按尺寸给。
+ * @param circular 圆形头像（艺术家）。与 [corner] 互斥。
+ *
+ * ⚠️ 占位块**常驻最底层**（而不是「没有封面才画」）：封面 URI 有值但图还没到 / 已经挂了时，
+ * 只画 AsyncImage 会留下一块空白，看起来像渲染坏了。
+ */
 @Composable
 private fun LocalCover(
     coverUri: String?,
     fallbackIcon: ImageVector,
     modifier: Modifier = Modifier,
     circular: Boolean = false,
+    corner: Dp = 8.dp,
 ) {
-    val shape = if (circular) CircleShape else MaterialTheme.shapes.small
-    Box(modifier.clip(shape).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+    val shape = if (circular) CircleShape else androidx.compose.foundation.shape.RoundedCornerShape(corner)
+    Box(
+        modifier.clip(shape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (fallbackIcon == Icons.Filled.Album || fallbackIcon == Icons.AutoMirrored.Filled.QueueMusic) {
+            CpCoverPlaceholder(
+                modifier = Modifier.fillMaxSize(),
+                corner = corner,
+                animated = corner >= 16.dp,
+            )
+        } else {
+            Box(
+                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    fallbackIcon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
         if (!coverUri.isNullOrBlank()) {
             AsyncImage(
                 model = coverUri.resized(240),
@@ -1946,23 +2143,21 @@ private fun LocalCover(
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
             )
-        } else if (fallbackIcon == Icons.Filled.MusicNote) {
-            CpCoverPlaceholder(
-                modifier = Modifier.fillMaxSize(),
-                corner = if (circular) 36.dp else 8.dp,
-                animated = false,
-            )
-        } else {
-            Icon(
-                fallbackIcon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(22.dp),
-            )
         }
     }
 }
 
+/**
+ * 歌曲排序菜单。
+ *
+ * 当前项带**方向箭头**（↑ / ↓）而不是另开一个「升序 / 降序」开关：重复点同一项即可
+ * 翻转方向（见 `DownloadsScreenModel.toggleSongSort`）。箭头只在当前项上出现。
+ *
+ * 图标用 `Sort` 而不是 `MoreVert`：行尾的「更多」已经占用了 MoreVert 的语义，
+ * 同一个页面里两个不同的按钮长得一样，用户读不出哪个是排序。
+ * 非默认排序生效时图标点亮为主题色 —— 否则「默认顺序」与「已按大小降序」
+ * 在界面上完全一样，看不出自己动过排序。
+ */
 @Composable
 private fun SortMenu(
     current: LocalLibrarySort,
@@ -1970,21 +2165,29 @@ private fun SortMenu(
     onSelect: (LocalLibrarySort) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val isDefault = current == LocalLibrarySort.TITLE && !descending
     Box {
         IconButton(onClick = { expanded = true }) {
-            Icon(Icons.Filled.MoreVert, contentDescription = "排序方式")
+            Icon(
+                Icons.AutoMirrored.Filled.Sort,
+                contentDescription = cpStrings().library.sort,
+                tint = if (isDefault) MaterialTheme.colorScheme.onSurfaceVariant
+                else MaterialTheme.colorScheme.primary,
+            )
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             LocalLibrarySort.entries.forEach { option ->
+                val active = option == current
                 DropdownMenuItem(
                     text = {
                         CpText(
-                            if (option == current) {
+                            if (active) {
                                 "${option.label} ${if (descending) "↓" else "↑"}"
                             } else {
                                 option.label
                             },
-                            fontWeight = if (option == current) FontWeight.SemiBold else FontWeight.Normal,
+                            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (active) MaterialTheme.colorScheme.primary else Color.Unspecified,
                         )
                     },
                     onClick = {

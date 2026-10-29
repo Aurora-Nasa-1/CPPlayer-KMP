@@ -50,6 +50,7 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
     val strings = cpStrings()
     val entries = remember { settingsEntries() }
     var searchQuery by remember { mutableStateOf("") }
+    var targetRequestKey by remember { mutableStateOf(0L) }
 
     val searchResults = remember(searchQuery, entries, strings) {
         val q = searchQuery.trim().lowercase()
@@ -103,6 +104,7 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
 
         if (expanded) {
             var selectedId by remember { mutableStateOf(entries.firstOrNull()?.id) }
+            var selectedTargetId by remember { mutableStateOf<String?>(null) }
             CpTwoPane(
                 rail = { railModifier ->
                     ScrollColumn(
@@ -123,14 +125,22 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
                             SettingsSearchResults(
                                 results = searchResults,
                                 selectedId = selectedId,
-                                onSelectEntry = { entry -> selectedId = entry.id },
+                                onSelectEntry = { entry, targetId ->
+                                    selectedId = entry.id
+                                    selectedTargetId = targetId
+                                    targetRequestKey++
+                                },
                                 query = searchQuery,
                             )
                         } else {
                             SettingsGroupedList(
                                 entries = entries,
                                 selectedId = selectedId,
-                                onSelect = { entry -> selectedId = entry.id },
+                                onSelect = { entry ->
+                                    selectedId = entry.id
+                                    selectedTargetId = null
+                                    targetRequestKey++
+                                },
                             )
                         }
                     }
@@ -139,7 +149,9 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
                     CompositionLocalProvider(LocalEmbeddedInPane provides true) {
                         val entry = entries.firstOrNull { it.id == selectedId } ?: entries.firstOrNull()
                         if (entry != null) {
-                            val screen = remember(entry.id) { entry.screen() }
+                            val screen = remember(entry.id, selectedTargetId, targetRequestKey) {
+                                entry.screen(selectedTargetId)
+                            }
                             screen.Content()
                         }
                     }
@@ -159,14 +171,14 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
                 SettingsSearchResults(
                     results = searchResults,
                     selectedId = null,
-                    onSelectEntry = { entry -> navigator?.push(entry.screen()) },
+                    onSelectEntry = { entry, targetId -> navigator?.push(entry.screen(targetId)) },
                     query = searchQuery,
                 )
             } else {
                 SettingsGroupedList(
                     entries = entries,
                     selectedId = null,
-                    onSelect = { entry -> navigator?.push(entry.screen()) },
+                    onSelect = { entry -> navigator?.push(entry.screen(null)) },
                 )
             }
         }
@@ -189,7 +201,7 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
 private fun SettingsSearchResults(
     results: List<SettingsSearchResult>,
     selectedId: String?,
-    onSelectEntry: (SettingsEntry) -> Unit,
+    onSelectEntry: (SettingsEntry, String?) -> Unit,
     query: String,
 ) {
     if (results.isEmpty()) {
@@ -213,7 +225,7 @@ private fun SettingsSearchResults(
                     index = index,
                     total = subItemMatches.size,
                     isSelected = match.entry.id == selectedId,
-                    onClick = { onSelectEntry(match.entry) },
+                    onClick = { onSelectEntry(match.entry, match.subItem.id) },
                 )
             }
         }
@@ -227,7 +239,7 @@ private fun SettingsSearchResults(
                     index = index,
                     total = entryMatches.size,
                     isSelected = match.entry.id == selectedId,
-                    onClick = { onSelectEntry(match.entry) },
+                    onClick = { onSelectEntry(match.entry, null) },
                 )
             }
         }
