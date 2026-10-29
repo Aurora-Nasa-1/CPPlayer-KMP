@@ -651,11 +651,11 @@ object AppModel {
     private const val KEY_BOTTOM_BAR_AUTO_HIDE = "bottom_bar_auto_hide"
 
     private val _bottomBarAutoHide = MutableStateFlow(
-        settings.getString(KEY_BOTTOM_BAR_AUTO_HIDE)?.toBooleanStrictOrNull() ?: true
+        settings.getString(KEY_BOTTOM_BAR_AUTO_HIDE)?.toBooleanStrictOrNull() ?: false
     )
 
     /**
-     * 窄屏（手机）底部导航栏是否**随内容上滑自动隐藏**（默认开）。
+     * 窄屏（手机）底部导航栏是否**随内容上滑自动隐藏**（默认关）。
      *
      * 生效范围是整个窄屏布局的底栏（Android 手机 / 窄窗口）；桌面宽屏有侧栏，
      * 本来就没有底栏。实现见 [cp.player.app.ui.component.BottomBarHideState]。
@@ -722,6 +722,22 @@ object AppModel {
     fun setShowSongAlbum(enabled: Boolean) {
         settings.putString(KEY_SHOW_SONG_ALBUM, enabled.toString())
         _showSongAlbum.value = enabled
+    }
+
+    // ============ 底部迷你播放器歌词显示（持久化） ============
+
+    private const val KEY_SHOW_MINI_PLAYER_LYRICS = "show_mini_player_lyrics"
+
+    private val _showMiniPlayerLyrics = MutableStateFlow(
+        settings.getString(KEY_SHOW_MINI_PLAYER_LYRICS)?.toBooleanStrictOrNull() ?: true
+    )
+
+    /** 底部迷你播放器是否显示当前歌词；关闭时固定显示歌手。 */
+    val showMiniPlayerLyricsFlow: StateFlow<Boolean> = _showMiniPlayerLyrics.asStateFlow()
+
+    fun setShowMiniPlayerLyrics(enabled: Boolean) {
+        settings.putString(KEY_SHOW_MINI_PLAYER_LYRICS, enabled.toString())
+        _showMiniPlayerLyrics.value = enabled
     }
 
     // ============ 日文汉字注音假名（振假名）设置 ============
@@ -1669,8 +1685,32 @@ object AppModel {
         val title: String,
     )
 
-    /** 清空当前用户资料（登出后调用）。 */
-    fun clearUserProfile() {
+    /**
+     * 清空当前用户资料 + **全部绑定账号的本地数据**（登出 / 移除当前账号后调用）。
+     *
+     * ### 为什么不能只清 _userProfile
+     * 只把资料置空的话，界面上「像是已注销」，但下列数据仍是上一个账号的：
+     * 最近播放、搜索历史、听歌习惯、播放队列与「保留上次播放」快照、接口缓存。
+     * 其中播放队列与快照会在**下次启动**时被自动恢复，于是「注销后重启仍是登录态
+     * 的那套数据」—— 这正是「显示已注销但本地没退干净」的观感来源。
+     *
+     * ### 在途请求必须先取消
+     * profileRefreshJob / unreadRefreshJob 跑在 IO 上，登出瞬间它们手里还握着
+     * **旧 cookie 的那次请求**；不取消的话，慢响应回来会把旧 uid 写回 _userProfile
+     * 并再 bump 一次账号代际 —— 界面表现为「刚注销，昵称又冒出来了」。
+     *
+     * @param clearCache 是否一并清空接口缓存。默认 true：
+     *   缓存的键只含 providerId + cookie 哈希，同一音源换号后旧响应仍可能被命中。
+     *   走服务端 logout() 时它自己也会清（见 CachedMusicApiService.logout），
+     *   这里是给「不走 logout 的入口」（移除账号 / 音源隔离页清除登录态）兜底。
+     */
+    fun clearUserProfile(clearCache: Boolean = true) {
+        // 1) 先掐掉在途请求，再谈清状态 —— 顺序反了就会被慢响应写回。
+        profileRefreshJob?.cancel()
+        profileRefreshJob = null
+        unreadRefreshJob?.cancel()
+        unreadRefreshJob = null
+
         val wasLoggedIn = _userProfile.value != null
         _userProfile.value = null
         // 从「有账号」变成「没账号」同样是一次账号代际：绑定账号的数据必须清掉重拉，
@@ -1679,13 +1719,46 @@ object AppModel {
         _unreadMessages.value = 0
         // 登出即停轮询（订阅关系保留 —— 用户回来还想收）。
         syncMessageWatch()
+
+        // 2) 本地持久化的账号数据：最近播放 / 搜索历史 / 听歌习惯。
+        clearRecentTracks()
+        clearSearchHistory()
+        runCatching { clearListeningRecords() }
+
+        // 3) 播放现场：队列 + 「保留上次播放」快照。不清的话重启会把这些恢复出来。
+        runCatching { playback.clearQueue() }
+
+        // 4) 收藏集合（内存）与接口缓存（同音源换号可能命中旧账号响应）。
         modelScope.launch { runCatching { playback.refreshFavorites() } }
+        if (clearCache) runCatching { backend.clearApiCache() }
+    }
+
+    /** 清空「最近播放」：内存列表与持久化键一起清（登出时调用）。 */
+    fun clearRecentTracks() {
+        _recentTracks.value = emptyList()
+        runCatching { settings.remove(KEY_RECENT_TRACKS) }
+    }
+
+    /**
+     * 清空搜索历史（持久化键 search_history）。
+     *
+     * 键是**全局单例**而不是按账号存的（见 SearchScreenModel），所以换号后
+     * 新用户会直接看到上一个账号的搜索词 —— 登出必须清掉。
+     */
+    fun clearSearchHistory() {
+        runCatching { settings.remove(KEY_SEARCH_HISTORY) }
     }
 
     // ============ 最近播放（持久化） ============
 
     private val KEY_RECENT_TRACKS = "recent_tracks"
     private val RECENT_LIMIT = 30
+
+    /**
+     * 搜索历史键。必须与 `SearchScreenModel` 里的 `SEARCH_HISTORY_KEY` 保持**同一个字面量** ——
+     * 那边是私有常量，登出清理走 [clearSearchHistory] 时要用同一个键才删得掉。
+     */
+    private val KEY_SEARCH_HISTORY = "search_history"
 
     private val _recentTracks = MutableStateFlow(loadRecentTracks())
     val recentTracksFlow: StateFlow<List<cp.player.core.music.TrackSummary>> = _recentTracks.asStateFlow()
@@ -1875,6 +1948,11 @@ object AppModel {
         )
     }
 
+    /** 听歌打卡与外部同步中心（Last.fm 等平台通用底层）。 */
+    val scrobbleHub: cp.player.core.scrobble.ScrobbleHub by lazy {
+        cp.player.core.scrobble.ScrobbleHub()
+    }
+
     private val _listeningRecords = MutableStateFlow<List<cp.player.core.insights.PlayRecord>>(emptyList())
 
     /** 全部原始听歌记录（升序）。习惯页的「最近」明细与日聚合都由它派生。 */
@@ -1912,6 +1990,7 @@ object AppModel {
         val mediaId: String,
         val name: String,
         val artist: String,
+        val album: String?,
         val provider: String,
         val startedAt: Long,
         var durationMs: Long,
@@ -1923,6 +2002,10 @@ object AppModel {
 
         /** 引擎报告过的最新位置，用于判定「是否播到尾部」。 */
         var lastPositionMs: Long = 0L
+
+        /** 上次观测到的红心状态（用于联动外部平台喜爱同步）。 */
+        var lastFavorite: Boolean = false
+        var favoriteObserved: Boolean = false
     }
 
     /** 「今天」的日期键（本地时区）。UI 与聚合共用，避免两处各取一次时钟导致跨零点不一致。 */
@@ -1944,6 +2027,9 @@ object AppModel {
             runCatching { insightsStore.loadAll() }
                 .onSuccess { _listeningRecords.value = it.records }
             recomputeInsights()
+
+            // 启动时尝试同步一次离线打卡待办队列
+            runCatching { scrobbleHub.flushPendingQueue() }
 
             var session: ListeningSession? = null
             try {
@@ -1979,13 +2065,25 @@ object AppModel {
         var session = current
         if (session == null || session.mediaId != track.id) {
             current?.let { closeSession(it, reachedTailOf(st)) }
+            val isLocal = (providerIdOf(track.id) == "local")
+            val dur = track.durationMs.takeIf { it > 0 } ?: st.durationMs
             session = ListeningSession(
                 mediaId = track.id,
                 name = track.name,
                 artist = track.artist,
+                album = track.album,
                 provider = providerIdOf(track.id),
                 startedAt = now,
-                durationMs = track.durationMs.takeIf { it > 0 } ?: st.durationMs,
+                durationMs = dur,
+            )
+            // 通知外部打卡服务（起播与 Now Playing 广播）
+            scrobbleHub.onTrackChanged(
+                mediaId = track.id,
+                title = track.name,
+                artist = track.artist,
+                album = track.album,
+                durationMs = dur,
+                isLocal = isLocal,
             )
         }
 
@@ -1997,6 +2095,34 @@ object AppModel {
         session.lastTick = now
         if (st.positionMs > 0) session.lastPositionMs = st.positionMs
         if (st.durationMs > 0) session.durationMs = st.durationMs
+
+        // 高频推进外部打卡服务进度追踪（判定是否达到打卡门槛：50% 或 4 分钟）
+        scrobbleHub.onPlaybackProgress(
+            isPlaying = st.isPlaying,
+            positionMs = st.positionMs,
+            durationMs = session.durationMs,
+        )
+
+        // 外部平台红心喜爱同步联动（当用户收藏/取消收藏时）
+        if (!session.favoriteObserved) {
+            session.favoriteObserved = true
+            session.lastFavorite = st.isFavorite
+        } else if (session.lastFavorite != st.isFavorite) {
+            session.lastFavorite = st.isFavorite
+            scrobbleHub.onFavoriteChanged(
+                track = cp.player.core.scrobble.ScrobbleTrack(
+                    title = track.name,
+                    artist = track.artist,
+                    album = track.album,
+                    durationSec = (session.durationMs / 1000L).toInt(),
+                    timestampSec = session.startedAt / 1000L,
+                    mediaId = track.id,
+                    isLocal = (session.provider == "local"),
+                ),
+                isFavorite = st.isFavorite,
+            )
+        }
+
         return session
     }
 
@@ -2012,6 +2138,9 @@ object AppModel {
 
     /** 关闭会话并落盘。多条路径都可能关同一个会话（换曲 / 清空 / 取消），本方法只被调用一次。 */
     private fun closeSession(session: ListeningSession, reachedTail: Boolean = false) {
+        // 通知外部打卡服务（保底检查或清除会话）
+        scrobbleHub.onTrackEnded(reachedEnd = reachedTail)
+
         // 一秒以下不收：误触播放、拖动进度条时的瞬间起播不该污染统计与「连续天数」。
         if (session.playedMs < 1_000L) return
 

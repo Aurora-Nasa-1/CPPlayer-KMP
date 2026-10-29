@@ -1,8 +1,10 @@
 package cp.player.app.ui.screen
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,12 +14,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -36,8 +45,10 @@ import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpContextMenuItem
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.SongItem
+import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.component.SongMenuActions
 import cp.player.app.ui.component.SongOptionsSheet
 import cp.player.app.ui.component.StateSurface
@@ -119,6 +130,7 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
         var showInfoTarget by remember { mutableStateOf<TrackSummary?>(null) }
         val likedIds by AppModel.playback.likedIds.collectAsState()
         val localFavoritePaths by AppModel.localMedia.favorites.paths.collectAsState()
+        val scrobbleState by AppModel.scrobbleHub.state.collectAsState()
         val toMediaId = { id: String -> if (id.contains("://")) id else "$provider://song/$id" }
         val navigator = LocalNavigator.current
         val expanded = LocalIsExpanded.current
@@ -178,6 +190,54 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
                             ),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
+                            item {
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth().clickable { navigator?.push(ScrobbleSettingsScreen()) },
+                                    shape = MaterialTheme.shapes.small,
+                                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.weight(1f),
+                                        ) {
+                                            Icon(
+                                                Icons.Filled.CloudSync,
+                                                contentDescription = null,
+                                                tint = if (scrobbleState.lastFmConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(16.dp),
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            CpText(
+                                                text = if (scrobbleState.lastFmConnected) {
+                                                    "Last.fm 同步中 · 今日打卡 ${scrobbleState.todayScrobbledCount} 首"
+                                                } else {
+                                                    "支持 Last.fm 听歌打卡，点击开启"
+                                                },
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = if (scrobbleState.lastFmConnected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        if (scrobbleState.pendingQueueSize > 0) {
+                                            TextButton(
+                                                onClick = {
+                                                    AppModel.scrobbleHub.flushPendingQueue()
+                                                    UiEvents.notify("已开始同步离线记录")
+                                                },
+                                            ) {
+                                                Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                Spacer(Modifier.width(4.dp))
+                                                CpText("待发 ${scrobbleState.pendingQueueSize} 条", style = MaterialTheme.typography.labelSmall)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             recentPlaysRows(
                                 tracks = recentTracks,
                                 columns = columns,

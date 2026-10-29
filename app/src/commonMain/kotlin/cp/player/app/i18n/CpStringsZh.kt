@@ -121,6 +121,12 @@ object CpStringsZh : CpStrings {
 
         override val trayShowWindow = "显示主界面"
         override val trayExit = "退出 CPPlayer"
+        override val trayMiniMode = "迷你模式"
+        override val trayNothingPlaying = "未在播放"
+        override val trayPlay = "播放"
+        override val trayPause = "暂停"
+        override val trayPrevious = "上一首"
+        override val trayNext = "下一首"
 
         override val closeDialogTitle = "关闭窗口"
         override val closeDialogMessage = "退出 CPPlayer，还是最小化到托盘继续接收消息通知？"
@@ -309,6 +315,8 @@ object CpStringsZh : CpStrings {
         override val lyricsProviderOnly = "仅音源 API"
         override val lyricsAmllFirst = "AMLL 优先"
         override val lyricsAmllOnly = "仅 AMLL"
+        override val showMiniPlayerLyrics = "底部迷你播放器显示歌词"
+        override val showMiniPlayerLyricsSubtitle = "关闭后显示歌手"
         override val showRubyLyrics = "日文汉字注音"
         override val showRubyLyricsSubtitle = "在日文歌词汉字上方显示小字假名（振假名）"
         override val lyricsWordSegmentation = "歌词智能分词"
@@ -736,6 +744,8 @@ object CpStringsZh : CpStrings {
         override val queueClearTitle = "清空播放队列"
         override fun queueClearMessage(size: Int) = "确定清空全部 $size 首队列歌曲吗？"
         override val queueEmptyLabel = "队列"
+        override val queueEmptyHint = "播放队列是空的"
+        override val queueNoMatchHint = "队列里没有匹配的歌曲"
         override val queueReorderHint = "长按拖拽重排"
         override val coverContentDescription = "封面"
 
@@ -772,6 +782,8 @@ object CpStringsZh : CpStrings {
         override val playAll = "播放全部"
         override val addToQueue = "加入队列"
         override val downloadAll = "全部下载"
+        override fun downloadAllMessage(name: String, count: Int) =
+            "将把《$name》里的 $count 首歌全部加入下载队列。下载可以取消，文件也可以删除，确定继续吗？"
         override val sharePlaylist = "分享歌单"
         override val favoritePlaylist = "收藏歌单"
         override val unfavoritePlaylist = "取消收藏"
@@ -958,6 +970,7 @@ object CpStringsZh : CpStrings {
     override val social = SocialStringsZh
     override val lyricsPlugin = LyricsPluginStringsZh
     override val lyricPush = LyricPushStringsZh
+    override val scrobble = ScrobbleStringsZh
 
     override val about: AboutStrings = object : AboutStrings {
         override val screenTitle = "关于与支持"

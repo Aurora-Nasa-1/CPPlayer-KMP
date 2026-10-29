@@ -36,6 +36,7 @@ import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSegmentedItem
 import cp.player.app.ui.component.SettingsSliderItem
 import cp.player.app.ui.component.SettingsSwitchItem
+import cp.player.app.ui.component.settingsSearchTarget
 import cp.player.app.ui.component.SleepTimerDialog
 import cp.player.app.ui.component.VipActivationDialog
 import cp.player.core.license.VipLicenseManager
@@ -47,7 +48,9 @@ import cp.player.app.ui.component.CpText
 /**
  * 播放与音质设置页面。
  */
-class PlaybackSettingsScreen : Screen {
+class PlaybackSettingsScreen(
+    private val targetSettingId: String? = null,
+) : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
@@ -123,6 +126,7 @@ class PlaybackSettingsScreen : Screen {
                     )
                     SettingsSegmentedItem(
                         title = "回放内核架构",
+                        modifier = Modifier.settingsSearchTarget("playback_audio_engine", targetSettingId),
                         subtitle = if (isFlickEngine) "已启用发烧内核，绕过系统混音器" else "使用系统默认通道，轻量兼容",
                         options = engineOptions,
                         selectedIndex = if (isFlickEngine) 1 else 0,
@@ -146,6 +150,7 @@ class PlaybackSettingsScreen : Screen {
                     SettingsSection("硬件直通与发烧特性") {
                         SettingsClickItem(
                             title = if (isAndroid) "Oboe / AAudio 直通" else "WASAPI Exclusive 独占直通",
+                            modifier = Modifier.settingsSearchTarget("playback_wasapi_exclusive", targetSettingId),
                             subtitle = if (isAndroid) {
                                 "绕过 Android AudioFlinger 重采样，直通底层音频 HAL / USB DAC"
                             } else {
@@ -237,6 +242,7 @@ class PlaybackSettingsScreen : Screen {
                 SettingsSection(s.playback.sectionQuality) {
                     SettingsDropdownItem(
                         title = s.playback.defaultQuality,
+                        modifier = Modifier.settingsSearchTarget("playback_quality", targetSettingId),
                         subtitle = s.playback.defaultQualityNote,
                         options = qualityLabels,
                         selectedIndex = qualityIndex,
@@ -249,6 +255,7 @@ class PlaybackSettingsScreen : Screen {
                     if (showMeteredQuality) {
                         SettingsDropdownItem(
                             title = s.playback.meteredQuality,
+                            modifier = Modifier.settingsSearchTarget("playback_metered_quality", targetSettingId),
                             subtitle = s.playback.meteredQualityNote,
                             options = qualityLabels,
                             selectedIndex = meteredQualityIndex,
@@ -275,6 +282,7 @@ class PlaybackSettingsScreen : Screen {
                     }
                     SettingsSwitchItem(
                         title = s.playback.fadeIn,
+                        modifier = Modifier.settingsSearchTarget("playback_crossfade", targetSettingId),
                         subtitle = s.playback.fadeInNote,
                         checked = fadeDraft.fadeIn,
                         onCheckedChange = { commitFade(fadeDraft.copy(fadeIn = it)) },
@@ -310,45 +318,55 @@ class PlaybackSettingsScreen : Screen {
                     )
                 }
                 SettingsSection(s.playback.sectionLyrics) {
+                    val showMiniPlayerLyrics by AppModel.showMiniPlayerLyricsFlow.collectAsState()
                     val showRuby by AppModel.showRubyLyricsFlow.collectAsState()
                     val wordSeg by AppModel.lyricsWordSegmentationFlow.collectAsState()
                     val smartKaraoke by AppModel.smartKaraokeLrcFlow.collectAsState()
+                    SettingsSwitchItem(
+                        title = s.playback.showMiniPlayerLyrics,
+                        subtitle = s.playback.showMiniPlayerLyricsSubtitle,
+                        checked = showMiniPlayerLyrics,
+                        onCheckedChange = { AppModel.setShowMiniPlayerLyrics(it) },
+                        index = 0,
+                        total = 5,
+                    )
                     SettingsSwitchItem(
                         title = s.playback.showRubyLyrics,
                         subtitle = s.playback.showRubyLyricsSubtitle,
                         checked = showRuby,
                         onCheckedChange = { AppModel.setShowRubyLyrics(it) },
-                        index = 0,
-                        total = 4,
+                        index = 1,
+                        total = 5,
                     )
                     SettingsSwitchItem(
                         title = s.playback.lyricsWordSegmentation,
                         subtitle = s.playback.lyricsWordSegmentationSubtitle,
                         checked = wordSeg,
                         onCheckedChange = { AppModel.setLyricsWordSegmentation(it) },
-                        index = 1,
-                        total = 4,
+                        index = 2,
+                        total = 5,
                     )
                     SettingsSwitchItem(
                         title = s.playback.smartKaraokeLrc,
                         subtitle = s.playback.smartKaraokeLrcSubtitle,
                         checked = smartKaraoke,
                         onCheckedChange = { AppModel.setSmartKaraokeLrc(it) },
-                        index = 2,
-                        total = 4,
+                        index = 3,
+                        total = 5,
                     )
                     SettingsClickItem(
                         title = s.playback.lyricsSource,
                         subtitle = s.playback.lyricsSourceNote,
                         icon = Icons.Filled.ClosedCaption,
-                        index = 3,
-                        total = 4,
+                        index = 4,
+                        total = 5,
                         onClick = { navigator.push(LyricsPluginSettingsScreen()) },
                     )
                 }
                 SettingsSection(s.playback.sectionSleepTimer) {
                     SettingsClickItem(
                         title = s.playback.sleepTimer,
+                        modifier = Modifier.settingsSearchTarget("playback_sleep_timer", targetSettingId),
                         subtitle = when {
                             playbackState.sleepAfterTrack -> s.playback.sleepAfterTrack
                             playbackState.sleepTimerRemainingMs != null ->
@@ -366,6 +384,7 @@ class PlaybackSettingsScreen : Screen {
                 SettingsSection(s.playback.sectionLastPlayback) {
                     SettingsSwitchItem(
                         title = s.playback.keepLastPlayback,
+                        modifier = Modifier.settingsSearchTarget("playback_keep_progress", targetSettingId),
                         subtitle = s.playback.keepLastPlaybackNote,
                         checked = keepLastPlayback,
                         onCheckedChange = { AppModel.setKeepLastPlayback(it) },
@@ -386,6 +405,7 @@ class PlaybackSettingsScreen : Screen {
                 SettingsSection(s.player.listenTogether) {
                     SettingsSwitchItem(
                         title = s.social.together.addNextOnPlay,
+                        modifier = Modifier.settingsSearchTarget("playback_listen_together_add_next", targetSettingId),
                         subtitle = s.social.together.addNextOnPlayNote,
                         checked = listenTogetherAddNext,
                         onCheckedChange = { AppModel.setListenTogetherAddNext(it) },

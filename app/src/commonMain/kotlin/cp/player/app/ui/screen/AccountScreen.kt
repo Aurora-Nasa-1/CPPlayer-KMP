@@ -2025,6 +2025,12 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
             AccountStore.remove(providerId, account.uid)
             if (wasActive) {
                 isLogged.value = false
+                // ⚠️ 移除**当前**账号也必须走一次服务端 logout：
+                //   AccountStore.remove 只清 active 标记与 cookie，不碰接口缓存；
+                //   而缓存键只含 providerId + cookie 哈希，同一音源再登录会命中
+                //   上一个账号的 user/playlist、user/like、user/cloud 响应。
+                //   失败无所谓（cookie 已经没了），但它必须在缓存能清之前被**调用过**。
+                runCatching { AppModel.authRepository.logout() }
                 AppModel.clearUserProfile()
                 message.value = this@AccountScreenModel.account.removedSession(account.nickname)
             } else {

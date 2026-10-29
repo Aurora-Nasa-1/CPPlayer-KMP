@@ -83,7 +83,7 @@ class SettingsRegistryTest {
     @Test
     fun `no two entries share a destination screen`() {
         withReleaseChannel("debug") {
-            val classes = settingsEntries().map { it.screen()::class }
+            val classes = settingsEntries().map { it.screen(null)::class }
             assertEquals(
                 classes.size,
                 classes.toSet().size,

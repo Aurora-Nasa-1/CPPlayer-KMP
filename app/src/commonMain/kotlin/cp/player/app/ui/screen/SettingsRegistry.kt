@@ -3,6 +3,7 @@ package cp.player.app.ui.screen
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Equalizer
@@ -95,7 +96,7 @@ data class SettingsEntry(
     val androidOnly: Boolean = false,
     val debugOnly: Boolean = false,
     val subItems: List<SettingsSubItem> = emptyList(),
-    val screen: () -> Screen,
+    val screen: (targetSettingId: String?) -> Screen,
 )
 
 /**
@@ -184,7 +185,7 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 sectionOf = { it.settings.groupGeneral },
             ),
         ),
-        screen = { LanguageSettingsScreen() },
+        screen = { _ -> LanguageSettingsScreen() },
     ),
     SettingsEntry(
         id = "appearance",
@@ -265,7 +266,7 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 debugOnly = true,
             ),
         ),
-        screen = { AppearanceSettingsScreen() },
+        screen = { targetId -> AppearanceSettingsScreen(targetId) },
     ),
     SettingsEntry(
         id = "playback",
@@ -341,7 +342,7 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 sectionOf = { it.player.listenTogether },
             ),
         ),
-        screen = { PlaybackSettingsScreen() },
+        screen = { targetId -> PlaybackSettingsScreen(targetId) },
     ),
     // 音效紧跟在「播放与音质」之后：两者是同一主题的两个层次
     // （音质决定"拿到什么"，音效决定"听起来怎么样"），用户找前者时常顺手看后者。
@@ -388,7 +389,7 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 sectionOf = { "动态控制" },
             ),
         ),
-        screen = { AudioEffectSettingsScreen() },
+        screen = { _ -> AudioEffectSettingsScreen() },
     ),
     SettingsEntry(
         id = "storage",
@@ -446,7 +447,7 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 sectionOf = { "清理与维护" },
             ),
         ),
-        screen = { StorageSettingsScreen() },
+        screen = { _ -> StorageSettingsScreen() },
     ),
     SettingsEntry(
         id = "shortcuts",
@@ -469,7 +470,7 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
             ),
         ),
         desktopOnly = true,
-        screen = { ShortcutSettingsScreen() },
+        screen = { _ -> ShortcutSettingsScreen() },
     ),
 )
 
@@ -491,7 +492,7 @@ private fun accountEntries(): List<SettingsEntry> = listOf(
                 sectionOf = { "音源账号" },
             ),
         ),
-        screen = { AccountScreen() },
+        screen = { _ -> AccountScreen() },
     ),
     SettingsEntry(
         id = "providers",
@@ -510,7 +511,7 @@ private fun accountEntries(): List<SettingsEntry> = listOf(
                 sectionOf = { "数据源" },
             ),
         ),
-        screen = { ProviderManagementScreen() },
+        screen = { _ -> ProviderManagementScreen() },
     ),
     // 歌词来源与音源管理同组：两者都是「内容/数据来源」，用户找它们时想的是同一件事
     // ——「我从哪儿拿内容」。且都支持导入 zip，放在一起心智一致。
@@ -535,7 +536,7 @@ private fun accountEntries(): List<SettingsEntry> = listOf(
                 sectionOf = { "歌词生态" },
             ),
         ),
-        screen = { LyricsPluginSettingsScreen() },
+        screen = { _ -> LyricsPluginSettingsScreen() },
     ),
 )
 
@@ -593,7 +594,7 @@ private fun connectivityEntries(): List<SettingsEntry> = listOf(
                 sectionOf = { "生态集成" },
             ),
         ),
-        screen = { ExternalAccessSettingsScreen() },
+        screen = { _ -> ExternalAccessSettingsScreen() },
     ),
     // 歌词投放与「外部访问」同族：都是「把本机正在发生的事交给别人」。
     // 区别只在出口 —— 那一页给的是 HTTP 接口，这一页给的是系统 UI 与歌词应用。
@@ -639,7 +640,7 @@ private fun connectivityEntries(): List<SettingsEntry> = listOf(
                 androidOnly = true,
             ),
         ),
-        screen = { LyricPushSettingsScreen() },
+        screen = { _ -> LyricPushSettingsScreen() },
     ),
     SettingsEntry(
         id = "standby",
@@ -677,7 +678,7 @@ private fun connectivityEntries(): List<SettingsEntry> = listOf(
                 sectionOf = { "多端互联" },
             ),
         ),
-        screen = { StandbySettingsScreen() },
+        screen = { _ -> StandbySettingsScreen() },
     ),
     // 「谁开了私信推送」的全貌 + 总开关 + 桌面关窗去向，都收在这一页。
     // 归在「连接与集成」而不是「通用」：它与「应用怎么和外界打交道」（这里指通知中心）
@@ -720,7 +721,35 @@ private fun connectivityEntries(): List<SettingsEntry> = listOf(
                 desktopOnly = true,
             ),
         ),
-        screen = { MessageNotifySettingsScreen() },
+        screen = { _ -> MessageNotifySettingsScreen() },
+    ),
+    SettingsEntry(
+        id = "scrobble",
+        group = SettingsGroup.CONNECTIVITY,
+        titleOf = { it.scrobble.entryTitle },
+        subtitleOf = { it.scrobble.entrySubtitle },
+        icon = Icons.Filled.CloudSync,
+        accent = SettingsAccent.PRIMARY,
+        keywords = listOf(
+            "lastfm", "last.fm", "scrobble", "打卡", "听歌记录", "正在播放", "now playing", "红心", "外部同步",
+        ),
+        subItems = listOf(
+            SettingsSubItem(
+                id = "scrobble_lastfm",
+                titleOf = { "Last.fm 平台连接" },
+                subtitleOf = { "绑定 Last.fm 账号并自动同步打卡与正在播放" },
+                keywords = listOf("lastfm", "last.fm", "打卡", "记录"),
+                sectionOf = { "打卡平台" },
+            ),
+            SettingsSubItem(
+                id = "scrobble_offline_queue",
+                titleOf = { "离线待办队列" },
+                subtitleOf = { "网络异常时暂存打卡记录并自动重试" },
+                keywords = listOf("离线", "重试", "队列", "queue"),
+                sectionOf = { "离线待办队列" },
+            ),
+        ),
+        screen = { _ -> ScrobbleSettingsScreen() },
     ),
 )
 
@@ -749,7 +778,7 @@ private fun otherEntries(): List<SettingsEntry> = listOf(
                 sectionOf = { "关于" },
             ),
         ),
-        screen = { AboutScreen() },
+        screen = { _ -> AboutScreen() },
     ),
     SettingsEntry(
         id = "diagnostics",
@@ -775,7 +804,7 @@ private fun otherEntries(): List<SettingsEntry> = listOf(
                 sectionOf = { "诊断与排查" },
             ),
         ),
-        screen = { HealthScreen() },
+        screen = { _ -> HealthScreen() },
     ),
     SettingsEntry(
         id = "render_tuning",
@@ -809,7 +838,7 @@ private fun otherEntries(): List<SettingsEntry> = listOf(
                 debugOnly = true,
             ),
         ),
-        screen = { RenderTuningSettingsScreen() },
+        screen = { _ -> RenderTuningSettingsScreen() },
     ),
     SettingsEntry(
         id = "onboarding",
@@ -831,6 +860,6 @@ private fun otherEntries(): List<SettingsEntry> = listOf(
                 debugOnly = true,
             ),
         ),
-        screen = { OnboardingScreen(replay = true) },
+        screen = { _ -> OnboardingScreen(replay = true) },
     ),
 )

@@ -78,6 +78,9 @@ interface CpStrings {
      */
     val lyricPush: LyricPushStrings
 
+    /** 听歌打卡与外部平台同步（Last.fm 等）。 */
+    val scrobble: ScrobbleStrings
+
     /**
      * 播放相关：播放页、播放控制、队列底栏、「更多」弹层。
      *
@@ -248,6 +251,18 @@ interface MessageNotifyStrings {
     /** 桌面托盘菜单。 */
     val trayShowWindow: String
     val trayExit: String
+
+    /** 桌面托盘菜单：切换迷你播放器（悬浮小窗）。 */
+    val trayMiniMode: String
+
+    /** 桌面托盘菜单：当前没有正在播放的内容（信息区的占位文案）。 */
+    val trayNothingPlaying: String
+
+    /** 桌面托盘菜单：播放控制的无障碍描述。 */
+    val trayPlay: String
+    val trayPause: String
+    val trayPrevious: String
+    val trayNext: String
 
     /** 关窗确认。 */
     val closeDialogTitle: String
@@ -484,6 +499,8 @@ interface PlaybackStrings {
     val lyricsProviderOnly: String
     val lyricsAmllFirst: String
     val lyricsAmllOnly: String
+    val showMiniPlayerLyrics: String get() = "Lyrics in mini player"
+    val showMiniPlayerLyricsSubtitle: String get() = "Show the current lyric in the bottom mini player; turn off to show the artist"
     val showRubyLyrics: String get() = "Japanese Furigana"
     val showRubyLyricsSubtitle: String get() = "Show furigana above kanji in Japanese lyrics"
     val lyricsWordSegmentation: String get() = "Lyric Word Segmentation"
@@ -974,6 +991,10 @@ interface PlayerStrings {
     val queueClearTitle: String
     fun queueClearMessage(size: Int): String
     val queueEmptyLabel: String
+    /** 播放队列「一首歌都没有」时的占位文案（区别于搜索无结果）。 */
+    val queueEmptyHint: String
+    /** 队列弹层内搜索无命中时的占位文案。 */
+    val queueNoMatchHint: String
     val queueReorderHint: String
     val coverContentDescription: String
 
@@ -1030,6 +1051,14 @@ interface LibraryStrings {
     val playAll: String
     val addToQueue: String
     val downloadAll: String
+
+    /**
+     * 「下载全部」的二次确认正文。
+     *
+     * 一次点击会给整张歌单排队几百个下载任务，误触的代价是流量与磁盘；
+     * 但它是可恢复的（任务可取消、歌可重下）⇒ 确认键不走 error 色。
+     */
+    fun downloadAllMessage(name: String, count: Int): String
     val sharePlaylist: String
     val favoritePlaylist: String
     val unfavoritePlaylist: String

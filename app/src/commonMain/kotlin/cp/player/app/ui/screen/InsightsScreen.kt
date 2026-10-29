@@ -2,6 +2,10 @@ package cp.player.app.ui.screen
 
 import cp.player.app.ui.component.CpText
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -13,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.items
@@ -110,12 +115,14 @@ private fun tabLabels(s: CpStrings) = listOf(
 
 @Composable
 private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
+    val navigator = LocalNavigator.currentOrThrow
     val s = cpStrings()
     val summary by AppModel.insightsSummaryFlow.collectAsState()
     val daily by AppModel.dailyInsightsFlow.collectAsState()
     val records by AppModel.listeningRecordsFlow.collectAsState()
     val writeError by AppModel.insightsWriteErrorFlow.collectAsState()
     val green by AppModel.heatmapGreenFlow.collectAsState()
+    val scrobbleState by AppModel.scrobbleHub.state.collectAsState()
     // 「最近」tab 的状态在这里收集，而不是在 `recentTab` 内部 —— 后者是
     // `LazyListScope` 扩展（非 @Composable），在里面读 collectAsState 编译不过。
     val recentTracks by AppModel.recentTracksFlow.collectAsState()
@@ -186,6 +193,8 @@ private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
                         green = green,
                         records = records,
                         selectedDay = selectedDay,
+                        scrobbleState = scrobbleState,
+                        onOpenScrobble = { navigator.push(ScrobbleSettingsScreen()) },
                         onSelectDay = { selectedDay = if (selectedDay == it) null else it },
                         onToggleGreen = { AppModel.setHeatmapGreen(!green) },
                         onClear = {
@@ -442,10 +451,64 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTab(
     green: Boolean,
     records: List<cp.player.core.insights.PlayRecord>,
     selectedDay: String?,
+    scrobbleState: cp.player.core.scrobble.ScrobbleHubState,
+    onOpenScrobble: () -> Unit,
     onSelectDay: (String) -> Unit,
     onToggleGreen: () -> Unit,
     onClear: () -> Unit,
 ) {
+    // 外部服务打卡同步状态卡片（Last.fm 等）
+    item {
+        Surface(
+            modifier = Modifier.fillMaxWidth().clickable { onOpenScrobble() },
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(
+                        Icons.Filled.CloudSync,
+                        contentDescription = null,
+                        tint = if (scrobbleState.lastFmConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        CpText(
+                            text = if (scrobbleState.lastFmConnected) {
+                                strings.scrobble.insightsSyncConnected(
+                                    scrobbleState.lastFmUsername.orEmpty(),
+                                    scrobbleState.todayScrobbledCount,
+                                )
+                            } else {
+                                strings.scrobble.insightsSyncDisconnected
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        if (scrobbleState.pendingQueueSize > 0) {
+                            CpText(
+                                text = strings.scrobble.pendingQueueCount(scrobbleState.pendingQueueSize),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+                }
+                TextButton(onClick = onOpenScrobble) {
+                    CpText(strings.scrobble.insightsGoToSettings)
+                }
+            }
+        }
+    }
+
     item {
         MetricRow(
             listOf(

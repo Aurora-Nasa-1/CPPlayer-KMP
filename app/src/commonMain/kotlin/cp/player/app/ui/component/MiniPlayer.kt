@@ -140,6 +140,8 @@ fun SharedTransitionScope.MiniPlayer(
     val press = rememberPressedScale()
     val desktop = LocalWindowChromeActive.current
     val s = cpStrings()
+    val showLyrics by AppModel.showMiniPlayerLyricsFlow.collectAsState()
+    val secondLineText = if (showLyrics) currentLyricLine(state) else ""
 
     // 队列弹层 / 「更多」弹层的开关（仅桌面分支会用到）。
     var showQueueSheet by remember { mutableStateOf(false) }
@@ -192,7 +194,7 @@ fun SharedTransitionScope.MiniPlayer(
                         MiniTrackInfo(
                             track = track,
                             isPlaying = state.isPlaying,
-                            lyricText = currentLyricLine(state),
+                            lyricText = secondLineText,
                             titleStyle = MaterialTheme.typography.titleSmall,
                             secondLineStyle = MaterialTheme.typography.bodySmall,
                             animatedVisibilityScope = animatedVisibilityScope,
@@ -246,7 +248,7 @@ fun SharedTransitionScope.MiniPlayer(
                                 MiniTrackInfo(
                                     track = track,
                                     isPlaying = state.isPlaying,
-                                    lyricText = currentLyricLine(state),
+                                    lyricText = secondLineText,
                                     titleStyle = MaterialTheme.typography.titleSmall,
                                     secondLineStyle = MaterialTheme.typography.bodySmall,
                                     animatedVisibilityScope = animatedVisibilityScope,

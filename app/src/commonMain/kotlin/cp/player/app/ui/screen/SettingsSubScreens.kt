@@ -38,6 +38,7 @@ import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSegmentedItem
 import cp.player.app.ui.component.SettingsSliderItem
 import cp.player.app.ui.component.SettingsSwitchItem
+import cp.player.app.ui.component.settingsSearchTarget
 import cp.player.app.ui.model.SONG_CACHE_CAPACITY_OPTIONS
 import cp.player.app.ui.model.StorageSettingsModel
 import cp.player.app.ui.util.formatBytes
@@ -54,7 +55,9 @@ import kotlin.math.roundToInt
 /**
  * 外观与主题设置页面。
  */
-class AppearanceSettingsScreen : Screen {
+class AppearanceSettingsScreen(
+    private val targetSettingId: String? = null,
+) : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
@@ -105,6 +108,7 @@ class AppearanceSettingsScreen : Screen {
                 SettingsSection(s.appearance.sectionLook) {
                     SettingsSegmentedItem(
                         title = s.appearance.themeMode,
+                        modifier = Modifier.settingsSearchTarget("appearance_theme_mode", targetSettingId),
                         options = ThemeMode.entries.map { it.displayName(s) },
                         selectedIndex = ThemeMode.entries.indexOf(themeMode).coerceAtLeast(0),
                         onSelect = { index ->
@@ -115,6 +119,7 @@ class AppearanceSettingsScreen : Screen {
                     )
                     SettingsSegmentedItem(
                         title = s.appearance.colorSource,
+                        modifier = Modifier.settingsSearchTarget("appearance_color_source", targetSettingId),
                         options = availableSources.map { it.displayName(s) },
                         selectedIndex = availableSources.indexOf(colorSource).coerceAtLeast(0),
                         onSelect = { index ->
@@ -125,6 +130,7 @@ class AppearanceSettingsScreen : Screen {
                     )
                     SettingsSwitchItem(
                         title = s.appearance.pureBlack,
+                        modifier = Modifier.settingsSearchTarget("appearance_pure_black", targetSettingId),
                         subtitle = s.appearance.pureBlackNote,
                         checked = pureBlack,
                         onCheckedChange = AppModel::setPureBlack,
@@ -134,6 +140,7 @@ class AppearanceSettingsScreen : Screen {
                     // 窄屏布局才有底栏；桌面宽屏走侧栏，这项开着也无副作用。
                     SettingsSwitchItem(
                         title = s.appearance.autoHideBottomBar,
+                        modifier = Modifier.settingsSearchTarget("appearance_auto_hide_bottom_bar", targetSettingId),
                         subtitle = s.appearance.autoHideBottomBarNote,
                         checked = bottomBarAutoHide,
                         onCheckedChange = AppModel::setBottomBarAutoHide,
@@ -142,6 +149,7 @@ class AppearanceSettingsScreen : Screen {
                     )
                     SettingsSwitchItem(
                         title = s.appearance.coverFlight,
+                        modifier = Modifier.settingsSearchTarget("appearance_cover_flight", targetSettingId),
                         subtitle = s.appearance.coverFlightNote,
                         checked = coverFlightAnimation,
                         onCheckedChange = AppModel::setCoverFlightAnimation,
@@ -152,6 +160,7 @@ class AppearanceSettingsScreen : Screen {
                     // 播放设置页：用户找它时的心理位置是「界面长什么样」，不是「怎么播」。
                     SettingsSwitchItem(
                         title = s.appearance.fluidBackground,
+                        modifier = Modifier.settingsSearchTarget("appearance_fluid_background", targetSettingId),
                         subtitle = s.appearance.fluidBackgroundNote,
                         checked = fluidBackground,
                         onCheckedChange = AppModel::setFluidBackground,
@@ -160,6 +169,7 @@ class AppearanceSettingsScreen : Screen {
                     )
                     SettingsSwitchItem(
                         title = s.appearance.showSongAlbum,
+                        modifier = Modifier.settingsSearchTarget("appearance_show_song_album", targetSettingId),
                         subtitle = s.appearance.showSongAlbumNote,
                         checked = showSongAlbum,
                         onCheckedChange = AppModel::setShowSongAlbum,
@@ -170,6 +180,7 @@ class AppearanceSettingsScreen : Screen {
                 SettingsSection(s.appearance.sectionFont) {
                     SettingsSliderItem(
                         title = s.appearance.fontRoundness,
+                        modifier = Modifier.settingsSearchTarget("appearance_font_roundness", targetSettingId),
                         subtitle = s.appearance.fontRoundnessNote(defaultRoundness),
                         value = displayedRoundness.toFloat(),
                         onValueChange = { draggingRoundness = it.toInt() },
@@ -210,6 +221,7 @@ class AppearanceSettingsScreen : Screen {
                     SettingsSection("布局与视图预览") {
                         SettingsSwitchItem(
                             title = "手机版界面预览 (412×892)",
+                            modifier = Modifier.settingsSearchTarget("appearance_mobile_preview", targetSettingId),
                             subtitle = if (cp.player.app.ui.util.DesktopShell.isMobileMode) {
                                 "当前为手机版紧凑视图，点击恢复桌面端大窗口"
                             } else {

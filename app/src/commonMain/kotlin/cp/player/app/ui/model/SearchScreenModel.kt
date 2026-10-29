@@ -23,6 +23,13 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
+/**
+ * 搜索历史的持久化键。
+ *
+ * ⚠️ 必须与 `AppModel` 里登出清理用的同名键**字面量一致**（那边是 private，
+ * 跨文件引用不到）。两处漂移的后果是「登出后搜索历史清不掉」——
+ * 界面看起来正常，只有换号之后才暴露。
+ */
 private const val SEARCH_HISTORY_KEY = "search_history"
 private const val MAX_SEARCH_HISTORY = 10
 

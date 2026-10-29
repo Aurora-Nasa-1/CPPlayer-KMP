@@ -11,6 +11,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import cafe.adriel.voyager.core.screen.Screen
@@ -26,6 +27,7 @@ import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSwitchItem
+import kotlinx.coroutines.launch
 
 /**
  * 音源隔离（「账号、缓存与设置按音源分开存储」）。
@@ -42,6 +44,7 @@ class ProviderIsolationScreen : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
+        val scope = rememberCoroutineScope()
         val provider by AppModel.activeProviderFlow.collectAsState()
         val switchAccount by AppModel.isolationSwitchAccountFlow.collectAsState()
         val profile by AppModel.userProfileFlow.collectAsState()
@@ -116,6 +119,10 @@ class ProviderIsolationScreen : Screen {
                                 if (!confirmClear) {
                                     confirmClear = true
                                 } else {
+                                    // 与账号页的「退出登录」保持一致：也要打一次服务端 logout，
+                                    // 否则接口缓存里仍留着该账号的响应（键含 cookie 哈希，
+                                    // 同一音源再登录会被读透层直接命中）。
+                                    scope.launch { runCatching { AppModel.authRepository.logout() } }
                                     AppModel.cookieStorage.clear(providerId)
                                     AccountStore.setActive(providerId, null)
                                     AppModel.clearUserProfile()

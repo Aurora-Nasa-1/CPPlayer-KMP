@@ -116,6 +116,12 @@ object CpStringsEn : CpStrings {
 
         override val trayShowWindow = "Show CPPlayer"
         override val trayExit = "Quit CPPlayer"
+        override val trayMiniMode = "Mini player"
+        override val trayNothingPlaying = "Nothing playing"
+        override val trayPlay = "Play"
+        override val trayPause = "Pause"
+        override val trayPrevious = "Previous track"
+        override val trayNext = "Next track"
 
         override val closeDialogTitle = "Close window"
         override val closeDialogMessage = "Quit CPPlayer, or keep it in the tray to receive message notifications?"
@@ -325,6 +331,8 @@ object CpStringsEn : CpStrings {
         override val lyricsProviderOnly = "Source API only"
         override val lyricsAmllFirst = "AMLL first"
         override val lyricsAmllOnly = "AMLL only"
+        override val showMiniPlayerLyrics = "Lyrics in mini player"
+        override val showMiniPlayerLyricsSubtitle = "Show the current lyric in the bottom mini player; turn off to show the artist"
         override val showRubyLyrics = "Japanese Furigana"
         override val showRubyLyricsSubtitle = "Show reading kana above kanji in Japanese lyrics"
         override val lyricsWordSegmentation = "Lyric Word Segmentation"
@@ -796,6 +804,8 @@ object CpStringsEn : CpStrings {
         override fun queueClearMessage(size: Int) =
             "Clear all $size tracks from the queue?"
         override val queueEmptyLabel = "Queue"
+        override val queueEmptyHint = "The play queue is empty"
+        override val queueNoMatchHint = "No matching tracks in the queue"
         override val queueReorderHint = "Press and drag to reorder"
         override val coverContentDescription = "Cover"
 
@@ -832,6 +842,8 @@ object CpStringsEn : CpStrings {
         override val playAll = "Play all"
         override val addToQueue = "Add to queue"
         override val downloadAll = "Download all"
+        override fun downloadAllMessage(name: String, count: Int) =
+            "This will queue all $count songs from \u201C$name\u201D for download. Downloads can be cancelled and files removed. Continue?"
         override val sharePlaylist = "Share playlist"
         override val favoritePlaylist = "Favorite playlist"
         override val unfavoritePlaylist = "Remove favorite"
@@ -1021,6 +1033,7 @@ object CpStringsEn : CpStrings {
     override val social = SocialStringsEn
     override val lyricsPlugin = LyricsPluginStringsEn
     override val lyricPush = LyricPushStringsEn
+    override val scrobble = ScrobbleStringsEn
     override val wall = WallStringsEn
 
     override val about: AboutStrings = object : AboutStrings {
