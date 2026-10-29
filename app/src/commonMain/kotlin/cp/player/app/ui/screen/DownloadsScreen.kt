@@ -1,62 +1,43 @@
 package cp.player.app.ui.screen
 
-import cp.player.app.ui.component.CpText
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import cp.player.app.AppModel
-import cp.player.app.ui.component.AddToLocalPlaylistDialog
-import cp.player.app.ui.component.AddToPlaylistSheet
-import cp.player.app.ui.component.CpAnchoredMenu
-import cp.player.app.ui.component.CpContextMenu
-import cp.player.app.ui.component.SongMenuActions
-import cp.player.app.ui.component.songContextMenuItems
-import cp.player.app.ui.util.UiEvents
-import cp.player.app.ui.util.formatBytes
-import cp.player.core.music.CPMediaId
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.VideoLibrary
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -67,7 +48,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -76,26 +56,40 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import coil3.compose.AsyncImage
-import cp.player.app.ui.component.ContentState
-import cp.player.app.ui.component.CpCoverPlaceholder
-import cp.player.app.ui.component.CpRouteScaffold
-import cp.player.app.ui.component.CpSpacing
-import cp.player.app.ui.component.CpToggleChip
-import cp.player.app.ui.component.StateSurface
-import cp.player.app.ui.component.LazyScrollColumn
+import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.component.AddToLocalPlaylistDialog
+import cp.player.app.ui.component.AddToPlaylistSheet
+import cp.player.app.ui.component.ContentState
+import cp.player.app.ui.component.CpAnchoredMenu
+import cp.player.app.ui.component.CpConfirmHost
+import cp.player.app.ui.component.CpContextMenu
+import cp.player.app.ui.component.CpCoverPlaceholder
+import cp.player.app.ui.component.CpLinearProgress
+import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.component.CpSpacing
+import cp.player.app.ui.component.CpText
+import cp.player.app.ui.component.CpToggleChip
+import cp.player.app.ui.component.LazyScrollColumn
+import cp.player.app.ui.component.SongMenuActions
+import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.desktopPagerMouseControl
+import cp.player.app.ui.component.rememberConfirmState
+import cp.player.app.ui.component.settingsRowContainer
+import cp.player.app.ui.component.songContextMenuItems
 import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.app.ui.model.DownloadsUiState
+import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.CpShapes
+import cp.player.app.ui.util.UiEvents
+import cp.player.app.ui.util.formatBytes
 import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.util.resized
-import cp.player.core.media.LocalMediaItem
-import cp.player.core.media.LocalMediaOrigin
 import cp.player.core.media.MediaType
 import cp.player.core.model.DownloadStatus
 import cp.player.core.model.DownloadTask
+import cp.player.core.music.CPMediaId
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -126,11 +120,6 @@ class DownloadsScreen(private val embedded: Boolean = false) : Screen {
 }
 
 private data class DownloadsTab(val label: String, val icon: ImageVector, val count: Int)
-
-@Composable
-internal fun DownloadsLibraryTab(model: DownloadsScreenModel) {
-    DownloadsScreenContent(model)
-}
 
 /**
  * 宽屏收口：正文用全局统一最大宽度并居中（与首页 / 曲库一致）。
@@ -176,12 +165,14 @@ private fun DownloadsScreenContent(model: DownloadsScreenModel, modifier: Modifi
             ) {
                 tabs.forEachIndexed { index, tab ->
                     val isSelected = pagerState.currentPage == index
-                    val countLabel = if (tab.count > 0) " (${if (tab.count > 99) "99+" else tab.count})" else ""
+                    // 计数为 0 时不带括号尾巴 —— 「下载中 (0)」比「下载中」更像出错。
+                    val countLabel = if (tab.count > 0) "${if (tab.count > 99) "99+" else tab.count}" else null
                     CpToggleChip(
                         checked = isSelected,
                         onCheckedChange = { if (it) scope.launch { pagerState.animateScrollToPage(index) } },
-                        label = "${tab.label}$countLabel",
+                        label = tab.label,
                         icon = tab.icon,
+                        badge = countLabel,
                     )
                 }
             }
@@ -191,7 +182,12 @@ private fun DownloadsScreenContent(model: DownloadsScreenModel, modifier: Modifi
             Modifier.fillMaxSize(),
             // 同 LegacyScaffold：底部弹窗形状统一取 `CpShapes.sheet`。
             shape = CpShapes.sheet,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            // ⚠️ 底色必须是**页面底色**（`background`）而不是 `surfaceContainerLow`。
+            // 卡片取 `settingsRowContainer()`，它在浅色下正是 `surfaceContainerLow` ——
+            // 面板若也用同一档，浅色主题里卡片与面板**完全同色**，整列任务糊成一片
+            // （离屏渲图实测：卡片边界只剩进度条那一根线）。深色下两边恰好不同（Highest vs Low），
+            // 所以这个缺陷只在浅色下出现，单看深色截图是发现不了的。
+            color = MaterialTheme.colorScheme.background,
         ) {
             HorizontalPager(
                 state = pagerState,
@@ -232,7 +228,9 @@ private fun DownloadsScreenContent(model: DownloadsScreenModel, modifier: Modifi
 private fun ActiveDownloadsTab(state: DownloadsUiState, model: DownloadsScreenModel) {
     val tasks = state.activeTasks
     val s = cpStrings()
-    var showCancelAllConfirm by remember { mutableStateOf(false) }
+    // 破坏性操作（取消任务会丢掉未完成的临时文件）只认 CpConfirmHost：
+    // 单条取消与「全部取消」共用同一个挂起态，文案不会漂成两套（见 AGENTS.md §6）。
+    val confirm = rememberConfirmState()
 
     if (tasks.isEmpty()) {
         DownloadsPageBox {
@@ -261,82 +259,46 @@ private fun ActiveDownloadsTab(state: DownloadsUiState, model: DownloadsScreenMo
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item(key = "batch_controls") {
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.7f),
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        CpText(
-                            "队列任务 (${tasks.size})",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface,
+                BatchControlBar(
+                    total = tasks.size,
+                    hasRunning = hasRunning,
+                    hasPaused = hasPaused,
+                    onPauseAll = { model.pauseAll() },
+                    onResumeAll = { model.resumeAll() },
+                    onCancelAll = {
+                        confirm.request(
+                            title = s.downloads.cancelAllConfirmTitle,
+                            message = s.downloads.cancelAllConfirmMessage,
+                            confirmLabel = s.downloads.cancelAll,
+                            destructive = true,
+                            onConfirm = { model.cancelAll(s) },
                         )
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            if (hasRunning) {
-                                FilledTonalButton(
-                                    onClick = { model.pauseAll() },
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                    shape = RoundedCornerShape(50),
-                                ) {
-                                    Icon(Icons.Filled.Pause, null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    CpText("全部暂停", style = MaterialTheme.typography.labelMedium)
-                                }
-                            }
-                            if (hasPaused) {
-                                FilledTonalButton(
-                                    onClick = { model.resumeAll() },
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                    shape = RoundedCornerShape(50),
-                                ) {
-                                    Icon(Icons.Filled.PlayArrow, null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    CpText("全部继续", style = MaterialTheme.typography.labelMedium)
-                                }
-                            }
-                            OutlinedButton(
-                                onClick = { showCancelAllConfirm = true },
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                shape = RoundedCornerShape(50),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    contentColor = MaterialTheme.colorScheme.error,
-                                ),
-                            ) {
-                                Icon(Icons.Filled.Close, null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                CpText("全部取消", style = MaterialTheme.typography.labelMedium)
-                            }
-                        }
-                    }
-                }
+                    },
+                )
             }
             items(tasks, key = { it.id }) { task ->
-                ActiveTaskCard(task = task, model = model)
+                // animateItem：任务完成 / 取消后卡片是**淡出并让下一条补位**，
+                // 而不是整列瞬间重排（后者看起来像列表被重新加载了一次）。
+                Box(Modifier.fillMaxWidth().animateItem()) {
+                    ActiveTaskCard(
+                        task = task,
+                        model = model,
+                        onCancelRequest = {
+                            confirm.request(
+                                title = s.downloads.cancelConfirmTitle,
+                                message = s.downloads.cancelConfirmMessage(task.title),
+                                confirmLabel = s.downloads.cancel,
+                                destructive = true,
+                                onConfirm = { model.cancel(task, s) },
+                            )
+                        },
+                    )
+                }
             }
         }
     }
 
-    if (showCancelAllConfirm) {
-        cp.player.app.ui.component.CpConfirmDialog(
-            title = "取消全部下载",
-            message = "确定要取消所有进行中的下载任务吗？未完成的临时文件将被清除。",
-            confirmLabel = "全部取消",
-            onConfirm = {
-                model.cancelAll(s)
-                showCancelAllConfirm = false
-            },
-            onDismiss = { showCancelAllConfirm = false },
-        )
-    }
+    CpConfirmHost(confirm)
 }
 
 /**
@@ -348,17 +310,137 @@ private fun ActiveDownloadsTab(state: DownloadsUiState, model: DownloadsScreenMo
 private fun emptyStateModifier(): Modifier =
     Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth().padding(CpSpacing.pageHorizontal)
 
+/**
+ * 队列标题 + 批量操作条。
+ *
+ * 三条纪律：
+ * 1. 底色取 [settingsRowContainer]（深色 `surfaceContainerHighest` / 浅色 `surfaceContainerLow`），
+ *    与全应用「卡片浮在页面之上」的那一档一致。此前这里写的是
+ *    `surfaceContainerHigh.copy(alpha = 0.7f)` —— 浅色下比正文卡片更亮、还带半透明，
+ *    在 `surfaceContainerLow` 的面板底色上看起来像一块没渲染完的蒙层。
+ * 2. 「全部取消」用 [TextButton] + error 色：它是这一行里唯一的破坏性动作，
+ *    不该和两个恢复性动作（暂停 / 继续）长得一样（此前是 OutlinedButton，同宽同重）。
+ * 3. 三个按钮都取 `CpShapes.full`（胶囊）而不是裸 `RoundedCornerShape(50)`：
+ *    刻度改版时裸值不会跟着改（AGENTS.md §6）。
+ */
 @Composable
-private fun ActiveTaskCard(task: DownloadTask, model: DownloadsScreenModel) {
+private fun BatchControlBar(
+    total: Int,
+    hasRunning: Boolean,
+    hasPaused: Boolean,
+    onPauseAll: () -> Unit,
+    onResumeAll: () -> Unit,
+    onCancelAll: () -> Unit,
+) {
     val s = cpStrings()
     Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = MaterialTheme.shapes.large,
+        color = settingsRowContainer(),
+        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            CpText(
+                s.downloads.queueTasks(total),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                if (hasRunning) {
+                    BatchButton(
+                        icon = Icons.Filled.Pause,
+                        label = s.downloads.pauseAll,
+                        onClick = onPauseAll,
+                    )
+                }
+                if (hasPaused) {
+                    BatchButton(
+                        icon = Icons.Filled.PlayArrow,
+                        label = s.downloads.resumeAll,
+                        onClick = onResumeAll,
+                    )
+                }
+                TextButton(
+                    onClick = onCancelAll,
+                    shape = CpShapes.full,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    CpText(
+                        s.downloads.cancelAll,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 批量操作条里的胶囊按钮（tonal，图标 + 文字）。 */
+@Composable
+private fun BatchButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+    FilledTonalButton(
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+        shape = CpShapes.full,
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(4.dp))
+        CpText(label, style = MaterialTheme.typography.labelMedium)
+    }
+}
+
+/**
+ * 进行中任务卡片。
+ *
+ * 与改造前的三处差别：
+ * 1. **进度条换成 [CpLinearProgress]**（Expressive 的直线形态：圆头 + 末端 stop indicator），
+ *    替换裸 `LinearProgressIndicator`。不选波形条的**理由写在 [cp.player.app.ui.component.CpWavyProgress]
+ *    的性能纪律里**：波形流动会按 `waveSpeed` 逐帧重绘所在层，而下载页同时挂着 N 张卡片
+ *    （N 可能是几十），常驻流动等于把整页钉在满帧空转。直线条同样带 Expressive 的圆头与
+ *    进度动画（走 [CpMotion]），但不自驱重绘。
+ * 2. **主操作改成 FilledIconButton**（暂停 / 继续）：它是一条任务的主动作，
+ *    与全应用其它「主操作」的视觉权重一致；取消 / 重试 / 删除仍是普通 IconButton。
+ * 3. 卡片形状取 `shapes.largeIncreased`、底色取 [settingsRowContainer]，
+ *    与「我的」页卡片、设置行同一套刻度与色阶。
+ */
+@Composable
+private fun ActiveTaskCard(
+    task: DownloadTask,
+    model: DownloadsScreenModel,
+    /** 请求取消：由宿主弹二次确认后再真正执行（见 [ActiveDownloadsTab]）。 */
+    onCancelRequest: () -> Unit,
+) {
+    val s = cpStrings()
+    val failed = task.status == DownloadStatus.FAILED || task.status == DownloadStatus.CANCELLED
+    val fraction = taskFraction(task)
+
+    Surface(
+        shape = MaterialTheme.shapes.largeIncreased,
+        color = settingsRowContainer(),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.fillMaxWidth().padding(12.dp)) {
+        // 水平内边距 16dp = 队列条 / 设置行的行内边距（`CpSpacing.formRowHorizontal`）。
+        // 此前这里是 14dp：卡片里的封面左边缘比上方队列条的标题**多缩进 2dp**，
+        // 视觉上「同一列的东西没对齐」—— 单看一张卡片发现不了，连着队列条一起看就很明显。
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TaskCover(task.coverUrl, task.mediaType, Modifier.size(48.dp))
+                TaskCover(task.coverUrl, task.mediaType, Modifier.size(52.dp))
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     CpText(
@@ -366,6 +448,10 @@ private fun ActiveTaskCard(task: DownloadTask, model: DownloadsScreenModel) {
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
+                        // 「正在下载的那一条」是这一页的焦点位：歌名允许跑马灯。
+                        // 焦点位在一次渲染里天然只有一个，等于自带限流（见 CpTextReveal）。
+                        emphasized = task.status == DownloadStatus.DOWNLOADING,
+                        marqueeEnabled = task.status == DownloadStatus.DOWNLOADING,
                     )
                     CpText(
                         task.artist ?: s.downloads.unknownArtist,
@@ -374,56 +460,94 @@ private fun ActiveTaskCard(task: DownloadTask, model: DownloadsScreenModel) {
                         maxLines = 1,
                     )
                 }
-                TaskActions(task = task, model = model)
+                TaskActions(task = task, model = model, onCancelRequest = onCancelRequest)
             }
             Spacer(Modifier.height(10.dp))
-            val fraction = taskFraction(task)
-            LinearProgressIndicator(
-                progress = { fraction },
-                modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                color = if (task.status == DownloadStatus.FAILED) MaterialTheme.colorScheme.error
-                else MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant,
-            )
-            Spacer(Modifier.height(6.dp))
-            CpText(
-                statusText(task),
-                style = MaterialTheme.typography.bodySmall,
-                color = if (task.status == DownloadStatus.FAILED) MaterialTheme.colorScheme.error
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
+            // 失败 / 已取消的任务不画那条「永远停在 60%」的进度：它已经不在推进了，
+            // 画出来只会让人以为还能继续（此时的动作是「重试」）。
+            if (!failed && task.status != DownloadStatus.PENDING) {
+                CpLinearProgress(
+                    progress = fraction,
+                    modifier = Modifier.fillMaxWidth().height(6.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                )
+                Spacer(Modifier.height(6.dp))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CpText(
+                    statusText(task),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (failed) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f),
+                )
+                // 百分比只在这一处显示一次。⛔ 别再让 `statusText` 也带一个 ——
+                // 曾经左边「下载中 62% · …」、右边又单独一个「62%」，同一个数字读两遍。
+                // 因此状态行用的是**只有体积**的那条文案（见 `statusText`）。
+                if (!failed && task.status != DownloadStatus.PENDING) {
+                    CpText(
+                        "${(fraction * 100).roundToInt()}%",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun TaskActions(task: DownloadTask, model: DownloadsScreenModel) {
+private fun TaskActions(
+    task: DownloadTask,
+    model: DownloadsScreenModel,
+    onCancelRequest: () -> Unit,
+) {
     val s = cpStrings()
     when (task.status) {
         DownloadStatus.DOWNLOADING -> {
-            IconButton(onClick = { model.pause(task) }) {
+            IconButton(
+                onClick = { model.pause(task) },
+                colors = IconButtonDefaults.iconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                ),
+            ) {
                 Icon(Icons.Filled.Pause, contentDescription = s.downloads.pause)
             }
-            IconButton(onClick = { model.cancel(task, s) }) {
-                Icon(Icons.Filled.Close, contentDescription = s.common.dismiss)
+            IconButton(onClick = onCancelRequest) {
+                Icon(Icons.Filled.Close, contentDescription = s.downloads.cancel)
             }
         }
         DownloadStatus.PENDING -> {
-            IconButton(onClick = { model.cancel(task, s) }) {
-                Icon(Icons.Filled.Close, contentDescription = s.common.dismiss)
+            IconButton(onClick = onCancelRequest) {
+                Icon(Icons.Filled.Close, contentDescription = s.downloads.cancel)
             }
         }
         DownloadStatus.PAUSED -> {
-            IconButton(onClick = { model.resume(task) }) {
+            IconButton(
+                onClick = { model.resume(task) },
+                colors = IconButtonDefaults.iconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
+            ) {
                 Icon(Icons.Filled.PlayArrow, contentDescription = s.downloads.resume)
             }
-            IconButton(onClick = { model.cancel(task, s) }) {
-                Icon(Icons.Filled.Close, contentDescription = s.common.dismiss)
+            IconButton(onClick = onCancelRequest) {
+                Icon(Icons.Filled.Close, contentDescription = s.downloads.cancel)
             }
         }
         DownloadStatus.FAILED, DownloadStatus.CANCELLED -> {
-            IconButton(onClick = { model.retry(task) }) {
+            IconButton(
+                onClick = { model.retry(task) },
+                colors = IconButtonDefaults.iconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
+            ) {
                 Icon(Icons.Filled.Replay, contentDescription = s.player.retry)
             }
             IconButton(onClick = { model.remove(task, deleteFile = false, s) }) {
@@ -441,7 +565,7 @@ private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScree
     val tasks = state.completedTasks
     // 「删除文件与记录」的二次确认：删掉的是已下载的本体文件，重新下要花流量与时间。
     // 挂起态放在 tab 层而不是每张卡片一份 —— 卡片可能有几十张。
-    var confirmDeleteTarget by remember { mutableStateOf<DownloadTask?>(null) }
+    val confirm = rememberConfirmState()
     var addToCloudTarget by remember { mutableStateOf<String?>(null) }
     var addToLocalPathTarget by remember { mutableStateOf<String?>(null) }
     val s = cpStrings()
@@ -456,10 +580,20 @@ private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScree
         }
         return
     }
-    // 宽屏两列：卡片内容很短（封面 + 标题 + 一行副标题），拉成整行后右端的删除按钮
+    // 多列栅格：卡片内容很短（封面 + 标题 + 一行副标题），拉成整行后右端的删除按钮
     // 离标题 1000dp 远，视觉上完全脱钩。
+    //
+    // 列数按**收口后的内容宽度**换算（不是窗口宽度）：正文被 `pageContentModifier`
+    // 钳在 1400dp 内，按窗口宽度算会在超宽屏上多出一列、右侧那条卡片反而被压窄。
+    // ⚠️ 阈值与列数**必须自洽**：450dp 一列的话，1400dp 的内容宽正好 3 列
+    // （`1/2/3` 三档分别落在 <900 / 900–1349 / ≥1350）。
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-        val columns = if (maxWidth >= 900.dp) 2 else 1
+        val contentWidth = maxWidth.coerceAtMost(CpSpacing.pageMaxWidth)
+        val columns = when {
+            contentWidth < 900.dp -> 1
+            contentWidth < 1350.dp -> 2
+            else -> 3
+        }
         val rows = if (columns == 1) tasks.map { listOf(it) } else tasks.chunked(columns)
         LazyScrollColumn(
             pageContentModifier(),
@@ -472,19 +606,30 @@ private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScree
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(rows, key = { it.first().id }) { row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.fillMaxWidth().animateItem(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     row.forEach { task ->
                         CompletedTaskCard(
                             task = task,
                             model = model,
                             strings = s,
                             modifier = Modifier.weight(1f),
-                            onDelete = { confirmDeleteTarget = task },
+                            onDelete = {
+                                confirm.request(
+                                    title = s.downloads.deleteConfirmTitle,
+                                    message = s.downloads.deleteConfirmMessage(task.title),
+                                    confirmLabel = s.downloads.delete,
+                                    destructive = true,
+                                    onConfirm = { model.remove(task, deleteFile = true, s) },
+                                )
+                            },
                             onAddToCloudPlaylist = { addToCloudTarget = it },
                             onAddToLocalPlaylist = { addToLocalPathTarget = it },
                         )
                     }
-                    // 最后一行为奇数时补一个等宽空位，否则那条卡片会被拉满整行。
+                    // 最后一行为奇数时补等宽空位，否则那条卡片会被拉满整行。
                     repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
@@ -505,17 +650,18 @@ private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScree
         )
     }
 
-    confirmDeleteTarget?.let { task ->
-        cp.player.app.ui.component.CpConfirmDialog(
-            title = s.downloads.deleteConfirmTitle,
-            message = s.downloads.deleteConfirmMessage(task.title),
-            confirmLabel = s.downloads.delete,
-            onConfirm = { model.remove(task, deleteFile = true, s) },
-            onDismiss = { confirmDeleteTarget = null },
-        )
-    }
+    CpConfirmHost(confirm)
 }
 
+/**
+ * 已完成任务卡片。
+ *
+ * 视觉与 [ActiveTaskCard] 同一套（`shapes.largeIncreased` + [settingsRowContainer]），
+ * 只把「进度区」换成「歌手 · 大小」一行 —— 两张卡片在页签之间切换时读起来是同一族。
+ *
+ * 行尾保留**两个**入口：播放（视频）或「下一首播放」（音频），以及「更多」锚定菜单。
+ * 多选 / 批量删除不在这里：本页的批量动作只有队列上的「全部暂停 / 继续 / 取消」。
+ */
 @Composable
 private fun CompletedTaskCard(
     task: DownloadTask,
@@ -528,9 +674,10 @@ private fun CompletedTaskCard(
     onAddToCloudPlaylist: (String) -> Unit = {},
     onAddToLocalPlaylist: (String) -> Unit = {},
 ) {
-    val navigator = cafe.adriel.voyager.navigator.LocalNavigator.current
+    val navigator = LocalNavigator.current
     var menuExpanded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val s = strings.downloads
     val isVideo = task.mediaType == MediaType.VIDEO
     val mediaId = task.localPath?.let { path ->
         if (isVideo) "local://video/$path" else "local://audio/$path"
@@ -564,15 +711,15 @@ private fun CompletedTaskCard(
                 scope.launch {
                     val target = cloudFavId !in likedIds
                     AppModel.playback.toggleFavoriteFor(task.mediaId)
-                    UiEvents.notify(if (target) "已收藏到云端" else "已取消云端收藏")
+                    UiEvents.notify(s.favoriteCloudDone(target))
                 }
             },
-            favoriteLabel = if (isCloudFav) "取消云端收藏" else "云端收藏",
+            favoriteLabel = if (isCloudFav) s.unfavoriteCloud else s.favoriteCloud,
             onAddToQueue = if (!isVideo && mediaId != null) {
                 {
                     scope.launch {
                         AppModel.playback.addToQueue(mediaId)
-                        UiEvents.notify("已加入播放队列")
+                        UiEvents.notify(strings.library.queuedToPlay)
                     }
                 }
             } else null,
@@ -580,7 +727,7 @@ private fun CompletedTaskCard(
                 {
                     scope.launch {
                         AppModel.playback.addNextToQueue(mediaId)
-                        UiEvents.notify("已添加为下一首播放")
+                        UiEvents.notify(strings.library.playNext)
                     }
                 }
             } else null,
@@ -594,22 +741,22 @@ private fun CompletedTaskCard(
                 { cp.player.app.platform.openInFileManager(path) }
             },
             onDelete = onDelete,
-            deleteLabel = "删除文件与记录",
+            deleteLabel = s.deleteFileAndRecord,
         )
     )
 
     CpContextMenu(items = contextMenu, modifier = modifier) {
         Surface(
             onClick = handlePlay,
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = MaterialTheme.shapes.largeIncreased,
+            color = settingsRowContainer(),
             modifier = Modifier.fillMaxWidth(),
         ) {
             Row(
-                Modifier.fillMaxWidth().padding(12.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TaskCover(task.coverUrl, task.mediaType, Modifier.size(48.dp))
+                TaskCover(task.coverUrl, task.mediaType, Modifier.size(52.dp))
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     CpText(
@@ -622,7 +769,7 @@ private fun CompletedTaskCard(
                     // 而歌手 + 文件大小是能扫读的。
                     CpText(
                         buildString {
-                            append(task.artist ?: "未知艺术家")
+                            append(task.artist ?: s.unknownArtist)
                             val size = task.totalBytes?.takeIf { it > 0 } ?: task.downloadedBytes
                             if (size > 0) append(" · ").append(formatBytes(size))
                         },
@@ -633,23 +780,25 @@ private fun CompletedTaskCard(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (isVideo) {
-                        IconButton(onClick = handlePlay) {
-                            Icon(
-                                Icons.Filled.PlayArrow,
-                                contentDescription = "播放视频",
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                        IconButton(
+                            onClick = handlePlay,
+                            colors = IconButtonDefaults.iconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            ),
+                        ) {
+                            Icon(Icons.Filled.PlayArrow, contentDescription = s.playVideo)
                         }
                     } else if (mediaId != null) {
                         IconButton(onClick = {
                             scope.launch {
                                 AppModel.playback.addNextToQueue(mediaId)
-                                UiEvents.notify("已添加为下一首播放")
+                                UiEvents.notify(strings.library.playNext)
                             }
                         }) {
                             Icon(
                                 Icons.AutoMirrored.Filled.QueueMusic,
-                                contentDescription = "下一首播放",
+                                contentDescription = s.playNext,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -662,7 +811,7 @@ private fun CompletedTaskCard(
                         IconButton(onClick = { menuExpanded = true }) {
                             Icon(
                                 Icons.Filled.MoreVert,
-                                contentDescription = "更多操作",
+                                contentDescription = strings.library.moreOptions,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -675,17 +824,22 @@ private fun CompletedTaskCard(
 
 // ============ 通用小组件与工具 ============
 
-/** 任务封面：有封面 URL 显示图片，否则按媒体类型显示图标占位。 */
+/**
+ * 任务封面：有封面 URL 显示图片，否则按媒体类型显示图标占位。
+ *
+ * ⚠️ `aspectRatio(1f)` 必须留在**调用方传进来的 modifier 之后**、且自身不能被
+ * 尺寸修饰符压过：任务卡片的封面是正方形，列表行给的是固定 `size(52.dp)`。
+ */
 @Composable
 private fun TaskCover(coverUrl: String?, mediaType: MediaType, modifier: Modifier = Modifier) {
     Box(
-        modifier.clip(MaterialTheme.shapes.medium),
+        modifier.aspectRatio(1f).clip(MaterialTheme.shapes.medium),
         contentAlignment = Alignment.Center,
     ) {
         Surface(
             Modifier.fillMaxSize(),
             shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceVariant,
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
         ) {
             if (!coverUrl.isNullOrBlank()) {
                 AsyncImage(
@@ -724,19 +878,31 @@ private fun taskFraction(task: DownloadTask): Float {
     return 0f
 }
 
-/** 任务状态文案。 */
+/**
+ * 任务状态文案。
+ *
+ * 文案取 `DownloadStrings`（`statusPending` / `statusDownloadingSize` / …）而不是就地拼中文：
+ * 接口里那一批成员早就存在（`I18N.md` 批次 6 的待迁移项），页面这边一直写死字面量，
+ * 于是英文界面里整页状态都是中文。
+ *
+ * ⚠️ 「下载中」走 [cp.player.app.i18n.DownloadStrings.statusDownloadingSize]（**只带体积**）：
+ * 卡片右端已经有独立的百分比了，状态行再带一次就是同一个数字显示两遍。
+ *
+ * ⚠️ `@Composable`：要读 `cpStrings()`（那是组合上下文的取值），所以只能被组合调用。
+ * 别把它挪进非组合的工具函数里 —— 那样语言切换不会重新求值。
+ */
+@Composable
 private fun statusText(task: DownloadTask): String {
-    val percent = (taskFraction(task) * 100).roundToInt()
+    val s = cpStrings().downloads
     val sizeHint = task.totalBytes?.takeIf { it > 0 }?.let {
         "${formatBytes(task.downloadedBytes)} / ${formatBytes(it)}"
     } ?: formatBytes(task.downloadedBytes)
     return when (task.status) {
-        DownloadStatus.PENDING -> "等待下载"
-        DownloadStatus.DOWNLOADING -> "下载中 $percent% · $sizeHint"
-        DownloadStatus.PAUSED -> "已暂停 · $sizeHint"
-        DownloadStatus.FAILED -> "下载失败：${task.error ?: "未知错误"}"
-        DownloadStatus.CANCELLED -> "已取消"
-        DownloadStatus.COMPLETED -> "已完成"
+        DownloadStatus.PENDING -> s.statusPending
+        DownloadStatus.DOWNLOADING -> s.statusDownloadingSize(sizeHint)
+        DownloadStatus.PAUSED -> s.statusPaused(sizeHint)
+        DownloadStatus.FAILED -> s.statusFailed(task.error ?: s.unknownError)
+        DownloadStatus.CANCELLED -> s.statusCancelled
+        DownloadStatus.COMPLETED -> cpStrings().library.completed
     }
 }
-

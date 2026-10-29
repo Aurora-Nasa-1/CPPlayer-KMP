@@ -56,7 +56,16 @@ class DesktopStreamLocalizer(
     @Volatile
     private var capacityBytes: Long = index.capacityBytes()?.takeIf { it > 0L } ?: maxCacheBytes
 
-    /** 同一 key 的并发下载串行化：两个请求同时落同一个文件会互相截断。 */
+    /**
+     * 全部下载经**这一把**锁串行化 —— 刻意不是按 key 各一把：
+     *
+     * 1. 同一 key 并发落盘会互相截断同一个 `.part`（必须串行）；
+     * 2. 更重要的是「当前曲落盘」与「预加载下一首落盘」在无损档位会同时存在，
+     *    当前曲的那次是用户**拖动进度条的直接依赖** —— 全局串行保证它跑完之前
+     *    带宽不被预加载分走。代价是预加载晚开工几十秒（依然可以赶在曲末之前完成），
+     *    换来的确定性值得。改成 per-key 锁反而会让预加载与当前曲抢带宽，
+     *    把「拖动可用」的时刻往后推。
+     */
     private val lock = Mutex()
 
     override fun cachedPath(cacheKey: String): String? {

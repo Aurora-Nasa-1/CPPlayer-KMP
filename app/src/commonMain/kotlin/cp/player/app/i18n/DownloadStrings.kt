@@ -48,6 +48,41 @@ interface DownloadStrings {
     /** @param title 任务（曲目）名。 */
     fun deleteConfirmMessage(title: String): String
 
+    // —— 「下载中」页签顶部的批量操作条 ——
+
+    /**
+     * 批量操作条的标题。
+     *
+     * 写成函数而不是「队列任务 (N)」拼串：中英语序/量词不同（「队列任务（3）」vs
+     * 「3 queued tasks」），在调用方拼就译不了（同本文件头部的说明）。
+     */
+    fun queueTasks(count: Int): String
+
+    val pauseAll: String
+    val resumeAll: String
+    val cancelAll: String
+
+    /** 单条取消（取消任务按钮 / 语义描述）。 */
+    val cancel: String
+
+    // —— 取消下载的二次确认（破坏性：会丢掉未完成的临时文件）——
+    val cancelAllConfirmTitle: String
+    val cancelAllConfirmMessage: String
+    val cancelConfirmTitle: String
+
+    /** @param title 任务（曲目）名。 */
+    fun cancelConfirmMessage(title: String): String
+
+    /** 已完成任务卡片的操作提示（列表行尾 / 右键菜单）。 */
+    val playVideo: String
+    val addToLocalPlaylist: String
+    val openInFileManager: String
+    val favoriteCloud: String
+    val unfavoriteCloud: String
+
+    /** @param target 当前要执行的动作；true = 收藏。 */
+    fun favoriteCloudDone(favorited: Boolean): String
+
     // —— 本地媒体库 ——
     val localImported: String
 
@@ -66,6 +101,17 @@ interface DownloadStrings {
 
     // —— 任务状态（见 I18N.md §5.3：状态文案不能在类里固化）——
     val statusPending: String
+
+    /**
+     * 下载中的状态行：**只带体积，不带百分比**。
+     *
+     * 百分比由卡片右端单独显示（`labelMedium` + 主题色），状态行再带一遍就是
+     * 同一屏里同一个数字读两遍。这里保留 [statusDownloading] 是给**其它布局**
+     * （没有独立百分比位置的地方）用的，两者不要在同一条状态行里同时出现。
+     *
+     * @param size 已 / 总字节的可读串。
+     */
+    fun statusDownloadingSize(size: String): String
 
     /** @param percent 0..100；@param size 已 / 总字节的可读串。 */
     fun statusDownloading(percent: Int, size: String): String
@@ -133,6 +179,43 @@ interface DownloadStrings {
     val emptySearchTitle: String
     val unknownAlbum: String
     val favoriteSongs: String
+
+    // —— 本地曲库管理 ——
+    val tabLocalFavorites: String
+    val tabLocalPlaylists: String
+    val emptyLocalFavoritesTitle: String
+    val emptyLocalFavoritesNote: String
+    val emptyLocalPlaylistsTitle: String
+    val emptyLocalPlaylistsNote: String
+    val newLocalPlaylist: String
+    val playlistName: String
+    val rename: String
+    val playPlaylist: String
+    val playlistOptions: String
+    val emptyPlaylistTitle: String
+    val emptyPlaylistNote: String
+    val filterAndScanSettings: String
+    val losslessOnly: String
+    val duplicatesOnly: String
+    val missingCoverOnly: String
+    val missingTagsOnly: String
+    val clearFilters: String
+    val scanSettings: String
+    fun scanRuleCount(count: Int): String
+    val scanSettingsNote: String
+    val minimumDuration: String
+    val skipVideoFiles: String
+    val excludedFolders: String
+    val save: String
+    val sortName: String
+    val sortCount: String
+    val sortRecent: String
+    val removeConfirmTitle: String
+    fun removeConfirmMessage(title: String): String
+    val deleteLocalFile: String
+    fun deleteLocalFileMessage(title: String): String
+    fun playlistTrackCount(count: Int): String
+    fun deleteLocalPlaylistMessage(name: String): String
 }
 
 /** 简体中文实现（界面现有字面量照搬）。 */
@@ -157,6 +240,26 @@ object DownloadStringsZh : DownloadStrings {
     override fun deleteConfirmMessage(title: String) =
         "确定删除「$title」吗？已下载的文件与记录会被一并移除。"
 
+    override fun queueTasks(count: Int) = "队列任务（$count）"
+    override val pauseAll = "全部暂停"
+    override val resumeAll = "全部继续"
+    override val cancelAll = "全部取消"
+    override val cancel = "取消任务"
+    override val cancelAllConfirmTitle = "取消全部下载"
+    override val cancelAllConfirmMessage =
+        "确定取消所有进行中的下载任务吗？未完成的临时文件将被清除。"
+    override val cancelConfirmTitle = "取消下载"
+    override fun cancelConfirmMessage(title: String) =
+        "确定取消「$title」的下载吗？已下载的临时部分会被清除，之后需要重新下载。"
+
+    override val playVideo = "播放视频"
+    override val addToLocalPlaylist = "添加到本地歌单"
+    override val openInFileManager = "在文件管理器中打开"
+    override val favoriteCloud = "云端收藏"
+    override val unfavoriteCloud = "取消云端收藏"
+    override fun favoriteCloudDone(favorited: Boolean) =
+        if (favorited) "已收藏到云端" else "已取消云端收藏"
+
     override val localImported = "本地导入"
     override fun itemCount(count: Int) = "$count 项"
     override val removeFromLibrary = "从库中移除"
@@ -167,6 +270,7 @@ object DownloadStringsZh : DownloadStrings {
     override val importing = "导入中…"
 
     override val statusPending = "等待下载"
+    override fun statusDownloadingSize(size: String) = "下载中 · $size"
     override fun statusDownloading(percent: Int, size: String) = "下载中 $percent% · $size"
     override fun statusPaused(size: String) = "已暂停 · $size"
     override fun statusFailed(error: String?) = "下载失败：$error"
@@ -214,6 +318,41 @@ object DownloadStringsZh : DownloadStrings {
     override val emptySearchTitle = "没有匹配的结果"
     override val unknownAlbum = "未知专辑"
     override val favoriteSongs = "我喜欢的本地音乐"
+    override val tabLocalFavorites = "本地喜欢"
+    override val tabLocalPlaylists = "本地歌单"
+    override val emptyLocalFavoritesTitle = "暂无本地喜欢歌曲"
+    override val emptyLocalFavoritesNote = "在歌曲菜单中选择「喜欢」，即可集中查看纯本地歌曲"
+    override val emptyLocalPlaylistsTitle = "暂无本地歌单"
+    override val emptyLocalPlaylistsNote = "创建歌单，将不同来源的本地歌曲整理到一起"
+    override val newLocalPlaylist = "新建本地歌单"
+    override val playlistName = "歌单名称"
+    override val rename = "重命名"
+    override val playPlaylist = "播放歌单"
+    override val playlistOptions = "歌单选项"
+    override val emptyPlaylistTitle = "此歌单暂无歌曲"
+    override val emptyPlaylistNote = "可从歌曲菜单中选择「添加到本地歌单」"
+    override val filterAndScanSettings = "筛选与扫描设置"
+    override val losslessOnly = "只看无损音频"
+    override val duplicatesOnly = "只看重复曲目"
+    override val missingCoverOnly = "只看缺少封面"
+    override val missingTagsOnly = "只看标签残缺"
+    override val clearFilters = "清除筛选"
+    override val scanSettings = "扫描设置"
+    override fun scanRuleCount(count: Int) = "$count 条规则"
+    override val scanSettingsNote = "改动会在下一次扫描时生效，并同步清理已被规则排除的条目。"
+    override val minimumDuration = "最短时长（秒），0 表示不过滤"
+    override val skipVideoFiles = "扫描时跳过视频文件"
+    override val excludedFolders = "排除目录（每行一个）"
+    override val save = "保存"
+    override val sortName = "名称"
+    override val sortCount = "数量"
+    override val sortRecent = "最近修改"
+    override val removeConfirmTitle = "从媒体库移除"
+    override fun removeConfirmMessage(title: String) = "从媒体库移除《$title》？磁盘中的文件会保留。"
+    override val deleteLocalFile = "彻底删除本地文件"
+    override fun deleteLocalFileMessage(title: String) = "确定要将《$title》从磁盘彻底删除吗？此操作无法撤销。"
+    override fun playlistTrackCount(count: Int) = "$count 首歌曲"
+    override fun deleteLocalPlaylistMessage(name: String) = "确定删除本地歌单《$name》吗？歌单内的本地音频文件不会被删除。"
 }
 
 /** 英文实现。 */
@@ -240,6 +379,26 @@ object DownloadStringsEn : DownloadStrings {
     override fun deleteConfirmMessage(title: String) =
         "Delete \"$title\"? The downloaded file and its record will both be removed."
 
+    override fun queueTasks(count: Int) = if (count == 1) "1 queued task" else "$count queued tasks"
+    override val pauseAll = "Pause all"
+    override val resumeAll = "Resume all"
+    override val cancelAll = "Cancel all"
+    override val cancel = "Cancel download"
+    override val cancelAllConfirmTitle = "Cancel all downloads"
+    override val cancelAllConfirmMessage =
+        "Cancel every download in progress? Partial temporary files will be removed."
+    override val cancelConfirmTitle = "Cancel download"
+    override fun cancelConfirmMessage(title: String) =
+        "Cancel downloading \"$title\"? The partial file will be removed and you'll need to start over."
+
+    override val playVideo = "Play video"
+    override val addToLocalPlaylist = "Add to local playlist"
+    override val openInFileManager = "Show in file manager"
+    override val favoriteCloud = "Favorite in cloud"
+    override val unfavoriteCloud = "Remove cloud favorite"
+    override fun favoriteCloudDone(favorited: Boolean) =
+        if (favorited) "Added to cloud favorites" else "Removed from cloud favorites"
+
     override val localImported = "Imported"
     override fun itemCount(count: Int) = if (count == 1) "1 item" else "$count items"
     override val removeFromLibrary = "Remove from library"
@@ -250,6 +409,7 @@ object DownloadStringsEn : DownloadStrings {
     override val importing = "Importing…"
 
     override val statusPending = "Waiting to download"
+    override fun statusDownloadingSize(size: String) = "Downloading · $size"
     override fun statusDownloading(percent: Int, size: String) = "Downloading $percent% · $size"
     override fun statusPaused(size: String) = "Paused · $size"
     override fun statusFailed(error: String?) = "Download failed: $error"
@@ -295,6 +455,41 @@ object DownloadStringsEn : DownloadStrings {
     override val emptySearchTitle = "No matches"
     override val unknownAlbum = "Unknown album"
     override val favoriteSongs = "Liked local music"
+    override val tabLocalFavorites = "Local favorites"
+    override val tabLocalPlaylists = "Local playlists"
+    override val emptyLocalFavoritesTitle = "No local favorites yet"
+    override val emptyLocalFavoritesNote = "Choose \"Favorite\" from a song menu to collect local tracks here"
+    override val emptyLocalPlaylistsTitle = "No local playlists yet"
+    override val emptyLocalPlaylistsNote = "Create a playlist to organize local songs from different folders"
+    override val newLocalPlaylist = "New local playlist"
+    override val playlistName = "Playlist name"
+    override val rename = "Rename"
+    override val playPlaylist = "Play playlist"
+    override val playlistOptions = "Playlist options"
+    override val emptyPlaylistTitle = "This playlist is empty"
+    override val emptyPlaylistNote = "Choose \"Add to local playlist\" from a song menu"
+    override val filterAndScanSettings = "Filters and scan settings"
+    override val losslessOnly = "Lossless audio only"
+    override val duplicatesOnly = "Duplicate tracks only"
+    override val missingCoverOnly = "Missing artwork only"
+    override val missingTagsOnly = "Incomplete tags only"
+    override val clearFilters = "Clear filters"
+    override val scanSettings = "Scan settings"
+    override fun scanRuleCount(count: Int) = if (count == 1) "1 rule" else "$count rules"
+    override val scanSettingsNote = "Changes apply on the next scan and remove indexed items excluded by these rules."
+    override val minimumDuration = "Minimum duration in seconds (0 disables filtering)"
+    override val skipVideoFiles = "Skip video files while scanning"
+    override val excludedFolders = "Excluded folders (one per line)"
+    override val save = "Save"
+    override val sortName = "Name"
+    override val sortCount = "Track count"
+    override val sortRecent = "Recently modified"
+    override val removeConfirmTitle = "Remove from library"
+    override fun removeConfirmMessage(title: String) = "Remove \"$title\" from the library? The file will remain on disk."
+    override val deleteLocalFile = "Delete local file permanently"
+    override fun deleteLocalFileMessage(title: String) = "Permanently delete \"$title\" from disk? This can't be undone."
+    override fun playlistTrackCount(count: Int) = if (count == 1) "1 song" else "$count songs"
+    override fun deleteLocalPlaylistMessage(name: String) = "Delete the local playlist \"$name\"? Its audio files will remain on disk."
 
     override val collapsePlayer = "Collapse the player"
     override val lyrics = "Lyrics"

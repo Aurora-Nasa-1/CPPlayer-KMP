@@ -50,6 +50,13 @@ internal data class StreamCacheIndexFile(
  *
  * 所有公开方法都同步：读写方既有播放协程（落盘完成时登记）也有 UI 线程（管理页），
  * 用粗粒度锁换正确性。
+ *
+ * ### 写盘为什么保持同步
+ * [flush] 是「全量 JSON + 临时文件 + 原子改名」，而条目数是「缓存文件数」量级（几十条），
+ * 实测写入在亚毫秒级。同目录新建实例（设置页 / 重启恢复）会立即读这个文件 —
+ * 异步写盘会让那条路径出现「测试级」竞态（写完前读旧值）。为这点开销引入异步
+ * 不值得；真正的主线程大头是 `SimpleCache` 首次构造（SQLite 初始化），那一个在
+ * 服务启动时预热（见 app-android 的 PlaybackMediaSessionService）。
  */
 internal class StreamCacheIndex(private val file: File) {
 
