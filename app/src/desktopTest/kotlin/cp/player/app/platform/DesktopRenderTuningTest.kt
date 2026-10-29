@@ -247,21 +247,27 @@ class DesktopRenderTuningTest {
     }
 
     @Test
-    fun `probe naming a real backend triggers a revert`() {
+    fun `one abnormal exit never triggers a backend revert`() {
+        assertNull(
+            DesktopRenderTuning.abandonedBackend("OPENGL:1"),
+            "单次 Ctrl+C、强杀或无关崩溃都不能证明 OpenGL 有问题",
+        )
+        assertNull(DesktopRenderTuning.abandonedBackend("OPENGL"), "旧版字据只能迁移为一次失败")
+    }
+
+    @Test
+    fun `repeated failures of the same backend trigger a revert`() {
         assertEquals(
             DesktopRenderTuning.Backend.OPENGL,
-            DesktopRenderTuning.abandonedBackend("OPENGL"),
-            "探测文件活到下次启动就说明该后端没能出帧，必须回退",
+            DesktopRenderTuning.abandonedBackend("OPENGL:${DesktopRenderTuning.FAILURE_THRESHOLD}"),
         )
     }
 
     @Test
     fun `probe parsing tolerates case and surrounding whitespace`() {
-        // 探测文件可能被带上换行；解析若不稳健，安全网会静默失效——这是最坏的一种 bug。
-        assertEquals(DesktopRenderTuning.Backend.OPENGL, DesktopRenderTuning.abandonedBackend("opengl\n"))
         assertEquals(
             DesktopRenderTuning.Backend.SOFTWARE_COMPAT,
-            DesktopRenderTuning.abandonedBackend(" software_compat "),
+            DesktopRenderTuning.abandonedBackend(" software_compat:2\n"),
         )
     }
 
@@ -281,11 +287,18 @@ class DesktopRenderTuningTest {
             assertNull(DesktopRenderTuning.readProbeFrom(probe), "文件不存在应读成 null")
 
             DesktopRenderTuning.writeProbeTo(probe, DesktopRenderTuning.Backend.OPENGL)
-            assertEquals("OPENGL", DesktopRenderTuning.readProbeFrom(probe))
+            assertEquals("OPENGL:1", DesktopRenderTuning.readProbeFrom(probe))
+            assertNull(
+                DesktopRenderTuning.abandonedBackend(DesktopRenderTuning.readProbeFrom(probe)),
+                "第一次异常退出必须继续保留 OpenGL",
+            )
+
+            DesktopRenderTuning.writeProbeTo(probe, DesktopRenderTuning.Backend.OPENGL)
+            assertEquals("OPENGL:2", DesktopRenderTuning.readProbeFrom(probe))
             assertEquals(
                 DesktopRenderTuning.Backend.OPENGL,
                 DesktopRenderTuning.abandonedBackend(DesktopRenderTuning.readProbeFrom(probe)),
-                "写进去再读出来必须能判定为「需回退」，否则安全网等于没接上",
+                "同一后端连续失败达到阈值后才能回退",
             )
 
             probe.delete()
@@ -303,7 +316,7 @@ class DesktopRenderTuningTest {
         try {
             val probe = File(File(dir, "nested"), "render_tuning_probe")
             DesktopRenderTuning.writeProbeTo(probe, DesktopRenderTuning.Backend.ANGLE)
-            assertEquals("ANGLE", DesktopRenderTuning.readProbeFrom(probe))
+            assertEquals("ANGLE:1", DesktopRenderTuning.readProbeFrom(probe))
         } finally {
             dir.deleteRecursively()
         }
@@ -363,7 +376,7 @@ class DesktopRenderTuningTest {
             val probe = File(dir, "render_tuning_probe")
             System.setProperty(OVERRIDE_PROBE, probe.path)
             DesktopRenderTuning.writeProbeTo(probe, Backend.OPENGL)
-            assertEquals("OPENGL", DesktopRenderTuning.readProbeFrom(probe))
+            assertEquals("OPENGL:1", DesktopRenderTuning.readProbeFrom(probe))
 
             var hook: Thread? = null
             DesktopRenderTuning.disarmProbeOnGracefulExit { hook = it }

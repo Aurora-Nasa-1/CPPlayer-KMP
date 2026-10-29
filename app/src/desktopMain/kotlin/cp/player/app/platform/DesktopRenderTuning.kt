@@ -47,7 +47,8 @@ import java.io.File
  *    （[beginStartupProbe]）写一个探测文件；
  * 2. 窗口连续出满 [HEALTHY_FRAME_COUNT] 帧后，由 `Main` 调 [markStartupHealthy] 删掉它；
  *    进程**正常退出**时也会删掉（见 [disarmProbeOnGracefulExit]）；
- * 3. 下次启动若探测文件**还在**，说明那个后端没能起来 → 自动改回「自动」并在设置页提示。
+ * 3. 下次启动若探测文件**还在**，先累计一次异常；只有同一后端连续达到 [FAILURE_THRESHOLD]
+ *    次未出帧才自动改回「自动」。单次 Ctrl+C、强杀或无关崩溃都继续保留原后端。
  *
  * 判断逻辑见 [abandonedBackend] 与 [shouldArmProbe]，都是纯函数、可测。
  *
@@ -65,6 +66,9 @@ internal object DesktopRenderTuning {
 
     /** 探测文件名（与配置文件同目录）。语义见 [applyBeforeSkikoInit]。 */
     private const val PROBE_FILE_NAME = "render_tuning_probe"
+
+    /** 连续多少次确认是原生渲染失败后才允许自动回退，避免一次异常退出误伤 OpenGL。 */
+    internal const val FAILURE_THRESHOLD = 2
 
     /**
      * 探测文件路径的覆写点，**仅供测试隔离**（让测试不碰真实 `~/.cpplayer/`）。
@@ -227,30 +231,37 @@ internal object DesktopRenderTuning {
         System.getProperty(PROP_PROBE_FILE)?.let(::File)
             ?: DesktopDataDir.file(PROBE_FILE_NAME)
 
+    internal data class ProbeState(val backend: Backend, val failures: Int)
+
     /**
-     * 纯逻辑：由探测文件内容判断「上次启动是不是卡在/崩在某个后端上」。
+     * 解析跨进程探测状态。只有同一后端连续留下足够次数的字据，才允许自动回退。
      *
-     * 探测文件只在**我们主动应用了设置页选定的非默认后端**时写入，成功出帧后删除。
-     * 所以它能活到下一次启动，就只有一种解释：那个后端在本机起不来。
-     *
-     * @param probeRaw 探测文件内容；`null` 表示文件不存在（上次正常起来了）。
-     * @return 需要回退的后端；`null` 表示无需回退。
+     * 单次异常退出可能来自终端 Ctrl+C、任务管理器结束、JVM/业务崩溃或机器掉电；这些都不能证明
+     * 渲染后端有问题。旧版只有后端名的字据按一次失败迁移，但不会单凭它回退。
      */
-    internal fun abandonedBackend(probeRaw: String?): Backend? {
-        val needle = probeRaw?.trim()?.uppercase().orEmpty()
-        if (needle.isEmpty() || needle == Backend.AUTO.name) return null
-        return Backend.entries.firstOrNull { it.name == needle }
+    internal fun parseProbe(probeRaw: String?): ProbeState? {
+        val parts = probeRaw?.trim()?.uppercase()?.split(':', limit = 2).orEmpty()
+        val backend = Backend.entries.firstOrNull { it.name == parts.firstOrNull() } ?: return null
+        if (backend == Backend.AUTO) return null
+        val failures = parts.getOrNull(1)?.toIntOrNull()?.takeIf { it > 0 } ?: 1
+        return ProbeState(backend, failures)
     }
+
+    /** 达到连续失败阈值才判定后端不可用；一次异常退出绝不触发切换。 */
+    internal fun abandonedBackend(probeRaw: String?): Backend? =
+        parseProbe(probeRaw)?.takeIf { it.failures >= FAILURE_THRESHOLD }?.backend
 
     /** 读探测文件内容；不存在或读失败都返回 `null`（读不到就当没发生过，不误伤）。 */
     internal fun readProbeFrom(file: File): String? =
         runCatching { file.takeIf { it.isFile }?.readText() }.getOrNull()
 
-    /** 写探测文件；失败不抛（探测只是尽力而为的安全网，不能反过来把启动搞崩）。 */
+    /** 写探测文件；同一后端遗留的失败次数递增，切换后端则重新计数。 */
     internal fun writeProbeTo(file: File, backend: Backend) {
         runCatching {
+            val previous = readProbeFrom(file)?.let(::parseProbe)
+            val failures = if (previous?.backend == backend) previous.failures + 1 else 1
             file.parentFile?.mkdirs()
-            file.writeText(backend.name)
+            file.writeText("${backend.name}:$failures")
         }
     }
 
@@ -276,6 +287,7 @@ internal object DesktopRenderTuning {
 
     /**
      * 立字据：本次以设置页选定的非默认后端启动，需要 [markStartupHealthy] 来销账。
+     * 若上次同一后端的字据仍在则累计失败次数；单次异常只记录，不切换后端。
      *
      * 由 `Main` 在 `application { }` 内、**其它初始化之后**调用。
      * 放在这个位置是有讲究的：若提前到 [applyBeforeSkikoInit] 就写，那么
@@ -294,7 +306,7 @@ internal object DesktopRenderTuning {
      *
      * 探测文件的语义是「这次启动没能出帧就结束了」，但**怎么结束**必须区分开：
      * - 后端在原生层把进程带崩（`hs_err_pid*.log`）、或渲染循环卡死被强杀 ⇒ JVM 走不到
-     *   关闭钩子，文件留下 ⇒ 下次启动回退。这正是安全模式要抓的情况。
+     *   关闭钩子，文件留下 ⇒ 下次启动累计一次；连续多次才回退。
      * - 应用自己**正常退出**（关窗 / 托盘退出 / 启动后随即退出）⇒ 进程完整跑完了，
      *   没出帧的原因多半只是窗口还没来得及显示（会话锁屏、窗口被遮挡、启动后马上退出），
      *   与后端无关。此时若还留着字据，下次启动就会把用户的 OpenGL 静默换成「自动」
@@ -314,7 +326,7 @@ internal object DesktopRenderTuning {
     /**
      * 由 `Main` 在窗口连续成功出帧后调用，宣告「这个后端跑得起来」。
      *
-     * 没被调用就等于探测文件留到下次启动 → 自动回退。见 [abandonedBackend]。
+     * 没被调用会让探测文件留到下次启动并累计一次；达到阈值后才自动回退。见 [abandonedBackend]。
      */
     fun markStartupHealthy() = clearProbe()
 
@@ -450,7 +462,7 @@ internal object DesktopRenderTuning {
                         else -> "未干预（Skiko 默认）"
                     },
                 )
-                append("[RenderTuning] 安全模式：若所选后端跑不起来（启动即崩或窗口不出现），下次启动会自动回退为「自动」。")
+                append("[RenderTuning] 安全模式：只有同一后端连续 $FAILURE_THRESHOLD 次未能出帧才回退；单次异常退出不切换。")
                 append("手工干预：-D$OVERRIDE_BACKEND=AUTO，或删除 ${storageHint()} 中的 $KEY_BACKEND / $KEY_VSYNC 项。")
             },
         )
@@ -459,9 +471,8 @@ internal object DesktopRenderTuning {
     /**
      * 安全模式：处理上一次启动留下的探测文件。
      *
-     * 探测文件存在 ⟹ 上次以某个「设置页选定的非默认后端」启动，却没撑到出帧
-     * （启动即崩 / 窗口不出现 / 渲染循环卡死）⟹ 该后端在本机不可用。
-     * 此时自动改回「自动」并记一笔提示，避免用户陷入
+     * 探测文件存在只说明上次没撑到出帧，可能是 Ctrl+C、强杀或无关崩溃，并不足以归因渲染。
+     * 只有同一后端连续达到 [FAILURE_THRESHOLD] 次，才确认其不可用并改回「自动」，避免用户陷入
      * 「选一次崩一次，而设置页恰恰进不去」的死循环。
      *
      * 为什么用文件而不是进程内 try/catch：后端不可用时往往在**原生层**直接崩，
@@ -469,21 +480,24 @@ internal object DesktopRenderTuning {
      */
     private fun recoverFromFailedLaunch() {
         val raw = readProbe()
+        val state = parseProbe(raw)
         val abandoned = abandonedBackend(raw)
-        if (abandoned != null) {
-            // 顺序要紧：先落回退值再写提示。storeBackend 不碰 KEY_LAST_REVERT，二者互不干扰。
-            // 回退值会以 "AUTO" **显式落盘**（storeBackend 不再删键）：这正是关掉平台默认的开关——
-            // 否则 Windows 上删键后下下次启动又会默认 OpenGL，陷入「默认 → 崩 → 回退 → 又默认」的循环。
-            storeBackend(Backend.AUTO)
-            prefs.putString(KEY_LAST_REVERT, abandoned.name)
-            clearProbe()
-            println(
-                "[RenderTuning] 上次以「${abandoned.label}」启动未能正常出帧，已自动回退为「自动」。" +
-                    "该后端在本机可能不受支持，建议先更新显卡驱动再试。",
+        when {
+            abandoned != null -> {
+                // 顺序要紧：先落回退值再写提示。只有连续多次未出帧才走到这里。
+                storeBackend(Backend.AUTO)
+                prefs.putString(KEY_LAST_REVERT, abandoned.name)
+                clearProbe()
+                println(
+                    "[RenderTuning] 「${abandoned.label}」已连续 ${state!!.failures} 次未能正常出帧，" +
+                        "确认达到渲染失败阈值，已自动回退为「自动」。建议先更新显卡驱动再试。",
+                )
+            }
+            state != null -> println(
+                "[RenderTuning] 上次运行在「${state.backend.label}」下异常结束（${state.failures}/$FAILURE_THRESHOLD）。" +
+                    "单次退出不构成渲染失败证据，本次继续优先使用该后端。",
             )
-        } else if (raw != null) {
-            // 文件在、但内容识别不了（多半被截断或为空）：清掉，免得下次继续误判。
-            clearProbe()
+            raw != null -> clearProbe()
         }
     }
 
