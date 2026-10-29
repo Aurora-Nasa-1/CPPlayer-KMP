@@ -263,8 +263,19 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
     val s = cpStrings()
     val track = state.currentTrack
     if (track == null) {
+        // 「无曲目 + 有错误」不能永远转圈：加载失败时 currentTrack 就是 null，
+        // 不配这层的话用户只能疑惑「加载不出来」。错误必须是看得见的终点，
+        // 不是转圈的背景音。
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            cp.player.app.ui.component.CpLoadingIndicator(Modifier.size(40.dp))
+            if (!state.error.isNullOrBlank()) {
+                cp.player.app.ui.component.CpText(
+                    state.error ?: "",
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 2,
+                )
+            } else {
+                cp.player.app.ui.component.CpLoadingIndicator(Modifier.size(40.dp))
+            }
         }
         return
     }
@@ -851,28 +862,33 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
             else -> 38.dp
         }
 
-        // 精确黄金间距：解决标准长屏下封面居中导致上下空隙巨大、下半部紧贴底边的严重失衡
+        // 封面到歌曲信息必须保持紧密，不能把长屏余量全部塞进这一处；否则标准手机上
+        // 封面悬在顶部、控件沉到底部，中间会形成明显断层。剩余空间交给整组内容的
+        // SpaceEvenly 分配到顶部、各段之间与底部，不让任何单个间距无限拉长。
         val artToInfoGap = when {
             isUltraCompact -> 6.dp
-            isCompact -> 12.dp
-            isTall -> 20.dp
-            else -> 16.dp
+            isCompact -> 10.dp
+            else -> 12.dp
         }
         val infoToProgressGap = when {
             isUltraCompact -> 4.dp
             isCompact -> 8.dp
-            isTall -> 16.dp
-            else -> 12.dp
+            else -> 10.dp
         }
         val progressToControlsGap = when {
             isUltraCompact -> 6.dp
             isCompact -> 10.dp
-            isTall -> 18.dp
-            else -> 14.dp
+            else -> 12.dp
         }
 
-        // 封面尺寸预算：扣除底部所有控件所需的基础高度，矮屏下自动收缩，标准长屏吃满可用宽度
-        val bottomControlsBudget = if (isUltraCompact) 230.dp else if (isCompact) 270.dp else 300.dp
+        // 封面尺寸预算：扣除底部所有控件所需的基础高度，矮屏下自动收缩，标准长屏吃满可用宽度。
+        // 长屏仍保留少量纵向余量，供整组内容均匀呼吸，而不是只在封面下形成空洞。
+        val bottomControlsBudget = when {
+            isUltraCompact -> 230.dp
+            isCompact -> 270.dp
+            isTall -> 320.dp
+            else -> 300.dp
+        }
         val maxArtByHeight = (screenHeight - bottomControlsBudget).coerceAtLeast(160.dp)
         val artSize = minOf(maxWidth, maxArtByHeight)
 
@@ -882,8 +898,9 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                 .padding(horizontal = horizontalPadding)
                 .padding(bottom = bottomPadding),
             horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = if (isUltraCompact) Arrangement.Top else Arrangement.SpaceEvenly,
         ) {
-            Spacer(Modifier.height(topPadding))
+            if (isUltraCompact) Spacer(Modifier.height(topPadding))
 
             // 封面区域：长屏直接充满整个屏幕可用宽度，紧贴顶栏下方，视觉沉浸饱满
             val coverCorner by animateDpAsState(
@@ -905,6 +922,7 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                 shape = RoundedCornerShape(coverCorner),
                 modifier = Modifier
                     .size(artSize)
+                    .aspectRatio(1f)
                     .sharedBounds(
                         sharedContentState = rememberSharedContentState(key = "cover-${track.id}"),
                         animatedVisibilityScope = animatedVisibilityScope
@@ -931,11 +949,6 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                     )
                 }
             }
-
-            // 长屏的剩余高度**全部**由封面与信息行之间的这条弹性空隙吸收：
-            // 封面贴顶、控制区与底部工具条贴底成组，多余高度不再堆在主控件
-            // 与底部工具条之间（旧写法那里是一条 weight(1f)，长屏上能拉开一大截）。
-            Spacer(Modifier.weight(1f))
 
             Spacer(Modifier.height(artToInfoGap))
 
@@ -1016,9 +1029,8 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                 centerIconSize = centerIconSize,
             )
 
-            // 主控件与底部工具条之间只留一小段固定间距：长屏多余高度已由
-            // 封面下方的弹性空隙吸收，这里再放 weight 会把两者撑得老远。
-            Spacer(Modifier.height(if (isUltraCompact) 6.dp else 10.dp))
+            // 主控件与底部工具条保持成组；整屏余量由 Column 均匀分配。
+            Spacer(Modifier.height(if (isUltraCompact) 6.dp else 8.dp))
 
             // 错误提示
             AnimatedVisibility(visible = !state.error.isNullOrBlank()) {

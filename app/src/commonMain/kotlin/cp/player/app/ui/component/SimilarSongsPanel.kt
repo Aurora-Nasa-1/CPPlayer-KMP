@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -275,7 +276,7 @@ fun SimilarSongsPanel(
                                 Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Box(modifier = Modifier.size(46.dp)) {
+                                Box(modifier = Modifier.size(46.dp).aspectRatio(1f)) {
                                     SimilarArtwork(item.coverUrl)
                                     if (playingSeed) {
                                         Box(
@@ -344,7 +345,7 @@ private fun SimilarArtwork(url: String?) {
         AsyncImage(
             model = url.resized(180),
             contentDescription = null,
-            modifier = Modifier.size(46.dp).clip(MaterialTheme.shapes.medium),
+            modifier = Modifier.size(46.dp).aspectRatio(1f).clip(MaterialTheme.shapes.medium),
             contentScale = ContentScale.Crop,
         )
     } else {

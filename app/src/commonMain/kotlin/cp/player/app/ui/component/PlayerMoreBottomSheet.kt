@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -170,7 +171,7 @@ fun PlayerMoreContent(
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Box(
-                    Modifier.size(76.dp).clip(RoundedCornerShape(20.dp))
+                    Modifier.size(76.dp).aspectRatio(1f).clip(RoundedCornerShape(20.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                     contentAlignment = Alignment.Center,
                 ) {

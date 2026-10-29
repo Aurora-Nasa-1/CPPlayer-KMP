@@ -23,6 +23,7 @@ import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -176,20 +177,18 @@ fun DesktopPlayerScreen(
     onRemoveQueue: (Int) -> Unit = {},
     onClearQueue: () -> Unit = {},
 ) {
-    // 音量真值在引擎里，UI 只持一份镜像（与旧实现一致：拖动即写回）。
+    // 音量直接读 [PlaybackUiState.volume]（setVolume 会同步写回状态流），
+    // 与迷你播放器的音量弹层共用同一事实源 —— 之前这层持本地镜像，
+    // 两边各调各的、互不可见（volume 字段进状态就是为此而加的，见它的 KDoc）。
     // 收在这一层是为了让 [DesktopPlayerLayout] 保持无 AppModel 依赖，能离屏渲染核对版式。
     val playback = AppModel.playback
-    var volume by remember { mutableStateOf(playback.currentVolume) }
     // ⚠️ 沉浸态的登记**不在这里**（见 DesktopPlayerStage 的 KDoc）：退场时本组件要在
     // 转场里多活一个节拍才被摘掉，登记在它身上会让窗口顶栏等它淡完才开始回落。
     // 由「决定显示播放页的人」登记：壳层是 `MainScreen`，路由是 `App` 看栈顶。
     DesktopPlayerLayout(
         state = state,
-        volume = volume,
-        onVolumeChange = { v ->
-            volume = v
-            playback.setVolume(v)
-        },
+        volume = state.volume,
+        onVolumeChange = { v -> playback.setVolume(v) },
         onBack = onBack,
         onTogglePlay = onTogglePlay,
         onSeek = onSeek,
@@ -696,6 +695,7 @@ internal fun DesktopPlayerLayout(
                                 url = track.coverUrl,
                                 modifier = Modifier
                                     .size(artSize)
+                                    .aspectRatio(1f)
                                     .shadow(
                                         elevation = if (state.isPlaying) 22.dp else 10.dp,
                                         shape = artShape,

@@ -294,7 +294,10 @@ private fun CommentBody(comment: Comment, model: CommentScreenModel, compact: Bo
         AsyncImage(
             model = comment.avatar,
             contentDescription = null,
-            modifier = Modifier.size(if (compact) 32.dp else 40.dp).clip(CircleShape),
+            modifier = Modifier
+                .size(if (compact) 32.dp else 40.dp)
+                .clip(CircleShape)
+                .let { if (onUserClick != null) it.clickable(onClick = onUserClick) else it },
             contentScale = ContentScale.Crop,
         )
         Spacer(Modifier.width(10.dp))
@@ -361,20 +364,22 @@ private fun CommentBody(comment: Comment, model: CommentScreenModel, compact: Bo
  */
 @Composable
 private fun CommentText(comment: Comment, replyPrefix: String) {
-    val target = comment.replyToNickname
-    if (target.isNullOrBlank()) {
-        CpText(comment.content, style = MaterialTheme.typography.bodyMedium)
-        return
+    ProvideCpTextFullDisplay {
+        val target = comment.replyToNickname
+        if (target.isNullOrBlank()) {
+            CpText(comment.content, style = MaterialTheme.typography.bodyMedium)
+            return@ProvideCpTextFullDisplay
+        }
+        val primary = MaterialTheme.colorScheme.primary
+        CpText(
+            buildAnnotatedString {
+                withStyle(SpanStyle(color = primary)) { append(replyPrefix) }
+                append("  ")
+                append(comment.content)
+            },
+            style = MaterialTheme.typography.bodyMedium,
+        )
     }
-    val primary = MaterialTheme.colorScheme.primary
-    CpText(
-        buildAnnotatedString {
-            withStyle(SpanStyle(color = primary)) { append(replyPrefix) }
-            append("  ")
-            append(comment.content)
-        },
-        style = MaterialTheme.typography.bodyMedium,
-    )
 }
 
 @Composable

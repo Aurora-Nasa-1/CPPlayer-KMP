@@ -56,6 +56,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import cp.player.app.ui.component.CpText
+import cp.player.app.ui.component.ProvideCpTextFullDisplay
 
 /**
  * 一对一私信页。
@@ -330,12 +331,14 @@ private fun MessageBubble(message: Message, emptyText: String) {
         }
         Column(horizontalAlignment = if (isMe) Alignment.End else Alignment.Start) {
             Surface(color = bubbleColor, shape = bubbleShape) {
-                CpText(
-                    message.text.ifBlank { emptyText },
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = bubbleContent,
-                )
+                ProvideCpTextFullDisplay {
+                    CpText(
+                        message.text.ifBlank { emptyText },
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = bubbleContent,
+                    )
+                }
             }
             val timeStr = remember(message.time) { formatChatTime(message.time) }
             if (timeStr.isNotEmpty()) {

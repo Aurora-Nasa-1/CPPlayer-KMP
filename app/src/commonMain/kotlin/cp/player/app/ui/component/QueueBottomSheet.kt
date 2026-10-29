@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import cp.player.app.ui.theme.CpMotion
@@ -44,6 +45,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +63,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.core.music.CPMediaId
+import cp.player.core.music.TrackSummary
 import cp.player.core.playback.QueueItem
 import cp.player.app.platform.shareText
 import cp.player.app.i18n.cpStrings
@@ -124,10 +127,14 @@ fun QueueContent(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var showSaveSheet by remember { mutableStateOf(false) }
+    var addToPlaylistTarget by remember { mutableStateOf<QueueItem?>(null) }
+    var detailTarget by remember { mutableStateOf<QueueItem?>(null) }
+    var optionsTarget by remember { mutableStateOf<Pair<Int, QueueItem>?>(null) }
     // 「清空队列」的二次确认：一键即生效的话，误触在底部工具行里太容易发生，
     // 而重建一份刚才的队列没有任何后悔药。
     val confirm = rememberConfirmState()
     val s = cpStrings()
+    val likedIds by cp.player.app.AppModel.playback.likedIds.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
@@ -254,7 +261,23 @@ fun QueueContent(
                 state = listState,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                itemsIndexed(filteredQueue, key = { _, (_, it) -> it.mediaId }) { _, (originalIndex, item) ->
+                // 空队列不能是**纯空白**：清空后列表区只剩头顶计数，用户会以为弹层没加载完。
+                // 与「搜索无命中」区分开：两种状态的下一步动作不同（等加歌 vs 改关键词）。
+                if (filteredQueue.isEmpty()) {
+                    item {
+                        cp.player.app.ui.component.CpText(
+                            if (searchQuery.isBlank()) s.player.queueEmptyHint else s.player.queueNoMatchHint,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        )
+                    }
+                }
+                // key 必须唯一：核心已保证入队 mediaId 不重复，但这里仍以
+                // 「下标 + mediaId」兜底 —— 恢复旧快照 / 远端队列替换等路径若漏了去重，
+                // 重复 key 会让 LazyColumn 直接抛 IllegalArgumentException 崩掉整个弹层。
+                itemsIndexed(filteredQueue, key = { _, (idx, it) -> "$idx:${it.mediaId}" }) { _, (originalIndex, item) ->
                     val isCurrent = originalIndex == currentIndex
                     QueueRow(
                         item = item,
@@ -263,6 +286,7 @@ fun QueueContent(
                         queueSize = queue.size,
                         onPlay = { onPlayAt(originalIndex) },
                         onRemove = { onRemove(originalIndex) },
+                        onOptions = { optionsTarget = originalIndex to item },
                         onMove = onMove,
                         // 桌面端右键菜单：动作与行内 More 菜单一致并补一个分享入口。
                         contextMenu = buildList {
@@ -393,7 +417,69 @@ fun QueueContent(
         )
     }
 
+    optionsTarget?.let { (index, item) ->
+        val track = item.toTrackSummary()
+        SongOptionsSheet(
+            songName = item.title,
+            artistName = item.artist,
+            isFavorite = track.id in likedIds,
+            isDownloaded = cp.player.app.AppModel.isDownloaded(track.id),
+            onDismiss = { optionsTarget = null },
+            onPlay = { onPlayAt(index) },
+            onToggleFavorite = {
+                val target = track.id !in likedIds
+                scope.launch {
+                    runCatching { cp.player.app.AppModel.musicRepository.likeSong(track.id, target) }
+                }
+            },
+            onAddToQueue = {
+                scope.launch {
+                    cp.player.app.AppModel.playback.addToQueue(item.mediaId)
+                }
+            },
+            onPlayNext = {
+                scope.launch {
+                    cp.player.app.AppModel.playback.addNextToQueue(item.mediaId)
+                }
+            },
+            onAddToPlaylist = { addToPlaylistTarget = item },
+            onDownload = { cp.player.app.AppModel.downloadTrack(track) },
+            onShowInfo = { detailTarget = item },
+            onShare = {
+                val rid = runCatching { CPMediaId.parse(item.mediaId).resourceId }.getOrDefault(item.mediaId)
+                shareText("「${item.title}」 https://music.163.com/#/song?id=$rid")
+            },
+            coverUrl = item.coverUrl,
+        )
+    }
+
+    addToPlaylistTarget?.let { item ->
+        AddToPlaylistSheet(
+            trackId = item.mediaId,
+            onDismiss = { addToPlaylistTarget = null },
+        )
+    }
+
+    detailTarget?.let { item ->
+        SongDetailInfoDialog(
+            track = item.toTrackSummary(),
+            onDismiss = { detailTarget = null },
+        )
+    }
+
     CpConfirmHost(confirm)
+}
+
+private fun QueueItem.toTrackSummary(): TrackSummary {
+    val resourceId = runCatching { CPMediaId.parse(mediaId).resourceId }.getOrDefault(mediaId)
+    return TrackSummary(
+        id = resourceId,
+        name = title,
+        artist = artist,
+        album = album,
+        coverUrl = coverUrl,
+        durationMs = durationMs,
+    )
 }
 
 @Composable
@@ -404,6 +490,7 @@ private fun QueueRow(
     queueSize: Int,
     onPlay: () -> Unit,
     onRemove: () -> Unit,
+    onOptions: () -> Unit,
     onMove: (Int, Int) -> Unit,
     modifier: Modifier = Modifier,
     /** 桌面端右键菜单项；null 时不启用。 */
@@ -437,7 +524,6 @@ private fun QueueRow(
         animationSpec = CpMotion.effects(),
         label = "queueTitleColorAnim",
     )
-    var showMenu by remember { mutableStateOf(false) }
     val s = cpStrings()
     val density = LocalDensity.current
     var dragAccum by remember { mutableStateOf(0f) }
@@ -504,7 +590,7 @@ private fun QueueRow(
                 Modifier.weight(1f).cpBounceClickable { onPlay() },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.size(48.dp)) {
+                Box(Modifier.size(48.dp).aspectRatio(1f)) {
                     if (!item.coverUrl.isNullOrBlank()) {
                         // [Bolt] Fetch smaller (150px) cover images for the queue list to reduce loading time
                         AsyncImage(
@@ -545,22 +631,8 @@ private fun QueueRow(
                     )
                 }
             }
-            Box {
-                IconButton(onClick = { showMenu = true }) {
-                    Icon(Icons.Filled.MoreVert, s.player.more)
-                }
-                androidx.compose.material3.DropdownMenu(
-                    expanded = showMenu,
-                    onDismissRequest = { showMenu = false },
-                ) {
-                    androidx.compose.material3.DropdownMenuItem(
-                        text = { CpText(s.player.removeFromQueue) },
-                        onClick = {
-                            showMenu = false
-                            onRemove()
-                        },
-                    )
-                }
+            IconButton(onClick = onOptions) {
+                Icon(Icons.Filled.MoreVert, s.player.more)
             }
             if (isCurrent) {
                 Spacer(Modifier.width(8.dp))

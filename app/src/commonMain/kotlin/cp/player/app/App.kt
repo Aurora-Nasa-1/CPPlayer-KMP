@@ -29,7 +29,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Alignment
@@ -46,10 +49,8 @@ import cp.player.app.ui.component.MiniPlayer
 import cp.player.app.ui.component.ProvideIsExpanded
 import cp.player.app.ui.screen.BackendErrorScreen
 import cp.player.app.ui.screen.ChatScreen
-import cp.player.app.ui.screen.HomeGeneratedPlaylistScreen
 import cp.player.app.ui.screen.MainScreen
 import cp.player.app.ui.screen.OnboardingScreen
-import cp.player.app.ui.screen.PlaylistDetailScreen
 import cp.player.app.ui.screen.PlayerScreen
 import cp.player.app.ui.screen.StartupScreen
 import cp.player.app.ui.theme.CpMotion
@@ -333,10 +334,11 @@ fun App(
                                                 // 桌面宽屏的对话在 `MessagesPane` 右栏里、不在这条根栈上，
                                                 // 由 `MainScreen` 自己那份宿主处理。
                                                 show = startDestination is AppStartDestination.Main &&
-                                                    navigator.lastItem !is MainScreen &&
                                                     navigator.lastItem !is PlayerScreen &&
                                                     navigator.lastItem !is ChatScreen &&
-                                                    navigator.lastItem !is cp.player.app.ui.screen.VideoPlayerScreen,
+                                                    navigator.lastItem !is cp.player.app.ui.screen.VideoPlayerScreen &&
+                                                    !cp.player.app.ui.util.DesktopShell.miniPlayerBlockedByChat,
+                                                mainScreenVisible = navigator.lastItem is MainScreen,
                                                 onClick = { navigator.push(PlayerScreen()) },
                                             ) {
                                                 ScreenTransition(
@@ -354,12 +356,6 @@ fun App(
                                                             // 背景还在撤，看得出一道错位）。
                                                             fadeIn(tween(CpMotion.PlayerExpandMs)) togetherWith
                                                                 fadeOut(tween(CpMotion.PlayerExpandMs))
-                                                        } else if (targetState is PlaylistDetailScreen ||
-                                                            targetState is HomeGeneratedPlaylistScreen
-                                                        ) {
-                                                            // 歌单打开：fade 交叉淡入（目标位置静态，飞行器叠加其上，
-                                                            // 见 CoverFlight）；返回 tab 时仍走下方 slide，保持「返回」的方向感。
-                                                            fadeIn(tween(300)) togetherWith fadeOut(tween(220))
                                                         } else {
                                                             // 复刻 Voyager SlideTransition 默认值：spring + Push/Pop 方向。
                                                             val spec = spring<IntOffset>(
@@ -444,6 +440,7 @@ fun App(
 @Composable
 private fun SharedTransitionScope.GlobalMiniPlayerHost(
     show: Boolean,
+    mainScreenVisible: Boolean,
     onClick: () -> Unit,
     pageContent: @Composable () -> Unit,
 ) {
@@ -460,9 +457,18 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
     // 的列表末尾靠它留白，小播放器浮在内容之上而不是坐进一条空白带里。
     val density = LocalDensity.current
     var barHeightPx by remember { mutableIntStateOf(0) }
+    val expanded = cp.player.app.ui.component.LocalIsExpanded.current
+    val bottomBarVisiblePx = cp.player.app.ui.util.DesktopShell.miniPlayerBottomBarVisiblePx
+    val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val bottomGap = when {
+        mainScreenVisible && expanded -> 24.dp
+        mainScreenVisible -> maxOf(with(density) { bottomBarVisiblePx.toDp() }, navigationBarInset) + 12.dp
+        else -> navigationBarInset
+    }
     val tailSpace by animateDpAsState(
         targetValue = if (show && hasTrack && barHeightPx > 0) {
-            with(density) { barHeightPx.toDp() } + 12.dp
+            with(density) { barHeightPx.toDp() } + 12.dp +
+                if (mainScreenVisible && expanded) bottomGap else 0.dp
         } else 0.dp,
         animationSpec = cp.player.app.ui.theme.CpMotion.spatial(),
         label = "globalMiniPlayerTail",
@@ -480,7 +486,7 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
                 show = show,
                 onClick = onClick,
                 onBarHeight = { barHeightPx = it },
-                modifier = Modifier.align(Alignment.BottomCenter),
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = bottomGap),
             )
         }
     }
@@ -522,7 +528,6 @@ private fun SharedTransitionScope.GlobalMiniPlayerBar(
                     onSkipPrev = AppModel.playback::skipPrevious,
                     onSkipNext = AppModel.playback::skipNext,
                     modifier = Modifier
-                        .navigationBarsPadding()
                         // 实测高度回传给宿主的尾留白（只量浮层自身，不含底部 inset）。
                         .onSizeChanged { onBarHeight(it.height) },
                 )
