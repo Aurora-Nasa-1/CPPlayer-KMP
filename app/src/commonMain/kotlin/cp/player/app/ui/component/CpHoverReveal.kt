@@ -15,14 +15,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import kotlinx.coroutines.delay
 
@@ -36,6 +37,9 @@ private const val HOVER_REVEAL_DELAY_MS = 250L
  * 且只有这一处消费。留够一行 40 个汉字的宽度，再宽的原文靠换行解决。
  */
 private val RevealMaxWidth = 360.dp
+
+/** 与锚点留出间隙，避免浮层盖住鼠标命中区后 hover 在两层之间反复切换。 */
+private val RevealGap = 6.dp
 
 /**
  * 悬停揭示：指针停在 [content] 上一段时间后，在它**原位置**浮出 [fullText] 的完整内容。
@@ -71,8 +75,9 @@ fun CpHoverReveal(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
-    var anchor by remember { mutableStateOf(IntOffset.Zero) }
     var visible by remember { mutableStateOf(false) }
+    val gapPx = with(androidx.compose.ui.platform.LocalDensity.current) { RevealGap.roundToPx() }
+    val positionProvider = remember(gapPx) { RevealPopupPositionProvider(gapPx) }
 
     LaunchedEffect(hovered) {
         if (hovered) {
@@ -84,28 +89,36 @@ fun CpHoverReveal(
         }
     }
 
-    Box(
-        modifier
-            .hoverable(interaction)
-            // 浮层要钉在文本的**窗口坐标**上：Popup 的 offset 是相对窗口的，
-            // 而文本可能被包在任意深度的容器里，局部坐标对不上。
-            .onGloballyPositioned { coords ->
-                val p = coords.positionInWindow()
-                anchor = IntOffset(p.x.toInt(), p.y.toInt())
-            },
-    ) {
+    Box(modifier.hoverable(interaction)) {
         content()
         if (visible) {
             Popup(
-                alignment = Alignment.TopStart,
-                offset = anchor,
-                // clippingEnabled 保持默认（true）：浮层被钳在主窗口内，
-                // 靠窗口右/下缘的文本不会把浮层甩到屏幕外面。
+                popupPositionProvider = positionProvider,
                 properties = PopupProperties(focusable = false),
             ) {
                 RevealCard(text = fullText, style = style)
             }
         }
+    }
+}
+
+private class RevealPopupPositionProvider(private val gapPx: Int) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val maxX = (windowSize.width - popupContentSize.width).coerceAtLeast(0)
+        val x = anchorBounds.left.coerceIn(0, maxX)
+        val below = anchorBounds.bottom + gapPx
+        val above = anchorBounds.top - gapPx - popupContentSize.height
+        val y = when {
+            below + popupContentSize.height <= windowSize.height -> below
+            above >= 0 -> above
+            else -> below.coerceIn(0, (windowSize.height - popupContentSize.height).coerceAtLeast(0))
+        }
+        return IntOffset(x, y)
     }
 }
 

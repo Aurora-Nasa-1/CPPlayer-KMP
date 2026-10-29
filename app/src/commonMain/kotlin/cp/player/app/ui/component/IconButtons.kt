@@ -24,19 +24,21 @@ fun CpBackButton(
     modifier: Modifier = Modifier,
     contentDescription: String = "返回",
 ) {
-    FilledIconButton(
-        onClick = onClick,
-        modifier = modifier,
-        colors = IconButtonDefaults.filledIconButtonColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-        ),
-    ) {
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-            contentDescription = contentDescription,
-            modifier = Modifier.size(CpIconSize.action),
-        )
+    CpHoverReveal(fullText = contentDescription) {
+        FilledIconButton(
+            onClick = onClick,
+            modifier = modifier,
+            colors = IconButtonDefaults.filledIconButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ),
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = contentDescription,
+                modifier = Modifier.size(CpIconSize.action),
+            )
+        }
     }
 }
 
@@ -50,13 +52,15 @@ fun CompactIconButton(
     enabled: Boolean = true,
     tint: Color = MaterialTheme.colorScheme.onSurface,
 ) {
-    IconButton(
-        onClick = onClick,
-        modifier = modifier.size(40.dp),
-        enabled = enabled,
-        colors = IconButtonDefaults.iconButtonColors(contentColor = tint),
-    ) {
-        Icon(icon, contentDescription, modifier = Modifier.size(24.dp))
+    CpHoverReveal(fullText = contentDescription) {
+        IconButton(
+            onClick = onClick,
+            modifier = modifier.size(40.dp),
+            enabled = enabled,
+            colors = IconButtonDefaults.iconButtonColors(contentColor = tint),
+        ) {
+            Icon(icon, contentDescription, modifier = Modifier.size(24.dp))
+        }
     }
 }
 
@@ -71,11 +75,13 @@ fun LargeIconButton(
     tint: Color = MaterialTheme.colorScheme.onSurface,
     containerColor: Color = Color.Unspecified,
 ) {
-    IconButton(
-        onClick = onClick,
-        modifier = modifier.size(56.dp),
-        enabled = enabled,
-    ) {
-        Icon(icon, contentDescription, modifier = Modifier.size(36.dp), tint = tint)
+    CpHoverReveal(fullText = contentDescription) {
+        IconButton(
+            onClick = onClick,
+            modifier = modifier.size(56.dp),
+            enabled = enabled,
+        ) {
+            Icon(icon, contentDescription, modifier = Modifier.size(36.dp), tint = tint)
+        }
     }
 }

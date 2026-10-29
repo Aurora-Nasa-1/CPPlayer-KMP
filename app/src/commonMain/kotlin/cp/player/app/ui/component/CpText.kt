@@ -7,6 +7,8 @@ import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -31,6 +33,29 @@ import androidx.compose.ui.unit.dp
 import cp.player.app.ui.theme.LocalAppFontFamilies
 import cp.player.app.ui.theme.buildAppStyledText
 import cp.player.app.ui.theme.localizedForLanguage
+
+/**
+ * 控制下游 [CpText] 是否默认「完整显示」而非单行截断。
+ *
+ * 当处于完整显示模式时（如详情正文、评论正文、聊天消息正文等）：
+ * - [CpText.maxLines] 默认值放开为 [Int.MAX_VALUE]（调用方若显式传参仍可覆盖）；
+ * - [CpText.overflow] 默认值变为 [TextOverflow.Clip]；
+ * - [CpText.reveal] 默认值变为 [CpTextReveal.None]。
+ *
+ * 列表摘要 / 标题等场景不在该作用域内，继续保持单行截断（maxLines = 1 + 省略号/悬停浮出）。
+ */
+val LocalCpTextFullDisplay = compositionLocalOf { false }
+
+/**
+ * 为 [content] 树中的所有 [CpText] 提供「完整显示」正文模式。
+ */
+@Composable
+fun ProvideCpTextFullDisplay(
+    fullDisplay: Boolean = true,
+    content: @Composable () -> Unit,
+) {
+    CompositionLocalProvider(LocalCpTextFullDisplay provides fullDisplay, content = content)
+}
 
 /**
  * 文本溢出揭示策略。
@@ -140,8 +165,8 @@ fun CpText(
     style: TextStyle = LocalTextStyle.current,
     color: Color = Color.Unspecified,
     fontWeight: FontWeight? = null,
-    maxLines: Int = 1,
-    reveal: CpTextReveal = CpTextReveal.Auto,
+    maxLines: Int = if (LocalCpTextFullDisplay.current) Int.MAX_VALUE else 1,
+    reveal: CpTextReveal = if (LocalCpTextFullDisplay.current) CpTextReveal.None else CpTextReveal.Auto,
     ellipsisMode: CpEllipsisMode = CpEllipsisMode.Tail,
     emphasized: Boolean = false,
     marqueeEnabled: Boolean = true,
@@ -149,7 +174,7 @@ fun CpText(
     minLines: Int = 1,
     fontSize: TextUnit? = null,
     onTextLayout: ((TextLayoutResult) -> Unit)? = null,
-    overflow: TextOverflow = TextOverflow.Ellipsis,
+    overflow: TextOverflow = if (LocalCpTextFullDisplay.current) TextOverflow.Clip else TextOverflow.Ellipsis,
     softWrap: Boolean = true,
     lineHeight: TextUnit = TextUnit.Unspecified,
     letterSpacing: TextUnit = TextUnit.Unspecified,
@@ -282,8 +307,8 @@ fun CpText(
     style: TextStyle = LocalTextStyle.current,
     color: Color = Color.Unspecified,
     fontWeight: FontWeight? = null,
-    maxLines: Int = 1,
-    reveal: CpTextReveal = CpTextReveal.Auto,
+    maxLines: Int = if (LocalCpTextFullDisplay.current) Int.MAX_VALUE else 1,
+    reveal: CpTextReveal = if (LocalCpTextFullDisplay.current) CpTextReveal.None else CpTextReveal.Auto,
     ellipsisMode: CpEllipsisMode = CpEllipsisMode.Tail,
     emphasized: Boolean = false,
     marqueeEnabled: Boolean = true,
@@ -291,7 +316,7 @@ fun CpText(
     minLines: Int = 1,
     fontSize: TextUnit? = null,
     onTextLayout: ((TextLayoutResult) -> Unit)? = null,
-    overflow: TextOverflow = TextOverflow.Ellipsis,
+    overflow: TextOverflow = if (LocalCpTextFullDisplay.current) TextOverflow.Clip else TextOverflow.Ellipsis,
     softWrap: Boolean = true,
     lineHeight: TextUnit = TextUnit.Unspecified,
     letterSpacing: TextUnit = TextUnit.Unspecified,

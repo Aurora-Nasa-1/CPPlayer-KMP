@@ -243,20 +243,86 @@ private fun CpContextMenuPanel(
 }
 
 /**
- * 锚定按钮的弹出菜单（与右键菜单同一份面板 [CpContextMenuPanel]）。
+ * 移动端底部动作菜单（自适应形态）。
  *
- * 包住触发按钮 [content]，[expanded] 为 true 时菜单的**右上角**钉在触发区域的
- * **右下角**（右缘对齐、整体垂在下方）—— 即「菜单在选项的右下角」。
- * 点击外部 / 菜单项后经 [onDismiss] 收起。菜单样式、动作语义与 [CpContextMenu] 完全一致 ——
- * 同一个动作集合既给右键也给「更多」按钮用（如 [SongItem] 的 MoreVert）。
+ * 手机/触屏形态下替代桌面端光标悬浮菜单，以 M3 标准底部抽屉展示动作列表。
+ */
+@Composable
+private fun CpContextMenuBottomSheet(
+    items: List<CpContextMenuItem>,
+    onDismiss: () -> Unit,
+) {
+    LegacyModalBottomSheet(
+        onDismissRequest = onDismiss,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 24.dp),
+        ) {
+            items.forEachIndexed { index, item ->
+                if (item.isSeparator()) {
+                    if (index in 1 until items.size - 1) {
+                        HorizontalDivider(
+                            Modifier.padding(vertical = 6.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                        )
+                    }
+                    return@forEachIndexed
+                }
+                val contentColor = when {
+                    !item.enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    item.danger -> MaterialTheme.colorScheme.error
+                    item.isSelected -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.onSurface
+                }
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            when {
+                                item.danger -> MaterialTheme.colorScheme.error.copy(alpha = 0.08f)
+                                item.isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                                else -> androidx.compose.ui.graphics.Color.Transparent
+                            }
+                        )
+                        .clickable(enabled = item.enabled) {
+                            onDismiss()
+                            item.onClick()
+                        }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    item.icon?.let {
+                        Icon(
+                            it,
+                            contentDescription = null,
+                            tint = contentColor,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                    CpText(
+                        item.label,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = contentColor,
+                        fontWeight = if (item.isSelected) FontWeight.SemiBold else null,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 锚定按钮的弹出菜单（具备跨端形态感知能力）。
  *
- * ### 为什么是 `TopEnd` + 锚点高度的 offset
- * Popup 的 alignment 语义是「把弹出层对齐进**锚点矩形内部**」
- * （AlignmentOffsetPositionProvider：锚点角 − 弹出层角 + offset），
- * 单靠 alignment 只能让菜单压在按钮上（旧实现 BottomEnd 就是叠在按钮上方偏左），
- * 表达不了「垂在下方」—— 用 offset 把菜单顶下一个锚点高度才行。
- *
- * 与右键菜单同款 `clippingEnabled = false`：靠近窗口边缘时菜单可伸出窗外。
+ * - **桌面端**（[LocalWindowChromeActive] 为真）：菜单右上角钉在触发区域右下角，
+ *   以 [Popup] 呈现光标级面板 [CpContextMenuPanel]。
+ * - **移动端**（[LocalWindowChromeActive] 为假）：展开为底部弹层列表 [CpContextMenuBottomSheet]，
+ *   符合触屏单手操作习惯。
  */
 @Composable
 fun CpAnchoredMenu(
@@ -266,17 +332,22 @@ fun CpAnchoredMenu(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
+    val isDesktop = LocalWindowChromeActive.current
     var anchorHeightPx by remember { mutableStateOf(0) }
     Box(modifier.onSizeChanged { anchorHeightPx = it.height }) {
         content()
         if (expanded && !items.isNullOrEmpty()) {
-            Popup(
-                alignment = Alignment.TopEnd,
-                offset = IntOffset(0, anchorHeightPx),
-                onDismissRequest = onDismiss,
-                properties = PopupProperties(focusable = true, clippingEnabled = false),
-            ) {
-                CpContextMenuPanel(items = items.orEmpty(), onDismiss = onDismiss)
+            if (isDesktop) {
+                Popup(
+                    alignment = Alignment.TopEnd,
+                    offset = IntOffset(0, anchorHeightPx),
+                    onDismissRequest = onDismiss,
+                    properties = PopupProperties(focusable = true, clippingEnabled = false),
+                ) {
+                    CpContextMenuPanel(items = items.orEmpty(), onDismiss = onDismiss)
+                }
+            } else {
+                CpContextMenuBottomSheet(items = items.orEmpty(), onDismiss = onDismiss)
             }
         }
     }

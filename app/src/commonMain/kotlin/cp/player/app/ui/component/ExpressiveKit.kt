@@ -1074,6 +1074,12 @@ fun CpTonalSplitButton(
  *
  * 与 `FilterChip` 的区别：选中时**形状本身会变**（圆角方形 → 胶囊），这正是 Expressive
  * 的表达方式。用于设置项开关、搜索类型筛选、播放页的循环模式等。
+ *
+ * @param badge 可选计数徽标（下载管理页的「下载中 3 / 已完成 12」）。
+ *   刻意**不进 [label]**（不写成「下载中 3」）：计数是次要信息，混进同一个字符串后
+ *   字号、颜色都跟正文一样，标题反而读不出来。徽标用 `labelSmall` + 容器色阶，
+ *   视觉上退到文字后面，同时保留「不看正文也知道有多少条」的扫读价值。
+ *   为 null 时不占位 —— 计数为 0 的页签不该显示一个「0」。
  */
 @Composable
 fun CpToggleChip(
@@ -1083,6 +1089,7 @@ fun CpToggleChip(
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
     enabled: Boolean = true,
+    badge: String? = null,
 ) {
     ToggleButton(
         checked = checked,
@@ -1091,17 +1098,34 @@ fun CpToggleChip(
         enabled = enabled,
         shapes = ToggleButtonDefaults.shapes(),
     ) {
-        ChipContent(icon = icon, label = label)
+        ChipContent(icon = icon, label = label, badge = badge)
     }
 }
 
 @Composable
-private fun RowScope.ChipContent(icon: ImageVector?, label: String) {
+private fun RowScope.ChipContent(icon: ImageVector?, label: String, badge: String?) {
     if (icon != null) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
     }
     CpText(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+    if (badge != null) {
+        Spacer(Modifier.width(6.dp))
+        Surface(
+            shape = CircleShape,
+            // 选中态由 ToggleButton 自己换容器色，徽标必须跟着换「前景/背景」这一对，
+            // 否则选中时圆钮是 primary 底的，徽标还是 surfaceContainerHigh —— 直接看不见。
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f),
+        ) {
+            CpText(
+                badge,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+            )
+        }
+    }
 }
 
 // ---------------------------------------------------------------- 动作组

@@ -170,6 +170,7 @@ fun AlbumCoverThumb(
 ) {
     Box(
         modifier
+            .aspectRatio(1f)
             .clip(RoundedCornerShape(corner))
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,

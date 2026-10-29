@@ -2,6 +2,8 @@ package cp.player.app.ui.component
 
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -47,7 +49,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.TextButton
+import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,6 +59,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -69,8 +74,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.CpText
 import cp.player.app.ui.theme.LocalIsDarkTheme
+import kotlinx.coroutines.delay
 
 /**
  * 设置项组件的**唯一实现层**（旧版 `SettingsSection` / `Expressive*Item` 的移植 + 重构）。
@@ -354,6 +361,39 @@ private fun SettingsLeadingIcon(icon: ImageVector, tint: Color) {
         tint = tint,
         modifier = Modifier.size(CpIconSize.action),
     )
+}
+
+@Composable
+fun Modifier.settingsSearchTarget(
+    id: String,
+    targetId: String?,
+): Modifier {
+    if (id != targetId) return this
+
+    val requester = remember { BringIntoViewRequester() }
+    val flash = remember(targetId) { Animatable(0f) }
+    val highlightColor = MaterialTheme.colorScheme.primary
+    val effectsSpec = CpMotion.effects<Float>()
+
+    LaunchedEffect(requester, targetId) {
+        delay(80)
+        requester.bringIntoView()
+        flash.snapTo(0.42f)
+        repeat(2) {
+            flash.animateTo(0f, effectsSpec)
+            flash.animateTo(0.42f, effectsSpec)
+        }
+        flash.animateTo(0f, effectsSpec)
+    }
+
+    return this
+        .bringIntoViewRequester(requester)
+        .drawWithContent {
+            drawContent()
+            if (flash.value > 0f) {
+                drawRect(highlightColor.copy(alpha = flash.value))
+            }
+        }
 }
 
 // ============================================================ 可点击行

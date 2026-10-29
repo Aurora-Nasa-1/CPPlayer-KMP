@@ -81,7 +81,7 @@ fun PlaylistItem(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(60.dp).clip(RoundedCornerShape(thumbCorner))
+                Modifier.size(60.dp).aspectRatio(1f).clip(RoundedCornerShape(thumbCorner))
                     .background(MaterialTheme.colorScheme.surfaceVariant)
                     .coverFlightSource(CoverFlight.playlistKey(playlist.id), thumbCorner),
                 contentAlignment = Alignment.Center,
