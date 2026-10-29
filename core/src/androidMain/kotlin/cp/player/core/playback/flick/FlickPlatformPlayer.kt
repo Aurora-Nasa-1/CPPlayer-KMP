@@ -195,6 +195,10 @@ class FlickPlatformPlayer(
     override fun play() {
         if (!lifecycleManager.requestAudioFocus()) {
             Log.w(TAG, "Cannot start playback: Audio focus denied by Android system")
+            // ⚠️ 不能静默返回：此刻状态还停在 Buffering（load 里置的），
+            // 焦点被拒又不报告 ⇒ 控制器看到的就是「点了播放、转圈、没反应」。
+            // 上报错误态让上层按「加载失败」路径处理（UI 提示 + 状态归位）。
+            _state.value = PlatformPlaybackState.Error("音频焦点被其他应用占用，无法开始播放")
             return
         }
         scope.launch(RustEngine.engineDispatcher) {
