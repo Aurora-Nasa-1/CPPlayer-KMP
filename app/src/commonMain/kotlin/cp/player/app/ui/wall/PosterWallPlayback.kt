@@ -59,7 +59,7 @@ internal fun PosterPlayerLyrics(
             if (activeLine != null) {
                 CpText(
                     text = activeLine.text,
-                    color = Color.White,
+                    color = PosterOnInk,
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
@@ -70,7 +70,7 @@ internal fun PosterPlayerLyrics(
                 if (!trans.isNullOrBlank()) {
                     CpText(
                         text = trans,
-                        color = Color.White.copy(alpha = 0.65f),
+                        color = PosterMuted.copy(alpha = 0.85f),
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center,
                         maxLines = 1,
@@ -85,7 +85,7 @@ internal fun PosterPlayerLyrics(
                         is LyricsState.NoLyrics -> s.player.lyricsEmpty
                         else -> s.player.lyricsIdle
                     },
-                    color = Color.White.copy(alpha = 0.65f),
+                    color = PosterMuted.copy(alpha = 0.85f),
                     fontSize = 16.sp,
                     textAlign = TextAlign.Center
                 )
@@ -117,9 +117,9 @@ internal fun PosterPlayerProgress(
                 }
             },
             colors = SliderDefaults.colors(
-                thumbColor = Color.White,
-                activeTrackColor = Color.White,
-                inactiveTrackColor = Color.White.copy(alpha = 0.25f)
+                thumbColor = PosterOnInk,
+                activeTrackColor = PosterOnInk,
+                inactiveTrackColor = PosterOnInk.copy(alpha = 0.25f)
             ),
             modifier = Modifier.fillMaxWidth()
         )
@@ -132,12 +132,12 @@ internal fun PosterPlayerProgress(
                 CpText(
                     formatTimeMs(displayMs),
                     // 压在封面图的黑渐变上，不跟主题走（浅色下深灰会压黑底不可读）。
-                    color = Color.White.copy(alpha = 0.65f),
+                    color = PosterMuted.copy(alpha = 0.85f),
                     fontSize = 11.sp
                 )
                 CpText(
                     formatTimeMs(duration),
-                    color = Color.White.copy(alpha = 0.65f),
+                    color = PosterMuted.copy(alpha = 0.85f),
                     fontSize = 11.sp
                 )
             }

@@ -357,14 +357,13 @@ internal fun PosterPlayControls(
     showSkipButtons: Boolean = true
 ) {
     val s = cpStrings()
-    val foreground = PosterOnInk
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (showSkipButtons) {
             PosterIconButton(s.wall.skipPrevious, onPrevious) {
                 Icon(
                     Icons.Default.SkipPrevious,
                     contentDescription = s.wall.skipPrevious,
-                    tint = foreground,
+                    tint = PosterMuted,
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -374,7 +373,7 @@ internal fun PosterPlayControls(
             if (playing) s.wall.pause else s.wall.posterPlay,
             onToggle,
             Modifier
-                .background(foreground, CircleShape)
+                .background(PosterOnInk, CircleShape)
                 .then(if (focus != null) Modifier.focusRequester(focus) else Modifier)
         ) {
             Icon(
@@ -389,7 +388,7 @@ internal fun PosterPlayControls(
                 Icon(
                     Icons.Default.SkipNext,
                     contentDescription = s.wall.skipNext,
-                    tint = foreground,
+                    tint = PosterMuted,
                     modifier = Modifier.size(24.dp)
                 )
             }
