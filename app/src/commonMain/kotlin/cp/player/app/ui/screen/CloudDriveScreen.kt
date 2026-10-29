@@ -1,31 +1,11 @@
 package cp.player.app.ui.screen
 
-import cp.player.app.ui.component.CpText
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CloudQueue
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
@@ -34,17 +14,15 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cp.player.app.AppModel
 import cp.player.app.platform.shareText
 import cp.player.app.ui.anim.CoverFlight
-import cp.player.app.ui.component.BentoCard
-import cp.player.app.ui.component.ContentState
-import cp.player.app.ui.component.CpConfirmState
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpRefreshablePage
-import cp.player.app.ui.component.CpRouteScaffold
-import cp.player.app.ui.component.CpSpacing
-import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.SongMenuActions
-import cp.player.app.ui.component.StateSurface
+import cp.player.app.ui.component.TrackEmptySpec
+import cp.player.app.ui.component.TrackListShell
+import cp.player.app.ui.component.TrackListStatus
+import cp.player.app.ui.component.TrackPrimaryAction
+import cp.player.app.ui.component.TrackRows
 import cp.player.app.ui.component.songContextMenuItems
 import cp.player.app.ui.component.songShareText
 import cp.player.app.ui.util.UiEvents
@@ -77,7 +55,7 @@ import kotlinx.coroutines.withContext
  * 3. **没有自己的加载边界**：加载中 / 失败 / 空态都得塞进共享列表的 `item {}` 里，
  *    于是「云盘加载失败」的重试按钮和「歌单列表」在同一个视口里打架。
  *
- * 独立成页之后：有标题与返回键（走 [CpRouteScaffold]）、有独立滚动位置、有自己的
+ * 独立成页之后：有标题与返回键（走统一歌曲列表壳）、有独立滚动位置、有自己的
  * 刷新（安卓下拉），并且可以从「我的」页的云盘卡直接跳进来。
  *
  * ## 2026-10-04 重写修掉了什么
@@ -100,13 +78,11 @@ class CloudDriveScreen(private val embedded: Boolean = false) : Screen {
         val navigator = LocalNavigator.current
         // rememberScreenModel 是 Screen 上的扩展函数，只能在 Content() 里调（见 AGENTS.md）。
         val model = rememberScreenModel { CloudDriveScreenModel() }
-        CpRouteScaffold(
-            title = "云盘",
-            onBack = { navigator?.popOrNotify() },
+        CloudDriveContent(
+            model = model,
             embedded = embedded,
-        ) { pageModifier ->
-            CloudDriveContent(model, pageModifier)
-        }
+            onBack = { navigator?.popOrNotify() },
+        )
     }
 }
 
@@ -274,7 +250,8 @@ class CloudDriveScreenModel : ScreenModel {
 @Composable
 private fun CloudDriveContent(
     model: CloudDriveScreenModel,
-    modifier: Modifier = Modifier,
+    embedded: Boolean,
+    onBack: () -> Unit,
 ) {
     val state by model.state.collectAsState()
     val refreshing by model.refreshing.collectAsState()
@@ -283,7 +260,6 @@ private fun CloudDriveContent(
     val likedIds by AppModel.playback.likedIds.collectAsState()
     val scope = rememberCoroutineScope()
 
-    // 「从云盘删除」是破坏性操作：只认 CpConfirmHost（AGENTS.md 硬规则）。
     val confirm = cp.player.app.ui.component.rememberConfirmState()
     val askDelete: (TrackSummary) -> Unit = { track ->
         confirm.request(
@@ -295,178 +271,90 @@ private fun CloudDriveContent(
         )
     }
 
+    val summary = cp.player.core.music.PlaylistSummary(
+        id = Long.MIN_VALUE,
+        name = "云盘",
+        coverUrl = state.songs.firstOrNull()?.coverUrl,
+        trackCount = state.songs.size,
+        creatorName = "跨设备音乐",
+    )
+    val countLabel = when {
+        state.loading -> "正在同步…"
+        state.hasMore -> "已加载 ${state.songs.size} 首 · 下滑继续加载"
+        else -> "${state.songs.size} 首歌曲"
+    }
+    val rows = TrackRows(
+        items = state.songs,
+        key = { it.id },
+        row = { index, track, rowModifier ->
+            SongItem(
+                track = track,
+                index = index,
+                total = state.songs.size,
+                isCurrentlyPlaying = track.id == currentTrackId,
+                modifier = rowModifier,
+                onClick = { model.play(index) },
+                contextMenu = songContextMenuItems(
+                    SongMenuActions(
+                        onPlay = { model.play(index) },
+                        isFavorite = track.id in likedIds,
+                        onToggleFavorite = {
+                            scope.launch {
+                                val target = track.id !in likedIds
+                                AppModel.playback.toggleFavoriteFor(
+                                    "${AppModel.activeProviderId()}://song/${track.id}"
+                                )
+                                UiEvents.notify(if (target) "已收藏" else "已取消收藏")
+                            }
+                        },
+                        onAddToQueue = { model.addToQueue(track) },
+                        onPlayNext = { model.playNext(track) },
+                        onShare = { shareText(songShareText(track)) },
+                        onDelete = { askDelete(track) },
+                    )
+                ),
+            )
+        },
+    )
+
     CpRefreshablePage(
         isRefreshing = refreshing,
         onRefresh = { model.load(force = true) },
-        modifier = modifier,
+        modifier = Modifier.fillMaxSize(),
     ) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-            LazyScrollColumn(
-                modifier = Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxHeight(),
-                contentPadding = PaddingValues(
-                    start = CpSpacing.pageHorizontal,
-                    end = CpSpacing.pageHorizontal,
-                    top = 8.dp,
-                    bottom = CpSpacing.formBottomInset,
-                ),
-                // ⚠️ 歌曲行之间必须是**分组列表缝**（4dp），不是仪表盘的卡片缝（12dp）。
-                // 云盘原先挂在「我的」页那个以 BentoGap 为行距的共享列表里，
-                // 于是每行都被 12dp 的缝割成一张张独立卡片，一屏只放得下 7 行。
-                verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
-            ) {
-                item {
-                    CloudDriveHeader(
-                        count = state.songs.size,
-                        hasMore = state.hasMore,
-                        loading = state.loading,
-                        onPlayAll = { model.play(0) },
-                    )
-                }
-                when {
-                    state.loading -> item {
-                        StateSurface {
-                            ContentState(
-                                title = "正在加载云盘",
-                                message = "正在同步云盘歌曲",
-                                loading = true,
-                            )
-                        }
-                    }
-                    state.error != null -> item {
-                        StateSurface {
-                            ContentState(
-                                title = "云盘加载失败",
-                                message = state.error,
-                                error = true,
-                                actionLabel = "重试",
-                                onAction = { model.load(force = true) },
-                            )
-                        }
-                    }
-                    state.songs.isEmpty() -> item {
-                        StateSurface {
-                            ContentState(
-                                title = "云盘空空如也",
-                                message = "把歌曲上传到云盘后会显示在这里",
-                            )
-                        }
-                    }
-                    else -> {
-                        items(state.songs.size) { index ->
-                            val track = state.songs[index]
-                            // 滚动接近尾部自动翻页（与歌单详情页同一套触发方式）。
-                            if (index >= state.songs.size - 5 && state.hasMore &&
-                                !state.loadingMore && state.loadMoreError == null
-                            ) {
-                                LaunchedEffect(index) { model.loadMore() }
-                            }
-                            SongItem(
-                                track = track,
-                                index = index,
-                                total = state.songs.size,
-                                isCurrentlyPlaying = track.id == currentTrackId,
-                                onClick = { model.play(index) },
-                                contextMenu = songContextMenuItems(
-                                    SongMenuActions(
-                                        onPlay = { model.play(index) },
-                                        isFavorite = track.id in likedIds,
-                                        onToggleFavorite = {
-                                            scope.launch {
-                                                val target = track.id !in likedIds
-                                                AppModel.playback.toggleFavoriteFor(
-                                                    "${AppModel.activeProviderId()}://song/${track.id}"
-                                                )
-                                                UiEvents.notify(if (target) "已收藏" else "已取消收藏")
-                                            }
-                                        },
-                                        onAddToQueue = { model.addToQueue(track) },
-                                        onPlayNext = { model.playNext(track) },
-                                        onShare = { shareText(songShareText(track)) },
-                                        onDelete = { askDelete(track) },
-                                    )
-                                ),
-                            )
-                        }
-                        item {
-                            when {
-                                state.loadMoreError != null -> StateSurface {
-                                    ContentState(
-                                        title = "加载更多失败",
-                                        message = state.loadMoreError,
-                                        error = true,
-                                        actionLabel = "重试",
-                                        onAction = {
-                                            model.clearLoadMoreError()
-                                            model.loadMore()
-                                        },
-                                    )
-                                }
-                                state.loadingMore -> StateSurface {
-                                    ContentState(title = "正在加载更多", message = "正在同步云盘歌曲", loading = true)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        TrackListShell(
+            rows = rows,
+            status = TrackListStatus(
+                loading = state.loading,
+                error = state.error,
+                hasMore = state.hasMore,
+                loadingMore = state.loadingMore,
+                loadMoreError = state.loadMoreError,
+            ),
+            empty = TrackEmptySpec(
+                title = "云盘空空如也",
+                message = "把歌曲上传到云盘后会显示在这里",
+            ),
+            title = { PlaylistTopBarTitle(summary) },
+            onBack = onBack,
+            header = {
+                PlaylistHeaderInfo(
+                    summary = summary,
+                    trackCountLabel = countLabel,
+                    isFavorite = false,
+                )
+            },
+            primaryActions = listOf(TrackPrimaryAction.PlayAll),
+            onPrimaryAction = { model.play(0) },
+            onPrimaryActionEnabled = state.songs.isNotEmpty() && !state.loading,
+            onRetry = { model.load(force = true) },
+            onLoadMore = {
+                if (state.loadMoreError != null) model.clearLoadMoreError()
+                model.loadMore()
+            },
+            applyStatusBarInset = !embedded,
+        )
     }
 
     CpConfirmHost(confirm)
-}
-
-/**
- * 顶部信息条：云盘说明 + 歌曲数 + 全部播放。
- *
- * 整页只有这一处「面」，下面是纯列表 —— 云盘最常用的动作就是「从头放一遍」。
- */
-@Composable
-private fun CloudDriveHeader(
-    count: Int,
-    hasMore: Boolean,
-    loading: Boolean,
-    onPlayAll: () -> Unit,
-) {
-    BentoCard(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        contentPadding = PaddingValues(18.dp),
-        // 内容高度由文字决定：撑满会把「全部播放」按钮顶到卡片下边缘之外。
-        fillHeight = false,
-    ) {
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Icon(
-                Icons.Filled.CloudQueue,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(28.dp),
-            )
-            Column(Modifier.weight(1f)) {
-                CpText("云盘", style = MaterialTheme.typography.titleLarge)
-                CpText(
-                    when {
-                        loading -> "正在同步…"
-                        count == 0 -> "上传后可跨设备播放"
-                        hasMore -> "已加载 $count 首 · 下滑继续加载"
-                        else -> "$count 首歌曲 · 上传后可跨设备播放"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
-            }
-            Button(onClick = onPlayAll, enabled = !loading && count > 0) {
-                Icon(
-                    Icons.Filled.PlayArrow,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                CpText("全部播放", modifier = Modifier.padding(start = 6.dp))
-            }
-        }
-    }
 }

@@ -88,6 +88,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.SubcomposeLayout
 import cp.player.app.ui.theme.CpMotion
+import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.cpBounceClickable
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -185,7 +186,11 @@ fun PlaylistDetailContent(
     val navigator = LocalNavigator.currentOrThrow
     val state by model.state.collectAsState()
     val playbackState by AppModel.playback.state.collectAsState()
-    val currentTrackId = playbackState.currentTrack?.id
+    // TrackSummary.id 可能被解析成带命名空间的 mediaId；歌单行保存的是裸 id。
+    // 当前队列项才是播放身份真值，取路径尾段用于与歌单裸 id 比较。
+    val currentTrackId = playbackState.queue.getOrNull(playbackState.currentIndex)?.mediaId
+        ?.substringAfterLast('/')
+        ?: playbackState.currentTrack?.id?.substringAfterLast('/')
     val scope = rememberCoroutineScope()
 
     var showPlaylistSheet by remember { mutableStateOf(false) }
@@ -1212,44 +1217,19 @@ private fun WideLayout(
             }
         },
         detail = {
-            val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-            TrackList(
-                model = model,
-                state = state,
-                allTracks = displayTracks,
-                displayTracks = filteredTracks,
-                currentTrackId = currentTrackId,
-                withHero = false,
-                summary = summary,
-                isOwner = isOwner,
-                isFavorite = isFavorite,
-                onToggleFavorite = onToggleFavorite,
-                onShare = onShare,
-                onDelete = onDelete,
-                searchQuery = searchQuery,
-                onSearchQueryChange = onSearchQueryChange,
-                isSearchActive = isSearchActive,
-                onToggleSearch = onToggleSearch,
-                onSongOptions = onSongOptions,
-                onSortClick = onOpenPlaylistSheet,
-                onAddTracks = onAddTracks,
-                onDownloadAll = { AppModel.downloadTracks(displayTracks) },
-                onEnterSelection = { },
-                onMore = onOpenPlaylistSheet,
-                buildSongMenu = buildSongMenu,
-                modifier = Modifier.fillMaxSize(),
-                topContentPadding = if (showBackButton || state.selectionMode) topInset + 56.dp else 0.dp,
-            )
-            if (showBackButton || state.selectionMode) {
+            Column(Modifier.fillMaxSize()) {
+                // 桌面端右栏标题栏（曲目标题 + 计数，或多选操作栏）
                 Row(
-                    modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp, top = topInset + 8.dp, end = 12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = CpSpacing.pageHorizontal, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (showBackButton) {
                         CpBackButton(onClick = onBack)
+                        Spacer(Modifier.width(12.dp))
                     }
                     if (state.selectionMode) {
-                        if (showBackButton) Spacer(Modifier.width(12.dp))
                         IconButton(onClick = { model.exitSelection() }) {
                             Icon(Icons.Filled.Close, contentDescription = s.library.exitSelection)
                         }
@@ -1293,8 +1273,51 @@ private fun WideLayout(
                                 Icon(Icons.Filled.Delete, contentDescription = s.library.removeFromPlaylist)
                             }
                         }
+                    } else {
+                        Column(modifier = Modifier.weight(1f)) {
+                            CpText(
+                                text = "曲目",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                            )
+                            CpText(
+                                text = s.library.trackCountLabel(trackCount, durationStr),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                            )
+                        }
                     }
                 }
+
+                TrackList(
+                    model = model,
+                    state = state,
+                    allTracks = displayTracks,
+                    displayTracks = filteredTracks,
+                    currentTrackId = currentTrackId,
+                    withHero = false,
+                    summary = summary,
+                    isOwner = isOwner,
+                    isFavorite = isFavorite,
+                    onToggleFavorite = onToggleFavorite,
+                    onShare = onShare,
+                    onDelete = onDelete,
+                    searchQuery = searchQuery,
+                    onSearchQueryChange = onSearchQueryChange,
+                    isSearchActive = isSearchActive,
+                    onToggleSearch = onToggleSearch,
+                    onSongOptions = onSongOptions,
+                    onSortClick = onOpenPlaylistSheet,
+                    onAddTracks = onAddTracks,
+                    onDownloadAll = { AppModel.downloadTracks(displayTracks) },
+                    onEnterSelection = { },
+                    onMore = onOpenPlaylistSheet,
+                    buildSongMenu = buildSongMenu,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    topContentPadding = 0.dp,
+                )
             }
         }
     )
@@ -1371,7 +1394,7 @@ private fun TrackList(
                     top = topContentPadding + 8.dp,
                     bottom = 96.dp,
                 ),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
             ) {
                 // 窄屏 Hero 头部
                 if (withHero) {
@@ -1818,54 +1841,18 @@ private fun M3ESecondaryActionsRail(
             )
         )
 
-        // 2. 分享歌单
-        if (onShare != null) {
+        // 2. 收藏（仅未收藏时提供快捷入口；删除/取消收藏/分享收纳于「更多」中，避免界面杂乱与误触）
+        if (!isOwner && onToggleFavorite != null && !isFavorite) {
             add(
                 SecondaryActionItem(
-                    id = "share",
-                    label = "分享",
-                    icon = Icons.Filled.Share,
-                    onClick = onShare,
+                    id = "favorite",
+                    label = "收藏",
+                    icon = Icons.Filled.BookmarkAdd,
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                    onClick = onToggleFavorite,
                 )
             )
-        }
-
-        // 3. 删除（创建者）/ 取消收藏（非创建者已收藏）/ 收藏
-        if (isOwner && onDelete != null) {
-            add(
-                SecondaryActionItem(
-                    id = "delete",
-                    label = "删除",
-                    icon = Icons.Filled.Delete,
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                    onClick = onDelete,
-                )
-            )
-        } else if (onToggleFavorite != null) {
-            if (isFavorite) {
-                add(
-                    SecondaryActionItem(
-                        id = "unfavorite",
-                        label = "取消收藏",
-                        icon = Icons.Filled.BookmarkRemove,
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                        onClick = onToggleFavorite,
-                    )
-                )
-            } else {
-                add(
-                    SecondaryActionItem(
-                        id = "favorite",
-                        label = "收藏",
-                        icon = Icons.Filled.BookmarkAdd,
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                        onClick = onToggleFavorite,
-                    )
-                )
-            }
         }
 
         // 4. 搜索（仅在未提升至顶栏时在快捷轨展现）
