@@ -350,6 +350,10 @@ class AudioPlayerImpl : PlatformPlayer {
         pendingSeek.cancel()
         player.stop()
         pollJob?.cancel()
+        // ⚠️ 底层 rodio 引擎句柄必须真正释放（换引擎 / 后端重置路径）：
+        // 只 stop 的话 Rust 侧 player 仍占着音频设备与解码资源，
+        // 尤其 Hi-Res ↔ Rodio 热切换时两个引擎会同时握设备。
+        runCatching { player.release() }
     }
 
     override fun setVolume(volume: Float) {
