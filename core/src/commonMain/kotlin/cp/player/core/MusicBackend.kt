@@ -53,6 +53,14 @@ import cp.player.core.provider.BackendProvider
 import cp.player.core.provider.ModuleManager
 import cp.player.core.provider.ProviderCookieStorage
 import cp.player.core.provider.ProviderManager
+import cp.player.core.pluginrepo.InstalledRepositoryPlugin
+import cp.player.core.pluginrepo.PluginInstallOutcome
+import cp.player.core.pluginrepo.PluginRepositoryService
+import cp.player.core.pluginrepo.PluginRepositorySource
+import cp.player.core.pluginrepo.RepositoryPluginKind
+import cp.player.core.pluginrepo.createPluginRepositoryIO
+import cp.player.core.pluginrepo.currentPluginTarget
+import cp.player.core.pluginrepo.compatibility
 import cp.player.core.util.PlatformContext
 import cp.player.core.util.SettingsStorage
 import cp.player.core.util.defaultSettingsStorage
@@ -69,6 +77,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.IO
 
 /** AMLL TTML 磁盘缓存的 SettingsStorage namespace（与主设置 / cookie 隔离）。 */
 private const val AMLL_CACHE_NAMESPACE = "amll_ttml_cache"
@@ -435,6 +447,87 @@ class MusicBackend private constructor(
         cp.player.core.lyricsplugin.createLyricsPluginService(context)
     }
 
+    private val pluginRepositoriesLazy = lazy {
+        PluginRepositoryService(
+            settings = defaultSettingsStorage("plugin_repositories_v1"),
+            io = createPluginRepositoryIO(context),
+            target = currentPluginTarget(),
+            installedPlugins = {
+                moduleManager.getAvailableProviders().map {
+                    InstalledRepositoryPlugin("provider:${it.id}", it.version, name = it.name)
+                } + lyricsPlugins.listSources().map {
+                    InstalledRepositoryPlugin("lyrics:${it.id}", it.version, it.versionCode, it.bundled, it.name)
+                }
+            },
+            pendingUpdateExists = moduleManager::hasPendingRepositoryUpdate,
+            defaultSources = listOf(PluginRepositorySource(
+                PluginRepositoryService.DEFAULT_CATALOG_URL, "CPPlayer Plugins",
+            )),
+            installPackage = { plugin, zipPath ->
+                when (plugin.kind) {
+                    RepositoryPluginKind.PROVIDER -> {
+                        val previous = moduleManager.getProvider(plugin.id)
+                        val artifact = plugin.compatibility(currentPluginTarget()).first
+                            ?: error("No compatible plugin package")
+                        if (previous != null && (previous.type != cp.player.core.provider.ProviderType.HTTP ||
+                                artifact.runtime != "http")) {
+                            check(withContext(Dispatchers.IO) { moduleManager.queueRepositoryUpdate(zipPath, plugin.id) }) {
+                                "Cannot save the update for the next restart"
+                            }
+                            PluginInstallOutcome(restartRequired = true)
+                        } else {
+                            check(activeProviderId() != plugin.id || !playbackController.state.value.isPlaying) {
+                                "Pause playback before updating the active provider"
+                            }
+                            val details = withContext(Dispatchers.IO) { moduleManager.installRepositoryModule(zipPath, plugin.id) }
+                                ?: error(moduleManager.lastLoadError ?: "Provider installation failed")
+                            var warning: String? = null
+                            if (activeProvider() == null || activeProviderId() == plugin.id) {
+                                val result = switchProviderInternal(details.provider, save = true)
+                                if (result !is BackendResult.Success) {
+                                    warning = "Provider installed but activation failed; open provider management to retry"
+                                }
+                            }
+                            PluginInstallOutcome(warning = warning)
+                        }
+                    }
+                    RepositoryPluginKind.LYRICS -> {
+                        val existing = lyricsPlugins.listSources().find { it.id == plugin.id }
+                        check(existing?.bundled != true) { "Built-in plugins are updated with the application" }
+                        val ids = lyricsPlugins.importPluginZip(zipPath)
+                        check(ids == listOf(plugin.id)) { "Unexpected lyrics package identity" }
+                        if (existing == null) {
+                            lyricsPlugins.setEnabled(plugin.id, false)
+                            lyricsSourceRegistry.setEnabled(plugin.id, false)
+                        }
+                        lyricsSourceRegistry.reload()
+                        PluginInstallOutcome()
+                    }
+                }
+            },
+        )
+    }
+
+    val pluginRepositories: PluginRepositoryService get() = pluginRepositoriesLazy.value
+
+    private fun startPluginRepositoryChecks() {
+        backendScope.launch {
+            delay(60_000)
+            while (isActive) {
+                try {
+                    pluginRepositories.checkIfDue()
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    println("[PluginRepository] ${error.message}")
+                }
+                delay(60 * 60_000L)
+            }
+        }
+    }
+
+    val pendingPluginUpdateError: String? get() = moduleManager.lastPendingUpdateError
+
     // ============ 对外集成契约（数据面） ============
 
     /**
@@ -751,6 +844,10 @@ class MusicBackend private constructor(
         val provider = details.provider
         val isUpdate = details.isUpdate
         val replacedId = details.replacedProviderId
+        backendScope.launch {
+            pluginRepositories.forgetInstall("provider:${provider.id}")
+            replacedId?.let { pluginRepositories.forgetInstall("provider:$it") }
+        }
 
         val active = activeProvider()
         val shouldActivate = active == null ||
@@ -780,6 +877,10 @@ class MusicBackend private constructor(
             ?: return ImportResult.Failed(moduleManager.lastLoadError ?: "更新失败")
         val provider = details.provider
         val replacedId = details.replacedProviderId
+        backendScope.launch {
+            pluginRepositories.forgetInstall("provider:${provider.id}")
+            replacedId?.let { pluginRepositories.forgetInstall("provider:$it") }
+        }
 
         val active = activeProvider()
         val shouldActivate = active == null ||
@@ -890,6 +991,7 @@ class MusicBackend private constructor(
         if (downloadManagerLazy.isInitialized()) {
             runCatching { downloadManager.shutdown() }
         }
+        if (pluginRepositoriesLazy.isInitialized()) runCatching { pluginRepositories.close() }
         backendScope.cancel()
         _stateFlow.value = BackendState.Uninitialized
         synchronized(COMPA) {
@@ -1009,6 +1111,7 @@ class MusicBackend private constructor(
                 // 装配本地媒体源与下载管理器（恢复持久化下载任务）
                 backend.bootstrapLocalStack()
                 INSTANCE = backend
+                backend.startPluginRepositoryChecks()
                 return backend
             }
         }

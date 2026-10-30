@@ -62,6 +62,7 @@ class LyricoLyricsPluginService(
                 enabled = source.manifest.id in enabled,
                 bundled = source.bundled,
                 configFields = source.manifest.configFields,
+                versionCode = source.manifest.versionCode,
             )
         }
     }
@@ -70,13 +71,14 @@ class LyricoLyricsPluginService(
         store.setEnabled(id, enabled)
     }
 
-    override suspend fun importPluginZip(zipPath: String): List<String> = withContext(Dispatchers.IO) {
+    override suspend fun importPluginZip(zipPath: String): List<String> = withContext(dispatcher) {
         val file = File(zipPath)
         require(file.isFile) { "Plugin zip not found: $zipPath" }
-        store.importZip(file)
+        // Keep file replacement and runtime invalidation on the same thread as script execution.
+        store.importZip(file).also { ids -> ids.forEach(::closeRuntime) }
     }
 
-    override suspend fun deletePlugin(id: String): Boolean = withContext(Dispatchers.IO) {
+    override suspend fun deletePlugin(id: String): Boolean = withContext(dispatcher) {
         closeRuntime(id)
         store.deletePlugin(id)
     }

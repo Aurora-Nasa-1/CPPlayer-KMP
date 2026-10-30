@@ -52,7 +52,12 @@ class FileLyricsPluginStore(
 
     // ============ 载入 ============
 
+    @Synchronized
     fun loadSources(): List<LyricoPluginSource> {
+        rootDir.listFiles { file -> file.isDirectory && file.name.startsWith(".backup-") }.orEmpty().forEach { backup ->
+            val target = File(rootDir, backup.name.removePrefix(".backup-"))
+            if (!target.exists() || target.deleteRecursively()) backup.renameTo(target)
+        }
         val bundled = loadBundledSources()
         val imported = rootDir.listFiles { file -> file.isDirectory }
             .orEmpty()
@@ -118,6 +123,7 @@ class FileLyricsPluginStore(
 
     // ============ 导入 / 删除 ============
 
+    @Synchronized
     fun importZip(zipFile: File): List<String> {
         rootDir.mkdirs()
         val tempDir = File(rootDir, ".import-${UUID.randomUUID()}")
@@ -133,9 +139,26 @@ class FileLyricsPluginStore(
             return roots.map { pluginDir ->
                 val manifest = pluginJson.decodeFromString<PluginManifest>(File(pluginDir, "manifest.json").readText())
                 validateManifest(manifest, entryExists = { File(pluginDir, manifest.entry).isFile })
+                require(loadBundledSources().none { it.manifest.id == manifest.id }) { "Cannot replace a built-in plugin" }
                 val target = File(rootDir, manifest.id.safeFileName())
-                if (target.exists()) target.deleteRecursively()
-                pluginDir.copyRecursively(target, overwrite = true)
+                val backup = File(rootDir, ".backup-${manifest.id.safeFileName()}")
+                check(!backup.exists()) { "An interrupted plugin update needs recovery" }
+                val previous = target.exists()
+                if (previous) check(target.renameTo(backup)) { "Cannot back up the existing plugin" }
+                if (!pluginDir.renameTo(target)) {
+                    if (previous) check(backup.renameTo(target)) { "Cannot recover the existing plugin" }
+                    error("Cannot install plugin files")
+                }
+                // A committed backup is not a recovery candidate if cleanup is interrupted.
+                if (previous) {
+                    val committed = File(rootDir, ".old-${UUID.randomUUID()}")
+                    if (!backup.renameTo(committed)) {
+                        target.deleteRecursively()
+                        check(backup.renameTo(target)) { "Cannot recover the existing plugin" }
+                        error("Cannot commit plugin files")
+                    }
+                    committed.deleteRecursively()
+                }
                 manifest.id
             }
         } finally {
@@ -143,6 +166,7 @@ class FileLyricsPluginStore(
         }
     }
 
+    @Synchronized
     fun deletePlugin(id: String): Boolean {
         val source = loadSources().firstOrNull { it.manifest.id == id } ?: return false
         if (source.bundled) return false

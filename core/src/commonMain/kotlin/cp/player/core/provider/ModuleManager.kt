@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 
 /**
  * 模块管理器（KMP 版）。
@@ -55,6 +57,8 @@ class ModuleManager(
         if (!PlatformSupport.exists(modulesDir)) {
             // 目录不存在时创建（jvmMain deleteRecursively/unzipTo 等会忽略）
         }
+        recoverRepositoryBackups()
+        applyPendingRepositoryUpdates()
         scanAndLoadAll()
         updateProvidersFlow()
         val restored = providerManager.restoreLastProvider(getAvailableProviders(), context)
@@ -67,6 +71,9 @@ class ModuleManager(
         // 列出子目录：jvm 桥；此处通过一个轻量 expect 列目录。
         val dirs = PlatformSupport.listChildDirectories(modulesDir)
         for (dir in dirs) {
+            if (lastPathSegment(dir).startsWith(".repository-")) continue
+            // Pending replacements have already been loaded and validated before the normal scan.
+            if (providers.containsKey(lastPathSegment(dir))) continue
             // ⚠️ 跳过导入中途失败残留的暂存目录：它可能已解压出 manifest.json，
             // 被当作真实模块加载会以**相同的 id** 覆盖真模块（providers[id] = provider），
             // 而 getModuleDir(id) 返回的却是正式目录 —— 表现为「幽灵音源」且删不掉。
@@ -100,6 +107,129 @@ class ModuleManager(
     /** 更新已有模块，返回具体更新结果。 */
     fun updateModuleDetails(zipPath: String, targetId: String): ModuleImportSuccess? = importZip(zipPath, expectedId = targetId)
 
+    /** Repository imports use exact identity and retain the old directory until the new load succeeds. */
+    @Synchronized
+    fun installRepositoryModule(zipPath: String, expectedId: String): ModuleImportSuccess? {
+        val existed = PlatformSupport.exists("$modulesDir/$expectedId")
+        if (!importRepositoryZip(zipPath, expectedId)) return null
+        return ModuleImportSuccess(providers.getValue(expectedId), existed, expectedId.takeIf { existed })
+    }
+
+    private fun importRepositoryZip(zipPath: String, expectedId: String): Boolean {
+        lastLoadError = null
+        val temporary = "$modulesDir/${TEMP_PREFIX}repo_${System.nanoTime()}"
+        val target = "$modulesDir/$expectedId"
+        val backup = "$modulesDir/.repository-backup-$expectedId"
+        val previous = providers[expectedId]
+        var backedUp = false
+        var moved = false
+        return try {
+            require(Regex("^[a-z0-9][a-z0-9._-]{0,127}$").matches(expectedId) && ".." !in expectedId)
+            check(PlatformSupport.unzipTo(zipPath, temporary)) { "Cannot extract repository package" }
+            val manifest = json.decodeFromString<ModuleManifest>(
+                PlatformSupport.readTextFile("$temporary/manifest.json") ?: error("Missing manifest.json"),
+            )
+            require(manifest.id == expectedId) { "Repository package ID mismatch" }
+            require(manifest.isLoadable) { "Provider requires host API ${manifest.resolvedMinHostApiVersion}" }
+            require(providers.values.none {
+                it.id != expectedId && it.name.trim().equals(manifest.name.trim(), ignoreCase = true)
+            }) { "A differently identified provider already uses this name; it will not be overwritten" }
+            check(!PlatformSupport.exists(backup)) { "An interrupted installation needs recovery; restart the application" }
+            if (PlatformSupport.exists(target)) {
+                previous?.stopServer()
+                check(PlatformSupport.moveDir(target, backup)) { "Cannot back up the existing module" }
+                backedUp = true
+            }
+            check(PlatformSupport.moveDir(temporary, target)) { "Cannot move the new module into place" }
+            moved = true
+            check(loadModuleIfExists(target)) { lastLoadError ?: "Cannot load the new module" }
+            if (backedUp) {
+                val committedBackup = "$modulesDir/.repository-old-$expectedId-${System.nanoTime()}"
+                check(PlatformSupport.moveDir(backup, committedBackup)) { "Cannot commit the module replacement" }
+                PlatformSupport.deleteRecursively(committedBackup)
+            }
+            runCatching { previous?.close() }
+            updateProvidersFlow()
+            true
+        } catch (error: Exception) {
+            providers[expectedId]?.takeIf { it !== previous }?.let { runCatching { it.close() } }
+            if (moved) PlatformSupport.deleteRecursively(target)
+            if (backedUp && !PlatformSupport.moveDir(backup, target)) {
+                lastLoadError = "Installation failed and backup recovery requires attention: $backup"
+            } else {
+                lastLoadError = error.message ?: "Repository installation failed"
+            }
+            if (previous != null) providers[expectedId] = previous else providers.remove(expectedId)
+            false
+        } finally {
+            PlatformSupport.deleteRecursively(temporary)
+        }
+    }
+
+    @Serializable
+    private data class PendingRepositoryUpdate(val id: String, val sha256: String)
+
+    var lastPendingUpdateError: String? = null
+        private set
+
+    fun hasPendingRepositoryUpdate(id: String): Boolean =
+        Regex("^[a-z0-9][a-z0-9._-]{0,127}$").matches(id) && ".." !in id &&
+            PlatformSupport.exists("$modulesDir/.repository-pending/$id.json")
+
+    @Synchronized
+    fun queueRepositoryUpdate(zipPath: String, id: String): Boolean {
+        val hash = PlatformSupport.sha256Hex(zipPath) ?: return false
+        val directory = "$modulesDir/.repository-pending"
+        val partial = "$directory/$id.zip.part"
+        val metadata = "$directory/$id.json"
+        if (!Regex("^[a-z0-9][a-z0-9._-]{0,127}$").matches(id) || ".." in id) return false
+        if (!PlatformSupport.copyFile(zipPath, partial)) return false
+        if (!PlatformSupport.moveFile(partial, "$directory/$id.zip")) return false
+        if (!PlatformSupport.writeTextFile("$metadata.part", json.encodeToString(PendingRepositoryUpdate(id, hash)))) return false
+        return PlatformSupport.moveFile("$metadata.part", metadata)
+    }
+
+    private fun removePendingRepositoryUpdate(id: String) {
+        if (!Regex("^[a-z0-9][a-z0-9._-]{0,127}$").matches(id) || ".." in id) return
+        val directory = "$modulesDir/.repository-pending"
+        // Remove the activation marker first; an orphaned ZIP is never applied on startup.
+        check(!PlatformSupport.exists("$directory/$id.json") ||
+            PlatformSupport.deleteRecursively("$directory/$id.json")) { "Cannot cancel the pending plugin update" }
+        PlatformSupport.deleteRecursively("$directory/$id.zip")
+    }
+
+    private fun applyPendingRepositoryUpdates() {
+        val directory = "$modulesDir/.repository-pending"
+        for (metadataPath in PlatformSupport.listChildFiles(directory).filter { it.endsWith(".json") }) {
+            try {
+                val pending = json.decodeFromString<PendingRepositoryUpdate>(
+                    PlatformSupport.readTextFile(metadataPath) ?: error("Cannot read pending update"),
+                )
+                require(Regex("^[a-z0-9][a-z0-9._-]{0,127}$").matches(pending.id) && ".." !in pending.id)
+                val archive = "$directory/${pending.id}.zip"
+                require(PlatformSupport.sha256Hex(archive) == pending.sha256) { "Pending package hash mismatch" }
+                check(importRepositoryZip(archive, pending.id)) { lastLoadError ?: "Pending update failed" }
+                PlatformSupport.deleteRecursively(archive)
+                PlatformSupport.deleteRecursively(metadataPath)
+            } catch (error: Exception) {
+                lastPendingUpdateError = error.message ?: "Pending update failed"
+                PlatformSupport.moveFile(metadataPath, "$metadataPath.failed")
+            }
+        }
+    }
+
+    private fun recoverRepositoryBackups() {
+        for (directory in PlatformSupport.listChildDirectories(modulesDir)) {
+            val name = lastPathSegment(directory)
+            if (!name.startsWith(".repository-backup-")) continue
+            val id = name.removePrefix(".repository-backup-")
+            val target = "$modulesDir/$id"
+            if (PlatformSupport.exists(target) && !PlatformSupport.deleteRecursively(target)) continue
+            if (!PlatformSupport.moveDir(directory, target)) lastPendingUpdateError = "Cannot recover provider $id"
+        }
+    }
+
+    @Synchronized
     private fun importZip(zipPath: String, expectedId: String?): ModuleImportSuccess? {
         lastLoadError = null
         // tempDir 提到 try 外：catch 分支必须能清理它 —— 解压中途失败（zip-slip / 磁盘满）
@@ -151,6 +281,8 @@ class ModuleManager(
                     "（需要 API ${manifest.resolvedMinHostApiVersion}，当前支持 ${HOST_PROVIDER_API_VERSION}）"
                 return null
             }
+            removePendingRepositoryUpdate(manifest.id)
+            replacedId?.takeIf { it != manifest.id }?.let(::removePendingRepositoryUpdate)
 
             // 若更新已有模块，先停止旧 Provider 的服务进程以释放文件锁（尤其是 Windows 上的 dll / exe）
             if (targetExisting != null) {
@@ -235,6 +367,7 @@ class ModuleManager(
             if (!provider.isReady()) {
                 val detail = extractLoadError(provider) ?: "未知原因"
                 lastLoadError = "Provider 未就绪 [${manifest.id}]: $detail"
+                runCatching { provider.close() }
                 return false
             }
             providers[manifest.id] = provider
@@ -256,9 +389,14 @@ class ModuleManager(
     fun getProvider(id: String): BackendProvider? = providers[id]
     fun getModuleDir(id: String): String = "$modulesDir/$id"
 
+    @Synchronized
     fun deleteModule(id: String): Boolean {
         val dir = getModuleDir(id)
         if (!PlatformSupport.exists(dir)) return false
+        try { removePendingRepositoryUpdate(id) } catch (error: Exception) {
+            lastLoadError = error.message
+            return false
+        }
         val ok = PlatformSupport.deleteRecursively(dir)
         if (ok) { providers.remove(id); updateProvidersFlow() }
         return ok

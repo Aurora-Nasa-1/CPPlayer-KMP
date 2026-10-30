@@ -92,6 +92,7 @@ data class LyricsPluginSourceInfo(
     val bundled: Boolean,
     /** manifest 里声明的自定义配置项（宿主渲染成表单）。 */
     val configFields: List<PluginConfigField> = emptyList(),
+    val versionCode: Int = 0,
 )
 
 /**
