@@ -1,12 +1,8 @@
 package cp.player.app.ui.screen
 
 import cp.player.app.ui.component.CpText
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -87,7 +83,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.SubcomposeLayout
-import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.cpBounceClickable
 import androidx.compose.ui.layout.ContentScale
@@ -801,7 +796,15 @@ private fun NarrowLayout(
         // 滑动开始时封面与副信息逐步淡出并缩减，滚动超 40% 深度时完全收缩取消封面
         val coverFraction = (1f - collapsedFraction * 2.5f).coerceIn(0f, 1f)
         val canShowBackButton = !LocalWindowChromeActive.current
-        val searchExpandedWidth = (maxWidth - (if (canShowBackButton) 52.dp else 12.dp) - 8.dp).coerceAtLeast(160.dp)
+        val searchExpandedWidth = minOf(
+            maxWidth * 0.48f,
+            maxWidth - (if (canShowBackButton) 52.dp else 12.dp) - 184.dp,
+        ).coerceAtLeast(120.dp)
+        val searchProgress by animateFloatAsState(
+            targetValue = if (isSearchActive) 1f else 0f,
+            animationSpec = tween(320, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+            label = "playlistTopBarSearch",
+        )
         val onToggleEnterSelection: () -> Unit = {
             if (state.selectionMode) {
                 model.exitSelection()
@@ -810,58 +813,46 @@ private fun NarrowLayout(
             }
         }
 
-        // 搜索展开 / 收起的时序编排（两段式，不许同时动）：
-        // 展开 —— 右侧按钮先淡出完成，搜索框随后才开始宽度动画；
-        // 收起 —— 搜索框先收完宽度，右侧按钮再淡入。
-        var searchButtonsVisible by remember { mutableStateOf(!isSearchActive) }
-        var searchBarExpanded by remember { mutableStateOf(isSearchActive) }
-        LaunchedEffect(isSearchActive) {
-            if (isSearchActive) {
-                searchButtonsVisible = false
-                kotlinx.coroutines.delay(SearchButtonsFadeMs.toLong())
-                searchBarExpanded = true
-            } else {
-                searchBarExpanded = false
-                kotlinx.coroutines.delay(SearchCollapseSettleMs.toLong())
-                searchButtonsVisible = true
-            }
-        }
-
         AppScaffold(
             title = {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().padding(end = 8.dp),
+                    modifier = Modifier.fillMaxWidth().height(56.dp).padding(end = 8.dp),
                 ) {
-                    if (coverFraction > 0.01f) {
-                        Surface(
-                            modifier = Modifier
-                                .size(56.dp * coverFraction)
-                                .graphicsLayer { alpha = coverFraction }
-                                .coverFlightTarget(CoverFlight.TARGET_PLAYLIST_HEADER, 12.dp),
-                            shape = RoundedCornerShape(12.dp * coverFraction),
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            shadowElevation = (2 * coverFraction).dp,
-                        ) {
-                            val hideCover = CoverFlight.isFlyingTo(CoverFlight.TARGET_PLAYLIST_HEADER)
-                            if (!summary.coverUrl.isNullOrBlank()) {
-                                AsyncImage(
-                                    model = summary.coverUrl.resized(200),
-                                    contentDescription = summary.name,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                        .graphicsLayer { alpha = if (hideCover) 0f else 1f },
-                                )
-                            } else {
-                                CpCoverPlaceholder(
-                                    modifier = Modifier.fillMaxSize()
-                                        .graphicsLayer { alpha = if (hideCover) 0f else 1f },
-                                    corner = 12.dp,
-                                    animated = false,
-                                )
+                    // 封面槽位随封面一起收起，避免折叠后标题左侧残留空白。
+                    Box(
+                        modifier = Modifier.width(70.dp * coverFraction).height(56.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        if (coverFraction > 0.01f) {
+                            Surface(
+                                modifier = Modifier
+                                    .size(56.dp * coverFraction)
+                                    .graphicsLayer { alpha = coverFraction }
+                                    .coverFlightTarget(CoverFlight.TARGET_PLAYLIST_HEADER, 12.dp),
+                                shape = RoundedCornerShape(12.dp * coverFraction),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shadowElevation = (2 * coverFraction).dp,
+                            ) {
+                                val hideCover = CoverFlight.isFlyingTo(CoverFlight.TARGET_PLAYLIST_HEADER)
+                                if (!summary.coverUrl.isNullOrBlank()) {
+                                    AsyncImage(
+                                        model = summary.coverUrl.resized(200),
+                                        contentDescription = summary.name,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                            .graphicsLayer { alpha = if (hideCover) 0f else 1f },
+                                    )
+                                } else {
+                                    CpCoverPlaceholder(
+                                        modifier = Modifier.fillMaxSize()
+                                            .graphicsLayer { alpha = if (hideCover) 0f else 1f },
+                                        corner = 12.dp,
+                                        animated = false,
+                                    )
+                                }
                             }
                         }
-                        Spacer(Modifier.width(14.dp * coverFraction))
                     }
                     Column(
                         modifier = Modifier.weight(1f),
@@ -874,7 +865,7 @@ private fun NarrowLayout(
                             } else {
                                 MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                             },
-                            maxLines = if (collapsedFraction > 0.4f || isSearchActive || searchBarExpanded) 1 else 2,
+                            maxLines = if (collapsedFraction > 0.4f) 1 else 2,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         if (coverFraction > 0.1f) {
@@ -919,56 +910,48 @@ private fun NarrowLayout(
                     onToggleActive = onToggleSearch,
                     resultCount = filteredTracks.size,
                     expandedWidth = searchExpandedWidth,
-                    expanded = searchBarExpanded,
+                    progress = searchProgress,
                 )
 
-                // 2. 多选按钮（参与搜索动画：搜索展开时渐隐淡出，收起时渐现淡入）
-                AnimatedVisibility(
-                    visible = searchButtonsVisible,
-                    enter = fadeIn(tween(SearchButtonsFadeMs)),
-                    exit = fadeOut(tween(SearchButtonsFadeMs)),
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.graphicsLayer {
+                        alpha = 1f - searchProgress
+                        scaleX = 1f - searchProgress * 0.08f
+                        scaleY = 1f - searchProgress * 0.08f
+                    },
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Spacer(Modifier.width(4.dp))
-                        FilledIconButton(
-                            onClick = onToggleEnterSelection,
-                            modifier = Modifier.size(40.dp),
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                contentColor = MaterialTheme.colorScheme.onSurface,
-                            ),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.SelectAll,
-                                contentDescription = s.library.selectAll,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
+                    Spacer(Modifier.width(4.dp))
+                    FilledIconButton(
+                        onClick = onToggleEnterSelection,
+                        enabled = searchProgress < 0.5f,
+                        modifier = Modifier.size(40.dp),
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                        ),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.SelectAll,
+                            contentDescription = s.library.selectAll,
+                            modifier = Modifier.size(20.dp),
+                        )
                     }
-                }
-
-                // 3. 更多选项按钮（参与搜索动画：搜索展开时渐隐淡出，收起时渐现淡入）
-                AnimatedVisibility(
-                    visible = searchButtonsVisible,
-                    enter = fadeIn(tween(SearchButtonsFadeMs)),
-                    exit = fadeOut(tween(SearchButtonsFadeMs)),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Spacer(Modifier.width(4.dp))
-                        FilledIconButton(
-                            onClick = onOpenPlaylistSheet,
-                            modifier = Modifier.size(40.dp),
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                contentColor = MaterialTheme.colorScheme.onSurface,
-                            ),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.MoreVert,
-                                contentDescription = s.library.moreOptions,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
+                    Spacer(Modifier.width(4.dp))
+                    FilledIconButton(
+                        onClick = onOpenPlaylistSheet,
+                        enabled = searchProgress < 0.5f,
+                        modifier = Modifier.size(40.dp),
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                        ),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.MoreVert,
+                            contentDescription = s.library.moreOptions,
+                            modifier = Modifier.size(20.dp),
+                        )
                     }
                 }
             },
@@ -1989,21 +1972,13 @@ private fun ActionChip(
     }
 }
 
-/** 右侧按钮淡出 / 淡入时长（tween，保证「先淡完再动宽度」的节拍是确定的）。 */
-private const val SearchButtonsFadeMs = 180
-
-/** 收起时宽度弹簧的收尾等待，之后右侧按钮才开始淡入。 */
-private const val SearchCollapseSettleMs = 420
-
 /**
  * 顶栏无缝伸缩搜索栏（对标 Material 3 Expressive 动画）。
  *
  * 未激活时：作为一个普通的 40dp 纯图标圆钮嵌入顶栏右侧动作区；
- * 点击激活时：通过空间弹簧动画（CpMotion.spatial）自动向左拉伸扩展成带输入框、
- * 清空按钮、结果计数徽标与关闭按钮的完整搜索栏；搜索图标平滑滑向最左侧。
+ * 点击激活时：平滑扩展成带输入框、清空按钮、结果计数徽标与关闭按钮的完整搜索栏。
  *
- * [isActive] 是用户的即时意图（图标变色、对齐等立即响应）；
- * [expanded] 才驱动宽度与内容淡入 —— 时序编排（按钮先淡出再展开宽度）由调用方控制。
+ * 外层槽位宽度固定；[progress] 只驱动槽内搜索框、内容与动作按钮，避免重排顶栏标题。
  */
 @Composable
 private fun PlaylistTopBarSearchBar(
@@ -2013,126 +1988,120 @@ private fun PlaylistTopBarSearchBar(
     onToggleActive: () -> Unit,
     resultCount: Int,
     expandedWidth: Dp,
-    expanded: Boolean,
+    progress: Float,
     modifier: Modifier = Modifier,
 ) {
-    val width by animateDpAsState(
-        targetValue = if (expanded) expandedWidth else 40.dp,
-        animationSpec = CpMotion.spatial(),
-        label = "searchBarWidth",
-    )
-    val contentAlpha by animateFloatAsState(
-        targetValue = if (expanded) 1f else 0f,
-        animationSpec = if (expanded) CpMotion.effects() else CpMotion.effectsFast(),
-        label = "searchContentAlpha",
-    )
+    val width = 40.dp + (expandedWidth - 40.dp) * progress
     val focusRequester = remember { FocusRequester() }
 
-    LaunchedEffect(expanded) {
-        if (expanded) {
-            kotlinx.coroutines.delay(220)
+    LaunchedEffect(isActive) {
+        if (isActive) {
+            kotlinx.coroutines.delay(260)
             try {
                 focusRequester.requestFocus()
             } catch (_: Exception) {}
         }
     }
 
-    Surface(
-        modifier = modifier
-            .width(width)
-            .height(40.dp),
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-        onClick = {
-            if (!isActive) onToggleActive()
-        },
+    Box(
+        modifier = modifier.width(expandedWidth).height(40.dp),
+        contentAlignment = Alignment.CenterEnd,
     ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = if (isActive) Alignment.CenterStart else Alignment.Center,
+        Surface(
+            modifier = Modifier.width(width).height(40.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            onClick = {
+                if (!isActive) onToggleActive()
+            },
         ) {
-            Icon(
-                imageVector = Icons.Filled.Search,
-                contentDescription = if (isActive) null else "搜索",
-                tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier
-                    .then(if (isActive) Modifier.padding(start = 12.dp) else Modifier)
-                    .size(20.dp),
-            )
-
-            if (width > 80.dp) {
-                Row(
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Search,
+                    contentDescription = if (isActive) null else "搜索",
+                    tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(start = 38.dp, end = 6.dp)
-                        .graphicsLayer { alpha = contentAlpha },
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    androidx.compose.foundation.text.BasicTextField(
-                        value = query,
-                        onValueChange = onQueryChange,
-                        modifier = Modifier
-                            .weight(1f)
-                            .focusRequester(focusRequester),
-                        textStyle = MaterialTheme.typography.bodyMedium.copy(
-                            color = MaterialTheme.colorScheme.onSurface,
-                        ),
-                        singleLine = true,
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        decorationBox = { innerTextField ->
-                            Box(
-                                modifier = Modifier.fillMaxWidth(),
-                                contentAlignment = Alignment.CenterStart,
-                            ) {
-                                if (query.isEmpty()) {
-                                    CpText(
-                                        text = "搜索歌曲、歌手、专辑...",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                        maxLines = 1,
-                                    )
-                                }
-                                innerTextField()
-                            }
-                        },
-                    )
+                        .padding(start = 10.dp + 2.dp * progress)
+                        .size(20.dp),
+                )
 
-                    if (query.isNotEmpty()) {
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        ) {
-                            CpText(
-                                text = "$resultCount 首",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            )
+                if (progress > 0.05f) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(start = 38.dp, end = 6.dp)
+                            .graphicsLayer { alpha = ((progress - 0.05f) / 0.65f).coerceIn(0f, 1f) },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        androidx.compose.foundation.text.BasicTextField(
+                            value = query,
+                            onValueChange = onQueryChange,
+                            modifier = Modifier
+                                .weight(1f)
+                                .focusRequester(focusRequester),
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                color = MaterialTheme.colorScheme.onSurface,
+                            ),
+                            singleLine = true,
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            decorationBox = { innerTextField ->
+                                Box(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    contentAlignment = Alignment.CenterStart,
+                                ) {
+                                    if (query.isEmpty()) {
+                                        CpText(
+                                            text = "搜索歌曲、歌手、专辑...",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                            maxLines = 1,
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            },
+                        )
+
+                        if (query.isNotEmpty()) {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            ) {
+                                CpText(
+                                    text = "$resultCount 首",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                )
+                            }
+                            Spacer(Modifier.width(4.dp))
+                            IconButton(
+                                onClick = { onQueryChange("") },
+                                modifier = Modifier.size(28.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Close,
+                                    contentDescription = "清除",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
                         }
-                        Spacer(Modifier.width(4.dp))
+
                         IconButton(
-                            onClick = { onQueryChange("") },
+                            onClick = onToggleActive,
                             modifier = Modifier.size(28.dp),
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.Close,
-                                contentDescription = "清除",
+                                contentDescription = "关闭搜索",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp),
+                                modifier = Modifier.size(18.dp),
                             )
                         }
-                    }
-
-                    IconButton(
-                        onClick = onToggleActive,
-                        modifier = Modifier.size(28.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Close,
-                            contentDescription = "关闭搜索",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp),
-                        )
                     }
                 }
             }

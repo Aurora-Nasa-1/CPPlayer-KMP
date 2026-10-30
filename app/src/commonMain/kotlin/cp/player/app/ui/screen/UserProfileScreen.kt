@@ -41,10 +41,13 @@ import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.anim.CoverFlight
+import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.AlbumCoverCard
 import cp.player.app.ui.component.ArtistAvatar
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.component.SongDetailInfoDialog
+import cp.player.app.ui.component.SongOptionsSheet
 import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LazyScrollColumn
@@ -60,6 +63,7 @@ import cp.player.app.platform.shareText
 import cp.player.app.ui.util.UiEvents
 import cp.player.core.BackendResult
 import cp.player.core.music.ProfileBundle
+import cp.player.core.music.TrackSummary
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -168,6 +172,15 @@ private fun UserProfileContent(
     // 「删除歌单 / 取消收藏」的二次确认：锚定菜单与底部弹层两个入口共用一份。
     val confirm = cp.player.app.ui.component.rememberConfirmState()
 
+    // 热门歌曲行尾「更多」的目标 + 它的二级弹层目标。
+    //
+    // ⚠️ 二级弹层的目标（加歌单 / 歌曲信息）必须由**本层**持有：SongOptionsSheet 的
+    // 动作是「先回调、再自行 onDismiss」，宿主一关就被卸载，状态放弹层里会被一起丢掉
+    // （同一坑见 RecentPlaysScreen 的同名注释）。
+    var songOptionsTarget by remember { mutableStateOf<TrackSummary?>(null) }
+    var addToPlaylistTrack by remember { mutableStateOf<TrackSummary?>(null) }
+    var showInfoTarget by remember { mutableStateOf<TrackSummary?>(null) }
+
     LaunchedEffect(uid) { model.load(uid, displayName, strings = s) }
 
     val bundle = state.bundle
@@ -237,19 +250,16 @@ private fun UserProfileContent(
                                     AppModel.playback.playQueue(mediaIds, index)
                                 }
                             },
-                            onOptionsClick = {
-                                scope.launch {
-                                    val target = track.id !in likedIds
-                                    AppModel.playback.toggleFavoriteFor("$provider://song/${track.id}")
-                                    UiEvents.notify(if (target) s.album.liked else s.album.unliked)
-                                }
-                            },
+                            onOptionsClick = { songOptionsTarget = track },
                             // 桌面端右键菜单
                             contextMenu = songContextMenuItems(
                                 SongMenuActions(
                                     onPlay = {
                                         CoverFlight.play(track.id, track.coverUrl)
                                         scope.launch { AppModel.playback.playQueue(mediaIds, index) }
+                                    },
+                                    onPlayMv = track.mvId?.takeIf { it > 0 }?.let { mvId ->
+                                        { navigator.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV")) }
                                     },
                                     isFavorite = track.id in likedIds,
                                     onToggleFavorite = {
@@ -267,6 +277,10 @@ private fun UserProfileContent(
                                         scope.launch { AppModel.playback.addNextToQueue("$provider://song/${track.id}") }
                                         UiEvents.notify(s.library.playNext)
                                     },
+                                    isDownloaded = AppModel.isDownloaded(track.id),
+                                    onDownload = { AppModel.downloadTrack(track) },
+                                    onAddToPlaylist = { addToPlaylistTrack = track },
+                                    onShowInfo = { showInfoTarget = track },
                                     onShare = { shareText(songShareText(track)) },
                                 )
                             ),
@@ -432,6 +446,61 @@ private fun UserProfileContent(
                 coverUrl = playlist.coverUrl,
             )
         }
+    }
+
+    // 热门歌曲行尾「更多」弹层（手机 / 触屏形态）。
+    //
+    // 桌面端（窗口 chrome 接管）实际走的是 `SongItem` 内部的锚定菜单（`CpAnchoredMenu`，
+    // 与右键同一份 items），那时 onOptionsClick **根本不会被回调**；因此这里无需再按
+    // `LocalWindowChromeActive` 分流 —— 只有「没有锚定菜单」的形态才会走到这里。
+    songOptionsTarget?.let { track ->
+        SongOptionsSheet(
+            songName = track.name,
+            artistName = track.artist,
+            coverUrl = track.coverUrl,
+            isFavorite = track.id in likedIds,
+            isDownloaded = AppModel.isDownloaded(track.id),
+            onDismiss = { songOptionsTarget = null },
+            onPlay = {
+                CoverFlight.play(track.id, track.coverUrl)
+                // 与行内点击走**同一条**播放动线：一起听「跟随」开启时点「播放」是
+                // 「下一首播放」，直接 playQueue 会绕过那个语义。
+                AppModel.playTrackClicked("$provider://song/${track.id}") {
+                    val index = songs.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+                    AppModel.playback.playQueue(mediaIds, index)
+                }
+            },
+            onToggleFavorite = {
+                scope.launch {
+                    val target = track.id !in likedIds
+                    AppModel.playback.toggleFavoriteFor("$provider://song/${track.id}")
+                    UiEvents.notify(if (target) s.album.liked else s.album.unliked)
+                }
+            },
+            onAddToQueue = {
+                scope.launch { AppModel.playback.addToQueue("$provider://song/${track.id}") }
+                UiEvents.notify(s.library.queuedToPlay)
+            },
+            onPlayNext = {
+                scope.launch { AppModel.playback.addNextToQueue("$provider://song/${track.id}") }
+                UiEvents.notify(s.library.playNext)
+            },
+            onAddToPlaylist = { addToPlaylistTrack = track },
+            onDownload = { AppModel.downloadTrack(track) },
+            onShowInfo = { showInfoTarget = track },
+            onShare = { shareText(songShareText(track)) },
+            onPlayMv = track.mvId?.takeIf { it > 0 }?.let { mvId ->
+                { navigator.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV")) }
+            },
+        )
+    }
+
+    addToPlaylistTrack?.let { track ->
+        AddToPlaylistSheet(trackId = track.id, onDismiss = { addToPlaylistTrack = null })
+    }
+
+    showInfoTarget?.let { track ->
+        SongDetailInfoDialog(track = track, onDismiss = { showInfoTarget = null })
     }
 
     cp.player.app.ui.component.CpConfirmHost(confirm)
