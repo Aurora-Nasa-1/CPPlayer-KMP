@@ -31,6 +31,8 @@ if "%DIRNAME%"=="" set DIRNAME=.
 @rem This is normally unused
 set APP_BASE_NAME=%~n0
 set APP_HOME=%DIRNAME%
+@rem Prefer the real Windows user profile when the host JVM reports a synthetic user.home.
+if not defined GRADLE_USER_HOME if defined USERPROFILE set "GRADLE_USER_HOME=%USERPROFILE%\.gradle"
 
 @rem Resolve any "." and ".." in APP_HOME to make it shorter.
 for %%i in ("%APP_HOME%") do set APP_HOME=%%~fi

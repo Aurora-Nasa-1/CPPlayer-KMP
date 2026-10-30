@@ -104,3 +104,9 @@ scripts/*keygen*
 sentry.properties
 # Sentry 官方引导工具（下载物，86MB，不入库）
 sentry-wizard.exe
+
+# --- Local verification artifacts (never committed) ------------------------
+# Offscreen preview PNGs and preserved test reports from one-off checks.
+# Regenerated on demand; the review dir holds third-party package ZIPs.
+artifacts/
+.pluginrepo-package-review/
