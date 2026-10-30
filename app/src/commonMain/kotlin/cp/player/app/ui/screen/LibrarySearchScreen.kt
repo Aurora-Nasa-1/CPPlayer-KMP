@@ -24,6 +24,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,8 +39,10 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
+import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.shareText
+import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpCoverPlaceholder
@@ -52,21 +55,26 @@ import cp.player.app.ui.component.PlaylistItem
 import cp.player.app.ui.component.PlaylistOptionsSheet
 import cp.player.app.ui.component.RenamePlaylistDialog
 import cp.player.app.ui.component.SectionHeader
+import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.playlistShareText
 import cp.player.app.ui.component.rememberConfirmState
 import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.app.ui.model.LibraryScreenModel
+import cp.player.app.ui.model.LibrarySearchScreenModel
+import cp.player.app.ui.model.LibraryTrackHit
 import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.util.resized
 import cp.player.core.media.LocalMediaItem
 import cp.player.core.music.PlaylistSummary
+import cp.player.core.music.TrackSummary
+import kotlinx.coroutines.launch
 
 /**
- * 曲库检索页：在「我的」范围内找东西（歌单 + 本地音乐）。
+ * 曲库检索页：在「我的」范围内找东西（歌单、歌单内歌曲 + 本地音乐）。
  *
  * 与 [SearchScreen] 的分工：那一页搜**在线曲库**（歌曲 / 专辑 / 歌手 / 歌单），
- * 这一页只搜**已经属于我的东西** —— 我的歌单、已下载 / 导入的本地歌曲。
+ * 这一页只搜**已经属于我的东西** —— 我的歌单、歌单里的歌曲、已下载 / 导入的本地歌曲。
  * 两者刻意分开：把本地条目混进在线搜索结果会让「搜索结果为空」变得不可信，
  * 而用户找自己歌单时又不想先等一次网络请求。
  *
@@ -85,7 +93,8 @@ class LibrarySearchScreen(private val initialQuery: String = "") : Screen {
     override fun Content() {
         val library = rememberScreenModel(tag = "$modelTag-library") { LibraryScreenModel() }
         val downloads = rememberScreenModel(tag = "$modelTag-downloads") { DownloadsScreenModel() }
-        LibrarySearchContent(library, downloads, initialQuery)
+        val search = rememberScreenModel(tag = "$modelTag-tracks") { LibrarySearchScreenModel() }
+        LibrarySearchContent(library, downloads, search, initialQuery)
     }
 }
 
@@ -93,12 +102,14 @@ class LibrarySearchScreen(private val initialQuery: String = "") : Screen {
 private fun LibrarySearchContent(
     library: LibraryScreenModel,
     downloads: DownloadsScreenModel,
+    search: LibrarySearchScreenModel,
     initialQuery: String,
 ) {
     val s = cpStrings()
     val navigator = LocalNavigator.currentOrThrow
     val libraryState by library.state.collectAsState()
     val downloadsState by downloads.state.collectAsState()
+    val searchState by search.state.collectAsState()
     var query by remember { mutableStateOf(initialQuery) }
     var selectedPlaylist by remember { mutableStateOf<PlaylistSummary?>(null) }
     var renameTarget by remember { mutableStateOf<PlaylistSummary?>(null) }
@@ -112,6 +123,9 @@ private fun LibrarySearchContent(
     }
 
     val keyword = query.trim()
+    LaunchedEffect(keyword, libraryState.playlists) {
+        search.search(keyword, libraryState.playlists)
+    }
     val playlists = remember(libraryState.playlists, keyword) {
         if (keyword.isEmpty()) emptyList()
         else libraryState.playlists.filter { playlist ->
@@ -163,7 +177,8 @@ private fun LibrarySearchContent(
                             )
                         }
                     }
-                    playlists.isEmpty() && localTracks.isEmpty() -> item {
+                    playlists.isEmpty() && localTracks.isEmpty() && searchState.trackHits.isEmpty() &&
+                        !searchState.loadingPlaylistTracks -> item {
                         StateSurface {
                             ContentState(
                                 title = s.library.noSearchResults,
@@ -188,6 +203,38 @@ private fun LibrarySearchContent(
                                     onClick = { navigator.push(PlaylistDetailScreen(playlist)) },
                                     onOptionsClick = { selectedPlaylist = playlist },
                                 )
+                            }
+                        }
+                        if (searchState.trackHits.isNotEmpty()) {
+                            item {
+                                SectionHeader(
+                                    title = s.library.searchPlaylistTracksSection,
+                                    supportingText = "${searchState.trackHits.size}",
+                                    modifier = Modifier.padding(top = 12.dp),
+                                )
+                            }
+                            itemsIndexed(
+                                searchState.trackHits,
+                                key = { _, hit -> "pt-${hit.playlist.id}-${hit.track.id}" },
+                            ) { index, hit ->
+                                PlaylistTrackRow(
+                                    hit = hit,
+                                    index = index,
+                                    total = searchState.trackHits.size,
+                                    allTracks = searchState.trackHits.map { it.track },
+                                )
+                            }
+                        }
+                        if (searchState.loadingPlaylistTracks && searchState.trackHits.isEmpty() &&
+                            playlists.isNotEmpty()
+                        ) {
+                            item {
+                                StateSurface {
+                                    ContentState(
+                                        title = s.library.searchPlaylistTracksLoading,
+                                        message = null,
+                                    )
+                                }
                             }
                         }
                         if (localTracks.isNotEmpty()) {
@@ -331,6 +378,30 @@ private fun LocalTrackRow(
                     maxLines = 1,
                 )
             }
+        },
+    )
+}
+
+@Composable
+private fun PlaylistTrackRow(
+    hit: LibraryTrackHit,
+    index: Int,
+    total: Int,
+    allTracks: List<TrackSummary>,
+) {
+    val scope = rememberCoroutineScope()
+    val track = hit.track
+    val mediaIds = allTracks.map { "${AppModel.activeProviderId()}://song/${it.id}" }
+    SongItem(
+        track = track,
+        index = index,
+        total = total,
+        supportingText = listOfNotNull(hit.playlist.name, track.artist)
+            .filter { it.isNotBlank() }
+            .joinToString(" · "),
+        onClick = {
+            CoverFlight.play(track.id, track.coverUrl)
+            scope.launch { AppModel.playback.playQueue(mediaIds, startIndex = index) }
         },
     )
 }

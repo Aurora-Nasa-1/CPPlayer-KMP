@@ -1167,6 +1167,8 @@ interface LibraryStrings {
     val searchLibraryEmpty: String
     val searchLibraryEmptyNote: String
     val searchPlaylistSection: String
+    val searchPlaylistTracksSection: String
+    val searchPlaylistTracksLoading: String
     val searchLocalSection: String
     fun searchOnlineHint(query: String): String
     val noSearchResults: String
