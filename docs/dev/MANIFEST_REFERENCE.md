@@ -128,7 +128,7 @@
 |---|---|
 | 桌面模块目录 | `~/.cpplayer/modules/` |
 | Android 模块目录 | `filesDir/modules/`（经 SAF 导入） |
-| 导入失败原因 | 设置 → 音源管理 / 诊断页会显示 `ModuleManager.lastLoadError` 的具体文案（manifest 缺字段、类型不支持、sha256 不匹配、ABI 不匹配、entryPoint 不存在等） |
+| 导入失败原因 | 设置 → 音源管理 / 诊断页会显示 `ModuleManager.lastLoadError` 的具体文案（manifest 缺字段、类型不支持、ABI 不匹配、entryPoint 不存在等） |
 | JNI 日志 | 日志前缀 `[JniProvider]`（含期望导出符号名，符号不匹配时据此定位） |
 | 健康监控 | 设置 → 调试 → 健康状态（按方法统计调用、期望字段命中、响应耗时） |
 | 通用调试 | `apiMap` 键必须等于宿主方法名；manifest 必须是合法 JSON；`required` 不强制 |

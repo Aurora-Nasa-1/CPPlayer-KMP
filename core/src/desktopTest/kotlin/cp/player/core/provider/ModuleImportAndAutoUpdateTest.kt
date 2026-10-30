@@ -130,4 +130,16 @@ class ModuleImportAndAutoUpdateTest {
         assertTrue(File(tempModulesDir, "kugou").exists(), "新模块目录必须存在")
         assertTrue(!File(tempModulesDir, "kugou-music-rs").exists(), "旧模块目录必须被清理，避免重复冗余")
     }
+
+    @Test
+    fun importPackageWithLegacySha256InManifestSucceedsWithoutMismatch() {
+        // 历史 manifest 中包含 sha256 字段的包不再因循环校验失败，而应兼容导入
+        val legacyShaZip = createZip(
+            "legacy_sha.zip",
+            """{"id":"legacy-sha","name":"带SHA音源","type":"http","entryPoint":"http://127.0.0.1:8004","version":"1.0.0","sha256":"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}"""
+        )
+        val result = moduleManager.importModuleDetails(legacyShaZip.absolutePath)
+        assertNotNull(result, "包含历史 sha256 字段的包应成功导入，不应因包内自哈希自相矛盾而报错")
+        assertEquals("legacy-sha", result.provider.id)
+    }
 }

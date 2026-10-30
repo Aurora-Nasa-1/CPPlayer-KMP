@@ -50,7 +50,7 @@ class ModuleManifestV3Test {
         val roundTripped = json.encodeToString(ModuleManifest.serializer(), m)
         assertFalse(
             roundTripped.contains("apiVersion"),
-            "缺省字段被序列化写回了，往返一次包就不再逐字节一致（sha256 会失败）：$roundTripped",
+            "缺省字段被序列化写回了，往返一次 manifest 不再与原始文件一致：$roundTripped",
         )
         assertFalse(roundTripped.contains("capabilities"), roundTripped)
         assertFalse(roundTripped.contains("minHostApiVersion"), roundTripped)

@@ -119,17 +119,8 @@ class ModuleManager(
             }
             val manifestText = PlatformSupport.readTextFile(manifestPath) ?: ""
             val manifest = json.decodeFromString(ModuleManifest.serializer(), manifestText)
-            // 完整性校验（CODE_REVIEW K5）：manifest 声明了 sha256 时，对原始 zip 字节
-            // 重算比对。jni/binary 模块会执行原生代码，损坏/被篡改的包不能静默加载。
-            // 字段缺省 = 旧格式包，跳过校验（向后兼容）。
-            manifest.sha256?.let { expected ->
-                val actual = PlatformSupport.sha256Hex(zipPath)
-                if (actual == null || !actual.equals(expected, ignoreCase = true)) {
-                    PlatformSupport.deleteRecursively(tempDir)
-                    lastLoadError = if (actual == null) "无法读取模块包以校验完整性" else "模块包完整性校验失败（sha256 不匹配）"
-                    return null
-                }
-            }
+            // 历史校验（CODE_REVIEW K5）：压缩包内声明自身 zip 的 sha256 逻辑自相矛盾且无法实现，
+            // 宿主不再进行包内自校验；整包完整性应由外部发布渠道校验。
 
             // 自动检查同 ID 或同名模块：优先按 ID，其次按音源显示名称匹配已安装模块
             val existingById = providers[manifest.id]

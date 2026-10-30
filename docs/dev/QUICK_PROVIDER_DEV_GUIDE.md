@@ -970,4 +970,4 @@ app.listen(3000, () => console.log('CPPlayer Standard v3 服务已在 3000 端�
    * 导入后音源卡片将展示出声明的全部能力徽标；
    * 前往搜索页搜索歌曲，点击即可起播（首次会拉取 `login/status` 等身份接口，未实现时返回 `{"code":500,...}` 也能正常听）。
 
-> **导入失败怎么排查**：宿主在音源管理页 / 诊断页会给出 `ModuleManager.lastLoadError` 的具体文案（manifest 缺字段、类型不支持、sha256 不匹配、ABI 不匹配、entryPoint 不存在等）；对应分支见源码 `ModuleManager.kt` 的导入路径错误文案。
+> **导入失败怎么排查**：宿主在音源管理页 / 诊断页会给出 `ModuleManager.lastLoadError` 的具体文案（manifest 缺字段、类型不支持、ABI 不匹配、entryPoint 不存在等）；对应分支见源码 `ModuleManager.kt` 的导入路径错误文案。

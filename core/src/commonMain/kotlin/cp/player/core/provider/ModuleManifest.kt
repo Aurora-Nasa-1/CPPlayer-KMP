@@ -164,13 +164,14 @@ data class ModuleManifest(
      */
     val loginMethods: List<String>? = null,
     /**
-     * 整个模块 zip 包的 SHA-256（十六进制，大小写不敏感，可选）。
+     * @deprecated 压缩包内声明并校验自身 zip 的 sha256 逻辑自相矛盾且无法实现
      *
-     * 导入 / 更新时宿主会对**原始 zip 字节**重新计算并与本字段比对，不匹配即拒绝安装
-     * （损坏或被篡改的包——尤其 jni/binary 类型会执行原生代码——不再被静默加载）。
-     * **null / 缺省 = 跳过校验**（向后兼容旧格式模块包；CODE_REVIEW K5）。
-     * 生成方式：`sha256sum xxx.zip`，把结果填进 manifest.json 后重新打包。
+     * （修改 manifest.json 写入哈希后重新打包必然改变 zip 的 sha256）。
+     * 整包完整性校验应由外部发布渠道（如更新服务清单、分发源）在包外进行；
+     * 宿主在导入时不对此字段进行自校验。本字段保留仅为兼容旧 manifest 反序列化。
+     * 新包无需声明此字段。
      */
+    @Deprecated("压缩包内校验自身 sha256 无法实现，已废弃且宿主不再校验")
     val sha256: String? = null,
     /**
      * 协议契约模式（可选）。
