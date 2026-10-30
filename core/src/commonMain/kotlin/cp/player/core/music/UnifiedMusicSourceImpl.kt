@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -209,13 +210,105 @@ class UnifiedMusicSourceImpl(
         }.toMap().takeIf { it.isNotEmpty() }
     }
 
+    private fun extractLevel(body: kotlinx.serialization.json.JsonElement): String? {
+        val obj = body as? JsonObject ?: return null
+        val direct = (obj["level"] as? JsonPrimitive)?.contentOrNull
+        if (!direct.isNullOrBlank()) return direct
+        val dataObj = obj["data"] as? JsonObject
+        val dataLevel = (dataObj?.get("level") as? JsonPrimitive)?.contentOrNull
+        if (!dataLevel.isNullOrBlank()) return dataLevel
+        val dataArray = obj["data"] as? JsonArray
+        val firstItem = dataArray?.firstOrNull() as? JsonObject
+        return (firstItem?.get("level") as? JsonPrimitive)?.contentOrNull
+    }
+
+    private fun extractCodec(body: kotlinx.serialization.json.JsonElement): String? {
+        val obj = body as? JsonObject ?: return null
+        for (key in listOf("type", "encodeType", "format")) {
+            (obj[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }?.let { return it }
+        }
+        val dataObj = obj["data"] as? JsonObject
+        if (dataObj != null) {
+            for (key in listOf("type", "encodeType", "format")) {
+                (dataObj[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }?.let { return it }
+            }
+        }
+        val dataArray = obj["data"] as? JsonArray
+        val firstItem = dataArray?.firstOrNull() as? JsonObject
+        if (firstItem != null) {
+            for (key in listOf("type", "encodeType", "format")) {
+                (firstItem[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun extractBitrate(body: kotlinx.serialization.json.JsonElement): Int? {
+        val obj = body as? JsonObject ?: return null
+        for (key in listOf("br", "bitrate")) {
+            (obj[key] as? JsonPrimitive)?.intOrNull?.takeIf { it > 0 }?.let { return it }
+        }
+        val dataObj = obj["data"] as? JsonObject
+        if (dataObj != null) {
+            for (key in listOf("br", "bitrate")) {
+                (dataObj[key] as? JsonPrimitive)?.intOrNull?.takeIf { it > 0 }?.let { return it }
+            }
+        }
+        val dataArray = obj["data"] as? JsonArray
+        val firstItem = dataArray?.firstOrNull() as? JsonObject
+        if (firstItem != null) {
+            for (key in listOf("br", "bitrate")) {
+                (firstItem[key] as? JsonPrimitive)?.intOrNull?.takeIf { it > 0 }?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun inferCodecFromUrl(url: String): String? {
+        val clean = url.substringBefore('?').lowercase()
+        return when {
+            clean.endsWith(".flac") -> "FLAC"
+            clean.endsWith(".mp3") -> "MP3"
+            clean.endsWith(".m4a") || clean.endsWith(".aac") -> "AAC"
+            clean.endsWith(".ogg") -> "OGG"
+            clean.endsWith(".wav") -> "WAV"
+            else -> null
+        }
+    }
+
+    private fun inferCodecFromLevel(level: String): String = when (level) {
+        "lossless", "hires", "jymaster" -> "FLAC"
+        else -> "MP3"
+    }
+
+    private fun inferBitrateFromLevel(level: String): Int? = when (level) {
+        "standard" -> 128000
+        "higher" -> 192000
+        "exhigh" -> 320000
+        "lossless" -> 999000
+        else -> null
+    }
+
     override suspend fun getSongUrl(mediaId: String, level: String): MusicResult<SongUrl> {
         val id = parseId(mediaId) ?: return BackendResult.Error("Invalid mediaId: $mediaId")
         if (id.providerId == "local") {
             val item = localMusicSource.items().value.find { it.path == id.resourceId }
                 // 条目缺失时返回 Error（与 getTrackDetail 行为一致），不得以裸路径伪装 Success
                 ?: return BackendResult.Error("Local media not found: $mediaId")
-            return BackendResult.Success(SongUrl(item.path, level, item.sizeBytes, null))
+            val ext = item.path.substringAfterLast('.', "").uppercase()
+            val localCodec = when (ext) {
+                "FLAC" -> "FLAC"
+                "WAV" -> "WAV"
+                "MP3" -> "MP3"
+                "AAC", "M4A" -> "AAC"
+                "OGG" -> "OGG"
+                else -> ext.takeIf { it.isNotBlank() }
+            }
+            val localLevel = when (localCodec) {
+                "FLAC", "WAV" -> "lossless"
+                else -> level
+            }
+            return BackendResult.Success(SongUrl(item.path, localLevel, item.sizeBytes, null, codec = localCodec))
         }
         return try {
             val json = musicApiService.getSongUrl(id.resourceId, level)
@@ -224,7 +317,10 @@ class UnifiedMusicSourceImpl(
                 val sizeBytes = extractSizeBytes(json)
                 val cookie = extractCookie(json)
                 val headers = extractHeaders(json)
-                BackendResult.Success(SongUrl(url, level, sizeBytes, null, cookie, headers))
+                val resolvedLevel = extractLevel(json) ?: level
+                val codec = extractCodec(json) ?: inferCodecFromUrl(url) ?: inferCodecFromLevel(resolvedLevel)
+                val bitrate = extractBitrate(json) ?: inferBitrateFromLevel(resolvedLevel)
+                BackendResult.Success(SongUrl(url, resolvedLevel, sizeBytes, null, cookie, headers, codec = codec, bitrate = bitrate))
             } else {
                 BackendResult.Error("No valid URL returned for $mediaId")
             }
@@ -246,7 +342,10 @@ class UnifiedMusicSourceImpl(
                 val sizeBytes = extractSizeBytes(json)
                 val cookie = extractCookie(json)
                 val headers = extractHeaders(json)
-                BackendResult.Success(SongUrl(url, level, sizeBytes, null, cookie, headers))
+                val resolvedLevel = extractLevel(json) ?: level
+                val codec = extractCodec(json) ?: inferCodecFromUrl(url) ?: inferCodecFromLevel(resolvedLevel)
+                val bitrate = extractBitrate(json) ?: inferBitrateFromLevel(resolvedLevel)
+                BackendResult.Success(SongUrl(url, resolvedLevel, sizeBytes, null, cookie, headers, codec = codec, bitrate = bitrate))
             } else {
                 getSongUrl(mediaId, level)
             }

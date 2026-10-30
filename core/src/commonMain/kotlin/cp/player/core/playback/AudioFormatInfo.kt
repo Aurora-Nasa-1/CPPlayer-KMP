@@ -19,5 +19,8 @@ data class AudioFormatInfo(
             codecName?.let { add(it) }
             bitDepth?.let { add("${it}bit") }
             sampleRate?.let { add("${it / 1000}kHz") }
-        }.joinToString(" · ").ifEmpty { "标准" }
+            if (bitDepth == null && bitrate != null && bitrate > 0) {
+                add("${bitrate / 1000}k")
+            }
+        }.joinToString(" · ")
 }

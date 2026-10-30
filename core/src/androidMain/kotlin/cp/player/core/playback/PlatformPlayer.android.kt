@@ -230,11 +230,18 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
         override fun onPlaybackStateChanged(playbackState: Int) {
             _state.value = when (playbackState) {
                 Player.STATE_BUFFERING -> PlatformPlaybackState.Buffering
-                Player.STATE_READY -> if (player.isPlaying) PlatformPlaybackState.Playing else PlatformPlaybackState.Paused
+                Player.STATE_READY -> {
+                    updateFormatInfo()
+                    if (player.isPlaying) PlatformPlaybackState.Playing else PlatformPlaybackState.Paused
+                }
                 Player.STATE_ENDED -> PlatformPlaybackState.Ended
                 else -> PlatformPlaybackState.Idle
             }
             publishPosition()
+        }
+
+        override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+            updateFormatInfo()
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -283,9 +290,37 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
         }
     }
 
+    private fun updateFormatInfo() {
+        val format = player.audioFormat ?: return
+        val mime = format.sampleMimeType
+        val codec = when {
+            mime?.contains("flac", ignoreCase = true) == true -> "FLAC"
+            mime?.contains("mp4a", ignoreCase = true) == true -> "AAC"
+            mime?.contains("mpeg", ignoreCase = true) == true -> "MP3"
+            mime?.contains("vorbis", ignoreCase = true) == true -> "Vorbis"
+            mime?.contains("opus", ignoreCase = true) == true -> "Opus"
+            else -> mime?.substringAfterLast('/')?.uppercase()
+        }
+        val bitDepth = when (format.pcmEncoding) {
+            androidx.media3.common.C.ENCODING_PCM_24BIT -> 24
+            androidx.media3.common.C.ENCODING_PCM_32BIT -> 32
+            androidx.media3.common.C.ENCODING_PCM_16BIT -> 16
+            else -> if (codec == "FLAC") 16 else null
+        }
+        _format.value = AudioFormatInfo(
+            codecName = codec,
+            sampleRate = format.sampleRate.takeIf { it > 0 },
+            bitDepth = bitDepth,
+            channels = format.channelCount.takeIf { it > 0 },
+            bitrate = format.bitrate.takeIf { it > 0 },
+            mimeType = mime,
+        )
+    }
+
     override suspend fun load(url: String, startPositionMs: Long, headers: Map<String, String>, metadata: PlaybackMetadata?) = kotlinx.coroutines.withContext(Dispatchers.Main) {
         // 换曲：清掉上一首遗留的待定 seek，避免污染新曲目的位置。
         pendingSeek.cancel()
+        _format.value = null
         val uri = Uri.parse(url)
         val scheme = uri.scheme?.lowercase()
         val isRemote = scheme == "http" || scheme == "https"

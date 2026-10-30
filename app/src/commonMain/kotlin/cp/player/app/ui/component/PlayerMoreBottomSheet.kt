@@ -94,6 +94,8 @@ fun PlayerMoreBottomSheet(
     onLyricOffset: () -> Unit = {},
     /** 当前全局音质档位（落盘 level，不是展示名）—— 由 [PlayerMoreSheets] 从 AppModel 传入。 */
     qualityLevel: String = "",
+    /** 当前曲目实际加载/播放音质档位（由 [PlayerMoreSheets] 从 PlaybackUiState 传入）。 */
+    trackQualityLevel: String = "",
     onSelectQuality: (String) -> Unit = {},
 ) {
     LegacyModalBottomSheet(onDismissRequest = onDismiss) {
@@ -116,6 +118,7 @@ fun PlayerMoreBottomSheet(
             onHandoff = onHandoff,
             onLyricOffset = onLyricOffset,
             qualityLevel = qualityLevel,
+            trackQualityLevel = trackQualityLevel,
             onSelectQuality = onSelectQuality,
             onClose = onDismiss,
         )
@@ -148,6 +151,7 @@ fun PlayerMoreContent(
     onHandoff: () -> Unit,
     onLyricOffset: () -> Unit = {},
     qualityLevel: String = "",
+    trackQualityLevel: String = "",
     onSelectQuality: (String) -> Unit = {},
     onClose: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -445,7 +449,17 @@ fun PlayerMoreContent(
                             label = formatTimeMs(track.durationMs),
                             modifier = Modifier.weight(1f),
                         )
-                        val qualityLabel = formatInfo?.qualityLabel ?: formatInfo?.codecName ?: "标准音质"
+                        val detailedFormat = formatInfo?.qualityLabel?.takeIf { it.isNotBlank() && it != "标准" }
+                        val effectiveLevel = trackQualityLevel.ifBlank { qualityLevel }.ifBlank { "standard" }
+                        val qualityLabel = when {
+                            detailedFormat != null -> detailedFormat
+                            formatInfo?.codecName?.isNotBlank() == true -> {
+                                val codec = formatInfo.codecName
+                                val br = formatInfo.bitrate?.let { " · ${it / 1000}k" } ?: ""
+                                "$codec$br"
+                            }
+                            else -> s.quality.fullLabelOf(effectiveLevel)
+                        }
                         DetailChip(
                             icon = Icons.Filled.GraphicEq,
                             label = qualityLabel,
@@ -630,6 +644,7 @@ fun PlayerMoreSheets(
             },
             onLyricOffset = { sheets.showLyricOffset = true },
             qualityLevel = qualityLevel,
+            trackQualityLevel = state.qualityLevel,
             onSelectQuality = AppModel::setPlaybackQuality,
         )
     }

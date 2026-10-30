@@ -555,7 +555,9 @@ class PlaybackControllerImpl(
             if (dur > 0L) updateState { it.copy(durationMs = dur) }
         }.launchIn(scope)
         platform.formatInfo.onEach { info ->
-            updateState { it.copy(formatInfo = info) }
+            if (info != null) {
+                updateState { it.copy(formatInfo = info) }
+            }
         }.launchIn(scope)
     }
 
@@ -1886,6 +1888,34 @@ class PlaybackControllerImpl(
                 ))
                 return@launch
             }
+            val actualLevel = songUrl.level.ifBlank { qualityLevel }
+            val resolvedFormat = AudioFormatInfo(
+                codecName = songUrl.codec?.uppercase() ?: when (actualLevel) {
+                    "lossless", "hires", "jymaster" -> "FLAC"
+                    else -> "MP3"
+                },
+                bitrate = songUrl.bitrate ?: when (actualLevel) {
+                    "standard" -> 128000
+                    "higher" -> 192000
+                    "exhigh" -> 320000
+                    "lossless" -> 999000
+                    else -> null
+                },
+                bitDepth = when (actualLevel) {
+                    "hires", "jymaster" -> 24
+                    "lossless" -> 16
+                    else -> null
+                },
+                sampleRate = when (actualLevel) {
+                    "hires" -> 96000
+                    "lossless", "exhigh", "higher", "standard" -> 44100
+                    else -> null
+                },
+            )
+            emit(_state.value.copy(
+                qualityLevel = actualLevel,
+                formatInfo = platform.formatInfo.value ?: resolvedFormat,
+            ))
             val headers = buildMap {
                 songUrl.headers?.let { putAll(it) }
                 songUrl.cookie?.takeIf { it.isNotBlank() }?.let { put("Cookie", it) }
@@ -2008,6 +2038,12 @@ class PlaybackControllerImpl(
             if (loadGeneration != gen) return true // 已被新导航接管：静默收场，别再报错
             val fallback = source.getSongUrl(mediaId, level = "standard").getOrNull() ?: return false
             if (fallback.url.isBlank()) return false
+            val fallbackFormat = AudioFormatInfo(
+                codecName = fallback.codec?.uppercase() ?: "MP3",
+                bitrate = fallback.bitrate ?: 128000,
+                sampleRate = 44100,
+            )
+            updateState { it.copy(qualityLevel = "standard", formatInfo = fallbackFormat) }
             val headers = buildMap {
                 fallback.headers?.let { putAll(it) }
                 fallback.cookie?.takeIf { it.isNotBlank() }?.let { put("Cookie", it) }
