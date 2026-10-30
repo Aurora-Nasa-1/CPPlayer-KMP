@@ -986,6 +986,16 @@ object CpStringsEn : CpStrings {
         override val liked = "Added to favorites"
         override val unliked = "Removed from favorites"
         override val searchAlbum = "Search album tracks…"
+
+        override val favoriteAlbum = "Favorite album"
+        override val favoriteAlbumActive = "Album favorited"
+        override fun favoriteAlbumDone(favorited: Boolean) =
+            if (favorited) "Album added to favorites" else "Album removed from favorites"
+        override fun unfavoriteAlbumMessage(name: String) =
+            "Remove \"$name\" from favorites? You can add it back later."
+        override val unfavoriteAlbumAction = "Remove favorite"
+        override val favoriteAlbumNeedLogin = "Sign in to favorite albums"
+        override val favoriteAlbumFailed = "Couldn't update the album favorite, try again later"
     }
 
     override val playlistSheet: PlaylistSheetStrings = object : PlaylistSheetStrings {

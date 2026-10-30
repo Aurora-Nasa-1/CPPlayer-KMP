@@ -1210,6 +1210,37 @@ interface AlbumStrings {
     val liked: String
     val unliked: String
     val searchAlbum: String
+
+    /** 专辑详情头部的收藏开关（未收藏态）。 */
+    val favoriteAlbum: String
+
+    /** 专辑详情头部的收藏开关（已收藏态）。 */
+    val favoriteAlbumActive: String
+
+    /** 收藏 / 取消收藏成功提示。 */
+    fun favoriteAlbumDone(favorited: Boolean): String
+
+    /** 取消收藏的二次确认正文。**可恢复**操作，不是不可逆删除。 */
+    fun unfavoriteAlbumMessage(name: String): String
+
+    /**
+     * 取消收藏的确认框标题 / 确认键文案。
+     *
+     * **不能复用 [favoriteAlbumActive]**（那是「已收藏专辑」状态标签）：确认框问的是
+     * 「要不要取消收藏」，用状态文案当动词会让用户以为点下去是「收藏」。
+     */
+    val unfavoriteAlbumAction: String
+
+    /**
+     * 「未登录无法收藏」提示。
+     *
+     * 上游 `album/sub` 是账号动作，未登录时只会返回失败 —— 先拦住并说清原因，
+     * 比让用户点了等一个「操作失败」更有用。
+     */
+    val favoriteAlbumNeedLogin: String
+
+    /** 收藏 / 取消收藏失败的提示。 */
+    val favoriteAlbumFailed: String
 }
 
 // ---------------------------------------------------------------------------

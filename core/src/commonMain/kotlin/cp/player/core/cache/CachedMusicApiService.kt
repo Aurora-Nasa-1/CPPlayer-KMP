@@ -193,6 +193,20 @@ class CachedMusicApiService(
             delegate.getArtistAlbums(id, limit)
         }
 
+    /**
+     * 已收藏专辑（`album/sublist`）。
+     *
+     * 它现在有**两个**消费方，且都是「一进页面就要一次」的形态：专辑墙（300 条）与
+     * 专辑详情（判定单张是否已收藏）。不缓存的话每次进详情页都会多打一次网络，
+     * 而这个列表只有用户自己收藏 / 取消收藏时才会变 —— 因此由
+     * [subscribeAlbum] 的写透负责失效（见下）。
+     */
+    override suspend fun getAlbumSublist(limit: Int, offset: Int): JsonElement =
+        read(
+            MusicApiMethod.ALBUM_SUBLIST,
+            mapOf("limit" to limit.toString(), "offset" to offset.toString())
+        ) { delegate.getAlbumSublist(limit, offset) }
+
     // 歌单
     override suspend fun getPlaylistDetail(id: Long): JsonElement =
         read(MusicApiMethod.PLAYLIST_DETAIL, mapOf("id" to id.toString())) {
@@ -349,6 +363,15 @@ class CachedMusicApiService(
     ): JsonElement = write(MusicApiMethod.PLAYLIST_DETAIL) {
         delegate.updatePlaylist(id, name, desc, tags)
     }
+
+    /**
+     * 收藏 / 取消收藏专辑 ⇒ 失效「已收藏专辑」列表（`album/sublist`）。
+     *
+     * ⚠️ 只失效 [MusicApiMethod.ALBUM_SUBLIST]：专辑详情（`album`）本身不随收藏态变化，
+     * 一起删只是让详情页白回源一次 —— 而详情页正是收藏动作的发起页，用户会立刻看到它重拉。
+     */
+    override suspend fun subscribeAlbum(id: Long, t: Int): JsonElement =
+        write(MusicApiMethod.ALBUM_SUBLIST) { delegate.subscribeAlbum(id, t) }
 
     override suspend fun likeSong(id: String, like: Boolean): JsonElement =
         write(MusicApiMethod.USER_LIKE_LIST) { delegate.likeSong(id, like) }
@@ -623,7 +646,9 @@ class CachedMusicApiService(
         // 这几张表按天甚至按周才变一次，不缓存的话每次切回首页都要重打一遍 ——
         // 首页一屏会并发十几个请求，这几个是纯公共数据、最没必要重复拉的那部分。
         MusicApiMethod.TOP_SONG, MusicApiMethod.TOP_ALBUM, MusicApiMethod.TOP_ARTISTS,
-        MusicApiMethod.TOP_PLAYLIST_HIGHQUALITY -> true
+        MusicApiMethod.TOP_PLAYLIST_HIGHQUALITY,
+        // 用户自己的收藏专辑列表：只有 `album/sub` 会改它（写透已接上失效）。
+        MusicApiMethod.ALBUM_SUBLIST -> true
         else -> false
     }
 }

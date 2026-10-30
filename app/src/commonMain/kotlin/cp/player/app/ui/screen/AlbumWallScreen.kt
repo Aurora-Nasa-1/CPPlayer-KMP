@@ -54,6 +54,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -90,7 +91,24 @@ class AlbumWallScreenModel : ScreenModel {
 
     init {
         observeRecent()
+        observeAlbumFavorites()
         refresh()
+    }
+
+    /**
+     * 收藏 / 取消收藏专辑后重拉——墙上「收藏专辑」那一源就是 `album/sublist`，
+     * 不发信号的后果是用户刚收藏的专辑在墙上不存在，而离开重进又突然有了。
+     *
+     * ⚠️ 这里直接调 [refresh]（它会置 `loading = true`），**不额外做静默分支**：
+     * 墙只有在 `loading && items.isEmpty()` 时才整面替换成占位（见 `AlbumWallContent`），
+     * 而收藏动作发生时墙上必然已有内容 ⇒ 旧构图留在原地，拉到后一次性换新。
+     */
+    private fun observeAlbumFavorites() {
+        screenModelScope.launch {
+            AppModel.albumFavoriteGeneration.drop(1).collect {
+                refresh()
+            }
+        }
     }
 
     /**

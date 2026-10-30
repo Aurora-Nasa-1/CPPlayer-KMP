@@ -150,6 +150,22 @@ class MusicRepository(private val api: MusicApiService) {
     suspend fun getAlbumDetail(id: Long): MusicResult<AlbumDetail> =
         MusicSourceFromApi.getAlbumDetail(api, id)
 
+    /**
+     * 收藏 / 取消收藏专辑（上游 `album/sub`，`t` = 1 收藏 / 2 取消收藏）。
+     *
+     * 没有返回值以外的「当前是否已收藏」查询接口 —— 判定只能靠
+     * [getUserAlbums] 拉全集本地比对，见 `AlbumDetailModel`。
+     *
+     * ⚠️ 成功后**必须**让读取方知道收藏列表变了：专辑墙（`AlbumWallScreenModel`）
+     * 与详情页都拿 `album/sublist` 当收藏真值，不发信号的话用户收藏完回到墙上
+     * 找不到刚收的专辑。
+     */
+    suspend fun subscribeAlbum(id: Long, subscribe: Boolean): Boolean {
+        val ok = isApiSuccess(api.subscribeAlbum(id, t = if (subscribe) 1 else 2))
+        if (ok) AppModel.notifyAlbumFavoriteChanged(id)
+        return ok
+    }
+
     /** 歌手介绍/资料；返回 null 表示这个 id 不是歌手。取消（如快速离开页面）会正常上抛。 */
     suspend fun getArtistProfile(id: Long): ArtistProfile? =
         runCatchingExceptCancellation { MusicSourceFromApi.parseArtistProfile(api.getArtistDetail(id)) }.getOrNull()

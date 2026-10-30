@@ -7,21 +7,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -32,8 +25,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
@@ -44,11 +35,8 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.i18n.cpStrings
 import cp.player.app.AppModel
 import cp.player.app.ui.anim.CoverFlight
-import cp.player.app.ui.component.AlbumCoverThumb
 import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.ContentState
-import cp.player.app.ui.component.CpActionButtonGroup
-import cp.player.app.ui.component.CpActionGroupItem
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.component.CpSpacing
@@ -61,13 +49,14 @@ import cp.player.app.ui.component.songContextMenuItems
 import cp.player.app.ui.component.songShareText
 import cp.player.app.platform.shareText
 import cp.player.app.ui.util.UiEvents
-import cp.player.app.ui.util.formatTimeMs
 import cp.player.core.BackendResult
 import cp.player.core.music.AlbumDetail
 import cp.player.core.music.AlbumSummary
 import cp.player.core.music.TrackSummary
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
@@ -98,6 +87,10 @@ private data class AlbumUiState(
     val loading: Boolean = true,
     val error: String? = null,
     val detail: AlbumDetail? = null,
+    /** 当前专辑是否已收藏（由 `album/sublist` 全集判定）。 */
+    val isFavorite: Boolean = false,
+    /** 收藏请求在途：按钮置灰，避免连点叠出互相取消的请求。 */
+    val favoritePending: Boolean = false,
 )
 
 private class AlbumDetailModel : ScreenModel {
@@ -105,6 +98,47 @@ private class AlbumDetailModel : ScreenModel {
     val state: StateFlow<AlbumUiState> = _state
 
     private var loadedId: Long? = null
+
+    /**
+     * 收藏集合是否已拉到。
+     *
+     * 上游没有「这张专辑是否已收藏」的单条查询 —— 只能拉 `album/sublist` 全集本地比对。
+     * 详情页可能被反复进入 / 退出大播放器后重进组合，所以拉到的结果缓存在模型里，
+     * 只有 [AppModel.albumFavoriteGeneration] 真的变了才重新拉。
+     */
+    private var favoriteIds: Set<Long>? = null
+
+    init {
+        // 任何地方收藏 / 取消收藏专辑后，本页的收藏态都要跟着变（典型场景：
+        // 详情页在双栏右栏、用户在左栏列表里收藏了同一张专辑）。
+        // `drop(1)` 跳过订阅时的当前值：首屏的收藏态由 [load] 自己拉，
+        // 不跳过的话这里会先白拉一次（且与 load 的那次并发，结果可能乱序覆盖）。
+        screenModelScope.launch {
+            AppModel.albumFavoriteGeneration.drop(1).collect {
+                // 自己发的那一次不重拉：本地已经乐观更新过，再拉一遍只会
+                // 因网络慢而闪回旧状态（见 AppModel.isLastChangedBySelf）。
+                if (AppModel.isLastChangedBySelf(loadedId)) return@collect
+                favoriteIds = null
+                syncFavoriteState()
+            }
+        }
+        // 换账号 ⇒ 收藏集合整份换掉（「已收藏」是账号数据，登录 / 登出 / 切号后
+        // 上一账号的判定没有任何意义）。订阅 accountGeneration 而不是 userProfileFlow：
+        // 后者启动时恢复资料也会发一次（见 AppModel.accountGeneration 的 KDoc）。
+        screenModelScope.launch {
+            AppModel.accountGeneration.drop(1).collect {
+                favoriteIds = null
+                syncFavoriteState()
+            }
+        }
+        // 切音源 ⇒ 收藏集合属于旧音源，同样作废。
+        screenModelScope.launch {
+            AppModel.sourceGeneration.drop(1).collect {
+                favoriteIds = null
+                syncFavoriteState()
+            }
+        }
+    }
 
     fun load(albumId: Long, fallback: AlbumSummary?) {
         if (loadedId == albumId && _state.value.detail != null) return
@@ -138,6 +172,69 @@ private class AlbumDetailModel : ScreenModel {
                     error = result.message,
                 )
             }
+            // 详情落定后再问收藏态：两个请求互不依赖，但收藏态错了顶多是按钮显示不对，
+            // 而详情拿不到整页就是错误态 —— 先保证主要信息。
+            syncFavoriteState()
+        }
+    }
+
+    /**
+     * 拉收藏全集并把结果套到当前专辑上。**已拉过就直接用缓存**（[favoriteIds] 非空）。
+     *
+     * 要点：`album/sublist` 本身在缓存层是读透的（见 `CachedMusicApiService.isCacheable`），
+     * 所以「拉全集」不是每次都打网络；但**空结果同样要缓存**（`emptySet()` 不为 null），
+     * 否则未登录时每次进详情页都会重打一次 —— 用 `?:` 而不是判 `isNotEmpty` 正是为此。
+     *
+     * **未登录 / 请求失败一律当作「未收藏」**而不是报错：详情页本身是可看的，
+     * 为了一个装饰性开关把整页变成错误态得不偿失（点下去会走 [toggleFavorite]
+     * 的登录提示分支，用户仍然知道为什么点了没反应）。
+     */
+    private suspend fun syncFavoriteState() {
+        val albumId = loadedId ?: return
+        val ids = favoriteIds ?: runCatching {
+            val result = AppModel.musicRepository.getUserAlbums(limit = 300)
+            when (result) {
+                is BackendResult.Success -> result.data.map { it.id }.toSet()
+                else -> emptySet()
+            }
+        }.getOrElse { emptySet() }.also { favoriteIds = it }
+        _state.update { it.copy(isFavorite = albumId in ids) }
+    }
+
+    /**
+     * 切换当前专辑的收藏态。
+     *
+     * 顺序是**乐观更新 → 请求 → 失败回滚**（与 `PlaybackControllerImpl.toggleFavoriteFor`
+     * 同一套）：收藏是「带结果的动作」，等网络回来才变色会让点击像没生效。
+     *
+     * 失败时回滚并出声 —— 静默回滚的结果是「按钮弹回去但没有任何解释」。
+     */
+    fun toggleFavorite() {
+        val albumId = loadedId ?: return
+        if (_state.value.favoritePending) return
+        if (AppModel.userProfileFlow.value == null) {
+            UiEvents.notify(AppModel.strings().album.favoriteAlbumNeedLogin)
+            return
+        }
+        val target = !_state.value.isFavorite
+        // 乐观更新 + 在途标记：连点由 [AlbumUiState.favoritePending] 挡住，
+        // 不挡的话两次点击会各自按「点击那一刻的本地状态」算出同一个目标，
+        // 上一次的响应回来又把按钮弹回去。
+        _state.update { it.copy(isFavorite = target, favoritePending = true) }
+        screenModelScope.launch {
+            val ok = runCatching { AppModel.musicRepository.subscribeAlbum(albumId, target) }
+                .getOrDefault(false)
+            val strings = AppModel.strings()
+            if (ok) {
+                // 收藏全集已经变了：本模型的缓存跟着改，**不必**立刻重拉
+                // （subscribeAlbum 已发代际信号，本页自己不会收到重拉）。
+                favoriteIds = if (target) favoriteIds?.plus(albumId) else favoriteIds?.minus(albumId)
+                _state.update { it.copy(favoritePending = false) }
+                UiEvents.notify(strings.album.favoriteAlbumDone(target))
+            } else {
+                _state.update { it.copy(isFavorite = !target, favoritePending = false) }
+                UiEvents.notify(strings.album.favoriteAlbumFailed)
+            }
         }
     }
 }
@@ -164,6 +261,24 @@ private fun AlbumDetailContent(
 
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
+
+    // 取消收藏的二次确认。**可恢复**操作 ⇒ destructive = false（确认键不走 error 色，
+    // 见 AGENTS.md §6）。收藏（加法）不需要确认，只有取消才问。
+    val confirm = cp.player.app.ui.component.rememberConfirmState()
+    val requestToggleFavorite: () -> Unit = {
+        val target = !state.isFavorite
+        if (!target) {
+            confirm.request(
+                title = s.album.unfavoriteAlbumAction,
+                message = s.album.unfavoriteAlbumMessage(state.detail?.name ?: fallback?.name ?: ""),
+                confirmLabel = s.album.unfavoriteAlbumAction,
+                destructive = false,
+                onConfirm = { model.toggleFavorite() },
+            )
+        } else {
+            model.toggleFavorite()
+        }
+    }
 
     LaunchedEffect(albumId) { model.load(albumId, fallback) }
 
@@ -235,6 +350,9 @@ private fun AlbumDetailContent(
                             trackCount = allTracks.size,
                             totalDurationMs = allTracks.sumOf { it.durationMs },
                             wide = isWide,
+                            isFavorite = state.isFavorite,
+                            favoritePending = state.favoritePending,
+                            onToggleFavorite = { requestToggleFavorite() },
                             onPlayAll = { playAt(0) },
                             onShuffle = shufflePlay,
                             onAddToQueue = queueAll,
@@ -427,139 +545,10 @@ private fun AlbumDetailContent(
             onDismiss = { showInfoTarget = null },
         )
     }
+
+    // 确认框宿主放在页面组合**末尾**（与其余弹层同级）——见 CpConfirmHost 的约定。
+    cp.player.app.ui.component.CpConfirmHost(confirm)
 }
 
-/**
- * 专辑头部：封面 + 名称 + 歌手 / 发行信息 + 说明 + 动作组。
- *
- * 按 M3 Expressive 的「hero 详情头」组织（与 `AboutScreen` 的 hero 同一套语言）：
- * 1. **标题用主色 + Bold** —— 一页的门面要一眼认出来；普通 `onSurface` 标题与列表行
- *    里的正文没有层级差，整页看起来像「一堆没排序的文字」；
- * 2. 封面圆角走 `shapes.extraLarge`（28dp），大图配大圆角；
- * 3. 动作操作整合为连体动作组（[CpActionButtonGroup]），主次分明且自适应横向布局。
- *
- * ⚠️ 曲目为空时四个动作**全部禁用**。拿不到曲目时头部仍会画出来（错误态也保留封面与
- * 名称），可点的按钮会让用户以为「点了没反应」—— 实际上队列里什么都没有。
- */
-@Composable
-private fun AlbumHeader(
-    detail: AlbumDetail,
-    trackCount: Int,
-    totalDurationMs: Long,
-    wide: Boolean,
-    onPlayAll: () -> Unit,
-    onShuffle: () -> Unit,
-    onAddToQueue: () -> Unit,
-    onDownloadAll: () -> Unit,
-) {
-    val s = cpStrings()
-    val metaLine = buildList {
-        detail.artistName?.takeIf { it.isNotBlank() }?.let(::add)
-        detail.publishTimeMs?.let { ms ->
-            cp.player.app.ui.component.epochMillisToYear(ms)?.let { year -> add(s.album.releasedYear(year)) }
-        }
-        detail.company?.takeIf { it.isNotBlank() }?.let(::add)
-        if (trackCount > 0) add(s.album.albumMeta(trackCount, formatTimeMs(totalDurationMs)))
-    }.joinToString(" · ")
-
-    val hasTracks = trackCount > 0
-    val actions = listOf(
-        CpActionGroupItem(s.library.playAll, Icons.Filled.PlayArrow, onPlayAll, enabled = hasTracks),
-        CpActionGroupItem(s.album.shufflePlay, Icons.Filled.Shuffle, onShuffle, enabled = hasTracks),
-        CpActionGroupItem(s.library.addToQueue, Icons.AutoMirrored.Filled.PlaylistAdd, onAddToQueue, enabled = hasTracks),
-        CpActionGroupItem(s.library.downloadAll, Icons.Filled.Download, onDownloadAll, enabled = hasTracks),
-    )
-
-    if (wide) {
-        Row(
-            Modifier.fillMaxWidth().padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(24.dp),
-        ) {
-            AlbumCoverThumb(
-                coverUrl = detail.coverUrl,
-                corner = AlbumCoverCorner,
-                modifier = Modifier.size(220.dp),
-            )
-            Column(Modifier.weight(1f)) {
-                AlbumTitle(detail.name, MaterialTheme.typography.headlineMedium)
-                Spacer(Modifier.height(8.dp))
-                AlbumMetaLine(metaLine)
-                detail.description?.takeIf { it.isNotBlank() }?.let { desc ->
-                    Spacer(Modifier.height(12.dp))
-                    AlbumDescription(desc, maxLines = 6)
-                }
-                Spacer(Modifier.height(16.dp))
-                CpActionButtonGroup(actions, modifier = Modifier.fillMaxWidth())
-            }
-        }
-    } else {
-        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-            AlbumCoverThumb(
-                coverUrl = detail.coverUrl,
-                corner = AlbumCoverCorner,
-                // ⚠️ `widthIn` 必须在 `fillMaxWidth` **之前**：顺序反了约束已被钉死，
-                // `widthIn` 会变成空操作（见 AGENTS.md 的宽高约束约定）。
-                modifier = Modifier
-                    .widthIn(max = 280.dp)
-                    .fillMaxWidth(0.62f)
-                    .aspectRatio(1f),
-            )
-            Spacer(Modifier.height(16.dp))
-            AlbumTitle(detail.name, MaterialTheme.typography.headlineSmall)
-            Spacer(Modifier.height(8.dp))
-            AlbumMetaLine(metaLine)
-            detail.description?.takeIf { it.isNotBlank() }?.let { desc ->
-                Spacer(Modifier.height(12.dp))
-                AlbumDescription(desc, maxLines = 5)
-            }
-            Spacer(Modifier.height(16.dp))
-            CpActionButtonGroup(actions, modifier = Modifier.fillMaxWidth())
-        }
-    }
-}
-
-/**
- * 专辑名。**主色 + Bold** —— 详情页的门面。
- *
- * 宽度（`headlineMedium` / `headlineSmall`）由调用方按宽窄屏选：同一个值在手机上
- * 会一行只放得下三四个字，专辑名普遍偏长，会立刻折成三行把封面挤下去。
- */
-@Composable
-private fun AlbumTitle(name: String, style: TextStyle) {
-    CpText(
-        name,
-        style = style,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary,
-        maxLines = 3,
-    )
-}
-
-/** 元信息行：歌手 · 发行年 · 发行方 · N 首 / 时长。全空时**不画**（否则留一条空行）。 */
-@Composable
-private fun AlbumMetaLine(text: String) {
-    if (text.isBlank()) return
-    CpText(
-        text,
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-}
-
-/** 专辑说明。**不套卡片**：说明本身是长文，再包一层容器只会多一道边框和一层内边距。 */
-@Composable
-private fun AlbumDescription(text: String, maxLines: Int) {
-    CpText(
-        text,
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = maxLines,
-    )
-}
-
-/**
- * 专辑封面圆角，取 M3 形状刻度的 `extraLarge`（28dp）—— 与卡片 / 弹层同一档。
- *
- * 不沿用列表缩略图的 12dp：那个值是按 60dp 的图定的，套到 220dp 的封面上会显得很方。
- */
-private val AlbumCoverCorner = 28.dp
+// 头部（封面 / 标题 / 元信息 / 说明 / 收藏 / 动作组）在 `AlbumHeaderParts.kt`：
+// 拆出去的唯一理由是**可出图** —— 整页要 AppModel + 网络才能起来，而头部是纯数据驱动的。

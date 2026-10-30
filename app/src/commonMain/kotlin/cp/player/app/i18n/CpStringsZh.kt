@@ -923,6 +923,16 @@ object CpStringsZh : CpStrings {
         override val liked = "已收藏"
         override val unliked = "已取消收藏"
         override val searchAlbum = "搜索专辑曲目…"
+
+        override val favoriteAlbum = "收藏专辑"
+        override val favoriteAlbumActive = "已收藏专辑"
+        override fun favoriteAlbumDone(favorited: Boolean) =
+            if (favorited) "已收藏专辑" else "已取消收藏专辑"
+        override fun unfavoriteAlbumMessage(name: String) =
+            "确定取消收藏「$name」吗？之后仍可重新收藏。"
+        override val unfavoriteAlbumAction = "取消收藏"
+        override val favoriteAlbumNeedLogin = "登录后才能收藏专辑"
+        override val favoriteAlbumFailed = "收藏操作失败，请稍后再试"
     }
 
     override val playlistSheet: PlaylistSheetStrings = object : PlaylistSheetStrings {

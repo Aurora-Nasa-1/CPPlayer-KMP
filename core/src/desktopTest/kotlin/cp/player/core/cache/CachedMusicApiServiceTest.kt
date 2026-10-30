@@ -277,6 +277,53 @@ class CachedMusicApiServiceTest {
         assertEquals(2, f.calls.count { it == "getLikeList" })
     }
 
+    /**
+     * 收藏专辑后，「已收藏专辑」列表必须回源。
+     *
+     * 这条**曾经是真的坏的**：`album/sublist` 根本不在 [isCacheable] 名单里，
+     * 于是 `subscribeAlbum` 的 `write(...)` 一个条目都失效不掉 —— 而专辑详情页
+     * 新增的收藏态判定正是读这个列表的。两处都放开（读侧进名单 + 写侧失效）才算成立，
+     * 所以这条用例同时钉住两侧。
+     */
+    @Test
+    fun `收藏专辑后已收藏专辑列表回源`() = runBlocking {
+        val f = Fixture()
+
+        f.api.getAlbumSublist(300, 0)
+        f.api.getAlbumSublist(300, 0)
+        assertEquals(1, f.calls.count { it == "getAlbumSublist" })
+
+        f.api.subscribeAlbum(1001L, 1)
+
+        f.next = ok("v2")
+        assertEquals("v2", tagOf(f.api.getAlbumSublist(300, 0)))
+        assertEquals(2, f.calls.count { it == "getAlbumSublist" })
+    }
+
+    /** 收藏不改变专辑详情本身，别为它白删详情缓存（详情页正是发起收藏的那一页）。 */
+    @Test
+    fun `收藏专辑不影响专辑详情缓存`() = runBlocking {
+        val f = Fixture()
+
+        f.api.getAlbumDetail(1001L)
+        f.api.subscribeAlbum(1001L, 1)
+
+        assertEquals("v1", tagOf(f.api.getAlbumDetail(1001L)))
+        assertEquals(1, f.calls.count { it == "getAlbumDetail" })
+    }
+
+    /** `album/sublist` 的键必须区分分页 —— 专辑墙按 300 拉、别处可能按 25 拉。 */
+    @Test
+    fun `已收藏专辑不同分页不共用缓存`() = runBlocking {
+        val f = Fixture()
+
+        f.api.getAlbumSublist(25, 0)
+        f.api.getAlbumSublist(300, 0)
+        f.api.getAlbumSublist(25, 25)
+
+        assertEquals(3, f.calls.count { it == "getAlbumSublist" })
+    }
+
     @Test
     fun `发评论后不再返回旧的评论列表`() = runBlocking {
         val f = Fixture()

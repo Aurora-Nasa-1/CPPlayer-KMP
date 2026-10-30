@@ -152,6 +152,42 @@ object AppModel {
     }
 
     /**
+     * 「专辑收藏代际」：专辑被收藏 / 取消收藏时递增。
+     *
+     * 与 [playlistGeneration] 是同一种信号，只是对象不同 —— **刻意不复用歌单那个**：
+     * 歌单代际的订阅者（媒体库、首页侧栏、歌单详情）在收藏专辑时**没有任何数据变化**，
+     * 复用会让它们白拉一遍网络；而专辑墙确实要重拉 `album/sublist`。
+     *
+     * 上游没有「这张专辑是否已收藏」的单条查询接口，收藏态只能靠 `album/sublist`
+     * 全集本地比对 —— 所以这个信号的语义是「**收藏集合变了**」，不是「某张图变了」。
+     * 参数 [albumId] 仅供需要定位单张专辑的订阅者使用，不参与去重。
+     */
+    private val _albumFavoriteGeneration = MutableStateFlow(0)
+    val albumFavoriteGeneration: StateFlow<Int> = _albumFavoriteGeneration.asStateFlow()
+
+    /**
+     * 最近一次被收藏 / 取消收藏的专辑 id。
+     *
+     * 详情页用它判断「这次代际是我自己发的」—— 否则本页刚做完的乐观更新会被
+     * 自己触发的刷新再拉一遍（并且可能因网络慢而闪回旧状态）。
+     */
+    @Volatile
+    private var lastChangedAlbumId: Long? = null
+
+    /** 本次代际变化是否由 [albumId] 这张专辑自己发出（详情页据此跳过重拉）。 */
+    fun isLastChangedBySelf(albumId: Long?): Boolean =
+        albumId != null && lastChangedAlbumId == albumId
+
+    fun notifyAlbumFavoriteChanged(albumId: Long? = null) {
+        // ⚠️ 顺序不能反：`lastChangedAlbumId` 必须在代际自增**之前**写好。
+        // StateFlow 的订阅者在 `value += 1` 那一句就可能被打断去读它（Dispatchers.Default
+        // 上并发），先自增再赋值会出现「代际已变成新值、但 lastChangedAlbumId 还是上一张」
+        // 的窗口 —— 详情页于是把自己发的那次当成别人的，白拉一遍列表。
+        lastChangedAlbumId = albumId
+        _albumFavoriteGeneration.value += 1
+    }
+
+    /**
      * 首次资料恢复是否已经跑完（见 [accountGeneration]）。
      * 只在 Main 之外的 IO 上写，读也只在同一条 IO 链里 —— 加 `@Volatile` 只是为了让
      * 读取方看到最新值，不做复合原子性假设。
