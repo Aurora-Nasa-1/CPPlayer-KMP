@@ -188,9 +188,19 @@ internal fun WallPosterOverlay(
                         Modifier.padding(start = 20.dp, end = 26.dp, top = 11.dp, bottom = 11.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Filled.PlayArrow, null, modifier = Modifier.size(18.dp))
+                        Icon(
+                            Icons.Filled.PlayArrow,
+                            contentDescription = s.wall.posterPlay,
+                            tint = Color.Black,
+                            modifier = Modifier.size(18.dp),
+                        )
                         Spacer(Modifier.width(8.dp))
-                        CpText(s.wall.posterPlay, fontSize = 14.5.sp, fontWeight = FontWeight.ExtraBold)
+                        CpText(
+                            s.wall.posterPlay,
+                            color = Color.Black,
+                            fontSize = 14.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                        )
                     }
                 }
                 Spacer(Modifier.width(14.dp))

@@ -581,19 +581,10 @@ internal class SmoothPositionSource(
         val elapsedMs = (nowNanos() - sampledAtNanos) / 1_000_000.0
         val clamped = elapsedMs.coerceIn(0.0, MaxExtrapolationMs.toDouble())
         val correction = correctionMs * kotlin.math.exp(-clamped / DecayTauMs)
-        val leadOffset = if (playing) LeadCompensationMs else 0.0
-        return authoritativeMs + clamped + correction + leadOffset
+        return authoritativeMs + clamped + correction
     }
 
     private companion object {
-        /**
-         * 音画同步超前量补偿（毫秒）：
-         * 抵消「底层音频引擎 200ms 轮询 + 协程派发 + Compose 重绘」管线时延
-         * 与系统 DAC 硬件音频缓冲输出延迟（通常 40~60ms）。
-         * 使视觉扫光精准对齐人耳听到的声音，消除智能逐字整体偏慢感（【L6】）。
-         */
-        const val LeadCompensationMs = 50.0
-
         /** 外推上限：200ms 轮询周期 + 100ms 余量。 */
         const val MaxExtrapolationMs = 300L
 
