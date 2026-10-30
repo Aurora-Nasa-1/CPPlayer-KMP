@@ -135,9 +135,9 @@ jpackage 生成的 `CPPlayer.cfg` 里 classpath / 资源路径全是 `$APPDIR\..
 
 ## 4. 更新链路
 
-**现状**（本次未改）：`AppUpdateChecker` 在 Windows 上匹配 `-Setup.exe`，然后打开浏览器/
-下载，安装仍由用户手动完成。相比 MSI 时代，安装这一步已经从「向导 + 选目录」变成
-「双击一下」，但还不是自动更新。
+`AppUpdateChecker` 在 Windows 上匹配 `-Setup.exe`，把 GitHub 资产的直链交给应用内
+下载器，安装包落到 CPPlayer 的下载目录，不再跳转浏览器。安装仍由用户手动完成：
+下载完成后运行 `Setup.exe` 即可。
 
 **下一步（待做）**：应用内静默更新。Velopack 的更新源可以直接用 GitHub Releases
 （`vpk` 会生成 `RELEASES`，客户端按它找包）。JVM 侧不需要引 Velopack 的 SDK：

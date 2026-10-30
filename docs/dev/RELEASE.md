@@ -138,8 +138,8 @@ on the default JDK and says so on stdout — `javaHome` is never set to a bogus 
 1. The About page calls the GitHub Releases API.
 2. It compares SemVer, including prerelease suffixes.
 3. Android selects the APK asset and queues it through `DownloadManager` into `Downloads`, with a completion notification.
-4. Windows selects the `-Setup.exe` asset; Linux selects the DEB/TAR.GZ asset. Desktop opens the browser because package installation remains user-controlled — see [`WINDOWS_PACKAGING.md`](WINDOWS_PACKAGING.md) for turning the Windows side into a silent in-app update.
-5. If no matching asset exists, the release page is opened as a safe fallback.
+4. Windows selects the `-Setup.exe` asset; Linux prefers the DEB and falls back to TAR.GZ; Android selects the APK. The selected asset's GitHub `browser_download_url` is passed directly to the platform downloader.
+5. Android queues the APK with `DownloadManager`; desktop streams the installer/archive into CPPlayer's managed download directory without opening a browser. If no matching asset exists, the release page remains available as a manual fallback.
 
 Desktop build metadata reaches the app through `compose.desktop.application.jvmArgs` in `app/build.gradle.kts` (`-Dcp.player.versionName`, `.versionCode`, `.releaseChannel`, `.gitSha`) and is read by `BuildInfo`. **Gradle properties do not become JVM system properties on their own** — dropping those lines silently makes the About page report `v1.0.0 (1)` / `unknown` forever, regardless of the tag.
 
