@@ -216,6 +216,7 @@ Java_cp_player_core_provider_JniProvider_analyzeAudioFile(
         "like": "unsupported"
     },
     "contract": "standard",         // "standard" | "netease-legacy" | null —— 当前仅为元数据（见下）
+    "apiVersionTag": "netease-v3",  // 接口代际标签（可选，纯展示，见字段表）
     "capabilities": ["search", "playback", "webviewLogin"],
     "loginMethods": ["qr", "phone", "email", "cookie", "webview"],
     "settingsSchema": [ ... ],
@@ -236,6 +237,7 @@ Java_cp_player_core_provider_JniProvider_analyzeAudioFile(
 | `entryPoint`       | 是  | URL、文件名或 .so 名                                                                                                     |
 | `contract`         | 否  | 标记响应模型的风格：`"standard"`（Standard v3 扁平模型）或 `"netease-legacy"`（网易云传统模型）。⚠️ **当前是纯元数据**：宿主解析器本就同时兼容两种形状，没有任何代码按它分支行为。填了不会改任何解析路径，新包仍写明，避免将来启用时歧义。 |
 | `apiVersion`       | 否（缺省 `1`） | 插件自身实现的**插件 API 版本**（宿主当前支持到 `3`）。缺省 1 = 历史行为（所有老包都是 v1，永远可加载）。**不要**在这里照抄 `3` 然后以为就能用 v3 特性——版本由你打算用的契约决定。 |
+| `apiVersionTag`    | 否（缺省不声明） | **接口代际标签**，自由字符串（如 `"netease-v3"` / `"v123"`）。⚠️ **纯展示，不分支行为**：不拼进请求 URL（版本段要进路径请写进 `entryPoint`）、不切换响应解析、不作加载闸门（判据只有 `minHostApiVersion`），宿主不认识这个串也照常加载。音源管理页副标题与诊断页会原样印出，用途是把「同一个上游平台的老接口包 / 新接口包」区分开。空白串等价于未声明。 |
 | `minHostApiVersion` | 否（缺省 `1`） | **加载的唯一闸门**：> 宿主当前 API 版本（`3`）时直接**拒装**并提示「请升级应用」。需要宿主侧能力时再把数字抬上去。 |
 | `sha256`           | 否  | （已废弃）历史字段，宿主不再校验。在包内 manifest 声明自身 zip 哈希自相矛盾且无法实现，整包完整性应由外部发布渠道校验。 |
 | `capabilities`     | 否  | 显式能力声明列表，如 `["search", "playback", "webviewLogin"]`。语义：**写了数组**则未声明项在 UI 上隐藏入口（当前真正做 UI 门控的仅 `comments` / `cloudDrive` / `recommend` 三项）；**完全不写该字段**则不隐藏任何入口（老包行为）。 |

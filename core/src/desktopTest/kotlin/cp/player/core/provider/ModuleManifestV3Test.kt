@@ -73,6 +73,53 @@ class ModuleManifestV3Test {
     }
 
     @Test
+    fun apiVersionTagIsFreeFormLabelAndNeverABarrier() {
+        // 代际标签刻意是**自由字符串**：宿主不认识 "netease-v3" 也必须照常加载。
+        // 若这里改成 enum / 白名单，新代际名的包在旧宿主上会直接装不上 —— 那才是灾难。
+        val m = parse(
+            """
+            {
+              "id": "netease-v3", "name": "网易云 v3", "version": "1.0.0",
+              "type": "http", "entryPoint": "http://127.0.0.1:3000/v123",
+              "apiVersionTag": "netease-v3"
+            }
+            """.trimIndent(),
+        )
+        assertEquals("netease-v3", m.resolvedApiVersionTag)
+        assertEquals("netease-v3", m.apiVersionTag, "标签必须原样保留，不能被规范化成别的写法")
+        assertTrue(m.isLoadable, "标签不是加载闸门，判据只有 minHostApiVersion")
+        // 标签与契约编号是两个维度：声明了标签不会顺手把 apiVersion 抬成 3。
+        assertEquals(1, m.resolvedApiVersion)
+    }
+
+    @Test
+    fun blankApiVersionTagIsTreatedAsUndeclared() {
+        // 空串 / 全空白会渲染成「· ·」这种只有分隔点的空角标，应当等价于没声明。
+        val blank = parse(
+            """
+            {
+              "id": "blank-tag", "name": "Blank", "version": "1.0.0",
+              "type": "http", "entryPoint": "http://127.0.0.1:3000",
+              "apiVersionTag": "   "
+            }
+            """.trimIndent(),
+        )
+        assertNull(blank.resolvedApiVersionTag)
+        // 字段本身仍保留原值（不替作者改写 manifest）。
+        assertEquals("   ", blank.apiVersionTag)
+    }
+
+    @Test
+    fun missingApiVersionTagIsNotWrittenBack() {
+        val m = parse(legacyJson)
+        val roundTripped = json.encodeToString(ModuleManifest.serializer(), m)
+        assertFalse(
+            roundTripped.contains("apiVersionTag"),
+            "缺省字段被序列化写回，往返一次 manifest 不再与原始文件一致：$roundTripped",
+        )
+    }
+
+    @Test
     fun minHostApiVersionAboveHostIsRejected() {
         val m = parse(
             """

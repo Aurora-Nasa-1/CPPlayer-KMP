@@ -76,6 +76,7 @@ my-jni-provider.zip (或 .cpm)
   "type": "http",
   "entryPoint": "http://127.0.0.1:3000",
   "contract": "standard",
+  "apiVersionTag": "standard-v3",
   "minHostApiVersion": 1,
   "supportedAbis": [
     "arm64-v8a",
@@ -161,6 +162,7 @@ my-jni-provider.zip (或 .cpm)
 | `entryPoint` | `String` | **必选** | HTTP 基地址（如 `"http://127.0.0.1:3000"`）或动态库文件名 |
 | `contract` | `String` | **推荐** | 填 `"standard"` 声明采用现代 Standard v3 规范。⚠️ 当前仅为元数据标记（解析器本就兼容两种响应形状），宿主不据此分支行为 |
 | `apiVersion` | `Int` | 可选（缺省 `1`） | 插件自身实现的插件 API 版本（当前宿主支持到 `3`）。缺省=1 表示历史行为 |
+| `apiVersionTag` | `String` | 可选（缺省不声明） | **接口代际标签**，自由字符串（如 `"netease-v3"` / `"v123"`）。**纯展示**：不拼请求路径、不切解析分支、不作加载闸门；音源管理页与诊断页原样显示，用来把「同一平台的老接口包 / 新接口包」区分开。空白串等价于未声明。上游版本段要进 URL 请自己写进 `entryPoint`（如 `"http://127.0.0.1:3000/v123"`），不要指望这个字段 |
 | `minHostApiVersion` | `Int` | 可选（缺省 `1`） | **加载的唯一闸门**：>宿主当前 API 版本（`3`）时拒绝加载并提示升级 |
 | `capabilities` | `Array<String>` | **强烈推荐** | 声明音源支持的能力网格清单；写了数组后未声明项在 UI 上裁剪（含能力徽标） |
 | `loginMethods` | `Array<String>` | 可选 | 支持的登录通道：`"qr"`(扫码), `"email"`(邮箱), `"sms"`(短信验证码), `"cookie"`(粘贴 Cookie), `"captchaImage"`(图形验证码), `"webview"`/`"web"`(WebView)。缺省=展示全部常见方式 |

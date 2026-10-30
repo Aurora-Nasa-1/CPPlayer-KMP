@@ -126,6 +126,22 @@ data class ModuleManifest(
      */
     val minHostApiVersion: Int? = null,
     /**
+     * 接口代际标签（可选，自由字符串，如 `"netease-v3"` / `"v123"`）。
+     *
+     * 用途：让宿主与用户在音源管理页把「这是哪一代接口的包」区分开——
+     * 同样是网易云，`netease-legacy` 与 `netease-v3` 两套包并存时，
+     * 只看 `version`（音源作者自己的语义化版本）分不出代际。
+     *
+     * ⚠️ **当前是纯标签，不参与任何行为分支**：
+     * - 不拼进请求 URL（HTTP 音源仍按 `${entryPoint}/<method>` 请求，版本段要拼请自己写进 `entryPoint`）；
+     * - 不切换响应解析（解析器本就同时兼容扁平 / 嵌套两种形状）；
+     * - 不作为加载闸门（判据只有 [minHostApiVersion]），也**不**要求宿主认识这个值。
+     *
+     * 刻意用裸字符串而不是 enum：manifest 是外部输入，新代际名出现时旧宿主
+     * 必须照常加载该包，只是在界面上照原样显示这个串。
+     */
+    val apiVersionTag: String? = null,
+    /**
      * 声称支持的能力列表（见 [ProviderCapability]，可选）。
      *
      * 未识别的条目**忽略而不报错**（前向兼容）。null / 缺省 = 未声明，
@@ -196,6 +212,16 @@ data class ModuleManifest(
 
     /** 已解析的宿主最低要求（缺省 1）。 */
     val resolvedMinHostApiVersion: Int get() = minHostApiVersion ?: 1
+
+    /**
+     * 已解析的接口代际标签：去空白之后仍非空才算声明。
+     *
+     * 为什么要掐掉空串：`"apiVersionTag": ""` 这类值在 UI 上会渲染成一个
+     * 只有分隔点的空角标（`· API 版本: ·`），看起来像宿主漏读字段。
+     * 空串应当与「没声明」等价。
+     */
+    val resolvedApiVersionTag: String?
+        get() = apiVersionTag?.trim()?.takeIf { it.isNotEmpty() }
 
     /**
      * 本包能否被当前宿主加载。

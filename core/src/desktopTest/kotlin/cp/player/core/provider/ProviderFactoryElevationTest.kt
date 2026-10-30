@@ -108,4 +108,38 @@ class ProviderFactoryElevationTest {
         val provider = ProviderFactory.create(manifest, tempDir.absolutePath)
         assertNull(provider, "不存在入口文件时应返回 null")
     }
+
+    @Test
+    fun `ProviderFactory 将 apiVersionTag 透传到 Provider`() {
+        // 标签只用于展示，但**显示的地方读的是 provider.apiVersionTag**，不是 manifest。
+        // 少接一处（比如 http 分支漏传）就会静默退化成「这包没写标签」—— 编译过、界面空。
+        val manifest = ModuleManifest(
+            id = "tagged-http",
+            name = "Tagged Http",
+            version = "1.0.0",
+            type = "http",
+            entryPoint = "http://127.0.0.1:8005",
+            apiVersionTag = "netease-v3",
+        )
+
+        val provider = ProviderFactory.create(manifest, tempDir.absolutePath)
+        assertNotNull(provider, "http 音源不需要入口文件，必须创建成功")
+        assertEquals("netease-v3", provider.apiVersionTag)
+        assertEquals(1, provider.apiVersion, "声明标签不该顺手改契约编号")
+    }
+
+    @Test
+    fun `ProviderFactory 未声明标签时 Provider 侧为 null`() {
+        val manifest = ModuleManifest(
+            id = "untagged-http",
+            name = "Untagged Http",
+            version = "1.0.0",
+            type = "http",
+            entryPoint = "http://127.0.0.1:8006",
+        )
+
+        val provider = ProviderFactory.create(manifest, tempDir.absolutePath)
+        assertNotNull(provider)
+        assertNull(provider.apiVersionTag, "老包没声明标签时必须为 null，界面才不会多画一个空角标")
+    }
 }

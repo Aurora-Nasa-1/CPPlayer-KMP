@@ -38,6 +38,7 @@ class DesktopJniProvider(
     loginMethods: List<String>? = null,
     capabilities: List<String>? = null,
     apiVersion: Int = 1,
+    apiVersionTag: String? = null,
     contract: String? = null,
     settingsSchema: List<ProviderSettingItemSchema>? = null
 ) : JniProvider(
@@ -51,6 +52,7 @@ class DesktopJniProvider(
     loginMethods = loginMethods,
     capabilities = capabilities,
     apiVersion = apiVersion,
+    apiVersionTag = apiVersionTag,
     contract = contract,
     settingsSchema = settingsSchema
 ) {
@@ -104,6 +106,7 @@ class DesktopJniProvider(
             loginMethods = loginMethods,
             capabilities = capabilities,
             apiVersion = apiVersion,
+            apiVersionTag = apiVersionTag,
             contract = contract,
             settingsSchema = settingsSchema
         )

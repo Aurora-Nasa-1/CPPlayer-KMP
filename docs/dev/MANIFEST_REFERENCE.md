@@ -27,6 +27,7 @@
 | `entryPoint` | String | ✅ | — | http：基地址；jni：库文件名；binary：可执行文件名。jni 加载顺序：`lib/<abi>/<entryPoint>` → 根目录 → Android 单 `.so` 探测（`PlatformSupport` L268-308） |
 | `apiMap` | Map<String,String> | 可选 | null | **key = 宿主内部标准方法名**（`cloudsearch`、`song/url/v1`、`lyric/new`…），**value = 你的端点**。查不到时按 key 原样请求（`ProviderManager.callApi` L143）。value 为 `"unsupported"` 时短路返回 `{"code":-1}`。完整方法名清单见 PROVIDER_DEV_GUIDE §7 |
 | `apiVersion` | Int | 可选 | **1** | 插件自身实现的插件 API 版本（宿主 `HOST_PROVIDER_API_VERSION = 3`）。**缺省必须是 1**：历史包没这字段，默认成 3 会把老包误判成新格式 |
+| `apiVersionTag` | String | 可选 | null | **接口代际标签**（自由字符串，如 `"netease-v3"` / `"v123"`）。**纯展示，不分支行为**：不拼 URL、不切解析、不作闸门，宿主不认识也照常加载。空白串等价于未声明。见 §2.1 |
 | `minHostApiVersion` | Int | 可选 | **1** | **加载的唯一闸门**：`> 3` 拒装并提示升级（`ModuleManifest.isLoadable` L206） |
 | `capabilities` | Array\<String\> | 可选 | null | 能力声明。语义见 §3 |
 | `updateUrl` | String | 可选 | null | 检查更新 JSON 端点（§6） |
@@ -36,6 +37,42 @@
 | `sha256` | String | 可选 | null | 整包（原始 ZIP 字节）SHA-256 十六进制。填了则导入时校验，不匹配拒装。生成：`sha256sum my.zip` |
 | `contract` | String | 可选 | null | 标记响应模型风格：`"standard"` / `"netease-legacy"`。**当前是纯元数据**——宿主解析器同时兼容两种形状，无任何代码按它分支；填了不改变任何解析路径 |
 | `settingsSchema` | Array\<Object\> | 可选 | null | 声明式设置表单（§5） |
+
+### 2.1 `apiVersionTag` 怎么用（与 `apiVersion` / `contract` 的区别）
+
+三者的分工，**别互相套用**：
+
+| 字段 | 回答的问题 | 宿主行为 |
+|---|---|---|
+| `apiVersion`（Int） | 「这个包实现了第几代**插件契约**」 | **参与闸门**：与 `minHostApiVersion` 一起决定能否加载 |
+| `contract`（String） | 「响应是扁平还是网易云嵌套」 | 纯元数据，解析器两种都认，不分支 |
+| `apiVersionTag`（String） | 「这是**哪一套上游接口**」（如网易云 legacy / v3 / `v123`） | **纯展示**：音源管理页与诊断页照原样印出来 |
+
+`apiVersionTag` 明确不做的事（避免有人以为写了它就能改行为）：
+
+- **不拼进请求 URL。** HTTP 音源仍然请求 `${entryPoint}/<method>`。上游接口的版本段
+  要拼就把版本写进 `entryPoint` 自己（例如 `"entryPoint": "http://127.0.0.1:3000/v123"`），
+  或者用 `apiMap` 把方法映射到带版本段的端点名。
+- **不切换解析路径。** 想声明扁平/嵌套用 `contract`（那也还是元数据）。
+- **不作加载闸门。** 判据只有 `minHostApiVersion`；新代际名（宿主不认识的串）必须照常加载。
+- **不写进枚举白名单。** 任意字符串，宿主只做 `trim()` 后非空判断；空白串 = 未声明。
+
+典型写法（`id` 是模块标识、`apiVersionTag` 是接口代际，两者不必相同）：
+
+```json
+{
+  "id": "ncm-api-rs",
+  "name": "网易云音乐 (v3)",
+  "version": "1.0.0",
+  "type": "jni",
+  "entryPoint": "ncm_api_rs.dll",
+  "apiVersionTag": "netease-v3"
+}
+```
+
+音源管理页副标题会多出一段 ` · netease-v3`（拼在 id 之后、`API vN` 之前），
+诊断页「已注册与已加载音源清单」里多一行 `接口代际: netease-v3`。
+没声明该字段的包与从前完全一样，不占位、不占行。
 
 ## 3. `capabilities` 语义（全部 14 个值）
 

@@ -83,6 +83,19 @@ interface BackendProvider {
      */
     val apiVersion: Int get() = 1
 
+    /**
+     * 接口代际标签（可选，如 `"netease-v3"` / `"v123"`），仅用于展示与区分。
+     *
+     * **纯标签，不参与任何行为分支**：不拼请求 URL、不切换解析分支、不作加载闸门
+     * （判据只有 [ModuleManifest.minHostApiVersion]）。语义详见 [ModuleManifest.apiVersionTag]。
+     *
+     * 与 [apiVersion] 是两个维度：[apiVersion] 是**插件契约编号**（宿主按它判断兼容性），
+     * 本字段是**音源自身接口代际的自由命名**（宿主不认识也照常加载）。
+     *
+     * 带默认实现：`core` 接口新增成员必须给默认实现（见 AGENTS.md）。
+     */
+    val apiVersionTag: String? get() = null
+
     /** 协议契约模式（"standard" | "netease-legacy"），缺省为 null（按 legacy 模式） */
     val contract: String? get() = null
 

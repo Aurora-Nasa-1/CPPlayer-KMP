@@ -10,6 +10,7 @@ actual object ProviderFactory {
         // 只丢弃该条目，不让整个包加载失败（前向兼容，见 ProviderCapability 的 KDoc）。
         val caps = manifest.knownCapabilities.ifEmpty { null }
         val apiVersion = manifest.resolvedApiVersion
+        val apiVersionTag = manifest.resolvedApiVersionTag
         return when (manifest.type) {
             "http" -> HttpProvider(
                 id = manifest.id,
@@ -22,6 +23,7 @@ actual object ProviderFactory {
                 loginMethods = manifest.loginMethods,
                 capabilities = caps,
                 apiVersion = apiVersion,
+                apiVersionTag = apiVersionTag,
                 contract = manifest.contract,
                 settingsSchema = manifest.settingsSchema,
             )
@@ -58,6 +60,7 @@ actual object ProviderFactory {
                         loginMethods = manifest.loginMethods,
                         capabilities = caps,
                         apiVersion = apiVersion,
+                        apiVersionTag = apiVersionTag,
                         contract = manifest.contract,
                         settingsSchema = manifest.settingsSchema,
                     )
