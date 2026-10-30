@@ -27,6 +27,7 @@ import androidx.compose.ui.window.rememberWindowState
 import cp.player.app.platform.DesktopBackDispatcher
 import cp.player.app.platform.DesktopCloseBehavior
 import cp.player.app.platform.DesktopRenderTuning
+import cp.player.app.platform.DesktopSplashWindow
 import cp.player.app.platform.DesktopTray
 import cp.player.app.platform.TrayMenuPopup
 import cp.player.app.platform.DesktopWindowPlacement
@@ -117,6 +118,10 @@ private const val WindowRetryDelayMs = 100L
  */
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 fun main(args: Array<String> = emptyArray()) {
+    DesktopSplashWindow.show(
+        isMobilePreview = args.contains("--mobile") || args.contains("-m") ||
+            System.getProperty("cp.player.mobilePreview") == "true"
+    )
     runDesktopApp(args)
 }
 
@@ -132,6 +137,9 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
         System.getProperty("cp.player.mobilePreview") == "true" ||
         args.contains("--mobile") ||
         args.contains("-m")
+
+    DesktopSplashWindow.show(isMobilePreview = mobilePreview)
+    DesktopSplashWindow.updateStatus("正在优化渲染后端...")
 
     // 必须最先执行：Skiko 在创建渲染器时首次读取 skiko.* 属性并固化，
     // 晚于这一步再写就不生效了。见 DesktopRenderTuning 的时序约束说明。
@@ -169,6 +177,7 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
     }
 
     application {
+        DesktopSplashWindow.updateStatus("正在连接音频引擎与曲库...")
         ensureBackendInitialized()
         // 放在其它初始化之后立字据：这样音频原生库加载失败之类的无关崩溃
         // 不会被算到渲染后端头上，导致下次启动无端回退用户的设置。
@@ -269,6 +278,8 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
             // 最小尺寸只能命令式设置：WindowState 没有 minSize 字段。
             LaunchedEffect(Unit) {
                 window.minimumSize = if (mobilePreview) MobilePreviewMinWindowSize else MinWindowSize
+                // 主界面排版就绪，关闭启动提示窗口
+                DesktopSplashWindow.dismiss()
             }
 
             // JBR 路：装自定义标题栏。窗口 peer 可能还没就绪，带重试；试满就放弃，
