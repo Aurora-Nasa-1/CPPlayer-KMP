@@ -3,6 +3,7 @@ package cp.player.app.ui.screen
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,6 +57,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -71,6 +73,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.screen.Screen
@@ -100,7 +103,19 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import cp.player.app.ui.component.CpText
+
+// ⚠️ 本页一律用 material3 的 `Text`，**不要**换成 `CpText`。
+//
+// `CpText` 的默认档是「单行 + 尾部省略号 + 悬停浮出全文」（见 `CpText.kt`），
+// 而诊断页读的就是**原始数据本身**：音源 ID / 方法名 / 错误串 / apiMap 路由 /
+// 底层诊断键值 / JSON 响应都会超过一行。用 `CpText` 的话，用户看到的是一串省略号，
+// 只有把鼠标悬上去（触屏根本没有 hover）才读得到 —— 等于把要排查的信息藏起来。
+// 所以这一页的每个 `Text` 都**不传** `maxLines` / `overflow`（= 不截断，自然换行），
+// 该独占一行的（错误串、原始 JSON）另加 `Modifier.fillMaxWidth()`。
+//
+// 代价是字体路由：裸 `Text` 拿不到 `CpText` 那层「拉丁 → Google Sans Flex、
+// 汉字 → MiSans」的逐 run 切换，中日文落回平台回退字体。这是本页刻意的取舍
+// —— 诊断页的首要目标是**读得到**，不是观感统一。
 
 private enum class HealthTab(val label: String, val icon: ImageVector) {
     OVERVIEW("概览", Icons.Default.Dashboard),
@@ -194,7 +209,7 @@ class HealthScreen : Screen {
                                     selected = selected,
                                     onClick = { currentTab = tab },
                                     label = {
-                                        CpText(
+                                        Text(
                                             tab.label,
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
@@ -236,19 +251,21 @@ class HealthScreen : Screen {
         rawJsonDialogContent?.let { raw ->
             AlertDialog(
                 onDismissRequest = { rawJsonDialogContent = null },
-                title = { CpText("API 原始返回内容") },
+                title = { Text("API 原始返回内容") },
                 text = {
+                    // ⚠️ 必须可滚动：原始 JSON 常常几十行，撑不住 420dp 时靠裁剪就是「看不全」。
                     Box(modifier = Modifier.heightIn(max = 420.dp)) {
                         SelectionContainer {
-                            CpText(
+                            Text(
                                 text = formatJsonString(raw),
+                                modifier = Modifier.verticalScroll(rememberScrollState()),
                                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                             )
                         }
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = { rawJsonDialogContent = null }) { CpText("关闭") }
+                    TextButton(onClick = { rawJsonDialogContent = null }) { Text("关闭") }
                 },
             )
         }
@@ -269,7 +286,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTabContent(
 
     item(key = "overview_provider_title") {
         Spacer(Modifier.height(4.dp))
-        CpText(
+        Text(
             "音源健康评分与指标",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
@@ -288,7 +305,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTabContent(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                CpText("暂无已加载音源", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("暂无已加载音源", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     } else {
@@ -304,8 +321,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTabContent(
     }
 }
 
+// internal：离屏渲染预览测试（desktopTest）直接组合这几张卡片核对「不截断」。
 @Composable
-private fun GlobalHealthCard(records: List<ApiCallRecord>, overall: HealthLevel) {
+internal fun GlobalHealthCard(records: List<ApiCallRecord>, overall: HealthLevel) {
     val totalCalls = records.size
     val totalSuccess = records.count { it.success }
     val totalFail = totalCalls - totalSuccess
@@ -332,15 +350,16 @@ private fun GlobalHealthCard(records: List<ApiCallRecord>, overall: HealthLevel)
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column {
-                    CpText("系统综合运行状态", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("系统综合运行状态", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(2.dp))
-                    CpText(
+                    Text(
                         "共 $totalCalls 次调用 · 平均响应 ${avgResponse}ms",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                Spacer(Modifier.width(12.dp))
 
                 Box(
                     modifier = Modifier
@@ -350,13 +369,13 @@ private fun GlobalHealthCard(records: List<ApiCallRecord>, overall: HealthLevel)
                     contentAlignment = Alignment.Center,
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CpText(
+                        Text(
                             "${globalSuccessRate.toInt()}%",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = accentColor,
                         )
-                        CpText(
+                        Text(
                             when (overall) {
                                 HealthLevel.OK -> "健康"
                                 HealthLevel.WARNING -> "警告"
@@ -396,13 +415,13 @@ private fun GlobalMetricChip(label: String, value: String, color: Color, icon: I
             }
         }
         Spacer(Modifier.height(4.dp))
-        CpText(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        CpText(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable
-private fun ProviderHealthCard(
+internal fun ProviderHealthCard(
     provider: BackendProvider?,
     providerId: String,
     stats: HealthMonitor.ProviderHealthStats?,
@@ -433,7 +452,7 @@ private fun ProviderHealthCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     Box(
                         modifier = Modifier
                             .size(10.dp)
@@ -441,9 +460,9 @@ private fun ProviderHealthCard(
                             .background(scoreColor),
                     )
                     Spacer(Modifier.width(10.dp))
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            CpText(
+                            Text(
                                 provider?.name ?: providerId,
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
@@ -454,7 +473,7 @@ private fun ProviderHealthCard(
                                     shape = MaterialTheme.shapes.extraSmall,
                                     color = MaterialTheme.colorScheme.primaryContainer,
                                 ) {
-                                    CpText(
+                                    Text(
                                         "当前生效",
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                         style = MaterialTheme.typography.labelSmall,
@@ -463,7 +482,8 @@ private fun ProviderHealthCard(
                                 }
                             }
                         }
-                        CpText(
+                        // ID / 类型 / 版本整行显示，长了就换行 —— 不再靠省略号。
+                        Text(
                             "ID: $providerId · 类型: ${provider?.type?.name ?: "UNKNOWN"} · 版本: ${provider?.version ?: "v1.0"}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -471,11 +491,12 @@ private fun ProviderHealthCard(
                     }
                 }
 
+                Spacer(Modifier.width(10.dp))
                 Surface(
                     shape = MaterialTheme.shapes.small,
                     color = scoreColor.copy(alpha = 0.14f),
                 ) {
-                    CpText(
+                    Text(
                         "${(score * 100).toInt()} 分",
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelMedium,
@@ -499,8 +520,9 @@ private fun ProviderHealthCard(
                     ) {
                         Icon(Icons.Filled.Error, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
-                        CpText(
+                        Text(
                             "加载异常: $err",
+                            modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onErrorContainer,
                         )
@@ -510,7 +532,7 @@ private fun ProviderHealthCard(
 
             if (stats == null || stats.totalCalls == 0) {
                 Spacer(Modifier.height(8.dp))
-                CpText(
+                Text(
                     "暂无调用记录",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -522,8 +544,8 @@ private fun ProviderHealthCard(
                 val successRate = s.successCount.toFloat() / s.totalCalls
                 Column {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        CpText("成功率", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        CpText("${(successRate * 100).toInt()}%", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = scoreColor)
+                        Text("成功率", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${(successRate * 100).toInt()}%", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = scoreColor)
                     }
                     Spacer(Modifier.height(4.dp))
                     LinearProgressIndicator(
@@ -554,11 +576,12 @@ private fun ProviderHealthCard(
                         Row(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.ErrorOutline, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.error)
                             Spacer(Modifier.width(6.dp))
-                            CpText(
-                                "最近错误: ${lastErr.take(120)}",
+                            // 最近错误整串显示：截到 120 字只会在最关键的尾部（堆栈 / 原因）断掉。
+                            Text(
+                                "最近错误: $lastErr",
+                                modifier = Modifier.weight(1f),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onErrorContainer,
-                                maxLines = 2,
                             )
                         }
                     }
@@ -575,12 +598,25 @@ private fun ProviderHealthCard(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(Modifier.padding(8.dp)) {
-                        CpText("底层诊断参数", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("底层诊断参数", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.height(4.dp))
                         diag.forEach { (k, v) ->
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                CpText(k, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                CpText(v, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), fontWeight = FontWeight.Medium)
+                            // 左右各占一半：诊断值（PID / 端口 / 路径）长短不定，靠
+                            // SpaceBetween 会被长 key 挤到只剩一个字宽 —— 均分后两列都能换行显示全。
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    k,
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    v,
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                    fontWeight = FontWeight.Medium,
+                                    textAlign = TextAlign.End,
+                                )
                             }
                         }
                     }
@@ -593,13 +629,13 @@ private fun ProviderHealthCard(
 @Composable
 private fun MiniMetric(label: String, value: String, valueColor: Color = Color.Unspecified) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        CpText(
+        Text(
             value,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Bold,
             color = if (valueColor != Color.Unspecified) valueColor else MaterialTheme.colorScheme.onSurface,
         )
-        CpText(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -613,12 +649,12 @@ private fun androidx.compose.foundation.lazy.LazyListScope.methodsTabContent(
     if (methodStats.isEmpty()) {
         item(key = "methods_empty") {
             Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
-                CpText("暂无方法统计数据", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("暂无方法统计数据", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     } else {
         item(key = "methods_header") {
-            CpText(
+            Text(
                 "API 方法调用性能与警告分布",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
@@ -634,8 +670,12 @@ private fun androidx.compose.foundation.lazy.LazyListScope.methodsTabContent(
 }
 
 @Composable
-private fun MethodStatCard(stat: HealthMonitor.MethodStats, allRecords: List<ApiCallRecord>) {
-    var expanded by remember { mutableStateOf(false) }
+internal fun MethodStatCard(
+    stat: HealthMonitor.MethodStats,
+    allRecords: List<ApiCallRecord>,
+    initialExpanded: Boolean = false,
+) {
+    var expanded by remember { mutableStateOf(initialExpanded) }
     val successRate = if (stat.totalCalls > 0) stat.successCount * 100f / stat.totalCalls else 0f
 
     val accentColor = when {
@@ -654,8 +694,8 @@ private fun MethodStatCard(stat: HealthMonitor.MethodStats, allRecords: List<Api
         Column(Modifier.padding(12.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
-                    CpText(stat.method, style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
-                    CpText(
+                    Text(stat.method, style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
+                    Text(
                         "${stat.totalCalls} 次 · 成功率 ${successRate.toInt()}% · 平均 ${stat.avgResponseMs}ms",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -663,15 +703,15 @@ private fun MethodStatCard(stat: HealthMonitor.MethodStats, allRecords: List<Api
                 }
 
                 if (stat.failCount > 0) {
-                    CpText("失败 ${stat.failCount}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    Text("失败 ${stat.failCount}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                     Spacer(Modifier.width(6.dp))
                 }
                 if (stat.warningCount > 0) {
-                    CpText("警告 ${stat.warningCount}", style = MaterialTheme.typography.labelSmall, color = Color(0xFFFF9800))
+                    Text("警告 ${stat.warningCount}", style = MaterialTheme.typography.labelSmall, color = Color(0xFFFF9800))
                     Spacer(Modifier.width(6.dp))
                 }
                 if (stat.fallbackCount > 0) {
-                    CpText("回退 ${stat.fallbackCount}", style = MaterialTheme.typography.labelSmall, color = Color(0xFFFF9800))
+                    Text("回退 ${stat.fallbackCount}", style = MaterialTheme.typography.labelSmall, color = Color(0xFFFF9800))
                     Spacer(Modifier.width(6.dp))
                 }
 
@@ -691,12 +731,17 @@ private fun MethodStatCard(stat: HealthMonitor.MethodStats, allRecords: List<Api
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Column(Modifier.padding(8.dp)) {
-                                CpText("警告类型分布", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color(0xFFFF9800))
+                                Text("警告类型分布", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color(0xFFFF9800))
                                 Spacer(Modifier.height(4.dp))
                                 stat.warningTypes.forEach { (warning, count) ->
-                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        CpText(formatWarning(warning), style = MaterialTheme.typography.bodySmall, color = Color(0xFFFF9800))
-                                        CpText("×$count", style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), fontWeight = FontWeight.Bold, color = Color(0xFFFF9800))
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(
+                                            formatWarning(warning),
+                                            modifier = Modifier.weight(1f),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color(0xFFFF9800),
+                                        )
+                                        Text("×$count", style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), fontWeight = FontWeight.Bold, color = Color(0xFFFF9800))
                                     }
                                 }
                             }
@@ -707,7 +752,7 @@ private fun MethodStatCard(stat: HealthMonitor.MethodStats, allRecords: List<Api
                         allRecords.filter { it.method == stat.method }.takeLast(5).reversed()
                     }
                     if (recentCalls.isNotEmpty()) {
-                        CpText("最近调用样本", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("最近调用样本", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         recentCalls.forEach { record ->
                             CallRecordItem(record, compact = true, onShowRawJson = {})
                         }
@@ -730,14 +775,14 @@ private fun androidx.compose.foundation.lazy.LazyListScope.logsTabContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            CpText("调用历史（最近 ${records.size} 条）", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("调用历史（最近 ${records.size} 条）", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         }
     }
 
     if (records.isEmpty()) {
         item(key = "logs_empty") {
             Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
-                CpText("暂无调用记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("暂无调用记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     } else {
@@ -749,12 +794,13 @@ private fun androidx.compose.foundation.lazy.LazyListScope.logsTabContent(
 }
 
 @Composable
-private fun CallRecordItem(
+internal fun CallRecordItem(
     record: ApiCallRecord,
     compact: Boolean,
     onShowRawJson: (String) -> Unit,
+    initialExpanded: Boolean = false,
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(initialExpanded) }
 
     val statusIcon = when {
         record.responseWarnings.isNotEmpty() && record.success -> "⚠️"
@@ -776,19 +822,23 @@ private fun CallRecordItem(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                CpText(statusIcon, fontSize = 13.sp)
+            // 概要行：状态图标 / 时间 / 音源 / 方法 / 警告数 / 耗时。
+            // 方法名用 weight(1f) 吃剩余宽度 —— 它**没有** maxLines，放不下就折行，
+            // 所以长方法名也是整串可见（这是本页「一律不截断」的落点之一）。
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                Text(statusIcon, fontSize = 13.sp)
                 Spacer(Modifier.width(6.dp))
-                CpText(timeStr, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(timeStr, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(8.dp))
-                CpText(record.providerId, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                Text(record.providerId, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(8.dp))
-                CpText(record.method, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.weight(1f))
+                Text(record.method, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.weight(1f))
                 if (record.responseWarnings.isNotEmpty()) {
-                    CpText("${record.responseWarnings.size}⚠", style = MaterialTheme.typography.labelSmall, color = Color(0xFFFF9800))
                     Spacer(Modifier.width(6.dp))
+                    Text("${record.responseWarnings.size}⚠", style = MaterialTheme.typography.labelSmall, color = Color(0xFFFF9800))
                 }
-                CpText("${record.durationMs}ms", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.width(6.dp))
+                Text("${record.durationMs}ms", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
             if (!compact && expanded) {
@@ -801,31 +851,31 @@ private fun CallRecordItem(
                     Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         record.responseCode?.let { code ->
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                CpText("HTTP 状态码", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                CpText("$code", style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), fontWeight = FontWeight.Bold)
+                                Text("HTTP 状态码", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("$code", style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), fontWeight = FontWeight.Bold)
                             }
                         }
                         record.errorCode?.let { errCode ->
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                CpText("业务错误码", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                                CpText("$errCode", style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                                Text("业务错误码", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                                Text("$errCode", style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                             }
                         }
                         record.errorMessage?.let { msg ->
-                            CpText(
+                            Text(
                                 "错误信息: $msg",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error,
                             )
                         }
                         if (record.responseWarnings.isNotEmpty()) {
-                            CpText("兼容性警告:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color(0xFFFF9800))
+                            Text("兼容性警告:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color(0xFFFF9800))
                             record.responseWarnings.forEach { w ->
-                                CpText("• ${formatWarning(w)}" + (if (record.expectedField != null) " (缺少字段: ${record.expectedField})" else ""), style = MaterialTheme.typography.bodySmall, color = Color(0xFFFF9800))
+                                Text("• ${formatWarning(w)}" + (if (record.expectedField != null) " (缺少字段: ${record.expectedField})" else ""), style = MaterialTheme.typography.bodySmall, color = Color(0xFFFF9800))
                             }
                         }
                         if (record.wasFallback && record.fallbackFrom != null) {
-                            CpText("回退来源: ${record.fallbackFrom}", style = MaterialTheme.typography.bodySmall, color = Color(0xFFFF9800))
+                            Text("回退来源: ${record.fallbackFrom}", style = MaterialTheme.typography.bodySmall, color = Color(0xFFFF9800))
                         }
 
                         val raw = record.rawResponse
@@ -835,7 +885,7 @@ private fun CallRecordItem(
                                 onClick = { onShowRawJson(raw) },
                                 modifier = Modifier.align(Alignment.End),
                             ) {
-                                CpText("查看原始 JSON", style = MaterialTheme.typography.labelSmall)
+                                Text("查看原始 JSON", style = MaterialTheme.typography.labelSmall)
                             }
                         }
                     }
@@ -864,7 +914,7 @@ private fun ApiTestRunner() {
     var responseTime by remember { mutableStateOf(0L) }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        CpText("选择要测试的 API 方法", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+        Text("选择要测试的 API 方法", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
 
         // 常用方法快速芯片
         Row(
@@ -876,7 +926,7 @@ private fun ApiTestRunner() {
                 FilterChip(
                     selected = selectedMethod == method,
                     onClick = { selectedMethod = method },
-                    label = { CpText(method, style = MaterialTheme.typography.labelSmall) },
+                    label = { Text(method, style = MaterialTheme.typography.labelSmall) },
                 )
             }
         }
@@ -884,12 +934,12 @@ private fun ApiTestRunner() {
         OutlinedTextField(
             value = selectedMethod,
             onValueChange = { selectedMethod = it },
-            label = { CpText("API 路径") },
+            label = { Text("API 路径") },
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.small,
         )
 
-        CpText("请求参数 (JSON 字典)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+        Text("请求参数 (JSON 字典)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
         OutlinedTextField(
             value = paramsText,
             onValueChange = { paramsText = it },
@@ -925,11 +975,11 @@ private fun ApiTestRunner() {
             if (isLoading) {
                 CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(8.dp))
-                CpText("请求执行中...")
+                Text("请求执行中...")
             } else {
                 Icon(Icons.AutoMirrored.Filled.Send, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                CpText("发送测试请求")
+                Text("发送测试请求")
             }
         }
 
@@ -940,9 +990,9 @@ private fun ApiTestRunner() {
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(Modifier.padding(12.dp)) {
-                    CpText("调用失败 (${responseTime}ms):", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
+                    Text("调用失败 (${responseTime}ms):", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
                     Spacer(Modifier.height(4.dp))
-                    CpText(errorMessage ?: "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                    Text(errorMessage ?: "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
                 }
             }
         }
@@ -953,8 +1003,8 @@ private fun ApiTestRunner() {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                CpText("返回结果", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                CpText("${responseTime}ms", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                Text("返回结果", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text("${responseTime}ms", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             }
 
             Card(
@@ -963,7 +1013,7 @@ private fun ApiTestRunner() {
                 colors = CardDefaults.cardColors(containerColor = settingsRowContainer()),
             ) {
                 SelectionContainer {
-                    CpText(
+                    Text(
                         responseText,
                         modifier = Modifier.padding(12.dp),
                         style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
@@ -982,7 +1032,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.apiMapTabContent() {
     if (activeProvider == null) {
         item(key = "apimap_no_provider") {
             Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
-                CpText("当前无生效的 Provider", color = MaterialTheme.colorScheme.error)
+                Text("当前无生效的 Provider", color = MaterialTheme.colorScheme.error)
             }
         }
         return
@@ -1000,21 +1050,21 @@ private fun androidx.compose.foundation.lazy.LazyListScope.apiMapTabContent() {
             colors = CardDefaults.outlinedCardColors(containerColor = settingsRowContainer()),
         ) {
             Column(Modifier.padding(14.dp)) {
-                CpText("当前生效音源: ${activeProvider.name}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("当前生效音源: ${activeProvider.name}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
-                CpText("ID: ${activeProvider.id}  ·  类型: ${activeProvider.type}  ·  版本: ${activeProvider.version}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                CpText("apiMap 映射条目数: ${apiMap.size}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("ID: ${activeProvider.id}  ·  类型: ${activeProvider.type}  ·  版本: ${activeProvider.version}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("apiMap 映射条目数: ${apiMap.size}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                 Spacer(Modifier.height(10.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Surface(shape = MaterialTheme.shapes.extraSmall, color = MaterialTheme.colorScheme.primaryContainer) {
-                        CpText("已映射: $mappedCount", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text("已映射: $mappedCount", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     }
                     Surface(shape = MaterialTheme.shapes.extraSmall, color = MaterialTheme.colorScheme.errorContainer) {
-                        CpText("不支持: $unsupportedCount", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                        Text("不支持: $unsupportedCount", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer)
                     }
                     Surface(shape = MaterialTheme.shapes.extraSmall, color = MaterialTheme.colorScheme.surfaceVariant) {
-                        CpText("透传: $passthroughCount", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("透传: $passthroughCount", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -1023,7 +1073,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.apiMapTabContent() {
 
     item(key = "apimap_list_title") {
         Spacer(Modifier.height(6.dp))
-        CpText("全量标准 API 映射路由表", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+        Text("全量标准 API 映射路由表", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
     }
 
     items(allKnownMethods, key = { "map_method_$it" }) { method ->
@@ -1041,9 +1091,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.apiMapTabContent() {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    CpText(method, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace))
+                    Text(method, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace))
                     if (isMapped) {
-                        CpText("→ $mapped", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                        Text("→ $mapped", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                     }
                 }
 
@@ -1055,7 +1105,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.apiMapTabContent() {
                         else -> MaterialTheme.colorScheme.surfaceVariant
                     },
                 ) {
-                    CpText(
+                    Text(
                         text = when {
                             isUnsupported -> "不支持"
                             isMapped -> "已映射"
@@ -1082,13 +1132,13 @@ private fun androidx.compose.foundation.lazy.LazyListScope.statusTabContent() {
     val activeProvider = AppModel.activeProvider()
 
     item(key = "status_title") {
-        CpText("已注册与已加载音源清单", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+        Text("已注册与已加载音源清单", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
     }
 
     if (providers.isEmpty()) {
         item(key = "status_empty") {
             Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
-                CpText("暂无已注册音源", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("暂无已注册音源", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     } else {
@@ -1103,32 +1153,42 @@ private fun androidx.compose.foundation.lazy.LazyListScope.statusTabContent() {
                 Column(Modifier.padding(14.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CpText(provider.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        // 名称 + 徽章吃掉剩余宽度：名字再长也只换行，不会把右侧按钮挤没。
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Text(
+                                provider.name,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
                             if (isActive) {
                                 Spacer(Modifier.width(8.dp))
                                 Surface(shape = MaterialTheme.shapes.extraSmall, color = MaterialTheme.colorScheme.primaryContainer) {
-                                    CpText("当前生效", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                    Text("当前生效", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
                                 }
                             }
                         }
 
                         if (!isActive) {
+                            Spacer(Modifier.width(8.dp))
                             OutlinedButton(
                                 onClick = { AppModel.switchOrReport(provider) },
                             ) {
-                                CpText("切换至此音源", style = MaterialTheme.typography.labelSmall)
+                                Text("切换至此音源", style = MaterialTheme.typography.labelSmall)
                             }
                         }
                     }
 
                     Spacer(Modifier.height(6.dp))
-                    CpText("ID: ${provider.id}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    CpText("类型: ${provider.type.name}  ·  版本: ${provider.version}  ·  API 版本: v${provider.apiVersion}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    CpText("apiMap 映射: ${provider.apiMap?.size ?: 0} 条规则", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("ID: ${provider.id}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("类型: ${provider.type.name}  ·  版本: ${provider.version}  ·  API 版本: v${provider.apiVersion}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // 接口代际标签（manifest 的 `apiVersionTag`）：没声明就不占一行，
+                    // 老包与以后的内置源诊断页保持原样。
+                    provider.apiVersionTag?.let { tag ->
+                        Text("接口代际: $tag", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text("apiMap 映射: ${provider.apiMap?.size ?: 0} 条规则", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                     provider.loadError?.let { err ->
                         Spacer(Modifier.height(8.dp))
@@ -1140,7 +1200,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.statusTabContent() {
                             Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Filled.Error, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
-                                CpText("启动/加载失败: $err", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                                Text("启动/加载失败: $err", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
                             }
                         }
                     }
@@ -1154,11 +1214,22 @@ private fun androidx.compose.foundation.lazy.LazyListScope.statusTabContent() {
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                CpText("运行时底层诊断", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                Text("运行时底层诊断", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                                 diag.forEach { (k, v) ->
-                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        CpText(k, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        CpText(v, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), fontWeight = FontWeight.Medium)
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(
+                                            k,
+                                            modifier = Modifier.weight(1f),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        Text(
+                                            v,
+                                            modifier = Modifier.weight(1f),
+                                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                            fontWeight = FontWeight.Medium,
+                                            textAlign = TextAlign.End,
+                                        )
                                     }
                                 }
                             }

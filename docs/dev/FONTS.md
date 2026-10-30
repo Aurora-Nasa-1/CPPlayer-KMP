@@ -71,6 +71,13 @@
 ⚠️ **裸 `Text(...)` 仍是系统 CJK 字体**。想让某处也走 MiSans、Noto，把它换成 `CpText`
 即可获得全部字体路由（注意 `CpText` 的 `maxLines` 默认是 1，多行文本要显式传）。
 
+⚠️ **例外：诊断 / 健康页（`HealthScreen.kt`）整页刻意用裸 `Text`**，并且**一律不传**
+`maxLines` / `overflow`。这一页读的是原始数据（音源 ID、方法名、错误串、apiMap 路由、
+底层诊断键值、原始 JSON），每一条都可能超过一行；`CpText` 的默认档是单行 + 尾部省略号 +
+悬停浮出全文，触屏没有 hover，等于把要排查的信息藏起来。
+`HealthScreenNoTruncationPreviewTest` 用源码扫描钉住这两条（不许出现 `CpText(` / `maxLines`），
+代价是这一页的中日文走平台回退字体 —— 诊断页的首要目标是「读得到」，不是观感统一。
+
 ## 4. 桌面内置 vs Android 下载
 
 Android 不内置这两款（合计约 30 MB，每个用户都要为它付包体积），改成用户显式下载：
