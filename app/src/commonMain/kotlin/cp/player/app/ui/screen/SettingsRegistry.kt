@@ -538,6 +538,16 @@ private fun accountEntries(): List<SettingsEntry> = listOf(
         ),
         screen = { _ -> LyricsPluginSettingsScreen() },
     ),
+    SettingsEntry(
+        id = "plugin_repository",
+        group = SettingsGroup.ACCOUNT_AND_PROVIDER,
+        titleOf = { it.pluginRepository.title },
+        subtitleOf = { it.pluginRepository.subtitle },
+        icon = Icons.Filled.Extension,
+        accent = SettingsAccent.SECONDARY,
+        keywords = listOf("插件", "仓库", "安装", "更新", "plugin", "repository", "install", "update"),
+        screen = { _ -> PluginRepositoryScreen() },
+    ),
 )
 
 /**

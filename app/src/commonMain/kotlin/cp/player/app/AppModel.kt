@@ -2743,6 +2743,13 @@ object AppModel {
 
     fun availableProviders(): List<BackendProvider> = backend.getAvailableProviders()
 
+    /** Repository installation already switched the backend; refresh UI caches without switching twice. */
+    internal fun onRepositoryProviderInstalled(providerId: String) {
+        if (activeProviderId() != providerId || activeProvider()?.isReady() != true) return
+        bumpSourceGeneration()
+        if (isolationSwitchAccount()) refreshUserProfile()
+    }
+
     fun activeProvider(): BackendProvider? = runCatching { backend.activeProvider() }.getOrNull()
 
     fun switchProvider(provider: BackendProvider): BackendResult<Unit> {

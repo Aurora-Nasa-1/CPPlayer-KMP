@@ -1057,6 +1057,7 @@ object CpStringsEn : CpStrings {
     override val insights = InsightStringsEn
     override val social = SocialStringsEn
     override val lyricsPlugin = LyricsPluginStringsEn
+    override val pluginRepository = PluginRepositoryStringsEn
     override val lyricPush = LyricPushStringsEn
     override val scrobble = ScrobbleStringsEn
     override val wall = WallStringsEn

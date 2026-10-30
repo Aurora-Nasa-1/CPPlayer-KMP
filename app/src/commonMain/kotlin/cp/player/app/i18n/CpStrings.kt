@@ -122,6 +122,7 @@ interface CpStrings {
      * 单独成组：它由独立的插件管理页消费，且将来播放页的「无歌词 → 换源」也读同一组。
      */
     val lyricsPlugin: LyricsPluginStrings
+    val pluginRepository: PluginRepositoryStrings
 
     /**
      * 专辑墙模式（`ui/wall`）。

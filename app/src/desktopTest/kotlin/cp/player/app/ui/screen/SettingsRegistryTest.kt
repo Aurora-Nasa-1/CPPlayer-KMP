@@ -115,7 +115,7 @@ class SettingsRegistryTest {
                 // `lyrics_plugins`（歌词源插件）与 `providers`（音源管理）同组：
                 // 两者都是「内容 / 数据来源」，用户找它们时想的是同一件事
                 // ——「我从哪儿拿内容」，且都支持导入 zip，放在一起心智一致。
-                listOf("account", "providers", "lyrics_plugins"),
+                listOf("account", "providers", "lyrics_plugins", "plugin_repository"),
                 byGroup[SettingsGroup.ACCOUNT_AND_PROVIDER]?.map { it.id },
                 "「账号与音源」组的内容或顺序变了",
             )

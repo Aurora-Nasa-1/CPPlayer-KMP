@@ -994,6 +994,7 @@ object CpStringsZh : CpStrings {
     override val wall = WallStringsZh
     override val social = SocialStringsZh
     override val lyricsPlugin = LyricsPluginStringsZh
+    override val pluginRepository = PluginRepositoryStringsZh
     override val lyricPush = LyricPushStringsZh
     override val scrobble = ScrobbleStringsZh
 

@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.FolderZip
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Tune
@@ -94,6 +95,10 @@ class ProviderManagementScreen : Screen {
         CpRouteScaffold(
             title = "音源管理",
             onBack = { navigator.popOrNotify() },
+            topBarActions = listOf(cp.player.app.ui.component.TopBarAction(
+                icon = { Icon(Icons.Filled.Extension, cpStrings().pluginRepository.title) },
+                onClick = { navigator.push(PluginRepositoryScreen()) },
+            )),
             floatingActionButton = {
                 FloatingActionButton(onClick = {
                     updateTarget = null
@@ -299,10 +304,14 @@ private fun ProviderRow(
     // API v1 是历史默认值，不显示（每个老包都是 v1，写出来只是噪声）；
     // 只有真正用了新契约的音源才值得占这段字。
     val apiText = if (provider.apiVersion > 1) " · API v${provider.apiVersion}" else ""
+    // 接口代际标签（manifest 的 `apiVersionTag`，如 "netease-v3" / "v123"）。
+    // 与 apiVersion 是两个维度：那个是插件契约编号，这个是音源自己的接口代际，
+    // 并存时两者都会显示 —— 「网易云 v3」和「API v1」本来就可以同时成立。
+    val tagText = provider.apiVersionTag?.let { " · $it" }.orEmpty()
     val hasConfig = !provider.settingsSchema.isNullOrEmpty()
     val configText = if (hasConfig) " · 支持自定义配置" else ""
     val subtitle = buildString {
-        append("${provider.type.name} · v${provider.version} · ${provider.id}$apiText$configText")
+        append("${provider.type.name} · v${provider.version} · ${provider.id}$tagText$apiText$configText")
         if (capabilityText.isNotEmpty()) append("\n$capabilityText")
     }
 

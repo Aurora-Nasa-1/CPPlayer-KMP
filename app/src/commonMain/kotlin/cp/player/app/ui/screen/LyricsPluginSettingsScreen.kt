@@ -89,6 +89,7 @@ class LyricsPluginSettingsScreen : Screen {
                     val message = runCatching { AppModel.backend.lyricsPlugins.importPluginZip(zipPath) }
                         .fold(
                             onSuccess = { ids ->
+                                ids.forEach { AppModel.backend.pluginRepositories.forgetInstall("lyrics:$it") }
                                 registry.reload()
                                 if (ids.isEmpty()) t.importFailed else t.importSuccessCount(ids.size)
                             },
@@ -118,6 +119,14 @@ class LyricsPluginSettingsScreen : Screen {
             onBack = { navigator.popOrNotify() },
         ) { pageModifier ->
             SettingsLazyPage(pageModifier) {
+                item {
+                    SettingsButtonItem(
+                        text = s.pluginRepository.title,
+                        subtitle = s.pluginRepository.subtitle,
+                        onClick = { navigator.push(PluginRepositoryScreen()) },
+                        index = 0, total = 1, icon = Icons.Filled.Extension,
+                    )
+                }
                 item { SettingsNote(t.note) }
                 item { SettingsNote(t.orderNote) }
 
