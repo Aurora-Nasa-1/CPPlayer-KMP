@@ -71,8 +71,12 @@ expect fun openUrl(url: String)
 expect fun openWebview(url: String, title: String? = null)
 
 
-/** Download a release asset using the platform's native download flow. */
-expect fun downloadUpdate(url: String, fileName: String)
+/**
+ * Download a release asset without opening a browser.
+ *
+ * @return true when the platform accepted or completed the download.
+ */
+expect suspend fun downloadUpdate(url: String, fileName: String): Boolean
 
 /**
  * 清空应用图片缓存（Coil 内存 + 磁盘）。

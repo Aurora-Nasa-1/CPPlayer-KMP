@@ -8,7 +8,9 @@ import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.parameter
 import io.ktor.serialization.kotlinx.json.json
+import io.ktor.http.isSuccess
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -93,7 +95,11 @@ object AppUpdateChecker {
         return try {
             val response = client.get(AppVersion.RELEASES_API) {
                 header("Accept", "application/vnd.github.v3+json")
+                header("User-Agent", "CPPlayer/${AppVersion.versionName}")
+                header("Cache-Control", "no-cache")
+                parameter("per_page", "100")
             }
+            if (!response.status.isSuccess()) return null
             // 先落到一个带显式类型的局部变量：`response.body()` 是 reified 的，
             // 直接串 `.filter { … }` 时接收者类型没有约束，T 推不出来。
             val fetched: List<GitHubRelease> = response.body()
@@ -109,19 +115,8 @@ object AppUpdateChecker {
             if (compareVersions(AppVersion.versionName, remoteVersionName) >= 0) return null
 
             val changelog = buildChangelog(releases, AppVersion.versionName)
-            val asset = latest.assets.firstOrNull { asset ->
-                when {
-                    isAndroidPlatform() -> asset.name.endsWith(".apk", ignoreCase = true)
-                    // Windows 安装包由 Velopack 产出，恒为 `CPPlayer-<version>-win-Setup.exe`
-                    // （同一个 release 里还会有 `*-win-portable.zip` 与更新源用的
-                    // `*.nupkg` / `RELEASES`——**都不该当成下载目标**，所以这里只认
-                    // `-Setup.exe`，认不到就走下面的「打开发布页」兜底）。
-                    desktopPlatform() == "windows" -> asset.name.endsWith("-Setup.exe", ignoreCase = true)
-                    desktopPlatform() == "linux" -> asset.name.endsWith(".deb", ignoreCase = true) || asset.name.endsWith(".tar.gz", ignoreCase = true)
-                    else -> asset.name.endsWith("-Setup.exe", true) || asset.name.endsWith(".deb", true)
-                }
-            }
-            val downloadUrl = asset?.browserDownloadUrl ?: latest.htmlUrl
+            val asset = selectPlatformAsset(latest.assets)
+            val downloadUrl = asset?.browserDownloadUrl
 
             UpdateResult(
                 versionName = remoteVersionName,
@@ -134,6 +129,35 @@ object AppUpdateChecker {
             )
         } catch (_: Exception) {
             null
+        }
+    }
+
+    private fun selectPlatformAsset(assets: List<GitHubAsset>): GitHubAsset? {
+        val candidates = assets.filter { asset ->
+            when {
+                isAndroidPlatform() -> asset.name.endsWith(".apk", ignoreCase = true)
+                    // Windows 安装包由 Velopack 产出，恒为 `CPPlayer-<version>-win-Setup.exe`
+                    // （同一个 release 里还会有 `*-win-portable.zip` 与更新源用的
+                    // `*.nupkg` / `RELEASES`——**都不该当成下载目标**，所以这里只认
+                    // `-Setup.exe`，认不到就走下面的「打开发布页」兜底）。
+                    desktopPlatform() == "windows" -> asset.name.endsWith("-Setup.exe", ignoreCase = true)
+                    desktopPlatform() == "linux" -> asset.name.endsWith(".deb", ignoreCase = true) ||
+                        asset.name.endsWith(".tar.gz", ignoreCase = true)
+                    else -> asset.name.endsWith("-Setup.exe", true) ||
+                        asset.name.endsWith(".deb", true) ||
+                        asset.name.endsWith(".tar.gz", true)
+                }
+            }
+        // GitHub does not guarantee asset order. Prefer the native installer on Linux,
+        // and keep the fallback archive available when a deb is not published.
+        return when {
+            desktopPlatform() == "linux" ->
+                candidates.firstOrNull { it.name.endsWith(".deb", ignoreCase = true) }
+                    ?: candidates.firstOrNull()
+            isAndroidPlatform() ->
+                candidates.firstOrNull { it.name.endsWith("-debug.apk", ignoreCase = true) && AppVersion.isDebugBuild }
+                    ?: candidates.firstOrNull()
+            else -> candidates.firstOrNull()
         }
     }
 

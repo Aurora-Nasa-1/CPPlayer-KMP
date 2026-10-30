@@ -19,7 +19,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,18 +59,9 @@ class AboutScreen : Screen {
         val navigator = LocalNavigator.currentOrThrow
         val scope = rememberCoroutineScope()
 
-        var isChecking by remember { mutableStateOf(true) }
+        var isChecking by remember { mutableStateOf(false) }
         var updateResult by remember { mutableStateOf<AppUpdateChecker.UpdateResult?>(null) }
         var showUpdateDialog by remember { mutableStateOf(false) }
-
-        LaunchedEffect(Unit) {
-            scope.launch {
-                val result = AppUpdateChecker.checkUpdate()
-                updateResult = result
-                isChecking = false
-                if (result != null) showUpdateDialog = true
-            }
-        }
 
         CpRouteScaffold(
             title = s.screenTitle,
@@ -170,7 +160,14 @@ class AboutScreen : Screen {
                 onDismiss = { showUpdateDialog = false },
                 onDownload = {
                     updateResult?.let { result ->
-                        downloadUpdate(result.downloadUrl ?: result.releaseUrl, result.assetName ?: "CPPlayer-${result.versionName}")
+                        val url = result.downloadUrl
+                        if (url == null) {
+                            openUrl(result.releaseUrl)
+                        } else {
+                            scope.launch {
+                                downloadUpdate(url, result.assetName ?: "CPPlayer-${result.versionName}")
+                            }
+                        }
                     }
                     showUpdateDialog = false
                 },

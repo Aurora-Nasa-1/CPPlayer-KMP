@@ -55,6 +55,7 @@ import cp.player.app.ui.screen.PlayerScreen
 import cp.player.app.ui.screen.StartupScreen
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.platform.PlatformMediaControlsEffect
+import cp.player.app.update.AppUpdateHost
 import cp.player.app.ui.util.popToMainShell
 import cp.player.core.MusicBackend
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -413,6 +414,7 @@ fun App(
                     }
                 }
             }
+            AppUpdateHost()
         }
     }
 }

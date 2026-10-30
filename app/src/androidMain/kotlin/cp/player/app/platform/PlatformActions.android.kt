@@ -208,21 +208,27 @@ actual fun openWebview(url: String, title: String?) {
 }
 
 
-actual fun downloadUpdate(url: String, fileName: String) {
-    val ctx = ctxOrNull ?: return
+actual suspend fun downloadUpdate(url: String, fileName: String): Boolean {
+    val ctx = ctxOrNull ?: return false
+    val safeFileName = fileName
+        .substringAfterLast('/')
+        .substringAfterLast('\\')
+        .ifBlank { "CPPlayer-update.apk" }
     try {
         val request = android.app.DownloadManager.Request(Uri.parse(url))
-            .setTitle(fileName)
+            .setTitle(safeFileName)
             .setDescription("CPPlayer 更新包")
             .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, safeFileName)
             .setAllowedOverMetered(true)
             .setAllowedOverRoaming(false)
         val manager = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
         manager.enqueue(request)
         sendPlatformToast("已开始下载更新")
+        return true
     } catch (e: Exception) {
-        openUrl(url)
+        sendPlatformToast("更新下载失败: ${e.message ?: "未知错误"}")
+        return false
     }
 }
 

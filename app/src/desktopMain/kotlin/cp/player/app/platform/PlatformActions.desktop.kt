@@ -10,9 +10,15 @@ import androidx.compose.runtime.setValue
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSegmentedItem
+import cp.player.core.download.defaultDownloadExecutor
+import cp.player.core.util.PlatformContext
+import cp.player.core.util.PlatformSupport
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.awt.Desktop
+import java.io.File
 import java.net.URI
 
 actual fun isAndroidPlatform(): Boolean = false
@@ -56,7 +62,34 @@ actual fun openWebview(url: String, title: String?) {
     openUrl(url)
 }
 
-actual fun downloadUpdate(url: String, fileName: String) = openUrl(url)
+actual suspend fun downloadUpdate(url: String, fileName: String): Boolean = withContext(Dispatchers.IO) {
+    val safeFileName = fileName
+        .substringAfterLast('/')
+        .substringAfterLast('\\')
+        .ifBlank { "CPPlayer-update" }
+    val directory = File(PlatformSupport.defaultDownloadsDir(PlatformContext()))
+    val target = File(directory, safeFileName)
+    val part = File("${target.absolutePath}.part")
+
+    runCatching {
+        directory.mkdirs()
+        if (target.isFile && target.length() > 0L) return@runCatching true
+        val resumeBytes = part.length().takeIf { part.isFile } ?: 0L
+        defaultDownloadExecutor().download(
+            url = url,
+            headers = emptyMap(),
+            targetPartPath = part.absolutePath,
+            resumeBytes = resumeBytes,
+        ) { _, _ -> }
+        if (target.exists() && !target.delete()) {
+            error("无法替换已有更新包")
+        }
+        if (!part.renameTo(target)) {
+            error("无法保存更新包")
+        }
+        true
+    }.getOrDefault(false)
+}
 
 
 /**
