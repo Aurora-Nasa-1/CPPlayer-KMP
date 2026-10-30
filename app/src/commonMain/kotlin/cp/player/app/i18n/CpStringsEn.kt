@@ -504,6 +504,17 @@ object CpStringsEn : CpStrings {
             // Unknown levels pass through: they're identifiers from the music source, not UI copy.
             else -> level
         }
+        override fun fullLabelOf(level: String) = when (level) {
+            "standard" -> "Standard Quality"
+            "higher" -> "High Quality"
+            "exhigh" -> "Very High Quality"
+            "lossless" -> "Lossless Quality"
+            "hires" -> "Hi-Res"
+            "jymaster" -> "Master Quality"
+            "sky" -> "Immersive Audio"
+            "jyeffect" -> "Effects"
+            else -> "$level Quality"
+        }
     }
 
     override val externalAccess: ExternalAccessStrings = object : ExternalAccessStrings {

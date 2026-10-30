@@ -474,6 +474,17 @@ object CpStringsZh : CpStrings {
             "jyeffect" -> "音效"
             else -> level
         }
+        override fun fullLabelOf(level: String) = when (level) {
+            "standard" -> "标准音质"
+            "higher" -> "较高音质"
+            "exhigh" -> "极高音质"
+            "lossless" -> "无损音质"
+            "hires" -> "Hi-Res"
+            "jymaster" -> "母带音质"
+            "sky" -> "沉浸声"
+            "jyeffect" -> "音效"
+            else -> "${level}音质"
+        }
     }
 
     override val externalAccess: ExternalAccessStrings = object : ExternalAccessStrings {

@@ -1039,6 +1039,7 @@ interface PlayerStrings {
  */
 interface QualityStrings {
     fun labelOf(level: String): String
+    fun fullLabelOf(level: String): String = labelOf(level)
 }
 
 
