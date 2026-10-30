@@ -71,47 +71,88 @@ private fun connectivityManagerOrNull(): ConnectivityManager? =
  */
 actual fun defaultFontRoundness(): Int = if (Build.VERSION.SDK_INT >= 36) 100 else 0
 
-actual fun saveQrCodeToGallery(base64Image: String, fileName: String) {
-    val ctx = ctxOrNull ?: return
-    try {
+/**
+ * 把二维码写进系统相册（Pictures/CPPlayer）。
+ *
+ * ⚠️ 返回值必须是**真的写进去了没有** —— 调用方拿它决定「这张图以后还要不要再试」。
+ * 下面两条失败路径（系统拒绝 insert、Q 以下写公共目录抛 SecurityException）都返回 false：
+ * - API 29+：`MediaStore.insert` 可能返回 null（媒体库被禁用 / 名额满）；
+ * - API 24–28：写 `Pictures` 公共目录**需要 WRITE_EXTERNAL_STORAGE**，本应用清单里没有
+ *   （见 app-android 的 AndroidManifest.xml），因此这段在 7/8/9 上必定抛 SecurityException
+ *   ⇒ 以前被 catch 成一句「保存失败」toast，现在照样如实返回 false，让自动保存下次再试。
+ *   要真正修好它得补权限 + 运行时申请流程，不属于这里。
+ */
+actual fun saveQrCodeToGallery(base64Image: String, fileName: String): Boolean {
+    val ctx = ctxOrNull ?: return false
+    var bitmap: Bitmap? = null
+    return try {
         val cleanBase64 = base64Image
             .substringAfter("base64,")
             .trim()
         val decoded = Base64.decode(cleanBase64, Base64.DEFAULT)
-        val bitmap = BitmapFactory.decodeByteArray(decoded, 0, decoded.size)
-            ?: return
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val values = android.content.ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, "$fileName.png")
-                put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/CPPlayer")
-            }
-            val uri = ctx.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-            if (uri != null) {
-                ctx.contentResolver.openOutputStream(uri)?.use { out ->
-                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-                }
-                sendPlatformToast("二维码已保存到相册")
-            }
+        bitmap = BitmapFactory.decodeByteArray(decoded, 0, decoded.size) ?: return false
+        val saved = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            saveQrViaMediaStore(ctx, bitmap, fileName)
         } else {
-            @Suppress("DEPRECATION")
-            val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-            val cpDir = File(dir, "CPPlayer").apply { mkdirs() }
-            val file = File(cpDir, "$fileName.png")
-            FileOutputStream(file).use { out ->
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-            }
-            val intent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE).apply {
-                data = Uri.fromFile(file)
-            }
-            ctx.sendBroadcast(intent)
+            saveQrToPublicPictures(ctx, bitmap, fileName)
+        }
+        if (saved) {
             sendPlatformToast("二维码已保存到相册")
         }
-        bitmap.recycle()
+        saved
     } catch (e: Exception) {
         sendPlatformToast("保存失败: ${e.message}")
+        false
+    } finally {
+        // 回收必须放在 finally：上面每个 return 之前都别再各自 recycle 一遍。
+        bitmap?.recycle()
     }
+}
+
+/** API 29+：走 MediaStore，不需要任何存储权限。 */
+private fun saveQrViaMediaStore(
+    ctx: Context,
+    bitmap: Bitmap,
+    fileName: String,
+): Boolean {
+    val values = android.content.ContentValues().apply {
+        put(MediaStore.Images.Media.DISPLAY_NAME, "$fileName.png")
+        put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+        put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/CPPlayer")
+    }
+    val uri = ctx.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+        ?: return false
+    return try {
+        // 只有 `compress` 真的返回 true 才算写进去了；流拿不到（null）同样算失败，
+        // 否则账本会记下「已存过」，而相册里其实只有一条打不开的空图。
+        ctx.contentResolver.openOutputStream(uri)?.use { out ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        } ?: false
+    } catch (e: Exception) {
+        // 写流失败时把刚插入的空条目删掉，别在相册里留一条打不开的图。
+        runCatching { ctx.contentResolver.delete(uri, null, null) }
+        throw e
+    }
+}
+
+/** API 24–28：直接写公共 Pictures 目录（需要 WRITE_EXTERNAL_STORAGE，见函数 KDoc）。 */
+private fun saveQrToPublicPictures(
+    ctx: Context,
+    bitmap: Bitmap,
+    fileName: String,
+): Boolean {
+    @Suppress("DEPRECATION")
+    val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+    val cpDir = File(dir, "CPPlayer").apply { mkdirs() }
+    val file = File(cpDir, "$fileName.png")
+    FileOutputStream(file).use { out ->
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+    }
+    val intent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE).apply {
+        data = Uri.fromFile(file)
+    }
+    ctx.sendBroadcast(intent)
+    return true
 }
 
 actual fun openTargetApp(packageName: String) {

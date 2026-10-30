@@ -101,6 +101,7 @@ import cp.player.app.auth.AccountStore
 import cp.player.app.auth.CookieLogin
 import cp.player.app.auth.QrLoginSession
 import cp.player.app.auth.QrLoginStore
+import cp.player.app.auth.QrAutoSaveTracker
 import cp.player.app.i18n.AccountStrings
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
@@ -147,7 +148,9 @@ import kotlinx.serialization.json.intOrNull
  *    - 欢迎引导 Hero：展示当前音源品牌信息与登录权益说明，摒弃冰冷的灰色假人头。
  *    - M3E 分段登录通道切换器：横向胶囊切换（扫码 / 手机号 / 邮箱 / Cookie），当前音源支持的方式一目了然。
  *    - 沉浸式登录面板：
- *      - 扫码登录：高对比度白色圆角底板，实时轮询状态徽标，支持刷新、保存相册及直达客户端 App。
+ *      - 扫码登录：高对比度白色圆角底板，实时轮询状态徽标，支持刷新、保存相册；
+ *        点「打开 客户端 App」跳转前会**自动把当前二维码存一份到相册**（同一张只存一次），
+ *        因为跳走之后登录页上的二维码就看不见了。
  *      - 手机号登录：输入框 + 图形验证码（按需）+ 短信验证码 + 全宽主登录按钮。
  *      - 邮箱登录：邮箱 + 密码（密码隐藏遮罩）+ 全宽主登录按钮。
  *      - Cookie 登录：多行文本框带实时清洗识别校验与安全脱敏回显。
@@ -1533,6 +1536,15 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
 
     private var qrJob: Job? = null
 
+    /**
+     * 「跳转前自动保存」的去重账本（同一张二维码只写一次相册）。
+     *
+     * 与 [qrJob] 同级：随 ScreenModel 生命周期存在，**换音源时**跟着现场一起 reset，
+     * 别让上一个音源的「已存过」拦下新音源的第一张二维码。
+     * 二维码本身换新（刷新 / 过期重取）不需要 reset —— 账本比的是图片内容，新图自然不同。
+     */
+    private val qrAutoSave = QrAutoSaveTracker()
+
     init {
         screenModelScope.launch {
             var lastProviderId: String? = null
@@ -1543,6 +1555,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
 
                 if (isProviderSwitched) {
                     cancelQrPolling()
+                    qrAutoSave.reset()
                     qrUrl.value = null
                     qrImgBase64.value = null
                     qrRestored.value = false
@@ -2058,11 +2071,40 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
     fun saveQrCode() {
         val base64 = qrImgBase64.value ?: return
         val providerName = activeProvider.value?.name ?: "qr"
-        saveQrCodeToGallery(base64, "QR_$providerName")
+        val saved = saveQrCodeToGallery(base64, "QR_$providerName")
+        // 手动保存成功同样记账：用户先点了「保存二维码」再点跳转，不该在相册里再出现一张。
+        if (saved) qrAutoSave.markSaved(base64)
     }
 
+    /**
+     * 「打开目标 App」——跳转前**先把当前二维码存进相册**。
+     *
+     * ### 为什么要在跳转时自动存
+     *
+     * 用户点这个按钮的本意是「去手机上扫」，跳过去后人就在另一个应用里了，
+     * 本应用的登录页看不到；而扫码的通常是**另一台设备**（或者同一台手机的相机 / 系统扫码入口）
+     * —— 现场这张二维码一离开登录页就没了。相册是它能落地的、用户回头找得到的地方。
+     * 于是这里做两件事：存图（同一张图只存一次，见 [QrAutoSaveTracker]）→ 再跳转。
+     *
+     * ### 顺序与失败处理
+     *
+     * 先存后跳：跳转一旦成功，本应用就被切到后台，之后再想写相册会撞上后台限制。
+     * 存图失败（桌面端恒失败、Android 7/8/9 缺写权限）**不阻断跳转** ——
+     * 跳过去扫码才是用户真正要做的事，相册里没有图只是少了个备份。
+     *
+     * 成功后的用户提示**不在这里发**：`saveQrCodeToGallery` 的实现自己弹 toast
+     * （与手动「保存二维码」同一个文案）。这里再写一条 `message` 只会被 2 秒一次的
+     * 轮询状态（「等待扫码…」）立刻盖掉，等于白发。
+     */
     fun openTargetApp() {
         val pkg = activeProvider.value?.targetAppPackage ?: return
+        val image = qrImgBase64.value?.takeIf { it.isNotBlank() }
+        if (image != null && qrAutoSave.needsSave(image)) {
+            val providerName = activeProvider.value?.name ?: "qr"
+            if (saveQrCodeToGallery(image, "QR_$providerName")) {
+                qrAutoSave.markSaved(image)
+            }
+        }
         openTargetApp(pkg)
     }
 }

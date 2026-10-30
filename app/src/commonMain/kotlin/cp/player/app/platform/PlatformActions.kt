@@ -29,10 +29,15 @@ expect fun defaultFontRoundness(): Int
  * 保存 Base64 编码的图片到系统相册。
  * 仅 Android 端生效，Desktop 端为空操作。
  *
+ * ⚠️ 返回值是**真的写进去了没有**，不是「调过了」。调用方（登录页的「跳转前自动保存」）
+ * 靠它决定要不要记下「这张图已经存过」—— 失败也记账的话，下一次跳转就不会再试，
+ * 用户永远拿不到那张图（Android 7/8/9 上写公共目录本来就可能失败，见实现侧注释）。
+ *
  * @param base64Image Base64 编码的图片数据（不含 data:image/... 前缀）
  * @param fileName 保存的文件名（不含扩展名）
+ * @return true 表示相册里确实多了一个文件；false 表示没写成（桌面端恒 false）
  */
-expect fun saveQrCodeToGallery(base64Image: String, fileName: String)
+expect fun saveQrCodeToGallery(base64Image: String, fileName: String): Boolean
 
 /**
  * 通过包名打开目标 App。

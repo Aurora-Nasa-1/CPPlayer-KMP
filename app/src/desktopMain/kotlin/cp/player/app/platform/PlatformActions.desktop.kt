@@ -31,7 +31,14 @@ actual fun networkMeteredChanges(): Flow<Boolean> = flowOf(false)
 /** 桌面端没有「系统圆滑度」一说，跟随字体文件自带的默认实例（ROND = 0，方正）。 */
 actual fun defaultFontRoundness(): Int = 0
 
-actual fun saveQrCodeToGallery(base64Image: String, fileName: String) {}
+/**
+ * 桌面端没有「相册」这个概念，恒返回 false。
+ *
+ * 返回 false 而不是 Unit 是实打实有用的：登录页「跳转到目标 App 前自动保存二维码」
+ * 拿到 false 就不会记账，下次跳转还会再试 —— 桌面端这个动作本来就是空操作，
+ * 不该假装「已经存过了」。日后再给桌面补一条「导出到图片文件夹」，调用方无需改。
+ */
+actual fun saveQrCodeToGallery(base64Image: String, fileName: String): Boolean = false
 
 actual fun openTargetApp(packageName: String) {}
 
