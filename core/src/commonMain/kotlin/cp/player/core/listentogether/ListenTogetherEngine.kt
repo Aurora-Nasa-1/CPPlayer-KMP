@@ -228,21 +228,18 @@ class ListenTogetherEngine(
         _state.value = _state.value.copy(supported = backend.isSupported())
     }
 
-    /** 开始维持会话（登录后 / 应用启动时调用一次）。 */
+    /** 开始维持会话（用户进入一起听页面时调用；未在房间时不发后台请求）。 */
     fun start() {
         if (loop?.isActive == true) return
         loop = scope.launch {
-            // 先把「在房」拉回来：应用重启后用户可能在房间里，但本地没有任何记录。
-            refreshInternal()
             var tick = 0L
             while (isActive) {
                 delay(POLL_INTERVAL_MS)
-                tick += POLL_INTERVAL_MS
                 if (!_state.value.inRoom) {
-                    // 不在房间时降频：只为发现「被邀请/被拉进房」，不值得每秒打接口。
-                    if (tick % IDLE_POLL_MULTIPLIER == 0L) refreshInternal()
+                    tick = 0L
                     continue
                 }
+                tick += POLL_INTERVAL_MS
                 refreshInternal()
                 pollSnapshot()
                 driftCorrect()
@@ -259,6 +256,7 @@ class ListenTogetherEngine(
             reportJob = scope.launch {
                 for (r in reportChannel) {
                     // 发送前再取一次房间号：排队期间可能已经退房
+                    if (!_state.value.inRoom) continue
                     val roomId = _state.value.room?.roomId ?: continue
                     backend.reportPlayCommand(
                         roomId = roomId,
@@ -277,6 +275,7 @@ class ListenTogetherEngine(
         if (playlistJob?.isActive != true) {
             playlistJob = scope.launch {
                 for (c in playlistChannel) {
+                    if (!_state.value.inRoom) continue
                     val roomId = _state.value.room?.roomId ?: continue
                     val uid = myUserId()
                     backend.reportPlaylist(roomId, uid, c.version, c.songIds)
@@ -470,6 +469,7 @@ class ListenTogetherEngine(
     }
 
     private suspend fun heartbeat() {
+        if (!_state.value.inRoom) return
         val info = heartbeatInfo() ?: return
         val roomId = _state.value.room?.roomId ?: return
         backend.heartbeat(
@@ -486,7 +486,7 @@ class ListenTogetherEngine(
             loading = false,
             supported = backend.isSupported(),
             inRoom = m.inRoom,
-            room = m.room,
+            room = m.room.takeIf { m.inRoom },
             connectionStatus = m.connectionStatus,
             myUserId = myUserId(),
         )
@@ -518,6 +518,7 @@ class ListenTogetherEngine(
 
     /** 拉一次房间快照并应用。轮询循环每 tick 调一次。 */
     private suspend fun pollSnapshot() {
+        if (!_state.value.inRoom) return
         val roomId = _state.value.room?.roomId ?: return
         when (val s = backend.snapshot(roomId)) {
             is BackendResult.Success -> applySnapshot(s.data)
@@ -861,9 +862,6 @@ class ListenTogetherEngine(
          * 别自己拍一个更小的值（更密只会更容易被风控）。
          */
         const val HEARTBEAT_INTERVAL_MS = 30_000L
-
-        /** 不在房间时的轮询降频倍数。 */
-        const val IDLE_POLL_MULTIPLIER = 3L
 
         /**
          * 应用远端进度的 seek 阈值。方案 §3.3(c)：偏差大于它才 seek；

@@ -264,11 +264,6 @@ object AppModel {
             },
             mediaIdForSong = { songId -> "${backend.activeProviderId()}://song/$songId" },
         )
-            // **自动启动**：引擎挂在应用级 scope 上，「在房」才能跨页面存活
-            // （用户不可能一直停在房间页）。第一个读到本状态的组合点就会把它拉起来 ——
-            // 实际是任意页面小播放器里那条 `ListenTogetherStrip`，
-            // 所以「不在房间页也能一起听」不依赖用户手动进过房间页。
-            .also { it.start() }
     }
 
     val listenTogetherState: StateFlow<cp.player.core.listentogether.ListenTogetherState>

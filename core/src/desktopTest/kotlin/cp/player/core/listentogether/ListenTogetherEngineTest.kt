@@ -1,7 +1,13 @@
 package cp.player.core.listentogether
 
 import cp.player.core.BackendResult
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -19,6 +25,7 @@ import kotlin.test.assertTrue
  * - 建房会**顶掉**当前房间且 `end` 不可逆 ⇒ 已在房间时必须硬拦；
  * - 轮询失败**不能**清空房间状态 ⇒ 一次网络抖动不该把用户踢出房间。
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class ListenTogetherEngineTest {
 
     /** 可控假后端；记录调用次数，用来验证「某些路径压根没发请求」。 */
@@ -33,44 +40,167 @@ class ListenTogetherEngineTest {
         var createCalls = 0
         var acceptCalls = 0
         var endCalls = 0
+        val requests = mutableListOf<String>()
 
-        override suspend fun membership() = membershipResult
+        override suspend fun membership(): BackendResult<ListenTogetherMembership> {
+            requests += "membership"
+            return membershipResult
+        }
+
         override suspend fun createRoom(): BackendResult<ListenTogetherRoom> {
+            requests += "create"
             createCalls++
             return createResult
         }
 
         override suspend fun accept(roomId: String, inviterId: Long): BackendResult<Unit> {
+            requests += "accept"
             acceptCalls++
             return acceptResult
         }
 
         override suspend fun end(roomId: String): BackendResult<Unit> {
+            requests += "end"
             endCalls++
             return ok(Unit)
         }
 
-        override suspend fun snapshot(roomId: String) = ok(RoomSnapshot(null, null))
+        override suspend fun snapshot(roomId: String): BackendResult<RoomSnapshot> {
+            requests += "snapshot"
+            return ok(RoomSnapshot(null, null))
+        }
+
         override suspend fun heartbeat(
             roomId: String, songId: String, playStatus: String, progressMs: Long,
-        ) = ok(Unit)
+        ): BackendResult<Unit> {
+            requests += "heartbeat"
+            return ok(Unit)
+        }
 
         override suspend fun reportPlayCommand(
             roomId: String, commandType: String, playStatus: String, progressMs: Long,
             formerSongId: String?, targetSongId: String?, clientSeq: Long,
-        ) = ok(Unit)
+        ): BackendResult<Unit> {
+            requests += "playCommand"
+            return ok(Unit)
+        }
 
         override suspend fun reportPlaylist(
             roomId: String, userId: Long, version: Long, songIds: List<String>,
-        ) = ok(Unit)
+        ): BackendResult<Unit> {
+            requests += "playlist"
+            return ok(Unit)
+        }
     }
 
-    private fun engine(backend: FakeBackend) = ListenTogetherEngine(
+    private fun engine(
+        backend: FakeBackend,
+        scope: CoroutineScope = CoroutineScope(Dispatchers.Default),
+    ) = ListenTogetherEngine(
         backend = backend,
-        // 用例直接调 suspend 方法，不跑 start() 的轮询循环，所以 scope 不会被用到。
-        scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default),
+        scope = scope,
         myUserId = { 42L },
+        heartbeatInfo = { HeartbeatInfo("123", true, 0L) },
     )
+
+    @Test
+    fun `idle startup never makes background requests`() = runTest {
+        val backend = FakeBackend()
+        val e = engine(backend, backgroundScope)
+
+        e.start()
+        runCurrent()
+        assertTrue(backend.requests.isEmpty(), "Starting an idle engine must not query membership")
+
+        advanceTimeBy(120_000L)
+        runCurrent()
+        assertTrue(backend.requests.isEmpty(), "Idle polling must not call any room API")
+    }
+
+    @Test
+    fun `explicit refresh outside a room makes only one request`() = runTest {
+        val backend = FakeBackend()
+        val e = engine(backend, backgroundScope)
+        e.start()
+        runCurrent()
+
+        e.refresh()
+        advanceTimeBy(120_000L)
+        runCurrent()
+
+        assertEquals(listOf("membership"), backend.requests)
+    }
+
+    @Test
+    fun `room created after idle startup still polls and sends heartbeats`() = runTest {
+        val backend = FakeBackend()
+        val e = engine(backend, backgroundScope)
+        e.start()
+        e.start()
+        runCurrent()
+        advanceTimeBy(120_000L)
+        runCurrent()
+
+        e.createRoom()
+        backend.membershipResult = ok(membership(inRoom = true))
+        advanceTimeBy(ListenTogetherEngine.HEARTBEAT_INTERVAL_MS)
+        runCurrent()
+
+        assertTrue(e.state.value.inRoom)
+        assertEquals(1, backend.createCalls)
+        assertEquals(7, backend.requests.count { it == "membership" })
+        assertEquals(6, backend.requests.count { it == "snapshot" })
+        assertEquals(1, backend.requests.count { it == "heartbeat" })
+    }
+
+    @Test
+    fun `leaving a room stops all background requests`() = runTest {
+        val backend = FakeBackend()
+        val e = engine(backend, backgroundScope)
+        e.createRoom()
+        backend.membershipResult = ok(membership(inRoom = true))
+        e.start()
+        runCurrent()
+        advanceTimeBy(ListenTogetherEngine.POLL_INTERVAL_MS)
+        runCurrent()
+        assertTrue("snapshot" in backend.requests)
+
+        e.endRoom()
+        val requestsAtExit = backend.requests.toList()
+        advanceTimeBy(120_000L)
+        runCurrent()
+
+        assertFalse(e.state.value.inRoom)
+        assertEquals(requestsAtExit, backend.requests)
+    }
+
+    @Test
+    fun `remote exit stops snapshot and heartbeat in the same polling cycle`() = runTest {
+        val backend = FakeBackend()
+        val e = engine(backend, backgroundScope)
+        e.createRoom()
+        backend.membershipResult = ok(membership(inRoom = true))
+        e.start()
+        runCurrent()
+        advanceTimeBy(ListenTogetherEngine.HEARTBEAT_INTERVAL_MS - ListenTogetherEngine.POLL_INTERVAL_MS)
+        runCurrent()
+        val snapshotsBeforeExit = backend.requests.count { it == "snapshot" }
+        assertEquals(5, snapshotsBeforeExit)
+
+        // A stale room payload must not authorize more requests after membership is revoked.
+        backend.membershipResult = ok(membership(inRoom = false).copy(room = room()))
+        advanceTimeBy(ListenTogetherEngine.POLL_INTERVAL_MS)
+        runCurrent()
+
+        assertFalse(e.state.value.inRoom)
+        assertNull(e.state.value.room)
+        assertEquals(snapshotsBeforeExit, backend.requests.count { it == "snapshot" })
+        assertFalse("heartbeat" in backend.requests)
+        val requestsAtExit = backend.requests.toList()
+        advanceTimeBy(120_000L)
+        runCurrent()
+        assertEquals(requestsAtExit, backend.requests)
+    }
 
     // ======================== 建房：已在房间必须硬拦 ========================
 
