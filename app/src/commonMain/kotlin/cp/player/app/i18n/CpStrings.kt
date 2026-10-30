@@ -1122,6 +1122,8 @@ interface LibraryStrings {
     val tabPlaylists: String
     val tabDownloads: String
     val myMusic: String
+    val gridView: String
+    val listView: String
     fun greeting(name: String): String
     fun librarySubtitle(playlists: Int, liked: Int): String
     fun countPlaylist(n: String): Pair<String, String>

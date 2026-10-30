@@ -916,6 +916,8 @@ object CpStringsEn : CpStrings {
         override val tabPlaylists = "Playlists"
         override val tabDownloads = "Downloads"
         override val myMusic = "My music"
+        override val gridView = "Grid view"
+        override val listView = "List view"
         override fun greeting(name: String) = "Hello, $name"
         override fun librarySubtitle(playlists: Int, liked: Int) =
             "$playlists playlists • $liked liked tracks"

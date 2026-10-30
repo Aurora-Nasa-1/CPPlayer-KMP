@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -107,6 +109,9 @@ import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.LazyScrollRow
 import cp.player.app.ui.component.LocalIsExpanded
 import cp.player.app.ui.component.PlaylistCoverCard
+import cp.player.app.ui.component.PageHeader
+import cp.player.app.ui.component.ProvideCpTextFullDisplay
+import cp.player.app.ui.component.desktopScrollbarGutter
 import cp.player.app.ui.component.ProviderFeatureGate
 import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.ui.component.SectionHeader
@@ -156,13 +161,8 @@ class HomeScreen : Screen {
  * `top_playlist_highquality`、排行榜 `toplist`、新碟上架 `top_album`、热门歌手 `top_artists`、
  * 新歌速递 `top_song`、最近播放（本地历史）。
  *
- * ### 与上一版的差异
- * - **删掉**：桌面顶部四张等宽「每日推荐 / 私人FM / 心动模式 / 相似歌曲」入口卡 ——
- *   它们没有任何数据，其中「每日推荐」还与正下方的日推大卡完全重复；
- * - **删掉**：日推卡里的随机封面拼图 —— 布局每次进页面都变，点击命中的还是另一首歌
- *   （封面列表过滤了空值、曲目列表没有，两个下标错位），既不可预期也没有信息量；
- * - **删掉**：与「推荐歌单」同构的「热门歌单」区块，改为同一区块内的来源分段切换；
- * - **新增**：焦点图轮播、排行榜、新碟上架、热门歌手、带地区切换的新歌速递。
+ * 桌面首屏优先展示每日歌曲与播放状态，最近播放直接铺成栅格；
+ * 焦点图置于发现歌单之后。移动端保留原有纵向布局。
  */
 @Composable
 private fun HomeScreenContent(model: HomeScreenModel) {
@@ -526,15 +526,6 @@ private const val DESKTOP_DAILY_COLUMNS = 4
 /** 与 [DESKTOP_DAILY_COLUMNS] 配套的展示条数：4 列 × 3 行。 */
 private const val DESKTOP_DAILY_COUNT = 12
 
-/**
- * 桌面焦点图高度。
- *
- * 按 1400dp 内容宽、hero 占 2/3 算约 4.2:1，与上游横幅素材比例接近。
- * 260dp（原 224dp）：L1 之后右侧面板由「三张固定电台入口」改成「继续收听」，
- * 需要放下封面 + 曲名 + 进度条三行，224dp 会把进度条挤到贴边。
- */
-private val DesktopBannerHeight = 260.dp
-
 @Composable
 internal fun DesktopHomeLayout(
     state: HomeUiState,
@@ -542,13 +533,13 @@ internal fun DesktopHomeLayout(
     nowPlaying: NowPlayingSnapshot,
     actions: HomeActions,
 ) {
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         val widthValue = maxWidth.value
-        val horizontalPadding = responsiveDp(widthValue, min = 24f, max = 48f, start = 1200f, end = 2200f)
+        val horizontalPadding = CpSpacing.pageHorizontal
         // 栅格按**实际内容宽度**换算 —— 窗口宽度里含两侧留白与滚动条槽，
         // 宽屏下直接拿它去除会多算出 1–2 列，卡片被压窄。
-        val contentWidth = (widthValue - horizontalPadding.value * 2f)
-            .coerceAtMost(CpSpacing.pageMaxWidth.value)
+        val contentWidth = widthValue.coerceAtMost(CpSpacing.pageMaxWidth.value) -
+            horizontalPadding.value * 2f - desktopScrollbarGutter.value
         val playlistColumns = CpSpacing.gridColumns(contentWidth.dp)
 
         val recommendedItems = state.visiblePlaylists.take(playlistColumns * PLAYLIST_ROWS)
@@ -556,12 +547,12 @@ internal fun DesktopHomeLayout(
         val artistItems = state.hotArtists.take(playlistColumns)
 
         ScrollColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize(),
             contentPadding = PaddingValues(
                 start = horizontalPadding,
                 end = horizontalPadding,
-                top = 24.dp,
-                bottom = WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding() + 24.dp,
+                top = CpSpacing.pageTop,
+                bottom = WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding() + CpSpacing.formBottomInset,
             ),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -569,93 +560,51 @@ internal fun DesktopHomeLayout(
                 // ⚠️ 顺序不能反：`fillMaxWidth()` 会把 min/max 都钉死成可用宽度，
                 // 之后 `widthIn(max = …)` 拿到的入参约束已是固定值，clamp 后等于没写。
                 modifier = Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
+                verticalArrangement = Arrangement.spacedBy(CpSpacing.section),
             ) {
-                // ── 焦点区：轮播图 + 快捷电台 ──
-                //
-                // 没有焦点图时**不留替代卡**：原先这里塞的是「今日速览」，而它内部两块
-                // 正是下方「每日推荐 / 最近播放」的**计数 + 跳转**，只是把同一目的地
-                // 在首屏最贵的位置（2/3 宽）又说了一遍；真正的列表本来就在同一屏下方。
-                // 无焦点图对应的恰恰是「未登录 / 新用户」——那正是最不需要「我的数据统计」
-                // 的时候（两个计数都会是 0）。移动端（MobileHomeLayout）从一开始就没有
-                // 这张卡，也从未出现版面容不下内容的问题，可见这个位置空着是成立的。
-                // 现在的做法：把「快捷电台」提升成一个常规区块（同 `HomeSectionCard` 规格），
-                // 用**可操作内容**填版面，而不是拿一张信息量为零的统计卡去占坑。
-                if (state.banners.isNotEmpty()) {
+                PageHeader(
+                    title = "发现音乐",
+                    subtitle = "你的音乐，常听常新",
+                    action = {
+                        TextButton(onClick = actions.onOpenAlbumWall) {
+                            Icon(PosterWallIcon, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            CpText("唱片墙")
+                        }
+                    },
+                )
+
+                if (state.dailySongs.isNotEmpty()) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().height(DesktopBannerHeight),
-                        horizontalArrangement = Arrangement.spacedBy(20.dp),
+                        modifier = Modifier.fillMaxWidth().height(CpSpacing.desktopFocusHeight),
+                        horizontalArrangement = Arrangement.spacedBy(CpSpacing.pageHorizontal),
                     ) {
+                        DailySelectionFocus(state.dailySongs, actions, Modifier.weight(1.65f).fillMaxHeight())
+                        // At a narrow desktop content width the shell already has a player.
+                        // Never squeeze artwork and song titles into a 190dp side panel.
+                        if (contentWidth >= 900f && nowPlaying.track != null) {
+                            LandingNowPlaying(nowPlaying, actions, Modifier.weight(1f).fillMaxHeight())
+                        }
+                    }
+                    val previewColumns = CpSpacing.gridColumns(contentWidth.dp, target = 300.dp, min = 2, max = 3)
+                    Row(horizontalArrangement = Arrangement.spacedBy(CpSpacing.musicGap)) {
+                        state.dailySongs.take(previewColumns).forEach { track ->
+                            LandingTrackRow(
+                                track, { actions.onPlayDailyTrack(track) }, { actions.onTrackOptions(track) },
+                                nowPlaying, Modifier.weight(1f),
+                            )
+                        }
+                    }
+                } else if (state.banners.isNotEmpty()) {
                         BannerCarousel(
                             banners = state.banners,
                             onClick = actions.onBannerClick,
-                            modifier = Modifier.weight(2f).fillMaxHeight(),
-                            height = DesktopBannerHeight,
+                            modifier = Modifier.fillMaxWidth(),
+                            height = CpSpacing.desktopFocusHeight,
                         )
-                        HeroQuickPanel(
-                            onPlayPersonalFm = actions.onPlayPersonalFm,
-                            onOpenIntelligence = actions.onOpenIntelligence,
-                            onOpenRecentPlays = actions.onOpenRecentPlays,
-                            recentEnabled = recentItems.isNotEmpty(),
-                            enabled = state.dailySongs.isNotEmpty(),
-                            nowPlaying = nowPlaying.track,
-                            isPlaying = nowPlaying.isPlaying,
-                            positionMs = nowPlaying.positionMs,
-                            durationMs = nowPlaying.durationMs,
-                            onOpenPlayer = actions.onOpenPlayer,
-                            onTogglePlayPause = actions.onTogglePlayPause,
-                            modifier = Modifier.weight(1f).fillMaxHeight(),
-                        )
-                    }
-                } else {
-                    val isLocalMode = AppModel.activeProvider() == null
-                    // 无焦点图时快捷电台**包进常规区块容器**，而不是三张裸卡横在页首 ——
-                    // 裸卡会让顶端显得孤立、且与下方「每日推荐」的左边缘对不齐。
-                    HomeSectionCard(
-                        title = if (isLocalMode) "快捷入口" else "快捷电台",
-                        subtitle = if (isLocalMode) "本地音乐快速启航" else "不用挑歌，直接开听",
-                    ) {
-                        HeroQuickRow(
-                            onPlayPersonalFm = actions.onPlayPersonalFm,
-                            onOpenIntelligence = actions.onOpenIntelligence,
-                            onOpenRecentPlays = actions.onOpenRecentPlays,
-                        )
-                    }
                 }
-
-                // ── 每日推荐（独占整行，主角）──
-                //
-                // 改版前这里是 `Row(每日推荐 weight(1.15) + 最近播放 weight(1))` 的
-                // **等高巨卡**，靠 `IntrinsicSize.Max` 让两者底部对齐。问题不在对齐，
-                // 在**版面分配与使用频率倒挂**：每日推荐是每天都要看一眼的核心内容，
-                // 「最近播放」是低频回溯操作，两者却各拿一半宽。
-                // 更糟的是那个对齐约束反过来压低了日推的信息密度 —— 它被限制在
-                // 「和右栏 6 行列表一样高」，只能放 10 首（两列 5 行）。
-                //
-                // 现在：日推独占整行、四列三行 12 首；最近播放降级为下方一条
-                // **横向滚动**的「继续收听」（见 RecentPlaysRail），
-                // 它本来就只需要"扫一眼、点一个"，不需要 12 行列表那么大的版面。
-                if (state.dailySongs.isNotEmpty()) {
-                    DailyMixCard(
-                        songs = state.dailySongs,
-                        onSongClick = actions.onPlayDailyTrack,
-                        onOpenPlaylist = actions.onOpenDaily,
-                        modifier = Modifier.fillMaxWidth(),
-                        compact = true,
-                        nowPlaying = nowPlaying,
-                    )
-                }
-
-                // ── 继续收听（横向错落药丸条，PixelPlayer 风格）──
-                RecentPlaysRail(
-                    tracks = recentItems,
-                    onTrackClick = actions.onRecentTrackClick,
-                    onTrackOptions = actions.onTrackOptions,
-                    onOpenAll = actions.onOpenRecentPlays,
-                    onPlayAll = actions.onRecentPlayAll,
-                    onOpenAlbumWall = actions.onOpenAlbumWall,
-                    nowPlaying = nowPlaying,
-                )
+                LandingRadioActions(actions, dailyAvailable = state.dailySongs.isNotEmpty())
+                DesktopRecentSelection(recentItems, nowPlaying, actions, contentWidth.dp)
 
                 if (state.visiblePlaylists.isNotEmpty() || state.playlistSourceLoading) {
                     HomeSectionCard(
@@ -681,6 +630,15 @@ internal fun DesktopHomeLayout(
                             )
                         }
                     }
+                }
+
+                if (state.dailySongs.isNotEmpty() && state.banners.isNotEmpty()) {
+                    BannerCarousel(
+                        banners = state.banners,
+                        onClick = actions.onBannerClick,
+                        modifier = Modifier.fillMaxWidth(),
+                        height = MobileBannerHeight,
+                    )
                 }
 
                 // ── 排行榜（多列网格）与新碟上架（与发现歌单统一列数）──
@@ -772,6 +730,7 @@ internal fun DesktopHomeLayout(
 
                 if (state.isEmptyHome) {
                     StateSurface {
+                        ProvideCpTextFullDisplay(true) {
                         if (AppModel.activeProvider() == null) {
                             ContentState(
                                 title = "本地音乐模式",
@@ -785,8 +744,118 @@ internal fun DesktopHomeLayout(
                                 message = "登录账号后即可同步每日歌曲与歌单",
                             )
                         }
+                        }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DesktopDailySelection(
+    songs: List<TrackSummary>,
+    columns: Int,
+    nowPlaying: NowPlayingSnapshot,
+    actions: HomeActions,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(Modifier.weight(1f)) {
+                CpText(
+                    "每日推荐",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                CpText(
+                    "为你精选 ${songs.size} 首",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            FilledTonalButton(onClick = actions.onOpenDaily) {
+                CpText("查看全部")
+                Icon(Icons.Filled.ChevronRight, null, Modifier.size(18.dp))
+            }
+        }
+        songs.take(columns * 3).chunked(columns).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { track ->
+                    CompactTrackCard(
+                        track = track,
+                        onClick = { actions.onPlayDailyTrack(track) },
+                        nowPlaying = nowPlaying,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DesktopRadioShortcuts(actions: HomeActions) {
+    val local = AppModel.activeProvider() == null
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ProviderFeatureGate(ProviderCapability.RECOMMEND) {
+            FilledTonalButton(onClick = actions.onPlayPersonalFm) {
+                Icon(if (local) Icons.Filled.Shuffle else Icons.Filled.Radio, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                CpText(if (local) "本地随机" else "私人 FM")
+            }
+        }
+        FilledTonalButton(onClick = actions.onOpenIntelligence) {
+            Icon(if (local) Icons.Filled.FolderOpen else Icons.Filled.Favorite, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            CpText(if (local) "本地曲库" else "心动模式")
+        }
+        FilledTonalButton(onClick = actions.onOpenRecentPlays) {
+            Icon(Icons.Filled.History, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            CpText("最近播放")
+        }
+    }
+}
+
+@Composable
+internal fun DesktopRecentSelection(
+    tracks: List<TrackSummary>,
+    nowPlaying: NowPlayingSnapshot,
+    actions: HomeActions,
+    contentWidth: Dp,
+) {
+    if (tracks.isEmpty()) return
+    val columns = CpSpacing.gridColumns(contentWidth, target = 280.dp, min = 2, max = 4)
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionTitleRow(
+            title = "最近播放",
+            subtitle = "熟悉的旋律，一点继续",
+            trailing = {
+                TextButton(onClick = actions.onOpenRecentPlays) { CpText("全部") }
+            },
+        )
+        tracks.take(columns * 2).chunked(columns).forEachIndexed { rowIndex, row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                row.forEachIndexed { columnIndex, track ->
+                    LandingTrackRow(
+                        track = track,
+                        onPlay = { actions.onRecentTrackClick(track, rowIndex * columns + columnIndex) },
+                        onOptions = { actions.onTrackOptions(track) },
+                        snapshot = nowPlaying,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
@@ -806,7 +875,7 @@ private fun playlistSourceHint(source: PlaylistSource): String = when (source) {
 private val MobileBannerHeight = 168.dp
 
 @Composable
-private fun MobileHomeLayout(
+internal fun MobileHomeLayout(
     state: HomeUiState,
     recentTracks: List<TrackSummary>,
     nowPlaying: NowPlayingSnapshot,
@@ -822,34 +891,42 @@ private fun MobileHomeLayout(
         ),
         verticalArrangement = Arrangement.spacedBy(CpSpacing.section),
     ) {
-        if (state.banners.isNotEmpty()) {
+        if (state.dailySongs.isNotEmpty()) {
             item {
-                BannerCarousel(
-                    banners = state.banners,
-                    onClick = actions.onBannerClick,
-                    modifier = Modifier.fillMaxWidth(),
-                    height = MobileBannerHeight,
+                DailySelectionFocus(
+                    state.dailySongs, actions,
+                    Modifier.fillMaxWidth().heightIn(min = CpSpacing.mobileFocusHeight),
+                    compact = true,
                 )
             }
         }
-
-        item {
-            HeroQuickRow(
-                onPlayPersonalFm = actions.onPlayPersonalFm,
-                onOpenIntelligence = actions.onOpenIntelligence,
-                onOpenRecentPlays = actions.onOpenRecentPlays,
-            )
-        }
-
+        item { LandingRadioActions(actions, compact = true, dailyAvailable = state.dailySongs.isNotEmpty()) }
         if (state.dailySongs.isNotEmpty()) {
             item {
-                DailyMixCard(
-                    songs = state.dailySongs,
-                    onSongClick = actions.onPlayDailyTrack,
-                    onOpenPlaylist = actions.onOpenDaily,
-                    modifier = Modifier.fillMaxWidth(),
-                    nowPlaying = nowPlaying,
+                Column(verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap)) {
+                    state.dailySongs.take(3).forEach { track ->
+                        LandingTrackRow(track, { actions.onPlayDailyTrack(track) }, { actions.onTrackOptions(track) }, nowPlaying)
+                    }
+                }
+            }
+        }
+        if (recentTracks.isNotEmpty()) {
+            item {
+                SectionHeader(
+                    title = "最近播放",
+                    action = { TextButton(actions.onOpenRecentPlays) { CpText("全部") } },
                 )
+                Spacer(Modifier.height(CpSpacing.musicGap))
+                Column(verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap)) {
+                    recentTracks.take(3).forEachIndexed { index, track ->
+                        LandingTrackRow(track, { actions.onRecentTrackClick(track, index) }, { actions.onTrackOptions(track) }, nowPlaying)
+                    }
+                }
+            }
+        }
+        if (state.banners.isNotEmpty()) {
+            item {
+                BannerCarousel(state.banners, actions.onBannerClick, Modifier.fillMaxWidth(), height = MobileBannerHeight)
             }
         }
 
@@ -973,20 +1050,6 @@ private fun MobileHomeLayout(
             }
         }
 
-        if (recentTracks.isNotEmpty()) {
-            item {
-                RecentPlaysRail(
-                    tracks = recentTracks.take(16),
-                    onTrackClick = actions.onRecentTrackClick,
-                    onTrackOptions = actions.onTrackOptions,
-                    onOpenAll = actions.onOpenRecentPlays,
-                    onPlayAll = actions.onRecentPlayAll,
-                    onOpenAlbumWall = actions.onOpenAlbumWall,
-                    nowPlaying = nowPlaying,
-                )
-            }
-        }
-
         if (state.error != null && AppModel.activeProvider() != null) {
             item {
                 StateSurface {
@@ -1003,6 +1066,7 @@ private fun MobileHomeLayout(
         if (state.isEmptyHome) {
             item {
                 StateSurface {
+                    ProvideCpTextFullDisplay {
                     if (AppModel.activeProvider() == null) {
                         ContentState(
                             title = "本地音乐模式",
@@ -1015,6 +1079,7 @@ private fun MobileHomeLayout(
                             title = "还没有个性化推荐",
                             message = "登录账号后即可同步每日歌曲与歌单",
                         )
+                    }
                     }
                 }
             }
@@ -1035,7 +1100,7 @@ internal fun BannerCarousel(
     banners: List<BannerItem>,
     onClick: (BannerItem) -> Unit,
     modifier: Modifier = Modifier,
-    height: Dp = DesktopBannerHeight,
+    height: Dp = CpSpacing.desktopFocusHeight,
 ) {
     if (banners.isEmpty()) return
     val pagerState = rememberPagerState(pageCount = { banners.size })
@@ -1216,21 +1281,14 @@ private fun HeroQuickPanel(
     onTogglePlayPause: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    // 走 BentoCard 而不是手写 Surface：多拿到两层东西 ——
-    // ① 在播态整卡可点时的**按压微缩**（原先是裸 Modifier.clickable，点下去没有任何反馈）；
-    // ② bentoOutline() 那层极淡描边。
-    //
-    // 两态共用一个 BentoCard，靠 onClick 是否为 null 切换：为 null 时 BentoCard 自己
-    // 退化成静态容器。高度由调用方钉死（modifier 带 fillMaxHeight），所以 fillHeight
-    // 可以取 true —— 在播态的 Spacer(weight(1f)) 需要**有界高度**才能把进度条压到底。
-    BentoCard(
-        modifier = modifier,
-        onClick = if (nowPlaying != null) onOpenPlayer else null,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
-        fillHeight = true,
-    ) {
-        if (nowPlaying != null) {
+    if (nowPlaying != null) {
+        BentoCard(
+            modifier = modifier,
+            onClick = onOpenPlayer,
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentPadding = PaddingValues(CpSpacing.pageHorizontal),
+            fillHeight = true,
+        ) {
             HeroNowPlaying(
                 track = nowPlaying,
                 isPlaying = isPlaying,
@@ -1238,11 +1296,11 @@ private fun HeroQuickPanel(
                 durationMs = durationMs,
                 onTogglePlayPause = onTogglePlayPause,
             )
-        } else {
-            // 不套 fillMaxHeight：内容本来就靠上，撑满了反而会被 SpaceBetween 拉散。
+        }
+    } else {
             Column(
-                Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 val isLocalMode = AppModel.activeProvider() == null
                 CpText(
@@ -1280,7 +1338,6 @@ private fun HeroQuickPanel(
                     enabled = recentEnabled,
                 )
             }
-        }
     }
 }
 
@@ -1329,7 +1386,7 @@ private fun HeroNowPlaying(
             // M3E 快速播放/暂停控制按钮
             Surface(
                 onClick = onTogglePlayPause,
-                modifier = Modifier.size(34.dp).cpBounceClickable(onClick = onTogglePlayPause),
+                modifier = Modifier.size(CpSpacing.touchTarget),
                 shape = CircleShape,
                 color = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -1344,28 +1401,8 @@ private fun HeroNowPlaying(
             }
         }
         Spacer(Modifier.height(10.dp))
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(Modifier.size(46.dp).aspectRatio(1f)) {
-                if (!track.coverUrl.isNullOrBlank()) {
-                    AsyncImage(
-                        model = track.coverUrl.resized(180),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.medium),
-                        contentScale = ContentScale.Crop,
-                    )
-                } else {
-                    CpCoverPlaceholder(
-                        modifier = Modifier.fillMaxSize(),
-                        corner = 12.dp,
-                        animated = false,
-                    )
-                }
-            }
-            Column(Modifier.weight(1f)) {
+        val labels: @Composable () -> Unit = {
+            Column {
                 CpText(
                     track.name,
                     style = MaterialTheme.typography.titleMedium,
@@ -1378,6 +1415,23 @@ private fun HeroNowPlaying(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                 )
+            }
+        }
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            if (maxWidth < 240.dp) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HomePlayingCover(track)
+                    labels()
+                }
+            } else {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    HomePlayingCover(track)
+                    Box(Modifier.weight(1f)) { labels() }
+                }
             }
         }
         // 占位把波形进度条推到卡片底部
@@ -1407,6 +1461,22 @@ private fun HeroNowPlaying(
 }
 
 @Composable
+private fun HomePlayingCover(track: TrackSummary) {
+    Box(Modifier.size(64.dp).clip(MaterialTheme.shapes.medium)) {
+        // Always keep a readable fallback underneath failed or slow image requests.
+        CpCoverPlaceholder(Modifier.fillMaxSize(), corner = 12.dp, animated = false)
+        if (!track.coverUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = track.coverUrl.resized(180),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        }
+    }
+}
+
+@Composable
 private fun HeroActionRow(
     icon: ImageVector,
     title: String,
@@ -1420,7 +1490,7 @@ private fun HeroActionRow(
     Surface(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.fillMaxWidth().cpBounceClickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
@@ -2646,14 +2716,4 @@ private fun CompactTrackCard(
         }
     }
 }
-
-private fun responsiveFloat(width: Float, min: Float, max: Float, start: Float, end: Float): Float {
-    if (width <= start) return min
-    if (width >= end) return max
-    val progress = (width - start) / (end - start)
-    return min + (max - min) * progress
-}
-
-private fun responsiveDp(width: Float, min: Float, max: Float, start: Float, end: Float) =
-    responsiveFloat(width, min, max, start, end).dp
 

@@ -855,6 +855,8 @@ object CpStringsZh : CpStrings {
         override val tabPlaylists = "歌单"
         override val tabDownloads = "下载"
         override val myMusic = "我的音乐"
+        override val gridView = "网格视图"
+        override val listView = "列表视图"
         override fun greeting(name: String) = "你好，$name"
         override fun librarySubtitle(playlists: Int, liked: Int) = "共 $playlists 个歌单 · 收藏 $liked 首"
         override fun countPlaylist(n: String) = n to "歌单"

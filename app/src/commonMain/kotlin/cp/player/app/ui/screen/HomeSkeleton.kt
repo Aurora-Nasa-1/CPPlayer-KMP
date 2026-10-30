@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import cp.player.app.ui.component.CpShimmerBox
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.ScrollColumn
+import cp.player.app.ui.component.desktopScrollbarGutter
 
 /**
  * 首页加载骨架屏（桌面端与移动端）。
@@ -41,69 +42,53 @@ import cp.player.app.ui.component.ScrollColumn
  * 3. 严格遵循 [CpSpacing] 的边距规则，数据返回替换时无突兀跳动。
  */
 
-private val DesktopBannerHeight = 260.dp
 private val MobileBannerHeight = 168.dp
-
-private fun responsiveFloat(width: Float, min: Float, max: Float, start: Float, end: Float): Float {
-    if (width <= start) return min
-    if (width >= end) return max
-    val progress = (width - start) / (end - start)
-    return min + (max - min) * progress
-}
-
-private fun responsiveDp(width: Float, min: Float, max: Float, start: Float, end: Float): Dp =
-    responsiveFloat(width, min, max, start, end).dp
 
 /**
  * 桌面端首页骨架屏。
  */
 @Composable
 fun DesktopHomeSkeleton(modifier: Modifier = Modifier) {
-    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         val widthValue = maxWidth.value
-        val horizontalPadding = responsiveDp(widthValue, min = 24f, max = 48f, start = 1200f, end = 2200f)
-        val contentWidth = (widthValue - horizontalPadding.value * 2f)
-            .coerceAtMost(CpSpacing.pageMaxWidth.value)
+        val horizontalPadding = CpSpacing.pageHorizontal
+        val contentWidth = widthValue.coerceAtMost(CpSpacing.pageMaxWidth.value) -
+            horizontalPadding.value * 2f - desktopScrollbarGutter.value
         val playlistColumns = CpSpacing.gridColumns(contentWidth.dp)
 
         ScrollColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize(),
             contentPadding = PaddingValues(
                 start = horizontalPadding,
                 end = horizontalPadding,
-                top = 24.dp,
-                bottom = WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding() + 24.dp,
+                top = CpSpacing.pageTop,
+                bottom = WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding() + CpSpacing.formBottomInset,
             ),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Column(
                 modifier = Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
+                verticalArrangement = Arrangement.spacedBy(CpSpacing.section),
             ) {
-                // 1. 焦点区：轮播图 (2f) + 快捷电台 (1f)
+                HomeSkeletonSectionHeader(titleWidth = 130.dp, subtitleWidth = 210.dp)
+                // Focus has the same height and column ratio as the loaded desktop page.
                 Row(
-                    modifier = Modifier.fillMaxWidth().height(DesktopBannerHeight),
-                    horizontalArrangement = Arrangement.spacedBy(20.dp),
+                    modifier = Modifier.fillMaxWidth().height(CpSpacing.desktopFocusHeight),
+                    horizontalArrangement = Arrangement.spacedBy(CpSpacing.pageHorizontal),
                 ) {
                     CpShimmerBox(
-                        modifier = Modifier.weight(2f).fillMaxHeight(),
+                        modifier = Modifier.weight(1.65f).fillMaxHeight(),
                         shape = MaterialTheme.shapes.large,
                     )
-                    CpShimmerBox(
+                    if (contentWidth >= 900f) CpShimmerBox(
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                         shape = MaterialTheme.shapes.large,
                     )
                 }
 
-                // 2. 每日推荐卡片骨架
+                // Recently played: a heading followed by two responsive track rows.
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            MaterialTheme.colorScheme.surfaceContainerLow,
-                            MaterialTheme.shapes.large,
-                        )
-                        .padding(20.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     Row(
@@ -128,7 +113,7 @@ fun DesktopHomeSkeleton(modifier: Modifier = Modifier) {
                     }
 
                     // 歌曲项网格（2 行，列数根据屏幕宽度自适应）
-                    val trackCols = if (playlistColumns >= 5) 4 else 3
+                    val trackCols = CpSpacing.gridColumns(contentWidth.dp, target = 280.dp, min = 2, max = 4)
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -163,45 +148,6 @@ fun DesktopHomeSkeleton(modifier: Modifier = Modifier) {
                                         }
                                     }
                                 }
-                            }
-                        }
-                    }
-                }
-
-                // 3. 继续收听药丸条
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    repeat(playlistColumns.coerceAtLeast(4)) {
-                        Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .background(
-                                    MaterialTheme.colorScheme.surfaceContainerLow,
-                                    MaterialTheme.shapes.medium,
-                                )
-                                .padding(horizontal = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            CpShimmerBox(
-                                modifier = Modifier.size(36.dp),
-                                shape = RoundedCornerShape(8.dp),
-                            )
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                CpShimmerBox(
-                                    modifier = Modifier.fillMaxWidth(0.7f).height(12.dp),
-                                    shape = MaterialTheme.shapes.extraSmall,
-                                )
-                                CpShimmerBox(
-                                    modifier = Modifier.fillMaxWidth(0.4f).height(10.dp),
-                                    shape = MaterialTheme.shapes.extraSmall,
-                                )
                             }
                         }
                     }
@@ -275,9 +221,9 @@ fun MobileHomeSkeleton(modifier: Modifier = Modifier) {
         ),
         verticalArrangement = Arrangement.spacedBy(CpSpacing.section),
     ) {
-        // 1. 焦点轮播图
+        // Daily focus occupies the first slot, not the promotional banner.
         CpShimmerBox(
-            modifier = Modifier.fillMaxWidth().height(MobileBannerHeight),
+            modifier = Modifier.fillMaxWidth().height(CpSpacing.mobileFocusHeight),
             shape = MaterialTheme.shapes.large,
         )
 
@@ -288,53 +234,26 @@ fun MobileHomeSkeleton(modifier: Modifier = Modifier) {
         ) {
             repeat(3) {
                 CpShimmerBox(
-                    modifier = Modifier.weight(1f).height(44.dp),
+                    modifier = Modifier.weight(1f).height(CpSpacing.musicShortcutHeight),
                     shape = MaterialTheme.shapes.medium,
                 )
             }
         }
 
         // 3. 每日推荐卡片
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    MaterialTheme.colorScheme.surfaceContainerLow,
-                    MaterialTheme.shapes.large,
-                )
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    CpShimmerBox(
-                        modifier = Modifier.width(100.dp).height(18.dp),
-                        shape = MaterialTheme.shapes.extraSmall,
-                    )
-                    CpShimmerBox(
-                        modifier = Modifier.width(140.dp).height(12.dp),
-                        shape = MaterialTheme.shapes.extraSmall,
-                    )
-                }
-                CpShimmerBox(
-                    modifier = Modifier.size(32.dp),
-                    shape = MaterialTheme.shapes.small,
-                )
-            }
-
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap)) {
             repeat(3) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().background(
+                        MaterialTheme.colorScheme.surfaceContainerLow,
+                        MaterialTheme.shapes.medium,
+                    ).padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     CpShimmerBox(
-                        modifier = Modifier.size(44.dp),
-                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.size(48.dp),
+                        shape = MaterialTheme.shapes.small,
                     )
                     Column(
                         modifier = Modifier.weight(1f),

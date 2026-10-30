@@ -100,6 +100,14 @@ object CpSpacing {
     /** 栅格类页面的区块间距（一个大区块与下一个之间）。 */
     val section = 28.dp
 
+    /** Shared music landing composition measurements, independent of window chrome. */
+    val desktopFocusHeight = 280.dp
+    val mobileFocusHeight = 224.dp
+    val musicArtwork = 184.dp
+    val musicArtworkCompact = 112.dp
+    val musicGap = 12.dp
+    val musicShortcutHeight = 88.dp
+
     // ======================================================== 页面级：表单页
     //
     // 设置 / 账号 / 集成 / 诊断 这类页面的内容是「标签—控件」两列，用这一组。

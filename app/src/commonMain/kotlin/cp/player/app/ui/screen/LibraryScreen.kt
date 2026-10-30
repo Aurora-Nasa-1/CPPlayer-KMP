@@ -53,6 +53,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -100,15 +101,16 @@ import cp.player.core.provider.ProviderCapability
 import kotlinx.coroutines.launch
 
 /**
- * 「我的」页：Material 3 Expressive 仪表盘 + 曲库列表。
+ * 「我的」页：桌面采用 [DesktopLibraryLayout]，窄屏保留轻量问候与曲库列表。
  *
  * 版面自上而下：
- * 1. **Bento 仪表盘** —— 问候区 / 聆听统计 / 主行动卡 / 快捷入口 / 偏好设置 / 关于。
- *    Expanded（≥840dp）走 2:1:1 的四列栅格，与设计稿一致；窄屏折叠成单列 + 两列并排。
- * 2. **我的歌单（快速查看）** —— 歌单封面卡片栅格，紧跟仪表盘。歌单是这个页面上
+ * 1. **桌面** —— 标题与新建操作、紧凑快捷入口、曲库筛选与网格 / 列表切换。
+ *    歌单只展示一次，更多菜单沿用下方共享的重命名与删除确认流程。
+ * 2. **窄屏** —— 轻量问候与快捷入口，继续使用下述快速歌单与曲库分段。
+ * **我的歌单（快速查看）** —— 歌单封面卡片栅格，紧跟问候区。歌单是这个页面上
  *    被查看频率最高的内容，不能要求用户先滚过整面仪表盘再开一个分段才能看到。
  *    完整清单（含增删改）仍在下方「曲库 → 歌单」。
- * 3. **曲库** —— 分段控件切歌单 / 下载，列表直接铺在同一个滚动容器里
+ * **曲库** —— 分段控件切歌单 / 本地，列表直接铺在同一个滚动容器里
  *    （不再用 HorizontalPager，否则仪表盘只能单独占一个滚动视口）。
  *
  * 云盘不再属于这里的分段：它有几十上百首、加载态与空态都和歌单完全不同源，
@@ -156,15 +158,8 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
     val likedIds by AppModel.playback.likedIds.collectAsState()
     val profile by AppModel.userProfileFlow.collectAsState()
     val expanded = LocalIsExpanded.current
-
-    // 滚动状态要自己持有：仪表盘上的入口（原「我的歌单」卡、快速区的「查看全部」）
-    // 点击后必须**滚动**到曲库区。此前它们只做 `selectTab(0)` —— 而 tab 默认就是 0，
-    // 曲库又在仪表盘之下约 500dp，点了之后屏幕上什么都不发生，看起来像坏掉。
-    val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
-    val scrollToLibrary: () -> Unit = {
-        scope.launch { listState.animateScrollToItem(LIBRARY_SECTION_INDEX) }
-    }
+    var gridView by rememberSaveable { mutableStateOf(true) }
+    val supportsCloud = rememberActiveProviderSupports(ProviderCapability.CLOUD_DRIVE)
 
     LaunchedEffect(state.selectedPlaylistId, state.playlists) {
         val target = state.selectedPlaylistId ?: return@LaunchedEffect
@@ -178,131 +173,41 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
         isRefreshing = refreshing,
         onRefresh = { model.refresh() },
     ) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-        LazyScrollColumn(
-            state = listState,
-            // 用全局统一的内容宽度：以前这里写死 1360、首页写死 1480–1840，
-            // 于是切 Tab 时正文宽度会整体跳一下 —— 大屏上非常刺眼。
-            modifier = Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxHeight(),
-            contentPadding = PaddingValues(
-                start = CpSpacing.pageHorizontal,
-                end = CpSpacing.pageHorizontal,
-                top = 8.dp,
-                bottom = 120.dp,
+        DesktopLibraryLayout(
+            state = state,
+            subtitle = s.library.librarySubtitle(state.playlists.size, likedIds.size),
+            supportsCloud = supportsCloud,
+            isLocalMode = AppModel.activeProvider() == null,
+            // Mobile defaults to a dense list for faster scanning and one-handed actions.
+            // The desktop preference remains independent and is remembered across visits.
+            gridView = if (expanded) gridView else false,
+            onGridViewChange = { gridView = it },
+            compact = !expanded,
+            greeting = if (!expanded) profile?.nickname?.let(s.library::greeting) else null,
+            actions = DesktopLibraryActions(
+                onSelectTab = model::selectTab,
+                onCreatePlaylist = { showCreateDialog = true },
+                onSearch = { navigator.push(LibrarySearchScreen()) },
+                onImport = { navigator.push(ImportPlaylistScreen()) },
+                onRecentPlays = { navigator.push(InsightsScreen(InsightsScreen.TAB_RECENT)) },
+                onInsights = { navigator.push(InsightsScreen(InsightsScreen.TAB_OVERVIEW)) },
+                onDownloads = { navigator.push(DownloadsScreen()) },
+                onLocal = { navigator.push(LocalLibraryScreen()) },
+                onCloud = { navigator.push(CloudDriveScreen()) },
+                onAlbumWall = { navigator.push(AlbumWallScreen()) },
+                onRetry = model::refresh,
+                onOpenPlaylist = { navigator.push(PlaylistDetailScreen(it)) },
+                onPlaylistOptions = { selectedPlaylist = it },
+                isOwner = model::isOwner,
             ),
-            verticalArrangement = Arrangement.spacedBy(BentoGap),
         ) {
-            item {
-                LibraryDashboard(
-                    expanded = expanded,
-                    title = if (expanded) s.library.myMusic
-                    else profile?.nickname?.let { s.library.greeting(it) } ?: s.library.myMusic,
-                    subtitle = s.library.librarySubtitle(state.playlists.size, likedIds.size),
-                    stats = listOf(
-                        s.library.countPlaylist(state.playlists.size.toString()),
-                        s.library.countLiked(likedIds.size.toString()),
-                        s.library.countDownload(downloadsState.downloadedItems.size.toString()),
-                    ),
-                    onCreatePlaylist = { showCreateDialog = true },
-                    onRecentPlays = { navigator.push(InsightsScreen(InsightsScreen.TAB_RECENT)) },
-                    // 宽屏仪表盘上的「聆听统计」卡：进报告页的概览（日历墙那一屏）。
-                    onOpenInsights = { navigator.push(InsightsScreen(InsightsScreen.TAB_OVERVIEW)) },
-                    onDownloads = { navigator.push(DownloadsScreen()) },
-                    onLocal = { navigator.push(LocalLibraryScreen()) },
-                    onCloud = { navigator.push(CloudDriveScreen()) },
-                    onAlbumWall = { navigator.push(AlbumWallScreen()) },
-                    onStorage = { navigator.push(StorageSettingsScreen()) },
-                    onAppearance = { navigator.push(AppearanceSettingsScreen()) },
-                    onPlayback = { navigator.push(PlaybackSettingsScreen()) },
-                    onProviders = { navigator.push(ProviderManagementScreen()) },
-                    onAbout = { navigator.push(AboutScreen()) },
-                )
-            }
-
-            // 「我的歌单」快速查看区：歌单是这个页面被查看频率最高的内容，
-            // 给它一个仪表盘之后立刻可见的封面卡片栅格（手机 2 列 / 宽屏按内容宽度换算）。
-            // 点「查看全部」滚动到曲库区 —— 不是切一个看不见的分段。
-            item {
-                PlaylistQuickGrid(
-                    playlists = state.playlists,
-                    loading = state.loading,
-                    error = state.error,
-                    onPlaylistClick = { navigator.push(PlaylistDetailScreen(it)) },
-                    onSeeAll = {
-                        model.selectTab(0)
-                        scrollToLibrary()
-                    },
-                    onGoLocal = { model.selectTab(1) },
-                )
-            }
-
-            item {
-                Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                    SectionHeader(
-                        title = s.library.libraryTitle,
-                        supportingText = when (state.selectedTab) {
-                            0 -> s.library.libraryPlaylistsCount(state.playlists.size)
-                            else -> s.library.libraryOffline
-                        },
-                        action = {
-                            // 三个入口放在标题行右侧而不是分段控件尾部：320dp 窄屏下
-                            // 三个分段 + 三个按钮会横向溢出。
-                            androidx.compose.material3.IconButton(
-                                onClick = { navigator.push(LibrarySearchScreen()) },
-                                modifier = Modifier.size(40.dp),
-                            ) {
-                                Icon(Icons.Filled.Search, s.library.searchLibrary)
-                            }
-                            androidx.compose.material3.IconButton(
-                                onClick = { navigator.push(ImportPlaylistScreen()) },
-                                modifier = Modifier.size(40.dp),
-                            ) {
-                                Icon(Icons.Filled.FileUpload, s.library.importPlaylist)
-                            }
-                            FilledTonalIconButton(
-                                onClick = { showCreateDialog = true },
-                                modifier = Modifier.size(40.dp),
-                                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                ),
-                            ) {
-                                Icon(Icons.Filled.Add, s.library.newPlaylist)
-                            }
-                        },
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    LibrarySegmentedTabs(
-                        filters = libraryFilters(s),
-                        // 兜底 coerce：云端曾存过 selectedTab=1（旧版云盘档），
-                        // 恢复出的越界值不能再喂给两档分段控件。
-                        selectedIndex = state.selectedTab.coerceIn(0, libraryFilters(s).lastIndex),
-                        onSelect = model::selectTab,
-                    )
-                }
-            }
-
-            when (state.selectedTab) {
-                0 -> playlistsSection(
-                    s = s,
-                    state = state,
-                    onRetry = model::refresh,
-                    isOwner = model::isOwner,
-                    onPlaylistClick = { navigator.push(PlaylistDetailScreen(it)) },
-                    onPlaylistOptions = { selectedPlaylist = it },
-                    onGoLocal = { model.selectTab(1) },
-                )
-                else -> item {
-                    LocalLibrarySection(
-                        s = s,
-                        state = downloadsState,
-                        onOpenLocal = { navigator.push(LocalLibraryScreen()) },
-                        onOpenDownloads = { navigator.push(DownloadsScreen()) },
-                    )
-                }
-            }
+            LocalLibrarySection(
+                s = s,
+                state = downloadsState,
+                onOpenLocal = { navigator.push(LocalLibraryScreen()) },
+                onOpenDownloads = { navigator.push(DownloadsScreen()) },
+            )
         }
-    }
     } // CpRefreshablePage
 
     selectedPlaylist?.let { playlist ->

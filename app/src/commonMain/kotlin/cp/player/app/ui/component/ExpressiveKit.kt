@@ -20,7 +20,9 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -69,6 +71,11 @@ import androidx.compose.material3.SplitButtonLayout
 import androidx.compose.material3.Surface
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.VerticalFloatingToolbar
 import androidx.compose.material3.WavyProgressIndicatorDefaults
 import androidx.compose.material3.toPath
@@ -89,6 +96,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -120,7 +131,7 @@ private val CpSeekBubbleHeight = 18.dp
 /**
  * M3 Expressive 组件套件。
  *
- * 这些是 material3 1.11 的 Expressive API 在本项目的**唯一入口** —— 页面里不要直接调
+ * 这些是 Material3 Expressive API 在本项目的**唯一入口** —— 页面里不要直接调
  * `LinearWavyProgressIndicator` / `LoadingIndicator` / `ToggleButton`，理由：
  *
  * 1. 它们都带 `@ExperimentalMaterial3ExpressiveApi`，散落各处会让每个文件都要 opt-in；
@@ -128,7 +139,7 @@ private val CpSeekBubbleHeight = 18.dp
  *    统一在这里收口；
  * 3. 观感一处调整、全局生效。
  *
- * ⚠️ 这些 API 来自 material3 `1.11.0-alpha07`（由 `libs.material3` 显式顶上去）。
+ * 当前依赖为 material3 `1.12.0-alpha03`（由 `libs.material3` 显式顶上去）。
  * 插件自带的 `compose.material3` 只有 `1.9.0`，里面**没有** `MaterialShapes` /
  * `WavyProgressIndicator` / `LoadingIndicator` / `ToggleButton` —— 若哪天那行依赖被删掉，
  * 这里会整片编译不过，而不是静默降级。
@@ -377,6 +388,15 @@ fun CpSeekBar(
         else -> positionMs.toFloat()
     }).coerceIn(0f, duration)
     val haptics = cp.player.app.ui.feedback.LocalCpHaptics.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+
+    val thumbVisible = (isHovered || dragging) && enabled
+    val thumbVisibilityFraction by animateFloatAsState(
+        targetValue = if (thumbVisible) 1f else 0f,
+        animationSpec = CpMotion.spatialFast(),
+        label = "thumbVisibilityFraction",
+    )
     val thumbMorphFraction by animateFloatAsState(
         targetValue = if (dragging) 1f else 0f,
         animationSpec = CpMotion.spatialFast(),
@@ -392,7 +412,10 @@ fun CpSeekBar(
     var pillWidthPx by remember { mutableStateOf(0) }
 
     Box(
-        modifier = modifier.height(CpSeekBarHeight).onSizeChanged { trackWidthPx = it.width },
+        modifier = modifier
+            .height(CpSeekBarHeight)
+            .onSizeChanged { trackWidthPx = it.width }
+            .hoverable(interactionSource = interactionSource, enabled = enabled),
         contentAlignment = Alignment.Center,
     ) {
         // 拖动中平息波形流动，避免动态波峰干扰手指的精准定位；松手后恢复律动
@@ -442,24 +465,30 @@ fun CpSeekBar(
         val activeThumbColor = if (enabled) thumbColor else MaterialTheme.colorScheme.onSurfaceVariant
 
         // PixelPlayer 式 Expressive 交互胶囊抓手：
-        // 静止时为 12dp 的圆点，触摸拖动时弹性拉伸为 24dp 的垂直交互抓手胶囊
+        // 悬停时为 12dp 的圆点，触摸拖动时弹性拉伸为 24dp 的垂直交互抓手胶囊；非悬停且未拖动时不显示。
         Canvas(Modifier.fillMaxWidth().height(CpSeekBarHeight)) {
-            val progress = (shown / duration).coerceIn(0f, 1f)
-            val baseRadiusPx = 6.dp.toPx()
-            val trackEdgePaddingPx = 10.dp.toPx()
-            val availableWidth = (size.width - trackEdgePaddingPx * 2f).coerceAtLeast(0f)
-            val thumbX = trackEdgePaddingPx + availableWidth * progress
-            val thumbY = size.height / 2f
+            val visibleFraction = thumbVisibilityFraction.coerceIn(0f, 2f)
+            if (visibleFraction > 0.001f) {
+                val progress = (shown / duration).coerceIn(0f, 1f)
+                val baseRadiusPx = 6.dp.toPx()
+                val trackEdgePaddingPx = 10.dp.toPx()
+                val availableWidth = (size.width - trackEdgePaddingPx * 2f).coerceAtLeast(0f)
+                val thumbX = trackEdgePaddingPx + availableWidth * progress
+                val thumbY = size.height / 2f
 
-            val currentWidth = (1f - thumbMorphFraction) * (baseRadiusPx * 2f) + thumbMorphFraction * 5.dp.toPx()
-            val currentHeight = (1f - thumbMorphFraction) * (baseRadiusPx * 2f) + thumbMorphFraction * 24.dp.toPx()
+                val targetWidth = (1f - thumbMorphFraction) * (baseRadiusPx * 2f) + thumbMorphFraction * 5.dp.toPx()
+                val targetHeight = (1f - thumbMorphFraction) * (baseRadiusPx * 2f) + thumbMorphFraction * 24.dp.toPx()
 
-            drawRoundRect(
-                color = activeThumbColor,
-                topLeft = Offset(thumbX - currentWidth / 2f, thumbY - currentHeight / 2f),
-                size = Size(currentWidth, currentHeight),
-                cornerRadius = CornerRadius(currentWidth / 2f),
-            )
+                val currentWidth = (targetWidth * visibleFraction).coerceAtLeast(0f)
+                val currentHeight = (targetHeight * visibleFraction).coerceAtLeast(0f)
+
+                drawRoundRect(
+                    color = activeThumbColor,
+                    topLeft = Offset(thumbX - currentWidth / 2f, thumbY - currentHeight / 2f),
+                    size = Size(currentWidth, currentHeight),
+                    cornerRadius = CornerRadius(currentWidth / 2f),
+                )
+            }
         }
 
         // 时间气泡：只在拖动时出现。静止时不出现 —— 那个位置下面的 time 行已经写着了，
@@ -678,6 +707,80 @@ fun MorphingShape(
         }
         path.transform(matrix)
         drawPath(path, color)
+    }
+}
+
+/**
+ * A bounded, state-driven MaterialShapes artwork mask. Unlike [MorphingShape],
+ * this never runs an idle animation; only an actual state change morphs the cover.
+ */
+@Composable
+fun CpExpressiveArtwork(
+    modifier: Modifier = Modifier,
+    active: Boolean = false,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    val morph = remember { Morph(MaterialShapes.Cookie4Sided, MaterialShapes.Cookie9Sided) }
+    val fraction by animateFloatAsState(
+        if (active) 1f else 0f,
+        animationSpec = CpMotion.spatial(),
+        label = "artworkShape",
+    )
+    val shape = remember(morph, fraction) {
+        object : Shape {
+            override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+                val path = morph.toPath(fraction, Path())
+                val bounds = path.getBounds()
+                path.transform(Matrix().apply {
+                    scale(size.width / bounds.width, size.height / bounds.height)
+                    translate(-bounds.left, -bounds.top)
+                })
+                return Outline.Generic(path)
+            }
+        }
+    }
+    Box(modifier.clip(shape), content = content)
+}
+
+/** Connected selection, with official checked/pressed shape transitions. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CpConnectedChoice(
+    selectedIndex: Int,
+    labels: List<String>,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    icons: List<ImageVector?> = emptyList(),
+    iconOnly: Boolean = false,
+) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
+        labels.forEachIndexed { index, label ->
+            val button: @Composable () -> Unit = {
+            ToggleButton(
+                checked = selectedIndex == index,
+                onCheckedChange = { onSelect(index) },
+                shapes = when (index) {
+                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                    labels.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                },
+            ) {
+                val icon = icons.getOrNull(index)
+                if (icon != null) Icon(icon, if (iconOnly) label else null, Modifier.size(18.dp))
+                if (!iconOnly && label.isNotBlank()) {
+                    if (icon != null) Spacer(Modifier.width(6.dp))
+                    CpText(label, style = MaterialTheme.typography.labelLarge)
+                }
+            }
+            }
+            if (iconOnly) {
+                TooltipBox(
+                    positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+                    tooltip = { PlainTooltip { CpText(label) } },
+                    state = rememberTooltipState(),
+                ) { button() }
+            } else button()
+        }
     }
 }
 
@@ -1139,7 +1242,7 @@ data class CpActionGroupItem(
 )
 
 /**
- * M3 Expressive **动作组**（`ButtonGroup` 的收口）—— 一排**连体**按钮。
+ * M3 Expressive adaptive action group using the official ButtonGroup.
  *
  * 这是「一坨相关动作」在 Expressive 里的标准长相：按钮彼此贴合成一个整体，
  * 按下时**被按的那颗会横向撑开、邻居被压窄**（`expandedRatio`），而不是各自缩一下。
@@ -1160,58 +1263,21 @@ fun CpActionButtonGroup(
     modifier: Modifier = Modifier,
 ) {
     if (items.isEmpty()) return
-    FlowRow(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+    // 1.12's overflow measure copies maxWidth without relaxing minWidth.
+    // Keep caller fill constraints on a Box, not on the adaptive group's menu.
+    Box(modifier) {
+    ButtonGroup(
+        overflowIndicator = { ButtonGroupDefaults.OverflowIndicator(it) },
     ) {
-        items.forEachIndexed { index, item ->
-            val interactionSource = remember { MutableInteractionSource() }
-            val isPrimary = index == 0
-            val containerColor = if (isPrimary) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerHigh
-            }
-            val contentColor = if (isPrimary) {
-                MaterialTheme.colorScheme.onPrimaryContainer
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            }
-            val shape = if (isPrimary) MaterialTheme.shapes.large else CircleShape
-
-            Surface(
+        items.forEach { item ->
+            clickableItem(
                 onClick = item.onClick,
+                label = item.label,
                 enabled = item.enabled,
-                shape = shape,
-                color = containerColor,
-                contentColor = contentColor,
-                modifier = Modifier
-                    .cpPressScale(interactionSource, pressedScale = 0.96f)
-                    .height(42.dp),
-                interactionSource = interactionSource,
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        imageVector = item.icon,
-                        contentDescription = null,
-                        modifier = Modifier.size(CpIconSize.inline),
-                        tint = contentColor.copy(alpha = if (item.enabled) 1f else 0.38f),
-                    )
-                    CpText(
-                        text = item.label,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = if (isPrimary) FontWeight.SemiBold else FontWeight.Medium,
-                        color = contentColor.copy(alpha = if (item.enabled) 1f else 0.38f),
-                        maxLines = 1,
-                    )
-                }
-            }
+                icon = { Icon(item.icon, null, Modifier.size(CpIconSize.inline)) },
+            )
         }
+    }
     }
 }
 
