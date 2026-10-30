@@ -364,19 +364,11 @@ private fun HomeScreenContent(model: HomeScreenModel) {
     )
 
     if (loading) {
-        // 加载态也走统一的页面宽度上限，否则「加载中」那张卡会比加载完的正文窄一圈，
-        // 内容一到位就横向撑开。
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            StateSurface(
-                Modifier.padding(horizontal = CpSpacing.pageHorizontal)
-                    .widthIn(max = CpSpacing.pageMaxWidth),
-            ) {
-                ContentState(
-                    title = "正在准备推荐",
-                    message = "正在同步每日歌曲、焦点图与榜单",
-                    loading = true,
-                )
-            }
+        // 首页骨架屏：结构与真实布局对齐（轮播、日推、歌单、榜单），避免全屏加载卡突兀闪现
+        if (LocalIsExpanded.current) {
+            DesktopHomeSkeleton()
+        } else {
+            MobileHomeSkeleton()
         }
         return
     }
