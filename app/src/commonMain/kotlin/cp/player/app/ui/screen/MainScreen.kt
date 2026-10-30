@@ -217,7 +217,10 @@ class MainScreen : Screen {
         androidx.compose.runtime.DisposableEffect(Unit) {
             onDispose {
                 cp.player.app.ui.util.DesktopShell.miniPlayerBlockedByChat = false
-                cp.player.app.ui.util.DesktopShell.miniPlayerBottomBarVisiblePx = 0f
+                // ⚠️ 离开 MainScreen 跳转到子页面时，不在此将 miniPlayerBottomBarVisiblePx 置 0：
+                // 子页面已由 App.kt 根据 mainScreenVisible=false 分支处理（bottomGap 为 navigationBarInset）。
+                // 若在此处重置为 0，返回 MainScreen 时在重组与首帧测量完成前会短暂读到 0px，
+                // 导致 MiniPlayer 沉到底部挡住导航栏。
             }
         }
         val selectTab: (Int) -> Unit = { index ->
@@ -409,9 +412,15 @@ class MainScreen : Screen {
             bottomBarHide.enabled = bottomBarAutoHide
             if (!bottomBarAutoHide) bottomBarHide.reset()
         }
+        // 观察底栏可见高度变动（手势拖拽、吸附回弹、测量更新），实时同步给 DesktopShell
+        androidx.compose.runtime.LaunchedEffect(bottomBarHide) {
+            androidx.compose.runtime.snapshotFlow { bottomBarHide.visibleHeightPx }
+                .collect { visiblePx ->
+                    cp.player.app.ui.util.DesktopShell.miniPlayerBottomBarVisiblePx = visiblePx
+                }
+        }
         androidx.compose.runtime.SideEffect {
-            cp.player.app.ui.util.DesktopShell.miniPlayerBottomBarVisiblePx =
-                bottomBarHide.barHeightPx * (1f - bottomBarHide.fraction)
+            cp.player.app.ui.util.DesktopShell.miniPlayerBottomBarVisiblePx = bottomBarHide.visibleHeightPx
         }
 
         val activeProvider by AppModel.activeProviderFlow.collectAsState()
@@ -631,7 +640,11 @@ class MainScreen : Screen {
                                 selectedIndex,
                                 selectTab,
                                 hideFraction = bottomBarHide.fraction,
-                                onHeightChanged = { bottomBarHide.barHeightPx = it.toFloat() },
+                                onHeightChanged = { height ->
+                                    bottomBarHide.barHeightPx = height.toFloat()
+                                    cp.player.app.ui.util.DesktopShell.miniPlayerBottomBarVisiblePx =
+                                        bottomBarHide.visibleHeightPx
+                                },
                             )
                         },
                         containerColor = Color.Transparent

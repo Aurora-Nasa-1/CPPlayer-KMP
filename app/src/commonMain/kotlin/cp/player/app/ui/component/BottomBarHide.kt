@@ -50,8 +50,8 @@ class BottomBarHideState(
     /** 是否启用（对应设置项）。关闭时应调用 [reset] 归零。 */
     var enabled: Boolean = true
 
-    /** 底栏完整高度（px），由宿主测量回传。 */
-    var barHeightPx by mutableFloatStateOf(0f)
+    /** 底栏完整高度（px），由宿主测量回传。初始使用兜底高度，避免初次组合或返回时高度为 0。 */
+    var barHeightPx by mutableFloatStateOf(fallbackHeightPx)
 
     private var hiddenPx by mutableFloatStateOf(0f)
 
@@ -59,12 +59,16 @@ class BottomBarHideState(
     private var settleJob: Job? = null
 
     /** 参考高度：优先实测，未回传时用兜底值。 */
-    private val heightPx: Float
+    val heightPx: Float
         get() = if (barHeightPx > 1f) barHeightPx else fallbackHeightPx
 
     /** 当前隐藏比例（0 = 完全可见，1 = 完全隐藏）。 */
     val fraction: Float
         get() = (hiddenPx / heightPx).coerceIn(0f, 1f)
+
+    /** 当前可见高度（px）。 */
+    val visibleHeightPx: Float
+        get() = (heightPx - hiddenPx).coerceAtLeast(0f)
 
     /** 立即回显（关闭设置项 / 状态重建时调用）。 */
     fun reset() {

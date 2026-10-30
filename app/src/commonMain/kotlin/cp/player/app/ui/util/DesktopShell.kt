@@ -113,8 +113,8 @@ object DesktopShell {
     /** Mini 模式下是否始终置顶（窗口始终处于最上层）。默认开启。 */
     var isMiniPinned by mutableStateOf(true)
 
-    /** 主壳层底部导航栏当前可见高度（px），供根层 MiniPlayer 跟随底栏移动。 */
-    var miniPlayerBottomBarVisiblePx by mutableStateOf(0f)
+    /** 主壳层底部导航栏当前可见高度（px），供根层 MiniPlayer 跟随底栏移动。负值表示未初始化/使用兜底。 */
+    var miniPlayerBottomBarVisiblePx by mutableStateOf(-1f)
 
     /** 桌面消息面板打开会话时隐藏根层 MiniPlayer，避免遮住固定输入栏。 */
     var miniPlayerBlockedByChat by mutableStateOf(false)

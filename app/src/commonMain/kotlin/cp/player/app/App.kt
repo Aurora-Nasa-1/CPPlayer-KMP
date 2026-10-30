@@ -462,7 +462,14 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
     val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val bottomGap = when {
         mainScreenVisible && expanded -> 24.dp
-        mainScreenVisible -> maxOf(with(density) { bottomBarVisiblePx.toDp() }, navigationBarInset) + 12.dp
+        mainScreenVisible -> {
+            val barDp = if (bottomBarVisiblePx >= 0f) {
+                with(density) { bottomBarVisiblePx.toDp() }
+            } else {
+                80.dp
+            }
+            maxOf(barDp, navigationBarInset) + 12.dp
+        }
         else -> navigationBarInset
     }
     val tailSpace by animateDpAsState(
