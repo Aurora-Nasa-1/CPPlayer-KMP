@@ -96,7 +96,7 @@ fun AppScaffold(
                     if (onBackPressed != null && !LocalWindowChromeActive.current) {
                         CpBackButton(
                             onClick = onBackPressed,
-                            modifier = Modifier.padding(start = 4.dp),
+                            modifier = Modifier.padding(start = 8.dp),
                         )
                     }
                 },
@@ -106,7 +106,7 @@ fun AppScaffold(
                         CpTopBarActionButton(action)
                     }
                     if (topBarActions.isNotEmpty()) {
-                        Spacer(Modifier.width(4.dp))
+                        Spacer(Modifier.width(8.dp))
                     }
                 },
                 scrollBehavior = actualScrollBehavior,

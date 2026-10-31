@@ -720,7 +720,10 @@ private fun NarrowLayout(
             title = s.library.selectedCount(state.selectedIds.size),
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
             navigationIcon = {
-                IconButton(onClick = { model.exitSelection() }) {
+                IconButton(
+                    onClick = { model.exitSelection() },
+                    modifier = Modifier.padding(start = 8.dp),
+                ) {
                     Icon(Icons.Filled.Close, contentDescription = s.library.exitSelection)
                 }
             },
@@ -806,7 +809,7 @@ private fun NarrowLayout(
         val coverFraction = (1f - collapsedFraction * 2.5f).coerceIn(0f, 1f)
         val canShowBackButton = !LocalWindowChromeActive.current
         val searchExpandedWidth = minOf(
-            maxWidth - (if (canShowBackButton) 52.dp else 12.dp) - 16.dp,
+            maxWidth - (if (canShowBackButton) 56.dp else 16.dp) - 20.dp,
             400.dp,
         ).coerceAtLeast(160.dp)
         val searchProgress by animateFloatAsState(
@@ -979,6 +982,7 @@ private fun NarrowLayout(
                         )
                     }
                 }
+                Spacer(Modifier.width(8.dp))
             },
         ) { _ ->
             TrackList(

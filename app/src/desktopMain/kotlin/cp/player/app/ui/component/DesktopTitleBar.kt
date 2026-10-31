@@ -1,8 +1,18 @@
 package cp.player.app.ui.component
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
@@ -35,7 +45,6 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -298,12 +307,22 @@ fun DesktopTitleBar(
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 if (showChrome) {
+                    val animatedBackSlotWidth by animateDpAsState(
+                        targetValue = if (canGoBack) ChromeSlotWidth else 0.dp,
+                        animationSpec = tween(durationMillis = 200),
+                        label = "backSlotWidth",
+                    )
+
                     // 返回键：**窗口 chrome 是桌面端唯一的返回入口** —— 页面内一律不自绘
                     // （见 `AppScaffold` / `CpRouteScaffold`）。是否可返回由调用方（`Main.kt`）
                     // 依据 Navigator 栈与内嵌面板状态算好，这里只负责画。
                     // 必须在拖拽区**外面**（JBR 模式由注册表豁免，无边框模式见下面的说明）。
-                    if (canGoBack) {
-                        ChromeRoundSlot(
+                    AnimatedVisibility(
+                        visible = canGoBack,
+                        enter = fadeIn(tween(180)) + expandHorizontally(tween(200)),
+                        exit = fadeOut(tween(150)) + shrinkHorizontally(tween(200)),
+                    ) {
+                        ChromeSlot(
                             onClick = onBack,
                             modifier = Modifier
                                 .chromeFade(chromeAlpha, interactive = !immersive)
@@ -327,40 +346,58 @@ fun DesktopTitleBar(
                     if (useJbr) {
                         Box(
                             Modifier
-                                .width(rightGroupWidth - if (canGoBack) ChromeSlotWidth else 0.dp)
+                                .width((rightGroupWidth - animatedBackSlotWidth).coerceAtLeast(0.dp))
                                 .fillMaxHeight()
                                 .chromeFade(chromeAlpha, interactive = !immersive),
                             contentAlignment = Alignment.CenterStart,
                         ) {
                             // CpText 而不是 Text：页面标题（"每日推荐 · 2026 年 10 月" 这类）
                             // 被左侧固定宽度的拖拽区挤断后仍可读全。
-                            CpText(
-                                text = title,
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                modifier = Modifier.padding(start = CpSpacing.pageHorizontal),
-                            )
+                            AnimatedContent(
+                                targetState = title,
+                                transitionSpec = {
+                                    (fadeIn(tween(220)) + slideInHorizontally(tween(220)) { it / 8 }) togetherWith
+                                        (fadeOut(tween(160)) + slideOutHorizontally(tween(160)) { -it / 8 })
+                                },
+                                label = "desktopTitleBarText",
+                            ) { currentTitle ->
+                                CpText(
+                                    text = currentTitle,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    modifier = Modifier.padding(start = CpSpacing.pageHorizontal),
+                                )
+                            }
                         }
                     } else {
                         WindowDragRegion(
                             windowScope = windowScope,
                             enabled = !maximized,
                             modifier = Modifier
-                                .width(ChromeActionsWidth - if (canGoBack) ChromeSlotWidth else 0.dp)
+                                .width((ChromeActionsWidth - animatedBackSlotWidth).coerceAtLeast(0.dp))
                                 .fillMaxHeight()
                                 // ⚠️ 拖拽**不**跟着淡出：AWT 的 MouseListener 不吃 Compose 的命中测试，
                                 // 沉浸态里这 300 多 dp 的顶边还能拖窗口，是用户最顺手的抓取位置。
                                 .chromeFade(chromeAlpha, interactive = !immersive)
                                 .onTitleBarDoubleClick(toggleMaximize),
                         ) {
-                            CpText(
-                                text = title,
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                modifier = Modifier.padding(start = CpSpacing.pageHorizontal),
-                            )
+                            AnimatedContent(
+                                targetState = title,
+                                transitionSpec = {
+                                    (fadeIn(tween(220)) + slideInHorizontally(tween(220)) { it / 8 }) togetherWith
+                                        (fadeOut(tween(160)) + slideOutHorizontally(tween(160)) { -it / 8 })
+                                },
+                                label = "desktopTitleBarText",
+                            ) { currentTitle ->
+                                CpText(
+                                    text = currentTitle,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    modifier = Modifier.padding(start = CpSpacing.pageHorizontal),
+                                )
+                            }
                         }
                     }
 
@@ -414,7 +451,7 @@ fun DesktopTitleBar(
                             .jbrClientZone(chromeBridge, "messages"),
                     )
                     if (AppVersion.isDebugBuild) {
-                        ChromeRoundSlot(
+                        ChromeSlot(
                             onClick = onToggleMobileMode,
                             modifier = Modifier
                                 .chromeFade(chromeAlpha, interactive = !immersive)
@@ -423,7 +460,7 @@ fun DesktopTitleBar(
                             Icon(Icons.Filled.PhoneAndroid, "手机版界面预览", modifier = Modifier.size(18.dp))
                         }
                     }
-                    ChromeRoundSlot(
+                    ChromeSlot(
                         onClick = onToggleMiniMode,
                         modifier = Modifier
                             .chromeFade(chromeAlpha, interactive = !immersive)
@@ -431,7 +468,7 @@ fun DesktopTitleBar(
                     ) {
                         Icon(Icons.Filled.PictureInPictureAlt, "迷你模式", modifier = Modifier.size(18.dp))
                     }
-                    ChromeRoundSlot(
+                    ChromeSlot(
                         onClick = onOpenSettings,
                         modifier = Modifier
                             .chromeFade(chromeAlpha, interactive = !immersive)
@@ -642,7 +679,7 @@ private fun WindowDragRegion(
  */
 @Composable
 private fun MessageSlot(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    ChromeRoundSlot(onClick = onClick, modifier = modifier) {
+    ChromeSlot(onClick = onClick, modifier = modifier) {
         Icon(
             Icons.AutoMirrored.Filled.Message,
             contentDescription = "消息",
@@ -661,7 +698,7 @@ private fun MessageSlot(onClick: () -> Unit, modifier: Modifier = Modifier) {
 private fun AccountSlot(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val profile by AppModel.userProfileFlow.collectAsState()
     val avatarUrl = profile?.avatarUrl
-    ChromeRoundSlot(onClick = onClick, modifier = modifier) {
+    ChromeSlot(onClick = onClick, modifier = modifier) {
         if (!avatarUrl.isNullOrBlank()) {
             AsyncImage(
                 model = avatarUrl,
@@ -722,46 +759,6 @@ private fun ChromeSeparator(modifier: Modifier = Modifier) {
             Modifier.size(width = 1.dp, height = 18.dp)
                 .background(MaterialTheme.colorScheme.outlineVariant),
         )
-    }
-}
-
-/**
- * 桌面顶栏中业务动作按钮的圆钮外壳（对齐歌单详情与移动端顶栏的圆钮样式与 M3E 规范）。
- */
-@Composable
-private fun ChromeRoundSlot(
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-    content: @Composable () -> Unit,
-) {
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-    val colors = MaterialTheme.colorScheme
-
-    val background by animateColorAsState(
-        targetValue = if (hovered) colors.surfaceContainerHighest else colors.surfaceContainerHighest.copy(alpha = 0.65f),
-        animationSpec = CpMotion.effectsFast(),
-        label = "chromeRoundSlotBackground",
-    )
-    val contentColor = if (hovered) colors.onSurface else colors.onSurfaceVariant
-
-    Box(
-        modifier = modifier
-            .fillMaxHeight()
-            .width(ChromeSlotWidth),
-        contentAlignment = Alignment.Center,
-    ) {
-        Surface(
-            modifier = Modifier.size(34.dp).cpPressScale(),
-            shape = CircleShape,
-            color = background,
-            onClick = onClick,
-            interactionSource = interaction,
-        ) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CompositionLocalProvider(LocalContentColor provides contentColor) { content() }
-            }
-        }
     }
 }
 
