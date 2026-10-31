@@ -21,6 +21,7 @@ jobs:
           SENTRY_PROJECT: cpplayer-kmp
           SENTRY_HOST: de.sentry.io
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
@@ -30,8 +31,8 @@ jobs:
           fi
 
           echo "正在从 Sentry 获取未解决的 Issues..."
-          ISSUES_JSON=$(curl -s -f -H "Authorization: Bearer ${SENTRY_AUTH_TOKEN}" \
-            "https://${SENTRY_HOST}/api/0/projects/${SENTRY_ORG}/${SENTRY_PROJECT}/issues/?query=is:unresolved&limit=20" || echo "[]")
+          ISSUES_JSON=$(curl -s -S -f -H "Authorization: Bearer ${SENTRY_AUTH_TOKEN}" \
+            "https://${SENTRY_HOST}/api/0/projects/${SENTRY_ORG}/${SENTRY_PROJECT}/issues/?query=is:unresolved&limit=20")
 
           COUNT=$(echo "$ISSUES_JSON" | jq '. | length')
           echo "发现 $COUNT 个未解决的 Sentry Issues"
@@ -41,7 +42,10 @@ jobs:
           fi
 
           # 获取仓库中已由 Sentry 创建过的 Issues 标题列表（用于绝对去重）
-          EXISTING_TITLES=$(gh issue list --state all --label sentry --limit 100 --json title --jq '.[].title' || true)
+          EXISTING_TITLES=$(gh issue list --state all --label sentry --limit 100 --json title --jq '.[].title')
+
+          # 标签创建失败时终止，避免后续报出缺少标签的二次错误。
+          gh label create sentry --color "e03e2f" --description "Issues synced from Sentry" --force
 
           echo "$ISSUES_JSON" | jq -c '.[]' | while read -r item; do
             ISSUE_ID=$(echo "$item" | jq -r '.id')
@@ -55,7 +59,8 @@ jobs:
             LAST_SEEN=$(echo "$item" | jq -r '.lastSeen // ""')
 
             IDENTIFIER="[Sentry ${SHORT_ID:-$ISSUE_ID}]"
-            FULL_TITLE="${IDENTIFIER} ${TITLE}"
+            # GitHub 标题上限为 256 字符，完整异常保留在正文中。
+            FULL_TITLE=$(printf '%s' "${IDENTIFIER} ${TITLE}" | jq -Rrs 'if length > 256 then .[:253] + "..." else . end')
 
             # 去重判断：如果现有任何 issue 标题包含该标识符，则跳过
             if echo "$EXISTING_TITLES" | grep -qF "$IDENTIFIER"; then
@@ -67,6 +72,7 @@ jobs:
 
             BODY="### 🚨 Sentry 自动捕获崩溃上报
 
+            - **异常摘要**: ${TITLE}
             - **Sentry 详情**: [查看 Sentry 完整堆栈](${PERMALINK})
             - **触发位置**: \`${CULPRIT}\`
             - **累计发生次数**: ${EVENTS_COUNT}
@@ -77,9 +83,6 @@ jobs:
             ---
             > 本 Issue 由 Sentry 同步机器人自动生成。在 Sentry 标记为已解决或在 commit 中注明 \`Fixes ${SHORT_ID}\` 即可自动联动。"
             BODY=$(echo "$BODY" | sed 's/^[ \t]*//')
-
-            # 确保 sentry 标签存在
-            gh label create sentry --color "e03e2f" --description "Issues synced from Sentry" --force || true
 
             # 创建 GitHub Issue
             gh issue create \

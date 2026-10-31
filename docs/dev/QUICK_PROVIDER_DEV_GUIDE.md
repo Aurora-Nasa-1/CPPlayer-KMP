@@ -11,9 +11,9 @@
 CPPlayer Standard v3 协议规范的核心理念是 **“开发者减负、能力渐进式扩展、UI 智能自适应”**：
 
 1. **最简核心契约（极简起步）：**  
-   任何音源只需实现 **2 ~ 3 个基础 API**（搜歌 `POST /search`、取流直链 `POST /song/url`、可选歌词 `POST /lyric`），即可在 CPPlayer 拥有完整的听歌、串流、预加载与下载体验。
+   起步必须实现 **3 个基础 API**：搜歌 `POST /search`、歌曲详情 `POST /song/detail`、取流直链 `POST /song/url`；歌词 `POST /lyric` 可选。没有歌曲详情时，未预先注入摘要的播放入口、队列恢复和批量预加载无法可靠工作，不能只实现搜索与直链就声称完整可用。
 2. **现代扁平数据模型：**  
-   告别历史平台繁复的深度嵌套（如 `songs[0].al.picUrl`, `ar[0].name`, `dt` 毫秒时长），直接返回扁平字段：`title`, `artist`, `album`, `coverUrl`, `duration`。
+   告别历史平台繁复的深度嵌套（如 `songs[0].al.picUrl`, `ar[0].name`），直接返回扁平字段：`title`, `artist`, `album`, `coverUrl`, `durationMs`。
 3. **声明式能力网格（按声明裁剪 UI，未声明不做限制）：**  
    音源通过 `manifest.json` 的 `capabilities` 声明自己支持的功能，宿主据此决定入口的**可见性**。语义分两种情况（`ModuleManifest.isFeatureAvailable`）：
    - **完全没写 `capabilities`（null）**：历史兼容模式，宿主**不裁剪任何入口**（老包的行为）；
@@ -23,7 +23,7 @@ CPPlayer Standard v3 协议规范的核心理念是 **“开发者减负、能�
 4. **跨语言运行时支持（HTTP / JNI / Binary）：**  
    支持 Node.js/Python/Go/Java 编写的 HTTP 服务（远程或本地），也支持 Rust/C++ 编译出的轻量原生 JNI 动态库（`.dll` / `.so`），兼顾开发便捷度与极致性能。
 5. **免写 UI 代码的 Material 3 设置页：**  
-   在 `manifest.json` 中声明 `settingsSchema`，CPPlayer 自动渲染原生表单并自动注入配置，后端完全无状态。
+   在 `manifest.json` 中声明 `settingsSchema`，CPPlayer 自动渲染原生表单并自动注入配置，插件不必另存一份配置；登录会话等运行状态仍由插件负责管理。
 
 ---
 
@@ -38,8 +38,8 @@ CPPlayer 支持三种音源运行时类型：
 | 类型 (`type`) | 运行方式 | 适用场景 | `entryPoint` 定义 |
 |---|---|---|---|
 | `"http"` | 远程或本地 HTTP/HTTPS 服务 | Python / Node.js / Go / 云端或内网部署服务 | 如 `"http://127.0.0.1:3000"` 或 `"https://api.example.com"` |
-| `"jni"` | 宿主进程直接动态加载动态链接库 | Rust / C++ / C 高性能跨平台模块 | 库文件名，如 `"libkugou_music_rs.so"` 或 `"kugou_music_rs.dll"` |
-| `"binary"` | 宿主自动拉起本地子进程守护执行 | Go / Rust 编译的独立本地单二进制可执行文件。**仅桌面端可用**：Android 端拒绝 `binary` 类型（需自行把可执行逻辑改造为 `.so` 走 `jni`） | 可执行文件名，如 `"my_server.exe"` |
+| `"jni"` | 桌面优先由独立 JNI Worker 加载，失败时回退宿主进程；Android 进程内加载 | Rust / C++ / C 高性能跨平台模块 | 库文件名，如 `"libkugou_music_rs.so"` 或 `"kugou_music_rs.dll"` |
+| `"binary"` | 宿主自动拉起本地子进程守护执行 | Go / Rust 编译的独立本地单二进制可执行文件。**执行进程仅桌面端可用**；Android 只有在包内找到兼容 `.so` 时才会提升为 JNI，否则明确拒绝 | 可执行文件名，如 `"my_server.exe"`；Android 需另提供对应 JNI 库 |
 
 ### 2.2 打包目录布局
 
@@ -50,7 +50,7 @@ my-http-provider.zip (或 .cpm)
 ```
 
 #### 原生 JNI 动态库音源包（多平台跨 ABI 支持）：
-宿主加载时优先按 `lib/<平台ABI>/<entryPoint>` 寻址，找不到时回退到根目录 `<entryPoint>`：
+宿主加载时优先按 `lib/<ABI>/<entryPoint>` 寻址，找不到时回退到根目录 `<entryPoint>`。ABI 目录不区分 OS；下图展示可用的目录形式，**不是一个 entryPoint 就能通吃所有后缀的跨 OS 包**，同 CPU 的 Windows / Linux / macOS 应分别发布：
 ```
 my-jni-provider.zip (或 .cpm)
 ├── manifest.json
@@ -114,6 +114,7 @@ my-jni-provider.zip (或 .cpm)
     "toplist_detail": "toplist/detail",
     "artist/detail": "artist/detail",
     "artist/songs": "artist/songs",
+    "artist/top/song": "artist/songs",
     "artist/album": "artist/albums",
     "album": "album",
     "user/playlist": "user/playlist",
@@ -126,7 +127,8 @@ my-jni-provider.zip (或 .cpm)
     "login/qr/create": "login/qr/create",
     "login/qr/check": "login/qr/check",
     "login/status": "login/status",
-    "login/webview/url": "login/webview/url"
+    "login/webview/url": "login/webview/url",
+    "login/webview/check": "login/webview/check"
   },
   "settingsSchema": [
     {
@@ -169,7 +171,7 @@ my-jni-provider.zip (或 .cpm)
 | `supportedAbis` | `Array<String>` | 可选 | 多 ABI 原生库：`["arm64-v8a","armeabi-v7a","x86_64"]`，配合 `lib/<abi>/` 目录 |
 | `targetAppPackage` | `String` | 可选 | 目标 App Android 包名（登录页「打开目标 App」按钮跳转用，如 `"com.netease.cloudmusic"`） |
 | `updateUrl` | `String` | 可选 | 检查更新 URL，指向返回最新版本信息的 JSON 端点 |
-| `sha256` | `String` | 可选 | 整个 ZIP 原始字节的 SHA-256 十六进制。填了则导入时校验，不匹配即拒装（防篡改）；`sha256sum xxx.zip` 生成 |
+| `sha256` | `String` | 已废弃 | 宿主不校验包内 manifest 对自身 ZIP 的哈希，修改 manifest 会改变 ZIP，无法自校验。整包完整性应由外部仓库发布元数据或发布渠道校验 |
 | `apiMap` | `Map<String, String>` | 可选 | 端点重映射表：**key=宿主内部标准方法名**（如 `cloudsearch`、`lyric/new`），**value=你的端点**。未映射的方法按宿主方法名原样请求 |
 | `settingsSchema` | `Array<Object>` | 可选 | 声明式设置表单定义（见 §9） |
 
@@ -189,19 +191,21 @@ my-jni-provider.zip (或 .cpm)
 | `playback` (基础核心) | 播放器、底栏进度条、预加载缓存与下载队列 | — | `song/url/v1`, `song/url/v1/302`, `song/download/url/v1`, `song/detail` |
 | `wordSyncedLyrics` / `lyricsSearch` | 歌词全屏页、沉浸式背景、逐字动效 | — | `lyric/new`(+ 宿主自带 AMLL/插件兜底) |
 | `userPlaylists` | 曲库页“我的歌单”分区与歌单详情 | — | `user/playlist`, `playlist/detail`, `playlist/track/all` |
-| `artistExplorer` | 歌手主页、热门单曲、歌手唱片作品集 | — | `artist/detail`, `artist/songs`, `artist/album` |
+| `artistExplorer` | 歌手主页、热门单曲、歌手唱片作品集 | — | `artist/detail`, `artist/top/song`（建议映射到 `artist/songs`）, `artist/songs`, `artist/album` |
 | `albumExplorer` | 专辑主页、唱片介绍与曲目清单 | — | `album` |
 | `recommend` | 首页每日推荐卡片、推荐歌单栅格 | ★ | `recommend/songs`, `recommend/resource` |
 | `charts` | 发现页排行榜总览与权威榜单 | — | `toplist` |
 | `comments` | 播放页评论悬浮球与评论/回复抽屉 | ★ | `comment/new`, `comment/floor` |
 | `cloudDrive` | 曲库页用户云盘入口卡片 | ★ | `user/cloud` |
 | `qrLogin` | 账号界面扫码授权登录窗口 | —（扫码 UI 常驻，按 `loginMethods` 收） | `login/qr/key`, `login/qr/create`, `login/qr/check` |
-| `webviewLogin` | 账号界面「网页登录」胶囊与原生态授权 | — | `login/webview/url` |
+| `webviewLogin` | 外部浏览器授权与会话轮询 | — | `login/webview/url`, `login/webview/check`, `login/status` |
 | `directoryBrowser` | 自定义目录 / 流派浏览能力徽标（暂无对应宿主页面） | — | — |
 
 > ⚠️ **避免一份文档两套说法**：`loginMethods`（登录页可见哪些登录方式）与 `qrLogin`/`webviewLogin`（能力徽标）是两套机制；当前登录入口显隐听 `loginMethods`。
 
 退出声明：未识别的能力值**忽略而不报错**（前向兼容：新宿主的未来能力不会把旧音源搞崩）。
+
+`capabilities: []` 或仅含未知能力时，已知能力集合就是空集，不会退回“未声明、全部展示”的历史分支；只有字段缺失才采用历史兼容语义。
 
 ---
 
@@ -217,7 +221,7 @@ my-jni-provider.zip (或 .cpm)
   "title": "晴天",
   "artist": "周杰伦",
   "album": "叶惠美",
-  "duration": 269,
+  "durationMs": 269000,
   "coverUrl": "https://img.example.com/cover.jpg"
 }
 ```
@@ -230,7 +234,7 @@ my-jni-provider.zip (或 .cpm)
 | **歌曲名称** | `title` | `name`, `song` | 字符串 |
 | **歌手名** | `artist` | `ar[]` / `artists[]`（对象数组，取每个的 `name`，多歌手用 `" / "` 连接）、`artist`（对象 → `name`）、`artist`（纯字符串兜底） | 三种形态都识别，数组形态还能拿到歌手 id（可跳主页） |
 | **专辑名** | `album` | `al` / `album`（对象，取 `name`，回退 `title`） | 纯字符串或 `{ "name": "叶惠美" }` 对象；**没有** `album_name` 之类的键 |
-| **时长** | `duration` | `dt`, `durationMs`（**没有** `timeLength`/`time_length`） | **秒↔毫秒智能识别**：值在 `1..9999` 之间视为**秒**、×1000 转毫秒；≥10000 视为**毫秒**原样保留 |
+| **时长** | `durationMs` | `dt`（毫秒）、`durationSeconds`（秒）、`duration`（历史歧义字段） | 明确单位优先，短音频 `durationMs: 9500` 就是 9.5 秒。只有 `duration` 保留旧规则：`1..9999` 为秒，≥10000 为毫秒；新插件不要用它表示长音频秒数 |
 | **封面图片** | `coverUrl` | `cover`, `picture`, `picUrl`；专辑对象的 `picUrl`/`coverUrl`/`cover` | 完整的 HTTP/HTTPS 图片地址 |
 | **MV id** | — | `mv`, `mvid` | 曲目上的可选 MV 标识 |
 
@@ -242,13 +246,19 @@ my-jni-provider.zip (或 .cpm)
 
 宿主与音源的所有交互均使用 `POST` 请求（`Content-Type: application/json`）。
 
+**请求值类型是协议的一部分：业务参数全部为字符串**，例如 `"type":"1"`、`"limit":"30"`、`"offset":"0"`、`"like":"true"`；不要按 JSON number/boolean 强类型反序列化。`config` 是对象，其值同样为字符串。响应中的计数、布尔、毫秒值仍使用 JSON number/boolean，不要把请求规则套到响应上。
+
+歌单、榜单、歌手、专辑和账号 ID 均支持不透明字符串（UUID、hash、`"001"`），宿主保留原样传回。Kotlin 领域模型新增 `resourceId`，旧 `id: Long` 仅供数值兼容，非数字时为 `0`，不能再拿它作列表键、路由或请求参数。评论、私信、MV 等 Legacy 扩展 ID 仍有数值限制，不等于所有历史端点都已泛化。
+
 ### 6.1 搜索歌曲与资源 (`POST /search`)
 
-* **请求参数（宿主只发这两个字段，没有 `limit` / `offset`）：**
+* **请求参数（旧两参调用可不带分页；分页调用另带字符串 `limit` / `offset`）：**
 ```json
 {
   "keywords": "周杰伦 晴天",
-  "type": 1
+  "type": "1",
+  "limit": "30",
+  "offset": "0"
 }
 ```
 * **`type` 检索类型：**
@@ -268,7 +278,7 @@ my-jni-provider.zip (或 .cpm)
         "title": "晴天",
         "artist": "周杰伦",
         "album": "叶惠美",
-        "duration": 269,
+        "durationMs": 269000,
         "coverUrl": "https://img.example.com/cover.jpg"
       }
     ],
@@ -276,7 +286,7 @@ my-jni-provider.zip (或 .cpm)
   }
 }
 ```
-*(同时兼容直接返回 `data: [ ...tracks... ]` 或 `data.songs`)*
+*(同时兼容直接返回 `data: [ ...tracks... ]` 或 `data.songs`；`data.total` 与 `data.hasMore` 会保留到领域结果。分页服务接口已支持 limit/offset，旧调用方不传时插件应提供默认页。)*
 
 #### 歌单搜索响应 (`type=1000`)：
 ```json
@@ -347,7 +357,7 @@ my-jni-provider.zip (或 .cpm)
   * 另有 4 个透传值会原样出现在 `level` 参数里（当前宿主 UI 不主动请求）：`"higher"`、`"jymaster"`、`"sky"`、`"dolby"` —— 建议插件侧按「能处理就处理、处理不了回落最近的低档位」实现，而不是报错。
   * 桌面端对 `lossless` / `hires` / `jymaster` / `sky`（`LOSSLESS_LEVELS`）会触发「边播边落盘」（引擎无法定位 FLAC over HTTP），插件照常返回直链即可，无需特殊配合。
 
-* **响应体（支持防盗链 Header 与文件大小透传；`format`/`quality` 宿主当前不读，仅作展示友好项）：**
+* **响应体（支持防盗链 Header、实际音质、格式与文件大小透传）：**
 ```json
 {
   "code": 0,
@@ -365,12 +375,30 @@ my-jni-provider.zip (或 .cpm)
 ```
 
 > **字段说明：**
-> * `url`：音频直链（302 重定向或 CDN 直链均可）。宿主也会优先认 `redirectUrl`（302 短链形态的响应）；兼容响应体各层级的 `url` 字段（自动深搜）。
-> * `format`：音频容器格式（`"flac"`, `"mp3"`, `"m4a"`, `"ogg"`, `"wav"`）。**宿主当前不读**，仅作信息性字段。
-> * `quality`：回显请求的音质档位。**宿主当前不读**。
+> * `url`：音频直链（302 重定向或 CDN 直链均可）。只读取根对象、`data` 对象或 `data` 数组条目的 `url` / `redirectUrl`；必须是 HTTP(S)，失败业务码不会被当成成功。不会深搜封面、验证码或错误消息中的地址。
+> * `format`：音频容器格式（`"flac"`, `"mp3"`, `"m4a"`, `"ogg"`, `"wav"`），宿主用于播放格式识别，兼容 `type` / `encodeType`。
+> * `quality`：服务端实际返回的音质档位，兼容 `level`（优先）。降级到较低音质时请如实回显，不要盲目复制请求。
 > * `size`：音频文件大小（单位：**字节 Bytes**）。宿主据此显示无损容量并进行预估下载进度。
 > * `headers`：防盗链请求头（`User-Agent`、`Referer` 等），音频流引擎与离线下载引擎会自动原样携带。
 > * `cookie`：鉴权 Cookie 字符串，填后与 `headers.Cookie` 等效（均注入音频流请求头）。
+> * `expireAt`：可选，过期的 Unix 毫秒时间戳；兼容 Legacy `expi`（收到响应起的秒数 TTL）。已过期地址不命中缓存，播放地址也不使用无限期旧缓存兜底。
+
+### 6.2.1 歌曲详情（必需，`POST /song/detail`）
+
+请求：`{ "ids": "track_1001,track_1002" }`。`ids` 是逗号分隔字符串，不是 JSON 数组；资源 ID 内不要包含逗号。每条结果的 `id` 必须与请求一致，不要改变大小写或去掉前导零。
+
+```json
+{
+  "code": 0,
+  "data": {
+    "tracks": [
+      { "id": "track_1001", "title": "晴天", "artist": "周杰伦", "album": "叶惠美", "durationMs": 269000 }
+    ]
+  }
+}
+```
+
+批量请求只返回确实存在的曲目；不支持的端点返回 `{"code":-1,"msg":"Unsupported"}`，不要返回成功空壳或 HTML 错误页。
 
 ---
 
@@ -448,7 +476,7 @@ CPPlayer 原生集成 **Accompanist Lyrics Core**，全面支持业界主流的�
 ### 7.1 歌手主页 (`POST /artist/detail`, `POST /artist/songs`, `POST /artist/albums`)
 
 #### 7.1.1 歌手资料 (`POST /artist/detail`)
-* **请求：** `{ "id": 6452 }`
+* **请求：** `{ "id": "6452" }`
 * **响应：**
 ```json
 {
@@ -466,7 +494,7 @@ CPPlayer 原生集成 **Accompanist Lyrics Core**，全面支持业界主流的�
 *(兼容字段：`avatarUrl` / `cover` / `picUrl`，`fans` / `fansCount` / `followeds`)*
 
 #### 7.1.2 歌手热门单曲 (`POST /artist/songs`)
-* **请求：** `{ "id": 6452, "limit": 50 }`
+* **请求：** `{ "id": "6452", "limit": "50" }`
 * **响应：**
 ```json
 {
@@ -478,7 +506,7 @@ CPPlayer 原生集成 **Accompanist Lyrics Core**，全面支持业界主流的�
         "title": "晴天",
         "artist": "周杰伦",
         "album": "叶惠美",
-        "duration": 269,
+        "durationMs": 269000,
         "coverUrl": "https://img.example.com/cover.jpg"
       }
     ]
@@ -487,7 +515,7 @@ CPPlayer 原生集成 **Accompanist Lyrics Core**，全面支持业界主流的�
 ```
 
 #### 7.1.3 歌手专辑列表 (`POST /artist/albums`)
-* **请求：** `{ "id": 6452, "limit": 30 }`
+* **请求：** `{ "id": "6452", "limit": "30" }`
 * **响应：**
 ```json
 {
@@ -507,7 +535,7 @@ CPPlayer 原生集成 **Accompanist Lyrics Core**，全面支持业界主流的�
 
 ### 7.2 专辑主页 (`POST /album`)
 
-* **请求：** `{ "id": 101 }`
+* **请求：** `{ "id": "101" }`
 * **响应：**
 ```json
 {
@@ -524,7 +552,7 @@ CPPlayer 原生集成 **Accompanist Lyrics Core**，全面支持业界主流的�
         "id": "track_101_1",
         "title": "以父之名",
         "artist": "周杰伦",
-        "duration": 342,
+        "durationMs": 342000,
         "coverUrl": "https://img.example.com/album.jpg"
       }
     ]
@@ -537,7 +565,7 @@ CPPlayer 原生集成 **Accompanist Lyrics Core**，全面支持业界主流的�
 ### 7.3 用户歌单与歌单详情
 
 #### 7.3.1 用户自建/收藏歌单 (`POST /user/playlist`)
-* **请求：** `{ "uid": 12345 }`
+* **请求：** `{ "uid": "12345" }`
 * **响应：**
 ```json
 {
@@ -554,7 +582,7 @@ CPPlayer 原生集成 **Accompanist Lyrics Core**，全面支持业界主流的�
 ```
 
 #### 7.3.2 歌单详情 (`POST /playlist/detail`)
-* **请求：** `{ "id": 9991 }`
+* **请求：** `{ "id": "9991" }`
 * **响应：**
 ```json
 {
@@ -571,7 +599,7 @@ CPPlayer 原生集成 **Accompanist Lyrics Core**，全面支持业界主流的�
         "id": "track_1001",
         "title": "晴天",
         "artist": "周杰伦",
-        "duration": 269
+        "durationMs": 269000
       }
     ]
   }
@@ -579,7 +607,7 @@ CPPlayer 原生集成 **Accompanist Lyrics Core**，全面支持业界主流的�
 ```
 
 #### 7.3.3 歌单曲目分页 (`POST /playlist/track/all`)
-* **请求：** `{ "id": 9991, "limit": 100, "offset": 0 }`
+* **请求：** `{ "id": "9991", "limit": "100", "offset": "0" }`
 * **响应：**
 ```json
 {
@@ -607,7 +635,7 @@ CPPlayer 原生集成 **Accompanist Lyrics Core**，全面支持业界主流的�
         "title": "晴天",
         "artist": "周杰伦",
         "album": "叶惠美",
-        "duration": 269,
+        "durationMs": 269000,
         "coverUrl": "https://img.example.com/cover.jpg"
       }
     ]
@@ -685,7 +713,7 @@ CPPlayer 原生集成 **Accompanist Lyrics Core**，全面支持业界主流的�
 *(宿主兼容 `data: ["id"]` 纯 ID 数组，以及 `{ "ids": ["id"] }` 对象结构)*
 
 * **标记 / 取消标记红心 (`POST /like`)：**
-  * 请求：`{ "id": "track_1001", "like": true }`
+  * 请求：`{ "id": "track_1001", "like": "true" }`
   * 响应：`{ "code": 0 }`
 
 ---
@@ -748,8 +776,12 @@ CPPlayer 会在启动及刷新用户信息时调用此接口。
 ### 8.3 网页授权登录 (`webviewLogin`) 与风控拦截
 
 #### 8.3.1 网页登录 (`POST /login/webview/url`)
-* 响应：`{ "code": 0, "data": { "url": "https://auth.example.com/oauth" } }`
-* 宿主直接唤起系统 WebView / 外部浏览器完成 OAuth 流程。
+* 响应：`{ "code": 0, "data": { "url": "https://auth.example.com/oauth", "sessionId": "unguessable-one-time-session" } }`
+* 宿主打开外部浏览器，不读取浏览器 Cookie，也不拦截任意回调。插件后端负责 OAuth 回调、校验 state、交换令牌，并绑定这一次 sessionId。
+* 打开页面后，宿主每 2 秒调用 `POST /login/webview/check`，请求 `{ "sessionId": "unguessable-one-time-session" }`，最多 5 分钟；离页、切登录通道、切音源或登出会取消。
+* 等待：`{ "code": 0, "data": { "status": "pending" } }`；成功：`{ "code": 0, "data": { "status": "authorized", "cookie": "session=..." } }`。终态还包括 `expired` / `denied`。**code=0 本身不表示授权完成**。
+* 授权完成后仍调用 `login/status` 验证身份。插件也可保存服务端会话而不回传 cookie，宿主不再因「本地没有 Cookie」跳过状态检查；这种共享服务端部署必须自行隔离客户端会话，不能把所有用户绑到一个全局登录态。
+* 旧插件只返回 URL 时仍能打开浏览器，但不会自动得到登录结果；应提示用户通过 Cookie 登录或升级插件实现会话接口。
 
 #### 8.3.2 拦截风控与滑动验证码
 当密码登录或频繁请求触发平台风控（例如滑块拼图、文字点选）时：
@@ -826,6 +858,8 @@ CPPlayer 会在启动及刷新用户信息时调用此接口。
    * 在 `req.body.config.<key>` 中同步注入一份。
 3. **后端无状态**：音源服务无需本地保存用户配置，直接从 Header 或 Body 中读取即可。
 
+配置参与 API 缓存和播放流缓存的隔离键。保存配置后当前音源页面会刷新；服务器地址、令牌变更不会继续命中另一套配置下的结果。不要使用 `id` / `cookie` / `config` 等业务保留键作为设置项名。
+
 ---
 
 ## 10. 原生 JNI 动态库模块开发 (Rust / C++)
@@ -848,6 +882,8 @@ Java_cp_player_core_provider_JniProvider_nativeCallApi(
 ```
 
 > ⚠️ 方法名是 **`nativeCallApi`**（对应 Kotlin 侧 `JniProvider.nativeCallApi`），不是 `callNative`。符号写错时 `System.load()` 会成功、但**首次调用**才抛 `UnsatisfiedLinkError`；宿主的错误日志里会打印期望的导出符号名，可据此快速定位。
+
+这是进程级 JNI ABI，不是可任意替换宿主 Kotlin 类的稳定 SDK。宿主类全限定名、JNI 签名、OS、CPU ABI 与依赖动态库都要匹配；Windows x86_64 的 DLL 不能放到 Linux 当 SO 用。当前布局只有 `lib/<abi>/`，没有 OS 维度，同 CPU 不同 OS 建议分别发包并使用正确 entryPoint。桌面 Worker 与直接 JNI 都按原始 JSON 透传嵌套 `config` 对象，不要把它当 JSON 字符串再解一层。C++ 不要让异常跨 JNI 边界，Rust 不要让 panic 穿过 FFI；优先返回可解析的错误 JSON。
 
 #### Rust 实现范例：
 ```rust
@@ -876,8 +912,7 @@ pub extern "system" fn Java_cp_player_core_provider_JniProvider_nativeCallApi(
 }
 ```
 
-> 另两个宿主会找的导出符号（可选，不导出即走 in-process 调用）：
-> `Java_cp_player_core_provider_JniProvider_startNativeServer(host, port)`、`Java_cp_player_core_provider_JniProvider_analyzeAudioFile(path)`。
+> 另外两个可选导出是 `Java_cp_player_core_provider_JniProvider_startNativeServer(host, port)` 与 `Java_cp_player_core_provider_JniProvider_analyzeAudioFile(path)`。纯 API 插件只实现 `nativeCallApi` 即可；若只提供本地 HTTP 服务，则需由 `startNativeServer` 启动，宿主在找不到 `nativeCallApi` 时才回退到该 HTTP 服务。未提供音频分析导出不影响普通 API 调用。
 
 ---
 
@@ -897,6 +932,8 @@ pub extern "system" fn Java_cp_player_core_provider_JniProvider_nativeCallApi(
     "cloudsearch": "search",
     "song/url/v1": "song/url",
     "song/url/v1/302": "song/url",
+    "song/download/url/v1": "song/url",
+    "song/detail": "song/detail",
     "lyric/new": "lyric"
   }
 }
@@ -908,37 +945,42 @@ const express = require('express');
 const app = express();
 app.use(express.json());
 
-// 1. 搜歌（宿主只发 keywords + type）
+const demoTrack = {
+    id: "demo_1001", title: "示例曲目", artist: "示例歌手", album: "示例专辑",
+    durationMs: 215000
+};
+
+// 1. 搜歌。请求值都是字符串；响应数值保持数字。
 app.post('/search', (req, res) => {
-    const { keywords, type = 1 } = req.body;
+    const { type = "1" } = req.body;
     res.json({
         code: 0,
         data: {
-            tracks: [
-                {
-                    id: "demo_1001",
-                    title: `歌曲: ${keywords}`,
-                    artist: "示例歌手",
-                    album: "示例专辑",
-                    duration: 215,
-                    coverUrl: "https://p2.music.126.net/6y-UleORITEDbvrOLAL-vQ==/109951163962024848.jpg"
-                }
-            ],
-            total: 1
+            tracks: type === "1" && Number(req.body.offset || "0") === 0 ? [demoTrack] : [],
+            total: type === "1" ? 1 : 0,
+            hasMore: false
         }
     });
 });
 
-// 2. 音频直链
+// 2. 无论从搜索点击还是恢复队列，都能按同一个 ID 取详情。
+app.post('/song/detail', (req, res) => {
+    const ids = String(req.body.ids || "").split(",");
+    res.json({ code: 0, data: { tracks: ids.includes(demoTrack.id) ? [demoTrack] : [] } });
+});
+
+// 3. 音频直链
 app.post('/song/url', (req, res) => {
     const { id, level = "standard" } = req.body;
+    if (id !== demoTrack.id) return res.json({ code: 404, msg: "Track not found" });
+    const url = process.env.DEMO_AUDIO_URL;
+    if (!url) return res.json({ code: 500, msg: "Set DEMO_AUDIO_URL to a real HTTP(S) audio URL" });
     res.json({
         code: 0,
         data: {
-            url: "https://www.w3schools.com/html/horse.mp3",
+            url,
             format: "mp3",
-            quality: level,
-            size: 2621440,
+            quality: "standard",
             headers: {
                 "User-Agent": "CPPlayer/Standard-v3"
             }
@@ -946,7 +988,7 @@ app.post('/song/url', (req, res) => {
     });
 });
 
-// 3. 歌词
+// 4. 可选歌词
 app.post('/lyric', (req, res) => {
     res.json({
         code: 0,
@@ -959,6 +1001,8 @@ app.post('/lyric', (req, res) => {
 app.listen(3000, () => console.log('CPPlayer Standard v3 服务已在 3000 端口启动'));
 ```
 
+安装依赖：`npm install express`，配置 `DEMO_AUDIO_URL` 为你有权使用的真实 HTTP(S) 音频再运行 `node server.js`。示例元信息只是演示，接入真实音源时必须返回与实际音频一致的标题、时长、音质与格式，不能把任意 MP3 标成无损。
+
 ---
 
 ## 12. 插件打包与安装验证
@@ -970,6 +1014,14 @@ app.listen(3000, () => console.log('CPPlayer Standard v3 服务已在 3000 端�
    * 点击右上角 **「+」** 或顶部 **「导入模块」**，选择你的 `.zip` / `.cpm` 文件；
 4. **验证能力**：
    * 导入后音源卡片将展示出声明的全部能力徽标；
-   * 前往搜索页搜索歌曲，点击即可起播（首次会拉取 `login/status` 等身份接口，未实现时返回 `{"code":500,...}` 也能正常听）。
+   * 前往搜索页搜索歌曲，点击即可起播（首次会拉取 `login/status` 等身份接口，未实现时明确返回 `{"code":-1,"msg":"Unsupported"}`，不要伪造已登录状态）。
+
+### 当前边界与验收
+
+- 最小 3 接口只保证搜歌、解析详情和取流闭环；歌单编辑、登录、评论等必须另实现对应端点，能力徽标本身不会补齐功能。
+- 搜索服务层已接受 `limit` / `offset` 并保留 `total` / `hasMore`，但当前主搜索页面仍是单次查询，没有续页入口。不要把服务分页支持等同于页面支持无限滚动。
+- 评论、私信、MV 等 Legacy 路径仍有数值 ID 假设；第三方平台的分享链接也尚无通用回传契约，部分旧入口仍使用网易云链接。这些不属于任意平台都已完整覆盖的能力。
+- 发布前至少验证：短音频时长、多个非数字 ID 不重名、歌单最后一页、切账号/服务地址后不串缓存、链接过期后重新取流、网页登录 pending/成功/拒绝/超时。
+- Kotlin 编译与解析器测试不能证明原生库可用；JNI 应逐 OS/ABI 装包测试，网页登录还需用真实后端和浏览器验证回调、会话隔离与退出取消。
 
 > **导入失败怎么排查**：宿主在音源管理页 / 诊断页会给出 `ModuleManager.lastLoadError` 的具体文案（manifest 缺字段、类型不支持、ABI 不匹配、entryPoint 不存在等）；对应分支见源码 `ModuleManager.kt` 的导入路径错误文案。

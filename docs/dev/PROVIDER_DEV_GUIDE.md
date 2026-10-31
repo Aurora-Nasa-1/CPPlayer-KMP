@@ -2,9 +2,9 @@
 
 > **面向：** 为 CPPlayer 开发音乐数据源（Provider）的第三方开发者
 >
-> 💡 **提示：** 如果你需要开发的是轻量新音源，或者移植第三方音乐软件（如 QQ 音乐、酷狗、Bilibili、Subsonic、Navidrome 等），强烈建议直接查阅 👉 [**《5 分钟上手：现代音源开发与移植指南 (Standard v3)》**](QUICK_PROVIDER_DEV_GUIDE.md)。只需实现 2 个基础接口，且支持 UI 自动隐藏与声明式原生配置表单。
+> 💡 **提示：** 如果你需要开发的是轻量新音源，或者移植第三方音乐软件（如 QQ 音乐、酷狗、Bilibili、Subsonic、Navidrome 等），强烈建议直接查阅 👉 [**《5 分钟上手：现代音源开发与移植指南 (Standard v3)》**](QUICK_PROVIDER_DEV_GUIDE.md)。最小可用闭环需要搜索、曲目详情和播放直链 3 个基础接口，且支持 UI 自动隐藏与声明式原生配置表单。
 >
-> **版本：** 3.1.0 · **最后更新：** 2026-10-15（新增 Standard v3 契约、声明式设置项与能力网格）
+> **版本：** 3.1.0 · **最后更新：** 2026-10-31（澄清请求类型、字符串资源 ID 与网页授权会话契约）
 >
 > 本指南为网易云兼容 Legacy 音源的完整规范参考，覆盖所有传统网易云 API 映射细节。
 
@@ -66,6 +66,14 @@ CPPlayer App
 | **apiMap**    | CPPlayer 内部方法名 → Provider 实际端点的映射表                |
 | **API 方法名**   | 标准化标识，如 `song/url/v1`、`cloudsearch`               |
 | **CPMediaId** | 跨 Provider 统一资源标识，格式 `{providerId}://{type}/{id}` |
+
+### 源码兼容与请求类型
+
+- 业务请求参数为字符串，包括 `id`、`limit`、`offset`、`type`、`like`；`config` 为对象，内部值也是字符串。响应的数值和布尔字段不受此规则影响。
+- 歌单、歌手、专辑、榜单与账号的规范 ID 是原始字符串。Kotlin 模型新增 `resourceId`，保留旧 `Long` 字段和方法；非数值 ID 的旧字段为 `0`，不要用它作路由、列表键或请求参数。新的 String 扩展重载在 `cp.player.core.api` 包内，需要显式导入。
+- 评论、私信、MV 等 Legacy 端点仍有数值 ID 限制；不能据此宣称所有历史功能都支持任意字符串。插件声明的能力必须与实际实现相符。
+- 新插件优先返回 `durationMs`（毫秒）或 `durationSeconds`（秒）；`dt` 固定为毫秒，只有历史歧义字段 `duration` 保留小于 10000 时按秒解析的规则。
+- 自定义配置与账号 Cookie 均参与 API 缓存隔离；修改服务地址、令牌或账号后，不会复用另一配置的缓存。插件自身持有的会话和缓存也必须自行隔离。
 
 ---
 
@@ -701,12 +709,27 @@ Java_cp_player_core_provider_JniProvider_analyzeAudioFile(
 {
   "code": 200,
   "data": {
-    "url": "https://music.example.com/oauth/authorize?client_id=xxx"
+    "url": "https://music.example.com/oauth/authorize?client_id=xxx",
+    "sessionId": "unguessable-one-time-session"
   }
 }
 ```
 
-> CPPlayer 会在桌面端或移动端以系统 Webview/系统默认浏览器唤起该授权页，用户完成授权后返回。
+宿主打开系统浏览器，不读取浏览器 Cookie，也不会自动捕获 OAuth 回调。插件后端负责校验 OAuth state、交换令牌，并将授权结果绑定到这次 `sessionId`。
+
+#### `login/webview/check` — 轮询本次网页授权结果
+
+请求：`{ "sessionId": "unguessable-one-time-session" }`。
+
+等待时返回 `{"code":0,"data":{"status":"pending"}}`；完成时返回：
+
+```json
+{"code":0,"data":{"status":"authorized","cookie":"session=..."}}
+```
+
+终态还包括 `expired` / `denied`。`code=0` 不能单独代表授权完成，必须明确返回 `status`。宿主打开页面后每 2 秒轮询一次，最多 5 分钟；离页、切登录方式、切音源或登出会取消轮询。完成后仍通过 `login/status` 验证账号。
+
+插件可维护服务端会话而不回传 Cookie，但必须隔离不同客户端的会话，不能让共享服务全局共用一个登录态。旧版 URL-only 插件仍可打开网页，但不会自动完成登录，应升级到会话接口或让用户使用 Cookie 登录。
 
 #### `captcha/verify/url` — 获取安全核验 / 人机验证页面 URL
 
