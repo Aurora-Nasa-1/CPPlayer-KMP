@@ -61,6 +61,7 @@ sentry = "8.3.0"
 # Rhino 支持插件实际用到的 ES5/ES2020 子集（globalThis / JSON / RegExp / Array 高阶函数）。
 # ⚠️ 版本需 ≥ 1.7.13 才有 globalThis；锁 1.7.15（1.7.x 线最后一个稳定版）。
 rhino = "1.7.15"
+robolectric = "4.17"
 # —— 歌词对外投放（系统级歌词渠道）——
 # 这四个都是 AAR，且**只在 androidMain 用**：桌面端没有对应生态，commonMain 只留
 # 「纯协议层」（OPlus 的 LRC/JSON 构建、节流与重试策略），才能在 desktopTest 里单测。
@@ -177,6 +178,7 @@ coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" 
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
 hypnoticcanvas = { module = "com.mikepenz.hypnoticcanvas:hypnoticcanvas", version.ref = "hypnoticcanvas" }
 rhino = { module = "org.mozilla:rhino", version.ref = "rhino" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 # 词幕（Lyricon）：Provider API —— 词幕侧靠 manifest 的 lyricon_module 元数据发现本应用。
 lyricon-provider = { module = "io.github.proify.lyricon:provider", version.ref = "lyriconProvider" }
 # SuperLyric：HChenX 的广播 IPC 生态，逐字歌词发布者协议。

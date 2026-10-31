@@ -88,7 +88,7 @@ internal class XiaomiSuperIslandBridge(
         this.enabled = enabled
         lastPayloadKey = null
         if (enabled) {
-            ensureChannel()
+            XiaomiSuperIslandLyricService.ensureChannel(appContext)
             // 冷启动也要能用：开启渠道时先挂上 Shizuku keepalive。
             // 未授权 / 未装 Shizuku 时内部只安排重试，**不会弹窗**（见 ShizukuKeepAlive）。
             ShizukuKeepAlive.ensureBound(appContext)
@@ -355,7 +355,7 @@ internal class XiaomiSuperIslandBridge(
         // ⚠️ minSdk = 24：`Notification.Builder(Context, String)` 是 **API 26** 才有的构造器，
         // 低版本直接 NoSuchMethodError。渠道本身也是 API 26 才存在，所以这里必须分支。
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(appContext, CHANNEL_ID)
+            Notification.Builder(appContext, XiaomiSuperIslandLyricService.CHANNEL_ID)
         } else {
             Notification.Builder(appContext)
         }
@@ -454,28 +454,8 @@ internal class XiaomiSuperIslandBridge(
         return (0xFF shl 24) or (r shl 16) or (g shl 8) or b
     }
 
-    private fun ensureChannel() {
-        ensureNotificationChannel(
-            context = appContext,
-            channelId = CHANNEL_ID,
-            name = CHANNEL_NAME,
-            description = CHANNEL_DESCRIPTION,
-            importance = NotificationManager.IMPORTANCE_HIGH,
-        )
-    }
-
     private companion object {
         const val TAG = "SuperIslandLyric"
-
-        /**
-         * 渠道 id 带 `_v2` 后缀。
-         *
-         * 上游踩过的坑：渠道一旦建过就不能改重要性，早期版本建成了 LOW，
-         * HyperOS 因此不把它当焦点通知。要修只能换 id。
-         */
-        const val CHANNEL_ID = "cp_player_super_island_lyric_v2"
-        const val CHANNEL_NAME = "小米超级岛歌词"
-        const val CHANNEL_DESCRIPTION = "在 HyperOS 超级岛显示当前歌词"
 
         const val MIN_RENDER_INTERVAL_MS = 1_500L
         const val CONTENT_INTENT_REQUEST = 3600

@@ -3,7 +3,8 @@
  * Upstream reference: app/src/main/java/com/ella/music/player/XiaomiSuperIslandLyricService.kt
  * Changes: 包名与 action 前缀换成 cp.player；去掉 `pendingNotification` 的跨进程假设注释
  *          （这里仍是同进程内存交接，理由不变）；补充「服务被 ROM 杀掉后重新走
- *          startForegroundService」的重入路径。
+ *          startForegroundService」的重入路径；onCreate 先挂前台通知（无载荷时兜底），
+ *          停止时只用 stopService，不再通过启动服务来传 STOP。
  * ⚠️ 需要在宿主模块（app-android）的 AndroidManifest 里声明：
  *    <service android:name="cp.player.core.lyricpush.XiaomiSuperIslandLyricService"
  *             android:foregroundServiceType="specialUse" android:exported="false" />
@@ -46,6 +47,19 @@ class XiaomiSuperIslandLyricService : Service() {
     }
     private var foregroundStarted = false
 
+    override fun onCreate() {
+        super.onCreate()
+        // Fulfil the FGS deadline before processing queued publish/stop commands.
+        // Static payloads can be lost when Android recreates the process.
+        runCatching {
+            ensureChannel(this)
+            promoteToForeground(pendingNotification ?: startupNotification())
+        }.onFailure {
+            Log.w(TAG, "Unable to initialize Super Island lyric foreground service", it)
+            stopSelfSafely()
+        }
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_PUBLISH -> {
@@ -58,17 +72,7 @@ class XiaomiSuperIslandLyricService : Service() {
                     if (foregroundStarted) {
                         notificationManager.notify(NOTIFICATION_ID, notification)
                     } else {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                            ServiceCompat.startForeground(
-                                this,
-                                NOTIFICATION_ID,
-                                notification,
-                                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
-                            )
-                        } else {
-                            startForeground(NOTIFICATION_ID, notification)
-                        }
-                        foregroundStarted = true
+                        promoteToForeground(notification)
                     }
                 }.onFailure {
                     Log.w(TAG, "Unable to publish Super Island lyric notification", it)
@@ -92,7 +96,43 @@ class XiaomiSuperIslandLyricService : Service() {
     }
 
     private fun stopSelfSafely() {
+        running = false
         runCatching { stopSelf() }
+    }
+
+    private fun startupNotification(): Notification {
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, CHANNEL_ID)
+        } else {
+            Notification.Builder(this)
+        }
+        builder
+            .setSmallIcon(applicationInfo.icon.takeIf { it != 0 } ?: android.R.drawable.ic_media_play)
+            .setContentTitle(CHANNEL_NAME)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setLocalOnly(true)
+            .setShowWhen(false)
+            .setCategory(Notification.CATEGORY_TRANSPORT)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
+        }
+        return builder.build()
+    }
+
+    private fun promoteToForeground(notification: Notification) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+        foregroundStarted = true
+        running = true
     }
 
     companion object {
@@ -101,6 +141,22 @@ class XiaomiSuperIslandLyricService : Service() {
         const val ACTION_PUBLISH = "cp.player.core.action.PUBLISH_SUPER_ISLAND_LYRIC"
         const val ACTION_STOP = "cp.player.core.action.STOP_SUPER_ISLAND_LYRIC"
         const val NOTIFICATION_ID = 0x454C4C53
+
+        // Keep the v2 channel: existing LOW-importance channels cannot be upgraded,
+        // and HyperOS requires HIGH importance to render Focus notifications.
+        internal const val CHANNEL_ID = "cp_player_super_island_lyric_v2"
+        private const val CHANNEL_NAME = "小米超级岛歌词"
+        private const val CHANNEL_DESCRIPTION = "在 HyperOS 超级岛显示当前歌词"
+
+        internal fun ensureChannel(context: Context) {
+            ensureNotificationChannel(
+                context = context,
+                channelId = CHANNEL_ID,
+                name = CHANNEL_NAME,
+                description = CHANNEL_DESCRIPTION,
+                importance = NotificationManager.IMPORTANCE_HIGH,
+            )
+        }
 
         @Volatile
         private var pendingNotification: Notification? = null
@@ -129,9 +185,7 @@ class XiaomiSuperIslandLyricService : Service() {
                 running = false
                 ContextCompat.startForegroundService(context, intent)
             }
-            if (result.isSuccess) {
-                running = true
-            } else {
+            if (result.isFailure) {
                 result.exceptionOrNull()?.let {
                     Log.w(TAG, "Unable to start Super Island lyric foreground service", it)
                 }
@@ -146,8 +200,8 @@ class XiaomiSuperIslandLyricService : Service() {
         fun stop(context: Context) {
             running = false
             val intent = Intent(context, XiaomiSuperIslandLyricService::class.java)
-                .setAction(ACTION_STOP)
-            runCatching { context.startService(intent) }
+            // Stopping an inactive service must not create a new service instance.
+            runCatching { context.stopService(intent) }
                 .onFailure { Log.w(TAG, "Unable to stop Super Island lyric service", it) }
         }
     }
