@@ -1,5 +1,6 @@
 package cp.player.app.ui.screen
 
+import androidx.compose.animation.ExperimentalSharedTransitionApi
 import cp.player.app.ui.component.CpText
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -614,55 +615,6 @@ class MainScreen : Screen {
                         }
                     }
                 } else {
-                    if (cp.player.app.ui.component.LocalRouteTopBarHostActive.current) {
-                        val profile by AppModel.userProfileFlow.collectAsState()
-                        val homeLeadingIcon: @Composable () -> Unit = {
-                            cp.player.app.ui.component.CpTopBarActionButton(
-                                cp.player.app.ui.component.TopBarAction(
-                                    icon = { AccountEntryContent(profile?.avatarUrl, "账号") },
-                                    onClick = { navigator?.push(AccountScreen()) },
-                                ),
-                                modifier = Modifier.padding(start = 8.dp),
-                            )
-                        }
-                        val homeActions = remember(navigator) {
-                            listOf(
-                                cp.player.app.ui.component.TopBarAction(
-                                    icon = { Icon(Icons.AutoMirrored.Outlined.Message, contentDescription = "消息", modifier = Modifier.size(20.dp)) },
-                                    onClick = {
-                                        navigator?.push(MessagesScreen())
-                                        AppModel.refreshUnreadMessages()
-                                    },
-                                ),
-                                cp.player.app.ui.component.TopBarAction(
-                                    icon = { Icon(Icons.Filled.Settings, contentDescription = "设置", modifier = Modifier.size(20.dp)) },
-                                    onClick = { navigator?.push(SettingsScreen()) },
-                                ),
-                            )
-                        }
-                        val currentTabTitle = tabs[selectedIndex].label
-                        val claim = remember {
-                            cp.player.app.ui.component.RouteTopBarClaim(
-                                initialTitle = currentTabTitle,
-                                initialOnBack = null,
-                                initialActions = homeActions,
-                                initialLeadingIcon = homeLeadingIcon,
-                            )
-                        }
-                        androidx.compose.runtime.SideEffect {
-                            claim.title = currentTabTitle
-                            claim.onBack = null
-                            claim.topBarActions = homeActions
-                            claim.leadingIcon = homeLeadingIcon
-                        }
-                        androidx.compose.runtime.DisposableEffect(claim) {
-                            cp.player.app.ui.component.routeTopBarClaims.add(claim)
-                            onDispose {
-                                cp.player.app.ui.component.routeTopBarClaims.remove(claim)
-                            }
-                        }
-                    }
-
                     androidx.compose.material3.Scaffold(
                         modifier = Modifier.fillMaxSize()
                             // 只挂顶栏的 scrollBehavior（大标题 → 64dp 靠它）。
@@ -670,23 +622,21 @@ class MainScreen : Screen {
                             // 理由见 `BottomBarHideState` 的 KDoc。
                             .nestedScroll(scrollBehavior.nestedScrollConnection),
                         topBar = {
-                            if (!cp.player.app.ui.component.LocalRouteTopBarHostActive.current) {
-                                // 三个 tab 的顶栏完全一致：标题 = tab 名，动作一律在右侧。
-                                // 「我的」页不再特殊化（昵称由页内问候区承担，见 LibraryScreen）。
-                                AppTopBar(
-                                    title = tabs[selectedIndex].label,
-                                    navigator = navigator,
-                                    scrollBehavior = scrollBehavior,
-                                    onOpenSettings = { navigator?.push(SettingsScreen()) },
-                                    onOpenAccount = { navigator?.push(AccountScreen()) },
-                                    // 窄屏没有内嵌 Navigator、也没有面板，消息走整页 push（原行为）。
-                                    onOpenMessages = {
-                                        navigator?.push(MessagesScreen())
-                                        AppModel.refreshUnreadMessages()
-                                    },
-                                    tabIndex = selectedIndex,
-                                )
-                            }
+                            // 三个 tab 的顶栏完全一致：标题 = tab 名，动作一律在右侧。
+                            // 「我的」页不再特殊化（昵称由页内问候区承担，见 LibraryScreen）。
+                            AppTopBar(
+                                title = tabs[selectedIndex].label,
+                                navigator = navigator,
+                                scrollBehavior = scrollBehavior,
+                                onOpenSettings = { navigator?.push(SettingsScreen()) },
+                                onOpenAccount = { navigator?.push(AccountScreen()) },
+                                // 窄屏没有内嵌 Navigator、也没有面板，消息走整页 push（原行为）。
+                                onOpenMessages = {
+                                    navigator?.push(MessagesScreen())
+                                    AppModel.refreshUnreadMessages()
+                                },
+                                tabIndex = selectedIndex,
+                            )
                         },
                         bottomBar = {
                             AppNavigationBar(
@@ -733,7 +683,7 @@ class MainScreen : Screen {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @Composable
 private fun AppTopBar(
     title: String,
@@ -815,14 +765,28 @@ private fun AppTopBar(
             colors = colors,
         )
     } else {
-        androidx.compose.material3.LargeTopAppBar(
-            navigationIcon = navigationIcon,
-            title = titleBar,
-            actions = actions,
-            scrollBehavior = scrollBehavior,
-            windowInsets = topBarInsets,
-            colors = colors,
-        )
+        val sharedScope = cp.player.app.ui.anim.LocalSharedTransitionScope.current
+        val navScope = cp.player.app.ui.anim.LocalNavAnimatedVisibilityScope.current
+        val topBarModifier = if (sharedScope != null && navScope != null && !cp.player.app.ui.component.LocalWindowChromeActive.current) {
+            with(sharedScope) {
+                Modifier.sharedBounds(
+                    sharedContentState = rememberSharedContentState(key = "universal_app_scaffold_topbar"),
+                    animatedVisibilityScope = navScope,
+                )
+            }
+        } else {
+            Modifier
+        }
+        Box(topBarModifier) {
+            androidx.compose.material3.LargeTopAppBar(
+                navigationIcon = navigationIcon,
+                title = titleBar,
+                actions = actions,
+                scrollBehavior = scrollBehavior,
+                windowInsets = topBarInsets,
+                colors = colors,
+            )
+        }
     }
 }
 

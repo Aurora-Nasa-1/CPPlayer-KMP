@@ -30,7 +30,7 @@ import cp.player.app.ui.util.DesktopRouteTitle
  * | `if (expanded) body(Modifier.fillMaxWidth()) else LegacyPageScaffold(…)` | **宽屏下整页没有返回入口** —— 桌面默认就是宽屏（初始 1320×860，最小 900×640 ≥ 840 断点），从标题栏点「账号」进去之后只剩 Esc，而 Esc 那时也没有任何处理器 |
  * | 各页自绘 `PageTitleBar` / `FilledIconButton` | 又两套外观 |
  *
- * 现在的形态由**判据**决定：
+ * 现在的形态由**三选一**的判据决定，且判据只此一份：
  *
  * 1. [embedded]（或 [LocalEmbeddedInPane] 为真）—— 被渲染成某个双栏布局的详情栏。
  *    宿主已经画了标题与返回，这里只出正文。⚠️ **不要**顺手在这里画返回键：
@@ -39,14 +39,13 @@ import cp.player.app.ui.util.DesktopRouteTitle
  *    （见 [DesktopRouteTitle] 与 `DesktopTitleBar`），页面**不再自绘顶栏**，
  *    否则窗口顶部会叠两条 chrome（44dp 标题栏 + 64dp 顶栏）。[topBarActions] 改在正文顶部
  *    渲染一行紧凑按钮，不会丢。
- * 3. `LocalRouteTopBarHostActive` —— 移动端 / 窄屏统一外置顶栏宿主接管。
- *    顶栏提升到转场动画外层常驻，页面仅向宿主发布标题与动作，正文独立滑动，
- *    标题与按钮执行微动淡入淡出（符合 Android 16 / Material 3 Expressive 规范）。
- * 4. 其余兜底（如独立测试或未包裹在宿主中的场景）—— 自绘 [AppScaffold] + [CpBackButton]。
+ * 3. 其余（安卓 / 窄屏 / 移动端）—— 自绘 [AppScaffold] + [CpBackButton]。
+ *    顶栏通过 `sharedBounds` 在页面转场时保持居顶淡入淡出、不随页面横移，
+ *    同时完整保留 `LargeTopAppBar` 随列表滚动的动态展开与收缩功能。
  *
- * @param title 页面标题。宽屏（判据 3/4）会显示在顶栏上；判据 2 会发布给窗口标题栏；判据 3 会发布给外置顶栏宿主。
+ * @param title 页面标题。宽屏（判据 3）会显示在顶栏上；判据 2 会发布给窗口标题栏。
  * @param onBack 返回动作。传 `null` 表示这一页没有返回（例如作为根页被复用）。
- *   判据 2 下由窗口标题栏承担，这里仍要传 —— 否则窄窗口（<840dp）就没有返回键。
+ *   判据 2 下由窗口标题栏承担，这里仍要传 —— 否则窄窗口（<840dp，走判据 3）就没有返回键。
  * @param content 正文。**必须使用传进来的 `Modifier`**（各分支给的是「填满剩余空间」的约束）。
  */
 @Composable
@@ -109,38 +108,6 @@ fun CpRouteScaffold(
             }
             // `floatingActionButton` 为空 lambda 时这里不产生任何绘制，无需判空
             // （`@Composable () -> Unit` 没法判空）。
-            Box(
-                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                floatingActionButton()
-            }
-        }
-        return
-    }
-
-    if (LocalRouteTopBarHostActive.current) {
-        val claim = remember {
-            RouteTopBarClaim(
-                initialTitle = title,
-                initialOnBack = onBack,
-                initialActions = topBarActions,
-            )
-        }
-        SideEffect {
-            claim.title = title
-            claim.onBack = onBack
-            claim.topBarActions = topBarActions
-        }
-        DisposableEffect(claim) {
-            routeTopBarClaims.add(claim)
-            onDispose {
-                routeTopBarClaims.remove(claim)
-            }
-        }
-
-        Box(modifier = modifier.fillMaxSize()) {
-            content(Modifier.fillMaxSize())
             Box(
                 modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
                 contentAlignment = Alignment.Center,

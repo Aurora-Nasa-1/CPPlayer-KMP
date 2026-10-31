@@ -268,17 +268,6 @@ fun App(
                             // 内容才真的顶到窗口上沿、让背景铺满。
                             if (titleBar != null) {
                                 Spacer(Modifier.height(clampedTopInset))
-                            } else {
-                                val activeClaim = cp.player.app.ui.component.currentRouteTopBarClaim
-                                val showMobileTopBar = activeClaim != null &&
-                                    navigator.lastItem !is PlayerScreen &&
-                                    navigator.lastItem !is cp.player.app.ui.screen.VideoPlayerScreen &&
-                                    navigator.lastItem !is cp.player.app.ui.screen.PlaylistDetailScreen &&
-                                    navigator.lastItem !is cp.player.app.ui.screen.HomeGeneratedPlaylistScreen
-                                cp.player.app.ui.component.MobileRouteTopBarHost(
-                                    claim = activeClaim,
-                                    visible = showMobileTopBar,
-                                )
                             }
 
                             // 把「窗口级顶栏是否已接管账号 / 设置入口」告诉下层。
@@ -287,7 +276,6 @@ fun App(
                             // 那时 isDesktop 仍为 true 但并没有标题栏。理由详见 LocalWindowChromeActive。
                             androidx.compose.runtime.CompositionLocalProvider(
                                 cp.player.app.ui.component.LocalWindowChromeActive provides (titleBar != null),
-                                cp.player.app.ui.component.LocalRouteTopBarHostActive provides (titleBar == null),
                                 // 根 Navigator 下发给整棵树：桌面宽屏的内容区里有内嵌 Navigator，
                                 // 页面读 LocalNavigator 拿到的是内嵌那一条；要整窗路由（播放页）
                                 // 的调用点必须显式用这一条。见 LocalRootNavigator 的 KDoc。
