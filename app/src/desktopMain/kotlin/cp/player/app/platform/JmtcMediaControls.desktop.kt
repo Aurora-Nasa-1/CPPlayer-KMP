@@ -28,7 +28,7 @@ import kotlinx.coroutines.launch
 /** Uses JMTC for Windows SMTC and Linux MPRIS. */
 internal class JmtcMediaControls private constructor(
     private val controller: PlaybackController,
-) {
+) : PlatformMediaControlsInstance {
     private var jmtc: JMTC? = null
 
     /** SMTC 线程上写、Compose 线程上读，必须有可见性保证。 */
@@ -95,7 +95,7 @@ internal class JmtcMediaControls private constructor(
     private var pushedPositionMs = -1L
     private var lastPositionPushAt = 0L
 
-    fun start() {
+    override fun start() {
         if (started || !isSupportedHost()) return
         // 同一实例在 stop() 之后被复用：executor 已关闭，再排队会抛 RejectedExecutionException。
         if (smtcExecutor.isShutdown) return
@@ -137,7 +137,7 @@ internal class JmtcMediaControls private constructor(
      * 由 Compose 侧高频调用；真正的推送逻辑在 [smtcExecutor] 线程上按 [pushState] 执行。
      * 调用方是 conflate 的 StateFlow 收集器，这里排队只是搬运，不需要再合并。
      */
-    fun update(state: PlaybackUiState) {
+    override fun update(state: PlaybackUiState) {
         try {
             smtcExecutor.execute { pushState(state) }
         } catch (_: RejectedExecutionException) {
@@ -215,7 +215,7 @@ internal class JmtcMediaControls private constructor(
         lastPositionPushAt = 0L
     }
 
-    fun stop() {
+    override fun stop() {
         // 先置停止意图：封堵在途的 start 任务（它们会据此提前返回，不再 enable）。
         stopRequested = true
         started = false
