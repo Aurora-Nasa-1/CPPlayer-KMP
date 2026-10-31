@@ -1,7 +1,20 @@
 package cp.player.app.repository
 
 import cp.player.app.AppModel
-import cp.player.core.api.extractUidFromLoginStatus
+import cp.player.core.api.extractUserResourceId
+import cp.player.core.api.getPlaylistDetail
+import cp.player.core.api.getPlaylistTracks
+import cp.player.core.api.addTracksToPlaylist
+import cp.player.core.api.removeTracksFromPlaylist
+import cp.player.core.api.deletePlaylist
+import cp.player.core.api.subscribePlaylist
+import cp.player.core.api.updatePlaylistName
+import cp.player.core.api.getAlbumDetail
+import cp.player.core.api.subscribeAlbum
+import cp.player.core.api.getArtistDetail
+import cp.player.core.api.getUserDetail
+import cp.player.core.api.getUserPlaylists
+import cp.player.core.api.getLikeList
 import cp.player.core.BackendResult
 import cp.player.core.api.MusicApiService
 import cp.player.core.music.AlbumDetail
@@ -39,6 +52,58 @@ class MusicRepository(private val api: MusicApiService) {
 
     suspend fun search(keyword: String, type: Int): MusicResult<SearchResult> =
         MusicSourceFromApi.search(api, keyword, type)
+
+    suspend fun search(keyword: String, type: Int, limit: Int, offset: Int): MusicResult<SearchResult> =
+        MusicSourceFromApi.search(api, keyword, type, limit, offset)
+
+    suspend fun getPlaylistDetail(id: String): MusicResult<PlaylistDetail> =
+        MusicSourceFromApi.getPlaylistDetail(api, id)
+
+    suspend fun getPlaylistTracks(id: String, limit: Int = 300, offset: Int = 0): MusicResult<PlaylistTracksPage> =
+        MusicSourceFromApi.getPlaylistTracks(api, id, limit, offset)
+
+    suspend fun getAlbumDetail(id: String): MusicResult<AlbumDetail> = MusicSourceFromApi.getAlbumDetail(api, id)
+
+    suspend fun subscribeAlbum(id: String, subscribe: Boolean): Boolean {
+        val ok = isApiSuccess(api.subscribeAlbum(id, if (subscribe) 1 else 2))
+        if (ok) AppModel.notifyAlbumFavoriteResourceChanged(id)
+        return ok
+    }
+
+    suspend fun getArtistProfile(id: String): ArtistProfile? =
+        runCatchingExceptCancellation { MusicSourceFromApi.parseArtistProfile(api.getArtistDetail(id)) }.getOrNull()
+
+    suspend fun getArtistTopSongs(id: String): MusicResult<List<TrackSummary>> =
+        MusicSourceFromApi.getArtistTopSongs(api, id)
+
+    suspend fun getArtistAlbums(id: String, limit: Int = 50): MusicResult<List<AlbumSummary>> =
+        MusicSourceFromApi.getArtistAlbums(api, id, limit)
+
+    suspend fun getUserPlaylistsOf(uid: String): MusicResult<List<PlaylistSummary>> =
+        MusicSourceFromApi.getUserPlaylists(api, uid)
+
+    suspend fun deletePlaylist(id: String): Boolean = playlistWrite(id) { this.deletePlaylist(id) }
+    suspend fun unsubscribePlaylist(id: String): Boolean = playlistWrite(id) { this.subscribePlaylist(id, 2) }
+    suspend fun subscribePlaylist(id: String, subscribe: Boolean): Boolean =
+        playlistWrite(id) { this.subscribePlaylist(id, if (subscribe) 1 else 2) }
+    suspend fun addTracksToPlaylist(playlistId: String, ids: List<String>): Boolean =
+        playlistWrite(playlistId) { this.addTracksToPlaylist(playlistId, ids) }
+    suspend fun removeTracksFromPlaylist(playlistId: String, ids: List<String>): Boolean =
+        playlistWrite(playlistId) { this.removeTracksFromPlaylist(playlistId, ids) }
+    suspend fun renamePlaylist(playlistId: String, name: String): Boolean =
+        playlistWrite(playlistId) { this.updatePlaylistName(playlistId, name) }
+
+    private suspend fun playlistWrite(id: String, block: suspend MusicApiService.() -> JsonElement): Boolean {
+        val ok = isApiSuccess(api.block())
+        if (ok) AppModel.notifyPlaylistChanged(id)
+        return ok
+    }
+
+    suspend fun createPlaylistResource(name: String): MusicResult<String> {
+        val result = MusicSourceFromApi.parseCreatedPlaylistId(api.createPlaylist(name))
+        if (result is BackendResult.Success) AppModel.notifyPlaylistChanged(result.data)
+        return result
+    }
 
     /**
      * 心动模式/智能播放列表。
@@ -188,14 +253,17 @@ class MusicRepository(private val api: MusicApiService) {
      * 歌手分支额外拉「热门歌曲」与「专辑」；用户分支拉「歌单」。
      * 这些子请求**失败不致命** —— 资料本身能显示就先显示，空的区块由页面自己收敛。
      */
-    suspend fun getProfileBundle(uid: Long): MusicResult<ProfileBundle> {
+    suspend fun getProfileBundle(uid: Long): MusicResult<ProfileBundle> = getProfileBundle(uid.toString())
+
+    suspend fun getProfileBundle(uid: String): MusicResult<ProfileBundle> {
         val artist = getArtistProfile(uid)
         if (artist != null) {
             val songs = (getArtistTopSongs(uid) as? BackendResult.Success)?.data.orEmpty()
             val albums = (getArtistAlbums(uid) as? BackendResult.Success)?.data.orEmpty()
             return BackendResult.Success(
                 ProfileBundle(
-                    uid = uid,
+                    uid = uid.toLongOrNull() ?: 0L,
+                    resourceId = uid,
                     isArtist = true,
                     nickname = artist.name,
                     avatarUrl = artist.avatarUrl,
@@ -214,7 +282,8 @@ class MusicRepository(private val api: MusicApiService) {
         val playlists = (getUserPlaylistsOf(uid) as? BackendResult.Success)?.data.orEmpty()
         return BackendResult.Success(
             ProfileBundle(
-                uid = uid,
+                uid = uid.toLongOrNull() ?: 0L,
+                resourceId = uid,
                 isArtist = false,
                 nickname = profile.nickname,
                 avatarUrl = profile.avatarUrl,
@@ -246,7 +315,7 @@ class MusicRepository(private val api: MusicApiService) {
         MusicSourceFromApi.getPlaylistTracks(api, id, limit, offset)
 
     suspend fun getCurrentUserPlaylists(): MusicResult<List<PlaylistSummary>> {
-        val uid = extractUidFromLoginStatus(api.getLoginStatus())
+        val uid = extractUserResourceId(api.getLoginStatus())
             ?: return BackendResult.Error("未登录或登录已过期")
         return MusicSourceFromApi.getUserPlaylists(api, uid)
     }
@@ -255,21 +324,9 @@ class MusicRepository(private val api: MusicApiService) {
         MusicSourceFromApi.getUserCloud(api, limit, offset)
 
     suspend fun getLikeList(): MusicResult<Set<String>> {
-        val uid = extractUidFromLoginStatus(api.getLoginStatus())
+        val uid = extractUserResourceId(api.getLoginStatus())
             ?: return BackendResult.Error("未登录或登录已过期")
-        val json = api.getLikeList(uid)
-        val root = json as? JsonObject ?: return BackendResult.Success(emptySet())
-        val array = (root["ids"]
-            ?: (root["data"] as? JsonObject)?.get("ids")
-            ?: (root["data"] as? JsonArray)
-            ?: (root["data"] as? JsonObject)?.get("trackIds")) as? JsonArray
-            ?: JsonArray(emptyList())
-        return BackendResult.Success(
-            array.mapNotNull { el ->
-                (el as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank)
-                    ?: ((el as? JsonObject)?.get("id") as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank)
-            }.toSet()
-        )
+        return MusicSourceFromApi.parseLikedTrackIds(api.getLikeList(uid))
     }
 
     suspend fun deletePlaylist(id: Long): Boolean {

@@ -2,6 +2,8 @@ package cp.player.core.cache
 
 import cp.player.core.util.currentTimeMillis
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * API 响应缓存抽象。
@@ -110,14 +112,19 @@ fun cacheKey(
     providerId: String,
     method: String,
     params: Map<String, String>,
-    cookie: String? = null
+    cookie: String? = null,
+    providerConfig: Map<String, String> = emptyMap(),
 ): String {
     val sortedParams = params.entries.sortedBy { it.key }
         .joinToString("&") { (k, v) -> "${escapeComponent(k)}=${escapeComponent(v)}" }
     // 无 cookie 时用固定占位：null 与「空 cookie」必须落在同一个键上，
     // 否则登录态为空的那次读永远命中不了。前缀分域，避免哈希恰好等于占位值。
     val ck = if (cookie.isNullOrEmpty()) "anon" else "h${stableHash64(cookie)}"
-    return "${escapeComponent(providerId)}#${escapeComponent(method)}#$sortedParams#$ck"
+    val configuration = if (providerConfig.isEmpty()) "" else {
+        val canonical = JsonObject(providerConfig.entries.sortedBy { it.key }.associate { it.key to JsonPrimitive(it.value) }).toString()
+        "#cfg${stableHash64(canonical)}"
+    }
+    return "${escapeComponent(providerId)}#${escapeComponent(method)}#$sortedParams#$ck$configuration"
 }
 
 /** 便捷封装：存入完整数据时自动计算指纹并打时间戳。 */

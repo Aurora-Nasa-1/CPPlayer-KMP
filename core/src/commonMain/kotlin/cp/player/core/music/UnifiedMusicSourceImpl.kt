@@ -1,5 +1,8 @@
 package cp.player.core.music
 
+import cp.player.core.api.playbackUrlOf
+import cp.player.core.api.playbackExpiresAt
+
 import cp.player.core.BackendResult
 import cp.player.core.api.MusicApiService
 import cp.player.core.local.LocalMediaSource
@@ -212,14 +215,14 @@ class UnifiedMusicSourceImpl(
 
     private fun extractLevel(body: kotlinx.serialization.json.JsonElement): String? {
         val obj = body as? JsonObject ?: return null
-        val direct = (obj["level"] as? JsonPrimitive)?.contentOrNull
+        val direct = ((obj["level"] ?: obj["quality"]) as? JsonPrimitive)?.contentOrNull
         if (!direct.isNullOrBlank()) return direct
         val dataObj = obj["data"] as? JsonObject
-        val dataLevel = (dataObj?.get("level") as? JsonPrimitive)?.contentOrNull
+        val dataLevel = ((dataObj?.get("level") ?: dataObj?.get("quality")) as? JsonPrimitive)?.contentOrNull
         if (!dataLevel.isNullOrBlank()) return dataLevel
         val dataArray = obj["data"] as? JsonArray
         val firstItem = dataArray?.firstOrNull() as? JsonObject
-        return (firstItem?.get("level") as? JsonPrimitive)?.contentOrNull
+        return ((firstItem?.get("level") ?: firstItem?.get("quality")) as? JsonPrimitive)?.contentOrNull
     }
 
     private fun extractCodec(body: kotlinx.serialization.json.JsonElement): String? {
@@ -320,7 +323,7 @@ class UnifiedMusicSourceImpl(
                 val resolvedLevel = extractLevel(json) ?: level
                 val codec = extractCodec(json) ?: inferCodecFromUrl(url) ?: inferCodecFromLevel(resolvedLevel)
                 val bitrate = extractBitrate(json) ?: inferBitrateFromLevel(resolvedLevel)
-                BackendResult.Success(SongUrl(url, resolvedLevel, sizeBytes, null, cookie, headers, codec = codec, bitrate = bitrate))
+                BackendResult.Success(SongUrl(url, resolvedLevel, sizeBytes, playbackExpiresAt(json, cp.player.core.util.currentTimeMillis()), cookie, headers, codec = codec, bitrate = bitrate))
             } else {
                 BackendResult.Error("No valid URL returned for $mediaId")
             }
@@ -345,7 +348,7 @@ class UnifiedMusicSourceImpl(
                 val resolvedLevel = extractLevel(json) ?: level
                 val codec = extractCodec(json) ?: inferCodecFromUrl(url) ?: inferCodecFromLevel(resolvedLevel)
                 val bitrate = extractBitrate(json) ?: inferBitrateFromLevel(resolvedLevel)
-                BackendResult.Success(SongUrl(url, resolvedLevel, sizeBytes, null, cookie, headers, codec = codec, bitrate = bitrate))
+                BackendResult.Success(SongUrl(url, resolvedLevel, sizeBytes, playbackExpiresAt(json, cp.player.core.util.currentTimeMillis()), cookie, headers, codec = codec, bitrate = bitrate))
             } else {
                 getSongUrl(mediaId, level)
             }
@@ -371,35 +374,6 @@ class UnifiedMusicSourceImpl(
         trackSummaryOf(this, mediaId)
 
     private fun extractUrl(body: kotlinx.serialization.json.JsonElement): String? {
-        if (body !is JsonObject) return null
-        (body["redirectUrl"] as? JsonPrimitive)?.contentOrNull?.let { if (it.startsWith("http")) return it }
-        val dataObj = body["data"] as? JsonObject
-        (dataObj?.get("url") as? JsonPrimitive)?.contentOrNull?.let { if (it.startsWith("http")) return it }
-        (body["url"] as? JsonPrimitive)?.contentOrNull?.let { if (it.startsWith("http")) return it }
-        return findUrlRecursive(body)
-    }
-
-    private fun findUrlRecursive(element: kotlinx.serialization.json.JsonElement?): String? {
-        if (element == null) return null
-        when (element) {
-            is JsonPrimitive -> {
-                val s = element.contentOrNull ?: return null
-                if (s.startsWith("http") && s.length > 12 && !s.contains("null")) return s
-            }
-            is JsonObject -> {
-                for (key in listOf("url", "picUrl", "coverImgUrl", "avatarUrl")) {
-                    val p = element[key]
-                    if (p is JsonPrimitive) {
-                        val s = p.contentOrNull
-                        if (s != null && s.startsWith("http") && s.length > 12 && !s.contains("null")) return s
-                    }
-                }
-                for ((_, v) in element) { findUrlRecursive(v)?.let { return it } }
-            }
-            is JsonArray -> {
-                for (e in element) { findUrlRecursive(e)?.let { return it } }
-            }
-        }
-        return null
+        return playbackUrlOf(body)
     }
 }

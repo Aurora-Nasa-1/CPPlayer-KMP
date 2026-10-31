@@ -79,7 +79,11 @@ data class PlaylistSummary(
     val coverUrl: String?,
     val trackCount: Int,
     val creatorName: String?,
+    /** Canonical upstream ID. [id] remains available for legacy numeric callers. */
+    val resourceId: String = if (id == 0L) "" else id.toString(),
 ) : cp.player.core.util.JavaSerializable
+
+val PlaylistSummary.isRemote: Boolean get() = id >= 0L && resourceId.isNotBlank()
 
 /**
  * 歌单详情（含完整曲目）。
@@ -99,6 +103,7 @@ data class PlaylistDetail(
 data class PlaylistTracksPage(
     val tracks: List<TrackSummary>,
     val hasMore: Boolean,
+    val paginationSpecified: Boolean = true,
 )
 
 /**
@@ -148,6 +153,8 @@ data class SearchResult(
     val playlists: List<PlaylistSummary>,
     val artists: List<ArtistSummary>,
     val albums: List<AlbumSummary> = emptyList(),
+    val total: Long? = null,
+    val hasMore: Boolean? = null,
 )
 
 /**
@@ -157,6 +164,7 @@ data class ArtistSummary(
     val id: Long,
     val name: String,
     val avatarUrl: String?,
+    val resourceId: String = if (id == 0L) "" else id.toString(),
 ) : cp.player.core.util.JavaSerializable
 
 /**
@@ -186,6 +194,7 @@ data class RankingSummary(
     val coverUrl: String?,
     val updateFrequency: String?,
     val trackCount: Int,
+    val resourceId: String = if (id == 0L) "" else id.toString(),
 )
 
 /**
@@ -201,6 +210,8 @@ data class AlbumSummary(
     val publishTimeMs: Long? = null,
     /** 专辑艺术家 id，用于从专辑反跳歌手。上游可能在 `artist.id` / `artists[0].id`。 */
     val artistId: Long? = null,
+    val resourceId: String = if (id == 0L) "" else id.toString(),
+    val artistResourceId: String? = artistId?.toString(),
 ) : cp.player.core.util.JavaSerializable
 
 /**
@@ -219,6 +230,8 @@ data class AlbumDetail(
     val company: String?,
     val description: String?,
     val tracks: List<TrackSummary>,
+    val resourceId: String = if (id == 0L) "" else id.toString(),
+    val artistResourceId: String? = artistId?.toString(),
 ) : cp.player.core.util.JavaSerializable
 
 /**
@@ -235,6 +248,7 @@ data class ArtistProfile(
     val albumSize: Int,
     val musicSize: Int,
     val followeds: Int,
+    val resourceId: String = if (id == 0L) "" else id.toString(),
 ) : cp.player.core.util.JavaSerializable
 
 /**
@@ -279,4 +293,5 @@ data class ProfileBundle(
     val playlists: List<PlaylistSummary> = emptyList(),
     val albums: List<AlbumSummary> = emptyList(),
     val songs: List<TrackSummary> = emptyList(),
+    val resourceId: String = if (uid == 0L) "" else uid.toString(),
 ) : cp.player.core.util.JavaSerializable

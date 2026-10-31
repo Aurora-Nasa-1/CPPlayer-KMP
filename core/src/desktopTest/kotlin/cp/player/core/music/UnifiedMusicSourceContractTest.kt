@@ -2,6 +2,7 @@ package cp.player.core.music
 
 import cp.player.core.BackendResult
 import cp.player.core.api.MusicApiService
+import cp.player.core.api.MusicApiMethod
 import cp.player.core.local.LocalFavorites
 import cp.player.core.local.LocalMediaSource
 import cp.player.core.local.LocalScanSettingsStore
@@ -489,6 +490,138 @@ class UnifiedMusicSourceContractTest {
     }
 
     // ============ 4. 本地曲目白名单（安全边界） ============
+
+    @Test
+    fun `explicit duration units never use legacy seconds heuristic`() {
+        for ((field, expected) in listOf("durationMs" to 9500L, "dt" to 9500L, "durationSeconds" to 9500000L)) {
+            val json = Json.parseToJsonElement("""{"code":0,"data":{"tracks":[{"id":"short","title":"Short","$field":9500}]}}""")
+            assertEquals(expected, MusicSourceFromApi.parseSearchSongs(json).getOrNull()?.songs?.single()?.durationMs)
+            assertEquals(expected, MusicSourceFromApi.parseSongDetailInfo(json).getOrNull()?.durationMs)
+        }
+    }
+
+    @Test
+    fun `null duration retains known detail metadata`() {
+        val fallback = SongDetailInfo("short", "Short", "", "", durationMs = 9500L)
+        val result = MusicSourceFromApi.parseSongDetailInfo(
+            Json.parseToJsonElement("""{"code":0,"data":{"tracks":[{"id":"short","durationMs":null}]}}"""),
+            fallback,
+        ).getOrNull() ?: fail("Expected detail metadata")
+        assertEquals(9500L, result.durationMs)
+    }
+
+    @Test
+    fun `artist top songs preserves legacy endpoint and falls back only when unsupported`() = runBlocking {
+        val calls = mutableListOf<Pair<String, Map<String, String>>>()
+        var topCode = 0
+        val api = object : MusicApiService by throwingApi() {
+            override suspend fun callApi(method: String, params: Map<String, String>, cookie: String?): JsonElement {
+                calls += method to params
+                return if (method == MusicApiMethod.ARTIST_TOP_SONG && topCode != 0) {
+                    Json.parseToJsonElement("""{"code":$topCode}""")
+                } else Json.parseToJsonElement("""{"code":0,"songs":[{"id":"track","name":"Track"}]}""")
+            }
+
+            override suspend fun getArtistTopSong(id: Long): JsonElement =
+                callApi(MusicApiMethod.ARTIST_TOP_SONG, mapOf("id" to id.toString()), null)
+
+            override suspend fun getArtistSongs(id: Long, limit: Int): JsonElement =
+                callApi(MusicApiMethod.ARTIST_SONGS, mapOf("id" to id.toString(), "limit" to limit.toString()), null)
+        }
+        assertEquals(1, MusicSourceFromApi.getArtistTopSongs(api, "001").getOrNull()?.size)
+        assertEquals(listOf(MusicApiMethod.ARTIST_TOP_SONG to mapOf("id" to "001")), calls)
+
+        for (code in listOf(-1, 404, 501)) {
+            topCode = code
+            calls.clear()
+            assertEquals(1, MusicSourceFromApi.getArtistTopSongs(api, "artist-uuid").getOrNull()?.size)
+            assertEquals(listOf(MusicApiMethod.ARTIST_TOP_SONG, MusicApiMethod.ARTIST_SONGS), calls.map { it.first })
+            assertEquals("artist-uuid", calls.last().second["id"])
+            assertEquals("50", calls.last().second["limit"])
+        }
+
+        topCode = 401
+        calls.clear()
+        assertTrue(MusicSourceFromApi.getArtistTopSongs(api, "artist-uuid") is BackendResult.Error)
+        assertEquals(1, calls.size)
+
+        topCode = -1
+        calls.clear()
+        assertEquals(1, MusicSourceFromApi.getArtistTopSongs(api, 123L).getOrNull()?.size)
+        assertEquals(listOf(MusicApiMethod.ARTIST_TOP_SONG, MusicApiMethod.ARTIST_SONGS), calls.map { it.first })
+    }
+
+    @Test
+    fun `playlist pagination reads nested flags including explicit false`() {
+        val page = MusicSourceFromApi.parsePlaylistTracks(
+            Json.parseToJsonElement("""{"code":0,"hasMore":false,"data":{"tracks":[],"hasMore":true}}"""),
+        ).getOrNull() ?: fail("Expected playlist page")
+        assertTrue(page.hasMore)
+        val last = MusicSourceFromApi.parsePlaylistTracks(
+            Json.parseToJsonElement("""{"code":0,"hasMore":true,"data":{"tracks":[],"hasMore":false}}"""),
+        ).getOrNull() ?: fail("Expected playlist page")
+        assertEquals(false, last.hasMore)
+    }
+
+    @Test
+    fun `liked tracks support nested ids without swallowing errors`() {
+        for (fields in listOf(
+            """"ids":["song-hash","001"]""",
+            """"data":["song-hash","001"]""",
+            """"data":{"ids":["song-hash","001"]}""",
+            """"data":{"trackIds":[{"id":"song-hash"},{"id":"001"}]}""",
+        )) {
+            val result = MusicSourceFromApi.parseLikedTrackIds(Json.parseToJsonElement("""{"code":0,$fields}"""))
+            assertEquals(setOf("song-hash", "001"), result.getOrNull())
+        }
+        assertEquals(emptySet(), MusicSourceFromApi.parseLikedTrackIds(Json.parseToJsonElement(
+            """{"code":0,"data":{"ids":[]}}""",
+        )).getOrNull())
+        assertTrue(MusicSourceFromApi.parseLikedTrackIds(Json.parseToJsonElement(
+            """{"code":401,"data":{"ids":[]}}""",
+        )) is BackendResult.Error)
+        assertTrue(MusicSourceFromApi.parseLikedTrackIds(Json.parseToJsonElement(
+            """{"code":0,"data":{}}""",
+        )) is BackendResult.Error)
+    }
+
+    @Test
+    fun `opaque and leading zero resource ids survive every catalog parser`() {
+        val playlists = MusicSourceFromApi.parseRecommendedPlaylists(Json.parseToJsonElement(
+            """{"code":0,"data":[{"id":"pl-uuid","title":"First"},{"id":"001","title":"Second"}]}""",
+        )).getOrNull() ?: fail("Expected playlists")
+        assertEquals(listOf("pl-uuid", "001"), playlists.map { it.resourceId })
+        assertTrue(playlists.all { it.isRemote })
+        assertEquals(listOf(0L, 1L), playlists.map { it.id })
+        val search = MusicSourceFromApi.parseSearchSongs(Json.parseToJsonElement(
+            """{"code":0,"data":{"playlists":[{"id":"pl-uuid","title":"List"}],"artists":[{"id":"ar-hash","name":"Artist"}],"albums":[{"id":"al-uuid","title":"Album","artist":{"id":"ar-hash","name":"Artist"}}],"total":47,"hasMore":true}}""",
+        )).getOrNull() ?: fail("Expected search")
+        assertEquals("pl-uuid", search.playlists.single().resourceId)
+        assertEquals("ar-hash", search.artists.single().resourceId)
+        assertEquals("al-uuid", search.albums.single().resourceId)
+        assertEquals("ar-hash", search.albums.single().artistResourceId)
+        assertEquals(47L, search.total)
+        assertEquals(true, search.hasMore)
+        assertEquals("rank-uuid", MusicSourceFromApi.parseRankings(Json.parseToJsonElement(
+            """{"code":0,"data":[{"id":"rank-uuid","title":"Ranking"}]}""",
+        )).getOrNull()?.single()?.resourceId)
+        assertEquals("ar-hash", MusicSourceFromApi.parseArtistProfile(Json.parseToJsonElement(
+            """{"code":0,"data":{"id":"ar-hash","name":"Artist"}}""",
+        ))?.resourceId)
+        assertEquals("al-uuid", MusicSourceFromApi.parseAlbumDetail(Json.parseToJsonElement(
+            """{"code":0,"data":{"id":"al-uuid","title":"Album","tracks":[]}}""",
+        )).getOrNull()?.resourceId)
+        assertEquals("user-uuid", MusicSourceFromApi.parseUserDetail(Json.parseToJsonElement(
+            """{"code":0,"data":{"userId":"user-uuid","name":"User"}}""",
+        ))?.resourceId)
+        assertEquals("new-uuid", MusicSourceFromApi.parseCreatedPlaylistId(Json.parseToJsonElement(
+            """{"code":0,"data":{"id":"new-uuid"}}""",
+        )).getOrNull())
+        val track = trackSummaryOf(Json.parseToJsonElement(
+            """{"id":"t","title":"Track","artists":[{"id":"ar-hash","name":"Artist"}]}""",
+        ) as kotlinx.serialization.json.JsonObject, "t")
+        assertEquals("ar-hash", track.artists.single().resourceId)
+    }
 
     @Test
     fun `本地曲目必须命中已登记条目，裸路径不得伪装成功`() = runBlocking {

@@ -16,5 +16,6 @@ data class UserProfile(
     val follows: Int = 0,
     val followeds: Int = 0,
     val eventCount: Int = 0,
-    val playlistCount: Int = 0
+    val playlistCount: Int = 0,
+    val resourceId: String = userId.toString(),
 )

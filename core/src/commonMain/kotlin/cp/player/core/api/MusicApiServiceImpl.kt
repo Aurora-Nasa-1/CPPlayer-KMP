@@ -669,33 +669,7 @@ class MusicApiServiceImpl(
         else (json["code"] as? JsonPrimitive)?.intOrNull
 
     private fun extractUrl(body: JsonElement): String? {
-        if (body !is JsonObject) return null
-        (body["redirectUrl"] as? JsonPrimitive)?.contentOrNull?.let { if (it.startsWith("http")) return it }
-        return findUrlRecursive(body)
-    }
-
-    private fun findUrlRecursive(element: JsonElement?): String? {
-        if (element == null) return null
-        when (element) {
-            is JsonPrimitive -> {
-                val s = element.contentOrNull ?: return null
-                if (s.startsWith("http") && s.length > 12 && !s.contains("null")) return s
-            }
-            is JsonObject -> {
-                for (key in URL_KEYS) {
-                    val p = element[key]
-                    if (p is JsonPrimitive) {
-                        val s = p.contentOrNull
-                        if (s != null && s.startsWith("http") && s.length > 12 && !s.contains("null")) return s
-                    }
-                }
-                for ((_, v) in element) { findUrlRecursive(v)?.let { return it } }
-            }
-            is kotlinx.serialization.json.JsonArray -> {
-                for (e in element) { findUrlRecursive(e)?.let { return it } }
-            }
-        }
-        return null
+        return playbackUrlOf(body)
     }
 
     private fun typeToCode(type: String): String = when (type) {
@@ -712,7 +686,6 @@ class MusicApiServiceImpl(
     companion object {
         private val parser = Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
 
-        private val URL_KEYS = arrayOf("url", "picUrl", "coverImgUrl", "avatarUrl")
     }
 }
 

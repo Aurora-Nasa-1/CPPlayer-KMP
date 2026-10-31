@@ -41,9 +41,7 @@ internal fun trackSummaryOf(json: JsonObject, id: String): TrackSummary {
         ?: (albumObj?.get("cover") as? JsonPrimitive)?.contentOrNull
     val coverUrl = rootCover ?: albumCover
 
-    val rawDuration = ((json["dt"] ?: json["duration"] ?: json["durationMs"]) as? JsonPrimitive)?.longOrNull ?: 0L
-    // 若时长在 1..10000 范围，通常为秒（如 240s），自动换算为毫秒
-    val durationMs = if (rawDuration in 1..9999) rawDuration * 1000L else rawDuration
+    val durationMs = trackDurationMs(json)
 
     val trackTitle = (json["title"] as? JsonPrimitive)?.contentOrNull
         ?: (json["name"] as? JsonPrimitive)?.contentOrNull
@@ -77,6 +75,7 @@ private fun artistOf(element: JsonElement): ArtistSummary? {
         id = (obj["id"] as? JsonPrimitive)?.longOrNull?.takeIf { it > 0L } ?: 0L,
         name = name,
         avatarUrl = null,
+        resourceId = (obj["id"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
     )
 }
 
@@ -86,3 +85,15 @@ internal fun rawTrackId(json: JsonObject): String =
         ?: (json["songId"] as? JsonPrimitive)?.contentOrNull
         ?: (json["trackId"] as? JsonPrimitive)?.contentOrNull
         ?: ""
+
+/** Explicit units take precedence; only the historical ambiguous `duration` uses a heuristic. */
+internal fun trackDurationMs(json: JsonObject): Long {
+    for (key in listOf("durationMs", "dt")) {
+        (json[key] as? JsonPrimitive)?.longOrNull?.let { return it.coerceAtLeast(0L) }
+    }
+    (json["durationSeconds"] as? JsonPrimitive)?.longOrNull?.let {
+        return it.coerceIn(0L, Long.MAX_VALUE / 1000L) * 1000L
+    }
+    val legacy = (json["duration"] as? JsonPrimitive)?.longOrNull?.coerceAtLeast(0L) ?: 0L
+    return if (legacy in 1..9999) legacy * 1000L else legacy
+}

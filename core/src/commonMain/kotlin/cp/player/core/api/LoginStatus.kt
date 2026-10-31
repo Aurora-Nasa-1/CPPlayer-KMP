@@ -51,16 +51,17 @@ fun unwrapLoginStatusData(root: JsonElement?): JsonObject? {
  * @return uid；未登录或响应异常时返回 null
  */
 fun extractUidFromLoginStatus(status: JsonElement?): Long? {
+    return extractUserResourceId(status)?.toLongOrNull()
+}
+
+/** Canonical account ID; UUID/hash IDs must not be coerced to numbers. */
+fun extractUserResourceId(status: JsonElement?): String? {
     val data = unwrapLoginStatusData(status) ?: return null
     val account = data["account"] as? JsonObject
     val profile = (data["profile"] as? JsonObject) ?: account
-    return (account?.get("id") as? JsonPrimitive)?.longOrNull
-        ?: (profile?.get("userId") as? JsonPrimitive)?.longOrNull
-        ?: (profile?.get("id") as? JsonPrimitive)?.longOrNull
-        ?: (data["userId"] as? JsonPrimitive)?.longOrNull
-        ?: (data["userid"] as? JsonPrimitive)?.longOrNull
-        ?: (data["id"] as? JsonPrimitive)?.longOrNull
-        ?: (data["uid"] as? JsonPrimitive)?.longOrNull
+    return listOf(account?.get("id"), profile?.get("userId"), profile?.get("id"),
+        data["userId"], data["userid"], data["id"], data["uid"])
+        .firstNotNullOfOrNull { (it as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank) }
 }
 
 /**
@@ -68,7 +69,7 @@ fun extractUidFromLoginStatus(status: JsonElement?): Long? {
  *
  * ⚠️ 判据是**有没有 uid**，不是 code —— 见文件头第 2 条坑。
  */
-fun isLoggedInStatus(status: JsonElement?): Boolean = extractUidFromLoginStatus(status) != null
+fun isLoggedInStatus(status: JsonElement?): Boolean = extractUserResourceId(status) != null
 
 /**
  * 取 `login/status` 的业务码：优先顶层 `code`，缺失时下沉到 `data.code`（NCM 形状）。

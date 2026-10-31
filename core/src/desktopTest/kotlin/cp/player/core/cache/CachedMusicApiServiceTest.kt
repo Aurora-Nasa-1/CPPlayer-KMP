@@ -2,12 +2,16 @@ package cp.player.core.cache
 
 import cp.player.core.api.MusicApiMethod
 import cp.player.core.api.MusicApiService
+import cp.player.core.api.getPlaylistDetail
+import cp.player.core.api.addTracksToPlaylist
+import cp.player.core.api.search
 import cp.player.core.provider.BackendProvider
 import cp.player.core.provider.ProviderCookieStorage
 import cp.player.core.provider.ProviderManager
 import cp.player.core.util.SettingsStorage
 import cp.player.core.util.currentTimeMillis
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -17,6 +21,9 @@ import kotlinx.serialization.json.intOrNull
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * [CachedMusicApiService] 的读透行为。
@@ -98,12 +105,14 @@ class CachedMusicApiServiceTest {
         }
     }
 
-    private fun fakeProvider(id: String, payload: JsonElement): BackendProvider {
+    private fun fakeProvider(id: String, payload: JsonElement, settings: Map<String, String> = emptyMap()): BackendProvider {
         val iface = BackendProvider::class.java
         return java.lang.reflect.Proxy.newProxyInstance(iface.classLoader, arrayOf(iface)) { _, m, _ ->
             when (m.name) {
                 "getId" -> id
                 "getApiMap" -> emptyMap<String, String>()
+                "isReady" -> true
+                "getCustomSettings" -> settings
                 "callApi" -> payload.toString()
                 else -> null
             }
@@ -353,6 +362,7 @@ class CachedMusicApiServiceTest {
     @Test
     fun `preloadSong预热URL详情与歌词缓存`() = runBlocking {
         val f = Fixture()
+        f.next = Json.parseToJsonElement("""{"code":200,"url":"https://cdn.example/audio.flac"}""")
 
         f.api.preloadSong("123", "lossless")
         assertEquals(1, f.calls.count { it == "getSongUrl" })
@@ -367,6 +377,73 @@ class CachedMusicApiServiceTest {
         f.api.getLyric("123")
 
         assertEquals(callCountAfterPreload, f.calls.size)
+    }
+
+    @Test
+    fun `config changes isolate read through and streaming caches without leaking secrets`() = runBlocking {
+        val settings = mutableMapOf("serverUrl" to "https://nas-a.example", "token" to "secret-a")
+        val f = Fixture()
+        f.providerManager.switchProvider(fakeProvider("nas", ok("v1"), settings), save = false)
+        f.api.getPlaylistDetail("uuid")
+        f.api.getPlaylistDetail("uuid")
+        assertEquals(1, f.calls.size)
+        settings["serverUrl"] = "https://nas-b.example"
+        f.next = ok("new-server")
+        assertEquals("new-server", tagOf(f.api.getPlaylistDetail("uuid")))
+        assertEquals(2, f.calls.size)
+        val events = f.api.callApiCached(MusicApiMethod.PLAYLIST_DETAIL, mapOf("id" to "uuid")).toList()
+        assertEquals(2, events.size)
+        assertEquals("new-server", tagOf((events.first() as CacheResult.Cached).data))
+        val key = cacheKey("nas", "playlist/detail", mapOf("id" to "uuid"), providerConfig = settings)
+        assertFalse(key.contains("secret-a"))
+        settings["token"] = "secret-b"
+        assertNotEquals(key, cacheKey("nas", "playlist/detail", mapOf("id" to "uuid"), providerConfig = settings))
+    }
+
+    @Test
+    fun `opaque playlist writes invalidate cached string reads and numeric reads`() = runBlocking {
+        val f = Fixture()
+        f.api.getPlaylistDetail("uuid")
+        f.api.getPlaylistDetail(123L)
+        assertEquals(2, f.cache.size())
+        f.api.addTracksToPlaylist("uuid", listOf("song-hash"))
+        assertEquals(0, f.cache.size())
+        f.api.getPlaylistDetail("uuid")
+        assertEquals(4, f.calls.size)
+    }
+
+    @Test
+    fun `search page offsets are distinct cache keys`() = runBlocking {
+        val f = Fixture()
+        f.api.search("test", 1, 30, 0)
+        f.api.search("test", 1, 30, 0)
+        f.api.search("test", 1, 30, 30)
+        assertEquals(2, f.calls.size)
+    }
+
+    @Test
+    fun `expired audio urls never hit fresh cache or stale fallback`() = runBlocking {
+        val f = Fixture()
+        f.next = Json.parseToJsonElement("""{"code":200,"data":{"url":"https://cdn.example/expired.mp3","expireAt":1}}""")
+        f.api.getSongUrl("123", "standard")
+        f.next = err(500)
+        assertEquals(500, (f.api.getSongUrl("123", "standard") as JsonObject)["code"]?.let { (it as JsonPrimitive).intOrNull })
+        assertEquals(2, f.calls.size)
+        f.throwOnCall = RuntimeException("network down")
+        val thrown = assertFailsWith<RuntimeException> { f.api.getSongUrl("123", "standard") }
+        assertEquals("network down", thrown.message)
+    }
+
+    @Test
+    fun `streaming url errors do not offer cached playback as fallback`() = runBlocking {
+        val f = Fixture()
+        f.next = Json.parseToJsonElement("""{"code":0,"data":{"url":"https://cdn.example/audio.mp3","expi":60}}""")
+        val params = mapOf("id" to "123", "level" to "standard")
+        f.api.callApiCached(MusicApiMethod.SONG_URL_V1_302, params).toList()
+        f.throwOnCall = RuntimeException("network down")
+        val results = f.api.callApiCached(MusicApiMethod.SONG_URL_V1_302, params).toList()
+        assertTrue(results.first() is CacheResult.Cached)
+        assertEquals(null, (results.last() as CacheResult.Error).fallback)
     }
 }
 

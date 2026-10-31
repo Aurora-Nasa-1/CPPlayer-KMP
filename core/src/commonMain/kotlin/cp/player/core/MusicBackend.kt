@@ -371,6 +371,14 @@ class MusicBackend private constructor(
             // 桌面是空实现；Android 上是真实投放，但**所有渠道默认关闭**，
             // 只有用户在设置页显式打开后才会对外写数据。
             lyricPusher = lyricPusherLazy.value,
+            cacheNamespace = {
+                val provider = activeProvider()
+                cp.player.core.cache.cacheKey(
+                    providerId = provider?.id.orEmpty(), method = "stream", params = emptyMap(),
+                    cookie = provider?.let { providerManager.cookieStorage.getCookie(it.id) },
+                    providerConfig = provider?.getCustomSettings().orEmpty(),
+                )
+            },
         )
     }
 
@@ -849,6 +857,14 @@ class MusicBackend private constructor(
             replacedId?.let { pluginRepositories.forgetInstall("provider:$it") }
         }
 
+        if (details.pendingRestart) {
+            return ImportResult.PendingRestart(
+                providerId = provider.id,
+                providerName = provider.name,
+                message = "音源正在使用中，已保存更新包，重启应用后自动生效"
+            )
+        }
+
         val active = activeProvider()
         val shouldActivate = active == null ||
             !active.isReady() ||
@@ -880,6 +896,14 @@ class MusicBackend private constructor(
         backendScope.launch {
             pluginRepositories.forgetInstall("provider:${provider.id}")
             replacedId?.let { pluginRepositories.forgetInstall("provider:$it") }
+        }
+
+        if (details.pendingRestart) {
+            return ImportResult.PendingRestart(
+                providerId = provider.id,
+                providerName = provider.name,
+                message = "音源正在使用中，已保存更新包，重启应用后自动生效"
+            )
         }
 
         val active = activeProvider()
@@ -948,6 +972,9 @@ class MusicBackend private constructor(
 
     /** 所有已加载 Provider 的快照。 */
     fun getAvailableProviders(): List<BackendProvider> = moduleManager.getAvailableProviders()
+
+    /** 检查指定 Provider 是否有已暂存、等待重启生效的更新包。 */
+    fun hasPendingUpdate(providerId: String): Boolean = moduleManager.hasPendingRepositoryUpdate(providerId)
 
     /** 最近一次加载/导入错误（用于详细诊断）。 */
     val lastLoadError: String? get() = moduleManager.lastLoadError

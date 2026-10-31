@@ -3,6 +3,14 @@ package cp.player.core.music
 import cp.player.core.BackendResult
 import cp.player.core.api.ApiResponseCodes
 import cp.player.core.api.MusicApiService
+import cp.player.core.api.getPlaylistDetail
+import cp.player.core.api.getPlaylistTracks
+import cp.player.core.api.getUserPlaylists
+import cp.player.core.api.getAlbumDetail
+import cp.player.core.api.getArtistSongs
+import cp.player.core.api.getArtistTopSong
+import cp.player.core.api.getArtistAlbums
+import cp.player.core.api.search
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -227,7 +235,7 @@ object MusicSourceFromApi {
                 ?: (this["data"] as? JsonObject)?.get("playlists")
                 ?: (this["data"] as? JsonArray)) as? JsonArray
                 ?: JsonArray(emptyList())
-            array.mapNotNull { (it as? JsonObject)?.toPlaylistSummary()?.takeIf { playlist -> playlist.id != 0L && playlist.name.isNotBlank() } }
+            array.mapNotNull { (it as? JsonObject)?.toPlaylistSummary()?.takeIf { playlist -> playlist.resourceId.isNotBlank() && playlist.name.isNotBlank() } }
         }
     }
 
@@ -268,16 +276,26 @@ object MusicSourceFromApi {
                 ?: (if (type == 1000) (this["data"] as? JsonArray) else null)
                 ?: JsonArray(emptyList()))
                 .map { it.jsonObject.toPlaylistSummary() }
-                .filter { it.id != 0L }
+                .filter { it.resourceId.isNotBlank() }
             val artists = (result["artists"] as? JsonArray
                 ?: (if (type == 100) (this["data"] as? JsonArray) else null)
                 ?: JsonArray(emptyList()))
                 .map { it.jsonObject.toArtistSummary() }
-                .filter { it.id != 0L }
+                .filter { it.resourceId.isNotBlank() }
             // 专辑搜索的关键修复点：上游字段是 `albums`。旧实现只认 `playlists`，
             // 于是「专辑」页签永远拿到 0 条。
             val albums = parseAlbumArray(result, "albums", if (type == 10) "data" else "")
-            SearchResult(songs = songs, playlists = playlists, artists = artists, albums = albums)
+            val countKey = when (type) {
+                1000 -> "playlistCount"
+                100 -> "artistCount"
+                10 -> "albumCount"
+                else -> "songCount"
+            }
+            SearchResult(
+                songs = songs, playlists = playlists, artists = artists, albums = albums,
+                total = ((result["total"] ?: result[countKey]) as? JsonPrimitive)?.longOrNull,
+                hasMore = ((result["hasMore"] ?: result["more"]) as? JsonPrimitive)?.booleanOrNull,
+            )
         }
     }
 
@@ -321,10 +339,12 @@ object MusicSourceFromApi {
             val tracks = array.mapNotNull { el ->
                 (el as? JsonObject)?.toTrackSummary()?.takeIf { it.id.isNotBlank() }
             }
-            val hasMore = ((this["more"] as? JsonPrimitive)?.booleanOrNull)
+            val data = this["data"] as? JsonObject
+            val hasMore = ((data?.get("hasMore") as? JsonPrimitive)?.booleanOrNull)
+                ?: (data?.get("more") as? JsonPrimitive)?.booleanOrNull
                 ?: (this["hasMore"] as? JsonPrimitive)?.booleanOrNull
-                ?: false
-            PlaylistTracksPage(tracks = tracks, hasMore = hasMore)
+                ?: (this["more"] as? JsonPrimitive)?.booleanOrNull
+            PlaylistTracksPage(tracks = tracks, hasMore = hasMore ?: false, paginationSpecified = hasMore != null)
         }
     }
 
@@ -354,6 +374,12 @@ object MusicSourceFromApi {
             ((this["id"] ?: (this["playlist"] as? JsonObject)?.get("id")) as? JsonPrimitive)?.longOrNull
                 ?: error("响应中没有新歌单 id")
         }
+    }
+
+    fun parseCreatedPlaylistId(json: JsonElement): MusicResult<String> = json.toMusicResult {
+        ((this["id"] ?: (this["playlist"] as? JsonObject)?.get("id")
+            ?: (this["data"] as? JsonObject)?.get("id")) as? JsonPrimitive)?.contentOrNull
+            ?.takeIf { it.isNotBlank() } ?: error("Missing playlist id")
     }
 
     // ============ 歌曲详情（信息弹窗） ============
@@ -400,9 +426,11 @@ object MusicSourceFromApi {
                 ?: (albumObj?.get("title") as? JsonPrimitive)?.contentOrNull
                 ?: (first["album"] as? JsonPrimitive)?.contentOrNull
                 ?: fallback?.album ?: ""
-            val rawDuration = ((first["dt"] ?: first["duration"] ?: first["durationMs"]) as? JsonPrimitive)?.longOrNull
-                ?: fallback?.durationMs ?: 0L
-            val durationMs = if (rawDuration in 1..9999) rawDuration * 1000L else rawDuration
+            val durationMs = if (listOf("durationMs", "dt", "durationSeconds", "duration").any {
+                (first[it] as? JsonPrimitive)?.longOrNull != null
+            }) {
+                trackDurationMs(first)
+            } else fallback?.durationMs ?: 0L
             val publishTime = ((first["publishTime"] ?: first["publishDate"] ?: first["releaseDate"]) as? JsonPrimitive)
                 ?.longOrNull?.takeIf { it > 0 }
             val commentCount = ((first["commentCount"] ?: first["comments"]) as? JsonPrimitive)
@@ -520,9 +548,9 @@ object MusicSourceFromApi {
                 val obj = el as? JsonObject ?: return@mapNotNull null
                 val name = (obj["name"] as? JsonPrimitive)?.contentOrNull
                     ?: (obj["title"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
-                val id = (obj["id"] as? JsonPrimitive)?.longOrNull ?: return@mapNotNull null
+                val resourceId = (obj["id"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
                 RankingSummary(
-                    id = id,
+                    id = resourceId.toLongOrNull() ?: 0L,
                     name = name,
                     coverUrl = (obj["coverUrl"] as? JsonPrimitive)?.contentOrNull
                         ?: (obj["cover"] as? JsonPrimitive)?.contentOrNull
@@ -530,8 +558,9 @@ object MusicSourceFromApi {
                         ?: (obj["picUrl"] as? JsonPrimitive)?.contentOrNull,
                     updateFrequency = (obj["updateFrequency"] as? JsonPrimitive)?.contentOrNull,
                     trackCount = (obj["trackCount"] as? JsonPrimitive)?.intOrNull ?: 0,
+                    resourceId = resourceId,
                 )
-            }.filter { it.id != 0L && it.name.isNotBlank() }
+            }.filter { it.resourceId.isNotBlank() && it.name.isNotBlank() }
         }
     }
 
@@ -579,12 +608,12 @@ object MusicSourceFromApi {
             val obj = el as? JsonObject ?: return@mapNotNull null
             val name = (obj["name"] as? JsonPrimitive)?.contentOrNull
                 ?: (obj["title"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
-            val id = (obj["id"] as? JsonPrimitive)?.longOrNull ?: return@mapNotNull null
+            val resourceId = (obj["id"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
             // `artist` 是单对象（新碟 / 歌手专辑），`artists` 是数组（专辑详情 / 部分搜索返回）。
             val artist = obj["artist"] as? JsonObject
             val firstArtist = (obj["artists"] as? JsonArray)?.firstOrNull() as? JsonObject
             AlbumSummary(
-                id = id,
+                id = resourceId.toLongOrNull() ?: 0L,
                 name = name,
                 coverUrl = (obj["coverUrl"] as? JsonPrimitive)?.contentOrNull
                     ?: (obj["cover"] as? JsonPrimitive)?.contentOrNull
@@ -600,8 +629,10 @@ object MusicSourceFromApi {
                     ?: (obj["publishDate"] as? JsonPrimitive)?.longOrNull,
                 artistId = (artist?.get("id") as? JsonPrimitive)?.longOrNull
                     ?: (firstArtist?.get("id") as? JsonPrimitive)?.longOrNull,
+                resourceId = resourceId,
+                artistResourceId = ((artist?.get("id") ?: firstArtist?.get("id")) as? JsonPrimitive)?.contentOrNull,
             )
-        }.filter { it.id != 0L && it.name.isNotBlank() }
+        }.filter { it.resourceId.isNotBlank() && it.name.isNotBlank() }
     }
 
     // ============ 专辑详情 ============
@@ -646,6 +677,8 @@ object MusicSourceFromApi {
                     ?: (album["briefDesc"] as? JsonPrimitive)?.contentOrNull
                     ?: (album["desc"] as? JsonPrimitive)?.contentOrNull,
                 tracks = tracks,
+                resourceId = (album["id"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
+                artistResourceId = (artist?.get("id") as? JsonPrimitive)?.contentOrNull,
             )
         }
     }
@@ -663,10 +696,9 @@ object MusicSourceFromApi {
         val root = json as? JsonObject ?: return null
         val data = (root["data"] as? JsonObject) ?: root
         val artist = (data["artist"] as? JsonObject) ?: data
-        val id = (artist["id"] as? JsonPrimitive)?.longOrNull
-            ?: (artist["artistId"] as? JsonPrimitive)?.longOrNull
-            ?: (artist["id"] as? JsonPrimitive)?.contentOrNull?.toLongOrNull()
-            ?: return null
+        if (!isSuccess(root)) return null
+        val resourceId = ((artist["id"] ?: artist["artistId"]) as? JsonPrimitive)?.contentOrNull
+            ?.takeIf { it.isNotBlank() } ?: return null
         val name = (artist["name"] as? JsonPrimitive)?.contentOrNull
             ?: (artist["title"] as? JsonPrimitive)?.contentOrNull
             ?: return null
@@ -675,7 +707,8 @@ object MusicSourceFromApi {
             .orEmpty()
         val user = (data["user"] as? JsonObject) ?: (artist["user"] as? JsonObject)
         return ArtistProfile(
-            id = id,
+            id = resourceId.toLongOrNull() ?: 0L,
+            resourceId = resourceId,
             name = name,
             avatarUrl = (artist["coverUrl"] as? JsonPrimitive)?.contentOrNull
                 ?: (artist["cover"] as? JsonPrimitive)?.contentOrNull
@@ -712,6 +745,19 @@ object MusicSourceFromApi {
 
     // ============ 用户资料 ============
 
+    fun parseLikedTrackIds(json: JsonElement): MusicResult<Set<String>> = json.toMusicResult {
+        val data = this["data"]
+        val array = (this["ids"] as? JsonArray)
+            ?: ((data as? JsonObject)?.get("ids") as? JsonArray)
+            ?: ((data as? JsonObject)?.get("trackIds") as? JsonArray)
+            ?: (data as? JsonArray)
+            ?: error("响应中没有收藏 ID 数组")
+        array.mapNotNull { item ->
+            (item as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank)
+                ?: ((item as? JsonObject)?.get("id") as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank)
+        }.toSet()
+    }
+
     /**
      * 解析用户资料（`user/detail`）：根键 `profile`。
      *
@@ -723,12 +769,12 @@ object MusicSourceFromApi {
             ?: (root["data"] as? JsonObject)?.get("profile") as? JsonObject
             ?: (root["data"] as? JsonObject)
             ?: root
-        val uid = (profile["userId"] as? JsonPrimitive)?.longOrNull
-            ?: (profile["id"] as? JsonPrimitive)?.longOrNull
-            ?: (profile["uid"] as? JsonPrimitive)?.longOrNull
-            ?: return null
+        if (!isSuccess(root)) return null
+        val uid = ((profile["userId"] ?: profile["id"] ?: profile["uid"]) as? JsonPrimitive)?.contentOrNull
+            ?.takeIf { it.isNotBlank() } ?: return null
         return cp.player.core.model.UserProfile(
-            userId = uid,
+            userId = uid.toLongOrNull() ?: 0L,
+            resourceId = uid,
             nickname = (profile["nickname"] as? JsonPrimitive)?.contentOrNull
                 ?: (profile["name"] as? JsonPrimitive)?.contentOrNull
                 ?: (profile["userName"] as? JsonPrimitive)?.contentOrNull ?: "",
@@ -784,19 +830,19 @@ object MusicSourceFromApi {
             array.mapNotNull { el ->
                 val obj = el as? JsonObject ?: return@mapNotNull null
                 // 上游在这两个端点用 `userId`；某些 Provider 会退化成 `id`。
-                val id = (obj["userId"] as? JsonPrimitive)?.longOrNull
-                    ?: (obj["id"] as? JsonPrimitive)?.longOrNull
-                    ?: return@mapNotNull null
+                val id = ((obj["userId"] ?: obj["id"]) as? JsonPrimitive)?.contentOrNull
+                    ?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
                 val name = (obj["nickname"] as? JsonPrimitive)?.contentOrNull
                     ?: (obj["name"] as? JsonPrimitive)?.contentOrNull
                     ?: return@mapNotNull null
                 ArtistSummary(
-                    id = id,
+                    id = id.toLongOrNull() ?: 0L,
+                    resourceId = id,
                     name = name,
                     avatarUrl = (obj["avatarUrl"] as? JsonPrimitive)?.contentOrNull
                         ?: (obj["picUrl"] as? JsonPrimitive)?.contentOrNull,
                 )
-            }.filter { it.id != 0L && it.name.isNotBlank() }
+            }.filter { it.resourceId.isNotBlank() && it.name.isNotBlank() }
         }
     }
 
@@ -818,15 +864,16 @@ object MusicSourceFromApi {
             array.mapNotNull { el ->
                 val obj = el as? JsonObject ?: return@mapNotNull null
                 val name = (obj["name"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
-                val id = (obj["id"] as? JsonPrimitive)?.longOrNull ?: return@mapNotNull null
+                val id = (obj["id"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
                 ArtistSummary(
-                    id = id,
+                    id = id.toLongOrNull() ?: 0L,
+                    resourceId = id,
                     name = name,
                     avatarUrl = (obj["picUrl"] as? JsonPrimitive)?.contentOrNull
                         ?: (obj["img1v1Url"] as? JsonPrimitive)?.contentOrNull
                         ?: (obj["avatarUrl"] as? JsonPrimitive)?.contentOrNull,
                 )
-            }.filter { it.id != 0L && it.name.isNotBlank() }
+            }.filter { it.resourceId.isNotBlank() && it.name.isNotBlank() }
         }
     }
 
@@ -848,6 +895,7 @@ object MusicSourceFromApi {
                 ?: (creator?.get("name") as? JsonPrimitive)?.contentOrNull
                 ?: (this["creator"] as? JsonPrimitive)?.contentOrNull
                 ?: (this["author"] as? JsonPrimitive)?.contentOrNull,
+            resourceId = (this["id"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
         )
     }
 
@@ -862,10 +910,34 @@ object MusicSourceFromApi {
                 ?: (this["avatar"] as? JsonPrimitive)?.contentOrNull
                 ?: (this["picUrl"] as? JsonPrimitive)?.contentOrNull
                 ?: (this["img1v1Url"] as? JsonPrimitive)?.contentOrNull,
+            resourceId = (this["id"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
         )
     }
 
     // ============ 便捷调用封装 ============
+
+    suspend fun getPlaylistDetail(api: MusicApiService, id: String): MusicResult<PlaylistDetail> =
+        parsePlaylistDetail(api.getPlaylistDetail(id))
+
+    suspend fun getPlaylistTracks(api: MusicApiService, id: String, limit: Int = 300, offset: Int = 0): MusicResult<PlaylistTracksPage> =
+        parsePlaylistTracks(api.getPlaylistTracks(id, limit, offset))
+
+    suspend fun getUserPlaylists(api: MusicApiService, uid: String): MusicResult<List<PlaylistSummary>> =
+        parseUserPlaylists(api.getUserPlaylists(uid))
+
+    suspend fun getAlbumDetail(api: MusicApiService, id: String): MusicResult<AlbumDetail> =
+        parseAlbumDetail(api.getAlbumDetail(id))
+
+    suspend fun getArtistAlbums(api: MusicApiService, id: String, limit: Int = 50): MusicResult<List<AlbumSummary>> =
+        parseArtistAlbums(api.getArtistAlbums(id, limit))
+
+    suspend fun getArtistTopSongs(api: MusicApiService, id: String): MusicResult<List<TrackSummary>> {
+        val top = parseArtistSongs(api.getArtistTopSong(id))
+        return if (top is BackendResult.Unsupported) parseArtistSongs(api.getArtistSongs(id, 50)) else top
+    }
+
+    suspend fun search(api: MusicApiService, keywords: String, type: Int, limit: Int, offset: Int): MusicResult<SearchResult> =
+        parseSearchSongs(api.search(keywords, type, limit, offset), type)
 
     /** 用 [api] 调用 + 直接解析的封装。 */
     suspend fun getPlaylistDetail(api: MusicApiService, id: Long): MusicResult<PlaylistDetail> =
@@ -918,8 +990,10 @@ object MusicSourceFromApi {
         parseAlbumDetail(api.getAlbumDetail(id))
 
     /** 歌手热门歌曲（`artist/top/song`，恒返回最多 50 首）。 */
-    suspend fun getArtistTopSongs(api: MusicApiService, id: Long): MusicResult<List<TrackSummary>> =
-        parseArtistSongs(api.getArtistTopSong(id))
+    suspend fun getArtistTopSongs(api: MusicApiService, id: Long): MusicResult<List<TrackSummary>> {
+        val top = parseArtistSongs(api.getArtistTopSong(id))
+        return if (top is BackendResult.Unsupported) parseArtistSongs(api.getArtistSongs(id, 50)) else top
+    }
 
     /** 歌手歌曲全量（按热度，`artist/songs`）。 */
     suspend fun getArtistSongs(api: MusicApiService, id: Long, limit: Int = 100): MusicResult<List<TrackSummary>> =

@@ -91,6 +91,9 @@ interface MusicApiService {
     suspend fun getWebviewLoginUrl(): JsonElement =
         callApi(MusicApiMethod.AUTH_WEBVIEW_URL)
 
+    suspend fun checkWebviewLogin(sessionId: String): JsonElement =
+        callApi(MusicApiMethod.AUTH_WEBVIEW_CHECK, mapOf("sessionId" to sessionId))
+
     /**
      * 获取安全风控 / 人机核验 / 验证码跳转网址。
      *

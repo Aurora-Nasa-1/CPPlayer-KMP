@@ -3,7 +3,8 @@ package cp.player.core.playback
 import cp.player.core.api.AmllTtmlClient
 import cp.player.core.api.LyricsSourceMode
 import cp.player.core.api.MusicApiService
-import cp.player.core.api.extractUidFromLoginStatus
+import cp.player.core.api.extractUserResourceId
+import cp.player.core.api.getLikeList
 import cp.player.core.music.TrackSummary
 import cp.player.core.music.UnifiedMusicSource
 import cp.player.core.lyrics.SmartKaraokeLrcSynthesizer
@@ -119,6 +120,7 @@ class PlaybackControllerImpl(
      * 影响播放本身。
      */
     private val lyricPusher: cp.player.core.lyricpush.LyricPusher? = null,
+    private val cacheNamespace: () -> String = { "" },
 ) : PlaybackController {
 
     private val _state = MutableStateFlow(PlaybackUiState())
@@ -917,18 +919,27 @@ class PlaybackControllerImpl(
         gen: Int,
         /** 曲目信息，落盘成功时随缓存一起登记，供管理页显示歌名 / 歌手。 */
         meta: SongCacheMeta?,
+        namespace: String,
     ) {
         localizeJob?.cancel()
         updateState { it.copy(isLocalizing = true) }
         localizeJob = scope.launch {
+            if (loadGeneration != gen) return@launch
+            if (cacheNamespaceOf(mediaId) != namespace) {
+                updateState { it.copy(isLocalizing = false) }
+                return@launch
+            }
             val path = streamLocalizer.localize(url, cacheKey, headers, meta)
             // 期间用户可能已经切歌：结果只能落到它自己那一首头上。
             if (loadGeneration != gen) return@launch
-            if (path != null) localized = mediaId to path
+            if (path != null && cacheNamespaceOf(mediaId) == namespace) localized = mediaId to path
             // 成败都要收回提示：失败时本曲就是「能播但不能拖」，不能一直挂着「缓存中」。
             updateState { it.copy(isLocalizing = false) }
         }
     }
+
+    private fun cacheNamespaceOf(mediaId: String): String =
+        if (mediaId.startsWith("local://")) "" else cacheNamespace()
 
     /**
      * 把引擎从「放流」切到「放本地副本」，并落到 [target]。
@@ -1107,7 +1118,7 @@ class PlaybackControllerImpl(
         runCatching {
             // login/status 的解包/取 uid 收敛在 core.api.LoginStatus（唯一入口）——
             // 这里此前自己抄了一份，且只读 account.id，漏了 profile.userId 的回退。
-            val uid = extractUidFromLoginStatus(api.getLoginStatus())
+            val uid = extractUserResourceId(api.getLoginStatus())
             if (uid == null) {
                 // 未登录/登出：清空收藏集合
                 _likedIds.value = emptySet()
@@ -1115,11 +1126,7 @@ class PlaybackControllerImpl(
                 return@runCatching
             }
             val likeJson = api.getLikeList(uid)
-            val likeRoot = (likeJson as? kotlinx.serialization.json.JsonObject) ?: return@runCatching
-            val ids = ((likeRoot["ids"] ?: likeRoot["data"] ?: (likeRoot["data"] as? kotlinx.serialization.json.JsonObject)?.get("ids"))
-                    as? kotlinx.serialization.json.JsonArray)
-                ?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
-                ?.toSet()
+            val ids = cp.player.core.music.MusicSourceFromApi.parseLikedTrackIds(likeJson).getOrNull()
                 ?: return@runCatching
             _likedIds.value = ids
             favoritesLoaded = true
@@ -1193,8 +1200,12 @@ class PlaybackControllerImpl(
             if (nextIndex == _index) return@launch
             val nextEntry = _queue.getOrNull(nextIndex) ?: return@launch
             val nextMediaId = nextEntry.mediaId
-            val cacheKey = cacheKeyOf(nextMediaId, qualityLevel)
-            if (preloadedKey == cacheKey) return@launch
+            val requestedLevel = qualityLevel
+            val namespace = cacheNamespaceOf(nextMediaId)
+            val requestKey = cacheKeyOf(nextMediaId, requestedLevel, namespace)
+            fun isCurrentRequest() = loadGeneration == currentGen &&
+                qualityLevel == requestedLevel && cacheNamespaceOf(nextMediaId) == namespace
+            if (preloadedKey == requestKey) return@launch
 
             // 1. 确保 TrackSummary 就绪
             if (nextEntry.summary == null) {
@@ -1203,7 +1214,7 @@ class PlaybackControllerImpl(
             val summary = nextEntry.summary
                 ?: source.getTrackDetail(nextMediaId).getOrNull()?.also { nextEntry.summary = it }
 
-            if (loadGeneration != currentGen) return@launch
+            if (!isCurrentRequest()) return@launch
 
             // 2. 预热歌词
             runCatching {
@@ -1211,12 +1222,15 @@ class PlaybackControllerImpl(
                 fetchLyricsFor(parsedId, nextEntry)
             }
 
-            if (loadGeneration != currentGen) return@launch
+            if (!isCurrentRequest()) return@launch
 
             // 3. 预加载播放地址（写入 CachedMusicApiService 缓存）
-            val urlResult = source.preloadTrack(nextMediaId, level = qualityLevel)
+            val urlResult = source.preloadTrack(nextMediaId, level = requestedLevel)
+            if (!isCurrentRequest()) return@launch
             val songUrl = urlResult.getOrNull() ?: return@launch
             if (songUrl.url.isBlank()) return@launch
+            val actualLevel = songUrl.level.ifBlank { requestedLevel }
+            val cacheKey = cacheKeyOf(nextMediaId, actualLevel, namespace)
 
             val headers = buildMap {
                 songUrl.headers?.let { putAll(it) }
@@ -1226,10 +1240,10 @@ class PlaybackControllerImpl(
                 }
             }
 
-            if (loadGeneration != currentGen) return@launch
+            if (!isCurrentRequest()) return@launch
 
             // 4. 无损档位预落盘
-            val localizing = streamLocalizer.isLocalizing(qualityLevel)
+            val localizing = streamLocalizer.isLocalizing(actualLevel)
             if (localizing && streamLocalizer.cachedPath(cacheKey) == null) {
                 val meta = summary?.let { SongCacheMeta(title = it.name, artist = it.artist) }
                 streamLocalizer.preload(
@@ -1240,8 +1254,8 @@ class PlaybackControllerImpl(
                 )
             }
 
-            if (loadGeneration == currentGen) {
-                preloadedKey = cacheKey
+            if (isCurrentRequest()) {
+                preloadedKey = requestKey
             }
         }
     }
@@ -1809,8 +1823,11 @@ class PlaybackControllerImpl(
             fun emit(u: PlaybackUiState) { if (loadGeneration == gen) updateState { u } }
 
             val mediaId = entry.mediaId
+            val requestedLevel = qualityLevel
+            val namespace = cacheNamespaceOf(mediaId)
             if (entry.summary == null) resolveEntry(_index)
             val summary = entry.summary ?: source.getTrackDetail(mediaId).getOrNull()?.also { entry.summary = it }
+            if (restartIfSourceChanged(mediaId, namespace, gen)) return@launch
             val currentLyrics = _state.value.lyrics
             // 「同一首」只能由**播放身份**判定，不能用 `TrackSummary.id` 等值比较。
             //
@@ -1873,7 +1890,8 @@ class PlaybackControllerImpl(
             emit(_state.value.copy(
                 isFavorite = resourceId != null && resourceId in _likedIds.value,
             ))
-            val urlResult = source.getSongUrl(mediaId, level = qualityLevel)
+            val urlResult = source.getSongUrl(mediaId, level = requestedLevel)
+            if (restartIfSourceChanged(mediaId, namespace, gen)) return@launch
             val songUrl = urlResult.getOrNull()
             if (songUrl == null || songUrl.url.isBlank()) {
                 // 解析不出播放地址：同样清掉暂存 seek，避免位置被永久冻住。
@@ -1888,7 +1906,7 @@ class PlaybackControllerImpl(
                 ))
                 return@launch
             }
-            val actualLevel = songUrl.level.ifBlank { qualityLevel }
+            val actualLevel = songUrl.level.ifBlank { requestedLevel }
             val resolvedFormat = AudioFormatInfo(
                 codecName = songUrl.codec?.uppercase() ?: when (actualLevel) {
                     "lossless", "hires", "jymaster" -> "FLAC"
@@ -1938,8 +1956,8 @@ class PlaybackControllerImpl(
             // 无损档位最终必须播**本地文件**，引擎才定位得动（桌面 rodio 无法定位
             // FLAC over HTTP，见 [StreamLocalizer]）。但**绝不等整曲下完才开播**：
             // 命中缓存就直接播本地；未命中就先用流立刻开播，落盘丢到后台并行做。
-            val cacheKey = cacheKeyOf(mediaId, qualityLevel)
-            val localizing = streamLocalizer.isLocalizing(qualityLevel)
+            val cacheKey = cacheKeyOf(mediaId, actualLevel, namespace)
+            val localizing = streamLocalizer.isLocalizing(actualLevel)
             val cachedLocal = if (localizing) streamLocalizer.cachedPath(cacheKey) else null
             // 换曲即作废上一首的后台落盘与「可切本地」状态，避免串曲。
             localizeJob?.cancel()
@@ -1964,14 +1982,14 @@ class PlaybackControllerImpl(
                 // 守卫之外的 load()/play() 在「清空队列 / 换队列」后仍会落地 ——
                 // 表现为队列已空、音乐却照常响起，后续副作用（engineReady / 落盘 /
                 // 预加载）还全部执行在已清空的队列上。
-                if (loadGeneration != gen) return@launch
+                if (restartIfSourceChanged(mediaId, namespace, gen)) return@launch
                 platform.load(
                     cachedLocal ?: songUrl.url,
                     startPositionMs = startAt,
                     headers = headers,
                     metadata = metadata,
                 )
-                if (loadGeneration != gen) return@launch
+                if (restartIfSourceChanged(mediaId, namespace, gen)) return@launch
                 engineReady = true
                 // load 途中又拖了一次：此时引擎已装上本曲，补发即可生效。
                 consumeDeferredSeek(mediaId)?.let { platform.seekTo(it) }
@@ -1993,6 +2011,7 @@ class PlaybackControllerImpl(
                         gen = gen,
                         // 管理页要显示的是「哪首歌占了磁盘」，这里正好握着 TrackSummary。
                         meta = SongCacheMeta(title = summary.name, artist = summary.artist),
+                        namespace = namespace,
                     )
                 }
                 // 歌词已在上面（emit 之后）发起，这里不再补发 —— 重复调用会取消刚起的那一轮，
@@ -2001,10 +2020,11 @@ class PlaybackControllerImpl(
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Throwable) {
+                if (restartIfSourceChanged(mediaId, namespace, gen)) return@launch
                 val msg = e.message ?: e.javaClass.simpleName
                 // 播放失败 → 自动降级到 standard 音质重试一次（JavaFX/格式问题/网络等均适用）
-                if (qualityLevel != "standard") {
-                    val retried = retryWithStandardQuality(mediaId, gen)
+                if (actualLevel != "standard") {
+                    val retried = retryWithStandardQuality(mediaId, gen, namespace)
                     if (retried) return@launch
                 }
                 // 播放彻底失败：清掉暂存 seek，别把进度条冻在乐观值上。
@@ -2019,12 +2039,22 @@ class PlaybackControllerImpl(
     }
 
     /**
-     * 磁盘流缓存的稳定键：`<mediaId>@<音质>`。
+     * 磁盘流缓存的稳定键：`<mediaId>@<实际音质>#<音源与账号配置摘要>`。
      *
      * 不含 URL，因为 CDN 的鉴权参数会过期换新；音质必须进键，
      * 否则切换音质后会命中另一音质的缓存字节，直接串音。
      */
-    private fun cacheKeyOf(mediaId: String, level: String): String = "$mediaId@$level"
+    private fun cacheKeyOf(mediaId: String, level: String, namespace: String = cacheNamespaceOf(mediaId)): String {
+        return "$mediaId@$level" + if (namespace.isEmpty()) "" else "#${cp.player.core.cache.stableHash64(namespace)}"
+    }
+
+    /** 配置或账号在挂起期间变更时重新解析，旧响应不能用新账号的 Cookie 或缓存身份。 */
+    private suspend fun restartIfSourceChanged(mediaId: String, namespace: String, gen: Int): Boolean {
+        if (loadGeneration != gen) return true
+        if (cacheNamespaceOf(mediaId) == namespace) return false
+        playCurrent()
+        return true
+    }
 
     /**
      * 格式不支持时降级到 standard 音质重试。成功返回 true。
@@ -2032,11 +2062,13 @@ class PlaybackControllerImpl(
      * @param gen 发起降级那次 [playCurrent] 的加载世代。期间若已开始新的导航，
      *   本次重试的结果必须作废 —— 否则旧曲会覆盖新曲的装载、还把 engineReady 掰回去。
      */
-    private suspend fun retryWithStandardQuality(mediaId: String, gen: Int): Boolean {
+    private suspend fun retryWithStandardQuality(mediaId: String, gen: Int, namespace: String): Boolean {
         updateState { it.copy(error = "音质降级中…") }
         return try {
-            if (loadGeneration != gen) return true // 已被新导航接管：静默收场，别再报错
-            val fallback = source.getSongUrl(mediaId, level = "standard").getOrNull() ?: return false
+            if (restartIfSourceChanged(mediaId, namespace, gen)) return true
+            val result = source.getSongUrl(mediaId, level = "standard")
+            if (restartIfSourceChanged(mediaId, namespace, gen)) return true
+            val fallback = result.getOrNull() ?: return false
             if (fallback.url.isBlank()) return false
             val fallbackFormat = AudioFormatInfo(
                 codecName = fallback.codec?.uppercase() ?: "MP3",
@@ -2050,7 +2082,7 @@ class PlaybackControllerImpl(
                 if (!containsKey("Cookie")) cookieProvider()?.takeIf { it.isNotBlank() }?.let { put("Cookie", it) }
             }
             val summary = _queue.getOrNull(_index)?.summary
-            if (loadGeneration != gen) return true
+            if (restartIfSourceChanged(mediaId, namespace, gen)) return true
             platform.load(
                 fallback.url,
                 startPositionMs = 0L,
@@ -2064,11 +2096,11 @@ class PlaybackControllerImpl(
                         coverUrl = it.coverUrl,
                         durationMs = it.durationMs,
                         // 降级后音质变了，缓存键必须跟着变，否则会命中原音质的缓存字节。
-                        cacheKey = cacheKeyOf(mediaId, "standard"),
+                        cacheKey = cacheKeyOf(mediaId, fallback.level.ifBlank { "standard" }, namespace),
                     )
                 },
             )
-            if (loadGeneration != gen) return true
+            if (restartIfSourceChanged(mediaId, namespace, gen)) return true
             // 降级装载完成：引擎已装上本曲，此后 seek 可以直接下发。
             engineReady = true
             platform.play()

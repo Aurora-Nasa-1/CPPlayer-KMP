@@ -39,6 +39,8 @@ class AuthRepository(private val api: MusicApiService) {
     /** 获取 WebView / 网页端登录入口 URL */
     suspend fun getWebviewLoginUrl(): JsonElement = api.getWebviewLoginUrl()
 
+    suspend fun checkWebviewLogin(sessionId: String): JsonElement = api.checkWebviewLogin(sessionId)
+
     /** 获取安全人机验证 / 验证码跳转网址 */
     suspend fun getVerifyUrl(phone: String? = null, customParams: Map<String, String> = emptyMap()): JsonElement =
         api.getVerifyUrl(phone, customParams)

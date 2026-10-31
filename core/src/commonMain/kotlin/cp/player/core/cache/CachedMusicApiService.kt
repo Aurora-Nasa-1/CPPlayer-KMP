@@ -3,6 +3,8 @@ package cp.player.core.cache
 import cp.player.core.api.ApiResponseCodes
 import cp.player.core.api.MusicApiMethod
 import cp.player.core.api.MusicApiService
+import cp.player.core.api.playbackUrlOf
+import cp.player.core.api.playbackExpiresAt
 import cp.player.core.monitor.HealthMonitor
 import cp.player.core.provider.ProviderManager
 import cp.player.core.util.currentTimeMillis
@@ -82,15 +84,16 @@ class CachedMusicApiService(
     private suspend fun read(
         method: String,
         params: Map<String, String>,
+        cookie: String? = null,
         block: suspend () -> JsonElement
     ): JsonElement {
         // [isCacheable] 是策略名单：未列入的读类接口（如 comment/mv）直通网络。
         // 不加这道闸，声明的策略就和实际行为对不上了。
         if (!config.enableCache || !isCacheable(method)) return block()
 
-        val key = keyFor(method, params)
+        val key = keyFor(method, params, cookie)
         val cached = cache.get(key)
-        if (cached != null && cached.age(currentTimeMillis()) <= config.freshTtlMs) {
+        if (cached != null && cached.age(currentTimeMillis()) <= config.freshTtlMs && isUsable(method, cached)) {
             _stats.update { it.copy(hits = it.hits + 1) }
             return cached.data
         }
@@ -112,7 +115,7 @@ class CachedMusicApiService(
             throw e
         } catch (e: Exception) {
             tryFallback(method, params)?.let { store(key, it); return it }
-            return staleOrNull(cached) ?: throw e
+            return staleOrNull(method, cached) ?: throw e
         }
 
         if (isSuccessResponse(method, fresh)) {
@@ -121,29 +124,60 @@ class CachedMusicApiService(
         }
         // 非成功码 ⇒ 上游/Provider 故障：容灾 → 旧缓存 → 原样交出失败响应
         tryFallback(method, params)?.let { store(key, it); return it }
-        return staleOrNull(cached) ?: fresh
+        return staleOrNull(method, cached) ?: fresh
     }
 
     /** 降级返回旧缓存并计数；无旧缓存则返回 null（调用方自行抛/交出失败响应）。 */
-    private fun staleOrNull(cached: CacheEntry?): JsonElement? =
-        cached?.also { _stats.update { s -> s.copy(staleServed = s.staleServed + 1) } }?.data
+    private fun staleOrNull(method: String, cached: CacheEntry?): JsonElement? =
+        cached?.takeIf { !isPlaybackUrl(method) && isUsable(method, it) }
+            ?.also { _stats.update { s -> s.copy(staleServed = s.staleServed + 1) } }?.data
+
+    private fun isPlaybackUrl(method: String): Boolean = method in setOf(
+        MusicApiMethod.SONG_URL_V1, MusicApiMethod.SONG_URL_V1_302, MusicApiMethod.SONG_DOWNLOAD_URL,
+    )
+
+    private fun isUsable(method: String, entry: CacheEntry): Boolean =
+        !isPlaybackUrl(method) || (
+            playbackUrlOf(entry.data) != null &&
+                (playbackExpiresAt(entry.data, entry.timestamp)?.let { it > currentTimeMillis() } ?: true)
+            )
 
     private fun store(key: String, data: JsonElement) {
-        cache.putData(key, data)
+        val now = currentTimeMillis()
+        val expiry = playbackExpiresAt(data, now)
+        val normalized = if (data is JsonObject && playbackUrlOf(data) != null && expiry != null) {
+            JsonObject(data + ("expireAt" to JsonPrimitive(expiry)))
+        } else data
+        cache.putData(key, normalized, now)
         _stats.update { it.copy(stores = it.stores + 1) }
     }
 
-    private fun keyFor(method: String, params: Map<String, String>): String {
+    private fun keyFor(method: String, params: Map<String, String>, cookie: String? = null): String {
         val providerId = providerManager.getCurrentProviderId()
         return cacheKey(
             providerId = providerId,
             method = method,
             params = params,
-            cookie = providerManager.cookieStorage.getCookie(providerId),
+            cookie = cookie ?: providerManager.cookieStorage.getCookie(providerId),
+            providerConfig = providerManager.currentProvider?.getCustomSettings().orEmpty(),
         )
     }
 
     // ======================== 读透：读类方法覆写 ========================
+
+    override suspend fun callApi(method: String, params: Map<String, String>, cookie: String?): JsonElement {
+        val invalidations = when (method) {
+            MusicApiMethod.PLAYLIST_TRACKS -> arrayOf(MusicApiMethod.PLAYLIST_DETAIL, MusicApiMethod.PLAYLIST_TRACK_ALL)
+            MusicApiMethod.PLAYLIST_CREATE, MusicApiMethod.PLAYLIST_DELETE, MusicApiMethod.PLAYLIST_SUBSCRIBE ->
+                arrayOf(MusicApiMethod.USER_PLAYLIST, MusicApiMethod.PLAYLIST_DETAIL, MusicApiMethod.PLAYLIST_TRACK_ALL)
+            MusicApiMethod.PLAYLIST_UPDATE, MusicApiMethod.PLAYLIST_NAME_UPDATE, MusicApiMethod.PLAYLIST_DESC_UPDATE ->
+                arrayOf(MusicApiMethod.USER_PLAYLIST, MusicApiMethod.PLAYLIST_DETAIL)
+            MusicApiMethod.ALBUM_SUB -> arrayOf(MusicApiMethod.ALBUM_SUBLIST)
+            else -> emptyArray()
+        }
+        return if (invalidations.isNotEmpty()) write(*invalidations) { delegate.callApi(method, params, cookie) }
+        else read(method, params, cookie) { delegate.callApi(method, params, cookie) }
+    }
 
     // 播放/下载链接：TTL 远短于链接有效期，且键里带账号 cookie
     override suspend fun getSongUrl(songId: String, level: String): JsonElement =
@@ -438,10 +472,12 @@ class CachedMusicApiService(
             return@flow
         }
 
-        val key = cacheKey(providerManager.getCurrentProviderId(), method, params, cookie)
+        val key = keyFor(method, params, cookie)
 
         // 1) 先返回缓存（若存在）
-        val cached = cache.get(key)
+        val cached = cache.get(key)?.takeIf {
+            isUsable(method, it) && (!isPlaybackUrl(method) || it.age(currentTimeMillis()) <= config.freshTtlMs)
+        }
         if (cached != null) {
             val now = currentTimeMillis()
             emit(CacheResult.Cached(
@@ -466,8 +502,7 @@ class CachedMusicApiService(
         try {
             val fresh = delegate.callApi(method, params, cookie)
             val warnings = collectRecentWarnings(method)
-            val freshLevel = classifyFresh(fresh, warnings)
-            val fp = Fingerprinter.compute(fresh)
+            val freshLevel = classifyFresh(method, fresh, warnings)
 
             // 健康监控 ERROR → 多 Provider 容灾
             if (freshLevel == HealthMonitor.HealthLevel.ERROR && config.enableFallback) {
@@ -485,7 +520,7 @@ class CachedMusicApiService(
             }
 
             // 比对指纹：与缓存相同且非 ERROR → 无需替换
-            if (cached != null && cached.fingerprint == fp && freshLevel != HealthMonitor.HealthLevel.ERROR) {
+            if (cached != null && cached.data == fresh && freshLevel != HealthMonitor.HealthLevel.ERROR) {
                 emit(CacheResult.NoChange)
                 return
             }
@@ -505,7 +540,7 @@ class CachedMusicApiService(
         } catch (e: Exception) {
             emit(CacheResult.Error(
                 message = e.message ?: "network error",
-                fallback = cached?.data,
+                fallback = staleOrNull(method, cached),
                 level = HealthMonitor.HealthLevel.ERROR
             ))
         }
@@ -537,7 +572,7 @@ class CachedMusicApiService(
                 val raw = withContext(Dispatchers.IO) { provider.callApi(mapped, params) }
                 val parsed = parseOrNull(raw) ?: continue
                 val code = codeOf(parsed)
-                val ok = ApiResponseCodes.isSuccess(code)
+                val ok = isSuccessResponse(method, parsed)
                 HealthMonitor.recordCall(HealthMonitor.ApiCallRecord(
                     timestamp = start, providerId = provider.id, method = method,
                     durationMs = currentTimeMillis() - start,
@@ -576,10 +611,11 @@ class CachedMusicApiService(
             .firstOrNull()?.responseWarnings ?: emptyList()
 
     private fun classifyFresh(
+        method: String,
         json: JsonElement,
         warnings: List<HealthMonitor.ResponseWarning>
     ): HealthMonitor.HealthLevel {
-        val success = ApiResponseCodes.isSuccess(codeOf(json))
+        val success = isSuccessResponse(method, json)
         return when {
             !success -> HealthMonitor.HealthLevel.ERROR
             warnings.any { HealthMonitor.classify(it) == HealthMonitor.HealthLevel.ERROR } ->
@@ -597,35 +633,13 @@ class CachedMusicApiService(
      * 失败而永不写回缓存（与 [cp.player.core.api.MusicApiServiceImpl.callApi] 同一分支）。
      */
     private fun isSuccessResponse(method: String, json: JsonElement): Boolean {
-        if (method == MusicApiMethod.SONG_URL_V1_302 && httpUrlOf(json) != null) return true
+        if (isPlaybackUrl(method)) return playbackUrlOf(json) != null
         return ApiResponseCodes.isSuccess(codeOf(json))
     }
 
     private fun codeOf(json: JsonElement): Int? =
         ((json as? JsonObject)?.get("code") as? JsonPrimitive)?.intOrNull
             ?: ((json as? JsonObject)?.get("status") as? JsonPrimitive)?.intOrNull
-
-    private fun httpUrlOf(element: JsonElement?): String? {
-        when (element) {
-            is JsonPrimitive -> {
-                val s = element.contentOrNull
-                if (s != null && s.startsWith("http")) return s
-            }
-            is JsonObject -> {
-                for (key in listOf("redirectUrl", "url")) {
-                    val p = element[key]
-                    if (p is JsonPrimitive) {
-                        val s = p.contentOrNull
-                        if (s != null && s.startsWith("http")) return s
-                    }
-                }
-                for ((_, v) in element) httpUrlOf(v)?.let { return it }
-            }
-            is JsonArray -> for (e in element) httpUrlOf(e)?.let { return it }
-            else -> Unit
-        }
-        return null
-    }
 
     /** 仅幂等读类接口缓存；写/动作类直通网络。 */
     private fun isCacheable(method: String): Boolean = when (method) {

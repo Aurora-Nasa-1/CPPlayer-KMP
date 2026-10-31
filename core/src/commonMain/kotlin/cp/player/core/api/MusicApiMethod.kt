@@ -44,6 +44,7 @@ object MusicApiMethod {
 
     /** WebView / 网页登录入口 URL 获取 */
     const val AUTH_WEBVIEW_URL = "login/webview/url"
+    const val AUTH_WEBVIEW_CHECK = "login/webview/check"
 
     /** 获取验证码 / 安全人机核验网址 */
     const val AUTH_VERIFY_URL = "captcha/verify/url"

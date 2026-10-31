@@ -86,6 +86,11 @@ class ApiFieldContractTest {
         assertTrue(satisfied(MusicApiMethod.AUTH_WEBVIEW_URL, """{"code":0,"data":{"url":"https://login.example.com"}}"""))
         assertTrue(satisfied(MusicApiMethod.AUTH_WEBVIEW_URL, """{"code":200,"verifyUrl":"https://login.example.com"}"""))
 
+        assertEquals("status", ApiFieldContract.expectedFieldOf(MusicApiMethod.AUTH_WEBVIEW_CHECK))
+        assertTrue(satisfied(MusicApiMethod.AUTH_WEBVIEW_CHECK, """{"code":0,"data":{"status":"pending"}}"""))
+        assertTrue(satisfied(MusicApiMethod.AUTH_WEBVIEW_CHECK, """{"code":0,"status":"authorized"}"""))
+        assertFalse(satisfied(MusicApiMethod.AUTH_WEBVIEW_CHECK, """{"code":0}"""))
+
         assertEquals("url", ApiFieldContract.expectedFieldOf(MusicApiMethod.AUTH_VERIFY_URL))
         assertTrue(satisfied(MusicApiMethod.AUTH_VERIFY_URL, """{"code":250,"verifyUrl":"https://verify.example.com"}"""))
         assertTrue(satisfied(MusicApiMethod.AUTH_VERIFY_URL, """{"code":0,"data":{"url":"https://verify.example.com"}}"""))

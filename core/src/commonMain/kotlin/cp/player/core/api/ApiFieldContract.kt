@@ -50,6 +50,7 @@ internal object ApiFieldContract {
         MusicApiMethod.AUTH_LOGOUT to "code",
         MusicApiMethod.AUTH_ANONYMOUS to "code",
         MusicApiMethod.AUTH_WEBVIEW_URL to "url",
+        MusicApiMethod.AUTH_WEBVIEW_CHECK to "status",
         MusicApiMethod.AUTH_VERIFY_URL to "url",
         MusicApiMethod.AUTH_VERIFY_CHECK to "code",
         // 主字段取 NCM(Node) 的包裹层 `data`；平铺 Provider 靠 ALIASES 的 profile/account 兜住。
