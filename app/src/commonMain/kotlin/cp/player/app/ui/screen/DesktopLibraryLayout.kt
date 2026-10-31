@@ -38,9 +38,11 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
@@ -76,6 +78,7 @@ import cp.player.app.ui.component.CpToggleChip
 import cp.player.app.ui.component.CpConnectedChoice
 import cp.player.app.ui.component.CpContextMenu
 import cp.player.app.ui.component.CpContextMenuItem
+import cp.player.app.ui.component.cpPressScale
 import cp.player.app.ui.component.CpSplitButton
 import cp.player.app.ui.component.ProvideCpTextFullDisplay
 import cp.player.app.ui.component.LazyScrollColumn
@@ -177,6 +180,30 @@ internal fun DesktopLibraryLayout(
                                     trailingContent = { Icon(Icons.Filled.FileUpload, s.library.importPlaylist) },
                                     modifier = Modifier.width(236.dp).height(CpSpacing.touchTarget),
                                 )
+                            } else {
+                                Spacer(Modifier.height(4.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilledTonalButton(
+                                        onClick = actions.onCreatePlaylist,
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                        shape = MaterialTheme.shapes.large,
+                                        modifier = Modifier.cpPressScale(),
+                                    ) {
+                                        Icon(Icons.Filled.Add, null, Modifier.size(18.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        CpText(s.library.newPlaylist)
+                                    }
+                                    FilledTonalButton(
+                                        onClick = actions.onImport,
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                        shape = MaterialTheme.shapes.large,
+                                        modifier = Modifier.cpPressScale(),
+                                    ) {
+                                        Icon(Icons.Filled.FileUpload, null, Modifier.size(18.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        CpText(s.library.importPlaylist)
+                                    }
+                                }
                             }
                         }
                         if (state.playlists.isNotEmpty()) {
@@ -237,10 +264,10 @@ internal fun DesktopLibraryLayout(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                            DesktopLibraryIcon(s.library.searchLibrary, Icons.Filled.Search, actions.onSearch)
-                            DesktopLibraryIcon(s.library.importPlaylist, Icons.Filled.FileUpload, actions.onImport)
+                            DesktopLibraryActionButton(s.library.searchLibrary, Icons.Filled.Search, actions.onSearch)
+                            DesktopLibraryActionButton(s.library.importPlaylist, Icons.Filled.FileUpload, actions.onImport)
                             if (compact) {
-                                DesktopLibraryIcon(s.library.newPlaylist, Icons.Filled.Add, actions.onCreatePlaylist)
+                                DesktopLibraryActionButton(s.library.newPlaylist, Icons.Filled.Add, actions.onCreatePlaylist)
                             }
                         }
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -333,8 +360,9 @@ private fun DesktopLibraryShortcut(
     prominent: Boolean = false,
 ) {
     Surface(
-        onClick = onClick, modifier = modifier,
-        shape = MaterialTheme.shapes.medium,
+        onClick = onClick,
+        modifier = modifier.cpPressScale(),
+        shape = MaterialTheme.shapes.large,
         color = if (prominent) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         Column(
@@ -342,8 +370,20 @@ private fun DesktopLibraryShortcut(
             verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Icon(icon, null, Modifier.size(26.dp))
-            CpText(label, style = MaterialTheme.typography.labelLarge, maxLines = 2, textAlign = TextAlign.Center)
+            Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.size(26.dp),
+                tint = if (prominent) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.primary,
+            )
+            CpText(
+                label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                textAlign = TextAlign.Center,
+                color = if (prominent) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+            )
         }
     }
 }
@@ -438,6 +478,27 @@ internal fun DesktopLibraryViewToggle(gridView: Boolean, onChange: (Boolean) -> 
         iconOnly = true,
         onSelect = { onChange(it == 0) },
     )
+}
+
+@Composable
+private fun DesktopLibraryActionButton(
+    label: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    DesktopLibraryTooltip(label) {
+        FilledIconButton(
+            onClick = onClick,
+            modifier = modifier.size(40.dp).cpPressScale(),
+            colors = IconButtonDefaults.filledIconButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ),
+        ) {
+            Icon(icon, contentDescription = label, modifier = Modifier.size(20.dp))
+        }
+    }
 }
 
 @Composable

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.fillMaxSize
@@ -493,6 +494,7 @@ class MainScreen : Screen {
                                       val nav = contentNavigator
                                       if (nav != null) nav.push(AccountScreen()) else navigator?.push(AccountScreen())
                                   },
+                                  tabIndex = selectedIndex,
                                   // 内容区有详情页时收起壳层顶栏：路由页自带 AppScaffold（平板
                                   // 无 chrome），不收就是双顶栏。桌面端 chrome 接管，无此问题。
                                   hide = contentNavSize > 1, ) },
@@ -632,6 +634,7 @@ class MainScreen : Screen {
                                     navigator?.push(MessagesScreen())
                                     AppModel.refreshUnreadMessages()
                                 },
+                                tabIndex = selectedIndex,
                             )
                         },
                         bottomBar = {
@@ -690,6 +693,7 @@ private fun AppTopBar(
     onOpenAccount: () -> Unit = {},
     showBack: Boolean = false,
     onBack: () -> Unit = {},
+    tabIndex: Int = -1,
     hide: Boolean = false,
 ) {    // 桌面自绘标题栏已经承担了「页面标题 + 返回 + 账号 / 设置」四件事（见 DesktopTitleBar），
     // 这里整条让位 —— 否则窗口顶部会叠两条 chrome（44dp 标题栏 + 64dp 顶栏），而顶栏里其实
@@ -724,31 +728,23 @@ private fun AppTopBar(
             )
         }
     }
-    // 右侧动作固定两个：消息 / 设置，一律走 CpTopBarActionButton（与最左的账号入口、
-    // 路由页的 topBarActions、CpBackButton 同一族）。此前同一个 tab 里「消息」是裸
-    // `IconButton`、账号 / 设置是 `FilledIconButton`，两种外观并排；三个 tab 的按钮位置
-    // 也各不相同。现在壳层顶栏全平台一致：**左 = 账号**，**右 = 消息 + 设置**。
+    // 右侧动作固定两个：消息 / 设置，一律走 CpTopBarActionButton（与歌单详情页一致的
+    // 40dp 填充圆钮、surfaceContainerHighest 底色、onSurface 内容色、4dp 间距、cpPressScale 弹性按压缩放）。
     val actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
-        // 这里刻意**不再**判 LocalWindowChromeActive：桌面端整条 AppTopBar 已经在函数开头
-        // 提前 return 了（窗口 chrome 接管了标题与这三个入口），能走到这里就说明没有 chrome。
-        // 两处都判会留下一条永远走不到的分支。
-        // 消息入口：桌面端由窗口标题栏承担，这里只在**没有窗口 chrome**（手机 / 平板）时出现。
-        // ⚠️ 刻意**不带未读角标**（2026-10-02 与标题栏一并去掉）—— 理由见
-        // `DesktopTitleBar.MessageSlot` 的 KDoc。数据链路保留，只是不再显示。
         cp.player.app.ui.component.CpTopBarActionButton(
             cp.player.app.ui.component.TopBarAction(
-                icon = { Icon(Icons.AutoMirrored.Outlined.Message, contentDescription = "消息") },
-                // 落点由调用点决定：宽屏平板 = 开面板（保留侧栏），窄屏 = 整页 push。
-                // 两处各写一套（旧行为）会出现同名入口两个落点（N5）。
+                icon = { Icon(Icons.AutoMirrored.Outlined.Message, contentDescription = "消息", modifier = Modifier.size(20.dp)) },
                 onClick = onOpenMessages,
             )
         )
+        Spacer(Modifier.width(4.dp))
         cp.player.app.ui.component.CpTopBarActionButton(
             cp.player.app.ui.component.TopBarAction(
-                icon = { Icon(Icons.Filled.Settings, contentDescription = "设置") },
+                icon = { Icon(Icons.Filled.Settings, contentDescription = "设置", modifier = Modifier.size(20.dp)) },
                 onClick = onOpenSettings,
             )
         )
+        Spacer(Modifier.width(4.dp))
     }
     val colors = TopAppBarDefaults.topAppBarColors(
         containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0f),

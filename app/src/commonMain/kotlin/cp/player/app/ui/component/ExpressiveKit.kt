@@ -1291,6 +1291,14 @@ fun CpActionButtonGroup(
  */
 @Composable
 fun Modifier.cpPressScale(
+    pressedScale: Float = 0.97f,
+): Modifier {
+    val interactionSource = remember { MutableInteractionSource() }
+    return cpPressScale(interactionSource, pressedScale)
+}
+
+@Composable
+fun Modifier.cpPressScale(
     interactionSource: MutableInteractionSource,
     pressedScale: Float = 0.97f,
 ): Modifier {

@@ -43,6 +43,8 @@ import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.shareText
 import cp.player.app.ui.anim.CoverFlight
+import cp.player.app.ui.component.AddToLocalPlaylistDialog
+import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpCoverPlaceholder
@@ -50,11 +52,11 @@ import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSearchField
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LazyScrollColumn
-import cp.player.app.ui.component.LegacyListItem
 import cp.player.app.ui.component.PlaylistItem
 import cp.player.app.ui.component.PlaylistOptionsSheet
 import cp.player.app.ui.component.RenamePlaylistDialog
 import cp.player.app.ui.component.SectionHeader
+import cp.player.app.ui.component.SongDetailInfoDialog
 import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.playlistShareText
@@ -63,6 +65,7 @@ import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.app.ui.model.LibraryScreenModel
 import cp.player.app.ui.model.LibrarySearchScreenModel
 import cp.player.app.ui.model.LibraryTrackHit
+import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.util.resized
 import cp.player.core.media.LocalMediaItem
@@ -107,12 +110,37 @@ private fun LibrarySearchContent(
 ) {
     val s = cpStrings()
     val navigator = LocalNavigator.currentOrThrow
+    val scope = rememberCoroutineScope()
     val libraryState by library.state.collectAsState()
     val downloadsState by downloads.state.collectAsState()
     val searchState by search.state.collectAsState()
     var query by remember { mutableStateOf(initialQuery) }
     var selectedPlaylist by remember { mutableStateOf<PlaylistSummary?>(null) }
     var renameTarget by remember { mutableStateOf<PlaylistSummary?>(null) }
+    var deleteTargetSong by remember { mutableStateOf<LocalMediaItem?>(null) }
+    var removeTargetSong by remember { mutableStateOf<LocalMediaItem?>(null) }
+    var addToCloudPlaylistTrack by remember { mutableStateOf<TrackSummary?>(null) }
+    var addToLocalPlaylistPath by remember { mutableStateOf<String?>(null) }
+    var showInfoTrack by remember { mutableStateOf<TrackSummary?>(null) }
+    val likedIds by AppModel.playback.likedIds.collectAsState()
+    val playbackState by AppModel.playback.state.collectAsState()
+    val currentPlayingTrackId = playbackState.currentTrack?.id
+    val toggleCloudFav: (String) -> Unit = remember(likedIds) {
+        { cloudId: String ->
+            scope.launch {
+                val cloudFavId = runCatching {
+                    cp.player.core.music.CPMediaId.parse(cloudId).resourceId
+                }.getOrDefault(cloudId)
+                val target = cloudFavId !in likedIds
+                AppModel.playback.toggleFavoriteFor(cloudId)
+                UiEvents.notify(s.downloads.favoriteCloudDone(target))
+            }
+        }
+    }
+    val toggleLocalFav: (String) -> Unit = {
+        val now = AppModel.localMedia.favorites.toggle(it)
+        UiEvents.notify(if (now) s.downloads.addedToFavorites else s.downloads.removedFromFavorites)
+    }
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val confirm = rememberConfirmState()
@@ -246,11 +274,25 @@ private fun LibrarySearchContent(
                                 )
                             }
                             itemsIndexed(localTracks, key = { _, item -> "l-${item.path}" }) { index, item ->
-                                LocalTrackRow(
-                                    item = item,
+                                val isVideo = item.mediaType == cp.player.core.media.MediaType.VIDEO
+                                val mediaId = if (isVideo) "local://video/${item.path}" else "local://audio/${item.path}"
+                                LocalSongRow(
+                                    song = item,
+                                    isCurrentlyPlaying = currentPlayingTrackId == mediaId,
+                                    likedIds = likedIds,
+                                    favoritePaths = downloadsState.favoritePaths,
+                                    model = downloads,
+                                    strings = s,
+                                    onPlay = { downloads.playAll(localTracks, index) },
+                                    onToggleCloudFav = toggleCloudFav,
+                                    onToggleLocalFav = toggleLocalFav,
+                                    onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
+                                    onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
+                                    onRemoveSong = { removeTargetSong = it },
+                                    onDeleteSong = { deleteTargetSong = it },
+                                    onShowInfo = { showInfoTrack = it },
                                     index = index,
                                     total = localTracks.size,
-                                    onClick = { downloads.playAll(localTracks, index) },
                                 )
                             }
                         }
@@ -324,62 +366,55 @@ private fun LibrarySearchContent(
         )
     }
 
-    CpConfirmHost(confirm)
-}
+    addToLocalPlaylistPath?.let { path ->
+        AddToLocalPlaylistDialog(
+            trackPaths = listOf(path),
+            onDismiss = { addToLocalPlaylistPath = null },
+        )
+    }
 
-/** 本地歌曲行：封面 + 标题 + 歌手 / 专辑。点击播放整个结果列表。 */
-@Composable
-private fun LocalTrackRow(
-    item: LocalMediaItem,
-    index: Int,
-    total: Int,
-    onClick: () -> Unit,
-) {
-    LegacyListItem(
-        index = index,
-        total = total,
-        onClick = onClick,
-        containerColor = cp.player.app.ui.component.settingsRowContainer(),
-        leadingContent = {
-            Box(Modifier.size(44.dp)) {
-                if (!item.coverUri.isNullOrBlank()) {
-                    AsyncImage(
-                        model = item.coverUri.resized(120),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(10.dp)),
-                    )
-                } else {
-                    CpCoverPlaceholder(
-                        modifier = Modifier.fillMaxSize(),
-                        corner = 10.dp,
-                        animated = false,
-                    )
-                }
-            }
-        },
-        headlineContent = {
-            CpText(
-                item.title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-            )
-        },
-        supportingContent = {
-            val subtitle = listOfNotNull(item.artist, item.album).filter { it.isNotBlank() }.joinToString(" · ")
-            if (subtitle.isNotBlank()) {
-                CpText(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
-            }
-        },
-    )
+    addToCloudPlaylistTrack?.let { track ->
+        val cloudId = track.originalMediaId ?: track.id
+        AddToPlaylistSheet(
+            trackIds = listOf(cloudId),
+            onDismiss = { addToCloudPlaylistTrack = null },
+        )
+    }
+
+    showInfoTrack?.let { track ->
+        SongDetailInfoDialog(
+            track = track,
+            onDismiss = { showInfoTrack = null },
+        )
+    }
+
+    deleteTargetSong?.let { song ->
+        confirm.request(
+            title = s.downloads.deleteLocalFile,
+            message = s.downloads.deleteLocalFileMessage(song.title),
+            confirmLabel = s.downloads.delete,
+            destructive = true,
+            onConfirm = {
+                downloads.deleteLocalFile(song, s)
+                deleteTargetSong = null
+            },
+        )
+    }
+
+    removeTargetSong?.let { song ->
+        confirm.request(
+            title = s.downloads.removeConfirmTitle,
+            message = s.downloads.removeConfirmMessage(song.title),
+            confirmLabel = s.downloads.removeFromLibrary,
+            destructive = false,
+            onConfirm = {
+                downloads.removeLocalItem(song, s)
+                removeTargetSong = null
+            },
+        )
+    }
+
+    CpConfirmHost(confirm)
 }
 
 @Composable

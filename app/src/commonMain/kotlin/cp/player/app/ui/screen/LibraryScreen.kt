@@ -149,6 +149,11 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
     // 现在收敛到全应用统一的 [CpConfirmHost] —— 与歌单详情页、侧栏、用户主页同一份文案。
     val confirm = cp.player.app.ui.component.rememberConfirmState()
     var showCreateDialog by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        cp.player.app.ui.util.UiEvents.createPlaylistEvents.collect {
+            showCreateDialog = true
+        }
+    }
     // 重命名目标（只有 owner 能看到入口）。与「删除 / 取消收藏」共用同一个选项弹层，
     // 但重命名不是破坏性操作，走独立的输入框而不是 CpConfirmHost。
     var renameTarget by remember { mutableStateOf<PlaylistSummary?>(null) }

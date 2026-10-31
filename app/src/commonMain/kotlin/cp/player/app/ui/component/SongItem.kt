@@ -98,9 +98,12 @@ fun SongItem(
         currentMediaId == track.id || currentMediaId?.substringAfterLast('/') == track.id
     val isActivelyPlaying = isCurrent && playbackState.isPlaying
 
-    // 桌面端（窗口 chrome 接管）且传入了菜单项 ⇒ MoreVert 走锚定菜单而不是底部弹层。
-    // 判据用 LocalWindowChromeActive 而不是平台，理由见它的 KDoc。
-    val anchoredMenu = LocalWindowChromeActive.current && !contextMenu.isNullOrEmpty()
+    val hasContextMenu = !contextMenu.isNullOrEmpty()
+    val showMoreButton = !selectionMode && (onOptionsClick != null || hasContextMenu)
+    // 桌面端（窗口 chrome 接管）且传入了菜单项 ⇒ MoreVert 走锚定菜单；
+    // 移动端若未传入专用的 onOptionsClick 弹层，只要提供了 contextMenu，
+    // 同样走具备自适应底部抽屉能力（CpContextMenuBottomSheet）的 CpAnchoredMenu。
+    val useAnchoredMenu = hasContextMenu && (LocalWindowChromeActive.current || onOptionsClick == null)
 
     val targetContainerColor = when {
         selectionMode && isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
@@ -239,9 +242,10 @@ fun SongItem(
                     emphasized = isCurrent,
                 )
             },
-            trailingContent = if (!selectionMode && (onOptionsClick != null || anchoredMenu)) {{
+            trailingContent = if (showMoreButton) {{
             // 桌面端：MoreVert 点击弹出锚定菜单（与右键同一份 items，见 CpAnchoredMenu），
             // 不再走底部弹层；移动端保持 SongOptionsSheet 动线不变。
+            // 移动端若未提供 onOptionsClick（如本地歌曲场景），回退到自适应底部弹层 CpContextMenuBottomSheet。
             var menuExpanded by remember { mutableStateOf(false) }
             CpAnchoredMenu(
                 expanded = menuExpanded,
@@ -250,7 +254,7 @@ fun SongItem(
             ) {
                 IconButton(
                     onClick = {
-                        if (anchoredMenu) menuExpanded = true else onOptionsClick?.invoke()
+                        if (useAnchoredMenu) menuExpanded = true else onOptionsClick?.invoke()
                     },
                     colors = androidx.compose.material3.IconButtonDefaults.iconButtonColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,

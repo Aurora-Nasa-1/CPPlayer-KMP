@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -302,7 +303,7 @@ fun DesktopTitleBar(
                     // 依据 Navigator 栈与内嵌面板状态算好，这里只负责画。
                     // 必须在拖拽区**外面**（JBR 模式由注册表豁免，无边框模式见下面的说明）。
                     if (canGoBack) {
-                        ChromeSlot(
+                        ChromeRoundSlot(
                             onClick = onBack,
                             modifier = Modifier
                                 .chromeFade(chromeAlpha, interactive = !immersive)
@@ -413,7 +414,7 @@ fun DesktopTitleBar(
                             .jbrClientZone(chromeBridge, "messages"),
                     )
                     if (AppVersion.isDebugBuild) {
-                        ChromeSlot(
+                        ChromeRoundSlot(
                             onClick = onToggleMobileMode,
                             modifier = Modifier
                                 .chromeFade(chromeAlpha, interactive = !immersive)
@@ -422,7 +423,7 @@ fun DesktopTitleBar(
                             Icon(Icons.Filled.PhoneAndroid, "手机版界面预览", modifier = Modifier.size(18.dp))
                         }
                     }
-                    ChromeSlot(
+                    ChromeRoundSlot(
                         onClick = onToggleMiniMode,
                         modifier = Modifier
                             .chromeFade(chromeAlpha, interactive = !immersive)
@@ -430,7 +431,7 @@ fun DesktopTitleBar(
                     ) {
                         Icon(Icons.Filled.PictureInPictureAlt, "迷你模式", modifier = Modifier.size(18.dp))
                     }
-                    ChromeSlot(
+                    ChromeRoundSlot(
                         onClick = onOpenSettings,
                         modifier = Modifier
                             .chromeFade(chromeAlpha, interactive = !immersive)
@@ -641,7 +642,7 @@ private fun WindowDragRegion(
  */
 @Composable
 private fun MessageSlot(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    ChromeSlot(onClick = onClick, modifier = modifier) {
+    ChromeRoundSlot(onClick = onClick, modifier = modifier) {
         Icon(
             Icons.AutoMirrored.Filled.Message,
             contentDescription = "消息",
@@ -660,12 +661,12 @@ private fun MessageSlot(onClick: () -> Unit, modifier: Modifier = Modifier) {
 private fun AccountSlot(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val profile by AppModel.userProfileFlow.collectAsState()
     val avatarUrl = profile?.avatarUrl
-    ChromeSlot(onClick = onClick, modifier = modifier) {
+    ChromeRoundSlot(onClick = onClick, modifier = modifier) {
         if (!avatarUrl.isNullOrBlank()) {
             AsyncImage(
                 model = avatarUrl,
                 contentDescription = "账号",
-                modifier = Modifier.size(22.dp).clip(CircleShape),
+                modifier = Modifier.size(24.dp).clip(CircleShape),
                 contentScale = ContentScale.Crop,
             )
         } else {
@@ -721,6 +722,46 @@ private fun ChromeSeparator(modifier: Modifier = Modifier) {
             Modifier.size(width = 1.dp, height = 18.dp)
                 .background(MaterialTheme.colorScheme.outlineVariant),
         )
+    }
+}
+
+/**
+ * 桌面顶栏中业务动作按钮的圆钮外壳（对齐歌单详情与移动端顶栏的圆钮样式与 M3E 规范）。
+ */
+@Composable
+private fun ChromeRoundSlot(
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val colors = MaterialTheme.colorScheme
+
+    val background by animateColorAsState(
+        targetValue = if (hovered) colors.surfaceContainerHighest else colors.surfaceContainerHighest.copy(alpha = 0.65f),
+        animationSpec = CpMotion.effectsFast(),
+        label = "chromeRoundSlotBackground",
+    )
+    val contentColor = if (hovered) colors.onSurface else colors.onSurfaceVariant
+
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .width(ChromeSlotWidth),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            modifier = Modifier.size(34.dp).cpPressScale(),
+            shape = CircleShape,
+            color = background,
+            onClick = onClick,
+            interactionSource = interaction,
+        ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CompositionLocalProvider(LocalContentColor provides contentColor) { content() }
+            }
+        }
     }
 }
 

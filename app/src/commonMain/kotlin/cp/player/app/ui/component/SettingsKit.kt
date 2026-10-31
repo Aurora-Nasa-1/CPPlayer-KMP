@@ -426,6 +426,7 @@ fun SettingsClickItem(
     selected: Boolean = false,
     mergeSemantics: Boolean = true,
     containerColor: Color = Color.Unspecified,
+    supportingContent: (@Composable () -> Unit)? = null,
     onClick: (() -> Unit)? = null,
 ) {
     val highlight = selected && containerColor == Color.Unspecified
@@ -458,9 +459,12 @@ fun SettingsClickItem(
             { SettingsLeadingIcon(img, leadingTint) }
         },
         headlineContent = { RowTitle(title, titleColor) },
-        supportingContent = subtitle?.let { sub ->
-            { RowSubtitle(sub, subtitleColor) }
-        },
+        supportingContent = if (subtitle != null || supportingContent != null) {
+            {
+                subtitle?.let { RowSubtitle(it, subtitleColor) }
+                supportingContent?.invoke()
+            }
+        } else null,
         trailingContent = trailingContent,
     )
 }

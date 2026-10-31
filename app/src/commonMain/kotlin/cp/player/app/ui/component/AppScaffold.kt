@@ -3,8 +3,11 @@ package cp.player.app.ui.component
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -39,7 +42,7 @@ fun CpTopBarActionButton(
 ) {
     FilledIconButton(
         onClick = action.onClick,
-        modifier = modifier.padding(end = 4.dp),
+        modifier = modifier.size(40.dp).cpPressScale(),
         colors = IconButtonDefaults.filledIconButtonColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
             contentColor = MaterialTheme.colorScheme.onSurface,
@@ -98,8 +101,12 @@ fun AppScaffold(
                     }
                 },
                 actions = actions ?: {
-                    topBarActions.forEach { action ->
+                    topBarActions.forEachIndexed { index, action ->
+                        if (index > 0) Spacer(Modifier.width(4.dp))
                         CpTopBarActionButton(action)
+                    }
+                    if (topBarActions.isNotEmpty()) {
+                        Spacer(Modifier.width(4.dp))
                     }
                 },
                 scrollBehavior = actualScrollBehavior,

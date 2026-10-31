@@ -822,6 +822,14 @@ private fun NarrowLayout(
             }
         }
 
+        // 仅在折叠态（标题移入顶栏且与展开的搜索框同层冲突时）随搜索展开渐隐；
+        // 展开态下标题与副信息/描述处于下层独立区域，不因顶栏搜索展开而消失。
+        val titleSearchFadeAlpha = if (collapsedFraction > 0.1f) {
+            (1f - searchProgress * 2f * ((collapsedFraction - 0.1f) / 0.4f).coerceIn(0f, 1f)).coerceIn(0f, 1f)
+        } else {
+            1f
+        }
+
         AppScaffold(
             title = {
                 Row(
@@ -830,7 +838,7 @@ private fun NarrowLayout(
                         .fillMaxWidth()
                         .height(56.dp)
                         .padding(end = 8.dp)
-                        .graphicsLayer { alpha = (1f - searchProgress * 2f).coerceIn(0f, 1f) },
+                        .graphicsLayer { alpha = titleSearchFadeAlpha },
                 ) {
                     // 封面槽位随封面一起收起，避免折叠后标题左侧残留空白。
                     Box(
@@ -878,7 +886,7 @@ private fun NarrowLayout(
                             } else {
                                 MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                             },
-                            maxLines = if (collapsedFraction > 0.4f || isSearchActive) 1 else 2,
+                            maxLines = if (collapsedFraction > 0.4f) 1 else 2,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         if (coverFraction > 0.1f) {

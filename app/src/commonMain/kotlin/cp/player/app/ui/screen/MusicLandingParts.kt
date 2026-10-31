@@ -59,6 +59,7 @@ import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpSplitButton
 import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.CpWavyProgress
+import cp.player.app.ui.component.cpPressScale
 import cp.player.app.ui.component.rememberActiveProviderSupports
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.util.formatTimeMs
@@ -230,7 +231,7 @@ internal fun LandingRadioActions(actions: HomeActions, compact: Boolean = false,
                 Surface(
                     onClick = item.onClick,
                     enabled = item.enabled,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).cpPressScale(),
                     shape = MaterialTheme.shapes.large,
                     color = when (index) {
                         0 -> MaterialTheme.colorScheme.secondaryContainer
@@ -280,7 +281,7 @@ internal fun LandingTrackRow(
         modifier = modifier,
     ) {
         Surface(
-            modifier = Modifier.fillMaxWidth().hoverable(interaction),
+            modifier = Modifier.fillMaxWidth().hoverable(interaction).cpPressScale(),
             onClick = onPlay,
             interactionSource = interaction,
             color = container,

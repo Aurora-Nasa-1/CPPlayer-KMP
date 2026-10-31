@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -950,7 +951,7 @@ private fun ColumnScope.SongList(
             ),
             verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
         ) {
-            items(songs, key = { it.path }) { song ->
+            itemsIndexed(songs, key = { _, song -> song.path }) { index, song ->
                 val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
                 val mediaId = if (isVideo) "local://video/${song.path}" else "local://audio/${song.path}"
                 LocalSongRow(
@@ -960,7 +961,7 @@ private fun ColumnScope.SongList(
                     favoritePaths = favoritePaths,
                     model = model,
                     strings = strings,
-                    onPlay = { model.playAll(songs, songs.indexOf(song)) },
+                    onPlay = { model.playAll(songs, index) },
                     onToggleCloudFav = onToggleCloudFav,
                     onToggleLocalFav = onToggleLocalFav,
                     onAddToCloudPlaylist = onAddToCloudPlaylist,
@@ -968,6 +969,8 @@ private fun ColumnScope.SongList(
                     onRemoveSong = onRemoveSong,
                     onDeleteSong = onDeleteSong,
                     onShowInfo = onShowInfo,
+                    index = index,
+                    total = songs.size,
                 )
             }
         }
@@ -982,7 +985,7 @@ private fun ColumnScope.SongList(
  * 同时完整支持本地能力（在文件管理器中打开、移出曲库、彻底删除）。
  */
 @Composable
-private fun LocalSongRow(
+internal fun LocalSongRow(
     song: LocalMediaItem,
     isCurrentlyPlaying: Boolean,
     likedIds: Set<String>,
@@ -991,13 +994,15 @@ private fun LocalSongRow(
     strings: CpStrings,
     onPlay: () -> Unit,
     onRemoveFromLocalPlaylist: (() -> Unit)? = null,
-    onToggleCloudFav: (String) -> Unit,
-    onToggleLocalFav: (String) -> Unit,
-    onAddToCloudPlaylist: (TrackSummary) -> Unit,
-    onAddToLocalPlaylist: (String) -> Unit,
-    onRemoveSong: (LocalMediaItem) -> Unit,
-    onDeleteSong: (LocalMediaItem) -> Unit,
-    onShowInfo: (TrackSummary) -> Unit,
+    onToggleCloudFav: ((String) -> Unit)? = null,
+    onToggleLocalFav: ((String) -> Unit)? = null,
+    onAddToCloudPlaylist: ((TrackSummary) -> Unit)? = null,
+    onAddToLocalPlaylist: ((String) -> Unit)? = null,
+    onRemoveSong: ((LocalMediaItem) -> Unit)? = null,
+    onDeleteSong: ((LocalMediaItem) -> Unit)? = null,
+    onShowInfo: ((TrackSummary) -> Unit)? = null,
+    index: Int = 0,
+    total: Int = 1,
 ) {
     val navigator = LocalNavigator.current
     val scope = rememberCoroutineScope()
@@ -1044,9 +1049,9 @@ private fun LocalSongRow(
         onPlay = handlePlay,
         isFavorite = isFav,
         onToggleFavorite = if (isDownloaded && cloudMediaId != null) {
-            { onToggleCloudFav(cloudMediaId) }
+            onToggleCloudFav?.let { fn -> { fn(cloudMediaId) } }
         } else {
-            { onToggleLocalFav(song.path) }
+            onToggleLocalFav?.let { fn -> { fn(song.path) } }
         },
         favoriteLabel = if (isDownloaded && cloudMediaId != null) {
             if (isCloudFav) s.unfavoriteCloud else s.favoriteCloud
@@ -1071,24 +1076,24 @@ private fun LocalSongRow(
         } else null,
         isDownloaded = true,
         onAddToPlaylist = if (isDownloaded && cloudMediaId != null) {
-            { onAddToCloudPlaylist(trackSummary) }
+            onAddToCloudPlaylist?.let { fn -> { fn(trackSummary) } }
         } else null,
-        onAddToLocalPlaylist = {
-            onAddToLocalPlaylist(song.path)
+        onAddToLocalPlaylist = onAddToLocalPlaylist?.let { fn ->
+            { fn(song.path) }
         },
         onRemoveFromPlaylist = onRemoveFromLocalPlaylist,
         onOpenInFileManager = {
             cp.player.app.platform.openInFileManager(song.path)
         },
-        onRemoveFromLibrary = {
-            onRemoveSong(song)
+        onRemoveFromLibrary = onRemoveSong?.let { fn ->
+            { fn(song) }
         },
-        onDelete = {
-            onDeleteSong(song)
+        onDelete = onDeleteSong?.let { fn ->
+            { fn(song) }
         },
         deleteLabel = s.deleteLocalFile,
-        onShowInfo = {
-            onShowInfo(trackSummary)
+        onShowInfo = onShowInfo?.let { fn ->
+            { fn(trackSummary) }
         },
     )
 
@@ -1096,6 +1101,8 @@ private fun LocalSongRow(
 
     SongItem(
         track = trackSummary,
+        index = index,
+        total = total,
         onClick = handlePlay,
         isCurrentlyPlaying = isCurrentlyPlaying,
         contextMenu = menuItems,
@@ -1331,7 +1338,7 @@ private fun ColumnScope.LocalPlaylistDetail(
                 ),
                 verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
             ) {
-                items(tracks, key = { it.path }) { song ->
+                itemsIndexed(tracks, key = { _, song -> song.path }) { index, song ->
                     val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
                     val mediaId = if (isVideo) "local://video/${song.path}" else "local://audio/${song.path}"
                     LocalSongRow(
@@ -1341,7 +1348,7 @@ private fun ColumnScope.LocalPlaylistDetail(
                         favoritePaths = favoritePaths,
                         model = model,
                         strings = strings,
-                        onPlay = { model.playAll(tracks, tracks.indexOf(song)) },
+                        onPlay = { model.playAll(tracks, index) },
                         onRemoveFromLocalPlaylist = { onRemoveFromPlaylist(song.path) },
                         onToggleCloudFav = onToggleCloudFav,
                         onToggleLocalFav = onToggleLocalFav,
@@ -1350,6 +1357,8 @@ private fun ColumnScope.LocalPlaylistDetail(
                         onRemoveSong = onRemoveSong,
                         onDeleteSong = onDeleteSong,
                         onShowInfo = onShowInfo,
+                        index = index,
+                        total = tracks.size,
                     )
                 }
             }
@@ -1822,7 +1831,7 @@ private fun ColumnScope.LocalFolderDetail(
             ),
             verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
         ) {
-            items(tracks, key = { it.path }) { song ->
+            itemsIndexed(tracks, key = { _, song -> song.path }) { index, song ->
                 val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
                 val mediaId = if (isVideo) "local://video/${song.path}" else "local://audio/${song.path}"
                 LocalSongRow(
@@ -1832,7 +1841,7 @@ private fun ColumnScope.LocalFolderDetail(
                     favoritePaths = favoritePaths,
                     model = model,
                     strings = strings,
-                    onPlay = { model.playAll(tracks, tracks.indexOf(song)) },
+                    onPlay = { model.playAll(tracks, index) },
                     onToggleCloudFav = onToggleCloudFav,
                     onToggleLocalFav = onToggleLocalFav,
                     onAddToCloudPlaylist = onAddToCloudPlaylist,
@@ -1840,6 +1849,8 @@ private fun ColumnScope.LocalFolderDetail(
                     onRemoveSong = onRemoveSong,
                     onDeleteSong = onDeleteSong,
                     onShowInfo = onShowInfo,
+                    index = index,
+                    total = tracks.size,
                 )
             }
         }
@@ -1900,7 +1911,7 @@ private fun ColumnScope.LocalAlbumDetail(
             ),
             verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
         ) {
-            items(tracks, key = { it.path }) { song ->
+            itemsIndexed(tracks, key = { _, song -> song.path }) { index, song ->
                 val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
                 val mediaId = if (isVideo) "local://video/${song.path}" else "local://audio/${song.path}"
                 LocalSongRow(
@@ -1910,7 +1921,7 @@ private fun ColumnScope.LocalAlbumDetail(
                     favoritePaths = favoritePaths,
                     model = model,
                     strings = strings,
-                    onPlay = { model.playAll(tracks, tracks.indexOf(song)) },
+                    onPlay = { model.playAll(tracks, index) },
                     onToggleCloudFav = onToggleCloudFav,
                     onToggleLocalFav = onToggleLocalFav,
                     onAddToCloudPlaylist = onAddToCloudPlaylist,
@@ -1918,6 +1929,8 @@ private fun ColumnScope.LocalAlbumDetail(
                     onRemoveSong = onRemoveSong,
                     onDeleteSong = onDeleteSong,
                     onShowInfo = onShowInfo,
+                    index = index,
+                    total = tracks.size,
                 )
             }
         }
@@ -1977,7 +1990,7 @@ private fun ColumnScope.LocalArtistDetail(
             ),
             verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
         ) {
-            items(tracks, key = { it.path }) { song ->
+            itemsIndexed(tracks, key = { _, song -> song.path }) { index, song ->
                 val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
                 val mediaId = if (isVideo) "local://video/${song.path}" else "local://audio/${song.path}"
                 LocalSongRow(
@@ -1987,7 +2000,7 @@ private fun ColumnScope.LocalArtistDetail(
                     favoritePaths = favoritePaths,
                     model = model,
                     strings = strings,
-                    onPlay = { model.playAll(tracks, tracks.indexOf(song)) },
+                    onPlay = { model.playAll(tracks, index) },
                     onToggleCloudFav = onToggleCloudFav,
                     onToggleLocalFav = onToggleLocalFav,
                     onAddToCloudPlaylist = onAddToCloudPlaylist,
@@ -1995,6 +2008,8 @@ private fun ColumnScope.LocalArtistDetail(
                     onRemoveSong = onRemoveSong,
                     onDeleteSong = onDeleteSong,
                     onShowInfo = onShowInfo,
+                    index = index,
+                    total = tracks.size,
                 )
             }
         }

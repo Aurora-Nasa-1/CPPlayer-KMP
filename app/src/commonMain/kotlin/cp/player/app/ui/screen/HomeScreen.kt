@@ -54,6 +54,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -93,6 +95,7 @@ import cp.player.app.ui.component.CpLinearProgress
 import cp.player.app.ui.component.CpPlayingEqualizer
 import cp.player.app.ui.component.CpWavyProgress
 import cp.player.app.ui.component.cpBounceClickable
+import cp.player.app.ui.component.cpPressScale
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.BentoCard
 import cp.player.app.ui.component.CpBackButton
@@ -563,7 +566,16 @@ internal fun DesktopHomeLayout(
                     title = "发现音乐",
                     subtitle = "你的音乐，常听常新",
                     action = {
-                        TextButton(onClick = actions.onOpenAlbumWall) {
+                        FilledTonalButton(
+                            onClick = actions.onOpenAlbumWall,
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                            shape = MaterialTheme.shapes.large,
+                            modifier = Modifier.cpPressScale(),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                            ),
+                        ) {
                             Icon(PosterWallIcon, null, Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
                             CpText("唱片墙")
@@ -2237,18 +2249,18 @@ private fun RecentPlaysRail(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    FilledTonalIconButton(
+                    FilledIconButton(
                         onClick = onOpenAlbumWall,
-                        modifier = Modifier.size(36.dp),
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(40.dp).cpPressScale(),
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
                         ),
                     ) {
                         Icon(
                             PosterWallIcon,
                             contentDescription = "唱片墙",
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier.size(20.dp),
                         )
                     }
                     TextButton(onClick = onOpenAll) { CpText("全部") }

@@ -14,8 +14,16 @@ object UiEvents {
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val messages: SharedFlow<String> = _messages.asSharedFlow()
 
+    private val _createPlaylistEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val createPlaylistEvents: SharedFlow<Unit> = _createPlaylistEvents.asSharedFlow()
+
     /** 发送一条一次性提示（非挂起；缓冲满时丢弃最旧语义由 tryEmit 失败静默处理）。 */
     fun notify(message: String) {
         _messages.tryEmit(message)
+    }
+
+    /** 触发打开新建歌单对话框。 */
+    fun triggerCreatePlaylist() {
+        _createPlaylistEvents.tryEmit(Unit)
     }
 }

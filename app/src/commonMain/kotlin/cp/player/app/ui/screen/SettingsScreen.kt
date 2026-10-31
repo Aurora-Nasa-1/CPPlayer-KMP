@@ -280,15 +280,24 @@ private fun SettingsSubItemRow(
                 contentColor = entry.accent.content(),
             )
         },
-        trailingContent = {
+        supportingContent = {
             Surface(
                 shape = MaterialTheme.shapes.small,
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                color = if (isSelected) {
+                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.12f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                },
+                modifier = Modifier.padding(top = 4.dp),
             ) {
                 CpText(
                     text = breadcrumb,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (isSelected) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                 )
             }
