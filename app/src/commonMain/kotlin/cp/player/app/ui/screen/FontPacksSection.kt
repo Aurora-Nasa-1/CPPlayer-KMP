@@ -1,17 +1,28 @@
 package cp.player.app.ui.screen
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import cp.player.app.AppModel
 import cp.player.app.i18n.FontPackStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.ui.component.CpConfirmHost
+import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsSection
+import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.rememberConfirmState
+import cp.player.app.ui.component.settingsSearchTarget
 import cp.player.app.ui.model.formatBytes
+import cp.player.app.ui.theme.AppFontFace
 import cp.player.app.ui.theme.AppFontPack
 import cp.player.app.ui.theme.FontPackPhase
 import cp.player.app.ui.theme.FontPackStatus
@@ -19,57 +30,94 @@ import cp.player.app.ui.theme.downloadFontPack
 import cp.player.app.ui.theme.platformSupportsFontPacks
 import cp.player.app.ui.theme.rememberFontPackStatuses
 import cp.player.app.ui.theme.removeFontPack
-import cp.player.app.ui.component.CpText
 
 /**
- * 「字库」设置区：中日文字体的现状与下载。
+ * 「字库」设置区：每种字体独立开关与中日文字体包下载。
  *
- * ## 为什么两端共用同一份 UI
+ * ## 独立开关与回退
  *
- * 桌面端字体**内置**、Android **下载**，看起来是两件事，但用户要看到的信息完全相同：
- * 一共几款字体、各自负责什么、现在能不能用、占多少体积。
- * 差别只在「最后一列能不能点」—— 桌面端 READY 且删除无意义（`removeFontPack` 是空实现），
- * 所以 `enabled` 直接按平台关掉，而不是再写一套桌面端专用的排版。
- * 两套排版的下场是两份文案漂移（本仓库在返回键上吃过一次）。
- *
- * ## 为什么删除也要二次确认
- *
- * 下载花的是用户的流量和时间，删掉是不可逆的（得重新下 30 MB）。
- * 按本仓库约定，破坏性操作只认 `CpConfirmHost` —— 哪怕只有一个入口。
+ * 每款字体（Google Sans Flex / Noto Sans JP / MiSans）均可单独开启或关闭：
+ * - 关闭某款字体时，该脚本文字回退到系统字体渲染。
+ * - 桌面端三款字体均随安装包内置，开关即时生效。
+ * - Android 端中日文字体需先下载，下载就绪后即可自由开关，亦可随时删除以释放存储。
  */
 @Composable
-fun FontPacksSection(modifier: Modifier = Modifier) {
+fun FontPacksSection(
+    modifier: Modifier = Modifier,
+    targetSettingId: String? = null,
+) {
     val strings = cpStrings()
     val packs = strings.fontPacks
     val statuses = rememberFontPackStatuses()
     val supported = platformSupportsFontPacks()
     val android = isAndroidPlatform()
     val confirm = rememberConfirmState()
+    val fontFaceEnabled by AppModel.fontFaceEnabledFlow.collectAsState()
+
+    val japaneseStatus = statuses.firstOrNull { it.pack == AppFontPack.JAPANESE }
+    val misansStatus = statuses.firstOrNull { it.pack == AppFontPack.MISANS }
 
     SettingsSection(packs.sectionTitle) {
-        statuses.forEachIndexed { index, status ->
-            // 桌面端：只展示（字体在安装包里，删了应用就没字体了）。
-            // Android：未下载 / 失败 → 下载，已安装 → 删除（带确认）。
+        // 0. Google Sans Flex（两端内置，默认开启）
+        val googleSansEnabled = fontFaceEnabled[AppFontFace.GOOGLE_SANS_FLEX] ?: true
+        SettingsSwitchItem(
+            title = packs.googleSansTitle,
+            subtitle = packs.googleSansNote,
+            checked = googleSansEnabled,
+            onCheckedChange = { AppModel.setFontFaceEnabled(AppFontFace.GOOGLE_SANS_FLEX, it) },
+            index = 0,
+            total = 3,
+            modifier = modifier.settingsSearchTarget("appearance_font_google_sans", targetSettingId),
+        )
+
+        // 1. Noto Sans JP（日文：桌面端内置，Android 下载）
+        val notoEnabled = fontFaceEnabled[AppFontFace.NOTO_SANS_JP] ?: true
+        val isJapaneseReady = !android || japaneseStatus?.phase == FontPackPhase.READY
+        if (isJapaneseReady) {
+            SettingsSwitchItem(
+                title = packs.japaneseTitle,
+                subtitle = if (android) "${packs.japaneseNote} · ${packs.stateInstalled}" else packs.japaneseNote,
+                checked = notoEnabled,
+                onCheckedChange = { AppModel.setFontFaceEnabled(AppFontFace.NOTO_SANS_JP, it) },
+                index = 1,
+                total = 3,
+                modifier = modifier.settingsSearchTarget("appearance_font_noto_sans_jp", targetSettingId),
+                leadingTrailingContent = if (android) {
+                    {
+                        IconButton(
+                            onClick = {
+                                confirm.request(
+                                    title = packs.japaneseTitle,
+                                    message = packs.deleteConfirm,
+                                    confirmLabel = packs.actionDelete,
+                                    dismissLabel = packs.cancel,
+                                    destructive = true,
+                                ) { removeFontPack(AppFontPack.JAPANESE) }
+                            },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.DeleteOutline,
+                                contentDescription = packs.actionDelete,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                } else null,
+            )
+        } else {
+            val status = japaneseStatus ?: FontPackStatus(AppFontPack.JAPANESE, FontPackPhase.MISSING)
             val actionable = supported && android && status.phase != FontPackPhase.DOWNLOADING
             SettingsClickItem(
-                title = titleOf(status.pack, packs),
+                title = packs.japaneseTitle,
                 subtitle = subtitleOf(status, packs),
-                index = index,
-                total = statuses.size,
-                modifier = modifier,
+                index = 1,
+                total = 3,
+                modifier = modifier.settingsSearchTarget("appearance_font_noto_sans_jp", targetSettingId),
                 enabled = actionable,
                 onClick = {
                     when (status.phase) {
-                        FontPackPhase.MISSING, FontPackPhase.FAILED -> downloadFontPack(status.pack)
-                        FontPackPhase.READY -> confirm.request(
-                            title = titleOf(status.pack, packs),
-                            message = packs.deleteConfirm,
-                            confirmLabel = packs.actionDelete,
-                            dismissLabel = packs.cancel,
-                            destructive = true,
-                        ) { removeFontPack(status.pack) }
-                        // 下载中点不动：这里再被点到说明状态刚好翻转，忽略即可。
-                        FontPackPhase.DOWNLOADING -> Unit
+                        FontPackPhase.MISSING, FontPackPhase.FAILED -> downloadFontPack(AppFontPack.JAPANESE)
+                        else -> Unit
                     }
                 },
                 trailingContent = {
@@ -77,7 +125,69 @@ fun FontPacksSection(modifier: Modifier = Modifier) {
                         text = trailingLabel(status, packs),
                         style = MaterialTheme.typography.labelLarge,
                         color = when (status.phase) {
-                            FontPackPhase.READY -> MaterialTheme.colorScheme.primary
+                            FontPackPhase.FAILED -> MaterialTheme.colorScheme.error
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                },
+            )
+        }
+
+        // 2. MiSans（中文：桌面端内置，Android 下载）
+        val misansEnabled = fontFaceEnabled[AppFontFace.MISANS] ?: true
+        val isMisansReady = !android || misansStatus?.phase == FontPackPhase.READY
+        if (isMisansReady) {
+            SettingsSwitchItem(
+                title = packs.misansTitle,
+                subtitle = if (android) "${packs.misansNote} · ${packs.stateInstalled}" else packs.misansNote,
+                checked = misansEnabled,
+                onCheckedChange = { AppModel.setFontFaceEnabled(AppFontFace.MISANS, it) },
+                index = 2,
+                total = 3,
+                modifier = modifier.settingsSearchTarget("appearance_font_misans", targetSettingId),
+                leadingTrailingContent = if (android) {
+                    {
+                        IconButton(
+                            onClick = {
+                                confirm.request(
+                                    title = packs.misansTitle,
+                                    message = packs.deleteConfirm,
+                                    confirmLabel = packs.actionDelete,
+                                    dismissLabel = packs.cancel,
+                                    destructive = true,
+                                ) { removeFontPack(AppFontPack.MISANS) }
+                            },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.DeleteOutline,
+                                contentDescription = packs.actionDelete,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                } else null,
+            )
+        } else {
+            val status = misansStatus ?: FontPackStatus(AppFontPack.MISANS, FontPackPhase.MISSING)
+            val actionable = supported && android && status.phase != FontPackPhase.DOWNLOADING
+            SettingsClickItem(
+                title = packs.misansTitle,
+                subtitle = subtitleOf(status, packs),
+                index = 2,
+                total = 3,
+                modifier = modifier.settingsSearchTarget("appearance_font_misans", targetSettingId),
+                enabled = actionable,
+                onClick = {
+                    when (status.phase) {
+                        FontPackPhase.MISSING, FontPackPhase.FAILED -> downloadFontPack(AppFontPack.MISANS)
+                        else -> Unit
+                    }
+                },
+                trailingContent = {
+                    CpText(
+                        text = trailingLabel(status, packs),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = when (status.phase) {
                             FontPackPhase.FAILED -> MaterialTheme.colorScheme.error
                             else -> MaterialTheme.colorScheme.onSurfaceVariant
                         },
@@ -95,11 +205,6 @@ fun FontPacksSection(modifier: Modifier = Modifier) {
     }
     // 确认框宿主放在本段末尾：与页面其余弹层同级（见 AGENTS 里「一页多入口接同一个 state」）。
     CpConfirmHost(confirm)
-}
-
-private fun titleOf(pack: AppFontPack, strings: FontPackStrings): String = when (pack) {
-    AppFontPack.JAPANESE -> strings.japaneseTitle
-    AppFontPack.MISANS -> strings.misansTitle
 }
 
 /**
@@ -125,7 +230,6 @@ private fun subtitleOf(status: FontPackStatus, strings: FontPackStrings): String
 private fun trailingLabel(status: FontPackStatus, strings: FontPackStrings): String = when (status.phase) {
     FontPackPhase.MISSING -> strings.actionDownload
     FontPackPhase.DOWNLOADING -> "${(status.progress * 100).toInt()}%"
-    // 桌面端 READY 时这一列只是状态说明，不是按钮（`enabled` 已关）。
     FontPackPhase.READY -> strings.stateInstalled
     FontPackPhase.FAILED -> strings.actionRetry
 }

@@ -69,6 +69,9 @@ private const val ColorTransitionMillis = 600
  * @param wallpaperSeed [ColorSource.COVER] 且没有曲目封面时的**系统壁纸**回退种子色；
  *   Android 恒为 null（那边由 Monet 直接给整套方案）
  */
+private val defaultFontFaceEnabledMap: Map<AppFontFace, Boolean> =
+    AppFontFace.entries.associateWith { true }
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun CpTheme(
@@ -83,6 +86,10 @@ fun CpTheme(
      * （[cp.player.app.platform.defaultFontRoundness]，Android 16+ 为 100，其余为 0）。
      */
     fontRoundness: Int? = null,
+    /**
+     * 各款字体的单独开关状态（对应 [AppFontFace]），未显式指定时默认全部开启。
+     */
+    fontFaceEnabled: Map<AppFontFace, Boolean> = defaultFontFaceEnabledMap,
     content: @Composable () -> Unit,
 ) {
     val dark = when (themeMode) {
@@ -149,9 +156,16 @@ fun CpTheme(
     // 之后就稳定了 —— 不会跟着上面的配色动画每帧重建。
     // 圆滑度变化会让五个字重实例全部换身份 ⇒ 字阶重建一次，这是可变字体换轴的固有代价，
     // 只发生在用户拖设置页滑杆松手的那一次。
+    val googleSansFlexEnabled = fontFaceEnabled[AppFontFace.GOOGLE_SANS_FLEX] ?: true
     val effectiveRoundness = fontRoundness ?: cp.player.app.platform.defaultFontRoundness()
     val fontFamily = googleSansFlexFamily(effectiveRoundness)
-    val typography: Typography = remember(fontFamily) { AppTypography.withFontFamily(fontFamily) }
+    val typography: Typography = remember(fontFamily, googleSansFlexEnabled) {
+        if (googleSansFlexEnabled) {
+            AppTypography.withFontFamily(fontFamily)
+        } else {
+            AppTypography
+        }
+    }
 
     // 中日文字体（日文 = Noto Sans JP，中文 = MiSans）。
     // ⚠️ 它们不进 [typography]：字阶是全局共享的，分不清这一段内容是中文还是日文。
@@ -159,7 +173,15 @@ fun CpTheme(
     // 这里只负责把「当前可用的字体家族」装进 CompositionLocal。
     // 桌面端随安装包内置、同步加载；Android 端由用户下载，下载完成后这里会因为
     // 状态变化重新组合，文本随之换字体 —— 不需要重启。
-    val appFontFamilies = rememberAppFontFamilies()
+    val rawFontFamilies = rememberAppFontFamilies()
+    val notoEnabled = fontFaceEnabled[AppFontFace.NOTO_SANS_JP] ?: true
+    val misansEnabled = fontFaceEnabled[AppFontFace.MISANS] ?: true
+    val appFontFamilies = remember(rawFontFamilies, notoEnabled, misansEnabled) {
+        AppFontFamilies(
+            japanese = if (notoEnabled) rawFontFamilies.japanese else null,
+            misans = if (misansEnabled) rawFontFamilies.misans else null,
+        )
+    }
 
     CompositionLocalProvider(
         LocalThemeMode provides themeMode,

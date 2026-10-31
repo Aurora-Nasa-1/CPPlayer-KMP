@@ -257,6 +257,27 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 sectionOf = { it.appearance.sectionFont },
             ),
             SettingsSubItem(
+                id = "appearance_font_google_sans",
+                titleOf = { it.fontPacks.googleSansTitle },
+                subtitleOf = { it.fontPacks.googleSansNote },
+                keywords = listOf("Google Sans", "拉丁", "英文", "数字", "默认字体", "latin", "font"),
+                sectionOf = { it.fontPacks.sectionTitle },
+            ),
+            SettingsSubItem(
+                id = "appearance_font_noto_sans_jp",
+                titleOf = { it.fontPacks.japaneseTitle },
+                subtitleOf = { it.fontPacks.japaneseNote },
+                keywords = listOf("Noto Sans JP", "日文", "日语", "假名", "日文汉字", "japanese", "font"),
+                sectionOf = { it.fontPacks.sectionTitle },
+            ),
+            SettingsSubItem(
+                id = "appearance_font_misans",
+                titleOf = { it.fontPacks.misansTitle },
+                subtitleOf = { it.fontPacks.misansNote },
+                keywords = listOf("MiSans", "中文", "汉字", "标点", "小米", "chinese", "font"),
+                sectionOf = { it.fontPacks.sectionTitle },
+            ),
+            SettingsSubItem(
                 id = "appearance_mobile_preview",
                 titleOf = { "手机版界面预览 (412×892)" },
                 subtitleOf = { "切换桌面端与手机版紧凑布局、底部导航栏与手机顶栏" },

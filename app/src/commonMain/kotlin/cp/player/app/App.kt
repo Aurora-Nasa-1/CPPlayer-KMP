@@ -581,13 +581,14 @@ private fun PlaybackMediaControlsBridge() {
  * 真正需要换色的那些 composable 由 `CompositionLocal` 的读取失效单独驱动，不受影响。
  */
 @Composable
-private fun AppTheme(content: @Composable () -> Unit) {
+internal fun AppTheme(content: @Composable () -> Unit) {
     val themeMode by AppModel.themeModeFlow.collectAsState()
     val colorSource by AppModel.colorSourceFlow.collectAsState()
     val pureBlack by AppModel.pureBlackFlow.collectAsState()
     val coverSeed by AppModel.coverSeedFlow.collectAsState()
     val wallpaperSeed by AppModel.wallpaperSeedFlow.collectAsState()
     val fontRoundness by AppModel.fontRoundnessFlow.collectAsState()
+    val fontFaceEnabled by AppModel.fontFaceEnabledFlow.collectAsState()
     // 语言必须在这里订阅一次：`ProvideCpStrings` 要覆盖整棵树（含 Navigator 与
     // 桌面的自绘标题栏），而 AppTheme 是全树唯一的主题宿主 —— 挂在这里才能保证
     // 「切换语言后立即生效」不需要重启，也不会漏掉任何分支。
@@ -599,6 +600,7 @@ private fun AppTheme(content: @Composable () -> Unit) {
         coverSeed = coverSeed,
         wallpaperSeed = wallpaperSeed,
         fontRoundness = fontRoundness,
+        fontFaceEnabled = fontFaceEnabled,
         // 触觉执行器必须在内容**之前**提供：它依赖 LocalView，而 LocalView 要在
         // setContent 的组合树里才拿得到宿主 View。放在主题内层可以保证
         // Navigator / 各 Screen 都在作用域内。

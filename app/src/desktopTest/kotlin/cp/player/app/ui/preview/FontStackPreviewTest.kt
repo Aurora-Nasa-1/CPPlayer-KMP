@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import cp.player.app.ui.component.CpText
+import cp.player.app.ui.theme.AppFontFace
 import cp.player.app.ui.theme.CpTheme
 import cp.player.app.ui.theme.ThemeMode
 import java.io.File
@@ -50,9 +51,13 @@ class FontStackPreviewTest {
      *
      * @param viaCpText true 走 [CpText]（带逐 run 字体切换），false 走裸 [Text]（只有默认字体）
      */
-    private fun renderBytes(text: String, viaCpText: Boolean): ByteArray {
+    private fun renderBytes(
+        text: String,
+        viaCpText: Boolean,
+        fontFaceEnabled: Map<AppFontFace, Boolean> = AppFontFace.entries.associateWith { true },
+    ): ByteArray {
         val scene = ImageComposeScene(width = 520, height = 96, density = Density(1f)) {
-            CpTheme(themeMode = ThemeMode.LIGHT) {
+            CpTheme(themeMode = ThemeMode.LIGHT, fontFaceEnabled = fontFaceEnabled) {
                 Box(
                     modifier = Modifier.fillMaxSize().background(Color.White),
                     contentAlignment = Alignment.CenterStart,
@@ -97,6 +102,25 @@ class FontStackPreviewTest {
     }
 
     @Test
+    fun chineseDisablingMiSansFallsBackToPlain() {
+        val plain = renderBytes(sampleChinese, viaCpText = false)
+        val styledWithMiSansDisabled = renderBytes(
+            sampleChinese,
+            viaCpText = true,
+            fontFaceEnabled = mapOf(
+                AppFontFace.GOOGLE_SANS_FLEX to true,
+                AppFontFace.NOTO_SANS_JP to true,
+                AppFontFace.MISANS to false,
+            ),
+        )
+        assertEquals(
+            plain.toList(),
+            styledWithMiSansDisabled.toList(),
+            "关闭 MiSans 时，中文应回退到系统字体，与裸 Text 逐像素一致",
+        )
+    }
+
+    @Test
     fun japaneseSwitchesToNotoSansJp() {
         val japanese = renderBytes(sampleJapanese, viaCpText = true)
         val chinese = renderBytes(sampleChinese, viaCpText = true)
@@ -104,6 +128,33 @@ class FontStackPreviewTest {
             chinese.toList(),
             japanese.toList(),
             "日文与中文渲染完全一致：日文字体没生效（两段文本内容不同，本就不可能逐像素相同）",
+        )
+    }
+
+    @Test
+    fun latinDisablingGoogleSansFlexChangesTypeface() {
+        val enabledBytes = renderBytes(
+            sampleLatin,
+            viaCpText = true,
+            fontFaceEnabled = mapOf(
+                AppFontFace.GOOGLE_SANS_FLEX to true,
+                AppFontFace.NOTO_SANS_JP to true,
+                AppFontFace.MISANS to true,
+            ),
+        )
+        val disabledBytes = renderBytes(
+            sampleLatin,
+            viaCpText = true,
+            fontFaceEnabled = mapOf(
+                AppFontFace.GOOGLE_SANS_FLEX to false,
+                AppFontFace.NOTO_SANS_JP to true,
+                AppFontFace.MISANS to true,
+            ),
+        )
+        assertNotEquals(
+            enabledBytes.toList(),
+            disabledBytes.toList(),
+            "关闭 Google Sans Flex 时，拉丁与数字应回退到系统默认字阶，像素应当与开启时不一致",
         )
     }
 

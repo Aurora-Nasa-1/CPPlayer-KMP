@@ -31,6 +31,7 @@ import cp.player.app.repository.SocialRepository
 import cp.player.app.shortcut.ShortcutAction
 import cp.player.app.shortcut.ShortcutBinding
 import cp.player.app.shortcut.UNBOUND_SHORTCUT_MARKER
+import cp.player.app.ui.theme.AppFontFace
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -692,6 +693,40 @@ object AppModel {
             settings.putString(KEY_FONT_ROUNDNESS, value.coerceIn(0, 100).toString())
         }
         _fontRoundness.value = value
+    }
+
+    // ============ 字体独立开关（持久化） ============
+
+    private const val KEY_FONT_GOOGLE_SANS_ENABLED = "font_google_sans_flex_enabled"
+    private const val KEY_FONT_NOTO_SANS_JP_ENABLED = "font_noto_sans_jp_enabled"
+    private const val KEY_FONT_MISANS_ENABLED = "font_misans_enabled"
+
+    private fun loadFontFaceEnabled(): Map<AppFontFace, Boolean> = mapOf(
+        AppFontFace.GOOGLE_SANS_FLEX to (settings.getString(KEY_FONT_GOOGLE_SANS_ENABLED)?.toBooleanStrictOrNull() ?: true),
+        AppFontFace.NOTO_SANS_JP to (settings.getString(KEY_FONT_NOTO_SANS_JP_ENABLED)?.toBooleanStrictOrNull() ?: true),
+        AppFontFace.MISANS to (settings.getString(KEY_FONT_MISANS_ENABLED)?.toBooleanStrictOrNull() ?: true),
+    )
+
+    private val _fontFaceEnabled = MutableStateFlow(loadFontFaceEnabled())
+
+    /**
+     * 各款字体的独立开关状态（默认全部开启）。
+     *
+     * 顺序对应 [AppFontFace.priority]。关闭某款字体时，该脚本的文字将回退到系统字体渲染。
+     */
+    val fontFaceEnabledFlow: StateFlow<Map<AppFontFace, Boolean>> = _fontFaceEnabled.asStateFlow()
+
+    fun isFontFaceEnabled(face: AppFontFace): Boolean =
+        _fontFaceEnabled.value[face] ?: true
+
+    fun setFontFaceEnabled(face: AppFontFace, enabled: Boolean) {
+        val key = when (face) {
+            AppFontFace.GOOGLE_SANS_FLEX -> KEY_FONT_GOOGLE_SANS_ENABLED
+            AppFontFace.NOTO_SANS_JP -> KEY_FONT_NOTO_SANS_JP_ENABLED
+            AppFontFace.MISANS -> KEY_FONT_MISANS_ENABLED
+        }
+        settings.putString(key, enabled.toString())
+        _fontFaceEnabled.value = _fontFaceEnabled.value + (face to enabled)
     }
 
     // ============ 底部导航栏（持久化） ============

@@ -233,7 +233,7 @@ fun buildAppStyledText(annotated: AnnotatedString, families: AppFontFamilies): A
  */
 internal fun cjkFaceFor(text: String, families: AppFontFamilies): AppFontFace? {
     if (families.isEmpty) return null
-    if (!text.any { it.isKana() }) return AppFontFace.MISANS
+    if (!text.any { it.isKana() }) return if (families.misans != null) AppFontFace.MISANS else null
     return if (families.japanese != null) AppFontFace.NOTO_SANS_JP else null
 }
 

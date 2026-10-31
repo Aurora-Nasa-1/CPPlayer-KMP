@@ -188,11 +188,13 @@ object CpStringsEn : CpStrings {
 
     override val fontPacks: FontPackStrings = object : FontPackStrings {
         override val sectionTitle = "Font packs"
-        override val intro = "Chinese and Japanese are rendered with MiSans / Noto Sans JP, while Latin " +
-            "letters and digits use Google Sans Flex. On desktop all three ship inside the installer; " +
-            "on Android the CJK fonts are downloaded on demand to keep the APK small."
+        override val intro = "Each font can be individually toggled on or off. When disabled or not downloaded, " +
+            "the system font is used instead. On desktop all three ship inside the installer; " +
+            "on Android the CJK fonts can be downloaded on demand."
         override val unsupported = "This Android version cannot apply variable font weights (Android 8.0 " +
             "or newer is required), so Chinese and Japanese will keep using the system font."
+        override val googleSansTitle = "Google Sans Flex (Latin / digits)"
+        override val googleSansNote = "Primary font for Latin letters, digits and symbols; supports variable roundness"
         override val japaneseTitle = "Noto Sans JP (Japanese)"
         override val japaneseNote = "Kana and Japanese kanji forms for Japanese lyrics and titles"
         override val misansTitle = "MiSans (Chinese)"

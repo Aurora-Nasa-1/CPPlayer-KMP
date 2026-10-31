@@ -81,6 +81,8 @@ class AppearanceSettingsScreen(
         val fluidBackground by AppModel.fluidBackgroundFlow.collectAsState()
         val showSongAlbum by AppModel.showSongAlbumFlow.collectAsState()
         val fontRoundness by AppModel.fontRoundnessFlow.collectAsState()
+        val fontFaceEnabled by AppModel.fontFaceEnabledFlow.collectAsState()
+        val googleSansEnabled = fontFaceEnabled[cp.player.app.ui.theme.AppFontFace.GOOGLE_SANS_FLEX] ?: true
         val platformAvailable = isPlatformColorSourceAvailable()
         val defaultRoundness = cp.player.app.platform.defaultFontRoundness()
 
@@ -206,6 +208,7 @@ class AppearanceSettingsScreen(
                             } else {
                                 ""
                             },
+                        enabled = googleSansEnabled,
                         index = 0,
                         total = if (fontRoundness != null) 2 else 1,
                     )
@@ -215,6 +218,7 @@ class AppearanceSettingsScreen(
                             text = s.appearance.resetPlatformDefault,
                             subtitle = s.appearance.resetPlatformDefaultNote,
                             icon = Icons.Filled.RestartAlt,
+                            enabled = googleSansEnabled,
                             index = 1,
                             total = 2,
                             onClick = { AppModel.setFontRoundness(null) },
@@ -222,9 +226,9 @@ class AppearanceSettingsScreen(
                     }
                 }
                 SettingsNote(s.appearance.roundnessNote)
-                // 字库：桌面端展示内置的三款字体，Android 提供中日文字体的下载 / 删除。
+                // 字库：每款字体独立开关；桌面端内置，Android 提供中日文字体的下载 / 删除。
                 // 与上面的「字体圆滑度」同属「字体长什么样」，所以放在同一页而不是单开一页。
-                FontPacksSection()
+                FontPacksSection(targetSettingId = targetSettingId)
                 SettingsNote(colorSource.description(s, platformAvailable))
 
                 if (!cp.player.app.platform.isAndroidPlatform() && cp.player.app.version.AppVersion.isDebugBuild) {

@@ -186,10 +186,12 @@ object CpStringsZh : CpStrings {
 
     override val fontPacks: FontPackStrings = object : FontPackStrings {
         override val sectionTitle = "字库"
-        override val intro = "中文与日文由 MiSans / Noto Sans JP 渲染，拉丁字母与数字用 Google Sans Flex。" +
-            "桌面端三款字体随安装包内置；安卓端为控制安装包体积，中日文字体需要按需下载。"
+        override val intro = "每种字体均可单独开关。未开启或未下载时将使用系统字体渲染对应文字。" +
+            "桌面端三款字体随安装包内置；安卓端中日文字体可按需下载与删除。"
         override val unsupported = "当前系统版本不支持字体的可变字重（需要 Android 8.0 及以上），" +
             "中文与日文将继续使用系统字体。"
+        override val googleSansTitle = "Google Sans Flex（拉丁 / 数字）"
+        override val googleSansNote = "拉丁字母、数字与符号的主字体，支持可变圆滑度"
         override val japaneseTitle = "Noto Sans JP（日文）"
         override val japaneseNote = "日文歌词、日文标题的假名与汉字写法"
         override val misansTitle = "MiSans（中文）"

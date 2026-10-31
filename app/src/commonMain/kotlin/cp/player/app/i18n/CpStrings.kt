@@ -339,12 +339,14 @@ interface AppearanceStrings {
 interface FontPackStrings {
     val sectionTitle: String
 
-    /** 整段说明：桌面端内置 / Android 下载。 */
+    /** 整段说明：桌面端内置 / Android 下载 / 单独开关。 */
     val intro: String
 
     /** 平台不支持时的说明（Android 7 及以下没有字体可变轴）。 */
     val unsupported: String
 
+    val googleSansTitle: String
+    val googleSansNote: String
     val japaneseTitle: String
     val japaneseNote: String
     val misansTitle: String

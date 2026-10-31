@@ -64,6 +64,7 @@ internal class TrayMenuScene(
             coverSeed = AppModel.coverSeedFlow.value,
             wallpaperSeed = AppModel.wallpaperSeedFlow.value,
             fontRoundness = AppModel.fontRoundnessFlow.value,
+            fontFaceEnabled = AppModel.fontFaceEnabledFlow.value,
         ) {
             ProvideCpStrings(AppModel.appLanguageFlow.value) {
                 // 根节点必须自己撑满：`ImageComposeScene` 不会给内容任何默认尺寸，

@@ -78,15 +78,20 @@
 `HealthScreenNoTruncationPreviewTest` 用源码扫描钉住这两条（不许出现 `CpText(` / `maxLines`），
 代价是这一页的中日文走平台回退字体 —— 诊断页的首要目标是「读得到」，不是观感统一。
 
-## 4. 桌面内置 vs Android 下载
+## 4. 独立开关与平台支持（桌面内置 vs Android 下载）
 
-Android 不内置这两款（合计约 30 MB，每个用户都要为它付包体积），改成用户显式下载：
+每款字体均支持**独立单独开关**（设置 → 外观 → **字库**）：
+- **Google Sans Flex**：开启时渲染拉丁 / 数字 / 符号并支持圆滑度调节；关闭时退回到系统默认 Typography。
+- **Noto Sans JP**：开启时接管假名与日文汉字；关闭时日文文字退回到系统日文字体。
+- **MiSans VF**：开启时接管中文、全角标点与其余文字；关闭时退回到系统中文字体。
+
+桌面端三款字体随安装包内置，开关直接生效；Android 端 Noto Sans JP 与 MiSans 为控制安装包体积改为按需下载：
 
 - 入口：设置 → 外观 → **字库**（`FontPacksSection`，两端共用同一份 UI）
 - 来源：本仓库的 GitHub Release **`fonts-v1`** 的两个资源，URL 硬编码在 `AppFontPack`
 - 落地：`filesDir/fonts/<fileName>`，先写 `.part` 再 rename，落地前校验**体积 + 字体魔数**
   （GitHub 出错会返回 HTML 错误页，不校验就会被当成字体）
-- 删除后立即回到平台回退字体；下载完成后无需重启，主题会重组
+- Android 端已下载的字体支持自由开关，亦可随时删除释放存储；删除后立即回到平台回退字体；下载完成后无需重启，主题会重组
 
 ⚠️ **换字体版本**：新建 `fonts-v2` 并**同步改 `AppFontPack` 里的 url**。不要删改已发布的
 `fonts-v1` 资源 —— 老版本 App 的下载会 404。
