@@ -1,5 +1,11 @@
 package cp.player.app.ui.screen
 
+import cp.player.core.api.parseWebLoginSession
+import cp.player.core.api.parseWebLoginState
+import cp.player.core.api.WebLoginState
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+
 import cp.player.app.ui.component.CpText
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -132,6 +138,7 @@ import cp.player.core.util.currentTimeMillis
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -336,9 +343,9 @@ class AccountScreen : Screen {
                         AccountHeroCard(
                             nickname = me.nickname,
                             avatarUrl = me.avatarUrl,
-                            uid = me.uid,
+                            uid = me.resourceId,
                             providerName = provider?.name ?: s.account.currentProvider,
-                            onOpenProfile = { navigator.push(UserProfileScreen(me.uid, me.nickname)) },
+                            onOpenProfile = { navigator.push(UserProfileScreen(me.uid, me.nickname, me.resourceId)) },
                             onOpenMessages = { navigator.push(MessagesScreen()) },
                         )
                     }
@@ -348,7 +355,7 @@ class AccountScreen : Screen {
                         s.account.accountsOf(provider?.name ?: s.account.currentProvider),
                     ) {
                         val activeUid = AccountStore.activeUid(model.providerId())
-                            ?: profile?.uid?.toString()
+                            ?: profile?.resourceId
 
                         accounts.forEachIndexed { index, account ->
                             val isActive = account.uid == activeUid
@@ -1353,7 +1360,7 @@ private fun WebviewLoginPanel(
 private fun AccountHeroCard(
     nickname: String?,
     avatarUrl: String?,
-    uid: Long?,
+    uid: String?,
     providerName: String,
     onOpenProfile: () -> Unit,
     onOpenMessages: () -> Unit,
@@ -1422,7 +1429,7 @@ private fun AccountHeroCard(
                         append(providerName)
                         if (uid != null) {
                             append(" · ")
-                            append(s.account.accountId(uid.toString()))
+                            append(s.account.accountId(uid))
                         }
                     },
                     style = MaterialTheme.typography.labelMedium,
@@ -1535,6 +1542,8 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
     private var captchaSessionCookie: String? = null
 
     private var qrJob: Job? = null
+    private var webJob: Job? = null
+    private var webSessionId: String? = null
 
     /**
      * 「跳转前自动保存」的去重账本（同一张二维码只写一次相册）。
@@ -1547,6 +1556,9 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
 
     init {
         screenModelScope.launch {
+            AppModel.sourceGeneration.drop(1).collect { cancelWebLogin() }
+        }
+        screenModelScope.launch {
             var lastProviderId: String? = null
             activeProvider.collect { provider ->
                 val currentProviderId = provider?.id
@@ -1555,6 +1567,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
 
                 if (isProviderSwitched) {
                     cancelQrPolling()
+                    cancelWebLogin()
                     qrAutoSave.reset()
                     qrUrl.value = null
                     qrImgBase64.value = null
@@ -1607,6 +1620,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
     fun providerId(): String = activeProvider.value?.id ?: AppModel.activeProviderId()
 
     fun setChannel(channel: LoginChannel) {
+        if (channel != LoginChannel.WEBVIEW) cancelWebLogin()
         method.value = channel
         if (channel == LoginChannel.QR) restoreOrFetchQrCode() else cancelQrPolling()
         if (channel == LoginChannel.PHONE && supportsCaptchaImage.value) fetchCaptchaImage()
@@ -1614,16 +1628,23 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
     }
 
     fun fetchWebviewLoginUrl() {
-        screenModelScope.launch {
+        cancelWebLogin()
+        val provider = activeProvider.value
+        val generation = AppModel.sourceGeneration.value
+        webJob = screenModelScope.launch {
             isLoading.value = true
             try {
                 val resp = AppModel.authRepository.getWebviewLoginUrl()
-                val url = extractVerifyUrl(resp) ?: ((resp as? JsonObject)?.get("url") as? JsonPrimitive)?.contentOrNull
-                if (!url.isNullOrBlank()) {
-                    webviewLoginUrl.value = url
+                if (activeProvider.value !== provider || AppModel.sourceGeneration.value != generation) return@launch
+                val session = parseWebLoginSession(resp)
+                if (session != null) {
+                    webviewLoginUrl.value = session.url
+                    webSessionId = session.sessionId
                 } else {
                     message.value = account.webviewUrlFailed
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 message.value = account.webviewUrlFailed
             } finally {
@@ -1636,8 +1657,57 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
         val url = customUrl?.takeIf { it.isNotBlank() } ?: webviewLoginUrl.value
         if (!url.isNullOrBlank()) {
             openWebview(url, account.webviewLoginTitle)
+            // A custom verification URL must not consume an unrelated login session.
+            if (url == webviewLoginUrl.value) startWebLoginPolling()
         } else {
             fetchWebviewLoginUrl()
+        }
+    }
+
+    private fun cancelWebLogin() {
+        webJob?.cancel()
+        webJob = null
+        webSessionId = null
+        webviewLoginUrl.value = null
+    }
+
+    private fun startWebLoginPolling() {
+        val sessionId = webSessionId ?: return
+        if (webJob?.isActive == true) return
+        val provider = activeProvider.value
+        val generation = AppModel.sourceGeneration.value
+        webJob = screenModelScope.launch {
+            try {
+                repeat(150) {
+                    delay(2000L)
+                    if (activeProvider.value !== provider || AppModel.sourceGeneration.value != generation ||
+                        method.value != LoginChannel.WEBVIEW) return@launch
+                    val response = AppModel.authRepository.checkWebviewLogin(sessionId)
+                    if (activeProvider.value !== provider || AppModel.sourceGeneration.value != generation) return@launch
+                    when (parseWebLoginState(response)) {
+                        WebLoginState.PENDING -> Unit
+                        WebLoginState.AUTHORIZED -> {
+                            webSessionId = null
+                            webviewLoginUrl.value = null
+                            onLoginSucceeded(response.uniCookie())
+                            return@launch
+                        }
+                        else -> {
+                            webSessionId = null
+                            webviewLoginUrl.value = null
+                            message.value = account.loginFailedRetry
+                            return@launch
+                        }
+                    }
+                }
+                webSessionId = null
+                webviewLoginUrl.value = null
+                message.value = account.loginFailedRetry
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                message.value = account.loginCheckFailed
+            }
         }
     }
 
@@ -1675,13 +1745,14 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
     fun cancelAddAccount() {
         showForm.value = false
         cancelQrPolling()
+        cancelWebLogin()
     }
 
     private fun refreshAccounts() {
         val providerId = providerId()
         val stored = AccountStore.list(providerId)
         val profile = AppModel.userProfileFlow.value
-        val currentUid = profile?.uid?.toString()
+        val currentUid = profile?.resourceId
         val merged = if (isLogged.value && profile != null && stored.none { it.uid == currentUid }) {
             stored + AccountStore.SavedAccount(
                 uid = currentUid ?: "",
@@ -1696,12 +1767,6 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
     }
 
     private suspend fun checkLoginStatus() {
-        val hasCookie = AppModel.cookieStorage.getCookie(providerId())?.isNotEmpty() == true
-        if (!hasCookie) {
-            isLogged.value = false
-            refreshAccounts()
-            return
-        }
         val body = runCatching { AppModel.authRepository.getLoginStatus() }.getOrNull()
         val ok = isLoggedInStatus(body)
         isLogged.value = ok
@@ -1912,7 +1977,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                 AccountStore.save(
                     providerId,
                     AccountStore.SavedAccount(
-                        uid = profile.uid.toString(),
+                        uid = profile.resourceId,
                         nickname = profile.nickname,
                         avatarUrl = profile.avatarUrl,
                         cookie = cookie,
@@ -1977,9 +2042,12 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
             message.value = account.loginFailedRetry
             return
         }
+        val provider = activeProvider.value
+        val generation = AppModel.sourceGeneration.value
         val providerId = providerId()
         if (!cookie.isNullOrEmpty()) AppModel.cookieStorage.saveCookie(providerId, cookie)
         val profile = AppModel.refreshUserProfileAwait()
+        if (activeProvider.value !== provider || AppModel.sourceGeneration.value != generation) return
         isLogged.value = profile != null
         if (profile != null) {
             QrLoginStore.clear(providerId)
@@ -1987,7 +2055,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                 AccountStore.save(
                     providerId,
                     AccountStore.SavedAccount(
-                        uid = profile.uid.toString(),
+                        uid = profile.resourceId,
                         nickname = profile.nickname,
                         avatarUrl = profile.avatarUrl,
                         cookie = cookie,
@@ -2004,6 +2072,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
 
     fun switchAccount(account: AccountStore.SavedAccount) {
         cancelQrPolling()
+        cancelWebLogin()
         screenModelScope.launch {
             val providerId = providerId()
             val previousCookie = AppModel.cookieStorage.getCookie(providerId)
@@ -2031,6 +2100,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
 
     fun removeAccount(account: AccountStore.SavedAccount) {
         cancelQrPolling()
+        cancelWebLogin()
         screenModelScope.launch {
             val providerId = providerId()
             val wasActive = AccountStore.activeUid(providerId) == account.uid
@@ -2055,6 +2125,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
 
     fun logout() {
         cancelQrPolling()
+        cancelWebLogin()
         screenModelScope.launch {
             val providerId = providerId()
             runCatching { AppModel.authRepository.logout() }

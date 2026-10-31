@@ -10,6 +10,7 @@ import cp.player.core.music.ArtistSummary
 import cp.player.core.music.BannerItem
 import cp.player.core.music.MusicResult
 import cp.player.core.music.PlaylistSummary
+import cp.player.core.music.isRemote
 import cp.player.core.music.RankingSummary
 import cp.player.core.music.TrackSummary
 import kotlinx.coroutines.Dispatchers
@@ -86,8 +87,8 @@ data class HomeUiState(
      */
     val sidebarPlaylists: List<PlaylistSummary>
         get() {
-            val likedId = likedPlaylist?.id
-            return userPlaylists.filter { it.id != likedId && !isLikedPlaylistName(it.name) }
+            val likedId = likedPlaylist?.resourceId
+            return userPlaylists.filter { it.resourceId != likedId && !isLikedPlaylistName(it.name) }
         }
 
     /**
@@ -281,7 +282,7 @@ class HomeScreenModel(
      * 与搜索 / 主页的更多菜单**都**按这条判据决定要不要出菜单 —— 判据写在这里
      * 而不是各页各写一个 `isLocalPlaylist`，就是为了别再漂。
      */
-    fun isServerPlaylist(playlist: PlaylistSummary): Boolean = playlist.id > 0
+    fun isServerPlaylist(playlist: PlaylistSummary): Boolean = playlist.isRemote
 
     /** 当前账号是否拥有该歌单 —— 决定菜单里是「删除歌单」还是「取消收藏」。 */
     fun isPlaylistOwner(playlist: PlaylistSummary): Boolean {
@@ -304,7 +305,7 @@ class HomeScreenModel(
         if (!isServerPlaylist(playlist)) return
         screenModelScope.launch {
             val result = withContext(Dispatchers.IO) {
-                safe { AppModel.musicRepository.getPlaylistDetail(playlist.id) }
+                safe { AppModel.musicRepository.getPlaylistDetail(playlist.resourceId) }
             }
             val detail = (result as? BackendResult.Success)?.data
             val tracks = detail?.tracks.orEmpty()
@@ -324,7 +325,7 @@ class HomeScreenModel(
         AppModel.playback.playQueue(
             tracks.map { "$provider://song/${it.id}" },
             startIndex = 0,
-            sourceId = playlist.id.toString(),
+            sourceId = playlist.resourceId,
         )
     }
 
@@ -349,8 +350,8 @@ class HomeScreenModel(
         screenModelScope.launch {
             val ok = withContext(Dispatchers.IO) {
                 runCatching {
-                    if (owner) AppModel.musicRepository.deletePlaylist(playlist.id)
-                    else AppModel.musicRepository.unsubscribePlaylist(playlist.id)
+                    if (owner) AppModel.musicRepository.deletePlaylist(playlist.resourceId)
+                    else AppModel.musicRepository.unsubscribePlaylist(playlist.resourceId)
                 }.getOrDefault(false)
             }
             cp.player.app.ui.util.UiEvents.notify(
@@ -503,7 +504,7 @@ class HomeScreenModel(
         val userResult = user.await()
         val mergedRecommended = (
             recommended.await().dataOrEmpty() + personalized.await().dataOrEmpty()
-            ).distinctBy { it.id }
+            ).distinctBy { it.resourceId }
 
         // 只有「日推」和「用户歌单」失败才升级成页面级错误：它们是登录态与个性化能力的
         // 直接体现。焦点图 / 榜单 / 新碟 / 歌手 / 新歌速递都是公共内容，某个 Provider 不提供

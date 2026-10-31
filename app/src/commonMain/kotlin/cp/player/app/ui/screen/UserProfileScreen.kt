@@ -76,18 +76,21 @@ import kotlinx.coroutines.launch
 class UserProfileScreen(
     private val uid: Long,
     private val displayName: String? = null,
+    private val resourceId: String = uid.toString(),
 ) : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         UserProfileContent(
-            uid = uid,
+            uid = resourceId,
             displayName = displayName,
             // `rememberScreenModel` 是定义在 `Screen` 上的**扩展函数**，只有 Screen 子类的
             // 成员里才有接收者；顶层的 @Composable 里调用会报 `Unresolved reference`。
             model = rememberScreenModel { UserProfileModel() },
             onBack = { navigator.popOrNotify() },
-            onOpenChat = { name -> navigator.push(ChatScreen(uid, name)) },
+            onOpenChat = if (uid > 0L && resourceId == uid.toString()) {
+                { name -> navigator.push(ChatScreen(uid, name)) }
+            } else null,
         )
     }
 }
@@ -105,13 +108,13 @@ private class UserProfileModel : ScreenModel {
     private val _state = MutableStateFlow(ProfileUiState())
     val state: StateFlow<ProfileUiState> = _state
 
-    private var loadedUid: Long? = null
+    private var loadedUid: String? = null
 
     /**
      * @param strings 失败兜底文案按**当前语言**组 —— 协程里读不到 CompositionLocal，
      *   由组合侧传进来（见 I18N.md §5.9）。
      */
-    fun load(uid: Long, fallbackName: String?, strings: CpStrings) {
+    fun load(uid: String, fallbackName: String?, strings: CpStrings) {
         if (loadedUid == uid && _state.value.bundle != null) return
         loadedUid = uid
         screenModelScope.launch {
@@ -125,7 +128,7 @@ private class UserProfileModel : ScreenModel {
                     error = result.message,
                     bundle = fallbackName?.let {
                         ProfileBundle(
-                            uid = uid, isArtist = false, nickname = it,
+                            uid = uid.toLongOrNull() ?: 0L, resourceId = uid, isArtist = false, nickname = it,
                             avatarUrl = null, signature = null,
                             primaryCount = 0, follows = 0, followeds = 0,
                         )
@@ -136,7 +139,7 @@ private class UserProfileModel : ScreenModel {
         }
     }
 
-    fun reload(uid: Long, fallbackName: String?, strings: CpStrings) {
+    fun reload(uid: String, fallbackName: String?, strings: CpStrings) {
         loadedUid = null
         load(uid, fallbackName, strings)
     }
@@ -144,11 +147,11 @@ private class UserProfileModel : ScreenModel {
 
 @Composable
 private fun UserProfileContent(
-    uid: Long,
+    uid: String,
     displayName: String?,
     model: UserProfileModel,
     onBack: () -> Unit,
-    onOpenChat: (String) -> Unit,
+    onOpenChat: ((String) -> Unit)?,
 ) {
     val state by model.state.collectAsState()
     val navigator = LocalNavigator.currentOrThrow
@@ -186,7 +189,7 @@ private fun UserProfileContent(
     val bundle = state.bundle
     val songs = bundle?.songs.orEmpty()
     val mediaIds = remember(songs) { songs.map { "$provider://song/${it.id}" } }
-    val isMe = me?.uid == uid
+    val isMe = me?.resourceId == uid
     // 热门歌曲最多 50 首，默认全展开会把下面的「专辑」推到很远的滚动位置。
     var songsExpanded by remember(uid) { mutableStateOf(false) }
     val visibleSongs = if (songsExpanded) songs else songs.take(SONG_PREVIEW)
@@ -310,7 +313,7 @@ private fun UserProfileContent(
                     // 横排一眼扫完，竖排会把「歌单 / 热门歌曲」挤到很下面。
                     item {
                         LazyScrollRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            items(bundle.albums.size, key = { "album-${bundle.albums[it].id}" }) { index ->
+                            items(bundle.albums.size, key = { "album-${bundle.albums[it].resourceId}" }) { index ->
                                 val album = bundle.albums[index]
                                 AlbumCoverCard(
                                     album = album,
@@ -329,7 +332,7 @@ private fun UserProfileContent(
                             modifier = Modifier.padding(top = 12.dp),
                         )
                     }
-                    items(bundle.playlists.size, key = { "pl-${bundle.playlists[it].id}" }) { index ->
+                    items(bundle.playlists.size, key = { "pl-${bundle.playlists[it].resourceId}" }) { index ->
                         val playlist = bundle.playlists[index]
                         PlaylistItem(
                             playlist = playlist,
@@ -399,7 +402,7 @@ private fun UserProfileContent(
                         playlistActions.downloadPlaylist(playlist)
                         playlistOptionsTarget = null
                     },
-                    onShare = { shareText(playlistShareText(playlist.id, playlist.name)) },
+                    onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
                     // 收藏状态不在这里查（要额外一次请求），所以菜单不提供「收藏歌单」；
                     // 取消收藏走 [onDelete] 那一支的「删除歌单 / 取消收藏」——
                     // 与侧栏同一条规则：owner 删除、非 owner 取消收藏。
@@ -442,7 +445,7 @@ private fun UserProfileContent(
                     playlistOptionsTarget = null
                 },
                 onDelete = if (owner) askDelete else null,
-                onShare = { shareText(playlistShareText(playlist.id, playlist.name)) },
+                onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
                 coverUrl = playlist.coverUrl,
             )
         }
@@ -511,7 +514,7 @@ private fun UserProfileContent(
 private fun ProfileHero(
     bundle: ProfileBundle,
     isMe: Boolean,
-    onOpenChat: (String) -> Unit,
+    onOpenChat: ((String) -> Unit)?,
 ) {
     val s = cpStrings()
     Column(
@@ -553,7 +556,7 @@ private fun ProfileHero(
             }
         }
         // 自己的主页发不了私信给自己 —— 这个按钮必须消失，而不是点了报错。
-        if (!isMe) {
+        if (!isMe && !bundle.isArtist && onOpenChat != null) {
             Spacer(Modifier.height(8.dp))
             TextButton(onClick = { onOpenChat(bundle.nickname) }) {
                 Icon(Icons.Filled.Email, contentDescription = null, modifier = Modifier.size(18.dp))

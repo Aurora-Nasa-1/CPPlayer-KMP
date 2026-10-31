@@ -294,7 +294,7 @@ internal fun DesktopLibraryLayout(
                             }
                         }
                         if (gridView) {
-                            items(state.playlists.chunked(columns), key = { "grid-${it.first().id}" }) { row ->
+                            items(state.playlists.chunked(columns), key = { "grid-${it.first().resourceId}" }) { row ->
                                 Row(horizontalArrangement = Arrangement.spacedBy(CpSpacing.pageHorizontal)) {
                                     row.forEach { playlist ->
                                         DesktopLibraryPlaylist(
@@ -308,7 +308,7 @@ internal fun DesktopLibraryLayout(
                                 }
                             }
                         } else {
-                            items(state.playlists, key = { "list-${it.id}" }) { playlist ->
+                            items(state.playlists, key = { "list-${it.resourceId}" }) { playlist ->
                                 PlaylistItem(
                                     playlist = playlist,
                                     isOwner = actions.isOwner(playlist),
@@ -382,11 +382,11 @@ internal fun DesktopLibraryPlaylist(
         Box(
             Modifier.fillMaxWidth().aspectRatio(1f).clip(MaterialTheme.shapes.large)
                 .clickable {
-                    CoverFlight.openPlaylist(playlist.id, playlist.coverUrl)
+                    CoverFlight.openPlaylist(playlist.resourceId, playlist.coverUrl)
                     onOpen()
                 }
                 // Matches the theme's large corner; flight API takes a Dp.
-                .coverFlightSource(CoverFlight.playlistKey(playlist.id), 16.dp),
+                .coverFlightSource(CoverFlight.playlistKey(playlist.resourceId), 16.dp),
         ) {
             CpCoverPlaceholder(Modifier.fillMaxSize(), corner = 16.dp, animated = false)
             if (!playlist.coverUrl.isNullOrBlank()) {

@@ -95,6 +95,7 @@ class ProviderCustomSettingsScreen(
                                     onCheckedChange = { v ->
                                         values[item.key] = v.toString()
                                         storage.putString(item.key, v.toString())
+                                        cp.player.app.AppModel.onProviderConfigurationChanged(providerId)
                                     }
                                 )
                             }
@@ -114,6 +115,7 @@ class ProviderCustomSettingsScreen(
                                         val selectedVal = options.getOrNull(idx)?.value.orEmpty()
                                         values[item.key] = selectedVal
                                         storage.putString(item.key, selectedVal)
+                                        cp.player.app.AppModel.onProviderConfigurationChanged(providerId)
                                     }
                                 )
                             }
@@ -181,6 +183,7 @@ class ProviderCustomSettingsScreen(
                         onClick = {
                             values[item.key] = editingText
                             storage.putString(item.key, editingText)
+                            cp.player.app.AppModel.onProviderConfigurationChanged(providerId)
                             editingItem = null
                         }
                     ) {

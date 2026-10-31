@@ -163,7 +163,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
 
     LaunchedEffect(state.selectedPlaylistId, state.playlists) {
         val target = state.selectedPlaylistId ?: return@LaunchedEffect
-        state.playlists.firstOrNull { it.id == target }?.let { navigator.push(PlaylistDetailScreen(it)) }
+        state.playlists.firstOrNull { it.resourceId == target }?.let { navigator.push(PlaylistDetailScreen(it)) }
     }
 
     // 页面级刷新入口：桌面 = 空白处右键「刷新」；Android = 下拉刷新。
@@ -217,7 +217,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
             onDismiss = { selectedPlaylist = null },
             onPlay = { model.play(playlist) },
             onAddToQueue = { model.play(playlist, addOnly = true) },
-            onShare = { shareText(playlistShareText(playlist.id, playlist.name)) },
+            onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
             onDelete = { askDeleteOrUnsubscribe(playlist, model, confirm, s) },
             onRename = if (model.isOwner(playlist)) {
                 { renameTarget = playlist }
@@ -235,7 +235,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
 
     renameTarget?.let { target ->
         cp.player.app.ui.component.RenamePlaylistDialog(
-            playlistId = target.id,
+            playlistId = target.resourceId,
             currentName = target.name,
             onDismiss = { renameTarget = null },
             onRenamed = {

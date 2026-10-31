@@ -84,6 +84,7 @@ object CoverFlight {
     fun trackKey(trackId: String): String = "source/track:$trackId"
 
     fun playlistKey(playlistId: Long): String = "source/playlist:$playlistId"
+    fun playlistKey(playlistId: String): String = "source/playlist:$playlistId"
 
     internal class Spot(
         val token: Any,
@@ -122,6 +123,9 @@ object CoverFlight {
      * 歌单打开本身走 fade 交叉淡入（目标位置静态、确定性高），飞行器与之叠加。
      */
     fun openPlaylist(playlistId: Long, coverUrl: String?) =
+        start(TARGET_PLAYLIST_HEADER, coverUrl, playlistKey(playlistId))
+
+    fun openPlaylist(playlistId: String, coverUrl: String?) =
         start(TARGET_PLAYLIST_HEADER, coverUrl, playlistKey(playlistId))
 
     private fun start(targetKey: String, coverUrl: String?, sourceKey: String) {

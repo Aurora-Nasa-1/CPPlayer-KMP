@@ -77,7 +77,7 @@ fun AddToPlaylistSheet(
             ?.takeIf { it.isNotBlank() }
     }
 
-    fun addTo(playlistId: Long) {
+    fun addTo(playlistId: String) {
         if (busy) return
         val ids = trackIds.mapNotNull(::extractRawId)
         if (ids.isEmpty()) {
@@ -107,7 +107,7 @@ fun AddToPlaylistSheet(
         busy = true
         scope.launch(Dispatchers.IO) {
             val newId = (runCatching {
-                AppModel.musicRepository.createPlaylist(name)
+                AppModel.musicRepository.createPlaylistResource(name)
             }.getOrNull() as? BackendResult.Success)?.data
             withContext(Dispatchers.Main) {
                 busy = false
@@ -168,10 +168,10 @@ fun AddToPlaylistSheet(
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                     contentPadding = PaddingValues(vertical = 4.dp),
                 ) {
-                    itemsIndexed(playlists!!, key = { _, p -> p.id }) { _, playlist ->
+                    itemsIndexed(playlists!!, key = { _, p -> p.resourceId }) { _, playlist ->
                         PlaylistPickerRow(
                             playlist = playlist,
-                            onClick = { addTo(playlist.id) },
+                            onClick = { addTo(playlist.resourceId) },
                         )
                     }
                 }

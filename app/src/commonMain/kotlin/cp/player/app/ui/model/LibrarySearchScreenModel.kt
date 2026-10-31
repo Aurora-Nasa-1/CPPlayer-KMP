@@ -57,7 +57,7 @@ class LibrarySearchScreenModel : ScreenModel {
         if (keyword.isEmpty() || playlists.isEmpty()) return
 
         searchJob = screenModelScope.launch {
-            val loaded = LinkedHashMap<Long, LinkedHashMap<String, TrackSummary>>()
+            val loaded = LinkedHashMap<String, LinkedHashMap<String, TrackSummary>>()
             val loadedMutex = Mutex()
             withContext(Dispatchers.IO) {
                 playlists.map { playlist ->
@@ -68,10 +68,10 @@ class LibrarySearchScreenModel : ScreenModel {
                             generation = gen,
                             onPage = { tracks ->
                                 loadedMutex.withLock {
-                                    val tracksById = loaded.getOrPut(playlist.id) { LinkedHashMap() }
+                                    val tracksById = loaded.getOrPut(playlist.resourceId) { LinkedHashMap() }
                                     tracks.forEach { tracksById[it.id] = it }
                                     val hits = playlists.flatMap { orderedPlaylist ->
-                                        loaded[orderedPlaylist.id].orEmpty().values
+                                        loaded[orderedPlaylist.resourceId].orEmpty().values
                                             .filter { it.matches(keyword) }
                                             .map { LibraryTrackHit(orderedPlaylist, it) }
                                     }.take(MAX_TRACKS_PER_PLAYLIST)
@@ -103,7 +103,7 @@ class LibrarySearchScreenModel : ScreenModel {
             var pageHasMore = false
             var emittedPage = false
             val params = mapOf(
-                "id" to playlist.id.toString(),
+                "id" to playlist.resourceId,
                 "limit" to PAGE_SIZE.toString(),
                 "offset" to offset.toString(),
             )
@@ -120,7 +120,7 @@ class LibrarySearchScreenModel : ScreenModel {
                 } ?: return@collect
                 val page = (MusicSourceFromApi.parsePlaylistTracks(data) as? BackendResult.Success)?.data
                     ?: return@collect
-                pageHasMore = page.hasMore || page.tracks.size >= PAGE_SIZE
+                pageHasMore = page.hasMore || (!page.paginationSpecified && page.tracks.size >= PAGE_SIZE)
                 if (!emittedPage || cachedResult is CacheResult.Fresh) {
                     emittedPage = true
                     loadedCount = (loadedCount + page.tracks.size).coerceAtMost(MAX_TRACKS_PER_PLAYLIST)

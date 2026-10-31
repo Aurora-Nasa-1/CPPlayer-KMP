@@ -196,7 +196,7 @@ private fun LibrarySearchContent(
                                     modifier = Modifier.padding(top = 8.dp),
                                 )
                             }
-                            items(playlists, key = { "p-${it.id}" }) { playlist ->
+                            items(playlists, key = { "p-${it.resourceId}" }) { playlist ->
                                 PlaylistItem(
                                     playlist = playlist,
                                     isOwner = library.isOwner(playlist),
@@ -215,7 +215,7 @@ private fun LibrarySearchContent(
                             }
                             itemsIndexed(
                                 searchState.trackHits,
-                                key = { _, hit -> "pt-${hit.playlist.id}-${hit.track.id}" },
+                                key = { _, hit -> "pt-${hit.playlist.resourceId}-${hit.track.id}" },
                             ) { index, hit ->
                                 PlaylistTrackRow(
                                     hit = hit,
@@ -299,7 +299,7 @@ private fun LibrarySearchContent(
             onDismiss = { selectedPlaylist = null },
             onPlay = { library.play(playlist) },
             onAddToQueue = { library.play(playlist, addOnly = true) },
-            onShare = { shareText(playlistShareText(playlist.id, playlist.name)) },
+            onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
             onDelete = { selectedPlaylist = null; requestDelete() },
             onRename = if (owner) {
                 { selectedPlaylist = null; renameTarget = playlist }
@@ -314,7 +314,7 @@ private fun LibrarySearchContent(
 
     renameTarget?.let { target ->
         RenamePlaylistDialog(
-            playlistId = target.id,
+            playlistId = target.resourceId,
             currentName = target.name,
             onDismiss = { renameTarget = null },
             onRenamed = {

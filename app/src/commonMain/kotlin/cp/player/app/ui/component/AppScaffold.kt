@@ -67,12 +67,14 @@ fun AppScaffold(
 ) {
     val actualScrollBehavior = scrollBehavior ?: TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
-    // If topBarContainerColor is Unspecified, make it match the scaffold's containerColor
-    // This ensures that the unscrolled TopAppBar blends seamlessly with the background
-    val actualTopBarContainerColor = if (topBarContainerColor == Color.Unspecified) {
-        if (containerColor == Color.Transparent) MaterialTheme.colorScheme.surface.copy(alpha = 0f) else containerColor
-    } else {
-        topBarContainerColor
+    // If topBarContainerColor is Unspecified or Transparent, make it match the unscrolled background
+    // with 0 alpha. We intentionally avoid Color.Transparent (which is transparent black Color(0x00000000)),
+    // because lerping from transparent black to scrolledContainerColor produces a muddy dark-gray
+    // midpoint that makes the top bar look darker during transition than after collapse.
+    val actualTopBarContainerColor = when {
+        topBarContainerColor != Color.Unspecified && topBarContainerColor != Color.Transparent -> topBarContainerColor
+        containerColor != Color.Transparent && containerColor != Color.Unspecified -> containerColor
+        else -> MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0f)
     }
 
     Scaffold(

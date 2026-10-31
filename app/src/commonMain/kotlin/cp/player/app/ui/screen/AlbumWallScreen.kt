@@ -196,8 +196,7 @@ class AlbumWallScreenModel : ScreenModel {
     }
 
     private suspend fun playAlbum(albumId: String): Boolean {
-        val id = albumId.toLongOrNull() ?: return false.also { notifyPlayFailed() }
-        val detail = safe { AppModel.musicRepository.getAlbumDetail(id) }
+        val detail = safe { AppModel.musicRepository.getAlbumDetail(albumId) }
             .let { (it as? BackendResult.Success)?.data }
         val provider = AppModel.activeProviderId()
         val ids = detail?.tracks?.map {
@@ -393,7 +392,7 @@ private fun buildWallItems(state: WallUiState, s: CpStrings): List<WallItem> {
     fun albumItems(): List<WallItem> = state.albums
         .sortedByDescending { it.publishTimeMs ?: 0L }
         .mapNotNull { al ->
-            val id = "album:${al.id}"
+            val id = "album:${al.resourceId}"
             if (!seen.add(id)) return@mapNotNull null
             WallItem(
                 id = id,
@@ -402,7 +401,7 @@ private fun buildWallItems(state: WallUiState, s: CpStrings): List<WallItem> {
                 coverUrl = al.coverUrl,
                 kind = WallKind.ALBUM,
                 weight = 0,
-                sourceId = al.id.toString(),
+                sourceId = al.resourceId,
             )
         }
 

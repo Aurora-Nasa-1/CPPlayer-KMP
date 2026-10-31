@@ -256,15 +256,15 @@ private fun HomeScreenContent(model: HomeScreenModel) {
                     0,
                 )
             } else {
-                val playlistId = banner.targetId.toLongOrNull()
-                // 拿不到数字 id 时退回搜索，而不是把用户丢在一个点不动的卡片上。
+                val playlistId = banner.targetId.takeIf { it.isNotBlank() }
                 if (playlistId == null) {
                     navigator.push(SearchScreen(banner.title))
                 } else {
                     navigator.push(
                         PlaylistDetailScreen(
                             PlaylistSummary(
-                                id = playlistId,
+                                id = playlistId.toLongOrNull() ?: 0L,
+                                resourceId = playlistId,
                                 name = banner.title.ifBlank { "推荐歌单" },
                                 coverUrl = banner.imageUrl,
                                 trackCount = 0,
@@ -276,15 +276,16 @@ private fun HomeScreenContent(model: HomeScreenModel) {
             }
         },
         onOpenPlaylist = {
-            CoverFlight.openPlaylist(it.id, it.coverUrl)
+            CoverFlight.openPlaylist(it.resourceId, it.coverUrl)
             navigator.push(PlaylistDetailScreen(it))
         },
         onOpenRanking = { ranking ->
-            CoverFlight.openPlaylist(ranking.id, ranking.coverUrl)
+            CoverFlight.openPlaylist(ranking.resourceId, ranking.coverUrl)
             navigator.push(
                 PlaylistDetailScreen(
                     PlaylistSummary(
                         id = ranking.id,
+                        resourceId = ranking.resourceId,
                         name = ranking.name,
                         coverUrl = ranking.coverUrl,
                         trackCount = ranking.trackCount,
@@ -303,13 +304,9 @@ private fun HomeScreenContent(model: HomeScreenModel) {
         onOpenArtist = { navigator.push(SearchScreen(it.name)) },
         onOpenDaily = { navigator.push(HomeGeneratedPlaylistScreen(dailyPlaylist, dailySongs)) },
         onPlayDailyTrack = { track ->
-            navigator.push(
-                HomeGeneratedPlaylistScreen(
-                    dailyPlaylist,
-                    dailySongs,
-                    dailySongs.indexOf(track).coerceAtLeast(0),
-                )
-            )
+            val index = dailySongs.indexOf(track).coerceAtLeast(0)
+            playTracks(dailySongs, index)
+            navigator.push(HomeGeneratedPlaylistScreen(dailyPlaylist, dailySongs))
         },
         onPlayPersonalFm = model::playPersonalFm,
         onOpenIntelligence = {
@@ -670,7 +667,7 @@ internal fun DesktopHomeLayout(
                             subtitle = { it.artistName ?: "未知歌手" },
                             onClick = actions.onOpenAlbum,
                             showSearchHint = true,
-                            flightKeyOf = { album -> CoverFlight.playlistKey(album.id) },
+                            flightKeyOf = { album -> CoverFlight.playlistKey(album.resourceId) },
                         )
                     }
                 }
@@ -952,7 +949,7 @@ internal fun MobileHomeLayout(
                     }
                 } else {
                     LazyScrollRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        items(state.visiblePlaylists.take(20), key = { it.id }) { playlist ->
+                        items(state.visiblePlaylists.take(20), key = { it.resourceId }) { playlist ->
                             PlaylistCoverCard(
                                 playlist = playlist,
                                 onClick = { actions.onOpenPlaylist(playlist) },
@@ -967,7 +964,7 @@ internal fun MobileHomeLayout(
             item { SectionHeader(title = "排行榜", supportingText = "点击进入榜单曲目") }
             item {
                 LazyScrollRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(state.rankings, key = { it.id }) { ranking ->
+                    items(state.rankings, key = { it.resourceId }) { ranking ->
                         RankingTile(
                             ranking = ranking,
                             onClick = { actions.onOpenRanking(ranking) },
@@ -982,7 +979,7 @@ internal fun MobileHomeLayout(
             item { SectionHeader(title = "新碟上架", supportingText = "点击查看专辑曲目") }
             item {
                 LazyScrollRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(state.newAlbums.take(12), key = { it.id }) { album ->
+                    items(state.newAlbums.take(12), key = { it.resourceId }) { album ->
                         CoverTile(
                             coverUrl = album.coverUrl,
                             title = album.name,
@@ -1000,7 +997,7 @@ internal fun MobileHomeLayout(
             item { SectionHeader(title = "热门歌手", supportingText = "点击查看歌手曲目") }
             item {
                 LazyScrollRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(state.hotArtists.take(12), key = { it.id }) { artist ->
+                    items(state.hotArtists.take(12), key = { it.resourceId }) { artist ->
                         ArtistTile(
                             artist = artist,
                             onClick = { actions.onOpenArtist(artist) },
@@ -1982,7 +1979,7 @@ private fun RankingRow(
     }
 
     val handleRankingClick = {
-        CoverFlight.openPlaylist(ranking.id, ranking.coverUrl)
+        CoverFlight.openPlaylist(ranking.resourceId, ranking.coverUrl)
         onClick()
     }
 
@@ -2020,7 +2017,7 @@ private fun RankingRow(
             }
             Box(
                 Modifier.size(52.dp)
-                    .coverFlightSource(CoverFlight.playlistKey(ranking.id), 12.dp)
+                    .coverFlightSource(CoverFlight.playlistKey(ranking.resourceId), 12.dp)
             ) {
                 if (!ranking.coverUrl.isNullOrBlank()) {
                     AsyncImage(
@@ -2077,7 +2074,7 @@ private fun RankingTile(
     modifier: Modifier = Modifier,
 ) {
     val handleTileClick = {
-        CoverFlight.openPlaylist(ranking.id, ranking.coverUrl)
+        CoverFlight.openPlaylist(ranking.resourceId, ranking.coverUrl)
         onClick()
     }
     CoverTile(
@@ -2085,7 +2082,7 @@ private fun RankingTile(
         title = ranking.name,
         subtitle = ranking.updateFrequency,
         onClick = handleTileClick,
-        flightKey = CoverFlight.playlistKey(ranking.id),
+        flightKey = CoverFlight.playlistKey(ranking.resourceId),
         modifier = modifier,
     )
 }

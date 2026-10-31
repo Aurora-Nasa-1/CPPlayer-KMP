@@ -424,7 +424,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                             ),
                                         )
                                     }
-                                    SearchType.ALBUM -> itemsIndexed(result.albums, key = { _, album -> "album-${album.id}" }) { _, album ->
+                                    SearchType.ALBUM -> itemsIndexed(result.albums, key = { _, album -> "album-${album.resourceId}" }) { _, album ->
                                         AlbumItem(
                                             album = album,
                                             modifier = Modifier.animateItem(),
@@ -432,7 +432,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                             onClick = { navigator.push(AlbumDetailScreen(album.id, album)) },
                                         )
                                     }
-                                    SearchType.PLAYLIST -> itemsIndexed(result.playlists, key = { _, playlist -> "playlist-${playlist.id}" }) { _, playlist ->
+                                    SearchType.PLAYLIST -> itemsIndexed(result.playlists, key = { _, playlist -> "playlist-${playlist.resourceId}" }) { _, playlist ->
                                         PlaylistItem(
                                             playlist = playlist,
                                             isOwner = false,
@@ -443,12 +443,12 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                             onOptionsClick = { playlistOptionsTarget = playlist },
                                         )
                                     }
-                                    SearchType.ARTIST -> itemsIndexed(result.artists, key = { _, artist -> "artist-${artist.id}" }) { _, artist ->
+                                    SearchType.ARTIST -> itemsIndexed(result.artists, key = { _, artist -> "artist-${artist.resourceId}" }) { _, artist ->
                                         ArtistItem(
                                             artist = artist,
                                             subtitle = "歌手",
                                             modifier = Modifier.animateItem(),
-                                            onClick = { navigator.push(UserProfileScreen(artist.id, artist.name)) },
+                                            onClick = { navigator.push(UserProfileScreen(artist.id, artist.name, artist.resourceId)) },
                                         )
                                     }
                                 }
@@ -540,7 +540,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                             playlistActions.downloadPlaylist(playlist)
                             playlistOptionsTarget = null
                         },
-                        onShare = { shareText(playlistShareText(playlist.id, playlist.name)) },
+                        onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
                     )
                 )
             } else {
@@ -580,7 +580,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                         playlistActions.queuePlaylist(playlist)
                         playlistOptionsTarget = null
                     },
-                    onShare = { shareText(playlistShareText(playlist.id, playlist.name)) },
+                    onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
                     coverUrl = playlist.coverUrl,
                 )
             }

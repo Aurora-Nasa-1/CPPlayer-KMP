@@ -208,6 +208,7 @@ class ProviderManagementModel : ScreenModel {
             message.value = when (result) {
                 is ImportResult.Activated -> if (result.isUpdate) "已自动更新并激活 ${result.provider.name}" else "已导入并自动激活 ${result.provider.name}"
                 is ImportResult.Loaded -> if (result.isUpdate) "已自动更新 ${result.provider.name}（当前仍使用 ${AppModel.activeProvider()?.name ?: "无"}）" else "已导入 ${result.provider.name}（当前仍使用 ${AppModel.activeProvider()?.name ?: "无"}）"
+                is ImportResult.PendingRestart -> result.message
                 is ImportResult.Failed -> result.message
             }
         }
@@ -223,6 +224,7 @@ class ProviderManagementModel : ScreenModel {
             message.value = when (result) {
                 is ImportResult.Activated -> "已更新并激活 ${result.provider.name}"
                 is ImportResult.Loaded -> "已更新 ${result.provider.name}（当前仍使用 ${AppModel.activeProvider()?.name ?: "无"}）"
+                is ImportResult.PendingRestart -> result.message
                 is ImportResult.Failed -> result.message
             }
         }
@@ -310,8 +312,10 @@ private fun ProviderRow(
     val tagText = provider.apiVersionTag?.let { " · $it" }.orEmpty()
     val hasConfig = !provider.settingsSchema.isNullOrEmpty()
     val configText = if (hasConfig) " · 支持自定义配置" else ""
+    val hasPendingUpdate = remember(provider.id) { AppModel.backend.hasPendingUpdate(provider.id) }
+    val pendingText = if (hasPendingUpdate) " · 待重启生效" else ""
     val subtitle = buildString {
-        append("${provider.type.name} · v${provider.version} · ${provider.id}$tagText$apiText$configText")
+        append("${provider.type.name} · v${provider.version} · ${provider.id}$tagText$apiText$configText$pendingText")
         if (capabilityText.isNotEmpty()) append("\n$capabilityText")
     }
 

@@ -462,7 +462,7 @@ class MainScreen : Screen {
                             // 否则会出现「左边列表里已经没有这个歌单了，右边还开着」。
                             onSidebarPlaylistsChanged = { ids ->
                                 val pane = desktopPane
-                                if (pane is DesktopPane.Playlist && pane.playlist.id !in ids) {
+                                if (pane is DesktopPane.Playlist && pane.playlist.resourceId !in ids) {
                                     desktopPane = DesktopPane.Tabs
                                 }
                             },
@@ -751,7 +751,7 @@ private fun AppTopBar(
         )
     }
     val colors = TopAppBarDefaults.topAppBarColors(
-        containerColor = Color.Transparent,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0f),
         scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
     )
     if (isDesktopExpanded) {
@@ -1012,7 +1012,7 @@ private fun DesktopSidebar(
      * 上报侧栏当前认得哪些歌单（含收藏夹）。右侧面板正开着的不在这批 id 里时，
      * 宿主应当把它收掉 —— 换账号 / 删除后那份歌单已经不存在了。
      */
-    onSidebarPlaylistsChanged: (Set<Long>) -> Unit = {},
+    onSidebarPlaylistsChanged: (Set<String>) -> Unit = {},
 ) {
     val profile by AppModel.userProfileFlow.collectAsState()
     // 侧栏只用到 likedPlaylist / userPlaylists，关掉发现内容的加载：
@@ -1042,7 +1042,7 @@ private fun DesktopSidebar(
     // 收藏夹（「xx喜欢的音乐」）已经有独立入口，不再以歌单身份重复出现。
     val allPlaylists = homeState.sidebarPlaylists
     val shownPlaylists = allPlaylists.take(SIDEBAR_PLAYLIST_LIMIT)
-    val selectedPlaylistId = (selectedPane as? DesktopPane.Playlist)?.playlist?.id
+    val selectedPlaylistId = (selectedPane as? DesktopPane.Playlist)?.playlist?.resourceId
 
     // 侧栏歌单「删除 / 取消收藏」的二次确认：删掉自己建的歌单不可恢复，
     // 而它在右键菜单里紧挨着「分享歌单」，一次误触就全没了。
@@ -1073,7 +1073,7 @@ private fun DesktopSidebar(
             add(
                 CpContextMenuItem(
                     "分享歌单", Icons.Filled.Share,
-                    onClick = { shareText(playlistShareText(playlist.id, playlist.name)) },
+                    onClick = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
                 )
             )
             // 与歌单详情页同一条可见性规则：owner 才谈得上「删除」，收藏来的只能「取消收藏」。
@@ -1103,8 +1103,8 @@ private fun DesktopSidebar(
     // 把「侧栏当前认得哪些歌单」报上去：右侧面板若正开着一个已经不在列表里的歌单
     // （切了账号 / 删掉了），MainScreen 据此把它收掉。
     // 收藏夹也算在内 —— 它虽然不在 [HomeUiState.sidebarPlaylists] 里，但有独立入口。
-    val visiblePlaylistIds = allPlaylists.mapTo(mutableSetOf()) { it.id }
-        .apply { homeState.likedPlaylist?.let { add(it.id) } }
+    val visiblePlaylistIds = allPlaylists.mapTo(mutableSetOf()) { it.resourceId }
+        .apply { homeState.likedPlaylist?.let { add(it.resourceId) } }
     androidx.compose.runtime.LaunchedEffect(visiblePlaylistIds) {
         onSidebarPlaylistsChanged(visiblePlaylistIds)
     }
@@ -1150,7 +1150,7 @@ private fun DesktopSidebar(
                 item {
                     val isLocalFav = selectedPane is DesktopPane.LocalLibrary && (selectedPane as DesktopPane.LocalLibrary).initialTab == 3
                     val isOnlineFav = selectedPlaylistId != null &&
-                        selectedPlaylistId == homeState.likedPlaylist?.id
+                        selectedPlaylistId == homeState.likedPlaylist?.resourceId
                     SidebarAction(
                         icon = Icons.Filled.FavoriteBorder,
                         label = "我喜欢的音乐",
@@ -1214,7 +1214,7 @@ private fun DesktopSidebar(
                         CpContextMenu(items = playlistMenu(playlist)) {
                             SidebarPlaylistRow(
                                 playlist = playlist,
-                                selected = selectedPlaylistId == playlist.id,
+                                selected = selectedPlaylistId == playlist.resourceId,
                                 onClick = { onOpenPlaylist(playlist) },
                             )
                         }
@@ -1514,6 +1514,7 @@ private val DesktopPaneSaver: Saver<DesktopPane, Any> = run {
                 is DesktopPane.Playlist -> mapOf(
                     "type" to "playlist",
                     "id" to pane.playlist.id,
+                    "resourceId" to pane.playlist.resourceId,
                     "name" to pane.playlist.name,
                     "coverUrl" to pane.playlist.coverUrl,
                     "trackCount" to pane.playlist.trackCount,
@@ -1534,7 +1535,8 @@ private val DesktopPaneSaver: Saver<DesktopPane, Any> = run {
                     val coverUrl = map["coverUrl"] as? String
                     val trackCount = (map["trackCount"] as? Number)?.toInt() ?: 0
                     val creatorName = map["creatorName"] as? String
-                    DesktopPane.Playlist(PlaylistSummary(id, name, coverUrl, trackCount, creatorName))
+                    val resourceId = map["resourceId"] as? String ?: id.toString()
+                    DesktopPane.Playlist(PlaylistSummary(id, name, coverUrl, trackCount, creatorName, resourceId))
                 }
                 else -> DesktopPane.Tabs
             }

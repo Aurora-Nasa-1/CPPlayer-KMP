@@ -70,7 +70,7 @@ class AlbumDetailScreen(
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         AlbumDetailContent(
-            albumId = albumId,
+            albumId = fallback?.resourceId ?: albumId.toString(),
             fallback = fallback,
             // ⚠️ `rememberScreenModel` 是**定义在 `Screen` 上的扩展函数**
             // （`javap` 核实：`rememberScreenModel(Screen, String, Function0, ...)`），
@@ -97,7 +97,7 @@ private class AlbumDetailModel : ScreenModel {
     private val _state = MutableStateFlow(AlbumUiState())
     val state: StateFlow<AlbumUiState> = _state
 
-    private var loadedId: Long? = null
+    private var loadedId: String? = null
 
     /**
      * 收藏集合是否已拉到。
@@ -106,7 +106,7 @@ private class AlbumDetailModel : ScreenModel {
      * 详情页可能被反复进入 / 退出大播放器后重进组合，所以拉到的结果缓存在模型里，
      * 只有 [AppModel.albumFavoriteGeneration] 真的变了才重新拉。
      */
-    private var favoriteIds: Set<Long>? = null
+    private var favoriteIds: Set<String>? = null
 
     init {
         // 任何地方收藏 / 取消收藏专辑后，本页的收藏态都要跟着变（典型场景：
@@ -117,7 +117,7 @@ private class AlbumDetailModel : ScreenModel {
             AppModel.albumFavoriteGeneration.drop(1).collect {
                 // 自己发的那一次不重拉：本地已经乐观更新过，再拉一遍只会
                 // 因网络慢而闪回旧状态（见 AppModel.isLastChangedBySelf）。
-                if (AppModel.isLastChangedBySelf(loadedId)) return@collect
+                if (AppModel.isLastChangedByResource(loadedId)) return@collect
                 favoriteIds = null
                 syncFavoriteState()
             }
@@ -140,7 +140,7 @@ private class AlbumDetailModel : ScreenModel {
         }
     }
 
-    fun load(albumId: Long, fallback: AlbumSummary?) {
+    fun load(albumId: String, fallback: AlbumSummary?) {
         if (loadedId == albumId && _state.value.detail != null) return
         loadedId = albumId
         screenModelScope.launch {
@@ -156,6 +156,8 @@ private class AlbumDetailModel : ScreenModel {
                     detail = fallback?.let {
                         AlbumDetail(
                             id = it.id,
+                            resourceId = it.resourceId,
+                            artistResourceId = it.artistResourceId,
                             name = it.name,
                             coverUrl = it.coverUrl,
                             artistName = it.artistName,
@@ -194,7 +196,7 @@ private class AlbumDetailModel : ScreenModel {
         val ids = favoriteIds ?: runCatching {
             val result = AppModel.musicRepository.getUserAlbums(limit = 300)
             when (result) {
-                is BackendResult.Success -> result.data.map { it.id }.toSet()
+                is BackendResult.Success -> result.data.map { it.resourceId }.toSet()
                 else -> emptySet()
             }
         }.getOrElse { emptySet() }.also { favoriteIds = it }
@@ -241,7 +243,7 @@ private class AlbumDetailModel : ScreenModel {
 
 @Composable
 private fun AlbumDetailContent(
-    albumId: Long,
+    albumId: String,
     fallback: AlbumSummary?,
     model: AlbumDetailModel,
     onBack: () -> Unit,

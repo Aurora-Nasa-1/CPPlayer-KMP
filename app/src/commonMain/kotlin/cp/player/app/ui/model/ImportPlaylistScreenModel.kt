@@ -33,7 +33,7 @@ data class ImportTrackItem(
 
 /** 导入完成后的落点，供页面显示「打开歌单」。 */
 data class PlaylistImportOutcome(
-    val playlistId: Long,
+    val playlistId: String,
     val playlistName: String,
     val added: Int,
     /** 有分片失败：已导入一部分，但不是全部。 */
@@ -246,7 +246,7 @@ class ImportPlaylistScreenModel(
             }
             val created = withContext(Dispatchers.IO) {
                 runCatchingExceptCancellation {
-                    AppModel.musicRepository.createPlaylist(name)
+                    AppModel.musicRepository.createPlaylistResource(name)
                 }.getOrNull()
             }
             val newId = (created as? BackendResult.Success)?.data
@@ -271,7 +271,7 @@ class ImportPlaylistScreenModel(
             _state.update {
                 it.copy(importing = true, importDone = 0, importTotal = ids.size, error = null, outcome = null)
             }
-            finishImport(target.id, target.name, ids, s)
+            finishImport(target.resourceId, target.name, ids, s)
         }
     }
 
@@ -281,7 +281,7 @@ class ImportPlaylistScreenModel(
         screenModelScope.launch {
             val ok = withContext(Dispatchers.IO) {
                 runCatchingExceptCancellation {
-                    AppModel.musicRepository.subscribePlaylist(source.id, true)
+                    AppModel.musicRepository.subscribePlaylist(source.resourceId, true)
                 }.getOrDefault(false)
             }
             UiEvents.notify(
@@ -291,7 +291,7 @@ class ImportPlaylistScreenModel(
     }
 
     private suspend fun finishImport(
-        playlistId: Long,
+        playlistId: String,
         playlistName: String,
         ids: List<String>,
         s: CpStrings,
@@ -388,7 +388,7 @@ class ImportPlaylistScreenModel(
             if (data.tracks.isEmpty()) break
             collected += data.tracks
             offset += data.tracks.size
-            if (!data.hasMore && data.tracks.size < TRACK_PAGE) break
+            if (!data.hasMore && (data.paginationSpecified || data.tracks.size < TRACK_PAGE)) break
         }
         if (collected.isEmpty()) collected += detailData?.tracks.orEmpty()
         return detailData?.summary to collected.distinctBy { it.id }

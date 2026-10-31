@@ -5,7 +5,7 @@ import cp.player.core.BackendResult
 import cp.player.core.BackendState
 import cp.player.core.ImportResult
 import cp.player.core.MusicBackend
-import cp.player.core.api.extractUidFromLoginStatus
+import cp.player.core.api.extractUserResourceId
 import cp.player.core.api.unwrapLoginStatusData
 import cp.player.core.control.LocalServerConfig
 import cp.player.core.control.LocalServerConfigStore
@@ -132,6 +132,7 @@ object AppModel {
 
     data class PlaylistChangeEvent(
         val playlistId: Long? = null,
+        val resourceId: String? = playlistId?.toString(),
     )
 
     /**
@@ -149,6 +150,11 @@ object AppModel {
     fun notifyPlaylistChanged(playlistId: Long? = null) {
         _playlistGeneration.value += 1
         _playlistEvents.tryEmit(PlaylistChangeEvent(playlistId))
+    }
+
+    fun notifyPlaylistChanged(resourceId: String) {
+        _playlistGeneration.value += 1
+        _playlistEvents.tryEmit(PlaylistChangeEvent(resourceId.toLongOrNull(), resourceId))
     }
 
     /**
@@ -173,6 +179,16 @@ object AppModel {
      */
     @Volatile
     private var lastChangedAlbumId: Long? = null
+    private var lastChangedAlbumResourceId: String? = null
+
+    fun isLastChangedByResource(albumId: String?): Boolean =
+        albumId != null && lastChangedAlbumResourceId == albumId
+
+    fun notifyAlbumFavoriteResourceChanged(albumId: String) {
+        lastChangedAlbumResourceId = albumId
+        lastChangedAlbumId = albumId.toLongOrNull()
+        _albumFavoriteGeneration.value += 1
+    }
 
     /** 本次代际变化是否由 [albumId] 这张专辑自己发出（详情页据此跳过重拉）。 */
     fun isLastChangedBySelf(albumId: Long?): Boolean =
@@ -184,6 +200,7 @@ object AppModel {
         // 上并发），先自增再赋值会出现「代际已变成新值、但 lastChangedAlbumId 还是上一张」
         // 的窗口 —— 详情页于是把自己发的那次当成别人的，白拉一遍列表。
         lastChangedAlbumId = albumId
+        lastChangedAlbumResourceId = albumId?.toString()
         _albumFavoriteGeneration.value += 1
     }
 
@@ -1507,6 +1524,7 @@ object AppModel {
         val uid: Long,
         val nickname: String,
         val avatarUrl: String,
+        val resourceId: String = uid.toString(),
     )
 
     private val _userProfile = MutableStateFlow<UserProfile?>(null)
@@ -1537,16 +1555,20 @@ object AppModel {
      * 返回 null 表示当前音源没有登录态（或拉取失败）。
      */
     suspend fun refreshUserProfileAwait(): UserProfile? {
+        val provider = activeProvider()
+        val generation = sourceGeneration.value
+        val cookie = provider?.let { cookieStorage.getCookie(it.id) }
         val profile = runCatching {
             val status = backend.musicApi.getLoginStatus()
             val root = status as? kotlinx.serialization.json.JsonObject ?: return@runCatching null
-            val uid = extractUidFromLoginStatus(root) ?: return@runCatching null
+            val uid = extractUserResourceId(root) ?: return@runCatching null
             val data = unwrapLoginStatusData(root) ?: return@runCatching null
             val prof = (data["profile"] as? kotlinx.serialization.json.JsonObject)
                 ?: (data["account"] as? kotlinx.serialization.json.JsonObject)
                 ?: data
             UserProfile(
-                uid = uid,
+                uid = uid.toLongOrNull() ?: 0L,
+                resourceId = uid,
                 nickname = (prof["nickname"] as? kotlinx.serialization.json.JsonPrimitive)?.content
                     ?: (prof["name"] as? kotlinx.serialization.json.JsonPrimitive)?.content
                     ?: (prof["userName"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "",
@@ -1555,11 +1577,14 @@ object AppModel {
                     ?: (prof["headImg"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "",
             )
         }.getOrNull()
-        val previousUid = _userProfile.value?.uid
+        currentCoroutineContext().ensureActive()
+        if (activeProvider() !== provider || sourceGeneration.value != generation ||
+            provider?.let { cookieStorage.getCookie(it.id) } != cookie) return null
+        val previousUid = _userProfile.value?.resourceId
         _userProfile.value = profile
         // 换人了 ⇒ 发一次账号代际（见 [accountGeneration]）。首次恢复不算：
         // 那一刻各页面首屏还在用同一份 cookie 拉数据，多发一次就是白拉一遍。
-        if (profileResolvedOnce && previousUid != profile?.uid) bumpAccountGeneration()
+        if (profileResolvedOnce && previousUid != profile?.resourceId) bumpAccountGeneration()
         profileResolvedOnce = true
         // 收藏列表与账号绑定，资料刷新后同步刷新
         runCatching { playback.refreshFavorites() }
@@ -2752,6 +2777,12 @@ object AppModel {
 
     fun activeProvider(): BackendProvider? = runCatching { backend.activeProvider() }.getOrNull()
 
+    fun onProviderConfigurationChanged(providerId: String) {
+        if (activeProviderId() != providerId) return
+        bumpSourceGeneration()
+        refreshUserProfile()
+    }
+
     fun switchProvider(provider: BackendProvider): BackendResult<Unit> {
         val result = backend.switchProvider(provider)
         if (result is BackendResult.Success) {
@@ -2814,6 +2845,7 @@ object AppModel {
             is ImportResult.Loaded -> {
                 migrateProviderData(result.replacedProviderId, result.provider.id)
             }
+            is ImportResult.PendingRestart -> Unit
             is ImportResult.Failed -> Unit
         }
         return result
@@ -2836,6 +2868,7 @@ object AppModel {
             is ImportResult.Loaded -> {
                 migrateProviderData(result.replacedProviderId, result.provider.id)
             }
+            is ImportResult.PendingRestart -> Unit
             is ImportResult.Failed -> Unit
         }
         return result

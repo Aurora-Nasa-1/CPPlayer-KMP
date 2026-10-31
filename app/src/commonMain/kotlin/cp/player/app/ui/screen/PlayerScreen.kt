@@ -295,7 +295,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
     val navigator = LocalNavigator.current
     val onArtistClick: ((cp.player.core.music.ArtistSummary) -> Unit)? = remember(navigator) {
         navigator?.let { nav ->
-            { artist -> nav.pushOrNotify(UserProfileScreen(artist.id, artist.name)) }
+            { artist -> nav.pushOrNotify(UserProfileScreen(artist.id, artist.name, artist.resourceId)) }
         }
     }
 

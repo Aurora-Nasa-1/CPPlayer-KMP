@@ -10,6 +10,7 @@ import cp.player.core.BackendResult
 import cp.player.core.music.MusicSourceFromApi
 import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.TrackSummary
+import cp.player.core.music.isRemote
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -56,7 +57,7 @@ class PlaylistDetailScreenModel : ScreenModel {
     val state: StateFlow<PlaylistDetailUiState> = _state.asStateFlow()
 
     /** 当前正在加载的歌单 id（切换歌单时丢弃过期结果，防串扰）。 */
-    private var fetchingPlaylistId: Long? = null
+    private var fetchingPlaylistId: String? = null
 
     /**
      * 已加载完成的歌单 id。
@@ -66,7 +67,7 @@ class PlaylistDetailScreenModel : ScreenModel {
      * 都会把歌单重拉一遍：真实歌单是重发网络请求并闪一屏空白，虚拟歌单（每日推荐）
      * 则是整份 state 被重建，连带丢掉排序 / 多选 / 滚动位置。
      */
-    private var loadedPlaylistId: Long? = null
+    private var loadedPlaylistId: String? = null
 
     /**
      * 已消费过自动播放的歌单 id。
@@ -74,7 +75,7 @@ class PlaylistDetailScreenModel : ScreenModel {
      * 与 [loadedPlaylistId] 同源的问题：自动播放同样挂在 LaunchedEffect 上，
      * 重新进入组合就会重放一次 —— 表现为「退出大播放器后播放被重置回第一首」。
      */
-    private var autoPlayedPlaylistId: Long? = null
+    private var autoPlayedPlaylistId: String? = null
 
     /**
      * 当前 [PlaylistDetailUiState.tracks] 里那些**裸 id** 属于哪个音源。
@@ -107,14 +108,14 @@ class PlaylistDetailScreenModel : ScreenModel {
                 tracksProviderId = null
                 // 虚拟歌单（每日推荐 / 相似歌曲 / 心动模式，id < 0）的曲目来自上一级，
                 // 本模型拿不到新音源的等价数据，只作废标记让宿主重喂。
-                if (summary.id > 0) load(summary, force = true)
+                if (summary.isRemote) load(summary, force = true)
             }
         }
         // 订阅歌单事件：当外部修改了当前歌单（如在播放器中加入当前歌单）时静默重拉
         screenModelScope.launch {
             AppModel.playlistEvents.collect { event ->
                 val summary = _state.value.summary ?: return@collect
-                if (!isSelfModifying && summary.id > 0 && event.playlistId == summary.id) {
+                if (!isSelfModifying && summary.isRemote && event.resourceId == summary.resourceId) {
                     refresh()
                 }
             }
@@ -129,32 +130,32 @@ class PlaylistDetailScreenModel : ScreenModel {
      * @param force 为 true 时忽略 [loadedPlaylistId] 守卫（供「重试」与「刷新」使用）。
      */
     fun load(summary: PlaylistSummary, force: Boolean = false) {
-        if (!force && loadedPlaylistId == summary.id) return
+        if (!force && loadedPlaylistId == summary.resourceId) return
         val gen = ++loadGen
         // 记下发请求这一刻的音源：曲目就绪后 mediaIds 用它拼，避免切源后被新 Provider 解释。
         val requestProvider = AppModel.activeProviderId()
-        loadedPlaylistId = summary.id
-        fetchingPlaylistId = summary.id
+        loadedPlaylistId = summary.resourceId
+        fetchingPlaylistId = summary.resourceId
         val silent = force && _state.value.tracks.isNotEmpty()
         if (!silent) {
             _state.value = PlaylistDetailUiState(summary = summary)
         }
         loadLiked()
-        checkSubscribed(summary.id)
+        checkSubscribed(summary.resourceId)
         screenModelScope.launch {
             val results = withContext(Dispatchers.IO) {
                 runCatching {
                     coroutineScope {
-                        val detail = async { AppModel.musicRepository.getPlaylistDetail(summary.id) }
+                        val detail = async { AppModel.musicRepository.getPlaylistDetail(summary.resourceId) }
                         val tracks = async {
-                            AppModel.musicRepository.getPlaylistTracks(summary.id, limit = PAGE_SIZE, offset = 0)
+                            AppModel.musicRepository.getPlaylistTracks(summary.resourceId, limit = PAGE_SIZE, offset = 0)
                         }
                         detail.await() to tracks.await()
                     }
                 }.getOrNull()
             }
             // 歌单已切换，或有更新的一次加载（切源重拉）已在途 —— 丢弃过期结果
-            if (fetchingPlaylistId != summary.id || gen != loadGen) return@launch
+            if (fetchingPlaylistId != summary.resourceId || gen != loadGen) return@launch
             if (results == null) {
                 if (silent) {
                     UiEvents.notify("歌单详情刷新失败")
@@ -178,7 +179,7 @@ class PlaylistDetailScreenModel : ScreenModel {
                     tracksProviderId = requestProvider
                     next = next.copy(
                         tracks = page.tracks.distinctBy { it.id },
-                        hasMore = page.hasMore || page.tracks.size >= PAGE_SIZE,
+                        hasMore = page.hasMore || (!page.paginationSpecified && page.tracks.size >= PAGE_SIZE),
                         nextOffset = page.tracks.size,
                         loading = false,
                         error = null,
@@ -204,7 +205,7 @@ class PlaylistDetailScreenModel : ScreenModel {
     /** 手动刷新当前歌单详情与曲目（静默刷新，不闪空白屏）。 */
     fun refresh() {
         val summary = _state.value.summary ?: return
-        if (summary.id > 0) load(summary, force = true)
+        if (summary.isRemote) load(summary, force = true)
     }
 
     /**
@@ -223,11 +224,11 @@ class PlaylistDetailScreenModel : ScreenModel {
         loading: Boolean = false,
         force: Boolean = false,
     ) {
-        if (!force && loadedPlaylistId == summary.id) return
+        if (!force && loadedPlaylistId == summary.resourceId) return
         // 让在途的 load() 结果作废（本方法直接整份替换曲目）。
         loadGen++
-        loadedPlaylistId = summary.id
-        fetchingPlaylistId = summary.id
+        loadedPlaylistId = summary.resourceId
+        fetchingPlaylistId = summary.resourceId
         // 这些曲目由宿主按当前音源喂入，记下对应音源供 mediaIds 使用。
         tracksProviderId = AppModel.activeProviderId()
         val distinct = tracks.distinctBy { it.id }
@@ -239,7 +240,7 @@ class PlaylistDetailScreenModel : ScreenModel {
             nextOffset = distinct.size,
         )
         loadLiked()
-        checkSubscribed(summary.id)
+        checkSubscribed(summary.resourceId)
     }
 
     /** 加载下一页曲目（追加、按 id 去重保序）。 */
@@ -253,7 +254,7 @@ class PlaylistDetailScreenModel : ScreenModel {
             } else s
         }
         if (!acquired) return
-        val playlistId = _state.value.summary?.id ?: return
+        val playlistId = _state.value.summary?.resourceId ?: return
         screenModelScope.launch {
             val offset = _state.value.nextOffset
             val result = withContext(Dispatchers.IO) {
@@ -273,7 +274,7 @@ class PlaylistDetailScreenModel : ScreenModel {
                                 tracks = existing + appended,
                                 // 追加去重后为空时以服务端 hasMore 为准，避免 size >= PAGE_SIZE 兜底放大导致反复拉取
                                 hasMore = if (appended.isEmpty()) page.hasMore
-                                else page.hasMore || page.tracks.size >= PAGE_SIZE,
+                                else page.hasMore || (!page.paginationSpecified && page.tracks.size >= PAGE_SIZE),
                                 nextOffset = offset + page.tracks.size,
                                 loadMoreError = null,
                             )
@@ -367,7 +368,7 @@ class PlaylistDetailScreenModel : ScreenModel {
      * 心动模式（playmode/intelligence/list）依赖这个来源做歌单上下文。
      */
     private fun sourceIdOrNull(): String? =
-        _state.value.summary?.id?.takeIf { it > 0 }?.toString()
+        _state.value.summary?.takeIf { it.isRemote }?.resourceId
 
     /** 按当前排序后的列表，从 [index] 处开始播放（替换队列）。[animateCover] 仅用户点击传 true。 */
     /**
@@ -380,7 +381,7 @@ class PlaylistDetailScreenModel : ScreenModel {
      * （每日推荐 / 相似歌曲 / 心动模式这类首页虚拟歌单；普通歌单走详情入口时为 null）。
      */
     fun autoPlayAt(index: Int, animateCover: Boolean = false) {
-        val id = _state.value.summary?.id ?: return
+        val id = _state.value.summary?.resourceId ?: return
         if (autoPlayedPlaylistId == id) return
         if (_state.value.tracks.isEmpty()) return
         autoPlayedPlaylistId = id
@@ -459,8 +460,8 @@ class PlaylistDetailScreenModel : ScreenModel {
         screenModelScope.launch {
             val ok = withContext(Dispatchers.IO) {
                 runCatching {
-                    if (owner) AppModel.musicRepository.deletePlaylist(playlist.id)
-                    else AppModel.musicRepository.unsubscribePlaylist(playlist.id)
+                    if (owner) AppModel.musicRepository.deletePlaylist(playlist.resourceId)
+                    else AppModel.musicRepository.unsubscribePlaylist(playlist.resourceId)
                 }.getOrDefault(false)
             }
             UiEvents.notify(
@@ -483,7 +484,7 @@ class PlaylistDetailScreenModel : ScreenModel {
             try {
                 val ids = newTracks.map { it.id }
                 val ok = withContext(Dispatchers.IO) {
-                    runCatching { AppModel.musicRepository.addTracksToPlaylist(playlist.id, ids) }
+                    runCatching { AppModel.musicRepository.addTracksToPlaylist(playlist.resourceId, ids) }
                         .getOrDefault(false)
                 }
                 if (ok) {
@@ -515,7 +516,7 @@ class PlaylistDetailScreenModel : ScreenModel {
             isSelfModifying = true
             try {
                 val ok = withContext(Dispatchers.IO) {
-                    runCatching { AppModel.musicRepository.removeTracksFromPlaylist(playlist.id, trackIds) }
+                    runCatching { AppModel.musicRepository.removeTracksFromPlaylist(playlist.resourceId, trackIds) }
                         .getOrDefault(false)
                 }
                 if (ok) {
@@ -576,12 +577,12 @@ class PlaylistDetailScreenModel : ScreenModel {
     fun isLiked(trackId: String): Boolean = _state.value.likedIds.contains(trackId)
 
     /** 检查当前歌单是否已被当前用户收藏（订阅）。 */
-    private fun checkSubscribed(playlistId: Long) {
-        if (playlistId <= 0) return
+    private fun checkSubscribed(playlistId: String) {
+        if (_state.value.summary?.isRemote != true) return
         screenModelScope.launch {
             val userPlaylists = runCatching { AppModel.musicRepository.getCurrentUserPlaylists() }.getOrNull()
             if (userPlaylists is BackendResult.Success && fetchingPlaylistId == playlistId) {
-                val favorited = userPlaylists.data.any { it.id == playlistId }
+                val favorited = userPlaylists.data.any { it.resourceId == playlistId }
                 _state.update { it.copy(isFavorite = favorited) }
             }
         }
@@ -591,7 +592,7 @@ class PlaylistDetailScreenModel : ScreenModel {
     fun togglePlaylistFavorite() {
         val current = _state.value.isFavorite
         val target = !current
-        val playlistId = _state.value.summary?.id ?: return
+        val playlistId = _state.value.summary?.resourceId ?: return
         screenModelScope.launch {
             val ok = withContext(Dispatchers.IO) {
                 runCatching { AppModel.musicRepository.subscribePlaylist(playlistId, target) }.getOrDefault(false)

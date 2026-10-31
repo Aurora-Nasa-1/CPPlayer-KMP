@@ -60,7 +60,7 @@ fun TrackArtistText(
     val artists = track.artists
     // 退化 1 / 2 / 3：整串纯文本，连点击区都不挂。
     // 全都缺 id 时也一样挂不得 —— ClickableText 的点击区盖住整行，「点了没反应」。
-    if (onArtistClick == null || artists.isEmpty() || artists.none { it.id != 0L }) {
+    if (onArtistClick == null || artists.isEmpty() || artists.none { it.resourceId.isNotBlank() }) {
         CpText(
             text = track.artist,
             modifier = modifier,
@@ -97,7 +97,7 @@ fun TrackArtistText(
                     ?.toIntOrNull()
                     ?: return@ClickableText
                 val artist = artists.getOrNull(index) ?: return@ClickableText
-                if (artist.id != 0L) onArtistClick(artist)
+                if (artist.resourceId.isNotBlank()) onArtistClick(artist)
             },
         )
     }
@@ -139,7 +139,7 @@ private fun artistAnnotatedString(
             val start = length
             appendAppFontRuns(artist.name, cjkFace ?: AppFontFace.MISANS, cjkFamily, families.misans)
             // 退化 3：没有 id 的那一位不注册注解 ⇒ 点它不跳转。
-            if (artist.id != 0L) addStringAnnotation(ARTIST_ANNOTATION, index.toString(), start, length)
+            if (artist.resourceId.isNotBlank()) addStringAnnotation(ARTIST_ANNOTATION, index.toString(), start, length)
         }
     }
 }

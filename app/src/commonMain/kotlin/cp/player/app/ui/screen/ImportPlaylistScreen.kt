@@ -181,7 +181,8 @@ internal fun ImportPlaylistContent(
                             onOpen = {
                                 onOpenPlaylist(
                                     PlaylistSummary(
-                                        id = outcome.playlistId,
+                                        id = outcome.playlistId.toLongOrNull() ?: 0L,
+                                        resourceId = outcome.playlistId,
                                         name = outcome.playlistName,
                                         coverUrl = state.sourcePlaylist?.coverUrl,
                                         trackCount = outcome.added,

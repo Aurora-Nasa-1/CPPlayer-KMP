@@ -21,13 +21,13 @@ data class LibraryUiState(
     val playlists: List<PlaylistSummary> = emptyList(),
     val loading: Boolean = true,
     val error: String? = null,
-    val selectedPlaylistId: Long? = null,
+    val selectedPlaylistId: String? = null,
     val selectedTab: Int = 0,
 )
 
 class LibraryScreenModel : ScreenModel {
     private val _state = MutableStateFlow(LibraryUiState())
-    fun selectPlaylist(playlistId: Long?) { _state.value = _state.value.copy(selectedPlaylistId = playlistId, selectedTab = 0) }
+    fun selectPlaylist(playlistId: Long?) { _state.value = _state.value.copy(selectedPlaylistId = playlistId?.toString(), selectedTab = 0) }
     fun selectTab(index: Int) { _state.value = _state.value.copy(selectedTab = index) }
     val state: StateFlow<LibraryUiState> = _state.asStateFlow()
 
@@ -119,8 +119,8 @@ class LibraryScreenModel : ScreenModel {
     fun deleteOrUnsubscribe(playlist: PlaylistSummary) {
         screenModelScope.launch {
             val ok = runCatching {
-                if (isOwner(playlist)) AppModel.musicRepository.deletePlaylist(playlist.id)
-                else AppModel.musicRepository.unsubscribePlaylist(playlist.id)
+                if (isOwner(playlist)) AppModel.musicRepository.deletePlaylist(playlist.resourceId)
+                else AppModel.musicRepository.unsubscribePlaylist(playlist.resourceId)
             }.getOrDefault(false)
             UiEvents.notify(
                 if (ok) (if (isOwner(playlist)) "已删除「${playlist.name}」" else "已取消收藏「${playlist.name}」")
@@ -132,7 +132,7 @@ class LibraryScreenModel : ScreenModel {
 
     fun play(playlist: PlaylistSummary, addOnly: Boolean = false) {
         screenModelScope.launch {
-            val result = AppModel.musicRepository.getPlaylistDetail(playlist.id)
+            val result = AppModel.musicRepository.getPlaylistDetail(playlist.resourceId)
             if (result !is BackendResult.Success) return@launch
             val ids = result.data.tracks.map { "${AppModel.activeProviderId()}://song/${it.id}" }
             if (ids.isEmpty()) return@launch
@@ -144,7 +144,7 @@ class LibraryScreenModel : ScreenModel {
                 AppModel.playback.playQueue(
                     ids,
                     startIndex = 0,
-                    sourceId = playlist.id.takeIf { it > 0 }?.toString(),
+                    sourceId = playlist.resourceId,
                 )
             }
         }

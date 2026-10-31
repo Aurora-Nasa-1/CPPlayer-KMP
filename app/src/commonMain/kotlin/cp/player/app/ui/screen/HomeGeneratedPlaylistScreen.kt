@@ -3,7 +3,10 @@ package cp.player.app.ui.screen
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.screen.ScreenKey
@@ -46,6 +49,8 @@ class HomeGeneratedPlaylistScreen(
     override fun Content() {
         val model = rememberScreenModel { PlaylistDetailScreenModel() }
         val sourceTracks by rememberUpdatedState(initialTracks)
+        var autoPlayConsumed by rememberSaveable(key) { mutableStateOf(false) }
+        val effectiveStartIndex = if (!autoPlayConsumed) startIndex else null
         LaunchedEffect(kind, playlist.id, seedTrackId, seedPlaylistId, sourceTracks.firstOrNull()?.id) {
             when (kind) {
                 HomeGeneratedPlaylistKind.Static -> Unit
@@ -92,7 +97,7 @@ class HomeGeneratedPlaylistScreen(
             embedded = false,
             onEmbeddedBack = null,
             initialOverrideTracks = initialTracks,
-            autoPlayIndex = startIndex,
+            autoPlayIndex = effectiveStartIndex,
             isLocalPlaylist = true,
             // 心动模式要先按种子拉取再填充，拉取期间保持加载态，
             // 否则会先闪一屏「歌单暂无歌曲」。

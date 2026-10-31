@@ -44,6 +44,7 @@ import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.resized
 import cp.player.core.music.TrackSummary
+import cp.player.core.playback.PlaybackUiState
 
 /**
  * M3 Expressive 风格歌曲列表项。
@@ -82,7 +83,14 @@ fun SongItem(
 ) {
     val globalShowAlbum by AppModel.showSongAlbumFlow.collectAsState()
     val actualShowAlbum = showAlbum ?: globalShowAlbum
-    val playbackState by AppModel.playback.state.collectAsState()
+    // 预览和启动早期没有后端；观察初始化信号，完成后再切换到真实播放状态。
+    val initialized by AppModel.initialized.collectAsState()
+    val playbackState = if (initialized) {
+        val state by AppModel.playback.state.collectAsState()
+        state
+    } else {
+        remember { PlaybackUiState() }
+    }
     // `currentTrack.id` 在解析链路中可能是裸 id，也可能是带命名空间的 mediaId；权威播放身份
     // 是当前队列项的 mediaId。普通列表用裸 id，因此同时比较 mediaId 尾段，避免歌单里永远匹配不到。
     val currentMediaId = playbackState.queue.getOrNull(playbackState.currentIndex)?.mediaId

@@ -35,7 +35,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun CreatePlaylistDialog(
     onDismiss: () -> Unit,
-    onCreated: (Long?) -> Unit,
+    onCreated: (String?) -> Unit,
 ) {
     val s = cpStrings()
     var name by remember { mutableStateOf("") }
@@ -72,7 +72,7 @@ fun CreatePlaylistDialog(
                     busy = true
                     scope.launch(Dispatchers.IO) {
                         val newId = (runCatching {
-                            AppModel.musicRepository.createPlaylist(playlistName)
+                            AppModel.musicRepository.createPlaylistResource(playlistName)
                         }.getOrNull() as? BackendResult.Success)?.data
                         withContext(Dispatchers.Main) {
                             busy = false

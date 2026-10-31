@@ -35,7 +35,7 @@ import kotlinx.coroutines.withContext
  */
 @Composable
 fun RenamePlaylistDialog(
-    playlistId: Long,
+    playlistId: String,
     currentName: String,
     onDismiss: () -> Unit,
     onRenamed: () -> Unit,

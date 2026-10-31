@@ -67,7 +67,7 @@ fun PlaylistItem(
     Surface(
         onClick = {
             // 在卡片自身触发：无论哪条调用路径（库列表 / 搜索 / 快捷入口）都覆盖。
-            CoverFlight.openPlaylist(playlist.id, playlist.coverUrl)
+            CoverFlight.openPlaylist(playlist.resourceId, playlist.coverUrl)
             onClick()
         },
         modifier = modifier.fillMaxWidth(),
@@ -83,7 +83,7 @@ fun PlaylistItem(
             Box(
                 Modifier.size(60.dp).aspectRatio(1f).clip(RoundedCornerShape(thumbCorner))
                     .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .coverFlightSource(CoverFlight.playlistKey(playlist.id), thumbCorner),
+                    .coverFlightSource(CoverFlight.playlistKey(playlist.resourceId), thumbCorner),
                 contentAlignment = Alignment.Center,
             ) {
                 if (!playlist.coverUrl.isNullOrBlank()) {
@@ -164,13 +164,13 @@ fun PlaylistCoverCard(
         modifier = modifier
             .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier.width(160.dp))
             .clickable {
-                CoverFlight.openPlaylist(playlist.id, playlist.coverUrl)
+                CoverFlight.openPlaylist(playlist.resourceId, playlist.coverUrl)
                 onClick()
             },
     ) {
         Box(
             modifier = Modifier.fillMaxWidth().aspectRatio(1f)
-                .coverFlightSource(CoverFlight.playlistKey(playlist.id), 24.dp),
+                .coverFlightSource(CoverFlight.playlistKey(playlist.resourceId), 24.dp),
         ) {
             // 占位块**常驻最底层**，而不是「没有封面时才画」。
             //

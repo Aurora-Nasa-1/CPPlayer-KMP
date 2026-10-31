@@ -140,7 +140,7 @@ fun PlaylistPickerSheet(
     title: String,
     onDismiss: () -> Unit,
     onSelected: (PlaylistSummary) -> Unit,
-    excludePlaylistId: Long? = null,
+    excludePlaylistId: String? = null,
 ) {
     val s = cpStrings()
     var playlists by remember { mutableStateOf<List<PlaylistSummary>?>(null) }
@@ -182,8 +182,8 @@ fun PlaylistPickerSheet(
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     itemsIndexed(
-                        playlists!!.filter { it.id != excludePlaylistId },
-                        key = { _, p -> p.id },
+                        playlists!!.filter { it.resourceId != excludePlaylistId },
+                        key = { _, p -> p.resourceId },
                     ) { _, playlist ->
                         PlaylistPickerRow(
                             playlist = playlist,

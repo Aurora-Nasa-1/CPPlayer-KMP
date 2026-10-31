@@ -407,7 +407,7 @@ internal fun DesktopPlayerLayout(
     val navigator = LocalNavigator.current
     val onArtistClick: ((ArtistSummary) -> Unit)? = remember(navigator) {
         navigator?.let { nav ->
-            { artist -> nav.pushOrNotify(UserProfileScreen(artist.id, artist.name)) }
+            { artist -> nav.pushOrNotify(UserProfileScreen(artist.id, artist.name, artist.resourceId)) }
         }
     }
     val onChangeLyricsSource: (() -> Unit)? = remember(navigator) {

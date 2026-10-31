@@ -11,7 +11,11 @@ import cp.player.app.i18n.CpStringsEn
 import cp.player.app.i18n.CpStringsZh
 import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.theme.CpTheme
+import cp.player.app.ui.theme.ThemeMode
 import cp.player.core.music.TrackSummary
+import java.io.ByteArrayInputStream
+import java.io.File
+import javax.imageio.ImageIO
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -49,6 +53,7 @@ class ShowSongAlbumSettingTest {
 
     @Test
     fun `SongItem renders cleanly with and without album display`() {
+        assertFalse(AppModel.initialized.value, "Render regression must exercise the uninitialized path")
         val sampleTrack = TrackSummary(
             id = "test-1",
             name = "七里香",
@@ -58,30 +63,43 @@ class ShowSongAlbumSettingTest {
             durationMs = 300_000,
         )
 
-        // 验证显式传 showAlbum = true / false 以及跟随全局设置均可正常完成组合与渲染
-        listOf(true, false, null).forEach { showAlbumFlag ->
-            val scene = ImageComposeScene(
-                width = 400,
-                height = 80,
-                density = Density(1f),
-            ) {
-                CpTheme {
-                    Box(Modifier.width(400.dp)) {
-                        SongItem(
-                            track = sampleTrack,
-                            onClick = {},
-                            showAlbum = showAlbumFlag,
-                        )
+        val output = File("build/preview-songitem").apply { mkdirs() }
+        for (theme in listOf(ThemeMode.LIGHT, ThemeMode.DARK)) {
+            for (highlighted in listOf(false, true)) {
+                for (showAlbumFlag in listOf(true, false, null)) {
+                    val scene = ImageComposeScene(
+                        width = 400,
+                        height = 80,
+                        density = Density(1f),
+                    ) {
+                        CpTheme(themeMode = theme) {
+                            Box(Modifier.width(400.dp)) {
+                                SongItem(
+                                    track = sampleTrack,
+                                    onClick = {},
+                                    showAlbum = showAlbumFlag,
+                                    isCurrentlyPlaying = highlighted,
+                                )
+                            }
+                        }
+                    }
+                    try {
+                        val image = scene.render()
+                        assertEquals(400, image.width)
+                        assertEquals(80, image.height)
+                        val bytes = image.encodeToData()?.bytes ?: error("PNG encoding failed")
+                        val bitmap = ImageIO.read(ByteArrayInputStream(bytes))
+                        val pixels = IntArray(bitmap.width * bitmap.height)
+                        bitmap.getRGB(0, 0, bitmap.width, bitmap.height, pixels, 0, bitmap.width)
+                        assertTrue(pixels.toSet().size > 20, "Song row must contain visible content")
+                        File(output, "no-backend-$theme-highlighted-$highlighted-album-$showAlbumFlag.png")
+                            .writeBytes(bytes)
+                    } finally {
+                        scene.close()
                     }
                 }
             }
-            try {
-                val image = scene.render()
-                assertEquals(400, image.width)
-                assertEquals(80, image.height)
-            } finally {
-                scene.close()
-            }
         }
+        assertFalse(AppModel.initialized.value, "Rendering must not initialize the backend")
     }
 }

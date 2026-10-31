@@ -3,6 +3,7 @@ package cp.player.app.ui.screen
 import cp.player.app.ui.component.CpText
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -74,6 +75,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -212,15 +214,22 @@ fun PlaylistDetailContent(
 
     // 首页生成的虚拟歌单（每日推荐 / 相似歌曲 / 心动模式）id 为负数，服务端并不存在，
     // 曲目已随导航传入，必须跳过远端加载，否则接口 404 会让详情页只剩空白。
-    LaunchedEffect(playlist.id, isLocalPlaylist) {
+    LaunchedEffect(playlist.resourceId, isLocalPlaylist) {
         if (isLocalPlaylist) model.loadLocal(playlist, initialOverrideTracks.orEmpty(), loadingOverride)
         else model.load(playlist)
     }
 
-    // 曲目就绪后从 autoPlayIndex 开始播放（为 null 时只浏览不播放）
+    // 曲目就绪后从 autoPlayIndex 开始播放（为 null 时只浏览不播放）。
+    // 用 rememberSaveable 记录本页面实例是否已消费自动播放，避免从大播放器/其他页面 pop
+    // 回来时重组重新触发导致重放。
+    var autoPlayConsumed by rememberSaveable(playlist.resourceId) { mutableStateOf(false) }
     LaunchedEffect(autoPlayIndex, state.tracks) {
         val index = autoPlayIndex ?: return@LaunchedEffect
-        model.autoPlayAt(index, animateCover = false)
+        if (autoPlayConsumed) return@LaunchedEffect
+        if (state.tracks.isNotEmpty()) {
+            autoPlayConsumed = true
+            model.autoPlayAt(index, animateCover = false)
+        }
     }
 
     // 多选模式下返回键退出多选
@@ -314,7 +323,7 @@ fun PlaylistDetailContent(
         add(CpContextMenuItem(s.library.downloadAll, Icons.Filled.Download, onClick = { AppModel.downloadTracks(displayTracks) }))
         add(CpContextMenuSeparator)
         add(CpContextMenuItem(s.library.sharePlaylist, Icons.Filled.Share, onClick = {
-            shareText(playlistShareText(playlist.id, summary.name))
+            shareText(playlistShareText(playlist.resourceId, summary.name))
         }))
         if (!isOwner) {
             add(
@@ -355,7 +364,7 @@ fun PlaylistDetailContent(
     }
 
     val onSharePlaylist: (() -> Unit)? = if (isLocalPlaylist) null else {
-        { shareText(playlistShareText(playlist.id, summary.name)) }
+        { shareText(playlistShareText(playlist.resourceId, summary.name)) }
     }
 
     if (!embedded) cp.player.app.ui.util.DesktopRouteTitle(summary.name)
@@ -457,7 +466,7 @@ fun PlaylistDetailContent(
 
     if (showRenameDialog) {
         cp.player.app.ui.component.RenamePlaylistDialog(
-            playlistId = summary.id,
+            playlistId = summary.resourceId,
             currentName = summary.name,
             onDismiss = { showRenameDialog = false },
             onRenamed = {
@@ -528,7 +537,7 @@ fun PlaylistDetailContent(
     if (showImportPicker) {
         PlaylistPickerSheet(
             title = s.library.importFromPlaylist,
-            excludePlaylistId = playlist.id,
+            excludePlaylistId = playlist.resourceId,
             onDismiss = { showImportPicker = false },
             onSelected = { source ->
                 showImportPicker = false
@@ -797,9 +806,9 @@ private fun NarrowLayout(
         val coverFraction = (1f - collapsedFraction * 2.5f).coerceIn(0f, 1f)
         val canShowBackButton = !LocalWindowChromeActive.current
         val searchExpandedWidth = minOf(
-            maxWidth * 0.48f,
-            maxWidth - (if (canShowBackButton) 52.dp else 12.dp) - 184.dp,
-        ).coerceAtLeast(120.dp)
+            maxWidth - (if (canShowBackButton) 52.dp else 12.dp) - 16.dp,
+            400.dp,
+        ).coerceAtLeast(160.dp)
         val searchProgress by animateFloatAsState(
             targetValue = if (isSearchActive) 1f else 0f,
             animationSpec = tween(320, easing = androidx.compose.animation.core.FastOutSlowInEasing),
@@ -817,7 +826,11 @@ private fun NarrowLayout(
             title = {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().height(56.dp).padding(end = 8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .padding(end = 8.dp)
+                        .graphicsLayer { alpha = (1f - searchProgress * 2f).coerceIn(0f, 1f) },
                 ) {
                     // 封面槽位随封面一起收起，避免折叠后标题左侧残留空白。
                     Box(
@@ -865,7 +878,7 @@ private fun NarrowLayout(
                             } else {
                                 MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                             },
-                            maxLines = if (collapsedFraction > 0.4f) 1 else 2,
+                            maxLines = if (collapsedFraction > 0.4f || isSearchActive) 1 else 2,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         if (coverFraction > 0.1f) {
@@ -902,7 +915,7 @@ private fun NarrowLayout(
             scrollBehavior = scrollBehavior,
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
             actions = {
-                // 1. 伸缩搜索框（默认未激活时为标准 40dp 纯图标圆钮）
+                // 1. 伸缩搜索框（默认未激活时为标准 40dp 纯图标圆钮，不额外占位）
                 PlaylistTopBarSearchBar(
                     query = searchQuery,
                     onQueryChange = onSearchQueryChange,
@@ -913,13 +926,17 @@ private fun NarrowLayout(
                     progress = searchProgress,
                 )
 
+                val buttonsRowWidth = 88.dp * (1f - searchProgress)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.graphicsLayer {
-                        alpha = 1f - searchProgress
-                        scaleX = 1f - searchProgress * 0.08f
-                        scaleY = 1f - searchProgress * 0.08f
-                    },
+                    modifier = Modifier
+                        .width(buttonsRowWidth)
+                        .clipToBounds()
+                        .graphicsLayer {
+                            alpha = (1f - searchProgress * 1.5f).coerceIn(0f, 1f)
+                            scaleX = 1f - searchProgress * 0.08f
+                            scaleY = 1f - searchProgress * 0.08f
+                        },
                 ) {
                     Spacer(Modifier.width(4.dp))
                     FilledIconButton(
@@ -1975,10 +1992,8 @@ private fun ActionChip(
 /**
  * 顶栏无缝伸缩搜索栏（对标 Material 3 Expressive 动画）。
  *
- * 未激活时：作为一个普通的 40dp 纯图标圆钮嵌入顶栏右侧动作区；
- * 点击激活时：平滑扩展成带输入框、清空按钮、结果计数徽标与关闭按钮的完整搜索栏。
- *
- * 外层槽位宽度固定；[progress] 只驱动槽内搜索框、内容与动作按钮，避免重排顶栏标题。
+ * 未激活时：作为一个普通的 40dp 纯图标圆钮嵌入顶栏右侧动作区，不为展开态预留固定空间（避免截断歌单标题文字）；
+ * 点击激活时：随 [progress] 平滑向左扩展成带输入框、清空按钮、结果计数徽标与关闭按钮的完整搜索栏。
  */
 @Composable
 private fun PlaylistTopBarSearchBar(
@@ -2003,18 +2018,14 @@ private fun PlaylistTopBarSearchBar(
         }
     }
 
-    Box(
-        modifier = modifier.width(expandedWidth).height(40.dp),
-        contentAlignment = Alignment.CenterEnd,
+    Surface(
+        modifier = modifier.width(width).height(40.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        onClick = {
+            if (!isActive) onToggleActive()
+        },
     ) {
-        Surface(
-            modifier = Modifier.width(width).height(40.dp),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-            onClick = {
-                if (!isActive) onToggleActive()
-            },
-        ) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.CenterStart,
@@ -2107,7 +2118,6 @@ private fun PlaylistTopBarSearchBar(
             }
         }
     }
-}
 
 /**
  * 歌单内即时搜索过滤胶囊栏。
