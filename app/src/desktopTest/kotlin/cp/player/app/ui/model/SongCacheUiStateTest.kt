@@ -205,20 +205,21 @@ class SongCacheUiStateTest {
 
     @Test
     fun `容量档位精确匹配优先`() {
-        assertEquals(0, songCacheCapacityIndex(512L * 1024 * 1024))
-        assertEquals(1, songCacheCapacityIndex(1L * 1024 * 1024 * 1024))
-        assertEquals(2, songCacheCapacityIndex(2L * 1024 * 1024 * 1024), "2 GiB 是默认档")
-        assertEquals(3, songCacheCapacityIndex(4L * 1024 * 1024 * 1024))
+        assertEquals(0, songCacheCapacityIndex(1L * 1024 * 1024 * 1024))
+        assertEquals(1, songCacheCapacityIndex(2L * 1024 * 1024 * 1024), "2 GiB 是默认档")
+        assertEquals(2, songCacheCapacityIndex(4L * 1024 * 1024 * 1024))
+        assertEquals(3, songCacheCapacityIndex(8L * 1024 * 1024 * 1024))
     }
 
     @Test
-    fun `认不出的上限退到不超过它的最大档`() {
-        // 老版本 / 将来新增档位写下的值：不能兜底到第一档，否则界面会谎报一个更小的上限。
-        assertEquals(0, songCacheCapacityIndex(700L * 1024 * 1024), "700MB 落在 512MB 与 1GB 之间")
-        assertEquals(2, songCacheCapacityIndex(3L * 1024 * 1024 * 1024))
-        assertEquals(3, songCacheCapacityIndex(64L * 1024 * 1024 * 1024), "比最大档还大 ⇒ 取最大档")
-        assertEquals(0, songCacheCapacityIndex(0L), "未知 / 加载中不能越界")
-        assertEquals(0, songCacheCapacityIndex(1L))
+    fun `非预设档位识别为自定义容量`() {
+        assertEquals(-1, songCacheCapacityIndex(512L * 1024 * 1024))
+        assertEquals(-1, songCacheCapacityIndex(3L * 1024 * 1024 * 1024))
+        assertEquals(-1, songCacheCapacityIndex(64L * 1024 * 1024 * 1024))
+        assertEquals(-1, songCacheCapacityIndex(0L))
+        assertTrue(isCustomSongCacheCapacity(3L * 1024 * 1024 * 1024))
+        assertFalse(isCustomSongCacheCapacity(2L * 1024 * 1024 * 1024))
+        assertFalse(isCustomSongCacheCapacity(0L))
     }
 
     @Test

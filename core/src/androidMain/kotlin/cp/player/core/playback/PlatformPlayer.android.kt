@@ -21,6 +21,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import cp.player.core.util.PlatformContext
 import cp.player.core.util.androidContext
+import cp.player.core.util.defaultSettingsStorage
 import java.io.File
 import kotlin.math.max
 import kotlin.math.pow
@@ -44,8 +45,14 @@ object SharedMedia3Player {
     /** 音频流磁盘缓存目录（位于 `cacheDir/media`，系统清理缓存时可能被回收）。 */
     const val CACHE_DIR_NAME = "media"
 
-    /** 磁盘缓存上限：512 MiB，按 LRU 淘汰。 */
-    const val CACHE_SIZE_BYTES = 512L * 1024L * 1024L
+    /** 默认磁盘缓存上限：2 GiB，按 LRU 淘汰。 */
+    const val DEFAULT_CACHE_SIZE_BYTES = 2L * 1024L * 1024L * 1024L
+
+    /** 历史常量兼容（原 512 MiB，现为默认 2 GiB）。 */
+    const val CACHE_SIZE_BYTES = DEFAULT_CACHE_SIZE_BYTES
+
+    const val KEY_CACHE_CAPACITY = "cache_capacity_bytes"
+    const val SETTINGS_NAMESPACE = "cp_player_cache"
 
     @Volatile
     private var instance: ExoPlayer? = null
@@ -56,6 +63,12 @@ object SharedMedia3Player {
     @Volatile
     private var cacheIndex: StreamCacheIndex? = null
 
+    @Volatile
+    private var evictor: DynamicLruCacheEvictor? = null
+
+    @Volatile
+    private var capacityBytes: Long = 0L
+
     /**
      * 音频流磁盘缓存。
      *
@@ -64,12 +77,45 @@ object SharedMedia3Player {
      * 不会因为缓存问题导致播不出来。
      */
     @Synchronized
-    fun getCache(context: android.content.Context): SimpleCache =
-        mediaCache ?: SimpleCache(
+    fun getCache(context: android.content.Context): SimpleCache {
+        val existing = mediaCache
+        if (existing != null) return existing
+
+        val savedCapacity = defaultSettingsStorage(SETTINGS_NAMESPACE)
+            .getString(KEY_CACHE_CAPACITY)?.toLongOrNull()
+            ?.takeIf { it > 0L } ?: DEFAULT_CACHE_SIZE_BYTES
+        capacityBytes = savedCapacity
+
+        val ev = DynamicLruCacheEvictor(savedCapacity)
+        evictor = ev
+
+        return SimpleCache(
             File(context.cacheDir, CACHE_DIR_NAME),
-            LeastRecentlyUsedCacheEvictor(CACHE_SIZE_BYTES),
+            ev,
             StandaloneDatabaseProvider(context.applicationContext),
         ).also { mediaCache = it }
+    }
+
+    fun getCapacityBytes(context: android.content.Context): Long {
+        if (capacityBytes > 0L) return capacityBytes
+        val saved = defaultSettingsStorage(SETTINGS_NAMESPACE)
+            .getString(KEY_CACHE_CAPACITY)?.toLongOrNull()
+            ?.takeIf { it > 0L } ?: DEFAULT_CACHE_SIZE_BYTES
+        capacityBytes = saved
+        return saved
+    }
+
+    @Synchronized
+    fun setCapacityBytes(context: android.content.Context, bytes: Long) {
+        val effective = if (bytes <= 0L) DEFAULT_CACHE_SIZE_BYTES else bytes
+        capacityBytes = effective
+        defaultSettingsStorage(SETTINGS_NAMESPACE).putString(KEY_CACHE_CAPACITY, effective.toString())
+        val cache = mediaCache
+        val ev = evictor
+        if (cache != null && ev != null) {
+            ev.setMaxBytes(cache, effective)
+        }
+    }
 
     @Synchronized
     internal fun getIndex(context: android.content.Context): StreamCacheIndex =

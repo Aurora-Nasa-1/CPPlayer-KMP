@@ -1,11 +1,18 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Cached
 import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PhoneAndroid
@@ -29,6 +36,8 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.component.CpText
+import cp.player.app.ui.component.CustomCapacityDialog
 import cp.player.app.ui.component.SettingsButtonItem
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsConfirmItem
@@ -41,8 +50,9 @@ import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.settingsSearchTarget
 import cp.player.app.ui.model.SONG_CACHE_CAPACITY_OPTIONS
 import cp.player.app.ui.model.StorageSettingsModel
-import cp.player.app.ui.util.formatBytes
+import cp.player.app.ui.model.isCustomSongCacheCapacity
 import cp.player.app.ui.model.songCacheCapacityIndex
+import cp.player.app.ui.util.formatBytes
 import cp.player.app.ui.theme.ColorSource
 import cp.player.app.ui.theme.ThemeMode
 import cp.player.app.ui.theme.description
@@ -303,6 +313,13 @@ private fun StorageSettingsContent(
             UiEvents.notify(s.storage.dirUpdated)
         }
     }
+    var showCustomCapacityDialog by remember { mutableStateOf(false) }
+    var pendingMigratePath by remember { mutableStateOf<String?>(null) }
+    val pickCacheDir = cp.player.app.platform.rememberDirectoryPicker { path ->
+        if (!path.isNullOrBlank()) {
+            pendingMigratePath = path
+        }
+    }
     // 从歌曲缓存明细页删完条目回来时，本页的数字必须是新的 ——
     // 回到这一页会重新进入组合，这个 effect 因此会重跑。
     LaunchedEffect(Unit) { model.refreshSongCache() }
@@ -361,18 +378,14 @@ private fun StorageSettingsContent(
                 }
             }
 
-            // ---- 歌曲缓存区：无损流落盘（桌面才有） ----
-            //
-            // 整块按 `songCacheSupported` 显隐，而不是显示「0 首 / 共 0 B」：
-            // 安卓端 ExoPlayer 能定位 HTTP FLAC、根本不落盘，摆一排恒为 0 的数字
-            // 只会被当成 bug 报上来。判据来自 core（capacityBytes = 0 即不支持），
-            // 不在这里重写一遍平台判断 —— 将来安卓真加了实现，这页自动就对了。
+            // ---- 歌曲缓存区：无损流落盘（桌面）与 ExoPlayer 磁盘流缓存（安卓） ----
             if (state.songCacheSupported) {
                 // 行数是**算出来的**而不是写死的：清空之后两个清理动作会消失，
                 // 写死会让分段卡片的末段圆角落到一个不存在的行上（首/末段判据按
                 // index/total 算，见 LegacyListItem.segmentCorners）。
                 val hasSongCache = state.songCacheEntries > 0
-                val songCacheRows = 2 + (if (hasSongCache) 2 else 0) + (if (isAndroid) 0 else 1)
+                val songCacheRows = 3 + (if (hasSongCache) 2 else 0) + (if (state.isRelocationSupported) 1 else 0) + (if (isAndroid) 0 else 1)
+                var rowIndex = 0
                 SettingsSection(s.storage.sectionSongCache) {
                     SettingsClickItem(
                         title = s.storage.cachedSongs,
@@ -384,24 +397,40 @@ private fun StorageSettingsContent(
                                 formatBytes(state.songCacheCapacityBytes),
                             )
                         },
-                        index = 0,
+                        index = rowIndex++,
                         total = songCacheRows,
                         icon = Icons.Filled.MusicNote,
                         onClick = onOpenSongCache,
                     )
-                    // 离散档位而不是滑条：容量是个「够用就好」的粗粒度决定，
-                    // 滑条会让人以为要精确到 MB，还得解释「无损一首多大」。
+                    // 离散预设档位（1G/2G/4G/8G）
                     SettingsSegmentedItem(
                         title = s.storage.cacheCapacity,
-                        subtitle = s.storage.cacheCapacityNote,
+                        subtitle = if (isCustomSongCacheCapacity(state.songCacheCapacityBytes)) {
+                            s.storage.customCapacitySubtitle(formatBytes(state.songCacheCapacityBytes))
+                        } else {
+                            s.storage.cacheCapacityNote
+                        },
                         options = SONG_CACHE_CAPACITY_OPTIONS.map { it.second },
                         selectedIndex = songCacheCapacityIndex(state.songCacheCapacityBytes),
                         onSelect = { i ->
                             SONG_CACHE_CAPACITY_OPTIONS.getOrNull(i)?.let { model.setSongCacheCapacity(it.first) }
                         },
-                        index = 1,
+                        index = rowIndex++,
                         total = songCacheRows,
                         icon = Icons.Filled.Storage,
+                    )
+                    // 自定义上限输入
+                    SettingsClickItem(
+                        title = s.storage.customCapacity,
+                        subtitle = if (isCustomSongCacheCapacity(state.songCacheCapacityBytes)) {
+                            s.storage.customCapacitySubtitle(formatBytes(state.songCacheCapacityBytes))
+                        } else {
+                            "当前上限: ${formatBytes(state.songCacheCapacityBytes)}，点击可自定义任意大小"
+                        },
+                        index = rowIndex++,
+                        total = songCacheRows,
+                        icon = Icons.Filled.Edit,
+                        onClick = { showCustomCapacityDialog = true },
                     )
                     // 没有缓存时**不渲染**这两个动作：`SettingsConfirmItem` 即使在
                     // enabled=false 时也仍然铺着 errorContainer，一行「看起来能点、
@@ -410,7 +439,7 @@ private fun StorageSettingsContent(
                         SettingsButtonItem(
                             text = s.storage.clearStaleCache,
                             subtitle = s.storage.clearStaleCacheNote,
-                            index = 2,
+                            index = rowIndex++,
                             total = songCacheRows,
                             icon = Icons.Filled.CleaningServices,
                             onClick = { model.clearSongCacheOlderThan(30) },
@@ -424,16 +453,26 @@ private fun StorageSettingsContent(
                                 formatBytes(state.songCacheBytes),
                             ),
                             onConfirm = { model.clearSongCache() },
-                            index = 3,
+                            index = rowIndex++,
                             total = songCacheRows,
                             icon = Icons.Filled.DeleteSweep,
+                        )
+                    }
+                    if (state.isRelocationSupported) {
+                        SettingsClickItem(
+                            title = s.storage.migrateCacheDir,
+                            subtitle = state.songCacheDirPath ?: s.storage.migrateCacheDirNote,
+                            index = rowIndex++,
+                            total = songCacheRows,
+                            icon = Icons.AutoMirrored.Filled.DriveFileMove,
+                            onClick = { pickCacheDir() },
                         )
                     }
                     if (!isAndroid) {
                         SettingsClickItem(
                             title = s.storage.openCacheDir,
                             subtitle = s.storage.openCacheDirNote,
-                            index = songCacheRows - 1,
+                            index = rowIndex++,
                             total = songCacheRows,
                             icon = Icons.AutoMirrored.Filled.OpenInNew,
                             onClick = {
@@ -513,4 +552,51 @@ private fun StorageSettingsContent(
         title = s.storage.screenTitle,
         onBack = onBack,
     ) { pageModifier -> body(pageModifier) }
+
+    if (showCustomCapacityDialog) {
+        CustomCapacityDialog(
+            currentCapacityBytes = state.songCacheCapacityBytes,
+            onConfirm = { bytes -> model.setSongCacheCapacity(bytes) },
+            onDismiss = { showCustomCapacityDialog = false },
+        )
+    }
+
+    pendingMigratePath?.let { targetPath ->
+        AlertDialog(
+            onDismissRequest = { pendingMigratePath = null },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = MaterialTheme.shapes.extraLarge,
+            title = {
+                CpText(
+                    s.storage.migrateCacheDirConfirmTitle,
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+            },
+            text = {
+                CpText(
+                    s.storage.migrateCacheDirConfirmMessage(targetPath),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = {
+                Button(
+                    shape = MaterialTheme.shapes.large,
+                    onClick = {
+                        model.migrateCacheDir(targetPath)
+                        pendingMigratePath = null
+                    },
+                ) {
+                    CpText("确定迁移")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    shape = MaterialTheme.shapes.large,
+                    onClick = { pendingMigratePath = null },
+                ) {
+                    CpText("取消")
+                }
+            },
+        )
+    }
 }

@@ -30,14 +30,19 @@ class AndroidStreamLocalizer(private val context: Context) : StreamLocalizer {
     ): String? = null
 
     override fun stats(): SongCacheStats {
+        val cap = SharedMedia3Player.getCapacityBytes(context)
         return runCatching {
             val c = cache
             SongCacheStats(
                 entries = c.keys.size,
                 bytes = c.cacheSpace,
-                capacityBytes = SharedMedia3Player.CACHE_SIZE_BYTES,
+                capacityBytes = cap,
             )
-        }.getOrDefault(SongCacheStats(capacityBytes = SharedMedia3Player.CACHE_SIZE_BYTES))
+        }.getOrDefault(SongCacheStats(capacityBytes = cap))
+    }
+
+    override fun setCapacityBytes(bytes: Long) {
+        SharedMedia3Player.setCapacityBytes(context, bytes)
     }
 
     override fun entries(): List<SongCacheEntry> {

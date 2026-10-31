@@ -86,6 +86,14 @@ data class SongCacheStats(
         else (bytes.toDouble() / capacityBytes.toDouble()).toFloat().coerceIn(0f, 1f)
 }
 
+/** 缓存目录迁移结果。 */
+sealed interface CacheRelocationResult {
+    data class Success(val movedFiles: Int, val movedBytes: Long) : CacheRelocationResult
+    data class Failure(val message: String) : CacheRelocationResult
+    object Unsupported : CacheRelocationResult
+    object SameDirectory : CacheRelocationResult
+}
+
 /**
  * 把远程流**落地成本地文件**后再交给引擎播放。
  *
@@ -229,6 +237,16 @@ interface StreamLocalizer {
      * 桌面端「打开目录」用它，用户能直接核对 / 备份那些文件。
      */
     fun cacheDirPath(): String? = null
+
+    /** 是否支持迁移缓存目录（只有支持自定义目录的平台才为 true，如桌面端）。 */
+    fun isRelocationSupported(): Boolean = false
+
+    /**
+     * 将缓存目录迁移至 [targetDirPath]。
+     * 迁移需处理正在播放的文件锁与跨盘拷贝，成功后切换目录并持久化路径。
+     */
+    suspend fun relocateCacheDir(targetDirPath: String): CacheRelocationResult =
+        CacheRelocationResult.Unsupported
 
     companion object {
         /**

@@ -6,6 +6,7 @@ import cp.player.core.download.ResumeNotSupportedException
 import cp.player.core.download.defaultDownloadExecutor
 import cp.player.core.media.AudioMetadataReader
 import cp.player.core.util.DesktopDataDir
+import cp.player.core.util.defaultSettingsStorage
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -32,7 +33,7 @@ import kotlinx.coroutines.withContext
  *    既存缓存的命名规则与哈希都不动 ⇒ 升级后老缓存照常命中，只是显示为「未知曲目」。
  */
 class DesktopStreamLocalizer(
-    private val cacheDir: File = DesktopDataDir.directory(CACHE_DIR_NAME),
+    private var cacheDir: File = resolveDefaultCacheDir(),
     /**
      * 容量上限的**默认值**。用户在管理页改过之后以索引里记的为准（见 [capacityBytes]）。
      * 参数名保持 `maxCacheBytes` 是为了不动既有测试与调用点。
@@ -47,7 +48,7 @@ class DesktopStreamLocalizer(
      * 必须是**附加**文件：文件名规则与 [sanitize] 的哈希都不能动，否则整盘既存缓存失效。
      * 声明在 [capacityBytes] 之前 —— 后者初始化时要读它的容量设置。
      */
-    private val index = StreamCacheIndex(File(cacheDir, StreamCacheIndex.FILE_NAME))
+    private var index = StreamCacheIndex(File(cacheDir, StreamCacheIndex.FILE_NAME))
 
     /**
      * 容量上限。默认取 [maxCacheBytes]，但用户可以在管理页改；
@@ -311,6 +312,60 @@ class DesktopStreamLocalizer(
     override fun cacheDirPath(): String =
         cacheDir.absolutePath
 
+    override fun isRelocationSupported(): Boolean = true
+
+    override suspend fun relocateCacheDir(targetDirPath: String): CacheRelocationResult = withContext(Dispatchers.IO) {
+        val trimmed = targetDirPath.trim()
+        if (trimmed.isBlank()) {
+            return@withContext CacheRelocationResult.Failure("目标目录不能为空")
+        }
+        val target = File(trimmed)
+        if (!target.exists() && !target.mkdirs()) {
+            return@withContext CacheRelocationResult.Failure("无法创建目标目录")
+        }
+        if (!target.isDirectory || !target.canWrite()) {
+            return@withContext CacheRelocationResult.Failure("目标目录不可写")
+        }
+        val current = cacheDir
+        if (current.canonicalPath == target.canonicalPath) {
+            return@withContext CacheRelocationResult.SameDirectory
+        }
+
+        lock.withLock {
+            var movedFiles = 0
+            var movedBytes = 0L
+            val oldFiles = current.listFiles() ?: emptyArray()
+
+            for (file in oldFiles) {
+                if (!file.isFile) continue
+                if (file.name.endsWith(".part")) {
+                    deleteQuietly(file)
+                    continue
+                }
+                val dest = File(target, file.name)
+                try {
+                    file.copyTo(dest, overwrite = true)
+                    if (dest.length() == file.length()) {
+                        movedFiles++
+                        movedBytes += dest.length()
+                        deleteQuietly(file)
+                    }
+                } catch (e: Exception) {
+                    dest.delete()
+                    return@withContext CacheRelocationResult.Failure("迁移文件 ${file.name} 失败: ${e.message}")
+                }
+            }
+
+            cacheDir = target
+            index = StreamCacheIndex(File(target, StreamCacheIndex.FILE_NAME))
+            try {
+                defaultSettingsStorage(SETTINGS_NAMESPACE).putString(KEY_CUSTOM_CACHE_DIR, target.absolutePath)
+            } catch (_: Exception) {}
+
+            CacheRelocationResult.Success(movedFiles, movedBytes)
+        }
+    }
+
     // ---- 管理面内部 ----
 
     /**
@@ -340,10 +395,11 @@ class DesktopStreamLocalizer(
     private fun deleteQuietly(file: File): Boolean =
         runCatching { file.delete() }.getOrDefault(false)
 
-    /** 从稳定键 `mediaId@音质` 拆出展示与索引需要的两段。 */
+    /** 从稳定键 `mediaId@音质#隔离摘要` 拆出展示字段，隔离摘要仅参与缓存身份。 */
     private fun recordMeta(fileName: String, cacheKey: String, meta: SongCacheMeta?) {
-        val level = cacheKey.substringAfterLast('@', "")
-        val mediaId = if (level.isEmpty()) cacheKey else cacheKey.substringBeforeLast('@')
+        val qualityKey = cacheKey.substringAfterLast('@', "")
+        val level = qualityKey.substringBefore('#')
+        val mediaId = if (qualityKey.isEmpty()) cacheKey else cacheKey.substringBeforeLast('@')
         index.put(
             fileName,
             StreamCacheMetaRecord(
@@ -369,7 +425,7 @@ class DesktopStreamLocalizer(
         return "$safe-${stableHash64(cacheKey)}"
     }
 
-    private companion object {
+    internal companion object {
         const val CACHE_DIR_NAME = "stream-cache"
         const val CONNECT_TIMEOUT_MS = 15_000
         const val READ_TIMEOUT_MS = 60_000
@@ -377,5 +433,18 @@ class DesktopStreamLocalizer(
 
         /** 缓存总容量上限：2 GiB。无损单曲几十~上百 MB，够放十几首。 */
         const val DEFAULT_MAX_CACHE_BYTES = 2L * 1024L * 1024L * 1024L
+        const val KEY_CUSTOM_CACHE_DIR = "custom_cache_dir"
+        const val SETTINGS_NAMESPACE = "cp_player_cache"
+
+        fun resolveDefaultCacheDir(): File {
+            val custom = try {
+                defaultSettingsStorage(SETTINGS_NAMESPACE).getString(KEY_CUSTOM_CACHE_DIR)
+            } catch (_: Exception) { null }
+            if (!custom.isNullOrBlank()) {
+                val f = File(custom)
+                if (f.exists() || f.mkdirs()) return f
+            }
+            return DesktopDataDir.directory(CACHE_DIR_NAME)
+        }
     }
 }

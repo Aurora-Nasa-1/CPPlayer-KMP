@@ -190,23 +190,23 @@ internal fun SongCacheEntry.displayName(strings: CpStrings): String =
  * （设置页里的 private 顶层函数测不到）。
  */
 internal val SONG_CACHE_CAPACITY_OPTIONS: List<Pair<Long, String>> = listOf(
-    512L * 1024L * 1024L to "512 MB",
     1L * 1024L * 1024L * 1024L to "1 GB",
     2L * 1024L * 1024L * 1024L to "2 GB",
     4L * 1024L * 1024L * 1024L to "4 GB",
+    8L * 1024L * 1024L * 1024L to "8 GB",
 )
 
 /**
- * 当前上限落在哪一档。
+ * 当前上限落在哪一预设档位。
  *
- * 精确匹配优先；匹配不上时（老版本写下的自定义值）退到**不超过它的最大档**，
- * 而不是兜底到第一档 —— 后者会让界面谎报一个比实际更小的上限。
+ * 精确匹配则返回对应索引（0..3）；未命中预设档位时返回 -1（表示为用户自定义容量）。
  */
-internal fun songCacheCapacityIndex(capacityBytes: Long): Int {
-    val exact = SONG_CACHE_CAPACITY_OPTIONS.indexOfFirst { it.first == capacityBytes }
-    if (exact >= 0) return exact
-    return SONG_CACHE_CAPACITY_OPTIONS.indexOfLast { it.first <= capacityBytes }.coerceAtLeast(0)
-}
+internal fun songCacheCapacityIndex(capacityBytes: Long): Int =
+    SONG_CACHE_CAPACITY_OPTIONS.indexOfFirst { it.first == capacityBytes }
+
+/** 是否为自定义容量（非 1/2/4/8 GB 预设档）。 */
+internal fun isCustomSongCacheCapacity(capacityBytes: Long): Boolean =
+    capacityBytes > 0L && songCacheCapacityIndex(capacityBytes) < 0
 
 /**
  * 音质档位的中文名。

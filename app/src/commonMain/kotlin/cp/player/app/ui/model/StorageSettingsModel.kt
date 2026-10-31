@@ -6,6 +6,7 @@ import cp.player.app.AppModel
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.formatBytes
 import cp.player.core.media.LocalMediaOrigin
+import cp.player.core.playback.CacheRelocationResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -35,6 +36,8 @@ data class StorageUiState(
     val songCacheEntries: Int = 0,
     val songCacheBytes: Long = 0L,
     val songCacheCapacityBytes: Long = 0L,
+    val songCacheDirPath: String? = null,
+    val isRelocationSupported: Boolean = false,
     val apiCacheEntries: Int = 0,
     val apiCacheHits: Long = 0L,
     val apiCacheMisses: Long = 0L,
@@ -131,10 +134,14 @@ class StorageSettingsModel : ScreenModel {
     fun refreshSongCache() {
         screenModelScope.launch(Dispatchers.IO) {
             val stats = runCatching { AppModel.backend.songCache.stats() }.getOrNull() ?: return@launch
+            val dirPath = runCatching { AppModel.backend.songCache.cacheDirPath() }.getOrNull()
+            val canRelocate = runCatching { AppModel.backend.songCache.isRelocationSupported() }.getOrDefault(false)
             _state.value = _state.value.copy(
                 songCacheEntries = stats.entries,
                 songCacheBytes = stats.bytes,
                 songCacheCapacityBytes = stats.capacityBytes,
+                songCacheDirPath = dirPath,
+                isRelocationSupported = canRelocate,
             )
         }
     }
@@ -189,6 +196,38 @@ class StorageSettingsModel : ScreenModel {
                 "缓存上限已设为 ${formatBytes(bytes)}"
             }
             withContext(Dispatchers.Main) { UiEvents.notify(message) }
+        }
+    }
+
+    /**
+     * 迁移歌曲缓存目录。
+     */
+    fun migrateCacheDir(targetPath: String) {
+        screenModelScope.launch(Dispatchers.IO) {
+            val result = runCatching { AppModel.backend.songCache.relocateCacheDir(targetPath) }
+                .getOrElse { CacheRelocationResult.Failure(it.message ?: "未知异常") }
+            refreshSongCache()
+            withContext(Dispatchers.Main) {
+                when (result) {
+                    is CacheRelocationResult.Success -> {
+                        val msg = if (result.movedFiles > 0) {
+                            "已成功迁移至 $targetPath，搬移了 ${result.movedFiles} 个文件（${formatBytes(result.movedBytes)}）"
+                        } else {
+                            "已成功切换缓存目录至 $targetPath"
+                        }
+                        UiEvents.notify(msg)
+                    }
+                    is CacheRelocationResult.SameDirectory -> {
+                        UiEvents.notify("所选目录与当前缓存目录相同")
+                    }
+                    is CacheRelocationResult.Failure -> {
+                        UiEvents.notify("迁移失败: ${result.message}")
+                    }
+                    is CacheRelocationResult.Unsupported -> {
+                        UiEvents.notify("当前平台不支持迁移缓存目录")
+                    }
+                }
+            }
         }
     }
 

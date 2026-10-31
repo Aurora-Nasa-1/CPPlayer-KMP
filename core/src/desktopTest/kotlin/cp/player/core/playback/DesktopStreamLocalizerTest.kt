@@ -87,6 +87,29 @@ class DesktopStreamLocalizerTest {
     }
 
     @Test
+    fun `namespaces isolate bytes without leaking into cache metadata`() = runBlocking {
+        val srv = start(FLAC_HEADER + ByteArray(2048))
+        val localizer = newLocalizer()
+        val mediaId = "nas://song/a@b/001"
+        val firstKey = "$mediaId@lossless#account-a"
+        val secondKey = "$mediaId@lossless#account-b"
+
+        val first = assertNotNull(localizer.localize(srv.url(), firstKey, emptyMap()))
+        assertNull(localizer.cachedPath(secondKey))
+        val second = assertNotNull(localizer.localize(srv.url(), secondKey, emptyMap()))
+
+        assertTrue(first != second)
+        assertEquals(2, srv.requests.get())
+        assertEquals(first, localizer.cachedPath(firstKey))
+        val index = StreamCacheIndex(File(cacheDir, StreamCacheIndex.FILE_NAME))
+        for (path in listOf(first, second)) {
+            val meta = assertNotNull(index.metaOf(File(path).name))
+            assertEquals(mediaId, meta.mediaId)
+            assertEquals("lossless", meta.qualityLevel)
+        }
+    }
+
+    @Test
     fun `cachedPath reports a ready copy without touching the network`() = runBlocking {
         val flac = FLAC_HEADER + ByteArray(2048)
         val srv = start(flac)

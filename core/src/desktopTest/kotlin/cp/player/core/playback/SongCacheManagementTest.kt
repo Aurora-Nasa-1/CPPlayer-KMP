@@ -8,6 +8,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
@@ -270,6 +271,43 @@ class SongCacheManagementTest {
             reopened.stats().capacityBytes,
             "容量设置要落盘，否则用户每次重启都得重设一遍",
         )
+    }
+
+    // ============ 目录迁移 ============
+
+    @Test
+    fun `relocateCacheDir 正常搬移文件与索引`() {
+        runBlocking {
+            val localizer = newLocalizer()
+            val s = start(flacBody(4096))
+            localizer.fill(s.url(), "track1@hires", title = "曲目1")
+            localizer.fill(s.url(), "track2@hires", title = "曲目2")
+
+            val targetDir = java.nio.file.Files.createTempDirectory("cpplayer-migrated-cache").toFile()
+            try {
+                val result = localizer.relocateCacheDir(targetDir.absolutePath)
+                assertIs<CacheRelocationResult.Success>(result)
+                assertEquals(3, result.movedFiles, "包含 2 个音频文件和 1 个 index.json 索引文件")
+
+                assertEquals(targetDir.absolutePath, localizer.cacheDirPath())
+                val entries = localizer.entries()
+                assertEquals(2, entries.size)
+                assertTrue(entries.any { it.title == "曲目1" })
+                assertTrue(entries.any { it.title == "曲目2" })
+            } finally {
+                targetDir.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun `relocateCacheDir 相同目录返回 SameDirectory`() {
+        runBlocking {
+            val localizer = newLocalizer()
+            val current = localizer.cacheDirPath()
+            val result = localizer.relocateCacheDir(current)
+            assertIs<CacheRelocationResult.SameDirectory>(result)
+        }
     }
 
     // ============ 辅助 ============
