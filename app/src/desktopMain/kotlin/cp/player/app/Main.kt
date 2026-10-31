@@ -34,6 +34,7 @@ import cp.player.app.platform.DesktopWindowPlacement
 import cp.player.app.platform.JbrWindowChrome
 import cp.player.app.platform.WindowDecorChoice
 import cp.player.app.platform.WindowsWindowCorners
+import cp.player.app.platform.WindowsSmtcControls
 import cp.player.app.platform.installDesktopImageCacheLimit
 import cp.player.app.monitoring.DesktopMonitoring
 import cp.player.app.ui.component.DesktopTitleBar
@@ -277,6 +278,7 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
             var jbrChrome by remember { mutableStateOf<JbrWindowChrome.Controller?>(null) }
             // 最小尺寸只能命令式设置：WindowState 没有 minSize 字段。
             LaunchedEffect(Unit) {
+                AppModel.startCoverColorTracking()
                 window.minimumSize = if (mobilePreview) MobilePreviewMinWindowSize else MinWindowSize
                 // 主界面排版就绪，关闭启动提示窗口
                 DesktopSplashWindow.dismiss()
@@ -310,6 +312,21 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
                     else -> TitleBarHeight.value
                 }
                 jbrChrome?.setHeight(targetHeight)
+                // 迷你模式下隐藏原生窗口控制钮，交由自绘 M3e 控制组处理
+                jbrChrome?.setControlsVisible(!isMiniMode)
+            }
+
+            // 同步窗口底层 AWT 容器背景色，防止窗口四角或转场出现默认白底
+            LaunchedEffect(Unit) {
+                AppModel.themeModeFlow.collect { mode ->
+                    val isDark = when (mode) {
+                        cp.player.app.ui.theme.ThemeMode.DARK -> true
+                        cp.player.app.ui.theme.ThemeMode.LIGHT -> false
+                        cp.player.app.ui.theme.ThemeMode.SYSTEM -> true
+                    }
+                    val awtBg = if (isDark) java.awt.Color(0x1F, 0x1F, 0x1F) else java.awt.Color(0xF5, 0xF5, 0xF5)
+                    runCatching { window.background = awtBg }
+                }
             }
 
             // 无边框路专属：Win11 的 DWM 圆角。纯 WS_POPUP 吃不到系统的自动圆角，
@@ -454,27 +471,37 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
             // `windowRef` 也要在这里补上 —— 关窗回调在 Window 之外，拿不到 window 对象。
             LaunchedEffect(window) {
                 windowRef.value = window
+                WindowsSmtcControls.primaryWindow = window
                 DesktopTray.onShowWindow = showMainWindow
                 DesktopTray.onExit = { exitApplication() }
             }
 
             val windowScope: WindowScope = this
             if (isMiniMode) {
-                DesktopMiniPlayer(
-                    windowScope = windowScope,
-                    jbr = jbrChrome,
-                    onRestore = { DesktopShell.isMiniMode = false },
-                    onClose = {
-                        when (closeBehavior) {
-                            DesktopCloseBehavior.EXIT -> exitApplication()
-                            DesktopCloseBehavior.TRAY -> hideToTray()
-                            DesktopCloseBehavior.ASK -> {
-                                dontAskAgain = false
-                                showCloseDialog = true
+                AppTheme {
+                    DesktopMiniPlayer(
+                        windowScope = windowScope,
+                        jbr = jbrChrome,
+                        onRestore = { DesktopShell.isMiniMode = false },
+                        onMinimize = {
+                            if (DesktopTray.isSupported) {
+                                hideToTray()
+                            } else {
+                                windowState.isMinimized = true
                             }
-                        }
-                    },
-                )
+                        },
+                        onClose = {
+                            when (closeBehavior) {
+                                DesktopCloseBehavior.EXIT -> exitApplication()
+                                DesktopCloseBehavior.TRAY -> hideToTray()
+                                DesktopCloseBehavior.ASK -> {
+                                    dontAskAgain = false
+                                    showCloseDialog = true
+                                }
+                            }
+                        },
+                    )
+                }
             } else {
                 androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.fillMaxSize()) {
                     if (isMobileMode) {

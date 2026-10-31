@@ -87,4 +87,35 @@ class BottomBarMiniPlayerLayoutTest {
         val gapSubScreen = computeBottomGap(mainScreenVisible = false, expanded = false, visiblePx = 240f)
         assertEquals(0.dp, gapSubScreen, "无底栏页面贴底，不受主屏底栏高度影响")
     }
+
+    @Test
+    fun `打开消息会话时迷你播放器必须让位隐藏`() {
+        DesktopShell.miniPlayerBlockedByChat = false
+
+        fun shouldShowMiniPlayer(
+            mainScreenVisible: Boolean,
+            lastItemIsPlayerScreen: Boolean,
+            lastItemIsChatScreen: Boolean,
+            miniPlayerBlockedByChat: Boolean,
+        ): Boolean {
+            return mainScreenVisible &&
+                !lastItemIsPlayerScreen &&
+                !lastItemIsChatScreen &&
+                !miniPlayerBlockedByChat
+        }
+
+        // 常规状态下迷你播放器显示
+        assertTrue(shouldShowMiniPlayer(true, false, false, DesktopShell.miniPlayerBlockedByChat))
+
+        // 桌面端打开消息会话，标记为 true，迷你播放器让位隐藏，避免挡住输入框
+        DesktopShell.miniPlayerBlockedByChat = true
+        assertTrue(
+            !shouldShowMiniPlayer(true, false, false, DesktopShell.miniPlayerBlockedByChat),
+            "消息输入框展开时迷你播放器必须隐藏，避免遮挡消息输入框与发送按钮",
+        )
+
+        // 离开消息会话，标记复位为 false，迷你播放器重新显示
+        DesktopShell.miniPlayerBlockedByChat = false
+        assertTrue(shouldShowMiniPlayer(true, false, false, DesktopShell.miniPlayerBlockedByChat))
+    }
 }

@@ -171,6 +171,12 @@ object JbrWindowChrome {
             runCatching { m.invoke(titleBar, "controls.dark", dark) }
         }
 
+        /** 设置右上角原生窗口控制钮（最小化 / 最大化 / 关闭）是否可见。迷你模式下隐藏以完全走自绘控制。 */
+        fun setControlsVisible(visible: Boolean) {
+            val m = putProperty ?: return
+            runCatching { m.invoke(titleBar, "controls.visible", visible) }
+        }
+
         /** 撤销自定义标题栏、恢复系统标题栏（目前只有测试场景用得上）。 */
         fun uninstall() {
             runCatching { api.setCustomTitleBar.invoke(api.windowDecorations, window, null) }

@@ -204,6 +204,16 @@ internal fun ChatContent(
         onDispose { AppModel.setActiveChatPeer(null) }
     }
 
+    // 桌面端打开对话时隐藏根层 MiniPlayer，避免遮挡底部的消息输入框与发送按钮。
+    // 无论是桌面双栏右栏（MessagesPane）、内容区内嵌路由（从主页点发私信），还是整页路由，
+    // 只要有对话与固定输入栏在屏幕上，底层的 MiniPlayer 就必须让位。
+    DisposableEffect(Unit) {
+        cp.player.app.ui.util.DesktopShell.miniPlayerBlockedByChat = true
+        onDispose {
+            cp.player.app.ui.util.DesktopShell.miniPlayerBlockedByChat = false
+        }
+    }
+
     // 新消息到达后滚到底部。用 `size` 而不是 `messages` 作 key：内容变化（例如重拉后
     // 同一条消息的 id 变了）不该触发一次滚动。
     LaunchedEffect(state.messages.size, peerUid) {

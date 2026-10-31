@@ -211,10 +211,10 @@ class MainScreen : Screen {
         // MessagesPane 自己的 DisposableEffect 要等 AnimatedContent 淡出（160ms）才 onDispose，
         // 那期间小播放器缺席、表现为收起消息面板后的一次闪动。这里在 desktopPane 变化的同一帧复位。
         androidx.compose.runtime.LaunchedEffect(desktopPane) {
-            if (desktopPane != DesktopPane.Messages) messagesChatOpen = false
-        }
-        androidx.compose.runtime.SideEffect {
-            cp.player.app.ui.util.DesktopShell.miniPlayerBlockedByChat = messagesChatOpen
+            if (desktopPane != DesktopPane.Messages) {
+                messagesChatOpen = false
+                cp.player.app.ui.util.DesktopShell.miniPlayerBlockedByChat = false
+            }
         }
         androidx.compose.runtime.DisposableEffect(Unit) {
             onDispose {
@@ -604,7 +604,10 @@ class MainScreen : Screen {
                                                     RecentPlaysScreen(embedded = true).Content()
                                                 DesktopPane.Messages ->
                                                     MessagesPane(
-                                                        onChatOpenChanged = { messagesChatOpen = it },
+                                                        onChatOpenChanged = { open ->
+                                                            messagesChatOpen = open
+                                                            cp.player.app.ui.util.DesktopShell.miniPlayerBlockedByChat = open
+                                                        },
                                                     )
                                                 DesktopPane.Tabs -> Unit
                                             }
