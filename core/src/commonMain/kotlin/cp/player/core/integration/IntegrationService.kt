@@ -3,12 +3,14 @@ package cp.player.core.integration
 import cp.player.core.BackendResult
 import cp.player.core.control.LocalServerConfig
 import cp.player.core.control.resolveAdvertisedHost
+import cp.player.core.lyrics.TtmlSerializer
 import cp.player.core.music.ArtistSummary
 import cp.player.core.music.CPMediaId
 import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.SearchResult
 import cp.player.core.music.TrackSummary
 import cp.player.core.music.UnifiedMusicSource
+import cp.player.core.playback.LyricsState
 import cp.player.core.playback.PlaybackUiState
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
@@ -234,6 +236,52 @@ class IntegrationService(
 
     fun playbackStates(): StateFlow<PlaybackUiState> = playbackState()
 
+    // ============ 只读：playback/lyrics ============
+
+    /**
+     * 当前正在播放曲目的逐字歌词（TTML 格式）与音源信息。
+     */
+    fun playbackLyrics(): IntegrationResult<PlaybackLyricsDto> {
+        val state = playbackState().value
+        val track = state.currentTrack
+            ?: return IntegrationResult.Failure(FailureKind.NOT_FOUND, "当前未播放任何曲目")
+
+        val lines = when (val l = state.lyrics) {
+            is LyricsState.Success -> l.lines
+            else -> emptyList()
+        }
+
+        val hasWordLevel = state.lyricsInfo?.hasWordLevel ?: lines.any { it.words.isNotEmpty() }
+        val ttml = if (lines.isNotEmpty()) {
+            TtmlSerializer.serialize(lines, title = track.name, artist = track.artist)
+        } else {
+            ""
+        }
+        val lrc = if (lines.isNotEmpty()) {
+            TtmlSerializer.toLrc(lines)
+        } else {
+            ""
+        }
+
+        val friendlyName = friendlySourceName(state.sourceId, state.lyricsInfo?.source)
+
+        return IntegrationResult.Ok(
+            PlaybackLyricsDto(
+                title = track.name,
+                artist = track.artist,
+                album = track.album,
+                durationMs = track.durationMs,
+                isPlaying = state.isPlaying,
+                positionMs = state.positionMs,
+                sourceId = state.sourceId,
+                sourceName = friendlyName,
+                hasWordLevel = hasWordLevel,
+                ttml = ttml,
+                lrc = lrc,
+            ),
+        )
+    }
+
     // ============ 写：播控 ============
 
     /**
@@ -344,6 +392,25 @@ class IntegrationService(
         name = name,
         avatarUrl = avatarUrl,
     )
+
+    private fun friendlySourceName(sourceId: String?, lyricsSource: String?): String {
+        if (!lyricsSource.isNullOrBlank() && lyricsSource != "Unknown") {
+            return lyricsSource
+        }
+        return when (sourceId?.lowercase()) {
+            "netease" -> "网易云音乐"
+            "qq" -> "QQ音乐"
+            "kugou" -> "酷狗音乐"
+            "kuwo" -> "酷我音乐"
+            "bilibili" -> "哔哩哔哩"
+            "migu" -> "咪咕音乐"
+            "spotify" -> "Spotify"
+            "amll" -> "Apple Music TTML"
+            "local" -> "本地曲目"
+            null, "" -> "CPPlayer"
+            else -> sourceId
+        }
+    }
 }
 
 /**

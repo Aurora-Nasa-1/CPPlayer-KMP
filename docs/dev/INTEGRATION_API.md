@@ -30,6 +30,7 @@
 | `GET /api/v1/tracks/{mediaId}` | ✅ 可用 |
 | `POST /api/v1/tracks/batch` | ✅ 可用 |
 | `GET /api/v1/playback` | ✅ 可用（只读快照） |
+| `GET /api/v1/playback/lyrics` | ✅ 可用（只读，AMLL TTML 逐字歌词与音源） |
 | `POST /api/v1/playback/{action}` | ✅ 可用（需开「远程播控」；`stop` 刻意不做，见 §13） |
 | `GET /api/v1/events` | ✅ 可用（SSE） |
 | `GET /stream` | ✅ 可用（媒体面，早于数据面就存在） |
@@ -228,6 +229,7 @@ Authorization: Bearer <accessToken>     ← 推荐，日志友好
 | `track` | 单曲详情 |
 | `trackBatch` | 批量曲目详情 |
 | `playback` | 播放状态（只读） |
+| `playbackLyrics` | 当前播放歌词与逐字数据（只读） |
 | `playbackControl` | 播控**写**操作（随 `local_server_allow_remote_control` 变化） |
 | `events` | 播放状态事件流（SSE） |
 | `stream` | 媒体面可用（随 `local_server_expose_stream` 变化） |
@@ -432,6 +434,47 @@ curl -H "Authorization: Bearer <token>" \
 > 不是音源数据。需要队列内容时用 `tracks/batch` 按 `mediaId` 取。
 >
 > 播控写操作见 §10；不重连就能拿到状态变化见 §11。
+
+---
+
+## 9.1 `GET /api/v1/playback/lyrics`
+
+获取当前正在播放曲目的逐字歌词与音源信息。专为桌面歌词软件（如 BetterLyrics）或第三方歌词小部件设计。
+
+```
+GET /api/v1/playback/lyrics
+```
+
+### 响应（`200 OK`）
+```json
+{
+  "title": "晴天",
+  "artist": "周杰伦",
+  "album": "叶惠美",
+  "durationMs": 269000,
+  "isPlaying": true,
+  "positionMs": 35000,
+  "sourceId": "netease",
+  "sourceName": "网易云音乐",
+  "hasWordLevel": true,
+  "ttml": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<tt ...>...</tt>",
+  "lrc": "[00:00.00]晴天 - 周杰伦\n..."
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `title` / `artist` / `album` | 当前曲目元数据 |
+| `durationMs` | 总时长（毫秒） |
+| `isPlaying` | 播放状态 |
+| `positionMs` | 当前播放位置（毫秒） |
+| `sourceId` | 原始音源标识（如 `netease` / `qq` / `amll` / `local`） |
+| `sourceName` | 对用户友好的音源显示名（如 `网易云音乐`） |
+| `hasWordLevel` | 是否包含逐字时间戳 |
+| `ttml` | AMLL / Apple Music 规范的逐字歌词 XML 字符串 |
+| `lrc` | 降级用的标准行级 LRC 文本 |
+
+> 当前无曲目播放时返回 `404 not_found`。
 
 ---
 

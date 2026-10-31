@@ -19,6 +19,7 @@ object IntegrationRoutes {
     const val TRACK = "$API_PREFIX/tracks/{mediaId}"
     const val TRACK_BATCH = "$API_PREFIX/tracks/batch"
     const val PLAYBACK = "$API_PREFIX/playback"
+    const val PLAYBACK_LYRICS = "$API_PREFIX/playback/lyrics"
     const val PLAYBACK_ACTION = "$API_PREFIX/playback/{action}"
     const val EVENTS = "$API_PREFIX/events"
 }

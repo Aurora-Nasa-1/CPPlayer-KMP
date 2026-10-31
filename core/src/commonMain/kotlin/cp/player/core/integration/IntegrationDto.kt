@@ -75,6 +75,9 @@ object IntegrationCapabilities {
     /** 播放状态（只读）。 */
     const val PLAYBACK = "playback"
 
+    /** 播放歌词与逐字数据（只读）。 */
+    const val PLAYBACK_LYRICS = "playbackLyrics"
+
     /**
      * 播控**写**操作（`/api/v1/playback/{action}`）。
      *
@@ -100,6 +103,7 @@ object IntegrationCapabilities {
         add(TRACK)
         add(TRACK_BATCH)
         add(PLAYBACK)
+        add(PLAYBACK_LYRICS)
         add(EVENTS)
         if (config.exposeStream) add(STREAM)
         if (config.allowRemoteControl) add(PLAYBACK_CONTROL)
@@ -242,6 +246,31 @@ data class PlaybackDto(
     val qualityLevel: String?,
     val currentTrack: TrackDto?,
     val queueLength: Int,
+)
+
+// ============ GET /api/v1/playback/lyrics ============
+
+/**
+ * 当前正在播放曲目的歌词与音源信息。
+ *
+ * 专为桌面外部歌词渲染器（如 BetterLyrics）或第三方歌词小部件提供：
+ * - [ttml] 遵循 AMLL / Apple Music 规范，含逐字时间戳及内嵌翻译/音译；
+ * - [lrc] 标准行级 LRC 文本（降级兼容）；
+ * - [sourceId] / [sourceName] 标明当前曲目来自哪个音源平台（网易云/QQ/B站/本地等）。
+ */
+@Serializable
+data class PlaybackLyricsDto(
+    val title: String,
+    val artist: String,
+    val album: String?,
+    val durationMs: Long,
+    val isPlaying: Boolean,
+    val positionMs: Long,
+    val sourceId: String?,
+    val sourceName: String,
+    val hasWordLevel: Boolean,
+    val ttml: String,
+    val lrc: String,
 )
 
 // ============ 播控动作 ============

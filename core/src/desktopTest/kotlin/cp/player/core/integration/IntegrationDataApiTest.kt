@@ -11,8 +11,10 @@ import cp.player.core.music.SearchResult
 import cp.player.core.music.SongUrl
 import cp.player.core.music.TrackSummary
 import cp.player.core.music.UnifiedMusicSource
+import cp.player.core.playback.LyricsState
 import cp.player.core.playback.PlaybackUiState
 import cp.player.core.playback.QueueItem
+import cp.player.core.playback.SyncedLyricLine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.net.HttpURLConnection
@@ -192,7 +194,7 @@ class IntegrationDataApiTest {
         assertTrue(res.body.contains("\"apiVersion\":1"), "响应体: ${res.body}")
         assertTrue(
             res.body.contains(
-                "\"capabilities\":[\"meta\",\"providers\",\"search\",\"track\",\"trackBatch\",\"playback\",\"events\",\"stream\"]"
+                "\"capabilities\":[\"meta\",\"providers\",\"search\",\"track\",\"trackBatch\",\"playback\",\"playbackLyrics\",\"events\",\"stream\"]"
             ),
             "capabilities 必须如实反映已实现能力: ${res.body}",
         )
@@ -368,6 +370,41 @@ class IntegrationDataApiTest {
         assertEquals(200, res.code, "没在播不是错误")
         assertTrue(res.body.contains("\"currentTrack\":null"), "显式 null 便于集成方发现字段: ${res.body}")
         assertTrue(res.body.contains("\"queueLength\":0"), "响应体: ${res.body}")
+    }
+
+    @Test
+    fun `playback_lyrics 返回逐字歌词与音源`() {
+        val lyricsLines = listOf(
+            SyncedLyricLine(
+                time = 1000L,
+                text = "测试歌词",
+                endTime = 4000L,
+                words = listOf(SyncedLyricLine.SyncedWord("测试", 1000L, 2000L), SyncedLyricLine.SyncedWord("歌词", 2000L, 4000L)),
+            ),
+        )
+        val state = playingState().copy(
+            lyrics = LyricsState.Success(lyricsLines),
+            sourceId = "netease",
+        )
+        val port = start(exposeDataApi = true, playback = state)
+        val res = get("http://127.0.0.1:$port${IntegrationRoutes.PLAYBACK_LYRICS}?token=secret")
+
+        assertEquals(200, res.code, "响应体: ${res.body}")
+        assertTrue(res.body.contains("\"title\":\"晴天\""), "响应体: ${res.body}")
+        assertTrue(res.body.contains("\"sourceId\":\"netease\""), "响应体: ${res.body}")
+        assertTrue(res.body.contains("\"sourceName\":\"网易云音乐\""), "响应体: ${res.body}")
+        assertTrue(res.body.contains("\"hasWordLevel\":true"), "响应体: ${res.body}")
+        assertTrue(res.body.contains("<tt "), "响应体应包含 TTML: ${res.body}")
+        assertTrue(res.body.contains("00:01.000") && res.body.contains("测试"), "响应体应包含逐字 span: ${res.body}")
+    }
+
+    @Test
+    fun `没有播放内容时 playback_lyrics 返回 404`() {
+        val port = start(exposeDataApi = true)
+        val res = get("http://127.0.0.1:$port${IntegrationRoutes.PLAYBACK_LYRICS}?token=secret")
+
+        assertEquals(404, res.code, "没在播时应 404")
+        assertTrue(res.body.contains("\"code\":\"not_found\""), "响应体: ${res.body}")
     }
 
     // ============ POST /playback/{action} ============

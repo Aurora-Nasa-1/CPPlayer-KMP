@@ -96,6 +96,11 @@ internal class KtorIntegrationRoutes(
             )
         }
 
+        routing.get(IntegrationRoutes.PLAYBACK_LYRICS) {
+            if (!gate(call)) return@get
+            call.respondOutcome(service.playbackLyrics(), PlaybackLyricsDto.serializer())
+        }
+
         routing.post(IntegrationRoutes.PLAYBACK_ACTION) {
             if (!gate(call)) return@post
             // Ktor 已对路径参数做过 percent-decoding

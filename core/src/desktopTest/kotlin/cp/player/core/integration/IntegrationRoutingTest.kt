@@ -142,7 +142,7 @@ class IntegrationRoutingTest {
 
     @Test
     fun `capabilities 只声明真正可用的能力并反映开关`() {
-        val dataFace = listOf("meta", "providers", "search", "track", "trackBatch", "playback", "events")
+        val dataFace = listOf("meta", "providers", "search", "track", "trackBatch", "playback", "playbackLyrics", "events")
 
         assertEquals(dataFace + "stream", IntegrationCapabilities.of(config(exposeStream = true)))
         assertEquals(
@@ -175,6 +175,7 @@ class IntegrationRoutingTest {
         assertEquals("/api/v1/tracks/{mediaId}", IntegrationRoutes.TRACK)
         assertEquals("/api/v1/tracks/batch", IntegrationRoutes.TRACK_BATCH)
         assertEquals("/api/v1/playback", IntegrationRoutes.PLAYBACK)
+        assertEquals("/api/v1/playback/lyrics", IntegrationRoutes.PLAYBACK_LYRICS)
         assertEquals("/api/v1/playback/{action}", IntegrationRoutes.PLAYBACK_ACTION)
         assertEquals("/api/v1/events", IntegrationRoutes.EVENTS)
     }
