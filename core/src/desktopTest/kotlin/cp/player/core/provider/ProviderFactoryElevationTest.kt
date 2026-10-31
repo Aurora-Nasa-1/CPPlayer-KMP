@@ -129,6 +129,23 @@ class ProviderFactoryElevationTest {
     }
 
     @Test
+    fun `explicit empty capabilities stay empty rather than enabling legacy mode`() {
+        for (capabilities in listOf(emptyList(), listOf("futureCapability"))) {
+            val manifest = ModuleManifest(
+                id = "restricted-http",
+                name = "Restricted Http",
+                version = "1.0.0",
+                type = "http",
+                entryPoint = "http://127.0.0.1:8006",
+                capabilities = capabilities,
+            )
+            val provider = ProviderFactory.create(manifest, tempDir.absolutePath)
+            assertNotNull(provider)
+            assertEquals(emptyList(), provider.capabilities)
+        }
+    }
+
+    @Test
     fun `ProviderFactory 未声明标签时 Provider 侧为 null`() {
         val manifest = ModuleManifest(
             id = "untagged-http",

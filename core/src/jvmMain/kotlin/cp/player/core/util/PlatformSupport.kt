@@ -134,7 +134,27 @@ actual object PlatformSupport {
         }
     }
 
-    actual fun deleteRecursively(path: String): Boolean = File(path).deleteRecursively()
+    actual fun deleteRecursively(path: String): Boolean {
+        val file = File(path)
+        if (!file.exists()) return true
+        if (file.deleteRecursively()) return true
+        // Windows 上若子进程刚刚被 kill，句柄解绑与反病毒/文件系统索引可能有短暂延迟，
+        // 进行多次带休眠的重试与垃圾回收以尽可能释放遗留文件锁。
+        val isWindows = System.getProperty("os.name", "").lowercase().contains("win")
+        if (isWindows) {
+            for (attempt in 1..5) {
+                System.gc()
+                try {
+                    Thread.sleep(100L * attempt)
+                } catch (ignored: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    break
+                }
+                if (!file.exists() || file.deleteRecursively()) return true
+            }
+        }
+        return false
+    }
 
     actual fun zipDirTo(dirPath: String, zipPath: String): Boolean = try {
         val root = File(dirPath)

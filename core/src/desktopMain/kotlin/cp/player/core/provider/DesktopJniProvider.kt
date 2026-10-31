@@ -188,7 +188,7 @@ class DesktopJniProvider(
         workerProcess?.let { proc ->
             try {
                 proc.destroyForcibly()
-                proc.waitFor(500, TimeUnit.MILLISECONDS)
+                proc.waitFor(1500, TimeUnit.MILLISECONDS)
             } catch (ignored: Throwable) {}
         }
         workerProcess = null
@@ -206,6 +206,9 @@ class DesktopJniProvider(
     override fun callApi(method: String, params: Map<String, String>): String {
         inProcessFallback?.let {
             return it.callApi(method, params)
+        }
+        if (!isLoaded) {
+            return """{"code":500,"msg":"Provider server is stopped"}"""
         }
         var proc = workerProcess
         if (proc == null || !proc.isAlive) {

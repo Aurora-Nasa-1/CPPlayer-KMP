@@ -13,6 +13,8 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import java.io.File
 
@@ -133,8 +135,16 @@ open class JniProvider(
             }
         }.toString()
         log("callApi -> nativeCallApi: method=$method, params={${maskParamsForLog(params)}}")
+        return callApiJson(method, json)
+    }
+
+    /** Worker requests already contain configuration; preserve the original JSON types. */
+    internal fun callApiJson(method: String, paramsJson: String): String {
+        if (!isLoaded) return errorJson("JNI not loaded: ${loadError ?: "unknown"}")
+        val body = runCatching { Json.parseToJsonElement(paramsJson) }.getOrNull() as? JsonObject
+            ?: return errorJson("JNI request must be a JSON object")
         return try {
-            val result = nativeCallApi(method, json)
+            val result = nativeCallApi(method, paramsJson)
             // 只记长度：响应体可能含账号资料 / 私信片段，不适合整段落日志。
             log("callApi <- nativeCallApi: method=$method, resultLen=${result.length}")
             result
@@ -143,7 +153,7 @@ open class JniProvider(
                 // 如果该 .so 是由 binary 提升而来、通过 startNativeServer 启动了本地 HTTP 服务，
                 // 但未实现 nativeCallApi 符号，则降级走 HTTP 回环调用
                 log("nativeCallApi 未导出但本地服务已就绪，降级走 HTTP: $method")
-                callApiViaHttp(method, json, configJson?.toString())
+                callApiViaHttp(method, paramsJson, (body["config"] as? JsonObject)?.toString())
             } else {
                 isLoaded = false
                 loadError = "JNI 调用崩溃: ${e.message} —— ${symbolMismatchHint("nativeCallApi")}"

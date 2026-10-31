@@ -133,6 +133,13 @@ sealed class ImportResult {
         val replacedProviderId: String? = null
     ) : ImportResult()
 
+    /** 模块文件使用中被锁定（如 Windows 上正在运行的音源），更新已暂存，重启应用后生效。 */
+    data class PendingRestart(
+        val providerId: String,
+        val providerName: String,
+        val message: String = "音源正在使用中，已保存更新包，重启应用后自动生效"
+    ) : ImportResult()
+
     /** 导入失败。 */
     data class Failed(val message: String) : ImportResult()
 }

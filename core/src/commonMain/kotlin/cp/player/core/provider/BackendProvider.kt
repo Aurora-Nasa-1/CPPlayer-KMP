@@ -68,8 +68,8 @@ interface BackendProvider {
     /**
      * 音源声称支持的能力（见 [ProviderCapability]），可选。
      *
-     * null = 未声明。**未声明不等于不支持** —— 能力只用于展示与解释，
-     * 不参与功能开关（否则每个老音源都会瞬间「少一堆功能」）。
+     * null = 未声明，保守展示旧模块的功能；非 null 时按声明开关界面入口。
+     * 显式空列表表示不开放任何已知能力，不能回退成未声明。
      * 内置 Provider 可以不给（返回 null）；外部模块由 manifest 带入，
      * 并经 [PlatformSupport] 侧的 [ModuleManifest.knownCapabilities] 过滤。
      *

@@ -50,6 +50,7 @@ class BinaryProvider(
 
     private var process: Process? = null
     private var port: Int = 3000
+    private var isStopped: Boolean = false
     private val client = createHttpClient()
     override var loadError: String? = null
     private val configStorage by lazy { defaultSettingsStorage("provider_config_$id") }
@@ -75,6 +76,7 @@ class BinaryProvider(
         }
         if (loadError != null) throw IllegalStateException("Binary not ready: $loadError")
         this.port = port
+        this.isStopped = false
         val file = File(binaryPath)
         if (!file.exists()) {
             loadError = "二进制文件不存在: $binaryPath"
@@ -103,10 +105,11 @@ class BinaryProvider(
     }
 
     override fun stopServer() {
+        isStopped = true
         process?.let { proc ->
             try {
                 proc.destroyForcibly()
-                proc.waitFor(500, java.util.concurrent.TimeUnit.MILLISECONDS)
+                proc.waitFor(1500, java.util.concurrent.TimeUnit.MILLISECONDS)
             } catch (ignored: Throwable) {}
         }
         process = null
@@ -133,6 +136,7 @@ class BinaryProvider(
     }
 
     override fun callApi(method: String, params: Map<String, String>): String {
+        if (isStopped) return """{"code": 500, "msg": "Binary provider is stopped"}"""
         if (loadError != null && process == null) return """{"code": 500, "msg": "Binary not ready: $loadError"}"""
         if (process != null && !process!!.isAlive) {
             val exitCode = runCatching { process?.exitValue() }.getOrNull()

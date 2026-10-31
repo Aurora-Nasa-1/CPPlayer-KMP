@@ -8,7 +8,7 @@ actual object ProviderFactory {
     actual fun create(manifest: ModuleManifest, moduleDir: String): BackendProvider? {
         // capabilities 经 knownCapabilities 过滤：未识别的能力名在 manifest 里出现时
         // 只丢弃该条目，不让整个包加载失败（前向兼容，见 ProviderCapability 的 KDoc）。
-        val caps = manifest.knownCapabilities.ifEmpty { null }
+        val caps = manifest.capabilities?.let { manifest.knownCapabilities }
         val apiVersion = manifest.resolvedApiVersion
         val apiVersionTag = manifest.resolvedApiVersionTag
         return when (manifest.type) {

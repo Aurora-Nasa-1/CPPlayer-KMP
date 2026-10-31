@@ -101,25 +101,7 @@ object JniWorker {
         try {
             val path = exchange.requestURI.path.removePrefix("/api/").removePrefix("/")
             val body = exchange.requestBody.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
-            val params = if (body.isNotBlank()) {
-                try {
-                    val jsonElement = Json.parseToJsonElement(body)
-                    if (jsonElement is JsonObject) {
-                        jsonElement.mapValues { (_, v) ->
-                            if (v is JsonPrimitive) v.content else v.toString()
-                        }
-                    } else emptyMap()
-                } catch (e: Throwable) {
-                    emptyMap()
-                }
-            } else emptyMap()
-
-            val result = if (path == "analyzeAudio") {
-                val filePath = params["path"] ?: ""
-                provider.analyzeAudio(filePath)
-            } else {
-                provider.callApi(path, params)
-            }
+            val result = dispatchWorkerRequest(path, body, provider::callApiJson, provider::analyzeAudio)
 
             val bytes = result.toByteArray(StandardCharsets.UTF_8)
             exchange.responseHeaders.set("Content-Type", "application/json; charset=utf-8")
@@ -133,4 +115,15 @@ object JniWorker {
             exchange.responseBody.use { it.write(bytes) }
         }
     }
+}
+
+internal fun dispatchWorkerRequest(
+    path: String,
+    body: String,
+    callApi: (String, String) -> String,
+    analyzeAudio: (String) -> String,
+): String {
+    if (path != "analyzeAudio") return callApi(path, body.ifBlank { "{}" })
+    val params = Json.parseToJsonElement(body) as? JsonObject
+    return analyzeAudio((params?.get("path") as? JsonPrimitive)?.content.orEmpty())
 }

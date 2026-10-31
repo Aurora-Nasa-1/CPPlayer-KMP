@@ -90,6 +90,7 @@ class ModuleManager(
         val provider: BackendProvider,
         val isUpdate: Boolean,
         val replacedProviderId: String? = null,
+        val pendingRestart: Boolean = false,
     )
 
     /** 导入 zip 模块包。 */
@@ -167,7 +168,11 @@ class ModuleManager(
     }
 
     @Serializable
-    private data class PendingRepositoryUpdate(val id: String, val sha256: String)
+    private data class PendingRepositoryUpdate(
+        val id: String,
+        val sha256: String,
+        val replacedId: String? = null,
+    )
 
     var lastPendingUpdateError: String? = null
         private set
@@ -177,7 +182,7 @@ class ModuleManager(
             PlatformSupport.exists("$modulesDir/.repository-pending/$id.json")
 
     @Synchronized
-    fun queueRepositoryUpdate(zipPath: String, id: String): Boolean {
+    fun queueRepositoryUpdate(zipPath: String, id: String, replacedId: String? = null): Boolean {
         val hash = PlatformSupport.sha256Hex(zipPath) ?: return false
         val directory = "$modulesDir/.repository-pending"
         val partial = "$directory/$id.zip.part"
@@ -185,7 +190,7 @@ class ModuleManager(
         if (!Regex("^[a-z0-9][a-z0-9._-]{0,127}$").matches(id) || ".." in id) return false
         if (!PlatformSupport.copyFile(zipPath, partial)) return false
         if (!PlatformSupport.moveFile(partial, "$directory/$id.zip")) return false
-        if (!PlatformSupport.writeTextFile("$metadata.part", json.encodeToString(PendingRepositoryUpdate(id, hash)))) return false
+        if (!PlatformSupport.writeTextFile("$metadata.part", json.encodeToString(PendingRepositoryUpdate(id, hash, replacedId)))) return false
         return PlatformSupport.moveFile("$metadata.part", metadata)
     }
 
@@ -208,6 +213,9 @@ class ModuleManager(
                 require(Regex("^[a-z0-9][a-z0-9._-]{0,127}$").matches(pending.id) && ".." !in pending.id)
                 val archive = "$directory/${pending.id}.zip"
                 require(PlatformSupport.sha256Hex(archive) == pending.sha256) { "Pending package hash mismatch" }
+                if (pending.replacedId != null && pending.replacedId != pending.id) {
+                    PlatformSupport.deleteRecursively("$modulesDir/${pending.replacedId}")
+                }
                 check(importRepositoryZip(archive, pending.id)) { lastLoadError ?: "Pending update failed" }
                 PlatformSupport.deleteRecursively(archive)
                 PlatformSupport.deleteRecursively(metadataPath)
@@ -293,21 +301,54 @@ class ModuleManager(
             if (targetExisting != null && targetExisting.id != manifest.id) {
                 val oldDir = "$modulesDir/${targetExisting.id}"
                 if (PlatformSupport.exists(oldDir)) {
-                    PlatformSupport.deleteRecursively(oldDir)
+                    if (!PlatformSupport.deleteRecursively(oldDir)) {
+                        // 旧目录被占用无法立即删除，暂存更新并在下次重启时应用
+                        val queued = queueRepositoryUpdate(zipPath, manifest.id, replacedId = targetExisting.id)
+                        PlatformSupport.deleteRecursively(tempDir)
+                        if (queued) {
+                            return ModuleImportSuccess(
+                                provider = targetExisting,
+                                isUpdate = true,
+                                replacedProviderId = targetExisting.id,
+                                pendingRestart = true,
+                            )
+                        }
+                        lastLoadError = "无法清理旧版本目录（模块文件可能正被占用）"
+                        return null
+                    }
                 }
                 providers.remove(targetExisting.id)
             }
 
             val targetDir = "$modulesDir/${manifest.id}"
-            // 旧目录清理失败（典型：Windows 上活跃 jni 模块的 dll 被占用）必须中止，
-            // 否则 moveDir 语义未定义、旧文件半新半旧。
+            // 旧目录清理失败（典型：Windows 上活跃 jni 模块的 dll 被占用）
             if (PlatformSupport.exists(targetDir) && !PlatformSupport.deleteRecursively(targetDir)) {
+                // 当目标模块文件正在使用中无法清理时（典型如 Windows 动态库被占用），
+                // 自动将更新包暂存至 .repository-pending，下次启动时自动生效。
+                val queued = queueRepositoryUpdate(zipPath, manifest.id, replacedId = replacedId)
                 PlatformSupport.deleteRecursively(tempDir)
+                if (queued && targetExisting != null) {
+                    return ModuleImportSuccess(
+                        provider = targetExisting,
+                        isUpdate = true,
+                        replacedProviderId = replacedId,
+                        pendingRestart = true,
+                    )
+                }
                 lastLoadError = "无法清理旧版本目录（模块文件可能正被占用）"
                 return null
             }
             if (!PlatformSupport.moveDir(tempDir, targetDir)) {
+                val queued = queueRepositoryUpdate(zipPath, manifest.id, replacedId = replacedId)
                 PlatformSupport.deleteRecursively(tempDir)
+                if (queued && targetExisting != null) {
+                    return ModuleImportSuccess(
+                        provider = targetExisting,
+                        isUpdate = true,
+                        replacedProviderId = replacedId,
+                        pendingRestart = true,
+                    )
+                }
                 lastLoadError = "移动临时目录失败"
                 return null
             }

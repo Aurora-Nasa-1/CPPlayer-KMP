@@ -11,6 +11,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -141,5 +142,46 @@ class ModuleImportAndAutoUpdateTest {
         val result = moduleManager.importModuleDetails(legacyShaZip.absolutePath)
         assertNotNull(result, "包含历史 sha256 字段的包应成功导入，不应因包内自哈希自相矛盾而报错")
         assertEquals("legacy-sha", result.provider.id)
+    }
+
+    @Test
+    fun updatingModuleWhileFilesLockedStagesPendingUpdateForRestart() {
+        // 导入初始版本
+        val v1Zip = createZip(
+            "test_source_v1.zip",
+            """{"id":"test-src","name":"测试音源","type":"http","entryPoint":"http://127.0.0.1:8005","version":"1.0.0"}""",
+            extraFiles = mapOf("lib/lock.dll" to "locked bytes")
+        )
+        val r1 = moduleManager.importModuleDetails(v1Zip.absolutePath)
+        assertNotNull(r1)
+        assertEquals("1.0.0", r1.provider.version)
+
+        // 模拟 Windows 上音源使用中：打开目录下的文件流锁定文件
+        val targetFile = File(tempModulesDir, "test-src/lib/lock.dll")
+        assertTrue(targetFile.exists())
+        val lockStream = java.io.FileInputStream(targetFile)
+        try {
+            // 此时尝试更新模块（新版本 2.0.0）
+            val v2Zip = createZip(
+                "test_source_v2.zip",
+                """{"id":"test-src","name":"测试音源","type":"http","entryPoint":"http://127.0.0.1:8006","version":"2.0.0"}""",
+                extraFiles = mapOf("lib/lock.dll" to "new bytes")
+            )
+            val r2 = moduleManager.updateModuleDetails(v2Zip.absolutePath, "test-src")
+            assertNotNull(r2, "即使文件被锁定无法立即覆盖，也应成功暂存为待重启更新")
+            assertTrue(r2.pendingRestart, "应标记 pendingRestart 为 true")
+            assertTrue(moduleManager.hasPendingRepositoryUpdate("test-src"), "应在 .repository-pending 登记待更新")
+        } finally {
+            lockStream.close()
+        }
+
+        // 模拟应用重启：重新初始化 ModuleManager
+        val newManager = ModuleManager(tempModulesDir.absolutePath, context)
+        newManager.init(providerManager)
+
+        assertFalse(newManager.hasPendingRepositoryUpdate("test-src"), "重启后应自动应用并清除暂存记录")
+        val updatedProvider = newManager.getProvider("test-src")
+        assertNotNull(updatedProvider)
+        assertEquals("2.0.0", updatedProvider.version, "重启后音源版本应已成功更新至 2.0.0")
     }
 }
