@@ -173,6 +173,11 @@ class PlaybackControllerImpl(
     /** 当前曲目已播放秒数（累计，仅 isPlaying=true 期间）。 */
     private var scrobbledSeconds = 0
     private var scrobbleTickJob: Job? = null
+    /** 当前正在活跃播放（或刚播放完待上报）的曲目信息与已上报秒数。 */
+    private var activeScrobbleMediaId: String? = null
+    private var activeScrobbleSummary: TrackSummary? = null
+    private var activeScrobbleSourceId: String? = null
+    private var lastScrobbledSeconds = 0
     /** 加载世代替换旧任务状态过时写入。 */
     private var loadGeneration = 0
 
@@ -1813,8 +1818,14 @@ class PlaybackControllerImpl(
         loadJob?.cancel()
         lyricsJob?.cancel()
         preloadJob?.cancel()
+        // 换曲或重播前，若上一首已有播放秒数且尚未结算，立即上报上一首的最终打卡
+        flushActiveScrobble()
         scrobbleTickJob?.cancel(); scrobbleJob?.cancel()
         scrobbledSeconds = 0
+        lastScrobbledSeconds = 0
+        activeScrobbleMediaId = entry.mediaId
+        activeScrobbleSummary = entry.summary
+        activeScrobbleSourceId = _sourceId ?: entry.summary?.album ?: "0"
         // 「这次要装的是哪一首」以**队列条目自己的 mediaId** 为准 —— 见 sameSong 的说明。
         val previousMediaId = playingMediaId
         playingMediaId = entry.mediaId
@@ -1827,6 +1838,12 @@ class PlaybackControllerImpl(
             val namespace = cacheNamespaceOf(mediaId)
             if (entry.summary == null) resolveEntry(_index)
             val summary = entry.summary ?: source.getTrackDetail(mediaId).getOrNull()?.also { entry.summary = it }
+            if (activeScrobbleMediaId == mediaId) {
+                activeScrobbleSummary = summary
+                if (activeScrobbleSourceId == null || activeScrobbleSourceId == "0") {
+                    activeScrobbleSourceId = _sourceId ?: summary?.album ?: "0"
+                }
+            }
             if (restartIfSourceChanged(mediaId, namespace, gen)) return@launch
             val currentLyrics = _state.value.lyrics
             // 「同一首」只能由**播放身份**判定，不能用 `TrackSummary.id` 等值比较。
@@ -2126,6 +2143,8 @@ class PlaybackControllerImpl(
             // 注意：只按世代判定，不要额外要求平台此刻仍处于 Ended——
             // 桌面端轮询会在 200ms 内把 Ended 覆写成 Idle，那样会把正常的自动续播也一起丢掉。
             if (navigationSeq != seqAtEnd) return@launch
+            // 曲目自然播完：结算并上报本曲的最终打卡
+            flushActiveScrobble()
             if (sleepAfterTrack) {
                 // 睡眠定时：播完当前后暂停，不再自动续播
                 cancelSleepTimer()
@@ -2135,6 +2154,9 @@ class PlaybackControllerImpl(
             when (_repeat) {
                 RepeatMode.ONE -> {
                     fadeOutStartedFor = null
+                    // 单曲循环即将从头重新开播：重置秒数与上报记录
+                    scrobbledSeconds = 0
+                    lastScrobbledSeconds = 0
                     requestSeek(0L)
                     platform.play()
                     startFadeIn()
@@ -2150,6 +2172,9 @@ class PlaybackControllerImpl(
                     if (stale) return@launch
                     val target = next
                     if (target == null) {
+                        scrobbleTickJob?.cancel(); scrobbleJob?.cancel()
+                        scrobbledSeconds = 0
+                        lastScrobbledSeconds = 0
                         updateState { it.copy(isPlaying = false, positionMs = 0L) }
                         return@launch
                     }
@@ -2373,6 +2398,13 @@ class PlaybackControllerImpl(
     }
 
     private fun clearState() {
+        flushActiveScrobble()
+        scrobbleTickJob?.cancel(); scrobbleJob?.cancel()
+        scrobbledSeconds = 0
+        lastScrobbledSeconds = 0
+        activeScrobbleMediaId = null
+        activeScrobbleSummary = null
+        activeScrobbleSourceId = null
         // 队列没了 ⇒ 歌词归属一并作废，否则下一首会被误判成「已经有词了」。
         lyricsMediaId = null
         playingMediaId = null
@@ -2423,18 +2455,34 @@ class PlaybackControllerImpl(
     }
 
     private fun flushScrobble() {
-        val mediaId = _queue.getOrNull(_index)?.mediaId ?: return
-        val summary = _queue.getOrNull(_index)?.summary ?: return
-        if (scrobbledSeconds <= 0) return
+        flushActiveScrobble()
+    }
+
+    /**
+     * 上报当前活跃曲目的已播放秒数。
+     *
+     * 触发时机：
+     * 1. 播放中每 [SCROBBLE_INTERVAL_S] 秒定期上报（心跳保活）；
+     * 2. 切歌 / 换曲时立即上报上一首的最终累计秒数；
+     * 3. 曲目自然播放结束（Ended）时上报完播秒数；
+     * 4. 清空队列或停止播放时结算。
+     */
+    private fun flushActiveScrobble() {
+        val mediaId = activeScrobbleMediaId ?: _queue.getOrNull(_index)?.mediaId ?: return
+        val summary = activeScrobbleSummary ?: _queue.getOrNull(_index)?.summary
+        val sourceId = activeScrobbleSourceId ?: _sourceId ?: summary?.album ?: "0"
+        val seconds = scrobbledSeconds
+        if (seconds <= 0 || seconds == lastScrobbledSeconds) return
         val id = runCatching { cp.player.core.music.CPMediaId.parse(mediaId) }.getOrNull() ?: return
         if (id.providerId == "local") return
-        scrobbleJob?.cancel()
-        scrobbleJob = scope.launch {
+
+        lastScrobbledSeconds = seconds
+        scope.launch {
             runCatching {
                 api.scrobble(
                     songId = id.resourceId,
-                    sourceId = _sourceId ?: summary.album ?: "0",
-                    playedSeconds = scrobbledSeconds,
+                    sourceId = sourceId,
+                    playedSeconds = seconds,
                 )
             }
             // 失败静默：scrobble 不影响播放体验
