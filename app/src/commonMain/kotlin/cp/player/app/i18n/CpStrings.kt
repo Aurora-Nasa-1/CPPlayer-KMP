@@ -399,6 +399,18 @@ interface StorageStrings {
     fun cachedSongsSummary(count: Int, bytes: String, capacity: String): String
     val cacheCapacity: String
     val cacheCapacityNote: String
+    val customCapacity: String
+    val customCapacityDialogTitle: String
+    val customCapacityDialogNote: String
+    val customCapacityUnitGb: String
+    val customCapacityUnitMb: String
+    fun customCapacitySubtitle(capacity: String): String
+    val cacheDir: String
+    val migrateCacheDir: String
+    val migrateCacheDirNote: String
+    val migrateCacheDirConfirmTitle: String
+    fun migrateCacheDirConfirmMessage(target: String): String
+    val cacheDirMigrating: String
     val clearStaleCache: String
     val clearStaleCacheNote: String
     val clearSongCache: String
@@ -558,6 +570,16 @@ interface PlaybackStrings {
     val timerAfterTrackChip: String
     val timerCancel: String
     val timerClose: String
+
+    val timerCustomChip: String
+    val timerCustomDialogTitle: String
+    val timerCustomModeDuration: String
+    val timerCustomModeAtTime: String
+    fun timerCustomDurationHint(minutes: Int, endTimeText: String): String
+    fun timerCustomAtTimeHint(targetTimeText: String, diffMinutes: Long): String
+    val timerCustomConfirm: String
+    val timerCustomToggleDial: String
+    val timerCustomToggleInput: String
 }
 
 // ---------------------------------------------------------------------------

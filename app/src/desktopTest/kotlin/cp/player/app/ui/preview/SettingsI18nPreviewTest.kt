@@ -55,6 +55,7 @@ import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSegmentedItem
 import cp.player.app.ui.component.SettingsSliderItem
 import cp.player.app.ui.component.SettingsSwitchItem
+import cp.player.app.ui.component.SleepCustomTimeDialog
 import cp.player.app.ui.component.SleepTimerDialog
 import cp.player.app.ui.screen.SettingsEntry
 import cp.player.app.ui.screen.SettingsGroup
@@ -849,6 +850,7 @@ class SettingsI18nPreviewTest {
                     // 那个按钮是 error 色的破坏性动作，英文下最容易挤爆。
                     "timer-active" to @Composable { SleepTimerDialogContent(active = true) },
                     "timer-idle" to @Composable { SleepTimerDialogContent(active = false) },
+                    "timer-custom" to @Composable { SleepCustomTimeDialog(initialMinutes = 75, onConfirm = {}, onDismiss = {}) },
                     // 批次 2：警告文案最长的两页，`troubleshooting` 单条 400+ 字符。
                     // `external_access` 是合并后的六段长页 —— 出图看的是窄屏能不能读完整。
                     "external" to @Composable { ExternalAccessPage() },

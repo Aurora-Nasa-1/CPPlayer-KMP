@@ -233,6 +233,19 @@ object CpStringsEn : CpStrings {
             "$count tracks · $bytes of $capacity"
         override val cacheCapacity = "Capacity limit"
         override val cacheCapacityNote = "Lowering the limit trims the least recently played tracks right away"
+        override val customCapacity = "Custom capacity"
+        override val customCapacityDialogTitle = "Custom Cache Limit"
+        override val customCapacityDialogNote = "Enter a custom capacity limit. Lowering the limit trims older tracks right away."
+        override val customCapacityUnitGb = "GB"
+        override val customCapacityUnitMb = "MB"
+        override fun customCapacitySubtitle(capacity: String) = "Current custom limit: $capacity. Click to edit"
+        override val cacheDir = "Cache folder"
+        override val migrateCacheDir = "Migrate cache folder"
+        override val migrateCacheDirNote = "Change song cache folder and move existing cached files"
+        override val migrateCacheDirConfirmTitle = "Migrate Cache Folder"
+        override fun migrateCacheDirConfirmMessage(target: String) =
+            "Are you sure you want to migrate song cache to:\n$target\n\nExisting cached files will be copied automatically."
+        override val cacheDirMigrating = "Migrating cache folder..."
         override val clearStaleCache = "Clear tracks unplayed for 30 days"
         override val clearStaleCacheNote = "Only drops what you haven't listened to lately"
         override val clearSongCache = "Clear song cache"
@@ -383,6 +396,18 @@ object CpStringsEn : CpStrings {
         override val timerAfterTrackChip = "After this track"
         override val timerCancel = "Cancel timer"
         override val timerClose = "Close"
+
+        override val timerCustomChip = "Custom..."
+        override val timerCustomDialogTitle = "Custom sleep timer"
+        override val timerCustomModeDuration = "Countdown"
+        override val timerCustomModeAtTime = "At time"
+        override fun timerCustomDurationHint(minutes: Int, endTimeText: String) =
+            "Will pause in $minutes min (approx. $endTimeText)"
+        override fun timerCustomAtTimeHint(targetTimeText: String, diffMinutes: Long) =
+            "Will pause at $targetTimeText (in approx. $diffMinutes min)"
+        override val timerCustomConfirm = "OK"
+        override val timerCustomToggleDial = "Switch to clock dial"
+        override val timerCustomToggleInput = "Switch to text input"
     }
 
     override val audioEffect: AudioEffectStrings = object : AudioEffectStrings {

@@ -229,6 +229,19 @@ object CpStringsZh : CpStrings {
             "$count 首 · 共 $bytes / 上限 $capacity"
         override val cacheCapacity = "容量上限"
         override val cacheCapacityNote = "上限调小后会立刻按最久未播放清理到位"
+        override val customCapacity = "自定义容量"
+        override val customCapacityDialogTitle = "自定义歌曲缓存上限"
+        override val customCapacityDialogNote = "请输入新的缓存容量上限。调小后将立刻按最久未播放清理到位。"
+        override val customCapacityUnitGb = "GB"
+        override val customCapacityUnitMb = "MB"
+        override fun customCapacitySubtitle(capacity: String) = "当前自定义上限: $capacity，点击可修改"
+        override val cacheDir = "缓存目录"
+        override val migrateCacheDir = "迁移缓存目录"
+        override val migrateCacheDirNote = "更改歌曲缓存位置并搬移已有文件"
+        override val migrateCacheDirConfirmTitle = "迁移歌曲缓存目录"
+        override fun migrateCacheDirConfirmMessage(target: String) =
+            "确定要将歌曲缓存迁移至以下目录吗？\n$target\n\n已有的缓存文件将被自动复制到新目录。"
+        override val cacheDirMigrating = "正在迁移缓存目录..."
         override val clearStaleCache = "清理 30 天未播放的缓存"
         override val clearStaleCacheNote = "只删长期不听的，最近在听的不受影响"
         override val clearSongCache = "清空歌曲缓存"
@@ -364,6 +377,18 @@ object CpStringsZh : CpStrings {
         override val timerAfterTrackChip = "播完本曲"
         override val timerCancel = "取消定时"
         override val timerClose = "关闭"
+
+        override val timerCustomChip = "自定义..."
+        override val timerCustomDialogTitle = "自定义定时关闭"
+        override val timerCustomModeDuration = "倒计时时长"
+        override val timerCustomModeAtTime = "指定时刻"
+        override fun timerCustomDurationHint(minutes: Int, endTimeText: String) =
+            "将在 $minutes 分钟后停止播放（约 $endTimeText）"
+        override fun timerCustomAtTimeHint(targetTimeText: String, diffMinutes: Long) =
+            "将在 $targetTimeText 停止播放（约 $diffMinutes 分钟后）"
+        override val timerCustomConfirm = "确定"
+        override val timerCustomToggleDial = "切换至时钟表盘"
+        override val timerCustomToggleInput = "切换至文本输入"
     }
 
     override val audioEffect: AudioEffectStrings = object : AudioEffectStrings {
