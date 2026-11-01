@@ -1333,6 +1333,15 @@ interface AboutStrings {
     val supportSection: String
     val supportProject: String
     val supportProjectSubtitle: String
+    val sponsorDeveloper: String get() = "赞助开发者"
+    val sponsorDeveloperSubtitle: String get() = "使用微信或支付宝赞助支持作者"
+    val sponsorDialogTitle: String get() = "赞助与支持"
+    val sponsorDialogSubtitle: String get() = "如果 CPPlayer 对你有帮助，欢迎赞助支持本项目的持续开发与维护！"
+    val wechatPay: String get() = "微信支付"
+    val alipay: String get() = "支付宝"
+    val sponsorAccount: String get() = "收款人: Aurora星空(**森)"
+    val sponsorThanks: String get() = "感谢每一位支持者的认可与鼓励 ❤️"
+    val close: String get() = "关闭"
     val footerNote: String
 }
 

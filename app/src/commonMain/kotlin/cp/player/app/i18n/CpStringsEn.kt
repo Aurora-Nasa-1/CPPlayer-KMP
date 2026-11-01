@@ -1108,6 +1108,15 @@ object CpStringsEn : CpStrings {
         override val supportSection = "Support"
         override val supportProject = "Support this project"
         override val supportProjectSubtitle = "View guidelines and ways to support on project homepage"
+        override val sponsorDeveloper = "Sponsor Developer"
+        override val sponsorDeveloperSubtitle = "Support via WeChat Pay or Alipay"
+        override val sponsorDialogTitle = "Sponsor & Support"
+        override val sponsorDialogSubtitle = "If CPPlayer helps you, feel free to sponsor and support ongoing development!"
+        override val wechatPay = "WeChat Pay"
+        override val alipay = "Alipay"
+        override val sponsorAccount = "Recipient: Aurora星空(**森)"
+        override val sponsorThanks = "Thanks to every supporter for your encouragement ❤️"
+        override val close = "Close"
         override val footerNote = "CPPlayer · Compose Multiplatform"
     }
 

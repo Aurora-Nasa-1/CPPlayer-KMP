@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.SystemUpdate
@@ -44,6 +45,9 @@ import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
+import cp.player.app.ui.component.SponsorDialog
+import cp.player.app.ui.component.SponsorInlineCard
+import cp.player.app.ui.component.SponsorPaymentType
 import cp.player.app.update.AppUpdateChecker
 import cp.player.app.version.AppVersion
 import kotlinx.coroutines.launch
@@ -62,6 +66,8 @@ class AboutScreen : Screen {
         var isChecking by remember { mutableStateOf(false) }
         var updateResult by remember { mutableStateOf<AppUpdateChecker.UpdateResult?>(null) }
         var showUpdateDialog by remember { mutableStateOf(false) }
+        var showSponsorDialog by remember { mutableStateOf(false) }
+        var sponsorDialogType by remember { mutableStateOf(SponsorPaymentType.WECHAT) }
 
         CpRouteScaffold(
             title = s.screenTitle,
@@ -142,7 +148,18 @@ class AboutScreen : Screen {
                 SettingsSection(s.supportSection) {
                     SettingsClickItem(
                         index = 0,
-                        total = 1,
+                        total = 2,
+                        icon = Icons.Default.Favorite,
+                        title = s.sponsorDeveloper,
+                        subtitle = s.sponsorDeveloperSubtitle,
+                        onClick = {
+                            sponsorDialogType = SponsorPaymentType.WECHAT
+                            showSponsorDialog = true
+                        },
+                    )
+                    SettingsClickItem(
+                        index = 1,
+                        total = 2,
                         icon = Icons.Default.Link,
                         title = s.supportProject,
                         subtitle = s.supportProjectSubtitle,
@@ -150,8 +167,22 @@ class AboutScreen : Screen {
                     )
                 }
 
+                SponsorInlineCard(
+                    onOpenDialog = { type ->
+                        sponsorDialogType = type
+                        showSponsorDialog = true
+                    },
+                )
+
                 SettingsNote(s.footerNote)
             }
+        }
+
+        if (showSponsorDialog) {
+            SponsorDialog(
+                initialType = sponsorDialogType,
+                onDismiss = { showSponsorDialog = false },
+            )
         }
 
         if (showUpdateDialog && updateResult != null) {

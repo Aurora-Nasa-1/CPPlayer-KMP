@@ -5,6 +5,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.10-purple.svg)](https://kotlinlang.org)
 [![Compose Multiplatform](https://img.shields.io/badge/Compose%20Multiplatform-1.12.2-blue.svg)](https://www.jetbrains.com/lp/compose-multiplatform/)
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E8%B5%9E%E5%8A%A9%E6%94%AF%E6%8C%81-ff69b4.svg)](#-赞助与支持-sponsor--support)
 
 ---
 
@@ -77,6 +78,19 @@ app-android ──▶ app ──▶ core
 ```
 
 发布细节请参阅 [`docs/dev/RELEASE.md`](docs/dev/RELEASE.md)。
+
+---
+
+## ☕ 赞助与支持 (Sponsor & Support)
+
+如果 CPPlayer 为你带来了愉悦的音乐体验，或者对你的学习与日常使用有所帮助，欢迎请作者喝杯咖啡！你的每一份支持都是项目持续迭代与完善的巨大动力 ❤️
+
+| 微信支付 (WeChat Pay) | 支付宝 (Alipay) |
+| :---: | :---: |
+| <img src="docs/assets/sponsor_wechat.png" width="260" alt="微信支付收款码" /> | <img src="docs/assets/sponsor_alipay.jpg" width="260" alt="支付宝收款码" /> |
+| **收款人：Aurora星空 (\*\*森)** | **收款人：Aurora星空 (\*\*森)** |
+
+> 💡 **提示**：扫码赞助时欢迎备注您的 GitHub 账号或昵称。感谢每一位支持 CPPlayer 的伙伴！
 
 ---
 

@@ -1044,6 +1044,15 @@ object CpStringsZh : CpStrings {
         override val supportSection = "支持项目"
         override val supportProject = "支持本项目"
         override val supportProjectSubtitle = "在项目主页查看说明与支持方式"
+        override val sponsorDeveloper = "赞助开发者"
+        override val sponsorDeveloperSubtitle = "使用微信或支付宝赞助支持作者"
+        override val sponsorDialogTitle = "赞助与支持"
+        override val sponsorDialogSubtitle = "如果 CPPlayer 对你有帮助，欢迎赞助支持本项目的持续开发与维护！"
+        override val wechatPay = "微信支付"
+        override val alipay = "支付宝"
+        override val sponsorAccount = "收款人: Aurora星空(**森)"
+        override val sponsorThanks = "感谢每一位支持者的认可与鼓励 ❤️"
+        override val close = "关闭"
         override val footerNote = "CPPlayer · Compose Multiplatform"
     }
 
