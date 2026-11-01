@@ -260,6 +260,22 @@ object AppModel {
     /** 当前活跃 Provider 唯一 ID（无活跃时返回 "default"）。 */
     fun activeProviderId(): String = runCatching { backend.activeProviderId() }.getOrDefault("default")
 
+    /**
+     * 将歌曲 ID 或已有 mediaId 规范化为 [cp.player.core.music.CPMediaId] 字符串（例如 `netease://song/12345`）。
+     * 若已包含 `://`（包含本地 `local://audio/...`）则直接返回原串。
+     */
+    fun toMediaId(idOrMediaId: String, providerId: String? = null): String {
+        val provider = providerId?.takeIf { it.isNotBlank() } ?: activeProviderId()
+        return cp.player.core.music.CPMediaId.toCanonicalMediaId(idOrMediaId, providerId = provider)
+    }
+
+    /**
+     * 提取用于音源 API 请求的裸资源 ID（如网易云的数字 ID）。
+     * 若传入的是 `netease://song/12345`，则返回 `12345`。
+     */
+    fun toRawTrackId(idOrMediaId: String): String =
+        cp.player.core.music.CPMediaId.toRawResourceId(idOrMediaId)
+
     val health: HealthMonitor get() = backend.health
 
     /** 播放控制器（前端唯一播放入口；UI 只 collect 其 state）。 */

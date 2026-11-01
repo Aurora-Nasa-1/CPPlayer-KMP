@@ -125,8 +125,16 @@ internal suspend fun fetchOwnedPlaylists(): List<PlaylistSummary> {
         withContext(Dispatchers.Main) { UiEvents.notify(result.message) }
     }
     val all = (result as? BackendResult.Success)?.data.orEmpty()
-    val nickname = AppModel.userProfileFlow.value?.nickname
-    return all.filter { nickname != null && it.creatorName == nickname }
+    var nickname = AppModel.userProfileFlow.value?.nickname
+    if (nickname.isNullOrBlank()) {
+        nickname = runCatching { AppModel.refreshUserProfileAwait()?.nickname }.getOrNull()
+    }
+    return if (!nickname.isNullOrBlank()) {
+        val filtered = all.filter { it.creatorName == nickname }
+        filtered.ifEmpty { all }
+    } else {
+        all
+    }
 }
 
 /**

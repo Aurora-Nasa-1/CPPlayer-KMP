@@ -1,6 +1,7 @@
 package cp.player.core.playback
 
 import cp.player.core.music.TrackSummary
+import cp.player.core.music.canonicalMediaId
 
 /** 歌词状态（前端渲染用）。 */
 sealed class LyricsState {
@@ -31,8 +32,8 @@ data class QueueItem(
     val durationMs: Long,
 )
 
-internal fun TrackSummary.toQueueItem(): QueueItem = QueueItem(
-    mediaId = id,
+internal fun TrackSummary.toQueueItem(canonicalMediaId: String? = null): QueueItem = QueueItem(
+    mediaId = canonicalMediaId?.takeIf { it.isNotBlank() } ?: canonicalMediaId(),
     title = name,
     artist = artist,
     album = album,

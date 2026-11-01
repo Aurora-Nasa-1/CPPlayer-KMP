@@ -566,9 +566,15 @@ fun PlaylistDetailContent(
 
     // 从播放队列添加
     if (showQueueSelection) {
-        val queueTracks = playbackState.queue.map { item ->
+        val queueTracks = playbackState.queue.mapNotNull { item ->
+            val rawId = runCatching { CPMediaId.parse(item.mediaId) }
+                .getOrNull()
+                ?.takeIf { it.providerId != "local" }
+                ?.resourceId
+                ?: item.mediaId.takeIf { !it.contains("://") && it.isNotBlank() }
+            if (rawId == null) return@mapNotNull null
             TrackSummary(
-                id = runCatching { CPMediaId.parse(item.mediaId).resourceId }.getOrDefault(item.mediaId),
+                id = rawId,
                 name = item.title,
                 artist = item.artist,
                 album = item.album,

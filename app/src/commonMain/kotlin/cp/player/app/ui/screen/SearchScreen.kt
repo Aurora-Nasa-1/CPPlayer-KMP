@@ -105,7 +105,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
         val state by model.state.collectAsState()
         val scope = rememberCoroutineScope()
         val provider = AppModel.activeProviderId()
-        val toMediaId = { id: String -> if (id.contains("://")) id else "$provider://song/$id" }
+        val toMediaId = { id: String -> AppModel.toMediaId(id, provider) }
         val navigator = LocalNavigator.currentOrThrow
 
         // 歌单搜索结果那一行右侧的「更多」需要一个动作来源：本页没有自己的

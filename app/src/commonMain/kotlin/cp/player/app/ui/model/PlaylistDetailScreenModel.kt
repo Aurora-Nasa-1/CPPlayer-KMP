@@ -359,7 +359,7 @@ class PlaylistDetailScreenModel : ScreenModel {
         // 用**曲目加载时**的音源，而不是当前活跃音源：否则切源后旧 id 会被新 Provider
         // 解释成别的歌。tracksProviderId 为空（尚未加载完）时才回落到当前活跃音源。
         val provider = tracksProviderId ?: AppModel.activeProviderId()
-        return tracks.map { "$provider://song/${it.id}" }
+        return tracks.map { AppModel.toMediaId(it.id, provider) }
     }
 
     /**
@@ -478,27 +478,48 @@ class PlaylistDetailScreenModel : ScreenModel {
      */
     fun addTracks(newTracks: List<TrackSummary>) {
         val playlist = _state.value.summary ?: return
-        if (newTracks.isEmpty() || !isOwner()) return
+        if (newTracks.isEmpty()) return
         screenModelScope.launch {
+            if (!isOwner()) {
+                val freshNick = withContext(Dispatchers.IO) {
+                    runCatching { AppModel.refreshUserProfileAwait()?.nickname }.getOrNull()
+                }
+                if (freshNick == null || playlist.creatorName != freshNick) {
+                    UiEvents.notify("只能向自己创建的歌单添加歌曲")
+                    return@launch
+                }
+            }
             isSelfModifying = true
             try {
-                val ids = newTracks.map { it.id }
-                val ok = withContext(Dispatchers.IO) {
-                    runCatching { AppModel.musicRepository.addTracksToPlaylist(playlist.resourceId, ids) }
-                        .getOrDefault(false)
+                // 过滤已在歌单中的歌曲，避免上游 502 报错整批失败
+                val existingIds = _state.value.tracks.mapTo(HashSet()) { it.id }
+                val toAdd = newTracks.filter { it.id.isNotBlank() && it.id !in existingIds }.distinctBy { it.id }
+                if (toAdd.isEmpty()) {
+                    UiEvents.notify("所选歌曲均已在歌单中")
+                    return@launch
                 }
-                if (ok) {
-                    var addedCount = 0
+                val ids = toAdd.map { it.id }
+                val chunks = ids.chunked(100)
+                var allOk = true
+                for (chunk in chunks) {
+                    val ok = withContext(Dispatchers.IO) {
+                        runCatching { AppModel.musicRepository.addTracksToPlaylist(playlist.resourceId, chunk) }
+                            .getOrDefault(false)
+                    }
+                    if (!ok) {
+                        allOk = false
+                        break
+                    }
+                }
+                if (allOk) {
+                    val addedCount = toAdd.size
                     _state.update { s ->
-                        val seen = s.tracks.mapTo(HashSet()) { it.id }
-                        val added = newTracks.filter { seen.add(it.id) }
-                        addedCount = added.size
                         s.copy(
-                            tracks = s.tracks + added,
-                            summary = s.summary?.copy(trackCount = s.summary.trackCount + added.size),
+                            tracks = s.tracks + toAdd,
+                            summary = s.summary?.copy(trackCount = s.summary.trackCount + addedCount),
                         )
                     }
-                    UiEvents.notify(if (addedCount > 0) "已添加 $addedCount 首歌曲" else "所选歌曲均已在歌单中")
+                    UiEvents.notify("已添加 $addedCount 首歌曲")
                 } else {
                     UiEvents.notify("加入歌单失败")
                 }

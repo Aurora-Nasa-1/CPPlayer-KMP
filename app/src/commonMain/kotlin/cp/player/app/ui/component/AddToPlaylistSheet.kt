@@ -68,30 +68,42 @@ fun AddToPlaylistSheet(
     }
 
     fun extractRawId(fullId: String): String? {
-        // 只接受音源侧的歌曲 id：队列里可能混着本地文件（`local://audio/<path>`），
-        // 把路径塞进「加入歌单」请求只会让整批请求失败，还会把数量报成「成功」。
-        return runCatching { cp.player.core.music.CPMediaId.parse(fullId) }
-            .getOrNull()
-            ?.takeIf { it.resourceType == "song" }
+        val trimmed = fullId.trim()
+        if (trimmed.isBlank()) return null
+        // 裸曲目 id（搜索 / 推荐 / 专辑等路径可能直接给裸 id）
+        if (!trimmed.contains("://")) {
+            return trimmed
+        }
+        // 带 scheme 的媒体 id：排除本地媒体（local://audio/...），仅保留音源侧歌曲 id
+        return cp.player.core.music.CPMediaId.parseOrNull(trimmed)
+            ?.takeIf { it.providerId != "local" }
             ?.resourceId
             ?.takeIf { it.isNotBlank() }
     }
 
     fun addTo(playlistId: String) {
         if (busy) return
-        val ids = trackIds.mapNotNull(::extractRawId)
+        val ids = trackIds.mapNotNull(::extractRawId).distinct()
         if (ids.isEmpty()) {
             UiEvents.notify(s.playlistSheet.addToPlaylistFailed)
             return
         }
         busy = true
         scope.launch(Dispatchers.IO) {
-            val ok = runCatching {
-                AppModel.musicRepository.addTracksToPlaylist(playlistId, ids)
-            }.getOrDefault(false)
+            val chunks = ids.chunked(100)
+            var allOk = true
+            for (chunk in chunks) {
+                val ok = runCatching {
+                    AppModel.musicRepository.addTracksToPlaylist(playlistId, chunk)
+                }.getOrDefault(false)
+                if (!ok) {
+                    allOk = false
+                    break
+                }
+            }
             withContext(Dispatchers.Main) {
                 busy = false
-                if (ok) {
+                if (allOk) {
                     UiEvents.notify(s.playlistSheet.addedTracks(ids.size))
                     onDismiss()
                 } else {
@@ -104,6 +116,11 @@ fun AddToPlaylistSheet(
     fun createAndAdd() {
         val name = newName.trim()
         if (name.isEmpty() || busy) return
+        val ids = trackIds.mapNotNull(::extractRawId).distinct()
+        if (ids.isEmpty()) {
+            UiEvents.notify(s.playlistSheet.addToPlaylistFailed)
+            return
+        }
         busy = true
         scope.launch(Dispatchers.IO) {
             val newId = (runCatching {

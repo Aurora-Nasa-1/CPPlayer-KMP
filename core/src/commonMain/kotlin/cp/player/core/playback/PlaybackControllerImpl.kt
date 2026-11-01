@@ -641,13 +641,14 @@ class PlaybackControllerImpl(
     }
 
     override suspend fun addToQueue(mediaId: String) {
+        val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(mediaId)
         navMutex.withLock {
             // 队列条目按 mediaId 唯一 —— 队列弹层用它做 LazyColumn 的 key，重复条目会
             // 直接把队列 UI 炸掉（IllegalArgumentException: key was already used），
             // 同一曲也会连播两遍。私人FM 的整批热门歌与用户搜索高度重叠，最容易撞上。
             // 已在队列里就不重复追加。
-            if (_queue.any { it.mediaId == mediaId }) return
-            _queue.add(Entry(mediaId))
+            if (_queue.any { it.mediaId == canonicalId }) return
+            _queue.add(Entry(canonicalId))
             if (_shuffle) {
                 // 新曲排在轮播末尾，已有曲目各自的位置不变。
                 //
@@ -667,12 +668,13 @@ class PlaybackControllerImpl(
     }
 
     override suspend fun addNextToQueue(mediaId: String) {
+        val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(mediaId)
         val insertedAt = navMutex.withLock {
             // 当前曲目本身就是它：已经在播，谈不上「下一首」。
-            if (_index in _queue.indices && _queue[_index].mediaId == mediaId) return
+            if (_index in _queue.indices && _queue[_index].mediaId == canonicalId) return
             // 已在队列其他位置 → 先按 [removeQueueItem] 的下标语义摘下来，
             // 等价于「移到下一首」而不是「什么都不发生」。
-            val existing = _queue.indexOfFirst { it.mediaId == mediaId }
+            val existing = _queue.indexOfFirst { it.mediaId == canonicalId }
             if (existing >= 0) {
                 _queue.removeAt(existing)
                 _order = _order?.filter { it != existing }?.map { if (it > existing) it - 1 else it }
@@ -682,7 +684,7 @@ class PlaybackControllerImpl(
                 if (_shuffle && _order != null) _orderPos = _order!!.indexOf(_index).coerceAtLeast(0)
             }
             val insertAt = if (_index in _queue.indices) _index + 1 else _queue.size
-            _queue.add(insertAt, Entry(mediaId))
+            _queue.add(insertAt, Entry(canonicalId))
             if (_shuffle) {
                 val base = _order
                 if (base != null) {
@@ -2233,9 +2235,10 @@ class PlaybackControllerImpl(
      * 选中的是重复项里的后者时，落到它首次出现的位置，而不是按下标硬套（会指错歌）。
      */
     private fun dedupeQueueInput(mediaIds: List<String>, startIndex: Int): Pair<List<String>, Int> {
-        val unique = mediaIds.distinct()
-        if (unique.size == mediaIds.size) return mediaIds to startIndex
-        val selected = mediaIds.getOrNull(startIndex.coerceIn(0, mediaIds.lastIndex))
+        val canonical = mediaIds.map { cp.player.core.music.CPMediaId.toCanonicalMediaId(it) }
+        val unique = canonical.distinct()
+        if (unique.size == canonical.size) return canonical to startIndex
+        val selected = canonical.getOrNull(startIndex.coerceIn(0, canonical.lastIndex))
         val remapped = selected?.let { unique.indexOf(it) } ?: -1
         val start = if (remapped >= 0) remapped else startIndex.coerceIn(0, unique.lastIndex)
         return unique to start
@@ -2387,7 +2390,7 @@ class PlaybackControllerImpl(
     private fun pushQueueState() {
         updateState {
             it.copy(
-                queue = _queue.mapIndexed { i, e -> e.summary?.toQueueItem() ?: QueueItem(e.mediaId, "加载中…", "", null, null, 0L) },
+                queue = _queue.mapIndexed { i, e -> e.summary?.toQueueItem(e.mediaId) ?: QueueItem(e.mediaId, "加载中…", "", null, null, 0L) },
                 currentIndex = _index,
             )
         }

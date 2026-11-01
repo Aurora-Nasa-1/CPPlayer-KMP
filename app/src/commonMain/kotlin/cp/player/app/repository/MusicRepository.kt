@@ -86,10 +86,16 @@ class MusicRepository(private val api: MusicApiService) {
     suspend fun unsubscribePlaylist(id: String): Boolean = playlistWrite(id) { this.subscribePlaylist(id, 2) }
     suspend fun subscribePlaylist(id: String, subscribe: Boolean): Boolean =
         playlistWrite(id) { this.subscribePlaylist(id, if (subscribe) 1 else 2) }
-    suspend fun addTracksToPlaylist(playlistId: String, ids: List<String>): Boolean =
-        playlistWrite(playlistId) { this.addTracksToPlaylist(playlistId, ids) }
-    suspend fun removeTracksFromPlaylist(playlistId: String, ids: List<String>): Boolean =
-        playlistWrite(playlistId) { this.removeTracksFromPlaylist(playlistId, ids) }
+    suspend fun addTracksToPlaylist(playlistId: String, ids: List<String>): Boolean {
+        val rawIds = ids.map { cp.player.core.music.CPMediaId.toRawResourceId(it) }.filter { it.isNotBlank() }
+        val rawPid = cp.player.core.music.CPMediaId.toRawResourceId(playlistId)
+        return playlistWrite(playlistId) { this.addTracksToPlaylist(rawPid, rawIds) }
+    }
+    suspend fun removeTracksFromPlaylist(playlistId: String, ids: List<String>): Boolean {
+        val rawIds = ids.map { cp.player.core.music.CPMediaId.toRawResourceId(it) }.filter { it.isNotBlank() }
+        val rawPid = cp.player.core.music.CPMediaId.toRawResourceId(playlistId)
+        return playlistWrite(playlistId) { this.removeTracksFromPlaylist(rawPid, rawIds) }
+    }
     suspend fun renamePlaylist(playlistId: String, name: String): Boolean =
         playlistWrite(playlistId) { this.updatePlaylistName(playlistId, name) }
 
@@ -349,7 +355,8 @@ class MusicRepository(private val api: MusicApiService) {
     }
 
     suspend fun addTracksToPlaylist(playlistId: Long, ids: List<String>): Boolean {
-        val ok = isApiSuccess(api.addTracksToPlaylist(playlistId, ids))
+        val rawIds = ids.map { cp.player.core.music.CPMediaId.toRawResourceId(it) }.filter { it.isNotBlank() }
+        val ok = isApiSuccess(api.addTracksToPlaylist(playlistId, rawIds))
         if (ok) AppModel.notifyPlaylistChanged(playlistId)
         return ok
     }
@@ -367,15 +374,18 @@ class MusicRepository(private val api: MusicApiService) {
     }
 
     suspend fun removeTracksFromPlaylist(playlistId: Long, ids: List<String>): Boolean {
-        val ok = isApiSuccess(api.removeTracksFromPlaylist(playlistId, ids))
+        val rawIds = ids.map { cp.player.core.music.CPMediaId.toRawResourceId(it) }.filter { it.isNotBlank() }
+        val ok = isApiSuccess(api.removeTracksFromPlaylist(playlistId, rawIds))
         if (ok) AppModel.notifyPlaylistChanged(playlistId)
         return ok
     }
 
-    suspend fun likeSong(songId: String, like: Boolean): Boolean = isApiSuccess(api.likeSong(songId, like))
+    suspend fun likeSong(songId: String, like: Boolean): Boolean =
+        isApiSuccess(api.likeSong(cp.player.core.music.CPMediaId.toRawResourceId(songId), like))
 
     /** 标记「不感兴趣」（推荐流去重）。 */
-    suspend fun dislikeSong(songId: String): Boolean = isApiSuccess(api.dislikeSong(songId))
+    suspend fun dislikeSong(songId: String): Boolean =
+        isApiSuccess(api.dislikeSong(cp.player.core.music.CPMediaId.toRawResourceId(songId)))
 
     /**
      * 新建歌单，返回新歌单 id。
@@ -466,9 +476,11 @@ class MusicRepository(private val api: MusicApiService) {
     suspend fun raw(block: suspend MusicApiService.() -> JsonElement): JsonElement = api.block()
 
     private fun isApiSuccess(json: JsonElement): Boolean {
-        val code = ((json as? JsonObject)?.get("code") as? JsonPrimitive)?.intOrNull
-            ?: ((json as? JsonObject)?.get("status") as? JsonPrimitive)?.intOrNull
-        return code == null || code == 200 || code == 0 || code == 201 || code == 301
+        val root = json as? JsonObject
+        val code = ((root?.get("body") as? JsonObject)?.get("code") as? JsonPrimitive)?.intOrNull
+            ?: (root?.get("code") as? JsonPrimitive)?.intOrNull
+            ?: (root?.get("status") as? JsonPrimitive)?.intOrNull
+        return code == null || code == 200 || code == 0 || code == 201
     }
 }
 

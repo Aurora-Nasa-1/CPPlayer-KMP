@@ -311,7 +311,7 @@ fun PosterWallScreen(
                     val detail = runCatching { AppModel.musicRepository.getAlbumDetail(albumId) }.getOrNull()
                     val provider = AppModel.activeProviderId()
                     val ids = (detail as? BackendResult.Success)?.data?.tracks?.map {
-                        if (it.id.contains("://")) it.id else "$provider://song/${it.id}"
+                        AppModel.toMediaId(it.id, provider)
                     }.orEmpty()
                     if (ids.isNotEmpty()) {
                         AppModel.playback.playQueue(ids, startIndex = 0, sourceId = albumId.toString())
@@ -320,8 +320,7 @@ fun PosterWallScreen(
             } else {
                 val provider = AppModel.activeProviderId()
                 val songIds = items.map {
-                    val id = it.song.id
-                    if (id.contains("://")) id else "$provider://song/$id"
+                    AppModel.toMediaId(it.song.id, provider)
                 }
                 val idx = items.indexOfFirst { it.song.id == poster.song.id }.coerceAtLeast(0)
                 AppModel.playback.playQueue(songIds, startIndex = idx)

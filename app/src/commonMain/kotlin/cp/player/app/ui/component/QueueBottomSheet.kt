@@ -127,7 +127,9 @@ fun QueueContent(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var showSaveSheet by remember { mutableStateOf(false) }
+    var showLocalSaveDialog by remember { mutableStateOf(false) }
     var addToPlaylistTarget by remember { mutableStateOf<QueueItem?>(null) }
+    var addToLocalPlaylistTarget by remember { mutableStateOf<QueueItem?>(null) }
     var detailTarget by remember { mutableStateOf<QueueItem?>(null) }
     var optionsTarget by remember { mutableStateOf<Pair<Int, QueueItem>?>(null) }
     // 「清空队列」的二次确认：一键即生效的话，误触在底部工具行里太容易发生，
@@ -375,11 +377,22 @@ fun QueueContent(
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
                     }
-                    IconButton(onClick = { showSaveSheet = true }) {
+                    IconButton(
+                        onClick = {
+                            if (queue.isEmpty()) return@IconButton
+                            val isAllLocal = queue.all { it.mediaId.startsWith("local://") }
+                            if (isAllLocal) {
+                                showLocalSaveDialog = true
+                            } else {
+                                showSaveSheet = true
+                            }
+                        },
+                        enabled = queue.isNotEmpty(),
+                    ) {
                         Icon(
                             Icons.AutoMirrored.Filled.PlaylistAdd,
                             contentDescription = s.player.saveAsPlaylist,
-                            tint = MaterialTheme.colorScheme.onSurface,
+                            tint = if (queue.isNotEmpty()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                         )
                     }
                     IconButton(
@@ -417,6 +430,19 @@ fun QueueContent(
         )
     }
 
+    if (showLocalSaveDialog) {
+        val paths = remember(queue) {
+            queue.map { item ->
+                runCatching { CPMediaId.parse(item.mediaId).resourceId }
+                    .getOrDefault(item.mediaId.removePrefix("local://audio/").removePrefix("local://video/"))
+            }.filter { it.isNotBlank() }
+        }
+        AddToLocalPlaylistDialog(
+            trackPaths = paths,
+            onDismiss = { showLocalSaveDialog = false },
+        )
+    }
+
     optionsTarget?.let { (index, item) ->
         val track = item.toTrackSummary()
         SongOptionsSheet(
@@ -442,7 +468,13 @@ fun QueueContent(
                     cp.player.app.AppModel.playback.addNextToQueue(item.mediaId)
                 }
             },
-            onAddToPlaylist = { addToPlaylistTarget = item },
+            onAddToPlaylist = {
+                if (item.mediaId.startsWith("local://")) {
+                    addToLocalPlaylistTarget = item
+                } else {
+                    addToPlaylistTarget = item
+                }
+            },
             onDownload = { cp.player.app.AppModel.downloadTrack(track) },
             onShowInfo = { detailTarget = item },
             onShare = {
@@ -460,6 +492,15 @@ fun QueueContent(
         )
     }
 
+    addToLocalPlaylistTarget?.let { item ->
+        val path = runCatching { CPMediaId.parse(item.mediaId).resourceId }
+            .getOrDefault(item.mediaId.removePrefix("local://audio/").removePrefix("local://video/"))
+        AddToLocalPlaylistDialog(
+            trackPaths = listOf(path),
+            onDismiss = { addToLocalPlaylistTarget = null },
+        )
+    }
+
     detailTarget?.let { item ->
         SongDetailInfoDialog(
             track = item.toTrackSummary(),
@@ -471,7 +512,7 @@ fun QueueContent(
 }
 
 private fun QueueItem.toTrackSummary(): TrackSummary {
-    val resourceId = runCatching { CPMediaId.parse(mediaId).resourceId }.getOrDefault(mediaId)
+    val resourceId = cp.player.core.music.CPMediaId.toRawResourceId(mediaId).ifBlank { mediaId }
     return TrackSummary(
         id = resourceId,
         name = title,

@@ -96,14 +96,17 @@ import cp.player.app.ui.component.CpSearchField
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.CpToggleChip
+import cp.player.app.ui.component.PlaylistOptionsSheet
 import cp.player.app.ui.component.SongDetailInfoDialog
 import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.SongMenuActions
+import cp.player.app.ui.component.SongOptionsSheet
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.cpBounceClickable
 import cp.player.app.ui.component.rememberConfirmState
 import cp.player.app.ui.component.settingsRowContainer
 import cp.player.app.ui.component.songContextMenuItems
+import cp.player.app.ui.component.songShareText
 import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.app.ui.model.DownloadsUiState
 import cp.player.app.ui.util.UiEvents
@@ -179,6 +182,7 @@ internal fun LocalLibraryTab(
 ) {
     val s = strings.downloads
     val scope = rememberCoroutineScope()
+    val navigator = LocalNavigator.current
     val confirm = rememberConfirmState()
     val pickFolder = rememberDirectoryPicker { path ->
         if (path != null) model.importFolder(path, strings)
@@ -197,6 +201,8 @@ internal fun LocalLibraryTab(
     var deleteTargetSong by remember { mutableStateOf<LocalMediaItem?>(null) }
     var removeTargetSong by remember { mutableStateOf<LocalMediaItem?>(null) }
     var showInfoTrack by remember { mutableStateOf<TrackSummary?>(null) }
+    var optionsTargetSong by remember { mutableStateOf<LocalMediaItem?>(null) }
+    var optionsTargetPlaylist by remember { mutableStateOf<LocalPlaylist?>(null) }
 
     val likedIds by AppModel.playback.likedIds.collectAsState()
     val playbackState by AppModel.playback.state.collectAsState()
@@ -263,123 +269,131 @@ internal fun LocalLibraryTab(
     val folders = remember(base) { LocalFolderTree.build(base) }
 
     // 页面内二级视图：专辑 / 艺术家 / 文件夹 / 本地歌单详情
-    val album = openedAlbum
-    if (album != null) {
-        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-            LocalAlbumDetail(
-                album = album,
-                items = state.localAudioItems,
-                model = model,
-                strings = strings,
-                onBack = { openedAlbum = null },
-                currentPlayingId = currentPlayingTrackId,
-                likedIds = likedIds,
-                favoritePaths = state.favoritePaths,
-                onToggleCloudFav = toggleCloudFav,
-                onToggleLocalFav = toggleLocalFav,
-                onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
-                onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
-                onRemoveSong = { removeTargetSong = it },
-                onDeleteSong = { deleteTargetSong = it },
-                onShowInfo = { showInfoTrack = it },
-            )
-        }
-        return
-    }
-
-    val artist = openedArtist
-    if (artist != null) {
-        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-            LocalArtistDetail(
-                artist = artist,
-                items = state.localAudioItems,
-                model = model,
-                strings = strings,
-                onBack = { openedArtist = null },
-                currentPlayingId = currentPlayingTrackId,
-                likedIds = likedIds,
-                favoritePaths = state.favoritePaths,
-                onToggleCloudFav = toggleCloudFav,
-                onToggleLocalFav = toggleLocalFav,
-                onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
-                onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
-                onRemoveSong = { removeTargetSong = it },
-                onDeleteSong = { deleteTargetSong = it },
-                onShowInfo = { showInfoTrack = it },
-            )
-        }
-        return
-    }
-
-    val openedFolderNode = openedFolder
-    if (openedFolderNode != null) {
-        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-            LocalFolderDetail(
-                node = openedFolderNode,
-                items = base,
-                model = model,
-                strings = strings,
-                onBack = { openedFolder = null },
-                currentPlayingId = currentPlayingTrackId,
-                likedIds = likedIds,
-                favoritePaths = state.favoritePaths,
-                onToggleCloudFav = toggleCloudFav,
-                onToggleLocalFav = toggleLocalFav,
-                onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
-                onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
-                onRemoveSong = { removeTargetSong = it },
-                onDeleteSong = { deleteTargetSong = it },
-                onShowInfo = { showInfoTrack = it },
-            )
-        }
-        return
-    }
-
-    val currentPlaylist = openedLocalPlaylist
-    if (currentPlaylist != null) {
-        val latestPlaylist = state.localPlaylists.find { it.id == currentPlaylist.id } ?: currentPlaylist
-        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-            LocalPlaylistDetail(
-                playlist = latestPlaylist,
-                items = state.localAudioItems,
-                model = model,
-                strings = strings,
-                onBack = { openedLocalPlaylist = null },
-                onRename = { renamePlaylistTarget = latestPlaylist },
-                onDelete = {
-                    confirm.request(
-                        title = strings.library.deletePlaylist,
-                        message = s.deleteLocalPlaylistMessage(latestPlaylist.name),
-                        confirmLabel = s.delete,
-                        destructive = true,
-                        onConfirm = {
-                            model.deleteLocalPlaylist(latestPlaylist.id)
-                            openedLocalPlaylist = null
-                        },
+    val currentSubView: (@Composable () -> Unit)? = when {
+        openedAlbum != null -> {
+            {
+                Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    LocalAlbumDetail(
+                        album = openedAlbum!!,
+                        items = state.localAudioItems,
+                        model = model,
+                        strings = strings,
+                        onBack = { openedAlbum = null },
+                        currentPlayingId = currentPlayingTrackId,
+                        likedIds = likedIds,
+                        favoritePaths = state.favoritePaths,
+                        onToggleCloudFav = toggleCloudFav,
+                        onToggleLocalFav = toggleLocalFav,
+                        onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
+                        onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
+                        onRemoveSong = { removeTargetSong = it },
+                        onDeleteSong = { deleteTargetSong = it },
+                        onShowInfo = { showInfoTrack = it },
+                        onSongOptions = { optionsTargetSong = it },
                     )
-                },
-                onRemoveFromPlaylist = { path ->
-                    model.removeTrackFromLocalPlaylist(latestPlaylist.id, path)
-                },
-                currentPlayingId = currentPlayingTrackId,
-                likedIds = likedIds,
-                favoritePaths = state.favoritePaths,
-                onToggleCloudFav = toggleCloudFav,
-                onToggleLocalFav = toggleLocalFav,
-                onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
-                onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
-                onRemoveSong = { removeTargetSong = it },
-                onDeleteSong = { deleteTargetSong = it },
-                onShowInfo = { showInfoTrack = it },
-            )
+                }
+            }
         }
-        return
+        openedArtist != null -> {
+            {
+                Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    LocalArtistDetail(
+                        artist = openedArtist!!,
+                        items = state.localAudioItems,
+                        model = model,
+                        strings = strings,
+                        onBack = { openedArtist = null },
+                        currentPlayingId = currentPlayingTrackId,
+                        likedIds = likedIds,
+                        favoritePaths = state.favoritePaths,
+                        onToggleCloudFav = toggleCloudFav,
+                        onToggleLocalFav = toggleLocalFav,
+                        onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
+                        onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
+                        onRemoveSong = { removeTargetSong = it },
+                        onDeleteSong = { deleteTargetSong = it },
+                        onShowInfo = { showInfoTrack = it },
+                        onSongOptions = { optionsTargetSong = it },
+                    )
+                }
+            }
+        }
+        openedFolder != null -> {
+            {
+                Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    LocalFolderDetail(
+                        node = openedFolder!!,
+                        items = base,
+                        model = model,
+                        strings = strings,
+                        onBack = { openedFolder = null },
+                        currentPlayingId = currentPlayingTrackId,
+                        likedIds = likedIds,
+                        favoritePaths = state.favoritePaths,
+                        onToggleCloudFav = toggleCloudFav,
+                        onToggleLocalFav = toggleLocalFav,
+                        onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
+                        onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
+                        onRemoveSong = { removeTargetSong = it },
+                        onDeleteSong = { deleteTargetSong = it },
+                        onShowInfo = { showInfoTrack = it },
+                        onSongOptions = { optionsTargetSong = it },
+                    )
+                }
+            }
+        }
+        openedLocalPlaylist != null -> {
+            val pl = openedLocalPlaylist!!
+            val latestPlaylist = state.localPlaylists.find { it.id == pl.id } ?: pl
+            {
+                Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    LocalPlaylistDetail(
+                        playlist = latestPlaylist,
+                        items = state.localAudioItems,
+                        model = model,
+                        strings = strings,
+                        onBack = { openedLocalPlaylist = null },
+                        onRename = { renamePlaylistTarget = latestPlaylist },
+                        onDelete = {
+                            confirm.request(
+                                title = strings.library.deletePlaylist,
+                                message = s.deleteLocalPlaylistMessage(latestPlaylist.name),
+                                confirmLabel = s.delete,
+                                destructive = true,
+                                onConfirm = {
+                                    model.deleteLocalPlaylist(latestPlaylist.id)
+                                    openedLocalPlaylist = null
+                                },
+                            )
+                        },
+                        onRemoveFromPlaylist = { path ->
+                            model.removeTrackFromLocalPlaylist(latestPlaylist.id, path)
+                        },
+                        currentPlayingId = currentPlayingTrackId,
+                        likedIds = likedIds,
+                        favoritePaths = state.favoritePaths,
+                        onToggleCloudFav = toggleCloudFav,
+                        onToggleLocalFav = toggleLocalFav,
+                        onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
+                        onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
+                        onRemoveSong = { removeTargetSong = it },
+                        onDeleteSong = { deleteTargetSong = it },
+                        onShowInfo = { showInfoTrack = it },
+                        onSongOptions = { optionsTargetSong = it },
+                    )
+                }
+            }
+        }
+        else -> null
     }
 
-    Column(
-        Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
+    if (currentSubView != null) {
+        currentSubView()
+    } else {
+        Column(
+            Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
         LocalLibraryToolbar(
             state = state,
             model = model,
@@ -467,6 +481,7 @@ internal fun LocalLibraryTab(
                     onRemoveSong = { removeTargetSong = it },
                     onDeleteSong = { deleteTargetSong = it },
                     onShowInfo = { showInfoTrack = it },
+                    onSongOptions = { optionsTargetSong = it },
                 )
                 4 -> LocalPlaylistGrid(
                     playlists = state.localPlaylists,
@@ -475,16 +490,7 @@ internal fun LocalLibraryTab(
                     strings = strings,
                     onCreatePlaylist = { showCreatePlaylistDialog = true },
                     onClick = { openedLocalPlaylist = it },
-                    onRename = { renamePlaylistTarget = it },
-                    onDelete = { pl ->
-                        confirm.request(
-                            title = strings.library.deletePlaylist,
-                            message = s.deleteLocalPlaylistMessage(pl.name),
-                            confirmLabel = s.delete,
-                            destructive = true,
-                            onConfirm = { model.deleteLocalPlaylist(pl.id) },
-                        )
-                    },
+                    onOptionsClick = { optionsTargetPlaylist = it },
                 )
                 5 -> FolderTreeView(
                     nodes = folders,
@@ -510,8 +516,10 @@ internal fun LocalLibraryTab(
                     onRemoveSong = { removeTargetSong = it },
                     onDeleteSong = { deleteTargetSong = it },
                     onShowInfo = { showInfoTrack = it },
+                    onSongOptions = { optionsTargetSong = it },
                 )
             }
+        }
         }
     }
 
@@ -587,6 +595,157 @@ internal fun LocalLibraryTab(
         SongDetailInfoDialog(
             track = track,
             onDismiss = { showInfoTrack = null },
+        )
+    }
+
+    optionsTargetPlaylist?.let { pl ->
+        val itemsByPath = remember(state.localAudioItems) { state.localAudioItems.associateBy { it.path } }
+        val tracks = remember(pl.trackPaths, itemsByPath) {
+            pl.trackPaths.mapNotNull { itemsByPath[it] }
+        }
+        val coverUri = remember(pl, itemsByPath) {
+            pl.trackPaths.firstNotNullOfOrNull { itemsByPath[it]?.coverUri }
+        }
+        PlaylistOptionsSheet(
+            playlistName = pl.name,
+            isOwner = true,
+            coverUrl = coverUri,
+            onDismiss = { optionsTargetPlaylist = null },
+            onPlay = {
+                if (tracks.isNotEmpty()) model.playAll(tracks)
+            },
+            onAddToQueue = {
+                if (tracks.isNotEmpty()) {
+                    scope.launch {
+                        tracks.forEach {
+                            val id = if (it.mediaType == cp.player.core.media.MediaType.VIDEO) "local://video/" else "local://audio/"
+                            AppModel.playback.addToQueue(id)
+                        }
+                        UiEvents.notify(strings.library.queuedToPlay)
+                    }
+                }
+            },
+            onRename = {
+                renamePlaylistTarget = pl
+            },
+            onDelete = {
+                confirm.request(
+                    title = strings.library.deletePlaylist,
+                    message = s.deleteLocalPlaylistMessage(pl.name),
+                    confirmLabel = s.delete,
+                    destructive = true,
+                    onConfirm = {
+                        model.deleteLocalPlaylist(pl.id)
+                        if (openedLocalPlaylist?.id == pl.id) {
+                            openedLocalPlaylist = null
+                        }
+                    },
+                )
+            },
+            isFavorite = false,
+        )
+    }
+
+    optionsTargetSong?.let { song ->
+        val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
+        val mediaId = if (isVideo) "local://video/" else "local://audio/"
+        val isDownloaded = song.source == LocalMediaOrigin.DOWNLOADED || !song.originalMediaId.isNullOrBlank()
+        val cloudMediaId = song.originalMediaId
+        val cloudFavId = cloudMediaId?.let { runCatching { cp.player.core.music.CPMediaId.parse(it).resourceId }.getOrDefault(it) }
+        val isCloudFav = cloudFavId != null && cloudFavId in likedIds
+        val isLocalFav = song.path in state.favoritePaths
+        val isFav = if (isDownloaded && cloudMediaId != null) isCloudFav else isLocalFav
+        val trackSummary = remember(song) {
+            TrackSummary(
+                id = mediaId,
+                name = song.title,
+                artist = song.artist ?: s.unknownArtist,
+                album = song.album,
+                coverUrl = song.coverUri,
+                durationMs = song.durationMs,
+                originalMediaId = song.originalMediaId,
+            )
+        }
+
+        SongOptionsSheet(
+            songName = song.title,
+            artistName = song.artist ?: s.unknownArtist,
+            isFavorite = isFav,
+            isDownloaded = true,
+            onDismiss = { optionsTargetSong = null },
+            onPlay = {
+                if (isVideo) {
+                    navigator?.push(VideoPlayerScreen(mediaId, title = song.title))
+                } else {
+                    model.playAll(listOf(song), 0)
+                }
+            },
+            onToggleFavorite = {
+                if (isDownloaded && cloudMediaId != null) {
+                    toggleCloudFav(cloudMediaId)
+                } else {
+                    toggleLocalFav(song.path)
+                }
+            },
+            onAddToQueue = {
+                if (!isVideo) {
+                    scope.launch {
+                        AppModel.playback.addToQueue(mediaId)
+                        UiEvents.notify(strings.library.queuedToPlay)
+                    }
+                }
+            },
+            onPlayNext = {
+                if (!isVideo) {
+                    scope.launch {
+                        AppModel.playback.addNextToQueue(mediaId)
+                        UiEvents.notify(strings.library.playNext)
+                    }
+                }
+            },
+            onAddToPlaylist = {
+                if (isDownloaded && cloudMediaId != null) {
+                    addToCloudPlaylistTrack = trackSummary
+                } else {
+                    addToLocalPlaylistPath = song.path
+                }
+            },
+            onAddToLocalPlaylist = if (isDownloaded && cloudMediaId != null) {
+                { addToLocalPlaylistPath = song.path }
+            } else null,
+            onDownload = {},
+            onShowInfo = {
+                showInfoTrack = trackSummary
+            },
+            onShare = {
+                if (!song.originalMediaId.isNullOrBlank()) {
+                    val share = songShareText(trackSummary)
+                    cp.player.app.platform.shareText(share)
+                } else {
+                    cp.player.app.platform.shareText(" - ")
+                }
+            },
+            onPlayMv = if (isVideo) {
+                { navigator?.push(VideoPlayerScreen(mediaId, title = song.title)) }
+            } else null,
+            coverUrl = song.coverUri,
+            onOpenInFileManager = {
+                cp.player.app.platform.openInFileManager(song.path)
+            },
+            onRemoveFromPlaylist = if (openedLocalPlaylist != null) {
+                {
+                    openedLocalPlaylist?.let { pl ->
+                        model.removeTrackFromLocalPlaylist(pl.id, song.path)
+                    }
+                }
+            } else null,
+            onRemoveFromLibrary = {
+                removeTargetSong = song
+            },
+            onDelete = {
+                deleteTargetSong = song
+            },
+            deleteLabel = s.deleteLocalFile,
         )
     }
 }
@@ -910,6 +1069,7 @@ private fun ColumnScope.SongList(
     onRemoveSong: (LocalMediaItem) -> Unit,
     onDeleteSong: (LocalMediaItem) -> Unit,
     onShowInfo: (TrackSummary) -> Unit,
+    onSongOptions: ((LocalMediaItem) -> Unit)? = null,
 ) {
     val s = strings.downloads
     Column(Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth().weight(1f)) {
@@ -969,6 +1129,7 @@ private fun ColumnScope.SongList(
                     onRemoveSong = onRemoveSong,
                     onDeleteSong = onDeleteSong,
                     onShowInfo = onShowInfo,
+                    onOptionsClick = onSongOptions,
                     index = index,
                     total = songs.size,
                 )
@@ -1001,6 +1162,7 @@ internal fun LocalSongRow(
     onRemoveSong: ((LocalMediaItem) -> Unit)? = null,
     onDeleteSong: ((LocalMediaItem) -> Unit)? = null,
     onShowInfo: ((TrackSummary) -> Unit)? = null,
+    onOptionsClick: ((LocalMediaItem) -> Unit)? = null,
     index: Int = 0,
     total: Int = 1,
 ) {
@@ -1106,6 +1268,7 @@ internal fun LocalSongRow(
         onClick = handlePlay,
         isCurrentlyPlaying = isCurrentlyPlaying,
         contextMenu = menuItems,
+        onOptionsClick = onOptionsClick?.let { fn -> { fn(song) } },
         supportingText = subtitle,
     )
 }
@@ -1120,8 +1283,7 @@ private fun ColumnScope.LocalPlaylistGrid(
     strings: CpStrings,
     onCreatePlaylist: () -> Unit,
     onClick: (LocalPlaylist) -> Unit,
-    onRename: (LocalPlaylist) -> Unit,
-    onDelete: (LocalPlaylist) -> Unit,
+    onOptionsClick: (LocalPlaylist) -> Unit,
 ) {
     Column(Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth().weight(1f)) {
         Row(
@@ -1169,12 +1331,7 @@ private fun ColumnScope.LocalPlaylistGrid(
                         coverUri = coverUri,
                         totalDurationMs = totalDurationMs,
                         onClick = { onClick(pl) },
-                        onPlay = {
-                            val tracks = pl.trackPaths.mapNotNull { itemsByPath[it] }
-                            if (tracks.isNotEmpty()) model.playAll(tracks)
-                        },
-                        onRename = { onRename(pl) },
-                        onDelete = { onDelete(pl) },
+                        onOptionsClick = { onOptionsClick(pl) },
                     )
                 }
             }
@@ -1198,11 +1355,8 @@ private fun LocalPlaylistCell(
     coverUri: String?,
     totalDurationMs: Long,
     onClick: () -> Unit,
-    onPlay: () -> Unit,
-    onRename: () -> Unit,
-    onDelete: () -> Unit,
+    onOptionsClick: () -> Unit,
 ) {
-    var menuExpanded by remember { mutableStateOf(false) }
     Column(
         Modifier.clip(MaterialTheme.shapes.largeIncreased).cpBounceClickable(onClick = onClick),
     ) {
@@ -1239,41 +1393,13 @@ private fun LocalPlaylistCell(
                     maxLines = 1,
                 )
             }
-            Box {
-                IconButton(onClick = { menuExpanded = true }, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        Icons.Filled.MoreVert,
-                        contentDescription = strings.downloads.playlistOptions,
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                    DropdownMenuItem(
-                        text = { CpText(strings.downloads.playPlaylist) },
-                        leadingIcon = { Icon(Icons.Filled.PlayArrow, null) },
-                        onClick = {
-                            menuExpanded = false
-                            onPlay()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { CpText(strings.downloads.rename) },
-                        leadingIcon = { Icon(Icons.Filled.Edit, null) },
-                        onClick = {
-                            menuExpanded = false
-                            onRename()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { CpText(strings.library.deletePlaylist, color = MaterialTheme.colorScheme.error) },
-                        leadingIcon = { Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error) },
-                        onClick = {
-                            menuExpanded = false
-                            onDelete()
-                        },
-                    )
-                }
+            IconButton(onClick = onOptionsClick, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    Icons.Filled.MoreVert,
+                    contentDescription = strings.downloads.playlistOptions,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
@@ -1299,6 +1425,7 @@ private fun ColumnScope.LocalPlaylistDetail(
     onRemoveSong: (LocalMediaItem) -> Unit,
     onDeleteSong: (LocalMediaItem) -> Unit,
     onShowInfo: (TrackSummary) -> Unit,
+    onSongOptions: ((LocalMediaItem) -> Unit)? = null,
 ) {
     val itemsByPath = remember(items) { items.associateBy { it.path } }
     val tracks = remember(playlist.trackPaths, itemsByPath) {
@@ -1357,6 +1484,7 @@ private fun ColumnScope.LocalPlaylistDetail(
                         onRemoveSong = onRemoveSong,
                         onDeleteSong = onDeleteSong,
                         onShowInfo = onShowInfo,
+                        onOptionsClick = onSongOptions,
                         index = index,
                         total = tracks.size,
                     )
@@ -1805,6 +1933,7 @@ private fun ColumnScope.LocalFolderDetail(
     onRemoveSong: (LocalMediaItem) -> Unit,
     onDeleteSong: (LocalMediaItem) -> Unit,
     onShowInfo: (TrackSummary) -> Unit,
+    onSongOptions: ((LocalMediaItem) -> Unit)? = null,
 ) {
     val s = strings.downloads
     val tracks = remember(items, node.path) { LocalFolderTree.allSongs(items, node) }
@@ -1849,6 +1978,7 @@ private fun ColumnScope.LocalFolderDetail(
                     onRemoveSong = onRemoveSong,
                     onDeleteSong = onDeleteSong,
                     onShowInfo = onShowInfo,
+                    onOptionsClick = onSongOptions,
                     index = index,
                     total = tracks.size,
                 )
@@ -1876,6 +2006,7 @@ private fun ColumnScope.LocalAlbumDetail(
     onRemoveSong: (LocalMediaItem) -> Unit,
     onDeleteSong: (LocalMediaItem) -> Unit,
     onShowInfo: (TrackSummary) -> Unit,
+    onSongOptions: ((LocalMediaItem) -> Unit)? = null,
 ) {
     val s = strings.downloads
     val pathSet = album.paths.toSet()
@@ -1929,6 +2060,7 @@ private fun ColumnScope.LocalAlbumDetail(
                     onRemoveSong = onRemoveSong,
                     onDeleteSong = onDeleteSong,
                     onShowInfo = onShowInfo,
+                    onOptionsClick = onSongOptions,
                     index = index,
                     total = tracks.size,
                 )
@@ -1954,6 +2086,7 @@ private fun ColumnScope.LocalArtistDetail(
     onRemoveSong: (LocalMediaItem) -> Unit,
     onDeleteSong: (LocalMediaItem) -> Unit,
     onShowInfo: (TrackSummary) -> Unit,
+    onSongOptions: ((LocalMediaItem) -> Unit)? = null,
 ) {
     val s = strings.downloads
     val tracks = remember(items, artist.name) {
@@ -2008,6 +2141,7 @@ private fun ColumnScope.LocalArtistDetail(
                     onRemoveSong = onRemoveSong,
                     onDeleteSong = onDeleteSong,
                     onShowInfo = onShowInfo,
+                    onOptionsClick = onSongOptions,
                     index = index,
                     total = tracks.size,
                 )

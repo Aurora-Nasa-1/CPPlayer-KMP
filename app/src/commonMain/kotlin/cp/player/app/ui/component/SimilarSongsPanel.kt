@@ -88,10 +88,7 @@ fun SimilarSongsPanel(
     var refreshToken by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
     val isDark = LocalIsDarkTheme.current
-    val toMediaId = { id: String ->
-        if (id.contains("://")) id
-        else "${AppModel.activeProviderId()}://song/$id"
-    }
+    val toMediaId = { id: String -> AppModel.toMediaId(id) }
 
     LaunchedEffect(seed, refreshToken) {
         if (seed.isBlank()) return@LaunchedEffect

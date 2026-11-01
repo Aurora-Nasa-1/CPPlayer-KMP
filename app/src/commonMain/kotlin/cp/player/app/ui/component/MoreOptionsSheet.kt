@@ -23,12 +23,14 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.BookmarkRemove
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
@@ -103,6 +105,12 @@ fun SongOptionsSheet(
     onShare: () -> Unit = {},
     onPlayMv: (() -> Unit)? = null,
     coverUrl: String? = null,
+    onAddToLocalPlaylist: (() -> Unit)? = null,
+    onOpenInFileManager: (() -> Unit)? = null,
+    onRemoveFromPlaylist: (() -> Unit)? = null,
+    onRemoveFromLibrary: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
+    deleteLabel: String? = null,
 ) {
     LegacyModalBottomSheet(onDismissRequest = onDismiss) {
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -234,9 +242,70 @@ fun SongOptionsSheet(
                     onClick = { onPlayMv(); onDismiss() },
                 )
             }
-        }
+            if (onAddToLocalPlaylist != null) {
+                ActionPill(
+                    label = "添加到本地歌单",
+                    icon = Icons.Filled.AddCircleOutline,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onAddToLocalPlaylist(); onDismiss() },
+                )
+            }
+            if (onOpenInFileManager != null || onRemoveFromLibrary != null || onRemoveFromPlaylist != null) {
+                val removeAction = onRemoveFromPlaylist ?: onRemoveFromLibrary
+                val removeLabel = if (onRemoveFromPlaylist != null) "从歌单移除" else "从曲库移除"
+                if (onOpenInFileManager != null && removeAction != null) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        ActionPill(
+                            label = "在文件管理器中打开",
+                            icon = Icons.Filled.FolderOpen,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onOpenInFileManager(); onDismiss() },
+                        )
+                        ActionPill(
+                            label = removeLabel,
+                            icon = Icons.Filled.Close,
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f),
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.weight(1f),
+                            onClick = { removeAction(); onDismiss() },
+                        )
+                    }
+                } else if (onOpenInFileManager != null) {
+                    ActionPill(
+                        label = "在文件管理器中打开",
+                        icon = Icons.Filled.FolderOpen,
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { onOpenInFileManager(); onDismiss() },
+                    )
+                } else if (removeAction != null) {
+                    ActionPill(
+                        label = removeLabel,
+                        icon = Icons.Filled.Close,
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f),
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { removeAction(); onDismiss() },
+                    )
+                }
+            }
+            if (onDelete != null) {
+                ActionPill(
+                    label = deleteLabel ?: "彻底删除本地文件",
+                    icon = Icons.Filled.Delete,
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onDelete(); onDismiss() },
+                )
+            }
         }
     }
+}
 }
 
 @Composable

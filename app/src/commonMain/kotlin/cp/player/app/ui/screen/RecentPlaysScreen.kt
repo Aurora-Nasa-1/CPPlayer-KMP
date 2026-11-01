@@ -131,7 +131,7 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
         val likedIds by AppModel.playback.likedIds.collectAsState()
         val localFavoritePaths by AppModel.localMedia.favorites.paths.collectAsState()
         val scrobbleState by AppModel.scrobbleHub.state.collectAsState()
-        val toMediaId = { id: String -> if (id.contains("://")) id else "$provider://song/$id" }
+        val toMediaId = { id: String -> AppModel.toMediaId(id, provider) }
         val navigator = LocalNavigator.current
         val expanded = LocalIsExpanded.current
 
@@ -384,11 +384,11 @@ fun RecentPlaysOptionsHost(
     val provider = AppModel.activeProviderId()
     val likedIds by AppModel.playback.likedIds.collectAsState()
     val localFavorites by AppModel.localMedia.favorites.paths.collectAsState()
-    val toMediaId = { id: String -> if (id.contains("://")) id else "$provider://song/$id" }
+    val toMediaId = { id: String -> AppModel.toMediaId(id, provider) }
 
-    val isLocal = track.id.startsWith("local://")
+    val isLocal = cp.player.core.music.CPMediaId.isLocal(track.id)
     val cloudId = track.originalMediaId ?: (if (!isLocal) track.id else null)
-    val cloudFavId = cloudId?.let { runCatching { cp.player.core.music.CPMediaId.parse(it).resourceId }.getOrDefault(it) }
+    val cloudFavId = cloudId?.let { cp.player.core.music.CPMediaId.toRawResourceId(it) }
     val localPath = if (isLocal) track.id.removePrefix("local://audio/").removePrefix("local://video/") else null
     val isLocalFav = localPath != null && localPath in localFavorites
     val isCloudFav = cloudFavId != null && cloudFavId in likedIds

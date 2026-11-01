@@ -58,6 +58,8 @@ import cp.player.app.ui.component.RenamePlaylistDialog
 import cp.player.app.ui.component.SectionHeader
 import cp.player.app.ui.component.SongDetailInfoDialog
 import cp.player.app.ui.component.SongItem
+import cp.player.app.ui.component.SongOptionsSheet
+import cp.player.app.ui.component.songShareText
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.playlistShareText
 import cp.player.app.ui.component.rememberConfirmState
@@ -122,6 +124,7 @@ private fun LibrarySearchContent(
     var addToCloudPlaylistTrack by remember { mutableStateOf<TrackSummary?>(null) }
     var addToLocalPlaylistPath by remember { mutableStateOf<String?>(null) }
     var showInfoTrack by remember { mutableStateOf<TrackSummary?>(null) }
+    var optionsTargetSong by remember { mutableStateOf<LocalMediaItem?>(null) }
     val likedIds by AppModel.playback.likedIds.collectAsState()
     val playbackState by AppModel.playback.state.collectAsState()
     val currentPlayingTrackId = playbackState.currentTrack?.id
@@ -291,6 +294,7 @@ private fun LibrarySearchContent(
                                     onRemoveSong = { removeTargetSong = it },
                                     onDeleteSong = { deleteTargetSong = it },
                                     onShowInfo = { showInfoTrack = it },
+                                    onOptionsClick = { optionsTargetSong = it },
                                     index = index,
                                     total = localTracks.size,
                                 )
@@ -411,6 +415,102 @@ private fun LibrarySearchContent(
                 downloads.removeLocalItem(song, s)
                 removeTargetSong = null
             },
+        )
+    }
+
+    optionsTargetSong?.let { song ->
+        val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
+        val mediaId = if (isVideo) "local://video/" else "local://audio/"
+        val isDownloaded = song.source == cp.player.core.media.LocalMediaOrigin.DOWNLOADED || !song.originalMediaId.isNullOrBlank()
+        val cloudMediaId = song.originalMediaId
+        val cloudFavId = cloudMediaId?.let { runCatching { cp.player.core.music.CPMediaId.parse(it).resourceId }.getOrDefault(it) }
+        val isCloudFav = cloudFavId != null && cloudFavId in likedIds
+        val isLocalFav = song.path in downloadsState.favoritePaths
+        val isFav = if (isDownloaded && cloudMediaId != null) isCloudFav else isLocalFav
+        val trackSummary = remember(song) {
+            TrackSummary(
+                id = mediaId,
+                name = song.title,
+                artist = song.artist ?: s.downloads.unknownArtist,
+                album = song.album,
+                coverUrl = song.coverUri,
+                durationMs = song.durationMs,
+                originalMediaId = song.originalMediaId,
+            )
+        }
+
+        SongOptionsSheet(
+            songName = song.title,
+            artistName = song.artist ?: s.downloads.unknownArtist,
+            isFavorite = isFav,
+            isDownloaded = true,
+            onDismiss = { optionsTargetSong = null },
+            onPlay = {
+                if (isVideo) {
+                    navigator.push(VideoPlayerScreen(mediaId, title = song.title))
+                } else {
+                    downloads.playAll(listOf(song), 0)
+                }
+            },
+            onToggleFavorite = {
+                if (isDownloaded && cloudMediaId != null) {
+                    toggleCloudFav(cloudMediaId)
+                } else {
+                    toggleLocalFav(song.path)
+                }
+            },
+            onAddToQueue = {
+                if (!isVideo) {
+                    scope.launch {
+                        AppModel.playback.addToQueue(mediaId)
+                        UiEvents.notify(s.library.queuedToPlay)
+                    }
+                }
+            },
+            onPlayNext = {
+                if (!isVideo) {
+                    scope.launch {
+                        AppModel.playback.addNextToQueue(mediaId)
+                        UiEvents.notify(s.library.playNext)
+                    }
+                }
+            },
+            onAddToPlaylist = {
+                if (isDownloaded && cloudMediaId != null) {
+                    addToCloudPlaylistTrack = trackSummary
+                } else {
+                    addToLocalPlaylistPath = song.path
+                }
+            },
+            onAddToLocalPlaylist = if (isDownloaded && cloudMediaId != null) {
+                { addToLocalPlaylistPath = song.path }
+            } else null,
+            onDownload = {},
+            onShowInfo = {
+                showInfoTrack = trackSummary
+            },
+            onShare = {
+                if (!song.originalMediaId.isNullOrBlank()) {
+                    val share = songShareText(trackSummary)
+                    cp.player.app.platform.shareText(share)
+                } else {
+                    cp.player.app.platform.shareText(" - ")
+                }
+            },
+            onPlayMv = if (isVideo) {
+                { navigator.push(VideoPlayerScreen(mediaId, title = song.title)) }
+            } else null,
+            coverUrl = song.coverUri,
+            onOpenInFileManager = {
+                cp.player.app.platform.openInFileManager(song.path)
+            },
+            onRemoveFromLibrary = {
+                removeTargetSong = song
+            },
+            onDelete = {
+                deleteTargetSong = song
+            },
+            deleteLabel = s.downloads.deleteLocalFile,
         )
     }
 

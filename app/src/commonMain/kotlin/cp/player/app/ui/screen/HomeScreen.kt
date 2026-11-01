@@ -199,7 +199,7 @@ private fun HomeScreenContent(model: HomeScreenModel) {
     // （数据刷新由 HomeScreenModel 订阅 sourceGeneration 负责，这里只管「接下来播谁」）。
     val activeProvider by AppModel.activeProviderFlow.collectAsState()
     val provider = activeProvider?.id ?: AppModel.activeProviderId()
-    val toMediaId = { id: String -> if (id.contains("://")) id else "$provider://song/$id" }
+    val toMediaId = { id: String -> AppModel.toMediaId(id, provider) }
 
     val dailySongs = state.dailySongs
     val dailyPlaylist = remember(dailySongs) {
