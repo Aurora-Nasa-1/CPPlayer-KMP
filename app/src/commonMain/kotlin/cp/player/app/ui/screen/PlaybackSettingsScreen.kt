@@ -37,9 +37,13 @@ import cp.player.app.ui.component.SettingsSegmentedItem
 import cp.player.app.ui.component.SettingsSliderItem
 import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.settingsSearchTarget
+import cp.player.app.ui.component.AutoPlayCustomTargetDialog
+import cp.player.app.ui.component.PlaylistPickerSheet
 import cp.player.app.ui.component.SleepTimerDialog
 import cp.player.app.ui.component.VipActivationDialog
 import cp.player.core.license.VipLicenseManager
+import cp.player.core.playback.AutoPlayCustomType
+import cp.player.core.playback.AutoPlayMode
 import cp.player.core.playback.PlaybackSessionSettings
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -58,6 +62,10 @@ class PlaybackSettingsScreen(
         val quality by AppModel.playbackQualityFlow.collectAsState()
         val meteredQuality by AppModel.meteredPlaybackQualityFlow.collectAsState()
         val keepLastPlayback by AppModel.keepLastPlaybackFlow.collectAsState()
+        val autoPlayMode by AppModel.autoPlayModeFlow.collectAsState()
+        val autoPlayCustomType by AppModel.autoPlayCustomTypeFlow.collectAsState()
+        val autoPlayCustomId by AppModel.autoPlayCustomIdFlow.collectAsState()
+        val autoPlayCustomTitle by AppModel.autoPlayCustomTitleFlow.collectAsState()
         val preloadNext by AppModel.preloadNextFlow.collectAsState()
         val listenTogetherAddNext by AppModel.listenTogetherAddNextFlow.collectAsState()
         val playbackState by AppModel.playback.state.collectAsState()
@@ -66,6 +74,8 @@ class PlaybackSettingsScreen(
         val fadePersisted by AppModel.fadeFlow.collectAsState()
         var fadeDraft by remember { mutableStateOf(fadePersisted) }
         var showSleepTimer by remember { mutableStateOf(false) }
+        var showAutoPlayTargetDialog by remember { mutableStateOf(false) }
+        var showPlaylistPicker by remember { mutableStateOf(false) }
 
         val qualityIndex = AppModel.qualityLevels.indexOfFirst { it == quality }.coerceAtLeast(0)
         val meteredQualityIndex =
@@ -381,13 +391,78 @@ class PlaybackSettingsScreen(
                         onClick = { showSleepTimer = true },
                     )
                 }
+                val autoPlayOptions = listOf(
+                    s.playback.autoPlayModeOff,
+                    s.playback.autoPlayModeContinue,
+                    s.playback.autoPlayModeDaily,
+                    s.playback.autoPlayModeCustom,
+                )
+                val autoPlaySelectedIndex = when (autoPlayMode) {
+                    AutoPlayMode.OFF -> 0
+                    AutoPlayMode.CONTINUE -> 1
+                    AutoPlayMode.DAILY -> 2
+                    AutoPlayMode.CUSTOM -> 3
+                }
+                SettingsSection(s.playback.sectionAutoPlay) {
+                    val totalItems = if (autoPlayMode == AutoPlayMode.CUSTOM) 2 else 1
+                    SettingsDropdownItem(
+                        title = s.playback.autoPlayMode,
+                        modifier = Modifier.settingsSearchTarget("playback_auto_play", targetSettingId),
+                        subtitle = s.playback.autoPlayModeNote,
+                        options = autoPlayOptions,
+                        selectedIndex = autoPlaySelectedIndex,
+                        onSelect = { index ->
+                            val mode = when (index) {
+                                1 -> AutoPlayMode.CONTINUE
+                                2 -> AutoPlayMode.DAILY
+                                3 -> AutoPlayMode.CUSTOM
+                                else -> AutoPlayMode.OFF
+                            }
+                            AppModel.setAutoPlayMode(mode)
+                        },
+                        index = 0,
+                        total = totalItems,
+                    )
+                    if (autoPlayMode == AutoPlayMode.CUSTOM) {
+                        val targetSubtitle = if (autoPlayCustomId.isNotBlank()) {
+                            val typeLabel = if (autoPlayCustomType == AutoPlayCustomType.PLAYLIST) {
+                                s.playback.autoPlayTypePlaylist
+                            } else {
+                                s.playback.autoPlayTypeTrack
+                            }
+                            val titleLabel = autoPlayCustomTitle.ifBlank { autoPlayCustomId }
+                            "$typeLabel: $titleLabel"
+                        } else {
+                            s.playback.autoPlayCustomTargetEmpty
+                        }
+                        SettingsClickItem(
+                            title = s.playback.autoPlayCustomTarget,
+                            subtitle = targetSubtitle,
+                            index = 1,
+                            total = totalItems,
+                            onClick = { showAutoPlayTargetDialog = true },
+                            trailingContent = {
+                                CpText(
+                                    text = if (autoPlayCustomId.isNotBlank()) "修改" else "设置",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            },
+                        )
+                    }
+                }
                 SettingsSection(s.playback.sectionLastPlayback) {
                     SettingsSwitchItem(
                         title = s.playback.keepLastPlayback,
                         modifier = Modifier.settingsSearchTarget("playback_keep_progress", targetSettingId),
                         subtitle = s.playback.keepLastPlaybackNote,
                         checked = keepLastPlayback,
-                        onCheckedChange = { AppModel.setKeepLastPlayback(it) },
+                        onCheckedChange = { checked ->
+                            AppModel.setKeepLastPlayback(checked)
+                            if (!checked && autoPlayMode == AutoPlayMode.CONTINUE) {
+                                AppModel.setAutoPlayMode(AutoPlayMode.OFF)
+                            }
+                        },
                         index = 0,
                         total = 1,
                     )
@@ -456,6 +531,43 @@ class PlaybackSettingsScreen(
                 onSelect = AppModel.playback::setSleepTimer,
                 onCancelTimer = AppModel.playback::cancelSleepTimer,
                 onDismiss = { showSleepTimer = false },
+            )
+        }
+
+        if (showAutoPlayTargetDialog) {
+            AutoPlayCustomTargetDialog(
+                currentType = autoPlayCustomType,
+                currentId = autoPlayCustomId,
+                currentTitle = autoPlayCustomTitle,
+                playbackState = playbackState,
+                onDismiss = { showAutoPlayTargetDialog = false },
+                onPickFromPlaylists = {
+                    showAutoPlayTargetDialog = false
+                    showPlaylistPicker = true
+                },
+                onSetTarget = { type, id, title ->
+                    AppModel.setAutoPlayCustomTarget(type, id, title)
+                    showAutoPlayTargetDialog = false
+                },
+                onClearTarget = {
+                    AppModel.clearAutoPlayCustomTarget()
+                    showAutoPlayTargetDialog = false
+                },
+            )
+        }
+
+        if (showPlaylistPicker) {
+            PlaylistPickerSheet(
+                title = s.playback.autoPlayPickFromPlaylists,
+                onDismiss = { showPlaylistPicker = false },
+                onSelected = { playlist ->
+                    AppModel.setAutoPlayCustomTarget(
+                        type = AutoPlayCustomType.PLAYLIST,
+                        id = playlist.resourceId.ifBlank { playlist.id.toString() },
+                        title = playlist.name,
+                    )
+                    showPlaylistPicker = false
+                },
             )
         }
 

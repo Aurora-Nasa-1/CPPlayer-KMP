@@ -584,10 +584,50 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                 topBar = {
                     CenterAlignedTopAppBar(
                         title = {
-                            MobilePlayerTabSelector(
-                                currentPage = pagerState.currentPage,
-                                onSelect = { page -> scope.launch { pagerState.animateScrollToPage(page) } },
-                            )
+                            AnimatedContent(
+                                targetState = pagerState.currentPage == 1,
+                                label = "TopBarTitle"
+                            ) { isPlayerPage ->
+                                if (isPlayerPage) {
+                                    MobilePlayerTabSelector(
+                                        currentPage = pagerState.currentPage,
+                                        onSelect = { page -> scope.launch { pagerState.animateScrollToPage(page) } },
+                                    )
+                                } else {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable(
+                                                interactionSource = remember { MutableInteractionSource() },
+                                                indication = null,
+                                                onClickLabel = "返回播放页",
+                                            ) {
+                                                scope.launch { pagerState.animateScrollToPage(1) }
+                                            }
+                                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        cp.player.app.ui.component.CpText(
+                                            text = track.name,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            textAlign = TextAlign.Center,
+                                            emphasized = true,
+                                            marqueeEnabled = state.isPlaying,
+                                        )
+                                        Spacer(Modifier.height(1.dp))
+                                        cp.player.app.ui.component.TrackArtistText(
+                                            track = track,
+                                            onArtistClick = onArtistClick,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            textAlign = TextAlign.Center,
+                                        )
+                                    }
+                                }
+                            }
                         },
                         navigationIcon = {
                             IconButton(onClick = onBack) {

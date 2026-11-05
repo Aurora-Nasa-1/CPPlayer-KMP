@@ -191,13 +191,13 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
         id = "appearance",
         group = SettingsGroup.GENERAL,
         titleOf = { it.settings.itemAppearance.title },
-        subtitleOf = { it.settings.itemAppearance.subtitle + " · " + it.language.screenTitle },
+        subtitleOf = { it.settings.itemAppearance.subtitle + " · " + it.appearance.themeMode },
         icon = Icons.Filled.Palette,
         accent = SettingsAccent.PRIMARY,
         keywords = listOf(
-            "主题", "深色", "浅色", "暗黑", "取色", "配色", "纯黑", "oled", "省电", "theme", "dark",
-            "语言", "中文", "英文", "简体", "繁体", "language", "locale", "chinese", "english", "i18n", "translation",
-            "专辑", "专辑名", "歌曲列表", "album",
+            "主题", "深色", "浅色", "暗黑", "取色", "配色", "纯黑", "oled", "amoled", "省电", "theme", "dark", "light",
+            "动态取色", "莫奈", "monet", "material you", "动效", "转场", "流体", "流光", "背景", "封面飞行",
+            "圆角", "字体", "font", "roundness", "专辑", "专辑名", "歌曲列表", "album",
         ),
         subItems = listOf(
             SettingsSubItem(
@@ -287,7 +287,13 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 debugOnly = true,
             ),
         ),
-        screen = { targetId -> AppearanceSettingsScreen(targetId) },
+        screen = { targetId ->
+            if (targetId in listOf("appearance_theme_mode", "appearance_pure_black", "appearance_color_source")) {
+                DarkThemeSettingsScreen()
+            } else {
+                AppearanceSettingsScreen(targetId)
+            }
+        },
     ),
     SettingsEntry(
         id = "playback",
@@ -340,6 +346,16 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 subtitleOf = { "开始播放、暂停及切换歌曲时的音量平滑渐变过渡" },
                 keywords = listOf("淡入淡出", "淡入", "淡出", "渐变", "平滑过渡", "切歌过渡", "crossfade", "fade"),
                 sectionOf = { "播放控制" },
+            ),
+            SettingsSubItem(
+                id = "playback_auto_play",
+                titleOf = { "打开软件自动播放" },
+                subtitleOf = { "应用启动时自动播放：继续上次播放、每日推荐或指定歌单/歌曲" },
+                keywords = listOf(
+                    "自动播放", "打开播放", "启动播放", "自启", "开机播放", "日推", "每日推荐", "续播",
+                    "auto play", "autoplay", "startup", "daily", "resume",
+                ),
+                sectionOf = { "自动播放" },
             ),
             SettingsSubItem(
                 id = "playback_keep_progress",

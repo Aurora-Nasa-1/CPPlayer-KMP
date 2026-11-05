@@ -161,6 +161,13 @@ fun App(
                     }
                 }
 
+                // 启动且进入主界面后，触发「打开软件自动播放」
+                LaunchedEffect(startDestination) {
+                    if (startDestination is AppStartDestination.Main) {
+                        AppModel.triggerStartupAutoPlay()
+                    }
+                }
+
                 // 通知点击 → 跳到对应会话。
                 //
                 // 必须在 Navigator 作用域内：要 push 到根栈。先 `popToMainShell()` 是因为

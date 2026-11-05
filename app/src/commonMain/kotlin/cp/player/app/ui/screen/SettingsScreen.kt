@@ -273,6 +273,7 @@ private fun SettingsSubItemRow(
         total = total,
         onClick = onClick,
         selected = isSelected,
+        showChevron = true,
         leadingContent = {
             MonetIcon(
                 icon = entry.icon,
@@ -355,6 +356,7 @@ private fun SettingsRow(
         total = total,
         onClick = onClick,
         selected = isSelected,
+        showChevron = true,
         leadingContent = {
             MonetIcon(
                 icon = entry.icon,

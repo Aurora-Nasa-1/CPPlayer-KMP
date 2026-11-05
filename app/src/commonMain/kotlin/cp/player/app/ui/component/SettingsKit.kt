@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -422,6 +423,7 @@ fun SettingsClickItem(
     icon: ImageVector? = null,
     leadingContent: (@Composable () -> Unit)? = null,
     trailingContent: (@Composable RowScope.() -> Unit)? = null,
+    showChevron: Boolean = false,
     enabled: Boolean = true,
     selected: Boolean = false,
     mergeSemantics: Boolean = true,
@@ -442,6 +444,17 @@ fun SettingsClickItem(
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
+
+    val actualTrailingContent: (@Composable RowScope.() -> Unit)? = trailingContent ?: if (showChevron) {
+        {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    } else null
 
     LegacyListItem(
         index = index,
@@ -465,7 +478,7 @@ fun SettingsClickItem(
                 supportingContent?.invoke()
             }
         } else null,
-        trailingContent = trailingContent,
+        trailingContent = actualTrailingContent,
     )
 }
 

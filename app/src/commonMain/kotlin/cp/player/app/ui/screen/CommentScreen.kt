@@ -1,9 +1,12 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
+import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.CommentPane
 import cp.player.app.ui.component.CpRouteScaffold
@@ -22,8 +25,15 @@ class CommentScreen(val id: String, val type: String = "music") : Screen {
         val model = rememberScreenModel { CommentScreenModel(id, type) }
         val navigator = LocalNavigator.current
         val s = cpStrings()
+        val playbackState by AppModel.playback.state.collectAsState()
+        val currentTrack = playbackState.currentTrack
+        val titleText = if (type == "music" && currentTrack != null && currentTrack.id == id) {
+            "${currentTrack.name} - ${currentTrack.artist}"
+        } else {
+            s.social.comment.title
+        }
         // 桌面自绘标题栏的标题（页内顶栏在桌面端整体让位，见 CpRouteScaffold 的 KDoc）。
-        cp.player.app.ui.util.DesktopRouteTitle(s.social.comment.title)
+        cp.player.app.ui.util.DesktopRouteTitle(titleText)
 
         // ⚠️ 必须走 `CpRouteScaffold`，不要退回 `AppScaffold`。
         //
@@ -34,7 +44,7 @@ class CommentScreen(val id: String, val type: String = "music") : Screen {
         // `CpRouteScaffold` 把「桌面发布标题 / 窄屏自绘顶栏 / 双栏右栏只出正文」三选一
         // 收在一处，本页只需要声明标题与返回动作。
         CpRouteScaffold(
-            title = s.social.comment.title,
+            title = titleText,
             onBack = { navigator.popOrNotify() },
         ) { pageModifier ->
             CommentPane(model = model, modifier = pageModifier)

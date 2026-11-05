@@ -31,6 +31,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cp.player.app.AppModel
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.openUrl
+import cp.player.app.ui.component.AudioEnginePhonePreviewCard
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.SettingsClickItem
@@ -71,8 +72,11 @@ class AudioEngineSettingsScreen : Screen {
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
             SettingsPage(pageModifier) {
-                // 顶部状态指示卡片
-                EngineStatusBanner(isFlickEngine = isFlickEngine)
+                // 顶部 Android 16 拟真手机动效与 Hi-Res 频谱卡片
+                AudioEnginePhonePreviewCard(
+                    isFlickEngine = isFlickEngine,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
 
                 SettingsSection("音频输出内核架构") {
                     val engineOptions = listOf(
@@ -252,57 +256,5 @@ class AudioEngineSettingsScreen : Screen {
             onBack = { navigator?.pop() },
             content = body,
         )
-    }
-}
-
-@Composable
-private fun EngineStatusBanner(isFlickEngine: Boolean) {
-    Surface(
-        shape = MaterialTheme.shapes.medium,
-        color = settingsRowContainer(),
-        modifier = Modifier.fillMaxWidth().padding(bottom = CpSpacing.listRowGap),
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Icon(
-                imageVector = if (isFlickEngine) Icons.Filled.Memory else Icons.Filled.Info,
-                contentDescription = null,
-                tint = if (isFlickEngine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-            )
-            Column(modifier = Modifier.weight(1f)) {
-                CpText(
-                    text = if (isFlickEngine) "FlickEngine Hi-Res 发烧引擎运行中" else "当前使用系统默认共享音频通道",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(Modifier.height(4.dp))
-                CpText(
-                    text = if (isFlickEngine) {
-                        "原生 64 位浮点架构 · 独占模式已就绪 · 支持 DSD / FLAC / Hi-Res 无损直出"
-                    } else {
-                        "适合日常日常轻量听歌，兼容所有系统级音效与后台并发播放"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (isFlickEngine) {
-                Surface(
-                    shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                ) {
-                    CpText(
-                        text = "VIP / Hi-Res",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    )
-                }
-            }
-        }
     }
 }

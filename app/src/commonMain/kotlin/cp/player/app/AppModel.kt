@@ -20,11 +20,14 @@ import cp.player.core.lyricpush.LyricSecondaryMode
 import cp.player.core.lyricpush.OPlusLyricMode
 import cp.player.core.lyricpush.XiaomiSuperIslandConfig
 import cp.player.core.monitor.HealthMonitor
+import cp.player.core.playback.AutoPlayCustomType
+import cp.player.core.playback.AutoPlayMode
 import cp.player.core.playback.PlaybackController
 import cp.player.core.playback.PlaybackSessionSettings
 import cp.player.core.provider.BackendProvider
 import cp.player.core.provider.ProviderCookieStorage
 import cp.player.core.util.SettingsStorage
+import cp.player.core.util.runCatchingExceptCancellation
 import cp.player.app.repository.AuthRepository
 import cp.player.app.repository.MusicRepository
 import cp.player.app.repository.SocialRepository
@@ -44,10 +47,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * 诊断页只读视图类型（转发 [HealthMonitor] 的嵌套类型）。
@@ -531,8 +536,145 @@ object AppModel {
         settings.putString(PlaybackSessionSettings.KEY_KEEP_LAST_PLAYBACK, enabled.toString())
         // 关掉时立刻清掉已有快照：否则「关掉 → 再打开」之间旧队列一直躺在盘上，
         // 重新打开会恢复到一份早已过期的会话（期间可能换了音源 / 删了歌单）。
-        if (!enabled) settings.remove(PlaybackSessionSettings.KEY_LAST_SESSION)
+        if (!enabled) {
+            settings.remove(PlaybackSessionSettings.KEY_LAST_SESSION)
+            if (autoPlayMode() == AutoPlayMode.CONTINUE) {
+                setAutoPlayMode(AutoPlayMode.OFF)
+            }
+        }
         _keepLastPlayback.value = enabled
+    }
+
+    // ============ 打开软件自动播放（持久化） ============
+
+    private val _autoPlayMode = MutableStateFlow(autoPlayMode())
+
+    /**
+     * 打开软件自动播放模式流（关闭 / 继续上次播放 / 每日推荐 / 指定歌单或歌曲）。
+     */
+    val autoPlayModeFlow: StateFlow<AutoPlayMode> = _autoPlayMode.asStateFlow()
+
+    fun autoPlayMode(): AutoPlayMode =
+        PlaybackSessionSettings.autoPlayMode(settings)
+
+    fun setAutoPlayMode(mode: AutoPlayMode) {
+        settings.putString(PlaybackSessionSettings.KEY_AUTO_PLAY_MODE, mode.storageKey)
+        // 设为「继续上次播放」时，必须保证「保留上次播放」也是开着的，否则无法恢复快照
+        if (mode == AutoPlayMode.CONTINUE && !keepLastPlayback()) {
+            setKeepLastPlayback(true)
+        }
+        _autoPlayMode.value = mode
+    }
+
+    private val _autoPlayCustomType = MutableStateFlow(autoPlayCustomType())
+    val autoPlayCustomTypeFlow: StateFlow<AutoPlayCustomType> = _autoPlayCustomType.asStateFlow()
+
+    fun autoPlayCustomType(): AutoPlayCustomType =
+        PlaybackSessionSettings.autoPlayCustomType(settings)
+
+    private val _autoPlayCustomId = MutableStateFlow(autoPlayCustomId())
+    val autoPlayCustomIdFlow: StateFlow<String> = _autoPlayCustomId.asStateFlow()
+
+    fun autoPlayCustomId(): String =
+        PlaybackSessionSettings.autoPlayCustomId(settings)
+
+    private val _autoPlayCustomTitle = MutableStateFlow(autoPlayCustomTitle())
+    val autoPlayCustomTitleFlow: StateFlow<String> = _autoPlayCustomTitle.asStateFlow()
+
+    fun autoPlayCustomTitle(): String =
+        PlaybackSessionSettings.autoPlayCustomTitle(settings)
+
+    fun setAutoPlayCustomTarget(type: AutoPlayCustomType, id: String, title: String) {
+        settings.putString(PlaybackSessionSettings.KEY_AUTO_PLAY_CUSTOM_TYPE, type.storageKey)
+        settings.putString(PlaybackSessionSettings.KEY_AUTO_PLAY_CUSTOM_ID, id)
+        settings.putString(PlaybackSessionSettings.KEY_AUTO_PLAY_CUSTOM_TITLE, title)
+        _autoPlayCustomType.value = type
+        _autoPlayCustomId.value = id
+        _autoPlayCustomTitle.value = title
+    }
+
+    fun clearAutoPlayCustomTarget() {
+        settings.remove(PlaybackSessionSettings.KEY_AUTO_PLAY_CUSTOM_ID)
+        settings.remove(PlaybackSessionSettings.KEY_AUTO_PLAY_CUSTOM_TITLE)
+        _autoPlayCustomId.value = ""
+        _autoPlayCustomTitle.value = ""
+    }
+
+    // ============ 启动时自动播放执行逻辑 ============
+
+    @Volatile
+    private var startupAutoPlayExecuted = false
+
+    /**
+     * 进入主界面且后端就绪时触发一次启动自动播放。
+     * 单个进程生命周期内只触发一次。
+     */
+    fun triggerStartupAutoPlay() {
+        if (startupAutoPlayExecuted) return
+        startupAutoPlayExecuted = true
+        modelScope.launch {
+            performStartupAutoPlay()
+        }
+    }
+
+    private suspend fun performStartupAutoPlay() {
+        val mode = autoPlayMode()
+        if (mode == AutoPlayMode.OFF) return
+
+        when (mode) {
+            AutoPlayMode.OFF -> return
+
+            AutoPlayMode.CONTINUE -> {
+                if (playback.state.value.isPlaying) return
+                // 若队列恢复尚未完成，等待最多 3 秒让上次会话装载进来
+                if (playback.state.value.queue.isEmpty()) {
+                    withTimeoutOrNull(3_000L) {
+                        playback.state.first { it.queue.isNotEmpty() }
+                    }
+                }
+                if (!playback.state.value.isPlaying && playback.state.value.queue.isNotEmpty()) {
+                    playback.togglePlayPause()
+                }
+            }
+
+            AutoPlayMode.DAILY -> {
+                if (playback.state.value.isPlaying) return
+                val dailyResult = runCatchingExceptCancellation {
+                    musicRepository.getRecommendedSongs()
+                }.getOrNull()
+                if (playback.state.value.isPlaying) return
+                val tracks = (dailyResult as? BackendResult.Success)?.data.orEmpty()
+                if (tracks.isNotEmpty()) {
+                    val ids = tracks.map { toMediaId(it.id) }
+                    playback.playQueue(ids, startIndex = 0)
+                }
+            }
+
+            AutoPlayMode.CUSTOM -> {
+                if (playback.state.value.isPlaying) return
+                val type = autoPlayCustomType()
+                val id = autoPlayCustomId().trim()
+                if (id.isBlank()) return
+
+                when (type) {
+                    AutoPlayCustomType.PLAYLIST -> {
+                        val detailResult = runCatchingExceptCancellation {
+                            musicRepository.getPlaylistDetail(id)
+                        }.getOrNull()
+                        if (playback.state.value.isPlaying) return
+                        val tracks = (detailResult as? BackendResult.Success)?.data?.tracks.orEmpty()
+                        if (tracks.isNotEmpty()) {
+                            val ids = tracks.map { toMediaId(it.id) }
+                            playback.playQueue(ids, startIndex = 0, sourceId = id)
+                        }
+                    }
+                    AutoPlayCustomType.TRACK -> {
+                        val mediaId = toMediaId(id)
+                        playback.play(mediaId)
+                    }
+                }
+            }
+        }
     }
 
     // ============ 下一首歌曲预加载（持久化） ============

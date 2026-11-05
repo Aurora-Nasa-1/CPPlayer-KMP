@@ -17,9 +17,12 @@ import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.runtime.Composable
+import cp.player.app.ui.component.DarkThemePhonePreviewCard
+import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.i18n.AppLanguage
 import cp.player.app.i18n.displayName
 import androidx.compose.runtime.LaunchedEffect
@@ -63,7 +66,7 @@ import cp.player.app.ui.util.popOrNotify
 import kotlin.math.roundToInt
 
 /**
- * 外观与主题设置页面。
+ * 外观与主题设置页面（设计贴合 Android 16 现代原生风格）。
  */
 class AppearanceSettingsScreen(
     private val targetSettingId: String? = null,
@@ -73,7 +76,6 @@ class AppearanceSettingsScreen(
         val navigator = LocalNavigator.currentOrThrow
         val s = cpStrings()
         val themeMode by AppModel.themeModeFlow.collectAsState()
-        val currentLanguage by AppModel.appLanguageFlow.collectAsState()
         val colorSource by AppModel.colorSourceFlow.collectAsState()
         val pureBlack by AppModel.pureBlackFlow.collectAsState()
         val bottomBarAutoHide by AppModel.bottomBarAutoHideFlow.collectAsState()
@@ -85,99 +87,73 @@ class AppearanceSettingsScreen(
         val googleSansEnabled = fontFaceEnabled[cp.player.app.ui.theme.AppFontFace.GOOGLE_SANS_FLEX] ?: true
         val platformAvailable = isPlatformColorSourceAvailable()
         val defaultRoundness = cp.player.app.platform.defaultFontRoundness()
+        val isDark = LocalIsDarkTheme.current
 
-        val availableSources = remember(platformAvailable) {
-            ColorSource.entries.filter { it != ColorSource.PLATFORM || platformAvailable }
-        }
-
-        // 拖动中的临时值：松手前只改显示，不写盘（桌面设置存储是全量回写，边拖边写打爆 IO）。
-        // -1 表示不在拖动中。
+        // 拖动中的临时值：松手前只改显示，不写盘
         var draggingRoundness by remember { mutableIntStateOf(-1) }
         val displayedRoundness = if (draggingRoundness >= 0) draggingRoundness
         else fontRoundness ?: defaultRoundness
 
+        val themeSummary = remember(themeMode, pureBlack, colorSource, s) {
+            val modeStr = themeMode.displayName(s)
+            val pureBlackStr = if (pureBlack) " · 纯黑已开启" else ""
+            val colorStr = " · " + colorSource.displayName(s)
+            "$modeStr$pureBlackStr$colorStr"
+        }
+
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
             SettingsPage(pageModifier) {
-                // 界面语言首选项（就地切换，整合设置项无需单开全屏二级页）
-                SettingsSection(s.language.screenTitle) {
-                    SettingsSegmentedItem(
-                        title = s.language.screenTitle,
-                        subtitle = currentLanguage.displayName(s),
-                        icon = Icons.Filled.Language,
-                        options = AppLanguage.entries.map { it.displayName(s) },
-                        selectedIndex = AppLanguage.entries.indexOf(currentLanguage).coerceAtLeast(0),
-                        onSelect = { index ->
-                            AppLanguage.entries.getOrNull(index)?.let(AppModel::setAppLanguage)
-                        },
+                // 顶部 Android 16 原生拟真手机机身与日月天体动效预览卡片
+                DarkThemePhonePreviewCard(
+                    isDark = isDark,
+                    pureBlack = pureBlack,
+                    colorSource = colorSource,
+                    allowInteractiveToggle = true,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+
+                // 1. 显示与色彩（二级菜单入口）
+                SettingsSection(s.appearance.sectionLook) {
+                    SettingsClickItem(
+                        title = "深色主题与配色",
+                        subtitle = themeSummary,
+                        icon = Icons.Filled.Palette,
+                        showChevron = true,
                         index = 0,
                         total = 1,
+                        modifier = Modifier.settingsSearchTarget("appearance_theme_mode", targetSettingId),
+                        onClick = { navigator.push(DarkThemeSettingsScreen()) },
                     )
                 }
 
-                // ⚠️ 本组所有行的 `total` 必须**同为组内行数**（分段圆角按 index/total
-                // 算首/中/末段）。此处曾出现 segmented 行写 `total = 3`、开关行写 `total = 4`
-                // 的分叉 —— 加/减行时会错出圆角。增删行时一起改。
-                SettingsSection(s.appearance.sectionLook) {
-                    SettingsSegmentedItem(
-                        title = s.appearance.themeMode,
-                        modifier = Modifier.settingsSearchTarget("appearance_theme_mode", targetSettingId),
-                        options = ThemeMode.entries.map { it.displayName(s) },
-                        selectedIndex = ThemeMode.entries.indexOf(themeMode).coerceAtLeast(0),
-                        onSelect = { index ->
-                            ThemeMode.entries.getOrNull(index)?.let(AppModel::setThemeMode)
-                        },
-                        index = 0,
-                        total = 7,
-                    )
-                    SettingsSegmentedItem(
-                        title = s.appearance.colorSource,
-                        modifier = Modifier.settingsSearchTarget("appearance_color_source", targetSettingId),
-                        options = availableSources.map { it.displayName(s) },
-                        selectedIndex = availableSources.indexOf(colorSource).coerceAtLeast(0),
-                        onSelect = { index ->
-                            availableSources.getOrNull(index)?.let(AppModel::setColorSource)
-                        },
-                        index = 1,
-                        total = 7,
-                    )
-                    SettingsSwitchItem(
-                        title = s.appearance.pureBlack,
-                        modifier = Modifier.settingsSearchTarget("appearance_pure_black", targetSettingId),
-                        subtitle = s.appearance.pureBlackNote,
-                        checked = pureBlack,
-                        onCheckedChange = AppModel::setPureBlack,
-                        index = 2,
-                        total = 7,
-                    )
-                    // 窄屏布局才有底栏；桌面宽屏走侧栏，这项开着也无副作用。
-                    SettingsSwitchItem(
-                        title = s.appearance.autoHideBottomBar,
-                        modifier = Modifier.settingsSearchTarget("appearance_auto_hide_bottom_bar", targetSettingId),
-                        subtitle = s.appearance.autoHideBottomBarNote,
-                        checked = bottomBarAutoHide,
-                        onCheckedChange = AppModel::setBottomBarAutoHide,
-                        index = 3,
-                        total = 7,
-                    )
+                // 2. 界面与交互动效
+                SettingsSection("动效与交互") {
                     SettingsSwitchItem(
                         title = s.appearance.coverFlight,
                         modifier = Modifier.settingsSearchTarget("appearance_cover_flight", targetSettingId),
                         subtitle = s.appearance.coverFlightNote,
                         checked = coverFlightAnimation,
                         onCheckedChange = AppModel::setCoverFlightAnimation,
-                        index = 4,
-                        total = 7,
+                        index = 0,
+                        total = 4,
                     )
-                    // 与「封面飞行动画」同属「播放页的视觉特效」，所以放同一组而不是
-                    // 播放设置页：用户找它时的心理位置是「界面长什么样」，不是「怎么播」。
                     SettingsSwitchItem(
                         title = s.appearance.fluidBackground,
                         modifier = Modifier.settingsSearchTarget("appearance_fluid_background", targetSettingId),
                         subtitle = s.appearance.fluidBackgroundNote,
                         checked = fluidBackground,
                         onCheckedChange = AppModel::setFluidBackground,
-                        index = 5,
-                        total = 7,
+                        index = 1,
+                        total = 4,
+                    )
+                    SettingsSwitchItem(
+                        title = s.appearance.autoHideBottomBar,
+                        modifier = Modifier.settingsSearchTarget("appearance_auto_hide_bottom_bar", targetSettingId),
+                        subtitle = s.appearance.autoHideBottomBarNote,
+                        checked = bottomBarAutoHide,
+                        onCheckedChange = AppModel::setBottomBarAutoHide,
+                        index = 2,
+                        total = 4,
                     )
                     SettingsSwitchItem(
                         title = s.appearance.showSongAlbum,
@@ -185,10 +161,12 @@ class AppearanceSettingsScreen(
                         subtitle = s.appearance.showSongAlbumNote,
                         checked = showSongAlbum,
                         onCheckedChange = AppModel::setShowSongAlbum,
-                        index = 6,
-                        total = 7,
+                        index = 3,
+                        total = 4,
                     )
                 }
+
+                // 3. 字体排版与几何形态
                 SettingsSection(s.appearance.sectionFont) {
                     SettingsSliderItem(
                         title = s.appearance.fontRoundness,
@@ -212,7 +190,6 @@ class AppearanceSettingsScreen(
                         index = 0,
                         total = if (fontRoundness != null) 2 else 1,
                     )
-                    // 「恢复默认」只在用户自定义过之后出现：默认状态下它是个死按钮。
                     if (fontRoundness != null) {
                         SettingsButtonItem(
                             text = s.appearance.resetPlatformDefault,
@@ -226,10 +203,7 @@ class AppearanceSettingsScreen(
                     }
                 }
                 SettingsNote(s.appearance.roundnessNote)
-                // 字库：每款字体独立开关；桌面端内置，Android 提供中日文字体的下载 / 删除。
-                // 与上面的「字体圆滑度」同属「字体长什么样」，所以放在同一页而不是单开一页。
                 FontPacksSection(targetSettingId = targetSettingId)
-                SettingsNote(colorSource.description(s, platformAvailable))
 
                 if (!cp.player.app.platform.isAndroidPlatform() && cp.player.app.version.AppVersion.isDebugBuild) {
                     SettingsSection("布局与视图预览") {

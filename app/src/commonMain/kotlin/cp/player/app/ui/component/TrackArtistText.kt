@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import cp.player.app.ui.theme.AppFontFace
 import cp.player.app.ui.theme.AppFontFamilies
@@ -54,8 +55,9 @@ fun TrackArtistText(
     style: TextStyle = MaterialTheme.typography.bodyMedium,
     color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     maxLines: Int = 1,
+    textAlign: TextAlign? = null,
 ) {
-    val textStyle = style.copy(color = color)
+    val textStyle = style.copy(color = color, textAlign = textAlign ?: style.textAlign)
     val resolvedStyle = textStyle.localizedForLanguage(track.artist)
     val artists = track.artists
     // 退化 1 / 2 / 3：整串纯文本，连点击区都不挂。
@@ -66,6 +68,7 @@ fun TrackArtistText(
             modifier = modifier,
             style = resolvedStyle,
             maxLines = maxLines,
+            textAlign = textAlign,
         )
         return
     }

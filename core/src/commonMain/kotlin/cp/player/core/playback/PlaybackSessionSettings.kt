@@ -71,4 +71,89 @@ object PlaybackSessionSettings {
     fun preloadNextEnabled(storage: SettingsStorage): Boolean =
         storage.getString(KEY_PRELOAD_NEXT)?.toBooleanStrictOrNull()
             ?: DEFAULT_PRELOAD_NEXT
+
+    // ============ 打开软件自动播放 ============
+
+    /**
+     * 自动播放模式开关键。
+     *
+     * 值见 [AutoPlayMode.storageKey]。缺失时默认 [DEFAULT_AUTO_PLAY_MODE] (关闭)。
+     */
+    const val KEY_AUTO_PLAY_MODE = "playback_auto_play_mode"
+
+    const val AUTO_PLAY_MODE_OFF = "off"
+    const val AUTO_PLAY_MODE_CONTINUE = "continue"
+    const val AUTO_PLAY_MODE_DAILY = "daily"
+    const val AUTO_PLAY_MODE_CUSTOM = "custom"
+
+    val DEFAULT_AUTO_PLAY_MODE = AutoPlayMode.OFF
+
+    /** 读取打开软件自动播放模式。 */
+    fun autoPlayMode(storage: SettingsStorage): AutoPlayMode =
+        AutoPlayMode.of(storage.getString(KEY_AUTO_PLAY_MODE))
+
+    /**
+     * 自动播放指定目标类型键。
+     *
+     * 值见 [AutoPlayCustomType.storageKey]。默认 [DEFAULT_AUTO_PLAY_CUSTOM_TYPE] (歌单)。
+     */
+    const val KEY_AUTO_PLAY_CUSTOM_TYPE = "playback_auto_play_custom_type"
+
+    const val AUTO_PLAY_CUSTOM_TYPE_PLAYLIST = "playlist"
+    const val AUTO_PLAY_CUSTOM_TYPE_TRACK = "track"
+
+    val DEFAULT_AUTO_PLAY_CUSTOM_TYPE = AutoPlayCustomType.PLAYLIST
+
+    /** 读取自动播放指定目标类型。 */
+    fun autoPlayCustomType(storage: SettingsStorage): AutoPlayCustomType =
+        AutoPlayCustomType.of(storage.getString(KEY_AUTO_PLAY_CUSTOM_TYPE))
+
+    /** 自动播放指定目标 ID 键（歌单 resourceId 或单曲 ID）。 */
+    const val KEY_AUTO_PLAY_CUSTOM_ID = "playback_auto_play_custom_id"
+
+    /** 读取自动播放指定目标 ID。 */
+    fun autoPlayCustomId(storage: SettingsStorage): String =
+        storage.getString(KEY_AUTO_PLAY_CUSTOM_ID).orEmpty()
+
+    /** 自动播放指定目标展示名称键。 */
+    const val KEY_AUTO_PLAY_CUSTOM_TITLE = "playback_auto_play_custom_title"
+
+    /** 读取自动播放指定目标展示名称。 */
+    fun autoPlayCustomTitle(storage: SettingsStorage): String =
+        storage.getString(KEY_AUTO_PLAY_CUSTOM_TITLE).orEmpty()
 }
+
+/**
+ * 打开软件自动播放模式。
+ */
+enum class AutoPlayMode(val storageKey: String) {
+    /** 关闭自动播放（默认）。 */
+    OFF(PlaybackSessionSettings.AUTO_PLAY_MODE_OFF),
+    /** 继续上次播放。 */
+    CONTINUE(PlaybackSessionSettings.AUTO_PLAY_MODE_CONTINUE),
+    /** 每日推荐。 */
+    DAILY(PlaybackSessionSettings.AUTO_PLAY_MODE_DAILY),
+    /** 指定歌单或单曲。 */
+    CUSTOM(PlaybackSessionSettings.AUTO_PLAY_MODE_CUSTOM);
+
+    companion object {
+        fun of(key: String?): AutoPlayMode =
+            entries.firstOrNull { it.storageKey == key } ?: OFF
+    }
+}
+
+/**
+ * 自动播放指定目标的类型：歌单或单曲。
+ */
+enum class AutoPlayCustomType(val storageKey: String) {
+    /** 歌单。 */
+    PLAYLIST(PlaybackSessionSettings.AUTO_PLAY_CUSTOM_TYPE_PLAYLIST),
+    /** 单曲。 */
+    TRACK(PlaybackSessionSettings.AUTO_PLAY_CUSTOM_TYPE_TRACK);
+
+    companion object {
+        fun of(key: String?): AutoPlayCustomType =
+            entries.firstOrNull { it.storageKey == key } ?: PLAYLIST
+    }
+}
+

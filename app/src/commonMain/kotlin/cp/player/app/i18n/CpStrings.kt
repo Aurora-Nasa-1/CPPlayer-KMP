@@ -529,6 +529,26 @@ interface PlaybackStrings {
     fun sleepRemaining(minutes: Long): String
     val sleepOff: String
 
+    val sectionAutoPlay: String
+    val autoPlayMode: String
+    val autoPlayModeNote: String
+    val autoPlayModeOff: String
+    val autoPlayModeContinue: String
+    val autoPlayModeDaily: String
+    val autoPlayModeCustom: String
+    val autoPlayCustomTarget: String
+    val autoPlayCustomTargetEmpty: String
+    val autoPlayCustomDialogTitle: String
+    val autoPlayPickFromPlaylists: String
+    val autoPlayUseCurrentSong: String
+    val autoPlayUseCurrentPlaylist: String
+    val autoPlayManualInput: String
+    val autoPlayTypePlaylist: String
+    val autoPlayTypeTrack: String
+    val autoPlayInputIdPlaceholder: String
+    val autoPlayInputTitlePlaceholder: String
+    val autoPlayClearTarget: String
+
     val sectionLastPlayback: String
     val keepLastPlayback: String
     val keepLastPlaybackNote: String
