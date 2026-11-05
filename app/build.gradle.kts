@@ -60,8 +60,6 @@ val cpPackageName = "CPPlayer"
 // 拖动跟手**。选择点是 Compose 内部的
 // `com.jetbrains.JBR.isWindowMoveSupported()` 二选一（已 javap 核实），应用侧改不了。
 //
-// 方案 / 来源 / 校验 / 风险 / 验收清单见 `docs/dev/JBR_PACKAGING.md`，这里只做落地。
-//
 // ⚠️ 三条硬约束：
 //   1. **版本钉死 21**（不是 JBR 25）：`:app` 的 desktop `jvmTarget` 就是 JVM_21，
 //      「换厂商」和「升主版本」必须分成两件事做，捆在一起出问题没法二分。
@@ -563,8 +561,7 @@ compose.desktop {
         } else {
             logger.lifecycle(
                 "CPPlayer: JBR 未启用 —— 将使用当前 JDK 打运行时。" +
-                    "如需启用：-Pcp.jbrDownload=true 或 -Pcp.jbrHome=<dir>" +
-                    "（见 docs/dev/JBR_PACKAGING.md）。",
+                    "如需启用：-Pcp.jbrDownload=true 或 -Pcp.jbrHome=<dir>。",
             )
         }
 

@@ -22,7 +22,6 @@
 | [PROVIDER_DEV_GUIDE.md](dev/PROVIDER_DEV_GUIDE.md) | **音源插件开发完整参考手册** | 全部宿主标准端点参考（apiMap 键名清单）、健康监控、打包与调试 |
 | [MANIFEST_REFERENCE.md](dev/MANIFEST_REFERENCE.md) | **manifest.json 单一事实源规范** | 音源 manifest 全字段、capabilities 语义、响应码表、音质档位、设置表单与更新机制（各指南冲突时以本文为准） |
 | [LYRICS_PLUGIN_DEV_GUIDE.md](dev/LYRICS_PLUGIN_DEV_GUIDE.md) | **歌词源插件（Lyrico / Rhino）开发指南** | 为无歌词曲目接入 TTML/逐字歌词源；独立 manifest schema、宿主 JS API、生命周期与调试 |
-| [PLUGIN_REPOSITORY_DESIGN.md](dev/PLUGIN_REPOSITORY_DESIGN.md) | **插件中心与仓库协议 v1** | 已实现的目录格式、一键安装、来源绑定、回滚与联网更新规则 |
 
 ### 核心架构与生态集成
 
@@ -37,9 +36,6 @@
 | 文档 | 说明 |
 |------|------|
 | [RELEASE.md](dev/RELEASE.md) | 发布流程、版本号规范与产物校验 |
-| [WINDOWS_PACKAGING.md](dev/WINDOWS_PACKAGING.md) | Windows 端 Velopack 安装包与自动更新机制 |
-| [LINUX_PACKAGING.md](dev/LINUX_PACKAGING.md) | Linux tar.gz 与 AUR (`cpplayer-bin`) 发布 |
-| [JBR_PACKAGING.md](dev/JBR_PACKAGING.md) | 桌面端 JetBrains Runtime (JBR) 打包与窗口装饰 |
 
 ---
 

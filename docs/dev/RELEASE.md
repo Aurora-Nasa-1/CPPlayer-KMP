@@ -107,8 +107,6 @@ Windows **no longer ships an MSI**. jpackage only produces the app image (`:app:
 | `CPPlayer-<version>-win-full.nupkg` + `RELEASES` | update feed consumed by Velopack |
 | `CPPlayer-<version>-win-portable.zip` | unzip-and-run, mirrors the Linux tar.gz |
 
-Why the switch, how the update feed is wired, and what still needs doing are in [`WINDOWS_PACKAGING.md`](WINDOWS_PACKAGING.md).
-
 Consequently `nativeDistributions.windows { ... }` now carries only `iconFile` — `shortcut` / `menu` / `perUserInstall` / `dirChooser` / `upgradeUuid` were MSI-only and have been removed.
 
 ### Bundled runtime: JetBrains Runtime (JBR)
@@ -118,8 +116,7 @@ The desktop packages ship **JBR** instead of temurin, so `WindowDraggableArea` u
 software movement. `compose.desktop.application.javaHome` points at a pinned JBR that CI downloads
 and sha256-checks before `gradlew` runs; `actions/setup-java` (temurin) is **still required** — it
 drives the Gradle daemon, compilation and tests, while JBR is only the runtime baked into the
-artifact. Version, source channel, checksums, the two hit-testing risks, and the full acceptance
-checklist live in [`JBR_PACKAGING.md`](JBR_PACKAGING.md).
+artifact. Version, source channel, and checksums are configured in `app/build.gradle.kts`.
 
 `-Pcp.jbrHome=<dir>` selects an existing runtime; `-Pcp.jbrDownload=true` downloads it on demand
 (off by default, so a plain local build is unaffected). When neither resolves, the build proceeds
