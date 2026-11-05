@@ -66,14 +66,15 @@ kotlin {
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.json)
+            implementation(libs.quickjs)
         }
         jvmMain.dependencies {
             implementation(libs.ktor.client.okhttp)
             // 本地服务器（REST 控制 API）——Ktor CIO，Android 与 Desktop 共用
             implementation(libs.ktor.server.core)
             implementation(libs.ktor.server.cio)
-            // 歌词源插件的 JS 运行时（Lyrico Plugin API 宿主）。Android 与桌面共用。
-            implementation(libs.rhino)
+            // JNA 本地库调用（Android 与 Desktop 共用）
+            implementation(libs.jna)
         }
         androidMain.dependencies {
             implementation(libs.kotlinx.coroutines.android)

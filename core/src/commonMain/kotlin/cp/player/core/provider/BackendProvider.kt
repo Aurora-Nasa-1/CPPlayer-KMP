@@ -207,7 +207,7 @@ interface BackendProvider {
      * @param path 音频文件路径
      * @return JSON 格式的分析结果
      */
-    fun analyzeAudio(path: String): String
+    fun analyzeAudio(path: String): String = """{"code": 500, "msg": "Not supported"}"""
 
     /**
      * 检查 Provider 是否已就绪，可以正常提供服务。
@@ -233,8 +233,10 @@ interface BackendProvider {
  * Provider 实现类型枚举。
  */
 enum class ProviderType {
-    /** JNI 本地库（C/C++/Rust 编写的 .so 文件） */
+    /** JNI 本地库（C/C++/Rust 编写的 .so 文件，标准 JNI 命名） */
     JNI,
+    /** JNA 本地库（C/C++/Rust 动态共享库，标准 C 调用规范） */
+    JNA,
     /** 独立可执行文件（通过 HTTP 与 CPPlayer 通信） */
     BINARY,
     /** WebSocket 通信（预留） */

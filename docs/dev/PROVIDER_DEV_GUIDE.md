@@ -137,14 +137,8 @@ Content-Type: application/json
 
 > ⚠️ **Android 平台限制与规范说明**：  
 > Android 系统的安全机制（W^X、SELinux、私有数据目录挂载 `noexec`）严格禁止在应用数据目录下执行任何独立二进制文件（`ProcessBuilder` / `exec` 均会被系统拦截并报 `error=13 Permission denied`）。  
-> 因此 **Android 端不支持运行独立 binary**。  
-> **Android 原生模块规范已全面提升至运行 `.so`（通过 JNI 动态加载）**。  
-> 
-> **自动规范提升机制**：  
-> 若跨平台模块在 `manifest.json` 中声明为 `type: "binary"`，宿主在 Android 端（或入口为动态库时）会自动提升该模块规范至运行 `.so`：  
-> 1. 加载器优先探测当前设备 ABI 对应的 `.so` 动态库（支持 `lib<entryPoint>.so`、`<entryPoint>.so` 或 `lib/<abi>/` 下的动态库）；  
-> 2. 若找到兼容的 `.so`，自动转换为 `JniProvider` 运行并加载入进程（若该 `.so` 导出了 `startNativeServer` 启动 HTTP 端口且未实现 `nativeCallApi`，宿主亦会自动降级走 HTTP 回环）；  
-> 3. 若 Android 端未找到任何兼容架构的 `.so` 动态库，则明确拦截并报错提示，防止无意义的进程启动崩溃。
+> 因此 **Android 端严格拒收独立 binary 模块**。若在 Android 端导入或扫描到 `type: "binary"` 模块，宿主会直接拦截并提示拒绝。  
+> **Android 原生模块规范必须打包为 `.so` 动态共享库（通过 `type: "jni"` 或 `type: "jna"` 加载）**。
 
 **要求：**
 
@@ -158,7 +152,7 @@ Content-Type: application/json
 | 属性           | 说明                                                                            |
 | ------------ | ----------------------------------------------------------------------------- |
 | `type`       | `"jni"`                                                                       |
-| `entryPoint` | Native 库文件名：`"libncm.so"`（Linux）、`"ncm.dll"`（Windows）、`"libncm.dylib"`（macOS） |
+| `entryPoint` | Native 库文件名：`"libncm.so"`（Linux/Android）、`"ncm.dll"`（Windows）、`"libncm.dylib"`（macOS） |
 
 **必须导出的 JNI 函数：**
 
@@ -191,14 +185,58 @@ Java_cp_player_core_provider_JniProvider_analyzeAudioFile(
 > Rust 侧用 `#[no_mangle] pub extern "system" fn ...` 直接写死符号名，  
 > 参见 `reference/netease-module-rust/src/util/jni.rs`。
 
-### 3.4 ~~Internal Provider（内置音源）~~（已移除）
+### 3.4 JNA Provider
 
-> **历史沿革**：曾存在 `type: "internal"`（别名 `"kotlin"` / `"builtin"`）的内置 Provider  
-> 通道，实现写在宿主 App 内（如 `MiguProvider.kt` 咪咕音源），随 APK / 桌面包分发、  
-> 一次实现覆盖全部 ABI。现已随 `MiguProvider` 一并从宿主移除——音源适配统一走  
-> `http`（托管服务）或 `binary`（独立可执行）两种外部模块形态，  
-> 适配代码放在宿主仓库之外（如 miguMusic-api 项目的 CPPlayer 模块包）。  
-> 导入旧 `internal` 模块 zip 会在创建 Provider 时静默失败（返回 null）。
+| 属性           | 说明                                                                            |
+| ------------ | ----------------------------------------------------------------------------- |
+| `type`       | `"jna"`                                                                       |
+| `entryPoint` | Native 动态库文件名：`"libncm.so"`（Linux/Android）、`"ncm.dll"`（Windows）、`"libncm.dylib"`（macOS） |
+| 支持平台     | **Desktop（Windows / Linux / macOS）与 Android（全架构）**                      |
+
+JNA Provider 通过标准 C ABI（`extern "C"`）动态加载与调用原生库，开发者**无需处理 JNIEnv、jstring 与复杂的 JNI 符号命名绑定**。
+
+**导出的 C ABI 函数：**
+
+```c
+// 1. API 调用（核心）
+// 输入方法名与 JSON 参数，返回指向以 '\0' 结尾的 UTF-8 字符串指针
+const char* call_api(const char* method, const char* paramsJson);
+
+// 2. 内存释放（强烈建议导出）
+// 宿主在读取完 call_api 返回的字符串后，会自动调用此函数释放 Native 分配的堆内存，避免内存泄漏
+void free_string(char* ptr);
+
+// 3. 启动本地服务（可选）
+// 若动态库内部通过 Rust/C++ 启动了本地 HTTP 服务（如 axum / tiny_http / httplib），
+// 可通过此函数接收宿主分配的端口并拉起后台服务
+int start_server(const char* host, int port);
+```
+
+> 💡 **“JNA 引导 + 本地 HTTP 服务” 模式**：  
+> 如果你已有基于 HTTP 的二进制服务代码，并希望在 Android 端运行而不愿重构业务为内存 FFI 调用，只需编译为 `.so` 并导出 `start_server(host, port)` 启动你的 HTTP 服务。宿主在发现未导出 `call_api` 时，**会自动转走 HTTP 回环请求（`POST http://127.0.0.1:{port}/api/{method}`）**，与 Desktop Binary 通信契约完全一致！
+
+**Rust 实现示例：**
+
+```rust
+use std::ffi::{CStr, CString};
+use std::os::raw::c_char;
+
+#[no_mangle]
+pub extern "C" fn call_api(method: *const c_char, params_json: *const c_char) -> *mut c_char {
+    let method_str = unsafe { CStr::from_ptr(method).to_str().unwrap_or("") };
+    let params_str = unsafe { CStr::from_ptr(params_json).to_str().unwrap_or("{}") };
+    
+    let result_json = handle_request(method_str, params_str);
+    CString::new(result_json).unwrap().into_raw()
+}
+
+#[no_mangle]
+pub extern "C" fn free_string(ptr: *mut c_char) {
+    if !ptr.is_null() {
+        unsafe { drop(CString::from_raw(ptr)) };
+    }
+}
+```
 
 ---
 

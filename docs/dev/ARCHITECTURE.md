@@ -31,7 +31,7 @@
 负责全部音乐领域能力的跨平台实现。**规则：严禁包含任何 UI 代码（Compose 组件、Screen、ScreenModel 等）。**
 
 - `api/`：音乐 API 契约常量、`MusicApiService` 容灾调度。
-- `provider/`：音源插件系统（`BackendProvider`、`ModuleManifest`、`ProviderManager`、`ModuleManager`，支持 HTTP / Binary / JNI；Android 端不支持独立 binary，原生模块规范提升至运行 `.so`）。
+- `provider/`：音源插件系统（`BackendProvider`、`ModuleManifest`、`ProviderManager`、`ModuleManager`，支持 HTTP / Binary / JNI / JNA / Script；Android 端严格拒收 binary 模块，原生模块须使用动态库 `.so` 并声明为 JNI 或 JNA）。
 - `lyrics/` / `lyricsplugin/`：歌词引擎与 Lyrico 歌词插件系统。
 - `cache/`：`CachedMusicApiService`（读透缓存 + 写失效 + 多 Provider 容灾）、`Fingerprinter`、`ApiCache`。
 - `playback/`：`PlaybackController`（播放队列、seek、切歌、歌词同步）、`PlatformPlayer` 抽象。
@@ -80,7 +80,7 @@ commonMain  ──▶  jvmMain  ──▶  { androidMain, desktopMain }
 | 源集 | 适用代码 | 禁止放置 |
 |------|----------|----------|
 | `commonMain` | 纯跨平台业务逻辑、`expect` 抽象、Ktor 客户端、领域模型 | 任何特定平台专有 API (`java.*`, `android.*`) |
-| `jvmMain` | Android 与 Desktop 共用的 JVM 基础设施（Socket、Zip 归档、ELF 解析、Ktor CIO 服务端、Rhino JS 引擎） | 仅在 Android 或仅在 Desktop 存在的专有代码 |
+| `jvmMain` | Android 与 Desktop 共用的 JVM 基础设施（Socket、Zip 归档、ELF 解析、Ktor CIO 服务端、QuickJS 脚本引擎） | 仅在 Android 或仅在 Desktop 存在的专有代码 |
 | `androidMain` | Android 专有能力（`Context`、`SharedPreferences`、Media3、JNI 动态链接） | 桌面端同样需要的通用实现 |
 | `desktopMain` | Desktop 专有能力（`~/.cpplayer` 运行时配置目录、桌面窗口吸附、WASAPI / Rodio 音频引擎、系统托盘） | Android 同样需要的实现 |
 

@@ -23,8 +23,8 @@
 | `id` | String | ✅ | — | 唯一全局标识（如 `netease`、`qqmusic-rs`）。**更新匹配**按同 id 或同 name 判定（`ModuleManager` L134-152）；id 变更会清掉旧模块目录（L169-176） |
 | `name` | String | ✅ | — | 显示名（音源管理页、登录页） |
 | `version` | String | ✅ | — | 语义化版本号 |
-| `type` | String | ✅ | — | `"http"` / `"jni"` / `"binary"`。⚠️ `binary` **仅桌面端**；Android 端自动探测 `.so` 提升为 jni（`ProviderFactory` L31-46），探测不到则拒装 |
-| `entryPoint` | String | ✅ | — | http：基地址；jni：库文件名；binary：可执行文件名。jni 加载顺序：`lib/<abi>/<entryPoint>` → 根目录 → Android 单 `.so` 探测（`PlatformSupport` L268-308） |
+| `type` | String | ✅ | — | `"http"` / `"jni"` / `"jna"` / `"binary"` / `"script"`。⚠️ `binary` **仅桌面端**；Android 端严格拒收 `binary` 模块，导入与加载时直接拦截报错。Android 原生模块请编译为 `.so` 动态库并声明为 `"jni"` 或 `"jna"` |
+| `entryPoint` | String | ✅ | — | http：基地址；jni/jna：库文件名（`.so` / `.dll` / `.dylib`）；binary：可执行文件名。动态库加载顺序：`lib/<abi>/<entryPoint>` → 根目录 → Android 单 `.so` 探测（`PlatformSupport` L268-308） |
 | `apiMap` | Map<String,String> | 可选 | null | **key = 宿主内部标准方法名**（`cloudsearch`、`song/url/v1`、`lyric/new`…），**value = 你的端点**。查不到时按 key 原样请求（`ProviderManager.callApi` L143）。value 为 `"unsupported"` 时短路返回 `{"code":-1}`。完整方法名清单见 PROVIDER_DEV_GUIDE §7 |
 | `apiVersion` | Int | 可选 | **1** | 插件自身实现的插件 API 版本（宿主 `HOST_PROVIDER_API_VERSION = 3`）。**缺省必须是 1**：历史包没这字段，默认成 3 会把老包误判成新格式 |
 | `apiVersionTag` | String | 可选 | null | **接口代际标签**（自由字符串，如 `"netease-v3"` / `"v123"`）。**纯展示，不分支行为**：不拼 URL、不切解析、不作闸门，宿主不认识也照常加载。空白串等价于未声明。见 §2.1 |

@@ -28,19 +28,16 @@ actual object ProviderFactory {
                 settingsSchema = manifest.settingsSchema,
             )
             "binary" -> {
+                if (PlatformInfo.isAndroid) {
+                    // Android 端完全不支持独立二进制（ProcessBuilder / exec 受 W^X 与 SELinux 拦截），
+                    // Android 端严格拒收 binary 模块，原生模块须使用动态库（type: "jni" 或 "jna"）。
+                    println("[ProviderFactory] Android 端拒收 binary 模块: id=${manifest.id}")
+                    return null
+                }
                 val binPath = PlatformSupport.resolveEntryPoint(moduleDir, manifest.entryPoint, manifest.supportedAbis)
                 val isSharedLib = binPath.endsWith(".so") || binPath.endsWith(".dll") || binPath.endsWith(".dylib")
-                if (PlatformInfo.isAndroid || isSharedLib) {
-                    // Android 端完全不支持独立二进制（ProcessBuilder / exec 受 W^X 与 SELinux 拦截），
-                    // 规范全面提升至运行 .so 原生动态库。
-                    // 若解析出的入口为动态库（或在 Android 端解析到 .so），提升至 JniProvider 运行。
-                    if (PlatformSupport.exists(binPath) && binPath.endsWith(".so")) {
-                        println("[ProviderFactory] Android/Native 环境下将 binary 模块 [${manifest.id}] 规范提升至运行 .so: $binPath")
-                        createJniProvider(manifest, binPath)
-                    } else if (PlatformInfo.isAndroid) {
-                        println("[ProviderFactory] Android 端不支持独立 binary 且未找到兼容架构的 .so 库: id=${manifest.id}, binPath=$binPath")
-                        null
-                    } else if (PlatformSupport.exists(binPath) && isSharedLib) {
+                if (isSharedLib) {
+                    if (PlatformSupport.exists(binPath)) {
                         // 桌面端声明为 binary 但入口为动态库时同样提升至 JNI
                         createJniProvider(manifest, binPath)
                     } else {
@@ -70,6 +67,45 @@ actual object ProviderFactory {
                 val soPath = PlatformSupport.resolveEntryPoint(moduleDir, manifest.entryPoint, manifest.supportedAbis)
                 if (!PlatformSupport.exists(soPath)) null
                 else createJniProvider(manifest, soPath)
+            }
+            "jna" -> {
+                val soPath = PlatformSupport.resolveEntryPoint(moduleDir, manifest.entryPoint, manifest.supportedAbis)
+                if (!PlatformSupport.exists(soPath)) null
+                else JnaProvider(
+                    id = manifest.id,
+                    name = manifest.name,
+                    version = manifest.version,
+                    soPath = soPath,
+                    apiMap = manifest.apiMap,
+                    updateUrl = manifest.updateUrl,
+                    targetAppPackage = manifest.targetAppPackage,
+                    loginMethods = manifest.loginMethods,
+                    capabilities = caps,
+                    apiVersion = apiVersion,
+                    apiVersionTag = apiVersionTag,
+                    contract = manifest.contract,
+                    settingsSchema = manifest.settingsSchema,
+                )
+            }
+            "js", "script" -> {
+                val scriptPath = PlatformSupport.resolveEntryPoint(moduleDir, manifest.entryPoint, manifest.supportedAbis)
+                if (!PlatformSupport.exists(scriptPath)) null
+                else JsBackendProvider(
+                    id = manifest.id,
+                    name = manifest.name,
+                    version = manifest.version,
+                    scriptPath = scriptPath,
+                    moduleDir = moduleDir,
+                    apiMap = manifest.apiMap,
+                    updateUrl = manifest.updateUrl,
+                    targetAppPackage = manifest.targetAppPackage,
+                    loginMethods = manifest.loginMethods,
+                    capabilities = caps,
+                    apiVersion = apiVersion,
+                    apiVersionTag = apiVersionTag,
+                    contract = manifest.contract,
+                    settingsSchema = manifest.settingsSchema,
+                )
             }
             else -> null
         }

@@ -56,12 +56,8 @@ coil = "3.6.3"
 # 调用方给的 `fallback` Brush（见 `CpFluidBackground` 的 KDoc）。
 hypnoticcanvas = "0.6.0"
 sentry = "8.3.0"
-# Mozilla Rhino：纯 JVM 的 JavaScript 引擎，用于运行 Lyrico 格式的歌词源插件。
-# 选它而不是 Android 专有的 QuickJS wrapper 是因为本仓库要 Android 与桌面
-# **共用同一套宿主契约**，而 QuickJS 的 Android wrapper 在桌面 JVM 上不可用。
-# Rhino 支持插件实际用到的 ES5/ES2020 子集（globalThis / JSON / RegExp / Array 高阶函数）。
-# ⚠️ 版本需 ≥ 1.7.13 才有 globalThis；锁 1.7.15（1.7.x 线最后一个稳定版）。
-rhino = "1.7.15"
+# QuickJS-kt：支持 Android 与 JVM 桌面端的现代化 QuickJS KMP 引擎（ES2023、原生 async/await、协程支持）
+quickjs = "1.0.15"
 robolectric = "4.17"
 # —— 歌词对外投放（系统级歌词渠道）——
 # 这四个都是 AAR，且**只在 androidMain 用**：桌面端没有对应生态，commonMain 只留
@@ -179,7 +175,7 @@ composemediaplayer-audio = { module = "io.github.kdroidfilter:composemediaplayer
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
 hypnoticcanvas = { module = "com.mikepenz.hypnoticcanvas:hypnoticcanvas", version.ref = "hypnoticcanvas" }
-rhino = { module = "org.mozilla:rhino", version.ref = "rhino" }
+quickjs = { module = "io.github.dokar3:quickjs-kt", version.ref = "quickjs" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 # 词幕（Lyricon）：Provider API —— 词幕侧靠 manifest 的 lyricon_module 元数据发现本应用。
 lyricon-provider = { module = "io.github.proify.lyricon:provider", version.ref = "lyriconProvider" }
@@ -199,6 +195,7 @@ mp3spi = { module = "com.googlecode.soundlibs:mp3spi", version.ref = "mp3spi" }
 jflac-codec = { module = "org.jflac:jflac-codec", version.ref = "jflac" }
 jlayer = { module = "javazoom:jlayer", version.ref = "jlayer" }
 jmtc = { module = "io.github.selemba1000:JavaMediaTransportControls", version.ref = "jmtc" }
+jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
 sentry-android = { module = "io.sentry:sentry-android", version.ref = "sentry" }
 sentry-core = { module = "io.sentry:sentry", version.ref = "sentry" }

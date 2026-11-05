@@ -289,6 +289,13 @@ class ModuleManager(
                     "（需要 API ${manifest.resolvedMinHostApiVersion}，当前支持 ${HOST_PROVIDER_API_VERSION}）"
                 return null
             }
+
+            // Android 端严格拒收 binary 模块
+            if (PlatformInfo.isAndroid && manifest.type == "binary") {
+                PlatformSupport.deleteRecursively(tempDir)
+                lastLoadError = "Android 端拒收 binary 模块，原生模块请使用动态共享库（type: \"jni\" 或 \"jna\"）"
+                return null
+            }
             removePendingRepositoryUpdate(manifest.id)
             replacedId?.takeIf { it != manifest.id }?.let(::removePendingRepositoryUpdate)
 
@@ -395,8 +402,9 @@ class ModuleManager(
             if (provider == null) {
                 val reason = when (manifest.type) {
                     "jni" -> "缺少与当前平台 ABI 匹配的 native 库文件"
+                    "jna" -> "缺少与当前平台 ABI 匹配的动态库文件或 JNA 加载失败"
                     "binary" -> if (PlatformInfo.isAndroid) {
-                        "Android 端不支持独立二进制可执行文件 (binary)，需规范提升至与当前架构匹配的 .so 动态库"
+                        "Android 端拒收 binary 模块，原生模块请使用动态共享库（type: \"jni\" 或 \"jna\"）"
                     } else {
                         "二进制入口文件不存在或与当前平台 ABI 不匹配"
                     }

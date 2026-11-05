@@ -78,6 +78,26 @@ class ProviderFactoryElevationTest {
     }
 
     @Test
+    fun `ProviderFactory 在 type 为 jna 且存在 so 时创建 JnaProvider`() {
+        val abiDir = File(tempDir, "lib/x86_64").apply { mkdirs() }
+        File(abiDir, "libncm_jna.so").writeText("mock elf")
+
+        val manifest = ModuleManifest(
+            id = "test-jna",
+            name = "Test JNA Provider",
+            version = "1.0.0",
+            type = "jna",
+            entryPoint = "libncm_jna.so",
+            supportedAbis = listOf("x86_64")
+        )
+
+        val provider = ProviderFactory.create(manifest, tempDir.absolutePath)
+        assertNotNull(provider, "应成功创建 JNA Provider")
+        assertTrue(provider is JnaProvider, "type 为 jna 时应创建 JnaProvider，实际为: ${provider::class.simpleName}")
+        assertEquals(ProviderType.JNA, provider.type)
+    }
+
+    @Test
     fun `ProviderFactory 在桌面端常规二进制文件时创建 BinaryProvider`() {
         val binFile = File(tempDir, "my-server.exe").apply { writeText("mock binary") }
 
