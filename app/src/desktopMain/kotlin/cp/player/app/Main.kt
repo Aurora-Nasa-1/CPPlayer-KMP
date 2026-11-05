@@ -48,6 +48,7 @@ import cp.player.app.ui.component.TitleBarHeight
 import cp.player.app.ui.util.DesktopShell
 import cp.player.app.ui.util.next
 import cp.player.app.ui.util.popToMainShell
+import cp.player.app.warmup.AotWarmupRunner
 import cp.player.app.version.AppVersion
 import cp.player.core.MusicBackend
 import cp.player.core.music.TrackSummary
@@ -194,8 +195,14 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
             System.getProperty("cp.player.cdsDump") == "true"
         if (isAotWarmup) {
             LaunchedEffect(Unit) {
-                println("[CPPlayer] AOT 预热模式激活：正在执行 Compose 渲染树与核心状态预热...")
-                delay(2500L)
+                println("[CPPlayer] AOT 预热模式激活：正在执行全系统深度热点预热...")
+                AotWarmupRunner.runAllWarmups()
+                // 启动看门狗守护线程：防止 JVM 在关闭阶段因 JNI 线程挂起，在 12 秒后强制退出
+                kotlin.concurrent.thread(isDaemon = true, name = "AotWarmupExitWatchdog") {
+                    Thread.sleep(12000L)
+                    Runtime.getRuntime().halt(0)
+                }
+                delay(1000L)
                 println("[CPPlayer] 预热完成，正在优雅关闭应用以触发 AOTCache 归档生成 (JEP 514)...")
                 exitApplication()
                 delay(600L)

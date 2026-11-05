@@ -489,16 +489,19 @@ val compactHeadersArgs: List<String> = if (enableCompactHeaders) {
 // 全面替代传统 AppCDS：在预热阶段完成全部类元数据预加载、预校验与符号链接（Preparation & Linking），
 // 启动时 HotSpot 经操作系统 mmap 直装内存，跳过全部类加载与校验损耗，冷启动耗时大幅压低至 <800ms。
 //
-// 1. 若存在 packaging/jbr/app-aot.aot 预编译 AOT 缓存或配置了 -Pcp.aotCache/cp.aot=<path>：
-//    使用 -XX:AOTCache 挂载加速；
-// 2. 若配置了 -Pcp.aotRecord=true 或 -Pcp.aotOutput=<path>：
-//    利用 JDK 25 JEP 514 命令行工效学注入 -XX:AOTCacheOutput，一键单步录制并生成 AOT 缓存；
-// 3. 兼容旧属性：若配置了 -Pcp.cds=true，自动映射为 AOT Cache 加速模式。
+// ⚠️ 类路径隔离纪律：
+// 1. 生产打包镜像（createDistributable / packageWindowsVelopack）：类路径为 $APPDIR/*（即 app/*.jar）。
+//    其 AOT 归档固定存放在 packaging/jbr/app-aot.aot，通过 JEP 514 / generate-aot-cache 脚本基于 app/ 目录生成。
+// 2. 本地开发任务（desktopRun / runMobile 等）：类路径为 Gradle 构建 classes + ~/.gradle 缓存 jar。
+//    绝不能在 desktopRun 上盲目注入 packaging/jbr/app-aot.aot（否则必定因类路径不一致报 shared class paths mismatch）；
+//    本地开发如需 AOT 加速，使用 -Pcp.aotRecord=true 将其单步录制到 build/aot/desktop-dev.aot。
 // ---------------------------------------------------------------------------
+val productionAotArchiveFile: File = rootProject.layout.projectDirectory.file("packaging/jbr/app-aot.aot").asFile
+val devAotArchiveFile: File = layout.buildDirectory.file("aot/desktop-dev.aot").get().asFile
+
 val aotCacheProp = (findProperty("cp.aotCache") ?: rootProject.findProperty("cp.aotCache")
     ?: findProperty("cp.aot") ?: rootProject.findProperty("cp.aot")) as String?
-val aotArchiveFile: File = aotCacheProp?.let { File(it) }
-    ?: rootProject.layout.projectDirectory.file("packaging/jbr/app-aot.aot").asFile
+val explicitAotFile: File? = aotCacheProp?.let { File(it) }
 
 val aotOutputProp = (findProperty("cp.aotOutput") ?: rootProject.findProperty("cp.aotOutput")) as String?
 val aotRecordRequested: Boolean = ((findProperty("cp.aotRecord") ?: rootProject.findProperty("cp.aotRecord")) as String?) == "true" ||
@@ -507,21 +510,6 @@ val aotRecordRequested: Boolean = ((findProperty("cp.aotRecord") ?: rootProject.
 val legacyCdsRequested: Boolean = ((rootProject.findProperty("cp.cds") ?: findProperty("cp.cds")) as String?) == "true"
 if (legacyCdsRequested) {
     logger.lifecycle("CPPlayer: 检测到 -Pcp.cds=true，AppCDS 已由 Project Leyden AOT Cache (JEP 483 / 514) 完全替代，已自动切换为 AOT Cache 加速。")
-}
-val enableAotCache: Boolean = aotArchiveFile.isFile || aotCacheProp != null || legacyCdsRequested
-
-val aotJvmArgs: List<String> = when {
-    aotRecordRequested -> {
-        val targetOutput = aotOutputProp?.let { File(it) } ?: aotArchiveFile
-        listOf(
-            "-XX:AOTCacheOutput=${targetOutput.absolutePath}",
-            "-Dcp.player.aotWarmup=true",
-        )
-    }
-    enableAotCache && aotArchiveFile.isFile -> {
-        listOf("-XX:AOTCache=${aotArchiveFile.absolutePath}")
-    }
-    else -> emptyList()
 }
 
 val previewJvmArgs: List<String> = if (isJdk25OrNewer) listOf("--enable-preview") else emptyList()
@@ -535,7 +523,7 @@ val desktopCommonJvmArgs = (listOf(
     "-Dcp.player.versionCode=$appVersionCode",
     "-Dcp.player.releaseChannel=$appReleaseChannel",
     "-Dcp.player.gitSha=$gitSha",
-) + previewJvmArgs + gcJvmArgs + compactHeadersArgs + aotJvmArgs).distinct()
+) + previewJvmArgs + gcJvmArgs + compactHeadersArgs).distinct()
 
 compose.desktop {
     application {
@@ -543,8 +531,9 @@ compose.desktop {
 
         val aotStatus = when {
             aotRecordRequested -> "AOTCacheOutput (Record)"
-            aotArchiveFile.isFile -> "AOTCache (${aotArchiveFile.name})"
-            enableAotCache -> "AOTCache (File not found)"
+            explicitAotFile?.isFile == true -> "AOTCache (${explicitAotFile.name})"
+            devAotArchiveFile.isFile -> "AOTCache (Dev: ${devAotArchiveFile.name})"
+            productionAotArchiveFile.isFile -> "AOTCache (Production: ${productionAotArchiveFile.name})"
             else -> "None"
         }
         logger.lifecycle("CPPlayer: 桌面端 JVM 调优模式: GC=$chosenGc, CompactHeaders=$enableCompactHeaders, Acceleration=$aotStatus, JDK25+=$isJdk25OrNewer")
@@ -744,17 +733,19 @@ val packageLinuxTarGz = tasks.register<Tar>("packageLinuxTarGz") {
             "createDistributable 产物布局不符合预期（缺 bin/ 或 lib/runtime/）：${appDir.absolutePath}\n" +
                 "若 compose 插件改了输出目录，请按本任务上方注释里的出处同步更新路径。"
         }
-        if (aotArchiveFile.isFile) {
+        val targetAot = explicitAotFile ?: productionAotArchiveFile
+        if (targetAot.isFile) {
             val linuxAppDir = appDir.resolve("lib/app")
             if (linuxAppDir.isDirectory) {
-                val linuxDest = linuxAppDir.resolve(aotArchiveFile.name)
-                aotArchiveFile.copyTo(linuxDest, overwrite = true)
+                val linuxDest = linuxAppDir.resolve(targetAot.name)
+                targetAot.copyTo(linuxDest, overwrite = true)
                 val cfgFile = linuxAppDir.resolve("$cpPackageName.cfg")
                 if (cfgFile.isFile) {
                     val text = cfgFile.readText()
-                    val aotOption = "java-options=-XX:AOTCache=\$APPDIR/${aotArchiveFile.name}"
+                    val aotOption = "java-options=-XX:AOTCache=\$APPDIR/${targetAot.name}"
+                    val safeReplacement = Regex.escapeReplacement(aotOption)
                     val updated = if (text.contains("-XX:AOTCache=")) {
-                        text.replace(Regex("java-options=-XX:AOTCache=[^\r\n]+"), aotOption)
+                        text.replace(Regex("java-options=-XX:AOTCache=[^\r\n]+"), safeReplacement)
                     } else if (text.contains("[JavaOptions]")) {
                         text.replace("[JavaOptions]", "[JavaOptions]\n$aotOption")
                     } else {
@@ -902,17 +893,19 @@ val packageWindowsVelopack = tasks.register<Exec>("packageWindowsVelopack") {
         }
 
         // 若存在预生成的 AOT Cache 归档（JEP 483 / 514），一并复制进应用镜像以供生产加速，并修复 CPPlayer.cfg 相对路径
-        if (aotArchiveFile.isFile) {
-            val appDest = appDir.resolve("app/${aotArchiveFile.name}")
-            aotArchiveFile.copyTo(appDest, overwrite = true)
+        val targetAot = explicitAotFile ?: productionAotArchiveFile
+        if (targetAot.isFile) {
+            val appDest = appDir.resolve("app/${targetAot.name}")
+            targetAot.copyTo(appDest, overwrite = true)
             logger.lifecycle("已注入 AOT Cache 预链接归档至安装镜像: ${appDest.name}")
 
             val cfgFile = appDir.resolve("app/$cpPackageName.cfg")
             if (cfgFile.isFile) {
                 val text = cfgFile.readText()
-                val aotOption = "java-options=-XX:AOTCache=\$APPDIR\\${aotArchiveFile.name}"
+                val aotOption = "java-options=-XX:AOTCache=\$APPDIR\\${targetAot.name}"
+                val safeReplacement = Regex.escapeReplacement(aotOption)
                 val updated = if (text.contains("-XX:AOTCache=")) {
-                    text.replace(Regex("java-options=-XX:AOTCache=[^\r\n]+"), aotOption)
+                    text.replace(Regex("java-options=-XX:AOTCache=[^\r\n]+"), safeReplacement)
                 } else if (text.contains("[JavaOptions]")) {
                     text.replace("[JavaOptions]", "[JavaOptions]\n$aotOption")
                 } else {
@@ -1016,7 +1009,24 @@ afterEvaluate {
     )
     val configureRunTask: (JavaExec) -> Unit = { task ->
         val existing = task.jvmArgs ?: emptyList()
-        val merged = (listOf("-XX:+UnlockExperimentalVMOptions") + existing + desktopCommonJvmArgs)
+        val runAotArgs = when {
+            aotRecordRequested -> {
+                val targetOutput = aotOutputProp?.let { File(it) } ?: devAotArchiveFile
+                targetOutput.parentFile?.mkdirs()
+                listOf(
+                    "-XX:AOTCacheOutput=${targetOutput.absolutePath}",
+                    "-Dcp.player.aotWarmup=true",
+                )
+            }
+            explicitAotFile != null && explicitAotFile.isFile -> {
+                listOf("-XX:AOTCache=${explicitAotFile.absolutePath}")
+            }
+            devAotArchiveFile.isFile -> {
+                listOf("-XX:AOTCache=${devAotArchiveFile.absolutePath}")
+            }
+            else -> emptyList()
+        }
+        val merged = (listOf("-XX:+UnlockExperimentalVMOptions") + existing + desktopCommonJvmArgs + runAotArgs)
             .filterNot { it.startsWith("-Dcp.player.releaseChannel=") }
             .plus(listOf("-Dcp.player.releaseChannel=debug", "-Dcp.player.isDesktopRun=true"))
             .distinct()

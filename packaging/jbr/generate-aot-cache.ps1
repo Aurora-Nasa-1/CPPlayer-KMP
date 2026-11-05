@@ -87,25 +87,32 @@ Write-Host ("  JEP 514 Ahead-of-Time Command-Line Ergonomics: {0}" -f $supportsO
 # 2. Assemble distributable app image if needed
 $appImageDir = Join-Path $repoRoot "app/build/compose/binaries/main/app/CPPlayer"
 $appDir = Join-Path $appImageDir "app"
-if (-not (Test-Path "$appDir")) {
-    Write-Host "[2/4] Assembling desktop distribution image for AOT training..." -ForegroundColor Yellow
-    Push-Location $repoRoot
-    try {
-        ./gradlew :app:createDistributable -x test --quiet
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to assemble distributable image"
-        }
-    } finally {
-        Pop-Location
+Write-Host "[2/4] Assembling desktop distribution image for AOT training..." -ForegroundColor Yellow
+Push-Location $repoRoot
+try {
+    ./gradlew :app:createDistributable -x test --quiet
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to assemble distributable image"
     }
-} else {
-    Write-Host "[2/4] Reusing existing distributable app image at: $appImageDir" -ForegroundColor Yellow
+} finally {
+    Pop-Location
 }
 
 # 3. Perform AOT Training
-Write-Host "[3/4] Performing AOT training run (warming Compose runtime & pre-linking classes)..." -ForegroundColor Yellow
+Write-Host "[3/4] Performing AOT training run (warming Compose runtime, Audio DSP, Lyrics & pre-linking classes)..." -ForegroundColor Yellow
 if (Test-Path $outputPath) {
     Remove-Item $outputPath -Force
+}
+
+$cfgPath = Join-Path $appDir "CPPlayer.cfg"
+if (Test-Path $cfgPath) {
+    Write-Host "  Reading exact classpath sequence from CPPlayer.cfg..." -ForegroundColor Gray
+    $cpEntries = Get-Content $cfgPath | Where-Object { $_ -match "^app\.classpath=(.+)$" } | ForEach-Object {
+        $matches[1].Replace('$APPDIR', 'app')
+    }
+    $effectiveClasspath = ($cpEntries -join ";")
+} else {
+    $effectiveClasspath = "app/*"
 }
 
 $jvmTrainingArgs = @(
@@ -117,47 +124,52 @@ $jvmTrainingArgs = @(
     "--enable-native-access=ALL-UNNAMED",
     "-Xms128m",
     "-Xmx512m",
-    "-Dskiko.library.path=$appDir",
+    "-Dskiko.library.path=app",
     "-Dcp.player.aotWarmup=true",
     "-Dcp.player.releaseChannel=debug",
-    "-cp", "$appDir/*"
+    "-cp", $effectiveClasspath
 )
 
-if ($supportsOneShotErgonomics) {
-    Write-Host "  Using JEP 514 One-Shot AOTCacheOutput..." -ForegroundColor Green
-    $runArgs = @("-XX:AOTCacheOutput=$outputPath") + $jvmTrainingArgs + @("cp.player.app.MainKt")
-    $prevEap = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    & $JavaExe $runArgs
-    $ErrorActionPreference = $prevEap
-
-    # HotSpot JEP 514 spawns an assembly child process on exit which writes $outputPath and removes $outputPath.config
-    $configPath = "$outputPath.config"
-    $deadline = (Get-Date).AddSeconds(45)
-    while ((Test-Path $configPath) -and (Get-Date) -lt $deadline) {
-        Start-Sleep -Milliseconds 500
-    }
-} else {
-    # Fallback to JEP 483 two-step workflow
-    Write-Host "  Fallback to JEP 483 two-step workflow (-XX:AOTMode=record & -XX:AOTMode=create)..." -ForegroundColor Yellow
-    $configPath = [System.IO.Path]::ChangeExtension($outputPath, ".aotconf")
-    if (Test-Path $configPath) { Remove-Item $configPath -Force }
-
-    $recordArgs = @("-XX:AOTMode=record", "-XX:AOTConfiguration=$configPath") + $jvmTrainingArgs + @("cp.player.app.MainKt")
-    $prevEap = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    & $JavaExe $recordArgs
-    $ErrorActionPreference = $prevEap
-
-    if (Test-Path $configPath) {
-        Write-Host "  Assembling AOT Cache from configuration..." -ForegroundColor Yellow
-        $createArgs = @("-XX:AOTMode=create", "-XX:AOTConfiguration=$configPath", "-XX:AOTCache=$outputPath", "-cp", "$appDir/*")
+Push-Location $appImageDir
+try {
+    if ($supportsOneShotErgonomics) {
+        Write-Host "  Using JEP 514 One-Shot AOTCacheOutput..." -ForegroundColor Green
+        $runArgs = @("-XX:AOTCacheOutput=$outputPath") + $jvmTrainingArgs + @("cp.player.app.MainKt")
         $prevEap = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
-        & $JavaExe $createArgs
+        & $JavaExe $runArgs
         $ErrorActionPreference = $prevEap
-        Remove-Item $configPath -Force -ErrorAction SilentlyContinue
+
+        # HotSpot JEP 514 spawns an assembly child process on exit which writes $outputPath and removes $outputPath.config
+        $configPath = "$outputPath.config"
+        $deadline = (Get-Date).AddSeconds(45)
+        while ((Test-Path $configPath) -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 500
+        }
+    } else {
+        # Fallback to JEP 483 two-step workflow
+        Write-Host "  Fallback to JEP 483 two-step workflow (-XX:AOTMode=record & -XX:AOTMode=create)..." -ForegroundColor Yellow
+        $configPath = [System.IO.Path]::ChangeExtension($outputPath, ".aotconf")
+        if (Test-Path $configPath) { Remove-Item $configPath -Force }
+
+        $recordArgs = @("-XX:AOTMode=record", "-XX:AOTConfiguration=$configPath") + $jvmTrainingArgs + @("cp.player.app.MainKt")
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        & $JavaExe $recordArgs
+        $ErrorActionPreference = $prevEap
+
+        if (Test-Path $configPath) {
+            Write-Host "  Assembling AOT Cache from configuration..." -ForegroundColor Yellow
+            $createArgs = @("-XX:AOTMode=create", "-XX:AOTConfiguration=$configPath", "-XX:AOTCache=$outputPath", "-cp", $effectiveClasspath)
+            $prevEap = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            & $JavaExe $createArgs
+            $ErrorActionPreference = $prevEap
+            Remove-Item $configPath -Force -ErrorAction SilentlyContinue
+        }
     }
+} finally {
+    Pop-Location
 }
 
 # 4. Verification
@@ -170,6 +182,34 @@ if (Test-Path $outputPath) {
     Write-Host "  Startup speedup expected: 60%~75% reduction in TTID (Cold Start < 800ms)" -ForegroundColor Green
     Write-Host "  Mount flag: -XX:AOTCache=$outputPath" -ForegroundColor Green
     Write-Host "==========================================================" -ForegroundColor Green
+
+    # Copy to app directory so that CPPlayer.exe can load it directly
+    $appDest = Join-Path $appDir "app-aot.aot"
+    Copy-Item $outputPath $appDest -Force -ErrorAction SilentlyContinue
+
+    Write-Host "  Validating archive mount with launcher classpath..." -ForegroundColor Yellow
+    Push-Location $appImageDir
+    try {
+        $verifyArgs = @(
+            "-XX:AOTCache=$outputPath",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+UseCompactObjectHeaders",
+            "--enable-native-access=ALL-UNNAMED",
+            "-cp", $effectiveClasspath,
+            "-version"
+        )
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = "SilentlyContinue"
+        $verifyOutput = & $JavaExe $verifyArgs 2>&1 | Out-String
+        $ErrorActionPreference = $prevEap
+        if ($verifyOutput -match "sharing" -and $verifyOutput -notmatch "error") {
+            Write-Host "  AOT Cache successfully verified in sharing mode!" -ForegroundColor Green
+        } else {
+            Write-Host $verifyOutput.Trim() -ForegroundColor Gray
+        }
+    } finally {
+        Pop-Location
+    }
 } else {
     Write-Warning "AOT Cache generation failed or file was not output. Ensure JVM supports Project Leyden AOT features."
 }
