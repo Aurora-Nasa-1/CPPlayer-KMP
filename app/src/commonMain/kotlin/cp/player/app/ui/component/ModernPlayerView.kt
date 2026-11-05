@@ -336,7 +336,11 @@ fun androidx.compose.animation.SharedTransitionScope.ModernPlayerScreenContent(
                         },
                         onOpenLayoutSettings = {
                             haptics.perform(CpHaptic.Tick)
-                            showLayoutSettingsSheet = true
+                            if (navigator != null) {
+                                navigator.pushOrNotify(cp.player.app.ui.screen.MobilePlayerSettingsScreen())
+                            } else {
+                                showLayoutSettingsSheet = true
+                            }
                         },
                         onOpenSongInfo = { moreSheets.showSongInfo = true },
                         onMoreClick = { moreSheets.showMoreMenu = true },

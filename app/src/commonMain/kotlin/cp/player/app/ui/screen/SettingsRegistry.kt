@@ -15,10 +15,12 @@ import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SettingsEthernet
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.WavingHand
 import androidx.compose.ui.graphics.vector.ImageVector
 import cafe.adriel.voyager.core.screen.Screen
@@ -304,10 +306,118 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
         screen = { targetId ->
             if (targetId in listOf("appearance_theme_mode", "appearance_pure_black", "appearance_color_source")) {
                 DarkThemeSettingsScreen()
+            } else if (targetId in listOf("appearance_modern_mobile_player", "appearance_mobile_player_layout")) {
+                MobilePlayerSettingsScreen(targetId)
             } else {
                 AppearanceSettingsScreen(targetId)
             }
         },
+    ),
+    SettingsEntry(
+        id = "mobile_player",
+        group = SettingsGroup.GENERAL,
+        titleOf = { "手机播放界面与布局" },
+        subtitleOf = { "全新单页播放布局 · 封面比例与圆角 · 夹层双行歌词 · 逐字动效 · 走带控制" },
+        icon = Icons.Filled.PhoneAndroid,
+        accent = SettingsAccent.PRIMARY,
+        keywords = listOf(
+            "播放页", "手机播放器", "单页", "封面", "圆角", "阴影", "歌词", "双行歌词",
+            "卡拉OK", "逐字", "走带", "波形进度条", "评论", "apple music", "player", "mobile",
+        ),
+        subItems = listOf(
+            SettingsSubItem(
+                id = "mobile_player_enabled",
+                titleOf = { "全新单页播放布局" },
+                subtitleOf = { "将封面、双行歌词预览与控制整合在一个页面中展示" },
+                keywords = listOf("单页", "播放页", "经典模式", "新版播放器"),
+                sectionOf = { "布局模式" },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_cover_scale",
+                titleOf = { "封面占屏宽比例" },
+                subtitleOf = { "调节专辑封面在竖屏播放界面中的相对尺寸" },
+                keywords = listOf("封面大小", "封面比例", "缩放", "cover scale"),
+                sectionOf = { "封面视觉与空间光影" },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_cover_corner",
+                titleOf = { "封面圆角半径" },
+                subtitleOf = { "控制专辑封面四周平滑曲率与卡片视觉柔和度" },
+                keywords = listOf("圆角", "封面圆角", "corner radius"),
+                sectionOf = { "封面视觉与空间光影" },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_cover_elevation",
+                titleOf = { "空间立体阴影" },
+                subtitleOf = { "为封面提供浮动层叠阴影效果" },
+                keywords = listOf("阴影", "立体", "景深", "elevation", "shadow"),
+                sectionOf = { "封面视觉与空间光影" },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_ambient_glow",
+                titleOf = { "封面弥散环境光晕" },
+                subtitleOf = { "在专辑封面底层投射基于动态色彩的流光柔和光晕" },
+                keywords = listOf("光晕", "弥散光", "环境光", "流光", "ambient glow"),
+                sectionOf = { "封面视觉与空间光影" },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_cover_swipe",
+                titleOf = { "封面左右滑动切歌手势" },
+                subtitleOf = { "在专辑封面上左右横向滑动手势触发上一首 / 下一首" },
+                keywords = listOf("滑动切歌", "手势", "切歌", "swipe gesture"),
+                sectionOf = { "手势与走带控制" },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_wavy_seek_bar",
+                titleOf = { "M3 Expressive 律动波形进度条" },
+                subtitleOf = { "采用 Material 3 Expressive 律动动态波形进度条" },
+                keywords = listOf("进度条", "波形", "律动", "wavy seek bar"),
+                sectionOf = { "手势与走带控制" },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_controls_scale",
+                titleOf = { "走带按键尺寸" },
+                subtitleOf = { "调节播放/暂停、切歌与模式切换按键的缩放比例" },
+                keywords = listOf("按键大小", "走带控制", "播放按键", "controls scale"),
+                sectionOf = { "手势与走带控制" },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_lyrics_size",
+                titleOf = { "夹层歌词正文字号" },
+                subtitleOf = { "调整单页模式下中间双行歌词预览的字体大小" },
+                keywords = listOf("歌词大小", "歌词字号", "lyrics font size"),
+                sectionOf = { "夹层歌词与卡拉OK" },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_lyrics_align",
+                titleOf = { "歌词对齐方式" },
+                subtitleOf = { "选择夹层预览歌词的文本排版方向（居中或靠左）" },
+                keywords = listOf("对齐", "居中", "靠左", "align"),
+                sectionOf = { "夹层歌词与卡拉OK" },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_karaoke",
+                titleOf = { "逐字卡拉OK动效" },
+                subtitleOf = { "音源包含逐字时值时，以精准平滑的高亮推进动画展现" },
+                keywords = listOf("逐字歌词", "卡拉OK", "karaoke"),
+                sectionOf = { "夹层歌词与卡拉OK" },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_translation",
+                titleOf = { "双语歌词翻译展示" },
+                subtitleOf = { "在歌曲拥有翻译歌词时，在正文下方同步显示次行译文" },
+                keywords = listOf("歌词翻译", "双语", "译文", "translation"),
+                sectionOf = { "夹层歌词与卡拉OK" },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_reset",
+                titleOf = { "恢复默认播放器布局配置" },
+                subtitleOf = { "重置封面比例、圆角、歌词字号及走带尺寸为出厂推荐值" },
+                keywords = listOf("重置", "恢复默认", "出厂设置", "reset"),
+                sectionOf = { "交互说明与重置" },
+            ),
+        ),
+        screen = { targetSettingId -> MobilePlayerSettingsScreen(targetSettingId) },
     ),
     SettingsEntry(
         id = "playback",

@@ -171,7 +171,6 @@ class AppearanceSettingsScreen(
 
                 // 3. 手机播放界面与布局微调
                 val mobilePlayerConfig by AppModel.mobilePlayerCustomConfigFlow.collectAsState()
-                var showLayoutSettingsSheet by remember { mutableStateOf(false) }
 
                 SettingsSection("手机端播放界面与布局") {
                     SettingsSwitchItem(
@@ -191,16 +190,7 @@ class AppearanceSettingsScreen(
                         index = 1,
                         total = 2,
                         modifier = Modifier.settingsSearchTarget("appearance_mobile_player_layout", targetSettingId),
-                        onClick = { showLayoutSettingsSheet = true },
-                    )
-                }
-
-                if (showLayoutSettingsSheet) {
-                    cp.player.app.ui.component.PlayerLayoutCustomizationSheet(
-                        config = mobilePlayerConfig,
-                        onUpdateConfig = { transform -> AppModel.updateMobilePlayerCustomConfig(transform) },
-                        onResetConfig = { AppModel.resetMobilePlayerCustomConfig() },
-                        onDismiss = { showLayoutSettingsSheet = false },
+                        onClick = { navigator.push(MobilePlayerSettingsScreen()) },
                     )
                 }
 
