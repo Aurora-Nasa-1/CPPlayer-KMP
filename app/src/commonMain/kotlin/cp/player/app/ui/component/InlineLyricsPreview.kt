@@ -422,10 +422,11 @@ private fun ActiveLyricLineView(
             )
 
             // 可选翻译行
-            if (showTranslation && !line.translation.isNullOrBlank()) {
+            val translation = line.translation
+            if (showTranslation && !translation.isNullOrBlank()) {
                 Spacer(Modifier.height(1.dp))
                 CpText(
-                    text = line.translation,
+                    text = translation,
                     fontSize = (fontSize.value * 0.72f).sp,
                     lineHeight = (fontSize.value * 0.95f).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
@@ -455,10 +456,11 @@ private fun ActiveLyricLineView(
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            if (showTranslation && !line.translation.isNullOrBlank()) {
+            val translation = line.translation
+            if (showTranslation && !translation.isNullOrBlank()) {
                 Spacer(Modifier.height(1.dp))
                 CpText(
-                    text = line.translation,
+                    text = translation,
                     fontSize = (fontSize.value * 0.72f).sp,
                     lineHeight = (fontSize.value * 0.95f).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),

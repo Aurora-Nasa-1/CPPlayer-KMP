@@ -29,8 +29,8 @@ import cp.player.app.ui.component.SettingsSegmentedItem
 import cp.player.app.ui.component.SettingsSliderItem
 import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.settingsSearchTarget
-import cp.player.app.ui.theme.CpHaptic
-import cp.player.app.ui.theme.LocalCpHaptics
+import cp.player.app.ui.feedback.CpHaptic
+import cp.player.app.ui.feedback.LocalCpHaptics
 import cp.player.app.ui.util.popOrNotify
 import kotlin.math.roundToInt
 
