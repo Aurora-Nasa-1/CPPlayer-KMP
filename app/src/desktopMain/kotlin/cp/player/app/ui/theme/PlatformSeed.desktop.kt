@@ -3,6 +3,7 @@ package cp.player.app.ui.theme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import cp.player.core.util.stable.DesktopStableValue
 import java.io.File
 import java.util.concurrent.TimeUnit
 import javax.imageio.ImageIO
@@ -24,22 +25,18 @@ actual fun platformDynamicScheme(dark: Boolean): ColorScheme? = null
  * 只在用户显式选择「跟随系统」时才会走到这里（默认来源是 `FIXED`），
  * 所以绝大多数启动不会付这个代价。
  */
-actual fun platformAccentSeed(): Color? = windowsAccentColor
+actual fun platformAccentSeed(): Color? = windowsAccentColor()
 
 /**
  * 桌面壁纸种子色。
  *
- * `by lazy` ⇒ 每个进程只解一次壁纸。**这里比 [platformAccentSeed] 贵得多**
- * （读文件 + 解码，几十到几百毫秒），所以它**不在 composition 里同步调用** ——
- * 由 `AppModel` 在 `Dispatchers.Default` 上预热，见 `startCoverColorTracking`。
- * 壁纸在运行中变化不感知（用户换了壁纸重启即可），换来的是「跟随封面但没在播放」
- * 这个状态不会每次切歌都重解一次壁纸。
+ * 基于 [DesktopStableValue] / JEP 502 延迟单次初始化，JIT 常量折叠保证高频取色零开销。
  */
-actual fun platformWallpaperSeed(): Color? = windowsWallpaperSeed
+actual fun platformWallpaperSeed(): Color? = windowsWallpaperSeed()
 
-private val windowsAccentColor: Color? by lazy { readWindowsAccentColor() }
+private val windowsAccentColor = DesktopStableValue.supplier { readWindowsAccentColor() }
 
-private val windowsWallpaperSeed: Color? by lazy {
+private val windowsWallpaperSeed = DesktopStableValue.supplier {
     readWindowsWallpaperFile()?.let(::extractWallpaperSeed)
 }
 

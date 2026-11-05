@@ -14,6 +14,7 @@ import com.sun.jna.ptr.PointerByReference
 import cp.player.core.music.TrackSummary
 import cp.player.core.playback.PlaybackController
 import cp.player.core.playback.PlaybackUiState
+import cp.player.core.util.VirtualThreadDispatcher
 import java.io.File
 import java.net.HttpURLConnection
 import java.nio.file.Files
@@ -61,7 +62,7 @@ internal class WindowsSmtcControls private constructor(
         Thread(r, "cpplayer-smtc-win").apply { isDaemon = true }
     }
 
-    private val coverScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val coverScope = CoroutineScope(SupervisorJob() + VirtualThreadDispatcher.dispatcher)
     private var coverCacheDir: File? = null
     private var latestTrack: TrackSummary? = null
 

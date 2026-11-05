@@ -5,6 +5,7 @@ import cp.player.core.provider.ModuleManifest
 import cp.player.core.util.PlatformContext
 import cp.player.core.util.PlatformInfo
 import cp.player.core.util.PlatformSupport
+import cp.player.core.util.VirtualThreadDispatcher
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
@@ -49,7 +50,7 @@ class JvmPluginRepositoryIO(private val root: File) : PluginRepositoryIO {
         }
     }
 
-    override suspend fun fetchCatalog(url: String): String = withContext(Dispatchers.IO) {
+    override suspend fun fetchCatalog(url: String): String = withContext(VirtualThreadDispatcher.dispatcher) {
         val output = ByteArrayOutputStream()
         readResponse(url, PluginRepositoryService.MAX_CATALOG_BYTES.toLong(), output)
         Charsets.UTF_8.newDecoder()
@@ -58,13 +59,13 @@ class JvmPluginRepositoryIO(private val root: File) : PluginRepositoryIO {
             .decode(ByteBuffer.wrap(output.toByteArray())).toString()
     }
 
-    override suspend fun cachedCatalog(url: String): String? = withContext(Dispatchers.IO) {
+    override suspend fun cachedCatalog(url: String): String? = withContext(VirtualThreadDispatcher.dispatcher) {
         val file = cacheFile(url)
         if (!file.isFile || file.length() > PluginRepositoryService.MAX_CATALOG_BYTES) null
         else runCatching { file.readText(Charsets.UTF_8) }.getOrNull()
     }
 
-    override suspend fun cacheCatalog(url: String, text: String): Unit = withContext(Dispatchers.IO) {
+    override suspend fun cacheCatalog(url: String, text: String): Unit = withContext(VirtualThreadDispatcher.dispatcher) {
         val file = cacheFile(url)
         requireNotNull(file.parentFile).mkdirs()
         val temporary = File(file.parentFile, "${file.name}.${UUID.randomUUID()}.tmp")
@@ -82,7 +83,7 @@ class JvmPluginRepositoryIO(private val root: File) : PluginRepositoryIO {
         plugin: RepositoryPlugin,
         artifact: PluginArtifact,
         onProgress: (PluginInstallPhase, Long) -> Unit,
-    ): String = withContext(Dispatchers.IO) {
+    ): String = withContext(VirtualThreadDispatcher.dispatcher) {
         val directory = File(root, "downloads").apply { mkdirs() }
         val file = File(directory, "${UUID.randomUUID()}.zip")
         try {
@@ -150,7 +151,7 @@ class JvmPluginRepositoryIO(private val root: File) : PluginRepositoryIO {
     }
 
     override suspend fun discardPackage(path: String) {
-        withContext(Dispatchers.IO) {
+        withContext(VirtualThreadDispatcher.dispatcher) {
             val file = File(path).canonicalFile
             val downloads = File(root, "downloads").canonicalFile
             require(file.parentFile == downloads) { "Refusing to remove a non-download file" }

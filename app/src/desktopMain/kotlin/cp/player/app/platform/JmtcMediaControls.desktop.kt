@@ -3,6 +3,7 @@ package cp.player.app.platform
 import cp.player.core.music.TrackSummary
 import cp.player.core.playback.PlaybackController
 import cp.player.core.playback.PlaybackUiState
+import cp.player.core.util.VirtualThreadDispatcher
 import io.github.selemba1000.JMTC
 import io.github.selemba1000.JMTCEnabledButtons
 import io.github.selemba1000.JMTCMediaType
@@ -65,7 +66,7 @@ internal class JmtcMediaControls private constructor(
     }
 
     /** 远程封面下载用的独立作用域：[stop] 时随实例一起取消，不会留下悬挂协程。 */
-    private val coverScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val coverScope = CoroutineScope(SupervisorJob() + VirtualThreadDispatcher.dispatcher)
 
     /**
      * 远程封面的本地缓存目录（系统临时目录下），按 URL 哈希落盘。

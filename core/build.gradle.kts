@@ -111,3 +111,7 @@ kotlin {
         // 就会多出一个帧节奏参与者，在 VRR 显示器上属风险项。
     }
 }
+
+tasks.named<Test>("desktopTest") {
+    jvmArgs("--enable-preview")
+}

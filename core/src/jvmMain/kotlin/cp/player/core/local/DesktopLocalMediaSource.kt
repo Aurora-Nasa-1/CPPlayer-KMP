@@ -6,6 +6,7 @@ import cp.player.core.media.LocalMediaOrigin
 import cp.player.core.media.MediaType
 import cp.player.core.media.toTrackMetadata
 import cp.player.core.util.DesktopDataDir
+import cp.player.core.util.DesktopTraceContext
 import cp.player.core.util.VirtualThreadDispatcher
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -134,7 +135,7 @@ class DesktopLocalMediaSource(dataDir: String? = null) : LocalMediaSource {
     private suspend fun scanOnce(
         roots: List<File>,
         onProgress: suspend (scanned: Int, total: Int, batch: List<LocalMediaItem>) -> Unit = { _, _, _ -> },
-    ): List<LocalMediaItem> {
+    ): List<LocalMediaItem> = DesktopTraceContext.withTraceSuspend(caller = "DesktopLocalMediaSource", operation = "scan") {
         val files = withContext(ioDispatcher) { collectFiles(roots) }
         val settings = scanSettings.snapshot()
         val total = files.size
@@ -150,7 +151,7 @@ class DesktopLocalMediaSource(dataDir: String? = null) : LocalMediaSource {
             scanned += chunk.size
             onProgress(scanned, total, accepted)
         }
-        return parsed
+        parsed
     }
 
     override suspend fun importFolder(uri: String): Int {

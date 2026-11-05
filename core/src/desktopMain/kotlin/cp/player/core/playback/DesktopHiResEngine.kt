@@ -1,5 +1,6 @@
 package cp.player.core.playback
 
+import cp.player.core.util.VirtualThreadDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -78,7 +79,7 @@ object DesktopHiResEngine {
     val audioEvents: SharedFlow<DesktopAudioEvent> = _audioEvents.asSharedFlow()
 
     private var pollJob: Job? = null
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + VirtualThreadDispatcher.dispatcher)
 
     init {
         tryLoadLibrary()

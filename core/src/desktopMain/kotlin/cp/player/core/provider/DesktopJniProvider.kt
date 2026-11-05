@@ -1,7 +1,9 @@
 package cp.player.core.provider
 
+import cp.player.core.util.DesktopTraceContext
 import cp.player.core.util.PlatformContext
 import cp.player.core.util.PlatformSupport
+import cp.player.core.util.VirtualThreadDispatcher
 import cp.player.core.util.createHttpClient
 import cp.player.core.util.defaultSettingsStorage
 import io.ktor.client.HttpClient
@@ -176,7 +178,7 @@ class DesktopJniProvider(
     }
 
     private fun drainProcessOutput(proc: Process) {
-        Thread({
+        VirtualThreadDispatcher.runOnVirtualThread("desktop-jni-worker-drain-$id") {
             runCatching {
                 val input = proc.inputStream
                 val buf = ByteArray(8192)
@@ -184,7 +186,7 @@ class DesktopJniProvider(
                     // drain
                 }
             }
-        }, "desktop-jni-worker-drain-$id").apply { isDaemon = true }.start()
+        }
     }
 
     override fun stopServer() {
@@ -207,58 +209,62 @@ class DesktopJniProvider(
     }
 
     override fun callApi(method: String, params: Map<String, String>): String {
-        inProcessFallback?.let {
-            return it.callApi(method, params)
-        }
-        if (!isLoaded) {
-            return """{"code":500,"msg":"Provider server is stopped"}"""
-        }
-        var proc = workerProcess
-        if (proc == null || !proc.isAlive) {
-            val exitCode = proc?.let { runCatching { it.exitValue() }.getOrNull() }
-            println("[DesktopJniProvider-$id] Worker 子进程不可用 (exitCode=$exitCode)，尝试自愈重启...")
-            val restarted = startWorkerProcess(serverPort)
-            if (restarted) {
-                proc = workerProcess
-            } else {
-                return """{"code":500,"msg":"Provider worker process not running (exitCode=$exitCode, restart failed: ${loadError ?: "unknown"})"}"""
+        val traceId = DesktopTraceContext.currentTraceId() ?: DesktopTraceContext.newTraceId("jni")
+        return DesktopTraceContext.withTrace(traceId = traceId, caller = "DesktopJniProvider-$id", operation = method) {
+            inProcessFallback?.let {
+                return@withTrace it.callApi(method, params)
             }
-        }
-        val configJson = settingsSchema?.let { schema ->
-            buildJsonObject {
-                schema.forEach { item ->
+            if (!isLoaded) {
+                return@withTrace """{"code":500,"msg":"Provider server is stopped"}"""
+            }
+            var proc = workerProcess
+            if (proc == null || !proc.isAlive) {
+                val exitCode = proc?.let { runCatching { it.exitValue() }.getOrNull() }
+                println("[DesktopJniProvider-$id] Worker 子进程不可用 (exitCode=$exitCode)，尝试自愈重启...")
+                val restarted = startWorkerProcess(serverPort)
+                if (restarted) {
+                    proc = workerProcess
+                } else {
+                    return@withTrace """{"code":500,"msg":"Provider worker process not running (exitCode=$exitCode, restart failed: ${loadError ?: "unknown"})"}"""
+                }
+            }
+            val configJson = settingsSchema?.let { schema ->
+                buildJsonObject {
+                    schema.forEach { item ->
+                        val value = configStorage.getString(item.key) ?: item.default
+                        if (value != null) {
+                            put(item.key, JsonPrimitive(value))
+                        }
+                    }
+                }
+            }
+            val body = buildJsonObject {
+                settingsSchema?.forEach { item ->
                     val value = configStorage.getString(item.key) ?: item.default
-                    if (value != null) {
-                        put(item.key, JsonPrimitive(value))
-                    }
+                    if (value != null) put(item.key, JsonPrimitive(value))
                 }
-            }
-        }
-        val body = buildJsonObject {
-            settingsSchema?.forEach { item ->
-                val value = configStorage.getString(item.key) ?: item.default
-                if (value != null) put(item.key, JsonPrimitive(value))
-            }
-            params.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
-            if (configJson != null && configJson.isNotEmpty()) {
-                put("config", configJson)
-            }
-        }.toString()
+                params.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
+                if (configJson != null && configJson.isNotEmpty()) {
+                    put("config", configJson)
+                }
+            }.toString()
 
-        return try {
-            runBlocking {
-                val client = getOrCreateHttpClient()
-                val resp = client.post("http://127.0.0.1:$serverPort/api/$method") {
-                    contentType(ContentType.Application.Json)
-                    if (configJson != null && configJson.isNotEmpty()) {
-                        header("X-Provider-Config", configJson.toString())
+            try {
+                runBlocking {
+                    val client = getOrCreateHttpClient()
+                    val resp = client.post("http://127.0.0.1:$serverPort/api/$method") {
+                        contentType(ContentType.Application.Json)
+                        header("X-Trace-Id", traceId)
+                        if (configJson != null && configJson.isNotEmpty()) {
+                            header("X-Provider-Config", configJson.toString())
+                        }
+                        setBody(body)
                     }
-                    setBody(body)
+                    resp.bodyAsText()
                 }
-                resp.bodyAsText()
+            } catch (e: Exception) {
+                """{"code": 500, "msg": "Worker HTTP call failed: ${e.message?.replace("\"", "\\\"")}"}"""
             }
-        } catch (e: Exception) {
-            """{"code": 500, "msg": "Worker HTTP call failed: ${e.message?.replace("\"", "\\\"")}"}"""
         }
     }
 

@@ -6,6 +6,8 @@ import cp.player.core.download.ResumeNotSupportedException
 import cp.player.core.download.defaultDownloadExecutor
 import cp.player.core.media.AudioMetadataReader
 import cp.player.core.util.DesktopDataDir
+import cp.player.core.util.DesktopTraceContext
+import cp.player.core.util.VirtualThreadDispatcher
 import cp.player.core.util.defaultSettingsStorage
 import java.io.File
 import kotlinx.coroutines.CancellationException
@@ -87,15 +89,17 @@ class DesktopStreamLocalizer(
             // 本地文件本来就可定位，不需要落地。
             return null
         }
-        return withContext(Dispatchers.IO) {
-            // ⚠️ 不能用 `runCatching`：它会把 CancellationException 一起吞掉，
-            // 于是「切歌后取消下载」变成空操作，旧下载继续跑到底白占带宽。
-            try {
-                localizeBlocking(url, cacheKey, headers, meta)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                null
+        return withContext(VirtualThreadDispatcher.dispatcher) {
+            DesktopTraceContext.withTraceSuspend(caller = "DesktopStreamLocalizer", operation = "localize:$cacheKey") {
+                // ⚠️ 不能用 `runCatching`：它会把 CancellationException 一起吞掉，
+                // 于是「切歌后取消下载」变成空操作，旧下载继续跑到底白占带宽。
+                try {
+                    localizeBlocking(url, cacheKey, headers, meta)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    null
+                }
             }
         }
     }
@@ -314,7 +318,7 @@ class DesktopStreamLocalizer(
 
     override fun isRelocationSupported(): Boolean = true
 
-    override suspend fun relocateCacheDir(targetDirPath: String): CacheRelocationResult = withContext(Dispatchers.IO) {
+    override suspend fun relocateCacheDir(targetDirPath: String): CacheRelocationResult = withContext(VirtualThreadDispatcher.dispatcher) {
         val trimmed = targetDirPath.trim()
         if (trimmed.isBlank()) {
             return@withContext CacheRelocationResult.Failure("目标目录不能为空")

@@ -45,14 +45,64 @@ object VirtualThreadDispatcher {
     val dispatcher: CoroutineDispatcher by lazy {
         if (isSupported) {
             try {
-                val method = Executors::class.java.getMethod("newVirtualThreadPerTaskExecutor")
-                val executor = method.invoke(null) as ExecutorService
-                executor.asCoroutineDispatcher()
+                newVirtualThreadExecutor().asCoroutineDispatcher()
             } catch (_: Throwable) {
                 Dispatchers.IO
             }
         } else {
             Dispatchers.IO
+        }
+    }
+
+    /**
+     * 创建基于虚拟线程的任务执行器（每个任务独占一个虚拟线程）。
+     * 若当前运行时不支持虚拟线程（如 Android ART），安全降级为普通的缓存线程池。
+     */
+    fun newVirtualThreadExecutor(): ExecutorService {
+        return if (isSupported) {
+            try {
+                val method = Executors::class.java.getMethod("newVirtualThreadPerTaskExecutor")
+                method.invoke(null) as ExecutorService
+            } catch (_: Throwable) {
+                Executors.newCachedThreadPool()
+            }
+        } else {
+            Executors.newCachedThreadPool()
+        }
+    }
+
+    /**
+     * 在虚拟线程上启动一个独立运行的任务。
+     * 若当前运行时不支持虚拟线程，平滑降级为守护平台线程。
+     */
+    fun runOnVirtualThread(name: String? = null, block: () -> Unit): Thread {
+        if (isSupported) {
+            try {
+                val ofVirtualMethod = Thread::class.java.getMethod("ofVirtual")
+                var builder = ofVirtualMethod.invoke(null)
+                if (name != null) {
+                    val nameMethod = builder.javaClass.getMethod("name", String::class.java)
+                    builder = nameMethod.invoke(builder, name)
+                }
+                val startMethod = builder.javaClass.getMethod("start", Runnable::class.java)
+                return startMethod.invoke(builder, Runnable { block() }) as Thread
+            } catch (_: Throwable) {
+                // fall through to platform thread
+            }
+        }
+        return Thread(block, name ?: "virtual-thread-fallback").apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    /** 检查给定线程是否为虚拟线程。 */
+    fun isVirtualThread(thread: Thread = Thread.currentThread()): Boolean {
+        return try {
+            val method = Thread::class.java.getMethod("isVirtual")
+            method.invoke(thread) as Boolean
+        } catch (_: Throwable) {
+            false
         }
     }
 }

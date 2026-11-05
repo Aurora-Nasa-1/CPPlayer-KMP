@@ -98,6 +98,28 @@
    - **单步预热模式**：若传入 `-Pcp.aotRecord=true`，通过 JEP 514 `-XX:AOTCacheOutput` 自动启动录制与组装；
    - **参数兼容**：旧属性 `-Pcp.cds=true` 自动映射为 AOT Cache 加速模式，彻底淘汰传统 AppCDS。
 
+### 2.6 激进虚拟线程调度与 JEP 506 Scoped Values 全链路落地
+
+针对桌面端高吞吐 I/O 密集型场景（本地曲库扫描、流媒体分块下载与缓存重定向、JNI Worker 子进程管道通信、插件包归档解压与 SMTC 媒体控制）：
+
+1. **激进使用虚拟线程（Project Loom）**：
+   - **核心调度升级**：在 `VirtualThreadDispatcher` 扩展 `newVirtualThreadExecutor()`、`runOnVirtualThread()` 与 `isVirtualThread()`，桌面端全面替代消耗平台线程的 `Dispatchers.IO` 与 `Executors.newCachedThreadPool()`；
+   - **落地组件**：
+     - `DesktopStreamLocalizer`：无损流本地落盘与缓存目录重定位切换至虚拟线程，零载体线程争用；
+     - `JniWorker`：子进程 HTTP 接口服务端执行器改用虚拟线程，高频 API 请求零堆栈开销；
+     - `DesktopHiResEngine`：发烧级音频引擎后台监控与事件轮询挂载至虚拟线程；
+     - `DesktopJniProvider`：进程标准输出流读取与管道排空全面迁移至轻量虚拟线程；
+     - `JvmPluginRepositoryIO`：歌词/音源插件元数据拉取与包体解压并发调度；
+     - `JmtcMediaControls` & `WindowsSmtcControls`：SMTC 封面网络拉取与降采样写入流全面使用虚拟线程。
+
+2. **换用 Scoped Values（JEP 506，JDK 25 正式特性）**：
+   - **淘汰 ThreadLocal 弊端**：传统的 `ThreadLocal` 具有可变性、无界生命周期且在生成成千上万个虚拟线程时会导致极其庞大的线程 Map 内存膨胀；
+   - **现代化落地**（`DesktopScopedValue` / `DesktopTraceContext`）：
+     - 采用单次写入不可变（Write-once）与受限生命周期（Bounded Lifetime）机制，退出代码块自动解绑，100% 杜绝内存泄漏；
+     - 虚拟线程与父子任务共享轻量快照树，常量时间查找且零复制成本；
+     - **跨端安全策略**：通过动态嗅探检测 Java 25 原生 `java.lang.ScopedValue`，在桌面 JBR 25 上启用最高性能的原生载体（`Carrier`）绑定；在 Android ART 运行时上自动平滑降级，100% 杜绝 `NoClassDefFoundError` 与类链接异常。
+   - **全链路追踪诊断**：在 `DesktopJniProvider`、`JniWorker`、`DesktopLocalMediaSource` 与 `DesktopStreamLocalizer` 间贯穿不可变 `DesktopTraceContext`，请求标识与调用者元数据无感传递。
+
 ---
 
 ## 3. 操作实践与使用指南

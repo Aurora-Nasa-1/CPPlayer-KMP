@@ -2,7 +2,9 @@ package cp.player.core.provider
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import cp.player.core.util.DesktopTraceContext
 import cp.player.core.util.PlatformContext
+import cp.player.core.util.VirtualThreadDispatcher
 import java.io.File
 import java.net.InetSocketAddress
 import java.nio.charset.StandardCharsets
@@ -76,7 +78,7 @@ object JniWorker {
                 server.createContext("/api/") { exchange ->
                     handleRequest(provider, exchange)
                 }
-                server.executor = java.util.concurrent.Executors.newCachedThreadPool()
+                server.executor = VirtualThreadDispatcher.newVirtualThreadExecutor()
                 server.start()
             } catch (e: Throwable) {
                 System.err.println("[JniWorker] HttpServer 启动失败 (port=$port): ${e.message}")
@@ -98,21 +100,26 @@ object JniWorker {
     }
 
     private fun handleRequest(provider: JniProvider, exchange: HttpExchange) {
-        try {
-            val path = exchange.requestURI.path.removePrefix("/api/").removePrefix("/")
-            val body = exchange.requestBody.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
-            val result = dispatchWorkerRequest(path, body, provider::callApiJson, provider::analyzeAudio)
+        val path = exchange.requestURI.path.removePrefix("/api/").removePrefix("/")
+        val traceId = exchange.requestHeaders.getFirst("X-Trace-Id") ?: DesktopTraceContext.newTraceId("jni")
+        DesktopTraceContext.withTrace(traceId = traceId, caller = "JniWorker", operation = path) {
+            try {
+                val body = exchange.requestBody.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+                val result = dispatchWorkerRequest(path, body, provider::callApiJson, provider::analyzeAudio)
 
-            val bytes = result.toByteArray(StandardCharsets.UTF_8)
-            exchange.responseHeaders.set("Content-Type", "application/json; charset=utf-8")
-            exchange.sendResponseHeaders(200, bytes.size.toLong())
-            exchange.responseBody.use { it.write(bytes) }
-        } catch (e: Throwable) {
-            val err = """{"code":500,"msg":"${e.message?.replace("\"", "\\\"")}"}"""
-            val bytes = err.toByteArray(StandardCharsets.UTF_8)
-            exchange.responseHeaders.set("Content-Type", "application/json; charset=utf-8")
-            exchange.sendResponseHeaders(500, bytes.size.toLong())
-            exchange.responseBody.use { it.write(bytes) }
+                val bytes = result.toByteArray(StandardCharsets.UTF_8)
+                exchange.responseHeaders.set("Content-Type", "application/json; charset=utf-8")
+                exchange.responseHeaders.set("X-Trace-Id", traceId)
+                exchange.sendResponseHeaders(200, bytes.size.toLong())
+                exchange.responseBody.use { it.write(bytes) }
+            } catch (e: Throwable) {
+                val err = """{"code":500,"msg":"${e.message?.replace("\"", "\\\"")}"}"""
+                val bytes = err.toByteArray(StandardCharsets.UTF_8)
+                exchange.responseHeaders.set("Content-Type", "application/json; charset=utf-8")
+                exchange.responseHeaders.set("X-Trace-Id", traceId)
+                exchange.sendResponseHeaders(500, bytes.size.toLong())
+                exchange.responseBody.use { it.write(bytes) }
+            }
         }
     }
 }
