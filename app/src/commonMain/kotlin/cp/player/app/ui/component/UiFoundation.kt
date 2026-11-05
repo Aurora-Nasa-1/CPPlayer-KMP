@@ -94,6 +94,10 @@ object CpSpacing {
     /** 栅格类页面的水平内边距。 */
     val pageHorizontal = 20.dp
 
+    /** Shared alignment for artwork, lyrics and transport in the mobile player. */
+    val playerHorizontal = 28.dp
+    val playerMaxWidth = 480.dp
+
     /** 栅格类页面的顶部内边距。 */
     val pageTop = 20.dp
 

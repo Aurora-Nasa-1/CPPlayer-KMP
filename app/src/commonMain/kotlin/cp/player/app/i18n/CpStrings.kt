@@ -998,6 +998,7 @@ interface PlayerStrings {
     fun sleepTimerRemaining(minutes: Long): String
 
     // —— 播放页控件 ——
+    val nowPlaying: String
     val collapse: String
     val translation: String
     val queue: String

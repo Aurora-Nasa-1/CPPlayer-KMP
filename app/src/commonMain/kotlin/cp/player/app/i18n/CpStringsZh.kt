@@ -780,6 +780,7 @@ object CpStringsZh : CpStrings {
         override fun sleepTimerAfterTrack() = "睡眠定时 · 播完本曲"
         override fun sleepTimerRemaining(minutes: Long) = "睡眠定时 · $minutes 分钟"
 
+        override val nowPlaying = "正在播放"
         override val collapse = "收起"
         override val translation = "翻译"
         override val queue = "队列"

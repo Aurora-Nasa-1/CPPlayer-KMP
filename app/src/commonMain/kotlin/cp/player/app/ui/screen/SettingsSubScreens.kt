@@ -223,8 +223,8 @@ class AppearanceSettingsScreen(
                         total = 2,
                     )
                     SettingsClickItem(
-                        title = "播放界面微调与自定义",
-                        subtitle = "封面比例 ${((mobilePlayerConfig.coverScale * 100).toInt())}% · 圆角 ${mobilePlayerConfig.coverCornerDp}dp · 歌词 ${mobilePlayerConfig.lyricsFontSizeSp}sp",
+                        title = "手机播放偏好",
+                        subtitle = "切歌手势 · 歌词 ${mobilePlayerConfig.lyricsFontSizeSp}sp · 翻译",
                         icon = Icons.Filled.Tune,
                         showChevron = true,
                         index = 1,

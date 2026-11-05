@@ -1,13 +1,16 @@
 package cp.player.app.ui.component
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -46,6 +49,9 @@ private const val ARTIST_ANNOTATION = "track-artist"
  *
  * 「点了没反应」比「看着就不像能点」糟糕得多（参见 `pushOrNotify` 的 KDoc），
  * 所以没有 id 的时候宁可不挂点击。
+ *
+ * 显式启用 [CpTextReveal.Marquee] 时，移动中的字形不作为点击坐标：
+ * 单歌手直接跳转，多歌手通过公共菜单选择；其余页面保留逐名字点击。
  */
 @Composable
 fun TrackArtistText(
@@ -56,6 +62,7 @@ fun TrackArtistText(
     color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     maxLines: Int = 1,
     textAlign: TextAlign? = null,
+    reveal: CpTextReveal = CpTextReveal.Auto,
 ) {
     val textStyle = style.copy(color = color, textAlign = textAlign ?: style.textAlign)
     val resolvedStyle = textStyle.localizedForLanguage(track.artist)
@@ -69,7 +76,37 @@ fun TrackArtistText(
             style = resolvedStyle,
             maxLines = maxLines,
             textAlign = textAlign,
+            reveal = reveal,
         )
+        return
+    }
+    if (reveal == CpTextReveal.Marquee && maxLines == 1) {
+        // Marquee moves drawn glyphs, not pointer coordinates. Keep a stable row target
+        // and let duets choose an artist instead of silently opening the first name.
+        var choosingArtist by remember(track.id, artists) { mutableStateOf(false) }
+        CpAnchoredMenu(
+            expanded = choosingArtist,
+            onDismiss = { choosingArtist = false },
+            items = artists.map { artist ->
+                CpContextMenuItem(
+                    label = artist.name,
+                    enabled = artist.resourceId.isNotBlank(),
+                    onClick = { choosingArtist = false; onArtistClick(artist) },
+                )
+            },
+            modifier = modifier.clickable(role = Role.Button) {
+                if (artists.size == 1) onArtistClick(artists.single())
+                else choosingArtist = true
+            },
+        ) {
+            CpText(
+                text = track.artist,
+                style = resolvedStyle,
+                maxLines = 1,
+                textAlign = textAlign,
+                reveal = reveal,
+            )
+        }
         return
     }
     // 曲目换了才重算（歌手串不随播放进度变）。

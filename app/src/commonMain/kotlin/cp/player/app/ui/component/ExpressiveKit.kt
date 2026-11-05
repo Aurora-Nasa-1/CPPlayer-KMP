@@ -671,6 +671,66 @@ fun CpPlainSeekBar(
     )
 }
 
+/** Quiet mobile timeline, retaining Material Slider gestures and accessibility. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CpMinimalSeekBar(
+    positionMs: Long,
+    durationMs: Long,
+    onSeek: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    trackKey: Any? = null,
+) {
+    val duration = durationMs.coerceAtLeast(1L).toFloat()
+    var dragging by remember(trackKey) { mutableStateOf(false) }
+    var dragValue by remember(trackKey) { mutableStateOf(0f) }
+    val held = rememberHeldSeekTarget(positionMs, durationMs, trackKey)
+    val shown = when {
+        dragging -> dragValue
+        held.targetMs >= 0L -> held.targetMs.toFloat()
+        else -> positionMs.toFloat()
+    }.coerceIn(0f, duration)
+    val ink = MaterialTheme.colorScheme.onSurface
+    val trackColor = ink.copy(alpha = if (enabled) 0.16f else 0.08f)
+    val activeColor = ink.copy(alpha = if (enabled) 0.7f else 0.25f)
+    Slider(
+        value = shown,
+        onValueChange = {
+            dragging = true
+            dragValue = it
+        },
+        onValueChangeFinished = {
+            if (dragging && enabled) {
+                val target = dragValue.toLong().coerceIn(0L, durationMs.coerceAtLeast(0L))
+                held.hold(target)
+                onSeek(target)
+            }
+            dragging = false
+        },
+        valueRange = 0f..duration,
+        enabled = enabled,
+        modifier = modifier,
+        thumb = {
+            Box(
+                Modifier.size(if (dragging) 12.dp else 6.dp)
+                    .clip(CircleShape).background(activeColor),
+            )
+        },
+        track = { sliderState ->
+            Canvas(Modifier.fillMaxWidth().height(4.dp)) {
+                val radius = CornerRadius(size.height / 2f)
+                drawRoundRect(trackColor, cornerRadius = radius)
+                drawRoundRect(
+                    activeColor,
+                    size = Size(size.width * (sliderState.value / duration).coerceIn(0f, 1f), size.height),
+                    cornerRadius = radius,
+                )
+            }
+        },
+    )
+}
+
 // ---------------------------------------------------------------- 形状
 
 /**

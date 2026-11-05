@@ -29,6 +29,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextMotion
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToLong
@@ -60,6 +61,14 @@ import androidx.compose.ui.graphics.BlendMode
  * 且库把注音画在音节正上方（不占行高），1/4 才不会盖住上一行。
  */
 private const val RubyFontRatio = 0.25f
+
+/** Shared lyric typography; the compact preview retains its user-selected size. */
+internal fun TextStyle.lyricLineStyle(fontSize: TextUnit = 28.sp): TextStyle = copy(
+    fontSize = fontSize,
+    fontWeight = FontWeight.Bold,
+    lineHeight = fontSize * (36f / 28f),
+    textMotion = TextMotion.Animated,
+)
 
 /**
  * 歌词显示组件（KMP 版使用官方 accompanist-lyrics-ui 移植）。
@@ -217,12 +226,7 @@ fun LyricContent(
     // 样式在这里只负责字号 / 字重 / 行高，以及 `lang=ja` + `palt`（见 JapaneseText.kt）。
     val currentTextStyle = MaterialTheme.typography.headlineMedium
     val normalStyle = remember(currentTextStyle, japaneseLyrics, wordSegmentation) {
-        currentTextStyle.copy(
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold,
-            lineHeight = 36.sp,
-            textMotion = TextMotion.Animated,
-        ).forLyricLanguage(japaneseLyrics, wordSegmentation)
+        currentTextStyle.lyricLineStyle().forLyricLanguage(japaneseLyrics, wordSegmentation)
     }
 
     val accompanimentStyle = remember(currentTextStyle, japaneseLyrics, wordSegmentation) {

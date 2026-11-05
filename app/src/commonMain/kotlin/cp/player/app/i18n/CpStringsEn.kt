@@ -839,6 +839,7 @@ object CpStringsEn : CpStrings {
         override fun sleepTimerAfterTrack() = "Sleep timer · after this track"
         override fun sleepTimerRemaining(minutes: Long) = "Sleep timer · $minutes min"
 
+        override val nowPlaying = "Now Playing"
         override val collapse = "Collapse"
         override val translation = "Translation"
         override val queue = "Queue"
