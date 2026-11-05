@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -37,10 +38,15 @@ import cp.player.app.AppModel
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.ContentState
+import cp.player.app.ui.component.CpDetailHeroSkeleton
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.component.CpSectionHeaderSkeleton
+import cp.player.app.ui.component.CpSkeletonCaption
+import cp.player.app.ui.component.CpSongRowSkeleton
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LazyScrollColumn
+import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.ui.component.SectionHeader
 import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.SongMenuActions
@@ -324,11 +330,23 @@ private fun AlbumDetailContent(
             // 宽屏把「封面 + 说明」放到左侧固定栏，曲目占右侧 —— 与歌单详情同一套断点。
             val isWide = cp.player.app.ui.component.CpBreakpoints.isExpanded(maxWidth)
             when {
-                state.loading && detail == null -> ContentState(
-                    title = s.album.loading,
-                    message = s.album.loadingNote,
-                    loading = true,
-                )
+                state.loading && detail == null -> ScrollColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = CpSpacing.pageHorizontal,
+                        end = CpSpacing.pageHorizontal,
+                        bottom = CpSpacing.formBottomInset,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
+                ) {
+                    // 骨架而不是居中加载器：这一页的结构（封面 + 元信息 + 曲目）在
+                    // 请求发出前就已经确定，先摆出来比「空一屏再整屏跳出」稳定得多。
+                    CpSkeletonCaption(s.album.loadingNote)
+                    CpDetailHeroSkeleton(wide = isWide)
+                    Spacer(Modifier.height(8.dp))
+                    CpSectionHeaderSkeleton(titleWidth = 64.dp, subtitleWidth = 150.dp, trailing = true)
+                    CpSongRowSkeleton(rows = 8)
+                }
                 detail == null -> ContentState(
                     title = s.album.notOpened,
                     // 后端给的 message 可能是空串（见 load() 里的 orEmpty）⇒ 用本地文案兜底。

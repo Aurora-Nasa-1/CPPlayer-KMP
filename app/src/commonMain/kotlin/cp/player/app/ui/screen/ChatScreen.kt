@@ -48,7 +48,9 @@ import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.component.CpChatBubblesSkeleton
 import cp.player.app.ui.component.CpSpacing
+import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.ui.util.formatChatTime
 import cp.player.core.BackendResult
 import cp.player.core.model.Message
@@ -238,10 +240,18 @@ internal fun ChatContent(
                         title = chat.loginRequired,
                         message = chat.accountBound,
                     )
-                    state.loading && state.messages.isEmpty() -> ContentState(
-                        title = chat.loading,
-                        loading = true,
-                    )
+                    state.loading && state.messages.isEmpty() -> ScrollColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        // 与消息列表同一边距与气泡间距：骨架是「这段对话的样子」，
+                        // 而不是一张居中的等待卡。
+                        contentPadding = PaddingValues(
+                            horizontal = CpSpacing.pageHorizontal,
+                            vertical = 12.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        CpChatBubblesSkeleton(rows = 7)
+                    }
                     state.messages.isEmpty() -> ContentState(
                         title = chat.empty,
                         message = state.error ?: chat.emptyHint,

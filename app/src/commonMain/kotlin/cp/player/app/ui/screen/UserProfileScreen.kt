@@ -51,6 +51,12 @@ import cp.player.app.ui.component.SongOptionsSheet
 import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LazyScrollColumn
+import cp.player.app.ui.component.CpCardRowSkeleton
+import cp.player.app.ui.component.CpProfileHeroSkeleton
+import cp.player.app.ui.component.CpSectionHeaderSkeleton
+import cp.player.app.ui.component.CpSkeletonCaption
+import cp.player.app.ui.component.CpSongRowSkeleton
+import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.ui.component.LazyScrollRow
 import cp.player.app.ui.component.PlaylistItem
 import cp.player.app.ui.component.SectionHeader
@@ -199,11 +205,28 @@ private fun UserProfileContent(
         onBack = onBack,
     ) { pageModifier ->
         when {
-            state.loading && bundle == null -> ContentState(
-                title = s.account.profileLoading,
-                message = s.account.profileLoadingNote,
-                loading = true,
-            )
+            state.loading && bundle == null -> ScrollColumn(
+                modifier = pageModifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = CpSpacing.pageHorizontal,
+                    end = CpSpacing.pageHorizontal,
+                    bottom = CpSpacing.formBottomInset,
+                ),
+                verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
+            ) {
+                // 个人主页的结构（头像 + 昵称 + 统计 + 热门歌曲 + 歌单）是固定的，
+                // 先摆结构再填数据，比居中转圈更接近「页面正在长出来」。
+                CpSkeletonCaption(s.account.profileLoadingNote)
+                CpProfileHeroSkeleton()
+                Spacer(Modifier.height(8.dp))
+                CpSectionHeaderSkeleton(titleWidth = 90.dp, subtitleWidth = 70.dp)
+                CpSongRowSkeleton(rows = 6)
+                Spacer(Modifier.height(8.dp))
+                CpSectionHeaderSkeleton(titleWidth = 72.dp, subtitleWidth = 44.dp)
+                // 歌单区在主页是**卡片行**（PlaylistItem：60dp 封面 + 两行字 + 卡片底），
+                // 不是封面栅格 —— 摆成栅格的话数据回来后整块会从方形网格塌成横条。
+                CpCardRowSkeleton(rows = 3, thumbSize = 60.dp)
+            }
             bundle == null -> ContentState(
                 title = s.account.profileNotOpened,
                 message = state.error,

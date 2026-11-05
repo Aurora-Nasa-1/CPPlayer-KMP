@@ -23,6 +23,8 @@ import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpBreakpoints
+import cp.player.app.ui.component.CpContactListSkeleton
+import cp.player.app.ui.component.CpSkeletonCaption
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpTwoPane
 import cp.player.app.ui.component.LazyScrollColumn
@@ -179,12 +181,21 @@ private fun ContactList(
             message = messages.accountBound,
             modifier = modifier.padding(top = 24.dp),
         )
-        state.loading && state.contacts.isEmpty() -> ContentState(
-            title = messages.loading,
-            message = messages.loadingNote,
-            loading = true,
-            modifier = modifier,
-        )
+        state.loading && state.contacts.isEmpty() -> LazyScrollColumn(
+            modifier = modifier.fillMaxSize(),
+            // 左栏是窄栏：行高与 ContactRow 一致（52dp 头像 + 两行字），
+            // 内边距与上方已加载列表同源。
+            contentPadding = PaddingValues(
+                start = CpSpacing.formHorizontal,
+                end = CpSpacing.formHorizontal,
+                top = CpSpacing.formVertical,
+                bottom = CpSpacing.formBottomInset,
+            ),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            item { CpSkeletonCaption(messages.loadingNote) }
+            item { CpContactListSkeleton(rows = 8) }
+        }
         state.contacts.isEmpty() -> ContentState(
             title = messages.empty,
             message = state.error ?: messages.emptyHint,

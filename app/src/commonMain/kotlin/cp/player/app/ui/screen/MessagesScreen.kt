@@ -45,6 +45,8 @@ import cp.player.app.ui.component.CpContextMenu
 import cp.player.app.ui.component.CpContextMenuItem
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.component.CpContactListSkeleton
+import cp.player.app.ui.component.CpSkeletonCaption
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.LegacyListItem
@@ -172,11 +174,21 @@ private fun MessagesContent(
                 message = messages.loginRequiredNote,
                 modifier = pageModifier.padding(top = 32.dp),
             )
-            state.loading && state.contacts.isEmpty() -> ContentState(
-                title = messages.loading,
-                message = messages.loadingNote,
-                loading = true,
-            )
+            state.loading && state.contacts.isEmpty() -> LazyScrollColumn(
+                modifier = pageModifier.fillMaxSize(),
+                // 与已加载列表取同一组内边距：骨架的行高与 ContactRow 对齐，
+                // 数据回来时只是灰块被文字替换，不会整体上移。
+                contentPadding = PaddingValues(
+                    start = CpSpacing.pageHorizontal,
+                    end = CpSpacing.pageHorizontal,
+                    top = CpSpacing.pageTop,
+                    bottom = CpSpacing.formBottomInset,
+                ),
+                verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
+            ) {
+                item { CpSkeletonCaption(messages.loadingNote) }
+                item { CpContactListSkeleton(rows = 8) }
+            }
             state.contacts.isEmpty() -> ContentState(
                 title = messages.empty,
                 message = state.error ?: messages.emptyHint,

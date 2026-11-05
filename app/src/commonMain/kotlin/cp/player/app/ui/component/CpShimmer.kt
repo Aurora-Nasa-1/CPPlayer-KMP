@@ -66,11 +66,18 @@ private const val ShimmerSweepFraction = 0.6f
  * 给任意块套上骨架扫光。
  *
  * @param shape 应与真内容的形状一致（例如封面用 `MaterialTheme.shapes.medium`）。
+ * @param base 块底色，默认 `surfaceContainerHigh`。
+ *   **只有在容器里**才需要覆盖：卡片行里卡片是 `surfaceContainerLow`，块若仍是 High，
+ *   与卡片只差一档、出图后几乎看不出结构（这条是离屏出图核对出来的）。
+ * @param highlight 扫光高光色，**必须比 [base] 浅**（否则扫光是「扫暗」）。
+ *   用 `surfaceBright`：浅色与深色主题下它都在 `surfaceContainerHighest` 之上。
  */
 @Composable
-fun Modifier.cpShimmer(shape: Shape = MaterialTheme.shapes.small): Modifier {
-    val base = MaterialTheme.colorScheme.surfaceContainerHigh
-    val highlight = MaterialTheme.colorScheme.surfaceContainerHighest
+fun Modifier.cpShimmer(
+    shape: Shape = MaterialTheme.shapes.small,
+    base: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    highlight: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
+): Modifier {
     val transition = rememberInfiniteTransition(label = "cpShimmer")
     // ⚠️ 不要写成 `by` 后在外面读：这里刻意保留 `State` 本体，让 `.value` 只在下面
     // `drawBehind` 的**绘制 lambda** 里被读 —— 每帧只重绘、不重组。
@@ -115,10 +122,11 @@ fun Modifier.cpShimmer(shape: Shape = MaterialTheme.shapes.small): Modifier {
 fun CpShimmerBox(
     modifier: Modifier = Modifier,
     shape: Shape = MaterialTheme.shapes.small,
+    base: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    highlight: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
 ) {
-    Box(modifier.cpShimmer(shape))
+    Box(modifier.cpShimmer(shape, base, highlight))
 }
-
 /**
  * 歌曲列表首屏的骨架：封面块 + 两行文字块。
  *

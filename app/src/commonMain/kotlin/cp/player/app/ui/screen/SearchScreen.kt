@@ -48,10 +48,14 @@ import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.AlbumItem
 import cp.player.app.ui.component.ArtistItem
 import cp.player.app.ui.component.ContentState
+import cp.player.app.ui.component.CpCardRowSkeleton
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSearchField
 import cp.player.app.ui.component.CpSearchFieldHeight
 import cp.player.app.ui.component.CpSearchSuggestionPanel
+import cp.player.app.ui.component.CpSectionHeaderSkeleton
+import cp.player.app.ui.component.CpSkeletonCaption
+import cp.player.app.ui.component.CpSongRowSkeleton
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.PageHeader
 import cp.player.app.ui.component.LazyScrollColumn
@@ -237,11 +241,41 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
             }
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                 when {
-                    // 加载 / 错误这两张卡也按页面宽度收口，否则宽屏上它们比搜索框宽一圈。
-                    state.loading -> StateSurface(
-                        Modifier.widthIn(max = CpSpacing.pageMaxWidth).padding(20.dp),
+                    // 骨架按**当前搜索类型**摆：搜歌曲是行骨架、搜专辑 / 歌单是封面栅格、
+                    // 搜歌手是圆头像行。三类结果长得完全不同，用同一套骨架等于给用户
+                    // 一个假的预期 —— 结果一回来整片都变样。
+                    state.loading -> LazyScrollColumn(
+                        Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = CpSpacing.pageHorizontal,
+                            end = CpSpacing.pageHorizontal,
+                            top = CpSpacing.listRowGap,
+                            bottom = CpSpacing.formBottomInset,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
                     ) {
-                        ContentState(title = "正在搜索", message = "正在从当前音源查找内容", loading = true)
+                        item { CpSkeletonCaption("正在从当前音源查找内容") }
+                        item {
+                            CpSectionHeaderSkeleton(
+                                titleWidth = 96.dp,
+                                subtitleWidth = 44.dp,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
+                            )
+                        }
+                        item {
+                            when (state.searchType) {
+                                // 歌曲是裸行（无卡片、48dp 方形封面）；
+                                // 专辑 / 歌单是卡片行 + 60dp 圆角封面；歌手是卡片行 + 56dp 圆头像。
+                                // 三种结果的行高与行内结构完全不同，映射错了数据回来时整屏都会跳。
+                                SearchType.SONG -> CpSongRowSkeleton(rows = 8)
+                                SearchType.ARTIST -> CpCardRowSkeleton(
+                                    rows = 6,
+                                    thumbSize = 56.dp,
+                                    circular = true,
+                                )
+                                else -> CpCardRowSkeleton(rows = 6, thumbSize = 60.dp)
+                            }
+                        }
                     }
                     state.error != null -> StateSurface(
                         Modifier.widthIn(max = CpSpacing.pageMaxWidth).padding(20.dp),

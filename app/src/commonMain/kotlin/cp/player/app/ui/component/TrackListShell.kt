@@ -368,11 +368,18 @@ fun <T> TrackListFrame(
     }
 
     when {
-        status.loading && rows.items.isEmpty() -> Box(
-            modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center,
+        status.loading && rows.items.isEmpty() -> ScrollColumn(
+            modifier = modifier.fillMaxSize(),
+            // 与列表本体的横向内边距同源（`TrackListMetrics.horizontal`）：
+            // 骨架的行位置必须和数据到位后的行位置一致，否则替换时会横向错一下。
+            contentPadding = PaddingValues(
+                start = TrackListMetrics.horizontal,
+                end = TrackListMetrics.horizontal,
+                top = 8.dp,
+                bottom = navInset + CpSpacing.formBottomInset,
+            ),
         ) {
-            CpLoadingIndicator(Modifier.size(40.dp))
+            CpSongRowSkeleton(rows = 10)
         }
 
         status.error != null && rows.items.isEmpty() -> Box(
