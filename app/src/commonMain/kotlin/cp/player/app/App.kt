@@ -6,9 +6,17 @@ import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.TransformOrigin
+import kotlin.math.roundToInt
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
@@ -349,21 +357,53 @@ fun App(
                                                 mainScreenVisible = navigator.lastItem is MainScreen,
                                                 onClick = { navigator.push(PlayerScreen()) },
                                             ) {
+                                                val isDesktopExpanded = cp.player.app.ui.component.LocalIsExpanded.current
+                                                val isDesktop = isDesktopExpanded || titleBar != null
                                                 ScreenTransition(
                                                     navigator = navigator,
                                                     transition = {
-                                                        // 播放页路由（从全局 MiniPlayer 展开）：fade，
-                                                        // 让 sharedBounds 的「小卡片长成全屏」形变唱主角 ——
-                                                        // 叠一层 slide 会和形变抢戏。
+                                                        // 播放页路由（从全局 MiniPlayer 展开）：
+                                                        // 桌面端保持双端淡入淡出，由窗口沉浸态协调顶栏；
+                                                        // 手机端应用背景沉底（scale/slide/dim）与浮起动效，sharedBounds 的「小卡片长成全屏」形变唱主角。
                                                         if (targetState is PlayerScreen ||
                                                             initialState is PlayerScreen
                                                         ) {
-                                                            // ⚠️ 时长 = 沉浸态的基准节拍：这条路由进 / 出播放页时，
-                                                            // 窗口顶栏的背景涨落与标题栏淡出也钉在同一拍上
-                                                            // （第一版 300ms，比节拍短 100ms，退出时页面先落完、
-                                                            // 背景还在撤，看得出一道错位）。
-                                                            fadeIn(tween(CpMotion.PlayerExpandMs)) togetherWith
-                                                                fadeOut(tween(CpMotion.PlayerExpandMs))
+                                                            if (isDesktop) {
+                                                                fadeIn(tween(CpMotion.PlayerExpandMs)) togetherWith
+                                                                    fadeOut(tween(CpMotion.PlayerExpandMs))
+                                                            } else if (targetState is PlayerScreen) {
+                                                                val enter = fadeIn(tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing))
+                                                                val exit = scaleOut(
+                                                                    animationSpec = tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing),
+                                                                    targetScale = 0.92f,
+                                                                    transformOrigin = TransformOrigin(0.5f, 0.4f),
+                                                                ) + slideOutVertically(
+                                                                    animationSpec = tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing),
+                                                                    targetOffsetY = { (it * 0.02f).roundToInt() },
+                                                                ) + fadeOut(
+                                                                    animationSpec = tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing),
+                                                                    targetAlpha = 0.6f,
+                                                                )
+                                                                (enter togetherWith exit).apply {
+                                                                    targetContentZIndex = 1f
+                                                                }
+                                                            } else {
+                                                                val enter = scaleIn(
+                                                                    animationSpec = tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing),
+                                                                    initialScale = 0.92f,
+                                                                    transformOrigin = TransformOrigin(0.5f, 0.4f),
+                                                                ) + slideInVertically(
+                                                                    animationSpec = tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing),
+                                                                    initialOffsetY = { (it * 0.02f).roundToInt() },
+                                                                ) + fadeIn(
+                                                                    animationSpec = tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing),
+                                                                    initialAlpha = 0.6f,
+                                                                )
+                                                                val exit = fadeOut(tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing))
+                                                                (enter togetherWith exit).apply {
+                                                                    targetContentZIndex = -1f
+                                                                }
+                                                            }
                                                         } else if (targetState is cp.player.app.ui.screen.PlaylistDetailScreen ||
                                                             initialState is cp.player.app.ui.screen.PlaylistDetailScreen ||
                                                             targetState is cp.player.app.ui.screen.HomeGeneratedPlaylistScreen ||
@@ -394,16 +434,32 @@ fun App(
                                                         CompositionLocalProvider(
                                                             cp.player.app.ui.anim.LocalNavAnimatedVisibilityScope provides this,
                                                         ) {
-                                                            screen.Content()
+                                                            val isPlayerOnTop = navigator.lastItem is PlayerScreen
+                                                            val cornerRadius by animateDpAsState(
+                                                                targetValue = if (isPlayerOnTop && !isDesktop && screen !is PlayerScreen) 20.dp else 0.dp,
+                                                                animationSpec = tween(
+                                                                    durationMillis = CpMotion.PlayerExpandMs,
+                                                                    easing = FastOutSlowInEasing,
+                                                                ),
+                                                                label = "playerBackgroundSinkCorner",
+                                                            )
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .fillMaxSize()
+                                                                    .then(
+                                                                        if (cornerRadius > 0.dp) {
+                                                                            Modifier.clip(RoundedCornerShape(cornerRadius))
+                                                                        } else Modifier
+                                                                    ),
+                                                            ) {
+                                                                screen.Content()
+                                                            }
                                                         }
                                                     },
                                                 )
                                             }
                                         }
                                     }
-
-                                    // 封面飞行器：必须压在所有页面与 MiniPlayer 之上（最后绘制）。
-                                    CoverFlightHost()
                                 }
                             }
                         }
@@ -426,6 +482,9 @@ fun App(
                                 }
                             }
                         }
+
+                        // 封面飞行器：压在整窗最顶层（页面、MiniPlayer 与桌面标题栏之上最后绘制）。
+                        CoverFlightHost()
                     }
                 }
             }

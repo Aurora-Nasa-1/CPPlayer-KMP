@@ -764,7 +764,10 @@ private fun SharedTransitionScope.MiniCover(
     modifier: Modifier = Modifier,
 ) {
     Box(
-        modifier.size(size).graphicsLayer { alpha = if (hideCover) 0f else 1f },
+        modifier
+            .size(size)
+            .coverFlightTarget(CoverFlight.TARGET_MINI, coverCorner)
+            .graphicsLayer { alpha = if (hideCover) 0f else 1f },
     ) {
         if (!track.coverUrl.isNullOrBlank()) {
             // 用 150px 缩略图，省内存与带宽。
@@ -772,7 +775,6 @@ private fun SharedTransitionScope.MiniCover(
                 model = track.coverUrl.resized(150),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize()
-                    .coverFlightTarget(CoverFlight.TARGET_MINI, coverCorner)
                     .sharedBounds(
                         sharedContentState = rememberSharedContentState(key = "cover-${track.id}"),
                         animatedVisibilityScope = animatedVisibilityScope

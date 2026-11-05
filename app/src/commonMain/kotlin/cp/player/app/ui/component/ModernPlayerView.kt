@@ -109,6 +109,21 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
         navigator?.let { nav -> { nav.pushOrNotify(LyricsPluginSettingsScreen()) } }
     }
 
+    val currentTrack = state.currentTrack
+    val titleModifier = if (currentTrack != null) {
+        Modifier.sharedBounds(
+            sharedContentState = rememberSharedContentState("title-${currentTrack.id}"),
+            animatedVisibilityScope = animatedVisibilityScope,
+        )
+    } else Modifier
+
+    val artistModifier = if (currentTrack != null) {
+        Modifier.sharedBounds(
+            sharedContentState = rememberSharedContentState("artist-${currentTrack.id}"),
+            animatedVisibilityScope = animatedVisibilityScope,
+        )
+    } else Modifier
+
     Box(
         Modifier.fillMaxSize()
             .sharedBounds(rememberSharedContentState("player-container"), animatedVisibilityScope)
@@ -144,6 +159,8 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
             artworkModifier = Modifier.sharedBounds(
                 rememberSharedContentState("cover-${state.currentTrack?.id}"), animatedVisibilityScope,
             ),
+            titleModifier = titleModifier,
+            artistModifier = artistModifier,
         ) { modifier ->
             LyricContent(
                 state = state,

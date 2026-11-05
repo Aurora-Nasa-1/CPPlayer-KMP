@@ -24,8 +24,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
-import cp.player.app.ui.anim.CoverFlight
-import cp.player.app.ui.anim.coverFlightTarget
 import cp.player.app.ui.component.BentoCard
 import cp.player.app.ui.component.CpCoverPlaceholder
 import cp.player.app.ui.component.CpText
@@ -82,24 +80,21 @@ internal fun PlaylistHeaderInfo(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Surface(
-            modifier = Modifier
-                .size(108.dp)
-                .coverFlightTarget(CoverFlight.TARGET_PLAYLIST_HEADER, 16.dp),
+            modifier = Modifier.size(108.dp),
             shape = MaterialTheme.shapes.large,
             color = MaterialTheme.colorScheme.surfaceVariant,
             shadowElevation = 4.dp,
         ) {
-            val hideCover = CoverFlight.isFlyingTo(CoverFlight.TARGET_PLAYLIST_HEADER)
             if (!summary.coverUrl.isNullOrBlank()) {
                 AsyncImage(
                     model = summary.coverUrl.resized(300),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize().graphicsLayer { alpha = if (hideCover) 0f else 1f },
+                    modifier = Modifier.fillMaxSize(),
                 )
             } else {
                 CpCoverPlaceholder(
-                    modifier = Modifier.fillMaxSize().graphicsLayer { alpha = if (hideCover) 0f else 1f },
+                    modifier = Modifier.fillMaxSize(),
                     corner = 16.dp,
                     animated = false,
                 )
@@ -205,24 +200,21 @@ internal fun PlaylistInfoRail(
         Spacer(Modifier.height(8.dp))
         // 桌面端宽屏大封面（208dp，extraLarge 28dp 圆角，8dp 阴影）
         Surface(
-            modifier = Modifier
-                .size(208.dp)
-                .coverFlightTarget(CoverFlight.TARGET_PLAYLIST_HEADER, 28.dp),
+            modifier = Modifier.size(208.dp),
             shape = MaterialTheme.shapes.extraLarge,
             color = MaterialTheme.colorScheme.surfaceVariant,
             shadowElevation = 8.dp,
         ) {
-            val hideCover = CoverFlight.isFlyingTo(CoverFlight.TARGET_PLAYLIST_HEADER)
             if (!summary.coverUrl.isNullOrBlank()) {
                 AsyncImage(
                     model = summary.coverUrl.resized(600),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize().graphicsLayer { alpha = if (hideCover) 0f else 1f },
+                    modifier = Modifier.fillMaxSize(),
                 )
             } else {
                 CpCoverPlaceholder(
-                    modifier = Modifier.fillMaxSize().graphicsLayer { alpha = if (hideCover) 0f else 1f },
+                    modifier = Modifier.fillMaxSize(),
                     corner = 28.dp,
                     animated = false,
                 )

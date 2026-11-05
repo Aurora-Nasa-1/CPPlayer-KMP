@@ -110,6 +110,8 @@ internal fun MobileNowPlayingLayout(
     contentModifier: Modifier = Modifier,
     dismissGesture: Modifier = Modifier,
     artworkModifier: Modifier = Modifier,
+    titleModifier: Modifier = Modifier,
+    artistModifier: Modifier = Modifier,
     lyricsContent: @Composable (Modifier) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -208,7 +210,14 @@ internal fun MobileNowPlayingLayout(
                             Modifier.fillMaxWidth().padding(top = if (compact) 4.dp else 12.dp, bottom = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            TrackHeading(track, !compact, onArtistClick, Modifier.weight(1f))
+                            TrackHeading(
+                                track = track,
+                                large = !compact,
+                                onArtistClick = onArtistClick,
+                                modifier = Modifier.weight(1f),
+                                titleModifier = titleModifier,
+                                artistModifier = artistModifier,
+                            )
                             Spacer(Modifier.width(8.dp))
                             PlayerIconButton(
                                 if (state.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
@@ -303,11 +312,13 @@ private fun TrackHeading(
     large: Boolean,
     onArtistClick: ((ArtistSummary) -> Unit)?,
     modifier: Modifier = Modifier,
+    titleModifier: Modifier = Modifier,
+    artistModifier: Modifier = Modifier,
 ) {
     Column(modifier) {
         CpText(
             track.name,
-            modifier = Modifier.fillMaxWidth().testTag("player-track-title"),
+            modifier = Modifier.then(titleModifier).fillMaxWidth().testTag("player-track-title"),
             style = if (large) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1, reveal = CpTextReveal.Marquee,
@@ -315,7 +326,7 @@ private fun TrackHeading(
         Spacer(Modifier.height(4.dp))
         TrackArtistText(
             track = track, onArtistClick = onArtistClick,
-            modifier = Modifier.fillMaxWidth().testTag("player-track-artist"),
+            modifier = Modifier.then(artistModifier).fillMaxWidth().testTag("player-track-artist"),
             style = if (large) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
             reveal = CpTextReveal.Marquee,

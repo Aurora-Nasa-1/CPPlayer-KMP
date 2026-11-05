@@ -25,11 +25,14 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -231,16 +234,31 @@ fun Modifier.coverFlightTarget(key: String, corner: Dp): Modifier {
  * 无飞行时不参与布局；App 离开组合时取消未完成的飞行。
  */
 @Composable
-fun CoverFlightHost() {
+fun CoverFlightHost(modifier: Modifier = Modifier) {
     DisposableEffect(Unit) { onDispose { CoverFlight.cancel() } }
     val flight = CoverFlight.active.value
-    if (flight != null) {
-        key(flight.id) { CoverFlightRenderer(flight) }
+    var hostCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .onGloballyPositioned { hostCoordinates = it },
+    ) {
+        if (flight != null) {
+            key(flight.id) {
+                CoverFlightRenderer(
+                    flight = flight,
+                    hostCoordinates = hostCoordinates,
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun CoverFlightRenderer(flight: CoverFlight.Flight) {
+private fun CoverFlightRenderer(
+    flight: CoverFlight.Flight,
+    hostCoordinates: LayoutCoordinates?,
+) {
     val android = isAndroidPlatform()
     val density = LocalDensity.current
     // 飞行时长：一次飞行要跨越大半个屏幕，属于「大面积元素位移」，取的是偏慢的一档，
@@ -254,7 +272,9 @@ private fun CoverFlightRenderer(flight: CoverFlight.Flight) {
         if (android) CpMotion.spatialSlow() else CpMotion.spatial()
     val arcPx = with(density) { (if (android) 48.dp else 0.dp).toPx() }
 
-    var target by remember(flight.id) { mutableStateOf<CoverFlight.Spot?>(null) }
+    var target by remember(flight.id) {
+        mutableStateOf(CoverFlight.peekTarget(flight.targetKey))
+    }
     var dismissing by remember(flight.id) { mutableStateOf(false) }
     val progress = remember(flight.id) { Animatable(0f) }
 
@@ -289,7 +309,7 @@ private fun CoverFlightRenderer(flight: CoverFlight.Flight) {
 
         // 目标可能还没出现（播放要先解析曲目 / 页面还在入场）：先在源位抬起等待；
         // 超时仍无目标则原地淡出取消，避免飞行器悬在半空。
-        val spot = withTimeoutOrNull(TARGET_WAIT_MS) {
+        val spot = target ?: withTimeoutOrNull(TARGET_WAIT_MS) {
             snapshotFlow { CoverFlight.peekTarget(flight.targetKey) }.first { it != null }
         }
         if (spot == null) {
@@ -319,18 +339,25 @@ private fun CoverFlightRenderer(flight: CoverFlight.Flight) {
         end()
     }
 
+    val hostPos = hostCoordinates?.positionInRoot() ?: Offset.Zero
     val p = progress.value
     val t = p.coerceIn(0f, 1f)
     val from = flight.from
     val to = target?.rect ?: from
+
+    val fromLeft = from.left - hostPos.x
+    val fromTop = from.top - hostPos.y
+    val toLeft = to.left - hostPos.x
+    val toTop = to.top - hostPos.y
+
     // 位置按 raw p 插值（允许回弹过冲）；弧线 / 圆角 / 尺寸用 clamp 后的 t，避免过冲时形状反算。
-    val left = lerp(from.left, to.left, p)
-    val top = lerp(from.top, to.top, p) - arcPx * sin(PI * t).toFloat()
+    val left = lerp(fromLeft, toLeft, p)
+    val top = lerp(fromTop, toTop, p) - arcPx * sin(PI * t).toFloat()
     val width = lerp(from.width, to.width, p)
     val height = lerp(from.height, to.height, p)
     val toCorner = target?.corner ?: flight.fromCorner
     val corner = flight.fromCorner + (toCorner - flight.fromCorner) * t
-    val scale = 1f + 0.05f * lift
+    val scale = 1f + 0.05f * (1f - t) * lift
 
     if (fade > 0.004f && width > 0f && height > 0f) {
         Box(
@@ -343,7 +370,7 @@ private fun CoverFlightRenderer(flight: CoverFlight.Flight) {
                     scaleY = scale
                     shape = RoundedCornerShape(corner)
                     clip = true
-                    shadowElevation = with(density) { 12.dp.toPx() } * (0.5f + 0.5f * lift)
+                    shadowElevation = with(density) { 12.dp.toPx() } * (1f - t) * (0.5f + 0.5f * lift)
                 }
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh),
         ) {
