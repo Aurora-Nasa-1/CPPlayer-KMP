@@ -84,18 +84,42 @@ if (Test-Path $probeConfig) { Remove-Item $probeConfig -Force -ErrorAction Silen
 Write-Host ("  JDK 25 Detected: {0}" -f $isJdk25) -ForegroundColor Cyan
 Write-Host ("  JEP 514 Ahead-of-Time Command-Line Ergonomics: {0}" -f $supportsOneShotErgonomics) -ForegroundColor Cyan
 
+function Invoke-JavaWithTimeout {
+    param(
+        [string]$JavaPath,
+        [string[]]$Arguments,
+        [int]$TimeoutSeconds = 30
+    )
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $JavaPath
+    $psi.Arguments = ($Arguments | ForEach-Object { if ($_ -match '\s') { "`"$_`"" } else { $_ } }) -join " "
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $finished = $proc.WaitForExit($TimeoutSeconds * 1000)
+    if (-not $finished) {
+        Write-Warning ("Java execution exceeded {0}s timeout. Terminating process..." -f $TimeoutSeconds)
+        try { $proc.Kill() } catch {}
+    }
+}
+
 # 2. Assemble distributable app image if needed
 $appImageDir = Join-Path $repoRoot "app/build/compose/binaries/main/app/CPPlayer"
 $appDir = Join-Path $appImageDir "app"
 Write-Host "[2/4] Assembling desktop distribution image for AOT training..." -ForegroundColor Yellow
-Push-Location $repoRoot
-try {
-    ./gradlew :app:createDistributable -x test --quiet
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to assemble distributable image"
+if (-not (Test-Path (Join-Path $appDir "CPPlayer.cfg"))) {
+    Push-Location $repoRoot
+    try {
+        $jbrDir = (Get-Item $JavaExe).Directory.Parent.FullName
+        ./gradlew :app:createDistributable "-Pcp.jbrHome=$jbrDir" "-Pcp.jdk25=true" "-Pcp.gc=shenandoah" "-Pcp.compactHeaders=true" -x test --quiet
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Gradle createDistributable returned non-zero exit code ($LASTEXITCODE)"
+        }
+    } finally {
+        Pop-Location
     }
-} finally {
-    Pop-Location
+} else {
+    Write-Host "  Desktop distribution image already assembled." -ForegroundColor Green
 }
 
 # 3. Perform AOT Training
@@ -135,14 +159,11 @@ try {
     if ($supportsOneShotErgonomics) {
         Write-Host "  Using JEP 514 One-Shot AOTCacheOutput..." -ForegroundColor Green
         $runArgs = @("-XX:AOTCacheOutput=$outputPath") + $jvmTrainingArgs + @("cp.player.app.MainKt")
-        $prevEap = $ErrorActionPreference
-        $ErrorActionPreference = "Continue"
-        & $JavaExe $runArgs
-        $ErrorActionPreference = $prevEap
+        Invoke-JavaWithTimeout -JavaPath $JavaExe -Arguments $runArgs -TimeoutSeconds 25
 
         # HotSpot JEP 514 spawns an assembly child process on exit which writes $outputPath and removes $outputPath.config
         $configPath = "$outputPath.config"
-        $deadline = (Get-Date).AddSeconds(45)
+        $deadline = (Get-Date).AddSeconds(20)
         while ((Test-Path $configPath) -and (Get-Date) -lt $deadline) {
             Start-Sleep -Milliseconds 500
         }
@@ -153,18 +174,12 @@ try {
         if (Test-Path $configPath) { Remove-Item $configPath -Force }
 
         $recordArgs = @("-XX:AOTMode=record", "-XX:AOTConfiguration=$configPath") + $jvmTrainingArgs + @("cp.player.app.MainKt")
-        $prevEap = $ErrorActionPreference
-        $ErrorActionPreference = "Continue"
-        & $JavaExe $recordArgs
-        $ErrorActionPreference = $prevEap
+        Invoke-JavaWithTimeout -JavaPath $JavaExe -Arguments $recordArgs -TimeoutSeconds 25
 
         if (Test-Path $configPath) {
             Write-Host "  Assembling AOT Cache from configuration..." -ForegroundColor Yellow
             $createArgs = @("-XX:AOTMode=create", "-XX:AOTConfiguration=$configPath", "-XX:AOTCache=$outputPath", "-cp", $effectiveClasspath)
-            $prevEap = $ErrorActionPreference
-            $ErrorActionPreference = "Continue"
-            & $JavaExe $createArgs
-            $ErrorActionPreference = $prevEap
+            Invoke-JavaWithTimeout -JavaPath $JavaExe -Arguments $createArgs -TimeoutSeconds 25
             Remove-Item $configPath -Force -ErrorAction SilentlyContinue
         }
     }

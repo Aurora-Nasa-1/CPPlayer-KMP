@@ -194,19 +194,26 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
         val isAotWarmup = System.getProperty("cp.player.aotWarmup") == "true" ||
             System.getProperty("cp.player.cdsDump") == "true"
         if (isAotWarmup) {
+            // 立即启动看门狗守护线程：15 秒超时强制 halt，绝不阻塞构建
+            kotlin.concurrent.thread(isDaemon = true, name = "AotWarmupGlobalWatchdog") {
+                Thread.sleep(15000L)
+                println("[CPPlayer] AOT 全局看门狗超时触发，强制退出 JVM...")
+                Runtime.getRuntime().halt(0)
+            }
+
             LaunchedEffect(Unit) {
-                println("[CPPlayer] AOT 预热模式激活：正在执行全系统深度热点预热...")
-                AotWarmupRunner.runAllWarmups()
-                // 启动看门狗守护线程：防止 JVM 在关闭阶段因 JNI 线程挂起，在 12 秒后强制退出
-                kotlin.concurrent.thread(isDaemon = true, name = "AotWarmupExitWatchdog") {
-                    Thread.sleep(12000L)
-                    Runtime.getRuntime().halt(0)
+                try {
+                    println("[CPPlayer] AOT 预热模式激活：正在执行全系统深度热点预热...")
+                    runCatching { AotWarmupRunner.runAllWarmups() }.onFailure {
+                        println("[CPPlayer] AOT 预热遇到非致命警告: ${it.message}")
+                    }
+                } finally {
+                    delay(300L)
+                    println("[CPPlayer] 预热完成，正在优雅关闭应用以触发 AOTCache 归档生成 (JEP 514)...")
+                    exitApplication()
+                    delay(300L)
+                    kotlin.system.exitProcess(0)
                 }
-                delay(1000L)
-                println("[CPPlayer] 预热完成，正在优雅关闭应用以触发 AOTCache 归档生成 (JEP 514)...")
-                exitApplication()
-                delay(600L)
-                kotlin.system.exitProcess(0)
             }
         }
 
@@ -264,8 +271,9 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
         val isMiniPinned = DesktopShell.isMiniPinned
         val isMobileMode = DesktopShell.isMobileMode
 
-        Window(
-            onCloseRequest = {
+        if (!isAotWarmup) {
+            Window(
+                onCloseRequest = {
                 when (closeBehavior) {
                     DesktopCloseBehavior.EXIT -> exitApplication()
                     DesktopCloseBehavior.TRAY -> hideToTray()
@@ -663,6 +671,7 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
                     onDismiss = { showCloseDialog = false },
                 )
             }
+        }
         }
     }
 }

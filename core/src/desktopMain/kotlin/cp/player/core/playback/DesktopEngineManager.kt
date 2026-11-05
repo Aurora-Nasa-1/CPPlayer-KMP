@@ -119,6 +119,15 @@ class DynamicDesktopPlatformPlayer(
         }
     }
 
+    private fun createStandardPlayer(): PlatformPlayer {
+        return try {
+            AudioPlayerImpl()
+        } catch (e: Throwable) {
+            println("[CPPlayer Engine Manager] Standard AudioPlayerImpl 初始化失败（如无声卡或CI环境）: ${e.message}")
+            NoopDesktopPlatformPlayer(e.message ?: "No audio output device")
+        }
+    }
+
     private fun createUnderlyingPlayer(type: DesktopPlayerEngineType): PlatformPlayer {
         return if (type == DesktopPlayerEngineType.HIRES_EXCLUSIVE) {
             if (DesktopEngineManager.isHiResEngineSupported) {
@@ -128,14 +137,17 @@ class DynamicDesktopPlatformPlayer(
 [CPPlayer Engine Manager] Hardware Direct Output: Bypassing Windows Audio Mixer
 ================================================================================
                 """.trimIndent())
-                DesktopHiResPlatformPlayer()
+                runCatching { DesktopHiResPlatformPlayer() }.getOrElse { err ->
+                    println("[CPPlayer Engine Manager] Hi-Res engine failed to create ($err). Falling back to Standard.")
+                    createStandardPlayer()
+                }
             } else {
                 println("[CPPlayer Engine Manager] Hi-Res engine requested but library unavailable. Falling back to Standard Rodio.")
-                AudioPlayerImpl()
+                createStandardPlayer()
             }
         } else {
             println("[CPPlayer Engine Manager] Active: Standard AudioPlayerImpl (Rodio Shared)")
-            AudioPlayerImpl()
+            createStandardPlayer()
         }
     }
 
@@ -244,3 +256,27 @@ class DynamicDesktopPlatformPlayer(
         checkAndSwitchEngine(force = true)
     }
 }
+
+private class NoopDesktopPlatformPlayer(val reason: String) : PlatformPlayer {
+    private val _state = MutableStateFlow<PlatformPlaybackState>(PlatformPlaybackState.Error("音频设备不可用: $reason"))
+    override val state: StateFlow<PlatformPlaybackState> = _state.asStateFlow()
+    private val _positionMs = MutableStateFlow(0L)
+    override val positionMs: StateFlow<Long> = _positionMs.asStateFlow()
+    private val _durationMs = MutableStateFlow(0L)
+    override val durationMs: StateFlow<Long> = _durationMs.asStateFlow()
+    private val _formatInfo = MutableStateFlow<AudioFormatInfo?>(null)
+    override val formatInfo: StateFlow<AudioFormatInfo?> = _formatInfo.asStateFlow()
+    override val seekFailures: SharedFlow<SeekFailure> = MutableSharedFlow()
+    override suspend fun load(url: String, startPositionMs: Long, headers: Map<String, String>, metadata: PlaybackMetadata?) {}
+    override fun play() {}
+    override fun pause() {}
+    override fun seekTo(positionMs: Long) {}
+    override fun stop() {}
+    override fun release() {}
+    override fun setVolume(volume: Float) {}
+    override fun getVolume(): Float = 1.0f
+    override val supportsExclusiveAudio: Boolean = false
+    override val audioEffectCapabilities: AudioEffectCapabilities = AudioEffectCapabilities.NONE
+    override fun applyAudioEffect(config: AudioEffectConfig) {}
+}
+
