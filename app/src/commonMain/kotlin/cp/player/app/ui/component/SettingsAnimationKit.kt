@@ -528,8 +528,8 @@ fun DarkThemePhonePreviewCard(
             // 太阳：金黄辐射、微光发散、白天显现、弧线平移至右上方
             val sunAlpha = (1f - celestialProgress).coerceIn(0f, 1f)
             val sunScale = 0.7f + (1f - celestialProgress) * 0.35f
-            val sunOffsetX = (1f - celestialProgress) * 70.dp - 25.dp
-            val sunOffsetY = celestialProgress * 30.dp - 10.dp
+            val sunOffsetX = 70.dp * (1f - celestialProgress) - 25.dp
+            val sunOffsetY = 30.dp * celestialProgress - 10.dp
 
             if (sunAlpha > 0.02f) {
                 Box(
@@ -572,8 +572,8 @@ fun DarkThemePhonePreviewCard(
             // 月亮：银白冷光、夜空繁星点缀、暗夜平移进入
             val moonAlpha = celestialProgress.coerceIn(0f, 1f)
             val moonScale = 0.7f + celestialProgress * 0.35f
-            val moonOffsetX = -(celestialProgress * 65.dp - 20.dp)
-            val moonOffsetY = (1f - celestialProgress) * 30.dp - 10.dp
+            val moonOffsetX = -(65.dp * celestialProgress - 20.dp)
+            val moonOffsetY = 30.dp * (1f - celestialProgress) - 10.dp
 
             if (moonAlpha > 0.02f) {
                 Box(
@@ -1027,12 +1027,12 @@ fun MotionDisplayPhonePreviewCard(
                 // 核心：平滑飞行的封面！
                 // 当 flightProgress 变化时，尺寸从 36dp 变化到 74dp，Y 轴平移
                 val coverSize = if (flightActive) {
-                    36.dp + (flightProgress * 38.dp)
+                    36.dp + (38.dp * flightProgress)
                 } else {
                     68.dp
                 }
                 val coverOffsetY = if (flightActive) {
-                    (1f - flightProgress) * 26.dp
+                    26.dp * (1f - flightProgress)
                 } else {
                     0.dp
                 }

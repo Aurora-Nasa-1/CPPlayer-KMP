@@ -1,7 +1,9 @@
 package cp.player.app.ui.screen
 
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
+import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Cached
 import androidx.compose.material.icons.filled.CleaningServices

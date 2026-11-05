@@ -237,7 +237,7 @@ fun AutoPlayCustomTargetDialog(
                 enabled = extractAutoPlayTargetId(inputId).isNotBlank(),
                 shape = MaterialTheme.shapes.large,
             ) {
-                CpText(s.general.confirm)
+                CpText(s.common.confirm)
             }
         },
         dismissButton = {
@@ -251,7 +251,7 @@ fun AutoPlayCustomTargetDialog(
                     }
                 }
                 TextButton(onClick = onDismiss) {
-                    CpText(s.general.cancel)
+                    CpText(s.common.dismiss)
                 }
             }
         },
