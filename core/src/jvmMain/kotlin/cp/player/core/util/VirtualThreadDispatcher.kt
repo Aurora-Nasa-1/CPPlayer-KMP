@@ -3,8 +3,12 @@ package cp.player.core.util
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
+import java.util.concurrent.Callable
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.ThreadFactory
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 虚拟线程（Project Loom / Java 21+ Virtual Threads）自适应协程调度器。
@@ -19,56 +23,78 @@ import java.util.concurrent.Executors
  * （Carrier Thread）会自动挂载其他虚拟任务，吞吐量极大提高，特别适合桌面高吞吐 I/O 密集型场景。
  *
  * ## 跨运行时兼容
- * Desktop JVM 跑在 JBR 21/25 上，拥有完整的 Virtual Threads 支持；
- * 而 Android ART 运行时目前尚未搭载 Loom，因此通过特性嗅探（嗅探 `Executors.newVirtualThreadPerTaskExecutor`）：
- * - 支持虚拟线程的运行时：使用 `Executors.newVirtualThreadPerTaskExecutor().asCoroutineDispatcher()`；
- * - 不支持的运行时（如 Android 或旧版环境）：安全降级为 [Dispatchers.IO]。
+ * Desktop JVM 跑在 JBR 21/25 上，拥有完整的 Virtual Threads 支持；Android ART 至今没有 Loom。
+ * 因此这里做两件事：
+ * - **按平台短路**：[PlatformInfo.isAndroid] 为真时一律用 [Dispatchers.IO]。本文件属于 `jvmMain`，
+ *   而 `androidMain.dependsOn(jvmMain)` —— Android 会原样继承这里的每一行，不能只靠反射探测兜底。
+ * - **探测必须真的起一条线程**：见 [isSupported]。
+ *
+ * ## ⚠️ 为什么"探测方法是否存在"是错的（真实事故）
+ * 旧实现只判断 `Executors.newVirtualThreadPerTaskExecutor` 这个方法**在不在**。但
+ * **方法存在 ≠ 产出的是虚拟线程**：Android 上该方法可见，产出的却是普通平台线程。
+ * 于是 `jvmMain` 里所有 `withContext(VirtualThreadDispatcher.dispatcher)` 的函数体都被搬到
+ * 一条**每个任务新建的**平台线程上执行，而这条线程是从 native 回调线程（JNI / Oboe / Rust
+ * 回调，`ThreadGroup` 为 null）的上下文里创建的 —— `Thread.start()` 立刻在 `ThreadGroup.add`
+ * 上抛 NPE：`Attempt to invoke virtual method 'void java.lang.ThreadGroup.add(java.lang.Thread)'
+ * on a null object reference`（Sentry CPPLAYER-KMP-2 / issue #168，v1.8.0 起量，命中路径是
+ * `PluginRepositoryService.loadCached` → `JvmPluginRepositoryIO.cachedCatalog`，启动即崩）。
+ *
+ * 所以现在：Android 直接不走这条路；其余运行时也要**真的提交一次任务、确认线程 `isVirtual`**，
+ * 探测失败一律按"不支持"处理（fail closed）。
  */
 object VirtualThreadDispatcher {
 
-    /** 检查当前 JVM 运行时是否真正支持 Virtual Threads（Java 21+ / Loom）。 */
-    val isSupported: Boolean by lazy {
-        try {
-            val method = Executors::class.java.getMethod("newVirtualThreadPerTaskExecutor")
-            val executor = method.invoke(null) as? ExecutorService
-            executor?.shutdown()
-            true
+    /** 探测超时：正常实现立刻有结果；卡住就说明这套 Loom 不能用。 */
+    private const val PROBE_TIMEOUT_MILLIS = 2_000L
+
+    private val platformThreadSequence = AtomicInteger()
+
+    /** 缓存的可用 ThreadGroup，见 [fallbackThreadGroup]。 */
+    @Volatile
+    private var cachedThreadGroup: ThreadGroup? = null
+
+    /** 检查当前运行时是否**真的**能用虚拟线程（Java 21+ / Loom，且不是半成品实现）。 */
+    val isSupported: Boolean by lazy { !PlatformInfo.isAndroid && probeVirtualThread() }
+
+    /**
+     * 真探针：走一遍和真实使用完全相同的路径 —— 建执行器、提交任务、拿到线程、确认它是虚拟线程。
+     * 任何一步抛异常（包括 `Thread.start()` 里的 `ThreadGroup.add` NPE）都判为不支持。
+     */
+    private fun probeVirtualThread(): Boolean {
+        val executor = newVirtualThreadExecutorOrNull() ?: return false
+        return try {
+            executor.submit(Callable { currentThreadIsVirtual() })
+                .get(PROBE_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
         } catch (_: Throwable) {
             false
+        } finally {
+            executor.shutdownNow()
         }
     }
 
     /**
      * 面向并发阻塞 I/O 的虚拟线程协程调度器。
-     * 若当前运行时不支持（如 Android ART），安全回退至 [Dispatchers.IO]。
+     * 若当前运行时不支持（Android / 旧版环境 / 半成品 Loom），安全回退至 [Dispatchers.IO]。
      */
     val dispatcher: CoroutineDispatcher by lazy {
-        if (isSupported) {
-            try {
-                newVirtualThreadExecutor().asCoroutineDispatcher()
-            } catch (_: Throwable) {
+        val executor = if (isSupported) newVirtualThreadExecutorOrNull() else null
+        if (executor == null) {
+            Dispatchers.IO
+        } else {
+            runCatching { executor.asCoroutineDispatcher() }.getOrElse {
+                executor.shutdownNow()
                 Dispatchers.IO
             }
-        } else {
-            Dispatchers.IO
         }
     }
 
     /**
      * 创建基于虚拟线程的任务执行器（每个任务独占一个虚拟线程）。
-     * 若当前运行时不支持虚拟线程（如 Android ART），安全降级为普通的缓存线程池。
+     * 若当前运行时不支持虚拟线程，降级为带名字的守护线程池。
      */
     fun newVirtualThreadExecutor(): ExecutorService {
-        return if (isSupported) {
-            try {
-                val method = Executors::class.java.getMethod("newVirtualThreadPerTaskExecutor")
-                method.invoke(null) as ExecutorService
-            } catch (_: Throwable) {
-                Executors.newCachedThreadPool()
-            }
-        } else {
-            Executors.newCachedThreadPool()
-        }
+        if (isSupported) newVirtualThreadExecutorOrNull()?.let { return it }
+        return Executors.newCachedThreadPool(platformThreadFactory("cpplayer-worker"))
     }
 
     /**
@@ -81,16 +107,22 @@ object VirtualThreadDispatcher {
                 val ofVirtualMethod = Thread::class.java.getMethod("ofVirtual")
                 var builder = ofVirtualMethod.invoke(null)
                 if (name != null) {
-                    val nameMethod = builder.javaClass.getMethod("name", String::class.java)
+                    // ⚠️ Method 必须从**公开接口**上取，不能用 `builder.javaClass`：
+                    // `ofVirtual()` 的运行时类型是 java.base 里包私有的 ThreadBuilders$VirtualThreadBuilder，
+                    // 对它 `getMethod` 拿到的 Method 在 invoke 时抛 IllegalAccessException，被下面的
+                    // catch 吞掉 ⇒ 明明支持虚拟线程的运行时也静默降级成平台线程（此前一直如此）。
+                    val nameMethod = threadBuilderClass("java.lang.Thread\$Builder\$OfVirtual")
+                        .getMethod("name", String::class.java)
                     builder = nameMethod.invoke(builder, name)
                 }
-                val startMethod = builder.javaClass.getMethod("start", Runnable::class.java)
+                val startMethod = threadBuilderClass("java.lang.Thread\$Builder")
+                    .getMethod("start", Runnable::class.java)
                 return startMethod.invoke(builder, Runnable { block() }) as Thread
             } catch (_: Throwable) {
                 // fall through to platform thread
             }
         }
-        return Thread(block, name ?: "virtual-thread-fallback").apply {
+        return Thread(fallbackThreadGroup(), block, name ?: "virtual-thread-fallback").apply {
             isDaemon = true
             start()
         }
@@ -104,5 +136,37 @@ object VirtualThreadDispatcher {
         } catch (_: Throwable) {
             false
         }
+    }
+
+    private fun newVirtualThreadExecutorOrNull(): ExecutorService? = try {
+        Executors::class.java.getMethod("newVirtualThreadPerTaskExecutor").invoke(null) as? ExecutorService
+    } catch (_: Throwable) {
+        null
+    }
+
+    /** 反射拿公开的 Builder 接口类型（不写死类字面量：Android 上没有这些类型，只能在支持时解析）。 */
+    private fun threadBuilderClass(className: String): Class<*> = Class.forName(className)
+
+    private fun currentThreadIsVirtual(): Boolean = isVirtualThread()
+
+    private fun platformThreadFactory(prefix: String) = ThreadFactory { runnable ->
+        val group = fallbackThreadGroup()
+        Thread(group, runnable, "$prefix-${platformThreadSequence.incrementAndGet()}").apply { isDaemon = true }
+    }
+
+    /**
+     * 建线程时要显式带上的 [ThreadGroup]。
+     *
+     * `Executors.defaultThreadFactory()` 会在**构造它的那个线程**上抓
+     * `Thread.currentThread().threadGroup`；一旦工厂是从 native 回调线程（JNI / Oboe，group 为 null）
+     * 里构造的，它此后产出的**每一条**线程都带 null 组，`start()` 必炸在 `ThreadGroup.add`。
+     * 这里改成显式传组；当前线程没有组时，退而从任意存活线程里找一个有效的并缓存下来。
+     */
+    private fun fallbackThreadGroup(): ThreadGroup? {
+        cachedThreadGroup?.let { return it }
+        val group = Thread.currentThread().threadGroup
+            ?: Thread.getAllStackTraces().keys.firstNotNullOfOrNull { it.threadGroup }
+        if (group != null) cachedThreadGroup = group
+        return group
     }
 }
