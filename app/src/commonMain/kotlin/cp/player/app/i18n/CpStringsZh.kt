@@ -805,7 +805,7 @@ object CpStringsZh : CpStrings {
         override val queueEmptyLabel = "队列"
         override val queueEmptyHint = "播放队列是空的"
         override val queueNoMatchHint = "队列里没有匹配的歌曲"
-        override val queueReorderHint = "长按拖拽重排"
+        override val queueReorderHint = "拖拽重排"
         override val coverContentDescription = "封面"
 
         override val previousTrack = "上一首"

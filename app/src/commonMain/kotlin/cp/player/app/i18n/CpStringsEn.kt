@@ -865,7 +865,7 @@ object CpStringsEn : CpStrings {
         override val queueEmptyLabel = "Queue"
         override val queueEmptyHint = "The play queue is empty"
         override val queueNoMatchHint = "No matching tracks in the queue"
-        override val queueReorderHint = "Press and drag to reorder"
+        override val queueReorderHint = "Drag to reorder"
         override val coverContentDescription = "Cover"
 
         override val previousTrack = "Previous track"

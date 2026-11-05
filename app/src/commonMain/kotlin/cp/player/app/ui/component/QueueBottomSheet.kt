@@ -2,9 +2,10 @@ package cp.player.app.ui.component
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
@@ -56,11 +57,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
 import cp.player.core.music.CPMediaId
 import cp.player.core.music.TrackSummary
@@ -149,6 +154,33 @@ fun QueueContent(
         else indexedQueue.filter { (_, item) ->
             item.title.contains(q, ignoreCase = true) ||
             item.artist.contains(q, ignoreCase = true)
+        }
+    }
+
+    // 为队列项生成稳定且唯一的 key：杜绝重复 key 异常的同时，
+    // 坚决不能在 key 中混入当前下标（例如 "$idx:${it.mediaId}"）。
+    // 混入下标会导致拖拽换位时 key 立即改变，Compose 误判为旧项销毁+新项插入，
+    // 进而强行打断 pointerInput 手势协程，表现为「拖动一格就卡住/无法连续拖拽」。
+    val stableKeys = remember(queue) {
+        val counts = mutableMapOf<String, Int>()
+        queue.map { item ->
+            val count = counts.getOrElse(item.mediaId) { 0 }
+            counts[item.mediaId] = count + 1
+            if (count == 0) item.mediaId else "${item.mediaId}#$count"
+        }
+    }
+
+    // 拖拽换位与长列表边缘自动滚动联动：拖到视口边缘时自动滚动，支持跨屏长距离重排
+    val onMoveAndScroll: (Int, Int) -> Unit = { from, to ->
+        onMove(from, to)
+        val layoutInfo = listState.layoutInfo
+        val visibleItems = layoutInfo.visibleItemsInfo
+        val firstVisible = visibleItems.firstOrNull()?.index ?: 0
+        val lastVisible = visibleItems.lastOrNull()?.index ?: 0
+        if (to <= firstVisible + 1 && to > 0) {
+            scope.launch { listState.animateScrollToItem((to - 1).coerceAtLeast(0)) }
+        } else if (to >= lastVisible - 1 && to < queue.size - 1) {
+            scope.launch { listState.animateScrollToItem((to + 1).coerceAtMost(queue.lastIndex)) }
         }
     }
 
@@ -276,20 +308,22 @@ fun QueueContent(
                         )
                     }
                 }
-                // key 必须唯一：核心已保证入队 mediaId 不重复，但这里仍以
-                // 「下标 + mediaId」兜底 —— 恢复旧快照 / 远端队列替换等路径若漏了去重，
-                // 重复 key 会让 LazyColumn 直接抛 IllegalArgumentException 崩掉整个弹层。
-                itemsIndexed(filteredQueue, key = { _, (idx, it) -> "$idx:${it.mediaId}" }) { _, (originalIndex, item) ->
+                val canDrag = searchQuery.isBlank() && queue.size > 1
+                itemsIndexed(
+                    filteredQueue,
+                    key = { _, (originalIndex, it) -> stableKeys.getOrNull(originalIndex) ?: it.mediaId },
+                ) { _, (originalIndex, item) ->
                     val isCurrent = originalIndex == currentIndex
                     QueueRow(
                         item = item,
                         isCurrent = isCurrent,
                         index = originalIndex,
                         queueSize = queue.size,
+                        canDrag = canDrag,
                         onPlay = { onPlayAt(originalIndex) },
                         onRemove = { onRemove(originalIndex) },
                         onOptions = { optionsTarget = originalIndex to item },
-                        onMove = onMove,
+                        onMove = onMoveAndScroll,
                         // 桌面端右键菜单：动作与行内 More 菜单一致并补一个分享入口。
                         contextMenu = buildList {
                             add(CpContextMenuItem(s.player.play, Icons.Filled.PlayArrow, onClick = { onPlayAt(originalIndex) }))
@@ -529,6 +563,7 @@ private fun QueueRow(
     isCurrent: Boolean,
     index: Int,
     queueSize: Int,
+    canDrag: Boolean,
     onPlay: () -> Unit,
     onRemove: () -> Unit,
     onOptions: () -> Unit,
@@ -538,35 +573,6 @@ private fun QueueRow(
     contextMenu: List<CpContextMenuItem>? = null,
 ) {
     val isDark = LocalIsDarkTheme.current
-    val targetBg = if (isCurrent) {
-        if (isDark) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f)
-        else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerLow
-    }
-    val animatedBg by animateColorAsState(
-        targetValue = targetBg,
-        animationSpec = CpMotion.effects(),
-        label = "queueRowBgAnim",
-    )
-    val rowCorner by animateDpAsState(
-        targetValue = if (isCurrent) 24.dp else 16.dp,
-        animationSpec = CpMotion.spatial(),
-        label = "queueRowCornerMorph",
-    )
-    val coverCorner by animateDpAsState(
-        targetValue = if (isCurrent) 24.dp else 12.dp,
-        animationSpec = CpMotion.spatial(),
-        label = "queueCoverCornerMorph",
-    )
-    val coverShape = remember(coverCorner) { RoundedCornerShape(coverCorner) }
-    val titleColor by animateColorAsState(
-        targetValue = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-        animationSpec = CpMotion.effects(),
-        label = "queueTitleColorAnim",
-    )
-    val s = cpStrings()
-    val density = LocalDensity.current
     var dragAccum by remember { mutableStateOf(0f) }
 
     // 拖拽重排用「行自己的当前下标」而不是闭包里的 i：pointerInput(Unit) 的 lambda
@@ -579,58 +585,119 @@ private fun QueueRow(
     var dragging by remember { mutableStateOf(false) }
     SideEffect { if (!dragging) pos = index }
 
-    // 右键菜单包在拖拽手柄所在整行之外：光标落在行上任意位置都能弹出，
-    // 不与 DragIndicator 的长按拖拽冲突（那只监听左键长按）。
-    CpContextMenu(items = contextMenu, modifier = modifier) {
-    Surface(
-        Modifier.fillMaxWidth(),
-        shape = remember(rowCorner) { RoundedCornerShape(rowCorner) },
-        color = animatedBg,
-    ) {
-        Row(
-            Modifier.padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+    val targetBg = if (dragging) {
+        if (isDark) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.95f)
+        else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.75f)
+    } else if (isCurrent) {
+        if (isDark) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f)
+        else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
+    val animatedBg by animateColorAsState(
+        targetValue = targetBg,
+        animationSpec = CpMotion.effects(),
+        label = "queueRowBgAnim",
+    )
+    val rowCorner by animateDpAsState(
+        targetValue = if (dragging) 20.dp else if (isCurrent) 24.dp else 16.dp,
+        animationSpec = CpMotion.spatial(),
+        label = "queueRowCornerMorph",
+    )
+    val coverCorner by animateDpAsState(
+        targetValue = if (isCurrent) 24.dp else 12.dp,
+        animationSpec = CpMotion.spatial(),
+        label = "queueCoverCornerMorph",
+    )
+    val coverShape = remember(coverCorner) { RoundedCornerShape(coverCorner) }
+    val scale by animateFloatAsState(
+        targetValue = if (dragging) 1.02f else 1f,
+        animationSpec = CpMotion.spatial(),
+        label = "queueRowScaleAnim",
+    )
+    val shadowElevation by animateDpAsState(
+        targetValue = if (dragging) 8.dp else 0.dp,
+        animationSpec = CpMotion.spatial(),
+        label = "queueRowShadowAnim",
+    )
+    val titleColor by animateColorAsState(
+        targetValue = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+        animationSpec = CpMotion.effects(),
+        label = "queueTitleColorAnim",
+    )
+    val s = cpStrings()
+    val density = LocalDensity.current
+
+    // 右键菜单包在拖拽手柄所在整行之外：光标落在行上任意位置都能弹出。
+    // 拖拽中提升整行 zIndex，避免被相邻兄弟组件遮挡。
+    CpContextMenu(items = contextMenu, modifier = modifier.zIndex(if (dragging) 2f else 0f)) {
+        Surface(
+            Modifier
+                .fillMaxWidth()
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    this.shadowElevation = shadowElevation.toPx()
+                    shape = RoundedCornerShape(rowCorner)
+                    clip = false
+                },
+            shape = remember(rowCorner) { RoundedCornerShape(rowCorner) },
+            color = animatedBg,
         ) {
-            Icon(
-                Icons.Filled.DragIndicator,
-                s.player.queueReorderHint,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .padding(horizontal = 4.dp)
-                    .pointerInput(Unit) {
-                        detectDragGesturesAfterLongPress(
-                            onDragStart = { dragAccum = 0f; dragging = true },
-                            onDrag = { change, dragAmount ->
-                                change.consume()
-                                dragAccum += dragAmount.y
-                                val threshold = with(density) { 72.dp.toPx() }
-                                // 每跨过一个行距就真实移动一位：pos 本地即时推进，
-                                // 一次手势滑过 N 行就连续 onMove N 次（动画逐格跟手）。
-                                while (dragAccum > threshold) {
-                                    val target = pos + 1
-                                    if (target >= latestQueueSize) { dragAccum = 0f; break }
-                                    latestMove(pos, target)
-                                    pos = target
-                                    dragAccum -= threshold
-                                }
-                                while (dragAccum < -threshold) {
-                                    val target = pos - 1
-                                    if (target < 0) { dragAccum = 0f; break }
-                                    latestMove(pos, target)
-                                    pos = target
-                                    dragAccum += threshold
-                                }
-                            },
-                            onDragEnd = { dragAccum = 0f; dragging = false },
-                            onDragCancel = { dragAccum = 0f; dragging = false },
-                        )
-                    },
-            )
-            Spacer(Modifier.width(4.dp))
             Row(
-                Modifier.weight(1f).cpBounceClickable { onPlay() },
+                Modifier.padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                val dragModifier = if (canDrag) {
+                    Modifier
+                        .padding(horizontal = 4.dp)
+                        .pointerHoverIcon(PointerIcon.Hand)
+                        .pointerInput(Unit) {
+                            detectDragGestures(
+                                onDragStart = {
+                                    dragAccum = 0f
+                                    dragging = true
+                                },
+                                onDrag = { change, dragAmount ->
+                                    change.consume()
+                                    dragAccum += dragAmount.y
+                                    val threshold = with(density) { 72.dp.toPx() }
+                                    // 每跨过一个行距就真实移动一位：pos 本地即时推进，
+                                    // 一次手势滑过 N 行就连续 onMove N 次（动画逐格跟手）。
+                                    while (dragAccum > threshold) {
+                                        val target = pos + 1
+                                        if (target >= latestQueueSize) { dragAccum = 0f; break }
+                                        latestMove(pos, target)
+                                        pos = target
+                                        dragAccum -= threshold
+                                    }
+                                    while (dragAccum < -threshold) {
+                                        val target = pos - 1
+                                        if (target < 0) { dragAccum = 0f; break }
+                                        latestMove(pos, target)
+                                        pos = target
+                                        dragAccum += threshold
+                                    }
+                                },
+                                onDragEnd = { dragAccum = 0f; dragging = false },
+                                onDragCancel = { dragAccum = 0f; dragging = false },
+                            )
+                        }
+                } else {
+                    Modifier.padding(horizontal = 4.dp)
+                }
+
+                Icon(
+                    Icons.Filled.DragIndicator,
+                    if (canDrag) s.player.queueReorderHint else null,
+                    tint = if (canDrag) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+                    modifier = dragModifier,
+                )
+                Spacer(Modifier.width(4.dp))
+                Row(
+                    Modifier.weight(1f).cpBounceClickable { onPlay() },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                 Box(Modifier.size(48.dp).aspectRatio(1f)) {
                     if (!item.coverUrl.isNullOrBlank()) {
                         // [Bolt] Fetch smaller (150px) cover images for the queue list to reduce loading time
