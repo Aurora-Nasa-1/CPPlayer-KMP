@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -343,10 +344,21 @@ fun CpText(
     val resolvedStyle = merged.localizedForLanguage(rawText)
     val families = LocalAppFontFamilies.current
 
-    var hasVisualOverflow by remember(text, resolvedStyle, maxLines) { mutableStateOf(false) }
+    // Karaoke color updates do not change glyph metrics. Resetting overflow for each
+    // highlight would detach/restart basicMarquee on every playback update.
+    val layoutSpans = remember(text) {
+        text.spanStyles.mapNotNull { span ->
+            val metrics = span.item.copy(color = Color.Unspecified, background = Color.Unspecified)
+            if (metrics == SpanStyle()) null
+            else AnnotatedString.Range(metrics, span.start, span.end, span.tag)
+        }
+    }
+    var hasVisualOverflow by remember(rawText, layoutSpans, text.paragraphStyles, resolvedStyle, maxLines) {
+        mutableStateOf(false)
+    }
 
     val externalLayout = rememberUpdatedState(onTextLayout)
-    val onLayout = remember(text, resolvedStyle, maxLines) {
+    val onLayout = remember(rawText, layoutSpans, text.paragraphStyles, resolvedStyle, maxLines) {
         { layout: TextLayoutResult ->
             if (!hasVisualOverflow && layout.hasVisualOverflow) {
                 hasVisualOverflow = true

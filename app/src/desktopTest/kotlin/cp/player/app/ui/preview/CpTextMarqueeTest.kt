@@ -8,8 +8,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import cp.player.app.ui.component.CpText
@@ -79,7 +83,10 @@ class CpTextMarqueeTest {
      * 采样窗口刻意拉长到 3 秒：`basicMarquee` 有初始延迟与轮间停顿，
      * 只看头两帧可能整段落在「停」的区间里而误判成「没动」。
      */
-    private fun renderTimeline(content: @Composable () -> Unit): List<ByteArray> {
+    private fun renderTimeline(
+        beforeFrame: (Int) -> Unit = {},
+        content: @Composable () -> Unit,
+    ): List<ByteArray> {
         val scene = ImageComposeScene(width = 200, height = 40, density = Density(1f)) {
             CpTheme(themeMode = ThemeMode.LIGHT) {
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { content() }
@@ -87,6 +94,7 @@ class CpTextMarqueeTest {
         }
         return try {
             (0 until 16).map { i ->
+                beforeFrame(i)
                 scene.render(i * 200_000_000L).encodeToData()?.bytes ?: error("encode failed")
             }
         } finally {
@@ -137,5 +145,37 @@ class CpTextMarqueeTest {
         val frames = renderTimeline { Row(emphasized = false, reveal = CpTextReveal.Marquee) }
         val distinct = frames.map { it.toList() }.distinct().size
         assertTrue(distinct > 1, "reveal = Marquee 必须无视 emphasized 直接滚动")
+    }
+
+    @Test
+    fun annotatedColorUpdatesDoNotRestartMarquee() {
+        val frame = mutableIntStateOf(0)
+        val stable = renderTimeline {
+            Box(Modifier.width(160.dp).height(28.dp)) {
+                CpText(
+                    text = longTitle, color = Color.Black,
+                    style = MaterialTheme.typography.titleMedium,
+                    reveal = CpTextReveal.Marquee, modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+        val updating = renderTimeline(beforeFrame = { frame.intValue = it }) {
+            Box(Modifier.width(160.dp).height(28.dp)) {
+                CpText(
+                    text = buildAnnotatedString {
+                        append(longTitle)
+                        // Identical visible color, changing span boundaries as karaoke advances.
+                        addStyle(SpanStyle(color = Color.Black), 0, frame.intValue + 1)
+                    },
+                    color = Color.Black, style = MaterialTheme.typography.titleMedium,
+                    reveal = CpTextReveal.Marquee, modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+        assertTrue(
+            stable.last().contentEquals(updating.last()),
+            "Color-only spans must preserve the same marquee offset as unchanged text",
+        )
+        assertTrue(updating.map { it.toList() }.distinct().size > 1)
     }
 }
