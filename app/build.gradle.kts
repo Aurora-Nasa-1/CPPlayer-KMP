@@ -461,12 +461,23 @@ val gcJvmArgs: List<String> = when (chosenGc) {
         }
         args
     }
-    else -> listOf(
-        "-XX:SoftMaxHeapSize=256m",
+    // ⚠️ 这一支**以前是 `else`（catch-all）**：`-Pcp.gc=g1` 和任何拼错的值都会静默落到这里，
+    // 于是实际跑的是 JDK 默认 GC（恰好是 G1），但你以为换了别的 GC —— 日志里一句解释都没有。
+    // 现在显式列出，未知取值直接让配置期失败（宁可构建挂掉，也不要静默跑错 GC）。
+    "g1", "g1gc", "default" -> listOf(
+        "-XX:+UseG1GC",
+        // 软顶必须**严格小于** -Xmx（256m），否则等于硬顶、形同虚设。
+        // 2026-11-05 把 -Xmx 从 512m 降到 256m 后，原来的 256m 就变成了硬顶，因此下调到 192m。
+        // ⚠️ 192m 未实测（本机默认走 Shenandoah，G1 路径没跑过）—— 但软顶只是「尽量压」，
+        // 不是 OOM 兜底（兜底仍是 -Xmx），风险低。
+        "-XX:SoftMaxHeapSize=192m",
         "-XX:MinHeapFreeRatio=10",
         "-XX:MaxHeapFreeRatio=30",
         "-XX:G1PeriodicGCInterval=60000",
         "-XX:+UseStringDeduplication",
+    )
+    else -> throw GradleException(
+        "cp.gc 不支持的取值：'$chosenGc'。可选：shenandoah（默认）/ shenandoah-iu / zgc / g1",
     )
 }
 
@@ -517,8 +528,8 @@ val previewJvmArgs: List<String> = if (isJdk25OrNewer) listOf("--enable-preview"
 val desktopCommonJvmArgs = (listOf(
     "-XX:+UnlockExperimentalVMOptions",
     "--enable-native-access=ALL-UNNAMED",
-    "-Xms128m",
-    "-Xmx420m",
+    "-Xms64m",
+    "-Xmx256m",
     "-Dcp.player.versionName=$appVersionName",
     "-Dcp.player.versionCode=$appVersionCode",
     "-Dcp.player.releaseChannel=$appReleaseChannel",
@@ -567,9 +578,23 @@ compose.desktop {
         // 最大堆 = 物理内存的 1/4、**初始堆 = 物理内存的 1/64**（32GB 机器上启动即
         // 提交 512MB），G1 又几乎从不把涨上去的堆还给 OS ⇒ 空闲占用 780MB。
         // 这一组对「音乐播放器」这种长驻 GUI 应用是稳态组合：
-        //   -Xms128m / -Xmx420m —— 初始堆压小；上限 420m（2026-11-05 由 512m 下调，
-        //     实测存活量见下）对 UI + 列表 + 封面绰绰有余。**再小就要先压测峰值**：
-        //     批量歌单加载 / 大 provider 响应 / Base64 歌词是三条最可能顶到上限的路径。
+        //   -Xms64m / -Xmx256m —— 初始堆压小；上限 256m（2026-11-05 由 512m 经 420m 下调）。
+        //     实测（打包产物 / 启动 + 首页 + 空闲 120s，每组 60 次采样取尾段中位数）：
+        //       | 配置                 | RSS 中位 | p90  | 峰值 |
+        //       | 128/420（改前）      | 970MB    | 1084 | 1117 |
+        //       | 64/256（现在）       | 886MB    | 934  | 961  |
+        //     堆内实测：GC 后存活仅 55~60MB，committed 峰值 229M（89%），最长暂停 0.32ms、
+        //     总暂停 10.6ms/110s（周期 26 次 vs 420m 时 13 次 —— 更勤但仍是亚毫秒）。
+        //     ⚠️ -Xms 直接等于空闲时的堆常驻（uncommit 只会退到 Xms），所以 128→64 是
+        //       稳态收益的主来源；-Xmx 主要压峰值。**再往下调之前必须先压测峰值路径**：
+        //     批量歌单加载 / 大 provider 响应 / Base64 歌词。
+        //     另：堆外大头是 skia 位图、127 个 jar 的 mmap、metaspace 88MB；
+        //     换软件渲染实测还能再省 ~120MB（RSS 848 vs 970），但动画流畅度要让位，未默认启用。
+        //   ⚠️ 以下四条**只在 `-Pcp.gc=g1` 时才会被加进去**（见上面的 gcJvmArgs 分支）：
+        // 默认 GC 是分代 Shenandoah，它没有 SoftMaxHeapSize/FreeRatio 这套收缩逻辑，
+        // 堆会直接贴着 -Xmx 扩张（实测 committed 229M / 上限 256M），靠 uncommit 归还。
+        // ⚠️ 且 -Xmx 降到 256m 后，下面的 `SoftMaxHeapSize=256m` 已**等于硬顶、形同虚设**：
+        //    走 G1 时若还想保留「常态软顶」的意图，把它改成 192m（必须严格小于 -Xmx）。
         //   -XX:SoftMaxHeapSize=256m —— 常态软顶：G1 会尽量把堆压在 256m 内，
         //     只有连续压力才越线（软顶不是硬顶，OOM 仍由 -Xmx 兜底）。
         //   -XX:MinHeapFreeRatio=10 / MaxHeapFreeRatio=30 —— 空闲比例从默认(20/45? /40/70)
