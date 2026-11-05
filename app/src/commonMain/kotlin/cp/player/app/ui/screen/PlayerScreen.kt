@@ -126,6 +126,7 @@ import cp.player.app.ui.component.LegacyModalBottomSheet
 import cp.player.app.ui.component.cpFluidBackground
 import cp.player.app.ui.component.desktopPagerMouseControl
 import cp.player.app.ui.component.PlayerMoreSheets
+import cp.player.app.ui.component.ModernPlayerScreenContent
 import cp.player.app.ui.component.ProviderFeatureGate
 import cp.player.app.ui.component.QueueBottomSheet
 import cp.player.app.ui.component.SimilarSongsPanel
@@ -197,30 +198,14 @@ class PlayerScreen : Screen {
             } else {
                 val sharedScope = LocalSharedTransitionScope.current
                 val navAnimScope = LocalNavAnimatedVisibilityScope.current
+                val modernPlayerEnabled by AppModel.modernMobilePlayerEnabledFlow.collectAsState()
+
                 if (sharedScope != null && navAnimScope != null) {
                     with(sharedScope) {
-                        PlayerScreenContent(
-                            state = effectiveState,
-                            animatedVisibilityScope = navAnimScope,
-                            onBack = { navigator.popOrNotify() },
-                            onTogglePlay = controller::togglePlayPause,
-                            onSeek = controller::seekTo,
-                            onSkipNext = controller::skipNext,
-                            onSkipPrev = controller::skipPrevious,
-                            onRepeat = onRepeat,
-                            onShuffle = controller::toggleShuffle,
-                            onClearQueue = controller::clearQueue,
-                            onPlayAt = { idx -> scope.launch { controller.playAt(idx) } },
-                            onRemoveQueue = { idx -> scope.launch { controller.removeQueueItem(idx) } },
-                            onMoveQueue = { from, to -> scope.launch { controller.moveQueueItem(from, to) } },
-                        )
-                    }
-                } else {
-                    androidx.compose.animation.SharedTransitionLayout {
-                        androidx.compose.animation.AnimatedVisibility(visible = true) {
-                            PlayerScreenContent(
+                        if (modernPlayerEnabled) {
+                            ModernPlayerScreenContent(
                                 state = effectiveState,
-                                animatedVisibilityScope = this,
+                                animatedVisibilityScope = navAnimScope,
                                 onBack = { navigator.popOrNotify() },
                                 onTogglePlay = controller::togglePlayPause,
                                 onSeek = controller::seekTo,
@@ -233,6 +218,60 @@ class PlayerScreen : Screen {
                                 onRemoveQueue = { idx -> scope.launch { controller.removeQueueItem(idx) } },
                                 onMoveQueue = { from, to -> scope.launch { controller.moveQueueItem(from, to) } },
                             )
+                        } else {
+                            PlayerScreenContent(
+                                state = effectiveState,
+                                animatedVisibilityScope = navAnimScope,
+                                onBack = { navigator.popOrNotify() },
+                                onTogglePlay = controller::togglePlayPause,
+                                onSeek = controller::seekTo,
+                                onSkipNext = controller::skipNext,
+                                onSkipPrev = controller::skipPrevious,
+                                onRepeat = onRepeat,
+                                onShuffle = controller::toggleShuffle,
+                                onClearQueue = controller::clearQueue,
+                                onPlayAt = { idx -> scope.launch { controller.playAt(idx) } },
+                                onRemoveQueue = { idx -> scope.launch { controller.removeQueueItem(idx) } },
+                                onMoveQueue = { from, to -> scope.launch { controller.moveQueueItem(from, to) } },
+                            )
+                        }
+                    }
+                } else {
+                    androidx.compose.animation.SharedTransitionLayout {
+                        androidx.compose.animation.AnimatedVisibility(visible = true) {
+                            if (modernPlayerEnabled) {
+                                ModernPlayerScreenContent(
+                                    state = effectiveState,
+                                    animatedVisibilityScope = this,
+                                    onBack = { navigator.popOrNotify() },
+                                    onTogglePlay = controller::togglePlayPause,
+                                    onSeek = controller::seekTo,
+                                    onSkipNext = controller::skipNext,
+                                    onSkipPrev = controller::skipPrevious,
+                                    onRepeat = onRepeat,
+                                    onShuffle = controller::toggleShuffle,
+                                    onClearQueue = controller::clearQueue,
+                                    onPlayAt = { idx -> scope.launch { controller.playAt(idx) } },
+                                    onRemoveQueue = { idx -> scope.launch { controller.removeQueueItem(idx) } },
+                                    onMoveQueue = { from, to -> scope.launch { controller.moveQueueItem(from, to) } },
+                                )
+                            } else {
+                                PlayerScreenContent(
+                                    state = effectiveState,
+                                    animatedVisibilityScope = this,
+                                    onBack = { navigator.popOrNotify() },
+                                    onTogglePlay = controller::togglePlayPause,
+                                    onSeek = controller::seekTo,
+                                    onSkipNext = controller::skipNext,
+                                    onSkipPrev = controller::skipPrevious,
+                                    onRepeat = onRepeat,
+                                    onShuffle = controller::toggleShuffle,
+                                    onClearQueue = controller::clearQueue,
+                                    onPlayAt = { idx -> scope.launch { controller.playAt(idx) } },
+                                    onRemoveQueue = { idx -> scope.launch { controller.removeQueueItem(idx) } },
+                                    onMoveQueue = { from, to -> scope.launch { controller.moveQueueItem(from, to) } },
+                                )
+                            }
                         }
                     }
                 }
@@ -516,7 +555,13 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                 )
             )
 
-            add(CpContextMenuSeparator)
+            add(
+                CpContextMenuItem(
+                    label = "切换到新版单页播放器",
+                    icon = Icons.Filled.AutoAwesome,
+                    onClick = { AppModel.setModernMobilePlayerEnabled(true) },
+                )
+            )
 
             // 收起
             add(

@@ -1003,6 +1003,75 @@ object AppModel {
         _showRubyLyrics.value = enabled
     }
 
+    // ============ 全新手机端播放界面与布局微调（持久化） ============
+
+    private const val KEY_MODERN_MOBILE_PLAYER = "modern_mobile_player"
+    private const val KEY_MOBILE_PLAYER_COVER_SCALE = "mobile_player_cover_scale"
+    private const val KEY_MOBILE_PLAYER_COVER_CORNER = "mobile_player_cover_corner"
+    private const val KEY_MOBILE_PLAYER_COVER_ELEVATION = "mobile_player_cover_elevation"
+    private const val KEY_MOBILE_PLAYER_AMBIENT_GLOW = "mobile_player_ambient_glow"
+    private const val KEY_MOBILE_PLAYER_COVER_SWIPE = "mobile_player_cover_swipe"
+    private const val KEY_MOBILE_PLAYER_WAVY_SEEKBAR = "mobile_player_wavy_seekbar"
+    private const val KEY_MOBILE_PLAYER_LYRICS_LINES = "mobile_player_lyrics_lines"
+    private const val KEY_MOBILE_PLAYER_LYRICS_FONT_SIZE = "mobile_player_lyrics_font_size"
+    private const val KEY_MOBILE_PLAYER_LYRICS_ALIGN = "mobile_player_lyrics_align"
+    private const val KEY_MOBILE_PLAYER_KARAOKE = "mobile_player_karaoke"
+    private const val KEY_MOBILE_PLAYER_SHOW_TRANSLATION = "mobile_player_show_translation"
+    private const val KEY_MOBILE_PLAYER_CONTROLS_SIZE = "mobile_player_controls_size"
+
+    private fun loadMobilePlayerCustomConfig(): cp.player.app.ui.model.MobilePlayerCustomConfig {
+        return cp.player.app.ui.model.MobilePlayerCustomConfig(
+            enabled = settings.getString(KEY_MODERN_MOBILE_PLAYER)?.toBooleanStrictOrNull() ?: true,
+            coverScale = settings.getString(KEY_MOBILE_PLAYER_COVER_SCALE)?.toFloatOrNull() ?: 0.72f,
+            coverCornerDp = settings.getString(KEY_MOBILE_PLAYER_COVER_CORNER)?.toIntOrNull() ?: 24,
+            coverElevationDp = settings.getString(KEY_MOBILE_PLAYER_COVER_ELEVATION)?.toIntOrNull() ?: 16,
+            ambientGlow = settings.getString(KEY_MOBILE_PLAYER_AMBIENT_GLOW)?.toBooleanStrictOrNull() ?: true,
+            coverSwipeGesture = settings.getString(KEY_MOBILE_PLAYER_COVER_SWIPE)?.toBooleanStrictOrNull() ?: true,
+            useWavySeekBar = settings.getString(KEY_MOBILE_PLAYER_WAVY_SEEKBAR)?.toBooleanStrictOrNull() ?: false,
+            lyricsLines = settings.getString(KEY_MOBILE_PLAYER_LYRICS_LINES)?.toIntOrNull() ?: 2,
+            lyricsFontSizeSp = settings.getString(KEY_MOBILE_PLAYER_LYRICS_FONT_SIZE)?.toIntOrNull() ?: 17,
+            lyricsAlignStart = settings.getString(KEY_MOBILE_PLAYER_LYRICS_ALIGN)?.toBooleanStrictOrNull() ?: false,
+            karaokeEnabled = settings.getString(KEY_MOBILE_PLAYER_KARAOKE)?.toBooleanStrictOrNull() ?: true,
+            showTranslation = settings.getString(KEY_MOBILE_PLAYER_SHOW_TRANSLATION)?.toBooleanStrictOrNull() ?: true,
+            controlsScale = settings.getString(KEY_MOBILE_PLAYER_CONTROLS_SIZE)?.toFloatOrNull() ?: 1.0f,
+        )
+    }
+
+    private val _mobilePlayerCustomConfig = MutableStateFlow(loadMobilePlayerCustomConfig())
+    val mobilePlayerCustomConfigFlow: StateFlow<cp.player.app.ui.model.MobilePlayerCustomConfig> =
+        _mobilePlayerCustomConfig.asStateFlow()
+
+    val modernMobilePlayerEnabledFlow: StateFlow<Boolean> =
+        _mobilePlayerCustomConfig.map { it.enabled }.stateIn(modelScope, SharingStarted.Eagerly, _mobilePlayerCustomConfig.value.enabled)
+
+    fun mobilePlayerCustomConfig(): cp.player.app.ui.model.MobilePlayerCustomConfig = _mobilePlayerCustomConfig.value
+
+    fun updateMobilePlayerCustomConfig(transform: (cp.player.app.ui.model.MobilePlayerCustomConfig) -> cp.player.app.ui.model.MobilePlayerCustomConfig) {
+        val updated = transform(_mobilePlayerCustomConfig.value)
+        settings.putString(KEY_MODERN_MOBILE_PLAYER, updated.enabled.toString())
+        settings.putString(KEY_MOBILE_PLAYER_COVER_SCALE, updated.coverScale.toString())
+        settings.putString(KEY_MOBILE_PLAYER_COVER_CORNER, updated.coverCornerDp.toString())
+        settings.putString(KEY_MOBILE_PLAYER_COVER_ELEVATION, updated.coverElevationDp.toString())
+        settings.putString(KEY_MOBILE_PLAYER_AMBIENT_GLOW, updated.ambientGlow.toString())
+        settings.putString(KEY_MOBILE_PLAYER_COVER_SWIPE, updated.coverSwipeGesture.toString())
+        settings.putString(KEY_MOBILE_PLAYER_WAVY_SEEKBAR, updated.useWavySeekBar.toString())
+        settings.putString(KEY_MOBILE_PLAYER_LYRICS_LINES, updated.lyricsLines.toString())
+        settings.putString(KEY_MOBILE_PLAYER_LYRICS_FONT_SIZE, updated.lyricsFontSizeSp.toString())
+        settings.putString(KEY_MOBILE_PLAYER_LYRICS_ALIGN, updated.lyricsAlignStart.toString())
+        settings.putString(KEY_MOBILE_PLAYER_KARAOKE, updated.karaokeEnabled.toString())
+        settings.putString(KEY_MOBILE_PLAYER_SHOW_TRANSLATION, updated.showTranslation.toString())
+        settings.putString(KEY_MOBILE_PLAYER_CONTROLS_SIZE, updated.controlsScale.toString())
+        _mobilePlayerCustomConfig.value = updated
+    }
+
+    fun setModernMobilePlayerEnabled(enabled: Boolean) {
+        updateMobilePlayerCustomConfig { it.copy(enabled = enabled) }
+    }
+
+    fun resetMobilePlayerCustomConfig() {
+        updateMobilePlayerCustomConfig { cp.player.app.ui.model.MobilePlayerCustomConfig() }
+    }
+
     // ============ 歌词智能分词设置 ============
 
     private const val KEY_LYRICS_WORD_SEGMENTATION = "lyrics_word_segmentation"

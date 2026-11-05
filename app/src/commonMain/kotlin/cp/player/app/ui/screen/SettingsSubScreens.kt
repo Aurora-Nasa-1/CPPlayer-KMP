@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.runtime.Composable
 import cp.player.app.ui.component.DarkThemePhonePreviewCard
 import cp.player.app.ui.theme.LocalIsDarkTheme
@@ -168,7 +169,42 @@ class AppearanceSettingsScreen(
                     )
                 }
 
-                // 3. 字体排版与几何形态
+                // 3. 手机播放界面与布局微调
+                val mobilePlayerConfig by AppModel.mobilePlayerCustomConfigFlow.collectAsState()
+                var showLayoutSettingsSheet by remember { mutableStateOf(false) }
+
+                SettingsSection("手机端播放界面与布局") {
+                    SettingsSwitchItem(
+                        title = "全新单页播放布局",
+                        modifier = Modifier.settingsSearchTarget("appearance_modern_mobile_player", targetSettingId),
+                        subtitle = if (mobilePlayerConfig.enabled) "已开启 · 封面、双行歌词与控制整合一屏" else "已关闭 · 使用经典三页横滑播放界面",
+                        checked = mobilePlayerConfig.enabled,
+                        onCheckedChange = AppModel::setModernMobilePlayerEnabled,
+                        index = 0,
+                        total = 2,
+                    )
+                    SettingsClickItem(
+                        title = "播放界面微调与自定义",
+                        subtitle = "封面比例 ${((mobilePlayerConfig.coverScale * 100).toInt())}% · 圆角 ${mobilePlayerConfig.coverCornerDp}dp · 歌词 ${mobilePlayerConfig.lyricsFontSizeSp}sp · 独立评论",
+                        icon = Icons.Filled.Tune,
+                        showChevron = true,
+                        index = 1,
+                        total = 2,
+                        modifier = Modifier.settingsSearchTarget("appearance_mobile_player_layout", targetSettingId),
+                        onClick = { showLayoutSettingsSheet = true },
+                    )
+                }
+
+                if (showLayoutSettingsSheet) {
+                    cp.player.app.ui.component.PlayerLayoutCustomizationSheet(
+                        config = mobilePlayerConfig,
+                        onUpdateConfig = { transform -> AppModel.updateMobilePlayerCustomConfig(transform) },
+                        onResetConfig = { AppModel.resetMobilePlayerCustomConfig() },
+                        onDismiss = { showLayoutSettingsSheet = false },
+                    )
+                }
+
+                // 4. 字体排版与几何形态
                 SettingsSection(s.appearance.sectionFont) {
                     SettingsSliderItem(
                         title = s.appearance.fontRoundness,

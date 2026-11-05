@@ -278,6 +278,20 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 sectionOf = { it.fontPacks.sectionTitle },
             ),
             SettingsSubItem(
+                id = "appearance_modern_mobile_player",
+                titleOf = { "全新单页播放布局" },
+                subtitleOf = { "将封面、双行歌词预览与控制整合在一个页面中展示" },
+                keywords = listOf("单页", "播放页", "新版播放器", "播放界面", "歌词", "apple music", "封面", "布局", "手机播放器"),
+                sectionOf = { "手机端播放界面与布局" },
+            ),
+            SettingsSubItem(
+                id = "appearance_mobile_player_layout",
+                titleOf = { "播放界面微调与自定义" },
+                subtitleOf = { "微调封面比例与圆角、景深阴影、双行歌词字号及对齐方式、走带控制缩放" },
+                keywords = listOf("微调", "播放界面微调", "自定义布局", "封面大小", "圆角", "阴影", "歌词字号", "按键大小", "卡拉OK"),
+                sectionOf = { "手机端播放界面与布局" },
+            ),
+            SettingsSubItem(
                 id = "appearance_mobile_preview",
                 titleOf = { "手机版界面预览 (412×892)" },
                 subtitleOf = { "切换桌面端与手机版紧凑布局、底部导航栏与手机顶栏" },
