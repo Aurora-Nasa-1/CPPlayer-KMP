@@ -57,6 +57,9 @@ echo "[2/4] Configuring JBR feature flags for ultra-minimal desktop..."
 #   * --disable-manpages --disable-docs
 
 JVM_FEATURES="compiler1,compiler2,g1gc,zgc,shenandoahgc,link-time-opt,cds"
+if [[ "${JBR_BRANCH}" == *"25"* ]]; then
+    JVM_FEATURES="${JVM_FEATURES},compact-headers"
+fi
 
 bash configure \
     --with-jvm-variants=server \

@@ -45,7 +45,9 @@ object VirtualThreadDispatcher {
     val dispatcher: CoroutineDispatcher by lazy {
         if (isSupported) {
             try {
-                Executors.newVirtualThreadPerTaskExecutor().asCoroutineDispatcher()
+                val method = Executors::class.java.getMethod("newVirtualThreadPerTaskExecutor")
+                val executor = method.invoke(null) as ExecutorService
+                executor.asCoroutineDispatcher()
             } catch (_: Throwable) {
                 Dispatchers.IO
             }

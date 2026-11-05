@@ -22,7 +22,6 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.CpRouteScaffold
-import cp.player.app.ui.component.DarkThemePhonePreviewCard
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
@@ -41,7 +40,6 @@ import cp.player.app.ui.util.popOrNotify
  * 贴合原生 Android 16「深色主题与色彩」的二级设置页面。
  *
  * 具有：
- * - 顶部 Android 16 原生拟真手机机身与日月天体动效卡片（[DarkThemePhonePreviewCard]）
  * - 外观模式（跟随系统 / 浅色 / 深色）单选层级
  * - AMOLED 纯黑极致省电与对比度增强开关
  * - Android Material You (Monet) 动态壁纸与封面取色配置
@@ -67,16 +65,7 @@ class DarkThemeSettingsScreen : Screen {
             onBack = { navigator.popOrNotify() },
         ) { pageModifier ->
             SettingsPage(pageModifier) {
-                // 1. 顶部拟真 Android 16 手机模型动效预览卡片
-                DarkThemePhonePreviewCard(
-                    isDark = isDark,
-                    pureBlack = pureBlack,
-                    colorSource = colorSource,
-                    allowInteractiveToggle = true,
-                    modifier = Modifier.padding(bottom = 6.dp),
-                )
-
-                // 2. 外观主题模式
+                // 1. 外观主题模式
                 SettingsSection("外观模式") {
                     ThemeMode.entries.forEachIndexed { index, mode ->
                         val selected = mode == themeMode

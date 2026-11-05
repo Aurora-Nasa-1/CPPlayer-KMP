@@ -1154,7 +1154,8 @@ fun Modifier.settingsContentWidth(): Modifier =
 @Composable
 fun SettingsPage(pageModifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
     ScrollColumn(
-        modifier = pageModifier.padding(vertical = CpSpacing.formVertical),
+        modifier = pageModifier,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = CpSpacing.formVertical),
         verticalArrangement = Arrangement.spacedBy(CpSpacing.formSectionGap),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -1163,7 +1164,6 @@ fun SettingsPage(pageModifier: Modifier, content: @Composable ColumnScope.() -> 
             verticalArrangement = Arrangement.spacedBy(CpSpacing.formSectionGap),
         ) {
             content()
-            Spacer(Modifier.height(CpSpacing.formBottomInset))
         }
     }
 }

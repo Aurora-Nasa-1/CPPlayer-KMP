@@ -282,8 +282,9 @@ fun DesktopTitleBar(
 
     // JBR 在客户区右上画原生窗口钮，右侧要给它们留位（Swing 逻辑像素即 dp，保底不少于 141dp）。
     val nativeControlsWidth = if (useJbr) jbr.rightInsetDp.dp else 0.dp
-    // 右侧按钮组总宽：JBR 模式 = 账号 + 消息 + (Debug手机预览) + 迷你模式 + 设置 + 原生窗口钮区；无边框模式 = 全自绘。
-    val slotsCount = if (AppVersion.isDebugBuild) 5 else 4
+    // 右侧按钮组总宽：JBR 模式 = 账号 + 消息 + (仅desktopRun/debug: 手机预览) + 迷你模式 + 设置 + 原生窗口钮区；无边框模式 = 全自绘。
+    val showMobilePreview = AppVersion.isDesktopRunOrDebug
+    val slotsCount = if (showMobilePreview) 5 else 4
     val rightGroupWidth = if (useJbr) ChromeSlotWidth * slotsCount + nativeControlsWidth else ChromeActionsWidth
 
     // 原生窗口钮的明暗跟随应用主题。判据用 surface 亮度而不是 isSystemInDarkTheme()：
@@ -450,7 +451,7 @@ fun DesktopTitleBar(
                             .chromeFade(chromeAlpha, interactive = !immersive)
                             .jbrClientZone(chromeBridge, "messages"),
                     )
-                    if (AppVersion.isDebugBuild) {
+                    if (showMobilePreview) {
                         ChromeSlot(
                             onClick = onToggleMobileMode,
                             modifier = Modifier

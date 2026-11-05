@@ -28,9 +28,7 @@ import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.component.SettingsBadge
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsDropdownItem
-import cp.player.app.ui.component.SettingsHeroCard
 import cp.player.app.ui.component.SettingsNote
-import cp.player.app.ui.component.SettingsNoteEmphasis
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSegmentedItem
@@ -102,38 +100,54 @@ class PlaybackSettingsScreen(
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
             SettingsPage(pageModifier) {
-                // M3 Expressive 音频架构与输出模式卡片
-                val heroSubtitle = if (isFlickEngine) {
-                    if (isAndroid) {
-                        "Oboe 低延迟硬件直通 · USB DAC 源码输出 · DSD 软解已就绪"
-                    } else {
-                        "WASAPI Exclusive 硬件独占直通 · Bit-Perfect 源码输出 (绕过 Windows 混音器)"
+                // 1. 流媒体与音频音质
+                SettingsSection(s.playback.sectionQuality) {
+                    val qualityTotal = (if (showMeteredQuality) 1 else 0) + 2
+                    SettingsDropdownItem(
+                        title = s.playback.defaultQuality,
+                        modifier = Modifier.settingsSearchTarget("playback_quality", targetSettingId),
+                        subtitle = s.playback.defaultQualityNote,
+                        options = qualityLabels,
+                        selectedIndex = qualityIndex,
+                        onSelect = { index ->
+                            AppModel.qualityLevels.getOrNull(index)?.let(AppModel::setPlaybackQuality)
+                        },
+                        index = 0,
+                        total = qualityTotal,
+                    )
+                    if (showMeteredQuality) {
+                        SettingsDropdownItem(
+                            title = s.playback.meteredQuality,
+                            modifier = Modifier.settingsSearchTarget("playback_metered_quality", targetSettingId),
+                            subtitle = s.playback.meteredQualityNote,
+                            options = qualityLabels,
+                            selectedIndex = meteredQualityIndex,
+                            onSelect = { index ->
+                                AppModel.qualityLevels.getOrNull(index)
+                                    ?.let(AppModel::setMeteredPlaybackQuality)
+                            },
+                            index = 1,
+                            total = qualityTotal,
+                        )
                     }
-                } else {
-                    if (isAndroid) {
-                        "AndroidX Media3 (ExoPlayer) 标准混音通道"
-                    } else {
-                        "系统混音共享输出 (轻量兼容，受 Windows 混音器影响)"
-                    }
+                    SettingsSwitchItem(
+                        title = s.playback.preloadNext,
+                        modifier = Modifier.settingsSearchTarget("playback_preload", targetSettingId),
+                        subtitle = s.playback.preloadNextNote,
+                        checked = preloadNext,
+                        onCheckedChange = { AppModel.setPreloadNext(it) },
+                        index = if (showMeteredQuality) 2 else 1,
+                        total = qualityTotal,
+                    )
                 }
-                SettingsHeroCard(
-                    title = if (isFlickEngine) "FlickEngine 发烧架构" else "系统标准音频架构",
-                    subtitle = heroSubtitle,
-                    icon = Icons.Filled.Memory,
-                    badgeText = if (isFlickEngine) {
-                        if (vipInfo.isActivated) "Hi-Res VIP · 源码独占" else "VIP 待激活"
-                    } else {
-                        "标准共享通道"
-                    },
-                    badgeContainerColor = if (isFlickEngine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                    badgeContentColor = if (isFlickEngine) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
 
+                // 2. 音频输出内核架构
                 SettingsSection("音频输出内核架构") {
                     val engineOptions = listOf(
                         "系统标准引擎",
                         "FlickEngine 发烧引擎 (VIP)",
                     )
+                    val kernelTotal = if (isFlickEngine) 4 else 2
                     SettingsSegmentedItem(
                         title = "回放内核架构",
                         modifier = Modifier.settingsSearchTarget("playback_audio_engine", targetSettingId),
@@ -152,66 +166,33 @@ class PlaybackSettingsScreen(
                             }
                         },
                         index = 0,
-                        total = 1,
+                        total = kernelTotal,
                     )
-                }
-
-                if (isFlickEngine) {
-                    SettingsSection("硬件直通与发烧特性") {
+                    if (isFlickEngine) {
                         SettingsClickItem(
-                            title = if (isAndroid) "Oboe / AAudio 直通" else "WASAPI Exclusive 独占直通",
+                            title = if (isAndroid) "Oboe 硬件直通与母带解码" else "WASAPI Exclusive 独占直通",
                             modifier = Modifier.settingsSearchTarget("playback_wasapi_exclusive", targetSettingId),
                             subtitle = if (isAndroid) {
-                                "绕过 Android AudioFlinger 重采样，直通底层音频 HAL / USB DAC"
+                                "绕过 Android AudioFlinger 重采样，直通底层音频 HAL / USB DAC，支持 DSD 软解"
                             } else {
-                                "完全绕过 Windows 系统混音器与音频增强，由播放器直接接管声卡终端"
+                                "完全绕过 Windows 混音器，独占接管声卡终端，支持 Bit-Perfect 与 DSD 软解"
                             },
-                            index = 0,
-                            total = 4,
-                            onClick = {
-                                navigator.push(AudioEngineSettingsScreen())
-                            },
+                            index = 1,
+                            total = kernelTotal,
+                            onClick = { navigator.push(AudioEngineSettingsScreen()) },
                             trailingContent = {
                                 SettingsBadge(
-                                    text = "已启用",
+                                    text = "详细配置",
                                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                 )
                             },
                         )
                         SettingsClickItem(
-                            title = "Bit-Perfect 位完美源码输出",
-                            subtitle = "声卡硬件采样率根据音轨物理规格自动重协商（44.1k/48k/96k/192kHz 自适应）",
-                            index = 1,
-                            total = 4,
-                            onClick = {},
-                            trailingContent = {
-                                SettingsBadge(
-                                    text = "自动自适应",
-                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                )
-                            },
-                        )
-                        SettingsClickItem(
-                            title = "DSD 母带级原生软解",
-                            subtitle = "支持 DSF / DFF 容器，支持 DSD64 / DSD128 高规格直接解码播放",
+                            title = "发烧特权授权管理",
+                            subtitle = if (vipInfo.isActivated) "已激活：${vipInfo.planName} (${vipInfo.licenseKey ?: "永久授权"})" else "未激活，点击输入卡密解锁发烧特性",
                             index = 2,
-                            total = 4,
-                            onClick = {},
-                            trailingContent = {
-                                SettingsBadge(
-                                    text = "内置支持",
-                                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                                )
-                            },
-                        )
-                        SettingsClickItem(
-                            title = "特权授权管理",
-                            subtitle = if (vipInfo.isActivated) "已激活：${vipInfo.planName} (${vipInfo.licenseKey ?: "永久授权"})" else "未激活，点击输入卡密解锁",
-                            index = 3,
-                            total = 4,
+                            total = kernelTotal,
                             onClick = { showVipDialog = true },
                             trailingContent = {
                                 CpText(
@@ -222,23 +203,13 @@ class PlaybackSettingsScreen(
                             },
                         )
                     }
-                    SettingsNote(
-                        if (isAndroid) "在 USB DAC 直通模式下，音频流直接送至外接解码耳放，实现全链路原生 Hi-Res 还原。"
-                        else "在 WASAPI Exclusive 独占模式下，声卡将独占输出通道，播放期间其他应用程序的声音将被静音，以确保 0 混音劣化与极致信噪比。",
-                        emphasis = SettingsNoteEmphasis.INFO,
-                    )
-                }
-
-                SettingsSection("DSP 音效与调音台") {
                     SettingsClickItem(
-                        title = "64位浮点 DSP 音效管线",
-                        subtitle = "内置 5段参数均衡器 (PEQ)、声道混音平衡与响度均衡调节",
+                        title = "DSP 音效与调音台",
+                        subtitle = "内置 10 频段参数均衡器 (EQ)、风格预设、声道平衡与响度均衡调节",
                         icon = Icons.Filled.Equalizer,
-                        index = 0,
-                        total = 1,
-                        onClick = {
-                            navigator.push(AudioEffectSettingsScreen())
-                        },
+                        index = if (isFlickEngine) 3 else 1,
+                        total = kernelTotal,
+                        onClick = { navigator.push(AudioEffectSettingsScreen()) },
                         trailingContent = {
                             CpText(
                                 text = "调音台",
@@ -249,40 +220,8 @@ class PlaybackSettingsScreen(
                     )
                 }
 
-                SettingsSection(s.playback.sectionQuality) {
-                    SettingsDropdownItem(
-                        title = s.playback.defaultQuality,
-                        modifier = Modifier.settingsSearchTarget("playback_quality", targetSettingId),
-                        subtitle = s.playback.defaultQualityNote,
-                        options = qualityLabels,
-                        selectedIndex = qualityIndex,
-                        onSelect = { index ->
-                            AppModel.qualityLevels.getOrNull(index)?.let(AppModel::setPlaybackQuality)
-                        },
-                        index = 0,
-                        total = if (showMeteredQuality) 2 else 1,
-                    )
-                    if (showMeteredQuality) {
-                        SettingsDropdownItem(
-                            title = s.playback.meteredQuality,
-                            modifier = Modifier.settingsSearchTarget("playback_metered_quality", targetSettingId),
-                            subtitle = s.playback.meteredQualityNote,
-                            options = qualityLabels,
-                            selectedIndex = meteredQualityIndex,
-                            onSelect = { index ->
-                                AppModel.qualityLevels.getOrNull(index)
-                                    ?.let(AppModel::setMeteredPlaybackQuality)
-                            },
-                            index = 1,
-                            total = 2,
-                        )
-                    }
-                }
+                // 3. 播放控制与过渡
                 SettingsSection(s.playback.sectionFade) {
-                    // 提交助手：先归一化 `enabled`（它等于"至少有一个子开关开着"），
-                    // 再落盘 + 下发。没有 UI 总开关 —— 总开关与子开关是同一状态的两个
-                    // 入口，必然出现「总开关开着但子项全关」的白挂状态、
-                    // 以及两处不同步（与音效页同一套判断）。
                     fun commitFade(next: cp.player.core.playback.FadeConfig) {
                         val normalized = next.copy(
                             enabled = next.fadeIn || next.fadeOut,
@@ -307,7 +246,6 @@ class PlaybackSettingsScreen(
                         index = 1,
                         total = 3,
                     )
-                    // 时长滑杆：两个子开关都关着时禁用（没有过渡发生，调时长无意义）。
                     SettingsSliderItem(
                         title = s.playback.fadeDuration,
                         value = fadeDraft.durationMs.toFloat(),
@@ -320,59 +258,31 @@ class PlaybackSettingsScreen(
                                 cp.player.core.playback.FadeConfig.DURATION_STEP_MS
                             ) - 1,
                         enabled = fadeDraft.enabled,
-                        // 拖动只改显示，松手才提交（SettingsStorage 是全量文件回写）。
                         onValueChange = { fadeDraft = fadeDraft.copy(durationMs = it.toInt()) },
                         onValueChangeFinished = { commitFade(fadeDraft) },
                         index = 2,
                         total = 3,
                     )
                 }
-                SettingsSection(s.playback.sectionLyrics) {
-                    val showMiniPlayerLyrics by AppModel.showMiniPlayerLyricsFlow.collectAsState()
-                    val showRuby by AppModel.showRubyLyricsFlow.collectAsState()
-                    val wordSeg by AppModel.lyricsWordSegmentationFlow.collectAsState()
-                    val smartKaraoke by AppModel.smartKaraokeLrcFlow.collectAsState()
+
+                SettingsSection(s.playback.sectionLastPlayback) {
                     SettingsSwitchItem(
-                        title = s.playback.showMiniPlayerLyrics,
-                        subtitle = s.playback.showMiniPlayerLyricsSubtitle,
-                        checked = showMiniPlayerLyrics,
-                        onCheckedChange = { AppModel.setShowMiniPlayerLyrics(it) },
+                        title = s.playback.keepLastPlayback,
+                        modifier = Modifier.settingsSearchTarget("playback_keep_progress", targetSettingId),
+                        subtitle = s.playback.keepLastPlaybackNote,
+                        checked = keepLastPlayback,
+                        onCheckedChange = { checked ->
+                            AppModel.setKeepLastPlayback(checked)
+                            if (!checked && autoPlayMode == AutoPlayMode.CONTINUE) {
+                                AppModel.setAutoPlayMode(AutoPlayMode.OFF)
+                            }
+                        },
                         index = 0,
-                        total = 5,
-                    )
-                    SettingsSwitchItem(
-                        title = s.playback.showRubyLyrics,
-                        subtitle = s.playback.showRubyLyricsSubtitle,
-                        checked = showRuby,
-                        onCheckedChange = { AppModel.setShowRubyLyrics(it) },
-                        index = 1,
-                        total = 5,
-                    )
-                    SettingsSwitchItem(
-                        title = s.playback.lyricsWordSegmentation,
-                        subtitle = s.playback.lyricsWordSegmentationSubtitle,
-                        checked = wordSeg,
-                        onCheckedChange = { AppModel.setLyricsWordSegmentation(it) },
-                        index = 2,
-                        total = 5,
-                    )
-                    SettingsSwitchItem(
-                        title = s.playback.smartKaraokeLrc,
-                        subtitle = s.playback.smartKaraokeLrcSubtitle,
-                        checked = smartKaraoke,
-                        onCheckedChange = { AppModel.setSmartKaraokeLrc(it) },
-                        index = 3,
-                        total = 5,
-                    )
-                    SettingsClickItem(
-                        title = s.playback.lyricsSource,
-                        subtitle = s.playback.lyricsSourceNote,
-                        icon = Icons.Filled.ClosedCaption,
-                        index = 4,
-                        total = 5,
-                        onClick = { navigator.push(LyricsPluginSettingsScreen()) },
+                        total = 1,
                     )
                 }
+
+                // 4. 定时与自动化
                 SettingsSection(s.playback.sectionSleepTimer) {
                     SettingsClickItem(
                         title = s.playback.sleepTimer,
@@ -391,6 +301,7 @@ class PlaybackSettingsScreen(
                         onClick = { showSleepTimer = true },
                     )
                 }
+
                 val autoPlayOptions = listOf(
                     s.playback.autoPlayModeOff,
                     s.playback.autoPlayModeContinue,
@@ -451,32 +362,56 @@ class PlaybackSettingsScreen(
                         )
                     }
                 }
-                SettingsSection(s.playback.sectionLastPlayback) {
+
+                // 5. 歌词呈现与解析
+                SettingsSection(s.playback.sectionLyrics) {
+                    val showMiniPlayerLyrics by AppModel.showMiniPlayerLyricsFlow.collectAsState()
+                    val showRuby by AppModel.showRubyLyricsFlow.collectAsState()
+                    val wordSeg by AppModel.lyricsWordSegmentationFlow.collectAsState()
+                    val smartKaraoke by AppModel.smartKaraokeLrcFlow.collectAsState()
                     SettingsSwitchItem(
-                        title = s.playback.keepLastPlayback,
-                        modifier = Modifier.settingsSearchTarget("playback_keep_progress", targetSettingId),
-                        subtitle = s.playback.keepLastPlaybackNote,
-                        checked = keepLastPlayback,
-                        onCheckedChange = { checked ->
-                            AppModel.setKeepLastPlayback(checked)
-                            if (!checked && autoPlayMode == AutoPlayMode.CONTINUE) {
-                                AppModel.setAutoPlayMode(AutoPlayMode.OFF)
-                            }
-                        },
+                        title = s.playback.showMiniPlayerLyrics,
+                        subtitle = s.playback.showMiniPlayerLyricsSubtitle,
+                        checked = showMiniPlayerLyrics,
+                        onCheckedChange = { AppModel.setShowMiniPlayerLyrics(it) },
                         index = 0,
-                        total = 1,
+                        total = 5,
+                    )
+                    SettingsSwitchItem(
+                        title = s.playback.showRubyLyrics,
+                        subtitle = s.playback.showRubyLyricsSubtitle,
+                        checked = showRuby,
+                        onCheckedChange = { AppModel.setShowRubyLyrics(it) },
+                        index = 1,
+                        total = 5,
+                    )
+                    SettingsSwitchItem(
+                        title = s.playback.lyricsWordSegmentation,
+                        subtitle = s.playback.lyricsWordSegmentationSubtitle,
+                        checked = wordSeg,
+                        onCheckedChange = { AppModel.setLyricsWordSegmentation(it) },
+                        index = 2,
+                        total = 5,
+                    )
+                    SettingsSwitchItem(
+                        title = s.playback.smartKaraokeLrc,
+                        subtitle = s.playback.smartKaraokeLrcSubtitle,
+                        checked = smartKaraoke,
+                        onCheckedChange = { AppModel.setSmartKaraokeLrc(it) },
+                        index = 3,
+                        total = 5,
+                    )
+                    SettingsClickItem(
+                        title = s.playback.lyricsSource,
+                        subtitle = s.playback.lyricsSourceNote,
+                        icon = Icons.Filled.ClosedCaption,
+                        index = 4,
+                        total = 5,
+                        onClick = { navigator.push(LyricsPluginSettingsScreen()) },
                     )
                 }
-                SettingsSection(s.playback.sectionPreload) {
-                    SettingsSwitchItem(
-                        title = s.playback.preloadNext,
-                        subtitle = s.playback.preloadNextNote,
-                        checked = preloadNext,
-                        onCheckedChange = { AppModel.setPreloadNext(it) },
-                        index = 0,
-                        total = 1,
-                    )
-                }
+
+                // 6. 社交互动与系统协作
                 SettingsSection(s.player.listenTogether) {
                     SettingsSwitchItem(
                         title = s.social.together.addNextOnPlay,
@@ -488,8 +423,7 @@ class PlaybackSettingsScreen(
                         total = 1,
                     )
                 }
-                // 熄屏后台保活的用户侧开关：媒体前台服务（Service 层已做）只解决
-                // 「应用自愿降级」，电池优化白名单解决「系统/厂商主动杀」。
+
                 if (isAndroidPlatform()) {
                     SettingsSection(s.playback.sectionBackground) {
                         val scope = rememberCoroutineScope()
@@ -509,8 +443,6 @@ class PlaybackSettingsScreen(
                             onClick = {
                                 batteryIgnored = isIgnoringBatteryOptimizations()
                                 requestIgnoreBatteryOptimizations()
-                                // 系统授权弹窗没有返回回调：延迟一轮重读状态，
-                                // 覆盖用户在弹窗里做出选择后回到页面的时机。
                                 scope.launch {
                                     delay(2_000)
                                     batteryIgnored = isIgnoringBatteryOptimizations()

@@ -94,8 +94,10 @@ root 名下的 600，换用户去跑反而要额外处理权限。
 - 包布局：整体装 `/opt/CPPlayer`，`/usr/bin/cpplayer` 是跳板脚本
   （`exec /opt/CPPlayer/bin/CPPlayer "$@"`，不用软链 —— jpackage 启动器按自身
   真实路径找 `../lib/<名>.cfg`）。
-- 依赖：`alsa-lib`（rodio/CPAL 播放）+ `fontconfig` + X11 组（AWT/Skiko）。
-  应用自带 JBR，不需要任何 `java-runtime`。
+  AUR 分发流**不包含自带 JBR**（`package()` 阶段移除自带 `lib/runtime`，并创建
+  指向系统 `/usr/lib/jvm/jbr25` 的软链接），极大减小包体积并复用共享环境。
+- 依赖：`jbr25`（提供 JetBrains Runtime 25、WindowMove、紧凑对象头与低延迟 GC）+
+  `alsa-lib`（rodio/CPAL 播放走 ALSA）+ `fontconfig` + X11 组（AWT/Skiko 窗口与字体）。
 - `pkgver` 会剥掉预发布后缀（AUR 只允许 `[A-Za-z0-9._]`）。
 - **改包元数据**（依赖、desktop 条目、描述）：直接改本仓库的
   `packaging/aur/cpplayer-bin/PKGBUILD` 模板，CI 原样带上去。
@@ -166,7 +168,7 @@ git tag v1.2.3 && git push origin v1.2.3
 - aur job：更新 AUR 上的 cpplayer-bin（首次推送会直接建包）；
 - release.yml：Android APK 挂到同一个 Release。
 
-之后在 Arch 上：`paru -S cpplayer-bin`（或 `yay`）即可安装。
+之后在 Arch 上：`paru -S cpplayer-bin`（或 `yay`）即可安装（会自动解析安装 `jbr25` 依赖）。
 
 ## 4. 已核对过的依据（防回退）
 

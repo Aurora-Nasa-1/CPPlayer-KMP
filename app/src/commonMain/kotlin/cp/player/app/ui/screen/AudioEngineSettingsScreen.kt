@@ -31,7 +31,6 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cp.player.app.AppModel
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.openUrl
-import cp.player.app.ui.component.AudioEnginePhonePreviewCard
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.SettingsClickItem
@@ -72,12 +71,6 @@ class AudioEngineSettingsScreen : Screen {
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
             SettingsPage(pageModifier) {
-                // 顶部 Android 16 拟真手机动效与 Hi-Res 频谱卡片
-                AudioEnginePhonePreviewCard(
-                    isFlickEngine = isFlickEngine,
-                    modifier = Modifier.padding(bottom = 4.dp),
-                )
-
                 SettingsSection("音频输出内核架构") {
                     val engineOptions = listOf(
                         "系统标准引擎 (默认)",

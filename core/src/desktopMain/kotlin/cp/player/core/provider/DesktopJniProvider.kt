@@ -160,6 +160,9 @@ class DesktopJniProvider(
 
             if (ready) {
                 workerProcess = proc
+                Runtime.getRuntime().addShutdownHook(Thread {
+                    runCatching { proc.destroyForcibly() }
+                })
                 drainProcessOutput(proc)
                 true
             } else {

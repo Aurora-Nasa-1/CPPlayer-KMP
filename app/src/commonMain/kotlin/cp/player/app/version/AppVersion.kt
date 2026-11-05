@@ -16,6 +16,8 @@ object AppVersion {
         internal set
     var releaseChannel: String = "stable"
         internal set
+    var isDesktopRun: Boolean = false
+        internal set
 
     fun init(
         versionName: String,
@@ -23,12 +25,14 @@ object AppVersion {
         gitSha: String = "unknown",
         isDesktop: Boolean = false,
         releaseChannel: String = "stable",
+        isDesktopRun: Boolean = false,
     ) {
         this.versionName = versionName
         this.versionCode = versionCode
         this.gitSha = gitSha
         this.isDesktop = isDesktop
         this.releaseChannel = releaseChannel
+        this.isDesktopRun = isDesktopRun
     }
 
     /**
@@ -41,6 +45,12 @@ object AppVersion {
      * 据此决定是否展示。
      */
     val isDebugBuild: Boolean get() = releaseChannel != "stable"
+
+    /**
+     * 仅限本地开发运行（如 desktopRun、IDE 调试）或 debug 构建。
+     * 正式发布打包产物（stable 渠道且非本地类路径运行）一律为 false。
+     */
+    val isDesktopRunOrDebug: Boolean get() = isDebugBuild || isDesktopRun
 
     val fullVersion: String get() = "v$versionName ($versionCode)"
 

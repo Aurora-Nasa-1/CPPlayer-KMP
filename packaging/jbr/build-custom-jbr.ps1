@@ -46,6 +46,9 @@ try {
     Write-Host "[2/4] Configuring feature flags via bash (MSYS2/Cygwin/WSL environment)..." -ForegroundColor Yellow
 
     $jvmFeatures = "compiler1,compiler2,g1gc,zgc,shenandoahgc,link-time-opt,cds"
+    if ($Branch -like "*25*") {
+        $jvmFeatures += ",compact-headers"
+    }
     $configureArgs = @(
         "configure",
         "--with-jvm-variants=server",

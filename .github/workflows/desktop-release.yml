@@ -33,7 +33,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  JAVA_VERSION: "21"
+  JAVA_VERSION: "25"
   # JetBrains Runtime —— **打进产物**的运行时（jpackage 的 --runtime-image）。
   # 目的只有一个：让 WindowDraggableArea 走原生 WindowMove（贴边吸附 / 拖出还原 / 跟手）。
   # 方案与验收清单见 docs/dev/JBR_PACKAGING.md。
@@ -116,9 +116,10 @@ jobs:
             gradleTasks: ":app:packageWindowsVelopack"
             assetPaths: |
               app/build/compose/binaries/main/velopack/*
-            # Windows 侧 .zip / .tar.gz 都有，用 .zip。
-            jbrExt: zip
-            jbrSha: 432d0f9bdc687a6c8e2e13e22be83cdb0d9460b6b15752e84bd97165e13e9f5f
+            # Windows 采用自编译、深度裁剪并集成 Compact Object Headers 的定制 JBR 25
+            jbrExt: tar.gz
+            jbrSha: 8994b26c31eb4ce4e171296e9e50970ce44d7142ba39d54b8eee67e4cb4761a2
+            jbrUrl: "https://github.com/Aurora-Nasa-1/CPPlayer-KMP/releases/download/jbr-assets-v1/jbr25-windows-x64-custom.tar.gz"
           - os: ubuntu-latest
             platform: linux
             gradleTasks: ":app:packageDeb :app:packageLinuxTarGz"
@@ -135,7 +136,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: zulu
           java-version: ${{ env.JAVA_VERSION }}
       - name: Setup Gradle
         # 与两个 Android 工作流对齐：缓存命中 + 守护进程复用，否则桌面包每次全量冷启动。
@@ -161,8 +162,13 @@ jobs:
           # javaHome 里找 jlink/jpackage，找不到直接失败：
           # "Failed to check JDK distribution: 'jlink', 'jpackage' are missing"。
           # 最终打进安装包的是 jlink 的裁剪产物，SDK 包不会让产物变大。
-          file="jbrsdk-${JBR_VERSION}-${{ matrix.platform }}-x64-${JBR_BUILD}.${{ matrix.jbrExt }}"
-          url="${JBR_URL_BASE}/${file}"
+          if [[ -n "${{ matrix.jbrUrl || '' }}" ]]; then
+            url="${{ matrix.jbrUrl }}"
+            file="jbr-${{ matrix.platform }}-x64.${{ matrix.jbrExt }}"
+          else
+            file="jbrsdk-${JBR_VERSION}-${{ matrix.platform }}-x64-${JBR_BUILD}.${{ matrix.jbrExt }}"
+            url="${JBR_URL_BASE}/${file}"
+          fi
           # 先下临时文件、校验通过再落位 —— 中断留下的半截包若直接落位，
           # 下次会因目录存在被误判成已就绪，打出**损坏的运行时**。
           out=".jbr/${file}.part"
@@ -205,6 +211,14 @@ jobs:
           # 也是核对命令行参数的唯一权威来源。
           .tools/vpk.exe pack -H | head -40
 
+      - name: Generate AOT Cache (Ahead-of-Time Class Loading & Linking - JEP 483 / 514)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          ./gradlew :app:createDistributable -Pcp.jbrHome="${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64" -Pcp.jdk25=true -Pcp.gc=shenandoah -Pcp.compactHeaders=true --no-daemon
+          ./packaging/jbr/generate-aot-cache.ps1 -JavaExe "${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64/bin/java.exe" -OutputFile "${{ github.workspace }}/packaging/jbr/app-aot.aot"
+
       - name: Build desktop package
         shell: bash
         # versionCode 由 Gradle 从 versionName 派生，不需要传；
@@ -224,7 +238,10 @@ jobs:
             -Pcp.jbrHome="${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64" \
             -Pcp.vpkPath="${{ github.workspace }}/.tools/vpk.exe" \
             -Papp.versionName="${{ needs.meta.outputs.version }}" \
-            -Papp.releaseChannel="${{ needs.meta.outputs.channel }}"
+            -Papp.releaseChannel="${{ needs.meta.outputs.channel }}" \
+            -Pcp.gc=shenandoah \
+            -Pcp.compactHeaders=true \
+            -Pcp.jdk25=true
       # tar.gz 的执行位全靠打包时原样保留，这里只做布局断言（缺关键文件立刻失败，
       # 别等到用户解压才发现）。执行位无法从 tar 列表读出，AUR 的 package() 里有
       # chmod 兜底（见 packaging/aur/cpplayer-bin/PKGBUILD）。

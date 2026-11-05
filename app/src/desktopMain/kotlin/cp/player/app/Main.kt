@@ -13,6 +13,10 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.DpSize
@@ -183,6 +187,22 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
         // 放在其它初始化之后立字据：这样音频原生库加载失败之类的无关崩溃
         // 不会被算到渲染后端头上，导致下次启动无端回退用户的设置。
         DesktopRenderTuning.beginStartupProbe()
+
+        // AOT 预热自动退出机制：在预热执行期，等待首帧与基础组件初始化完毕后优雅退出应用，
+        // 触发 HotSpot JVM 的 shutdown hook 以生成最终的 .aot (JEP 514 / JEP 483) 归档。
+        val isAotWarmup = System.getProperty("cp.player.aotWarmup") == "true" ||
+            System.getProperty("cp.player.cdsDump") == "true"
+        if (isAotWarmup) {
+            LaunchedEffect(Unit) {
+                println("[CPPlayer] AOT 预热模式激活：正在执行 Compose 渲染树与核心状态预热...")
+                delay(2500L)
+                println("[CPPlayer] 预热完成，正在优雅关闭应用以触发 AOTCache 归档生成 (JEP 514)...")
+                exitApplication()
+                delay(600L)
+                kotlin.system.exitProcess(0)
+            }
+        }
+
         val windowState = rememberWindowState(
             size = remember { if (mobilePreview) loadMobileWindowSize() else loadWindowSize() },
             position = WindowPosition(Alignment.Center),
@@ -256,8 +276,10 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
             resizable = !isMiniMode,
             onKeyEvent = ::handleDesktopShortcut,
             // 两条装饰路线的选择，见上方 main() 的 KDoc。
-            // 手机预览模式使用原生边框与标题栏，供拖动与关闭窗口。
-            decoration = if (isMobileMode || useJbrChrome) {
+            // 窗口 decoration 在 AWT 中不可在窗口 displayable 后动态变更（否则抛 IllegalComponentStateException: The frame is displayable），
+            // 因此必须使用固定配置：JBR 路走 SystemDefault，无边框自绘路走 Undecorated(6.dp)。
+            // 手机预览模式统一通过 MobilePreviewTitleBar / JBR 自定义高度完成控制与拖动。
+            decoration = if (useJbrChrome) {
                 WindowDecoration.SystemDefault
             } else {
                 // 无边框：系统标题栏整体交给 DesktopTitleBar 自绘。
@@ -726,6 +748,10 @@ private fun windowTitleOf(track: TrackSummary?, isMobilePreview: Boolean = false
  */
 private fun handleDesktopShortcut(event: KeyEvent): Boolean {
     if (event.type != KeyEventType.KeyDown) return false
+    if (AppVersion.isDesktopRunOrDebug && (event.isCtrlPressed || event.isMetaPressed) && event.isShiftPressed && event.key == androidx.compose.ui.input.key.Key.M) {
+        DesktopShell.isMobileMode = !DesktopShell.isMobileMode
+        return true
+    }
     val action = AppModel.matchShortcut(event) ?: return false
 
     // 返回键（默认 Esc）等价于安卓返回键，由各页面通过 BackHandler 注册处理器。
@@ -829,12 +855,18 @@ private fun ensureBackendInitialized() {
             settings = defaultSettingsStorage(),
         )
         AppModel.markInitialized()
+        val isDesktopRun = System.getProperty("cp.player.isDesktopRun") == "true" ||
+            System.getProperty("cp.player.mobilePreview") == "true" ||
+            System.getProperty("idea.active") != null ||
+            System.getProperty("idea.version") != null ||
+            (System.getProperty("java.class.path", "").let { it.contains("build/classes") || it.contains("build\\classes") })
         AppVersion.init(
             versionName = BuildInfo.VERSION_NAME,
             versionCode = BuildInfo.VERSION_CODE,
             gitSha = BuildInfo.GIT_SHA,
             isDesktop = true,
             releaseChannel = BuildInfo.RELEASE_CHANNEL,
+            isDesktopRun = isDesktopRun,
         )
         DesktopMonitoring.init(
             versionName = BuildInfo.VERSION_NAME,

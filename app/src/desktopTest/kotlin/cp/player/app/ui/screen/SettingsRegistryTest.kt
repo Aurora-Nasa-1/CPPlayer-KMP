@@ -22,11 +22,14 @@ class SettingsRegistryTest {
     /** 临时切换发布渠道（debugOnly 入口的可见性由它决定），结束后原样恢复。 */
     private fun withReleaseChannel(channel: String, block: () -> Unit) {
         val saved = AppVersion.releaseChannel
+        val savedRun = AppVersion.isDesktopRun
         AppVersion.releaseChannel = channel
+        AppVersion.isDesktopRun = channel != "stable"
         try {
             block()
         } finally {
             AppVersion.releaseChannel = saved
+            AppVersion.isDesktopRun = savedRun
         }
     }
 
@@ -99,23 +102,12 @@ class SettingsRegistryTest {
         withReleaseChannel("debug") {
             val byGroup = settingsEntries().groupBy { it.group }
             assertEquals(
-                // 「语言」排第一：它是唯一一个「改变整棵树读到的东西」的设置，
-                // 也常常是用户在看不懂界面时要找的第一个入口。
-                //
-                // ⚠️ `audio_effect`（音效）紧跟在 `playback`（播放与音质）之后：
-                // 两者是同一主题的两个层次 —— 音质决定「拿到什么」，
-                // 音效决定「听起来怎么样」，用户找前者时常顺手看后者。
-                // 它**不是** desktopOnly：桌面端底层没有音效能力，但那一页会
-                // 明示禁用并解释原因（入口消失会让用户以为桌面版是残缺的）。
-                listOf("language", "appearance", "playback", "audio_effect", "storage", "shortcuts"),
+                listOf("appearance", "playback", "storage", "shortcuts"),
                 byGroup[SettingsGroup.GENERAL]?.map { it.id },
                 "「通用」组的内容或顺序变了",
             )
             assertEquals(
-                // `lyrics_plugins`（歌词源插件）与 `providers`（音源管理）同组：
-                // 两者都是「内容 / 数据来源」，用户找它们时想的是同一件事
-                // ——「我从哪儿拿内容」，且都支持导入 zip，放在一起心智一致。
-                listOf("account", "providers", "lyrics_plugins", "plugin_repository"),
+                listOf("account", "providers", "plugin_repository"),
                 byGroup[SettingsGroup.ACCOUNT_AND_PROVIDER]?.map { it.id },
                 "「账号与音源」组的内容或顺序变了",
             )

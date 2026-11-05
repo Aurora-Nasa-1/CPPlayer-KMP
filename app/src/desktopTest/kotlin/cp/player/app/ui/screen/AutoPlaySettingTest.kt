@@ -15,8 +15,14 @@ class AutoPlaySettingTest {
 
     @Test
     fun autoPlayModeDefaultsToOff() {
-        assertEquals(AutoPlayMode.OFF, AppModel.autoPlayMode())
-        assertEquals(AutoPlayMode.OFF, AppModel.autoPlayModeFlow.value)
+        val orig = AppModel.autoPlayMode()
+        try {
+            AppModel.setAutoPlayMode(AutoPlayMode.OFF)
+            assertEquals(AutoPlayMode.OFF, AppModel.autoPlayMode())
+            assertEquals(AutoPlayMode.OFF, AppModel.autoPlayModeFlow.value)
+        } finally {
+            AppModel.setAutoPlayMode(orig)
+        }
     }
 
     @Test

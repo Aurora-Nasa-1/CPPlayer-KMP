@@ -1,6 +1,7 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -22,6 +23,7 @@ import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpTwoPane
 import cp.player.app.ui.component.LocalEmbeddedInPane
+import cp.player.app.ui.component.LocalMiniPlayerTailSpace
 import cp.player.app.ui.component.MonetIcon
 import cp.player.app.ui.component.ScrollColumn
 import androidx.compose.foundation.layout.Arrangement
@@ -107,41 +109,44 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
             var selectedTargetId by remember { mutableStateOf<String?>(null) }
             CpTwoPane(
                 rail = { railModifier ->
-                    ScrollColumn(
-                        modifier = railModifier.padding(
-                            start = CpSpacing.formHorizontal,
-                            end = CpSpacing.formHorizontal,
-                            top = CpSpacing.formVertical,
-                            bottom = CpSpacing.formBottomInset,
-                        ),
-                        verticalArrangement = Arrangement.spacedBy(CpSpacing.formSectionGap),
-                    ) {
-                        SettingsSearchBar(
-                            query = searchQuery,
-                            onQueryChange = { searchQuery = it },
-                            placeholder = "搜索设置项与功能...",
-                        )
-                        if (searchQuery.isNotBlank()) {
-                            SettingsSearchResults(
-                                results = searchResults,
-                                selectedId = selectedId,
-                                onSelectEntry = { entry, targetId ->
-                                    selectedId = entry.id
-                                    selectedTargetId = targetId
-                                    targetRequestKey++
-                                },
+                    CompositionLocalProvider(LocalMiniPlayerTailSpace provides 0.dp) {
+                        ScrollColumn(
+                            modifier = railModifier,
+                            contentPadding = PaddingValues(
+                                start = CpSpacing.formHorizontal,
+                                end = CpSpacing.formHorizontal,
+                                top = CpSpacing.formVertical,
+                                bottom = CpSpacing.formVertical,
+                            ),
+                            verticalArrangement = Arrangement.spacedBy(CpSpacing.formSectionGap),
+                        ) {
+                            SettingsSearchBar(
                                 query = searchQuery,
+                                onQueryChange = { searchQuery = it },
+                                placeholder = "搜索设置项与功能...",
                             )
-                        } else {
-                            SettingsGroupedList(
-                                entries = entries,
-                                selectedId = selectedId,
-                                onSelect = { entry ->
-                                    selectedId = entry.id
-                                    selectedTargetId = null
-                                    targetRequestKey++
-                                },
-                            )
+                            if (searchQuery.isNotBlank()) {
+                                SettingsSearchResults(
+                                    results = searchResults,
+                                    selectedId = selectedId,
+                                    onSelectEntry = { entry, targetId ->
+                                        selectedId = entry.id
+                                        selectedTargetId = targetId
+                                        targetRequestKey++
+                                    },
+                                    query = searchQuery,
+                                )
+                            } else {
+                                SettingsGroupedList(
+                                    entries = entries,
+                                    selectedId = selectedId,
+                                    onSelect = { entry ->
+                                        selectedId = entry.id
+                                        selectedTargetId = null
+                                        targetRequestKey++
+                                    },
+                                )
+                            }
                         }
                     }
                 },

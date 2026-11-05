@@ -24,10 +24,10 @@ import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.runtime.Composable
-import cp.player.app.ui.component.DarkThemePhonePreviewCard
 import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.i18n.AppLanguage
 import cp.player.app.i18n.displayName
+import cp.player.app.i18n.displayNote
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -104,33 +104,69 @@ class AppearanceSettingsScreen(
             "$modeStr$pureBlackStr$colorStr"
         }
 
+        val availableSources = remember(platformAvailable) {
+            ColorSource.entries.filter { it != ColorSource.PLATFORM || platformAvailable }
+        }
+
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
             SettingsPage(pageModifier) {
-                // 顶部 Android 16 原生拟真手机机身与日月天体动效预览卡片
-                DarkThemePhonePreviewCard(
-                    isDark = isDark,
-                    pureBlack = pureBlack,
-                    colorSource = colorSource,
-                    allowInteractiveToggle = true,
-                    modifier = Modifier.padding(bottom = 4.dp),
-                )
-
-                // 1. 显示与色彩（二级菜单入口）
+                // 1. 主题与色彩系统
                 SettingsSection(s.appearance.sectionLook) {
-                    SettingsClickItem(
-                        title = "深色主题与配色",
-                        subtitle = themeSummary,
-                        icon = Icons.Filled.Palette,
-                        showChevron = true,
-                        index = 0,
-                        total = 1,
+                    SettingsSegmentedItem(
+                        title = s.appearance.themeMode,
+                        subtitle = themeMode.displayName(s),
+                        options = ThemeMode.entries.map { it.displayName(s) },
+                        selectedIndex = ThemeMode.entries.indexOf(themeMode).coerceAtLeast(0),
+                        onSelect = { index ->
+                            ThemeMode.entries.getOrNull(index)?.let(AppModel::setThemeMode)
+                        },
                         modifier = Modifier.settingsSearchTarget("appearance_theme_mode", targetSettingId),
-                        onClick = { navigator.push(DarkThemeSettingsScreen()) },
+                        index = 0,
+                        total = 3,
+                    )
+                    SettingsSegmentedItem(
+                        title = s.appearance.colorSource,
+                        subtitle = colorSource.displayName(s),
+                        options = availableSources.map { it.displayName(s) },
+                        selectedIndex = availableSources.indexOf(colorSource).coerceAtLeast(0),
+                        onSelect = { index ->
+                            availableSources.getOrNull(index)?.let(AppModel::setColorSource)
+                        },
+                        modifier = Modifier.settingsSearchTarget("appearance_color_source", targetSettingId),
+                        index = 1,
+                        total = 3,
+                    )
+                    SettingsSwitchItem(
+                        title = s.appearance.pureBlack,
+                        subtitle = s.appearance.pureBlackNote,
+                        checked = pureBlack,
+                        onCheckedChange = AppModel::setPureBlack,
+                        modifier = Modifier.settingsSearchTarget("appearance_pure_black", targetSettingId),
+                        index = 2,
+                        total = 3,
                     )
                 }
 
-                // 2. 界面与交互动效
-                SettingsSection("动效与交互") {
+                // 2. 界面语言
+                val currentLanguage by AppModel.appLanguageFlow.collectAsState()
+                val languageOptions = remember(s) { AppLanguage.entries }
+                SettingsSection(s.language.screenTitle) {
+                    SettingsSegmentedItem(
+                        title = s.language.screenTitle,
+                        subtitle = currentLanguage.displayName(s) + " · " + currentLanguage.displayNote(s),
+                        options = languageOptions.map { it.displayName(s) },
+                        selectedIndex = languageOptions.indexOf(currentLanguage).coerceAtLeast(0),
+                        onSelect = { index ->
+                            languageOptions.getOrNull(index)?.let(AppModel::setAppLanguage)
+                        },
+                        modifier = Modifier.settingsSearchTarget("appearance_language", targetSettingId),
+                        index = 0,
+                        total = 1,
+                    )
+                }
+
+                // 3. 界面与交互动效
+                SettingsSection("界面动效与视觉表现") {
                     SettingsSwitchItem(
                         title = s.appearance.coverFlight,
                         modifier = Modifier.settingsSearchTarget("appearance_cover_flight", targetSettingId),
@@ -138,7 +174,7 @@ class AppearanceSettingsScreen(
                         checked = coverFlightAnimation,
                         onCheckedChange = AppModel::setCoverFlightAnimation,
                         index = 0,
-                        total = 4,
+                        total = 3,
                     )
                     SettingsSwitchItem(
                         title = s.appearance.fluidBackground,
@@ -147,7 +183,7 @@ class AppearanceSettingsScreen(
                         checked = fluidBackground,
                         onCheckedChange = AppModel::setFluidBackground,
                         index = 1,
-                        total = 4,
+                        total = 3,
                     )
                     SettingsSwitchItem(
                         title = s.appearance.autoHideBottomBar,
@@ -156,20 +192,24 @@ class AppearanceSettingsScreen(
                         checked = bottomBarAutoHide,
                         onCheckedChange = AppModel::setBottomBarAutoHide,
                         index = 2,
-                        total = 4,
+                        total = 3,
                     )
+                }
+
+                // 3. 内容与列表呈现
+                SettingsSection("内容与列表呈现") {
                     SettingsSwitchItem(
                         title = s.appearance.showSongAlbum,
                         modifier = Modifier.settingsSearchTarget("appearance_show_song_album", targetSettingId),
                         subtitle = s.appearance.showSongAlbumNote,
                         checked = showSongAlbum,
                         onCheckedChange = AppModel::setShowSongAlbum,
-                        index = 3,
-                        total = 4,
+                        index = 0,
+                        total = 1,
                     )
                 }
 
-                // 3. 手机播放界面与布局微调
+                // 4. 手机端播放界面与布局
                 val mobilePlayerConfig by AppModel.mobilePlayerCustomConfigFlow.collectAsState()
 
                 SettingsSection("手机端播放界面与布局") {
@@ -184,7 +224,7 @@ class AppearanceSettingsScreen(
                     )
                     SettingsClickItem(
                         title = "播放界面微调与自定义",
-                        subtitle = "封面比例 ${((mobilePlayerConfig.coverScale * 100).toInt())}% · 圆角 ${mobilePlayerConfig.coverCornerDp}dp · 歌词 ${mobilePlayerConfig.lyricsFontSizeSp}sp · 独立评论",
+                        subtitle = "封面比例 ${((mobilePlayerConfig.coverScale * 100).toInt())}% · 圆角 ${mobilePlayerConfig.coverCornerDp}dp · 歌词 ${mobilePlayerConfig.lyricsFontSizeSp}sp",
                         icon = Icons.Filled.Tune,
                         showChevron = true,
                         index = 1,
@@ -233,7 +273,7 @@ class AppearanceSettingsScreen(
                 SettingsNote(s.appearance.roundnessNote)
                 FontPacksSection(targetSettingId = targetSettingId)
 
-                if (!cp.player.app.platform.isAndroidPlatform() && cp.player.app.version.AppVersion.isDebugBuild) {
+                if (!cp.player.app.platform.isAndroidPlatform() && cp.player.app.version.AppVersion.isDesktopRunOrDebug) {
                     SettingsSection("布局与视图预览") {
                         SettingsSwitchItem(
                             title = "手机版界面预览 (412×892)",

@@ -4,18 +4,22 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.FolderZip
-import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Tune
@@ -27,14 +31,22 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
@@ -43,151 +55,325 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
+import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.rememberZipPicker
 import cp.player.app.platform.rememberZipSaver
-import cp.player.app.i18n.cpStrings
+import cp.player.app.platform.sendPlatformToast
 import cp.player.app.ui.component.ContentState
+import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpRouteScaffold
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.SettingsButtonItem
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsLazyPage
 import cp.player.app.ui.component.SettingsNote
+import cp.player.app.ui.component.SettingsSwitchItem
+import cp.player.app.ui.component.rememberConfirmState
+import cp.player.app.ui.component.settingsContentWidth
 import cp.player.app.ui.component.settingsRowHighlightContent
+import cp.player.app.ui.util.popOrNotify
 import cp.player.core.BackendResult
 import cp.player.core.ImportResult
+import cp.player.core.lyrics.BuiltinLyricsSourceIds
+import cp.player.core.lyrics.LyricsCapability
+import cp.player.core.lyrics.LyricsSourceEntry
+import cp.player.core.lyrics.LyricsSourceRegistry
 import cp.player.core.provider.BackendProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import cp.player.app.ui.component.CpText
 
 /**
- * 音源管理：导入、切换、更新、导出与删除音源模块。
+ * 音源与歌词管理：导入、切换、更新、导出与删除音源模块及歌词来源插件。
+ *
+ * @param initialTab 0 为「音源模块」，1 为「歌词来源」。
  */
-class ProviderManagementScreen : Screen {
+class ProviderManagementScreen(
+    private val initialTab: Int = 0,
+) : Screen {
+
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
+        val s = cpStrings()
+        val t = s.lyricsPlugin
+        val scope = rememberCoroutineScope()
+
+        var selectedTab by remember { mutableIntStateOf(initialTab.coerceIn(0, 1)) }
+
         val model = rememberScreenModel { ProviderManagementModel() }
         val providers by model.providers.collectAsState()
         val active by model.active.collectAsState()
         val busy by model.busy.collectAsState()
         val message by model.message.collectAsState()
-        // 行菜单「更新」与 FAB「导入」共用同一个 zip 选择器：更新时先记下目标行，
-        // 回调里按是否记录了目标分流 —— 免得每行都挂一个文件选择器。
+
         var updateTarget by remember { mutableStateOf<BackendProvider?>(null) }
-        // 「删除模块」的二次确认：删掉的是模块本体（含它的登录态与本地数据目录），
-        // 且它在行菜单里紧挨着「导出 / 更新」，误触代价高。
-        val confirm = cp.player.app.ui.component.rememberConfirmState()
-        val pickZip = rememberZipPicker(onPicked = { zipPath ->
+        val confirm = rememberConfirmState()
+
+        // 音源 zip 选择器
+        val pickProviderZip = rememberZipPicker(onPicked = { zipPath ->
             val target = updateTarget
             updateTarget = null
             if (zipPath == null) return@rememberZipPicker
             if (target == null) model.importModule(zipPath) else model.updateModule(target, zipPath)
         })
 
+        // 歌词来源体系
+        val lyricsRegistry: LyricsSourceRegistry = AppModel.lyricsSources
+        var lyricsSources by remember { mutableStateOf<List<LyricsSourceEntry>>(emptyList()) }
+        val refreshLyrics: suspend () -> Unit = {
+            lyricsSources = runCatching { lyricsRegistry.allSources() }.getOrDefault(emptyList())
+        }
+
+        LaunchedEffect(Unit) { refreshLyrics() }
+
+        // 歌词 zip 选择器
+        val pickLyricsZip = rememberZipPicker(onPicked = { zipPath ->
+            if (zipPath != null) {
+                scope.launch {
+                    val msg = runCatching { AppModel.backend.lyricsPlugins.importPluginZip(zipPath) }
+                        .fold(
+                            onSuccess = { ids ->
+                                ids.forEach { AppModel.backend.pluginRepositories.forgetInstall("lyrics:$it") }
+                                lyricsRegistry.reload()
+                                if (ids.isEmpty()) t.importFailed else t.importSuccessCount(ids.size)
+                            },
+                            onFailure = { t.importFailed },
+                        )
+                    sendPlatformToast(msg)
+                    refreshLyrics()
+                }
+            }
+        })
+
+        fun moveLyrics(id: String, delta: Int) {
+            val ids = lyricsSources.map { it.id }.toMutableList()
+            val from = ids.indexOf(id)
+            val to = from + delta
+            if (from < 0 || to !in ids.indices) return
+            ids[from] = ids[to].also { ids[to] = ids[from] }
+            scope.launch {
+                lyricsRegistry.setOrder(ids)
+                refreshLyrics()
+            }
+        }
+
         CpRouteScaffold(
-            title = "音源管理",
+            title = "音源与歌词管理",
             onBack = { navigator.popOrNotify() },
-            topBarActions = listOf(cp.player.app.ui.component.TopBarAction(
-                icon = { Icon(Icons.Filled.Extension, cpStrings().pluginRepository.title) },
-                onClick = { navigator.push(PluginRepositoryScreen()) },
-            )),
+            topBarActions = listOf(
+                cp.player.app.ui.component.TopBarAction(
+                    icon = { Icon(Icons.Filled.Extension, cpStrings().pluginRepository.title) },
+                    onClick = { navigator.push(PluginRepositoryScreen()) },
+                ),
+            ),
             floatingActionButton = {
                 FloatingActionButton(onClick = {
-                    updateTarget = null
-                    pickZip()
+                    if (selectedTab == 0) {
+                        updateTarget = null
+                        pickProviderZip()
+                    } else {
+                        pickLyricsZip()
+                    }
                 }) {
-                    Icon(Icons.Filled.Add, "导入模块")
+                    Icon(
+                        imageVector = if (selectedTab == 0) Icons.Filled.Add else Icons.Filled.FileUpload,
+                        contentDescription = if (selectedTab == 0) "导入音源模块" else "导入歌词插件",
+                    )
                 }
             },
         ) { pageModifier ->
-            Box(pageModifier) {
-                if (providers.isEmpty() && busy == null) {
-                    ContentState(
-                        title = "尚未加载任何音源模块",
-                        message = "点击「导入模块」或右下角 + 导入 .zip 模块，模块包需含 manifest.json",
-                        modifier = Modifier.align(Alignment.Center),
-                    )
-                } else {
-                    SettingsLazyPage(
-                        pageModifier = Modifier.fillMaxSize(),
-                        // FAB 56dp + 16dp 边距 ⇒ 至少留 88dp，否则最后一行被压住。
-                        bottomInset = 88.dp,
+            Column(pageModifier) {
+                // Tab 分页栏
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    TabRow(
+                        selectedTabIndex = selectedTab,
+                        modifier = Modifier.settingsContentWidth(),
+                        containerColor = Color.Transparent,
                     ) {
-                        // 显式导入入口：FAB 滚动时容易找不到，按钮行钉在列表顶部。
-                        item(key = "__import__") {
-                            SettingsButtonItem(
-                                text = "导入模块",
-                                subtitle = "选择 .zip 模块包（需含 manifest.json）",
-                                icon = Icons.Filled.Add,
-                                index = 0,
-                                total = 1,
-                                onClick = {
-                                    updateTarget = null
-                                    pickZip()
-                                },
-                            )
-                        }
-                        message?.let { msg ->
-                            item(key = "__status__") {
-                                SettingsNote(msg, color = MaterialTheme.colorScheme.primary)
-                            }
-                        }
-                        itemsIndexed(providers, key = { _, provider -> provider.id }) { index, provider ->
-                            val schemas = provider.settingsSchema
-                            ProviderRow(
-                                provider = provider,
-                                index = index,
-                                total = providers.size,
-                                isActive = provider.id == active?.id,
-                                onActivate = { model.activate(provider) },
-                                onDelete = {
-                                    confirm.request(
-                                        title = "删除音源模块",
-                                        message = buildString {
-                                            append("确定删除「").append(provider.name)
-                                            append("」（").append(provider.id).append("）吗？\n")
-                                            append("模块文件与该音源下的登录态会被移除，需要重新导入才能使用。")
-                                            if (provider.id == active?.id) {
-                                                append("\n它正是当前音源，删除后会自动切换到其他可用音源。")
-                                            }
-                                        },
-                                        confirmLabel = "删除",
-                                        onConfirm = { model.delete(provider.id) },
-                                    )
-                                },
-                                onExport = { dest -> model.exportModuleTo(provider, dest) },
-                                onUpdate = {
-                                    updateTarget = provider
-                                    pickZip()
-                                },
-                                onOpenSettings = if (!schemas.isNullOrEmpty()) {
-                                    { navigator.push(ProviderCustomSettingsScreen(provider.id, provider.name, schemas)) }
-                                } else null,
-                            )
-                        }
+                        Tab(
+                            selected = selectedTab == 0,
+                            onClick = { selectedTab = 0 },
+                            text = { CpText("音源模块") },
+                        )
+                        Tab(
+                            selected = selectedTab == 1,
+                            onClick = { selectedTab = 1 },
+                            text = { CpText("歌词来源") },
+                        )
                     }
                 }
-                busy?.let { label ->
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CpLoadingIndicator(Modifier.size(40.dp))
-                            Spacer(Modifier.height(8.dp))
-                            CpText(label)
+
+                Box(Modifier.fillMaxWidth().weight(1f)) {
+                    if (selectedTab == 0) {
+                        // ---------------- 音源模块 ----------------
+                        if (providers.isEmpty() && busy == null) {
+                            ContentState(
+                                title = "尚未加载任何音源模块",
+                                message = "点击「导入模块」或右下角 + 导入 .zip 模块，模块包需含 manifest.json",
+                                modifier = Modifier.align(Alignment.Center),
+                            )
+                        } else {
+                            SettingsLazyPage(
+                                pageModifier = Modifier.fillMaxSize(),
+                                bottomInset = 88.dp,
+                            ) {
+                                item(key = "__import__") {
+                                    SettingsButtonItem(
+                                        text = "导入音源模块",
+                                        subtitle = "选择 .zip 模块包（需含 manifest.json）",
+                                        icon = Icons.Filled.Add,
+                                        index = 0,
+                                        total = 1,
+                                        onClick = {
+                                            updateTarget = null
+                                            pickProviderZip()
+                                        },
+                                    )
+                                }
+                                message?.let { msg ->
+                                    item(key = "__status__") {
+                                        SettingsNote(msg, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
+                                itemsIndexed(providers, key = { _, provider -> provider.id }) { index, provider ->
+                                    val schemas = provider.settingsSchema
+                                    ProviderRow(
+                                        provider = provider,
+                                        index = index,
+                                        total = providers.size,
+                                        isActive = provider.id == active?.id,
+                                        onActivate = { model.activate(provider) },
+                                        onDelete = {
+                                            confirm.request(
+                                                title = "删除音源模块",
+                                                message = buildString {
+                                                    append("确定删除「").append(provider.name)
+                                                    append("」（").append(provider.id).append("）吗？\n")
+                                                    append("模块文件与该音源下的登录态会被移除，需要重新导入才能使用。")
+                                                    if (provider.id == active?.id) {
+                                                        append("\n它正是当前音源，删除后会自动切换到其他可用音源。")
+                                                    }
+                                                },
+                                                confirmLabel = "删除",
+                                                onConfirm = { model.delete(provider.id) },
+                                            )
+                                        },
+                                        onExport = { dest -> model.exportModuleTo(provider, dest) },
+                                        onUpdate = {
+                                            updateTarget = provider
+                                            pickProviderZip()
+                                        },
+                                        onOpenSettings = if (!schemas.isNullOrEmpty()) {
+                                            { navigator.push(ProviderCustomSettingsScreen(provider.id, provider.name, schemas)) }
+                                        } else null,
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        // ---------------- 歌词来源 ----------------
+                        SettingsLazyPage(
+                            pageModifier = Modifier.fillMaxSize(),
+                            bottomInset = 88.dp,
+                        ) {
+                            item {
+                                SettingsButtonItem(
+                                    text = s.pluginRepository.title,
+                                    subtitle = s.pluginRepository.subtitle,
+                                    onClick = { navigator.push(PluginRepositoryScreen()) },
+                                    index = 0, total = 1, icon = Icons.Filled.Extension,
+                                )
+                            }
+                            item { SettingsNote(t.note) }
+                            item { SettingsNote(t.orderNote) }
+
+                            if (lyricsSources.isEmpty()) {
+                                item { SettingsNote(t.emptyMessage) }
+                            } else {
+                                lyricsSources.forEachIndexed { index, source ->
+                                    item(key = "lyrics-src-${source.id}") {
+                                        SettingsSwitchItem(
+                                            title = sourceTitle(source, t),
+                                            subtitle = sourceSubtitle(source, t),
+                                            checked = source.enabled,
+                                            onCheckedChange = { checked ->
+                                                scope.launch {
+                                                    lyricsRegistry.setEnabled(source.id, checked)
+                                                    if (!source.bundled) {
+                                                        runCatching {
+                                                            AppModel.backend.lyricsPlugins.setEnabled(source.id, checked)
+                                                        }
+                                                    }
+                                                    refreshLyrics()
+                                                }
+                                            },
+                                            index = index,
+                                            total = lyricsSources.size,
+                                            icon = Icons.Filled.Extension,
+                                            leadingTrailingContent = {
+                                                LyricsSourceRowActions(
+                                                    source = source,
+                                                    isFirst = index == 0,
+                                                    isLast = index == lyricsSources.lastIndex,
+                                                    t = t,
+                                                    onMoveUp = { moveLyrics(source.id, -1) },
+                                                    onMoveDown = { moveLyrics(source.id, +1) },
+                                                    onDelete = {
+                                                        confirm.request(
+                                                            title = t.deleteConfirmTitle,
+                                                            message = t.deleteConfirmMessage(source.name),
+                                                            onConfirm = {
+                                                                scope.launch {
+                                                                    runCatching {
+                                                                        AppModel.backend.lyricsPlugins.deletePlugin(source.id)
+                                                                    }
+                                                                    lyricsRegistry.reload()
+                                                                    refreshLyrics()
+                                                                }
+                                                            },
+                                                        )
+                                                    },
+                                                )
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+
+                            item {
+                                SettingsButtonItem(
+                                    text = t.importAction,
+                                    onClick = { pickLyricsZip() },
+                                    index = 0,
+                                    total = 1,
+                                    icon = Icons.Filled.FileUpload,
+                                )
+                            }
+                        }
+                    }
+
+                    busy?.let { label ->
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CpLoadingIndicator(Modifier.size(40.dp))
+                                Spacer(Modifier.height(8.dp))
+                                CpText(label)
+                            }
                         }
                     }
                 }
             }
         }
 
-        cp.player.app.ui.component.CpConfirmHost(confirm)
+        CpConfirmHost(confirm)
     }
 }
 
@@ -195,7 +381,6 @@ class ProviderManagementModel : ScreenModel {
     val providers: StateFlow<List<BackendProvider>> = AppModel.backend.providersFlow
     val active: StateFlow<BackendProvider?> get() = AppModel.activeProviderFlow
 
-    /** 非 null 时显示「正在处理」遮罩（导入 / 更新 / 导出共用，文案随操作变化）。 */
     val busy = MutableStateFlow<String?>(null)
     val message = MutableStateFlow<String?>(null)
 
@@ -214,7 +399,6 @@ class ProviderManagementModel : ScreenModel {
         }
     }
 
-    /** 行菜单「更新」：用新 zip 包替换指定模块（支持按 ID 或按音源名称匹配）。 */
     fun updateModule(provider: BackendProvider, zipPath: String?) {
         if (zipPath == null) { message.value = "未选择文件"; return }
         screenModelScope.launch {
@@ -230,12 +414,6 @@ class ProviderManagementModel : ScreenModel {
         }
     }
 
-    /**
-     * 行菜单「导出」：把模块目录打包为 zip 写到 [destPath]。
-     *
-     * **同步**版本 —— 由 [rememberZipSaver] 的回调调用，平台层保证已在 IO 线程上
-     * （桌面端经 IO 协程中转）；返回是否写入成功。中途没有挂起点，协程被取消也会写完。
-     */
     fun exportModuleTo(provider: BackendProvider, destPath: String?): Boolean {
         if (destPath == null) return false
         busy.value = "正在导出 ${provider.name}…"
@@ -258,17 +436,13 @@ class ProviderManagementModel : ScreenModel {
         screenModelScope.launch {
             val result = withContext(Dispatchers.IO) { AppModel.deleteProvider(id) }
             message.value = when (result) {
-                is BackendResult.Success -> "已删除模块 $id"
+                is BackendResult.Success<*> -> "已删除模块 $id"
                 is BackendResult.Error -> result.message
                 is BackendResult.Unsupported -> result.message
             }
         }
     }
 }
-
-/** 取路径的最后一段做展示（导出提示里不甩一长串绝对路径）。 */
-private fun fileNameOf(path: String): String =
-    path.substringAfterLast('/').substringAfterLast('\\')
 
 @Composable
 private fun ProviderRow(
@@ -282,33 +456,22 @@ private fun ProviderRow(
     onUpdate: () -> Unit,
     onOpenSettings: (() -> Unit)? = null,
 ) {
-    // 当前音源那行的底色是 primaryContainer，行尾控件必须跟着换成它的前景色 ——
-    // 继续用 onSurfaceVariant 会在浅色主题下掉对比度。
     val trailingTint = if (isActive) {
         settingsRowHighlightContent()
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
     var menuOpen by remember { mutableStateOf(false) }
-    // 每行一个保存对话框：导出文件名按 id + 版本生成，id 本身就是模块目录名，天然文件名安全。
     val exportZip = rememberZipSaver(
         fileName = "${provider.id}-v${provider.version}.zip",
         onWriteTo = onExport,
     )
 
-    // 能力标签：只展示宿主**认识**且当前语言有译名的那些（见 CpStrings.capabilityLabel）。
-    // 未声明的音源（老包）这里就是空串，副标题与从前一模一样 —— 不能因为「没声明」
-    // 就写一句「不支持任何能力」，那是在替音源下结论（未声明 ≠ 不支持）。
     val s = cpStrings()
     val capabilityText = provider.capabilities.orEmpty()
         .mapNotNull { s.player.capabilityLabel(it) }
         .joinToString(" · ")
-    // API v1 是历史默认值，不显示（每个老包都是 v1，写出来只是噪声）；
-    // 只有真正用了新契约的音源才值得占这段字。
     val apiText = if (provider.apiVersion > 1) " · API v${provider.apiVersion}" else ""
-    // 接口代际标签（manifest 的 `apiVersionTag`，如 "netease-v3" / "v123"）。
-    // 与 apiVersion 是两个维度：那个是插件契约编号，这个是音源自己的接口代际，
-    // 并存时两者都会显示 —— 「网易云 v3」和「API v1」本来就可以同时成立。
     val tagText = provider.apiVersionTag?.let { " · $it" }.orEmpty()
     val hasConfig = !provider.settingsSchema.isNullOrEmpty()
     val configText = if (hasConfig) " · 支持自定义配置" else ""
@@ -326,7 +489,6 @@ private fun ProviderRow(
         index = index,
         total = total,
         selected = isActive,
-        // 行尾的「更多」按钮是**独立动作**：合并语义会把它并进整行，读屏用户就点不到菜单。
         mergeSemantics = false,
         onClick = onActivate,
         trailingContent = {
@@ -352,8 +514,6 @@ private fun ProviderRow(
                     }
                     Spacer(Modifier.width(6.dp))
                 }
-                // 更多按钮样式对齐歌曲列表的 SongItem：40dp 圆形、surfaceContainerHigh 底。
-                // 按钮自带头色底座，图标统一用 onSurfaceVariant，不再随行高亮变色。
                 Box {
                     IconButton(
                         onClick = { menuOpen = true },
@@ -413,3 +573,125 @@ private fun ProviderRow(
         },
     )
 }
+
+// ---------------- 歌词来源相关辅助函数与组件 ----------------
+
+@Composable
+private fun LyricsSourceRowActions(
+    source: LyricsSourceEntry,
+    isFirst: Boolean,
+    isLast: Boolean,
+    t: cp.player.app.i18n.LyricsPluginStrings,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val tint = MaterialTheme.colorScheme.onSurfaceVariant
+    val label = { action: String -> "$action ${sourceTitle(source, t)}" }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        SettingsRowIconButton(
+            icon = Icons.Filled.KeyboardArrowUp,
+            contentDescription = label(t.moveUp),
+            enabled = !isFirst,
+            tint = tint,
+            onClick = onMoveUp,
+        )
+        SettingsRowIconButton(
+            icon = Icons.Filled.KeyboardArrowDown,
+            contentDescription = label(t.moveDown),
+            enabled = !isLast,
+            tint = tint,
+            onClick = onMoveDown,
+        )
+        if (source.removable) {
+            SettingsRowIconButton(
+                icon = Icons.Filled.DeleteOutline,
+                contentDescription = label(t.deleteAction),
+                enabled = true,
+                tint = MaterialTheme.colorScheme.error,
+                onClick = onDelete,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsRowIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    enabled: Boolean,
+    tint: Color,
+    onClick: () -> Unit,
+) {
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(40.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+private fun sourceTitle(
+    source: LyricsSourceEntry,
+    t: cp.player.app.i18n.LyricsPluginStrings,
+): String = if (!source.localizeName) {
+    source.name
+} else {
+    when (source.id) {
+        BuiltinLyricsSourceIds.SIDECAR -> t.builtinSidecar
+        BuiltinLyricsSourceIds.EMBEDDED -> t.builtinEmbedded
+        BuiltinLyricsSourceIds.AMLL -> t.builtinAmll
+        BuiltinLyricsSourceIds.PROVIDER -> t.builtinProvider
+        else -> source.name
+    }
+}
+
+private fun sourceSubtitle(
+    source: LyricsSourceEntry,
+    t: cp.player.app.i18n.LyricsPluginStrings,
+): String {
+    val capabilities = source.capabilities.mapNotNull { capability ->
+        when (capability) {
+            LyricsCapability.SEARCH_SONGS -> t.capabilitySearchSongs
+            LyricsCapability.GET_LYRICS -> t.capabilityGetLyrics
+            LyricsCapability.SEARCH_COVERS -> t.capabilitySearchCovers
+            LyricsCapability.LOOKUP_BY_ID -> t.capabilityLookupById
+        }
+    }.joinToString(" / ")
+
+    val parts = if (source.bundled) {
+        listOfNotNull(
+            t.bundledBadge.takeIf { it.isNotBlank() },
+            builtinNote(source, t)?.takeIf { it.isNotBlank() },
+        )
+    } else {
+        listOfNotNull(
+            listOfNotNull(
+                source.author.takeIf { it.isNotBlank() },
+                source.version.takeIf { it.isNotBlank() }?.let { "v$it" },
+            ).joinToString(" · ").takeIf { it.isNotBlank() },
+            capabilities.takeIf { it.isNotBlank() },
+        )
+    }
+    val body = parts.joinToString(" — ")
+    return if (source.enabled) body else "$body · ${t.disabledHint}"
+}
+
+private fun builtinNote(
+    source: LyricsSourceEntry,
+    t: cp.player.app.i18n.LyricsPluginStrings,
+): String? = when (source.id) {
+    BuiltinLyricsSourceIds.SIDECAR -> t.builtinSidecarNote
+    BuiltinLyricsSourceIds.EMBEDDED -> t.builtinEmbeddedNote
+    BuiltinLyricsSourceIds.AMLL -> t.builtinAmllNote
+    BuiltinLyricsSourceIds.PROVIDER -> t.builtinProviderNote
+    else -> null
+}
+
+private fun fileNameOf(path: String): String = path.replace('\\', '/').substringAfterLast('/')

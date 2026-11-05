@@ -101,8 +101,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -216,9 +219,36 @@ fun androidx.compose.animation.SharedTransitionScope.ModernPlayerScreenContent(
         Brush.verticalGradient(listOf(surfaceTop, surfaceBottom))
     }
 
-    // 下拉关闭手势（非歌词展开态启用）
+    // 下拉关闭手势（作用于顶栏与顶部主视觉区域，避免与歌词垂直滑动冲突）
     val offsetY = remember { Animatable(0f) }
     val maxDrag = with(LocalDensity.current) { 380.dp.toPx() }
+
+    val headerDragModifier = Modifier.pointerInput(Unit) {
+        detectVerticalDragGestures(
+            onDragEnd = {
+                if (offsetY.value > 0) {
+                    val target = if (offsetY.value > maxDrag / 2) maxDrag * 2 else 0f
+                    if (target > 0f) {
+                        haptics.perform(CpHaptic.Confirm)
+                        onBack()
+                    }
+                    scope.launch { offsetY.animateTo(target, tween(250)) }
+                }
+            },
+            onDragCancel = {
+                if (offsetY.value > 0) {
+                    scope.launch { offsetY.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow)) }
+                }
+            },
+            onVerticalDrag = { change, dragAmount ->
+                if (dragAmount > 0 || offsetY.value > 0) {
+                    val newOffset = (offsetY.value + dragAmount).coerceIn(0f, maxDrag * 2)
+                    scope.launch { offsetY.snapTo(newOffset) }
+                    change.consume()
+                }
+            },
+        )
+    }
 
     Box(
         Modifier
@@ -233,34 +263,6 @@ fun androidx.compose.animation.SharedTransitionScope.ModernPlayerScreenContent(
         Surface(
             modifier = Modifier
                 .fillMaxSize()
-                .then(
-                    if (!isLyricsExpanded) Modifier.pointerInput(Unit) {
-                        detectVerticalDragGestures(
-                            onDragEnd = {
-                                if (offsetY.value > 0) {
-                                    val target = if (offsetY.value > maxDrag / 2) maxDrag * 2 else 0f
-                                    if (target > 0f) {
-                                        haptics.perform(CpHaptic.Confirm)
-                                        onBack()
-                                    }
-                                    scope.launch { offsetY.animateTo(target, tween(250)) }
-                                }
-                            },
-                            onDragCancel = {
-                                if (offsetY.value > 0) {
-                                    scope.launch { offsetY.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow)) }
-                                }
-                            },
-                            onVerticalDrag = { change, dragAmount ->
-                                if (dragAmount > 0 || offsetY.value > 0) {
-                                    val newOffset = (offsetY.value + dragAmount).coerceIn(0f, maxDrag * 2)
-                                    scope.launch { offsetY.snapTo(newOffset) }
-                                    change.consume()
-                                }
-                            },
-                        )
-                    } else Modifier
-                )
                 .offset { IntOffset(0, offsetY.value.roundToInt()) },
             color = Color.Transparent,
             contentColor = MaterialTheme.colorScheme.onSurface,
@@ -313,6 +315,11 @@ fun androidx.compose.animation.SharedTransitionScope.ModernPlayerScreenContent(
                         track = track,
                         config = layoutConfig,
                         animatedVisibilityScope = animatedVisibilityScope,
+                        showTranslation = showTranslation,
+                        onToggleTranslation = {
+                            haptics.perform(CpHaptic.Tick)
+                            showTranslation = !showTranslation
+                        },
                         onBack = onBack,
                         onTogglePlay = onTogglePlay,
                         onSeek = onSeek,
@@ -348,6 +355,9 @@ fun androidx.compose.animation.SharedTransitionScope.ModernPlayerScreenContent(
                             moreSheets.showMoreMenu = false
                             moreSheets.showSleepTimer = true
                         },
+                        onOpenOffsetDialog = { showOffsetDialog = true },
+                        onChangeSource = onChangeLyricsSource,
+                        dragModifier = headerDragModifier,
                     )
                 }
             }
@@ -402,7 +412,13 @@ fun androidx.compose.animation.SharedTransitionScope.ModernPlayerScreenContent(
 }
 
 /**
- * 单页式主播放界面内容排版。
+ * 全新单页主播放界面内容排版。
+ *
+ * 优化重点：
+ * 1. 彻底移除 SpaceBetween 导致的无故纵向大间距，顶部封面+信息与底部走带控制各就各位；
+ * 2. 中间真正嵌入歌词界面同款 [LyricContent]，支持自由上下滑动、点击单句 seek、逐字卡拉OK高亮与双语翻译；
+ * 3. 歌词区上下增加平滑 Alpha 渐变遮罩，使歌词优雅溶于背景；
+ * 4. 顶栏精炼，收录歌词校准、双语翻译开关、布局微调与队列入口，手势与歌词滚动互不冲突。
  */
 @OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -411,6 +427,8 @@ private fun androidx.compose.animation.SharedTransitionScope.ModernSinglePageLay
     track: cp.player.core.music.TrackSummary,
     config: MobilePlayerCustomConfig,
     animatedVisibilityScope: AnimatedVisibilityScope,
+    showTranslation: Boolean,
+    onToggleTranslation: () -> Unit,
     onBack: () -> Unit,
     onTogglePlay: () -> Unit,
     onSeek: (Long) -> Unit,
@@ -427,6 +445,9 @@ private fun androidx.compose.animation.SharedTransitionScope.ModernSinglePageLay
     onOpenSongInfo: () -> Unit,
     onMoreClick: () -> Unit,
     onSleepTimer: () -> Unit,
+    onOpenOffsetDialog: () -> Unit,
+    onChangeSource: (() -> Unit)? = null,
+    dragModifier: Modifier = Modifier,
 ) {
     val s = cpStrings()
     val isDark = LocalIsDarkTheme.current
@@ -437,36 +458,39 @@ private fun androidx.compose.animation.SharedTransitionScope.ModernSinglePageLay
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
+                modifier = dragModifier,
                 title = {
-                    // 顶栏轻量状态药丸（支持触觉与弹性按压反馈）
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = if (isDark) 0.35f else 0.45f),
-                        border = BorderStroke(
-                            0.5.dp,
-                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.15f else 0.25f)
-                        ),
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .cpPressScale(pressedScale = 0.95f)
-                            .clickable(onClick = onExpandLyrics),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    state.formatInfo?.let { info ->
+                        Surface(
+                            onClick = onOpenSongInfo,
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(
+                                alpha = if (isDark) 0.35f else 0.45f
+                            ),
+                            border = BorderStroke(
+                                0.5.dp,
+                                MaterialTheme.colorScheme.outlineVariant.copy(
+                                    alpha = if (isDark) 0.15f else 0.25f
+                                )
+                            ),
                         ) {
-                            Icon(
-                                Icons.Filled.Lyrics,
-                                contentDescription = null,
-                                modifier = Modifier.size(13.dp),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                            CpText(
-                                text = "单页播放",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Info,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(12.dp),
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                                CpText(
+                                    text = info.qualityLabel,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 },
@@ -480,7 +504,24 @@ private fun androidx.compose.animation.SharedTransitionScope.ModernSinglePageLay
                     }
                 },
                 actions = {
-                    // 布局微调入口
+                    // 歌词偏移微调入口
+                    IconButton(onClick = onOpenOffsetDialog) {
+                        Icon(
+                            imageVector = Icons.Filled.AutoAwesome,
+                            contentDescription = "歌词偏移校准",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    // 翻译切换
+                    IconButton(onClick = onToggleTranslation) {
+                        Icon(
+                            imageVector = Icons.Filled.Translate,
+                            contentDescription = s.player.translation,
+                            tint = if (showTranslation) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    // 界面微调入口
                     IconButton(onClick = onOpenLayoutSettings) {
                         Icon(
                             imageVector = Icons.Filled.Tune,
@@ -488,12 +529,14 @@ private fun androidx.compose.animation.SharedTransitionScope.ModernSinglePageLay
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    // 队列
+                    // 播放队列
                     FilledIconButton(
                         onClick = onOpenQueue,
                         modifier = Modifier.padding(end = 8.dp),
                         colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = if (isDark) 0.6f else 0.8f),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(
+                                alpha = if (isDark) 0.6f else 0.8f
+                            ),
                             contentColor = MaterialTheme.colorScheme.onSurface,
                         ),
                     ) {
@@ -510,28 +553,25 @@ private fun androidx.compose.animation.SharedTransitionScope.ModernSinglePageLay
         }
     ) { innerPadding ->
         BoxWithConstraints(
-            Modifier
+            modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(horizontal = 18.dp)
-                .padding(bottom = 12.dp)
         ) {
             val screenHeight = maxHeight
-            val isUltraCompact = screenHeight < 620.dp
+            val isCompact = screenHeight < 680.dp
 
-            // 根据整屏可用高度分配封面预算，预留出歌曲信息、双行歌词、进度条、主控制与底栏高度
-            val bottomReservedBudget = when {
-                isUltraCompact -> 240.dp
-                screenHeight < 740.dp -> 275.dp
-                else -> 310.dp
+            // 兼顾视觉焦点与中间歌词展示空间的自适应封面尺寸
+            val rawCoverSize = when {
+                screenHeight < 620.dp -> screenHeight * 0.17f
+                screenHeight < 740.dp -> screenHeight * 0.21f
+                else -> screenHeight * 0.24f
             }
-            val maxCoverHeight = (screenHeight - bottomReservedBudget).coerceAtLeast(150.dp)
-            val baseCoverWidth = maxWidth * config.coverScale
-            val coverSize = minOf(baseCoverWidth, maxCoverHeight)
+            val coverSize = (rawCoverSize * (config.coverScale / 0.72f)).coerceIn(100.dp, 200.dp)
 
             val baseCorner = config.coverCornerDp.toFloat()
             val coverCorner by animateDpAsState(
-                targetValue = if (state.isPlaying) baseCorner.dp else (baseCorner + 8).dp,
+                targetValue = if (state.isPlaying) baseCorner.dp else (baseCorner + 6).dp,
                 animationSpec = CpMotion.spatialSlow(),
                 label = "coverCorner",
             )
@@ -549,229 +589,286 @@ private fun androidx.compose.animation.SharedTransitionScope.ModernSinglePageLay
             Column(
                 modifier = Modifier.fillMaxSize(),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                // 1. 封面区域（支持弥散环境光晕 + 左右滑动切歌）
-                Box(contentAlignment = Alignment.Center) {
-                    if (config.ambientGlow && !track.coverUrl.isNullOrBlank()) {
-                        Box(
-                            modifier = Modifier
-                                .size(coverSize * 0.95f)
-                                .graphicsLayer {
-                                    scaleX = coverScale * 1.10f
-                                    scaleY = coverScale * 1.10f
-                                    alpha = if (state.isPlaying) 0.55f else 0.28f
-                                }
-                                .clip(RoundedCornerShape(coverCorner + 8.dp))
-                                .background(
-                                    Brush.radialGradient(
-                                        colors = listOf(
-                                            MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.65f else 0.45f),
-                                            Color.Transparent,
+                // 1. 顶部主视觉区域（封面 + 歌曲信息行，支持下滑收起手势）
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(dragModifier),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.padding(top = 2.dp),
+                    ) {
+                        if (config.ambientGlow && !track.coverUrl.isNullOrBlank()) {
+                            Box(
+                                modifier = Modifier
+                                    .size(coverSize * 0.95f)
+                                    .graphicsLayer {
+                                        scaleX = coverScale * 1.10f
+                                        scaleY = coverScale * 1.10f
+                                        alpha = if (state.isPlaying) 0.55f else 0.28f
+                                    }
+                                    .clip(RoundedCornerShape(coverCorner + 8.dp))
+                                    .background(
+                                        Brush.radialGradient(
+                                            colors = listOf(
+                                                MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.65f else 0.45f),
+                                                Color.Transparent,
+                                            )
                                         )
                                     )
-                                )
-                        )
-                    }
-
-                    var horizontalDragOffset by remember { mutableFloatStateOf(0f) }
-
-                    Surface(
-                        shape = RoundedCornerShape(coverCorner),
-                        modifier = Modifier
-                            .size(coverSize)
-                            .aspectRatio(1f)
-                            .sharedBounds(
-                                sharedContentState = rememberSharedContentState(key = "cover-${track.id}"),
-                                animatedVisibilityScope = animatedVisibilityScope
                             )
-                            .graphicsLayer {
-                                scaleX = coverScale
-                                scaleY = coverScale
-                                translationX = horizontalDragOffset * 0.22f
-                            }
-                            .clip(RoundedCornerShape(coverCorner))
-                            .then(
-                                if (config.coverSwipeGesture) {
-                                    Modifier.pointerInput(track.id) {
-                                        detectHorizontalDragGestures(
-                                            onDragEnd = {
-                                                if (horizontalDragOffset < -55f) {
-                                                    haptics.perform(CpHaptic.Confirm)
-                                                    onSkipNext()
-                                                } else if (horizontalDragOffset > 55f) {
-                                                    haptics.perform(CpHaptic.Confirm)
-                                                    onSkipPrev()
+                        }
+
+                        var horizontalDragOffset by remember { mutableFloatStateOf(0f) }
+
+                        Surface(
+                            shape = RoundedCornerShape(coverCorner),
+                            modifier = Modifier
+                                .size(coverSize)
+                                .aspectRatio(1f)
+                                .sharedBounds(
+                                    sharedContentState = rememberSharedContentState(key = "cover-${track.id}"),
+                                    animatedVisibilityScope = animatedVisibilityScope
+                                )
+                                .graphicsLayer {
+                                    scaleX = coverScale
+                                    scaleY = coverScale
+                                    translationX = horizontalDragOffset * 0.22f
+                                }
+                                .clip(RoundedCornerShape(coverCorner))
+                                .then(
+                                    if (config.coverSwipeGesture) {
+                                        Modifier.pointerInput(track.id) {
+                                            detectHorizontalDragGestures(
+                                                onDragEnd = {
+                                                    if (horizontalDragOffset < -55f) {
+                                                        haptics.perform(CpHaptic.Confirm)
+                                                        onSkipNext()
+                                                    } else if (horizontalDragOffset > 55f) {
+                                                        haptics.perform(CpHaptic.Confirm)
+                                                        onSkipPrev()
+                                                    }
+                                                    horizontalDragOffset = 0f
+                                                },
+                                                onDragCancel = { horizontalDragOffset = 0f },
+                                                onHorizontalDrag = { change, dragAmount ->
+                                                    horizontalDragOffset = (horizontalDragOffset + dragAmount).coerceIn(-160f, 160f)
+                                                    change.consume()
                                                 }
-                                                horizontalDragOffset = 0f
-                                            },
-                                            onDragCancel = { horizontalDragOffset = 0f },
-                                            onHorizontalDrag = { change, dragAmount ->
-                                                horizontalDragOffset = (horizontalDragOffset + dragAmount).coerceIn(-160f, 160f)
-                                                change.consume()
-                                            }
-                                        )
-                                    }
-                                } else Modifier
-                            ),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        shadowElevation = coverElevation,
-                    ) {
-                        if (!track.coverUrl.isNullOrBlank()) {
-                            AsyncImage(
-                                model = track.coverUrl,
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        } else {
-                            CpCoverPlaceholder(
-                                modifier = Modifier.fillMaxSize(),
-                                corner = coverCorner,
-                            )
-                        }
-                    }
-                }
-
-                // 2. 歌曲信息行（歌名、歌手、喜欢）
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        CpText(
-                            text = track.name,
-                            style = if (isUltraCompact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
-                            maxLines = 1,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            emphasized = true,
-                            marqueeEnabled = state.isPlaying,
-                            modifier = Modifier.sharedBounds(
-                                sharedContentState = rememberSharedContentState(key = "title-${track.id}"),
-                                animatedVisibilityScope = animatedVisibilityScope,
-                            )
-                        )
-                        Spacer(Modifier.height(1.dp))
-                        TrackArtistText(
-                            track = track,
-                            onArtistClick = onArtistClick,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            modifier = Modifier.sharedBounds(
-                                sharedContentState = rememberSharedContentState(key = "artist-${track.id}"),
-                                animatedVisibilityScope = animatedVisibilityScope,
-                            )
-                        )
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        track.mvId?.takeIf { it > 0 }?.let { mvId ->
-                            val nav = LocalNavigator.current
-                            IconButton(onClick = { nav?.push(VideoPlayerScreen("netease://mv/$mvId")) }) {
-                                Icon(
-                                    Icons.Filled.SmartDisplay,
-                                    contentDescription = "播放 MV",
-                                    tint = MaterialTheme.colorScheme.primary,
+                                            )
+                                        }
+                                    } else Modifier
+                                ),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            shadowElevation = coverElevation,
+                        ) {
+                            if (!track.coverUrl.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = track.coverUrl,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            } else {
+                                CpCoverPlaceholder(
+                                    modifier = Modifier.fillMaxSize(),
+                                    corner = coverCorner,
                                 )
                             }
                         }
-                        ExpressiveLikeButton(
-                            isFavorite = state.isFavorite,
-                            onClick = onLikeClick,
-                        )
+                    }
+
+                    Spacer(Modifier.height(if (isCompact) 8.dp else 10.dp))
+
+                    // 歌曲信息行（歌名、歌手、MV、喜欢）
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            CpText(
+                                text = track.name,
+                                style = if (isCompact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+                                maxLines = 1,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                emphasized = true,
+                                marqueeEnabled = state.isPlaying,
+                                modifier = Modifier.sharedBounds(
+                                    sharedContentState = rememberSharedContentState(key = "title-${track.id}"),
+                                    animatedVisibilityScope = animatedVisibilityScope,
+                                )
+                            )
+                            Spacer(Modifier.height(1.dp))
+                            TrackArtistText(
+                                track = track,
+                                onArtistClick = onArtistClick,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                modifier = Modifier.sharedBounds(
+                                    sharedContentState = rememberSharedContentState(key = "artist-${track.id}"),
+                                    animatedVisibilityScope = animatedVisibilityScope,
+                                )
+                            )
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            track.mvId?.takeIf { it > 0 }?.let { mvId ->
+                                val nav = LocalNavigator.current
+                                IconButton(onClick = { nav?.push(VideoPlayerScreen("netease://mv/$mvId")) }) {
+                                    Icon(
+                                        Icons.Filled.SmartDisplay,
+                                        contentDescription = "播放 MV",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            }
+                            ExpressiveLikeButton(
+                                isFavorite = state.isFavorite,
+                                onClick = onLikeClick,
+                            )
+                        }
                     }
                 }
 
-                // 3. 夹在封面与播放控制之间的两行歌词预览（0.5 + 1 + 0.5）
-                InlineLyricsPreview(
-                    lyricsState = state.lyrics,
-                    positionMs = state.positionMs,
-                    isPlaying = state.isPlaying,
-                    config = config,
-                    trackId = track.id,
-                    onClick = onExpandLyrics,
-                )
+                Spacer(Modifier.height(6.dp))
 
-                // 4. 进度条及时间戳（支持 M3E 波形 / 经典平直进度条切换）
-                ModernProgressSection(
-                    state = state,
-                    config = config,
-                    onSeek = onSeek,
-                    onOpenSongInfo = onOpenSongInfo,
-                )
-
-                // 5. 播放控制按键
-                val baseControlsHeight = (64 * config.controlsScale).dp
-                val sideIconSize = (32 * config.controlsScale).dp
-                val centerIconSize = (38 * config.controlsScale).dp
-
-                PlaybackControls(
-                    isPlaying = state.isPlaying,
-                    isBuffering = state.isBuffering,
-                    onPlayPause = onTogglePlay,
-                    onSkipNext = onSkipNext,
-                    onSkipPrevious = onSkipPrev,
-                    modifier = Modifier.fillMaxWidth(),
-                    sideButtonModifier = Modifier.height(baseControlsHeight),
-                    centerButtonModifier = Modifier.height(baseControlsHeight),
-                    sideWeight = 1f,
-                    centerWeight = 1.25f,
-                    sideIconSize = sideIconSize,
-                    centerIconSize = centerIconSize,
-                )
-
-                // 6. 底部工具条（独立评论按钮、随机、循环、定时、歌词展开、更多）
-                CpFloatingToolbar(
-                    modifier = Modifier.align(Alignment.CenterHorizontally),
-                ) {
-                    // 独立评论按钮
-                    IconButton(onClick = onOpenComments) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.Comment,
-                            contentDescription = "歌曲评论",
-                            modifier = Modifier.size(22.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    CpModeToggle(
-                        active = state.shuffleEnabled,
-                        onClick = onShuffle,
-                        icon = Icons.Filled.Shuffle,
-                        label = s.player.shuffle,
-                    )
-                    CpModeToggle(
-                        active = state.repeatMode != RepeatMode.OFF,
-                        onClick = onRepeat,
-                        icon = when (state.repeatMode) {
-                            RepeatMode.ONE -> Icons.Filled.RepeatOne
-                            else -> Icons.Filled.Repeat
+                // 2. 中间主歌词区域（真正嵌入全功能 LyricContent，两端透明渐变溶出，自由滚动）
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                        .drawWithContent {
+                            drawContent()
+                            val fadeHeight = 22.dp.toPx()
+                            if (size.height > fadeHeight * 2) {
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        colors = listOf(Color.Transparent, Color.Black),
+                                        startY = 0f,
+                                        endY = fadeHeight
+                                    ),
+                                    blendMode = BlendMode.DstIn
+                                )
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        colors = listOf(Color.Black, Color.Transparent),
+                                        startY = size.height - fadeHeight,
+                                        endY = size.height
+                                    ),
+                                    blendMode = BlendMode.DstIn
+                                )
+                            }
                         },
-                        label = s.player.repeat,
+                ) {
+                    LyricContent(
+                        state = state,
+                        showTranslation = showTranslation,
+                        onSeek = onSeek,
+                        onChangeSource = onChangeSource,
+                        contentPadding = PaddingValues(vertical = 18.dp, horizontal = 4.dp),
                     )
-                    CpModeToggle(
-                        active = (state.sleepTimerRemainingMs ?: 0L) > 0 || state.sleepAfterTrack,
-                        onClick = onSleepTimer,
-                        icon = Icons.Filled.AccessAlarm,
-                        label = s.player.sleepTimer,
-                        activeTint = MaterialTheme.colorScheme.primary,
+                }
+
+                Spacer(Modifier.height(6.dp))
+
+                // 3. 底部紧凑走带与控制操作区
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    // 进度条及时间戳
+                    ModernProgressSection(
+                        state = state,
+                        config = config,
+                        onSeek = onSeek,
+                        onOpenSongInfo = onOpenSongInfo,
                     )
-                    // 歌词展开
-                    IconButton(onClick = onExpandLyrics) {
-                        Icon(
-                            Icons.Filled.Lyrics,
-                            contentDescription = "展开歌词",
-                            modifier = Modifier.size(22.dp),
-                            tint = MaterialTheme.colorScheme.primary,
+
+                    Spacer(Modifier.height(6.dp))
+
+                    // 播放控制按键
+                    val baseControlsHeight = (62 * config.controlsScale).dp
+                    val sideIconSize = (30 * config.controlsScale).dp
+                    val centerIconSize = (36 * config.controlsScale).dp
+
+                    PlaybackControls(
+                        isPlaying = state.isPlaying,
+                        isBuffering = state.isBuffering,
+                        onPlayPause = onTogglePlay,
+                        onSkipNext = onSkipNext,
+                        onSkipPrevious = onSkipPrev,
+                        modifier = Modifier.fillMaxWidth(),
+                        sideButtonModifier = Modifier.height(baseControlsHeight),
+                        centerButtonModifier = Modifier.height(baseControlsHeight),
+                        sideWeight = 1f,
+                        centerWeight = 1.25f,
+                        sideIconSize = sideIconSize,
+                        centerIconSize = centerIconSize,
+                    )
+
+                    Spacer(Modifier.height(6.dp))
+
+                    // 底部快捷工具条
+                    CpFloatingToolbar(
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                    ) {
+                        // 独立评论按钮
+                        IconButton(onClick = onOpenComments) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Comment,
+                                contentDescription = "歌曲评论",
+                                modifier = Modifier.size(22.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        CpModeToggle(
+                            active = state.shuffleEnabled,
+                            onClick = onShuffle,
+                            icon = Icons.Filled.Shuffle,
+                            label = s.player.shuffle,
                         )
-                    }
-                    IconButton(onClick = onMoreClick) {
-                        Icon(
-                            Icons.Filled.MoreVert,
-                            contentDescription = s.player.more,
-                            modifier = Modifier.size(22.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        CpModeToggle(
+                            active = state.repeatMode != RepeatMode.OFF,
+                            onClick = onRepeat,
+                            icon = when (state.repeatMode) {
+                                RepeatMode.ONE -> Icons.Filled.RepeatOne
+                                else -> Icons.Filled.Repeat
+                            },
+                            label = s.player.repeat,
                         )
+                        CpModeToggle(
+                            active = (state.sleepTimerRemainingMs ?: 0L) > 0 || state.sleepAfterTrack,
+                            onClick = onSleepTimer,
+                            icon = Icons.Filled.AccessAlarm,
+                            label = s.player.sleepTimer,
+                            activeTint = MaterialTheme.colorScheme.primary,
+                        )
+                        // 全屏展开歌词
+                        IconButton(onClick = onExpandLyrics) {
+                            Icon(
+                                Icons.Filled.Lyrics,
+                                contentDescription = "展开全屏歌词",
+                                modifier = Modifier.size(22.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        IconButton(onClick = onMoreClick) {
+                            Icon(
+                                Icons.Filled.MoreVert,
+                                contentDescription = s.player.more,
+                                modifier = Modifier.size(22.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }
