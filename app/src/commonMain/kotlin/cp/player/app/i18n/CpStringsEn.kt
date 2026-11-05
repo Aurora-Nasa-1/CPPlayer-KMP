@@ -1098,6 +1098,15 @@ object CpStringsEn : CpStrings {
         override fun addedToPlaylist(count: Int, name: String) =
             if (count > 0) "Added $count track(s) to \"$name\"" else "Already in \"$name\""
         override fun alreadyInPlaylist(name: String) = "Already in \"$name\""
+
+        override val saveDailyToPlaylist = "Save as playlist"
+        override val saveDailyToPlaylistTitle = "Save as playlist"
+        override val saveDailyToPlaylistConfirm = "Convert"
+        override val saveDailyToPlaylistConverted = "Saved"
+        override fun saveDailyToPlaylistNote(count: Int) = "Save all $count daily recommended tracks into a new playlist"
+        override fun saveDailyToPlaylistSuccess(name: String, count: Int) = "Saved as playlist \"$name\" ($count tracks)"
+        override val saveDailyToPlaylistAlreadySaved = "Note: Today's recommendations have already been saved to a playlist."
+        override val saveDailyToPlaylistFailed = "Failed to create playlist, please check your connection or login status"
     }
     override val playlistImport = PlaylistImportStringsEn
     override val account = AccountStringsEn

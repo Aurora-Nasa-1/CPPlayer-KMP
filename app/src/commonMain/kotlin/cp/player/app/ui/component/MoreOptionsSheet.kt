@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AddCircleOutline
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.BookmarkRemove
 import androidx.compose.material.icons.filled.Close
@@ -325,6 +326,7 @@ fun PlaylistOptionsSheet(
     onToggleFavorite: (() -> Unit)? = null,
     currentSort: PlaylistSortType? = null,
     onSortChange: ((PlaylistSortType) -> Unit)? = null,
+    onConvertToPlaylist: (() -> Unit)? = null,
 ) {
     LegacyModalBottomSheet(onDismissRequest = onDismiss) {
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -372,7 +374,7 @@ fun PlaylistOptionsSheet(
                             color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         ) {
                             CpText(
-                                if (isOwner) "我创建的歌单" else if (isFavorite) "已收藏歌单" else "公开歌单",
+                                if (isOwner) "我创建的歌单" else if (onConvertToPlaylist != null) (if (isFavorite) "已转为歌单" else "每日推荐") else if (isFavorite) "已收藏歌单" else "公开歌单",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
@@ -440,6 +442,15 @@ fun PlaylistOptionsSheet(
                             contentColor = MaterialTheme.colorScheme.onErrorContainer,
                             modifier = Modifier.weight(1f),
                             onClick = { onDelete(); onDismiss() },
+                        )
+                    } else if (onConvertToPlaylist != null) {
+                        ActionPill(
+                            label = if (isFavorite) "已转歌单" else "一键转歌单",
+                            icon = if (isFavorite) Icons.Filled.Bookmark else Icons.Filled.BookmarkAdd,
+                            color = if (isFavorite) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.tertiaryContainer,
+                            contentColor = if (isFavorite) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onTertiaryContainer,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onConvertToPlaylist(); onDismiss() },
                         )
                     } else if (onToggleFavorite != null) {
                         // 非创建者：取消收藏 / 收藏歌单

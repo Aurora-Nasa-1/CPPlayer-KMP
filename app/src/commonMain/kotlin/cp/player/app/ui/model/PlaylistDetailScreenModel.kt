@@ -240,7 +240,34 @@ class PlaylistDetailScreenModel : ScreenModel {
             nextOffset = distinct.size,
         )
         loadLiked()
-        checkSubscribed(summary.resourceId)
+        if (summary.id == -101L || summary.name == "每日推荐") {
+            val now = cp.player.core.util.localDateTimeOf(cp.player.core.util.currentTimeMillis())
+            val m = now.month.toString().padStart(2, '0')
+            val d = now.day.toString().padStart(2, '0')
+            checkDailyConverted("${now.year}-$m-$d")
+        } else {
+            checkSubscribed(summary.resourceId)
+        }
+    }
+
+    /** 检查每日推荐是否已转存过歌单。 */
+    fun checkDailyConverted(todayStr: String) {
+        screenModelScope.launch {
+            val userPlaylists = runCatching { AppModel.musicRepository.getCurrentUserPlaylists() }.getOrNull()
+            if (userPlaylists is BackendResult.Success) {
+                val converted = userPlaylists.data.any {
+                    it.name.contains("每日推荐") && it.name.contains(todayStr)
+                }
+                if (converted) {
+                    _state.update { it.copy(isFavorite = true) }
+                }
+            }
+        }
+    }
+
+    /** 每日推荐转存歌单成功后标记已转存。 */
+    fun markDailyConverted() {
+        _state.update { it.copy(isFavorite = true) }
     }
 
     /** 加载下一页曲目（追加、按 id 去重保序）。 */

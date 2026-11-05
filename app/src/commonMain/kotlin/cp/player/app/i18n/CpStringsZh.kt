@@ -1034,6 +1034,15 @@ object CpStringsZh : CpStrings {
         override fun addedToPlaylist(count: Int, name: String) =
             if (count > 0) "已将 $count 首歌曲添加到「$name」" else "歌曲已在「$name」中"
         override fun alreadyInPlaylist(name: String) = "歌曲已在「$name」中"
+
+        override val saveDailyToPlaylist = "一键转歌单"
+        override val saveDailyToPlaylistTitle = "一键转歌单"
+        override val saveDailyToPlaylistConfirm = "转为歌单"
+        override val saveDailyToPlaylistConverted = "已转歌单"
+        override fun saveDailyToPlaylistNote(count: Int) = "将今日推荐的 $count 首歌曲转存为新歌单"
+        override fun saveDailyToPlaylistSuccess(name: String, count: Int) = "已成功转为歌单「$name」（共 $count 首）"
+        override val saveDailyToPlaylistAlreadySaved = "提示：今日推荐已转存过歌单，确认后将再次创建新歌单"
+        override val saveDailyToPlaylistFailed = "转存歌单失败，请检查网络或登录状态"
     }
     override val playlistImport = PlaylistImportStringsZh
     override val account = AccountStringsZh

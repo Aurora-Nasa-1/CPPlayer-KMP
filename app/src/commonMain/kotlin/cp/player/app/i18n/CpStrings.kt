@@ -1333,6 +1333,15 @@ interface PlaylistSheetStrings {
     fun createdAndAddedTo(name: String): String
     fun addedToPlaylist(count: Int, name: String): String
     fun alreadyInPlaylist(name: String): String
+
+    val saveDailyToPlaylist: String
+    val saveDailyToPlaylistTitle: String
+    val saveDailyToPlaylistConfirm: String
+    val saveDailyToPlaylistConverted: String
+    fun saveDailyToPlaylistNote(count: Int): String
+    fun saveDailyToPlaylistSuccess(name: String, count: Int): String
+    val saveDailyToPlaylistAlreadySaved: String
+    val saveDailyToPlaylistFailed: String
 }
 
 interface AboutStrings {

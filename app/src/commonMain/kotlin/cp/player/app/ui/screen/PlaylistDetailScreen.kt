@@ -38,6 +38,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.BookmarkRemove
 import androidx.compose.material.icons.filled.Close
@@ -120,6 +121,8 @@ import cp.player.app.ui.component.CpSplitButton
 import cp.player.app.ui.component.CpTwoPane
 import cp.player.app.ui.component.PlaylistSortType
 import cp.player.app.ui.component.LazyScrollColumn
+import cp.player.app.ui.component.CpPlaylistHeroSkeleton
+import cp.player.app.ui.component.CpSongRowSkeleton
 import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.ui.component.PlaylistOptionsSheet
 import cp.player.app.ui.component.PlaylistPickerSheet
@@ -192,6 +195,8 @@ fun PlaylistDetailContent(
 
     var showPlaylistSheet by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
+    var showSaveDailyDialog by remember { mutableStateOf(false) }
+    val isDailyRecommend = playlist.id == -101L || (isLocalPlaylist && playlist.name == "每日推荐")
     var optionsTarget by remember { mutableStateOf<TrackSummary?>(null) }
     var showInfoTarget by remember { mutableStateOf<TrackSummary?>(null) }
     var addToPlaylistIds by remember { mutableStateOf<List<String>?>(null) }
@@ -266,7 +271,8 @@ fun PlaylistDetailContent(
     }
 
     val togglePlaylistFavorite: () -> Unit = {
-        model.togglePlaylistFavorite()
+        if (isDailyRecommend) showSaveDailyDialog = true
+        else model.togglePlaylistFavorite()
     }
 
     // 「删除歌单 / 取消收藏」的统一确认入口
@@ -316,38 +322,52 @@ fun PlaylistDetailContent(
     }
 
     // 桌面端歌单动作菜单
-    val playlistMenu: List<CpContextMenuItem>? = if (isLocalPlaylist) null else buildList {
-        add(CpContextMenuItem(s.common.refresh, Icons.Filled.Refresh, onClick = { model.refresh() }))
-        add(CpContextMenuItem(s.library.playAll, Icons.Filled.PlayArrow, onClick = { model.playAll() }))
-        add(CpContextMenuItem(s.library.addToQueue, Icons.Filled.QueueMusic, onClick = { model.queueAll() }))
-        add(CpContextMenuItem(s.library.downloadAll, Icons.Filled.Download, onClick = { AppModel.downloadTracks(displayTracks) }))
-        add(CpContextMenuSeparator)
-        add(CpContextMenuItem(s.library.sharePlaylist, Icons.Filled.Share, onClick = {
-            shareText(playlistShareText(playlist.resourceId, summary.name))
-        }))
-        if (!isOwner) {
+    val playlistMenu: List<CpContextMenuItem>? = if (isLocalPlaylist && !isDailyRecommend) null else buildList {
+        if (isDailyRecommend) {
             add(
                 CpContextMenuItem(
-                    if (playlistFavorite) s.library.unfavoritePlaylist else s.library.favoritePlaylist,
-                    if (playlistFavorite) Icons.Filled.BookmarkRemove else Icons.Filled.BookmarkAdd,
-                    onClick = togglePlaylistFavorite,
+                    if (playlistFavorite) "重新转为歌单" else "一键转歌单",
+                    if (playlistFavorite) Icons.Filled.Bookmark else Icons.Filled.BookmarkAdd,
+                    onClick = { showSaveDailyDialog = true },
                 )
             )
-        }
-        if (isOwner) {
-            add(
-                CpContextMenuItem(
-                    s.library.renamePlaylist, Icons.Filled.Edit,
-                    onClick = { showRenameDialog = true },
+            add(CpContextMenuItem(s.common.refresh, Icons.Filled.Refresh, onClick = { model.refresh() }))
+            add(CpContextMenuItem(s.library.playAll, Icons.Filled.PlayArrow, onClick = { model.playAll() }))
+            add(CpContextMenuItem(s.library.addToQueue, Icons.Filled.QueueMusic, onClick = { model.queueAll() }))
+            add(CpContextMenuItem(s.library.downloadAll, Icons.Filled.Download, onClick = { AppModel.downloadTracks(displayTracks) }))
+        } else {
+            add(CpContextMenuItem(s.common.refresh, Icons.Filled.Refresh, onClick = { model.refresh() }))
+            add(CpContextMenuItem(s.library.playAll, Icons.Filled.PlayArrow, onClick = { model.playAll() }))
+            add(CpContextMenuItem(s.library.addToQueue, Icons.Filled.QueueMusic, onClick = { model.queueAll() }))
+            add(CpContextMenuItem(s.library.downloadAll, Icons.Filled.Download, onClick = { AppModel.downloadTracks(displayTracks) }))
+            add(CpContextMenuSeparator)
+            add(CpContextMenuItem(s.library.sharePlaylist, Icons.Filled.Share, onClick = {
+                shareText(playlistShareText(playlist.resourceId, summary.name))
+            }))
+            if (!isOwner) {
+                add(
+                    CpContextMenuItem(
+                        if (playlistFavorite) s.library.unfavoritePlaylist else s.library.favoritePlaylist,
+                        if (playlistFavorite) Icons.Filled.BookmarkRemove else Icons.Filled.BookmarkAdd,
+                        onClick = togglePlaylistFavorite,
+                    )
                 )
-            )
-            add(
-                CpContextMenuItem(
-                    s.library.deletePlaylist, Icons.Filled.Delete,
-                    onClick = confirmDeletePlaylist,
-                    danger = true,
+            }
+            if (isOwner) {
+                add(
+                    CpContextMenuItem(
+                        s.library.renamePlaylist, Icons.Filled.Edit,
+                        onClick = { showRenameDialog = true },
+                    )
                 )
-            )
+                add(
+                    CpContextMenuItem(
+                        s.library.deletePlaylist, Icons.Filled.Delete,
+                        onClick = confirmDeletePlaylist,
+                        danger = true,
+                    )
+                )
+            }
         }
     }
 
@@ -386,7 +406,9 @@ fun PlaylistDetailContent(
                 currentTrackId = currentTrackId,
                 isOwner = isOwner,
                 isFavorite = playlistFavorite,
-                onToggleFavorite = if (!isOwner && !isLocalPlaylist) togglePlaylistFavorite else null,
+                onToggleFavorite = if (isDailyRecommend) {
+                    { showSaveDailyDialog = true }
+                } else if (!isOwner && !isLocalPlaylist) togglePlaylistFavorite else null,
                 onShare = onSharePlaylist,
                 onDelete = if (isOwner) confirmDeletePlaylist else null,
                 searchQuery = inPlaylistSearchQuery,
@@ -405,6 +427,8 @@ fun PlaylistDetailContent(
                 onRemoveSelected = confirmRemoveTracks,
                 playlistMenu = playlistMenu,
                 buildSongMenu = buildSongMenu,
+                isDailyRecommend = isDailyRecommend,
+                onSaveDailyToPlaylist = { showSaveDailyDialog = true },
             )
         } else {
             NarrowLayout(
@@ -418,7 +442,9 @@ fun PlaylistDetailContent(
                 currentTrackId = currentTrackId,
                 isOwner = isOwner,
                 isFavorite = playlistFavorite,
-                onToggleFavorite = if (!isOwner && !isLocalPlaylist) togglePlaylistFavorite else null,
+                onToggleFavorite = if (isDailyRecommend) {
+                    { showSaveDailyDialog = true }
+                } else if (!isOwner && !isLocalPlaylist) togglePlaylistFavorite else null,
                 onShare = onSharePlaylist,
                 onDelete = if (isOwner) confirmDeletePlaylist else null,
                 searchQuery = inPlaylistSearchQuery,
@@ -436,6 +462,8 @@ fun PlaylistDetailContent(
                 onRemoveSelected = confirmRemoveTracks,
                 buildSongMenu = buildSongMenu,
                 maxWidth = maxWidth,
+                isDailyRecommend = isDailyRecommend,
+                onSaveDailyToPlaylist = { showSaveDailyDialog = true },
             )
         }
     }
@@ -448,7 +476,7 @@ fun PlaylistDetailContent(
             onDismiss = { showPlaylistSheet = false },
             onPlay = { model.playAll() },
             onAddToQueue = { model.queueAll() },
-            onRefresh = if (isLocalPlaylist) null else { { model.refresh() } },
+            onRefresh = if (isLocalPlaylist && !isDailyRecommend) null else { { model.refresh() } },
             onDelete = if (isOwner) confirmDeletePlaylist else null,
             onShare = onSharePlaylist,
             onRename = if (isOwner) {
@@ -458,9 +486,10 @@ fun PlaylistDetailContent(
             },
             coverUrl = summary.coverUrl,
             isFavorite = playlistFavorite,
-            onToggleFavorite = if (!isOwner && !isLocalPlaylist) togglePlaylistFavorite else null,
+            onToggleFavorite = if (isDailyRecommend) null else if (!isOwner && !isLocalPlaylist) togglePlaylistFavorite else null,
             currentSort = state.sortType,
             onSortChange = { model.setSort(it) },
+            onConvertToPlaylist = if (isDailyRecommend) { { showSaveDailyDialog = true } } else null,
         )
     }
 
@@ -476,8 +505,21 @@ fun PlaylistDetailContent(
         )
     }
 
+    if (showSaveDailyDialog) {
+        cp.player.app.ui.component.SaveDailyToPlaylistDialog(
+            tracks = displayTracks.ifEmpty { state.tracks },
+            isAlreadySaved = playlistFavorite,
+            onDismiss = { showSaveDailyDialog = false },
+            onSaved = { _ ->
+                showSaveDailyDialog = false
+                model.markDailyConverted()
+            },
+        )
+    }
+
     // 歌曲选项弹层
-    optionsTarget?.let { track ->        SongOptionsSheet(
+    optionsTarget?.let { track ->
+        SongOptionsSheet(
             songName = track.name,
             artistName = track.artist,
             isFavorite = model.isLiked(track.id),
@@ -717,6 +759,8 @@ private fun NarrowLayout(
     onAddTracks: () -> Unit,
     onRemoveSelected: (List<String>) -> Unit,
     buildSongMenu: @Composable (TrackSummary, Int) -> List<CpContextMenuItem>,
+    isDailyRecommend: Boolean = false,
+    onSaveDailyToPlaylist: (() -> Unit)? = null,
     maxWidth: Dp = 360.dp,
 ) {
     val s = cpStrings()
@@ -1015,6 +1059,8 @@ private fun NarrowLayout(
                 onEnterSelection = onToggleEnterSelection,
                 onMore = onOpenPlaylistSheet,
                 buildSongMenu = buildSongMenu,
+                isDailyRecommend = isDailyRecommend,
+                onSaveDailyToPlaylist = onSaveDailyToPlaylist,
             )
         }
     }
@@ -1051,6 +1097,8 @@ private fun WideLayout(
     onRemoveSelected: (List<String>) -> Unit,
     playlistMenu: List<CpContextMenuItem>?,
     buildSongMenu: @Composable (TrackSummary, Int) -> List<CpContextMenuItem>,
+    isDailyRecommend: Boolean = false,
+    onSaveDailyToPlaylist: (() -> Unit)? = null,
 ) {
     val s = cpStrings()
     val windowChromeActive = LocalWindowChromeActive.current
@@ -1227,6 +1275,8 @@ private fun WideLayout(
                                     if (windowChromeActive && !playlistMenu.isNullOrEmpty()) moreMenuExpanded = true
                                     else onOpenPlaylistSheet()
                                 },
+                                isDailyRecommend = isDailyRecommend,
+                                onSaveDailyToPlaylist = onSaveDailyToPlaylist,
                                 useFlowLayout = true,
                             )
                         }
@@ -1369,14 +1419,28 @@ private fun TrackList(
     onEnterSelection: () -> Unit,
     onMore: () -> Unit,
     buildSongMenu: @Composable (TrackSummary, Int) -> List<CpContextMenuItem>,
+    isDailyRecommend: Boolean = false,
+    onSaveDailyToPlaylist: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     topContentPadding: Dp = 0.dp,
 ) {
     val s = cpStrings()
     when {
         state.loading && allTracks.isEmpty() -> {
-            Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                cp.player.app.ui.component.CpLoadingIndicator(Modifier.size(40.dp))
+            // 曲目还没回来，但「这一页有几首、从哪开始」的结构已经定了：
+            // 用行骨架替代居中加载器，数据到位时只是灰块变文字，不会整屏重画。
+            ScrollColumn(
+                modifier = modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 20.dp,
+                    end = 20.dp,
+                    top = topContentPadding + 8.dp,
+                    bottom = 96.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
+            ) {
+                if (withHero) CpPlaylistHeroSkeleton()
+                CpSongRowSkeleton(rows = 9)
             }
         }
         state.error != null && allTracks.isEmpty() -> {
@@ -1437,6 +1501,8 @@ private fun TrackList(
                             onDownloadAll = onDownloadAll,
                             onEnterSelection = onEnterSelection,
                             onMore = onMore,
+                            isDailyRecommend = isDailyRecommend,
+                            onSaveDailyToPlaylist = onSaveDailyToPlaylist,
                         )
                     }
                 } else if (isSearchActive) {
@@ -1576,6 +1642,8 @@ private fun NarrowPlaylistHero(
     onDownloadAll: () -> Unit,
     onEnterSelection: () -> Unit,
     onMore: () -> Unit,
+    isDailyRecommend: Boolean = false,
+    onSaveDailyToPlaylist: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -1610,6 +1678,8 @@ private fun NarrowPlaylistHero(
             selectionMode = false,
             onEnterSelection = onEnterSelection,
             onOpenOptions = onMore,
+            isDailyRecommend = isDailyRecommend,
+            onSaveDailyToPlaylist = onSaveDailyToPlaylist,
             useFlowLayout = true,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -1845,22 +1915,31 @@ private fun M3ESecondaryActionsRail(
     selectionMode: Boolean,
     onEnterSelection: () -> Unit,
     onOpenOptions: () -> Unit,
+    /**
+     * 每日推荐这类**虚拟歌单**（id 为负数 / 本地生成的「每日推荐」）：
+     * 服务端根本没有这张歌单，所以「收藏」是个假动作 —— 收藏位换成「转歌单」。
+     */
+    isDailyRecommend: Boolean = false,
+    /** 「转歌单」入口。为 null 时不显示（默认值保证老调用点不用改）。 */
+    onSaveDailyToPlaylist: (() -> Unit)? = null,
     useFlowLayout: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val items = buildList {
-        // 1. 添加歌曲
-        add(
-            SecondaryActionItem(
-                id = "add",
-                label = "添加",
-                icon = Icons.Filled.PlaylistAdd,
-                onClick = onAdd,
+        // 1. 添加歌曲（虚拟每日推荐无添加歌曲操作）
+        if (!isDailyRecommend) {
+            add(
+                SecondaryActionItem(
+                    id = "add",
+                    label = "添加",
+                    icon = Icons.Filled.PlaylistAdd,
+                    onClick = onAdd,
+                )
             )
-        )
+        }
 
-        // 2. 收藏（仅未收藏时提供快捷入口；删除/取消收藏/分享收纳于「更多」中，避免界面杂乱与误触）
-        if (!isOwner && onToggleFavorite != null && !isFavorite) {
+        // 2. 收藏（仅真实歌单在快捷轨展现收藏；每日推荐一键转歌单统一收纳于「更多」界面中）
+        if (!isDailyRecommend && !isOwner && onToggleFavorite != null && !isFavorite) {
             add(
                 SecondaryActionItem(
                     id = "favorite",
