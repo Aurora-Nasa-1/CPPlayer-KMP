@@ -9,6 +9,8 @@ import cp.player.app.platform.DesktopSplashWindow
  * 运行按钮（Run 'MainMobileKt'）直接以手机版尺寸与布局运行桌面端。
  */
 fun main(args: Array<String>) {
+    // 与 Main.kt 同一条纪律：钩子路径不建窗、不初始化，立刻以 0 退出。见 VelopackHooks.kt。
+    exitIfVelopackHook(args)
     DesktopSplashWindow.show(isMobilePreview = true)
     System.setProperty("cp.player.mobilePreview", "true")
     if (System.getProperty("cp.player.releaseChannel").isNullOrBlank()) {

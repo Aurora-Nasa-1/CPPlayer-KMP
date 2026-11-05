@@ -109,6 +109,19 @@ Windows **no longer ships an MSI**. jpackage only produces the app image (`:app:
 
 Consequently `nativeDistributions.windows { ... }` now carries only `iconFile` — `shortcut` / `menu` / `perUserInstall` / `dirChooser` / `upgradeUuid` were MSI-only and have been removed.
 
+#### Runtime hooks — the app must exit on `--veloapp-*`
+
+`vpk pack --skipVeloAppCheck` only silences vpk's **build-time** check that the app integrates the Velopack SDK. The **runtime** contract still applies: during install / update / uninstall the installer launches the app image with one of
+
+```
+--veloapp-install <ver>    --veloapp-updated <ver>
+--veloapp-obsolete <ver>   --veloapp-uninstall <ver>
+```
+
+and expects the process to exit quickly (30s for install/uninstall, 15s for the update pair). **A process that overruns is killed**, the kill is a non-zero exit code, and Setup then shows its "Install Partially Succeeded" box — 「安装未完成」 — even though the app was installed correctly (shortcuts and the uninstall entry are written regardless). The user sees the app start, vanish ~30s later, get an error dialog, and then the app start again with `VELOPACK_FIRSTRUN=true`.
+
+`exitIfVelopackHook(args)` in `app/src/desktopMain/kotlin/cp/player/app/VelopackHooks.kt` handles all four by exiting with code 0 before the splash window is created. It is called from the **first line** of `main()` — moving it into `runDesktopApp` would let the splash come up first, and `desktopRun` can never reproduce the bug because there is no installer in the picture. Only a real `Setup.exe` run exercises this path.
+
 ### Bundled runtime: JetBrains Runtime (JBR)
 
 The desktop packages ship **JBR** instead of temurin, so `WindowDraggableArea` uses the native

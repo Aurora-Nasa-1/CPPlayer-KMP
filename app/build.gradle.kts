@@ -788,6 +788,12 @@ val packageLinuxTarGz = tasks.register<Tar>("packageLinuxTarGz") {
 // builder（安装/更新后的回调钩子）。JVM 侧不引它的 SDK，更新改由 `Update.exe`
 // 命令行驱动，所以必须跳过这项校验，否则 vpk 直接报错退出。
 //
+// ⚠️ **它跳过的只是「打包期静态检查」，运行期契约照旧成立，别以为这就完事了**：
+// 安装/升级/卸载时，安装器会用 `--veloapp-install|-updated|-obsolete|-uninstall`
+// 把主 exe 当钩子拉起，要求 15~30 秒内退出（超时直接杀进程）。不处理它们的后果是
+// 安装器弹「安装未完成」——而应用其实已经装好了（2026-11-05 的真实症状）。
+// 钩子判据在 `app/src/desktopMain/kotlin/cp/player/app/VelopackHooks.kt`。
+//
 // ⚠️ `--shortcuts Desktop,StartMenuRoot`：合法值只有 `Desktop` / `StartMenuRoot` /
 // `StartMenu` / `Startup` / `None`。**`StartMenu` 是 StartMenuRoot 里的子文件夹**，
 // 且官方文档明写它「必须同时指定 --packAuthors」——用它会在开始菜单多出一层目录。

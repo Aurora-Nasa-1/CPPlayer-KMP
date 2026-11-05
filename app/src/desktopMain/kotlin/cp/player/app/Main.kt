@@ -124,6 +124,10 @@ private const val WindowRetryDelayMs = 100L
  */
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 fun main(args: Array<String> = emptyArray()) {
+    // ⚠️ 必须是第一句，且在任何 UI 之前：Windows 安装包由 Velopack 打，安装/升级/
+    // 卸载时它会用 `--veloapp-*` 参数把本 exe 当钩子拉起并要求 15~30 秒内退出，
+    // 超时直接杀掉 ⇒ 安装器报「安装未完成」。见 VelopackHooks.kt。
+    exitIfVelopackHook(args)
     DesktopSplashWindow.show(
         isMobilePreview = args.contains("--mobile") || args.contains("-m") ||
             System.getProperty("cp.player.mobilePreview") == "true"
