@@ -121,6 +121,101 @@ class LocalScanSettingsTest {
                 excludeFolders = listOf("/a"),
             ).activeRuleCount,
         )
+        assertEquals(
+            2,
+            LocalScanSettings(
+                excludeUnreadableAudio = true,
+                excludeDuplicates = true,
+            ).activeRuleCount,
+        )
+    }
+
+    @Test
+    fun `排除无法解析的音频只在开关打开时生效`() {
+        val items = listOf(audio("broken", duration = 0), audio("ok", duration = 60_000))
+        assertEquals(2, LocalScanSettings().apply(items).size)
+        assertEquals(
+            listOf("ok"),
+            LocalScanSettings(excludeUnreadableAudio = true).apply(items).map { it.path },
+        )
+    }
+
+    @Test
+    fun `无法解析规则不误伤 SAF 条目与视频`() {
+        // SAF 条目从不解析时长（恒为 0），不能据此判成损坏；
+        // 视频也没有「时长读不出来 = 损坏」这层含义。
+        val items = listOf(
+            audio("content://tree/music/a.mp3", duration = 0),
+            LocalMediaItem(
+                path = "/movie.mkv",
+                title = "电影",
+                durationMs = 0,
+                mediaType = MediaType.VIDEO,
+            ),
+        )
+        assertEquals(2, LocalScanSettings(excludeUnreadableAudio = true).apply(items).size)
+    }
+
+    @Test
+    fun `重复音频只保留音质最好的一份`() {
+        val settings = LocalScanSettings(excludeDuplicates = true)
+        val items = listOf(
+            audio("/a/song.mp3", duration = 200_000, bitrate = 128),
+            audio("/b/song.flac", duration = 200_300, lossless = true),
+            audio("/c/song.mp3", duration = 199_800, bitrate = 320),
+        )
+        // 输入顺序不影响结果：三份副本合并，留无损那份
+        assertEquals(listOf("/b/song.flac"), settings.deduplicate(items).map { it.path })
+    }
+
+    @Test
+    fun `时长差超出容差的同名曲目不算重复`() {
+        val settings = LocalScanSettings(excludeDuplicates = true)
+        val items = listOf(
+            audio("/a/song.mp3", duration = 200_000, bitrate = 320),
+            audio("/b/song.mp3", duration = 260_000, bitrate = 320), // Live 版
+        )
+        assertEquals(2, settings.deduplicate(items).size)
+    }
+
+    @Test
+    fun `时长未知时只有字节数一致才合并`() {
+        val settings = LocalScanSettings(excludeDuplicates = true)
+        val same = listOf(
+            audio("/a/x.mp3", duration = 0, size = 4_000_000),
+            audio("/b/x.mp3", duration = 0, size = 4_000_000),
+        )
+        assertEquals(1, settings.deduplicate(same).size)
+
+        val different = listOf(
+            audio("/a/x.mp3", duration = 0, size = 4_000_000),
+            audio("/b/x.mp3", duration = 0, size = 5_000_000),
+        )
+        assertEquals(2, settings.deduplicate(different).size)
+    }
+
+    @Test
+    fun `关闭重复规则时不做任何合并`() {
+        val items = listOf(
+            audio("/a/song.mp3", duration = 200_000),
+            audio("/b/song.mp3", duration = 200_000),
+        )
+        assertEquals(2, LocalScanSettings().deduplicate(items).size)
+        assertEquals(2, LocalScanSettings().applyAll(items).size)
+    }
+
+    @Test
+    fun `applyAll 同时应用逐条规则与去重`() {
+        val settings = LocalScanSettings(
+            minDurationSeconds = 5,
+            excludeDuplicates = true,
+        )
+        val items = listOf(
+            audio("/a/short.mp3", duration = 3_000),
+            audio("/a/song.mp3", duration = 200_000, bitrate = 128),
+            audio("/b/song.mp3", duration = 200_000, bitrate = 320),
+        )
+        assertEquals(listOf("/b/song.mp3"), settings.applyAll(items).map { it.path })
     }
 
     @Test
@@ -132,11 +227,21 @@ class LocalScanSettingsTest {
         assertEquals(1, settings.apply(items).size)
     }
 
-    private fun audio(path: String, duration: Long = 60_000) = LocalMediaItem(
+    private fun audio(
+        path: String,
+        duration: Long = 60_000,
+        size: Long = 1_000_000,
+        bitrate: Int? = null,
+        lossless: Boolean = false,
+    ) = LocalMediaItem(
         path = path,
-        title = path.substringAfterLast('/'),
+        title = path.substringAfterLast('/').substringBeforeLast('.'),
         durationMs = duration,
+        sizeBytes = size,
         mediaType = MediaType.AUDIO,
-        metadata = LocalTrackMetadata(),
+        metadata = LocalTrackMetadata(
+            bitrateKbps = bitrate,
+            bitDepth = if (lossless) 24 else null,
+        ),
     )
 }

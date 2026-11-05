@@ -220,7 +220,14 @@ interface DownloadStrings {
     fun scanRuleCount(count: Int): String
     val scanSettingsNote: String
     val minimumDuration: String
+    /** 时长预设标签：「不限」/「5 秒」这类。 */
+    val durationUnlimited: String
+    fun durationSeconds(seconds: Int): String
     val skipVideoFiles: String
+    /** 排除读不出时长的音频（文件截断 / 编码损坏）。 */
+    val excludeUnreadableAudio: String
+    /** 排除重复音频（同一首只保留音质最好的一份）。 */
+    val excludeDuplicates: String
     val excludedFolders: String
     val save: String
     val sortName: String
@@ -376,7 +383,11 @@ object DownloadStringsZh : DownloadStrings {
     override fun scanRuleCount(count: Int) = "$count 条规则"
     override val scanSettingsNote = "改动会在下一次扫描时生效，并同步清理已被规则排除的条目。"
     override val minimumDuration = "最短时长（秒），0 表示不过滤"
+    override val durationUnlimited = "不限"
+    override fun durationSeconds(seconds: Int) = "$seconds 秒"
     override val skipVideoFiles = "扫描时跳过视频文件"
+    override val excludeUnreadableAudio = "排除无法解析的音频（时长读取失败 / 文件损坏）"
+    override val excludeDuplicates = "排除重复音频（同一首只保留音质最好的一份）"
     override val excludedFolders = "排除目录（每行一个）"
     override val save = "保存"
     override val sortName = "名称"
@@ -534,7 +545,11 @@ object DownloadStringsEn : DownloadStrings {
     override fun scanRuleCount(count: Int) = if (count == 1) "1 rule" else "$count rules"
     override val scanSettingsNote = "Changes apply on the next scan and remove indexed items excluded by these rules."
     override val minimumDuration = "Minimum duration in seconds (0 disables filtering)"
+    override val durationUnlimited = "Off"
+    override fun durationSeconds(seconds: Int) = if (seconds == 1) "1 second" else "$seconds seconds"
     override val skipVideoFiles = "Skip video files while scanning"
+    override val excludeUnreadableAudio = "Exclude unreadable audio (duration cannot be read / file damaged)"
+    override val excludeDuplicates = "Exclude duplicate audio (keep the best-quality copy of each track)"
     override val excludedFolders = "Excluded folders (one per line)"
     override val save = "Save"
     override val sortName = "Name"

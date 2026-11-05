@@ -89,9 +89,9 @@ class AndroidLocalMediaSource(private val context: Context) : LocalMediaSource {
         if (_isScanning.value) return@flow
         _isScanning.value = true
         try {
-            // 扫描过滤规则在此生效（排除目录 / 最短时长 / 是否含视频）
+            // 扫描过滤规则在此生效（排除目录 / 最短时长 / 无法解析 / 重复条目 / 是否含视频）
             val discovered = withContext(Dispatchers.IO) {
-                scanSettings.snapshot().apply(queryMediaStore())
+                scanSettings.snapshot().applyAll(queryMediaStore())
             }
             var scanned = 0
             val total = discovered.size

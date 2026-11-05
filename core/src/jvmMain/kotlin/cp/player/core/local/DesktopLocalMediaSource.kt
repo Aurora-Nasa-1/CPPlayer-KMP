@@ -130,7 +130,7 @@ class DesktopLocalMediaSource(dataDir: String? = null) : LocalMediaSource {
      * 进度条不会退化成 0 → 100 的跳变。
      *
      * 过滤放在解析**之后**：最短时长规则依赖解析出来的时长，先滤会让时长未知
-     * 的文件被整批误伤。
+     * 的文件被整批误伤。重复合并放在**整轮结束之后**（见 [LocalScanSettings.deduplicate]）。
      */
     private suspend fun scanOnce(
         roots: List<File>,
@@ -151,7 +151,9 @@ class DesktopLocalMediaSource(dataDir: String? = null) : LocalMediaSource {
             scanned += chunk.size
             onProgress(scanned, total, accepted)
         }
-        parsed
+        // 重复判定必须等整轮结束：同一首歌的两个副本常常落在相邻两批里。
+        // 逐条规则已在批内应用过，这里只多跑一次去重（关闭时原样返回）。
+        settings.deduplicate(parsed)
     }
 
     override suspend fun importFolder(uri: String): Int {

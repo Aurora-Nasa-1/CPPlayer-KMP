@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.Sort
@@ -946,13 +947,22 @@ private fun ScanSettingsDialog(
 ) {
     var minDuration by remember { mutableStateOf(current.minDurationSeconds.toString()) }
     var filterVideo by remember { mutableStateOf(current.filterVideoFiles) }
+    var excludeUnreadable by remember { mutableStateOf(current.excludeUnreadableAudio) }
+    var excludeDuplicates by remember { mutableStateOf(current.excludeDuplicates) }
     var excludeText by remember { mutableStateOf(current.excludeFolders.joinToString("\n")) }
+    // 输入框是唯一事实来源：预设只是替它填值，所以选中态由当前文本反推
+    val presetSeconds = listOf(0, LocalScanSettings.SHORT_AUDIO_SECONDS, 30)
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { CpText(strings.downloads.scanSettings) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // 规则一多（时长 + 预设 + 三个开关 + 排除目录）在窄屏上会顶出对话框，
+            // 内容区必须能滚 —— AlertDialog 的 text 槽位本身不滚动。
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 CpText(
                     strings.downloads.scanSettingsNote,
                     style = MaterialTheme.typography.bodySmall,
@@ -965,10 +975,46 @@ private fun ScanSettingsDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                // 常用阈值一键选：打字改「0 / 5 / 30」是最常做的一次编辑
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    presetSeconds.forEach { seconds ->
+                        CpToggleChip(
+                            checked = (minDuration.toIntOrNull() ?: 0) == seconds,
+                            onCheckedChange = { minDuration = seconds.toString() },
+                            label = if (seconds == 0) {
+                                strings.downloads.durationUnlimited
+                            } else {
+                                strings.downloads.durationSeconds(seconds)
+                            },
+                        )
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = filterVideo, onCheckedChange = { filterVideo = it })
                     Spacer(Modifier.width(4.dp))
                     CpText(strings.downloads.skipVideoFiles)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = excludeUnreadable,
+                        onCheckedChange = { excludeUnreadable = it },
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    CpText(
+                        strings.downloads.excludeUnreadableAudio,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = excludeDuplicates,
+                        onCheckedChange = { excludeDuplicates = it },
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    CpText(
+                        strings.downloads.excludeDuplicates,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                 }
                 OutlinedTextField(
                     value = excludeText,
@@ -992,6 +1038,8 @@ private fun ScanSettingsDialog(
                                 .map { it.trim() }
                                 .filter { it.isNotEmpty() },
                             includeOnlyFolders = current.includeOnlyFolders,
+                            excludeUnreadableAudio = excludeUnreadable,
+                            excludeDuplicates = excludeDuplicates,
                         ),
                     )
                 },
