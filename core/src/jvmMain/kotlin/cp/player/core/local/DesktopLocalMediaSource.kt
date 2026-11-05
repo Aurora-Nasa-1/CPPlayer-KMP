@@ -6,6 +6,7 @@ import cp.player.core.media.LocalMediaOrigin
 import cp.player.core.media.MediaType
 import cp.player.core.media.toTrackMetadata
 import cp.player.core.util.DesktopDataDir
+import cp.player.core.util.VirtualThreadDispatcher
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -31,7 +32,8 @@ import kotlinx.serialization.json.Json
  *   + 持久化的「已导入文件夹」列表
  * - 扩展名白名单复用 [MediaType.fromFileName]
  *   （mp3/flac/m4a/ogg/wav/aac/mp4/mkv/mov/webm/avi）
- * - 文件遍历在 [Dispatchers.IO] 上执行，进度按 50 条/批发射
+ * - 文件遍历与标签解析优先在 [VirtualThreadDispatcher]（Java 21/25 虚拟线程）上执行，
+ *   避免占用有限的平台操作系统线程，提高海量小文件并发吞吐；
  * - 索引持久化于 `~/.cpplayer/local-media/index.json`（与 modules 目录同级风格；
  *   旧目录名 `.kmp-pro` 的迁移见 [DesktopDataDir]）
  *
@@ -43,15 +45,19 @@ class DesktopLocalMediaSource(dataDir: String? = null) : LocalMediaSource {
         private const val CHUNK_SIZE = 50
 
         /**
-         * 标签解析用的并发池。
+         * 标签解析与 I/O 调度池。
          *
-         * 上下限刻意收窄到 2..8：过低在 NVMe 上吃不满带宽，过高在机械盘 / 网络盘上
-         * 会因为寻道竞争反而更慢。这类「IO 密集但每次只读几十 KB」的负载，
-         * 并发度略高于核数是合适的，再多就是纯排队。
+         * 优先使用 Java 21/25 虚拟线程（Project Loom），轻量且阻塞 I/O 时零切换损耗；
+         * 若运行时未开启或不支持虚拟线程，则安全退化至限制并发度的 [Dispatchers.IO]。
          */
-        private val parseDispatcher = Dispatchers.IO.limitedParallelism(
-            Runtime.getRuntime().availableProcessors().coerceIn(2, 8),
-        )
+        private val ioDispatcher = VirtualThreadDispatcher.dispatcher
+        private val parseDispatcher = if (VirtualThreadDispatcher.isSupported) {
+            VirtualThreadDispatcher.dispatcher
+        } else {
+            Dispatchers.IO.limitedParallelism(
+                Runtime.getRuntime().availableProcessors().coerceIn(2, 8),
+            )
+        }
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -110,7 +116,7 @@ class DesktopLocalMediaSource(dataDir: String? = null) : LocalMediaSource {
         } finally {
             _isScanning.value = false
         }
-    }.flowOn(Dispatchers.IO)
+    }.flowOn(ioDispatcher)
 
     /**
      * 一次完整扫描：收集文件 → **并发**解析标签 → 按批回调进度 → 应用过滤规则。
@@ -119,7 +125,7 @@ class DesktopLocalMediaSource(dataDir: String? = null) : LocalMediaSource {
      *
      * 标签解析是纯 IO 等待（读文件头 / moov / OGG 尾页），单线程下每首都要
      * 走一次完整的「seek + read」，几千首的曲库会拖到几十秒。这里用
-     * [parseDispatcher]（受 CPU 核数限制的 IO 池）并发解析，同时**仍然按批回调**，
+     * [parseDispatcher]（优先虚拟线程或受 CPU 核数限制的 IO 池）并发解析，同时**仍然按批回调**，
      * 进度条不会退化成 0 → 100 的跳变。
      *
      * 过滤放在解析**之后**：最短时长规则依赖解析出来的时长，先滤会让时长未知
@@ -129,7 +135,7 @@ class DesktopLocalMediaSource(dataDir: String? = null) : LocalMediaSource {
         roots: List<File>,
         onProgress: suspend (scanned: Int, total: Int, batch: List<LocalMediaItem>) -> Unit = { _, _, _ -> },
     ): List<LocalMediaItem> {
-        val files = withContext(Dispatchers.IO) { collectFiles(roots) }
+        val files = withContext(ioDispatcher) { collectFiles(roots) }
         val settings = scanSettings.snapshot()
         val total = files.size
         var scanned = 0

@@ -1,0 +1,47 @@
+# Baseline Profile for CPPlayer Android
+# Covers cold start, Compose Multiplatform frame rendering, Voyager navigation, and audio pipeline initiation.
+
+# App Entry & Core Orchestration
+HPLcp/player/app/MainActivity;
+HPLcp/player/app/MainActivityKt;
+HPLcp/player/app/AppModel;
+HPLcp/player/app/AppModelKt;
+HPLcp/player/app/service/PlaybackMediaSessionService;
+HPLcp/player/app/platform/PlatformContext;
+HPLcp/player/app/platform/PlatformActions;
+
+# Compose Multiplatform UI & M3 Expressive
+HPLandroidx/compose/runtime/Composer;
+HPLandroidx/compose/runtime/ComposerImpl;
+HPLandroidx/compose/runtime/Recomposer;
+HPLandroidx/compose/runtime/SnapshotStateKt;
+HPLandroidx/compose/runtime/snapshots/Snapshot;
+HPLandroidx/compose/ui/platform/AndroidComposeView;
+HPLandroidx/compose/ui/node/LayoutNode;
+HPLandroidx/compose/foundation/lazy/LazyListState;
+HPLandroidx/compose/material3/ColorScheme;
+HPLandroidx/compose/material3/MaterialTheme;
+
+# Voyager Navigation & Transitions
+HPLcafe/adriel/voyager/navigator/Navigator;
+HPLcafe/adriel/voyager/navigator/NavigatorKt;
+HPLcafe/adriel/voyager/core/screen/Screen;
+HPLcafe/adriel/voyager/core/model/ScreenModel;
+
+# Core Playback, State Flows, & Media Resolution
+HPLcp/player/core/playback/PlaybackController;
+HPLcp/player/core/playback/PlaybackControllerImpl;
+HPLcp/player/core/media/UnifiedMediaResolver;
+HPLcp/player/core/media/LocalMediaItem;
+HPLcp/player/core/util/VirtualThreadDispatcher;
+
+# Kotlinx Coroutines & Flow Dispatching
+HPLkotlinx/coroutines/flow/StateFlow;
+HPLkotlinx/coroutines/flow/SharedFlow;
+HPLkotlinx/coroutines/Dispatchers;
+HPLkotlinx/coroutines/BuildersKt;
+
+# Media3 Session & ExoPlayer Audio Engine
+HPLandroidx/media3/session/MediaSession;
+HPLandroidx/media3/session/MediaSessionService;
+HPLandroidx/media3/exoplayer/ExoPlayer;

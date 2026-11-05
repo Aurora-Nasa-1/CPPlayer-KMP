@@ -18,6 +18,7 @@ adaptive = "1.3.0"
 # 所以「同类 Screen 共享 ScreenModel」那条结论不受影响（见 MEMORY「关键坑」）。
 voyager = "2.2.21-1.10.3"
 androidx-activity = "1.9.3"
+androidx-profileinstaller = "1.4.1"
 qrose = "1.3.0"
 # 1.11.1：从 1.4.1 跨了 7 个 minor，但逐类 javap 核对后**项目用到的 API 全部保留** ——
 # `COMMAND_SEEK_*` 13 个常量一字未变、`onUpdateNotification(MediaSession, boolean)` 签名相同、
@@ -162,6 +163,7 @@ ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
 ktor-server-cio = { module = "io.ktor:ktor-server-cio", version.ref = "ktor" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version = "1.17.0" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
+androidx-profileinstaller = { module = "androidx.profileinstaller:profileinstaller", version.ref = "androidx-profileinstaller" }
 voyager-navigator = { module = "cafe.adriel.voyager:voyager-navigator", version.ref = "voyager" }
 voyager-screenmodel = { module = "cafe.adriel.voyager:voyager-screenmodel", version.ref = "voyager" }
 voyager-transitions = { module = "cafe.adriel.voyager:voyager-transitions", version.ref = "voyager" }

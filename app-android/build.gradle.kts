@@ -115,6 +115,7 @@ android {
 dependencies {
     implementation(project(":app"))
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.profileinstaller)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.exoplayer)
