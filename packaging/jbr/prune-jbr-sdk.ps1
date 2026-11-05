@@ -65,7 +65,15 @@ foreach ($exe in $unneededExes) {
 }
 Write-Host ("Removed {0} unused CLI diagnostic executables." -f $removedCount)
 
-# 3. Verify critical runtime components remain intact
+# 3. Strip redundant CDS archives (*nocoops*.jsa)
+$redundantJsa = Get-ChildItem -Path "$targetPath/bin/server" -Filter "*nocoops*.jsa" -Force -ErrorAction SilentlyContinue
+if ($redundantJsa) {
+    $jsaSize = ($redundantJsa | Measure-Object -Property Length -Sum).Sum / 1MB
+    Write-Host ("Removing {0} redundant non-compressed-oops CDS archives (total {1:N2} MB)..." -f $redundantJsa.Count, $jsaSize)
+    $redundantJsa | Remove-Item -Force -ErrorAction SilentlyContinue
+}
+
+# 4. Verify critical runtime components remain intact
 $criticalItems = @("bin/java.exe", "bin/javaw.exe", "bin/jlink.exe", "bin/jpackage.exe", "bin/awt.dll", "lib", "release")
 foreach ($item in $criticalItems) {
     $itemPath = Join-Path $targetPath $item
