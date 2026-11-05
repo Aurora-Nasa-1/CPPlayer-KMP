@@ -363,7 +363,7 @@ internal fun PosterPlayControls(
                 Icon(
                     Icons.Default.SkipPrevious,
                     contentDescription = s.wall.skipPrevious,
-                    tint = PosterMuted,
+                    tint = Color.White.copy(alpha = 0.72f),
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -373,13 +373,13 @@ internal fun PosterPlayControls(
             if (playing) s.wall.pause else s.wall.posterPlay,
             onToggle,
             Modifier
-                .background(PosterOnInk, CircleShape)
+                .background(Color.White, CircleShape)
                 .then(if (focus != null) Modifier.focusRequester(focus) else Modifier)
         ) {
             Icon(
                 if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
                 contentDescription = if (playing) s.wall.pause else s.wall.posterPlay,
-                tint = PosterInk,
+                tint = Color(0xFF101014),
                 modifier = Modifier.size(26.dp)
             )
         }
@@ -388,7 +388,7 @@ internal fun PosterPlayControls(
                 Icon(
                     Icons.Default.SkipNext,
                     contentDescription = s.wall.skipNext,
-                    tint = PosterMuted,
+                    tint = Color.White.copy(alpha = 0.72f),
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -645,12 +645,12 @@ internal fun PosterExpandedCard(
                                 Icon(
                                     Icons.Default.PlayArrow,
                                     contentDescription = s.wall.posterPlay,
-                                    tint = PosterInk,
+                                    tint = Color(0xFF101014),
                                     modifier = Modifier.size(20.dp)
                                 )
                                 CpText(
                                     s.wall.posterPlay,
-                                    color = PosterInk,
+                                    color = Color(0xFF101014),
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(start = 8.dp)

@@ -242,11 +242,15 @@ fun PosterWallScreen(
     }
     val wall = rememberSaveable(source, query, stacked, saver = PosterWallState.Saver) { PosterWallState() }
 
-    val currentIndex = remember(items, currentSongId, queueIndex, source) {
+    val playbackSourceId by remember { derivedStateOf { playback.sourceId } }
+    val currentIndex = remember(items, currentSongId, queueIndex, source, playbackSourceId) {
         if (source == "queue") {
             items.indexOfFirst { it.sourceIndex == queueIndex }
         } else {
-            items.indexOfFirst { it.song.id == currentSongId }
+            items.indexOfFirst {
+                it.song.id == currentSongId ||
+                    (it.song.sourceKind == "album" && it.song.id == playbackSourceId)
+            }
         }
     }
 
@@ -306,16 +310,20 @@ fun PosterWallScreen(
                 val idx = items.indexOfFirst { it.song.id == poster.song.id }.coerceAtLeast(0)
                 AppModel.playback.playQueue(list, startIndex = idx)
             } else if (poster.song.sourceKind == "album") {
-                val albumId = poster.song.id.toLongOrNull()
-                if (albumId != null) {
-                    val detail = runCatching { AppModel.musicRepository.getAlbumDetail(albumId) }.getOrNull()
-                    val provider = AppModel.activeProviderId()
-                    val ids = (detail as? BackendResult.Success)?.data?.tracks?.map {
-                        AppModel.toMediaId(it.id, provider)
-                    }.orEmpty()
-                    if (ids.isNotEmpty()) {
-                        AppModel.playback.playQueue(ids, startIndex = 0, sourceId = albumId.toString())
-                    }
+                val albumId = poster.song.id
+                val detail = runCatching {
+                    val idLong = albumId.toLongOrNull()
+                    if (idLong != null) AppModel.musicRepository.getAlbumDetail(idLong)
+                    else AppModel.musicRepository.getAlbumDetail(albumId)
+                }.getOrNull()
+                val provider = AppModel.activeProviderId()
+                val ids = (detail as? BackendResult.Success)?.data?.tracks?.map {
+                    AppModel.toMediaId(it.id, provider)
+                }.orEmpty()
+                if (ids.isNotEmpty()) {
+                    AppModel.playback.playQueue(ids, startIndex = 0, sourceId = albumId)
+                } else {
+                    UiEvents.notify(s.wall.playFailed)
                 }
             } else {
                 val provider = AppModel.activeProviderId()
@@ -617,7 +625,8 @@ fun PosterWallScreen(
         // Expanded modal card
         if (!lyricTheater) {
             expanded?.let { poster ->
-                val isCurrent = poster.song.id == currentSongId && (source != "queue" || poster.sourceIndex == queueIndex)
+                val isCurrent = (poster.song.id == currentSongId || (poster.song.sourceKind == "album" && playback.sourceId == poster.song.id)) &&
+                    (source != "queue" || poster.sourceIndex == queueIndex)
                 PosterExpandedCard(
                     poster = poster,
                     viewport = focusViewport,
@@ -697,14 +706,44 @@ fun PosterWallScreen(
                 },
                 onAddToQueue = {
                     scope.launch {
-                        AppModel.playback.addToQueue(songTrackUri)
-                        UiEvents.notify("已加入播放队列")
+                        if (song.sourceKind == "album") {
+                            val detail = runCatching {
+                                val idLong = song.id.toLongOrNull()
+                                if (idLong != null) AppModel.musicRepository.getAlbumDetail(idLong)
+                                else AppModel.musicRepository.getAlbumDetail(song.id)
+                            }.getOrNull()
+                            val tracks = (detail as? BackendResult.Success)?.data?.tracks.orEmpty()
+                            if (tracks.isNotEmpty()) {
+                                tracks.forEach { AppModel.playback.addToQueue(AppModel.toMediaId(it.id, provider)) }
+                                UiEvents.notify("已将整张专辑加入播放队列")
+                            } else {
+                                UiEvents.notify(s.wall.playFailed)
+                            }
+                        } else {
+                            AppModel.playback.addToQueue(songTrackUri)
+                            UiEvents.notify("已加入播放队列")
+                        }
                     }
                 },
                 onPlayNext = {
                     scope.launch {
-                        AppModel.playback.addNextToQueue(songTrackUri)
-                        UiEvents.notify("将在下一首播放")
+                        if (song.sourceKind == "album") {
+                            val detail = runCatching {
+                                val idLong = song.id.toLongOrNull()
+                                if (idLong != null) AppModel.musicRepository.getAlbumDetail(idLong)
+                                else AppModel.musicRepository.getAlbumDetail(song.id)
+                            }.getOrNull()
+                            val tracks = (detail as? BackendResult.Success)?.data?.tracks.orEmpty()
+                            if (tracks.isNotEmpty()) {
+                                tracks.asReversed().forEach { AppModel.playback.addNextToQueue(AppModel.toMediaId(it.id, provider)) }
+                                UiEvents.notify("已将整张专辑添加至下一首播放")
+                            } else {
+                                UiEvents.notify(s.wall.playFailed)
+                            }
+                        } else {
+                            AppModel.playback.addNextToQueue(songTrackUri)
+                            UiEvents.notify("将在下一首播放")
+                        }
                     }
                 },
                 onAddToPlaylist = {
