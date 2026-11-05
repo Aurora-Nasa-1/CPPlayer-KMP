@@ -21,7 +21,8 @@
 | [QUICK_PROVIDER_DEV_GUIDE.md](dev/QUICK_PROVIDER_DEV_GUIDE.md) | **现代插件开发极速指南 (Standard v3)** | 开发轻量自定义音源、第三方平台移植（5 分钟上手） |
 | [PROVIDER_DEV_GUIDE.md](dev/PROVIDER_DEV_GUIDE.md) | **音源插件开发完整参考手册** | 全部宿主标准端点参考（apiMap 键名清单）、健康监控、打包与调试 |
 | [MANIFEST_REFERENCE.md](dev/MANIFEST_REFERENCE.md) | **manifest.json 单一事实源规范** | 音源 manifest 全字段、capabilities 语义、响应码表、音质档位、设置表单与更新机制（各指南冲突时以本文为准） |
-| [LYRICS_PLUGIN_DEV_GUIDE.md](dev/LYRICS_PLUGIN_DEV_GUIDE.md) | **歌词源插件（Lyrico / Rhino）开发指南** | 为无歌词曲目接入 TTML/逐字歌词源；独立 manifest schema、宿主 JS API、生命周期与调试 |
+| [JS_PROVIDER_DEV_GUIDE.md](dev/JS_PROVIDER_DEV_GUIDE.md) | **JS 音源插件开发指南 (Provider Standard JS v1)** | 基于 QuickJS 的轻量跨平台（Android + 桌面）单脚本音源开发、原生 fetch/crypto 加速与调试 |
+| [LYRICS_PLUGIN_DEV_GUIDE.md](dev/LYRICS_PLUGIN_DEV_GUIDE.md) | **歌词源插件开发指南（Lyrico 兼容 / QuickJS 宿主）** | 为无歌词曲目接入 TTML/逐字歌词源；独立 manifest schema、宿主 JS API、生命周期与调试 |
 
 ### 核心架构与生态集成
 

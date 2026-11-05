@@ -1,18 +1,18 @@
 /*
  * Based on the Lyrico Plugin API host contract (https://github.com/Replica0110/Lyrico) — Apache-2.0.
  * Host contract reference: app/src/main/java/com/ella/music/plugin/runtime/PluginJsRuntime.kt
- * Changes: the JS engine was swapped from Android-only quickjs-wrapper to Mozilla Rhino so the
- *          same host contract runs on both Android and Desktop JVM. The Lyrico host bootstrap and
- *          __invoke dispatcher are reproduced verbatim from upstream so existing plugins run
- *          unchanged. See THIRD_PARTY_LICENSES.md.
+ * Changes: the JS engine uses QuickJS (via dokar3:quickjs-kt) across Android and Desktop JVM,
+ *          providing native ES2023 performance, async/await support, and thread safety via
+ *          isolated engine instances. See THIRD_PARTY_LICENSES.md.
  */
 package cp.player.core.lyricsplugin
 
-import org.mozilla.javascript.BaseFunction
-import org.mozilla.javascript.Context
-import org.mozilla.javascript.Function
-import org.mozilla.javascript.Scriptable
-import org.mozilla.javascript.ScriptableObject
+import com.dokar.quickjs.QuickJs
+import com.dokar.quickjs.binding.function
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.runBlocking
+import java.util.concurrent.Executors
 
 /**
  * 宿主 → JS 的桥。插件通过 `__lyricoHostCall(name, payloadJson)` 调用宿主的 `Platform.*`。
@@ -30,76 +30,77 @@ interface PluginHostApi {
 }
 
 /**
- * 用 Rhino 运行一个 Lyrico 格式插件的 JS 运行时。
+ * 运行一个 Lyrico 格式插件的 JS 运行时（基于 QuickJS 原生引擎）。
  *
  * 契约（与上游逐字一致）：
  * - 宿主暴露全局函数 `__lyricoHostCall(name, payloadJson) -> String`
  * - 脚本加载前先注入 `Platform` / `app` / `runtime` 引导层
  * - 宿主通过全局 `__invoke(fnName, requestJson) -> String` 调插件入口
  *
- * ⚠️ **非线程安全**：一个实例必须在同一线程创建与使用（调用方在专属单线程调度器上跑）。
+ * 保留类名 [RhinoPluginRuntime] 以向前兼容既有调用方。
  */
+typealias QuickJsPluginRuntime = RhinoPluginRuntime
+
 class RhinoPluginRuntime(private val hostApi: PluginHostApi) : AutoCloseable {
 
-    private var scope: Scriptable? = null
+    private val executor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "CPPlayer-LyricsPluginRuntime").apply { isDaemon = true }
+    }
+    private val dispatcher: CoroutineDispatcher = executor.asCoroutineDispatcher()
+
+    @Volatile
+    private var quickJs: QuickJs? = null
+
+    @Volatile
     private var closed = false
 
+    init {
+        runBlocking(dispatcher) {
+            val qjs = QuickJs.create(dispatcher)
+            quickJs = qjs
+            qjs.function<String>("__lyricoHostCall") { args ->
+                val name = args.getOrNull(0)?.toString() ?: ""
+                val payload = args.getOrNull(1)?.toString() ?: "{}"
+                hostApi.call(name, payload)
+            }
+            qjs.evaluate<Any?>(GLOBAL_THIS_SHIM)
+            qjs.evaluate<Any?>(HOST_API_BOOTSTRAP)
+            qjs.evaluate<Any?>(INVOKE_DISPATCHER)
+        }
+    }
+
     /** 求值插件脚本（含 include 合并后的完整源码）。 */
-    fun eval(script: String, filename: String) = withContext { cx, scope ->
-        hostApi.beginInvocation()
-        cx.evaluateString(scope, script, filename, 1, null)
-        Unit
+    fun eval(script: String, filename: String) {
+        check(!closed) { "RhinoPluginRuntime already closed" }
+        runBlocking(dispatcher) {
+            hostApi.beginInvocation()
+            quickJs?.evaluate<Any?>(script, filename = filename)
+        }
     }
 
     /** 调用插件全局入口函数，返回其 JSON 字符串化结果。 */
-    fun call(functionName: String, requestJson: String): String = withContext { cx, scope ->
-        hostApi.beginInvocation()
-        val fn = ScriptableObject.getProperty(scope, "__invoke")
-        if (fn !is Function) return@withContext "null"
-        val result = fn.call(cx, scope, scope, arrayOf<Any>(functionName, requestJson))
-        when (result) {
-            null, Context.getUndefinedValue() -> "null"
-            else -> Context.toString(result)
+    fun call(functionName: String, requestJson: String): String {
+        check(!closed) { "RhinoPluginRuntime already closed" }
+        return runBlocking(dispatcher) {
+            hostApi.beginInvocation()
+            val callScript = "await globalThis.__invoke(${encodeJsString(functionName)}, ${encodeJsString(requestJson)});"
+            val result = quickJs?.evaluate<String>(callScript)
+            result ?: "null"
         }
     }
 
     override fun close() {
+        if (closed) return
         closed = true
-        scope = null
-    }
-
-    private fun <T> withContext(block: (Context, Scriptable) -> T): T {
-        check(!closed) { "RhinoPluginRuntime already closed" }
-        val cx = Context.enter()
-        try {
-            // -1 = 解释执行，不生成字节码：在 Android 上避免动态类加载，桌面端也够快。
-            cx.optimizationLevel = -1
-            cx.languageVersion = Context.VERSION_ES6
-            val activeScope = scope ?: createScope(cx).also { scope = it }
-            return block(cx, activeScope)
-        } finally {
-            Context.exit()
+        runBlocking(dispatcher) {
+            try {
+                quickJs?.close()
+            } catch (ignored: Throwable) {
+            } finally {
+                quickJs = null
+            }
         }
-    }
-
-    private fun createScope(cx: Context): Scriptable {
-        val scope = cx.initStandardObjects()
-        ScriptableObject.putProperty(scope, "__lyricoHostCall", HostCallFunction(hostApi))
-        cx.evaluateString(scope, GLOBAL_THIS_SHIM, "<host-shim>", 1, null)
-        cx.evaluateString(scope, HOST_API_BOOTSTRAP, "<host-bootstrap>", 1, null)
-        cx.evaluateString(scope, INVOKE_DISPATCHER, "<host-dispatcher>", 1, null)
-        return scope
-    }
-
-    /** Rhino 在个别配置下不定义 `globalThis`；补一个指向全局对象的别名。 */
-    private class HostCallFunction(private val hostApi: PluginHostApi) : BaseFunction() {
-        override fun call(cx: Context, scope: Scriptable, thisObj: Scriptable, args: Array<out Any>): Any {
-            val name = args.getOrNull(0)?.let { Context.toString(it) } ?: ""
-            val payload = args.getOrNull(1)?.let { Context.toString(it) } ?: "{}"
-            return hostApi.call(name, payload)
-        }
-
-        override fun getFunctionName(): String = "__lyricoHostCall"
+        executor.shutdown()
     }
 
     private companion object {
@@ -114,10 +115,10 @@ class RhinoPluginRuntime(private val hostApi: PluginHostApi) : AutoCloseable {
 
         private const val INVOKE_DISPATCHER = """
             (function() {
-              globalThis.__invoke = function(name, requestJson) {
+              globalThis.__invoke = async function(name, requestJson) {
                 var fn = globalThis[name];
                 if (typeof fn !== "function") return "null";
-                var result = fn(JSON.parse(requestJson || "{}"));
+                var result = await fn(JSON.parse(requestJson || "{}"));
                 return JSON.stringify(result === undefined ? null : result);
               };
             })();
@@ -281,5 +282,15 @@ class RhinoPluginRuntime(private val hostApi: PluginHostApi) : AutoCloseable {
               };
             })();
         """
+
+        private fun encodeJsString(value: String): String {
+            val escaped = value
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t")
+            return "\"$escaped\""
+        }
     }
 }

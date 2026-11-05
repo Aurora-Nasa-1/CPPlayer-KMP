@@ -78,7 +78,7 @@ With none configured, the build still succeeds and produces an **unsigned** rele
 
 `app-android` runs R8 with resource shrinking on `release`. Debug builds do not, so **a red stable release is the only place R8 problems surface** — always build `:app-android:assembleRelease` locally before tagging.
 
-Missing classes are a **hard error** for R8, not a warning: `ERROR: Missing classes detected ... mapping/release/missing_rules.txt` fails `minifyReleaseWithR8`. When a dependency drags in JDK-only classes, add `-dontwarn` for them in `app-android/proguard-rules.pro` (current entries: `java.lang.management.*` from Ktor, `java.beans.*` from Rhino's lyrics-plugin JS runtime). Only do this when the referencing code path is genuinely unreachable on Android — `-dontwarn` does not make the code work, it only stops R8 from refusing to shrink.
+Missing classes are a **hard error** for R8, not a warning: `ERROR: Missing classes detected ... mapping/release/missing_rules.txt` fails `minifyReleaseWithR8`. When a dependency drags in JDK-only classes, add `-dontwarn` for them in `app-android/proguard-rules.pro` (current entries: `java.lang.management.*` from Ktor; historical `java.beans.*` from Rhino has been eliminated after migrating to QuickJS). Only do this when the referencing code path is genuinely unreachable on Android — `-dontwarn` does not make the code work, it only stops R8 from refusing to shrink.
 
 ## Desktop packaging (icons + installers)
 

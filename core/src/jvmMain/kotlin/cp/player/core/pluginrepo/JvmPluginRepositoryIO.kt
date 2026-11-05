@@ -245,6 +245,11 @@ internal fun verifyRepositoryPackage(
                 require(uri.scheme in setOf("https", "http") && !uri.host.isNullOrBlank() && uri.userInfo == null) {
                     "Invalid provider service URL"
                 }
+            } else if (manifest.type == "js" || manifest.type == "script") {
+                requireSafePluginPath(manifest.entryPoint)
+                require(zip.getEntry(manifest.entryPoint)?.isDirectory == false) {
+                    "JS entry script is missing"
+                }
             } else {
                 requireSafePluginPath(manifest.entryPoint)
                 // Online packages deliberately require an explicit entry, not legacy filename guessing.

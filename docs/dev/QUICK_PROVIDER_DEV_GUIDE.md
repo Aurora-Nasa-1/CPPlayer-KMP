@@ -37,11 +37,19 @@ CPPlayer 支持三种音源运行时类型：
 
 | 类型 (`type`) | 运行方式 | 适用场景 | `entryPoint` 定义 |
 |---|---|---|---|
+| `"js"` (或 `"script"`) | 宿主内嵌原生 QuickJS 引擎执行（支持 ES2023、async/await、原生 fetch 与 crypto 加速） | 纯 JavaScript / TypeScript 编写的轻量音源，**全平台（Android + 桌面）统一单脚本运行**，免编译 | 脚本文件名，如 `"index.js"` |
 | `"http"` | 远程或本地 HTTP/HTTPS 服务 | Python / Node.js / Go / 云端或内网部署服务 | 如 `"http://127.0.0.1:3000"` 或 `"https://api.example.com"` |
 | `"jni"` | 桌面优先由独立 JNI Worker 加载，失败时回退宿主进程；Android 进程内加载 | Rust / C++ / C 高性能跨平台模块 | 库文件名，如 `"libkugou_music_rs.so"` 或 `"kugou_music_rs.dll"` |
 | `"binary"` | 宿主自动拉起本地子进程守护执行 | Go / Rust 编译的独立本地单二进制可执行文件。**执行进程仅桌面端可用**；Android 只有在包内找到兼容 `.so` 时才会提升为 JNI，否则明确拒绝 | 可执行文件名，如 `"my_server.exe"`；Android 需另提供对应 JNI 库 |
 
 ### 2.2 打包目录布局
+
+#### JS 脚本音源包（跨端通用、免编译）：
+```
+my-js-provider.zip (或 .cpm)
+├── manifest.json
+└── index.js
+```
 
 #### HTTP 音源包：
 ```

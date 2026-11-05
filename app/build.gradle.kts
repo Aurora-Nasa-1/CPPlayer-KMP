@@ -518,7 +518,7 @@ val desktopCommonJvmArgs = (listOf(
     "-XX:+UnlockExperimentalVMOptions",
     "--enable-native-access=ALL-UNNAMED",
     "-Xms128m",
-    "-Xmx512m",
+    "-Xmx420m",
     "-Dcp.player.versionName=$appVersionName",
     "-Dcp.player.versionCode=$appVersionCode",
     "-Dcp.player.releaseChannel=$appReleaseChannel",
@@ -567,7 +567,9 @@ compose.desktop {
         // 最大堆 = 物理内存的 1/4、**初始堆 = 物理内存的 1/64**（32GB 机器上启动即
         // 提交 512MB），G1 又几乎从不把涨上去的堆还给 OS ⇒ 空闲占用 780MB。
         // 这一组对「音乐播放器」这种长驻 GUI 应用是稳态组合：
-        //   -Xms128m / -Xmx512m —— 初始堆压小；上限 512m 对 UI + 列表 + 封面绰绰有余。
+        //   -Xms128m / -Xmx420m —— 初始堆压小；上限 420m（2026-11-05 由 512m 下调，
+        //     实测存活量见下）对 UI + 列表 + 封面绰绰有余。**再小就要先压测峰值**：
+        //     批量歌单加载 / 大 provider 响应 / Base64 歌词是三条最可能顶到上限的路径。
         //   -XX:SoftMaxHeapSize=256m —— 常态软顶：G1 会尽量把堆压在 256m 内，
         //     只有连续压力才越线（软顶不是硬顶，OOM 仍由 -Xmx 兜底）。
         //   -XX:MinHeapFreeRatio=10 / MaxHeapFreeRatio=30 —— 空闲比例从默认(20/45? /40/70)
