@@ -28,6 +28,7 @@ class UnifiedMusicSourceImpl(
      * 属静默错误结果。跨音源聚合尚未实现，正确行为是显式报错而不是假装成功。
      */
     private val activeProviderId: () -> String?,
+    private val activeProvider: () -> cp.player.core.provider.BackendProvider? = { null },
 ) : UnifiedMusicSource {
 
     /**
@@ -313,17 +314,35 @@ class UnifiedMusicSourceImpl(
             }
             return BackendResult.Success(SongUrl(item.path, localLevel, item.sizeBytes, null, codec = localCodec))
         }
+        val provider = activeProvider()
+        val providerLevelKey = cp.player.core.provider.AudioQualityResolver.resolveKey(provider?.qualityOptions, level)
         return try {
-            val json = musicApiService.getSongUrl(id.resourceId, level)
+            val json = musicApiService.getSongUrl(id.resourceId, providerLevelKey)
             val url = extractUrl(json)
             if (url != null && url.startsWith("http")) {
                 val sizeBytes = extractSizeBytes(json)
                 val cookie = extractCookie(json)
                 val headers = extractHeaders(json)
-                val resolvedLevel = extractLevel(json) ?: level
-                val codec = extractCodec(json) ?: inferCodecFromUrl(url) ?: inferCodecFromLevel(resolvedLevel)
-                val bitrate = extractBitrate(json) ?: inferBitrateFromLevel(resolvedLevel)
-                BackendResult.Success(SongUrl(url, resolvedLevel, sizeBytes, playbackExpiresAt(json, cp.player.core.util.currentTimeMillis()), cookie, headers, codec = codec, bitrate = bitrate))
+                val rawLevel = extractLevel(json) ?: providerLevelKey
+                val matchedOption = cp.player.core.provider.AudioQualityResolver.resolveOption(provider?.qualityOptions, rawLevel)
+                val resolvedLevel = matchedOption?.targetQuality ?: cp.player.core.provider.AudioQualityResolver.resolveTargetQuality(provider?.qualityOptions, rawLevel)
+                val qualityLabel = matchedOption?.label
+                val codec = extractCodec(json) ?: matchedOption?.format?.uppercase() ?: inferCodecFromUrl(url) ?: inferCodecFromLevel(resolvedLevel)
+                val bitrate = extractBitrate(json) ?: matchedOption?.bitrate ?: inferBitrateFromLevel(resolvedLevel)
+                BackendResult.Success(
+                    SongUrl(
+                        url = url,
+                        level = resolvedLevel,
+                        sizeBytes = sizeBytes,
+                        expireAt = playbackExpiresAt(json, cp.player.core.util.currentTimeMillis()),
+                        cookie = cookie,
+                        headers = headers,
+                        codec = codec,
+                        bitrate = bitrate,
+                        qualityKey = rawLevel,
+                        qualityLabel = qualityLabel
+                    )
+                )
             } else {
                 BackendResult.Error("No valid URL returned for $mediaId")
             }
@@ -338,17 +357,35 @@ class UnifiedMusicSourceImpl(
             return getSongUrl(mediaId, level)
         }
         runCatching { getTrackDetail(mediaId) }
+        val provider = activeProvider()
+        val providerLevelKey = cp.player.core.provider.AudioQualityResolver.resolveKey(provider?.qualityOptions, level)
         return try {
-            val json = musicApiService.preloadSong(id.resourceId, level)
+            val json = musicApiService.preloadSong(id.resourceId, providerLevelKey)
             val url = extractUrl(json)
             if (url != null && url.startsWith("http")) {
                 val sizeBytes = extractSizeBytes(json)
                 val cookie = extractCookie(json)
                 val headers = extractHeaders(json)
-                val resolvedLevel = extractLevel(json) ?: level
-                val codec = extractCodec(json) ?: inferCodecFromUrl(url) ?: inferCodecFromLevel(resolvedLevel)
-                val bitrate = extractBitrate(json) ?: inferBitrateFromLevel(resolvedLevel)
-                BackendResult.Success(SongUrl(url, resolvedLevel, sizeBytes, playbackExpiresAt(json, cp.player.core.util.currentTimeMillis()), cookie, headers, codec = codec, bitrate = bitrate))
+                val rawLevel = extractLevel(json) ?: providerLevelKey
+                val matchedOption = cp.player.core.provider.AudioQualityResolver.resolveOption(provider?.qualityOptions, rawLevel)
+                val resolvedLevel = matchedOption?.targetQuality ?: cp.player.core.provider.AudioQualityResolver.resolveTargetQuality(provider?.qualityOptions, rawLevel)
+                val qualityLabel = matchedOption?.label
+                val codec = extractCodec(json) ?: matchedOption?.format?.uppercase() ?: inferCodecFromUrl(url) ?: inferCodecFromLevel(resolvedLevel)
+                val bitrate = extractBitrate(json) ?: matchedOption?.bitrate ?: inferBitrateFromLevel(resolvedLevel)
+                BackendResult.Success(
+                    SongUrl(
+                        url = url,
+                        level = resolvedLevel,
+                        sizeBytes = sizeBytes,
+                        expireAt = playbackExpiresAt(json, cp.player.core.util.currentTimeMillis()),
+                        cookie = cookie,
+                        headers = headers,
+                        codec = codec,
+                        bitrate = bitrate,
+                        qualityKey = rawLevel,
+                        qualityLabel = qualityLabel
+                    )
+                )
             } else {
                 getSongUrl(mediaId, level)
             }

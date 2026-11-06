@@ -15,5 +15,6 @@ actual fun createJniProvider(manifest: ModuleManifest, soPath: String): BackendP
         apiVersionTag = manifest.resolvedApiVersionTag,
         contract = manifest.contract,
         settingsSchema = manifest.settingsSchema,
+        qualityOptions = manifest.qualityOptions,
     )
 }

@@ -29,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -41,24 +42,15 @@ import cp.player.app.ui.theme.CpMotion
 /**
  * 音质档位选择器 —— 两处入口共用同一份「档位表 + 文案表」。
  *
- * 为什么单独成文件：[AppModel.qualityLevels] 是**落盘用的 level**（`standard` /
- * `exhigh` / `lossless` / `hires`），展示名只在 `s.quality.labelOf(level)` 里。
- * 两处入口（桌面迷你播放器的 chip、播放页「更多」弹层的音质卡片）如果各写一遍
- * `when (level) { "lossless" -> "无损" … }`，中英切换时会有一处漏译 —— 那正是
- * `QualityStrings` 存在的理由。这里只做 UI，档位与文案都从既有事实源取。
- *
- * 两处入口改的都是**同一份全局设置**（`AppModel.setPlaybackQuality`）：写盘 + 同步给
- * 播放控制器，对**之后加载**的曲目生效，不打断正在播的这首。
+ * 现已支持当前音源自定义音质选项（由 [AppModel.currentQualityOptions] 提供）。
+ * 用户选中的是具体音源档位，底层映射并持久化其原生 targetQuality（如 "hires"），
+ * 在切换音源时由系统自动寻找对应映射档位或平滑降级。
  */
 
 /**
- * 迷你播放器右栏的音质 chip：没有任何底色的胶囊，悬停才浮出一层淡底（M3 Expressive
- * 里次级工具的长相 —— 与 [CpFloatingToolbar] 同一条思路，但更轻）。
+ * 迷你播放器右栏的音质 chip。
  *
- * 点击展开档位菜单。菜单用 `DropdownMenu` 而不是底表：从底栏弹一个整屏宽的面板
- * 去选四个词，视觉上像换了个页面。
- *
- * @param level 当前档位（落盘 level，不是展示名）。
+ * @param level 当前档位（原生 targetQuality 标识，如 standard / exhigh / lossless / hires）。
  */
 @Composable
 fun QualityMenuChip(
@@ -67,6 +59,11 @@ fun QualityMenuChip(
     modifier: Modifier = Modifier,
 ) {
     val s = cpStrings()
+    val gen by AppModel.sourceGeneration.collectAsState()
+    val options = remember(gen) { AppModel.currentQualityOptions() }
+    val activeOption = options.firstOrNull { it.targetQuality == level }
+    val displayLabel = activeOption?.customLabel ?: s.quality.labelOf(level)
+
     var expanded by remember { mutableStateOf(false) }
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
@@ -100,7 +97,7 @@ fun QualityMenuChip(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 CpText(
-                    text = s.quality.labelOf(level),
+                    text = displayLabel,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -109,11 +106,13 @@ fun QualityMenuChip(
         }
 
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            AppModel.qualityLevels.forEach { candidate ->
+            options.forEach { candidate ->
+                val optionLabel = candidate.customLabel ?: s.quality.labelOf(candidate.targetQuality)
+                val isSelected = candidate.targetQuality == level
                 DropdownMenuItem(
-                    text = { CpText(s.quality.labelOf(candidate)) },
+                    text = { CpText(optionLabel) },
                     trailingIcon = {
-                        if (candidate == level) {
+                        if (isSelected) {
                             Icon(
                                 imageVector = Icons.Filled.Check,
                                 contentDescription = null,
@@ -124,7 +123,7 @@ fun QualityMenuChip(
                     },
                     onClick = {
                         expanded = false
-                        if (candidate != level) onSelect(candidate)
+                        if (!isSelected) onSelect(candidate.targetQuality)
                     },
                 )
             }
@@ -133,10 +132,7 @@ fun QualityMenuChip(
 }
 
 /**
- * 「更多」弹层里的音质卡片：标题 + 一行说明 + 四个档位胶囊。
- *
- * 用 [CpToggleChip]（选中时形状本身从圆角方形变成胶囊）而不是一排 `RadioButton`：
- * 这是 Expressive 里「选项组」的标准长相，也和设置页的 Segmented / 下拉保持同一族语汇。
+ * 「更多」弹层里的音质卡片：标题 + 一行说明 + 档位胶囊。
  */
 @Composable
 fun QualitySectionCard(
@@ -145,6 +141,9 @@ fun QualitySectionCard(
     modifier: Modifier = Modifier,
 ) {
     val s = cpStrings()
+    val gen by AppModel.sourceGeneration.collectAsState()
+    val options = remember(gen) { AppModel.currentQualityOptions() }
+
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.55f),
         shape = RoundedCornerShape(20.dp),
@@ -184,15 +183,15 @@ fun QualitySectionCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                AppModel.qualityLevels.forEach { candidate ->
+                options.forEach { candidate ->
+                    val isChecked = candidate.targetQuality == level
+                    val optionLabel = candidate.customLabel ?: s.quality.labelOf(candidate.targetQuality)
                     CpToggleChip(
-                        checked = candidate == level,
+                        checked = isChecked,
                         onCheckedChange = { checked ->
-                            // ToggleButton 语义上可以被「取消选中」，但音质是**必选其一**的
-                            // 单选组：只在勾上时提交，取消动作直接忽略（否则会出现「没有音质」）。
-                            if (checked && candidate != level) onSelect(candidate)
+                            if (checked && !isChecked) onSelect(candidate.targetQuality)
                         },
-                        label = s.quality.labelOf(candidate),
+                        label = optionLabel,
                     )
                 }
             }

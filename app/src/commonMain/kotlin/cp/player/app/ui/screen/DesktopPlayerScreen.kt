@@ -763,7 +763,13 @@ internal fun DesktopPlayerLayout(
                             }
 
                             // 音质 / 引擎标识
-                            val qualityLabel = state.formatInfo?.qualityLabel?.takeIf { it.isNotBlank() }
+                            val formatQuality = state.formatInfo?.qualityLabel?.takeIf { it.isNotBlank() }
+                            val sourceQuality = state.sourceQualityLabel?.takeIf { it.isNotBlank() }
+                            val qualityLabel = when {
+                                sourceQuality != null && formatQuality != null -> "$sourceQuality · $formatQuality"
+                                sourceQuality != null -> sourceQuality
+                                else -> formatQuality
+                            }
                             val isFlickEngine = AppModel.audioEngineFlow.collectAsState().value ==
                                 cp.player.core.playback.PlaybackSessionSettings.ENGINE_FLICK_HIRES
                             if (metrics.showMetaChips && (qualityLabel != null || isFlickEngine)) {

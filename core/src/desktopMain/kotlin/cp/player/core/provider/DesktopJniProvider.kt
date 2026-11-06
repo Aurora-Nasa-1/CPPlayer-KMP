@@ -42,7 +42,8 @@ class DesktopJniProvider(
     apiVersion: Int = 1,
     apiVersionTag: String? = null,
     contract: String? = null,
-    settingsSchema: List<ProviderSettingItemSchema>? = null
+    settingsSchema: List<ProviderSettingItemSchema>? = null,
+    qualityOptions: List<ProviderQualityOption>? = null
 ) : JniProvider(
     id = id,
     name = name,
@@ -56,7 +57,8 @@ class DesktopJniProvider(
     apiVersion = apiVersion,
     apiVersionTag = apiVersionTag,
     contract = contract,
-    settingsSchema = settingsSchema
+    settingsSchema = settingsSchema,
+    qualityOptions = qualityOptions
 ) {
 
     private var workerProcess: Process? = null
@@ -110,7 +112,8 @@ class DesktopJniProvider(
             apiVersion = apiVersion,
             apiVersionTag = apiVersionTag,
             contract = contract,
-            settingsSchema = settingsSchema
+            settingsSchema = settingsSchema,
+            qualityOptions = qualityOptions
         )
         inProcess.startServer(context, port)
         inProcessFallback = inProcess

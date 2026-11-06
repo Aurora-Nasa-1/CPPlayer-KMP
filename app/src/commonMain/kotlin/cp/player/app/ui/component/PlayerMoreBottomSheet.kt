@@ -96,6 +96,8 @@ fun PlayerMoreBottomSheet(
     qualityLevel: String = "",
     /** 当前曲目实际加载/播放音质档位（由 [PlayerMoreSheets] 从 PlaybackUiState 传入）。 */
     trackQualityLevel: String = "",
+    /** 当前音源自定义音质文案（由 [PlayerMoreSheets] 从 PlaybackUiState 传入）。 */
+    sourceQualityLabel: String? = null,
     onSelectQuality: (String) -> Unit = {},
 ) {
     LegacyModalBottomSheet(onDismissRequest = onDismiss) {
@@ -119,6 +121,7 @@ fun PlayerMoreBottomSheet(
             onLyricOffset = onLyricOffset,
             qualityLevel = qualityLevel,
             trackQualityLevel = trackQualityLevel,
+            sourceQualityLabel = sourceQualityLabel,
             onSelectQuality = onSelectQuality,
             onClose = onDismiss,
         )
@@ -152,6 +155,7 @@ fun PlayerMoreContent(
     onLyricOffset: () -> Unit = {},
     qualityLevel: String = "",
     trackQualityLevel: String = "",
+    sourceQualityLabel: String? = null,
     onSelectQuality: (String) -> Unit = {},
     onClose: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -452,6 +456,8 @@ fun PlayerMoreContent(
                         val detailedFormat = formatInfo?.qualityLabel?.takeIf { it.isNotBlank() && it != "标准" }
                         val effectiveLevel = trackQualityLevel.ifBlank { qualityLevel }.ifBlank { "standard" }
                         val qualityLabel = when {
+                            !sourceQualityLabel.isNullOrBlank() && detailedFormat != null -> "$sourceQualityLabel · $detailedFormat"
+                            !sourceQualityLabel.isNullOrBlank() -> sourceQualityLabel
                             detailedFormat != null -> detailedFormat
                             formatInfo?.codecName?.isNotBlank() == true -> {
                                 val codec = formatInfo.codecName
@@ -645,6 +651,7 @@ fun PlayerMoreSheets(
             onLyricOffset = { sheets.showLyricOffset = true },
             qualityLevel = qualityLevel,
             trackQualityLevel = state.qualityLevel,
+            sourceQualityLabel = state.sourceQualityLabel,
             onSelectQuality = AppModel::setPlaybackQuality,
         )
     }
@@ -691,6 +698,7 @@ fun PlayerMoreSheets(
             track = track,
             formatInfo = state.formatInfo,
             lyricsInfo = state.lyricsInfo,
+            sourceQualityLabel = state.sourceQualityLabel,
             onDismiss = { sheets.showSongInfo = false },
         )
     }
@@ -710,6 +718,7 @@ fun SongInfoDialog(
     formatInfo: AudioFormatInfo?,
     lyricsInfo: LyricsInfo?,
     onDismiss: () -> Unit,
+    sourceQualityLabel: String? = null,
 ) {
     val s = cpStrings()
     AlertDialog(
@@ -731,6 +740,9 @@ fun SongInfoDialog(
                             id = track.id,
                         ),
                     )
+                    sourceQualityLabel?.takeIf { it.isNotBlank() }?.let {
+                        append("\n${s.player.quality}: $it")
+                    }
                     lyricsInfo?.let { lyric ->
                         append("\n\n")
                         append(

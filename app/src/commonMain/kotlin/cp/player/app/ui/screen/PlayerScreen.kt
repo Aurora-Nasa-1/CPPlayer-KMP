@@ -1313,9 +1313,16 @@ private fun ProgressRow(
                     )
                 }
             } else {
-                state.formatInfo?.let { info ->
+                val formatQuality = state.formatInfo?.qualityLabel?.takeIf { it.isNotBlank() }
+                val sourceQuality = state.sourceQualityLabel?.takeIf { it.isNotBlank() }
+                val label = when {
+                    sourceQuality != null && formatQuality != null -> "$sourceQuality · $formatQuality"
+                    sourceQuality != null -> sourceQuality
+                    else -> formatQuality
+                }
+                if (label != null) {
                     CpText(
-                        info.qualityLabel,
+                        label,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

@@ -216,6 +216,7 @@ class MusicBackend private constructor(
             musicApiService = cachedMusicApi,
             localMusicSource = source,
             activeProviderId = { providerManager.getCurrentProviderId() },
+            activeProvider = { providerManager.currentProvider ?: state.activeProvider },
         )
 
     // ============ 统一音乐源 (统一 MediaId) ============

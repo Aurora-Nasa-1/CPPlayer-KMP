@@ -26,6 +26,7 @@ actual object ProviderFactory {
                 apiVersionTag = apiVersionTag,
                 contract = manifest.contract,
                 settingsSchema = manifest.settingsSchema,
+                qualityOptions = manifest.qualityOptions,
             )
             "binary" -> {
                 if (PlatformInfo.isAndroid) {
@@ -60,6 +61,7 @@ actual object ProviderFactory {
                         apiVersionTag = apiVersionTag,
                         contract = manifest.contract,
                         settingsSchema = manifest.settingsSchema,
+                        qualityOptions = manifest.qualityOptions,
                     )
                 }
             }

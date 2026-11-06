@@ -436,9 +436,16 @@ private fun PlayerTimeline(state: PlaybackUiState, onSeek: (Long) -> Unit) {
                     )
                 }
             } else {
-                state.formatInfo?.let { info ->
+                val formatQuality = state.formatInfo?.qualityLabel?.takeIf { it.isNotBlank() }
+                val sourceQuality = state.sourceQualityLabel?.takeIf { it.isNotBlank() }
+                val label = when {
+                    sourceQuality != null && formatQuality != null -> "$sourceQuality · $formatQuality"
+                    sourceQuality != null -> sourceQuality
+                    else -> formatQuality
+                }
+                if (label != null) {
                     CpText(
-                        info.qualityLabel, style = MaterialTheme.typography.labelSmall,
+                        label, style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
                         modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                         textAlign = TextAlign.Center,

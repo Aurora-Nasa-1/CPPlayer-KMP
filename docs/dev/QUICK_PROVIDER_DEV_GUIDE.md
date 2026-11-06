@@ -138,6 +138,12 @@ my-jni-provider.zip (或 .cpm)
     "login/webview/url": "login/webview/url",
     "login/webview/check": "login/webview/check"
   },
+  "qualityOptions": [
+    { "key": "128k", "targetQuality": "standard", "label": "标准 128K" },
+    { "key": "320k", "targetQuality": "exhigh", "label": "极高 320K" },
+    { "key": "flac", "targetQuality": "lossless", "label": "无损 FLAC" },
+    { "key": "hi-res", "targetQuality": "hires", "label": "Hi-Res 无损", "format": "flac" }
+  ],
   "settingsSchema": [
     {
       "key": "serverUrl",
@@ -181,6 +187,7 @@ my-jni-provider.zip (或 .cpm)
 | `updateUrl` | `String` | 可选 | 检查更新 URL，指向返回最新版本信息的 JSON 端点 |
 | `sha256` | `String` | 已废弃 | 宿主不校验包内 manifest 对自身 ZIP 的哈希，修改 manifest 会改变 ZIP，无法自校验。整包完整性应由外部仓库发布元数据或发布渠道校验 |
 | `apiMap` | `Map<String, String>` | 可选 | 端点重映射表：**key=宿主内部标准方法名**（如 `cloudsearch`、`lyric/new`），**value=你的端点**。未映射的方法按宿主方法名原样请求 |
+| `qualityOptions` | `Array<Object>` | 可选 | 音源自定义音质选项及其向原生音质映射列表（见 §6.2） |
 | `settingsSchema` | `Array<Object>` | 可选 | 声明式设置表单定义（见 §9） |
 
 > **`apiMap` 映射方向务必留意**：是 `宿主内部方法名 → 你的端点`（`ProviderManager.callApi` 先查表再直传 value）。key 写不存在的宿主方法名=死键（映射永远不命中）。完整宿主方法名清单见 [PROVIDER_DEV_GUIDE.md](PROVIDER_DEV_GUIDE.md) §7。
@@ -360,9 +367,10 @@ my-jni-provider.zip (或 .cpm)
   "level": "lossless"
 }
 ```
-* **`level` 音质等级：**
-  * 宿主 UI 只给用户 4 个档位（`AppModel.qualityLevels`）：`"standard"`、`"exhigh"`（**默认值**）、`"lossless"`、`"hires"`。
-  * 另有 4 个透传值会原样出现在 `level` 参数里（当前宿主 UI 不主动请求）：`"higher"`、`"jymaster"`、`"sky"`、`"dolby"` —— 建议插件侧按「能处理就处理、处理不了回落最近的低档位」实现，而不是报错。
+* **`level` 音质等级与自定义映射：**
+  * 宿主支持音源声明 `qualityOptions` 自定义音质与原生等级映射。若音源声明了映射（如 `{"key": "hi-res", "targetQuality": "hires"}`），当用户设定音质为 `hires` 时，传给音源的 `level` 会自动转换为音源定制的 `"hi-res"`！
+  * 跨音源切换时，软件保持用户的全局原生偏好（如 `hires`），并自动寻找新音源映射到 `hires` 的选项；若新音源不具备该档位，按阶梯就近平滑降级（如降至 `lossless` 对应的 key），切回时立即恢复。
+  * 若未声明 `qualityOptions`，宿主 UI 使用 4 个原生档位（`AppModel.qualityLevels`）：`"standard"`、`"exhigh"`（**默认值**）、`"lossless"`、`"hires"`，并透传 `"higher"`、`"jymaster"`、`"sky"`、`"dolby"`。
   * 桌面端对 `lossless` / `hires` / `jymaster` / `sky`（`LOSSLESS_LEVELS`）会触发「边播边落盘」（引擎无法定位 FLAC over HTTP），插件照常返回直链即可，无需特殊配合。
 
 * **响应体（支持防盗链 Header、实际音质、格式与文件大小透传）：**

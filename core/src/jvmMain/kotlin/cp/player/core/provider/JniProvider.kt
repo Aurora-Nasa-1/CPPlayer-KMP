@@ -31,7 +31,8 @@ open class JniProvider(
     override val apiVersion: Int = 1,
     override val apiVersionTag: String? = null,
     override val contract: String? = null,
-    override val settingsSchema: List<ProviderSettingItemSchema>? = null
+    override val settingsSchema: List<ProviderSettingItemSchema>? = null,
+    override val qualityOptions: List<ProviderQualityOption>? = null
 ) : BackendProvider {
 
     override val type: ProviderType = ProviderType.JNI

@@ -199,7 +199,12 @@ data class ModuleManifest(
      * 声明式音源设置界面配置项（可选）。
      * 宿主可根据此配置自动渲染设置表单，并持久化用户配置。
      */
-    val settingsSchema: List<ProviderSettingItemSchema>? = null
+    val settingsSchema: List<ProviderSettingItemSchema>? = null,
+    /**
+     * 音源自定义音质选项及其向软件原生音质映射列表（可选）。
+     * 声明后前端根据此列表渲染当前音源档位并实现跨音源自动保持与平滑映射。
+     */
+    val qualityOptions: List<ProviderQualityOption>? = null
 ) {
     /**
      * 已解析的 API 版本（缺省 1）。

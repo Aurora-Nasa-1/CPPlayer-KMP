@@ -37,6 +37,7 @@
 | `sha256` | String | 可选 | null | 整包（原始 ZIP 字节）SHA-256 十六进制。填了则导入时校验，不匹配拒装。生成：`sha256sum my.zip` |
 | `contract` | String | 可选 | null | 标记响应模型风格：`"standard"` / `"netease-legacy"`。**当前是纯元数据**——宿主解析器同时兼容两种形状，无任何代码按它分支；填了不改变任何解析路径 |
 | `settingsSchema` | Array\<Object\> | 可选 | null | 声明式设置表单（§5） |
+| `qualityOptions` | Array\<Object\> | 可选 | null | 音源自定义音质选项及其向原生音质映射列表（§8） |
 
 ### 2.1 `apiVersionTag` 怎么用（与 `apiVersion` / `contract` 的区别）
 
@@ -159,7 +160,53 @@
 | `lossless` / `hires` / `jymaster` / `sky` | 桌面端 `LOSSLESS_LEVELS`：触发「边播边落盘」（引擎无法定位 FLAC over HTTP） | 插件照常返回直链即可 |
 | `higher` / `jymaster` / `sky` / `dolby` | 仅作为透传值出现在 `level` 参数（宿主 UI 不主动请求） | 建议「能处理就处理、处理不了回落最近低档位」，不要报错 |
 
-## 8. 安装与调试
+## 8. 音质选项与原生映射契约 (`qualityOptions`)
+
+音源可通过在 `manifest.json` 中声明 `qualityOptions` 数组，向宿主公开自身支持的音质选项，并将其映射到宿主原生音质等级（支持在 v1 与 v3 规范中使用）。
+
+```json
+"qualityOptions": [
+  {
+    "key": "128k",
+    "targetQuality": "standard",
+    "label": "标准 128K",
+    "bitrate": 128000
+  },
+  {
+    "key": "320k",
+    "targetQuality": "exhigh",
+    "label": "极高 320K",
+    "bitrate": 320000
+  },
+  {
+    "key": "flac",
+    "targetQuality": "lossless",
+    "label": "无损 FLAC",
+    "format": "flac"
+  },
+  {
+    "key": "hi-res",
+    "targetQuality": "hires",
+    "label": "Hi-Res 无损",
+    "format": "flac"
+  }
+]
+```
+
+### 8.1 字段规范
+- **`key`**（String，必填）：音源端点实际接收的参数名（如传给 `song/url` 的 `level` 字段）。
+- **`targetQuality`**（String，必填）：映射到的宿主原生音质标识（见 §7，如 `standard` / `higher` / `exhigh` / `lossless` / `hires` / `jymaster` / `sky` / `dolby`）。
+- **`label`**（String，可选）：前端 UI 展示文案（如 `Hi-Res 臻品`）；为空时回退原生文案。
+- **`bitrate`**（Int，可选）：预估音频码率（bps）。
+- **`format`**（String，可选）：预估容器格式（如 `flac`, `mp3`）。
+
+### 8.2 跨音源切换与降级行为
+- **用户偏好无损保持**：用户设置的音质始终保存为原生目标（如 `hires`）。
+- **自动寻找映射**：切换音源时，宿主在新音源的 `qualityOptions` 中寻找映射到当前用户偏好（如 `hires`）的选项（例如新音源映射的 `hi-res` 或 `master`）。
+- **阶梯就近平滑降级**：若新音源未提供该档位，按音质阶梯（`standard` < `higher` < `exhigh` < `lossless` < `hires` < `jymaster`）就近寻找小于等于目标档位的最高档位（例如降级到 `lossless` 的 `flac`），且**不篡改**用户的全局偏好设置。一旦切回支持原档位的音源，立即恢复。
+- **未声明时的保底兼容**：若音源未声明 `qualityOptions`，宿主自动提供默认 4 档 1:1 透传映射，老旧插件完全无缝兼容。
+
+## 9. 安装与调试
 
 | 项 | 位置/方式 |
 |---|---|
@@ -170,7 +217,7 @@
 | 健康监控 | 设置 → 调试 → 健康状态（按方法统计调用、期望字段命中、响应耗时） |
 | 通用调试 | `apiMap` 键必须等于宿主方法名；manifest 必须是合法 JSON；`required` 不强制 |
 
-## 9. 与音源插件 apiVersion 的关系
+## 10. 与音源插件 apiVersion 的关系
 
 音源插件走本文 `apiVersion`（当前宿主支持 3）；**歌词源插件**走独立的
 `LyricsPluginManifest.pluginApiVersion`（`core/.../lyricsplugin/`）——两套编号互不通用，见歌词插件指南。

@@ -342,7 +342,9 @@ pub extern "C" fn free_string(ptr: *mut c_char) {
 }
 ```
 
-### 5.3 音质等级 (level)
+### 5.3 音质等级 (level) 与自定义音质映射
+
+宿主软件内置的标准原生音质等级如下：
 
 | 值          | 音质     | 码率       |
 | ---------- | ------ | -------- |
@@ -354,6 +356,23 @@ pub extern "C" fn free_string(ptr: *mut c_char) {
 | `jymaster` | 超清母带   | -        |
 | `sky`      | 沉浸环绕声  | -        |
 | `dolby`    | 杜比全景声  | -        |
+
+#### 自定义音质与原生映射 (`qualityOptions`)
+无论在 **v1 (Legacy)** 还是 **v3 (Standard)** 规范中，如果你的音源接口所使用的音质标识不同于上述原生值（例如你的上游使用 `hi-res`、`master`、`sq`、`flac` 或 `320k`），可在 `manifest.json` 中配置 `qualityOptions`：
+
+```json
+"qualityOptions": [
+  { "key": "128k", "targetQuality": "standard", "label": "标准 128K" },
+  { "key": "320k", "targetQuality": "exhigh", "label": "极高 320K" },
+  { "key": "flac", "targetQuality": "lossless", "label": "无损 FLAC" },
+  { "key": "hi-res", "targetQuality": "hires", "label": "Hi-Res 无损", "format": "flac" }
+]
+```
+
+- **参数透明映射**：宿主请求你的 `song/url` 端点时，`level` 参数会自动传入对应的 `key`（如用户偏好为 `hires` 时，传给音源的是 `level: "hi-res"`）。
+- **音源切换偏好保持**：用户在软件设置的音质偏好（如 `hires`）为全局原生偏好，当用户在不同音源间切换时，软件保持 `hires` 并自动寻找新音源中映射到 `hires` 的选项；若新音源不具备该档位，按阶梯平滑降级（如就近降级到 `lossless`），切回支持源时立刻恢复。
+- **前端原生展示**：前端选择器会展示音源的自定义 `label`，并在播放界面结合音频格式详细参数向用户呈现当前音源音质。
+- **向下兼容**：若未声明 `qualityOptions`，宿主自动回退使用默认原生 4 档参数（`standard`, `exhigh`, `lossless`, `hires`）。
 
 ### 5.4 资源类型码
 

@@ -54,4 +54,8 @@ data class PlaybackUiState(
      * 「按位置传参」的既有构造点静默错位（编译器只在类型不同时才报错）。
      */
     val volume: Float = 1f,
+    /** 音源实际返回的音质参数标识（如 "hi-res", "320k", "flac"），null 表示与 qualityLevel 相同或未提供。 */
+    val sourceQualityKey: String? = null,
+    /** 音源声明的自定义音质展示文案（如 "Hi-Res 无损", "臻品母带"），null 时前端回退原生文案。 */
+    val sourceQualityLabel: String? = null,
 )

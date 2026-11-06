@@ -1952,6 +1952,8 @@ class PlaybackControllerImpl(
             emit(_state.value.copy(
                 qualityLevel = actualLevel,
                 formatInfo = platform.formatInfo.value ?: resolvedFormat,
+                sourceQualityKey = songUrl.qualityKey ?: actualLevel,
+                sourceQualityLabel = songUrl.qualityLabel,
             ))
             val headers = buildMap {
                 songUrl.headers?.let { putAll(it) }

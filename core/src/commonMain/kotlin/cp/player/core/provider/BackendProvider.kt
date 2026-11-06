@@ -103,6 +103,24 @@ interface BackendProvider {
     val settingsSchema: List<ProviderSettingItemSchema>? get() = null
 
     /**
+     * 音源自定义音质选项及其向软件原生音质映射列表（可选）。
+     * null 时表示未声明，按宿主默认原生音质处理。
+     */
+    val qualityOptions: List<ProviderQualityOption>? get() = null
+
+    /**
+     * 将原生目标音质解析为发往当前音源的实际参数 key。
+     */
+    fun resolveQualityKey(targetQuality: String): String =
+        AudioQualityResolver.resolveKey(qualityOptions, targetQuality)
+
+    /**
+     * 根据音源实际返回的 key 还原原生音质与自定义标签配置。
+     */
+    fun resolveQualityOption(actualKey: String): ProviderQualityOption? =
+        AudioQualityResolver.resolveOption(qualityOptions, actualKey)
+
+    /**
      * 加载或运行时的错误信息（若有）。
      * 正常就绪时为 null；失败时返回具体错误原因，供状态机与健康诊断界面展示。
      */

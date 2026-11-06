@@ -143,6 +143,8 @@ data class SongUrl(
     val headers: Map<String, String>? = null,
     val codec: String? = null,
     val bitrate: Int? = null,
+    val qualityKey: String? = null,
+    val qualityLabel: String? = null,
 )
 
 /**

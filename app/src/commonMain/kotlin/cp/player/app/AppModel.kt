@@ -1255,6 +1255,41 @@ object AppModel {
      */
     val qualityLevels: List<String> = listOf("standard", "exhigh", "lossless", "hires")
 
+    /**
+     * 前端展示用的音质项。
+     * [key] 为音源上游参数，[targetQuality] 为映射的软件原生等级，[customLabel] 为音源自定义名称（若有）。
+     */
+    data class DisplayQualityOption(
+        val key: String,
+        val targetQuality: String,
+        val customLabel: String? = null,
+    )
+
+    /**
+     * 获取当前活跃音源可用的音质选项列表。
+     * 若当前音源声明了 qualityOptions，转换为 [DisplayQualityOption] 列表；
+     * 若未声明，回退到系统默认的 4 档原生音质。
+     */
+    fun currentQualityOptions(): List<DisplayQualityOption> {
+        val options = activeProvider()?.qualityOptions
+        if (!options.isNullOrEmpty()) {
+            return options.map {
+                DisplayQualityOption(
+                    key = it.key,
+                    targetQuality = it.targetQuality,
+                    customLabel = it.label,
+                )
+            }
+        }
+        return qualityLevels.map {
+            DisplayQualityOption(
+                key = it,
+                targetQuality = it,
+                customLabel = null,
+            )
+        }
+    }
+
     private val _playbackQuality = MutableStateFlow(playbackQuality())
     val playbackQualityFlow: StateFlow<String> = _playbackQuality.asStateFlow()
 
@@ -3049,6 +3084,7 @@ object AppModel {
         val result = backend.switchProvider(provider)
         if (result is BackendResult.Success) {
             bumpSourceGeneration()
+            syncPlaybackQuality()
             if (isolationSwitchAccount()) {
                 refreshUserProfile()
             }
@@ -3066,6 +3102,7 @@ object AppModel {
             ?: (result as? BackendResult.Unsupported)?.message
         if (result.isSuccess) {
             bumpSourceGeneration()
+            syncPlaybackQuality()
             // 音源隔离：cookie 是按音源存的，切过去之后要按**新音源的 cookie** 重新拉资料，
             // 否则界面会继续显示上一个音源的账号（用户看到的是「切了源但账号没换」）。
             if (isolationSwitchAccount()) {
