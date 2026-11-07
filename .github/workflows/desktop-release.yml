@@ -213,28 +213,45 @@ jobs:
       - name: Generate AOT Cache (Ahead-of-Time Class Loading & Linking - JEP 483 / 514)
         if: matrix.platform == 'windows'
         shell: pwsh
-        continue-on-error: true
-        timeout-minutes: 5
+        timeout-minutes: 8
         run: |
-          ./gradlew :app:createDistributable -Pcp.jbrHome="${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64" -Pcp.jdk25=true -Pcp.gc=shenandoah -Pcp.compactHeaders=true --no-daemon
-          ./packaging/jbr/generate-aot-cache.ps1 -JavaExe "${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64/bin/java.exe" -OutputFile "${{ github.workspace }}/packaging/jbr/app-aot.aot"
+          ./gradlew :app:createDistributable \
+            -Pcp.jbrHome="${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64" \
+            -Pcp.vpkPath="${{ github.workspace }}/.tools/vpk.exe" \
+            -Papp.versionName="${{ needs.meta.outputs.version }}" \
+            -Papp.releaseChannel="${{ needs.meta.outputs.channel }}" \
+            -Pcp.jdk25=true \
+            -Pcp.gc=shenandoah \
+            -Pcp.compactHeaders=true \
+            --no-daemon
+          ./packaging/jbr/generate-aot-cache.ps1 \
+            -JavaExe "${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64/bin/java.exe" \
+            -OutputFile "${{ github.workspace }}/packaging/jbr/app-aot.aot" \
+            -VersionName "${{ needs.meta.outputs.version }}" \
+            -ReleaseChannel "${{ needs.meta.outputs.channel }}"
 
       - name: Generate AOT Cache (Linux - JEP 483 / 514)
         if: matrix.platform == 'linux'
         shell: bash
-        continue-on-error: true
-        timeout-minutes: 5
+        timeout-minutes: 8
         run: |
+          # Linux Runner 为无头环境，必须具备 Xvfb 以便 Compose/Skiko 图形上下文初始化
+          command -v xvfb-run >/dev/null 2>&1 || { sudo apt-get update -y && sudo apt-get install -y xvfb; }
           # Linux 包（deb/tar.gz）的 Gradle 任务会复用 createDistributable 产物，
-          # 在这里先跑一遍 createDistributable + AOT Cache 生成，
-          # Gradle 打包时会自动把 app-aot.aot 注入进 lib/app/ 并更新 CPPlayer.cfg。
-          # generate-aot-cache.sh 从 .cfg 读精确类路径（不用 glob），与 PS1 版本行为对齐。
+          # 必须传入与最终打包完全相同的版本号与渠道属性，保证 ProGuard 产物 100% 匹配且后续不会因输入变化而重构。
           ./gradlew :app:createDistributable \
             -Pcp.jbrHome="${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64" \
-            -Pcp.jdk25=true -Pcp.gc=shenandoah -Pcp.compactHeaders=true --no-daemon
+            -Papp.versionName="${{ needs.meta.outputs.version }}" \
+            -Papp.releaseChannel="${{ needs.meta.outputs.channel }}" \
+            -Pcp.jdk25=true \
+            -Pcp.gc=shenandoah \
+            -Pcp.compactHeaders=true \
+            --no-daemon
           CP_JBR_HOME="${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64" \
-            bash packaging/jbr/generate-aot-cache.sh \
-            "${{ github.workspace }}/packaging/jbr/app-aot.aot"
+            xvfb-run -a bash packaging/jbr/generate-aot-cache.sh \
+            "${{ github.workspace }}/packaging/jbr/app-aot.aot" \
+            "${{ needs.meta.outputs.version }}" \
+            "${{ needs.meta.outputs.channel }}"
 
       - name: Build desktop package
         shell: bash
@@ -259,6 +276,23 @@ jobs:
             -Pcp.gc=shenandoah \
             -Pcp.compactHeaders=true \
             -Pcp.jdk25=true
+      - name: Verify Windows AOT Cache Injection
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $aotPath = "app/build/compose/binaries/main/app/CPPlayer/app/app-aot.aot"
+          if (-not (Test-Path $aotPath)) {
+            Write-Error "Windows app-image missing app-aot.aot! AOT Cache injection failed."
+            exit 1
+          }
+          $cfgPath = "app/build/compose/binaries/main/app/CPPlayer/app/CPPlayer.cfg"
+          $cfgContent = Get-Content $cfgPath -Raw
+          if ($cfgContent -notmatch "-XX:AOTCache=") {
+            Write-Error "CPPlayer.cfg missing -XX:AOTCache entry!"
+            exit 1
+          }
+          Write-Host "Verified Windows AOT Cache and CPPlayer.cfg successfully configured." -ForegroundColor Green
+
       # tar.gz 的执行位全靠打包时原样保留，这里只做布局断言（缺关键文件立刻失败，
       # 别等到用户解压才发现）。执行位无法从 tar 列表读出，AUR 的 package() 里有
       # chmod 兜底（见 packaging/aur/cpplayer-bin/PKGBUILD）。
@@ -289,9 +323,11 @@ jobs:
           # Linux app-image 布局（与 Windows 不同 —— Windows 启动器在根、运行时在 runtime/）：
           #   CPPlayer/bin/CPPlayer                    启动器
           #   CPPlayer/lib/app/*.jar + CPPlayer.cfg
+          #   CPPlayer/lib/app/app-aot.aot              AOT Cache 预链接归档
           #   CPPlayer/lib/runtime/{release,lib/modules,lib/server/libjvm.so,...}
           for p in \
             'CPPlayer/bin/CPPlayer' \
+            'CPPlayer/lib/app/app-aot.aot' \
             'CPPlayer/lib/runtime/release' \
             'CPPlayer/lib/runtime/lib/modules'
           do
