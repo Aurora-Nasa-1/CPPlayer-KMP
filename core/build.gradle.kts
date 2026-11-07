@@ -73,7 +73,10 @@ kotlin {
             // 本地服务器（REST 控制 API）——Ktor CIO，Android 与 Desktop 共用
             implementation(libs.ktor.server.core)
             implementation(libs.ktor.server.cio)
-            // JNA 本地库调用（Android 与 Desktop 共用）
+            // JNA 本地库调用（Android 与 Desktop 共用编译期符号；运行期 Desktop 走 jar，Android 走 aar）
+            compileOnly(libs.jna)
+        }
+        desktopMain.dependencies {
             implementation(libs.jna)
         }
         androidMain.dependencies {
