@@ -9,10 +9,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 OUTPUT_FILE="${1:-"$SCRIPT_DIR/app-aot.aot"}"
+VERSION_NAME="${2:-${APP_VERSION_NAME:-}}"
+RELEASE_CHANNEL="${3:-${APP_RELEASE_CHANNEL:-stable}}"
 
 echo "=========================================================="
 echo "  CPPlayer AOT Cache Generator (JDK 25 / JEP 483 & 514)  "
 echo "  Destination: $OUTPUT_FILE"
+echo "  Version:     ${VERSION_NAME:-<default>}"
+echo "  Channel:     $RELEASE_CHANNEL"
 echo "=========================================================="
 
 JAVA_BIN="${CP_JBR_HOME:-}/bin/java"
@@ -49,7 +53,24 @@ fi
 
 if [[ ! -d "$APP_DIR" || ! -f "$APP_DIR/CPPlayer.cfg" ]]; then
     echo "[2/4] Assembling distributable image..."
-    (cd "$REPO_ROOT" && ./gradlew :app:createDistributable -x test --quiet)
+    GRADLE_ARGS=(
+        ":app:createDistributable"
+        "-Pcp.jdk25=true"
+        "-Pcp.gc=shenandoah"
+        "-Pcp.compactHeaders=true"
+        "-x" "test"
+        "--quiet"
+    )
+    if [[ -n "${CP_JBR_HOME:-}" ]]; then
+        GRADLE_ARGS+=("-Pcp.jbrHome=$CP_JBR_HOME")
+    fi
+    if [[ -n "$VERSION_NAME" ]]; then
+        GRADLE_ARGS+=("-Papp.versionName=$VERSION_NAME")
+    fi
+    if [[ -n "$RELEASE_CHANNEL" ]]; then
+        GRADLE_ARGS+=("-Papp.releaseChannel=$RELEASE_CHANNEL")
+    fi
+    (cd "$REPO_ROOT" && ./gradlew "${GRADLE_ARGS[@]}")
     if [[ -d "$APP_IMAGE_DIR/lib/app" ]]; then
         APP_DIR="$APP_IMAGE_DIR/lib/app"
     elif [[ -d "$APP_IMAGE_DIR/app" ]]; then
@@ -94,18 +115,31 @@ JVM_ARGS=(
     "-XX:+ShenandoahUncommit"
     "-XX:+UseCompactObjectHeaders"
     "--enable-native-access=ALL-UNNAMED"
-    "-Xms128m"
-    "-Xmx512m"
+    "-Xms64m"
+    "-Xmx256m"
     "-Dskiko.library.path=$APP_DIR"
     "-Dcp.player.aotWarmup=true"
-    "-Dcp.player.releaseChannel=stable"
-    "-cp" "$EFFECTIVE_CP"
+    "-Dcp.player.releaseChannel=$RELEASE_CHANNEL"
 )
+if [[ -n "$VERSION_NAME" ]]; then
+    JVM_ARGS+=("-Dcp.player.versionName=$VERSION_NAME")
+fi
+if "$JAVA_BIN" --enable-preview -version &>/dev/null; then
+    JVM_ARGS+=("--enable-preview")
+fi
+JVM_ARGS+=("-cp" "$EFFECTIVE_CP")
+
+# 无头 Linux 环境自动采用 xvfb-run 包裹图形上下文
+RUN_CMD=("$JAVA_BIN")
+if [[ -z "${DISPLAY:-}" ]] && command -v xvfb-run &>/dev/null; then
+    echo "  Notice: No DISPLAY detected; wrapping JVM run with xvfb-run..."
+    RUN_CMD=(xvfb-run -a "$JAVA_BIN")
+fi
 
 # Test for JEP 514 support
 if "$JAVA_BIN" -XX:AOTCacheOutput=/dev/null -version &>/dev/null; then
     echo "  Using JEP 514 One-Shot Ahead-of-Time Command-Line Ergonomics..."
-    timeout 60s "$JAVA_BIN" "-XX:AOTCacheOutput=$OUTPUT_FILE" "${JVM_ARGS[@]}" cp.player.app.MainKt || true
+    timeout 60s "${RUN_CMD[@]}" "-XX:AOTCacheOutput=$OUTPUT_FILE" "${JVM_ARGS[@]}" cp.player.app.MainKt || true
     # JEP 514 在父进程退出后由子进程异步写 .aot 文件；等待最多 30 秒让其完成。
     CONFIG_FILE="${OUTPUT_FILE}.config"
     deadline=$((SECONDS + 30))
@@ -115,9 +149,9 @@ if "$JAVA_BIN" -XX:AOTCacheOutput=/dev/null -version &>/dev/null; then
 else
     echo "  Falling back to JEP 483 two-step workflow..."
     CONFIG_FILE="${OUTPUT_FILE%.*}.aotconf"
-    timeout 60s "$JAVA_BIN" "-XX:AOTMode=record" "-XX:AOTConfiguration=$CONFIG_FILE" "${JVM_ARGS[@]}" cp.player.app.MainKt || true
+    timeout 60s "${RUN_CMD[@]}" "-XX:AOTMode=record" "-XX:AOTConfiguration=$CONFIG_FILE" "${JVM_ARGS[@]}" cp.player.app.MainKt || true
     if [[ -f "$CONFIG_FILE" ]]; then
-        timeout 60s "$JAVA_BIN" "-XX:AOTMode=create" "-XX:AOTConfiguration=$CONFIG_FILE" "-XX:AOTCache=$OUTPUT_FILE" "-cp" "$EFFECTIVE_CP" || true
+        timeout 60s "${RUN_CMD[@]}" "-XX:AOTMode=create" "-XX:AOTConfiguration=$CONFIG_FILE" "-XX:AOTCache=$OUTPUT_FILE" "-cp" "$EFFECTIVE_CP" || true
         rm -f "$CONFIG_FILE"
     fi
 fi
@@ -129,6 +163,26 @@ if [[ -f "$OUTPUT_FILE" ]]; then
     echo "  AOT Cache successfully generated: ${SIZE_MB} MB"
     echo "  Mount flag: -XX:AOTCache=$OUTPUT_FILE"
     echo "=========================================================="
+
+    echo "  Validating archive mount with launcher classpath..."
+    VERIFY_ARGS=(
+        "-XX:AOTCache=$OUTPUT_FILE"
+        "-XX:+UnlockExperimentalVMOptions"
+        "-XX:+UseCompactObjectHeaders"
+        "--enable-native-access=ALL-UNNAMED"
+    )
+    if "$JAVA_BIN" --enable-preview -version &>/dev/null; then
+        VERIFY_ARGS+=("--enable-preview")
+    fi
+    VERIFY_ARGS+=("-cp" "$EFFECTIVE_CP" "-version")
+    VERIFY_OUT="$("$JAVA_BIN" "${VERIFY_ARGS[@]}" 2>&1 || true)"
+    if grep -q "sharing" <<<"$VERIFY_OUT" && ! grep -qi "error" <<<"$VERIFY_OUT"; then
+        echo "  AOT Cache successfully verified in sharing mode!"
+    else
+        echo "  Notice: AOT verification report:"
+        echo "$VERIFY_OUT"
+    fi
 else
-    echo "Warning: AOT cache was not created." >&2
+    echo "Error: AOT cache was not created." >&2
+    exit 1
 fi

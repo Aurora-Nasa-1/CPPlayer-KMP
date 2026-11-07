@@ -14,7 +14,9 @@
 [CmdletBinding()]
 param(
     [string]$OutputFile = "",
-    [string]$JavaExe = ""
+    [string]$JavaExe = "",
+    [string]$VersionName = "",
+    [string]$ReleaseChannel = "stable"
 )
 
 $ErrorActionPreference = "Stop"
@@ -29,6 +31,8 @@ $outputPath = [System.IO.Path]::GetFullPath($OutputFile)
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "  CPPlayer AOT Cache Generator (JDK 25 / JEP 483 & 514)  " -ForegroundColor Cyan
 Write-Host "  Destination: $outputPath" -ForegroundColor Cyan
+Write-Host ("  Version:     {0}" -f $(if ($VersionName) { $VersionName } else { "<default>" })) -ForegroundColor Cyan
+Write-Host ("  Channel:     {0}" -f $ReleaseChannel) -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 # 1. Locate Java executable
@@ -111,7 +115,18 @@ if (-not (Test-Path (Join-Path $appDir "CPPlayer.cfg"))) {
     Push-Location $repoRoot
     try {
         $jbrDir = (Get-Item $JavaExe).Directory.Parent.FullName
-        ./gradlew :app:createDistributable "-Pcp.jbrHome=$jbrDir" "-Pcp.jdk25=true" "-Pcp.gc=shenandoah" "-Pcp.compactHeaders=true" -x test --quiet
+        $gradleArgs = @(
+            ":app:createDistributable",
+            "-Pcp.jbrHome=$jbrDir",
+            "-Pcp.jdk25=true",
+            "-Pcp.gc=shenandoah",
+            "-Pcp.compactHeaders=true",
+            "-x", "test",
+            "--quiet"
+        )
+        if ($VersionName) { $gradleArgs += "-Papp.versionName=$VersionName" }
+        if ($ReleaseChannel) { $gradleArgs += "-Papp.releaseChannel=$ReleaseChannel" }
+        ./gradlew @gradleArgs
         if ($LASTEXITCODE -ne 0) {
             Write-Warning "Gradle createDistributable returned non-zero exit code ($LASTEXITCODE)"
         }
@@ -146,13 +161,19 @@ $jvmTrainingArgs = @(
     "-XX:+ShenandoahUncommit",
     "-XX:+UseCompactObjectHeaders",
     "--enable-native-access=ALL-UNNAMED",
-    "-Xms128m",
-    "-Xmx512m",
+    "-Xms64m",
+    "-Xmx256m",
     "-Dskiko.library.path=app",
     "-Dcp.player.aotWarmup=true",
-    "-Dcp.player.releaseChannel=stable",
-    "-cp", $effectiveClasspath
+    "-Dcp.player.releaseChannel=$ReleaseChannel"
 )
+if ($VersionName) {
+    $jvmTrainingArgs += "-Dcp.player.versionName=$VersionName"
+}
+if ($isJdk25) {
+    $jvmTrainingArgs += "--enable-preview"
+}
+$jvmTrainingArgs += @("-cp", $effectiveClasspath)
 
 Push-Location $appImageDir
 try {
@@ -209,7 +230,10 @@ if (Test-Path $outputPath) {
             "-XX:AOTCache=$outputPath",
             "-XX:+UnlockExperimentalVMOptions",
             "-XX:+UseCompactObjectHeaders",
-            "--enable-native-access=ALL-UNNAMED",
+            "--enable-native-access=ALL-UNNAMED"
+        )
+        if ($isJdk25) { $verifyArgs += "--enable-preview" }
+        $verifyArgs += @(
             "-cp", $effectiveClasspath,
             "-version"
         )
@@ -226,5 +250,5 @@ if (Test-Path $outputPath) {
         Pop-Location
     }
 } else {
-    Write-Warning "AOT Cache generation failed or file was not output. Ensure JVM supports Project Leyden AOT features."
+    throw "AOT Cache generation failed or file was not output. Ensure JVM supports Project Leyden AOT features."
 }
