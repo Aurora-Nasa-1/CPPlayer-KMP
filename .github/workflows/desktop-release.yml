@@ -214,9 +214,27 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         continue-on-error: true
+        timeout-minutes: 5
         run: |
           ./gradlew :app:createDistributable -Pcp.jbrHome="${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64" -Pcp.jdk25=true -Pcp.gc=shenandoah -Pcp.compactHeaders=true --no-daemon
           ./packaging/jbr/generate-aot-cache.ps1 -JavaExe "${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64/bin/java.exe" -OutputFile "${{ github.workspace }}/packaging/jbr/app-aot.aot"
+
+      - name: Generate AOT Cache (Linux - JEP 483 / 514)
+        if: matrix.platform == 'linux'
+        shell: bash
+        continue-on-error: true
+        timeout-minutes: 5
+        run: |
+          # Linux 包（deb/tar.gz）的 Gradle 任务会复用 createDistributable 产物，
+          # 在这里先跑一遍 createDistributable + AOT Cache 生成，
+          # Gradle 打包时会自动把 app-aot.aot 注入进 lib/app/ 并更新 CPPlayer.cfg。
+          # generate-aot-cache.sh 从 .cfg 读精确类路径（不用 glob），与 PS1 版本行为对齐。
+          ./gradlew :app:createDistributable \
+            -Pcp.jbrHome="${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64" \
+            -Pcp.jdk25=true -Pcp.gc=shenandoah -Pcp.compactHeaders=true --no-daemon
+          CP_JBR_HOME="${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64" \
+            bash packaging/jbr/generate-aot-cache.sh \
+            "${{ github.workspace }}/packaging/jbr/app-aot.aot"
 
       - name: Build desktop package
         shell: bash
