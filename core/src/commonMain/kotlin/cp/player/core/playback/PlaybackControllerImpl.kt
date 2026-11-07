@@ -929,11 +929,15 @@ class PlaybackControllerImpl(
         namespace: String,
     ) {
         localizeJob?.cancel()
-        updateState { it.copy(isLocalizing = true) }
+        val rawLevel = cacheKey.substringAfterLast('@', "")
+        val isLossless = rawLevel.substringBefore('#') in StreamLocalizer.LOSSLESS_LEVELS
+        if (isLossless) {
+            updateState { it.copy(isLocalizing = true) }
+        }
         localizeJob = scope.launch {
             if (loadGeneration != gen) return@launch
             if (cacheNamespaceOf(mediaId) != namespace) {
-                updateState { it.copy(isLocalizing = false) }
+                if (isLossless) updateState { it.copy(isLocalizing = false) }
                 return@launch
             }
             val path = streamLocalizer.localize(url, cacheKey, headers, meta)
@@ -941,7 +945,7 @@ class PlaybackControllerImpl(
             if (loadGeneration != gen) return@launch
             if (path != null && cacheNamespaceOf(mediaId) == namespace) localized = mediaId to path
             // 成败都要收回提示：失败时本曲就是「能播但不能拖」，不能一直挂着「缓存中」。
-            updateState { it.copy(isLocalizing = false) }
+            if (isLossless) updateState { it.copy(isLocalizing = false) }
         }
     }
 
@@ -1980,6 +1984,9 @@ class PlaybackControllerImpl(
             val cacheKey = cacheKeyOf(mediaId, actualLevel, namespace)
             val localizing = streamLocalizer.isLocalizing(actualLevel)
             val cachedLocal = if (localizing) streamLocalizer.cachedPath(cacheKey) else null
+            if (cachedLocal != null) {
+                streamLocalizer.recordMetadata(cacheKey, SongCacheMeta(title = summary.name, artist = summary.artist))
+            }
             // 换曲即作废上一首的后台落盘与「可切本地」状态，避免串曲。
             localizeJob?.cancel()
             localized = cachedLocal?.let { mediaId to it }

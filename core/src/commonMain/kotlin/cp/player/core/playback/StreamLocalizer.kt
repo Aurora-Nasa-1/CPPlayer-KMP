@@ -176,6 +176,13 @@ interface StreamLocalizer {
         return localize(url, cacheKey, headers, meta)
     }
 
+    /**
+     * 补充或修复缓存元信息（供缓存命中时补录遗漏的歌名 / 歌手）。
+     *
+     * 默认空实现：不支持落盘的平台无需记录。
+     */
+    fun recordMetadata(cacheKey: String, meta: SongCacheMeta?) {}
+
     // ======================== 管理面 ========================
     //
     // 这一组**全部带默认实现**：安卓（ExoPlayer 能定位 HTTP FLAC，从不落盘）与测试替身

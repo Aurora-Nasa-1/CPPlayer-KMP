@@ -123,6 +123,7 @@ fun SharedTransitionScope.MiniPlayer(
     onTogglePlay: () -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrev: () -> Unit = {},
+    isDockedToBottomBar: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val track = state.currentTrack ?: return
@@ -143,6 +144,29 @@ fun SharedTransitionScope.MiniPlayer(
     val showLyrics by AppModel.showMiniPlayerLyricsFlow.collectAsState()
     val secondLineText = if (showLyrics) currentLyricLine(state) else ""
 
+    // 手机端在底栏收缩隐藏或无底栏页面时，下方圆角与上方圆角随动过渡到屏幕圆角
+    val screenCorner = rememberScreenCornerRadius()
+    val targetBottomCorner = if (desktop || isDockedToBottomBar) 16.dp else screenCorner
+    val targetTopCorner = if (desktop || isDockedToBottomBar) 28.dp else screenCorner
+    val animatedBottomCorner by animateDpAsState(
+        targetValue = targetBottomCorner,
+        animationSpec = CpMotion.spatial(),
+        label = "miniPlayerBottomCorner",
+    )
+    val animatedTopCorner by animateDpAsState(
+        targetValue = targetTopCorner,
+        animationSpec = CpMotion.spatial(),
+        label = "miniPlayerTopCorner",
+    )
+    val currentShape = remember(animatedTopCorner, animatedBottomCorner) {
+        RoundedCornerShape(
+            topStart = animatedTopCorner,
+            topEnd = animatedTopCorner,
+            bottomStart = animatedBottomCorner,
+            bottomEnd = animatedBottomCorner,
+        )
+    }
+
     // 队列弹层 / 「更多」弹层的开关（仅桌面分支会用到）。
     var showQueueSheet by remember { mutableStateOf(false) }
     val moreSheets = rememberPlayerMoreSheetState()
@@ -150,7 +174,7 @@ fun SharedTransitionScope.MiniPlayer(
     Surface(
         onClick = onClick,
         interactionSource = press.first,
-        shape = CpShapes.miniPlayer,
+        shape = currentShape,
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp)

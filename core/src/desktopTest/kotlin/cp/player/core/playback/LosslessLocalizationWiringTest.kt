@@ -277,12 +277,12 @@ class LosslessLocalizationWiringTest {
     }
 
     @Test
-    fun `lossless tiers are recognized and lossy ones are not`() {
+    fun `all valid tiers are localized on desktop`() {
         val localizer = DesktopStreamLocalizer(cacheDir = java.io.File("build-verify-tmp-unused"))
         assertTrue(localizer.isLocalizing("lossless"))
         assertTrue(localizer.isLocalizing("hires"))
-        assertFalse(localizer.isLocalizing("exhigh"))
-        assertFalse(localizer.isLocalizing("standard"))
+        assertTrue(localizer.isLocalizing("exhigh"))
+        assertTrue(localizer.isLocalizing("standard"))
     }
 
     @Test

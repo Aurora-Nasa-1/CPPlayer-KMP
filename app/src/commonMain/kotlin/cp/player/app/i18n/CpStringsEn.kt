@@ -230,7 +230,7 @@ object CpStringsEn : CpStrings {
 
         override val sectionSongCache = "Song cache"
         override val cachedSongs = "Cached songs"
-        override val cachedSongsEmpty = "Nothing cached — lossless tracks are cached as you play them"
+        override val cachedSongsEmpty = "Nothing cached — tracks are cached as you play them"
         override fun cachedSongsSummary(count: Int, bytes: String, capacity: String) =
             "$count tracks · $bytes of $capacity"
         override val cacheCapacity = "Capacity limit"

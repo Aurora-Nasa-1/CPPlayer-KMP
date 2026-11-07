@@ -45,6 +45,26 @@ class AndroidStreamLocalizer(private val context: Context) : StreamLocalizer {
         SharedMedia3Player.setCapacityBytes(context, bytes)
     }
 
+    override fun recordMetadata(cacheKey: String, meta: SongCacheMeta?) {
+        if (meta == null || meta.title.isNullOrBlank()) return
+        val existing = index.metaOf(cacheKey)
+        if (existing?.title.isNullOrBlank()) {
+            val qualityKey = cacheKey.substringAfterLast('@', "")
+            val level = if (qualityKey.isBlank() || qualityKey == cacheKey) null else qualityKey.substringBefore('#')
+            val mediaId = if (level != null) cacheKey.substringBeforeLast('@') else cacheKey
+            index.put(
+                cacheKey,
+                StreamCacheMetaRecord(
+                    mediaId = mediaId,
+                    qualityLevel = level,
+                    title = meta.title,
+                    artist = meta.artist,
+                    recordedAtMs = System.currentTimeMillis(),
+                ),
+            )
+        }
+    }
+
     override fun entries(): List<SongCacheEntry> {
         return runCatching {
             val c = cache
@@ -57,7 +77,8 @@ class AndroidStreamLocalizer(private val context: Context) : StreamLocalizer {
                 val bytes = spans.sumOf { it.length }
                 val lastAccessMs = spans.maxOfOrNull { it.lastTouchTimestamp } ?: 0L
                 val record = idx.metaOf(key)
-                val level = record?.qualityLevel ?: key.substringAfterLast('@', "").takeIf { it.isNotBlank() && it != key }
+                val rawLevel = record?.qualityLevel ?: key.substringAfterLast('@', "").takeIf { it.isNotBlank() && it != key }
+                val level = rawLevel?.substringBefore('#')
                 val mediaId = record?.mediaId ?: if (level != null) key.substringBeforeLast('@') else key
                 SongCacheEntry(
                     id = key,

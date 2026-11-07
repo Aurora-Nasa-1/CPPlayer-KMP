@@ -118,13 +118,26 @@ object SharedMedia3Player {
     }
 
     @Synchronized
-    internal fun getIndex(context: android.content.Context): StreamCacheIndex =
-        cacheIndex ?: StreamCacheIndex(
-            File(File(context.cacheDir, CACHE_DIR_NAME), "index.json")
-        ).also { cacheIndex = it }
+    internal fun getIndex(context: android.content.Context): StreamCacheIndex {
+        val existing = cacheIndex
+        if (existing != null) return existing
+        // ⚠️ 绝不能存放在 context.cacheDir/media 目录：
+        // SimpleCache 每次初始化都会把无法识别为分片的文件直接 file.delete()！
+        // 存放在 filesDir 避免被 SimpleCache 误杀，也避免系统低存储空间清理缓存时丢失曲目展示信息。
+        val target = File(context.filesDir, "stream_cache_index.json")
+        val legacy = File(File(context.cacheDir, CACHE_DIR_NAME), "index.json")
+        if (!target.exists() && legacy.exists()) {
+            runCatching {
+                legacy.copyTo(target, overwrite = true)
+                legacy.delete()
+            }
+        }
+        return StreamCacheIndex.get(target).also { cacheIndex = it }
+    }
 
     fun recordMetadata(context: android.content.Context, key: String, metadata: PlaybackMetadata?) {
-        val level = key.substringAfterLast('@', "").takeIf { it.isNotBlank() && it != key }
+        val qualityKey = key.substringAfterLast('@', "")
+        val level = if (qualityKey.isBlank() || qualityKey == key) null else qualityKey.substringBefore('#')
         val mediaId = metadata?.id ?: if (level != null) key.substringBeforeLast('@') else null
         getIndex(context).put(
             key,
@@ -133,6 +146,7 @@ object SharedMedia3Player {
                 qualityLevel = level,
                 title = metadata?.title,
                 artist = metadata?.artist,
+                recordedAtMs = System.currentTimeMillis(),
             )
         )
     }

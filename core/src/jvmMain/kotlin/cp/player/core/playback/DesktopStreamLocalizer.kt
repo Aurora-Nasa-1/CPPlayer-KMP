@@ -50,7 +50,7 @@ class DesktopStreamLocalizer(
      * 必须是**附加**文件：文件名规则与 [sanitize] 的哈希都不能动，否则整盘既存缓存失效。
      * 声明在 [capacityBytes] 之前 —— 后者初始化时要读它的容量设置。
      */
-    private var index = StreamCacheIndex(File(cacheDir, StreamCacheIndex.FILE_NAME))
+    private var index = StreamCacheIndex.get(File(cacheDir, StreamCacheIndex.FILE_NAME))
 
     /**
      * 容量上限。默认取 [maxCacheBytes]，但用户可以在管理页改；
@@ -71,12 +71,25 @@ class DesktopStreamLocalizer(
      */
     private val lock = Mutex()
 
+    /** 桌面端对所有有效格式/音质（MP3、AAC、FLAC、Hi-Res等）均支持本地化落盘缓存。 */
+    override fun isLocalizing(qualityLevel: String): Boolean = qualityLevel.isNotBlank()
+
     override fun cachedPath(cacheKey: String): String? {
         // 只查表、不发网络请求：这个方法在播放路径上被同步调用，必须廉价。
         val hit = cachedFile(sanitize(cacheKey)) ?: return null
         // 触碰访问时间，LRU 才不会把正在听的曲子先淘汰掉。
         hit.setLastModified(System.currentTimeMillis())
         return hit.absolutePath
+    }
+
+    override fun recordMetadata(cacheKey: String, meta: SongCacheMeta?) {
+        if (meta == null || meta.title.isNullOrBlank()) return
+        val stem = sanitize(cacheKey)
+        val hit = cachedFile(stem) ?: return
+        val existing = index.metaOf(hit.name)
+        if (existing?.title.isNullOrBlank()) {
+            recordMeta(hit.name, cacheKey, meta)
+        }
     }
 
     override suspend fun localize(
@@ -116,6 +129,9 @@ class DesktopStreamLocalizer(
         cachedFile(stem)?.let { hit ->
             // 命中：触碰访问时间，LRU 才不会把正在听的曲子先淘汰掉。
             hit.setLastModified(System.currentTimeMillis())
+            if (meta != null && !meta.title.isNullOrBlank() && index.metaOf(hit.name)?.title.isNullOrBlank()) {
+                recordMeta(hit.name, cacheKey, meta)
+            }
             return@withLock hit.absolutePath
         }
 
@@ -361,7 +377,7 @@ class DesktopStreamLocalizer(
             }
 
             cacheDir = target
-            index = StreamCacheIndex(File(target, StreamCacheIndex.FILE_NAME))
+            index = StreamCacheIndex.get(File(target, StreamCacheIndex.FILE_NAME))
             try {
                 defaultSettingsStorage(SETTINGS_NAMESPACE).putString(KEY_CUSTOM_CACHE_DIR, target.absolutePath)
             } catch (_: Exception) {}

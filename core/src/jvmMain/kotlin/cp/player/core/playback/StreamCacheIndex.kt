@@ -17,6 +17,7 @@ internal data class StreamCacheMetaRecord(
     val qualityLevel: String? = null,
     val title: String? = null,
     val artist: String? = null,
+    val recordedAtMs: Long = 0L,
 )
 
 /** 索引文件的结构。 */
@@ -63,6 +64,7 @@ internal class StreamCacheIndex(private val file: File) {
     private val json = Json { ignoreUnknownKeys = true }
 
     private var loaded = false
+    private var lastLoadedModified: Long = 0L
     private var capacity: Long? = null
     private val records = mutableMapOf<String, StreamCacheMetaRecord>()
 
@@ -90,7 +92,8 @@ internal class StreamCacheIndex(private val file: File) {
     @Synchronized
     fun put(fileName: String, record: StreamCacheMetaRecord) {
         ensureLoaded()
-        records[fileName] = record
+        val toSave = if (record.recordedAtMs > 0L) record else record.copy(recordedAtMs = System.currentTimeMillis())
+        records[fileName] = toSave
         flush()
     }
 
@@ -100,11 +103,18 @@ internal class StreamCacheIndex(private val file: File) {
         if (records.remove(fileName) != null) flush()
     }
 
-    /** 丢弃不在 [existing] 里的记录：被外部（文件管理器）删掉的文件不该在索引里留尸。 */
+    /** 丢弃不在 [existing] 里的记录：被外部（文件管理器）删掉的文件不该在索引里留尸。带宽限期防并发落盘未就绪。 */
     @Synchronized
-    fun retainOnly(existing: Set<String>) {
+    fun retainOnly(existing: Set<String>, gracePeriodMs: Long = 120_000L) {
         ensureLoaded()
-        if (records.keys.retainAll(existing)) flush()
+        val now = System.currentTimeMillis()
+        val toRemove = records.filter { (k, v) ->
+            k !in existing && (v.recordedAtMs <= 0L || (now - v.recordedAtMs) > gracePeriodMs)
+        }.keys
+        if (toRemove.isNotEmpty()) {
+            toRemove.forEach { records.remove(it) }
+            flush()
+        }
     }
 
     /** 清空全部记录，**保留**容量设置。 */
@@ -118,14 +128,16 @@ internal class StreamCacheIndex(private val file: File) {
     }
 
     private fun ensureLoaded() {
-        if (loaded) return
+        val source = file.takeIf { it.isFile }
+        val currentMod = source?.lastModified() ?: 0L
+        if (loaded && currentMod == lastLoadedModified) return
         loaded = true
-        // 索引缺失 / 损坏 / 字段不认识 ⇒ 当作「空的旧索引」继续跑。
-        // 它只是一份展示用的元信息，绝不能因为读不出来就让缓存不可用。
-        val source = file.takeIf { it.isFile } ?: return
+        lastLoadedModified = currentMod
+        if (source == null) return
         val parsed = runCatching { json.decodeFromString<StreamCacheIndexFile>(source.readText()) }
             .getOrNull() ?: return
         capacity = parsed.capacityBytes
+        records.clear()
         records.putAll(parsed.entries)
     }
 
@@ -140,11 +152,19 @@ internal class StreamCacheIndex(private val file: File) {
                 file.delete()
                 if (!tmp.renameTo(file)) tmp.delete()
             }
+            lastLoadedModified = file.takeIf { it.isFile }?.lastModified() ?: 0L
         }
     }
 
     internal companion object {
         const val FILE_NAME = "index.json"
         const val TMP_SUFFIX = ".tmp"
+        private val instances = mutableMapOf<String, StreamCacheIndex>()
+
+        @Synchronized
+        fun get(file: File): StreamCacheIndex {
+            val canonical = runCatching { file.canonicalPath }.getOrDefault(file.absolutePath)
+            return instances.getOrPut(canonical) { StreamCacheIndex(file) }
+        }
     }
 }

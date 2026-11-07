@@ -226,7 +226,7 @@ object CpStringsZh : CpStrings {
 
         override val sectionSongCache = "歌曲缓存"
         override val cachedSongs = "已缓存歌曲"
-        override val cachedSongsEmpty = "暂无缓存；播放无损音质的歌曲时会自动缓存"
+        override val cachedSongsEmpty = "暂无缓存；播放歌曲时会自动缓存"
         override fun cachedSongsSummary(count: Int, bytes: String, capacity: String) =
             "$count 首 · 共 $bytes / 上限 $capacity"
         override val cacheCapacity = "容量上限"

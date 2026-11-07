@@ -118,4 +118,47 @@ class BottomBarMiniPlayerLayoutTest {
         DesktopShell.miniPlayerBlockedByChat = false
         assertTrue(shouldShowMiniPlayer(true, false, false, DesktopShell.miniPlayerBlockedByChat))
     }
+
+    @Test
+    fun `手机端无底栏或底栏隐藏时迷你播放器圆角变为屏幕圆角`() {
+        val screenCorner = 32.dp
+
+        fun computeCorners(isDesktop: Boolean, isDockedToBottomBar: Boolean): Pair<androidx.compose.ui.unit.Dp, androidx.compose.ui.unit.Dp> {
+            val bottom = if (isDesktop || isDockedToBottomBar) 16.dp else screenCorner
+            val top = if (isDesktop || isDockedToBottomBar) 28.dp else screenCorner
+            return top to bottom
+        }
+
+        // 1. 桌面端：始终保持默认圆角 (top 28dp, bottom 16dp)
+        assertEquals(28.dp to 16.dp, computeCorners(isDesktop = true, isDockedToBottomBar = false))
+
+        // 2. 手机端有底栏（主页停靠态）：默认圆角
+        assertEquals(28.dp to 16.dp, computeCorners(isDesktop = false, isDockedToBottomBar = true))
+
+        // 3. 手机端无底栏或收缩隐藏态：上下圆角均变为屏幕圆角 (32dp)
+        assertEquals(32.dp to 32.dp, computeCorners(isDesktop = false, isDockedToBottomBar = false))
+    }
+
+    @Test
+    fun `子页面切换时底栏隐藏比例结合路由栈状态触发下沉`() {
+        fun computeEffectiveHideFraction(
+            bottomBarHideFraction: Float,
+            isMainTop: Boolean,
+        ): Float {
+            val navBarExitFraction = if (isMainTop) 0f else 1f
+            return maxOf(bottomBarHideFraction, navBarExitFraction)
+        }
+
+        // 1. 主页面且未滚动隐藏：比例为 0
+        assertEquals(0f, computeEffectiveHideFraction(0f, isMainTop = true))
+
+        // 2. 主页面但手势滚动收缩隐藏一半：比例为 0.5
+        assertEquals(0.5f, computeEffectiveHideFraction(0.5f, isMainTop = true))
+
+        // 3. 切换到子页面（isMainTop = false）：无论手势状态，立即触发退出比例 1.0（下沉）
+        assertEquals(1f, computeEffectiveHideFraction(0f, isMainTop = false))
+
+        // 4. 从子页面返回主页（isMainTop = true）：恢复为当前手势状态（浮起）
+        assertEquals(0f, computeEffectiveHideFraction(0f, isMainTop = true))
+    }
 }

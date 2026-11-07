@@ -418,7 +418,17 @@ fun App(
                                                                 stiffness = 400f,
                                                                 visibilityThreshold = IntOffset.VisibilityThreshold,
                                                             )
-                                                            if (navigator.lastEvent == StackEvent.Pop) {
+                                                            if (!isDesktop && initialState is MainScreen && targetState !is MainScreen) {
+                                                                // 手机端从主页进入无底栏子页面：子页面从右侧滑入，主页原地淡出并让底栏下沉
+                                                                (slideInHorizontally(spec) { it } togetherWith fadeOut(tween(220))).apply {
+                                                                    targetContentZIndex = 1f
+                                                                }
+                                                            } else if (!isDesktop && targetState is MainScreen && initialState !is MainScreen) {
+                                                                // 手机端从无底栏子页面返回主页：子页面向右滑出，主页淡入并让底栏浮起
+                                                                (fadeIn(tween(220)) togetherWith slideOutHorizontally(spec) { it }).apply {
+                                                                    targetContentZIndex = -1f
+                                                                }
+                                                            } else if (navigator.lastEvent == StackEvent.Pop) {
                                                                 slideInHorizontally(spec) { -it } togetherWith
                                                                     slideOutHorizontally(spec) { it }
                                                             } else {
@@ -536,7 +546,8 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
     val expanded = cp.player.app.ui.component.LocalIsExpanded.current
     val bottomBarVisiblePx = cp.player.app.ui.util.DesktopShell.miniPlayerBottomBarVisiblePx
     val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val bottomGap = when {
+    val isBottomBarShowing = mainScreenVisible && (bottomBarVisiblePx > 0.5f || bottomBarVisiblePx < 0f)
+    val targetBottomGap = when {
         mainScreenVisible && expanded -> 24.dp
         mainScreenVisible -> {
             val barDp = if (bottomBarVisiblePx >= 0f) {
@@ -544,14 +555,23 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
             } else {
                 80.dp
             }
-            maxOf(barDp, navigationBarInset) + 12.dp
+            if (barDp <= 0.5.dp) {
+                navigationBarInset
+            } else {
+                maxOf(barDp, navigationBarInset) + 12.dp
+            }
         }
         else -> navigationBarInset
     }
+    val animatedBottomGap by animateDpAsState(
+        targetValue = targetBottomGap,
+        animationSpec = cp.player.app.ui.theme.CpMotion.spatial(),
+        label = "miniPlayerBottomGap",
+    )
     val tailSpace by animateDpAsState(
         targetValue = if (show && hasTrack && barHeightPx > 0) {
             with(density) { barHeightPx.toDp() } + 12.dp +
-                if (mainScreenVisible && expanded) bottomGap else 0.dp
+                if (mainScreenVisible && expanded) animatedBottomGap else 0.dp
         } else 0.dp,
         animationSpec = cp.player.app.ui.theme.CpMotion.spatial(),
         label = "globalMiniPlayerTail",
@@ -567,9 +587,10 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
             pageContent()
             GlobalMiniPlayerBar(
                 show = show,
+                isDockedToBottomBar = isBottomBarShowing,
                 onClick = onClick,
                 onBarHeight = { barHeightPx = it },
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = bottomGap),
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = animatedBottomGap),
             )
         }
     }
@@ -585,6 +606,7 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
 @Composable
 private fun SharedTransitionScope.GlobalMiniPlayerBar(
     show: Boolean,
+    isDockedToBottomBar: Boolean,
     onClick: () -> Unit,
     onBarHeight: (Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -606,6 +628,7 @@ private fun SharedTransitionScope.GlobalMiniPlayerBar(
                 MiniPlayer(
                     state = playbackState,
                     animatedVisibilityScope = animScope,
+                    isDockedToBottomBar = isDockedToBottomBar,
                     onClick = onClick,
                     onTogglePlay = AppModel.playback::togglePlayPause,
                     onSkipPrev = AppModel.playback::skipPrevious,

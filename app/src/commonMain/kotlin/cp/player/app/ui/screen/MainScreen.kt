@@ -642,11 +642,18 @@ class MainScreen : Screen {
                             )
                         },
                         bottomBar = {
+                            val isTopScreen = navigator?.lastItem is MainScreen
+                            val navBarExitFraction by animateFloatAsState(
+                                targetValue = if (isTopScreen) 0f else 1f,
+                                animationSpec = cp.player.app.ui.theme.CpMotion.spatial(),
+                                label = "navBarExitFraction",
+                            )
+                            val effectiveHideFraction = maxOf(bottomBarHide.fraction, navBarExitFraction)
                             AppNavigationBar(
                                 tabs,
                                 selectedIndex,
                                 selectTab,
-                                hideFraction = bottomBarHide.fraction,
+                                hideFraction = effectiveHideFraction,
                                 onHeightChanged = { height ->
                                     bottomBarHide.barHeightPx = height.toFloat()
                                     cp.player.app.ui.util.DesktopShell.miniPlayerBottomBarVisiblePx =
