@@ -150,7 +150,7 @@ $jvmTrainingArgs = @(
     "-Xmx512m",
     "-Dskiko.library.path=app",
     "-Dcp.player.aotWarmup=true",
-    "-Dcp.player.releaseChannel=debug",
+    "-Dcp.player.releaseChannel=stable",
     "-cp", $effectiveClasspath
 )
 
@@ -159,11 +159,11 @@ try {
     if ($supportsOneShotErgonomics) {
         Write-Host "  Using JEP 514 One-Shot AOTCacheOutput..." -ForegroundColor Green
         $runArgs = @("-XX:AOTCacheOutput=$outputPath") + $jvmTrainingArgs + @("cp.player.app.MainKt")
-        Invoke-JavaWithTimeout -JavaPath $JavaExe -Arguments $runArgs -TimeoutSeconds 25
+        Invoke-JavaWithTimeout -JavaPath $JavaExe -Arguments $runArgs -TimeoutSeconds 60
 
         # HotSpot JEP 514 spawns an assembly child process on exit which writes $outputPath and removes $outputPath.config
         $configPath = "$outputPath.config"
-        $deadline = (Get-Date).AddSeconds(20)
+        $deadline = (Get-Date).AddSeconds(30)
         while ((Test-Path $configPath) -and (Get-Date) -lt $deadline) {
             Start-Sleep -Milliseconds 500
         }
@@ -174,12 +174,12 @@ try {
         if (Test-Path $configPath) { Remove-Item $configPath -Force }
 
         $recordArgs = @("-XX:AOTMode=record", "-XX:AOTConfiguration=$configPath") + $jvmTrainingArgs + @("cp.player.app.MainKt")
-        Invoke-JavaWithTimeout -JavaPath $JavaExe -Arguments $recordArgs -TimeoutSeconds 25
+        Invoke-JavaWithTimeout -JavaPath $JavaExe -Arguments $recordArgs -TimeoutSeconds 60
 
         if (Test-Path $configPath) {
             Write-Host "  Assembling AOT Cache from configuration..." -ForegroundColor Yellow
             $createArgs = @("-XX:AOTMode=create", "-XX:AOTConfiguration=$configPath", "-XX:AOTCache=$outputPath", "-cp", $effectiveClasspath)
-            Invoke-JavaWithTimeout -JavaPath $JavaExe -Arguments $createArgs -TimeoutSeconds 25
+            Invoke-JavaWithTimeout -JavaPath $JavaExe -Arguments $createArgs -TimeoutSeconds 60
             Remove-Item $configPath -Force -ErrorAction SilentlyContinue
         }
     }

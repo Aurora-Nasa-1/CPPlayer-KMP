@@ -77,6 +77,7 @@ kotlin {
             implementation(libs.jna)
         }
         androidMain.dependencies {
+            implementation("net.java.dev.jna:jna:${libs.versions.jna.get()}@aar")
             implementation(libs.kotlinx.coroutines.android)
             // ⚠️ 版本由 1.15.0 提到 1.17.0（gradle/libs.versions.toml）。
             // 原因：歌词投放要用的 `NotificationCompat.setShortCriticalText` /

@@ -45,6 +45,9 @@ android {
         buildConfigField("String", "GIT_SHA", "\"$gitSha\"")
         buildConfigField("String", "RELEASE_CHANNEL", "\"$appReleaseChannel\"")
         buildConfigField("String", "SENTRY_DSN", "\"$sentryDsn\"")
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
     signingConfigs {
         create("release") {
@@ -108,7 +111,11 @@ android {
         isCoreLibraryDesugaringEnabled = true
     }
     packaging {
-        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "com/sun/jna/**"
+            excludes += "/com/sun/jna/**"
+        }
     }
 }
 
@@ -119,7 +126,8 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.exoplayer)
-    implementation(libs.sentry.android)
+    implementation(libs.sentry.android.core)
+    implementation("net.java.dev.jna:jna:${libs.versions.jna.get()}@aar")
     // 核心库脱糖的运行时实现（java.time 等被改写成这些类的调用）。
     // 与 compileOptions.isCoreLibraryDesugaringEnabled 是一对，缺任何一个都不生效：
     // 只开开关不引依赖 → AGP 报 "coreLibraryDesugaring configuration contains no dependencies"。

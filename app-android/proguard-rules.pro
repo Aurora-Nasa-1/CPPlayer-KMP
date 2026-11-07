@@ -132,3 +132,13 @@
 -dontwarn rikka.shizuku.**
 -dontwarn org.lsposed.hiddenapibypass.**
 
+# ---------------------------------------------------------------------------
+# 10. JNA (Java Native Access)
+# ---------------------------------------------------------------------------
+-keepclassmembers class * extends com.sun.jna.Library {
+    public <methods>;
+    public <fields>;
+}
+-keep class com.sun.jna.** { *; }
+-dontwarn com.sun.jna.**
+

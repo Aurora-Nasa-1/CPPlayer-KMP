@@ -45,7 +45,11 @@ class JvmPluginHostApi(
 ) : PluginHostApi {
 
     private val json = Json { ignoreUnknownKeys = true }
-    private val memoryCache = LinkedHashMap<String, CacheEntry>()
+    // ⚠️ 原来是 LinkedHashMap + synchronized：虚拟线程在 object monitor 上等锁时会
+    // 钉住（pin）载体平台线程，导致 carrier 线程池被耗尽。换成 ConcurrentHashMap：
+    // get/put/remove/clear 均无锁，且保持 O(1) 均摊时间复杂度。
+    private val memoryCache = java.util.concurrent.ConcurrentHashMap<String, CacheEntry>()
+
 
     /** 一次调用内的取消标记（预留：超时后拒绝继续发起 HTTP）。 */
     @Volatile
@@ -247,12 +251,20 @@ class JvmPluginHostApi(
 
     private fun cacheGet(key: String): String {
         if (key.isBlank()) return ""
-        synchronized(memoryCache) {
-            memoryCache[key]?.let { entry ->
-                if (entry.expiresAt == 0L || entry.expiresAt > System.currentTimeMillis()) return entry.value
-                memoryCache.remove(key)
+        // ConcurrentHashMap：无需 synchronized。
+        // "读-校验-删" 用 compute 保证原子性，避免两个并发调用同时通过过期校验后各自 remove 一次。
+        var cached: String? = null
+        memoryCache.compute(key) { _, entry ->
+            when {
+                entry == null -> null
+                entry.expiresAt == 0L || entry.expiresAt > System.currentTimeMillis() -> {
+                    cached = entry.value
+                    entry // 保留
+                }
+                else -> null // 已过期，删除
             }
         }
+        cached?.let { return it }
         val disk = cacheRootDir ?: return ""
         val file = File(disk, key.safeCacheName())
         return if (file.isFile) runCatching { file.readText() }.getOrDefault("") else ""
@@ -260,7 +272,7 @@ class JvmPluginHostApi(
 
     private fun cacheSet(key: String, value: String) {
         if (key.isBlank()) return
-        synchronized(memoryCache) { memoryCache[key] = CacheEntry(value, 0L) }
+        memoryCache[key] = CacheEntry(value, 0L)
         cacheRootDir?.let { dir ->
             runCatching {
                 dir.mkdirs()
@@ -270,14 +282,15 @@ class JvmPluginHostApi(
     }
 
     private fun cacheRemove(key: String) {
-        synchronized(memoryCache) { memoryCache.remove(key) }
+        memoryCache.remove(key)
         cacheRootDir?.let { dir -> runCatching { File(dir, key.safeCacheName()).delete() } }
     }
 
     private fun cacheClear() {
-        synchronized(memoryCache) { memoryCache.clear() }
+        memoryCache.clear()
         cacheRootDir?.let { dir -> runCatching { dir.listFiles()?.forEach(File::delete) } }
     }
+
 
     private fun String.safeCacheName(): String =
         "$pluginId-${hashHex("SHA-256", this).take(32)}"

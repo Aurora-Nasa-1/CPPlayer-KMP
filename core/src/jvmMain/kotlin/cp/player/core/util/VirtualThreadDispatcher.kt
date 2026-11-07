@@ -3,6 +3,9 @@ package cp.player.core.util
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
+import java.lang.invoke.MethodHandle
+import java.lang.invoke.MethodHandles
+import java.lang.invoke.MethodType
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -52,6 +55,69 @@ object VirtualThreadDispatcher {
     /** 缓存的可用 ThreadGroup，见 [fallbackThreadGroup]。 */
     @Volatile
     private var cachedThreadGroup: ThreadGroup? = null
+
+    /**
+     * 类加载期一次性初始化的 Loom MethodHandle 缓存。
+     *
+     * 用 MethodHandle 替代 `Method.invoke`：
+     *   - 避免每次 [runOnVirtualThread] / [isVirtualThread] 调用都走 `Class.forName` + `getMethod`；
+     *   - MethodHandle 经 HotSpot C2 内联后开销接近直接调用，比反射快约 10×；
+     *   - Android 上 Loom 类不存在，`init` 块里的所有 forName 失败 → 全部 null，安全降级。
+     */
+    private object LoomHandles {
+        val newVirtualThreadExecutor: MethodHandle?
+        val ofVirtual: MethodHandle?
+        /** OfVirtual.name(String) —— 绑定在**公开接口**上，不是运行时的包私有实现类。 */
+        val builderName: MethodHandle?
+        val builderStart: MethodHandle?
+        val isVirtual: MethodHandle?
+
+        init {
+            val lookup = MethodHandles.publicLookup()
+            var newVTExec: MethodHandle? = null
+            var ofV: MethodHandle? = null
+            var bName: MethodHandle? = null
+            var bStart: MethodHandle? = null
+            var isVirt: MethodHandle? = null
+            runCatching {
+                // Executors.newVirtualThreadPerTaskExecutor()
+                newVTExec = lookup.findStatic(
+                    Executors::class.java,
+                    "newVirtualThreadPerTaskExecutor",
+                    MethodType.methodType(ExecutorService::class.java),
+                )
+                // Thread.ofVirtual() -> Thread.Builder.OfVirtual
+                val ofVirtualClass = Class.forName("java.lang.Thread\$Builder\$OfVirtual")
+                ofV = lookup.findStatic(
+                    Thread::class.java, "ofVirtual",
+                    MethodType.methodType(ofVirtualClass),
+                )
+                // OfVirtual.name(String) -> OfVirtual
+                // ⚠️ 必须从公开接口 OfVirtual 上取：运行时类型是包私有的
+                // ThreadBuilders$VirtualThreadBuilder，对它 lookup 会抛 IllegalAccessException。
+                bName = lookup.findVirtual(
+                    ofVirtualClass, "name",
+                    MethodType.methodType(ofVirtualClass, String::class.java),
+                )
+                // Thread.Builder.start(Runnable) -> Thread
+                val builderClass = Class.forName("java.lang.Thread\$Builder")
+                bStart = lookup.findVirtual(
+                    builderClass, "start",
+                    MethodType.methodType(Thread::class.java, Runnable::class.java),
+                )
+                // Thread.isVirtual() -> boolean
+                isVirt = lookup.findVirtual(
+                    Thread::class.java, "isVirtual",
+                    MethodType.methodType(Boolean::class.javaPrimitiveType),
+                )
+            }
+            newVirtualThreadExecutor = newVTExec
+            ofVirtual = ofV
+            builderName = bName
+            builderStart = bStart
+            isVirtual = isVirt
+        }
+    }
 
     /** 检查当前运行时是否**真的**能用虚拟线程（Java 21+ / Loom，且不是半成品实现）。 */
     val isSupported: Boolean by lazy { !PlatformInfo.isAndroid && probeVirtualThread() }
@@ -103,23 +169,20 @@ object VirtualThreadDispatcher {
      */
     fun runOnVirtualThread(name: String? = null, block: () -> Unit): Thread {
         if (isSupported) {
-            try {
-                val ofVirtualMethod = Thread::class.java.getMethod("ofVirtual")
-                var builder = ofVirtualMethod.invoke(null)
-                if (name != null) {
-                    // ⚠️ Method 必须从**公开接口**上取，不能用 `builder.javaClass`：
-                    // `ofVirtual()` 的运行时类型是 java.base 里包私有的 ThreadBuilders$VirtualThreadBuilder，
-                    // 对它 `getMethod` 拿到的 Method 在 invoke 时抛 IllegalAccessException，被下面的
-                    // catch 吞掉 ⇒ 明明支持虚拟线程的运行时也静默降级成平台线程（此前一直如此）。
-                    val nameMethod = threadBuilderClass("java.lang.Thread\$Builder\$OfVirtual")
-                        .getMethod("name", String::class.java)
-                    builder = nameMethod.invoke(builder, name)
+            val ofV = LoomHandles.ofVirtual
+            val bStart = LoomHandles.builderStart
+            if (ofV != null && bStart != null) {
+                try {
+                    var builder: Any = ofV.invoke()
+                    if (name != null) {
+                        LoomHandles.builderName?.let { bName ->
+                            builder = bName.invoke(builder, name)
+                        }
+                    }
+                    return bStart.invoke(builder, Runnable { block() }) as Thread
+                } catch (_: Throwable) {
+                    // fall through to platform thread
                 }
-                val startMethod = threadBuilderClass("java.lang.Thread\$Builder")
-                    .getMethod("start", Runnable::class.java)
-                return startMethod.invoke(builder, Runnable { block() }) as Thread
-            } catch (_: Throwable) {
-                // fall through to platform thread
             }
         }
         return Thread(fallbackThreadGroup(), block, name ?: "virtual-thread-fallback").apply {
@@ -131,21 +194,17 @@ object VirtualThreadDispatcher {
     /** 检查给定线程是否为虚拟线程。 */
     fun isVirtualThread(thread: Thread = Thread.currentThread()): Boolean {
         return try {
-            val method = Thread::class.java.getMethod("isVirtual")
-            method.invoke(thread) as Boolean
+            LoomHandles.isVirtual?.invoke(thread) as? Boolean ?: false
         } catch (_: Throwable) {
             false
         }
     }
 
     private fun newVirtualThreadExecutorOrNull(): ExecutorService? = try {
-        Executors::class.java.getMethod("newVirtualThreadPerTaskExecutor").invoke(null) as? ExecutorService
+        LoomHandles.newVirtualThreadExecutor?.invoke() as? ExecutorService
     } catch (_: Throwable) {
         null
     }
-
-    /** 反射拿公开的 Builder 接口类型（不写死类字面量：Android 上没有这些类型，只能在支持时解析）。 */
-    private fun threadBuilderClass(className: String): Class<*> = Class.forName(className)
 
     private fun currentThreadIsVirtual(): Boolean = isVirtualThread()
 

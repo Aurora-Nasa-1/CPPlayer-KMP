@@ -79,9 +79,6 @@ shizuku = "13.1.5"
 # HiddenApiBypass：豁免隐藏 API 限制（`IConnectivityManager` 的 TRANSACTION_* 常量、
 # `ServiceManager.getService` 都要反射读）。**进程级、非永久**，进程重建后要重装。
 hiddenApiBypass = "6.1"
-mp3spi = "1.9.5.4"
-jflac = "1.5.2"
-jlayer = "1.0.1"
 jmtc = "0.0.3"
 # jna-platform 用于 SMTC 应用身份注册（AUMID / 开始菜单快捷方式），版本对齐 JMTC 传递的 jna。
 jna = "5.19.1"
@@ -163,7 +160,6 @@ androidx-profileinstaller = { module = "androidx.profileinstaller:profileinstall
 voyager-navigator = { module = "cafe.adriel.voyager:voyager-navigator", version.ref = "voyager" }
 voyager-screenmodel = { module = "cafe.adriel.voyager:voyager-screenmodel", version.ref = "voyager" }
 voyager-transitions = { module = "cafe.adriel.voyager:voyager-transitions", version.ref = "voyager" }
-voyager-koin = { module = "cafe.adriel.voyager:voyager-koin", version.ref = "voyager" }
 qrose = { module = "io.github.alexzhirkevich:qrose", version.ref = "qrose" }
 androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
 androidx-media3-session = { group = "androidx.media3", name = "media3-session", version.ref = "media3" }
@@ -191,13 +187,11 @@ shizuku-api = { module = "dev.rikka.shizuku:api", version.ref = "shizuku" }
 shizuku-provider = { module = "dev.rikka.shizuku:provider", version.ref = "shizuku" }
 # 隐藏 API 豁免（Apache-2.0）。
 hidden-api-bypass = { module = "org.lsposed.hiddenapibypass:hiddenapibypass", version.ref = "hiddenApiBypass" }
-mp3spi = { module = "com.googlecode.soundlibs:mp3spi", version.ref = "mp3spi" }
-jflac-codec = { module = "org.jflac:jflac-codec", version.ref = "jflac" }
-jlayer = { module = "javazoom:jlayer", version.ref = "jlayer" }
 jmtc = { module = "io.github.selemba1000:JavaMediaTransportControls", version.ref = "jmtc" }
 jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
 sentry-android = { module = "io.sentry:sentry-android", version.ref = "sentry" }
+sentry-android-core = { module = "io.sentry:sentry-android-core", version.ref = "sentry" }
 sentry-core = { module = "io.sentry:sentry", version.ref = "sentry" }
 
 [plugins]

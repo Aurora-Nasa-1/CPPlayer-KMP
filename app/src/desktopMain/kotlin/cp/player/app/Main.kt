@@ -198,10 +198,11 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
         val isAotWarmup = System.getProperty("cp.player.aotWarmup") == "true" ||
             System.getProperty("cp.player.cdsDump") == "true"
         if (isAotWarmup) {
-            // 立即启动看门狗守护线程：15 秒超时强制 halt，绝不阻塞构建
+            // 启动看门狗守护线程：45 秒超时强制 halt，避免慢速 CI 环境假死并绝不阻塞构建
+            val aotTimeoutMs = System.getProperty("cp.player.aotTimeoutMs")?.toLongOrNull() ?: 45000L
             kotlin.concurrent.thread(isDaemon = true, name = "AotWarmupGlobalWatchdog") {
-                Thread.sleep(15000L)
-                println("[CPPlayer] AOT 全局看门狗超时触发，强制退出 JVM...")
+                Thread.sleep(aotTimeoutMs)
+                println("[CPPlayer] AOT 全局看门狗超时触发（${aotTimeoutMs}ms），强制退出 JVM...")
                 Runtime.getRuntime().halt(0)
             }
 

@@ -409,7 +409,7 @@ compose.resources {
 // 3. Compact Object Headers (JDK 25 JEP 519 / JDK 24 JEP 450):
 //    - 将 64 位 HotSpot 对象头压缩至 8 字节（节省 33%~50% 对象头空间）；
 //    - 针对海量 SongItem / LyricLine / State 对象，全应用堆物理占用立减 15%~25%，大幅提升 CPU L1/L2 缓存行命中率；
-//    - JDK 25 下为正式产品特性（-XX:+UseCompactObjectHeaders），自动嗅探并开启。
+//    - JDK 25 下正式晋升为 Product 特性（非默认开启，需显式传入 -XX:+UseCompactObjectHeaders；Gradle 构建自动嗅探运行时并在支持时注入，无需 Experimental 标志）。
 // 4. Ahead-of-Time Class Loading & Linking (JEP 483) 与 AOT Ergonomics (JEP 514):
 //    - 彻底超越传统 CDS/AppCDS，在构建/预热阶段完成全部类元数据预加载、预校验与符号链接（Preparation & Linking）；
 //    - 启动时通过 -XX:AOTCache mmap 直装内存，跳过全部类加载与校验开销，桌面端冷启动直冲 <800ms；
@@ -526,7 +526,6 @@ if (legacyCdsRequested) {
 val previewJvmArgs: List<String> = if (isJdk25OrNewer) listOf("--enable-preview") else emptyList()
 
 val desktopCommonJvmArgs = (listOf(
-    "-XX:+UnlockExperimentalVMOptions",
     "--enable-native-access=ALL-UNNAMED",
     "-Xms64m",
     "-Xmx256m",
@@ -604,6 +603,12 @@ compose.desktop {
         //   -XX:+UseStringDeduplication —— G1 免费午餐：歌单里海量重复字符串
         //     （歌手名 / 来源 / URL 前缀）共享同一份 char[]，省堆且几乎零成本。
         jvmArgs += desktopCommonJvmArgs
+        buildTypes.release.proguard {
+            isEnabled.set(true)
+            configurationFiles.from(project.file("desktop-proguard-rules.pro"))
+            optimize.set(true)
+            obfuscate.set(false)
+        }
         nativeDistributions {
             // ⚠️ 故意没有 TargetFormat.Msi：Windows 安装包改由 Velopack 从 app-image 打
             // （见文件末尾的 `packageWindowsVelopack`）。jpackage 的 MSI 是内置 WiX 模板

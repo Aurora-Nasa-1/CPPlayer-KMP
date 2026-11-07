@@ -14,10 +14,10 @@ import java.util.function.Supplier
  * 1. **延迟不可变性（Deferred Immutability）**：将对象的创建与实际初始化时机彻底解耦，按需进行单次赋值。
  * 2. **线程安全单次初始化**：多线程并发访问时保证计算 lambda 最多执行一次，消除双重检查锁定的潜在隐患。
  * 3. **HotSpot JIT 常量折叠（Constant Folding）**：
- *    在 Java 25+ 运行时上透明桥接 [java.lang.StableValue]（JEP 502），使 HotSpot C2 JIT 编译器在优化阶段
+ *    在 Java 25+ 运行时上透明桥接 [java.lang.StableValue]（JEP 502 Preview，需 `--enable-preview`），使 HotSpot C2 JIT 编译器在优化阶段
  *    能够将该稳定值当作 trusted final 常量处理，在机器码生成阶段直接常量折叠（Constant-fold），
  *    消除每次访问的内存栅障（Memory Fence）、非空检查（Null-check）与类加载顺序惩罚。
- *    在 Java 21-24 运行时上平滑无缝回退为原子无锁快速路径，无需任何外部依赖。
+ *    在当前打包 JBR 21 的 Release 环境或 Java 21-24 运行时上，类加载探测安全跳过，平滑无缝回退为原子无锁 CAS 快速路径，无需任何外部依赖。
  */
 interface DesktopStableValue<T> {
 

@@ -1,7 +1,9 @@
 package cp.player.core.util
 
+import java.lang.invoke.MethodHandle
+import java.lang.invoke.MethodHandles
+import java.lang.invoke.MethodType
 import java.lang.reflect.InvocationTargetException
-import java.lang.reflect.Method
 import java.util.NoSuchElementException
 import kotlinx.coroutines.asContextElement
 import kotlinx.coroutines.withContext
@@ -25,16 +27,22 @@ class DesktopScopedValue<T> internal constructor(
 
     /** 检查当前作用域内是否已绑定此 ScopedValue。 */
     fun isBound(): Boolean {
+        // 1. 优先检查协程挂起上下文 / 回退绑定（协程 withBindings 作用域快速命中，避免无效反射调用）
+        val fallbackMap = FallbackBinding.holder.get()
+        if (fallbackMap != null && fallbackMap.containsKey(this)) {
+            return true
+        }
+        // 2. 检查 Java 25 原生 ScopedValue（同步 runWith 路径）
         if (nativeScopedValue != null && NativeBinding.isSupported) {
             try {
-                if (NativeBinding.isBoundMethod!!.invoke(nativeScopedValue) as Boolean) {
+                if (NativeBinding.isBoundHandle!!.invoke(nativeScopedValue) as Boolean) {
                     return true
                 }
             } catch (_: Throwable) {
                 // fall through
             }
         }
-        return FallbackBinding.isBound(this)
+        return false
     }
 
     /**
@@ -43,11 +51,19 @@ class DesktopScopedValue<T> internal constructor(
      */
     @Suppress("UNCHECKED_CAST")
     fun get(): T {
+        // 1. 优先检查协程挂起上下文 / 回退绑定
+        val fallbackMap = FallbackBinding.holder.get()
+        if (fallbackMap != null && fallbackMap.containsKey(this)) {
+            return fallbackMap[this] as T
+        }
+        // 2. 检查 Java 25 原生 ScopedValue
         if (nativeScopedValue != null && NativeBinding.isSupported) {
             try {
-                if (NativeBinding.isBoundMethod!!.invoke(nativeScopedValue) as Boolean) {
-                    return NativeBinding.getMethod!!.invoke(nativeScopedValue) as T
+                if (NativeBinding.isBoundHandle!!.invoke(nativeScopedValue) as Boolean) {
+                    return NativeBinding.getHandle!!.invoke(nativeScopedValue) as T
                 }
+            } catch (e: NoSuchElementException) {
+                throw e
             } catch (e: InvocationTargetException) {
                 val target = e.targetException
                 if (target is NoSuchElementException) throw target
@@ -55,7 +71,7 @@ class DesktopScopedValue<T> internal constructor(
                 // fall through
             }
         }
-        return FallbackBinding.get(this)
+        throw NoSuchElementException("ScopedValue [$name] not bound")
     }
 
     /**
@@ -117,7 +133,7 @@ class DesktopScopedValue<T> internal constructor(
         fun <T> create(name: String): DesktopScopedValue<T> {
             val nativeObj = if (NativeBinding.isSupported) {
                 try {
-                    NativeBinding.newInstanceMethod!!.invoke(null)
+                    NativeBinding.newInstanceHandle!!.invoke()
                 } catch (_: Throwable) {
                     null
                 }
@@ -131,45 +147,45 @@ class DesktopScopedValue<T> internal constructor(
     /** JEP 506 原生反射绑定门面（保证桌面 JBR 25 高性能同时避免 Android ART 类加载链接错误）。 */
     internal object NativeBinding {
         val isSupported: Boolean
-        val newInstanceMethod: Method?
-        val whereMethod: Method?
-        val getMethod: Method?
-        val isBoundMethod: Method?
-        val carrierWhereMethod: Method?
-        val carrierRunMethod: Method?
+        val newInstanceHandle: MethodHandle?
+        val whereHandle: MethodHandle?
+        val getHandle: MethodHandle?
+        val isBoundHandle: MethodHandle?
+        val carrierWhereHandle: MethodHandle?
+        val carrierRunHandle: MethodHandle?
 
         init {
             var supported = false
-            var newInst: Method? = null
-            var whereM: Method? = null
-            var getM: Method? = null
-            var isBoundM: Method? = null
-            var carrierWhereM: Method? = null
-            var carrierRunM: Method? = null
+            var newInstH: MethodHandle? = null
+            var whereH: MethodHandle? = null
+            var getH: MethodHandle? = null
+            var isBoundH: MethodHandle? = null
+            var carrierWhereH: MethodHandle? = null
+            var carrierRunH: MethodHandle? = null
 
-            try {
+            runCatching {
                 val svClass = Class.forName("java.lang.ScopedValue")
-                newInst = svClass.getMethod("newInstance")
-                whereM = svClass.getMethod("where", svClass, Any::class.java)
-                getM = svClass.getMethod("get")
-                isBoundM = svClass.getMethod("isBound")
-
                 val carrierClass = Class.forName("java.lang.ScopedValue\$Carrier")
-                carrierWhereM = carrierClass.getMethod("where", svClass, Any::class.java)
-                carrierRunM = carrierClass.getMethod("run", Runnable::class.java)
+                val lookup = MethodHandles.publicLookup()
+
+                newInstH = lookup.findStatic(svClass, "newInstance", MethodType.methodType(svClass))
+                whereH = lookup.findStatic(svClass, "where", MethodType.methodType(carrierClass, svClass, Any::class.java))
+                getH = lookup.findVirtual(svClass, "get", MethodType.methodType(Any::class.java))
+                isBoundH = lookup.findVirtual(svClass, "isBound", MethodType.methodType(Boolean::class.javaPrimitiveType))
+
+                carrierWhereH = lookup.findVirtual(carrierClass, "where", MethodType.methodType(carrierClass, svClass, Any::class.java))
+                carrierRunH = lookup.findVirtual(carrierClass, "run", MethodType.methodType(Void.TYPE, Runnable::class.java))
 
                 supported = true
-            } catch (_: Throwable) {
-                supported = false
             }
 
             isSupported = supported
-            newInstanceMethod = newInst
-            whereMethod = whereM
-            getMethod = getM
-            isBoundMethod = isBoundM
-            carrierWhereMethod = carrierWhereM
-            carrierRunMethod = carrierRunM
+            newInstanceHandle = newInstH
+            whereHandle = whereH
+            getHandle = getH
+            isBoundHandle = isBoundH
+            carrierWhereHandle = carrierWhereH
+            carrierRunHandle = carrierRunH
         }
     }
 
@@ -217,7 +233,8 @@ object DesktopScopedContext {
 
     /**
      * 批量绑定一组键值并在该受限作用域内执行同步代码块 [block]。
-     * 若在支持 JEP 506 的 JVM 上运行，原生 `ScopedValue` 载体链与线程安全回退表将同时生效。
+     * 若在支持 JEP 506 的 JVM 上运行，原生 `ScopedValue` 载体链生效且无 ThreadLocal 污染；
+     * 若在不支持原生 ScopedValue 的环境，则平滑降级到基于线程局部变量的回退表。
      */
     fun <R> runWith(vararg bindings: Pair<DesktopScopedValue<*>, Any?>, block: () -> R): R {
         if (bindings.isEmpty()) return block()
@@ -225,17 +242,16 @@ object DesktopScopedContext {
         val map = bindings.toMap()
         if (DesktopScopedValue.NativeBinding.isSupported) {
             val validBindings = bindings.filter { it.first.nativeScopedValue != null }
-            if (validBindings.isNotEmpty()) {
+            if (validBindings.size == bindings.size && validBindings.isNotEmpty()) {
                 try {
                     val first = validBindings.first()
-                    var carrier = DesktopScopedValue.NativeBinding.whereMethod!!.invoke(
-                        null,
+                    var carrier = DesktopScopedValue.NativeBinding.whereHandle!!.invoke(
                         first.first.nativeScopedValue,
                         first.second,
                     )
                     for (i in 1 until validBindings.size) {
                         val item = validBindings[i]
-                        carrier = DesktopScopedValue.NativeBinding.carrierWhereMethod!!.invoke(
+                        carrier = DesktopScopedValue.NativeBinding.carrierWhereHandle!!.invoke(
                             carrier,
                             item.first.nativeScopedValue,
                             item.second,
@@ -246,13 +262,14 @@ object DesktopScopedContext {
                     var failure: Throwable? = null
                     val runnable = Runnable {
                         try {
-                            result = DesktopScopedValue.FallbackBinding.runWith(map, block)
+                            // 原生路径直接执行 block，无需二次写入 FallbackBinding ThreadLocal，消除冗余开销与双重状态
+                            result = block()
                         } catch (t: Throwable) {
                             failure = t
                         }
                     }
 
-                    DesktopScopedValue.NativeBinding.carrierRunMethod!!.invoke(carrier, runnable)
+                    DesktopScopedValue.NativeBinding.carrierRunHandle!!.invoke(carrier, runnable)
                     failure?.let { throw it }
                     @Suppress("UNCHECKED_CAST")
                     return result as R
