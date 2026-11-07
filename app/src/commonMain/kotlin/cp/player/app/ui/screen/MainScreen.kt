@@ -648,7 +648,7 @@ class MainScreen : Screen {
                                 animationSpec = cp.player.app.ui.theme.CpMotion.spatial(),
                                 label = "navBarExitFraction",
                             )
-                            val effectiveHideFraction = maxOf(bottomBarHide.fraction, navBarExitFraction)
+                            val effectiveHideFraction = maxOf(bottomBarHide.fraction, navBarExitFraction).coerceIn(0f, 1f)
                             AppNavigationBar(
                                 tabs,
                                 selectedIndex,
@@ -1151,7 +1151,7 @@ private fun DesktopSidebar(
             LazyScrollColumn(
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(
-                    bottom = cp.player.app.ui.component.LocalMiniPlayerTailSpace.current,
+                    bottom = cp.player.app.ui.component.LocalMiniPlayerTailSpace.current.coerceAtLeast(0.dp),
                 ),
             ) {
                 item { SidebarSection("发现音乐") }

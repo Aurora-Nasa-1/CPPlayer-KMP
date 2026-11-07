@@ -545,7 +545,7 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
     var barHeightPx by remember { mutableIntStateOf(0) }
     val expanded = cp.player.app.ui.component.LocalIsExpanded.current
     val bottomBarVisiblePx = cp.player.app.ui.util.DesktopShell.miniPlayerBottomBarVisiblePx
-    val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding().coerceAtLeast(0.dp)
     val isBottomBarShowing = mainScreenVisible && (bottomBarVisiblePx > 0.5f || bottomBarVisiblePx < 0f)
     val targetBottomGap = when {
         mainScreenVisible && expanded -> 24.dp
@@ -562,24 +562,25 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
             }
         }
         else -> navigationBarInset
-    }
+    }.coerceAtLeast(0.dp)
     val animatedBottomGap by animateDpAsState(
         targetValue = targetBottomGap,
         animationSpec = cp.player.app.ui.theme.CpMotion.spatial(),
         label = "miniPlayerBottomGap",
     )
+    val safeBottomGap = animatedBottomGap.coerceAtLeast(0.dp)
     val tailSpace by animateDpAsState(
         targetValue = if (show && hasTrack && barHeightPx > 0) {
             with(density) { barHeightPx.toDp() } + 12.dp +
-                if (mainScreenVisible && expanded) animatedBottomGap else 0.dp
+                if (mainScreenVisible && expanded) safeBottomGap else 0.dp
         } else 0.dp,
         animationSpec = cp.player.app.ui.theme.CpMotion.spatial(),
         label = "globalMiniPlayerTail",
     )
     CompositionLocalProvider(
-        // ⚠️ 必须钳到非负：tailSpace 由 spring 动画驱动（CpMotion.spatial 是回弹
-        // spring），小播放器消失时从高值回落到 0 会**下冲穿负**，负 Dp 进
-        // PaddingValues 直接抛「Padding must be non-negative」—— Android 实锤过
+        // ⚠️ 必须钳到非负：tailSpace 与 animatedBottomGap 由 spring 动画驱动（CpMotion.spatial 是回弹
+        // spring），小播放器消失或底栏状态切换时从高值回落到 0 会**下冲穿负**，负 Dp 进
+        // PaddingValues 或 Modifier.padding 直接抛「Padding must be non-negative」—— Android 实锤过
         // 的概率崩溃。钳在这里（提供方）+ DesktopScrollbars（消费方）双保险。
         cp.player.app.ui.component.LocalMiniPlayerTailSpace provides tailSpace.coerceAtLeast(0.dp),
     ) {
@@ -590,7 +591,7 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
                 isDockedToBottomBar = isBottomBarShowing,
                 onClick = onClick,
                 onBarHeight = { barHeightPx = it },
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = animatedBottomGap),
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = safeBottomGap),
             )
         }
     }

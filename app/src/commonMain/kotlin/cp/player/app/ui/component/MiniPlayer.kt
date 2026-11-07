@@ -160,10 +160,10 @@ fun SharedTransitionScope.MiniPlayer(
     )
     val currentShape = remember(animatedTopCorner, animatedBottomCorner) {
         RoundedCornerShape(
-            topStart = animatedTopCorner,
-            topEnd = animatedTopCorner,
-            bottomStart = animatedBottomCorner,
-            bottomEnd = animatedBottomCorner,
+            topStart = animatedTopCorner.coerceAtLeast(0.dp),
+            topEnd = animatedTopCorner.coerceAtLeast(0.dp),
+            bottomStart = animatedBottomCorner.coerceAtLeast(0.dp),
+            bottomEnd = animatedBottomCorner.coerceAtLeast(0.dp),
         )
     }
 

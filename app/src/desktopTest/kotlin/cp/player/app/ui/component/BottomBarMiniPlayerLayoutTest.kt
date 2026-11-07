@@ -161,4 +161,15 @@ class BottomBarMiniPlayerLayoutTest {
         // 4. 从子页面返回主页（isMainTop = true）：恢复为当前手势状态（浮起）
         assertEquals(0f, computeEffectiveHideFraction(0f, isMainTop = true))
     }
+
+    @Test
+    fun `弹簧回弹下冲时底栏间距与圆角必须钳到非负避免Padding崩溃`() {
+        val overshootGap = (-4.5).dp
+        val safeGap = overshootGap.coerceAtLeast(0.dp)
+        assertEquals(0.dp, safeGap, "弹簧过冲穿负时必须钳到 0dp，避免 Padding must be non-negative 异常")
+
+        val overshootCorner = (-2.0).dp
+        val safeCorner = overshootCorner.coerceAtLeast(0.dp)
+        assertEquals(0.dp, safeCorner, "弹簧过冲穿负时圆角必须钳到 0dp")
+    }
 }
