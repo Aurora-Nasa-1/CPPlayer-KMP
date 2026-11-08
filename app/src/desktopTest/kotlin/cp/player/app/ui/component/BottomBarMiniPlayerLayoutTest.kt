@@ -120,23 +120,64 @@ class BottomBarMiniPlayerLayoutTest {
     }
 
     @Test
-    fun `手机端无底栏或底栏隐藏时迷你播放器圆角变为屏幕圆角`() {
+    fun `手机端无底栏或底栏隐藏时迷你播放器按同心圆角和悬浮边距进行胶囊化过渡`() {
         val screenCorner = 32.dp
 
-        fun computeCorners(isDesktop: Boolean, isDockedToBottomBar: Boolean): Pair<androidx.compose.ui.unit.Dp, androidx.compose.ui.unit.Dp> {
-            val bottom = if (isDesktop || isDockedToBottomBar) 16.dp else screenCorner
-            val top = if (isDesktop || isDockedToBottomBar) 28.dp else screenCorner
-            return top to bottom
+        fun computeLayout(
+            isDesktop: Boolean,
+            isDockedToBottomBar: Boolean,
+        ): Triple<Pair<androidx.compose.ui.unit.Dp, androidx.compose.ui.unit.Dp>, androidx.compose.ui.unit.Dp, androidx.compose.ui.unit.Dp> {
+            val horizontalMargin = if (isDesktop || isDockedToBottomBar) 8.dp else 12.dp
+            val innerHorizontalPadding = if (isDesktop || isDockedToBottomBar) 12.dp else 16.dp
+            val floatingCorner = (screenCorner - horizontalMargin).coerceIn(20.dp, 28.dp)
+            val topCorner = if (isDesktop || isDockedToBottomBar) 28.dp else floatingCorner
+            val bottomCorner = if (isDesktop || isDockedToBottomBar) 16.dp else floatingCorner
+            return Triple(topCorner to bottomCorner, horizontalMargin, innerHorizontalPadding)
         }
 
-        // 1. 桌面端：始终保持默认圆角 (top 28dp, bottom 16dp)
-        assertEquals(28.dp to 16.dp, computeCorners(isDesktop = true, isDockedToBottomBar = false))
+        // 1. 桌面端：始终保持默认圆角 (28dp, 16dp)，外边距 8dp，内边距 12dp
+        val desktopLayout = computeLayout(isDesktop = true, isDockedToBottomBar = false)
+        assertEquals(28.dp to 16.dp, desktopLayout.first)
+        assertEquals(8.dp, desktopLayout.second)
+        assertEquals(12.dp, desktopLayout.third)
 
-        // 2. 手机端有底栏（主页停靠态）：默认圆角
-        assertEquals(28.dp to 16.dp, computeCorners(isDesktop = false, isDockedToBottomBar = true))
+        // 2. 手机端有底栏（主页停靠态）：默认圆角 (28dp, 16dp)，外边距 8dp，内边距 12dp
+        val dockedLayout = computeLayout(isDesktop = false, isDockedToBottomBar = true)
+        assertEquals(28.dp to 16.dp, dockedLayout.first)
+        assertEquals(8.dp, dockedLayout.second)
+        assertEquals(12.dp, dockedLayout.third)
 
-        // 3. 手机端无底栏或收缩隐藏态：上下圆角均变为屏幕圆角 (32dp)
-        assertEquals(32.dp to 32.dp, computeCorners(isDesktop = false, isDockedToBottomBar = false))
+        // 3. 手机端无底栏或收缩隐藏态（精致悬浮胶囊）：同心圆角 (20dp)，外边距扩展至 12dp，内边距补偿至 16dp
+        val floatingLayout = computeLayout(isDesktop = false, isDockedToBottomBar = false)
+        assertEquals(20.dp to 20.dp, floatingLayout.first)
+        assertEquals(12.dp, floatingLayout.second)
+        assertEquals(16.dp, floatingLayout.third)
+    }
+
+    @Test
+    fun `底栏隐藏过程中底部间隙平滑过渡至悬浮安全区无阶跃断崖`() {
+        val navigationBarInset = 24.dp
+
+        fun computeBottomGap(barDp: androidx.compose.ui.unit.Dp, mainScreenVisible: Boolean): androidx.compose.ui.unit.Dp {
+            return if (mainScreenVisible) {
+                maxOf(barDp + 12.dp, navigationBarInset + 8.dp)
+            } else {
+                navigationBarInset + 8.dp
+            }
+        }
+
+        // 1. 底栏完全展开 (80dp)：底栏高度 + 12dp = 92dp
+        assertEquals(92.dp, computeBottomGap(80.dp, mainScreenVisible = true))
+
+        // 2. 底栏随手势收缩中 (40dp)：40dp + 12dp = 52dp
+        assertEquals(52.dp, computeBottomGap(40.dp, mainScreenVisible = true))
+
+        // 3. 底栏收缩至接近 0dp：平滑接纳为 navigationBarInset + 8dp = 32dp
+        assertEquals(32.dp, computeBottomGap(10.dp, mainScreenVisible = true))
+        assertEquals(32.dp, computeBottomGap(0.dp, mainScreenVisible = true))
+
+        // 4. 子页面（无底栏）：悬浮在手势区上方 8dp
+        assertEquals(32.dp, computeBottomGap(0.dp, mainScreenVisible = false))
     }
 
     @Test

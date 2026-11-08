@@ -144,10 +144,30 @@ fun SharedTransitionScope.MiniPlayer(
     val showLyrics by AppModel.showMiniPlayerLyricsFlow.collectAsState()
     val secondLineText = if (showLyrics) currentLyricLine(state) else ""
 
-    // 手机端在底栏收缩隐藏或无底栏页面时，下方圆角与上方圆角随动过渡到屏幕圆角
+    // 外边距：底栏停靠态取 8dp；底栏收缩隐藏或二级页面时扩展至 12dp（增强悬浮呼吸感）
+    val targetHorizontalMargin = if (desktop || isDockedToBottomBar) 8.dp else 12.dp
+    val animatedHorizontalMargin by animateDpAsState(
+        targetValue = targetHorizontalMargin,
+        animationSpec = CpMotion.spatial(),
+        label = "miniPlayerHorizontalMargin",
+    )
+
+    // 内边距：底栏停靠态取 12dp；悬浮胶囊态随着圆角增大，水平内边距动态扩展至 16dp，避免封面与按钮被大圆角挤压
+    val targetInnerHorizontalPadding = if (desktop || isDockedToBottomBar) 12.dp else 16.dp
+    val animatedInnerHorizontalPadding by animateDpAsState(
+        targetValue = targetInnerHorizontalPadding,
+        animationSpec = CpMotion.spatial(),
+        label = "miniPlayerInnerHorizontalPadding",
+    )
+
+    // 手机端在底栏收缩隐藏或无底栏页面时，过渡到与屏幕同心的精致悬浮胶囊圆角：
+    // 同心圆角法则：R_inner = R_outer - margin，同时收敛在 [20.dp, 28.dp] 区间内，避免生搬物理大圆角导致笨重
     val screenCorner = rememberScreenCornerRadius()
-    val targetBottomCorner = if (desktop || isDockedToBottomBar) 16.dp else screenCorner
-    val targetTopCorner = if (desktop || isDockedToBottomBar) 28.dp else screenCorner
+    val floatingCorner = remember(screenCorner, targetHorizontalMargin) {
+        (screenCorner - targetHorizontalMargin).coerceIn(20.dp, 28.dp)
+    }
+    val targetBottomCorner = if (desktop || isDockedToBottomBar) 16.dp else floatingCorner
+    val targetTopCorner = if (desktop || isDockedToBottomBar) 28.dp else floatingCorner
     val animatedBottomCorner by animateDpAsState(
         targetValue = targetBottomCorner,
         animationSpec = CpMotion.spatial(),
@@ -177,7 +197,7 @@ fun SharedTransitionScope.MiniPlayer(
         shape = currentShape,
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .padding(horizontal = animatedHorizontalMargin.coerceAtLeast(0.dp), vertical = 4.dp)
             .then(press.second)
             .sharedBounds(
                 sharedContentState = rememberSharedContentState(key = "player-container"),
@@ -241,7 +261,7 @@ fun SharedTransitionScope.MiniPlayer(
                 )
             } else {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = animatedInnerHorizontalPadding.coerceAtLeast(0.dp), vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     MiniCover(

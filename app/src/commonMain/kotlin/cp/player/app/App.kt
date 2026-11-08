@@ -546,7 +546,7 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
     val expanded = cp.player.app.ui.component.LocalIsExpanded.current
     val bottomBarVisiblePx = cp.player.app.ui.util.DesktopShell.miniPlayerBottomBarVisiblePx
     val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding().coerceAtLeast(0.dp)
-    val isBottomBarShowing = mainScreenVisible && (bottomBarVisiblePx > 0.5f || bottomBarVisiblePx < 0f)
+    val isBottomBarShowing = mainScreenVisible && (if (bottomBarVisiblePx >= 0f) with(density) { bottomBarVisiblePx.toDp() } > 36.dp else true)
     val targetBottomGap = when {
         mainScreenVisible && expanded -> 24.dp
         mainScreenVisible -> {
@@ -555,13 +555,9 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
             } else {
                 80.dp
             }
-            if (barDp <= 0.5.dp) {
-                navigationBarInset
-            } else {
-                maxOf(barDp, navigationBarInset) + 12.dp
-            }
+            maxOf(barDp + 12.dp, navigationBarInset + 8.dp)
         }
-        else -> navigationBarInset
+        else -> navigationBarInset + 8.dp
     }.coerceAtLeast(0.dp)
     val animatedBottomGap by animateDpAsState(
         targetValue = targetBottomGap,
