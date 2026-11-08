@@ -215,19 +215,19 @@ jobs:
         shell: pwsh
         timeout-minutes: 8
         run: |
-          ./gradlew :app:createDistributable \
-            -Pcp.jbrHome="${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64" \
-            -Pcp.vpkPath="${{ github.workspace }}/.tools/vpk.exe" \
-            -Papp.versionName="${{ needs.meta.outputs.version }}" \
-            -Papp.releaseChannel="${{ needs.meta.outputs.channel }}" \
-            -Pcp.jdk25=true \
-            -Pcp.gc=shenandoah \
-            -Pcp.compactHeaders=true \
+          ./gradlew :app:createDistributable `
+            -Pcp.jbrHome="${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64" `
+            -Pcp.vpkPath="${{ github.workspace }}/.tools/vpk.exe" `
+            -Papp.versionName="${{ needs.meta.outputs.version }}" `
+            -Papp.releaseChannel="${{ needs.meta.outputs.channel }}" `
+            -Pcp.jdk25=true `
+            -Pcp.gc=shenandoah `
+            -Pcp.compactHeaders=true `
             --no-daemon
-          ./packaging/jbr/generate-aot-cache.ps1 \
-            -JavaExe "${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64/bin/java.exe" \
-            -OutputFile "${{ github.workspace }}/packaging/jbr/app-aot.aot" \
-            -VersionName "${{ needs.meta.outputs.version }}" \
+          ./packaging/jbr/generate-aot-cache.ps1 `
+            -JavaExe "${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64/bin/java.exe" `
+            -OutputFile "${{ github.workspace }}/packaging/jbr/app-aot.aot" `
+            -VersionName "${{ needs.meta.outputs.version }}" `
             -ReleaseChannel "${{ needs.meta.outputs.channel }}"
 
       - name: Generate AOT Cache (Linux - JEP 483 / 514)
