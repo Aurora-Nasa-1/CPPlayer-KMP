@@ -26,7 +26,7 @@
   -> Repository / UnifiedMusicSource
   -> ProviderHost（账号会话、取消、超时、校验）
   -> SDK MusicProvider
-  -> Kotlin / JavaScript / 受信任 Native 适配器
+  -> Kotlin / JavaScript / Native 适配器
   -> 自己的上游服务
 ```
 
@@ -46,7 +46,7 @@
 | `close()` | 无 | 释放会话资源 |
 
 **已支持只读目录能力**：远端歌词、歌单搜索/详情/曲目/用户歌单、专辑搜索/详情、
-歌手搜索/详情/曲目/专辑。Kotlin、JavaScript 与可信 JNI/Native 适配器使用同一业务契约。
+歌手搜索/详情/曲目/专辑。Kotlin、JavaScript 与 JNI/Native 适配器使用同一业务契约。
 
 **扩展业务契约**：已接入登录、推荐、评论/私信、一起听、MV/视频、DJ、日历/动态、
 账号/云盘和目录写操作。共 160 个业务操作，完整签名与能力名由 schema 生成到
@@ -134,7 +134,9 @@ QuickJS 单会话线程、内存上限 32 MiB、栈 512 KiB、执行预算 250 m
 
 ## 6. 安装与验证
 
-ZIP 安装只允许 SDK JavaScript 包，Kotlin/Native 需受信任代码注册。
+ZIP 安装支持 SDK JavaScript 与 JNI/Native 包；原生库使用宿主统一 `NativeSession`
+入口，无需 `nativeFactoryClass`、宿主预先注册或额外信任授权。
+格式见 [Manifest](MANIFEST_REFERENCE.md#原生-sdk-包)。
 手动导入与仓库安装都按精确 ID 校验；同名不同 ID 不覆盖。
 入口缺失、越界、超限、未知契约等在替换文件前拒绝；更新失败保留旧安装。
 

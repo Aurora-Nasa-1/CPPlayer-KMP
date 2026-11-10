@@ -7,7 +7,7 @@ Date: 2026-11-10.
 
 ```text
 Compose / repositories -> Kotlin unified music data layer -> KMP SDK contract
-  -> ProviderHost -> compiled Kotlin / QuickJS / trusted JNI adapter
+  -> ProviderHost -> compiled Kotlin / QuickJS / JNI adapter
   -> provider business implementation
        -> account-scoped host services (HTTP, storage, SHA-256)
 ```
@@ -16,8 +16,9 @@ The domain must not depend on a provider implementation. The SDK contains
 development types and helpers, not UI, database access, or host cache policy.
 The primary development API is `provider-sdk-kmp`. It depends on coroutines,
 never on core, Compose, a host database, or an individual provider. Kotlin/JNI
-providers use the same typed business contract; the JNI implementation is trusted
-host code and is not a sandbox.
+providers use the same typed business contract. JNI packages can be installed
+directly through standard NativeSession exports, with optional custom adapters;
+JNI is not sandboxed.
 
 ## Source audit
 
@@ -144,7 +145,7 @@ CancellationException, never a Failure or successful empty page.
 | Authentication | Scoped contexts and cookie storage foundation | Migrate AuthRepository and account UI flows |
 | Cache | Account-fenced SDK audio keys, no typed metadata cache | Host typed cache policy, downloads/account restore audit |
 | UnifiedMediaResolver video/audio facade | Historical API route | Separate typed video/audio resolver migration |
-| Native distribution | Trusted JNI host adapter only | ABI packaging/signing/install trust UX |
+| Native distribution | Installable native libraries, optional adapter JAR; no trust gate | Device and distribution matrix |
 | Other desktop OS / Android device | Build gates only | Device and distribution matrix |
 
 Existing user data is not rewritten. Default-account cookie keys stay unchanged;
@@ -170,8 +171,11 @@ The transitional JSON surface is gone. Deleted from `core`:
   now only the audio-file cache, keyed by provider/account/credential/settings.
 - `music/MusicSourceFromApi`, `music/TrackJsonMapper`, `provider/compat/LegacyMusicSourceAdapter`.
 - `listentogether/NeteaseListenTogetherBackend` (it dispatched `listentogether/...` over the
-  JSON bridge); replaced by `UnsupportedListenTogetherBackend`, which reports the capability
-  as absent instead of failing at call time.
+  JSON bridge); the application now uses `SdkListenTogetherBackend` to call typed SDK
+  operations through UnifiedMusicSource. Missing capabilities return Unsupported.
+  Account/provider changes retire the old room and queued writes. The existing room UI
+  still requires losslessly representable positive Long user IDs; other SDK IDs are
+  explicitly unsupported rather than rewritten.
 
 Consumer changes:
 
@@ -207,8 +211,8 @@ Consumer changes:
   directly. Tests that only asserted "the retired stub throws" were replaced with a check that
   rejecting a legacy descriptor does not create an SDK session.
 
-- `ProviderType` now has exactly two values: `JNI` (trusted native SDK, registered via
-  `jniSdkProvider`) and `SCRIPT` (KMP SDK JS/TS package, loaded via `ProviderFactory`).
+- `ProviderType` now has exactly two values: `JNI` (native SDK, installed via
+  `ProviderFactory` or registered via `jniSdkProvider`) and `SCRIPT` (KMP SDK JS/TS package).
   `FFM` / `BINARY` / `WEBSOCKET` / `HTTP` had no constructor and were removed; the stale
   hot-swap branch in `MusicBackend.installPackage` collapsed to `if (previous != null)` —
   in-process SDK providers always need a restart to be replaced.

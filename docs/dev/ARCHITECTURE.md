@@ -59,13 +59,21 @@ app Repository 与播放链路直接消费 `UnifiedMusicSource`，不再经过
 多 Provider 容灾执行路径已删除。
 播放文件缓存仍按 Provider/账号/凭证版本/设置隔离，并以实际音质标识。
 
-当前 SDK 契约含 160 个业务操作；除歌曲与目录读取外，登录、推荐、评论/私信、
+当前 SDK 契约含 161 个业务操作；除歌曲与目录读取外，登录、推荐、评论/私信、
 一起听、MV/视频、DJ、日历/动态、云盘和目录写操作已有类型化链路。
 `ExtendedOperations`、扩展 JS/JNI 分发、Host 方法与统一层方法由同一 schema 生成，
 旧编号不变。操作清单见 [SDK 操作表](SDK_OPERATIONS.md)，
 本批范围与尚未移植的类别见 [迁移状态](SDK_MIGRATION_STATUS.md)。
 具体音源未声明或未实现的能力仍返回 Unsupported；契约测试不代表真实上游或真机联调。
 独立 Lyrico 歌词插件、本地边车、AMLL、本地视频不受影响。
+
+凭据保存或清除会同步取消对应活跃账号的 SDK 请求；其他账号不受影响。
+播放缓存的索引回退也必须匹配账号、凭据版本和设置摘要，无法确认归属的旧缓存
+仅允许精确键命中。收藏列表绑定同一账号身份，换音源、换账号及退出登录时清除旧状态。
+`getLikeListPage`（tag 166）按最多 500 项分页，统一层合并完整集合；旧接口保持兼容。
+视频下载按 MV / video 类型调用对应解析器，并保留实际质量、格式、过期时间和显式媒体头。
+一起听页面通过 `SdkListenTogetherBackend` 接入统一层；会话切换时清理旧房间和待发指令。
+当前房间 UI 的用户 ID 仍为 Long，无法无损表示的不透明 SDK 用户 ID 明确返回 Unsupported。
 
 ## 5. 源集
 
@@ -78,7 +86,7 @@ commonMain -> jvmMain -> {androidMain, desktopMain}
 | `commonMain` | 业务模型、SDK 接口、会话调度、expect 抽象 |
 | `jvmMain` | Android/Desktop 共用的文件/归档、Ktor 服务、QuickJS runtime |
 | `androidMain` | Android Context、Media3、平台服务 |
-| `desktopMain` | Desktop 媒体引擎、窗口/托盘、受信任 Native worker |
+| `desktopMain` | Desktop 媒体引擎、窗口/托盘、JNI 包类加载器 |
 
 桌面持久化路径统一取 `DesktopDataDir`。不为新音源新增私有宿主目录。
 

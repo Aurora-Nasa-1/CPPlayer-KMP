@@ -1,6 +1,6 @@
 # SDK Migration Status
 
-As of 2026-11-10, the schema defines 160 business operations and 165 total
+As of 2026-11-10, the schema defines 161 business operations and 166 total
 protocol operations. A declared contract is not proof that an installed provider
 implements it. Unsupported defaults remain mandatory for additive capabilities.
 
@@ -27,6 +27,26 @@ fixtures exercise the same typed chain; they do not implement a production music
 service.
 
 ## Application Entry Points
+
+Tag 166 adds `getLikeListPage(PagedIdRequest): IdPage` with capability
+`accounts.likes.page`. Each page has at most 500 opaque IDs and explicit
+`hasMore`. The unified `getLikeList(uid)` collects all pages before publishing a
+set, advances offsets by received item count, rejects empty continuation pages,
+and bounds aggregation to 1,000,000 IDs. Providers without the new capability use
+the original bounded `getLikeList(UserRequest)`; they must implement the new
+capability for larger collections. Existing tags and DTO layouts are unchanged.
+
+Credential changes now immediately cancel the affected active SDK session.
+Favorites and offline cache fallback are scoped to account/credential/configuration
+identity. Failed refreshes cannot retain a previous account's favorites.
+
+Video download tasks use MV/video resolution rather than audio resolution,
+preserving actual quality, explicit headers, expiry and known container format.
+`SdkListenTogetherBackend` connects the existing room engine to typed SDK
+operations; session changes clear room state and queued writes. The current room
+UI uses Long user IDs: opaque IDs that cannot round-trip exactly are explicitly
+unsupported rather than numerically normalized. Production-provider integration
+remains separate validation.
 
 Use the request-object methods on UnifiedMusicSource for current-session calls.
 IDs are opaque provider-local strings, not CPMediaId values. The application

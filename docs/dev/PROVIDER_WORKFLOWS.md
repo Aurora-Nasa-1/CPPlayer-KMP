@@ -50,6 +50,12 @@ SDK 请求里的 ID 是当前 Provider 的裸字符串；`001`、`A`、`a`、`A,
 包括空字符串。不要将 `cursor || undefined` 用作归一化。
 未知 `hasMore` 与已知 false 不同；调用者需要结合该业务的上游分页语义决定是否继续。
 
+收藏 ID 集合超过 500 项时，实现 `getLikeListPage(PagedIdRequest): IdPage` 并声明
+`accounts.likes.page`（tag 166）。`id = "self"` 指当前登录账号，每页仍最多 500 项；
+`hasMore` 必须明确给出，不能用空页表示“还有下一页”。宿主按实际返回条数递增 offset，
+成功取完所有页才发布完整集合，最多合并 1,000,000 项。旧的 `accounts.likes` /
+`getLikeList(UserRequest)` 保持有界完整集合语义，不能静默截断为前 500 项。
+
 目录相关的默认 DTO 与过滤器不是任意上游参数字典：
 
 - `getNewAlbums` 是既有的有限发现选择；`browseNewAlbums` 支持 area/offset，
@@ -65,6 +71,12 @@ SDK 请求里的 ID 是当前 Provider 的裸字符串；`001`、`A`、`a`、`A,
 `resolve`、`resolveMv`、`resolveVideo` 返回 `MediaResource`。Provider 按实际资源填写
 `actualQuality`，明确列出媒体访问头。未知格式、码率、大小、过期时间留 null。
 时长和绝对时间分别用毫秒和 Unix epoch 毫秒；`ScrobbleRequest.playedSeconds` 是明确的秒数例外。
+
+音频下载调用 `resolve`；MV 与视频下载分别调用 `resolveMv` / `resolveVideo`。
+宿主使用实际质量和已知容器格式确定下载记录与后缀，过期直链重新解析，
+只转发 Provider 明确返回的媒体头，不从账号会话自动注入 Cookie。
+播放缓存的跨音质回退必须匹配账号、凭据版本与设置摘要，旧的无归属索引不参与账号回退。
+保存或清除当前账号凭据会立即取消旧会话请求；Provider 必须响应协程取消。
 
 `media.qualities` 对应 `getMediaQualities`，支持 `song`、`audio`、`mv`、`video`。
 每个 `QualityOption.id` 是唯一的业务音质 key；`available = false` 可表示当前账号不可用，
@@ -150,6 +162,11 @@ Provider 不创建第二个宿主后端，也不自行启动服务端。
 | `sequence` / `serverSequence` / `version` | 非负 safe integer，不能用时间戳猜值 |
 
 应用通过版本与序列号协调状态；Provider 不把缺失值伪造成最新命令，也不吞掉失效会话。
+
+应用页面已通过 `SdkListenTogetherBackend` 接入上述 SDK 操作；切换音源或账号会清除
+旧房间和待发送指令。`MutationResult.success = false` 必须视为失败。
+当前应用房间模型仍用 Long 用户 ID：只有能够精确往返的正整数 ID 可进入该 UI，
+带前导零、超范围或其他字符串会明确返回 Unsupported，SDK 本身仍完整保留原始字符串。
 
 ## 7. MV、视频与 DJ
 

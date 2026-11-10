@@ -262,7 +262,7 @@ Authorization: Bearer <accessToken>     ← 推荐，日志友好
 | `id` | 音源标识；`mediaId` 里的命名空间就是它 |
 | `name` | 显示名 |
 | `version` | 音源版本 |
-| `type` | 实现类型，枚举名透传。可安装的 KMP SDK 脚本包为 `SCRIPT`；受信任代码注册的适配器可使用其他枚举标签，标签不代表旧传输入口仍可安装 |
+| `type` | 实现类型，枚举名透传。可安装的 KMP SDK 脚本包为 `SCRIPT`，原生适配器包为 `JNI`；不代表旧协议包可安装 |
 | `active` | 是否为当前活跃音源；**最多一个**为 `true` |
 
 ---
