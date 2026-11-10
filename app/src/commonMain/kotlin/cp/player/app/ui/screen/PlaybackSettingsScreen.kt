@@ -157,6 +157,33 @@ class PlaybackSettingsScreen(
                     )
                 }
 
+                // 1.5 播放速度（ExoPlayer 式能力位：不支持的引擎上整块隐藏）
+                //
+                // 能力位来自平台播放器而不是写死"桌面才显示"：将来 Android 补齐
+                // Media3 的 PlaybackParameters，只要那边把 supportsPlaybackSpeed 打开，
+                // 这个控件就会自动出现，不需要再改设置页。
+                if (AppModel.playback.supportsPlaybackSpeed) {
+                    SettingsSection("播放速度") {
+                        val speedValues = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
+                        val speedLabels = speedValues.map { "${it}×" }
+                        val selectedSpeed = speedValues
+                            .indexOfFirst { kotlin.math.abs(it - playbackState.playbackSpeed) < 0.01f }
+                            .coerceAtLeast(0)
+                        SettingsDropdownItem(
+                            title = "播放速度",
+                            modifier = Modifier.settingsSearchTarget("playback_speed", targetSettingId),
+                            subtitle = "由音频引擎变速，不改变音调",
+                            options = speedLabels,
+                            selectedIndex = selectedSpeed,
+                            onSelect = { index ->
+                                speedValues.getOrNull(index)?.let(AppModel.playback::setPlaybackSpeed)
+                            },
+                            index = 0,
+                            total = 1,
+                        )
+                    }
+                }
+
                 // 2. 音频输出内核 / 输出模式
                 //
                 // ⚠️ 两端的「选择」不是同一件事，文案必须分开写（详见 AudioEngineSettingsScreen 的对照表）：
