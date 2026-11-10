@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -19,8 +20,9 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.toSize
 import com.materialkolor.hct.Hct
-import com.mikepenz.hypnoticcanvas.shaders.MeshGradient
+import com.mikepenz.hypnoticcanvas.RuntimeEffect
 import com.mikepenz.hypnoticcanvas.shaders.Shader
+import cp.player.app.AppModel
 import cp.player.app.ui.theme.LocalIsDarkTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -73,6 +75,7 @@ fun Modifier.cpFluidBackground(
     fallback: Brush,
     speed: Float = CpFluidBackgroundDefaults.SPEED,
     scale: Float = CpFluidBackgroundDefaults.SCALE,
+    dither: Boolean = AppModel.fluidBackgroundDitherFlow.collectAsState().value,
 ): Modifier {
     if (!enabled) return this.background(fallback)
 
@@ -85,15 +88,16 @@ fun Modifier.cpFluidBackground(
     val base = if (dark) scheme.surfaceContainerLowest else scheme.surface
     val palette = remember(primary, base, dark) { buildFluidPalette(primary, base, dark) }
 
-    // ⚠️ 必须自己 remember 着色器实例，**不能**把 `MeshGradient(...)` 直接写在
-    // 实参位置上：`MeshGradient` 没重写 `equals` ⇒ 逐帧新建实例 = 逐帧重新编译 SkSL。
+    // ⚠️ 必须自己 remember 着色器实例，**不能**把 `CpFluidMeshGradient(...)` 直接写在
+    // 实参位置上：避免逐帧新建实例导致重新编译 SkSL。
     val settled = rememberSettledPalette(palette)
     val shader = remember(settled, scale) {
-        MeshGradient(
+        CpFluidMeshGradient(
             colors = settled.toTypedArray(),
             // 库把这个 `speed` 拼进 SkSL（`$speed`），改它要重编译；总速度交给 uniform 控制。
             speed = 1f,
             scale = scale,
+            dither = dither,
         )
     }
 
@@ -104,6 +108,7 @@ fun Modifier.cpFluidBackground(
         fallback = fallback,
         speed = speed,
         fpsConfig = fpsConfig,
+        dither = dither,
     )
 }
 
@@ -116,6 +121,7 @@ private fun Modifier.cpPacedShaderBackground(
     fallback: Brush,
     speed: Float,
     fpsConfig: FluidFpsConfig,
+    dither: Boolean = true,
 ): Modifier {
     val effect = remember(shader) { buildRuntimeEffect(shader) }
     if (!effect.supported) return this.background(fallback)
@@ -143,6 +149,9 @@ private fun Modifier.cpPacedShaderBackground(
         .drawBehind {
             val w = if (reportedSize.width > 0f) reportedSize.width else size.width
             val h = if (reportedSize.height > 0f) reportedSize.height else size.height
+            if (shader is CpFluidMeshGradient) {
+                shader.dither = dither
+            }
             effect.update(shader, time * speed * speedModifier, w, h)
             if (effect.ready) {
                 drawRect(effect.build())
@@ -164,6 +173,166 @@ object CpFluidBackgroundDefaults {
 
     /** 库默认值。色团大小在桌面 1320×860 与手机竖屏上观感都合适。 */
     const val SCALE = 2f
+}
+
+/**
+ * 流体网格着色器（带 TPDF 高频空间抖动）。
+ *
+ * 在 Simplex 噪声网格渐变的基础上：
+ * 1. 引入了 [dither] 均匀变量 `uDither`，在片元着色器末端注入微量高频三角分布抖动（TPDF - Triangular
+ *    Probability Density Function）；
+ * 2. 在 8-bit SDR 帧缓冲区（`RGBA_8888`）下，将低频大面积暗色平滑渐变的色带断层（Color Banding）
+ *    完全打碎，使肉眼观感达到逼近 10-bit / 12-bit 的丝滑过渡；
+ * 3. 抖动通过 uniform 变量传递，动态开关无需重新编译 SkSL，零卡顿。
+ */
+class CpFluidMeshGradient(
+    private val colors: Array<Color>,
+    val speed: Float = 1f,
+    val scale: Float = 2f,
+    @Volatile var dither: Boolean = true,
+) : Shader {
+    private val colorCount: Int = colors.size
+    private val colorUniforms: FloatArray = colors.flatMap {
+        listOf(it.red, it.green, it.blue)
+    }.toFloatArray()
+
+    override val name: String = "CpFluidMeshGradient"
+    override val authorName: String = "Mike Penz / Johnny Leek / CPPlayer"
+    override val authorUrl: String = "https://github.com/mikepenz/"
+    override val credit: String = "Mesh gradient with TPDF dither"
+    override val license: String = "MIT License"
+    override val licenseUrl: String = "https://opensource.org/license/mit"
+    override val speedModifier: Float get() = 0.5f
+
+    override val sksl: String = buildSksl(colorCount, scale, speed)
+
+    override fun applyUniforms(runtimeEffect: RuntimeEffect, time: Float, width: Float, height: Float) {
+        super.applyUniforms(runtimeEffect, time, width, height)
+        runtimeEffect.setFloatUniform("uColor", colorUniforms)
+        runtimeEffect.setFloatUniform("uDither", if (dither) 1f else 0f)
+    }
+
+    companion object {
+        private fun buildSksl(colorCount: Int, scale: Float, speed: Float): String = """
+uniform float uTime;
+uniform vec3 uResolution;
+uniform float uDither;
+
+vec3 vColor;
+const int MAX_COLORS = $colorCount;
+uniform vec3 uColor[MAX_COLORS];
+
+// Simplex 3D Noise by Ian McEwan, Ashima Arts
+vec4 permute(vec4 x) {
+    return mod(((x * 34.0) + 1.0) * x, 289.0);
+}
+vec4 taylorInvSqrt(vec4 r) {
+    return 1.79284291400159 - 0.85373472095314 * r;
+}
+
+float snoise(vec3 v) {
+    const vec2 C = vec2(1.0 / 6.0, 1.0 / 3.0);
+    const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+
+    vec3 i = floor(v + dot(v, C.yyy));
+    vec3 x0 = v - i + dot(i, C.xxx);
+
+    vec3 g = step(x0.yzx, x0.xyz);
+    vec3 l = 1.0 - g;
+    vec3 i1 = min(g.xyz, l.zxy);
+    vec3 i2 = max(g.xyz, l.zxy);
+
+    vec3 x1 = x0 - i1 + 1.0 * C.xxx;
+    vec3 x2 = x0 - i2 + 2.0 * C.xxx;
+    vec3 x3 = x0 - 1.0 + 3.0 * C.xxx;
+
+    i = mod(i, 289.0);
+    vec4 p = permute(permute(permute(i.z + vec4(0.0, i1.z, i2.z, 1.0)) + i.y + vec4(0.0, i1.y, i2.y, 1.0)) + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+
+    float n_ = 1.0 / 7.0;
+    vec3 ns = n_ * D.wyz - D.xzx;
+
+    vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+
+    vec4 x_ = floor(j * ns.z);
+    vec4 y_ = floor(j - 7.0 * x_);
+
+    vec4 x = x_ * ns.x + ns.yyyy;
+    vec4 y = y_ * ns.x + ns.yyyy;
+    vec4 h = 1.0 - abs(x) - abs(y);
+
+    vec4 b0 = vec4(x.xy, y.xy);
+    vec4 b1 = vec4(x.zw, y.zw);
+
+    vec4 s0 = floor(b0) * 2.0 + 1.0;
+    vec4 s1 = floor(b1) * 2.0 + 1.0;
+    vec4 sh = -step(h, vec4(0.0));
+
+    vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
+    vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+
+    vec3 p0 = vec3(a0.xy, h.x);
+    vec3 p1 = vec3(a0.zw, h.y);
+    vec3 p2 = vec3(a1.xy, h.z);
+    vec3 p3 = vec3(a1.zw, h.w);
+
+    vec4 norm = taylorInvSqrt(vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
+    p0 *= norm.x;
+    p1 *= norm.y;
+    p2 *= norm.z;
+    p3 *= norm.w;
+
+    vec4 m = max(0.6 - vec4(dot(x0, x0), dot(x1, x1), dot(x2, x2), dot(x3, x3)), 0.0);
+    m = m * m;
+    return 42.0 * dot(m * m, vec4(dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)));
+}
+
+// Author : Johnny Leek / Yuri Artiukh / CPPlayer
+vec4 main( vec2 fragCoord ) {
+    float mr = min(uResolution.x, uResolution.y);
+    vec2 uv = (fragCoord * $scale - uResolution.xy) / mr;
+
+    vec2 base = uv / 2.0;
+
+    float tilt = -0.5 * uv.y;
+    float incline = uv.x * 0.1;
+
+    float offset = incline * mix(-0.25, 0.25, uv.y);
+
+    float noise = snoise(vec3(base.x + uTime * 0.2, base.y, uTime * 0.2));
+
+    noise = max(0.0, noise);
+
+    vColor = uColor[MAX_COLORS - 1];
+
+    for(int i = 0; i < MAX_COLORS - 1; i++) {
+        float flow = 5.0 + float(i) * 0.3;
+        float speed = 6.0 * $speed + float(i) * 0.3;
+        float seed = 1.0 + float(i) * 4.0;
+
+        vec2 frequency = vec2(0.3, 0.7);
+
+        float noiseFloor = 0.00001;
+        float noiseCeil = 0.6 + float(i) * 0.07;
+
+        float noiseVal = smoothstep(noiseFloor, noiseCeil, snoise(vec3(base.x * frequency.x + uTime * 0.005 * flow, base.y * frequency.y, uTime * 0.005 * speed + seed)));
+
+        vColor = mix(vColor, uColor[i], noiseVal);
+    }
+
+    // High-frequency Triangular Probability Density Function (TPDF) Dithering
+    // Eliminates color banding in 8-bit SDR framebuffers (simulating 10-bit smoothness)
+    if (uDither > 0.5) {
+        float n1 = fract(52.9829189 * fract(dot(fragCoord, vec2(0.06711056, 0.00583715))));
+        float n2 = fract(52.9829189 * fract(dot(fragCoord + vec2(0.5, 0.5), vec2(0.06711056, 0.00583715))));
+        float dither = (n1 + n2 - 1.0) / 255.0;
+        vColor = clamp(vColor + vec3(dither), 0.0, 1.0);
+    }
+
+    return vec4(vColor, 1.0);
+}
+""".trimIndent()
+    }
 }
 
 // ---------------------------------------------------------------------------

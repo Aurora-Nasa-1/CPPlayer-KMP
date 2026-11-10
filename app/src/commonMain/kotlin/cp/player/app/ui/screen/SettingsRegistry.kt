@@ -223,6 +223,13 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 sectionOf = { "界面动效与视觉表现" },
             ),
             SettingsSubItem(
+                id = "appearance_fluid_background_dither",
+                titleOf = { it.appearance.fluidBackgroundDither },
+                subtitleOf = { it.appearance.fluidBackgroundDitherNote },
+                keywords = listOf("抖动", "dither", "色阶", "断层", "色带", "10bit", "平滑", "渐变", "banding"),
+                sectionOf = { "界面动效与视觉表现" },
+            ),
+            SettingsSubItem(
                 id = "appearance_auto_hide_bottom_bar",
                 titleOf = { it.appearance.autoHideBottomBar },
                 subtitleOf = { it.appearance.autoHideBottomBarNote },
@@ -362,6 +369,13 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 subtitleOf = { "提前缓冲即将播放的曲目，消除切歌等待与卡顿" },
                 keywords = listOf("预加载", "缓冲", "预读", "提前加载", "preload", "buffer"),
                 sectionOf = { "流媒体与音频音质" },
+            ),
+            SettingsSubItem(
+                id = "playback_speed",
+                titleOf = { "播放速度" },
+                subtitleOf = { "0.5× ~ 2.0× 变速，由音频引擎处理、不改变音调" },
+                keywords = listOf("倍速", "播放速度", "变速", "快放", "慢放", "speed", "tempo"),
+                sectionOf = { "播放速度" },
             ),
             SettingsSubItem(
                 id = "playback_audio_engine",

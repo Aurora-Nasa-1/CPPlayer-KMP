@@ -84,6 +84,7 @@ class AppearanceSettingsScreen(
         val bottomBarAutoHide by AppModel.bottomBarAutoHideFlow.collectAsState()
         val coverFlightAnimation by AppModel.coverFlightAnimationFlow.collectAsState()
         val fluidBackground by AppModel.fluidBackgroundFlow.collectAsState()
+        val fluidBackgroundDither by AppModel.fluidBackgroundDitherFlow.collectAsState()
         val showSongAlbum by AppModel.showSongAlbumFlow.collectAsState()
         val fontRoundness by AppModel.fontRoundnessFlow.collectAsState()
         val fontFaceEnabled by AppModel.fontFaceEnabledFlow.collectAsState()
@@ -174,7 +175,7 @@ class AppearanceSettingsScreen(
                         checked = coverFlightAnimation,
                         onCheckedChange = AppModel::setCoverFlightAnimation,
                         index = 0,
-                        total = 3,
+                        total = 4,
                     )
                     SettingsSwitchItem(
                         title = s.appearance.fluidBackground,
@@ -183,7 +184,17 @@ class AppearanceSettingsScreen(
                         checked = fluidBackground,
                         onCheckedChange = AppModel::setFluidBackground,
                         index = 1,
-                        total = 3,
+                        total = 4,
+                    )
+                    SettingsSwitchItem(
+                        title = s.appearance.fluidBackgroundDither,
+                        modifier = Modifier.settingsSearchTarget("appearance_fluid_background_dither", targetSettingId),
+                        subtitle = s.appearance.fluidBackgroundDitherNote,
+                        checked = fluidBackgroundDither,
+                        onCheckedChange = AppModel::setFluidBackgroundDither,
+                        enabled = fluidBackground,
+                        index = 2,
+                        total = 4,
                     )
                     SettingsSwitchItem(
                         title = s.appearance.autoHideBottomBar,
@@ -191,8 +202,8 @@ class AppearanceSettingsScreen(
                         subtitle = s.appearance.autoHideBottomBarNote,
                         checked = bottomBarAutoHide,
                         onCheckedChange = AppModel::setBottomBarAutoHide,
-                        index = 2,
-                        total = 3,
+                        index = 3,
+                        total = 4,
                     )
                 }
 

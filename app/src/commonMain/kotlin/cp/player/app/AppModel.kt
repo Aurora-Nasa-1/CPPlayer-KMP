@@ -306,7 +306,7 @@ object AppModel {
      */
     val listenTogether: cp.player.core.listentogether.ListenTogetherEngine by lazy {
         cp.player.core.listentogether.ListenTogetherEngine(
-            backend = cp.player.core.listentogether.UnsupportedListenTogetherBackend,
+            backend = cp.player.core.listentogether.SdkListenTogetherBackend(backend.unifiedSource),
             scope = modelScope,
             myUserId = { userProfileFlow.value?.uid ?: 0L },
             heartbeatInfo = {
@@ -336,7 +336,11 @@ object AppModel {
                     ?.resourceId
             },
             mediaIdForSong = { songId -> "${backend.activeProviderId()}://song/$songId" },
-        )
+        ).also { engine ->
+            modelScope.launch {
+                backend.unifiedSource.accountChanges.collect { engine.resetSession() }
+            }
+        }
     }
 
     val listenTogetherState: StateFlow<cp.player.core.listentogether.ListenTogetherState>
@@ -386,6 +390,7 @@ object AppModel {
     private val KEY_COLOR_SOURCE = "color_source"
     private val KEY_PURE_BLACK = "pure_black"
     private val KEY_FLUID_BACKGROUND = "fluid_background"
+    private val KEY_FLUID_BACKGROUND_DITHER = "fluid_background_dither"
     private val KEY_PLAYBACK_QUALITY = "playback_quality"
     private val KEY_METERED_PLAYBACK_QUALITY = "playback_quality_metered"
     private val KEY_LISTEN_TOGETHER_ADD_NEXT = "listen_together_add_next"
@@ -510,6 +515,24 @@ object AppModel {
     fun setFluidBackground(enabled: Boolean) {
         settings.putString(KEY_FLUID_BACKGROUND, enabled.toString())
         _fluidBackground.value = enabled
+    }
+
+    private val _fluidBackgroundDither = MutableStateFlow(fluidBackgroundDither())
+
+    /**
+     * 播放页流体背景着色器是否开启抗色阶断层高频抖动（TPDF Dithering）。
+     *
+     * 默认开。在 8-bit SDR 帧缓冲区下消除大面积渐变的暗部色阶断层，
+     * 计算仅占几条 GPU 算术指令，不占显存带宽。
+     */
+    val fluidBackgroundDitherFlow: StateFlow<Boolean> = _fluidBackgroundDither.asStateFlow()
+
+    fun fluidBackgroundDither(): Boolean =
+        settings.getString(KEY_FLUID_BACKGROUND_DITHER)?.toBooleanStrictOrNull() ?: true
+
+    fun setFluidBackgroundDither(enabled: Boolean) {
+        settings.putString(KEY_FLUID_BACKGROUND_DITHER, enabled.toString())
+        _fluidBackgroundDither.value = enabled
     }
 
     // ============ 保留上次播放（持久化） ============

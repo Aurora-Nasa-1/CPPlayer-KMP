@@ -310,6 +310,8 @@ interface AppearanceStrings {
 
     val fluidBackground: String
     val fluidBackgroundNote: String
+    val fluidBackgroundDither: String
+    val fluidBackgroundDitherNote: String
 
     val showSongAlbum: String
     val showSongAlbumNote: String
