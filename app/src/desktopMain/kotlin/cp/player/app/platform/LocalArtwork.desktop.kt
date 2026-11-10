@@ -68,7 +68,7 @@ internal object LocalArtwork {
     /**
      * 按最后修改时间回收旧条目。
      *
-     * 缓存目录挂在系统临时目录下：进程被强杀时不会走 [JmtcMediaControls.stop] 的清理，
+     * 缓存目录挂在系统临时目录下：进程被强杀时不会走播控控制器的清理，
      * 长会话中又只增不减 —— 不设上限就会一直占磁盘。
      */
     private fun pruneCache(cacheDir: File) {

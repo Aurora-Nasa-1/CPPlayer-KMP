@@ -32,7 +32,9 @@ class PluginRepositoryFacadeTest {
     fun `only a newly completed installation notifies UI caches not staged or rejected installs`() {
         runBlocking {
             for (restartRequired in listOf(false, true)) {
-                val artifact = PluginArtifact("any", runtime = "http", url = "https://example.org/p.zip",
+                // provider 运行时只接受 "js"/"script"；旧的 "http" 会在 catalog 刷新阶段
+                // 就被判为不兼容，这个用例想测的「安装完成才通知 UI」根本走不到。
+                val artifact = PluginArtifact("any", runtime = "script", url = "https://example.org/p.zip",
                     sha256 = "a".repeat(64), bytes = 1)
                 val plugin = RepositoryPlugin("test", RepositoryPluginKind.PROVIDER, "Test", "1.0.0", artifacts = listOf(artifact))
                 val text = Json.encodeToString(PluginCatalog(name = "Test", plugins = listOf(plugin)))

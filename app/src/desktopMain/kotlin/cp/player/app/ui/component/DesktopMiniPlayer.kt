@@ -63,6 +63,7 @@ import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.JbrWindowChrome
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.LocalIsDarkTheme
+import cp.player.app.ui.theme.containsKana
 import cp.player.app.ui.util.DesktopShell
 import cp.player.app.ui.util.LyricOffsetManager
 import cp.player.app.ui.util.resized
@@ -125,6 +126,9 @@ fun DesktopMiniPlayer(
     val trackId = track?.id.orEmpty()
     val lyricOffset = if (trackId.isNotBlank()) LyricOffsetManager.getOffset(trackId) else 0L
     val effectivePos = playbackState.positionMs + lyricOffset
+
+    val lyricLines = (playbackState.lyrics as? LyricsState.Success)?.lines.orEmpty()
+    val isJapaneseLyrics = remember(lyricLines) { lyricLines.any { it.text.containsKana() } }
 
     // 实时计算当前处于活动态的歌词单行
     val currentLyricText = remember(playbackState.lyrics, effectivePos) {
@@ -341,6 +345,7 @@ fun DesktopMiniPlayer(
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.primary,
                                 maxLines = 1,
+                                isJapanese = isJapaneseLyrics,
                             )
                         } else {
                             CpText(

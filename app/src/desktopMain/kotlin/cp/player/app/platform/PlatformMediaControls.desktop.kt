@@ -54,7 +54,7 @@ private fun createPlatformMediaControls(controller: PlaybackController): Platfor
     val os = System.getProperty("os.name", "").lowercase(Locale.ROOT)
     return when {
         os.contains("win") -> WindowsSmtcControls.create(controller)
-        os.contains("linux") -> JmtcMediaControls.create(controller)
+        os.contains("linux") -> LinuxMprisControls.create(controller)
         else -> NoopMediaControls
     }
 }

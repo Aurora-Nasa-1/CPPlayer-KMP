@@ -1,22 +1,22 @@
 package cp.player.app.platform
 
-import com.sun.jna.Callback
-import com.sun.jna.Function
-import com.sun.jna.Memory
-import com.sun.jna.Native
-import com.sun.jna.Pointer
-import com.sun.jna.Structure
-import com.sun.jna.WString
-import com.sun.jna.platform.win32.Guid.GUID
-import com.sun.jna.platform.win32.Ole32Util
-import com.sun.jna.ptr.LongByReference
-import com.sun.jna.ptr.PointerByReference
 import cp.player.core.music.TrackSummary
 import cp.player.core.playback.PlaybackController
 import cp.player.core.playback.PlaybackUiState
 import cp.player.core.util.VirtualThreadDispatcher
 import java.io.File
+import java.lang.foreign.Arena
+import java.lang.foreign.FunctionDescriptor
+import java.lang.foreign.Linker
+import java.lang.foreign.MemoryLayout
+import java.lang.foreign.MemorySegment
+import java.lang.foreign.SymbolLookup
+import java.lang.foreign.ValueLayout
+import java.lang.invoke.MethodHandle
+import java.lang.invoke.MethodHandles
+import java.lang.invoke.MethodType
 import java.net.HttpURLConnection
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
@@ -24,7 +24,6 @@ import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -34,15 +33,8 @@ import kotlinx.coroutines.launch
  *
  * ## 架构与实现
  *
- * 彻底替换破损的上游 `JavaMediaTransportControls` (JMTC 0.0.3)：
- * 1. JMTC 的 C++ 桥接将 `MediaPlayer` 放在局部栈变量上，返回即析构导致 Windows
- *    Media Foundation 立即拆毁 SMTC 会话；
- * 2. 现代 Windows 10 (1809+) / Windows 11 对未打包（unpackaged classic Win32）桌面应用，
- *    要求通过 [ISystemMediaTransportControlsInterop.GetForWindow] 明确绑定顶层主窗口 HWND；
- * 3. JMTC 硬编码 MTA 初始化，在 AWT EDT 上直接抛访问违例崩溃；
- *
- * 本实现采用纯 JNA COM 驱动 WinRT 接口，无需任何额外动态链接库，直接与 Windows 系统的
- * `combase.dll` / `Windows.Media.dll` 通信：
+ * 全程基于 JDK 22+ Foreign Function & Memory API (FFM) 驱动 WinRT COM 接口，
+ * 无需 JNA、JMTC 或任何第三方动态链接库，直接与 Windows 系统的 `combase.dll` / `Windows.Media.dll` 通信：
  * - 绑定主窗口 HWND，实现系统级媒体会话与音量/快捷键悬浮窗；
  * - 监听硬件媒体键与悬浮窗按钮（播放/暂停/上一曲/下一曲）；
  * - 动态推送曲目名、艺术家、专辑名与专辑封面图片；
@@ -66,18 +58,19 @@ internal class WindowsSmtcControls private constructor(
     private var coverCacheDir: File? = null
     private var latestTrack: TrackSummary? = null
 
-    // WinRT COM 句柄
-    private var smtcPtr: Pointer? = null
-    private var smtc2Ptr: Pointer? = null
-    private var displayUpdaterPtr: Pointer? = null
-    private var musicPropertiesPtr: Pointer? = null
-    private var musicProperties2Ptr: Pointer? = null
-    private var uriFactoryPtr: Pointer? = null
-    private var streamStaticsPtr: Pointer? = null
+    // FFM Arena 与 WinRT COM 句柄
+    private var rootArena: Arena? = null
+    private var callbackArena: Arena? = null
 
-    // 回调对象内存防 GC
-    private var callbackVtbl: ComVtbl? = null
-    private var callbackMemory: Memory? = null
+    private var smtcPtr: MemorySegment? = null
+    private var smtc2Ptr: MemorySegment? = null
+    private var displayUpdaterPtr: MemorySegment? = null
+    private var musicPropertiesPtr: MemorySegment? = null
+    private var musicProperties2Ptr: MemorySegment? = null
+    private var uriFactoryPtr: MemorySegment? = null
+    private var streamStaticsPtr: MemorySegment? = null
+
+    private var callbackObj: MemorySegment? = null
     private var buttonEventToken: Long = 0L
 
     // 推送去抖
@@ -86,6 +79,10 @@ internal class WindowsSmtcControls private constructor(
     private var pushedPlayingStatus = -1
     private var pushedPositionMs = -1L
     private var lastPositionPushAt = 0L
+
+    private val iidIUnknownBytes = ByteArray(16)
+    private val iidAgileObjectBytes = ByteArray(16)
+    private val iidButtonHandlerBytes = ByteArray(16)
 
     override fun start() {
         if (started || smtcExecutor.isShutdown) return
@@ -101,138 +98,236 @@ internal class WindowsSmtcControls private constructor(
             // 1. 设置进程 AUMID 并同步开始菜单快捷方式
             WindowsSmtcIdentity.ensure()
 
+            val arena = Arena.ofShared()
+            rootArena = arena
+
+            // 预解析常用 GUID 字节
+            parseGuid(IID_IUNKNOWN, iidIUnknownBytes, arena)
+            parseGuid(IID_AGILE_OBJECT, iidAgileObjectBytes, arena)
+            parseGuid(IID_BUTTON_EVENT_HANDLER, iidButtonHandlerBytes, arena)
+
             // 2. 初始化 COM 套间 (MTA)
-            combase("RoInitialize").invokeInt(arrayOf(RO_INIT_MULTITHREADED))
+            val combaseRoInit = downcallCombase("RoInitialize", FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_INT), arena)
+            combaseRoInit.invokeWithArguments(RO_INIT_MULTITHREADED)
 
             // 3. 解析主窗口 HWND
-            var hwndPtr = resolveHwnd()
+            var hwndLong = resolveHwndLong(arena)
             var attempts = 0
-            while ((hwndPtr == null || Pointer.nativeValue(hwndPtr) == 0L) && attempts < 20) {
+            while (hwndLong == 0L && attempts < 20) {
                 Thread.sleep(100)
-                hwndPtr = resolveHwnd()
+                hwndLong = resolveHwndLong(arena)
                 attempts++
             }
-            if (hwndPtr == null || Pointer.nativeValue(hwndPtr) == 0L) {
+            if (hwndLong == 0L) {
                 System.err.println("[WindowsSMTC] 未能获取窗口 HWND，放弃初始化")
+                arena.close()
+                rootArena = null
                 return@runCatching
             }
 
             // 4. 获取 ISystemMediaTransportControlsInterop 工厂
-            val hClassName = createHString("Windows.Media.SystemMediaTransportControls")
-            val iidInterop = Ole32Util.getGUIDFromString(IID_INTEROP)
-            val interopRef = PointerByReference()
-            val hrFact = combase("RoGetActivationFactory").invokeInt(arrayOf(
-                hClassName, iidInterop.pointer, interopRef,
-            ))
-            deleteHString(hClassName)
+            val hClassName = createHString("Windows.Media.SystemMediaTransportControls", arena)
+            val iidInterop = arena.allocate(16)
+            parseGuid(IID_INTEROP, iidInterop)
+            val interopRef = arena.allocate(ValueLayout.ADDRESS)
+
+            val roGetActivationFactory = downcallCombase(
+                "RoGetActivationFactory",
+                FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS),
+                arena,
+            )
+            val hrFact = roGetActivationFactory.invokeWithArguments(hClassName, iidInterop, interopRef) as Int
+            deleteHString(hClassName, arena)
             check(hrFact == 0) { "RoGetActivationFactory(SMTC) failed: 0x${Integer.toHexString(hrFact)}" }
-            val interop = interopRef.value ?: error("ISystemMediaTransportControlsInterop is null")
+            val interop = interopRef.get(ValueLayout.ADDRESS, 0)
 
             // 5. GetForWindow(hwnd) -> ISystemMediaTransportControls
-            val iidSmtc = Ole32Util.getGUIDFromString(IID_SMTC)
-            val smtcRef = PointerByReference()
-            val hrGet = method(interop, SLOT_INTEROP_GET_FOR_WINDOW).invokeInt(arrayOf(
-                interop, hwndPtr, iidSmtc.pointer, smtcRef,
-            ))
+            val iidSmtc = arena.allocate(16)
+            parseGuid(IID_SMTC, iidSmtc)
+            val smtcRef = arena.allocate(ValueLayout.ADDRESS)
+            val hrGet = callCom(interop, SLOT_INTEROP_GET_FOR_WINDOW, hwndLong, iidSmtc, smtcRef)
             release(interop)
             check(hrGet == 0) { "GetForWindow failed: 0x${Integer.toHexString(hrGet)}" }
-            val smtc = smtcRef.value ?: error("SMTC instance is null")
+            val smtc = smtcRef.get(ValueLayout.ADDRESS, 0)
             smtcPtr = smtc
 
             // 6. 激活控制按钮与状态
-            call(smtc, SLOT_SMTC_PUT_IS_ENABLED, (1).toByte())
-            call(smtc, SLOT_SMTC_PUT_IS_PLAY_ENABLED, (1).toByte())
-            call(smtc, SLOT_SMTC_PUT_IS_PAUSE_ENABLED, (1).toByte())
-            call(smtc, SLOT_SMTC_PUT_IS_NEXT_ENABLED, (1).toByte())
-            call(smtc, SLOT_SMTC_PUT_IS_PREV_ENABLED, (1).toByte())
+            callCom(smtc, SLOT_SMTC_PUT_IS_ENABLED, (1).toByte())
+            callCom(smtc, SLOT_SMTC_PUT_IS_PLAY_ENABLED, (1).toByte())
+            callCom(smtc, SLOT_SMTC_PUT_IS_PAUSE_ENABLED, (1).toByte())
+            callCom(smtc, SLOT_SMTC_PUT_IS_NEXT_ENABLED, (1).toByte())
+            callCom(smtc, SLOT_SMTC_PUT_IS_PREV_ENABLED, (1).toByte())
 
-            // 7. 注册按钮回调 (Play, Pause, Next, Previous)
+            // 7. 注册按钮回调
             registerButtonCallback(smtc)
 
             // 8. 获取 DisplayUpdater 与 MusicProperties
-            val updaterRef = PointerByReference()
-            val hrUpdater = method(smtc, SLOT_SMTC_GET_DISPLAY_UPDATER).invokeInt(arrayOf(smtc, updaterRef))
-            if (hrUpdater == 0 && updaterRef.value != null) {
-                val updater = updaterRef.value
-                displayUpdaterPtr = updater
-                call(updater, SLOT_UPDATER_PUT_TYPE, MEDIA_TYPE_MUSIC)
+            val updaterRef = arena.allocate(ValueLayout.ADDRESS)
+            val hrUpdater = callCom(smtc, SLOT_SMTC_GET_DISPLAY_UPDATER, updaterRef)
+            if (hrUpdater == 0) {
+                val updater = updaterRef.get(ValueLayout.ADDRESS, 0)
+                if (isValidPtr(updater)) {
+                    displayUpdaterPtr = updater
+                    callCom(updater, SLOT_UPDATER_PUT_TYPE, MEDIA_TYPE_MUSIC)
 
-                val musicRef = PointerByReference()
-                if (method(updater, SLOT_UPDATER_GET_MUSIC_PROPS).invokeInt(arrayOf(updater, musicRef)) == 0) {
-                    val music = musicRef.value
-                    musicPropertiesPtr = music
+                    val musicRef = arena.allocate(ValueLayout.ADDRESS)
+                    if (callCom(updater, SLOT_UPDATER_GET_MUSIC_PROPS, musicRef) == 0) {
+                        val music = musicRef.get(ValueLayout.ADDRESS, 0)
+                        if (isValidPtr(music)) {
+                            musicPropertiesPtr = music
 
-                    val iidMusic2 = Ole32Util.getGUIDFromString(IID_MUSIC_PROPERTIES2)
-                    val music2Ref = PointerByReference()
-                    if (queryInterface(music, iidMusic2.pointer, music2Ref) == 0) {
-                        musicProperties2Ptr = music2Ref.value
+                            val iidMusic2 = arena.allocate(16)
+                            parseGuid(IID_MUSIC_PROPERTIES2, iidMusic2)
+                            val music2Ref = arena.allocate(ValueLayout.ADDRESS)
+                            if (queryInterface(music, iidMusic2, music2Ref) == 0) {
+                                val music2 = music2Ref.get(ValueLayout.ADDRESS, 0)
+                                if (isValidPtr(music2)) musicProperties2Ptr = music2
+                            }
+                        }
                     }
                 }
             }
 
             // 9. 获取 ISystemMediaTransportControls2 (用于 Timeline)
-            val iidSmtc2 = Ole32Util.getGUIDFromString(IID_SMTC2)
-            val smtc2Ref = PointerByReference()
-            if (queryInterface(smtc, iidSmtc2.pointer, smtc2Ref) == 0) {
-                smtc2Ptr = smtc2Ref.value
+            val iidSmtc2 = arena.allocate(16)
+            parseGuid(IID_SMTC2, iidSmtc2)
+            val smtc2Ref = arena.allocate(ValueLayout.ADDRESS)
+            if (queryInterface(smtc, iidSmtc2, smtc2Ref) == 0) {
+                val smtc2 = smtc2Ref.get(ValueLayout.ADDRESS, 0)
+                if (isValidPtr(smtc2)) smtc2Ptr = smtc2
             }
 
             // 10. 初始化封面 Uri / Stream 激活工厂
-            initCoverFactories()
+            initCoverFactories(arena, roGetActivationFactory)
 
             started = true
-            println("[WindowsSMTC] 成功初始化并绑定窗口 HWND=${Pointer.nativeValue(hwndPtr)}")
+            println("[WindowsSMTC] 成功通过 FFM 初始化并绑定窗口 HWND=$hwndLong")
         }.onFailure {
             System.err.println("[WindowsSMTC] 初始化失败: ${it.stackTraceToString()}")
         }
     }
 
-    private fun initCoverFactories() {
+    private fun initCoverFactories(arena: Arena, roGetActivationFactory: MethodHandle) {
         runCatching {
-            // Windows.Foundation.Uri
-            val hUriClass = createHString("Windows.Foundation.Uri")
-            val iidUriFact = Ole32Util.getGUIDFromString(IID_URI_FACTORY)
-            val uriFactRef = PointerByReference()
-            if (combase("RoGetActivationFactory").invokeInt(arrayOf(hUriClass, iidUriFact.pointer, uriFactRef)) == 0) {
-                uriFactoryPtr = uriFactRef.value
+            val hUriClass = createHString("Windows.Foundation.Uri", arena)
+            val iidUriFact = arena.allocate(16)
+            parseGuid(IID_URI_FACTORY, iidUriFact)
+            val uriFactRef = arena.allocate(ValueLayout.ADDRESS)
+            if (roGetActivationFactory.invokeWithArguments(hUriClass, iidUriFact, uriFactRef) as Int == 0) {
+                val uriFact = uriFactRef.get(ValueLayout.ADDRESS, 0)
+                if (isValidPtr(uriFact)) uriFactoryPtr = uriFact
             }
-            deleteHString(hUriClass)
+            deleteHString(hUriClass, arena)
 
-            // Windows.Storage.Streams.RandomAccessStreamReference
-            val hStreamClass = createHString("Windows.Storage.Streams.RandomAccessStreamReference")
-            val iidStreamStatics = Ole32Util.getGUIDFromString(IID_STREAM_REF_STATICS)
-            val streamStaticsRef = PointerByReference()
-            if (combase("RoGetActivationFactory").invokeInt(arrayOf(hStreamClass, iidStreamStatics.pointer, streamStaticsRef)) == 0) {
-                streamStaticsPtr = streamStaticsRef.value
+            val hStreamClass = createHString("Windows.Storage.Streams.RandomAccessStreamReference", arena)
+            val iidStreamStatics = arena.allocate(16)
+            parseGuid(IID_STREAM_REF_STATICS, iidStreamStatics)
+            val streamStaticsRef = arena.allocate(ValueLayout.ADDRESS)
+            if (roGetActivationFactory.invokeWithArguments(hStreamClass, iidStreamStatics, streamStaticsRef) as Int == 0) {
+                val streamStatics = streamStaticsRef.get(ValueLayout.ADDRESS, 0)
+                if (isValidPtr(streamStatics)) streamStaticsPtr = streamStatics
             }
-            deleteHString(hStreamClass)
+            deleteHString(hStreamClass, arena)
         }
     }
 
-    private fun registerButtonCallback(smtc: Pointer) {
-        val vtbl = ComVtbl()
-        val mem = Memory(Native.POINTER_SIZE.toLong())
+    private fun registerButtonCallback(smtc: MemorySegment) {
+        val arena = Arena.ofShared()
+        callbackArena = arena
 
-        vtbl.QueryInterface = QueryInterfaceCallback { _, riidPtr, ppv ->
-            val guidStr = GUID(riidPtr).toGuidString().lowercase()
-            if (guidStr.contains(IID_IUNKNOWN) ||
-                guidStr.contains(IID_AGILE_OBJECT) ||
-                guidStr.contains(IID_BUTTON_EVENT_HANDLER)
-            ) {
-                ppv.setValue(mem)
-                0 // S_OK
-            } else {
-                ppv.setValue(Pointer.NULL)
-                E_NOINTERFACE
-            }
+        val lookup = MethodHandles.lookup()
+        val qiHandle = lookup.findSpecial(
+            WindowsSmtcControls::class.java,
+            "onQueryInterface",
+            MethodType.methodType(Int::class.java, MemorySegment::class.java, MemorySegment::class.java, MemorySegment::class.java),
+            WindowsSmtcControls::class.java,
+        ).bindTo(this)
+
+        val addRefHandle = lookup.findSpecial(
+            WindowsSmtcControls::class.java,
+            "onAddRef",
+            MethodType.methodType(Int::class.java, MemorySegment::class.java),
+            WindowsSmtcControls::class.java,
+        ).bindTo(this)
+
+        val releaseHandle = lookup.findSpecial(
+            WindowsSmtcControls::class.java,
+            "onRelease",
+            MethodType.methodType(Int::class.java, MemorySegment::class.java),
+            WindowsSmtcControls::class.java,
+        ).bindTo(this)
+
+        val invokeHandle = lookup.findSpecial(
+            WindowsSmtcControls::class.java,
+            "onInvoke",
+            MethodType.methodType(Int::class.java, MemorySegment::class.java, MemorySegment::class.java, MemorySegment::class.java),
+            WindowsSmtcControls::class.java,
+        ).bindTo(this)
+
+        val linker = Linker.nativeLinker()
+        val qiStub = linker.upcallStub(
+            qiHandle,
+            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS),
+            arena,
+        )
+        val addRefStub = linker.upcallStub(
+            addRefHandle,
+            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS),
+            arena,
+        )
+        val releaseStub = linker.upcallStub(
+            releaseHandle,
+            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS),
+            arena,
+        )
+        val invokeStub = linker.upcallStub(
+            invokeHandle,
+            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS),
+            arena,
+        )
+
+        val vtbl = arena.allocate(ValueLayout.ADDRESS, 4)
+        vtbl.setAtIndex(ValueLayout.ADDRESS, 0, qiStub)
+        vtbl.setAtIndex(ValueLayout.ADDRESS, 1, addRefStub)
+        vtbl.setAtIndex(ValueLayout.ADDRESS, 2, releaseStub)
+        vtbl.setAtIndex(ValueLayout.ADDRESS, 3, invokeStub)
+
+        val obj = arena.allocate(ValueLayout.ADDRESS)
+        obj.set(ValueLayout.ADDRESS, 0, vtbl)
+        callbackObj = obj
+
+        val tokenRef = arena.allocate(ValueLayout.JAVA_LONG)
+        val hr = callCom(smtc, SLOT_SMTC_ADD_BUTTON_PRESSED, obj, tokenRef)
+        if (hr == 0) {
+            buttonEventToken = tokenRef.get(ValueLayout.JAVA_LONG, 0)
+        } else {
+            System.err.println("[WindowsSMTC] add_ButtonPressed 失败: 0x${Integer.toHexString(hr)}")
         }
-        vtbl.AddRef = AddRefCallback { 1 }
-        vtbl.Release = ReleaseCallback { 1 }
-        vtbl.Invoke = InvokeCallback { _, _, argsPtr ->
-            if (argsPtr != null) {
-                val btnMem = Memory(4)
-                if (method(argsPtr, SLOT_EVENT_ARGS_GET_BUTTON).invokeInt(arrayOf(argsPtr, btnMem)) == 0) {
-                    when (btnMem.getInt(0)) {
+    }
+
+    private fun onQueryInterface(thisPtr: MemorySegment, riid: MemorySegment, ppv: MemorySegment): Int {
+        val bytes = riid.reinterpret(16).toArray(ValueLayout.JAVA_BYTE)
+        if (bytes.contentEquals(iidIUnknownBytes) ||
+            bytes.contentEquals(iidAgileObjectBytes) ||
+            bytes.contentEquals(iidButtonHandlerBytes)
+        ) {
+            ppv.reinterpret(ValueLayout.ADDRESS.byteSize()).set(ValueLayout.ADDRESS, 0, callbackObj ?: thisPtr)
+            return 0 // S_OK
+        }
+        ppv.reinterpret(ValueLayout.ADDRESS.byteSize()).set(ValueLayout.ADDRESS, 0, MemorySegment.NULL)
+        return E_NOINTERFACE
+    }
+
+    private fun onAddRef(thisPtr: MemorySegment): Int = 1
+
+    private fun onRelease(thisPtr: MemorySegment): Int = 1
+
+    private fun onInvoke(thisPtr: MemorySegment, sender: MemorySegment, args: MemorySegment): Int {
+        if (isValidPtr(args)) {
+            Arena.ofConfined().use { tempArena ->
+                val btnMem = tempArena.allocate(ValueLayout.JAVA_INT)
+                if (callCom(args, SLOT_EVENT_ARGS_GET_BUTTON, btnMem) == 0) {
+                    when (btnMem.get(ValueLayout.JAVA_INT, 0)) {
                         BUTTON_PLAY -> controller.resume()
                         BUTTON_PAUSE, BUTTON_STOP -> controller.pause()
                         BUTTON_NEXT -> controller.skipNext()
@@ -240,21 +335,8 @@ internal class WindowsSmtcControls private constructor(
                     }
                 }
             }
-            0 // S_OK
         }
-        vtbl.write()
-        mem.setPointer(0, vtbl.pointer)
-
-        callbackVtbl = vtbl
-        callbackMemory = mem
-
-        val tokenRef = LongByReference()
-        val hr = method(smtc, SLOT_SMTC_ADD_BUTTON_PRESSED).invokeInt(arrayOf(smtc, mem, tokenRef))
-        if (hr == 0) {
-            buttonEventToken = tokenRef.value
-        } else {
-            System.err.println("[WindowsSMTC] add_ButtonPressed 失败: 0x${Integer.toHexString(hr)}")
-        }
+        return 0 // S_OK
     }
 
     override fun update(state: PlaybackUiState) {
@@ -275,9 +357,9 @@ internal class WindowsSmtcControls private constructor(
             if (pushedTrackId != null) {
                 resetPushedState()
                 runCatching {
-                    call(smtc, SLOT_SMTC_PUT_PLAYBACK_STATUS, STATUS_CLOSED)
-                    call(updater, SLOT_UPDATER_CLEAR_ALL)
-                    call(updater, SLOT_UPDATER_UPDATE)
+                    callCom(smtc, SLOT_SMTC_PUT_PLAYBACK_STATUS, STATUS_CLOSED)
+                    callCom(updater, SLOT_UPDATER_CLEAR_ALL)
+                    callCom(updater, SLOT_UPDATER_UPDATE)
                 }
             }
             return
@@ -311,7 +393,7 @@ internal class WindowsSmtcControls private constructor(
         // 3) 播放状态翻转
         if (pushedPlayingStatus != playingStatus) {
             pushedPlayingStatus = playingStatus
-            call(smtc, SLOT_SMTC_PUT_PLAYBACK_STATUS, playingStatus)
+            callCom(smtc, SLOT_SMTC_PUT_PLAYBACK_STATUS, playingStatus)
             dirty = true
         }
 
@@ -325,7 +407,7 @@ internal class WindowsSmtcControls private constructor(
 
         // 5) 提交刷新
         if (dirty) {
-            call(updater, SLOT_UPDATER_UPDATE)
+            callCom(updater, SLOT_UPDATER_UPDATE)
         }
     }
 
@@ -333,48 +415,51 @@ internal class WindowsSmtcControls private constructor(
         val music = musicPropertiesPtr ?: return
         val updater = displayUpdaterPtr ?: return
 
-        // 标题与艺术家
-        val hTitle = createHString(track.name.ifBlank { "CPPlayer" })
-        method(music, SLOT_MUSIC_PUT_TITLE).invokeInt(arrayOf(music, hTitle))
-        deleteHString(hTitle)
+        Arena.ofConfined().use { tempArena ->
+            val hTitle = createHString(track.name.ifBlank { "CPPlayer" }, tempArena)
+            callCom(music, SLOT_MUSIC_PUT_TITLE, hTitle)
+            deleteHString(hTitle, tempArena)
 
-        val hArtist = createHString(track.artist)
-        method(music, SLOT_MUSIC_PUT_ARTIST).invokeInt(arrayOf(music, hArtist))
-        deleteHString(hArtist)
+            val hArtist = createHString(track.artist, tempArena)
+            callCom(music, SLOT_MUSIC_PUT_ARTIST, hArtist)
+            deleteHString(hArtist, tempArena)
 
-        // 专辑名
-        musicProperties2Ptr?.let { music2 ->
-            val hAlbum = createHString(track.album.orEmpty())
-            method(music2, SLOT_MUSIC2_PUT_ALBUM_TITLE).invokeInt(arrayOf(music2, hAlbum))
-            deleteHString(hAlbum)
+            musicProperties2Ptr?.let { music2 ->
+                val hAlbum = createHString(track.album.orEmpty(), tempArena)
+                callCom(music2, SLOT_MUSIC2_PUT_ALBUM_TITLE, hAlbum)
+                deleteHString(hAlbum, tempArena)
+            }
         }
 
-        // 封面设置
         applyCoverThumbnail(updater, coverFile)
     }
 
-    private fun applyCoverThumbnail(updater: Pointer, coverFile: File?) {
+    private fun applyCoverThumbnail(updater: MemorySegment, coverFile: File?) {
         val uriFact = uriFactoryPtr ?: return
         val streamStatics = streamStaticsPtr ?: return
         if (coverFile == null || !coverFile.isFile) return
 
         runCatching {
-            val uriStr = coverFile.toURI().toASCIIString()
-            val hUriStr = createHString(uriStr)
-            val uriRef = PointerByReference()
-            val hrUri = method(uriFact, SLOT_URI_FACT_CREATE_URI).invokeInt(arrayOf(uriFact, hUriStr, uriRef))
-            deleteHString(hUriStr)
-            if (hrUri == 0 && uriRef.value != null) {
-                val uri = uriRef.value
-                val streamRef = PointerByReference()
-                val hrStream = method(streamStatics, SLOT_STREAM_STATICS_CREATE_FROM_URI).invokeInt(arrayOf(
-                    streamStatics, uri, streamRef,
-                ))
-                release(uri)
-                if (hrStream == 0 && streamRef.value != null) {
-                    val stream = streamRef.value
-                    method(updater, SLOT_UPDATER_PUT_THUMBNAIL).invokeInt(arrayOf(updater, stream))
-                    release(stream)
+            Arena.ofConfined().use { tempArena ->
+                val uriStr = coverFile.toURI().toASCIIString()
+                val hUriStr = createHString(uriStr, tempArena)
+                val uriRef = tempArena.allocate(ValueLayout.ADDRESS)
+                val hrUri = callCom(uriFact, SLOT_URI_FACT_CREATE_URI, hUriStr, uriRef)
+                deleteHString(hUriStr, tempArena)
+                if (hrUri == 0) {
+                    val uri = uriRef.get(ValueLayout.ADDRESS, 0)
+                    if (isValidPtr(uri)) {
+                        val streamRef = tempArena.allocate(ValueLayout.ADDRESS)
+                        val hrStream = callCom(streamStatics, SLOT_STREAM_STATICS_CREATE_FROM_URI, uri, streamRef)
+                        release(uri)
+                        if (hrStream == 0) {
+                            val stream = streamRef.get(ValueLayout.ADDRESS, 0)
+                            if (isValidPtr(stream)) {
+                                callCom(updater, SLOT_UPDATER_PUT_THUMBNAIL, stream)
+                                release(stream)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -383,23 +468,32 @@ internal class WindowsSmtcControls private constructor(
     private fun updateTimeline(durationMs: Long, positionMs: Long) {
         val smtc2 = smtc2Ptr ?: return
         runCatching {
-            val hTimelineClass = createHString("Windows.Media.SystemMediaTransportControlsTimelineProperties")
-            val propsRef = PointerByReference()
-            val hrAct = combase("RoActivateInstance").invokeInt(arrayOf(hTimelineClass, propsRef))
-            deleteHString(hTimelineClass)
-            if (hrAct == 0 && propsRef.value != null) {
-                val props = propsRef.value
-                val dur100ns = durationMs.coerceAtLeast(0L) * 10_000L
-                val pos100ns = positionMs.coerceIn(0L, durationMs) * 10_000L
+            Arena.ofConfined().use { tempArena ->
+                val hTimelineClass = createHString("Windows.Media.SystemMediaTransportControlsTimelineProperties", tempArena)
+                val propsRef = tempArena.allocate(ValueLayout.ADDRESS)
+                val roActivateInstance = downcallCombase(
+                    "RoActivateInstance",
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS),
+                    tempArena,
+                )
+                val hrAct = roActivateInstance.invokeWithArguments(hTimelineClass, propsRef) as Int
+                deleteHString(hTimelineClass, tempArena)
+                if (hrAct == 0) {
+                    val props = propsRef.get(ValueLayout.ADDRESS, 0)
+                    if (isValidPtr(props)) {
+                        val dur100ns = durationMs.coerceAtLeast(0L) * 10_000L
+                        val pos100ns = positionMs.coerceIn(0L, durationMs) * 10_000L
 
-                call(props, SLOT_TIMELINE_PUT_START, 0L)
-                call(props, SLOT_TIMELINE_PUT_END, dur100ns)
-                call(props, SLOT_TIMELINE_PUT_MIN_SEEK, 0L)
-                call(props, SLOT_TIMELINE_PUT_MAX_SEEK, dur100ns)
-                call(props, SLOT_TIMELINE_PUT_POSITION, pos100ns)
+                        callCom(props, SLOT_TIMELINE_PUT_START, 0L)
+                        callCom(props, SLOT_TIMELINE_PUT_END, dur100ns)
+                        callCom(props, SLOT_TIMELINE_PUT_MIN_SEEK, 0L)
+                        callCom(props, SLOT_TIMELINE_PUT_MAX_SEEK, dur100ns)
+                        callCom(props, SLOT_TIMELINE_PUT_POSITION, pos100ns)
 
-                method(smtc2, SLOT_SMTC2_UPDATE_TIMELINE).invokeInt(arrayOf(smtc2, props))
-                release(props)
+                        callCom(smtc2, SLOT_SMTC2_UPDATE_TIMELINE, props)
+                        release(props)
+                    }
+                }
             }
         }
     }
@@ -413,14 +507,14 @@ internal class WindowsSmtcControls private constructor(
             smtcExecutor.execute {
                 smtcPtr?.let { smtc ->
                     if (buttonEventToken != 0L) {
-                        method(smtc, SLOT_SMTC_REMOVE_BUTTON_PRESSED).invokeInt(arrayOf(smtc, buttonEventToken))
+                        callCom(smtc, SLOT_SMTC_REMOVE_BUTTON_PRESSED, buttonEventToken)
                         buttonEventToken = 0L
                     }
-                    call(smtc, SLOT_SMTC_PUT_IS_ENABLED, (0).toByte())
+                    callCom(smtc, SLOT_SMTC_PUT_IS_ENABLED, (0).toByte())
                 }
                 displayUpdaterPtr?.let { updater ->
-                    call(updater, SLOT_UPDATER_CLEAR_ALL)
-                    call(updater, SLOT_UPDATER_UPDATE)
+                    callCom(updater, SLOT_UPDATER_CLEAR_ALL)
+                    callCom(updater, SLOT_UPDATER_UPDATE)
                 }
 
                 release(musicProperties2Ptr)
@@ -439,8 +533,11 @@ internal class WindowsSmtcControls private constructor(
                 uriFactoryPtr = null
                 streamStaticsPtr = null
 
-                callbackVtbl = null
-                callbackMemory = null
+                callbackObj = null
+                runCatching { callbackArena?.close() }
+                callbackArena = null
+                runCatching { rootArena?.close() }
+                rootArena = null
 
                 resetPushedState()
                 latestTrack = null
@@ -489,7 +586,7 @@ internal class WindowsSmtcControls private constructor(
                 if (pushedTrackId != trackId) return@execute
                 val updater = displayUpdaterPtr ?: return@execute
                 applyCoverThumbnail(updater, cover)
-                call(updater, SLOT_UPDATER_UPDATE)
+                callCom(updater, SLOT_UPDATER_UPDATE)
             }
         } catch (_: RejectedExecutionException) {
             // stop() 后到达
@@ -536,32 +633,6 @@ internal class WindowsSmtcControls private constructor(
             .digest(value.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
 
-    // COM 结构体与回调
-    class ComVtbl : Structure() {
-        @JvmField var QueryInterface: QueryInterfaceCallback? = null
-        @JvmField var AddRef: AddRefCallback? = null
-        @JvmField var Release: ReleaseCallback? = null
-        @JvmField var Invoke: InvokeCallback? = null
-
-        override fun getFieldOrder(): List<String> = listOf("QueryInterface", "AddRef", "Release", "Invoke")
-    }
-
-    fun interface QueryInterfaceCallback : Callback {
-        fun invoke(thisPtr: Pointer?, riid: Pointer?, ppv: PointerByReference): Int
-    }
-
-    fun interface AddRefCallback : Callback {
-        fun invoke(thisPtr: Pointer?): Int
-    }
-
-    fun interface ReleaseCallback : Callback {
-        fun invoke(thisPtr: Pointer?): Int
-    }
-
-    fun interface InvokeCallback : Callback {
-        fun invoke(thisPtr: Pointer?, sender: Pointer?, args: Pointer?): Int
-    }
-
     companion object {
         @Volatile
         var primaryWindow: java.awt.Window? = null
@@ -569,74 +640,121 @@ internal class WindowsSmtcControls private constructor(
         fun create(controller: PlaybackController): PlatformMediaControlsInstance =
             WindowsSmtcControls(controller)
 
-        fun resolveHwnd(): Pointer? {
-            primaryWindow?.let { win ->
-                val ptr = Native.getWindowPointer(win)
-                if (ptr != null && Pointer.nativeValue(ptr) != 0L) {
-                    return ptr
-                }
-            }
-            val hwndLong = findWindowByPid()
-            if (hwndLong != 0L) {
-                return Pointer(hwndLong)
-            }
-            return null
+        private fun isValidPtr(ptr: MemorySegment?): Boolean =
+            ptr != null && ptr != MemorySegment.NULL && ptr.address() != 0L
+
+        private fun resolveHwndLong(arena: Arena): Long {
+            return findWindowByPid(arena)
         }
 
-        private fun findWindowByPid(): Long {
-            val getTopWindow = Function.getFunction("user32", "GetTopWindow")
-            val getWindow = Function.getFunction("user32", "GetWindow")
-            val isWindowVisible = Function.getFunction("user32", "IsWindowVisible")
-            val getWindowThreadProcessId = Function.getFunction("user32", "GetWindowThreadProcessId")
+        private fun findWindowByPid(arena: Arena): Long {
+            val linker = Linker.nativeLinker()
+            val user32 = SymbolLookup.libraryLookup("user32", arena)
+            val getTopWindow = linker.downcallHandle(user32.find("GetTopWindow").orElseThrow(), FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG))
+            val getWindow = linker.downcallHandle(user32.find("GetWindow").orElseThrow(), FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT))
+            val isWindowVisible = linker.downcallHandle(user32.find("IsWindowVisible").orElseThrow(), FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG))
+            val getWindowThreadProcessId = linker.downcallHandle(user32.find("GetWindowThreadProcessId").orElseThrow(), FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS))
 
             val myPid = ProcessHandle.current().pid().toInt()
-            val pidMem = Memory(4)
-            var hwnd = (getTopWindow.invoke(Long::class.java, arrayOf(0L)) as? Long) ?: 0L
+            val pidMem = arena.allocate(ValueLayout.JAVA_INT)
+            var hwnd = getTopWindow.invokeWithArguments(0L) as Long
             while (hwnd != 0L) {
-                val visible = ((isWindowVisible.invoke(Int::class.java, arrayOf(hwnd)) as? Int) ?: 0) != 0
+                val visible = (isWindowVisible.invokeWithArguments(hwnd) as Int) != 0
                 if (visible) {
-                    getWindowThreadProcessId.invoke(arrayOf(hwnd, pidMem))
-                    if (pidMem.getInt(0) == myPid) {
+                    getWindowThreadProcessId.invokeWithArguments(hwnd, pidMem)
+                    if (pidMem.get(ValueLayout.JAVA_INT, 0) == myPid) {
                         return hwnd
                     }
                 }
-                hwnd = (getWindow.invoke(Long::class.java, arrayOf(hwnd, 2 /* GW_HWNDNEXT */)) as? Long) ?: 0L
+                hwnd = getWindow.invokeWithArguments(hwnd, 2 /* GW_HWNDNEXT */) as Long
             }
             return 0L
         }
 
-        private fun combase(name: String): Function = Function.getFunction("combase", name)
-
-        private fun createHString(str: String): Pointer {
-            val ref = PointerByReference()
-            val hr = combase("WindowsCreateString").invokeInt(arrayOf(
-                WString(str), str.length, ref,
-            ))
-            check(hr == 0) { "WindowsCreateString failed: 0x${Integer.toHexString(hr)}" }
-            return ref.value
+        private fun downcallCombase(name: String, desc: FunctionDescriptor, arena: Arena): MethodHandle {
+            val linker = Linker.nativeLinker()
+            val combase = SymbolLookup.libraryLookup("combase", arena)
+            return linker.downcallHandle(combase.find(name).orElseThrow(), desc)
         }
 
-        private fun deleteHString(hstring: Pointer?) {
-            if (hstring != null) {
-                combase("WindowsDeleteString").invokeInt(arrayOf(hstring))
+        private fun parseGuid(guidStr: String, target: MemorySegment) {
+            Arena.ofConfined().use { temp ->
+                val ole32 = SymbolLookup.libraryLookup("ole32", temp)
+                val iidFromString = Linker.nativeLinker().downcallHandle(
+                    ole32.find("IIDFromString").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS),
+                )
+                val wide = temp.allocateFrom(guidStr, StandardCharsets.UTF_16LE)
+                iidFromString.invokeWithArguments(wide, target)
             }
         }
 
-        private fun method(obj: Pointer, slot: Int): Function {
-            val vtbl = obj.getPointer(0)
-            val funcPtr = vtbl.getPointer(slot.toLong() * Native.POINTER_SIZE)
-            return Function.getFunction(funcPtr)
+        private fun parseGuid(guidStr: String, outBytes: ByteArray, arena: Arena) {
+            val mem = arena.allocate(16)
+            parseGuid(guidStr, mem)
+            val bytes = mem.toArray(ValueLayout.JAVA_BYTE)
+            System.arraycopy(bytes, 0, outBytes, 0, 16)
         }
 
-        private fun call(obj: Pointer, slot: Int, vararg args: Any?): Int =
-            method(obj, slot).invokeInt(arrayOf(obj, *args))
+        private fun createHString(str: String, arena: Arena): MemorySegment {
+            val linker = Linker.nativeLinker()
+            val combase = SymbolLookup.libraryLookup("combase", arena)
+            val createStr = linker.downcallHandle(
+                combase.find("WindowsCreateString").orElseThrow(),
+                FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.ADDRESS),
+            )
+            val wideStr = arena.allocateFrom(str, StandardCharsets.UTF_16LE)
+            val outRef = arena.allocate(ValueLayout.ADDRESS)
+            val hr = createStr.invokeWithArguments(wideStr, str.length, outRef) as Int
+            check(hr == 0) { "WindowsCreateString failed: 0x${Integer.toHexString(hr)}" }
+            return outRef.get(ValueLayout.ADDRESS, 0)
+        }
 
-        private fun queryInterface(obj: Pointer, riid: Pointer, ppv: PointerByReference): Int =
-            method(obj, 0).invokeInt(arrayOf(obj, riid, ppv))
+        private fun deleteHString(hstr: MemorySegment?, arena: Arena) {
+            if (isValidPtr(hstr)) {
+                val linker = Linker.nativeLinker()
+                val combase = SymbolLookup.libraryLookup("combase", arena)
+                val delStr = linker.downcallHandle(
+                    combase.find("WindowsDeleteString").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS),
+                )
+                delStr.invokeWithArguments(hstr!!)
+            }
+        }
 
-        private fun release(obj: Pointer?) {
-            if (obj != null && Pointer.nativeValue(obj) != 0L) {
-                method(obj, 2).invokeInt(arrayOf(obj))
+        private fun callCom(iface: MemorySegment, slot: Int, vararg args: Any): Int {
+            val vtable = iface.reinterpret(ValueLayout.ADDRESS.byteSize())
+                .get(ValueLayout.ADDRESS, 0)
+                .reinterpret((slot + 1).toLong() * ValueLayout.ADDRESS.byteSize())
+            val funcPtr = vtable.get(ValueLayout.ADDRESS, slot.toLong() * ValueLayout.ADDRESS.byteSize())
+
+            val paramLayouts = ArrayList<MemoryLayout>(args.size + 1)
+            paramLayouts.add(ValueLayout.ADDRESS) // this
+            for (arg in args) {
+                when (arg) {
+                    is MemorySegment -> paramLayouts.add(ValueLayout.ADDRESS)
+                    is Int -> paramLayouts.add(ValueLayout.JAVA_INT)
+                    is Long -> paramLayouts.add(ValueLayout.JAVA_LONG)
+                    is Short -> paramLayouts.add(ValueLayout.JAVA_SHORT)
+                    is Byte -> paramLayouts.add(ValueLayout.JAVA_BYTE)
+                    else -> error("Unsupported COM arg: ${arg::class}")
+                }
+            }
+
+            val desc = FunctionDescriptor.of(ValueLayout.JAVA_INT, *paramLayouts.toTypedArray())
+            val handle = Linker.nativeLinker().downcallHandle(funcPtr, desc)
+            val invokeArgs = arrayOfNulls<Any>(args.size + 1)
+            invokeArgs[0] = iface
+            args.copyInto(invokeArgs, 1)
+            return handle.invokeWithArguments(*invokeArgs) as Int
+        }
+
+        private fun queryInterface(obj: MemorySegment, riid: MemorySegment, ppv: MemorySegment): Int =
+            callCom(obj, 0 /* QueryInterface */, riid, ppv)
+
+        private fun release(obj: MemorySegment?) {
+            if (isValidPtr(obj)) {
+                callCom(obj!!, 2 /* Release */)
             }
         }
 
@@ -648,9 +766,9 @@ internal class WindowsSmtcControls private constructor(
         private const val IID_URI_FACTORY = "{44a9796f-723e-4fdf-a218-033e75b0c084}"
         private const val IID_STREAM_REF_STATICS = "{857309dc-3fbf-4e7d-986f-ef3b1a07a964}"
 
-        private const val IID_IUNKNOWN = "00000000-0000-0000-c000-000000000046"
-        private const val IID_AGILE_OBJECT = "94ea2b94-e9cc-49e0-c0ff-ee64ca8f5b90"
-        private const val IID_BUTTON_EVENT_HANDLER = "0557e996-7b23-5bae-aa81-ea0d671143a4"
+        private const val IID_IUNKNOWN = "{00000000-0000-0000-c000-000000000046}"
+        private const val IID_AGILE_OBJECT = "{94ea2b94-e9cc-49e0-c0ff-ee64ca8f5b90}"
+        private const val IID_BUTTON_EVENT_HANDLER = "{0557e996-7b23-5bae-aa81-ea0d671143a4}"
 
         // vtable 槽位
         private const val SLOT_INTEROP_GET_FOR_WINDOW = 6

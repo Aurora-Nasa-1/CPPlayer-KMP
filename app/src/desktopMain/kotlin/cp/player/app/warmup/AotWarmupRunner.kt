@@ -17,6 +17,7 @@ import cp.player.core.model.LyricsInfo
 import cp.player.core.model.Playlist
 import cp.player.core.model.Song
 import cp.player.core.music.PlaylistSummary
+import cp.player.core.music.TrackLyrics
 import cp.player.core.playback.AudioEffectConfig
 import cp.player.core.playback.AudioEffectPreset
 import cp.player.core.playback.EqBand
@@ -153,19 +154,12 @@ object AotWarmupRunner {
     private fun warmupLyricsAndTypography() {
         runCatching {
             // 预热标准 LRC 与 TTML 逐字歌词解析器
-            val mockLyricsPayload = Json.parseToJsonElement(
-                """
-                {
-                  "code": 0,
-                  "data": {
-                    "lyric": "[00:00.00]CPPlayer AOT Warmup Track\n[00:02.50]Ahead of Time Class Loading & Linking\n[00:06.00]Sub-millisecond Generational Shenandoah GC",
-                    "tlyric": "[00:00.00]CPPlayer AOT 预热曲目\n[00:02.50]提前类加载与链接固化\n[00:06.00]亚毫秒级分代 Shenandoah 垃圾回收",
-                    "ttml": "<tt><body><div><p begin=\"1.000\" end=\"4.000\"><span begin=\"1.000\" end=\"2.000\">Project</span> <span begin=\"2.000\" end=\"4.000\">Leyden</span></p></div></body></tt>"
-                  }
-                }
-                """.trimIndent()
+            val mockLyrics = TrackLyrics(
+                lrc = "[00:00.00]CPPlayer AOT Warmup Track\n[00:02.50]Ahead of Time Class Loading & Linking\n[00:06.00]Sub-millisecond Generational Shenandoah GC",
+                translation = "[00:00.00]CPPlayer AOT 预热曲目\n[00:02.50]提前类加载与链接固化\n[00:06.00]亚毫秒级分代 Shenandoah 垃圾回收",
+                ttml = "<tt><body><div><p begin=\"1.000\" end=\"4.000\"><span begin=\"1.000\" end=\"2.000\">Project</span> <span begin=\"2.000\" end=\"4.000\">Leyden</span></p></div></body></tt>",
             )
-            val parsedLines = LyricsParser.parse(mockLyricsPayload, durationMs = 120000L)
+            val parsedLines = LyricsParser.parseTrackLyrics(mockLyrics, durationMs = 120000L)
 
             // 预热 Compose 文本构建器
             val annotated = AnnotatedString.Builder("CPPlayer 高性能文本渲染引擎").apply {

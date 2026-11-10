@@ -1,96 +1,147 @@
 package cp.player.app.repository
 
 import cp.player.core.BackendResult
-import cp.player.core.api.MusicApiMethod
-import cp.player.core.api.MusicApiService
+import cp.player.core.music.*
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
+/**
+ * 仓库层只经强类型 [UnifiedMusicSource] 取数。
+ *
+ * 旧的 JSON 桥（`MusicApiService` + `callApi` 断言）随兼容层一起删除；
+ * 这里保留的是「opaque id 端到端不被改写」与「不猜可选字段」两件事。
+ */
 class MusicRepositoryResourceIdTest {
-    private class Fixture {
-        val calls = mutableListOf<Pair<String, Map<String, String>>>()
-        val responses = mutableMapOf(
-            MusicApiMethod.PLAYLIST_DETAIL to """{"code":0,"data":{"id":"001","title":"List","tracks":[]}}""",
-            MusicApiMethod.PLAYLIST_TRACK_ALL to """{"code":0,"data":{"tracks":[],"hasMore":false}}""",
-            MusicApiMethod.ALBUM_DETAIL to """{"code":0,"data":{"id":"album-uuid","title":"Album","tracks":[]}}""",
-            MusicApiMethod.USER_PLAYLIST to """{"code":0,"data":[{"id":"playlist-uuid","title":"List"}]}""",
-            MusicApiMethod.USER_LIKE_LIST to """{"code":0,"data":{"ids":["track-hash","001"]}}""",
+
+    @Test
+    fun `comment repository preserves opaque cursors and effective server sorting`() {
+        runBlocking {
+            val calls = mutableListOf<List<Any?>>()
+            val page = CommentPage(emptyList(), 0, true, "", 2, nextCursor = "")
+            @Suppress("UNCHECKED_CAST")
+            val source = java.lang.reflect.Proxy.newProxyInstance(
+                UnifiedMusicSource::class.java.classLoader,
+                arrayOf(UnifiedMusicSource::class.java),
+            ) { _, method, args ->
+                when (method.name) {
+                    "getCommentsPage" -> {
+                        calls += args.take(6)
+                        BackendResult.Success(page)
+                    }
+                    else -> error("Unexpected source call: ${method.name}")
+                }
+            } as UnifiedMusicSource
+            val repository = MusicRepository(source)
+            for (cursor in listOf(null, "", "opaque+/==:%20")) {
+                assertEquals(page, repository.getComments(
+                    "test://playlist/Playlist-A", "playlist", 7, 21, 1, cursor,
+                ).getOrNull())
+                assertEquals(listOf("test://playlist/Playlist-A", "playlist", 7, 21, 1, cursor), calls.last())
+            }
+            assertEquals(3, calls.size)
+        }
+    }
+
+    @Test
+    fun `typed search and detail never round trip through JSON or guess optional metadata`() = runBlocking {
+        val track = TrackSummary("test://song/001", "Short", "Artist", null, null, 9_500L)
+        val requests = mutableListOf<Pair<Int, Int>>()
+        val source = object : UnifiedMusicSource {
+            override suspend fun getTrackDetail(mediaId: String) = BackendResult.Success(track)
+            override suspend fun getTrackDetails(mediaIds: List<String>) = BackendResult.Success(listOf(track))
+            override suspend fun getSongUrl(mediaId: String, level: String) = BackendResult.Unsupported("unused")
+            override suspend fun search(keywords: String, type: Int, providers: List<String>?) =
+                searchPage(keywords, type, 30, 0, providers)
+            override suspend fun searchPage(keywords: String, type: Int, limit: Int, offset: Int, providers: List<String>?): MusicResult<SearchResult> {
+                requests += limit to offset
+                return BackendResult.Success(SearchResult(listOf(track), emptyList(), emptyList()))
+            }
+            override suspend fun getUserPlaylists(providerId: String, uid: Long) = BackendResult.Unsupported("unused")
+        }
+        val repository = MusicRepository(source)
+        assertEquals(track, repository.search("short", 1, 10, 20).getOrNull()?.songs?.single())
+        assertEquals(listOf(10 to 20), requests)
+        val detail = repository.getSongDetailInfo(track.id).getOrNull()!!
+        assertEquals(track.id, detail.songId)
+        assertEquals(9_500L, detail.durationMs)
+        assertEquals(null, detail.fee)
+        assertEquals(null, detail.maxBitrate)
+        assertTrue(MusicRepository().search("short", 1) is BackendResult.Unsupported)
+    }
+
+    @Test
+    fun `strongly typed unifiedSource is preferred without JSON serialization round trip`() = runBlocking {
+        val track = TrackSummary("netease://song/001", "Track", "Artist", null, null, 180_000L)
+        val album = AlbumDetail(
+            id = 101L, name = "Album", coverUrl = null, artistName = "Artist", artistId = 201L,
+            publishTimeMs = null, company = null, description = null, tracks = listOf(track),
+            resourceId = "album-001", artistResourceId = "artist-001",
+        )
+        val playlist = PlaylistDetail(
+            summary = PlaylistSummary(1L, "List", null, 1, "Creator", "list-001"),
+            tracks = listOf(track),
+            description = "Desc",
+        )
+        val profile = ArtistProfile(
+            id = 201L, name = "Artist", avatarUrl = null, briefDesc = "Bio", alias = emptyList(),
+            albumSize = 5, musicSize = 10, followeds = 100, resourceId = "artist-001",
         )
 
+        val source = object : UnifiedMusicSource {
+            override suspend fun getTrackDetail(mediaId: String) = BackendResult.Success(track)
+            override suspend fun getTrackDetails(mediaIds: List<String>) = BackendResult.Success(listOf(track))
+            override suspend fun getSongUrl(mediaId: String, level: String) = BackendResult.Unsupported("unused")
+            override suspend fun search(keywords: String, type: Int, providers: List<String>?) =
+                BackendResult.Unsupported("unused")
+            override suspend fun getUserPlaylists(providerId: String, uid: Long) =
+                BackendResult.Unsupported("unused")
+            override suspend fun getPlaylistDetail(mediaId: String): MusicResult<PlaylistDetail> =
+                BackendResult.Success(playlist)
+            override suspend fun getPlaylistTracks(mediaId: String, limit: Int, offset: Int): MusicResult<CatalogPage<TrackSummary>> =
+                BackendResult.Success(CatalogPage(listOf(track), 1, false))
+            override suspend fun getAlbumDetail(mediaId: String): MusicResult<AlbumDetail> =
+                BackendResult.Success(album)
+            override suspend fun getArtistProfile(mediaId: String): MusicResult<ArtistProfile> =
+                BackendResult.Success(profile)
+            override suspend fun getArtistTracks(mediaId: String, limit: Int, offset: Int): MusicResult<CatalogPage<TrackSummary>> =
+                BackendResult.Success(CatalogPage(listOf(track), 1, false))
+            override suspend fun getArtistAlbums(mediaId: String, limit: Int, offset: Int): MusicResult<CatalogPage<AlbumSummary>> =
+                BackendResult.Success(CatalogPage(listOf(AlbumSummary(101L, "Album", null, "Artist", 1, null, 201L, "album-001", "artist-001")), 1, false))
+            override suspend fun getUserPlaylistPage(mediaId: String, limit: Int, offset: Int): MusicResult<CatalogPage<PlaylistSummary>> =
+                BackendResult.Success(CatalogPage(listOf(playlist.summary), 1, false))
+        }
+
+        val repository = MusicRepository(source)
+        assertEquals(playlist.summary.resourceId, repository.getPlaylistDetail("list-001").getOrNull()?.summary?.resourceId)
+        assertEquals(1, repository.getPlaylistTracks("list-001", 300, 0).getOrNull()?.tracks?.size)
+        assertEquals(album.resourceId, repository.getAlbumDetail("album-001").getOrNull()?.resourceId)
+        assertEquals(profile.resourceId, repository.getArtistProfile("artist-001")?.resourceId)
+        assertEquals(track.id, repository.getArtistTopSongs("artist-001").getOrNull()?.single()?.id)
+        assertEquals("album-001", repository.getArtistAlbums("artist-001", 10).getOrNull()?.single()?.resourceId)
+        assertEquals(listOf(playlist.summary), repository.getUserPlaylistsOf("user-001").getOrNull())
+    }
+
+    @Test
+    fun `repository operates without legacy api bridge when unifiedSource is supplied`() = runBlocking {
+        val playlist = PlaylistDetail(
+            summary = PlaylistSummary(1L, "List", null, 1, null, "list-001"),
+            tracks = emptyList(),
+            description = null,
+        )
         @Suppress("UNCHECKED_CAST")
-        val api: MusicApiService = java.lang.reflect.Proxy.newProxyInstance(
-            MusicApiService::class.java.classLoader, arrayOf(MusicApiService::class.java),
-        ) { _, method, args ->
+        val source = java.lang.reflect.Proxy.newProxyInstance(
+            UnifiedMusicSource::class.java.classLoader,
+            arrayOf(UnifiedMusicSource::class.java),
+        ) { _, method, _ ->
             when (method.name) {
-                "getLoginStatus" -> Json.parseToJsonElement(
-                    """{"code":0,"data":{"account":{"id":"user-uuid"},"profile":{"userId":"user-uuid","name":"User"}}}""",
-                )
-                "callApi" -> {
-                    val endpoint = args!![0] as String
-                    calls += endpoint to (args[1] as Map<String, String>)
-                    Json.parseToJsonElement(responses[endpoint] ?: """{"code":401}""")
-                }
-                else -> error("Unexpected API overload: ${method.name}")
+                "getPlaylistDetail" -> BackendResult.Success(playlist)
+                else -> BackendResult.Unsupported("unused")
             }
-        } as MusicApiService
-
-        val repository = MusicRepository(api)
-    }
-
-    @Test
-    fun `catalog and account reads preserve opaque ids end to end`() = runBlocking {
-        val f = Fixture()
-        assertEquals("001", f.repository.getPlaylistDetail("001").getOrNull()?.summary?.resourceId)
-        assertEquals(false, f.repository.getPlaylistTracks("001", 50, 100).getOrNull()?.hasMore)
-        assertEquals("album-uuid", f.repository.getAlbumDetail("album-uuid").getOrNull()?.resourceId)
-        assertEquals("playlist-uuid", f.repository.getUserPlaylistsOf("user-uuid").getOrNull()?.single()?.resourceId)
-        assertTrue(f.repository.getCurrentUserPlaylists() is BackendResult.Success)
-        assertEquals(setOf("track-hash", "001"), f.repository.getLikeList().getOrNull())
-        assertEquals(listOf(
-            MusicApiMethod.PLAYLIST_DETAIL to mapOf("id" to "001"),
-            MusicApiMethod.PLAYLIST_TRACK_ALL to mapOf("id" to "001", "limit" to "50", "offset" to "100"),
-            MusicApiMethod.ALBUM_DETAIL to mapOf("id" to "album-uuid"),
-            MusicApiMethod.USER_PLAYLIST to mapOf("uid" to "user-uuid"),
-            MusicApiMethod.USER_PLAYLIST to mapOf("uid" to "user-uuid"),
-            MusicApiMethod.USER_LIKE_LIST to mapOf("uid" to "user-uuid"),
-        ), f.calls)
-    }
-
-    @Test
-    fun `opaque artist profile uses the supported songs fallback`() = runBlocking {
-        val f = Fixture()
-        f.responses[MusicApiMethod.ARTIST_DETAIL] = """{"code":0,"data":{"id":"artist-hash","name":"Artist"}}"""
-        f.responses[MusicApiMethod.ARTIST_TOP_SONG] = """{"code":501}"""
-        f.responses[MusicApiMethod.ARTIST_SONGS] = """{"code":0,"data":{"tracks":[{"id":"track-hash","title":"Track"}]}}"""
-        f.responses[MusicApiMethod.ARTIST_ALBUM] = """{"code":0,"data":[{"id":"album-uuid","title":"Album"}]}"""
-        val bundle = f.repository.getProfileBundle("artist-hash").getOrNull()
-            ?: error("Expected artist bundle")
-        assertTrue(bundle.isArtist)
-        assertEquals("artist-hash", bundle.resourceId)
-        assertEquals(0L, bundle.uid)
-        assertEquals("track-hash", bundle.songs.single().id)
-        assertEquals("album-uuid", bundle.albums.single().resourceId)
-        assertTrue(f.calls.all { it.second["id"] == "artist-hash" })
-    }
-
-    @Test
-    fun `string playlist writes dispatch once without recursion`() = runBlocking {
-        val f = Fixture()
-        assertFalse(f.repository.deletePlaylist("playlist-uuid"))
-        assertFalse(f.repository.subscribePlaylist("playlist-uuid", true))
-        assertFalse(f.repository.renamePlaylist("playlist-uuid", "Renamed"))
-        assertFalse(f.repository.addTracksToPlaylist("playlist-uuid", listOf("song-hash", "001")))
-        assertFalse(f.repository.removeTracksFromPlaylist("playlist-uuid", listOf("song-hash")))
-        assertEquals(listOf(
-            MusicApiMethod.PLAYLIST_DELETE to mapOf("id" to "playlist-uuid"),
-            MusicApiMethod.PLAYLIST_SUBSCRIBE to mapOf("id" to "playlist-uuid", "t" to "1"),
-            MusicApiMethod.PLAYLIST_NAME_UPDATE to mapOf("id" to "playlist-uuid", "name" to "Renamed"),
-            MusicApiMethod.PLAYLIST_TRACKS to mapOf("op" to "add", "pid" to "playlist-uuid", "tracks" to "song-hash,001"),
-            MusicApiMethod.PLAYLIST_TRACKS to mapOf("op" to "del", "pid" to "playlist-uuid", "tracks" to "song-hash"),
-        ), f.calls)
+        } as UnifiedMusicSource
+        val repository = MusicRepository(source)
+        assertEquals("list-001", repository.getPlaylistDetail("list-001").getOrNull()?.summary?.resourceId)
+        assertTrue(repository.getIntelligenceSongs("song-1", 1L) is BackendResult.Unsupported)
     }
 }

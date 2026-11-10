@@ -179,22 +179,6 @@ class SongCacheUiStateTest {
         assertEquals("刚刚", relativeTime(2_000L, zh, 1_000L))
     }
 
-    // ============ 接口缓存命中率 ============
-
-    @Test
-    fun `没有样本时命中率是 null 而不是 0`() {
-        // 0% 是「一查一个准地没命中」（该去查白名单/键），和「还没查过」是两件事。
-        assertNull(StorageUiState().apiCacheHitRate)
-        assertEquals(0L, StorageUiState().apiCacheSamples)
-    }
-
-    @Test
-    fun `命中率按命中除总数计算`() {
-        val s = StorageUiState(apiCacheHits = 3, apiCacheMisses = 1)
-        assertEquals(0.75f, s.apiCacheHitRate)
-        assertEquals(4L, s.apiCacheSamples)
-    }
-
     @Test
     fun `歌曲缓存能力判据来自容量而不是平台`() {
         assertFalse(StorageUiState(songCacheCapacityBytes = 0L).songCacheSupported, "安卓：不落盘")

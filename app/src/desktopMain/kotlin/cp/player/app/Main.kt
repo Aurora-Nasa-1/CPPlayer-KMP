@@ -155,6 +155,11 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
     // 晚于这一步再写就不生效了。见 DesktopRenderTuning 的时序约束说明。
     DesktopRenderTuning.applyBeforeSkikoInit()
 
+    // 启用 JBR 在 Windows 10/11 上的现代原生文件对话框（Common Item Dialog / IFileDialog）
+    if (System.getProperty("os.name").orEmpty().startsWith("Windows")) {
+        System.setProperty("sun.awt.windows.useCommonItemDialog", "true")
+    }
+
     // Coil 内存缓存上限必须在任何图片请求之前装上（SingletonImageLoader 首次
     // get() 后 factory 固化，晚了 setSafe 直接抛），见 DesktopImageCacheTuning 的说明。
     installDesktopImageCacheLimit()

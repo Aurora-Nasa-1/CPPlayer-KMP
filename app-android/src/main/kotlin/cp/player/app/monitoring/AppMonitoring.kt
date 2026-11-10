@@ -88,6 +88,10 @@ object AppMonitoring {
             // 针对免费版：关闭全量性能追踪事务，避免短时间刷满 10,000 次 Performance 额度
             options.tracesSampleRate = 0.0
 
+            // 启用 NDK 原生崩溃拦截与作用域同步 (libsentry.so / libsentry-android.so)
+            options.isEnableNdk = true
+            options.isEnableScopeSync = true
+
             // 核心拦截钩子：在本地内存丢弃不需要的事件，不发网络请求
             options.beforeSend = SentryOptions.BeforeSendCallback { event, _ ->
                 val ex = event.throwable
