@@ -129,6 +129,7 @@ internal fun extendedOperationCases(): List<ExtendedOperationCase> = listOf(
     extendedCase163(),
     extendedCase164(),
     extendedCase165(),
+    extendedCase166(),
 )
 
 private fun extendedCase61(): ExtendedOperationCase {
@@ -2648,5 +2649,29 @@ private fun extendedCase165(): ExtendedOperationCase {
                     extendedValues(response.values()) == extendedValues(responseRoundTrip.values())
             },
             { actual -> actual is UserCursorRequest && extendedValues(actual.values()) == extendedValues(request.values()) },
+        )
+}
+
+private fun extendedCase166(): ExtendedOperationCase {
+        val request = PagedIdRequest(id = "Opaque-A", limit = 30, offset = 1)
+        val response = IdPage(items = listOf("items"), total = 1L, hasMore = true)
+        return ExtendedOperationCase("getLikeListPage", "accounts.likes.page", 166, request, request.values(), response, response.values(),
+            { it.getLikeListPage(request).values() },
+            { source -> when (val result = source.getLikeListPage(request)) {
+                is BackendResult.Success -> BackendResult.Success(result.data.values())
+                is BackendResult.Error -> result
+                is BackendResult.Unsupported -> result
+            } },
+            {
+                val requestReader = WireReader(WireWriter().also(request::write).finish())
+                val requestRoundTrip = PagedIdRequest.read(requestReader)
+                requestReader.finish()
+                val responseReader = WireReader(WireWriter().also(response::write).finish())
+                val responseRoundTrip = IdPage.read(responseReader)
+                responseReader.finish()
+                extendedValues(request.values()) == extendedValues(requestRoundTrip.values()) &&
+                    extendedValues(response.values()) == extendedValues(responseRoundTrip.values())
+            },
+            { actual -> actual is PagedIdRequest && extendedValues(actual.values()) == extendedValues(request.values()) },
         )
 }

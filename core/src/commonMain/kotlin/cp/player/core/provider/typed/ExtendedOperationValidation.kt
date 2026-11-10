@@ -185,6 +185,11 @@ internal fun validateExtendedResult(values: Map<String, Any?>, request: Map<Stri
     }
 }
 
+internal fun validateIdPage(page: IdPage) {
+    page.items.forEach(::validateId)
+    require(!page.hasMore || page.items.isNotEmpty())
+}
+
 private fun validatePlayStatus(value: String) {
     require(value in setOf("PLAY", "PAUSE"))
 }

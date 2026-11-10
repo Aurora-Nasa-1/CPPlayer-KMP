@@ -9,7 +9,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-/** SDK script packages. Manual import and repository installation share one transaction. */
+/** SDK packages. Manual import and repository installation share one transaction. */
 class ModuleManager(
     private val modulesDir: String,
     private val context: PlatformContext,
@@ -80,7 +80,7 @@ class ModuleManager(
         try {
             require(expectedId == null || validId(expectedId)) { "Invalid provider ID" }
             check(PlatformSupport.unzipTo(zipPath, temporary)) { "Cannot extract provider package" }
-            // Script descriptors capture the source, so validate before touching the installed directory.
+            // Descriptors capture a source or native runtime snapshot before replacing installed files.
             val provider = readProvider(temporary)
             replacement = provider
             id = provider.id
@@ -130,8 +130,8 @@ class ModuleManager(
             PlatformSupport.readTextFile("$directory/manifest.json") ?: error("Missing manifest.json"),
         )
         require(manifest.isLoadable) { manifest.loadabilityError.orEmpty() }
-        val implementation = ProviderFactory.create(manifest, directory)
-            ?: error("SDK entryPoint is missing, outside the package, or exceeds 1 MiB")
+        val implementation = ProviderFactory.create(manifest, directory, context)
+            ?: error("SDK entryPoint is missing, outside the package, or exceeds ${manifest.maxEntryPointBytes} bytes")
         check(implementation.isReady()) { implementation.loadError ?: "SDK provider is not ready" }
         return object : BackendProvider by implementation {
             override val updateUrl = manifest.updateUrl

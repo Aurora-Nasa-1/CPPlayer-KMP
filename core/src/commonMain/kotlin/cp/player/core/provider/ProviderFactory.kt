@@ -3,8 +3,8 @@ package cp.player.core.provider
 /**
  * 根据模块 manifest 与解压目录构造 [BackendProvider]。
  *
- * commonMain 声明 expect；jvmMain 只加载 KMP SDK JavaScript 包。
- * Kotlin 与原生 worker 由宿主显式注册，不从 manifest 获得进程内信任。
+ * commonMain 声明 expect；jvmMain 加载 KMP SDK JavaScript 或 JNI 包。
+ * JNI 包使用宿主统一入口或自带适配器，不要求宿主预先注册。
  */
 expect object ProviderFactory {
     /**
@@ -14,5 +14,9 @@ expect object ProviderFactory {
      * @param moduleDir 模块解压根目录绝对路径
      * @return 就绪的 [BackendProvider]，或该类型在当前平台不支持时返回 null
      */
-    fun create(manifest: ModuleManifest, moduleDir: String): BackendProvider?
+    fun create(
+        manifest: ModuleManifest,
+        moduleDir: String,
+        context: cp.player.core.util.PlatformContext? = null,
+    ): BackendProvider?
 }

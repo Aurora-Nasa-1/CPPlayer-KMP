@@ -6,7 +6,7 @@ import cp.player.sdk.jni.JniMusicProvider
 import cp.player.sdk.jni.JniProviderSession
 
 /**
- * Register a trusted JNI library through its own native session class.
+ * Register a built-in JNI library through its own native session class.
  * The factory creates one handle per immutable account/config/credential context.
  */
 fun jniSdkProvider(

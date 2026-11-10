@@ -33,6 +33,15 @@ class ProviderManager(
     private val KEY_LAST_PROVIDER_ID = "last_active_provider_id"
     @Volatile private var sessionProvider: BackendProvider? = null
     private var unsubscribeRetirement: () -> Unit = {}
+    private val unsubscribeCredentials = cookieStorage.onChanged { provider, account ->
+        sdkSessions.invalidateCredentials(provider, account)
+    }
+
+    suspend fun close() {
+        unsubscribeCredentials()
+        unsubscribeRetirement()
+        sdkSessions.close()
+    }
 
     private fun observeRetirement(provider: BackendProvider): () -> Unit {
         val lock = Any()
@@ -121,6 +130,7 @@ class ProviderManager(
             }
         }
         currentProvider = provider
+        sdkSessions.invalidate()
         // Subscribe before any lazy session can be created: configuration changes must also fence
         // the gap between its settings snapshot and registration of the session's own listener.
         unsubscribeRetirement = provider?.let(::observeRetirement) ?: {}
@@ -152,6 +162,16 @@ class ProviderManager(
  */
 class ProviderCookieStorage(private val settings: SettingsStorage) {
     private val versions = mutableMapOf<String, Long>()
+    private val listeners = mutableSetOf<(String, String) -> Unit>()
+    fun onChanged(listener: (String, String) -> Unit): () -> Unit {
+        synchronized(versions) { listeners.add(listener) }
+        return { synchronized(versions) { listeners.remove(listener); Unit } }
+    }
+    private fun changed(providerId: String, accountId: String) {
+        // Never call a session owner while holding the storage lock.
+        val snapshot = synchronized(versions) { listeners.toList() }
+        snapshot.forEach { it(providerId, accountId) }
+    }
     fun revision(providerId: String, accountId: String): Long = synchronized(versions) { versions[key(providerId, accountId)] ?: 0 }
     // Length prefixes prevent ambiguous pairs; the default retains existing data.
     private fun key(provider: String, account: String): String =
@@ -162,6 +182,7 @@ class ProviderCookieStorage(private val settings: SettingsStorage) {
             settings.putString(key, cookie)
             versions[key] = (versions[key] ?: 0) + 1
         }
+        changed(providerId, accountId)
     }
     fun getCookie(providerId: String, accountId: String = "default"): String? =
         synchronized(versions) { settings.getString(key(providerId, accountId)) }
@@ -171,5 +192,6 @@ class ProviderCookieStorage(private val settings: SettingsStorage) {
             settings.remove(key)
             versions[key] = (versions[key] ?: 0) + 1
         }
+        changed(providerId, accountId)
     }
 }

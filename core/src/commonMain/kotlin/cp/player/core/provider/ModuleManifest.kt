@@ -115,7 +115,7 @@ data class ModuleManifest(
     val id: String,
     val name: String,
     val version: String,
-    val type: String, // "js" or "script"; native SDK adapters require trusted registration
+    val type: String, // "js", "script", "jni" or "native"
     val entryPoint: String,
     /**
      * Catalog metadata only. Omission does not select a legacy runtime.
@@ -140,7 +140,7 @@ data class ModuleManifest(
     /** 检查更新 URL（可选），指向返回最新版本信息的 JSON 端点 */
     val updateUrl: String? = null,
     /**
-     * Legacy metadata retained for decoding only. Installed script packages have no native ABI.
+     * Native package ABI labels. Omission allows the current platform.
      */
     val supportedAbis: List<String>? = null,
     /**
@@ -180,7 +180,9 @@ data class ModuleManifest(
      * 音源自定义音质选项及其向软件原生音质映射列表（可选）。
      * 声明后前端根据此列表渲染当前音源档位并实现跨音源自动保持与平滑映射。
      */
-    val qualityOptions: List<ProviderQualityOption>? = null
+    val qualityOptions: List<ProviderQualityOption>? = null,
+    /** Optional custom adapter class; omitted when entryPoint is a native SDK library. */
+    val nativeFactoryClass: String? = null,
 ) {
     /**
      * 已解析的 API 版本（缺省 1）。
@@ -216,8 +218,11 @@ data class ModuleManifest(
                 "Invalid provider ID"
             contract != PROVIDER_SDK_CONTRACT ->
                 "Legacy Provider v1/v3 is retired; rebuild with provider-sdk-kmp ($PROVIDER_SDK_CONTRACT)"
-            type !in setOf("js", "script") ->
-                "Only SDK JavaScript packages can be imported; native providers require trusted registration"
+            type !in setOf("js", "script", "jni", "native") ->
+                "Unsupported SDK provider type: $type"
+            isNative && nativeFactoryClass != null &&
+                !Regex("[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)+").matches(nativeFactoryClass) ->
+                "Invalid native SDK adapter class name"
             entryPoint.isBlank() || entryPoint.startsWith("/") || '\\' in entryPoint ||
                 ':' in entryPoint || entryPoint.split('/').any { it.isEmpty() || it == "." || it == ".." } ->
                 "Provider entryPoint must be a relative path inside the package"
@@ -227,6 +232,10 @@ data class ModuleManifest(
                 "Provider requires host API $resolvedMinHostApiVersion (supported: $HOST_PROVIDER_API_VERSION)"
             else -> null
         }
+
+    val isNative: Boolean get() = type == "jni" || type == "native"
+
+    val maxEntryPointBytes: Long get() = if (isNative) 64L * 1024 * 1024 else 1024L * 1024
 
     /**
      * Only currently implemented SDK capabilities can become UI labels.

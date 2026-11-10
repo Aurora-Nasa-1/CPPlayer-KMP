@@ -215,4 +215,6 @@ abstract class ExtendedJsProviderMethods : MusicProvider {
         extendedBusiness("sendResourceMessage", request.values(), MutationResult::fromValues)
     override suspend fun getUserCommentHistory(request: UserCursorRequest): CommentPage =
         extendedBusiness("getUserCommentHistory", request.values(), CommentPage::fromValues)
+    override suspend fun getLikeListPage(request: PagedIdRequest): IdPage =
+        extendedBusiness("getLikeListPage", request.values(), IdPage::fromValues)
 }

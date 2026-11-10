@@ -5,6 +5,8 @@ import cp.player.sdk.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 internal interface ManagedProviderRuntime : ProviderRuntime {
     suspend fun close()
@@ -30,12 +32,22 @@ class ProviderSdkSessions(
     private var revision = 0L
     private val accounts = mutableMapOf<String, String>()
     private var closed = false
+    private val _changes = MutableStateFlow(0L)
+    val changes = _changes.asStateFlow()
 
     /** Immediately fences old results; resource disposal drains asynchronously. */
     fun invalidate() {
         synchronized(this) {
             revision++
             host?.invalidate()
+            _changes.value++
+        }
+    }
+
+    fun invalidateCredentials(providerId: String, accountId: String) {
+        synchronized(this) {
+            if (!closed && active()?.id == providerId && (accounts[providerId] ?: "default") == accountId)
+                invalidate()
         }
     }
 

@@ -1176,3 +1176,15 @@ suspend fun ProviderHost.getUserCommentHistory(request: UserCursorRequest): Comm
         }
     }
 }
+
+suspend fun ProviderHost.getLikeListPage(request: PagedIdRequest): IdPage {
+    validateExtendedRequest(request)
+    request.write(WireWriter())
+    return callExtended(ExtendedCapability.GETLIKELISTPAGE) { provider ->
+        provider.getLikeListPage(request).also {
+            validateExtendedResult(it.values(), request.values())
+            validateIdPage(it)
+            it.write(WireWriter())
+        }
+    }
+}

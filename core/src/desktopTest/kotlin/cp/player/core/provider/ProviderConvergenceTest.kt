@@ -15,15 +15,19 @@ class ProviderConvergenceTest {
     )
 
     @Test
-    fun `only SDK script packages are loadable`() {
+    fun `only SDK script and self contained native packages are loadable`() {
         assertTrue(manifest().isLoadable)
         for (contract in listOf(null, "standard", "netease-legacy", "v1", "v3", "kmp-sdk-v2")) {
             assertFalse(manifest().copy(contract = contract).isLoadable)
         }
-        for (type in listOf("http", "binary", "jni", "jna", "ffm", "unknown")) {
+        for (type in listOf("http", "binary", "jna", "ffm", "unknown")) {
             assertFalse(manifest().copy(type = type).isLoadable)
         }
         assertTrue(manifest().copy(type = "script").isLoadable)
+        for (type in listOf("jni", "native")) {
+            assertTrue(manifest().copy(type = type).isLoadable)
+            assertTrue(manifest().copy(type = type, nativeFactoryClass = "example.Factory").isLoadable)
+        }
         assertFalse(manifest().copy(minHostApiVersion = HOST_PROVIDER_API_VERSION + 1).isLoadable)
         assertEquals(listOf("search", "playback"), manifest().copy(
             capabilities = listOf(Capability.SEARCH, Capability.RESOLVE, "comments", "qrLogin"),

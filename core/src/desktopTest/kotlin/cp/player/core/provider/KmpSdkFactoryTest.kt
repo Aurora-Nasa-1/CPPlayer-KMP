@@ -7,7 +7,7 @@ import kotlin.test.*
 
 class KmpSdkFactoryTest {
     @Test
-    fun `manifest opts into SDK while unknown majors and implicit native trust are rejected`() {
+    fun `manifest opts into SDK while unknown majors and incomplete native packages are rejected`() {
         val directory = Files.createTempDirectory("kmp-sdk-factory-").toFile()
         try {
             directory.resolve("index.js").writeText("""
@@ -20,7 +20,9 @@ class KmpSdkFactoryTest {
             val provider = assertNotNull(ProviderFactory.create(manifest, directory.absolutePath))
             assertIs<SdkBackendProvider>(provider)
             assertNull(ProviderFactory.create(manifest.copy(contract = "kmp-sdk-v2"), directory.absolutePath))
-            assertNull(ProviderFactory.create(manifest.copy(type = "jni"), directory.absolutePath))
+            assertFailsWith<IllegalArgumentException> {
+                ProviderFactory.create(manifest.copy(type = "jni"), directory.absolutePath)
+            }
             runBlocking {
                 val settings = SdkMemorySettings()
                 val manager = ProviderManager(settings, ProviderCookieStorage(settings))

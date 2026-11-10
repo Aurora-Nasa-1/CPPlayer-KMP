@@ -37,7 +37,7 @@ class KmpSdkMigrationOperationsTest {
                     assertEquals(case.tag, calls.last().first, case.method)
                     assertTrue(case.matchesRequest(calls.last().second), case.method)
                 }
-                assertEquals((127..165).toList(), calls.map { it.first })
+                assertEquals((127..166).toList(), calls.map { it.first })
                 assertEquals(listOf("Opaque-A", "a"), (calls.single { it.first == 138 }.second as PlaylistOrderRequest).playlistIds)
             } finally { host.close() }
         }
