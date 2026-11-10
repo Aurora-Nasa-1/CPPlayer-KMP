@@ -25,5 +25,6 @@ dependencyResolutionManagement {
 rootProject.name = "CPPlayer"
 
 include(":core")
+include(":provider-sdk-kmp")
 include(":app")
 include(":app-android")

@@ -1,0 +1,16 @@
+{
+  "name": "@cpplayer/provider-kmp-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": { "types": "./index.d.mts", "import": "./index.mjs" }
+  },
+  "scripts": {
+    "test": "node --test test.mjs ../../provider-contract/documentation.test.mjs",
+    "check:types": "tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext contract.test.mts"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}
