@@ -71,7 +71,9 @@ class DesktopSettingsStorage(
 
         internal fun shared(namespace: String): DesktopSettingsStorage {
             val key = "${DesktopDataDir.root().absolutePath}|$namespace"
-            return shared.getOrPut(key) { DesktopSettingsStorage(namespace) }
+            // 必须 computeIfAbsent：`getOrPut` 是「先 get 再 put」，并发首调会各建一个实例，
+            // 泄漏的那个持着旧快照 —— 正是本类上面那段「后写者覆盖先写者」的成因。
+            return shared.computeIfAbsent(key) { DesktopSettingsStorage(namespace) }
         }
     }
 }

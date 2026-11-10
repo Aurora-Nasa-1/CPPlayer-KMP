@@ -1,15 +1,12 @@
 package cp.player.core.lyrics
 
 import cp.player.core.api.AmllTtmlClient
-import cp.player.core.api.MusicApiService
 import cp.player.core.api.amllPlatformFor
+import cp.player.core.music.TrackLyrics
+import cp.player.core.music.UnifiedMusicSource
 import cp.player.core.playback.LyricsParser
 import cp.player.core.playback.SidecarLyricLoader
 import cp.player.core.playback.SyncedLyricLine
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
 
 /**
  * 三条**内置**歌词来源的实现。
@@ -24,7 +21,7 @@ import kotlinx.serialization.json.contentOrNull
  * |---|---|---|
  * | [SidecarLyricsSource] | `SidecarLyrics.load()`（仅本地曲） | 同目录同名 `.lrc/.ttml/.elrc` 解析出行 |
  * | [AmllLyricsSource] | `fetchFromAmll()` | AMLL 返回 TTML 且解析出行 |
- * | [ProviderLyricsSource] | `api.getLyric()` + `LyricsParser.parse` | 解析出行 |
+ * | [ProviderLyricsSource] | `unifiedSource.getLyrics()` + `LyricsParser.parse` | 解析出行 |
  */
 
 /**
@@ -41,9 +38,9 @@ internal class SidecarLyricsSource : LyricsSource {
     override val capabilities = setOf(LyricsCapability.GET_LYRICS)
 
     override suspend fun fetch(request: LyricsRequest): LyricsSourceResult? {
-        if (!request.isLocal) return null
-        val resourceId = request.mediaId?.resourceId ?: return null
-        val hit = SidecarLyricLoader.load(resourceId) ?: return null
+        val path = request.localFilePath ?: if (request.isLocal) request.mediaId?.resourceId else null
+        if (path.isNullOrBlank()) return null
+        val hit = SidecarLyricLoader.load(path) ?: return null
         // 边车命中的 format 由扩展名决定，交给名字里带出来的信息即可：这里只要行。
         return LyricsSourceResult(lines = hit.first)
     }
@@ -60,9 +57,9 @@ internal class EmbeddedLyricsSource : LyricsSource {
     override val capabilities = setOf(LyricsCapability.GET_LYRICS)
 
     override suspend fun fetch(request: LyricsRequest): LyricsSourceResult? {
-        if (!request.isLocal) return null
-        val resourceId = request.mediaId?.resourceId ?: return null
-        val hit = cp.player.core.playback.EmbeddedLyricLoader.load(resourceId) ?: return null
+        val path = request.localFilePath ?: if (request.isLocal) request.mediaId?.resourceId else null
+        if (path.isNullOrBlank()) return null
+        val hit = cp.player.core.playback.EmbeddedLyricLoader.load(path) ?: return null
         return LyricsSourceResult(lines = hit.first)
     }
 }
@@ -116,8 +113,9 @@ internal class AmllLyricsSource(
  * 把 AMLL 拖到最前 = AMLL 优先；把它关掉 = 仅音源。不再需要枚举语义。
  */
 internal class ProviderLyricsSource(
-    private val api: MusicApiService,
+    private val unifiedSource: UnifiedMusicSource? = null,
 ) : LyricsSource {
+
     override val id = BuiltinLyricsSourceIds.PROVIDER
     override val name = "Provider lyrics"
     override val bundled = true
@@ -128,35 +126,22 @@ internal class ProviderLyricsSource(
         val targetMediaId = request.platformMediaId ?: request.mediaId
         // 没有可用平台 ID 或为原生本地曲（无 originalMediaId）时无法通过音源 API 取词。
         if (targetMediaId == null || targetMediaId.providerId == "local") return null
-        val songId = targetMediaId.resourceId
-        val json = api.getLyric(songId)
+
+        val source = unifiedSource ?: return null
+        val res = source.getLyrics(targetMediaId.toString())
+        if (res !is cp.player.core.BackendResult.Success) return null
         // 带上时长：`[mm:ss:cc]` 方言是否被误读要看它（见 `LyricsTimeRepair`）。
         // 时长只是判据，缺了也能解析 —— 只是那一类方言改不过来。
-        val lines = LyricsParser.parse(json, durationMs = request.durationMs)
+        val lines = LyricsParser.parseTrackLyrics(res.data, durationMs = request.durationMs)
         if (lines.isEmpty()) return null
         return LyricsSourceResult(lines = lines)
     }
 
-    /** 音源 JSON → 展示用 [cp.player.core.model.LyricsInfo]（保留改造前 `extractLyricsInfo` 的判据）。 */
-    internal fun infoOf(json: JsonElement, lines: List<SyncedLyricLine>): ProviderLyricsInfo {
-        val obj = json as? JsonObject
-        val data = obj?.get("data") as? JsonObject
-        val yrc = ((obj?.get("yrc") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
-            ?: ((data?.get("yrc") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
-            ?: (obj?.get("yrc") as? JsonPrimitive)?.contentOrNull
-            ?: (data?.get("yrc") as? JsonPrimitive)?.contentOrNull
-        val tlyric = ((obj?.get("tlyric") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
-            ?: ((data?.get("tlyric") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
-        val romalrc = ((obj?.get("romalrc") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
-            ?: ((data?.get("romalrc") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
-        val lrc = ((obj?.get("lrc") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
-            ?: ((data?.get("lrc") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
-            ?: (obj?.get("lyric") as? JsonPrimitive)?.contentOrNull
-            ?: (data?.get("lyric") as? JsonPrimitive)?.contentOrNull
-            ?: ((obj?.get("klyric") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
-            ?: ((data?.get("klyric") as? JsonObject)?.get("lyric") as? JsonPrimitive)?.contentOrNull
-        val ttml = (obj?.get("ttml") as? JsonPrimitive)?.contentOrNull
-            ?: (data?.get("ttml") as? JsonPrimitive)?.contentOrNull
+    /** 强类型 [TrackLyrics] → 展示用 [ProviderLyricsInfo]。 */
+    internal fun infoOf(lyrics: TrackLyrics, lines: List<SyncedLyricLine>): ProviderLyricsInfo {
+        val ttml = lyrics.ttml
+        val lrc = lyrics.lrc
+        val yrc = lyrics.yrc
         return ProviderLyricsInfo(
             format = when {
                 !ttml.isNullOrBlank() || lrc?.trimStart()?.startsWith("<tt") == true || lrc?.trimStart()?.startsWith("<?xml") == true -> "TTML"
@@ -165,8 +150,8 @@ internal class ProviderLyricsSource(
                 else -> "Unknown"
             },
             hasWordLevel = lines.any { it.words.isNotEmpty() },
-            hasTranslation = lines.any { !it.translation.isNullOrBlank() } || !tlyric.isNullOrBlank(),
-            hasPhonetic = lines.any { !it.romanization.isNullOrBlank() } || !romalrc.isNullOrBlank(),
+            hasTranslation = lines.any { !it.translation.isNullOrBlank() } || !lyrics.translation.isNullOrBlank(),
+            hasPhonetic = lines.any { !it.romanization.isNullOrBlank() } || !lyrics.romanization.isNullOrBlank(),
         )
     }
 }

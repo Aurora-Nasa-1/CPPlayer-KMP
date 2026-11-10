@@ -2,7 +2,6 @@ package cp.player.core.lyrics
 
 import cp.player.core.api.AmllTtmlClient
 import cp.player.core.api.LyricsSourceMode
-import cp.player.core.api.MusicApiService
 import cp.player.core.lyricsplugin.LyricsPluginService
 import cp.player.core.util.SettingsStorage
 import kotlinx.serialization.Serializable
@@ -30,9 +29,9 @@ class FileLyricsSourceRegistry(
     private val rootDir: File,
     private val plugins: LyricsPluginService,
     private val amllClient: AmllTtmlClient?,
-    private val api: MusicApiService,
     /** 旧设置读取器：只在迁移时用（`lyrics_source_mode`）。 */
     private val legacySettings: SettingsStorage? = null,
+    private val unifiedSource: cp.player.core.music.UnifiedMusicSource? = null,
 ) : LyricsSourceRegistry {
 
     private val json = Json {
@@ -63,7 +62,8 @@ class FileLyricsSourceRegistry(
             add(SidecarLyricsSource())
             add(EmbeddedLyricsSource())
             amllClient?.let { add(AmllLyricsSource(it)) }
-            add(ProviderLyricsSource(api))
+            // 恒定在册：没有 unifiedSource 时它只会返回 null，UI 也能解释「为什么没词」
+            add(ProviderLyricsSource(unifiedSource))
         }
     }
 

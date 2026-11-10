@@ -82,7 +82,7 @@ sealed class BackendResult<out T> {
     ) : BackendResult<Nothing>()
 
     /**
-     * 当前音源不支持该功能（[BackendProvider.apiMap] 映射为 "unsupported"）。
+     * 当前 SDK 契约或音源未实现该能力，不应重试或隐式切换音源。
      * 与 [Error] 区分：这并非系统故障，而是功能缺失，
      * UI 应提示"该音源不支持此功能"而非"出错了"。
      */

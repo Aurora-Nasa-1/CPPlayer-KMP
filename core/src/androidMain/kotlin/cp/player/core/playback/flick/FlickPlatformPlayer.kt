@@ -5,13 +5,17 @@ import android.util.Log
 import cp.player.core.playback.AudioEffectCapabilities
 import cp.player.core.playback.AudioEffectConfig
 import cp.player.core.playback.AudioFormatInfo
+import cp.player.core.playback.DesktopStreamLocalizer
 import cp.player.core.playback.PendingSeekTracker
 import cp.player.core.playback.PlatformPlaybackState
 import cp.player.core.playback.PlatformPlayer
 import cp.player.core.playback.PlaybackMetadata
 import cp.player.core.playback.SeekFailure
+import cp.player.core.playback.SongCacheMeta
+import cp.player.core.playback.StreamLocalizer
 import cp.player.engine.AudioEvent
 import cp.player.engine.RustEngine
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -26,7 +30,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 基于旧版 FlickPlayer (Rust 核心) 的高级音频播放器实现。
+ * 基于 FlickPlayer (Rust 核心) 的发烧音频播放器实现。
  *
  * ### 能力特性
  * - 独占模式 [supportsExclusiveAudio] = true（支持 UAC 2.0 USB DAC 源码直通与 DAP Bit-Perfect）；
@@ -34,10 +38,13 @@ import kotlinx.coroutines.withContext
  * - 原生支持 DSD (DSF/DFF) 软解与 DoP 输出；
  * - 优雅降级：当未打包底层 so 库时，明确报错并不影响其余模块。
  *
- * 可作为后续「VIP / 发烧友 Hi-Res 模式」的付费扩展播放引擎。
+ * 作为「VIP / 发烧友 Hi-Res 模式」的高级扩展播放引擎。
  */
 class FlickPlatformPlayer(
     private val context: Context,
+    private val localizer: StreamLocalizer = DesktopStreamLocalizer(
+        cacheDir = File(context.cacheDir, "flick-stream-cache").apply { mkdirs() }
+    ),
 ) : PlatformPlayer {
 
     companion object {
@@ -182,14 +189,38 @@ class FlickPlatformPlayer(
         _positionMs.value = startPositionMs
         _state.value = PlatformPlaybackState.Buffering
 
+        val playablePath = resolvePlayablePath(url, headers, metadata)
         withContext(RustEngine.engineDispatcher) {
-            val ok = RustEngine.play(url)
+            val ok = RustEngine.play(playablePath)
             if (!ok) {
-                _state.value = PlatformPlaybackState.Error("Failed to open source in Hi-Res engine")
+                _state.value = PlatformPlaybackState.Error("Failed to open source in Hi-Res engine: $playablePath")
             } else if (startPositionMs > 0L) {
                 RustEngine.seek(startPositionMs / 1000.0)
             }
         }
+    }
+
+    private suspend fun resolvePlayablePath(
+        url: String,
+        headers: Map<String, String>,
+        metadata: PlaybackMetadata?,
+    ): String {
+        if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) {
+            return url
+        }
+
+        val cacheKey = metadata?.cacheKey?.takeIf { it.isNotBlank() } ?: url
+        val cached = localizer.cachedPath(cacheKey)
+        if (cached != null) {
+            return cached
+        }
+
+        val meta = SongCacheMeta(title = metadata?.title, artist = metadata?.artist)
+        val localized = localizer.localize(url, cacheKey, headers, meta)
+        if (localized != null) {
+            return localized
+        }
+        return url
     }
 
     override fun play() {

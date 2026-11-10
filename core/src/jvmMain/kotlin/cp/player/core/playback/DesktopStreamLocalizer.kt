@@ -1,6 +1,6 @@
 package cp.player.core.playback
 
-import cp.player.core.cache.stableHash64
+import cp.player.core.util.stableHash64
 import cp.player.core.download.DownloadExecutor
 import cp.player.core.download.ResumeNotSupportedException
 import cp.player.core.download.defaultDownloadExecutor
@@ -182,11 +182,15 @@ class DesktopStreamLocalizer(
         }
     }
 
-    /** 命中一个**已完整**的缓存文件（`<stem>.<ext>`）。 */
-    private fun cachedFile(stem: String): File? =
-        cacheDir.listFiles()?.firstOrNull {
-            it.isFile && it.name.startsWith("$stem.") && !it.name.endsWith(".part") && it.length() > 0L
-        }
+    /**
+     * 命中一个**已完整**的缓存文件（`<stem>.<ext>`）。
+     *
+     * 用「按已知扩展名逐个探」而不是 `cacheDir.listFiles()`：后者是一次目录全量枚举 +
+     * 数组分配，而本方法在播放路径上每首歌要调 3~4 次（预加载 / 开播 / 落盘前判）。
+     */
+    private fun cachedFile(stem: String): File? = CACHE_EXTENSIONS.firstNotNullOfOrNull { ext ->
+        File(cacheDir, stem + ext).takeIf { it.isFile && it.length() > 0L }
+    }
 
     /**
      * 按 magic bytes 定扩展名，回退到 `.bin`。
@@ -291,6 +295,26 @@ class DesktopStreamLocalizer(
      * 调用方搬成功后会用 [remove] 清掉这条。
      */
     override fun entryPath(id: String): String? = fileFor(id)?.absolutePath
+
+    /**
+     * 按 mediaId 查旁车索引定位一条缓存。
+     *
+     * **不碰文件系统目录**（只 `stat` 命中的那一个文件），也不解析音频标签 ——
+     * 它会在播放失败的回退路径上被调用，那里一分钟都不能多花。
+     */
+    override fun findByMediaId(mediaId: String): SongCacheEntry? {
+        val (name, meta) = index.entryOfMediaId(mediaId) ?: return null
+        val file = File(cacheDir, name).takeIf { it.isFile && it.length() > 0L } ?: return null
+        return SongCacheEntry(
+            id = file.name,
+            mediaId = meta.mediaId,
+            qualityLevel = meta.qualityLevel,
+            title = meta.title,
+            artist = meta.artist,
+            bytes = file.length(),
+            lastAccessMs = file.lastModified(),
+        )
+    }
 
     override fun clear(): Int {
         // 连 `.part` 残渣一起清：它们只在进程被杀时才会残留，留着纯占空间。
@@ -434,7 +458,7 @@ class DesktopStreamLocalizer(
     /**
      * 文件名安全化：`mediaId` 里带 `://`，直接当文件名会失败。
      *
-     * 末尾用 [cp.player.core.cache.stableHash64] 兜底：不同 key 可能被安全化成同一个
+     * 末尾用 [cp.player.core.util.stableHash64] 兜底：不同 key 可能被安全化成同一个
      * 名字，不加哈希就会互相串音。**这个哈希实现不可换** —— 换了等于所有缓存文件
      * 改名，整盘 stream-cache 立即失效。
      */
@@ -450,6 +474,9 @@ class DesktopStreamLocalizer(
         const val CONNECT_TIMEOUT_MS = 15_000
         const val READ_TIMEOUT_MS = 60_000
         const val BUFFER_BYTES = 64 * 1024
+
+        /** [extensionFor] 可能产出的全部扩展名；探存时按此顺序逐个试。 */
+        private val CACHE_EXTENSIONS = listOf(".flac", ".m4a", ".mp3", ".ogg", ".aac", ".wav", ".bin")
 
         /** 缓存总容量上限：2 GiB。无损单曲几十~上百 MB，够放十几首。 */
         const val DEFAULT_MAX_CACHE_BYTES = 2L * 1024L * 1024L * 1024L

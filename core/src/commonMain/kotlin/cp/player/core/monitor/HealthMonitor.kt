@@ -8,14 +8,16 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * API 调用健康监控（KMP 版，三级分类）。
+ * 取数健康监控（KMP 版，三级分类）。
  *
  * 三级分类语义：
- * - [HealthLevel.OK]      响应正常，可直接使用
- * - [HealthLevel.WARNING] 勉强可用（不符合预期但可降级使用，如缺字段、慢响应、空数据）
- * - [HealthLevel.ERROR]   不可用（报错、解析失败、Provider 不支持），需回退
+ * - [HealthLevel.OK]      拿到结果，可直接使用
+ * - [HealthLevel.WARNING] 音源明确做不到（[cp.player.core.BackendResult.Unsupported]），不是故障
+ * - [HealthLevel.ERROR]   调用失败（异常 / Provider 错误），需回退或重试
  *
- * 覆盖范围：所有 API 调用通过 [cp.player.core.api.MusicApiServiceImpl.callApi] 统一拦截。
+ * 覆盖范围：由取数边界（`UnifiedMusicSourceImpl` 的 `boundary`）逐次上报 [recordCall]。
+ * 边界是唯一知道「这次调用是哪个操作、花了多久、结果属于哪一类」的地方，
+ * 因此监控不需要（也不应该）再往各 Provider 里插桩。
  *
  * ### 性能设计
  * - 使用 [MutableStateFlow.update] 避免每次记录都完整复制列表
@@ -29,50 +31,28 @@ object HealthMonitor {
     // ======================== 数据模型 ========================
 
     /**
-     * 健康等级。ERROR 表示不可用需回退，WARNING 表示可降级使用，OK 表示正常。
+     * 健康等级。ERROR 表示调用失败，WARNING 表示音源不支持该操作，OK 表示正常。
      */
     enum class HealthLevel { OK, WARNING, ERROR }
 
     /**
-     * 响应警告类型。每个类型在 [classify] 后归入 [HealthLevel]。
-     */
-    enum class ResponseWarning {
-        MISSING_CODE, UNEXPECTED_CODE, MISSING_DATA_FIELD,
-        EMPTY_DATA_ARRAY, EMPTY_DATA_OBJECT, MALFORMED_RESPONSE,
-        UNSUPPORTED_BY_PROVIDER, SLOW_RESPONSE
-    }
-
-    /**
-     * 将 [ResponseWarning] 归类为健康等级。
+     * 一次取数操作的记录。
      *
-     * - [ResponseWarning.UNSUPPORTED_BY_PROVIDER]、[ResponseWarning.MALFORMED_RESPONSE]
-     *   归为 [HealthLevel.ERROR]（无法使用）
-     * - 其余归为 [HealthLevel.WARNING]（数据不完美但可降级）
+     * 只保留强类型链路真实存在的语义：谁（音源）、做了什么（操作名）、多久、结果如何。
+     * 旧 JSON 投影层的响应码 / 缺字段 / 原始报文等字段已随兼容层一起删除。
      */
-    fun classify(warning: ResponseWarning): HealthLevel = when (warning) {
-        ResponseWarning.UNSUPPORTED_BY_PROVIDER,
-        ResponseWarning.MALFORMED_RESPONSE -> HealthLevel.ERROR
-        else -> HealthLevel.WARNING
-    }
-
     data class ApiCallRecord(
         val timestamp: Long,
         val providerId: String,
-        val method: String,
+        /** 取数操作名，与 `UnifiedMusicSource` 的方法名一致（如 `getTrackDetail`）。 */
+        val operation: String,
         val durationMs: Long,
-        val success: Boolean,
-        val level: HealthLevel = if (success) HealthLevel.OK else HealthLevel.ERROR,
-        val errorCode: Int? = null,
+        val level: HealthLevel,
         val errorMessage: String? = null,
-        val wasFallback: Boolean = false,
-        val fallbackFrom: String? = null,
-        val responseWarnings: List<ResponseWarning> = emptyList(),
-        val responseCode: Int? = null,
-        /** 期望的数据字段名（如 "data", "playlist"），仅 MISSING_DATA_FIELD 时有值 */
-        val expectedField: String? = null,
-        /** 原始返回内容（JSON 字符串） */
-        val rawResponse: String? = null
-    )
+    ) {
+        /** 是否拿到结果（`Unsupported` 不算成功，但也不是故障）。 */
+        val success: Boolean get() = level == HealthLevel.OK
+    }
 
     data class ProviderHealthStats(
         val providerId: String,
@@ -84,25 +64,21 @@ object HealthMonitor {
         val errorCount: Int,
         val avgResponseMs: Long,
         val p95ResponseMs: Long,
-        val fallbackCount: Int,
         val lastError: String?,
         val lastErrorTime: Long,
         val healthScore: Float,
-        val lastWarning: ResponseWarning?,
         /** 综合健康等级：取近 N 条记录中最差等级 */
         val overallLevel: HealthLevel
     )
 
-    data class MethodStats(
-        val method: String,
+    data class OperationStats(
+        val operation: String,
         val totalCalls: Int,
         val successCount: Int,
         val failCount: Int,
         val avgResponseMs: Long,
-        val fallbackCount: Int,
         val warningCount: Int,
-        val errorCount: Int,
-        val warningTypes: Map<ResponseWarning, Int>
+        val errorCount: Int
     )
 
     // ======================== 状态 ========================
@@ -117,7 +93,7 @@ object HealthMonitor {
     // ======================== 记录 ========================
 
     /**
-     * 记录一次 API 调用。使用 Flow update 避免完整列表复制。
+     * 记录一次取数操作。使用 Flow update 避免完整列表复制。
      */
     fun recordCall(record: ApiCallRecord) {
         _recordsFlow.update { current ->
@@ -161,14 +137,14 @@ object HealthMonitor {
      *
      * 所有过滤条件都**在截断之前**生效 —— `limit` 是「过滤后的条数」，
      * 不是「扫描的条数」。否则像 `getRecentRecords(limit = 1, onlyWarnings = true)`
-     * 这样先截断再按 method 挑的用法会几乎永远挑不中。
+     * 这样先截断再按 operation 挑的用法会几乎永远挑不中。
      *
-     * @param method 只看某个 API 方法的记录
+     * @param operation 只看某个操作（`UnifiedMusicSource` 方法名）的记录
      */
     fun getRecentRecords(
         limit: Int = 100,
         providerId: String? = null,
-        method: String? = null,
+        operation: String? = null,
         onlyFailures: Boolean = false,
         onlyWarnings: Boolean = false,
         onlyErrors: Boolean = false
@@ -179,7 +155,7 @@ object HealthMonitor {
             if (result.size >= limit) break
             val r = snapshot[i]
             if (providerId != null && r.providerId != providerId) continue
-            if (method != null && r.method != method) continue
+            if (operation != null && r.operation != operation) continue
             if (onlyFailures && r.success) continue
             if (onlyWarnings && r.level != HealthLevel.WARNING) continue
             if (onlyErrors && r.level != HealthLevel.ERROR) continue
@@ -188,40 +164,33 @@ object HealthMonitor {
         return result
     }
 
-    fun getStatsByMethod(): Map<String, MethodStats> {
+    fun getStatsByOperation(): Map<String, OperationStats> {
         val snapshot = _recordsFlow.value
-        return snapshot.groupBy { it.method }.mapValues { (method, list) ->
+        return snapshot.groupBy { it.operation }.mapValues { (operation, list) ->
             var successCount = 0
             var failCount = 0
             var totalDuration = 0L
-            var fallbackCount = 0
             var warningCount = 0
             var errorCount = 0
-            val warningTypeMap = mutableMapOf<ResponseWarning, Int>()
 
             for (r in list) {
                 if (r.success) successCount++ else failCount++
                 totalDuration += r.durationMs
-                if (r.wasFallback) fallbackCount++
-                if (r.responseWarnings.isNotEmpty()) {
-                    val hasError = r.responseWarnings.any { classify(it) == HealthLevel.ERROR }
-                    if (hasError) errorCount++ else warningCount++
-                    for (w in r.responseWarnings) {
-                        warningTypeMap[w] = (warningTypeMap[w] ?: 0) + 1
-                    }
+                when (r.level) {
+                    HealthLevel.WARNING -> warningCount++
+                    HealthLevel.ERROR -> errorCount++
+                    HealthLevel.OK -> {}
                 }
             }
 
-            MethodStats(
-                method = method,
+            OperationStats(
+                operation = operation,
                 totalCalls = list.size,
                 successCount = successCount,
                 failCount = failCount,
                 avgResponseMs = if (list.isNotEmpty()) totalDuration / list.size else 0L,
-                fallbackCount = fallbackCount,
                 warningCount = warningCount,
-                errorCount = errorCount,
-                warningTypes = warningTypeMap
+                errorCount = errorCount
             )
         }
     }
@@ -247,25 +216,19 @@ object HealthMonitor {
         val total = list.size
         var success = 0
         var totalDuration = 0L
-        var fallbacks = 0
         var warningCount = 0
         var errorCount = 0
         var lastFail: ApiCallRecord? = null
-        var lastWarningRecord: ApiCallRecord? = null
 
         for (r in list) {
             if (r.success) success++
             totalDuration += r.durationMs
-            if (r.wasFallback) fallbacks++
             when (r.level) {
                 HealthLevel.WARNING -> warningCount++
                 HealthLevel.ERROR -> errorCount++
                 HealthLevel.OK -> {}
             }
-            if (r.responseWarnings.isNotEmpty() && lastWarningRecord == null) {
-                lastWarningRecord = r
-            }
-            if (!r.success) lastFail = r
+            if (r.level == HealthLevel.ERROR) lastFail = r
         }
 
         val fail = total - success
@@ -290,11 +253,9 @@ object HealthMonitor {
             errorCount = errorCount,
             avgResponseMs = avgMs,
             p95ResponseMs = p95Ms,
-            fallbackCount = fallbacks,
             lastError = lastFail?.errorMessage,
             lastErrorTime = lastFail?.timestamp ?: 0L,
             healthScore = score,
-            lastWarning = lastWarningRecord?.responseWarnings?.firstOrNull(),
             overallLevel = computeOverallLevel(list)
         )
     }

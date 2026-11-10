@@ -8,6 +8,7 @@ import cp.player.core.music.SongUrl
 import cp.player.core.music.UnifiedMusicSource
 import cp.player.core.util.PlatformSupport
 import cp.player.core.util.currentTimeMillis
+import kotlinx.serialization.json.Json
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
@@ -189,6 +190,7 @@ class DownloadEngine(
                 task.localPath?.let {
                     PlatformSupport.deleteRecursively(it)
                     PlatformSupport.deleteRecursively("$it.part")
+                    deleteCompanionFiles(it)
                 }
             }
             _tasks.update { list -> list.filterNot { it.id == id } }
@@ -218,6 +220,7 @@ class DownloadEngine(
                     task.localPath?.let {
                         PlatformSupport.deleteRecursively(it)
                         PlatformSupport.deleteRecursively("$it.part")
+                        deleteCompanionFiles(it)
                     }
                 }
             }
@@ -266,7 +269,8 @@ class DownloadEngine(
                 PlatformSupport.deleteRecursively(partPath)
                 return@withContext null
             }
-            val completed = task.copy(
+            val enriched = downloadCompanionAssets(task, targetPath)
+            val completed = enriched.copy(
                 status = DownloadStatus.COMPLETED,
                 progress = 1f,
                 downloadedBytes = sourceBytes,
@@ -410,6 +414,7 @@ class DownloadEngine(
             throw DownloadFailedException("下载临时文件重命名失败: $partPath")
         }
         val downloaded = resumeBytes + written
+        val enriched = downloadCompanionAssets(task, targetPath)
         // 条件式完成迁移：仅从 PENDING/DOWNLOADING → COMPLETED，不覆盖并发写入的 PAUSED/CANCELLED
         val completed = updateTaskIf(
             task.id,
@@ -422,7 +427,10 @@ class DownloadEngine(
                     downloadedBytes = downloaded,
                     totalBytes = finalTotal,
                     localPath = targetPath,
-                    error = null
+                    error = null,
+                    album = enriched.album ?: it.album,
+                    durationMs = if (enriched.durationMs > 0L) enriched.durationMs else it.durationMs,
+                    coverUrl = enriched.coverUrl ?: it.coverUrl,
                 )
             }
         )
@@ -597,6 +605,103 @@ class DownloadEngine(
         persistMutex.withLock {
             store?.save(taskSnapshot)
         }
+    }
+
+    private fun deleteCompanionFiles(audioPath: String) {
+        val basePath = audioPath.substringBeforeLast('.', "")
+        if (basePath.isNotBlank()) {
+            PlatformSupport.deleteRecursively("$basePath.lrc")
+            PlatformSupport.deleteRecursively("$basePath.jpg")
+            PlatformSupport.deleteRecursively("$basePath.png")
+            PlatformSupport.deleteRecursively("$basePath.json")
+        }
+    }
+
+    /**
+     * 下载伴生资源（歌词 .lrc、封面 .jpg/.png、云数据 .json），并补全任务的专辑/时长/封面等云端元数据。
+     */
+    private suspend fun downloadCompanionAssets(task: DownloadTask, targetPath: String): DownloadTask {
+        val basePath = targetPath.substringBeforeLast('.', "")
+        if (basePath.isBlank()) return task
+
+        var effectiveAlbum = task.album
+        var effectiveDurationMs = task.durationMs
+        var effectiveCoverUrl = task.coverUrl
+
+        // 0. 若关键元数据缺失，尝试从音源拉取最新 TrackSummary
+        if (effectiveAlbum.isNullOrBlank() || effectiveDurationMs <= 0L || effectiveCoverUrl.isNullOrBlank()) {
+            runCatching {
+                when (val detailRes = source.getTrackDetail(task.mediaId)) {
+                    is BackendResult.Success -> {
+                        val detail = detailRes.data
+                        if (effectiveAlbum.isNullOrBlank()) effectiveAlbum = detail.album
+                        if (effectiveDurationMs <= 0L) effectiveDurationMs = detail.durationMs
+                        if (effectiveCoverUrl.isNullOrBlank()) effectiveCoverUrl = detail.coverUrl
+                    }
+                    else -> Unit
+                }
+            }
+        }
+
+        // 1. 伴生歌词：若 .lrc 不存在，拉取歌词并落地为同名边车歌词
+        val lrcPath = "$basePath.lrc"
+        if (!PlatformSupport.exists(lrcPath)) {
+            runCatching {
+                when (val lyricRes = source.getLyric(task.mediaId)) {
+                    is BackendResult.Success -> {
+                        val lrcText = lyricRes.data
+                        if (lrcText.isNotBlank()) {
+                            PlatformSupport.writeTextFile(lrcPath, lrcText)
+                        }
+                    }
+                    else -> Unit
+                }
+            }
+        }
+
+        // 2. 伴生封面：若 .jpg/.png 不存在，下载封面并落地
+        val coverExt = if (effectiveCoverUrl?.contains(".png", ignoreCase = true) == true) "png" else "jpg"
+        val coverPath = "$basePath.$coverExt"
+        val altCoverPath = if (coverExt == "jpg") "$basePath.png" else "$basePath.jpg"
+        if (!PlatformSupport.exists(coverPath) && !PlatformSupport.exists(altCoverPath) && !effectiveCoverUrl.isNullOrBlank()) {
+            runCatching {
+                val coverPart = "$coverPath.part"
+                executor.download(effectiveCoverUrl, emptyMap(), coverPart, 0L) { _, _ -> }
+                if (PlatformSupport.exists(coverPart) && PlatformSupport.fileSize(coverPart) > 0L) {
+                    PlatformSupport.moveFile(coverPart, coverPath)
+                } else {
+                    PlatformSupport.deleteRecursively(coverPart)
+                }
+            }
+        }
+
+        // 3. 伴生云数据：落地 JSON
+        val jsonPath = "$basePath.json"
+        if (!PlatformSupport.exists(jsonPath)) {
+            runCatching {
+                val metadata = DownloadCloudMetadata(
+                    mediaId = task.mediaId,
+                    title = task.title,
+                    artist = task.artist,
+                    album = effectiveAlbum,
+                    coverUrl = effectiveCoverUrl,
+                    durationMs = effectiveDurationMs,
+                    qualityLevel = task.qualityLevel,
+                    downloadedAt = currentTimeMillis(),
+                )
+                val jsonText = Json.encodeToString(
+                    DownloadCloudMetadata.serializer(),
+                    metadata
+                )
+                PlatformSupport.writeTextFile(jsonPath, jsonText)
+            }
+        }
+
+        return task.copy(
+            album = effectiveAlbum,
+            durationMs = effectiveDurationMs,
+            coverUrl = effectiveCoverUrl,
+        )
     }
 
     companion object {

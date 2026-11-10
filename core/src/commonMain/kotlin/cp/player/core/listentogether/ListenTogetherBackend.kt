@@ -16,7 +16,7 @@ import cp.player.core.BackendResult
  * 音源能力缺失（换音源才有救）与临时故障（可重试）是**两种不同的处置**，
  * 让它们共用一条 Error 通道会让 UI 把「这个音源做不到」渲染成「出错了，请重试」——
  * 用户重试到天荒地老也没用。所以能力判定是**独立的一次询问**，
- * 与 `BackendProvider.apiMap` 的 `"unsupported"` 是同一套语义。
+ * 与 `UnifiedMusicSource` 的 `BackendResult.Unsupported` 是同一套语义。
  */
 interface ListenTogetherBackend {
 

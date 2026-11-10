@@ -13,6 +13,7 @@ import cp.player.core.util.PlatformContext
 import cp.player.core.util.PlatformSupport
 import cp.player.core.util.SettingsStorage
 import cp.player.core.util.currentTimeMillis
+import kotlinx.serialization.json.Json
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
@@ -54,7 +55,10 @@ interface MediaDownloadManager {
         artist: String? = null,
         coverUrl: String? = null,
         mediaType: MediaType = MediaType.AUDIO,
-        level: String = DEFAULT_QUALITY_LEVEL
+        level: String = DEFAULT_QUALITY_LEVEL,
+
+        album: String? = null,
+        durationMs: Long = 0L,
     ): DownloadTask
 
     /**
@@ -165,6 +169,23 @@ class MediaDownloadManagerImpl(
                     task.localPath?.let { PlatformSupport.exists(it) } != true
                 ) {
                     task.copy(status = DownloadStatus.FAILED, error = "本地文件丢失，请重新下载")
+                } else if (task.status == DownloadStatus.COMPLETED && (task.album == null || task.durationMs <= 0L)) {
+                    val base = task.localPath?.substringBeforeLast('.', "")
+                    val jsonPath = base?.let { "$it.json" }
+                    if (jsonPath != null && PlatformSupport.exists(jsonPath)) {
+                        val cloudMeta = runCatching {
+                            PlatformSupport.readTextFile(jsonPath)?.let {
+                                Json.decodeFromString(DownloadCloudMetadata.serializer(), it)
+                            }
+                        }.getOrNull()
+                        if (cloudMeta != null) {
+                            task.copy(
+                                album = task.album ?: cloudMeta.album,
+                                durationMs = if (task.durationMs > 0L) task.durationMs else cloudMeta.durationMs,
+                                coverUrl = task.coverUrl ?: cloudMeta.coverUrl
+                            )
+                        } else task
+                    } else task
                 } else {
                     task
                 }
@@ -181,7 +202,9 @@ class MediaDownloadManagerImpl(
         artist: String?,
         coverUrl: String?,
         mediaType: MediaType,
-        level: String
+        level: String,
+        album: String?,
+        durationMs: Long,
     ): DownloadTask = enqueueMutex.withLock {
         val existing = engine.tasksFlow.value.firstOrNull { it.mediaId == mediaId }
 
@@ -200,7 +223,7 @@ class MediaDownloadManagerImpl(
             existing.status == DownloadStatus.CANCELLED ||
             existing.status == DownloadStatus.COMPLETED
         ) {
-            adoptFromCache(mediaId, title, artist, coverUrl, mediaType, level)?.let { return@withLock it }
+            adoptFromCache(mediaId, title, artist, coverUrl, mediaType, level, album, durationMs)?.let { return@withLock it }
         }
 
         when {
@@ -214,7 +237,10 @@ class MediaDownloadManagerImpl(
                     coverUrl = coverUrl,
                     mediaType = mediaType,
                     qualityLevel = level,
-                    createdAt = currentTimeMillis()
+                    createdAt = currentTimeMillis(),
+
+                    album = album,
+                    durationMs = durationMs,
                 )
                 engine.submit(task)
                 task
@@ -282,6 +308,8 @@ class MediaDownloadManagerImpl(
                     mediaType = MediaType.AUDIO,
                     qualityLevel = level,
                     createdAt = currentTimeMillis(),
+
+
                 )
                 val done = engine.adoptFromLocalFile(task, sourcePath)
                 if (done == null) {
@@ -309,6 +337,8 @@ class MediaDownloadManagerImpl(
         coverUrl: String?,
         mediaType: MediaType,
         level: String,
+        album: String?,
+        durationMs: Long,
     ): DownloadTask? {
         if (mediaType != MediaType.AUDIO) return null
         // 缓存只可能存在于「需要落盘的无损档位」（见 StreamLocalizer.LOSSLESS_LEVELS）：
@@ -331,8 +361,9 @@ class MediaDownloadManagerImpl(
             mediaType = mediaType,
             qualityLevel = level,
             createdAt = currentTimeMillis(),
+
         )
-        val completed = engine.adoptFromLocalFile(task, sourcePath) ?: return null
+        val completed = engine.adoptFromLocalFile(task.copy(album = album, durationMs = durationMs), sourcePath) ?: return null
         runCatching { cache.remove(entry.id) }
         return completed
     }
@@ -364,14 +395,22 @@ class MediaDownloadManagerImpl(
     private fun deliverCompleted(task: DownloadTask) {
         val callback = onCompleted ?: return
         val path = task.localPath ?: return
+        val basePath = path.substringBeforeLast('.', "")
+        val localCoverPath = if (basePath.isNotBlank()) {
+            if (PlatformSupport.exists("$basePath.jpg")) "$basePath.jpg"
+            else if (PlatformSupport.exists("$basePath.png")) "$basePath.png"
+            else null
+        } else null
         val item = LocalMediaItem(
             path = path,
             title = task.title,
             artist = task.artist,
-            durationMs = 0L, // 时长探测由本地索引侧负责
+            album = task.album,
+            durationMs = task.durationMs,
+
             sizeBytes = PlatformSupport.fileSize(path),
             mediaType = task.mediaType,
-            coverUri = task.coverUrl,
+            coverUri = localCoverPath?.let { "file:///$it" } ?: task.coverUrl,
             source = LocalMediaOrigin.DOWNLOADED,
             lastModified = PlatformSupport.fileLastModified(path),
             originalMediaId = task.mediaId,

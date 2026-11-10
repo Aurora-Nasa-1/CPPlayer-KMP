@@ -6,11 +6,13 @@ import kotlinx.coroutines.flow.StateFlow
  * 流输出的解析结果。
  *
  * @property url 上游可播放地址（可能带时效签名）。
- * @property cookie 拉流所需的 Cookie；由服务端注入，**不下发给接收端**。
+ * @property cookie 兼容调用方显式提供的流 Cookie；不自动读取账号凭证，不下发给接收端。
  */
 data class StreamTarget(
     val url: String,
     val cookie: String? = null,
+    /** Only the headers returned by the SDK resolver; never add the account credential implicitly. */
+    val headers: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -64,7 +66,7 @@ interface LocalServer {
  * @param activeConfig **实时**配置读取器：路由级开关（`exposeStream` / `exposeDataApi` /
  *        `allowRemoteControl`）必须按请求现读，改它们不该重启端口。
  * @param resolveStreamUrl 把 mediaId 解析为上游可播放地址；传 null 表示「当前曲目」。
- *        由 [cp.player.core.MusicBackend] 用 `UnifiedMusicSource` + 当前 Provider 的 cookie 实现。
+ *        由 [cp.player.core.MusicBackend] 用统一音乐源和显式流 Header 实现。
  *
  * ⚠️ [resolveStreamUrl] 必须留在**参数表最后**：它是主 lambda 型参数。
  * 在它后面插参数会让既有 `createLocalServer(config) { … }` 静默改绑，

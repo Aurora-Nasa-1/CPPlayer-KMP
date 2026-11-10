@@ -73,4 +73,8 @@ data class DownloadTask(
      * 新字段一律放参数表末尾（见 AGENTS.md）：插在中间会让按位置传参的旧构造点静默错位。
      */
     val fromCache: Boolean = false,
+    /** 歌曲所属专辑（云数据） */
+    val album: String? = null,
+    /** 歌曲时长（毫秒，云数据） */
+    val durationMs: Long = 0L,
 )

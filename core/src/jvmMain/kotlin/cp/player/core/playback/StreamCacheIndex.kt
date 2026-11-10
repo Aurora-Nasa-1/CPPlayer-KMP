@@ -103,6 +103,18 @@ internal class StreamCacheIndex(private val file: File) {
         if (records.remove(fileName) != null) flush()
     }
 
+    /**
+     * 按 mediaId 反查一条记录（文件名 + 元信息）。
+     *
+     * 纯内存（`records` 是插入序），**不碰文件系统** —— 供播放路径的
+     * `findByMediaId` 使用。同一首歌多音质缓存时取最后写入的那条。
+     */
+    @Synchronized
+    fun entryOfMediaId(mediaId: String): Pair<String, StreamCacheMetaRecord>? {
+        ensureLoaded()
+        return records.entries.lastOrNull { it.value.mediaId == mediaId }?.let { it.key to it.value }
+    }
+
     /** 丢弃不在 [existing] 里的记录：被外部（文件管理器）删掉的文件不该在索引里留尸。带宽限期防并发落盘未就绪。 */
     @Synchronized
     fun retainOnly(existing: Set<String>, gracePeriodMs: Long = 120_000L) {

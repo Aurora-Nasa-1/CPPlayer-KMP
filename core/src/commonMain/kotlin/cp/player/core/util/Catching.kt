@@ -9,8 +9,7 @@ import kotlin.coroutines.cancellation.CancellationException
  * 「伪装成网络失败」继续走回退分支：快速切歌时旧请求不中断、反而再发一次
  * 请求（CODE_REVIEW B5 的 AMLL 取词就是这种形态），同时破坏结构化并发。
  *
- * 规则（同 [cp.player.core.cache.CachedMusicApiService] 的既有约定）：
- * **凡是可能运行在可取消协程里的 `runCatching`，包网络/挂起调用时一律用本函数。**
+ * 规则：**凡是可能运行在可取消协程里的 `runCatching`，包网络/挂起调用时一律用本函数。**
  */
 inline fun <T> runCatchingExceptCancellation(block: () -> T): Result<T> =
     try {

@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * 本地媒体源接口（泛化版，替代原 [LocalMusicSource]）。
+ * 本地媒体源接口（音频 / 视频统一抽象）。
  *
  * 不再绑定「歌曲」概念，统一管理本地音频 / 视频条目
  * （[cp.player.core.media.LocalMediaItem]），覆盖三类来源：

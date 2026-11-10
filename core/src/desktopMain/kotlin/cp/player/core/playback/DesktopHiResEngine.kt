@@ -273,6 +273,69 @@ object DesktopHiResEngine {
         }
     }
 
+    /**
+     * 当前是否以硬件独占模式打开设备。
+     *
+     * 默认 **`false`**（共享）：独占只在用户显式开启且 VIP 有效时才成立。
+     * 见 [setExclusiveMode] 与 `PlaybackSessionSettings.KEY_WASAPI_EXCLUSIVE` 的说明。
+     */
+    private var _isExclusiveMode: Boolean = false
+    val isExclusiveMode: Boolean get() = _isExclusiveMode
+
+    /**
+     * 设置是否开启硬件独占模式 (WASAPI Exclusive / Bit-Perfect 源码输出)。
+     * 若为 false，则以 WASAPI 共享模式运行，兼容系统混音器。
+     *
+     * 进程环境变量与 JNI 两侧都要写：Rust 引擎在**创建引擎之前**就会读
+     * `CP_WASAPI_EXCLUSIVE` 决定输出签名，只设 JNI 那一半来不及。
+     */
+    fun setExclusiveMode(enabled: Boolean): Boolean {
+        _isExclusiveMode = enabled
+        setProcessEnv("CP_WASAPI_EXCLUSIVE", if (enabled) "1" else "0")
+        if (isInitialized) {
+            runCatching { nativeSetExclusiveMode(enabled) }
+        }
+        return true
+    }
+
+    /**
+     * 设置 DSD 输出模式：0 = PCM Decimation (软解到 PCM), 1 = DoP, 2 = Native DSD, 3 = Auto。
+     */
+    fun setDsdOutputMode(mode: Int): Boolean {
+        if (!isInitialized) return false
+        return runCatching { nativeSetDsdOutputMode(mode) }.getOrDefault(false)
+    }
+
+    private fun setProcessEnv(key: String, value: String) {
+        try {
+            System.setProperty(key, value)
+            val os = System.getProperty("os.name", "").lowercase()
+            if (os.contains("win")) {
+                val linker = java.lang.foreign.Linker.nativeLinker()
+                val kernel32 = java.lang.foreign.SymbolLookup.libraryLookup("kernel32", java.lang.foreign.Arena.global())
+                val setEnvHandle = kernel32.find("SetEnvironmentVariableW").map {
+                    linker.downcallHandle(
+                        it,
+                        java.lang.foreign.FunctionDescriptor.of(
+                            java.lang.foreign.ValueLayout.JAVA_INT,
+                            java.lang.foreign.ValueLayout.ADDRESS,
+                            java.lang.foreign.ValueLayout.ADDRESS,
+                        )
+                    )
+                }.orElse(null)
+                if (setEnvHandle != null) {
+                    java.lang.foreign.Arena.ofConfined().use { arena ->
+                        val k = arena.allocateFrom(key, java.nio.charset.StandardCharsets.UTF_16LE)
+                        val v = arena.allocateFrom(value, java.nio.charset.StandardCharsets.UTF_16LE)
+                        setEnvHandle.invokeExact(k, v)
+                    }
+                }
+            }
+        } catch (t: Throwable) {
+            logger.fine("setProcessEnv failed for $key: ${t.message}")
+        }
+    }
+
     fun stopEngine() {
         pollJob?.cancel()
         pollJob = null
@@ -377,6 +440,173 @@ object DesktopHiResEngine {
         }
     }
 
+    /**
+     * 当前 DLL 的 API 等级。`1` = 2026-11-10 之前发布的旧库（只会播本地路径），
+     * `2` = 带 HTTP 源 / 变速 / gapless / 动态处理的版本。
+     *
+     * ⚠️ 不能靠「方法调一下看抛不抛异常」去逐个猜：那会把探测动作本身变成一次
+     * 真实的播放/配置下发。用一个专门的、无副作用的导出做版本握手最省事。
+     */
+    val apiLevel: Int by lazy {
+        if (!isInitialized) {
+            1
+        } else {
+            try {
+                nativeGetEngineApiLevel().coerceAtLeast(1)
+            } catch (t: Throwable) {
+                logger.info("Legacy FlickEngine DLL detected (no nativeGetEngineApiLevel); extended features disabled")
+                1
+            }
+        }
+    }
+
+    /** 是否具备本次新增的全部引擎能力（宿主据此决定走直连还是落盘）。 */
+    val supportsExtendedFeatures: Boolean get() = apiLevel >= 2
+
+    // ======================== 扩展能力（FlickEngine 有实现、旧 DLL 未导出） ========================
+
+    /**
+     * 把 Kotlin 的 `Map<String,String>` 摊平成 `[k1, v1, k2, v2, ...]`。
+     *
+     * JNI 侧刻意不解析 JSON：请求头个数个位数，扁平数组零依赖、零歧义，
+     * 也不会因为 header 值里带引号而被 JSON 解析坑到。
+     */
+    private fun flattenHeaders(headers: Map<String, String>): Array<String> {
+        if (headers.isEmpty()) return emptyArray()
+        val out = ArrayList<String>(headers.size * 2)
+        for ((key, value) in headers) {
+            out.add(key)
+            out.add(value)
+        }
+        return out.toTypedArray()
+    }
+
+    /** 直连播放 HTTP(S) 流：边下边播、支持 Range seek，不再要求先整首落盘。 */
+    fun playUrl(url: String, headers: Map<String, String> = emptyMap()): Boolean {
+        if (!isInitialized) return false
+        return try {
+            nativePlayUrl(url, flattenHeaders(headers))
+        } catch (t: Throwable) {
+            logger.log(Level.WARNING, "nativePlayUrl failed for $url", t)
+            false
+        }
+    }
+
+    /** 把下一首（本地路径）排进引擎的无缝队列。 */
+    fun queueNext(path: String): Boolean {
+        if (!isInitialized) return false
+        return try {
+            nativeQueueNext(path)
+        } catch (t: Throwable) {
+            logger.log(Level.WARNING, "nativeQueueNext failed for $path", t)
+            false
+        }
+    }
+
+    /** 把下一首（HTTP 流）排进引擎的无缝队列。 */
+    fun queueNextUrl(url: String, headers: Map<String, String> = emptyMap()): Boolean {
+        if (!isInitialized) return false
+        return try {
+            nativeQueueNextUrl(url, flattenHeaders(headers))
+        } catch (t: Throwable) {
+            logger.log(Level.WARNING, "nativeQueueNextUrl failed for $url", t)
+            false
+        }
+    }
+
+    /** 立刻切到已排队的下一首（由宿主在需要「跳过」但保持 gapless 时用）。 */
+    fun skipToNext(): Boolean {
+        if (!isInitialized) return false
+        return try {
+            nativeSkipToNext()
+        } catch (t: Throwable) {
+            logger.log(Level.WARNING, "nativeSkipToNext failed", t)
+            false
+        }
+    }
+
+    /**
+     * 引擎侧真交叉淡化（双源重叠）。
+     *
+     * ⚠️ 与 `PlaybackFadeController` 的音量斜坡**互斥**：两边同时改音量会互相打架。
+     * 宿主在启用本能力时不再启动 FadeRunner，见 [PlaybackFadeController]。
+     */
+    fun setCrossfade(enabled: Boolean, durationSecs: Float): Boolean {
+        if (!isInitialized) return false
+        return try {
+            nativeSetCrossfade(enabled, durationSecs.coerceAtLeast(0f))
+        } catch (t: Throwable) {
+            logger.log(Level.WARNING, "nativeSetCrossfade failed", t)
+            false
+        }
+    }
+
+    /** 0 = 等功率（默认），1 = 线性，2 = 平方根，3 = S 曲线。 */
+    fun setCrossfadeCurve(curve: Int): Boolean {
+        if (!isInitialized) return false
+        return try {
+            nativeSetCrossfadeCurve(curve.coerceIn(0, 3))
+        } catch (t: Throwable) {
+            logger.log(Level.WARNING, "nativeSetCrossfadeCurve failed", t)
+            false
+        }
+    }
+
+    fun setPlaybackSpeed(speed: Float): Boolean {
+        if (!isInitialized) return false
+        return try {
+            nativeSetPlaybackSpeed(speed.coerceIn(0.25f, 4.0f))
+        } catch (t: Throwable) {
+            logger.log(Level.WARNING, "nativeSetPlaybackSpeed failed", t)
+            false
+        }
+    }
+
+    fun getPlaybackSpeed(): Float {
+        if (!isInitialized) return 1f
+        return try {
+            nativeGetPlaybackSpeed().takeIf { it.isFinite() && it > 0f } ?: 1f
+        } catch (t: Throwable) {
+            1f
+        }
+    }
+
+    /**
+     * 响度均衡：压缩器。阈值/比率/启动/释放/补偿增益，单位与 Rust `set_compressor` 一致。
+     */
+    fun setCompressor(
+        enabled: Boolean,
+        thresholdDb: Float,
+        ratio: Float,
+        attackMs: Float,
+        releaseMs: Float,
+        makeupGainDb: Float,
+    ): Boolean {
+        if (!isInitialized) return false
+        return try {
+            nativeSetCompressor(enabled, thresholdDb, ratio, attackMs, releaseMs, makeupGainDb)
+        } catch (t: Throwable) {
+            logger.log(Level.WARNING, "nativeSetCompressor failed", t)
+            false
+        }
+    }
+
+    /** 防爆音：硬限幅器。 */
+    fun setLimiter(
+        enabled: Boolean,
+        inputGainDb: Float,
+        ceilingDb: Float,
+        releaseMs: Float,
+    ): Boolean {
+        if (!isInitialized) return false
+        return try {
+            nativeSetLimiter(enabled, inputGainDb, ceilingDb, releaseMs)
+        } catch (t: Throwable) {
+            logger.log(Level.WARNING, "nativeSetLimiter failed", t)
+            false
+        }
+    }
+
     // Native JNI Declarations（对齐 C/Rust 导出契约）
     private external fun nativeInit(): Boolean
     private external fun nativeShutdown(): Boolean
@@ -393,4 +623,32 @@ object DesktopHiResEngine {
         feedback: Float, width: Float,
     ): Boolean
     private external fun nativePollEvent(): String?
+    private external fun nativeSetExclusiveMode(enabled: Boolean): Boolean
+    private external fun nativeSetDsdOutputMode(mode: Int): Boolean
+
+    // 扩展能力：这些符号在 2026-11-10 之前发布的 DLL 里**不存在**。
+    // 上面的包装方法都带 try/catch，老 DLL 上会静默返回 false / 默认值，不会崩。
+    private external fun nativeGetEngineApiLevel(): Int
+    private external fun nativePlayUrl(url: String, headers: Array<String>): Boolean
+    private external fun nativeQueueNext(path: String): Boolean
+    private external fun nativeQueueNextUrl(url: String, headers: Array<String>): Boolean
+    private external fun nativeSkipToNext(): Boolean
+    private external fun nativeSetCrossfade(enabled: Boolean, durationSecs: Float): Boolean
+    private external fun nativeSetCrossfadeCurve(curve: Int): Boolean
+    private external fun nativeSetPlaybackSpeed(speed: Float): Boolean
+    private external fun nativeGetPlaybackSpeed(): Float
+    private external fun nativeSetCompressor(
+        enabled: Boolean,
+        thresholdDb: Float,
+        ratio: Float,
+        attackMs: Float,
+        releaseMs: Float,
+        makeupGainDb: Float,
+    ): Boolean
+    private external fun nativeSetLimiter(
+        enabled: Boolean,
+        inputGainDb: Float,
+        ceilingDb: Float,
+        releaseMs: Float,
+    ): Boolean
 }

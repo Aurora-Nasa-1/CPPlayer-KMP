@@ -201,6 +201,14 @@ interface StreamLocalizer {
     fun entries(): List<SongCacheEntry> = emptyList()
 
     /**
+     * 按 [mediaId] 找**一条**缓存（播放回退 / 「这首有没有本地副本」）。
+     *
+     * ⚠️ 刻意独立于 [entries]：后者要列目录、还要给缺元信息的老文件解析音频标签，
+     * 放在播放路径上会卡住起播。默认 `null`（不落盘的平台天然没有）。
+     */
+    fun findByMediaId(mediaId: String): SongCacheEntry? = null
+
+    /**
      * 按 [SongCacheEntry.id]（文件名）删除单条。
      *
      * @return 是否真的删掉了文件（文件已不存在也算 false，调用方据此刷新而非当作错误）

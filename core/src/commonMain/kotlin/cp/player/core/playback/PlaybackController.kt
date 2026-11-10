@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
  *
  * UI 只与此接口对话；内部由 [PlaybackControllerImpl] 实现，
  * 协调 [PlatformPlayer]（播放）+ [cp.player.core.music.UnifiedMusicSource]（取 URL/详情）
- * + [cp.player.core.api.MusicApiService]（歌词/scrobble）。
+ * + 同一个 [cp.player.core.music.UnifiedMusicSource]（歌词/scrobble）。
  *
  * 前端禁止：直接调 [cp.player.core.music.UnifiedMusicSource]、做 Song ↔ MediaItem 转换、
  * 感知引擎类型、轮询位置。一切差异由此接口及其 StateFlow 屏蔽。

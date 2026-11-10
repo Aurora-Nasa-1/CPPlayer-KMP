@@ -88,13 +88,12 @@ data class LyricsSourceConfigOption(
  *
  * @param plugins 第三方插件服务（适配成 [LyricsSource]）
  * @param amllClient AMLL 客户端；null 表示不提供 AMLL 来源（该来源不会出现在列表里）
- * @param api 音源 API（「音源自带歌词」来源用）
  * @param legacySettings 旧设置读取器，**仅用于一次性迁移** `lyrics_source_mode`
  */
 expect fun createLyricsSourceRegistry(
     context: cp.player.core.util.PlatformContext,
     plugins: cp.player.core.lyricsplugin.LyricsPluginService,
     amllClient: cp.player.core.api.AmllTtmlClient?,
-    api: cp.player.core.api.MusicApiService,
     legacySettings: cp.player.core.util.SettingsStorage? = null,
+    unifiedSource: cp.player.core.music.UnifiedMusicSource? = null,
 ): LyricsSourceRegistry

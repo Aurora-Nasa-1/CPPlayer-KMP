@@ -44,6 +44,8 @@ data class LyricsRequest(
     val durationMs: Long = 0L,
     val isLocal: Boolean = false,
     val originalMediaId: CPMediaId? = null,
+    /** 本地文件路径（原生本地曲或已下载歌曲命中本地文件时注入） */
+    val localFilePath: String? = null,
 ) {
     /** 实际可用于平台精确查询的 mediaId（在线曲为 mediaId，已下载本地曲为 originalMediaId）。 */
     val platformMediaId: CPMediaId?

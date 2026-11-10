@@ -2,13 +2,6 @@ package cp.player.core
 
 import cp.player.core.api.AmllTtmlClient
 import cp.player.core.api.LyricsSourceMode
-import cp.player.core.api.MusicApiService
-import cp.player.core.api.MusicApiServiceImpl
-import cp.player.core.cache.ApiCache
-import cp.player.core.cache.CacheConfig
-import cp.player.core.cache.CacheStats
-import cp.player.core.cache.CachedMusicApiService
-import cp.player.core.cache.InMemoryApiCache
 import cp.player.core.control.ExternalPusher
 import cp.player.core.control.LocalServer
 import cp.player.core.control.LocalServerConfig
@@ -82,9 +75,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.IO
 
-/** AMLL TTML 磁盘缓存的 SettingsStorage namespace（与主设置 / cookie 隔离）。 */
-private const val AMLL_CACHE_NAMESPACE = "amll_ttml_cache"
-
 /**
  * CPPlayer 后端统一入口（KMP 版）。
  *
@@ -95,10 +85,10 @@ private const val AMLL_CACHE_NAMESPACE = "amll_ttml_cache"
  * 1. **生命周期 + 状态机**：通过 [stateFlow] 暴露 [BackendState]，
  *    自动管理初始化、Provider 激活、错误恢复。
  * 2. **Provider 管理**：导入 / 切换 / 删除音源模块，导入时自动激活首个 Provider。
- * 3. **音乐数据访问**：通过 [musicApi] / [cachedMusicApi] 提供云音乐 API（原 [MusicApiService]），
- *    后续将逐步迁移到更高层的 [MusicSource]（待实现，见 below）。
+ * 3. **音乐数据访问**：一律经 [unifiedSource]（强类型 [UnifiedMusicSource]），
+ *    不再暴露 JSON API 门面。
  * 4. **本地媒体**：通过 [localMedia] 访问平台本地媒体源（扫描 / 导入 / 下载登记），
- *    并经由 [unifiedSource] 参与统一 MediaId 路由（[localMusic] 为兼容别名）。
+ *    并经由 [unifiedSource] 参与统一 MediaId 路由。
  * 5. **播放控制**：通过 [playbackController] 访问；实际播放由平台 [createPlatformPlayer] 提供。
  * 6. **健康监控**：通过 [health] 访问带 [HealthMonitor.HealthLevel] 三级分类的 API 健康数据。
  * 7. **错误处理**：所有可失败操作返回 [BackendResult]，UI 可穷举 [Success]/[Error]/[Unsupported]。
@@ -136,16 +126,11 @@ class MusicBackend private constructor(
     private val settings: SettingsStorage,
     private val providerManager: ProviderManager,
     private val moduleManager: ModuleManager,
-    private val musicApiImpl: MusicApiServiceImpl,
-    private val cachedMusicApi: CachedMusicApiService,
-    private val cache: ApiCache,
 ) {
 
-    /** 模块内可见：供 [MusicApiServiceFactory] 兼容层转发。 */
+    /** 模块内可见：供兼容层转发。 */
     internal val providerManagerInternal get() = providerManager
     internal val moduleManagerInternal get() = moduleManager
-    internal val apiImplInternal get() = musicApiImpl
-    internal val cachedApiInternal get() = cachedMusicApi
 
     /**
      * Cookie 存储（按 Provider 隔离账号）。前端登录/登出时直接使用。
@@ -174,49 +159,31 @@ class MusicBackend private constructor(
     val health: HealthMonitor get() = HealthMonitor
 
     // ============ 音乐数据访问（云侧） ============
-
-    /**
-     * 带读透缓存的云音乐 API。
-     *
-     * 交出去的是 [CachedMusicApiService]（装饰器），**裸实现不外泄** ——
-     * 否则调用方绕过装饰器，缓存层形同不存在（历史 bug，见 ARCHITECTURE §5）。
-     */
-    @Deprecated("请使用统一访问入口 unifiedSource", ReplaceWith("unifiedSource"))
-    val musicApi: MusicApiService get() = cachedMusicApi
-
-    @Deprecated("请使用统一访问入口 unifiedSource", ReplaceWith("unifiedSource"))
-    val cachedApi: CachedMusicApiService get() = cachedMusicApi
+    //
+    // 云侧取数只有一个入口：[unifiedSource]（强类型 UnifiedMusicSource）。
+    // 旧的 JSON 门面（MusicApiService / SdkApiProjection）已删除。
 
     // ============ 本地音乐 ============
 
-    @Deprecated("请使用统一访问入口 unifiedSource", ReplaceWith("unifiedSource"))
-    var localMusic: LocalMediaSource
-        get() = _localMusic
-        internal set(value) {
-            attachLocalMedia(value)
-        }
-
-    private var _localMusic: LocalMediaSource = NoopLocalMusicSource
+    private var localMediaAttached = false
 
     /**
-     * 本地媒体源一次性装配：赋值 [NoopLocalMusicSource] 之外的真实实现，
-     * 并重建 [unifiedSource] 纳入本地源。
+     * 本地媒体源一次性装配：把真实实现纳入 [unifiedSource]。
      *
-     * 守卫：仅允许从 [NoopLocalMusicSource] 迁移一次；二次赋值抛异常，
+     * 守卫：仅允许装配一次；二次装配抛异常，
      * 防止重建 [unifiedSource] 导致 playbackController/download 持有旧实例。
      */
     private fun attachLocalMedia(source: LocalMediaSource) {
-        check(_localMusic is NoopLocalMusicSource) { "本地媒体源已装配，不允许二次赋值" }
-        _localMusic = source
+        check(!localMediaAttached) { "本地媒体源已装配，不允许二次赋值" }
+        localMediaAttached = true
         _unifiedSource = unifiedSourceFor(source)
     }
 
     private fun unifiedSourceFor(source: LocalMediaSource) =
         cp.player.core.music.UnifiedMusicSourceImpl(
-            musicApiService = cachedMusicApi,
             localMusicSource = source,
-            activeProviderId = { providerManager.getCurrentProviderId() },
             activeProvider = { providerManager.currentProvider ?: state.activeProvider },
+            sdkHost = { providerManager.sdkSessions.current() },
         )
 
     // ============ 统一音乐源 (统一 MediaId) ============
@@ -238,8 +205,8 @@ class MusicBackend private constructor(
     /**
      * 平台本地媒体源（真实实现，由 [createLocalMediaSource] 装配）。
      *
-     * 首次访问时构造并同步赋给 [localMusic]（其 setter 会重建 [unifiedSource]，
-     * 保证统一路由包含本地源）。惰性委托默认 SYNCHRONIZED，多线程安全、单例语义。
+     * 首次访问时构造并交给 [attachLocalMedia]（重建 [unifiedSource]，保证统一路由包含本地源）。
+     * 惰性委托默认 SYNCHRONIZED，多线程安全、单例语义。
      *
      * [init] 完成时已显式触发装配（见 [bootstrapLocalStack]），前端可直接使用。
      */
@@ -248,7 +215,7 @@ class MusicBackend private constructor(
     // ============ 下载管理（前端唯一下载入口） ============
 
     private val downloadManagerLazy = lazy {
-        // 先确保 localMedia 已装配：其 setter 会重建 unifiedSource，
+        // 先确保 localMedia 已装配：装配会重建 unifiedSource，
         // 保证下载侧持有的 source 与最终统一路由一致（顺序不可颠倒）。
         localMedia
         MediaDownloadManagerImpl(
@@ -305,25 +272,10 @@ class MusicBackend private constructor(
      * 内联时 [reset] 拿不到引用，它的 Ktor 连接池 / 线程每次重建都泄漏一套。
      * 与 K11 同一类：清理要先被引用到，才谈得上「接入 reset」。
      */
-    private val amllClientLazy = lazy {
-        AmllTtmlClient(diskCache = defaultSettingsStorage(AMLL_CACHE_NAMESPACE))
-    }
+    private val amllClientLazy = lazy { AmllTtmlClient() }
 
     /** 歌曲缓存（无损流落盘）的管理句柄：占用概览 + 条目列表 + 删除 / 清理。 */
     val songCache: StreamLocalizer by streamLocalizerLazy
-
-    /** 接口缓存的可观测计数（命中 / 未命中 / 降级返回旧缓存 …），管理页据此显示命中率。 */
-    val apiCacheStats: StateFlow<CacheStats> get() = cachedMusicApi.stats
-
-    /** 当前接口缓存条目数。 */
-    fun apiCacheSize(): Int = cache.size()
-
-    /** 清空接口缓存，返回删除的条目数。 */
-    fun clearApiCache(): Int {
-        val removed = cache.size()
-        if (removed > 0) cache.clear()
-        return removed
-    }
 
     // ============ 播放控制器（前端唯一播放入口） ============
 
@@ -332,7 +284,7 @@ class MusicBackend private constructor(
 
     /**
      * 前端播放控制唯一入口。惰性创建，绑定 [UnifiedMusicSourceImpl] 取源 +
-     * [MusicApiServiceImpl] 抓歌词/scrobble + 平台 [PlatformPlayer] 实际播放。
+     * 强类型 [unifiedSource] 取歌词/scrobble + 平台 [PlatformPlayer] 实际播放。
      *
      * 前端只应 `backend.playbackController.state.collectAsState()` 渲染，
      * 并通过此对象的方法触发播控——禁止直接访问 [unifiedSource] 用于播放。
@@ -345,8 +297,6 @@ class MusicBackend private constructor(
         PlaybackControllerImpl(
             platform = platform,
             source = unifiedSource,
-            api = musicApiImpl,
-            cookieProvider = { activeProvider()?.let { p -> providerManager.cookieStorage.getCookie(p.id) } },
             scope = backendScope,
             // 无损档位「边播边落盘」：桌面引擎无法定位 FLAC over HTTP，安卓是空实现。
             // 见 StreamLocalizer 的实测矩阵。实例由本类持有（见 songCache），管理页共用同一个。
@@ -374,11 +324,74 @@ class MusicBackend private constructor(
             lyricPusher = lyricPusherLazy.value,
             cacheNamespace = {
                 val provider = activeProvider()
-                cp.player.core.cache.cacheKey(
+                val account = providerManager.sdkSessions.selectedAccountId
+                cp.player.core.util.cacheKey(
                     providerId = provider?.id.orEmpty(), method = "stream", params = emptyMap(),
-                    cookie = provider?.let { providerManager.cookieStorage.getCookie(it.id) },
-                    providerConfig = provider?.getCustomSettings().orEmpty(),
+                    cookie = provider?.let { providerManager.cookieStorage.getCookie(it.id, account) },
+                    providerConfig = provider?.getCustomSettings().orEmpty() +
+                        mapOf(
+                            "__sdkAccount" to account,
+                            "__sdkCredentialEpoch" to (provider?.let {
+                                providerManager.cookieStorage.revision(it.id, account)
+                            } ?: 0).toString(),
+                        ),
                 )
+            },
+            downloadedFileResolver = { mediaId ->
+                val identity = cp.player.core.music.CPMediaId.parseOrNull(mediaId)
+                downloadManager.tasksFlow.value.firstOrNull {
+                    (it.mediaId == mediaId || (identity != null &&
+                        it.providerId == identity.providerId && it.mediaId == identity.resourceId)) &&
+                        it.mediaType == cp.player.core.media.MediaType.AUDIO &&
+                        it.status == cp.player.core.model.DownloadStatus.COMPLETED &&
+                        it.localPath != null &&
+                        cp.player.core.util.PlatformSupport.exists(it.localPath)
+                }?.localPath
+                    ?: localMedia.items().value.firstOrNull {
+                        it.originalMediaId == mediaId && it.mediaType == cp.player.core.media.MediaType.AUDIO &&
+                            cp.player.core.util.PlatformSupport.exists(it.path)
+                    }?.path
+            },
+            downloadedTrackResolver = { mediaId ->
+                val identity = cp.player.core.music.CPMediaId.parseOrNull(mediaId)
+                val task = downloadManager.tasksFlow.value.firstOrNull {
+                    (it.mediaId == mediaId || (identity != null &&
+                        it.providerId == identity.providerId && it.mediaId == identity.resourceId)) &&
+                        it.mediaType == cp.player.core.media.MediaType.AUDIO &&
+                        it.status == cp.player.core.model.DownloadStatus.COMPLETED
+                }
+                if (task != null && task.localPath != null && cp.player.core.util.PlatformSupport.exists(task.localPath)) {
+                    val basePath = task.localPath.substringBeforeLast('.', "")
+                    val localCover = if (basePath.isNotBlank()) {
+                        if (cp.player.core.util.PlatformSupport.exists("$basePath.jpg")) "file:///$basePath.jpg"
+                        else if (cp.player.core.util.PlatformSupport.exists("$basePath.png")) "file:///$basePath.png"
+                        else null
+                    } else null
+                    cp.player.core.music.TrackSummary(
+                        id = mediaId,
+                        name = task.title,
+                        artist = task.artist.orEmpty(),
+                        album = task.album,
+                        coverUrl = localCover ?: task.coverUrl,
+                        durationMs = task.durationMs,
+                        originalMediaId = mediaId,
+                    )
+                } else {
+                    localMedia.items().value.firstOrNull {
+                        it.originalMediaId == mediaId && it.mediaType == cp.player.core.media.MediaType.AUDIO &&
+                            cp.player.core.util.PlatformSupport.exists(it.path)
+                    }?.let { item ->
+                        cp.player.core.music.TrackSummary(
+                            id = mediaId,
+                            name = item.title,
+                            artist = item.artist ?: "Unknown",
+                            album = item.album,
+                            coverUrl = item.coverUri,
+                            durationMs = item.durationMs,
+                            originalMediaId = item.originalMediaId,
+                        )
+                    }
+                }
             },
         )
     }
@@ -389,8 +402,7 @@ class MusicBackend private constructor(
     val mediaResolver: UnifiedMediaResolver by lazy {
         UnifiedMediaResolverImpl(
             localMediaSource = localMedia,
-            musicApiService = musicApiImpl,
-            cookieProvider = { activeProvider()?.let { p -> providerManager.cookieStorage.getCookie(p.id) } },
+            musicSource = unifiedSource,
         )
     }
 
@@ -442,8 +454,8 @@ class MusicBackend private constructor(
             context = context,
             plugins = lyricsPlugins,
             amllClient = amllClientLazy.value,
-            api = musicApiImpl,
             legacySettings = settings,
+            unifiedSource = unifiedSource,
         )
     }
 
@@ -476,10 +488,12 @@ class MusicBackend private constructor(
                 when (plugin.kind) {
                     RepositoryPluginKind.PROVIDER -> {
                         val previous = moduleManager.getProvider(plugin.id)
-                        val artifact = plugin.compatibility(currentPluginTarget()).first
-                            ?: error("No compatible plugin package")
-                        if (previous != null && (previous.type != cp.player.core.provider.ProviderType.HTTP ||
-                                artifact.runtime != "http")) {
+                        check(plugin.compatibility(currentPluginTarget()).first != null) {
+                            "No compatible plugin package"
+                        }
+                        // 已安装的 provider 都是进程内 SDK（JNI / JS），运行中无法卸下旧实例，
+                        // 因此一律排队到下次启动再替换。旧版可热替换的 HTTP provider 已不存在。
+                        if (previous != null) {
                             check(withContext(Dispatchers.IO) { moduleManager.queueRepositoryUpdate(zipPath, plugin.id) }) {
                                 "Cannot save the update for the next restart"
                             }
@@ -806,7 +820,7 @@ class MusicBackend private constructor(
      * 流输出服务的目标解析：mediaId → 上游可播放地址。
      *
      * mediaId 为空时取当前曲目。音质沿用播放控制器当前等级，
-     * cookie 由服务端注入并**只保留在本机**，不下发给接收端。
+     * SDK 返回的显式请求头只由本机中继转发，不下发给接收端。
      */
     private suspend fun resolveStreamTarget(mediaId: String?): StreamTarget? {
         val targetId = mediaId?.takeIf { it.isNotBlank() }
@@ -816,9 +830,7 @@ class MusicBackend private constructor(
         val songUrl = (unifiedSource.getSongUrl(targetId, level) as? BackendResult.Success)?.data
             ?: return null
         if (songUrl.url.isBlank()) return null
-        val cookie = songUrl.cookie?.takeIf { it.isNotBlank() }
-            ?: activeProvider()?.let { providerManager.cookieStorage.getCookie(it.id) }
-        return StreamTarget(url = songUrl.url, cookie = cookie)
+        return StreamTarget(url = songUrl.url, headers = songUrl.headers.orEmpty())
     }
 
     // ============ Provider 管理（带状态机错误处理与自动激活） ============
@@ -963,6 +975,7 @@ class MusicBackend private constructor(
         val remaining = moduleManager.getAvailableProviders()
         if (deletingActive || remaining.isEmpty()) {
             if (remaining.isEmpty()) {
+                providerManager.switchProvider(null, context, save = false)
                 _stateFlow.value = BackendState.NoProvider
             } else {
                 switchProviderInternal(remaining.first(), save = true)
@@ -980,26 +993,22 @@ class MusicBackend private constructor(
     /** 最近一次加载/导入错误（用于详细诊断）。 */
     val lastLoadError: String? get() = moduleManager.lastLoadError
 
-    // ============ 音乐数据访问（高层封装，逐步从 [MusicApiService] 迁移） ============
+    // ============ 音乐数据访问 ============
     //
-    // TODO（增量迁移）：在此处逐步增加 `fetch*` 方法，
-    // 将 [MusicApiService] 的 JsonElement 返回解析为
-    // [cp.player.core.music] 中的强类型领域模型，统一返回 [MusicResult]。
-    // 首批：推荐歌单 / 日推 / 搜索 / 歌单详情。
-    // 见 cp.player.core.music.MusicSourceFromApi。
+    // 取数一律经 [unifiedSource]；这里不再提供 JSON 转发方法。
 
     // ============ 释放 ============
 
     /** 释放后端单例（主要供测试用）。 */
     fun reset() {
+        providerManager.sdkSessions.invalidate()
+        CoroutineScope(Dispatchers.Default).launch { providerManager.sdkSessions.close() }
         runCatching { stopAutoPush() }
         runCatching { localServerStatusJob?.cancel() }
         runCatching { localServer?.stop() }
         localServer = null
-        runCatching { activeProvider()?.stopServer() }
-        // 释放各 Provider 持有的资源（HttpProvider / BinaryProvider 各自持有一个 Ktor 客户端）。
-        // Provider 重载或后端重建时不关就是连接池 / 线程泄漏；BackendProvider.close() 默认空实现，
-        // 无状态 Provider 自动免疫。
+        runCatching { activeProvider()?.retireSessions() }
+        // Descriptors retire their sessions; the session owner drains and releases adapters.
         runCatching {
             moduleManager.getAvailableProviders().forEach { p -> runCatching { p.close() } }
         }
@@ -1058,13 +1067,10 @@ class MusicBackend private constructor(
 
     /**
      * 尝试从 Provider 提取加载/启动失败的错误描述。
-     * 优先读取 [BackendProvider.loadError]；反射兜底旧版本。
+     * 加载错误由描述符直接提供，不再反射旧实现。
      */
     private fun extractProviderError(provider: BackendProvider): String? {
-        return provider.loadError ?: runCatching {
-            val m = provider.javaClass.getMethod("getLoadError")
-            m.invoke(provider) as? String
-        }.getOrNull()
+        return provider.loadError
     }
 
     // ============ 伴生（工厂） ============
@@ -1081,20 +1087,14 @@ class MusicBackend private constructor(
          *
          * @param context 平台上下文
          * @param settings 设置存储（cookie / 最近 Provider ID 持久化）
-         * @param cache 缓存实现；null 时按 [CacheConfig.maxEntries] 建进程内 LRU
-         *   （曾经在这里写死 `InMemoryApiCache()` 默认值，`CacheConfig.maxEntries` 就成了死参数）
-         * @param cacheConfig 缓存配置
          * @return 初始化后的 [MusicBackend] 单例
          */
         fun init(
             context: PlatformContext,
             settings: SettingsStorage,
-            cache: ApiCache? = null,
-            cacheConfig: CacheConfig = CacheConfig(),
         ): MusicBackend {
             synchronized(COMPA) {
                 INSTANCE?.let { return it }
-                val effectiveCache = cache ?: InMemoryApiCache(cacheConfig.maxEntries)
                 val cookieStorage = ProviderCookieStorage(settings)
                 val providerManager = ProviderManager(settings, cookieStorage)
                 val moduleManager = ModuleManager(
@@ -1102,22 +1102,12 @@ class MusicBackend private constructor(
                     context,
                 )
                 moduleManager.init(providerManager)
-                val impl = MusicApiServiceImpl(providerManager, cookieStorage)
-                val cached = CachedMusicApiService(
-                    delegate = impl,
-                    cache = effectiveCache,
-                    providerManager = providerManager,
-                    allProviders = { listOfNotNull(providerManager.currentProvider) },
-                    config = cacheConfig.copy(enableFallback = false),
-                )
-                val backend = MusicBackend(
+                lateinit var backend: MusicBackend
+                backend = MusicBackend(
                     context = context,
                     settings = settings,
                     providerManager = providerManager,
                     moduleManager = moduleManager,
-                    musicApiImpl = impl,
-                    cachedMusicApi = cached,
-                    cache = effectiveCache,
                 )
                 // 监听 Provider 切换，同步后端状态机
                 providerManager.addOnProviderChangedListener { p ->
@@ -1153,7 +1143,7 @@ class MusicBackend private constructor(
         _stateFlow.value = when {
             // current 已设置且就绪 → Ready
             current != null && current.isReady() -> BackendState.Ready(current)
-            // current 已设置但未就绪（如 JNI startServer 崩溃）→ Error（附具体原因）
+            // current 已设置但未就绪（如 SDK session 建立失败）→ Error（附具体原因）
             current != null && !current.isReady() ->
                 BackendState.Error(extractProviderError(current) ?: "Provider 服务启动失败")
             // 有模块但未激活（init 中所有 provider 都 isReady=false，switchProvider 拒绝）

@@ -6,13 +6,9 @@ import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import com.mocharealm.accompanist.lyrics.core.parser.AutoParser
 import com.mocharealm.accompanist.lyrics.core.parser.EnhancedLrcParser
-import com.mocharealm.accompanist.lyrics.core.parser.KugouKrcParser
 import com.mocharealm.accompanist.lyrics.core.parser.NeteaseYrcParser
 import com.mocharealm.accompanist.lyrics.core.parser.TTMLParser
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
+import cp.player.core.music.TrackLyrics
 
 /**
  * 歌词解析与装配器：
@@ -26,47 +22,18 @@ object LyricsParser {
     private val autoParser = AutoParser()
 
     /**
-     * @param durationMs 曲目时长（毫秒），用于判定时间戳方言是否与时长相容。0 = 未知。
-     *   只有 [LyricsTimeRepair] 用它 —— 见那里的说明（`[mm:ss:cc]` 被读成 `h:mm:ss`
-     *   会让整首歌的歌词都被推到约 60 倍之后，UI 因此整首停在「前奏」）。
-     * @return 已按时间升序、去重的歌词行；无可用歌词返回空列表。
+     * 直接解析强类型 [TrackLyrics] 数据，避免在 JSON 字符串与对象之间来回序列化。
      */
-    fun parse(json: JsonElement, durationMs: Long = 0L): List<SyncedLyricLine> {
-        val obj = json as? JsonObject ?: return emptyList()
-        val data = obj["data"] as? JsonObject
-
-        // 0. TTML 格式（支持 data.ttml 或根层 ttml）
-        val ttml = ((obj["ttml"] ?: data?.get("ttml")) as? JsonPrimitive)?.contentOrNull
+    fun parseTrackLyrics(lyrics: TrackLyrics, durationMs: Long = 0L): List<SyncedLyricLine> {
+        val ttml = lyrics.ttml
         if (!ttml.isNullOrBlank()) {
             val lines = parseTtml(ttml)
             if (lines.isNotEmpty()) return finalize(lines)
         }
 
-        // 1. 酷狗逐字 KRC（支持明文）
-        val krc = ((obj["krc"] as? JsonObject) ?: (data?.get("krc") as? JsonObject))
-            ?.let { (it["lyric"] as? JsonPrimitive)?.contentOrNull }
-            ?: (obj["krc"] as? JsonPrimitive)?.contentOrNull
-            ?: (data?.get("krc") as? JsonPrimitive)?.contentOrNull
-        if (!krc.isNullOrBlank()) {
-            val lines = parseKrc(krc)
-            if (lines.isNotEmpty()) return finalize(lines)
-        }
-
-        // 2. 优先逐字 YRC
-        val yrc = ((obj["yrc"] as? JsonObject) ?: (data?.get("yrc") as? JsonObject))
-            ?.let { (it["lyric"] as? JsonPrimitive)?.contentOrNull }
-            ?: (obj["yrc"] as? JsonPrimitive)?.contentOrNull
-            ?: (data?.get("yrc") as? JsonPrimitive)?.contentOrNull
-
-        val tlyricRaw = ((obj["tlyric"] as? JsonObject) ?: (data?.get("tlyric") as? JsonObject))
-            ?.let { (it["lyric"] as? JsonPrimitive)?.contentOrNull }
-            ?: (obj["tlyric"] as? JsonPrimitive)?.contentOrNull
-            ?: (data?.get("tlyric") as? JsonPrimitive)?.contentOrNull
-
-        val romalrcRaw = ((obj["romalrc"] as? JsonObject) ?: (data?.get("romalrc") as? JsonObject))
-            ?.let { (it["lyric"] as? JsonPrimitive)?.contentOrNull }
-            ?: (obj["romalrc"] as? JsonPrimitive)?.contentOrNull
-            ?: (data?.get("romalrc") as? JsonPrimitive)?.contentOrNull
+        val yrc = lyrics.yrc
+        val tlyricRaw = lyrics.translation
+        val romalrcRaw = lyrics.romanization
 
         if (!yrc.isNullOrBlank()) {
             val yrcLines = parseYrc(yrc)
@@ -76,18 +43,9 @@ object LyricsParser {
             }
         }
 
-        // 3. 行级 / 增强型 LRC + 翻译
-        val lyricRaw = ((obj["lrc"] as? JsonObject) ?: (data?.get("lrc") as? JsonObject))
-            ?.let { (it["lyric"] as? JsonPrimitive)?.contentOrNull }
-            ?: (obj["lyric"] as? JsonPrimitive)?.contentOrNull
-            ?: (data?.get("lyric") as? JsonPrimitive)?.contentOrNull
-            ?: ((obj["klyric"] as? JsonObject) ?: (data?.get("klyric") as? JsonObject))
-                ?.let { (it["lyric"] as? JsonPrimitive)?.contentOrNull }
-
+        val lyricRaw = lyrics.lrc
         if (lyricRaw.isNullOrBlank()) return emptyList()
 
-        // BOM 统一在这里剥掉：带 BOM 时行首时间戳（以及下面的 TTML 前缀判定）都对不上，
-        // 症状是**第一行歌词静默丢失**。
         val lyricText = LyricsTimeRepair.stripBom(lyricRaw)
 
         if (lyricText.trimStart().startsWith("<tt") || lyricText.trimStart().startsWith("<?xml")) {
@@ -95,8 +53,6 @@ object LyricsParser {
             if (lines.isNotEmpty()) return finalize(lines)
         }
 
-        // 时间戳方言修复：`[mm:ss:cc]` 必须按百分秒读，否则整份歌词被推到约 60 倍之后
-        // （UI 表现为「整首都停在前奏」）。翻译 / 罗马音同一份文件、同一种方言，一起修。
         val mainRaw = LyricsTimeRepair.repairColonDialect(
             lyricText,
             durationMs,
@@ -151,12 +107,6 @@ object LyricsParser {
     internal fun parseYrc(raw: String): List<SyncedLyricLine> {
         return runCatching {
             NeteaseYrcParser.parse(raw).toSyncedLyricLines()
-        }.getOrDefault(emptyList())
-    }
-
-    internal fun parseKrc(raw: String): List<SyncedLyricLine> {
-        return runCatching {
-            KugouKrcParser.parse(raw).toSyncedLyricLines()
         }.getOrDefault(emptyList())
     }
 

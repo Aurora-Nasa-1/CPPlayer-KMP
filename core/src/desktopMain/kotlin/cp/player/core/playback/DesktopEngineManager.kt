@@ -1,5 +1,6 @@
 package cp.player.core.playback
 
+import cp.player.core.license.VipLicenseManager
 import cp.player.core.util.SettingsStorage
 import cp.player.core.util.defaultSettingsStorage
 import kotlinx.coroutines.CoroutineScope
@@ -16,26 +17,34 @@ import kotlinx.coroutines.launch
 import java.util.logging.Logger
 
 /**
- * 桌面端播放引擎类型。
+ * 桌面端播放引擎**输出模式**。
+ *
+ * ⚠️ 两个值都跑同一个 Rust FlickEngine（解码 / DSP / 输出全在引擎内），
+ * 差别只在 WASAPI 的共享 / 独占这一层：
+ * - [FLICK_STANDARD]：WASAPI Shared。经 Windows 会话混音器输出，能与其他应用共存（**默认**）；
+ * - [FLICK_EXCLUSIVE]：WASAPI Exclusive。独占声卡与采样率，Bit-Perfect 直通（VIP 特权，需显式开启）。
+ *
+ * 「系统引擎」这个模式**不存在** —— 桌面端没有 rodio / 系统播放器回退路径，
+ * 原生库缺失时是直接无输出（见 `NoopDesktopPlatformPlayer`）。
  */
 enum class DesktopPlayerEngineType {
-    /** 标准桌面引擎（基于 composemediaplayer / nucleus.rodio），轻量默认。 */
-    STANDARD_RODIO,
+    /** 标准共享模式（FlickEngine + WASAPI Shared 共享混音通道）。 */
+    FLICK_STANDARD,
 
     /**
-     * 高级发烧引擎（基于专有 Rust 引擎 + WASAPI 独占直通 + Symphonia + DSD 软解）。
-     * 原生免驱、源码输出（Bit-Perfect），适合用于后续「VIP / Hi-Res 专业版」桌面端付费特权功能。
+     * 高级发烧独占模式（FlickEngine + WASAPI Exclusive 独占直通 + Bit-Perfect 源码输出 + DSD 软解）。
+     * 完全绕过 Windows 系统混音器，专供 VIP 用户，且必须由用户显式打开。
      */
-    HIRES_EXCLUSIVE,
+    FLICK_EXCLUSIVE,
 }
 
 /**
- * 桌面端播放器引擎管理器，支持动态切换标准 Rodio 与 Hi-Res 发烧独占引擎。
+ * 桌面端播放器引擎管理器，统一由 Rust FlickEngine 驱动，支持动态切换标准共享与 VIP 硬件独占直通。
  */
 object DesktopEngineManager {
     private val logger = Logger.getLogger("DesktopEngineManager")
 
-    /** 检查当前系统环境是否已就绪桌面 Hi-Res 原生动态库 */
+    /** 检查当前系统环境是否已就绪桌面 Rust FlickEngine 原生动态库 */
     val isHiResEngineSupported: Boolean
         get() = DesktopHiResEngine.isAvailable
 
@@ -54,14 +63,14 @@ object DesktopEngineManager {
         return player
     }
 
-    /** 主动通知当前播放器重载/热切换引擎 */
+    /** 主动通知当前播放器重载/热切换引擎模式 */
     fun notifyEngineChanged() {
         activeDynamicPlayer?.checkAndSwitchEngine(force = true)
     }
 }
 
 /**
- * 动态切换代理播放器：使应用无论何时在设置中切换引擎、或者切歌时，都能即时无缝切换底层物理引擎。
+ * 动态切换代理播放器：使桌面端无论何时在设置中切换标准/独占引擎模式、或者卡密激活时，都能即时无缝切换底层模式。
  */
 class DynamicDesktopPlatformPlayer(
     private val storage: SettingsStorage,
@@ -96,58 +105,82 @@ class DynamicDesktopPlatformPlayer(
     override val audioEffectCapabilities: AudioEffectCapabilities
         get() = activePlayer.audioEffectCapabilities
 
+    // 引擎级通用能力必须逐个转发：DynamicDesktopPlatformPlayer 是 UI 唯一拿到的实例，
+    // 少了任何一个 override，桌面端就会静默退回接口的「不支持」默认值。
+    override val supportsPlaybackSpeed: Boolean get() = activePlayer.supportsPlaybackSpeed
+    override val playbackSpeed: Float get() = activePlayer.playbackSpeed
+    override val supportsGaplessQueue: Boolean get() = activePlayer.supportsGaplessQueue
+    override val supportsNativeCrossfade: Boolean get() = activePlayer.supportsNativeCrossfade
+    override val supportsSeekableRemoteStreams: Boolean get() = activePlayer.supportsSeekableRemoteStreams
+
     private var currentEngineType: DesktopPlayerEngineType = resolveDesiredEngine()
     private var activePlayer: PlatformPlayer = createUnderlyingPlayer(currentEngineType)
     private var forwardJob: Job? = null
 
     private var lastVolume: Float = 1.0f
     private var lastEffectConfig: AudioEffectConfig? = null
+    /** 用户设定的倍速；null = 从未改过（引擎默认 1.0，不必重放）。 */
+    private var lastPlaybackSpeed: Float? = null
+    /** 用户设定的引擎侧交叉淡化（enabled, durationMs）。 */
+    private var lastCrossfade: Pair<Boolean, Long>? = null
 
     init {
         bindUnderlyingPlayer(activePlayer)
     }
 
+    /**
+     * 解析本次应当使用的输出模式。
+     *
+     * ### 两条硬规则（都对应过真实事故）
+     * 1. **独占必须有 VIP**：卡密失效 / 未激活时一律回到共享，不复用上一次的独占会话；
+     * 2. **独占绝不默认开启**：读 [PlaybackSessionSettings.KEY_WASAPI_EXCLUSIVE]，
+     *    缺失即为 `false`。旧写法是「键不是 STANDARD 且是 VIP ⇒ 独占」，
+     *    等于让老用户（甚至只激活过卡密、从没进过设置页的用户）在启动瞬间就被
+     *    抢走声卡 —— 日志里那句 `SUCCESS: Initialized in EXCLUSIVE (Bit-Perfect) hardware mode!`
+     *    就是这么来的。**用户没点过那个开关，就不该听到独占。**
+     */
     private fun resolveDesiredEngine(): DesktopPlayerEngineType {
         if (preferredEngine != null) return preferredEngine
-        val key = storage.getString(PlaybackSessionSettings.KEY_AUDIO_ENGINE)
-        return if (key == PlaybackSessionSettings.ENGINE_STANDARD) {
-            DesktopPlayerEngineType.STANDARD_RODIO
-        } else if (DesktopEngineManager.isHiResEngineSupported) {
-            DesktopPlayerEngineType.HIRES_EXCLUSIVE
+        val isVip = isVipUser || VipLicenseManager.isVipActive
+        val wantsExclusive = PlaybackSessionSettings.wasapiExclusive(storage)
+        return if (isVip && wantsExclusive) {
+            DesktopPlayerEngineType.FLICK_EXCLUSIVE
         } else {
-            DesktopPlayerEngineType.STANDARD_RODIO
-        }
-    }
-
-    private fun createStandardPlayer(): PlatformPlayer {
-        return try {
-            AudioPlayerImpl()
-        } catch (e: Throwable) {
-            println("[CPPlayer Engine Manager] Standard AudioPlayerImpl 初始化失败（如无声卡或CI环境）: ${e.message}")
-            NoopDesktopPlatformPlayer(e.message ?: "No audio output device")
+            DesktopPlayerEngineType.FLICK_STANDARD
         }
     }
 
     private fun createUnderlyingPlayer(type: DesktopPlayerEngineType): PlatformPlayer {
-        return if (type == DesktopPlayerEngineType.HIRES_EXCLUSIVE) {
-            if (DesktopEngineManager.isHiResEngineSupported) {
-                println("""
+        if (!DesktopEngineManager.isHiResEngineSupported) {
+            println("[CPPlayer Engine Manager] Rust FlickEngine 原生动态库未就绪 (rust_lib_flick_player)")
+            return NoopDesktopPlatformPlayer("FlickEngine 原生动态库未就绪")
+        }
+
+        return if (type == DesktopPlayerEngineType.FLICK_EXCLUSIVE) {
+            println("""
 ================================================================================
-[CPPlayer Engine Manager] ACTIVE: FlickEngine WASAPI Exclusive Mode (Bit-Perfect)
+[CPPlayer Engine Manager] ACTIVE: FlickEngine WASAPI Exclusive Mode (Bit-Perfect VIP)
 [CPPlayer Engine Manager] Hardware Direct Output: Bypassing Windows Audio Mixer
 ================================================================================
-                """.trimIndent())
-                runCatching { DesktopHiResPlatformPlayer() }.getOrElse { err ->
-                    println("[CPPlayer Engine Manager] Hi-Res engine failed to create ($err). Falling back to Standard.")
-                    createStandardPlayer()
-                }
-            } else {
-                println("[CPPlayer Engine Manager] Hi-Res engine requested but library unavailable. Falling back to Standard Rodio.")
-                createStandardPlayer()
+            """.trimIndent())
+            runCatching {
+                DesktopHiResPlatformPlayer(isExclusive = true)
+            }.getOrElse { err ->
+                println("[CPPlayer Engine Manager] FlickEngine Exclusive 创建失败 ($err)，自动回退至 FlickEngine Standard 模式。")
+                DesktopHiResPlatformPlayer(isExclusive = false)
             }
         } else {
-            println("[CPPlayer Engine Manager] Active: Standard AudioPlayerImpl (Rodio Shared)")
-            createStandardPlayer()
+            println("""
+================================================================================
+[CPPlayer Engine Manager] ACTIVE: FlickEngine Standard Mode (WASAPI Shared)
+[CPPlayer Engine Manager] System Mixer Friendly Output
+================================================================================
+            """.trimIndent())
+            runCatching {
+                DesktopHiResPlatformPlayer(isExclusive = false)
+            }.getOrElse { err ->
+                NoopDesktopPlatformPlayer("FlickEngine 初始化失败: ${err.message}")
+            }
         }
     }
 
@@ -157,9 +190,9 @@ class DynamicDesktopPlatformPlayer(
             launch {
                 player.state.collect { st ->
                     _state.value = st
-                    if (st is PlatformPlaybackState.Error && currentEngineType == DesktopPlayerEngineType.HIRES_EXCLUSIVE) {
-                        println("[CPPlayer Engine Manager] Hi-Res engine encountered error: ${st.message}. Automatically failing over to Standard Rodio engine!")
-                        switchEngine(DesktopPlayerEngineType.STANDARD_RODIO)
+                    if (st is PlatformPlaybackState.Error && currentEngineType == DesktopPlayerEngineType.FLICK_EXCLUSIVE) {
+                        println("[CPPlayer Engine Manager] FlickEngine 独占模式遇到错误: ${st.message}，自动降级至标准模式！")
+                        switchEngine(DesktopPlayerEngineType.FLICK_STANDARD)
                     }
                 }
             }
@@ -179,9 +212,7 @@ class DynamicDesktopPlatformPlayer(
         try {
             oldPlayer.stop()
             oldPlayer.release()
-            if (currentEngineType == DesktopPlayerEngineType.HIRES_EXCLUSIVE) {
-                DesktopHiResEngine.shutdownEngine()
-            }
+            DesktopHiResEngine.shutdownEngine()
         } catch (t: Throwable) {
             logger.warning("[ENGINE] Error releasing player: ${t.message}")
         }
@@ -198,6 +229,7 @@ class DynamicDesktopPlatformPlayer(
             try {
                 oldPlayer.stop()
                 oldPlayer.release()
+                DesktopHiResEngine.shutdownEngine()
             } catch (t: Throwable) {
                 logger.warning("[ENGINE] Error releasing previous player: ${t.message}")
             }

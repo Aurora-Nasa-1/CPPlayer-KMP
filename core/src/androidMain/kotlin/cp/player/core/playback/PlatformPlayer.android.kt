@@ -183,7 +183,7 @@ object SharedMedia3Player {
     }
 }
 
-private class Media3PlatformPlayer(context: android.content.Context) : PlatformPlayer {
+internal class Media3PlatformPlayer(context: android.content.Context) : PlatformPlayer {
     private val player = SharedMedia3Player.get(context)
 
     /** 供缓存目录等使用；持有 application context 不泄漏 Activity。 */
@@ -393,6 +393,8 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
             appContext,
             DefaultHttpDataSource.Factory()
                 .setDefaultRequestProperties(headers)
+                .setConnectTimeoutMs(15_000)
+                .setReadTimeoutMs(30_000)
                 // CDN 常见 http→https 跳转，允许跨协议重定向，减少加载失败。
                 .setAllowCrossProtocolRedirects(true),
         )
@@ -633,4 +635,4 @@ private class Media3PlatformPlayer(context: android.content.Context) : PlatformP
 }
 
 actual fun createPlatformPlayer(context: PlatformContext): PlatformPlayer =
-    context.androidContext()?.let(::Media3PlatformPlayer) ?: AudioPlayerImpl()
+    context.androidContext()?.let { cp.player.core.playback.flick.FlickEngineManager.createPlayer(it) } ?: AudioPlayerImpl()

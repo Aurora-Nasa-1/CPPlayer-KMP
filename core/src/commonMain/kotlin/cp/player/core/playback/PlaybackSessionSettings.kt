@@ -47,10 +47,40 @@ object PlaybackSessionSettings {
      * 播放引擎选择键。
      *
      * 值：[ENGINE_STANDARD] (标准) 或 [ENGINE_FLICK_HIRES] (发烧级专有引擎)。
+     *
+     * ⚠️ **桌面端不读这个键**：桌面只有 FlickEngine 一个后端（原生库缺失时直接
+     * 无输出，不存在「换回系统引擎」这条路），真正的选择是
+     * [KEY_WASAPI_EXCLUSIVE]（共享 / 独占）。这个键只在 Android 上决定
+     * ExoPlayer 与 FlickEngine 之间切谁。
      */
     const val KEY_AUDIO_ENGINE = "playback_audio_engine"
     const val ENGINE_STANDARD = "standard"
     const val ENGINE_FLICK_HIRES = "flick_hires"
+
+    /**
+     * WASAPI 硬件独占（Bit-Perfect 直通）开关键，**仅 Windows 桌面生效**。
+     *
+     * 值语义：`"true"` / `"false"`。缺失时按 [DEFAULT_WASAPI_EXCLUSIVE] 处理。
+     *
+     * ### 为什么必须是独立的一个键（而不是拿 [KEY_AUDIO_ENGINE] 兼职）
+     * 「用哪个内核」与「是否抢走声卡」是两件事：桌面内核没得选（只有 FlickEngine），
+     * 独占才是那个需要用户点头的决定。旧实现把两者合并在一个键里，
+     * 结果是「选了发烧内核 = 默认独占」，VIP 用户还没看过任何说明就被抢走了声卡。
+     *
+     * ### 为什么默认关
+     * 独占期间**其它应用全部静音**（系统提示音、网页、会议软件），这是能让人错过
+     * 会议邀请的副作用，不能由程序替用户默认决定。默认共享、想要时再开，
+     * 是这件事唯一站得住的默认值。
+     */
+    const val KEY_WASAPI_EXCLUSIVE = "playback_wasapi_exclusive"
+
+    /** 独占模式默认值：**关**（理由见 [KEY_WASAPI_EXCLUSIVE]）。 */
+    const val DEFAULT_WASAPI_EXCLUSIVE = false
+
+    /** 读取 WASAPI 独占开关；缺失或非法值回落到 [DEFAULT_WASAPI_EXCLUSIVE]。 */
+    fun wasapiExclusive(storage: SettingsStorage): Boolean =
+        storage.getString(KEY_WASAPI_EXCLUSIVE)?.toBooleanStrictOrNull()
+            ?: DEFAULT_WASAPI_EXCLUSIVE
 
     /** 读取开关；缺失或非法值回落到 [DEFAULT_KEEP_LAST_PLAYBACK]。 */
     fun keepLastPlayback(storage: SettingsStorage): Boolean =

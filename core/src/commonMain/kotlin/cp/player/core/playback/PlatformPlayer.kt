@@ -52,6 +52,53 @@ interface PlatformMediaPlayer {
      */
     val seekFailures: SharedFlow<SeekFailure> get() = NoSeekFailures
 
+    // ============ 引擎级通用能力（ExoPlayer 式的可选能力位） ============
+    //
+    // 这一组**全部带默认实现**：rodio、静音输出、测试假播放器、视频播放器
+    // 都不必因为「接口多了一个成员」而改动；默认语义就是「我没这个能力」。
+    // 能力位与方法成对出现：UI 必须先读能力位再决定要不要显示控件，
+    // 否则又会出现「能拖、能存盘、但什么都不发生」的开关。
+
+    /** 是否支持变速播放（保持音调的 time-stretch 由引擎自己负责）。 */
+    val supportsPlaybackSpeed: Boolean get() = false
+
+    /** 当前播放速度，`1.0` = 原速。不支持的实现恒为 1。 */
+    val playbackSpeed: Float get() = 1f
+
+    /** 设置播放速度，范围由实现自行夹紧；不支持时静默忽略。 */
+    fun setPlaybackSpeed(speed: Float) {}
+
+    /** 是否支持把下一首源直接排进引擎，由引擎做真正的无缝衔接（gapless / crossfade）。 */
+    val supportsGaplessQueue: Boolean get() = false
+
+    /**
+     * 把下一首排进引擎队列。[source] 可以是本地文件路径或 http(s) URL，
+     * [headers] 只在 URL 场景有意义（Cookie / Referer 等）。
+     */
+    fun queueNext(source: String, headers: Map<String, String> = emptyMap()) {}
+
+    /**
+     * 是否支持**引擎侧真交叉淡化**（两个解码源重叠）。
+     *
+     * ⚠️ 与 [PlaybackFadeController] 的音量斜坡互斥，见 [setNativeCrossfade]。
+     */
+    val supportsNativeCrossfade: Boolean get() = false
+
+    /**
+     * 配置引擎侧交叉淡化。开启后宿主**必须**停用 FadeRunner 的音量斜坡，
+     * 否则两套机制会同时改音量，听感是「淡出两次」。
+     */
+    fun setNativeCrossfade(enabled: Boolean, durationMs: Long) {}
+
+    /**
+     * 引擎能否**直接**播放并定位 http(s) 流。
+     *
+     * `true` 时，宿主不应再为了「让拖动生效」而把正在播的流切成本地副本 ——
+     * 那会重新 load 一次、产生一声咔哒，纯属多余。这个能力位存在之前，
+     * 「后台落盘 → 用户第一次拖动时切本地」是桌面 FLAC 流唯一能 seek 的办法。
+     */
+    val supportsSeekableRemoteStreams: Boolean get() = false
+
     suspend fun load(
         url: String,
         startPositionMs: Long = 0L,
@@ -71,12 +118,14 @@ interface PlatformPlayer : PlatformMediaPlayer {
     val formatInfo: StateFlow<AudioFormatInfo?>
 
     /**
-     * 本平台是否支持**音频独占**（绕过系统混音器直接输出）。
+     * 本平台**当前**是否正在以音频独占（绕过系统混音器直接输出）方式工作。
      *
-     * ⚠️ 全仓当前**没有任何实现返回 true**，也没有消费方 —— 保留它是作为能力位，
-     * 供将来「音效 vs 独占」的取舍决策使用：独占输出会绕过系统音效链，
-     * 开了独占之后 [applyAudioEffect] 的效果将不可用。一旦某平台真的实现独占，
-     * 这条约束必须同时在 UI 上体现（两者互斥，不能各自安好地各显示一个开关）。
+     * 桌面端 = WASAPI Exclusive 是否生效（VIP + 用户显式开启，默认关）；
+     * Android 端 FlickEngine 恒为 true（Oboe / USB DAC 直通），Media3 为 false。
+     *
+     * ⚠️ 与 `AudioEffectCapabilities` 的关系**不是互斥**：FlickEngine 的 PEQ / 声道平衡
+     * 跑在引擎自己的 DSP 管线里，独占照样能用，所以这里真为 true 时**不要**顺手把音效页禁用。
+     * （只有「独占绕开系统音效链」的平台才互斥 —— 本仓目前没有这种实现。）
      */
     val supportsExclusiveAudio: Boolean get() = false
 

@@ -168,6 +168,7 @@ internal class KtorLocalServer(
                 readTimeout = 0 // 长流不设读超时
                 instanceFollowRedirects = true
                 setRequestProperty("User-Agent", USER_AGENT)
+                target.headers.forEach { (name, value) -> setRequestProperty(name, value) }
                 rangeHeader?.takeIf { it.isNotBlank() }?.let { setRequestProperty(HttpHeaders.Range, it) }
                 target.cookie?.takeIf { it.isNotBlank() }?.let { setRequestProperty("Cookie", it) }
             }

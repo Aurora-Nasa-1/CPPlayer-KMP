@@ -506,7 +506,7 @@ class ListenTogetherEngine(
             supported = false,
             inRoom = false,
             room = null,
-            error = NeteaseListenTogetherBackend.UNSUPPORTED_MESSAGE,
+            error = UnsupportedListenTogetherBackend.UNSUPPORTED_MESSAGE,
         )
     }
 
