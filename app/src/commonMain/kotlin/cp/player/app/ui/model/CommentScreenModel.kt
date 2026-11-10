@@ -22,7 +22,7 @@ import kotlinx.coroutines.withContext
  * 评论排序（取值与上游 `sortType` 一致）。
  *
  * ⚠️ 这套取值**只对 `comment/new` 有意义**：`comment/music` 那一族老端点的请求体里
- * 没有 `sortType`，传过去会被 Provider 丢掉（见 `MusicApiServiceImpl.getComments`）。
+ * 没有 `sortType`，具体转换由 Provider 实现。
  * Provider 侧再把「推荐」翻译成上游真正要的 `99`，返回体里带回的也是那个值。
  */
 object CommentSort {
@@ -116,12 +116,13 @@ class CommentScreenModel(val id: String, val type: String) : ScreenModel {
      * 下一页 offset（顶层列表）。
      *
      * ⚠️ 每次前进**一个 [PAGE_SIZE]**，而不是「本页实际回来几条」。
-     * 评论列表走 `comment/new`，那边是 `pageNo = offset / pageSize + 1` 的页码分页
-     * （见 `MusicApiServiceImpl.getComments`）。按实际条数前进的话，只要服务端少给一条
+     * 对页码分页的 Provider，offset 会转换成 `pageNo = offset / pageSize + 1`。
+     * 按实际条数前进的话，只要服务端少给一条
      * （过滤、或平铺回复被归进父评论）页码就会原地踏步 ⇒ 下一页把同一页又拉一遍，
      * 表现为「滚动加载出重复评论」。
      */
     private var nextOffset: Int = 0
+    private var nextCursor: String? = null
 
     init {
         loadComments()
@@ -147,6 +148,7 @@ class CommentScreenModel(val id: String, val type: String) : ScreenModel {
         }
         serverSortType = sortType
         nextOffset = 0
+        nextCursor = null
         _state.update {
             it.copy(
                 sortType = sortType,
@@ -188,6 +190,7 @@ class CommentScreenModel(val id: String, val type: String) : ScreenModel {
         val gen = ++loadGen
         val requestedSort = _state.value.sortType
         nextOffset = 0
+        nextCursor = null
         _state.update { it.copy(loading = true, error = null, loadingMore = false) }
 
         loadJob = screenModelScope.launch {
@@ -210,6 +213,7 @@ class CommentScreenModel(val id: String, val type: String) : ScreenModel {
                             val page = result.data
                             serverSortType = page.sortType
                             nextOffset = PAGE_SIZE
+                            nextCursor = page.nextCursor
                             s.copy(
                                 comments = page.comments,
                                 totalCount = page.totalCount,
@@ -262,6 +266,7 @@ class CommentScreenModel(val id: String, val type: String) : ScreenModel {
                             limit = PAGE_SIZE,
                             offset = nextOffset,
                             sortType = serverSortType,
+                            cursor = nextCursor,
                         )
                     }.getOrElse { BackendResult.Error(it.message ?: "加载更多评论失败") }
                 }
@@ -272,6 +277,7 @@ class CommentScreenModel(val id: String, val type: String) : ScreenModel {
                             val page = result.data
                             serverSortType = page.sortType
                             nextOffset += PAGE_SIZE
+                            nextCursor = page.nextCursor
                             curr.copy(
                                 comments = curr.comments + page.comments,
                                 hasMore = page.hasMore && page.comments.isNotEmpty(),

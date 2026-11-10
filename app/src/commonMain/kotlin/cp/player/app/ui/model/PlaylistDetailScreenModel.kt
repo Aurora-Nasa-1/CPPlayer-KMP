@@ -7,7 +7,6 @@ import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.PlaylistSortType
 import cp.player.app.ui.util.UiEvents
 import cp.player.core.BackendResult
-import cp.player.core.music.MusicSourceFromApi
 import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.TrackSummary
 import cp.player.core.music.isRemote
@@ -49,7 +48,7 @@ data class PlaylistDetailUiState(
 class PlaylistDetailScreenModel : ScreenModel {
 
     companion object {
-        /** 单页曲目数（与 MusicSourceFromApi.getPlaylistTracks 默认值一致）。 */
+        /** 单页曲目数（默认 100）。 */
         private const val PAGE_SIZE = 300
     }
 

@@ -5,7 +5,6 @@ import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
 import cp.player.app.ui.util.UiEvents
 import cp.player.core.BackendResult
-import cp.player.core.music.MusicSourceFromApi
 import cp.player.core.music.PlaylistSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -97,9 +96,13 @@ class LibraryScreenModel : ScreenModel {
                             } else {
                                 s.copy(playlists = result.data, loading = false)
                             }
-                        is BackendResult.Error -> s.copy(loading = false, error = result.message)
+                        is BackendResult.Error ->
+                            if (s.playlists.isNotEmpty()) s.copy(loading = false)
+                            else s.copy(loading = false, error = result.message)
                         is BackendResult.Unsupported -> s.copy(loading = false, error = result.message)
-                        null -> s.copy(loading = false, error = "媒体库加载失败")
+                        null ->
+                            if (s.playlists.isNotEmpty()) s.copy(loading = false)
+                            else s.copy(loading = false, error = "媒体库加载失败")
                     }
                 }
             } finally {

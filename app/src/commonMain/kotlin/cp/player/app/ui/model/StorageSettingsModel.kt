@@ -13,7 +13,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.roundToInt
 
 /**
  * 存储管理页 UI 状态。
@@ -25,9 +24,6 @@ import kotlin.math.roundToInt
  * @param songCacheBytes 歌曲缓存总字节数
  * @param songCacheCapacityBytes 歌曲缓存容量上限；**0 表示该平台不落盘**（安卓），
  *   界面据此整块隐藏 —— 而不是显示一个永远是 0 的数字
- * @param apiCacheEntries 接口缓存条目数
- * @param apiCacheHits 接口缓存命中数（累计）
- * @param apiCacheMisses 接口缓存未命中数（累计）
  */
 data class StorageUiState(
     val downloadedCount: Int = 0,
@@ -38,25 +34,9 @@ data class StorageUiState(
     val songCacheCapacityBytes: Long = 0L,
     val songCacheDirPath: String? = null,
     val isRelocationSupported: Boolean = false,
-    val apiCacheEntries: Int = 0,
-    val apiCacheHits: Long = 0L,
-    val apiCacheMisses: Long = 0L,
 ) {
     /** 该平台是否真的在落盘（安卓为 false）。 */
     val songCacheSupported: Boolean get() = songCacheCapacityBytes > 0L
-
-    /** 命中 + 未命中总数；0 表示本次会话还没查过任何东西。 */
-    val apiCacheSamples: Long get() = apiCacheHits + apiCacheMisses
-
-    /**
-     * 接口缓存命中率 0f..1f；**没有样本时返回 null**。
-     *
-     * 返回 null 而不是 0f：0% 的命中率是「一查一个准地没命中」，和「还没查过」
-     * 是完全相反的两件事 —— 前者说明缓存白名单或键配错了，值得去查。
-     */
-    val apiCacheHitRate: Float?
-        get() = if (apiCacheSamples <= 0L) null
-        else apiCacheHits.toFloat() / apiCacheSamples.toFloat()
 }
 
 /**
@@ -66,8 +46,7 @@ data class StorageUiState(
  * - 下载占用取本地媒体库登记的 `LocalMediaItem.sizeBytes`（登记发生在下载完成与扫描时，
  *   与磁盘实际状态基本一致），**不做全盘扫描** —— 扫描大目录会卡住页面且没有必要。
  * - 图片缓存占用读 Coil 磁盘缓存的实时值（平台层 `imageCacheSizeBytes`）。
- * - 歌曲缓存（无损流）与接口缓存走 [cp.player.core.MusicBackend] 的管理句柄：
- *   前者要读目录放 IO 线程，后者是内存计数直接取。
+ * - 歌曲缓存（无损流）走 [cp.player.core.MusicBackend.songCache] 的管理句柄：要读目录，放 IO 线程。
  */
 class StorageSettingsModel : ScreenModel {
 
@@ -85,21 +64,9 @@ class StorageSettingsModel : ScreenModel {
                 )
             }
         }
-        // 接口缓存计数常驻收集：命中率是个「一直在动」的数字，进来取一次就永远停在旧值。
-        screenModelScope.launch {
-            AppModel.backend.apiCacheStats.collect { stats ->
-                _state.value = _state.value.copy(
-                    apiCacheHits = stats.hits,
-                    apiCacheMisses = stats.misses,
-                    // 条目数不在 stats 里（它只记累计事件），单独取一次快照。
-                    apiCacheEntries = AppModel.backend.apiCacheSize(),
-                )
-            }
-        }
         refreshImageCacheSize()
         refreshSongCache()
     }
-
     /** 重新统计图片缓存占用。 */
     fun refreshImageCacheSize() {
         screenModelScope.launch(Dispatchers.IO) {
@@ -227,25 +194,6 @@ class StorageSettingsModel : ScreenModel {
                         UiEvents.notify("当前平台不支持迁移缓存目录")
                     }
                 }
-            }
-        }
-    }
-
-    // ============ 接口缓存（进程内元数据） ============
-
-    /** 清空接口缓存。它只是元数据副本，清掉不影响任何已下载或已缓存的音频。 */
-    fun clearApiCache() {
-        screenModelScope.launch(Dispatchers.IO) {
-            val removed = runCatching { AppModel.backend.clearApiCache() }.getOrDefault(0)
-            // 命中 / 未命中是累计值，不会被 clear 重置 —— 这里只为顺带刷新条目数。
-            val stats = AppModel.backend.apiCacheStats.value
-            _state.value = _state.value.copy(
-                apiCacheEntries = AppModel.backend.apiCacheSize(),
-                apiCacheHits = stats.hits,
-                apiCacheMisses = stats.misses,
-            )
-            withContext(Dispatchers.Main) {
-                UiEvents.notify(if (removed > 0) "接口缓存已清理，删除 $removed 条" else "接口缓存本来就是空的")
             }
         }
     }

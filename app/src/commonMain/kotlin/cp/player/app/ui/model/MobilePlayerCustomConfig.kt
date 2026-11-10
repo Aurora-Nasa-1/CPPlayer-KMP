@@ -45,4 +45,10 @@ data class MobilePlayerCustomConfig(
 
     /** 走带控制按键整体缩放比例 (0.85f ~ 1.15f，默认 1.0f)。 */
     val controlsScale: Float = 1.0f,
+
+    /** 是否在完整歌词界面启用无操作自动沉浸（等待数秒后隐藏顶部和底部控制栏）。 */
+    val lyricsImmersiveEnabled: Boolean = true,
+
+    /** 歌词沉浸等待时间（秒，范围 2 ~ 10 秒，默认 4 秒）。 */
+    val lyricsImmersiveTimeoutSeconds: Int = 4,
 )

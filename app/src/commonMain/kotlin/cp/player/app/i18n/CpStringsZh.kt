@@ -256,14 +256,6 @@ object CpStringsZh : CpStrings {
         override val openCacheDirNote = "在文件管理器中核对 / 备份缓存文件"
         override val openCacheDirFailed = "打开缓存目录失败"
 
-        override val sectionApiCache = "接口缓存"
-        override val apiCacheEntries = "缓存条目"
-        override val apiCacheEmpty = "暂无缓存"
-        override fun apiCacheEntryCount(count: Int) = "$count 条"
-        override fun apiCacheHitRate(rate: Int) = " · 本次会话命中率 $rate%"
-        override val clearApiCache = "清理接口缓存"
-        override val clearApiCacheNote = "歌曲、歌单等信息的读取缓存；清理后下次会重新向音源请求"
-
         override val sectionImageCache = "图片缓存"
         override val imageCache = "图片缓存"
         override val imageCacheMeasuring = "统计中…"

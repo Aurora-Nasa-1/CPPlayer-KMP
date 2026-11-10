@@ -506,12 +506,15 @@ class HomeScreenModel(
             recommended.await().dataOrEmpty() + personalized.await().dataOrEmpty()
             ).distinctBy { it.resourceId }
 
-        // 只有「日推」和「用户歌单」失败才升级成页面级错误：它们是登录态与个性化能力的
-        // 直接体现。焦点图 / 榜单 / 新碟 / 歌手 / 新歌速递都是公共内容，某个 Provider 不提供
-        // 属于正常情况，静默留白比甩一条红字更合适。
-        val error = dailyResult.errorOrNull() ?: userResult.errorOrNull()
-
         val allRegionSongs = newSongs.await().dataOrEmpty()
+        val hasAnyCachedContent = dailyResult.dataOrEmpty().isNotEmpty() ||
+            userResult.dataOrEmpty().isNotEmpty() ||
+            mergedRecommended.isNotEmpty() ||
+            allRegionSongs.isNotEmpty()
+
+        // 只有「日推」和「用户歌单」失败才升级成页面级错误；若已命中任何缓存内容（如歌单或速递），
+        // 则静默展示已有缓存内容，不弹出阻断性错误红卡。
+        val error = if (hasAnyCachedContent) null else (dailyResult.errorOrNull() ?: userResult.errorOrNull())
 
         HomeUiState(
             dailySongs = dailyResult.dataOrEmpty(),

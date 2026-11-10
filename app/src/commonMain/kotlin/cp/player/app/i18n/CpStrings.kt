@@ -423,14 +423,6 @@ interface StorageStrings {
     val openCacheDirNote: String
     val openCacheDirFailed: String
 
-    val sectionApiCache: String
-    val apiCacheEntries: String
-    val apiCacheEmpty: String
-    fun apiCacheEntryCount(count: Int): String
-    fun apiCacheHitRate(rate: Int): String
-    val clearApiCache: String
-    val clearApiCacheNote: String
-
     val sectionImageCache: String
     val imageCache: String
     val imageCacheMeasuring: String

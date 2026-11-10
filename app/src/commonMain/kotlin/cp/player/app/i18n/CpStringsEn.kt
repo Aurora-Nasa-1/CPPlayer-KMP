@@ -260,15 +260,6 @@ object CpStringsEn : CpStrings {
         override val openCacheDirNote = "Inspect or back up the cached files in your file manager"
         override val openCacheDirFailed = "Couldn't open the cache folder"
 
-        override val sectionApiCache = "API cache"
-        override val apiCacheEntries = "Cache entries"
-        override val apiCacheEmpty = "Nothing cached"
-        override fun apiCacheEntryCount(count: Int) = "$count entries"
-        override fun apiCacheHitRate(rate: Int) = " · $rate% hit rate this session"
-        override val clearApiCache = "Clear API cache"
-        override val clearApiCacheNote =
-            "Read cache for track and playlist metadata; entries are fetched from the source again after clearing"
-
         override val sectionImageCache = "Image cache"
         override val imageCache = "Image cache"
         override val imageCacheMeasuring = "Measuring…"

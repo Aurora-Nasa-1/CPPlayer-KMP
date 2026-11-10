@@ -12,16 +12,12 @@ import cp.player.core.music.ArtistSummary
 import cp.player.core.media.MediaType
 import cp.player.core.local.LocalLibraryAggregator
 import cp.player.core.local.LocalGridSort
+import cp.player.app.repository.HotSearch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * 搜索历史的持久化键。
@@ -32,11 +28,6 @@ import kotlinx.serialization.json.jsonPrimitive
  */
 private const val SEARCH_HISTORY_KEY = "search_history"
 private const val MAX_SEARCH_HISTORY = 10
-
-data class HotSearch(
-    val keyword: String,
-    val description: String = "",
-)
 
 data class SearchUiState(
     val query: String = "",
@@ -83,31 +74,13 @@ class SearchScreenModel(private val initialQuery: String = "") : ScreenModel {
 
     private fun loadHotSearches() {
         screenModelScope.launch {
-            val response = runCatching { AppModel.musicRepository.getHotSearches() }.getOrNull()
-            val hot = response?.parseHotSearches().orEmpty()
+            val hot = runCatching { AppModel.musicRepository.getHotSearches() }.getOrNull().orEmpty()
             _state.value = _state.value.copy(
                 hotSearches = hot.ifEmpty {
                     listOf(HotSearch("热门歌曲"), HotSearch("流行音乐"), HotSearch("古典乐"))
                 },
             )
         }
-    }
-
-    private fun JsonElement.parseHotSearches(): List<HotSearch> {
-        val root = this as? JsonObject ?: return emptyList()
-        val array = (root["data"] as? JsonArray)
-            ?: (root["result"] as? JsonArray)
-            ?: return emptyList()
-        return array.mapNotNull { item ->
-            val obj = item as? JsonObject ?: return@mapNotNull null
-            val keyword = (obj["searchWord"] ?: obj["keyword"] ?: obj["word"])
-                ?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
-            if (keyword.isEmpty()) null else HotSearch(
-                keyword = keyword,
-                description = (obj["content"] ?: obj["score"])
-                    ?.jsonPrimitive?.contentOrNull.orEmpty(),
-            )
-        }.distinctBy { it.keyword }.take(20)
     }
 
     fun setQuery(query: String) {
