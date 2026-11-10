@@ -451,7 +451,7 @@ private fun HomeScreenContent(model: HomeScreenModel) {
     }
 }
 
-/** 焦点图里 `targetType = 1` 表示单曲。与 `MusicSourceFromApi` 的过滤名单保持一致。 */
+/** 焦点图里 `targetType = 1` 表示单曲。 */
 private const val BANNER_TARGET_SONG = 1
 
 /**

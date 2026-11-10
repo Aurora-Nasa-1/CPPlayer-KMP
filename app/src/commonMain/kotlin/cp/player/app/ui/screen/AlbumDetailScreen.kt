@@ -189,9 +189,8 @@ private class AlbumDetailModel : ScreenModel {
     /**
      * 拉收藏全集并把结果套到当前专辑上。**已拉过就直接用缓存**（[favoriteIds] 非空）。
      *
-     * 要点：`album/sublist` 本身在缓存层是读透的（见 `CachedMusicApiService.isCacheable`），
-     * 所以「拉全集」不是每次都打网络；但**空结果同样要缓存**（`emptySet()` 不为 null），
-     * 否则未登录时每次进详情页都会重打一次 —— 用 `?:` 而不是判 `isNotEmpty` 正是为此。
+     * 要点：**空结果同样要缓存**（`emptySet()` 不为 null），否则未登录时每次进详情页
+     * 都会重打一次取数 —— 用 `?:` 而不是判 `isNotEmpty` 正是为此。
      *
      * **未登录 / 请求失败一律当作「未收藏」**而不是报错：详情页本身是可看的，
      * 为了一个装饰性开关把整页变成错误态得不偿失（点下去会走 [toggleFavorite]

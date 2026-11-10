@@ -1,6 +1,7 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
@@ -61,6 +62,36 @@ class MobilePlayerSettingsScreen(private val targetSettingId: String? = null) : 
                     )
                 }
                 SettingsSection("歌词") {
+                    val lyricsTotal = if (config.lyricsImmersiveEnabled) 5 else 4
+                    SettingsSwitchItem(
+                        title = "歌词沉浸模式",
+                        subtitle = "在完整歌词界面无操作几秒后自动隐藏顶部和底部控制栏，轻触屏幕任意位置恢复",
+                        icon = Icons.Filled.Fullscreen,
+                        checked = config.lyricsImmersiveEnabled,
+                        onCheckedChange = {
+                            haptics.perform(CpHaptic.Tick)
+                            AppModel.updateMobilePlayerCustomConfig { c -> c.copy(lyricsImmersiveEnabled = it) }
+                        },
+                        index = 0, total = lyricsTotal,
+                        modifier = Modifier.settingsSearchTarget("mobile_player_lyrics_immersive", targetSettingId),
+                    )
+                    if (config.lyricsImmersiveEnabled) {
+                        SettingsSliderItem(
+                            title = "沉浸等待时间",
+                            subtitle = "无触控操作后自动收起控制栏的等待时长",
+                            value = config.lyricsImmersiveTimeoutSeconds.toFloat(),
+                            onValueChange = {
+                                val s = it.roundToInt().coerceIn(2, 10)
+                                if (s != config.lyricsImmersiveTimeoutSeconds) {
+                                    AppModel.updateMobilePlayerCustomConfig { c -> c.copy(lyricsImmersiveTimeoutSeconds = s) }
+                                }
+                            },
+                            valueRange = 2f..10f, steps = 7,
+                            valueLabel = "${config.lyricsImmersiveTimeoutSeconds} 秒",
+                            index = 1, total = lyricsTotal,
+                            modifier = Modifier.settingsSearchTarget("mobile_player_lyrics_timeout", targetSettingId),
+                        )
+                    }
                     SettingsSliderItem(
                         title = "歌词预览字号",
                         subtitle = "仅调整封面下方的当前歌词",
@@ -72,7 +103,7 @@ class MobilePlayerSettingsScreen(private val targetSettingId: String? = null) : 
                             draggingSize = -1
                         },
                         valueLabel = "$size sp",
-                        index = 0, total = 3,
+                        index = if (config.lyricsImmersiveEnabled) 2 else 1, total = lyricsTotal,
                         modifier = Modifier.settingsSearchTarget("mobile_player_lyrics_size", targetSettingId),
                     )
                     SettingsSwitchItem(
@@ -82,7 +113,7 @@ class MobilePlayerSettingsScreen(private val targetSettingId: String? = null) : 
                         onCheckedChange = {
                             AppModel.updateMobilePlayerCustomConfig { c -> c.copy(karaokeEnabled = it) }
                         },
-                        index = 1, total = 3,
+                        index = if (config.lyricsImmersiveEnabled) 3 else 2, total = lyricsTotal,
                         modifier = Modifier.settingsSearchTarget("mobile_player_karaoke", targetSettingId),
                     )
                     SettingsSwitchItem(
@@ -92,7 +123,7 @@ class MobilePlayerSettingsScreen(private val targetSettingId: String? = null) : 
                         onCheckedChange = {
                             AppModel.updateMobilePlayerCustomConfig { c -> c.copy(showTranslation = it) }
                         },
-                        index = 2, total = 3,
+                        index = if (config.lyricsImmersiveEnabled) 4 else 3, total = lyricsTotal,
                         modifier = Modifier.settingsSearchTarget("mobile_player_translation", targetSettingId),
                     )
                 }

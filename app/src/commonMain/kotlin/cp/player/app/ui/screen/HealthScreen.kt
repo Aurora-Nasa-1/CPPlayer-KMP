@@ -3,16 +3,13 @@ package cp.player.app.ui.screen
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -20,14 +17,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Analytics
-import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.DeleteSweep
@@ -35,17 +27,9 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Map
-import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -55,16 +39,13 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,33 +63,23 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.ApiCallRecord
 import cp.player.app.AppModel
 import cp.player.app.HealthLevel
-import cp.player.core.monitor.HealthMonitor.ResponseWarning
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpRouteScaffold
-import cp.player.app.ui.component.CpSpacing
-import cp.player.app.ui.component.LegacyListItem
-import cp.player.app.ui.component.SettingsFieldGroup
 import cp.player.app.ui.component.SettingsLazyPage
 import cp.player.app.ui.component.TopBarAction
 import cp.player.app.ui.component.rememberConfirmState
 import cp.player.app.ui.component.settingsRowContainer
-import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.popOrNotify
 import cp.player.core.monitor.HealthMonitor
 import cp.player.core.provider.BackendProvider
-import cp.player.core.util.currentTimeMillis
 import cp.player.core.util.localDateTimeOf
-import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 
 // ⚠️ 本页一律用 material3 的 `Text`，**不要**换成 `CpText`。
 //
 // `CpText` 的默认档是「单行 + 尾部省略号 + 悬停浮出全文」（见 `CpText.kt`），
-// 而诊断页读的就是**原始数据本身**：音源 ID / 方法名 / 错误串 / apiMap 路由 /
-// 底层诊断键值 / JSON 响应都会超过一行。用 `CpText` 的话，用户看到的是一串省略号，
+// 而诊断页读的就是**原始数据本身**：音源 ID / 操作名 / 错误串 /
+// 底层诊断键值都会超过一行。用 `CpText` 的话，用户看到的是一串省略号，
 // 只有把鼠标悬上去（触屏根本没有 hover）才读得到 —— 等于把要排查的信息藏起来。
 // 所以这一页的每个 `Text` 都**不传** `maxLines` / `overflow`（= 不截断，自然换行），
 // 该独占一行的（错误串、原始 JSON）另加 `Modifier.fillMaxWidth()`。
@@ -119,10 +90,8 @@ import kotlinx.serialization.json.JsonPrimitive
 
 private enum class HealthTab(val label: String, val icon: ImageVector) {
     OVERVIEW("概览", Icons.Default.Dashboard),
-    METHODS("方法统计", Icons.Default.Analytics),
+    METHODS("操作统计", Icons.Default.Analytics),
     LOGS("调用日志", Icons.AutoMirrored.Filled.List),
-    TEST("API 测试", Icons.AutoMirrored.Filled.Send),
-    API_MAP("apiMap", Icons.Default.Map),
     STATUS("Provider 状态", Icons.Default.Info),
 }
 
@@ -132,28 +101,10 @@ private val prettyJson = Json {
     isLenient = true
 }
 
-private val allKnownMethods = listOf(
-    "login/qr/key", "login/qr/create", "login/qr/check",
-    "login", "login/cellphone", "captcha/sent", "logout",
-    "register/anonimous", "login/status",
-    "user/playlist", "user/playlist/create", "user/playlist/collect",
-    "user/detail", "user/cloud", "likelist", "like",
-    "recommend/songs", "recommend/resource", "recommend/songs/dislike",
-    "playlist/detail", "playlist/track/all", "playlist/tracks",
-    "playlist/create", "playlist/delete", "playlist/subscribe",
-    "album", "artist/detail", "artist/songs", "artist/album",
-    "cloudsearch", "search/hot/detail", "search/suggest",
-    "song/url/v1/302", "song/url/v1", "song/download/url/v1",
-    "song/detail", "personal_fm", "playmode/intelligence/list",
-    "lyric/new",
-    "comment/music", "comment/playlist", "comment/album",
-    "comment/floor", "comment/like", "comment",
-    "pl/count", "msg/recentcontact", "msg/private",
-    "msg/private/history", "msg/private/mark/read", "send/text",
-)
-
 /**
- * 诊断与健康监控页面：提供 6 大功能模块（概览、方法统计、调用日志、API 测试、apiMap、Provider 状态）。
+ * 诊断与健康监控页面：概览、方法统计、调用日志、Provider 状态。
+ *
+ * 「API 测试」「apiMap」两页签已随 JSON 兼容层一起删除：新的取数链路没有可自由分发的原始端点。
  */
 class HealthScreen : Screen {
 
@@ -165,7 +116,6 @@ class HealthScreen : Screen {
         val overall by AppModel.health.overallLevelFlow.collectAsState()
 
         var currentTab by remember { mutableStateOf(HealthTab.OVERVIEW) }
-        var rawJsonDialogContent by remember { mutableStateOf<String?>(null) }
         val confirm = rememberConfirmState()
 
         CpRouteScaffold(
@@ -232,42 +182,13 @@ class HealthScreen : Screen {
                         methodsTabContent(records)
                     }
                     HealthTab.LOGS -> {
-                        logsTabContent(records, onShowRawJson = { rawJsonDialogContent = it })
-                    }
-                    HealthTab.TEST -> {
-                        testTabContent()
-                    }
-                    HealthTab.API_MAP -> {
-                        apiMapTabContent()
+                        logsTabContent(records)
                     }
                     HealthTab.STATUS -> {
                         statusTabContent()
                     }
                 }
             }
-        }
-
-        // 查看原始 JSON 弹窗
-        rawJsonDialogContent?.let { raw ->
-            AlertDialog(
-                onDismissRequest = { rawJsonDialogContent = null },
-                title = { Text("API 原始返回内容") },
-                text = {
-                    // ⚠️ 必须可滚动：原始 JSON 常常几十行，撑不住 420dp 时靠裁剪就是「看不全」。
-                    Box(modifier = Modifier.heightIn(max = 420.dp)) {
-                        SelectionContainer {
-                            Text(
-                                text = formatJsonString(raw),
-                                modifier = Modifier.verticalScroll(rememberScrollState()),
-                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                            )
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { rawJsonDialogContent = null }) { Text("关闭") }
-                },
-            )
         }
 
         CpConfirmHost(confirm)
@@ -327,8 +248,7 @@ internal fun GlobalHealthCard(records: List<ApiCallRecord>, overall: HealthLevel
     val totalCalls = records.size
     val totalSuccess = records.count { it.success }
     val totalFail = totalCalls - totalSuccess
-    val totalFallbacks = records.count { it.wasFallback }
-    val totalWarnings = records.count { it.responseWarnings.isNotEmpty() }
+    val totalUnsupported = records.count { it.level == HealthLevel.WARNING }
     val globalSuccessRate = if (totalCalls > 0) totalSuccess * 100f / totalCalls else 100f
     val avgResponse = if (totalCalls > 0) records.sumOf { it.durationMs } / totalCalls else 0L
 
@@ -395,8 +315,7 @@ internal fun GlobalHealthCard(records: List<ApiCallRecord>, overall: HealthLevel
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 GlobalMetricChip("成功", "$totalSuccess", Color(0xFF4CAF50), Icons.Default.CheckCircle)
                 GlobalMetricChip("失败", "$totalFail", MaterialTheme.colorScheme.error, Icons.Default.Error)
-                GlobalMetricChip("警告", "$totalWarnings", Color(0xFFFF9800), Icons.Default.Warning)
-                GlobalMetricChip("回退", "$totalFallbacks", Color(0xFFFF9800), Icons.Default.SwapHoriz)
+                GlobalMetricChip("不支持", "$totalUnsupported", Color(0xFFFF9800), Icons.Default.Warning)
             }
         }
     }
@@ -644,26 +563,26 @@ private fun MiniMetric(label: String, value: String, valueColor: Color = Color.U
 private fun androidx.compose.foundation.lazy.LazyListScope.methodsTabContent(
     records: List<ApiCallRecord>,
 ) {
-    val methodStats = HealthMonitor.getStatsByMethod()
+    val operationStats = HealthMonitor.getStatsByOperation()
 
-    if (methodStats.isEmpty()) {
+    if (operationStats.isEmpty()) {
         item(key = "methods_empty") {
             Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
-                Text("暂无方法统计数据", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("暂无操作统计数据", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     } else {
         item(key = "methods_header") {
             Text(
-                "API 方法调用性能与警告分布",
+                "取数操作调用性能（按 UnifiedMusicSource 操作名）",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,
             )
         }
 
-        val sorted = methodStats.values.sortedByDescending { it.totalCalls }
-        items(sorted, key = { "method_${it.method}" }) { stat ->
+        val sorted = operationStats.values.sortedByDescending { it.totalCalls }
+        items(sorted, key = { "op_${it.operation}" }) { stat ->
             MethodStatCard(stat, records)
         }
     }
@@ -671,7 +590,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.methodsTabContent(
 
 @Composable
 internal fun MethodStatCard(
-    stat: HealthMonitor.MethodStats,
+    stat: HealthMonitor.OperationStats,
     allRecords: List<ApiCallRecord>,
     initialExpanded: Boolean = false,
 ) {
@@ -694,7 +613,7 @@ internal fun MethodStatCard(
         Column(Modifier.padding(12.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(stat.method, style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
+                    Text(stat.operation, style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
                     Text(
                         "${stat.totalCalls} 次 · 成功率 ${successRate.toInt()}% · 平均 ${stat.avgResponseMs}ms",
                         style = MaterialTheme.typography.bodySmall,
@@ -710,10 +629,6 @@ internal fun MethodStatCard(
                     Text("警告 ${stat.warningCount}", style = MaterialTheme.typography.labelSmall, color = Color(0xFFFF9800))
                     Spacer(Modifier.width(6.dp))
                 }
-                if (stat.fallbackCount > 0) {
-                    Text("回退 ${stat.fallbackCount}", style = MaterialTheme.typography.labelSmall, color = Color(0xFFFF9800))
-                    Spacer(Modifier.width(6.dp))
-                }
 
                 Icon(
                     if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
@@ -724,37 +639,14 @@ internal fun MethodStatCard(
 
             AnimatedVisibility(visible = expanded) {
                 Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (stat.warningTypes.isNotEmpty()) {
-                        Surface(
-                            shape = MaterialTheme.shapes.extraSmall,
-                            color = Color(0xFFFF9800).copy(alpha = 0.08f),
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Column(Modifier.padding(8.dp)) {
-                                Text("警告类型分布", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color(0xFFFF9800))
-                                Spacer(Modifier.height(4.dp))
-                                stat.warningTypes.forEach { (warning, count) ->
-                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Text(
-                                            formatWarning(warning),
-                                            modifier = Modifier.weight(1f),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = Color(0xFFFF9800),
-                                        )
-                                        Text("×$count", style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), fontWeight = FontWeight.Bold, color = Color(0xFFFF9800))
-                                    }
-                                }
-                            }
-                        }
-                    }
 
-                    val recentCalls = remember(allRecords, stat.method) {
-                        allRecords.filter { it.method == stat.method }.takeLast(5).reversed()
+                    val recentCalls = remember(allRecords, stat.operation) {
+                        allRecords.filter { it.operation == stat.operation }.takeLast(5).reversed()
                     }
                     if (recentCalls.isNotEmpty()) {
                         Text("最近调用样本", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         recentCalls.forEach { record ->
-                            CallRecordItem(record, compact = true, onShowRawJson = {})
+                            CallRecordItem(record, compact = true)
                         }
                     }
                 }
@@ -767,7 +659,6 @@ internal fun MethodStatCard(
 
 private fun androidx.compose.foundation.lazy.LazyListScope.logsTabContent(
     records: List<ApiCallRecord>,
-    onShowRawJson: (String) -> Unit,
 ) {
     item(key = "logs_summary") {
         Row(
@@ -788,7 +679,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.logsTabContent(
     } else {
         val reversed = records.reversed()
         itemsIndexed(reversed, key = { index, r -> "log_${r.timestamp}_$index" }) { index, record ->
-            CallRecordItem(record, compact = false, onShowRawJson = onShowRawJson)
+            CallRecordItem(record, compact = false)
         }
     }
 }
@@ -797,17 +688,14 @@ private fun androidx.compose.foundation.lazy.LazyListScope.logsTabContent(
 internal fun CallRecordItem(
     record: ApiCallRecord,
     compact: Boolean,
-    onShowRawJson: (String) -> Unit,
     initialExpanded: Boolean = false,
 ) {
     var expanded by remember { mutableStateOf(initialExpanded) }
 
-    val statusIcon = when {
-        record.responseWarnings.isNotEmpty() && record.success -> "⚠️"
-        record.success && !record.wasFallback -> "✅"
-        record.success && record.wasFallback -> "↩️"
-        !record.success && record.wasFallback -> "⚠️"
-        else -> "❌"
+    val statusIcon = when (record.level) {
+        HealthLevel.OK -> "✅"
+        HealthLevel.WARNING -> "⚠️"
+        HealthLevel.ERROR -> "❌"
     }
 
     val timeStr = runCatching {
@@ -822,9 +710,9 @@ internal fun CallRecordItem(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-            // 概要行：状态图标 / 时间 / 音源 / 方法 / 警告数 / 耗时。
-            // 方法名用 weight(1f) 吃剩余宽度 —— 它**没有** maxLines，放不下就折行，
-            // 所以长方法名也是整串可见（这是本页「一律不截断」的落点之一）。
+            // 概要行：状态图标 / 时间 / 音源 / 操作名 / 耗时。
+            // 操作名用 weight(1f) 吃剩余宽度 —— 它**没有** maxLines，放不下就折行，
+            // 所以长操作名也是整串可见（这是本页「一律不截断」的落点之一）。
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                 Text(statusIcon, fontSize = 13.sp)
                 Spacer(Modifier.width(6.dp))
@@ -832,11 +720,7 @@ internal fun CallRecordItem(
                 Spacer(Modifier.width(8.dp))
                 Text(record.providerId, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(8.dp))
-                Text(record.method, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.weight(1f))
-                if (record.responseWarnings.isNotEmpty()) {
-                    Spacer(Modifier.width(6.dp))
-                    Text("${record.responseWarnings.size}⚠", style = MaterialTheme.typography.labelSmall, color = Color(0xFFFF9800))
-                }
+                Text(record.operation, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.weight(1f))
                 Spacer(Modifier.width(6.dp))
                 Text("${record.durationMs}ms", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -849,44 +733,22 @@ internal fun CallRecordItem(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        record.responseCode?.let { code ->
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("HTTP 状态码", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("$code", style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), fontWeight = FontWeight.Bold)
-                            }
-                        }
-                        record.errorCode?.let { errCode ->
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("业务错误码", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                                Text("$errCode", style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
-                            }
-                        }
+                        Text(
+                            "结果: " + when (record.level) {
+                                HealthLevel.OK -> "成功"
+                                HealthLevel.WARNING -> "音源不支持该操作"
+                                HealthLevel.ERROR -> "调用失败"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (record.level == HealthLevel.OK)
+                                MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
+                        )
                         record.errorMessage?.let { msg ->
                             Text(
                                 "错误信息: $msg",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error,
                             )
-                        }
-                        if (record.responseWarnings.isNotEmpty()) {
-                            Text("兼容性警告:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color(0xFFFF9800))
-                            record.responseWarnings.forEach { w ->
-                                Text("• ${formatWarning(w)}" + (if (record.expectedField != null) " (缺少字段: ${record.expectedField})" else ""), style = MaterialTheme.typography.bodySmall, color = Color(0xFFFF9800))
-                            }
-                        }
-                        if (record.wasFallback && record.fallbackFrom != null) {
-                            Text("回退来源: ${record.fallbackFrom}", style = MaterialTheme.typography.bodySmall, color = Color(0xFFFF9800))
-                        }
-
-                        val raw = record.rawResponse
-                        if (raw != null) {
-                            Spacer(Modifier.height(4.dp))
-                            OutlinedButton(
-                                onClick = { onShowRawJson(raw) },
-                                modifier = Modifier.align(Alignment.End),
-                            ) {
-                                Text("查看原始 JSON", style = MaterialTheme.typography.labelSmall)
-                            }
                         }
                     }
                 }
@@ -896,236 +758,6 @@ internal fun CallRecordItem(
 }
 
 // ======================== Tab 4: API 测试 (Api Test) ========================
-
-private fun androidx.compose.foundation.lazy.LazyListScope.testTabContent() {
-    item(key = "api_test_panel") {
-        ApiTestRunner()
-    }
-}
-
-@Composable
-private fun ApiTestRunner() {
-    val coroutineScope = rememberCoroutineScope()
-    var selectedMethod by remember { mutableStateOf(allKnownMethods[0]) }
-    var paramsText by remember { mutableStateOf("{\n  \"id\": \"\"\n}") }
-    var responseText by remember { mutableStateOf("") }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
-    var responseTime by remember { mutableStateOf(0L) }
-
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("选择要测试的 API 方法", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
-
-        // 常用方法快速芯片
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            val quickMethods = listOf("user/playlist", "song/url/v1", "song/detail", "playlist/detail", "cloudsearch", "lyric/new", "login/status")
-            quickMethods.forEach { method ->
-                FilterChip(
-                    selected = selectedMethod == method,
-                    onClick = { selectedMethod = method },
-                    label = { Text(method, style = MaterialTheme.typography.labelSmall) },
-                )
-            }
-        }
-
-        OutlinedTextField(
-            value = selectedMethod,
-            onValueChange = { selectedMethod = it },
-            label = { Text("API 路径") },
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.small,
-        )
-
-        Text("请求参数 (JSON 字典)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-        OutlinedTextField(
-            value = paramsText,
-            onValueChange = { paramsText = it },
-            modifier = Modifier.fillMaxWidth().heightIn(min = 110.dp),
-            shape = MaterialTheme.shapes.small,
-            textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-        )
-
-        Button(
-            onClick = {
-                isLoading = true
-                errorMessage = null
-                responseText = ""
-                coroutineScope.launch {
-                    val start = currentTimeMillis()
-                    try {
-                        val params = parseJsonParams(paramsText)
-                        val result = AppModel.backend.musicApi.callApi(selectedMethod, params)
-                        responseTime = currentTimeMillis() - start
-                        responseText = prettyJson.encodeToString(JsonElement.serializer(), result)
-                    } catch (e: Throwable) {
-                        responseTime = currentTimeMillis() - start
-                        errorMessage = e.message ?: e.toString()
-                    } finally {
-                        isLoading = false
-                    }
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !isLoading,
-            shape = MaterialTheme.shapes.small,
-        ) {
-            if (isLoading) {
-                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                Spacer(Modifier.width(8.dp))
-                Text("请求执行中...")
-            } else {
-                Icon(Icons.AutoMirrored.Filled.Send, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("发送测试请求")
-            }
-        }
-
-        if (errorMessage != null) {
-            Surface(
-                shape = MaterialTheme.shapes.small,
-                color = MaterialTheme.colorScheme.errorContainer,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column(Modifier.padding(12.dp)) {
-                    Text("调用失败 (${responseTime}ms):", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
-                    Spacer(Modifier.height(4.dp))
-                    Text(errorMessage ?: "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
-                }
-            }
-        }
-
-        if (responseText.isNotEmpty()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("返回结果", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text("${responseTime}ms", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-            }
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.small,
-                colors = CardDefaults.cardColors(containerColor = settingsRowContainer()),
-            ) {
-                SelectionContainer {
-                    Text(
-                        responseText,
-                        modifier = Modifier.padding(12.dp),
-                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                    )
-                }
-            }
-        }
-    }
-}
-
-// ======================== Tab 5: apiMap ========================
-
-private fun androidx.compose.foundation.lazy.LazyListScope.apiMapTabContent() {
-    val activeProvider = AppModel.activeProvider()
-
-    if (activeProvider == null) {
-        item(key = "apimap_no_provider") {
-            Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
-                Text("当前无生效的 Provider", color = MaterialTheme.colorScheme.error)
-            }
-        }
-        return
-    }
-
-    val apiMap = activeProvider.apiMap ?: emptyMap()
-    val mappedCount = allKnownMethods.count { apiMap.containsKey(it) }
-    val unsupportedCount = allKnownMethods.count { apiMap[it].equals("unsupported", ignoreCase = true) }
-    val passthroughCount = allKnownMethods.size - mappedCount
-
-    item(key = "apimap_header_card") {
-        OutlinedCard(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.medium,
-            colors = CardDefaults.outlinedCardColors(containerColor = settingsRowContainer()),
-        ) {
-            Column(Modifier.padding(14.dp)) {
-                Text("当前生效音源: ${activeProvider.name}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(4.dp))
-                Text("ID: ${activeProvider.id}  ·  类型: ${activeProvider.type}  ·  版本: ${activeProvider.version}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("apiMap 映射条目数: ${apiMap.size}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-                Spacer(Modifier.height(10.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Surface(shape = MaterialTheme.shapes.extraSmall, color = MaterialTheme.colorScheme.primaryContainer) {
-                        Text("已映射: $mappedCount", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                    }
-                    Surface(shape = MaterialTheme.shapes.extraSmall, color = MaterialTheme.colorScheme.errorContainer) {
-                        Text("不支持: $unsupportedCount", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer)
-                    }
-                    Surface(shape = MaterialTheme.shapes.extraSmall, color = MaterialTheme.colorScheme.surfaceVariant) {
-                        Text("透传: $passthroughCount", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-        }
-    }
-
-    item(key = "apimap_list_title") {
-        Spacer(Modifier.height(6.dp))
-        Text("全量标准 API 映射路由表", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
-    }
-
-    items(allKnownMethods, key = { "map_method_$it" }) { method ->
-        val mapped = apiMap[method]
-        val isUnsupported = mapped.equals("unsupported", ignoreCase = true)
-        val isMapped = mapped != null && !isUnsupported
-
-        Surface(
-            shape = MaterialTheme.shapes.extraSmall,
-            color = settingsRowContainer(),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(method, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace))
-                    if (isMapped) {
-                        Text("→ $mapped", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                    }
-                }
-
-                Surface(
-                    shape = MaterialTheme.shapes.extraSmall,
-                    color = when {
-                        isUnsupported -> MaterialTheme.colorScheme.errorContainer
-                        isMapped -> MaterialTheme.colorScheme.primaryContainer
-                        else -> MaterialTheme.colorScheme.surfaceVariant
-                    },
-                ) {
-                    Text(
-                        text = when {
-                            isUnsupported -> "不支持"
-                            isMapped -> "已映射"
-                            else -> "透传"
-                        },
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = when {
-                            isUnsupported -> MaterialTheme.colorScheme.onErrorContainer
-                            isMapped -> MaterialTheme.colorScheme.onPrimaryContainer
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
-                }
-            }
-        }
-    }
-}
-
-// ======================== Tab 6: Provider 状态 (Provider Status) ========================
 
 private fun androidx.compose.foundation.lazy.LazyListScope.statusTabContent() {
     val providers = AppModel.availableProviders()
@@ -1188,7 +820,6 @@ private fun androidx.compose.foundation.lazy.LazyListScope.statusTabContent() {
                     provider.apiVersionTag?.let { tag ->
                         Text("接口代际: $tag", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Text("apiMap 映射: ${provider.apiMap?.size ?: 0} 条规则", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                     provider.loadError?.let { err ->
                         Spacer(Modifier.height(8.dp))
@@ -1243,37 +874,4 @@ private fun androidx.compose.foundation.lazy.LazyListScope.statusTabContent() {
 
 // ======================== 辅助函数 ========================
 
-private fun formatWarning(warning: ResponseWarning): String = when (warning) {
-    ResponseWarning.MISSING_CODE -> "缺少 code 字段"
-    ResponseWarning.UNEXPECTED_CODE -> "异常响应码"
-    ResponseWarning.MISSING_DATA_FIELD -> "缺少数据字段"
-    ResponseWarning.EMPTY_DATA_ARRAY -> "空数据数组"
-    ResponseWarning.EMPTY_DATA_OBJECT -> "空数据对象"
-    ResponseWarning.MALFORMED_RESPONSE -> "响应格式异常"
-    ResponseWarning.UNSUPPORTED_BY_PROVIDER -> "Provider 不支持"
-    ResponseWarning.SLOW_RESPONSE -> "响应过慢(>5s)"
-}
 
-private fun parseJsonParams(json: String): Map<String, String> {
-    return try {
-        val element = prettyJson.parseToJsonElement(json)
-        if (element is JsonObject) {
-            element.mapValues { (_, v) ->
-                if (v is JsonPrimitive) v.content else v.toString()
-            }
-        } else {
-            emptyMap()
-        }
-    } catch (_: Throwable) {
-        emptyMap()
-    }
-}
-
-private fun formatJsonString(raw: String): String {
-    return try {
-        val element = prettyJson.parseToJsonElement(raw)
-        prettyJson.encodeToString(JsonElement.serializer(), element)
-    } catch (_: Throwable) {
-        raw
-    }
-}

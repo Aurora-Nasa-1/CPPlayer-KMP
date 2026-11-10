@@ -35,9 +35,9 @@ import kotlinx.coroutines.launch
  * 旧版**没有**这个页面 —— 隔离一直发生在数据层，用户看不见也没法解释。
  * 新版把它显式化：把「哪些东西是按音源分开的」讲清楚，再给两个真正可动的开关。
  *
- * 数据层事实（改动前必须先看 `ProviderManager` / `CachedMusicApiService`）：
+ * 数据层事实（改动前必须先看 `ProviderManager` / `UnifiedMusicSourceImpl`）：
  * - Cookie：`cookie_<providerId>`，切音源即换登录态
- * - 缓存：`ApiCache` 键含 `providerId + cookieHash`，A 音源的缓存不会串到 B
+ * - 缓存：音频落盘缓存按 `providerId + 账号 + 凭据 + 设置` 命名空间隔离，A 音源不会串到 B
  * - 账号列表：`AccountStore` 的 `saved_accounts_<providerId>` / `active_account_<providerId>`
  */
 class ProviderIsolationScreen : Screen {

@@ -20,6 +20,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
+import cp.player.app.platform.desktopPlatform
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.isIgnoringBatteryOptimizations
 import cp.player.app.platform.requestIgnoreBatteryOptimizations
@@ -83,20 +84,35 @@ class PlaybackSettingsScreen(
         val qualityLabels = AppModel.qualityLevels.map { s.quality.labelOf(it) }
 
         val audioEngine by AppModel.audioEngineFlow.collectAsState()
-        val isFlickEngine = audioEngine == PlaybackSessionSettings.ENGINE_FLICK_HIRES
+        // ⚠️ 桌面端「发烧」不是一个二选一的引擎，而是一个独占开关（默认关）。
+        // 见 `PlaybackSessionSettings.KEY_WASAPI_EXCLUSIVE` 与 [AudioEngineSettingsScreen] 的平台对照表。
+        val wasapiExclusive by AppModel.wasapiExclusiveFlow.collectAsState()
         val vipInfo by VipLicenseManager.licenseState.collectAsState()
         var showVipDialog by remember { mutableStateOf(false) }
+        // 卡密框可能从多个入口打开（换内核 / 开独占 / 只想看看状态），
+        // 激活成功后要接着做的是**用户刚才被打断的那件事**，而不是无脑切引擎。
+        var afterVipAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
         if (showVipDialog) {
             VipActivationDialog(
                 onDismiss = { showVipDialog = false },
                 onSuccess = {
-                    AppModel.setAudioEngine(PlaybackSessionSettings.ENGINE_FLICK_HIRES)
+                    afterVipAction?.invoke()
+                    afterVipAction = null
                 },
             )
         }
 
         val isAndroid = isAndroidPlatform()
+        val isWindowsDesktop = !isAndroid && desktopPlatform() == "windows"
+        // 独占是否真的在生效：平台支持 + VIP 有效 + 开关打开
+        val exclusiveActive = isWindowsDesktop && vipInfo.isActivated && wasapiExclusive
+        // 发烧内核是否真的在生效（Android 才有「内核」概念）
+        val flickEngineActive = if (isAndroid) {
+            vipInfo.isActivated && audioEngine == PlaybackSessionSettings.ENGINE_FLICK_HIRES
+        } else {
+            true
+        }
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
             SettingsPage(pageModifier) {
@@ -141,73 +157,123 @@ class PlaybackSettingsScreen(
                     )
                 }
 
-                // 2. 音频输出内核架构
-                SettingsSection("音频输出内核架构") {
-                    val engineOptions = listOf(
-                        "系统标准引擎",
-                        "FlickEngine 发烧引擎 (VIP)",
-                    )
-                    val kernelTotal = if (isFlickEngine) 4 else 2
+                // 2. 音频输出内核 / 输出模式
+                //
+                // ⚠️ 两端的「选择」不是同一件事，文案必须分开写（详见 AudioEngineSettingsScreen 的对照表）：
+                // - Android：Media3（默认）↔ FlickEngine（VIP），换的是**内核**；
+                // - 桌面：共享（默认）↔ WASAPI 独占（VIP），换的是**同一内核的输出模式**。
+                //   这里曾写成「系统标准引擎 / FlickEngine 发烧引擎」—— 桌面端根本没有第二个
+                //   引擎，用户以为关掉就能回系统播放器，实际关掉的只是独占。
+                SettingsSection(if (isAndroid) "播放内核" else "音频输出模式") {
+                    val engineOptions = if (isAndroid) {
+                        listOf("系统 Media3（默认）", "FlickEngine（VIP）")
+                    } else {
+                        listOf("共享（默认）", "独占（VIP）")
+                    }
+                    val selectedKernel = if (isAndroid) {
+                        if (audioEngine == PlaybackSessionSettings.ENGINE_FLICK_HIRES) 1 else 0
+                    } else {
+                        if (exclusiveActive) 1 else 0
+                    }
+                    val kernelTotal = 4
                     SettingsSegmentedItem(
-                        title = "回放内核架构",
+                        title = if (isAndroid) "当前生效内核" else "WASAPI 输出模式",
                         modifier = Modifier.settingsSearchTarget("playback_audio_engine", targetSettingId),
-                        subtitle = if (isFlickEngine) "已启用发烧内核，绕过系统混音器" else "使用系统默认通道，轻量兼容",
+                        subtitle = when {
+                            isAndroid && audioEngine == PlaybackSessionSettings.ENGINE_FLICK_HIRES && !vipInfo.isActivated ->
+                                "卡密未激活：已自动回落到系统内核"
+                            isAndroid && flickEngineActive ->
+                                "FlickEngine 低延迟直通 · 下次起播生效"
+                            isAndroid ->
+                                "系统 Media3：兼容与耗电更稳，发烧特性不可用"
+                            exclusiveActive ->
+                                "已接管声卡：播放期间其它应用静音"
+                            else ->
+                                "共享声卡：可与其它应用同时出声"
+                        },
                         options = engineOptions,
-                        selectedIndex = if (isFlickEngine) 1 else 0,
+                        selectedIndex = selectedKernel,
                         onSelect = { index ->
-                            if (index == 1) {
-                                if (!vipInfo.isActivated) {
-                                    showVipDialog = true
+                            if (isAndroid) {
+                                if (index == 1) {
+                                    if (!vipInfo.isActivated) {
+                                        afterVipAction = {
+                                            AppModel.setAudioEngine(PlaybackSessionSettings.ENGINE_FLICK_HIRES)
+                                        }
+                                        showVipDialog = true
+                                    } else {
+                                        AppModel.setAudioEngine(PlaybackSessionSettings.ENGINE_FLICK_HIRES)
+                                    }
                                 } else {
-                                    AppModel.setAudioEngine(PlaybackSessionSettings.ENGINE_FLICK_HIRES)
+                                    AppModel.setAudioEngine(PlaybackSessionSettings.ENGINE_STANDARD)
                                 }
                             } else {
-                                AppModel.setAudioEngine(PlaybackSessionSettings.ENGINE_STANDARD)
+                                if (index == 1) {
+                                    if (!vipInfo.isActivated) {
+                                        afterVipAction = { AppModel.setWasapiExclusive(true) }
+                                        showVipDialog = true
+                                    } else {
+                                        AppModel.setWasapiExclusive(true)
+                                    }
+                                } else {
+                                    AppModel.setWasapiExclusive(false)
+                                }
                             }
                         },
                         index = 0,
                         total = kernelTotal,
                     )
-                    if (isFlickEngine) {
-                        SettingsClickItem(
-                            title = if (isAndroid) "Oboe 硬件直通与母带解码" else "WASAPI Exclusive 独占直通",
-                            modifier = Modifier.settingsSearchTarget("playback_wasapi_exclusive", targetSettingId),
-                            subtitle = if (isAndroid) {
-                                "绕过 Android AudioFlinger 重采样，直通底层音频 HAL / USB DAC，支持 DSD 软解"
-                            } else {
-                                "完全绕过 Windows 混音器，独占接管声卡终端，支持 Bit-Perfect 与 DSD 软解"
-                            },
-                            index = 1,
-                            total = kernelTotal,
-                            onClick = { navigator.push(AudioEngineSettingsScreen()) },
-                            trailingContent = {
-                                SettingsBadge(
-                                    text = "详细配置",
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                )
-                            },
-                        )
-                        SettingsClickItem(
-                            title = "发烧特权授权管理",
-                            subtitle = if (vipInfo.isActivated) "已激活：${vipInfo.planName} (${vipInfo.licenseKey ?: "永久授权"})" else "未激活，点击输入卡密解锁发烧特性",
-                            index = 2,
-                            total = kernelTotal,
-                            onClick = { showVipDialog = true },
-                            trailingContent = {
-                                CpText(
-                                    text = if (vipInfo.isActivated) "更换卡密" else "激活特权",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            },
-                        )
-                    }
+                    SettingsClickItem(
+                        title = if (isAndroid) "Oboe 直通、USB DAC 与 DSD" else "独占、Bit-Perfect 与 DSD",
+                        modifier = Modifier.settingsSearchTarget("playback_wasapi_exclusive", targetSettingId),
+                        subtitle = if (isAndroid) {
+                            "Oboe 低延迟直通 · UAC 2.0 USB DAC 源码输出 · DSD64/128 软解"
+                        } else if (!isWindowsDesktop) {
+                            "当前平台没有 WASAPI 独占通道，仅提供共享输出"
+                        } else {
+                            "WASAPI 独占 · Bit-Perfect 采样率自适应 · DSD64/128 软解"
+                        },
+                        index = 1,
+                        total = kernelTotal,
+                        onClick = { navigator.push(AudioEngineSettingsScreen()) },
+                        trailingContent = {
+                            SettingsBadge(
+                                text = "特性说明",
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                        },
+                    )
+                    SettingsClickItem(
+                        title = "发烧特权授权管理",
+                        subtitle = if (vipInfo.isActivated) {
+                            // 没有卡密时不补括号（否则会拼出「… (永久授权) (永久授权)」）
+                            val key = vipInfo.licenseKey?.takeIf { it.isNotBlank() }
+                            if (key != null) "已激活：${vipInfo.planName} ($key)" else "已激活：${vipInfo.planName}"
+                        } else {
+                            "未激活，点击输入卡密解锁 FlickEngine 与独占直通"
+                        },
+                        index = 2,
+                        total = kernelTotal,
+                        onClick = {
+                            afterVipAction = null
+                            showVipDialog = true
+                        },
+                        trailingContent = {
+                            CpText(
+                                text = if (vipInfo.isActivated) "更换卡密" else "激活特权",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                    )
                     SettingsClickItem(
                         title = "DSP 音效与调音台",
-                        subtitle = "内置 10 频段参数均衡器 (EQ)、风格预设、声道平衡与响度均衡调节",
+                        // ⚠️ 不要写成「空间环绕」：引擎的 FX 只有「拉宽侧声道」（set_fx 的 width），
+                        // 不是真正的环绕声。见 docs/dev/FLICK_ENGINE.md §2 能力矩阵。
+                        subtitle = "5 段参数均衡器 (PEQ)、风格预设、声道平衡与立体声宽度",
                         icon = Icons.Filled.Equalizer,
-                        index = if (isFlickEngine) 3 else 1,
+                        index = 3,
                         total = kernelTotal,
                         onClick = { navigator.push(AudioEffectSettingsScreen()) },
                         trailingContent = {

@@ -655,6 +655,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                         cp.player.app.ui.component.CpText(
                                             text = track.name,
                                             style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.onSurface,
                                             maxLines = 1,
                                             textAlign = TextAlign.Center,
@@ -1047,6 +1048,7 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                     cp.player.app.ui.component.CpText(
                         text = track.name,
                         style = if (isUltraCompact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         color = MaterialTheme.colorScheme.onSurface,
                         emphasized = true,

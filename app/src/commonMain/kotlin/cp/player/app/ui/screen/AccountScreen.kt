@@ -1,7 +1,6 @@
 package cp.player.app.ui.screen
 
-import cp.player.core.api.parseWebLoginSession
-import cp.player.core.api.parseWebLoginState
+import cp.player.app.repository.QrStatusKind
 import cp.player.core.api.WebLoginState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -129,9 +128,6 @@ import cp.player.app.ui.component.rememberConfirmState
 import cp.player.app.ui.component.settingsRowHighlightContent
 import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.popOrNotify
-import cp.player.core.api.extractVerifyUrl
-import cp.player.core.api.isLoggedInStatus
-import cp.player.core.api.isVerificationChallenge
 import cp.player.core.provider.ProviderCapability
 import cp.player.core.util.currentTimeMillis
 
@@ -140,11 +136,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.intOrNull
 
 /**
  * 账号与登录界面（遵循 Material 3 Expressive 规范重构）。
@@ -1569,6 +1560,9 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                     cancelQrPolling()
                     cancelWebLogin()
                     qrAutoSave.reset()
+                    // 作废的登录任务不会再清加载态（它已经不"属于"当前音源了），
+                    // 这里必须自己收掉，否则新音源没有扫码通道时转圈会一直停在屏上。
+                    isLoading.value = false
                     qrUrl.value = null
                     qrImgBase64.value = null
                     qrRestored.value = false
@@ -1619,6 +1613,47 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
 
     fun providerId(): String = activeProvider.value?.id ?: AppModel.activeProviderId()
 
+    /**
+     * 一次登录动作所属的音源现场（音源 id + 音源代际）。
+     *
+     * ### 为什么登录链路必须带上它
+     *
+     * 二维码 / 验证码 / WebView 都是**跨音源一定失效**的长事务：请求发出后用户完全可能
+     * 正好切了音源（「登录页 → 切换音源」就在同一屏、同一个栈里）。响应回来时「当前音源」
+     * 已经换了人，如果这时按**当前**音源回写，就会：
+     * 1. 把 A 音源的二维码存成 B 音源的现场（[QrLoginStore]），下次进登录页还会被
+     *    **恢复**出来 —— 看起来就是「切了音源，登录页还是上个音源的二维码」，
+     *    而且重启后依然在（现场有 5 分钟寿命）；
+     * 2. 把 A 音源的 cookie 写进 B 音源的 cookie 槽位（见 [onLoginSucceeded]）。
+     *
+     * 所以每个登录动作在**发起时**抓一份现场，所有回写前先核对它还是不是当前音源。
+     * 注意音源实例用 `!==` 比较是不够的：切走再切回拿到的是**同一个实例**，
+     * 必须靠 [AppModel.sourceGeneration] 区分「中间发生过切换」。
+     */
+    private data class ProviderBinding(val providerId: String, val generation: Int)
+
+    private fun bindProvider(): ProviderBinding =
+        ProviderBinding(providerId(), AppModel.sourceGeneration.value)
+
+    private fun ProviderBinding.isCurrent(): Boolean =
+        generation == AppModel.sourceGeneration.value && providerId == providerId()
+
+    /**
+     * 调一次登录接口，**不吞协程取消**。
+     *
+     * `runCatching { … }` 会把 `CancellationException` 一起吞掉：`cancelQrPolling()` 之后
+     * 旧任务并不会立刻停，还会继续往下走 —— 把提示改成「获取失败 / 轮询失败」，甚至把
+     * 结果写回界面。这里只吞普通异常，取消一律上抛（与取数边界
+     * `UnifiedMusicSourceImpl.boundary` 是同一个约定）。
+     */
+    private suspend fun <T> loginAttempt(block: suspend () -> T): T? = try {
+        block()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
+
     fun setChannel(channel: LoginChannel) {
         if (channel != LoginChannel.WEBVIEW) cancelWebLogin()
         method.value = channel
@@ -1634,9 +1669,8 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
         webJob = screenModelScope.launch {
             isLoading.value = true
             try {
-                val resp = AppModel.authRepository.getWebviewLoginUrl()
+                val session = AppModel.authRepository.getWebviewLoginUrl()
                 if (activeProvider.value !== provider || AppModel.sourceGeneration.value != generation) return@launch
-                val session = parseWebLoginSession(resp)
                 if (session != null) {
                     webviewLoginUrl.value = session.url
                     webSessionId = session.sessionId
@@ -1682,14 +1716,14 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                     delay(2000L)
                     if (activeProvider.value !== provider || AppModel.sourceGeneration.value != generation ||
                         method.value != LoginChannel.WEBVIEW) return@launch
-                    val response = AppModel.authRepository.checkWebviewLogin(sessionId)
+                    val checkResult = AppModel.authRepository.checkWebviewLogin(sessionId)
                     if (activeProvider.value !== provider || AppModel.sourceGeneration.value != generation) return@launch
-                    when (parseWebLoginState(response)) {
+                    when (checkResult.state) {
                         WebLoginState.PENDING -> Unit
                         WebLoginState.AUTHORIZED -> {
                             webSessionId = null
                             webviewLoginUrl.value = null
-                            onLoginSucceeded(response.uniCookie())
+                            onLoginSucceeded(checkResult.cookie)
                             return@launch
                         }
                         else -> {
@@ -1722,13 +1756,10 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
     fun fetchCaptchaImage() {
         if (!supportsCaptchaImage.value) return
         screenModelScope.launch {
-
-            val body = runCatching { AppModel.authRepository.getCaptchaImage() }.getOrNull()
-            val obj = body?.asObject()
-            val img = (obj?.get("captchaImage") as? JsonPrimitive)?.contentOrNull
-            if (obj != null && obj.asCodeOk() && !img.isNullOrBlank()) {
-                captchaImage.value = img
-                captchaSessionCookie = (obj["cookie"] as? JsonPrimitive)?.contentOrNull
+            val res = runCatching { AppModel.authRepository.getCaptchaImage() }.getOrNull()
+            if (res != null && res.ok && !res.captchaImage.isNullOrBlank()) {
+                captchaImage.value = res.captchaImage
+                captchaSessionCookie = res.sessionCookie
             } else {
                 captchaImage.value = null
                 captchaSessionCookie = null
@@ -1767,12 +1798,38 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
     }
 
     private suspend fun checkLoginStatus() {
-        val body = runCatching { AppModel.authRepository.getLoginStatus() }.getOrNull()
-        val ok = isLoggedInStatus(body)
-        isLogged.value = ok
+        val binding = bindProvider()
+        var networkFailed = false
+        val ok = try {
+            AppModel.authRepository.getLoginStatus()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            networkFailed = true
+            false
+        }
+        // 请求期间切了音源 ⇒ 这份「登录态」属于上一个音源，不能拿来判当前音源已登录。
+        if (!binding.isCurrent()) return
         if (ok) {
+            isLogged.value = true
             runCatching { AppModel.refreshUserProfileAwait() }
+            if (!binding.isCurrent()) return
             message.value = account.loginRestored
+        } else if (networkFailed) {
+            // 弱网或离线：检查本地是否已有已保存的账号或登录态，避免误判为「未登录」
+            val providerId = providerId()
+            val hasCachedAccount = AccountStore.activeUid(providerId) != null ||
+                !AppModel.cookieStorage.getCookie(providerId).isNullOrEmpty() ||
+                AppModel.userProfileFlow.value != null
+            if (hasCachedAccount) {
+                isLogged.value = true
+                runCatching { AppModel.refreshUserProfileAwait() }
+                if (!binding.isCurrent()) return
+            } else {
+                isLogged.value = false
+            }
+        } else {
+            isLogged.value = false
         }
         refreshAccounts()
     }
@@ -1803,24 +1860,30 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
     private fun startQrJob(initialKey: String?, reuseQr: Boolean) {
         cancelQrPolling()
         qrJob = screenModelScope.launch {
+            // 这一整轮扫码只认发起时的音源（见 [ProviderBinding]）：中途换源 ⇒ 直接作废，
+            // 既不上屏、也不落盘，更不会把旧音源的 key 拿去轮询。
+            val binding = bindProvider()
             isLoading.value = true
             try {
                 var pendingKey = initialKey
                 var pendingReuse = reuseQr
                 repeat(QR_MAX_ROUNDS) { round ->
                     val key = pendingKey
-                        ?: runCatching { AppModel.authRepository.getQrKey() }.getOrNull()?.uniCodeKey()
+                        ?: loginAttempt { AppModel.authRepository.getQrKey() }?.key
                     val reuse = pendingReuse
                     pendingKey = null
                     pendingReuse = false
                     if (key == null) {
-                        message.value = account.qrKeyFailed
+                        if (binding.isCurrent()) message.value = account.qrKeyFailed
                         return@launch
                     }
                     if (!reuse) {
-                        val qrResp = runCatching { AppModel.authRepository.createQrCode(key) }.getOrNull()
-                        val url = qrResp?.uniQrUrl()
-                        val img = qrResp?.uniQrImage()
+                        val qrResp = loginAttempt { AppModel.authRepository.createQrCode(key) }
+                        // 取二维码期间换了音源 ⇒ 这张图是上一个音源的，不能给用户看，
+                        // 更不能记成新音源的现场（否则下次进登录页会被原样"恢复"出来）。
+                        if (!binding.isCurrent()) return@launch
+                        val url = qrResp?.url
+                        val img = qrResp?.imageBase64
                         qrUrl.value = url
                         qrImgBase64.value = img
                         if (url == null) {
@@ -1828,9 +1891,8 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                             return@launch
                         }
                         qrRestored.value = false
-                        val providerId = providerId()
                         QrLoginStore.save(
-                            providerId,
+                            binding.providerId,
                             QrLoginSession(
                                 key = key,
                                 url = url,
@@ -1840,23 +1902,28 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                         )
                     }
                     isLoading.value = false
-                    when (pollQrStatus(key)) {
+                    when (pollQrStatus(key, binding)) {
                         QrPollResult.LOGGED_IN -> return@launch
                         QrPollResult.STOPPED -> {
-                            if (!isLogged.value) QrLoginStore.clear(providerId())
+                            if (!isLogged.value && binding.isCurrent()) {
+                                QrLoginStore.clear(binding.providerId)
+                            }
                             return@launch
                         }
                         QrPollResult.EXPIRED ->
                             if (round == QR_MAX_ROUNDS - 1) {
-                                message.value = account.qrExpiredRetry
+                                if (binding.isCurrent()) message.value = account.qrExpiredRetry
                             } else {
-                                message.value = account.qrRefreshing
-                                isLoading.value = true
+                                if (binding.isCurrent()) {
+                                    message.value = account.qrRefreshing
+                                    isLoading.value = true
+                                }
                             }
                     }
                 }
             } finally {
-                isLoading.value = false
+                // 换源后新的一轮扫码会自己管加载态，别被作废的旧任务清掉。
+                if (binding.isCurrent()) isLoading.value = false
             }
         }
     }
@@ -1866,11 +1933,14 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
         qrJob = null
     }
 
-    private suspend fun pollQrStatus(key: String): QrPollResult {
+    private suspend fun pollQrStatus(key: String, binding: ProviderBinding): QrPollResult {
         var consecutiveFailures = 0
         repeat(QR_POLL_MAX) {
             kotlinx.coroutines.delay(QR_POLL_INTERVAL_MS)
-            val resp = runCatching { AppModel.authRepository.checkQrStatus(key) }.getOrNull()
+            // 换源后这张二维码在这个音源上根本不存在，继续轮询只会拿到 800/错误。
+            if (!binding.isCurrent()) return QrPollResult.STOPPED
+            val resp = loginAttempt { AppModel.authRepository.checkQrStatus(key) }
+            if (!binding.isCurrent()) return QrPollResult.STOPPED
             if (resp == null) {
                 consecutiveFailures++
                 if (consecutiveFailures >= QR_FAILURE_LIMIT) {
@@ -1879,11 +1949,11 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                 }
             } else {
                 consecutiveFailures = 0
-                when (resolveQrStatus(resp)) {
+                when (resp.status) {
                     QrStatusKind.WAITING -> message.value = account.qrWaiting
                     QrStatusKind.SCANNED -> message.value = account.qrScanned
                     QrStatusKind.SUCCESS -> {
-                        onLoginSucceeded(resp.uniCookie())
+                        onLoginSucceeded(resp.cookie, binding = binding)
                         return QrPollResult.LOGGED_IN
                     }
                     QrStatusKind.EXPIRED -> return QrPollResult.EXPIRED
@@ -1900,20 +1970,22 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
         if (email.isBlank() || password.isBlank()) return
         cancelQrPolling()
         screenModelScope.launch {
+            val binding = bindProvider()
             isLoading.value = true
             try {
-                val body = AppModel.authRepository.login(email, password)
-                val vUrl = extractVerifyUrl(body)
-                if (vUrl != null || isVerificationChallenge(body)) {
-                    verifyUrl.value = vUrl
+                val actionResult = AppModel.authRepository.login(email, password)
+                // 请求期间换了音源 ⇒ 这是上一个音源发起的登录，cookie 不能记到新音源名下。
+                if (!binding.isCurrent()) return@launch
+                if (actionResult.verifyUrl != null || actionResult.isVerificationChallenge) {
+                    verifyUrl.value = actionResult.verifyUrl
                     message.value = account.verifyRequired
                     return@launch
                 }
-                onLoginSucceeded(body.uniCookie(), body.asCodeOk())
+                onLoginSucceeded(actionResult.cookie, actionResult.ok, binding)
             } catch (e: Exception) {
                 message.value = account.loginFailed(e.message)
             } finally {
-                isLoading.value = false
+                if (binding.isCurrent()) isLoading.value = false
             }
         }
     }
@@ -1922,31 +1994,31 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
         if (phone.isBlank()) return
         cancelQrPolling()
         screenModelScope.launch {
+            val binding = bindProvider()
             isLoading.value = true
             try {
-                val body = AppModel.authRepository.loginWithPhone(
+                val actionResult = AppModel.authRepository.loginWithPhone(
                     phone,
                     codeOrPass,
                     imageCaptcha.value.ifBlank { null },
                     captchaSessionCookie,
                 )
-                if (!body.asCodeOk()) {
-                    val vUrl = extractVerifyUrl(body)
-                    if (vUrl != null || isVerificationChallenge(body)) {
-                        verifyUrl.value = vUrl
+                if (!binding.isCurrent()) return@launch
+                if (!actionResult.ok) {
+                    if (actionResult.verifyUrl != null || actionResult.isVerificationChallenge) {
+                        verifyUrl.value = actionResult.verifyUrl
                         message.value = account.verifyRequired
                         return@launch
                     }
-                    val reason = (body.asObject()?.get("msg") as? JsonPrimitive)?.contentOrNull
-                    message.value = account.loginFailed(reason ?: account.pleaseRetry)
+                    message.value = account.loginFailed(actionResult.reason ?: account.pleaseRetry)
                     fetchCaptchaImage()
                     return@launch
                 }
-                onLoginSucceeded(body.uniCookie(), ok = true)
+                onLoginSucceeded(actionResult.cookie, ok = true, binding = binding)
             } catch (e: Exception) {
                 message.value = account.loginFailed(e.message)
             } finally {
-                isLoading.value = false
+                if (binding.isCurrent()) isLoading.value = false
             }
         }
     }
@@ -1959,12 +2031,16 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
         }
         cancelQrPolling()
         screenModelScope.launch {
+            val binding = bindProvider()
+            val providerId = binding.providerId
             isLoading.value = true
             try {
-                val providerId = providerId()
                 val previous = AppModel.cookieStorage.getCookie(providerId)
                 AppModel.cookieStorage.saveCookie(providerId, cookie)
                 val profile = AppModel.refreshUserProfileAwait()
+                // 验证期间换了音源：上面的 cookie 属于旧音源，收手即可
+                // （切源时 `AppModel.switchOrReport` 会重新拉新音源的资料）。
+                if (!binding.isCurrent()) return@launch
                 if (profile == null) {
                     if (previous.isNullOrEmpty()) AppModel.cookieStorage.clear(providerId)
                     else AppModel.cookieStorage.saveCookie(providerId, previous)
@@ -2002,18 +2078,16 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                     captchaSessionCookie,
                 )
             }
-                .onSuccess { body ->
-                    if (body.asCodeOk()) {
+                .onSuccess { actionResult ->
+                    if (actionResult.ok) {
                         message.value = account.captchaSent
                     } else {
-                        val vUrl = extractVerifyUrl(body)
-                        if (vUrl != null || isVerificationChallenge(body)) {
-                            verifyUrl.value = vUrl
+                        if (actionResult.verifyUrl != null || actionResult.isVerificationChallenge) {
+                            verifyUrl.value = actionResult.verifyUrl
                             message.value = account.verifyRequired
                             return@launch
                         }
-                        val reason = (body.asObject()?.get("msg") as? JsonPrimitive)?.contentOrNull
-                        message.value = account.captchaSendFailed(reason ?: account.pleaseRetry)
+                        message.value = account.captchaSendFailed(actionResult.reason ?: account.pleaseRetry)
                         fetchCaptchaImage()
                     }
                 }
@@ -2027,8 +2101,8 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
         screenModelScope.launch {
             isLoading.value = true
             try {
-                val body = AppModel.authRepository.loginAnonymous()
-                onLoginSucceeded(body.uniCookie(), body.asCodeOk())
+                val actionResult = AppModel.authRepository.loginAnonymous()
+                onLoginSucceeded(actionResult.cookie, actionResult.ok)
             } catch (e: Exception) {
                 message.value = account.guestLoginFailed(e.message)
             } finally {
@@ -2037,23 +2111,36 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
         }
     }
 
-    private suspend fun onLoginSucceeded(cookie: String?, ok: Boolean = true) {
+    /**
+     * 登录成功后的收尾（写 cookie → 拉资料 → 记账号）。
+     *
+     * @param binding 这次登录**发起时**所属的音源；不传则按当前音源现场处理
+     *   （邮箱 / 手机 / Cookie 这类短事务走默认即可）。扫码这种长事务必须传入
+     *   发起时的现场 —— 否则一次在途的 803 会把**上一个音源的 cookie 写进当前音源的
+     *   cookie 槽位**，用户看到的是「切了音源，登进去还是上个音源的账号」。
+     */
+    private suspend fun onLoginSucceeded(
+        cookie: String?,
+        ok: Boolean = true,
+        binding: ProviderBinding? = null,
+    ) {
         if (!ok) {
             message.value = account.loginFailedRetry
             return
         }
-        val provider = activeProvider.value
-        val generation = AppModel.sourceGeneration.value
-        val providerId = providerId()
-        if (!cookie.isNullOrEmpty()) AppModel.cookieStorage.saveCookie(providerId, cookie)
+        val owner = binding ?: bindProvider()
+        // ⚠️ 先判归属再落 cookie：cookie 一旦写错槽位，后续 refreshUserProfileAwait
+        // 读的是**当前**音源的 cookie，两者会互相打脸。
+        if (!owner.isCurrent()) return
+        if (!cookie.isNullOrEmpty()) AppModel.cookieStorage.saveCookie(owner.providerId, cookie)
         val profile = AppModel.refreshUserProfileAwait()
-        if (activeProvider.value !== provider || AppModel.sourceGeneration.value != generation) return
+        if (!owner.isCurrent()) return
         isLogged.value = profile != null
         if (profile != null) {
-            QrLoginStore.clear(providerId)
+            QrLoginStore.clear(owner.providerId)
             if (!cookie.isNullOrEmpty()) {
                 AccountStore.save(
-                    providerId,
+                    owner.providerId,
                     AccountStore.SavedAccount(
                         uid = profile.resourceId,
                         nickname = profile.nickname,
@@ -2205,93 +2292,4 @@ private const val QR_POLL_MAX = 120
 private const val QR_FAILURE_LIMIT = 5
 private const val QR_MAX_ROUNDS = 3
 
-private fun JsonElement.asObject(): JsonObject? = this as? JsonObject
 
-private fun JsonElement.asCode(): Int? =
-    (asObject()?.get("code") as? JsonPrimitive)?.intOrNull
-
-private fun JsonElement.asCodeOk(): Boolean {
-    val c = asCode() ?: return false
-    return c == 200 || c == 0 || c == 201 || c == 301 || c == 803
-}
-
-private fun JsonElement.uniCodeKey(): String? {
-    val obj = asObject() ?: return null
-    (obj["unikey"] as? JsonPrimitive)?.contentOrNull?.let { return it }
-    (obj["key"] as? JsonPrimitive)?.contentOrNull?.let { return it }
-    val data = obj["data"] as? JsonObject ?: return null
-    (data["unikey"] as? JsonPrimitive)?.contentOrNull?.let { return it }
-    (data["key"] as? JsonPrimitive)?.contentOrNull?.let { return it }
-    return null
-}
-
-private fun JsonElement.uniQrUrl(): String? {
-    val obj = asObject() ?: return null
-    (obj["qrurl"] as? JsonPrimitive)?.contentOrNull?.let { if (it.isNotBlank()) return it }
-    (obj["qrUrl"] as? JsonPrimitive)?.contentOrNull?.let { if (it.isNotBlank()) return it }
-    (obj["url"] as? JsonPrimitive)?.contentOrNull?.let { if (it.isNotBlank()) return it }
-    val data = obj["data"] as? JsonObject ?: return null
-    (data["qrurl"] as? JsonPrimitive)?.contentOrNull?.let { if (it.isNotBlank()) return it }
-    (data["qrUrl"] as? JsonPrimitive)?.contentOrNull?.let { if (it.isNotBlank()) return it }
-    (data["url"] as? JsonPrimitive)?.contentOrNull?.let { if (it.isNotBlank()) return it }
-    return null
-}
-
-private fun JsonElement.uniQrImage(): String? {
-    val obj = asObject() ?: return null
-    (obj["qrimg"] as? JsonPrimitive)?.contentOrNull?.let { if (it.isNotBlank()) return it }
-    (obj["qrcode"] as? JsonPrimitive)?.contentOrNull?.let { if (it.isNotBlank()) return it }
-    (obj["base64"] as? JsonPrimitive)?.contentOrNull?.let { if (it.isNotBlank()) return it }
-    val data = obj["data"] as? JsonObject ?: return null
-    (data["qrimg"] as? JsonPrimitive)?.contentOrNull?.let { if (it.isNotBlank()) return it }
-    (data["qrcode"] as? JsonPrimitive)?.contentOrNull?.let { if (it.isNotBlank()) return it }
-    (data["base64"] as? JsonPrimitive)?.contentOrNull?.let { if (it.isNotBlank()) return it }
-    return null
-}
-
-private fun JsonElement.uniCookie(): String? {
-    val obj = asObject() ?: return null
-    (obj["cookie"] as? JsonPrimitive)?.contentOrNull?.let { if (it.isNotBlank()) return it }
-    val data = obj["data"] as? JsonObject ?: return null
-    (data["cookie"] as? JsonPrimitive)?.contentOrNull?.let { if (it.isNotBlank()) return it }
-    return null
-}
-
-private enum class QrStatusKind {
-    WAITING,
-    SCANNED,
-    SUCCESS,
-    EXPIRED,
-    UNKNOWN
-}
-
-private fun resolveQrStatus(resp: JsonElement?): QrStatusKind {
-    if (resp == null) return QrStatusKind.UNKNOWN
-    val obj = resp as? JsonObject
-    val data = obj?.get("data") as? JsonObject
-
-    val code = (obj?.get("code") as? JsonPrimitive)?.intOrNull
-        ?: (data?.get("code") as? JsonPrimitive)?.intOrNull
-    val status = (obj?.get("status") as? JsonPrimitive)?.intOrNull
-        ?: (data?.get("status") as? JsonPrimitive)?.intOrNull
-    val statusStr = (obj?.get("status") as? JsonPrimitive)?.contentOrNull?.uppercase()
-        ?: (data?.get("status") as? JsonPrimitive)?.contentOrNull?.uppercase()
-        ?: (obj?.get("state") as? JsonPrimitive)?.contentOrNull?.uppercase()
-        ?: (data?.get("state") as? JsonPrimitive)?.contentOrNull?.uppercase()
-
-    if (code == 803 || status == 803 || status == 2 || status == 4 ||
-        statusStr in setOf("SUCCESS", "CONFIRMED", "LOGGED_IN", "FINISH") ||
-        (!resp.uniCookie().isNullOrBlank() && (code == 200 || code == 0))) {
-        return QrStatusKind.SUCCESS
-    }
-    if (code == 802 || status == 802 || status == 1 || statusStr in setOf("SCANNED", "WAITING_CONFIRM")) {
-        return QrStatusKind.SCANNED
-    }
-    if (code == 800 || status == 800 || status == 3 || statusStr in setOf("EXPIRED", "TIMEOUT")) {
-        return QrStatusKind.EXPIRED
-    }
-    if (code == 801 || status == 801 || status == 0 || statusStr in setOf("WAITING", "WAITING_SCAN")) {
-        return QrStatusKind.WAITING
-    }
-    return QrStatusKind.UNKNOWN
-}

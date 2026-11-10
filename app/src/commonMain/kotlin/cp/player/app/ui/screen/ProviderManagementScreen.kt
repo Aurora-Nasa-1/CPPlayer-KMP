@@ -1,5 +1,6 @@
 package cp.player.app.ui.screen
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -215,11 +216,27 @@ class ProviderManagementScreen(
                     if (selectedTab == 0) {
                         // ---------------- 音源模块 ----------------
                         if (providers.isEmpty() && busy == null) {
-                            ContentState(
-                                title = "尚未加载任何音源模块",
-                                message = "点击「导入模块」或右下角 + 导入 .zip 模块，模块包需含 manifest.json",
-                                modifier = Modifier.align(Alignment.Center),
-                            )
+                            // 空列表 = 首次使用 / 刚删光。这里必须自带导入按钮：
+                            // 桌面宽屏下本页渲染在设置页右栏（`CpRouteScaffold` 的 embedded 分支），
+                            // 没有任何列表项可点，只靠 FAB 就会变成「这页没有导入入口」。
+                            Column(
+                                modifier = Modifier.fillMaxSize(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                            ) {
+                                ContentState(
+                                    title = "尚未加载任何音源模块",
+                                    message = "导入 .zip 模块包即可开始使用，模块包需含 manifest.json",
+                                    actionLabel = "导入音源模块",
+                                    onAction = {
+                                        updateTarget = null
+                                        pickProviderZip()
+                                    },
+                                )
+                                message?.let { msg ->
+                                    SettingsNote(msg, color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
                         } else {
                             SettingsLazyPage(
                                 pageModifier = Modifier.fillMaxSize(),

@@ -116,11 +116,11 @@ import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.shareText
+import cp.player.app.ui.component.CpCoverPlaceholder
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpSeekBar
 import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.LazyScrollColumn
-import cp.player.app.ui.component.MorphingShape
 import cp.player.app.ui.component.PlayerMoreContent
 import cp.player.app.ui.component.PlayerMoreSheets
 import cp.player.app.ui.component.PlayerMoreSheetState
@@ -770,9 +770,26 @@ internal fun DesktopPlayerLayout(
                                 sourceQuality != null -> sourceQuality
                                 else -> formatQuality
                             }
-                            val isFlickEngine = AppModel.audioEngineFlow.collectAsState().value ==
-                                cp.player.core.playback.PlaybackSessionSettings.ENGINE_FLICK_HIRES
-                            if (metrics.showMetaChips && (qualityLabel != null || isFlickEngine)) {
+                            // 引擎标识：只标「此刻真的在跑什么」。
+                            //
+                            // ⚠️ 旧版按 `KEY_AUDIO_ENGINE == flick_hires` 就写「Flick Hi-Res · 独占」，
+                            // 在桌面端这是错的：那个键在桌面已不决定内核（只有 FlickEngine），
+                            // 独占是另一个开关，且默认关 —— 于是页面上挂着「独占」徽标、
+                            // 实际跑的是共享混音。这里按平台各取各的判据：
+                            // Android 看内核 + VIP（卡密失效会回落 ExoPlayer），桌面看独占是否生效。
+                            val isAndroid = cp.player.app.platform.isAndroidPlatform()
+                            val vipActive =
+                                cp.player.core.license.VipLicenseManager.licenseState.collectAsState().value.isActivated
+                            val engineKey = AppModel.audioEngineFlow.collectAsState().value
+                            val exclusiveOn = AppModel.wasapiExclusiveFlow.collectAsState().value
+                            val engineChip = when {
+                                isAndroid && vipActive &&
+                                    engineKey == cp.player.core.playback.PlaybackSessionSettings.ENGINE_FLICK_HIRES ->
+                                    "Flick Hi-Res"
+                                !isAndroid && vipActive && exclusiveOn -> "WASAPI 独占 · Bit-Perfect"
+                                else -> null
+                            }
+                            if (metrics.showMetaChips && (qualityLabel != null || engineChip != null)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically,
@@ -785,9 +802,9 @@ internal fun DesktopPlayerLayout(
                                             content = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
-                                    if (isFlickEngine) {
+                                    if (engineChip != null) {
                                         PlayerMetaChip(
-                                            text = "Flick Hi-Res · 独占",
+                                            text = engineChip,
                                             container = MaterialTheme.colorScheme.tertiaryContainer,
                                             content = MaterialTheme.colorScheme.onTertiaryContainer,
                                             onClick = { navigator?.push(AudioEngineSettingsScreen()) },
@@ -1521,25 +1538,11 @@ internal fun Artwork(url: String?, modifier: Modifier) {
     if (!url.isNullOrBlank()) {
         AsyncImage(model = url.resized(900), contentDescription = null, modifier = modifier, contentScale = ContentScale.Crop)
     } else {
-        // 无封面时放一个**持续变形**的 MaterialShapes 形状，而不是一个「♪」字符 ——
-        // 空状态是 Expressive 最容易出彩、也最容易被忽略的地方。
-        // 底色用 primary→tertiary 容器的斜向渐变，而不是一块死灰：一块纯 surfaceVariant
-        // 的大方块在浅色主题下看着像「图加载失败」，渐变才读得出是刻意的占位。
-        Box(
-            modifier = modifier.background(
-                Brush.linearGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.primaryContainer,
-                        MaterialTheme.colorScheme.tertiaryContainer,
-                    )
-                )
-            ),
-            contentAlignment = Alignment.Center,
-        ) {
-            MorphingShape(
-                modifier = Modifier.fillMaxSize(0.42f),
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.45f),
-            )
-        }
+        // 与移动端 PlayerScreen 统一走静态占位块，避免常驻 MorphingShape 引起死循环渲染
+        CpCoverPlaceholder(
+            modifier = modifier,
+            corner = 24.dp,
+            animated = false,
+        )
     }
 }

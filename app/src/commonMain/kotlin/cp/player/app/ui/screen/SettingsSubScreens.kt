@@ -532,41 +532,6 @@ private fun StorageSettingsContent(
                 }
             }
 
-            // ---- 接口缓存区：歌曲 / 歌单等元数据的读透缓存 ----
-            SettingsSection(s.storage.sectionApiCache) {
-                SettingsClickItem(
-                    title = s.storage.apiCacheEntries,
-                    subtitle = buildString {
-                        append(
-                            if (state.apiCacheEntries == 0) {
-                                s.storage.apiCacheEmpty
-                            } else {
-                                s.storage.apiCacheEntryCount(state.apiCacheEntries)
-                            },
-                        )
-                        state.apiCacheHitRate?.let { rate ->
-                            append(s.storage.apiCacheHitRate((rate * 100).roundToInt()))
-                        }
-                    },
-                    index = 0,
-                    total = 2,
-                    icon = Icons.Filled.Cached,
-                    // 只读统计行：它没有「点进去看」的下一页。
-                    onClick = null,
-                )
-                SettingsButtonItem(
-                    text = s.storage.clearApiCache,
-                    subtitle = s.storage.clearApiCacheNote,
-                    index = 1,
-                    total = 2,
-                    icon = Icons.Filled.CleaningServices,
-                    // 刻意**不**按「有没有条目」禁用：这是非破坏性动作，
-                    // 空缓存时点一下得到一句「本来就是空的」比一个点了没反应的
-                    // 灰行更有交代。
-                    onClick = { model.clearApiCache() },
-                )
-            }
-
             // ---- 图片缓存区 ----
             SettingsSection(s.storage.sectionImageCache) {
                 SettingsClickItem(

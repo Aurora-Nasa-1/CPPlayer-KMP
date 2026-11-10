@@ -365,17 +365,23 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
             ),
             SettingsSubItem(
                 id = "playback_audio_engine",
-                titleOf = { "FlickEngine Hi-Res 发烧音频内核" },
-                subtitleOf = { "硬件直通 · 源码输出 · WASAPI 独占 · 高采样率 DAC 支持" },
-                keywords = listOf("音频引擎", "内核", "flick", "engine", "发烧", "hires", "dac", "直通", "源码输出"),
+                titleOf = { "音频输出内核与独占模式" },
+                subtitleOf = { "FlickEngine 发烧内核 · WASAPI 共享/独占切换 · Oboe 直通 · DSD 软解" },
+                keywords = listOf(
+                    "音频引擎", "内核", "flick", "engine", "发烧", "hires", "dac", "直通", "源码输出",
+                    "独占", "共享", "输出模式", "media3", "exoplayer", "oboe",
+                ),
                 sectionOf = { "音频输出内核架构" },
             ),
             SettingsSubItem(
                 id = "playback_wasapi_exclusive",
-                titleOf = { "WASAPI 硬件独占输出" },
-                subtitleOf = { "绕过系统音频混音器，独占音频设备实现原生采样率源码直通" },
-                keywords = listOf("wasapi", "独占", "exclusive", "硬件独占", "bit-perfect", "源码", "混音器", "声卡"),
-                sectionOf = { "硬件直通与发烧特性" },
+                titleOf = { "WASAPI 硬件独占输出（默认关闭）" },
+                subtitleOf = { "独占声卡并绕过系统混音器，Bit-Perfect 源码直通；需 VIP 且手动开启" },
+                keywords = listOf(
+                    "wasapi", "独占", "exclusive", "硬件独占", "bit-perfect", "源码", "混音器", "声卡",
+                    "共享", "shared", "默认关闭",
+                ),
+                sectionOf = { "音频输出内核架构" },
                 desktopOnly = true,
             ),
             SettingsSubItem(
