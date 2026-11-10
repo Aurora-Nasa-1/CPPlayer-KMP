@@ -1,223 +1,98 @@
-# CPPlayer 插件 Manifest 规范参考（单一事实源）
+# SDK Provider Manifest 参考
 
-> 本文是 `manifest.json`（音源插件）的**唯一权威规范**，逐字段对照宿主源码
-> （`core/src/commonMain/kotlin/cp/player/core/provider/ModuleManifest.kt`、`ModuleManager.kt`、
-> `HttpProvider.kt`、`BinaryProvider.kt`、`JniProvider.kt`、`PlatformSupport.jvm.kt`）。
-> 其它指南（QUICK / PROVIDER_DEV_GUIDE）只保留最小示例并链接到这里；两者冲突时以本文为准。
->
-> 歌词源插件用的是**另一套 manifest schema**（`versionCode`/`entry`/`capabilities=searchSongs|getLyrics`），
-> 见 [LYRICS_PLUGIN_DEV_GUIDE.md](LYRICS_PLUGIN_DEV_GUIDE.md)。
+更新：2026-11-10。事实源为 `ModuleManifest`、`ProviderFactory`、`ModuleManager`
+与 `verifyRepositoryPackage`。此文替代旧 Provider v1/v3 安装规范。
+**独立 Lyrico 歌词插件不使用此 schema**，见 [歌词插件指南](LYRICS_PLUGIN_DEV_GUIDE.md)。
 
----
+## 最小清单
 
-## 1. 文件与格式纪律
-
-- `manifest.json` 必须位于 ZIP **根目录**，且是**合法 JSON**（不允许 `//` 注释、尾逗号、单引号）。
-  解析失败 = 「导入失败」，错误文案不指向具体字段 —— 落盘前请过一遍 JSON 校验器。
-- 模块包是 `.zip`（桌面端导入对话框只过滤 `.zip`；`.cpm` 后缀仅 Android 端经 SAF 可用）。
-
-## 2. 全字段表
-
-| 字段 | 类型 | 必填 | 缺省 | 语义与源码锚点 |
-|---|---|---|---|---|
-| `id` | String | ✅ | — | 唯一全局标识（如 `netease`、`qqmusic-rs`）。**更新匹配**按同 id 或同 name 判定（`ModuleManager` L134-152）；id 变更会清掉旧模块目录（L169-176） |
-| `name` | String | ✅ | — | 显示名（音源管理页、登录页） |
-| `version` | String | ✅ | — | 语义化版本号 |
-| `type` | String | ✅ | — | `"http"` / `"jni"` / `"jna"` / `"binary"` / `"script"`。⚠️ `binary` **仅桌面端**；Android 端严格拒收 `binary` 模块，导入与加载时直接拦截报错。Android 原生模块请编译为 `.so` 动态库并声明为 `"jni"` 或 `"jna"` |
-| `entryPoint` | String | ✅ | — | http：基地址；jni/jna：库文件名（`.so` / `.dll` / `.dylib`）；binary：可执行文件名。动态库加载顺序：`lib/<abi>/<entryPoint>` → 根目录 → Android 单 `.so` 探测（`PlatformSupport` L268-308） |
-| `apiMap` | Map<String,String> | 可选 | null | **key = 宿主内部标准方法名**（`cloudsearch`、`song/url/v1`、`lyric/new`…），**value = 你的端点**。查不到时按 key 原样请求（`ProviderManager.callApi` L143）。value 为 `"unsupported"` 时短路返回 `{"code":-1}`。完整方法名清单见 PROVIDER_DEV_GUIDE §7 |
-| `apiVersion` | Int | 可选 | **1** | 插件自身实现的插件 API 版本（宿主 `HOST_PROVIDER_API_VERSION = 3`）。**缺省必须是 1**：历史包没这字段，默认成 3 会把老包误判成新格式 |
-| `apiVersionTag` | String | 可选 | null | **接口代际标签**（自由字符串，如 `"netease-v3"` / `"v123"`）。**纯展示，不分支行为**：不拼 URL、不切解析、不作闸门，宿主不认识也照常加载。空白串等价于未声明。见 §2.1 |
-| `minHostApiVersion` | Int | 可选 | **1** | **加载的唯一闸门**：`> 3` 拒装并提示升级（`ModuleManifest.isLoadable` L206） |
-| `capabilities` | Array\<String\> | 可选 | null | 能力声明。语义见 §3 |
-| `updateUrl` | String | 可选 | null | 检查更新 JSON 端点（§6） |
-| `supportedAbis` | Array\<String\> | 可选 | null | `["arm64-v8a","armeabi-v7a","x86_64"]`；配合 `lib/<abi>/` 目录。null=单架构兼容旧格式 |
-| `targetAppPackage` | String | 可选 | null | 目标 App Android 包名（登录页「打开目标 App」）。仅 Android 生效 |
-| `loginMethods` | Array\<String\> | 可选 | null | 取值：`qr` / `email` / `sms` / `cookie` / `captchaImage` / `webview`（或 `web`）。null=展示全部常见方式；`cookie` 是宿主兜底、始终可用 |
-| `sha256` | String | 可选 | null | 整包（原始 ZIP 字节）SHA-256 十六进制。填了则导入时校验，不匹配拒装。生成：`sha256sum my.zip` |
-| `contract` | String | 可选 | null | 标记响应模型风格：`"standard"` / `"netease-legacy"`。**当前是纯元数据**——宿主解析器同时兼容两种形状，无任何代码按它分支；填了不改变任何解析路径 |
-| `settingsSchema` | Array\<Object\> | 可选 | null | 声明式设置表单（§5） |
-| `qualityOptions` | Array\<Object\> | 可选 | null | 音源自定义音质选项及其向原生音质映射列表（§8） |
-
-### 2.1 `apiVersionTag` 怎么用（与 `apiVersion` / `contract` 的区别）
-
-三者的分工，**别互相套用**：
-
-| 字段 | 回答的问题 | 宿主行为 |
-|---|---|---|
-| `apiVersion`（Int） | 「这个包实现了第几代**插件契约**」 | **参与闸门**：与 `minHostApiVersion` 一起决定能否加载 |
-| `contract`（String） | 「响应是扁平还是网易云嵌套」 | 纯元数据，解析器两种都认，不分支 |
-| `apiVersionTag`（String） | 「这是**哪一套上游接口**」（如网易云 legacy / v3 / `v123`） | **纯展示**：音源管理页与诊断页照原样印出来 |
-
-`apiVersionTag` 明确不做的事（避免有人以为写了它就能改行为）：
-
-- **不拼进请求 URL。** HTTP 音源仍然请求 `${entryPoint}/<method>`。上游接口的版本段
-  要拼就把版本写进 `entryPoint` 自己（例如 `"entryPoint": "http://127.0.0.1:3000/v123"`），
-  或者用 `apiMap` 把方法映射到带版本段的端点名。
-- **不切换解析路径。** 想声明扁平/嵌套用 `contract`（那也还是元数据）。
-- **不作加载闸门。** 判据只有 `minHostApiVersion`；新代际名（宿主不认识的串）必须照常加载。
-- **不写进枚举白名单。** 任意字符串，宿主只做 `trim()` 后非空判断；空白串 = 未声明。
-
-典型写法（`id` 是模块标识、`apiVersionTag` 是接口代际，两者不必相同）：
+ZIP 根目录必须包含 UTF-8 的 `manifest.json`：
 
 ```json
 {
-  "id": "ncm-api-rs",
-  "name": "网易云音乐 (v3)",
+  "id": "my-provider",
+  "name": "My Provider",
   "version": "1.0.0",
-  "type": "jni",
-  "entryPoint": "ncm_api_rs.dll",
-  "apiVersionTag": "netease-v3"
+  "type": "js",
+  "contract": "kmp-sdk-v1",
+  "entryPoint": "index.js",
+  "capabilities": ["search", "playback"],
+  "sdkOrigins": ["https://api.example.com"],
+  "settingsSchema": [
+    { "key": "origin", "label": "API origin", "type": "string", "default": "https://api.example.com" }
+  ]
 }
 ```
 
-音源管理页副标题会多出一段 ` · netease-v3`（拼在 id 之后、`API vN` 之前），
-诊断页「已注册与已加载音源清单」里多一行 `接口代际: netease-v3`。
-没声明该字段的包与从前完全一样，不占位、不占行。
+## 生效字段
 
-## 3. `capabilities` 语义（全部 14 个值）
-
-宿主定义（`ProviderCapability`，未识别的值**忽略不报错**，前向兼容）：
-
-`search` · `playback` · `qrLogin` · `webviewLogin` · `wordSyncedLyrics` · `comments` ·
-`cloudDrive` · `recommend` · `lyricsSearch` · `charts` · `userPlaylists` · `artistExplorer` ·
-`albumExplorer` · `directoryBrowser`
-
-`isFeatureAvailable(capability)` 的两态语义（`ModuleManifest` L228-229）：
-
-| manifest 状态 | 行为 |
+| 字段 | 语义 |
 |---|---|
-| `capabilities` 字段**不存在**（null，历史包） | **什么都不隐藏**：保守兼容，所有入口照常显示 |
-| `capabilities` **存在**（哪怕空数组） | 未声明的能力 → 对应 UI 入口隐藏 |
+| `id` | 稳定身份；匹配 `[a-z0-9][a-z0-9._-]{0,127}`，不能含 `..` 或等于 `local` |
+| `name` | 显示名称，不是更新/账号迁移的身份键 |
+| `version` | 插件版本；仓库更新使用严格 SemVer |
+| `type` | 仅 `js` 或同义的 `script` |
+| `contract` | 必须精确为 `kmp-sdk-v1`；缺省、旧契约、未知主版本均拒绝 |
+| `entryPoint` | 包内相对文件路径；不能为绝对路径、含反斜杠/冒号、空段、`.` 或 `..` 段 |
+| `sdkOrigins` | runtime HTTP origin 白名单；省略等于禁止 HTTP，不是“任意域名” |
+| `capabilities` | 安装展示标签，按下方规则映射；不能替代运行期方法能力 |
+| `settingsSchema` | 声明式设置；会话获得已保存值与默认值组成的只读快照 |
+| `qualityOptions` | 业务音质 key 与应用档位的映射 |
+| `updateUrl` | 可选更新描述地址 |
+| `apiVersion` / `minHostApiVersion` | 既有仓库元数据，缺省 1；正整数，最低宿主要求不能高于当前值 3 |
 
-**当前真正做了 UI 门控的只有 3 个**（app 源码全部消费点）：
-- `comments` → 播放页评论入口（`PlayerScreen` / `DesktopPlayerScreen` / `CommentScreenModel`）
-- `cloudDrive` → 曲库云盘入口（`CloudDriveScreen` / `LibraryScreen`）
-- `recommend` → 首页每日推荐区（`HomeScreen`）
+`apiVersion` 数字 **不决定协议**；写成 1 或 3 都不能开启旧加载路径。
+`contract` 才是 SDK 版本闸门。
 
-其余 11 个值目前只影响**能力徽标**与「为什么这个按钮没有」的解释文案。
-**不要把文档读成「声明了就有一整套页面」** —— 那是远期目标；当前以源码消费点为准。
+## 能力与音质
 
-`loginMethods` 与 `qrLogin`/`webviewLogin` 是两套机制：登录页入口显隐听 `loginMethods`。
+manifest 标签以 `ProviderCapability.sdkLabels` 为准：
 
-## 4. 响应码与错误码
-
-宿主侧「成功」判定唯一码表（`ApiResponseCodes`）：
-
-| 集合 | 码 | 用途 |
-|---|---|---|
-| `SUCCESS` | `0` / `200` / `201` / `301` | 通用成功（网易云风格 200；0 为部分 Provider；201 创建类；301 重定向类） |
-| `QR_PENDING` | `801` / `802` / `803` | 扫码中间态（等待扫码 / 已扫码待确认 / 已确认）——**不是成功**，只在 `login/qr/check` 有意义；`800` = 二维码过期（失败） |
-| `VERIFY_REQUIRED` | `250` / `804` / `4001` | 触发安全风控 / 人机核验：宿主弹安全卡片引导完成验证 |
-
-短路/业务错误码：
-
-| 场景 | 形态 |
+| UI 标签 | 清单映射条件 |
 |---|---|
-| apiMap 映射为 `"unsupported"` | `ProviderManager` 直接返回 `{"code":-1,"msg":"该提供商不支持此功能"}`，不触网 |
-| HTTP 调用失败 | `{"code":500,"msg":"HTTP call failed: ..."}` |
-| 业务层 Unsupported | `MusicSourceFromApi.toMusicResult` 把 `{-1, 501, 404}` 归类为 unsupported（能力缺失，换音源）；其余错误码归为临时失败（重试） |
+| `search` | 标签本身，或 tracks/playlists/albums/artists 的 search 能力之一 |
+| `playback` | 标签本身，或 `tracks.resolve` |
+| `lyricsSearch` | 标签本身，或 `lyrics.get` |
+| `userPlaylists` | 标签本身，或 `playlists.user` |
+| `artistExplorer` | 标签本身，或同时声明 `artists.get`、`artists.tracks`、`artists.albums` |
+| `albumExplorer` | 标签本身，或 `albums.get` |
 
-对外集成 API（第三方 HTTP 契约）的错误码是**另一套**（`IntegrationDto.ApiErrorCodes`），见 [INTEGRATION_API.md](INTEGRATION_API.md) §3，不要与本表混用。
+运行期仍以 `MusicProvider.capabilities()` / JS `provider.capabilities` 为准，
+缺少 runtime 方法能力时请求明确返回 `Unsupported`。
 
-## 5. `settingsSchema` 控件契约
+评论、登录、一起听、上传等已经有独立 SDK 方法能力，但不能靠 `comments`、
+`qrLogin` 等旧 manifest 标签启用。具体能力名见 [操作参考](SDK_OPERATIONS.md)，
+方法参数见 [字段参考](SDK_TYPES.md)。
+未知标签忽略，不因新标签导致 JSON 解码失败。
 
 ```json
 {
-  "key": "serverUrl",
-  "label": "服务器地址",
-  "type": "string",
-  "placeholder": "https://…",
-  "default": "https://default.example.com",
-  "options": [{ "label": "标准", "value": "standard" }],
-  "required": true,
-  "description": "悬停说明"
+  "qualityOptions": [
+    { "key": "flac", "label": "FLAC", "targetQuality": "lossless" }
+  ]
 }
 ```
 
-- `type` 取值：`"string"` / `"password"` / `"switch"` / `"select"`（UI 侧 `"switch"` 与 `"boolean"` 都认）。
-- ⚠️ **`default` 必须是 JSON 字符串**：schema 定义 `default: String?`，写成布尔 `"default": false`
-  会让整个 manifest 的 kotlinx 反序列化直接抛异常 → 「导入失败」。switch 也写 `"true"` / `"false"`。
-- ⚠️ `required` 只影响 UI 显示，宿主**不做强制校验**——必填缺值时请求里只是没有该字段。后端自行兜底默认值。
+宿主把请求档位映射为业务 key；返回时按实际 `actualQuality` 还原标签。
+不要在未知情况下把请求档位当作实际音质。
 
-**注入机制**（`HttpProvider.callApi`，JniProvider / BinaryProvider 同理）：
-1. HTTP Header：`X-Provider-Config: {"serverUrl":"…",…}`（仅当 schema 存在；值为用户已存值或 `default`，仅非 null 注入）；
-2. POST JSON body 根层平铺同名键（**业务参数覆盖同名字段**）；
-3. body 里另附 `config: {…}` 一份。
-4. 持久化命名空间：`provider_config_<id>`（`defaultSettingsStorage`）——与模块目录解耦，模块更新不丢。
+## 安装与更新纪律
 
-## 6. 更新机制
+1. 入口必须存在于包内，规范化路径不能越过模块根目录；最多 1 MiB，严格 UTF-8。
+2. 手动导入、显式更新、仓库安装共用事务；新包结构验证完成后才备份/替换旧目录。
+3. 更新按精确 ID；目标 ID 不同或已安装另一个同名不同 ID 插件时拒绝，不自动删除/迁移。
+4. 安装中断的备份在启动时恢复；失败包不应破坏旧安装。
+5. 仓库下载在解压前校验外部 SHA-256、字节数、ID/版本/runtime/API 与安全归档路径。
+   清单内的“自身 ZIP sha256”不可能自洽，不做这种校验。
+6. 活跃音源的仓库更新仍可暂存至重启，避免在途调用持有旧描述符；不再为 DLL 锁实现换 ID 删除链。
+7. `getModuleDir`、删除和导出也验证 ID，不能用路径穿越访问模块根目录外的文件。
 
-- `updateUrl` 返回：`{ "version": "1.1.0", "downloadUrl": "https://…/v1.1.0.zip", "changelog": "…" }`。
-- **更新 = 先删旧目录、再移入新目录**：包内任何运行时数据子目录一律**不保留**（此前文档声称保留 `user_data/` 是错误的）。用户级持久化走 `settingsSchema` 命名空间。
-- 更新匹配：同 `id` 或同 `name`；`id` 变更会清理旧目录。
+## 不再生效的旧字段与类型
 
-## 7. 音质档位真相表
+HTTP/Binary/JNI/FFM 旧包和旧脚本协议均不再安装。
+可信 Kotlin/Native SDK 工厂只能由宿主代码注册，不通过 ZIP 放开执行信任。
+`apiMap`、`supportedAbis`、`loginMethods`、`targetAppPackage` 等旧元数据可能仍能解码，
+但不会恢复旧服务、登录工作流或按 ABI 猜 DLL 入口。
 
-| 档位 | 谁在用 | 说明 |
-|---|---|---|
-| `standard` / `exhigh` / `lossless` / `hires` | 宿主 UI 4 档（`AppModel.qualityLevels`）；默认 **`exhigh`**（播放与下载同） | 请求 `level` 参数即这 4 个值 |
-| `lossless` / `hires` / `jymaster` / `sky` | 桌面端 `LOSSLESS_LEVELS`：触发「边播边落盘」（引擎无法定位 FLAC over HTTP） | 插件照常返回直链即可 |
-| `higher` / `jymaster` / `sky` / `dolby` | 仅作为透传值出现在 `level` 参数（宿主 UI 不主动请求） | 建议「能处理就处理、处理不了回落最近低档位」，不要报错 |
-
-## 8. 音质选项与原生映射契约 (`qualityOptions`)
-
-音源可通过在 `manifest.json` 中声明 `qualityOptions` 数组，向宿主公开自身支持的音质选项，并将其映射到宿主原生音质等级（支持在 v1 与 v3 规范中使用）。
-
-```json
-"qualityOptions": [
-  {
-    "key": "128k",
-    "targetQuality": "standard",
-    "label": "标准 128K",
-    "bitrate": 128000
-  },
-  {
-    "key": "320k",
-    "targetQuality": "exhigh",
-    "label": "极高 320K",
-    "bitrate": 320000
-  },
-  {
-    "key": "flac",
-    "targetQuality": "lossless",
-    "label": "无损 FLAC",
-    "format": "flac"
-  },
-  {
-    "key": "hi-res",
-    "targetQuality": "hires",
-    "label": "Hi-Res 无损",
-    "format": "flac"
-  }
-]
-```
-
-### 8.1 字段规范
-- **`key`**（String，必填）：音源端点实际接收的参数名（如传给 `song/url` 的 `level` 字段）。
-- **`targetQuality`**（String，必填）：映射到的宿主原生音质标识（见 §7，如 `standard` / `higher` / `exhigh` / `lossless` / `hires` / `jymaster` / `sky` / `dolby`）。
-- **`label`**（String，可选）：前端 UI 展示文案（如 `Hi-Res 臻品`）；为空时回退原生文案。
-- **`bitrate`**（Int，可选）：预估音频码率（bps）。
-- **`format`**（String，可选）：预估容器格式（如 `flac`, `mp3`）。
-
-### 8.2 跨音源切换与降级行为
-- **用户偏好无损保持**：用户设置的音质始终保存为原生目标（如 `hires`）。
-- **自动寻找映射**：切换音源时，宿主在新音源的 `qualityOptions` 中寻找映射到当前用户偏好（如 `hires`）的选项（例如新音源映射的 `hi-res` 或 `master`）。
-- **阶梯就近平滑降级**：若新音源未提供该档位，按音质阶梯（`standard` < `higher` < `exhigh` < `lossless` < `hires` < `jymaster`）就近寻找小于等于目标档位的最高档位（例如降级到 `lossless` 的 `flac`），且**不篡改**用户的全局偏好设置。一旦切回支持原档位的音源，立即恢复。
-- **未声明时的保底兼容**：若音源未声明 `qualityOptions`，宿主自动提供默认 4 档 1:1 透传映射，老旧插件完全无缝兼容。
-
-## 9. 安装与调试
-
-| 项 | 位置/方式 |
-|---|---|
-| 桌面模块目录 | `~/.cpplayer/modules/` |
-| Android 模块目录 | `filesDir/modules/`（经 SAF 导入） |
-| 导入失败原因 | 设置 → 音源管理 / 诊断页会显示 `ModuleManager.lastLoadError` 的具体文案（manifest 缺字段、类型不支持、ABI 不匹配、entryPoint 不存在等） |
-| JNI 日志 | 日志前缀 `[JniProvider]`（含期望导出符号名，符号不匹配时据此定位） |
-| 健康监控 | 设置 → 调试 → 健康状态（按方法统计调用、期望字段命中、响应耗时） |
-| 通用调试 | `apiMap` 键必须等于宿主方法名；manifest 必须是合法 JSON；`required` 不强制 |
-
-## 10. 与音源插件 apiVersion 的关系
-
-音源插件走本文 `apiVersion`（当前宿主支持 3）；**歌词源插件**走独立的
-`LyricsPluginManifest.pluginApiVersion`（`core/.../lyricsplugin/`）——两套编号互不通用，见歌词插件指南。
+不要只给旧包换一个 `contract` 值；必须迁移业务方法与数据类型。
+已有用户包文件不自动删除，退役包会给出可解释的拒绝原因。

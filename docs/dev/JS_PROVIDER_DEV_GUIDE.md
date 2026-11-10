@@ -1,246 +1,102 @@
-# CPPlayer JS 音源插件开发指南 (Provider Standard JS v1)
+# JavaScript / TypeScript Provider
 
-> **适用场景：** 基于 JavaScript / TypeScript 开发免编译、轻量、跨全平台（Android + Desktop）即插即用的 CPPlayer 音源插件。  
-> **底层引擎：** 本宿主采用原生 **QuickJS** 引擎（全平台 C 绑定，支持完整 ES2023、异步 Promise / async / await 与微任务调度）。
+更新：2026-11-10。当前入口是 `globalThis.provider` 与 `kmp-sdk-v1`，
+不是旧 `CPPlayer` 全局、默认导出探测或 Standard JS v1。
 
----
+## 业务面
 
-## 1. 核心架构与设计理念
-
-1. **单脚本即插即用（免交叉编译）：**  
-   相比 `jni` 模式需要针对各操作系统与 CPU 架构分别编译 `.so` / `.dll`，JS 音源仅需单份 `.js` 文件即可在 Windows、macOS、Linux、Android（arm64/v7a/x86）上无差别运行。
-2. **极简起步契约（与 Standard v3 扁平模型一致）：**  
-   音源只需按需导出标准异步方法（`search`、`getMediaSource`、`getSongDetail`、`getLyric`），返回扁平数据模型。
-3. **宿主原生算力注入（避免纯 JS 算力瓶颈）：**  
-   宿主向 JS 沙箱注入原生高速能力，包括包装自 Ktor 的异步 `fetch`（自动处理 Cookie、Header 与重定向）、原生加解密 `crypto`（MD5、SHA256、AES、RSA）、独立持久化 `storage` 以及 Material 3 设置页参数映射 `env.settings`。
-
----
-
-## 2. 插件包目录结构与打包规范
-
-音源插件分发包为标准 `.zip` 压缩包（亦可重命名为 `.cpm`）：
-
-```text
-my-js-provider.zip (或 .cpm)
-├── manifest.json       # 模块元数据定义（必须置于根目录）
-├── index.js            # 入口脚本（对应 manifest 中的 entryPoint）
-└── libs/               # 可选：附属脚本或工具库
-    └── helper.js
-```
-
-### 2.1 清单文件定义 (`manifest.json`)
-
-```json
-{
-  "id": "my-music-js",
-  "name": "示例 JS 音源",
-  "version": "1.0.0",
-  "type": "js",
-  "entryPoint": "index.js",
-  "apiVersion": 1,
-  "minHostApiVersion": 3,
-  "capabilities": [
-    "search",
-    "playback",
-    "lyricsSearch"
-  ],
-  "settingsSchema": [
-    {
-      "key": "cookie",
-      "label": "用户 Cookie / SESSDATA",
-      "type": "password",
-      "placeholder": "请输入登录 Cookie 获取高清音质",
-      "required": false
-    }
-  ]
-}
-```
-
-- `type`: 固定声明为 `"js"`（兼容 `"script"`）；
-- `entryPoint`: 入口脚本相对路径，如 `"index.js"`；
-- `capabilities`: 声明插件支持的功能（宿主据此展示对应能力标签）。
-
----
-
-## 3. 标准音源 API 契约
-
-插件脚本可通过 `globalThis.CPPlayer = { ... }`、`export default { ... }` 或直接在全局定义契约函数。所有方法均应为 `async`（返回 `Promise`）：
-
-### 3.1 歌曲与歌单搜索 (`search`)
-- **入参对象：** `{ keywords, page, limit, type }`
-- **返回值格式：**
 ```javascript
-{
-  code: 200,
-  data: {
-    songs: [
-      {
-        id: "1001",
-        title: "歌曲名",
-        artist: "歌手名",
-        album: "专辑名",
-        durationMs: 240000,
-        coverUrl: "https://example.com/cover.jpg"
-      }
-    ],
-    hasMore: true
-  }
-}
-```
-
-### 3.2 获取播放串流直链 (`getMediaSource`)
-- **入参对象：** `{ id, quality }`（quality 常见取值：`"standard"`, `"exhigh"`, `"lossless"`, `"hires"`）
-- **返回值格式：**
-```javascript
-{
-  code: 200,
-  url: "https://stream.example.com/audio.flac",
-  headers: {
-    "Referer": "https://music.example.com",
-    "User-Agent": "Mozilla/5.0 ..."
+globalThis.provider = {
+  capabilities: ["tracks.get", "tracks.resolve"],
+  async get(request, context) {
+    return { id: request.id, title: "Track", artists: [], durationMs: 9500 };
   },
-  format: "flac",
-  bitrate: 320000
-}
-```
-
-### 3.3 歌曲详情元数据 (`getSongDetail`)
-- **入参对象：** `{ id }`
-- **返回值格式：**
-```javascript
-{
-  id: "1001",
-  title: "歌曲名",
-  artist: "歌手名",
-  album: "专辑名",
-  durationMs: 240000,
-  coverUrl: "https://example.com/cover.jpg"
-}
-```
-
-### 3.4 歌词获取 (`getLyric`)
-- **入参对象：** `{ id }`
-- **返回值格式：**
-```javascript
-{
-  code: 200,
-  lyric: "[00:00.00] 歌词正文...",
-  tlyric: "[00:00.00] 翻译歌词（可选）...",
-  format: "lrc" // 或 "ttml", "yrc"
-}
-```
-
----
-
-## 4. 宿主沙箱注入的原生 API
-
-为了让音源脚本能够高效完成网络逆向解析与数据抓取，宿主在执行脚本前已注入以下原生环境对象：
-
-### 4.1 网络请求 (`fetch`)
-```javascript
-// 支持标准 async/await 调度
-const res = await fetch("https://api.example.com/data", {
-  method: "POST", // GET, POST, HEAD 等
-  headers: {
-    "Content-Type": "application/json",
-    "Referer": "https://music.example.com"
-  },
-  body: JSON.stringify({ q: keywords })
-});
-
-const status = res.status; // 200
-const ok = res.ok;         // true
-const json = await res.json();
-const text = await res.text();
-```
-
-### 4.2 原生加解密加速 (`crypto`)
-避免在 JS 中进行低效的大数计算：
-- `crypto.md5(text)`: 32 位小写 Hex 字符串；
-- `crypto.sha1(text)`: 40 位小写 Hex 字符串；
-- `crypto.sha256(text)`: 64 位小写 Hex 字符串；
-- `crypto.base64Encode(text)`: 返回 Base64 编码；
-- `crypto.base64Decode(base64)`: 返回 Base64 解码文本；
-- `crypto.aesEncrypt(text, key, iv, { mode: "CBC", padding: "PKCS7Padding" })`: AES 加密（返回 Base64）；
-- `crypto.aesDecrypt(cipherBase64, key, iv, { mode: "CBC", padding: "PKCS7Padding" })`: AES 解密（返回明文）；
-- `crypto.rsaEncrypt(text, publicKeyPem)`: RSA 公钥加密。
-
-### 4.3 本地独立键值持久化 (`storage`)
-每个音源按 ID 拥有独立的持久化隔离存储：
-- `storage.getItem(key)`: 获取字符串值（若不存在返回 null）；
-- `storage.setItem(key, value)`: 保存字符串键值；
-- `storage.removeItem(key)`: 删除指定键；
-- `storage.clear()`: 清空当前音源的所有存储。
-
-### 4.4 环境变量与配置项 (`env`)
-```javascript
-const id = env.id;             // 音源唯一标识
-const version = env.version;   // 插件版本号
-const userCookie = env.settings.cookie; // 用户在设置页中填写的参数
-```
-
-### 4.5 调试输出 (`console`)
-`console.log(...)`、`console.info(...)`、`console.warn(...)`、`console.error(...)` 输出内容会自动注入至 CPPlayer 宿主日志管道。
-
----
-
-## 5. 完整音源示例
-
-```javascript
-/**
- * 示例：轻量开放音频源插件 (index.js)
- */
-globalThis.CPPlayer = {
-  async search({ keywords, page, limit }) {
-    console.log("搜索歌曲: " + keywords);
-    const res = await fetch(`https://api.example.com/search?keyword=${encodeURIComponent(keywords)}&page=${page || 1}`);
-    const data = await res.json();
-
+  async resolve(request, context) {
     return {
-      code: 200,
-      data: {
-        songs: (data.items || []).map(item => ({
-          id: String(item.id),
-          title: item.title,
-          artist: item.artist,
-          album: item.album || item.title,
-          durationMs: item.duration * 1000,
-          coverUrl: item.pic
-        })),
-        hasMore: data.hasMore || false
-      }
-    };
-  },
-
-  async getMediaSource({ id, quality }) {
-    // 携带用户的设置项
-    const token = env.settings.cookie || "";
-    const sign = crypto.md5(id + token + "_secret");
-
-    const res = await fetch(`https://api.example.com/song/url?id=${id}&sign=${sign}`);
-    const data = await res.json();
-
-    return {
-      code: 200,
-      url: data.url,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-        "Referer": "https://api.example.com/"
-      }
-    };
-  },
-
-  async getSongDetail({ id }) {
-    const res = await fetch(`https://api.example.com/song/detail?id=${id}`);
-    const item = await res.json();
-    return {
-      id: String(item.id),
-      title: item.title,
-      artist: item.artist,
-      album: item.album,
-      durationMs: item.duration * 1000,
-      coverUrl: item.pic
+      url: "https://audio.example.com/track.wav",
+      actualQuality: "lossless",
+      headers: [{ name: "X-Stream-Token", value: "stream-scoped-token" }],
+      format: "WAV"
     };
   }
 };
 ```
+
+这是数据形状示例，不是可用的外部音乐服务。可运行示例：
+[`index.js`](../../provider-sdk-kmp/examples/js/index.js) 与
+[快速上手](QUICK_PROVIDER_DEV_GUIDE.md)。
+
+| 方法 | 输入 | 输出 |
+|---|---|---|
+| `search(request, context)` | `{keyword, limit, offset}` | `{items: Track[], total?, hasMore?}` |
+| `get(request, context)` | `{id}` | `Track` |
+| `getMany(request, context)` | `{ids: string[]}` | `{items: [{id, track? , failure?}]}` |
+| `resolve(request, context)` | `{id, quality}` | `MediaResource` |
+
+`getMany` 可省略，宿主适配器会调用 `get`；仅实现真正批量接口时声明 `tracks.getMany`。
+结果直接跨 QuickJS 传对象/数组，不需要 stringify/parse。
+解析自己上游的 JSON 当然可以；这不等于恢复旧宿主 JSON 协议。
+
+## 上下文
+
+每个方法拿到只读 `context`，包含 `providerId`、`accountId`、`settings`、`credential`：
+
+```javascript
+const response = await context.http({
+  url: context.settings.origin + "/catalog.json",
+  method: "GET",
+  headers: [{ name: "Authorization", value: "Bearer " + context.credential }]
+});
+if (response.status !== 200) {
+  throw Object.assign(Error("Catalog request failed"), { category: "Network" });
+}
+const catalog = JSON.parse(context.text(response.body));
+```
+
+- `http`：返回 `{status, headers, body}`；body 是字节数组，不是浏览器 Response。
+- `sha256(bytes)`：返回字节数组；不是旧 `crypto` 全套加解密 API。
+- `utf8(text)` / `text(bytes)`：UTF-8 转换，文本解码严格校验。
+- `read(key)` / `write(key, bytesOrNull)`：当前会话临时存储，隔离且有界。
+
+无全局 `fetch`、旧 `env.settings`、宿主文件系统或数据库契约。
+HTTP 只允许 manifest 中的 origin，不自动带凭证，不自动跟随重定向。
+需要认证时由业务为对应服务显式设置 Header，不能把 API Cookie 泛发到媒体域名。
+
+## TypeScript 与打包
+
+类型定义在 [`js/index.d.mts`](../../provider-sdk-kmp/js/index.d.mts) 和
+[`js/types.generated.ts`](../../provider-sdk-kmp/js/types.generated.ts)。
+所有业务方法和 DTO 字段都有生成注释；`KnownCapability` 可用于已知能力名补全。
+完整输入输出约束见 [字段参考](SDK_TYPES.md)，功能组合见
+[分域实现指南](PROVIDER_WORKFLOWS.md)。Kotlin 与 TS 声明使用同一份 schema，
+无需另写一份原始 API 响应接口。
+可选的 `defineProvider` 只做作者侧能力/方法检查；先 bundle 作者侧 import，
+安装包里只放入口脚本及元数据。运行时不提供 Node 模块加载器。
+
+只加载 manifest 指向的单个脚本，不会扫描 `libs` 或猜入口文件。
+入口最多 1 MiB，脚本、标识符与元数据须 UTF-8。
+
+跨桥二进制为 `Int8Array | Uint8Array`，不使用普通数值数组、文件路径或 base64 字符串。
+optional/null 字段、空数组默认值与 safe integer 的准确规则见字段参考。
+运行时不调用 JS `provider.close`；会话引擎和 runtime 存储由宿主释放。
+
+作者侧类型验证示例：
+
+```powershell
+npm ci --prefix provider-sdk-kmp/js --ignore-scripts
+npm run --prefix provider-sdk-kmp/js check:types
+node --test provider-sdk-kmp/js/test.mjs provider-contract/documentation.test.mjs
+```
+
+这是本仓库的验证路径，版本由新 SDK 的 package-lock.json 固定。
+独立 TS 项目可直接使用自己的 `tsc` 与包导出的类型。
+
+## 错误与安全
+
+JS 抛带 `category` 的 Error，例如 `NotFound`、`Unsupported`、`Authentication`。
+每个批量结果对应原输入同位置；失败不能通过删掉该位置表示。
+不要把凭证放进错误文本，或把业务失败伪装成空列表成功。
+
+QuickJS 引擎、线程、超时、并发和释放由宿主会话负责。
+不需要自己实现进程管理、HTTP 桥或调用重试瀑布。
+完整限制与数据语义见 [Provider 指南](PROVIDER_DEV_GUIDE.md)。

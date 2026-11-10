@@ -1,93 +1,97 @@
 # 架构与模块职责
 
-本文档定义 CPPlayer 的模块边界、依赖规则与源集分层设计。
+更新：2026-11-10。此文描述当前生产链路，不把早期兼容迁移方案视为现行行为。
 
----
+## 1. 依赖与职责
 
-## 1. 模块职责与依赖流向
-
-```
-┌──────────────────────────────────────────────┐
-│  app-android/         安卓入口点              │
-│  MainActivity · Application · MediaSession   │
-└───────────────────┬──────────────────────────┘
-                    │ depends on
-┌───────────────────▼──────────────────────────┐
-│  app/                 前端共享 UI 与桌面入口  │
-│  Compose UI · Voyager · ScreenModel          │
-│  主题与视觉 · 平台动作 (Android / Desktop)    │
-└───────────────────┬──────────────────────────┘
-                    │ depends on
-┌───────────────────▼──────────────────────────┐
-│  core/                后端领域核心            │
-│  Provider · API · 缓存 · 播放内核 · 本地库    │
-│  下载管理 · 本地流媒体服务                    │
-└──────────────────────────────────────────────┘
+```text
+app-android -> app -> core -> provider-sdk-kmp
 ```
 
-依赖方向单向流动，严禁反向依赖：
+- `provider-sdk-kmp`：独立强类型业务契约、数据类型、默认批量行为和受控 runtime。
+  不依赖 core、Compose、宿主数据库或具体音源。
+- `core`：账号会话、统一音乐源、本地库、播放/下载/缓存、歌词与对外集成，不含 UI。
+- `app`：Compose UI、ScreenModel、业务 Repository 与平台呈现。
+- `app-android`：Android Activity、Application、MediaSessionService 等平台入口。
 
-### `core` —— 后端核心
-负责全部音乐领域能力的跨平台实现。**规则：严禁包含任何 UI 代码（Compose 组件、Screen、ScreenModel 等）。**
+## 2. 唯一远端数据链
 
-- `api/`：音乐 API 契约常量、`MusicApiService` 容灾调度。
-- `provider/`：音源插件系统（`BackendProvider`、`ModuleManifest`、`ProviderManager`、`ModuleManager`，支持 HTTP / Binary / JNI / JNA / Script；Android 端严格拒收 binary 模块，原生模块须使用动态库 `.so` 并声明为 JNI 或 JNA）。
-- `lyrics/` / `lyricsplugin/`：歌词引擎与 Lyrico 歌词插件系统。
-- `cache/`：`CachedMusicApiService`（读透缓存 + 写失效 + 多 Provider 容灾）、`Fingerprinter`、`ApiCache`。
-- `playback/`：`PlaybackController`（播放队列、seek、切歌、歌词同步）、`PlatformPlayer` 抽象。
-- `control/`：本地 HTTP 流媒体服务与局域网推送（`LocalServer`、`ExternalPusher`）。
-- `integration/`：跨软件标准 API 契约导出（`/api/v1/...`）。
-- `download/`：多任务媒体下载管理。**与 `playback/` 的歌曲缓存打通**：无损档位边播边落盘的那份完整音频
-  （见 `StreamLocalizer`）可以直接「转成下载」—— `MediaDownloadManager.importFromSongCache()` 一键批量搬，
-  `enqueue()` 在入队前也会先查同音质缓存并直接搬运，命中就不联网。匹配只认 `mediaId + 音质`
-  （mediaId 带 `{providerId}://` 前缀），**不按歌名/歌手兜底** —— 不同音源的同名曲是不同音频。
-- `local/` / `media/`：本地音频文件扫描与媒体标签元数据解析。
-- `music/`：跨音源统一领域模型（`TrackSummary`、`PlaylistSummary`、`CPMediaId`）。
-- `MusicBackend.kt`：**后端统一对外的单例入口**。
-
-### `app` —— 前端共享层
-负责全平台 Compose Multiplatform 界面呈现与交互逻辑。
-
-- `ui/screen/`：Voyager 页面组件。
-- `ui/component/`：通用与业务 UI 组件库。
-- `ui/model/`：页面级 `ScreenModel`。
-- `ui/theme/`：主题系统（动态取色、深浅模式、纯黑省电模式）。
-- `repository/`：`MusicRepository`、`AuthRepository` 等面向 UI 的业务领域仓库。
-- `platform/`：桌面与 Android 平台能力抽象（窗口控制、系统媒体按键、渲染调优）。
-- `update/` / `version/`：应用内更新检查与语义化版本比较。
-
-### `app-android` —— Android 平台入口
-遵循 Android Gradle Plugin (AGP) 规范的纯入口模块：`MainActivity`、`CPPlayerApplication`、Media3 `MediaSessionService` 与清单配置。**不包含具体业务实现。**
-
----
-
-## 2. 前后端交互规则
-
-1. **唯一统一入口**：前端访问后端能力的根入口是 `cp.player.core.MusicBackend`。
-2. **UI 隔离**：UI 组件严禁直接依赖底层网络调用或音源 Provider，所有数据交互均通过 `repository/` 层（`MusicRepository`、`AuthRepository` 等）代理。
-3. **共享领域模型**：`core` 中的领域模型（`cp.player.core.music.*`、`media.*`）作为标准数据契约，前后端直接共用。
-
----
-
-## 3. 源集分层设计
-
-工程采用清晰的多平台源集依赖层次：
-
-```
-commonMain  ──▶  jvmMain  ──▶  { androidMain, desktopMain }
+```text
+Repository / PlaybackController / MediaResolver / Integration
+    -> UnifiedMusicSource
+        -> 已注册的本地音频 / 下载副本
+        -> ProviderSdkSessions.current()
+            -> ProviderHost
+                -> SDK MusicProvider
+                    -> Kotlin / JS / 可信 Native adapter
 ```
 
-| 源集 | 适用代码 | 禁止放置 |
-|------|----------|----------|
-| `commonMain` | 纯跨平台业务逻辑、`expect` 抽象、Ktor 客户端、领域模型 | 任何特定平台专有 API (`java.*`, `android.*`) |
-| `jvmMain` | Android 与 Desktop 共用的 JVM 基础设施（Socket、Zip 归档、ELF 解析、Ktor CIO 服务端、QuickJS 脚本引擎） | 仅在 Android 或仅在 Desktop 存在的专有代码 |
-| `androidMain` | Android 专有能力（`Context`、`SharedPreferences`、Media3、JNI 动态链接） | 桌面端同样需要的通用实现 |
-| `desktopMain` | Desktop 专有能力（`~/.cpplayer` 运行时配置目录、桌面窗口吸附、WASAPI / Rodio 音频引擎、系统托盘） | Android 同样需要的实现 |
+统一层先处理本地数据，纯本地/离线请求不创建远端会话。
+远端请求只访问当前账号会话，外部 Provider ID 不匹配时返回 Unsupported，
+不会按标题、裸 ID 或失败状态去找另一个音源。
 
----
+`ProviderManager` 只管理描述符选择和会话失效，不分配端口、不启动服务、
+不分发同步 JSON 请求。`ModuleManager` 只安装 SDK 脚本，手动/仓库导入共用可回滚事务。
+脚本 Provider 与可信 Kotlin/JNI、桌面 Native worker 都实现相同的 `MusicProvider` 业务契约；
+JNI/worker 是适配传输，不是另一套 API。旧 HTTP/Binary/JNI JSON 协议和工厂分支已移除；
+旧 JS 实现只存在于测试夹具。
+共享工作副本中未跟踪的 FFM/compat 旧文件保留在磁盘，但已排除出生产源集，
+验证脚本检查最终 core JAR，避免意外重新打包它们。
 
-## 4. 核心设计原则
+## 3. 生命周期与数据语义
 
-- **缓存读透策略**：读类接口自动走 LRU 缓存并支持多音源容灾回退；写类操作（如加歌单、收藏）精确失效对应缓存。
-- **配置与数据隔离**：不同音源插件的缓存与账号 Session 严格按 Provider ID 和账号隔离，互不串扰。
-- **能力网格化驱动**：音源声明自身支持的 `capabilities`，客户端根据能力矩阵自适应渲染或物理移除对应界面入口。
+- 会话身份包含 Provider、SDK 账号、修订号；凭证版本、设置快照变化会新建会话。
+- 旧会话先同步失效并取消调用，排空后只释放一次；切换期间的旧结果不能写回。
+- 能力列表每会话只读取一次；失败/取消不缓存。
+- ID 区分大小写且不转数值；播放/目录原有入口使用带 Provider 命名空间的 `CPMediaId`。
+  新增的请求对象业务方法显式绑定当前账号会话，内部 ID 使用 Provider 原始字符串。
+- 批量详情保序、保留重复项、逐项失败；远端失败不丢弃同批次本地结果。
+- 毫秒、实际音质、显式 Header 原样传递；未知计数、码率、格式和到期时间不猜值。
+- 账号 Cookie 不再自动补入媒体流、预加载、下载和流中继请求。
+
+## 4. 类型化业务入口
+
+app Repository 与播放链路直接消费 `UnifiedMusicSource`，不再经过
+`MusicApiService`、`MusicSourceFromApi` 或 JSON 输出投影。
+歌单内搜索不再绕过 Repository 读取 raw JSON 缓存或自行传 Cookie。
+
+无活跃 Provider 时不会回退到旧 JSON 缓存，取消也不会被吞成缓存错误。
+多 Provider 容灾执行路径已删除。
+播放文件缓存仍按 Provider/账号/凭证版本/设置隔离，并以实际音质标识。
+
+当前 SDK 契约含 160 个业务操作；除歌曲与目录读取外，登录、推荐、评论/私信、
+一起听、MV/视频、DJ、日历/动态、云盘和目录写操作已有类型化链路。
+`ExtendedOperations`、扩展 JS/JNI 分发、Host 方法与统一层方法由同一 schema 生成，
+旧编号不变。操作清单见 [SDK 操作表](SDK_OPERATIONS.md)，
+本批范围与尚未移植的类别见 [迁移状态](SDK_MIGRATION_STATUS.md)。
+具体音源未声明或未实现的能力仍返回 Unsupported；契约测试不代表真实上游或真机联调。
+独立 Lyrico 歌词插件、本地边车、AMLL、本地视频不受影响。
+
+## 5. 源集
+
+```text
+commonMain -> jvmMain -> {androidMain, desktopMain}
+```
+
+| 源集 | 职责 |
+|---|---|
+| `commonMain` | 业务模型、SDK 接口、会话调度、expect 抽象 |
+| `jvmMain` | Android/Desktop 共用的文件/归档、Ktor 服务、QuickJS runtime |
+| `androidMain` | Android Context、Media3、平台服务 |
+| `desktopMain` | Desktop 媒体引擎、窗口/托盘、受信任 Native worker |
+
+桌面持久化路径统一取 `DesktopDataDir`。不为新音源新增私有宿主目录。
+
+## 6. 验证与后续工作
+
+- 必跑 `:app:compileKotlinDesktop` 与 `:core:compileKotlinDesktop`。
+- [定向验证脚本](../../scripts/verify-provider-chain.ps1) 使用独立 cache/build，
+  检查 SDK、统一层、导入回滚、缓存隔离、播放流头与 Repository 的 XML，要求零跳过。
+- 独立运行完整 `:core:desktopTest`；旧工作副本里的测试可能仍要求已退役协议成功，
+  需要与现行契约区分，不能通过恢复隐式兼容来“修绿”。
+- 后续扩展能力应先加 SDK schema/接口默认实现、跨语言生成与契约测试，
+  再接统一层、Repository 和 UI，不能另开 v3 JSON 入口。
+
+开发入口：[Provider 指南](PROVIDER_DEV_GUIDE.md) · [Manifest](MANIFEST_REFERENCE.md)。
+此前的 `PROVIDER_TYPED_RUNTIME.md`/SDK proposal 是过程记录；
+其中“仍回退旧 Provider”的迁移描述不再是当前生产行为。

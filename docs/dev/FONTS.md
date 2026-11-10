@@ -63,10 +63,14 @@
 - 唯一的自有逻辑在 `prepare(line, group, measurer, style)`：用 `buildAppStyledText` 生成带
   font span 的 `AnnotatedString`，`measure` 成 layout 后再交回 `CjkProfile`。
   `DefaultLyricsProfile.draw` 是直接 `drawText(unit.layout)` 的，所以 span 能原样穿透。
+  ⚠️ 歌词分词后，单个 syllable 或 group（如「運命」「君」）往往只包含汉字而无假名；
+  `ScriptFontLyricsProfile` 根据整首歌或整行是否为日语（`isJapaneseLyrics` / `line.syllables.any { it.content.containsKana() }`），
+  把汉字准确路由至 Noto Sans JP，避免被误判成 MiSans。
 - 量不出任何 span（如 Android 未下载日文字体）时**原样委派**，不凭空多量一次。
 
-`LyricContent` 那边因此**不再换 fontFamily**，`forLyricLanguage` 只保留
-`lang=ja` + `palt`（`withJapaneseTypesetting`）。
+普通行（`SyncedLine`，无逐字时间戳）在歌词库内部直接通过 `Text(style)` 绘制、不走 profile；
+因此 `LyricContent` 为普通行样式绑定 `appFonts.japanese`（日文歌词）/ `appFonts.misans`（中文歌词），
+确保普通行的日文汉字同样使用 Noto Sans JP。逐字行在测量时会抹去西文字体的干扰，保证拉丁字符依然走 Google Sans Flex。
 
 ⚠️ **裸 `Text(...)` 仍是系统 CJK 字体**。想让某处也走 MiSans、Noto，把它换成 `CpText`
 即可获得全部字体路由（注意 `CpText` 的 `maxLines` 默认是 1，多行文本要显式传）。

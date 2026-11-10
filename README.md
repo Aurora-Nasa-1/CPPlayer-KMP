@@ -11,8 +11,12 @@
 
 ## 📌 文档入口
 
+Provider 唯一开发入口：[KMP SDK 快速上手](docs/dev/QUICK_PROVIDER_DEV_GUIDE.md)。
+生产链路为统一数据层 → 账号会话 → KMP SDK → 适配器；Legacy v1 / Standard v3 已退役，
+旧包不再加载。当前范围与尚未接入的能力见 [架构](docs/dev/ARCHITECTURE.md)。
+
 - 📖 **用户手册**：[用户使用指南 (USER_GUIDE.md)](docs/USER_GUIDE.md)（安装、音源导入、账号登录、推送、常见问题）
-- 🔌 **插件开发**：[5分钟极速上手现代音源与插件 (Standard v3)](docs/dev/QUICK_PROVIDER_DEV_GUIDE.md) · [插件完整参考手册](docs/dev/PROVIDER_DEV_GUIDE.md)
+- 🔌 **插件开发**：[SDK 快速上手](docs/dev/QUICK_PROVIDER_DEV_GUIDE.md) · [业务契约与生命周期](docs/dev/PROVIDER_DEV_GUIDE.md) · [Manifest](docs/dev/MANIFEST_REFERENCE.md)
 - 🛠️ **开发者文档**：[开发者文档总索引](docs/README.md)（架构、集成契约、各平台打包）
 
 ---
@@ -20,11 +24,13 @@
 ## 🌟 核心特性
 
 - **纯正跨平台一致体验**：基于 Compose Multiplatform 打造，桌面端原生窗口手势吸附、移动端沉浸体验。
-- **现代化插件系统 (Standard v3)**：
-  - 极简契约：实现“搜索”“歌曲详情”“获取音频直链”3 个接口，即可覆盖播放、队列恢复与预加载；歌词按需扩展。
+- **KMP Provider SDK**：
+  - 极简契约：实现 `search`、`get`、`resolve`，批量详情有保序默认实现；无需端点映射、JSON 宿主封套或本地服务。
+  - Kotlin、JavaScript 与受信任 JNI/Native 适配器共用同一组类型化业务操作；Provider 的上游 HTTP 通过会话 runtime 发起。
   - 原生声明式设置：音源在 `manifest.json` 中声明配置字段，客户端自动渲染 Material 3 原生设置面板。
-  - UI 能力声明：音源以 `capabilities` 声明支持的能力（当前实际门控评论 / 云盘 / 推荐入口，其余展示能力徽标；未声明不做限制）。
-  - 多类型插件生态：Standard v3 / Legacy 音源插件、[Lyrico 歌词插件](docs/dev/LYRICS_PLUGIN_DEV_GUIDE.md)与本地边车歌词。
+  - 账号会话隔离，切换时取消旧请求；媒体流只转发显式请求头。
+  - 当前契约含 160 个 typed 业务操作，覆盖登录、目录读写、多类型搜索、评论/私信/通知、一起听、MV/视频、DJ、日历/动态、账号绑定、排序/导入及分块上传；具体音源按能力声明实现，未实现仍明确返回不支持。完整清单见 [SDK 操作表](docs/dev/SDK_OPERATIONS.md)，剩余工作见 [移植状态](docs/dev/SDK_MIGRATION_STATUS.md)。
+  - JavaScript SDK 包可导入；Kotlin/JNI Provider 由可信宿主代码注册，不能作为插件 ZIP 安装。独立 [Lyrico 歌词插件](docs/dev/LYRICS_PLUGIN_DEV_GUIDE.md)、AMLL 与本地边车歌词照常使用。
 - **发烧级音频解码引擎**：
   - 支持 WASAPI Exclusive 硬件独占直通推流、DSD 解码与无损流落盘缓存。
   - 10 频段参数均衡器 (PEQ)、声道平衡、响度归一化与防爆音削顶。
@@ -39,12 +45,13 @@
 ## 🏗️ 架构与模块划分
 
 ```
-app-android ──▶ app ──▶ core
+app-android ──▶ app ──▶ core ──▶ provider-sdk-kmp
 ```
 
 | 模块 | 职责 | 说明 |
 |------|------|------|
-| `core` | **后端领域核心** | 音源插件系统、API 服务、读透缓存、播放内核、本地媒体库、下载与流输出服务。**无任何 UI 代码** |
+| `provider-sdk-kmp` | **Provider 强类型开发契约** | 独立 KMP SDK，业务方法、数据类型及受控宿主能力，不依赖 core/UI/具体 Provider |
+| `core` | **后端领域核心** | SDK 会话、统一数据层、播放内核、本地媒体库、下载与流输出；保留部分旧页面的输出投影。**无任何 UI 代码** |
 | `app` | **前端跨平台共享** | Compose Multiplatform UI、Voyager 导航、ScreenModel、主题系统，以及桌面端入口 `Main.kt` |
 | `app-android` | **Android 平台入口** | 依 AGP 规范独立的应用模块：`MainActivity`、`Application`、Media3 `MediaSessionService` |
 
@@ -71,6 +78,9 @@ app-android ──▶ app ──▶ core
 # 运行单元测试
 ./gradlew :core:desktopTest
 ./gradlew :app:desktopTest
+
+# SDK 与统一数据链路定向回归（隔离构建，检查零跳过 XML）
+pwsh -File scripts/verify-provider-chain.ps1
 
 # 打包分发产物
 ./gradlew :app:packageWindowsVelopack  # Windows 安装包 (Velopack)

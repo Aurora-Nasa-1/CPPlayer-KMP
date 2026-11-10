@@ -2,7 +2,7 @@
 
 面向**第三方软件**的契约手册：让别的程序把 CPPlayer 当成一个音源来用。
 
-> 设计动机、边界纪律与分阶段计划见 [`INTEGRATION_PLAN.md`](../history/INTEGRATION_PLAN.md)。
+> 统一数据链路与模块职责见 [架构](ARCHITECTURE.md)。
 > 本文只讲**已经能用**的部分。
 
 ---
@@ -157,8 +157,8 @@ curl -H "Authorization: Bearer <token>" \
 | `upstream_failed` | 502 | 上游音源失败 | **重试**有意义 |
 | `internal_error` | 500 | 服务端内部错误 | 上报 |
 
-> **`501` 与 `502` 必须分开处理。** `501` 不是故障，是能力缺失：`apiMap` 把该端点
-> 映射成了 `unsupported`，换个音源就能用。`502` 才是网络/上游的临时问题。
+> **`501` 与 `502` 必须分开处理。** `501` 表示当前 SDK 或音源能力缺失，不应重复请求。
+> `502` 才是网络/上游的临时问题；宿主不会自动调用另一个音源兜底。
 > 把两者混为一谈会导致集成方对着不支持该功能的音源无限重试。
 
 > **例外**：媒体面 `/stream` 的既有错误沿用旧形态 `{ "code": 401, "msg": "…" }`，
@@ -252,8 +252,7 @@ Authorization: Bearer <accessToken>     ← 推荐，日志友好
 ```json
 {
   "providers": [
-    { "id": "netease", "name": "NeteaseCloudMusicApi", "version": "1.2.0", "type": "JNI", "active": true },
-    { "id": "local",   "name": "本地音乐",               "version": "1.0.0", "type": "BINARY", "active": false }
+    { "id": "catalog", "name": "Catalog", "version": "1.0.0", "type": "SCRIPT", "active": true }
   ]
 }
 ```
@@ -263,7 +262,7 @@ Authorization: Bearer <accessToken>     ← 推荐，日志友好
 | `id` | 音源标识；`mediaId` 里的命名空间就是它 |
 | `name` | 显示名 |
 | `version` | 音源版本 |
-| `type` | 实现类型：`JNI` / `BINARY` / `HTTP` / `SCRIPT`（`BackendProvider.ProviderType` 枚举直接透传；另有 `WEBSOCKET` 为预留枚举值，当前不会产生） |
+| `type` | 实现类型，枚举名透传。可安装的 KMP SDK 脚本包为 `SCRIPT`；受信任代码注册的适配器可使用其他枚举标签，标签不代表旧传输入口仍可安装 |
 | `active` | 是否为当前活跃音源；**最多一个**为 `true` |
 
 ---
