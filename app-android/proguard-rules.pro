@@ -5,15 +5,6 @@
 # 每条规则都对应一次真实风险盘点（2026-10-04，开 R8 时逐点核实过）。
 
 # ---------------------------------------------------------------------------
-# 1. JNI（最高风险点，缺了必崩）
-# ---------------------------------------------------------------------------
-# JniProvider 的 external fun 走 JNI 符号名绑定（native 侧导出
-# `Java_cp_player_core_provider_JniProvider_nativeCallApi` 等）。
-# R8 重命名类或方法 ⇒ UnsatisfiedLinkError，音源模块整体失联。
-# 类名、方法名、签名必须原样保留。
--keep class cp.player.core.provider.JniProvider { *; }
-
-# ---------------------------------------------------------------------------
 # 2. 按方法名的运行时反射
 # ---------------------------------------------------------------------------
 # MusicBackend.kt / ModuleManager.kt：`provider.javaClass.getMethod("getLoadError")`
@@ -133,12 +124,10 @@
 -dontwarn org.lsposed.hiddenapibypass.**
 
 # ---------------------------------------------------------------------------
-# 10. JNA (Java Native Access)
+# 11. Sentry NDK (libsentry 原生崩溃监控)
 # ---------------------------------------------------------------------------
--keepclassmembers class * extends com.sun.jna.Library {
-    public <methods>;
-    public <fields>;
-}
--keep class com.sun.jna.** { *; }
--dontwarn com.sun.jna.**
+-keep class io.sentry.android.ndk.** { *; }
+-dontwarn io.sentry.android.ndk.**
+
+
 

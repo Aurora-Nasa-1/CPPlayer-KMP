@@ -37,13 +37,18 @@ kotlin {
     }
 
     sourceSets {
+        // Retired WIP sources may remain on disk in shared workspaces; never ship them.
+        commonMain.get().kotlin.exclude("cp/player/core/provider/compat/**")
         val jvmMain by creating
         jvmMain.dependsOn(commonMain.get())
         androidMain.get().dependsOn(jvmMain)
         val desktopMain by getting
         desktopMain.dependsOn(jvmMain)
+        desktopMain.kotlin.exclude("cp/player/core/provider/FfmProvider.kt")
 
         val desktopTest by getting {
+            kotlin.srcDir(rootProject.file("provider-sdk-kmp/examples/kotlin"))
+            kotlin.srcDir(rootProject.file("provider-sdk-kmp/examples/jni/kotlin"))
             dependencies {
                 implementation(kotlin("test"))
                 implementation(libs.kotlinx.coroutines.test)
@@ -58,6 +63,7 @@ kotlin {
         }
 
         commonMain.dependencies {
+            api(project(":provider-sdk-kmp"))
             implementation(libs.accompanist.lyrics.core)
             implementation(libs.composemediaplayer.audio)
             implementation(libs.kotlinx.coroutines.core)
@@ -73,14 +79,10 @@ kotlin {
             // 本地服务器（REST 控制 API）——Ktor CIO，Android 与 Desktop 共用
             implementation(libs.ktor.server.core)
             implementation(libs.ktor.server.cio)
-            // JNA 本地库调用（Android 与 Desktop 共用编译期符号；运行期 Desktop 走 jar，Android 走 aar）
-            compileOnly(libs.jna)
         }
         desktopMain.dependencies {
-            implementation(libs.jna)
         }
         androidMain.dependencies {
-            implementation("net.java.dev.jna:jna:${libs.versions.jna.get()}@aar")
             implementation(libs.kotlinx.coroutines.android)
             // ⚠️ 版本由 1.15.0 提到 1.17.0（gradle/libs.versions.toml）。
             // 原因：歌词投放要用的 `NotificationCompat.setShortCriticalText` /
@@ -111,7 +113,7 @@ kotlin {
         }
 
         // 注意：这里曾声明 org.openjfx:javafx-graphics / javafx-base，但全仓 Kotlin 源码
-        // 对 javafx.* 零引用（音频走 nucleus.rodio 的 Rust JNI，SMTC 走 JMTC 的 JNA），
+        // 对 javafx.* 零引用（音频走 nucleus.rodio 的 Rust JNI，播控走 FFM），
         // 属死依赖，已移除。JavaFX 的 Prism 自带 DWM/vblank vsync 线程，一旦被谁初始化
         // 就会多出一个帧节奏参与者，在 VRR 显示器上属风险项。
     }

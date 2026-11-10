@@ -46,6 +46,7 @@ android {
         buildConfigField("String", "RELEASE_CHANNEL", "\"$appReleaseChannel\"")
         buildConfigField("String", "SENTRY_DSN", "\"$sentryDsn\"")
         ndk {
+            abiFilters.clear()
             abiFilters += listOf("arm64-v8a")
         }
     }
@@ -113,8 +114,18 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
-            excludes += "com/sun/jna/**"
-            excludes += "/com/sun/jna/**"
+        }
+        jniLibs {
+            // Android 端仅支持 arm64-v8a (ARMv8 64位架构)，严格过滤并排除其余老旧架构动态库
+            excludes += listOf(
+                "lib/armeabi-v7a/**",
+                "lib/armeabi/**",
+                "lib/x86/**",
+                "lib/x86_64/**",
+                "lib/mips/**",
+                "lib/mips64/**",
+                "lib/riscv64/**",
+            )
         }
     }
 }
@@ -127,7 +138,7 @@ dependencies {
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.sentry.android.core)
-    implementation("net.java.dev.jna:jna:${libs.versions.jna.get()}@aar")
+    implementation(libs.sentry.android.ndk)
     // 核心库脱糖的运行时实现（java.time 等被改写成这些类的调用）。
     // 与 compileOptions.isCoreLibraryDesugaringEnabled 是一对，缺任何一个都不生效：
     // 只开开关不引依赖 → AGP 报 "coreLibraryDesugaring configuration contains no dependencies"。

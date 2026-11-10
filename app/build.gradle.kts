@@ -376,8 +376,6 @@ kotlin {
             dependencies {
                 implementation(compose.desktop.currentOs)
                 implementation(libs.kotlinx.coroutines.swing)
-                implementation(libs.jmtc)
-                implementation(libs.jna.platform)
                 implementation(libs.ktor.client.okhttp)
                 implementation(libs.sentry.core)
             }
@@ -529,6 +527,7 @@ val desktopCommonJvmArgs = (listOf(
     "--enable-native-access=ALL-UNNAMED",
     "-Xms64m",
     "-Xmx256m",
+    "-Dsun.awt.windows.useCommonItemDialog=true",
     "-Dcp.player.versionName=$appVersionName",
     "-Dcp.player.versionCode=$appVersionCode",
     "-Dcp.player.releaseChannel=$appReleaseChannel",
@@ -786,6 +785,25 @@ val packageLinuxTarGz = tasks.register<Tar>("packageLinuxTarGz") {
                     cfgFile.writeText(updated)
                 }
                 logger.lifecycle("已注入 AOT Cache 归档至 Linux 安装镜像: ${linuxDest.name}")
+            }
+        }
+
+        // 打包前将预编译原生动态库（如 libsentry.so、librust_lib_flick_player.so）注入到 Linux app-image
+        val nativeDir = project.file("native")
+        if (nativeDir.isDirectory) {
+            val targets = listOf(
+                appDir.resolve("lib"),
+                appDir.resolve("lib/app"),
+                appDir.resolve("lib/runtime/lib"),
+            )
+            nativeDir.listFiles()?.filter { it.isFile }?.forEach { f ->
+                targets.forEach { targetDir ->
+                    if (targetDir.isDirectory) {
+                        val dest = targetDir.resolve(f.name)
+                        f.copyTo(dest, overwrite = true)
+                        logger.lifecycle("已注入原生动态库至 Linux 安装镜像: ${f.name} -> ${dest.absolutePath}")
+                    }
+                }
             }
         }
     }

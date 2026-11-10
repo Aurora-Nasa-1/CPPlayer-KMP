@@ -1,7 +1,7 @@
 # CPPlayer Compose Desktop ProGuard 规则与排除配置
 #
 # 针对桌面端 release 包的代码收缩、优化与排除。
-# 全面覆盖跨平台 JNI、JNA、ServiceLoader SPI、网络引擎、序列化与媒体控制链路。
+# 全面覆盖跨平台 JNI、FFM、ServiceLoader SPI、网络引擎、序列化与媒体控制链路。
 
 # ---------------------------------------------------------------------------
 # 1. 基础配置、警告抑制与资源适配
@@ -66,42 +66,15 @@
 -dontwarn dev.nucleusframework.**
 -dontwarn io.github.vinceglb.filekit.**
 
-# ---------------------------------------------------------------------------
-# 6. JNA (Java Native Access) 与系统集成 (Windows SMTC / COM / DWM / JnaProvider)
-# ---------------------------------------------------------------------------
--keep interface * extends com.sun.jna.Library { *; }
--keep class * implements com.sun.jna.Library { *; }
-
--keep interface * extends com.sun.jna.Callback { *; }
--keepclassmembers class * implements com.sun.jna.Callback {
-    public <methods>;
-}
-
-# JNA Structure 依赖反射读取字段排布 (public/protected/package-private)，必须完整保留所有字段
--keepclassmembers class * extends com.sun.jna.Structure {
-    <fields>;
-}
-
--keep class * extends com.sun.jna.IntegerType { *; }
--keep class * extends com.sun.jna.PointerType { *; }
-
--keep class com.sun.jna.** { *; }
--dontwarn com.sun.jna.**
+# FlickEngine（Rust DLL）的 JNI 入口在本仓自己的类里。
+# Rust 侧的符号名是写死的 Java_cp_player_core_playback_DesktopHiResEngine_nativeXxx，
+# 一旦混淆类名或 native 方法名，release 包里就是 UnsatisfiedLinkError 且**只在装出来的包里复现**
+# （desktopRun 不做混淆）。这一条必须常驻。
+-keep class cp.player.core.playback.DesktopHiResEngine { *; }
+-keepclasseswithmembernames class cp.player.core.playback.DesktopHiResEngine { native <methods>; }
 
 # ---------------------------------------------------------------------------
-# 7. Linux DBus / MPRIS 媒体控制集成 (JMTC & DBus-Java 5.x)
-# ---------------------------------------------------------------------------
-# JMTC 在 Linux 上依赖 com.github.hypfvieh:dbus-java-core 及 native-unixsocket 传输。
-# DBus 传输实现依赖 ServiceLoader.load(ITransportProvider.class)，必须保留实现类。
--keep class io.github.selemba1000.** { *; }
--keep class org.freedesktop.dbus.** { *; }
--keep class com.github.hypfvieh.** { *; }
--dontwarn io.github.selemba1000.**
--dontwarn org.freedesktop.dbus.**
--dontwarn com.github.hypfvieh.**
-
-# ---------------------------------------------------------------------------
-# 8. QuickJS 脚本引擎 (原生 JNI 符号与方法)
+# 6. QuickJS 脚本引擎 (原生 JNI 符号与方法)
 # ---------------------------------------------------------------------------
 -keep class com.dokar.quickjs.** { *; }
 -keepclasseswithmembernames class com.dokar.quickjs.** { native <methods>; }

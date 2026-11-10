@@ -79,9 +79,6 @@ shizuku = "13.1.5"
 # HiddenApiBypass：豁免隐藏 API 限制（`IConnectivityManager` 的 TRANSACTION_* 常量、
 # `ServiceManager.getService` 都要反射读）。**进程级、非永久**，进程重建后要重装。
 hiddenApiBypass = "6.1"
-jmtc = "0.0.3"
-# jna-platform 用于 SMTC 应用身份注册（AUMID / 开始菜单快捷方式），版本对齐 JMTC 传递的 jna。
-jna = "5.19.1"
 accompanist-lyrics-ui = "2.0.0-rc.2"
 accompanist-lyrics-core = "0.5.0"
 # ⚠️ material-kolor 必须与上面的 compose 行保持一致：5.0.0 依赖 compose 1.11.1，
@@ -187,11 +184,9 @@ shizuku-api = { module = "dev.rikka.shizuku:api", version.ref = "shizuku" }
 shizuku-provider = { module = "dev.rikka.shizuku:provider", version.ref = "shizuku" }
 # 隐藏 API 豁免（Apache-2.0）。
 hidden-api-bypass = { module = "org.lsposed.hiddenapibypass:hiddenapibypass", version.ref = "hiddenApiBypass" }
-jmtc = { module = "io.github.selemba1000:JavaMediaTransportControls", version.ref = "jmtc" }
-jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
-jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
 sentry-android = { module = "io.sentry:sentry-android", version.ref = "sentry" }
 sentry-android-core = { module = "io.sentry:sentry-android-core", version.ref = "sentry" }
+sentry-android-ndk = { module = "io.sentry:sentry-android-ndk", version.ref = "sentry" }
 sentry-core = { module = "io.sentry:sentry", version.ref = "sentry" }
 
 [plugins]
