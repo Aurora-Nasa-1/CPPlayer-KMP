@@ -176,4 +176,59 @@ class DesktopPeqMapperTest {
         val on = DesktopPeqMapper.fxPlan(MixerConfig(balance = 0.2f))
         assertTrue(off.signature() != on.signature())
     }
+
+    // ============================ 动态处理 ============================
+
+    @Test
+    fun `dynamics plan is off when the whole chain or leveling is disabled`() {
+        assertFalse(DesktopPeqMapper.dynamicsPlan(LevelingConfig(enabled = true), overallEnabled = false).compressorEnabled)
+        assertFalse(DesktopPeqMapper.dynamicsPlan(LevelingConfig(enabled = false), overallEnabled = true).compressorEnabled)
+        assertFalse(DesktopPeqMapper.dynamicsPlan(LevelingConfig(enabled = false), overallEnabled = true).limiterEnabled)
+    }
+
+    @Test
+    fun `dynamics plan maps target loudness to compressor threshold`() {
+        val plan = DesktopPeqMapper.dynamicsPlan(
+            LevelingConfig(enabled = true, targetLevelDb = -12f, preventClipping = true),
+            overallEnabled = true,
+        )
+        assertTrue(plan.compressorEnabled)
+        assertEquals(-12f, plan.thresholdDb, 1e-6f)
+        assertEquals(6f, plan.makeupGainDb, 1e-6f, "只补回被压掉的一半，不能全补回去等于没压")
+        assertTrue(plan.limiterEnabled)
+    }
+
+    @Test
+    fun `prevent clipping controls only the limiter`() {
+        val plan = DesktopPeqMapper.dynamicsPlan(
+            LevelingConfig(enabled = true, preventClipping = false),
+            overallEnabled = true,
+        )
+        assertTrue(plan.compressorEnabled, "关掉防爆音不应连带关掉响度均衡")
+        assertFalse(plan.limiterEnabled)
+    }
+
+    @Test
+    fun `dynamics plan clamps target level and makeup gain`() {
+        val quiet = DesktopPeqMapper.dynamicsPlan(
+            LevelingConfig(enabled = true, targetLevelDb = -100f), overallEnabled = true,
+        )
+        assertEquals(LevelingConfig.TARGET_LEVEL_MIN_DB, quiet.thresholdDb, 1e-6f)
+        assertEquals(6f, quiet.makeupGainDb, 1e-6f)
+
+        val loud = DesktopPeqMapper.dynamicsPlan(
+            LevelingConfig(enabled = true, targetLevelDb = 20f), overallEnabled = true,
+        )
+        assertEquals(LevelingConfig.TARGET_LEVEL_MAX_DB, loud.thresholdDb, 1e-6f)
+        assertEquals(0f, loud.makeupGainDb, 1e-6f)
+    }
+
+    @Test
+    fun `dynamics signature changes with target level`() {
+        val a = DesktopPeqMapper.dynamicsPlan(LevelingConfig(enabled = true, targetLevelDb = -6f), true)
+        val b = DesktopPeqMapper.dynamicsPlan(LevelingConfig(enabled = true, targetLevelDb = -6f), true)
+        val c = DesktopPeqMapper.dynamicsPlan(LevelingConfig(enabled = true, targetLevelDb = -9f), true)
+        assertEquals(a.signature(), b.signature())
+        assertTrue(a.signature() != c.signature())
+    }
 }

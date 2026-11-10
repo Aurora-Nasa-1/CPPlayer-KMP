@@ -1,5 +1,7 @@
-# 临时脚手架：为本机非标准路径的 MSVC 工具链准备 cargo 构建环境。用完即删。
+# 本机构建辅助：为非标准路径的 MSVC 工具链准备 cargo 构建环境。
 # VS 装在 E:\project\build（不在 C:\Program Files），Windows SDK 是 10.0.26100.0。
+# 用法（在仓库根执行）：source rust-msvc-env.sh && cd native/flick-player-engine && cargo build --release --offline --lib
+# 详见 docs/dev/FLICK_ENGINE.md §6。
 VC="E:/project/build/VC/Tools/MSVC/14.51.36231"
 SDK="C:/Program Files (x86)/Windows Kits/10"
 SDKV="10.0.26100.0"

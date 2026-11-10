@@ -28,6 +28,7 @@
 # ---------------------------------------------------------------------------
 -keep class cp.player.app.** { *; }
 -keep class cp.player.core.** { *; }
+-keep class cp.player.sdk.** { *; }
 -keepclassmembers class cp.player.** {
     java.lang.String getLoadError();
 }
