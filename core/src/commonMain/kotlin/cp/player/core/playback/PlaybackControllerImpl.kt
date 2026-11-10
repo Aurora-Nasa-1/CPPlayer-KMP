@@ -562,6 +562,17 @@ class PlaybackControllerImpl(
     override val audioEffectCapabilities: AudioEffectCapabilities
         get() = platform.audioEffectCapabilities
 
+    override val supportsPlaybackSpeed: Boolean
+        get() = platform.supportsPlaybackSpeed
+
+    override fun setPlaybackSpeed(speed: Float) {
+        val clamped = speed.coerceIn(0.25f, 4.0f)
+        platform.setPlaybackSpeed(clamped)
+        // 只写用户设定的值；不支持的平台能力位为 false，UI 根本不会调到，
+        // 所以这里不需要「引擎是否真的接受」的回读。
+        updateState { it.copy(playbackSpeed = clamped) }
+    }
+
     override fun setFade(config: FadeConfig) {
         fadeController.setFade(config)
     }

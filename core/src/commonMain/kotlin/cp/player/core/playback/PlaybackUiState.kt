@@ -58,4 +58,13 @@ data class PlaybackUiState(
     val sourceQualityKey: String? = null,
     /** 音源声明的自定义音质展示文案（如 "Hi-Res 无损", "臻品母带"），null 时前端回退原生文案。 */
     val sourceQualityLabel: String? = null,
+    /**
+     * 当前播放速度，`1.0` = 原速。
+     *
+     * 放在参数表**末尾**：这个 data class 有二十来项，新字段插在中间会让
+     * 「按位置传参」的既有构造点静默错位（见 [volume] 的 KDoc）。
+     * 前端必须配合 [cp.player.core.playback.PlaybackController.supportsPlaybackSpeed]
+     * 决定是否显示倍速控件 —— 不支持的引擎上不给一排无效按钮。
+     */
+    val playbackSpeed: Float = 1f,
 )

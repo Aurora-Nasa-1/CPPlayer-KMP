@@ -203,6 +203,10 @@ class DynamicDesktopPlatformPlayer(
         }
         player.setVolume(lastVolume)
         lastEffectConfig?.let { player.applyAudioEffect(it) }
+        // 热切换（标准 ↔ 独占、VIP 状态变化）之后引擎是全新的，
+        // 用户之前设过的倍速与淡化必须重放，否则一换引擎就悄悄回原速。
+        lastPlaybackSpeed?.let { player.setPlaybackSpeed(it) }
+        lastCrossfade?.let { (enabled, durationMs) -> player.setNativeCrossfade(enabled, durationMs) }
     }
 
     private fun switchEngine(target: DesktopPlayerEngineType) {
@@ -282,6 +286,20 @@ class DynamicDesktopPlatformPlayer(
     override fun applyAudioEffect(config: AudioEffectConfig) {
         lastEffectConfig = config
         activePlayer.applyAudioEffect(config)
+    }
+
+    override fun setPlaybackSpeed(speed: Float) {
+        lastPlaybackSpeed = speed
+        activePlayer.setPlaybackSpeed(speed)
+    }
+
+    override fun queueNext(source: String, headers: Map<String, String>) {
+        activePlayer.queueNext(source, headers)
+    }
+
+    override fun setNativeCrossfade(enabled: Boolean, durationMs: Long) {
+        lastCrossfade = enabled to durationMs
+        activePlayer.setNativeCrossfade(enabled, durationMs)
     }
 
     override fun reloadEngine() {

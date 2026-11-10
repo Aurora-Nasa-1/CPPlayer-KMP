@@ -27,6 +27,17 @@ internal class PlaybackFadeController(
     @Volatile
     private var fadeOutStartedFor: String? = null
 
+    /**
+     * 引擎自己能做真交叉淡化（双解码源重叠）时，宿主的音量斜坡必须**完全让位**。
+     *
+     * 两套机制同时改音量会「淡出两次」，而且引擎那套还会自己起下一个源，
+     * 宿主再补一次 fade-in 只会把它压掉。所以这里不是「优先级」而是**互斥**：
+     * native 模式下 3. 的曲末淡出、切歌淡入全部 no-op，音量始终等于 [userVolume]。
+     *
+     * 用 getter 而不是构造时快照：引擎可能在设置页读能力位之后才完成 init。
+     */
+    private val useNativeCrossfade: Boolean get() = platform.supportsNativeCrossfade
+
     private val fadeRunner: FadeRunner = FadeRunner(
         scope = scope,
         apply = { v -> platform.setVolume(v.coerceIn(0f, 1f)) },
@@ -43,6 +54,12 @@ internal class PlaybackFadeController(
     fun setFade(config: FadeConfig) {
         fadeConfig = config
         fadeSettings?.let { FadeSettings.write(it, config) }
+        if (useNativeCrossfade) {
+            // 把配置整体转交引擎（含关闭），宿主不再碰音量。
+            fadeRunner.cancel()
+            platform.setNativeCrossfade(config.enabled, config.durationMsClamped.toLong())
+            return
+        }
         if (!config.enabled) {
             fadeRunner.cancel()
             platform.setVolume(userVolume)
@@ -55,6 +72,7 @@ internal class PlaybackFadeController(
     }
 
     fun startFadeIn() {
+        if (useNativeCrossfade) return
         val cfg = fadeConfig
         if (!cfg.enabled || !cfg.fadeIn) {
             fadeRunner.cancel()

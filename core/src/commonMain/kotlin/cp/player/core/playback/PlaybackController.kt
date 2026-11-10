@@ -164,6 +164,24 @@ interface PlaybackController {
      */
     fun setAudioEffect(config: AudioEffectConfig) {}
 
+    // ============ 播放速度 ============
+
+    /**
+     * 当前平台是否支持变速播放。
+     *
+     * 默认 false：测试假播放器、静止输出、Android 侧（未接变速）都不必实现。
+     * 桌面 FlickEngine 在 apiLevel ≥ 2 时返回 true —— 与 `audioEffectCapabilities`
+     * 同一套「先声明能力、再显示控件」的规矩，别让不支持的平台出现无效按钮。
+     */
+    val supportsPlaybackSpeed: Boolean get() = false
+
+    /**
+     * 设置播放速度，`1.0` = 原速，实现自行夹紧范围。不支持时静默忽略。
+     *
+     * 默认空实现，理由同 [setPreloadNext]。
+     */
+    fun setPlaybackSpeed(speed: Float) {}
+
     // ============ 淡入淡出 ============
 
     /**

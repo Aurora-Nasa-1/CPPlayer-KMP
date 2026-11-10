@@ -155,7 +155,10 @@ internal class PlaybackMediaLoader(
             return
         }
         val local = localized?.takeIf { it.first == mediaId }?.second
-        if (local != null && !playingFromLocal) {
+        // 引擎能直接定位 http(s) 流时，不要再为了「让拖动生效」而把播放源切成本地副本：
+        // 那会重新 load 一次、打断正在播的流并产生咔哒。切本地是旧引擎
+        // （FLAC over HTTP 无法 seek）时代的兜底，现在只在它确实做不到时启用。
+        if (local != null && !playingFromLocal && !platform.supportsSeekableRemoteStreams) {
             playingFromLocal = true
             engineReady = false
             deferredSeek = null
@@ -494,7 +497,11 @@ internal class PlaybackMediaLoader(
                 platform.play()
                 fadeController.startFadeIn()
                 persistSession()
-                if (localizing && cachedLocal == null && !isLocalFile) {
+                // 直连流已经可 seek ⇒ 不必再为「拖动可用」偷偷把整首歌下到磁盘。
+                // 省下的是无损单曲几十 MB 的流量与磁盘寿命，也避免 LRU 把别的缓存挤掉。
+                if (localizing && cachedLocal == null && !isLocalFile &&
+                    !platform.supportsSeekableRemoteStreams
+                ) {
                     startBackgroundLocalize(
                         mediaId = mediaId,
                         cacheKey = cacheKey,
