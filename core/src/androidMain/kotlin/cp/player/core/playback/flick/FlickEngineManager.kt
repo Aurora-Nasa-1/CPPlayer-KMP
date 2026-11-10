@@ -10,6 +10,7 @@ import cp.player.core.playback.Media3PlatformPlayer
 import cp.player.core.playback.PlatformPlaybackState
 import cp.player.core.playback.PlatformPlayer
 import cp.player.core.playback.PlaybackMetadata
+import cp.player.core.playback.NativeTrackTransition
 import cp.player.core.playback.PlaybackSessionSettings
 import cp.player.core.playback.SeekFailure
 import cp.player.core.util.SettingsStorage
@@ -116,6 +117,15 @@ class DynamicAndroidPlatformPlayer(
 
     private var lastVolume: Float = 1.0f
     private var lastEffectConfig: AudioEffectConfig? = null
+    private var lastPlaybackSpeed: Float? = null
+    private var lastCrossfade: Pair<Boolean, Long>? = null
+
+    override val supportsPlaybackSpeed: Boolean get() = activePlayer.supportsPlaybackSpeed
+    override val playbackSpeed: Float get() = activePlayer.playbackSpeed
+    override val supportsNativeCrossfade: Boolean get() = activePlayer.supportsNativeCrossfade
+    override val supportsGaplessQueue: Boolean get() = activePlayer.supportsGaplessQueue
+    override val nativeTrackTransitions: StateFlow<NativeTrackTransition?> get() = activePlayer.nativeTrackTransitions
+    override val supportsSeekableRemoteStreams: Boolean get() = activePlayer.supportsSeekableRemoteStreams
 
     init {
         bindUnderlyingPlayer(activePlayer)
@@ -175,6 +185,8 @@ class DynamicAndroidPlatformPlayer(
         }
         player.setVolume(lastVolume)
         lastEffectConfig?.let { player.applyAudioEffect(it) }
+        lastPlaybackSpeed?.let { player.setPlaybackSpeed(it) }
+        lastCrossfade?.let { player.setNativeCrossfade(it.first, it.second) }
     }
 
     private fun switchEngine(target: AndroidPlayerEngineType) {
@@ -251,6 +263,20 @@ class DynamicAndroidPlatformPlayer(
     override fun applyAudioEffect(config: AudioEffectConfig) {
         lastEffectConfig = config
         activePlayer.applyAudioEffect(config)
+    }
+
+    override fun setPlaybackSpeed(speed: Float) {
+        lastPlaybackSpeed = speed
+        activePlayer.setPlaybackSpeed(speed)
+    }
+
+    override fun setNativeCrossfade(enabled: Boolean, durationMs: Long) {
+        lastCrossfade = enabled to durationMs
+        activePlayer.setNativeCrossfade(enabled, durationMs)
+    }
+
+    override fun queueNext(mediaId: String, source: String, headers: Map<String, String>) {
+        activePlayer.queueNext(mediaId, source, headers)
     }
 
     override fun reloadEngine() {

@@ -131,3 +131,8 @@
 
 
 
+# FlickEngine：JNI 名称在 Rust 导出符号中写死，不能混淆或删除。
+-keep class cp.player.engine.RustEngine {
+    native <methods>;
+}
+

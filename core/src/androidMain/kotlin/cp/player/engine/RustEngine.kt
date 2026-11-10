@@ -56,6 +56,16 @@ object RustEngine {
     private const val TAG = "RustEngine"
     private const val LIB_NAME = "rust_lib_flick_player"
 
+    /**
+     * 进度轮询间隔（ms）。
+     *
+     * 引擎**不推送** Progress 事件（`AudioEvent::Progress` 在 Rust 侧从不被构造），
+     * 进度只能由宿主按节拍拉取 [getProgress] —— 漏掉这层轮询的表现是
+     * 「无总时长 + 进度条不动 + 拖动进度条无效」。与桌面
+     * `DesktopHiResEngine.startProgressPolling` 同一机制、同一节拍。
+     */
+    private const val PROGRESS_POLL_INTERVAL_MS = 100L
+
     private var _isAvailable = false
     val isAvailable: Boolean get() = _isAvailable
 
@@ -80,6 +90,7 @@ object RustEngine {
     val audioEvents: SharedFlow<AudioEvent> = _audioEvents.asSharedFlow()
 
     private var pollJob: Job? = null
+    private var progressJob: Job? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     init {
@@ -108,6 +119,7 @@ object RustEngine {
             if (success) {
                 isInitialized = true
                 startPolling()
+                startProgressPolling()
             }
             success
         } catch (e: Throwable) {
@@ -122,6 +134,59 @@ object RustEngine {
             nativePlay(path)
         } catch (e: Throwable) {
             Log.e(TAG, "nativePlay failed for $path", e)
+            false
+        }
+    }
+
+    fun playUrl(url: String, headers: Map<String, String> = emptyMap()): Boolean {
+        if (!isInitialized) return false
+        return try {
+            nativePlayUrl(url, flattenHeaders(headers))
+        } catch (e: Throwable) {
+            Log.e(TAG, "nativePlayUrl failed", e)
+            false
+        }
+    }
+
+    fun queueNext(path: String): Boolean {
+        if (!isInitialized) return false
+        return try { nativeQueueNext(path) } catch (e: Throwable) {
+            Log.e(TAG, "nativeQueueNext failed", e)
+            false
+        }
+    }
+
+    fun queueNextUrl(url: String, headers: Map<String, String> = emptyMap()): Boolean {
+        if (!isInitialized) return false
+        return try { nativeQueueNextUrl(url, flattenHeaders(headers)) } catch (e: Throwable) {
+            Log.e(TAG, "nativeQueueNextUrl failed", e)
+            false
+        }
+    }
+
+    fun setPlaybackSpeed(speed: Float): Boolean {
+        if (!isInitialized) return false
+        return try {
+            nativeSetPlaybackSpeed(speed.coerceIn(0.25f, 4.0f))
+        } catch (e: Throwable) {
+            false
+        }
+    }
+
+    fun getPlaybackSpeed(): Float {
+        if (!isInitialized) return 1f
+        return try {
+            nativeGetPlaybackSpeed().takeIf { it.isFinite() && it > 0f } ?: 1f
+        } catch (e: Throwable) {
+            1f
+        }
+    }
+
+    fun setCrossfade(enabled: Boolean, durationSecs: Float): Boolean {
+        if (!isInitialized) return false
+        return try {
+            nativeSetCrossfade(enabled, durationSecs.coerceAtLeast(0f))
+        } catch (e: Throwable) {
             false
         }
     }
@@ -235,6 +300,8 @@ object RustEngine {
     fun stopEngine() {
         pollJob?.cancel()
         pollJob = null
+        progressJob?.cancel()
+        progressJob = null
         if (isInitialized) {
             try {
                 nativeStop()
@@ -300,6 +367,15 @@ object RustEngine {
         }
     }
 
+    fun waitDirectUsbSessionStopped(timeoutMs: Int): Boolean {
+        if (!isInitialized) return true
+        return try {
+            nativeWaitRustDirectUsbSessionStopped(timeoutMs)
+        } catch (e: Throwable) {
+            false
+        }
+    }
+
     fun isRustDirectUsbSessionActive(): Boolean {
         if (!isInitialized) return false
         return try {
@@ -323,6 +399,31 @@ object RustEngine {
                 } catch (e: Throwable) {
                     delay(500)
                 }
+            }
+        }
+    }
+
+    /**
+     * 进度轮询：把 [getProgress] 的结果按节拍转成 [AudioEvent.Progress] 事件。
+     *
+     * 引擎的事件流里**永远没有** Progress（Rust 侧从不构造），`FlickPlatformPlayer`
+     * 的时长/位置/seek 对账又全挂在 `audioEvents` 上 —— 必须在这里合成事件，
+     * 与桌面 `DesktopHiResEngine.startProgressPolling` 同一机制。
+     */
+    private fun startProgressPolling() {
+        if (progressJob?.isActive == true) return
+        progressJob = scope.launch {
+            while (isActive) {
+                try {
+                    val progress = getProgress()
+                    if (progress != null) {
+                        _engineProgress.value = progress
+                        _audioEvents.tryEmit(progress)
+                    }
+                } catch (_: Throwable) {
+                    // 单次拉取失败不影响下一轮（引擎切换/释放瞬间的竞态）。
+                }
+                delay(PROGRESS_POLL_INTERVAL_MS)
             }
         }
     }
@@ -383,6 +484,9 @@ object RustEngine {
     private external fun nativeInit(): Boolean
     private external fun nativeInitRustAndroidContext(context: Context): Boolean
     private external fun nativePlay(path: String): Boolean
+    private external fun nativePlayUrl(url: String, headers: Array<String>): Boolean
+    private external fun nativeQueueNext(path: String): Boolean
+    private external fun nativeQueueNextUrl(url: String, headers: Array<String>): Boolean
     private external fun nativePause(): Boolean
     private external fun nativeResume(): Boolean
     private external fun nativeStop(): Boolean
@@ -397,6 +501,9 @@ object RustEngine {
     private external fun nativeGetState(): String
     private external fun nativeGetProgress(): String?
     private external fun nativePollEvent(): String?
+    private external fun nativeSetPlaybackSpeed(speed: Float): Boolean
+    private external fun nativeGetPlaybackSpeed(): Float
+    private external fun nativeSetCrossfade(enabled: Boolean, durationSecs: Float): Boolean
 
     private external fun nativeSetDsdOutputMode(mode: Int): Boolean
     private external fun nativeSetDapBitPerfectEnabled(enabled: Boolean): Boolean
@@ -406,5 +513,9 @@ object RustEngine {
         manufacturer: String?, serial: String?, deviceName: String?,
     ): Boolean
     private external fun nativeClearRustDirectUsbPlayback(): Boolean
+    private external fun nativeWaitRustDirectUsbSessionStopped(timeoutMs: Int): Boolean
     private external fun nativeIsRustDirectUsbSessionActive(): Boolean
+
+    private fun flattenHeaders(headers: Map<String, String>): Array<String> =
+        headers.flatMap { (key, value) -> listOf(key, value) }.toTypedArray()
 }

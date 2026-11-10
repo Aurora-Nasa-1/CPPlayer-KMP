@@ -6,12 +6,15 @@ import cp.player.core.playback.AudioEffectCapabilities
 import cp.player.core.playback.AudioEffectConfig
 import cp.player.core.playback.AudioFormatInfo
 import cp.player.core.playback.DesktopStreamLocalizer
+import cp.player.core.playback.FlickPeqMapper
 import cp.player.core.playback.PendingSeekTracker
 import cp.player.core.playback.PlatformPlaybackState
 import cp.player.core.playback.PlatformPlayer
 import cp.player.core.playback.PlaybackMetadata
+import cp.player.core.playback.NativeTrackTransition
+import cp.player.core.playback.isNativeQueuedTrackEnding
 import cp.player.core.playback.SeekFailure
-import cp.player.core.playback.SongCacheMeta
+import cp.player.core.playback.SeekOrigin
 import cp.player.core.playback.StreamLocalizer
 import cp.player.engine.AudioEvent
 import cp.player.engine.RustEngine
@@ -70,6 +73,39 @@ class FlickPlatformPlayer(
     override val seekFailures: SharedFlow<SeekFailure> = _seekFailures.asSharedFlow()
 
     override val supportsExclusiveAudio: Boolean get() = true
+    override val supportsSeekableRemoteStreams: Boolean get() = true
+    override val supportsPlaybackSpeed: Boolean get() = true
+    override val playbackSpeed: Float get() = RustEngine.getPlaybackSpeed()
+    override val supportsNativeCrossfade: Boolean get() = true
+    override val supportsGaplessQueue: Boolean get() = true
+
+    private val _nativeTrackTransitions = MutableStateFlow<NativeTrackTransition?>(null)
+    override val nativeTrackTransitions: StateFlow<NativeTrackTransition?> = _nativeTrackTransitions.asStateFlow()
+    private var nativeTransitionSequence = 0L
+    private var currentMediaId: String? = null
+    private val queuedMediaIds = mutableMapOf<String, String>()
+
+    override fun queueNext(mediaId: String, source: String, headers: Map<String, String>) {
+        queuedMediaIds[source] = mediaId
+        scope.launch(RustEngine.engineDispatcher) {
+            val ok = if (source.startsWith("http://", true) || source.startsWith("https://", true)) {
+                RustEngine.queueNextUrl(source, headers)
+            } else {
+                RustEngine.queueNext(source)
+            }
+            if (!ok) Log.w(TAG, "Unable to queue next source for native transition")
+        }
+    }
+
+    override fun setPlaybackSpeed(speed: Float) {
+        scope.launch(RustEngine.engineDispatcher) { RustEngine.setPlaybackSpeed(speed) }
+    }
+
+    override fun setNativeCrossfade(enabled: Boolean, durationMs: Long) {
+        scope.launch(RustEngine.engineDispatcher) {
+            RustEngine.setCrossfade(enabled, durationMs.coerceAtLeast(0L) / 1000f)
+        }
+    }
 
     override val audioEffectCapabilities = AudioEffectCapabilities(
         supportsEqualizer = true,
@@ -104,6 +140,9 @@ class FlickPlatformPlayer(
             _state.value = PlatformPlaybackState.Error("Hi-Res Engine native library not available")
         } else {
             observeRustEvents()
+            scope.launch(RustEngine.engineDispatcher) {
+                lifecycleManager.scanForUsbAudioDevices()
+            }
         }
     }
 
@@ -115,7 +154,9 @@ class FlickPlatformPlayer(
                     is AudioEvent.StateChanged -> handleStateChanged(event.state)
                     is AudioEvent.Progress -> handleProgress(event)
                     is AudioEvent.FormatChanged -> handleFormatChanged(event)
-                    is AudioEvent.TrackEnded -> handleTrackEnded()
+                    is AudioEvent.TrackEnded -> handleTrackEnded(event.path)
+                    is AudioEvent.CrossfadeStarted -> handleNativeTransition(event.toPath)
+                    is AudioEvent.NextTrackReady -> handleNativeTransition(event.path)
                     is AudioEvent.Error -> handleError(event.message)
                     else -> {}
                 }
@@ -130,6 +171,15 @@ class FlickPlatformPlayer(
             "buffering" -> PlatformPlaybackState.Buffering
             "idle", "stopped" -> PlatformPlaybackState.Idle
             else -> _state.value
+        }
+        // ⚠️ 引擎播完时先发 TrackEnded 紧跟 StateChanged(Stopped)，StateFlow 合并
+        // 快速赋值会让 Ended 被 Idle 吞掉 ⇒ onTrackEnded() 不触发、播完不切下一首。
+        // 与 PlatformPlayer.android.kt 的 STATE_ENDED 保护同构：Ended 只能被
+        // Playing/Buffering（新曲开始）覆写，不能被 Idle/Paused 吞掉。
+        if (_state.value == PlatformPlaybackState.Ended &&
+            (newState == PlatformPlaybackState.Idle || newState == PlatformPlaybackState.Paused)
+        ) {
+            return
         }
         _state.value = newState
     }
@@ -172,6 +222,20 @@ class FlickPlatformPlayer(
         _state.value = PlatformPlaybackState.Ended
     }
 
+    private fun handleTrackEnded(path: String) {
+        if (isNativeQueuedTrackEnding(currentMediaId, queuedMediaIds, path)) return
+        handleTrackEnded()
+    }
+
+    private fun handleNativeTransition(path: String) {
+        val mediaId = queuedMediaIds[path] ?: return
+        seekTracker.cancel()
+        val previous = currentMediaId
+        currentMediaId = mediaId
+        _positionMs.value = 0L
+        _nativeTrackTransitions.value = NativeTrackTransition(mediaId, previous, ++nativeTransitionSequence)
+    }
+
     private fun handleError(message: String) {
         Log.e(TAG, "Rust engine playback error: $message")
         _state.value = PlatformPlaybackState.Error(message)
@@ -183,44 +247,40 @@ class FlickPlatformPlayer(
         headers: Map<String, String>,
         metadata: PlaybackMetadata?,
     ) {
+        queuedMediaIds.clear()
+        currentMediaId = metadata?.id
         currentUrl = url
         seekTracker.cancel()
         _durationMs.value = metadata?.durationMs ?: 0L
         _positionMs.value = startPositionMs
         _state.value = PlatformPlaybackState.Buffering
 
-        val playablePath = resolvePlayablePath(url, headers, metadata)
         withContext(RustEngine.engineDispatcher) {
-            val ok = RustEngine.play(playablePath)
+            val isHttp = url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true)
+            val playablePath = if (isHttp) {
+                val cacheKey = metadata?.cacheKey?.takeIf { it.isNotBlank() } ?: url
+                localizer.cachedPath(cacheKey)
+            } else {
+                url
+            }
+            val ok = if (playablePath != null) {
+                RustEngine.play(playablePath)
+            } else {
+                val direct = RustEngine.playUrl(url, headers)
+                if (direct || !isHttp) direct else {
+                    val cacheKey = metadata?.cacheKey?.takeIf { it.isNotBlank() } ?: url
+                    val cached = localizer.cachedPath(cacheKey)
+                    val fallback = cached ?: localizer.localize(url, cacheKey, headers, null)
+                    fallback?.let(RustEngine::play) ?: false
+                }
+            }
+            val source = playablePath ?: url
             if (!ok) {
-                _state.value = PlatformPlaybackState.Error("Failed to open source in Hi-Res engine: $playablePath")
+                _state.value = PlatformPlaybackState.Error("Failed to open source in Hi-Res engine: $source")
             } else if (startPositionMs > 0L) {
-                RustEngine.seek(startPositionMs / 1000.0)
+                seekTracker.request(startPositionMs, engineReady = false, origin = SeekOrigin.START_POSITION)
             }
         }
-    }
-
-    private suspend fun resolvePlayablePath(
-        url: String,
-        headers: Map<String, String>,
-        metadata: PlaybackMetadata?,
-    ): String {
-        if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) {
-            return url
-        }
-
-        val cacheKey = metadata?.cacheKey?.takeIf { it.isNotBlank() } ?: url
-        val cached = localizer.cachedPath(cacheKey)
-        if (cached != null) {
-            return cached
-        }
-
-        val meta = SongCacheMeta(title = metadata?.title, artist = metadata?.artist)
-        val localized = localizer.localize(url, cacheKey, headers, meta)
-        if (localized != null) {
-            return localized
-        }
-        return url
     }
 
     override fun play() {
@@ -244,7 +304,8 @@ class FlickPlatformPlayer(
     }
 
     override fun seekTo(positionMs: Long) {
-        val clamped = positionMs.coerceIn(0L, _durationMs.value.coerceAtLeast(0L))
+        val duration = _durationMs.value
+        val clamped = if (duration > 0L) positionMs.coerceIn(0L, duration) else positionMs.coerceAtLeast(0L)
         val isReady = _state.value == PlatformPlaybackState.Playing || _state.value == PlatformPlaybackState.Paused
         seekTracker.request(clamped, isReady)
         _positionMs.value = clamped
@@ -284,27 +345,17 @@ class FlickPlatformPlayer(
         if (!RustEngine.isAvailable) return
 
         scope.launch(RustEngine.engineDispatcher) {
-            // 1. 同步参数均衡器 (PEQ)
-            if (config.equalizer.enabled && config.equalizer.bands.isNotEmpty()) {
-                val bands = config.equalizer.bands
-                val freqs = FloatArray(bands.size) { bands[it].frequencyHz.toFloat() }
-                val gains = FloatArray(bands.size) { bands[it].gainDb }
-                val qs = FloatArray(bands.size) { 1.0f } // 默认标准 Q
-                RustEngine.setEqualizer(true, freqs, gains, qs)
-            } else {
-                RustEngine.setEqualizer(false, floatArrayOf(), floatArrayOf(), floatArrayOf())
-            }
-
-            // 2. 同步声相平衡与空间效果
-            if (config.mixer.balance != 0f || config.mixer.virtualizerStrength != 0f) {
-                RustEngine.setFx(
-                    enabled = true,
-                    balance = config.mixer.balance,
-                    width = 1.0f + (config.mixer.virtualizerStrength * 0.5f),
-                )
-            } else {
-                RustEngine.setFx(enabled = false, balance = 0f)
-            }
+            val peq = FlickPeqMapper.peqPlan(config.equalizer)
+            RustEngine.setEqualizer(peq.active, peq.freqsHz, peq.gainsDb, peq.qs)
+            val fx = FlickPeqMapper.fxPlan(config.mixer)
+            RustEngine.setFx(
+                enabled = fx.enabled,
+                balance = fx.balance,
+                width = fx.width,
+                mix = FlickPeqMapper.CLEAN_FX_MIX,
+                feedback = FlickPeqMapper.CLEAN_FX_FEEDBACK,
+                damp = FlickPeqMapper.CLEAN_FX_DAMP,
+            )
         }
     }
 }
