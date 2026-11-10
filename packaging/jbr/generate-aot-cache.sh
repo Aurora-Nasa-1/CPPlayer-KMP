@@ -53,14 +53,22 @@ fi
 
 if [[ ! -d "$APP_DIR" || ! -f "$APP_DIR/CPPlayer.cfg" ]]; then
     echo "[2/4] Assembling distributable image..."
+    # 按脚本实际使用的 java 决定打包参数：JBR 21 没有分代 Shenandoah（JDK 24+）
+    # 也没有 Compact Object Headers，硬塞 JDK 25 参数会让生成的启动器和 AOT 训练
+    # 在 VM 初始化阶段就失败。
+    JAVA_VERSION_OUTPUT="$("$JAVA_BIN" -version 2>&1)"
+    JAVA_MAJOR="$(sed -nE '1s/.*version "([0-9]+).*/\1/p' <<<"$JAVA_VERSION_OUTPUT")"
+    JAVA_MAJOR="${JAVA_MAJOR:-0}"
     GRADLE_ARGS=(
         ":app:createDistributable"
-        "-Pcp.jdk25=true"
-        "-Pcp.gc=shenandoah"
-        "-Pcp.compactHeaders=true"
         "-x" "test"
         "--quiet"
     )
+    if (( JAVA_MAJOR >= 25 )); then
+        GRADLE_ARGS+=("-Pcp.gc=shenandoah" "-Pcp.compactHeaders=true")
+    else
+        GRADLE_ARGS+=("-Pcp.gc=g1")
+    fi
     if [[ -n "${CP_JBR_HOME:-}" ]]; then
         GRADLE_ARGS+=("-Pcp.jbrHome=$CP_JBR_HOME")
     fi
@@ -108,25 +116,33 @@ echo "  Effective classpath: $EFFECTIVE_CP"
 echo "[3/4] Performing AOT training run..."
 rm -f "$OUTPUT_FILE"
 
-JVM_ARGS=(
-    "-XX:+UnlockExperimentalVMOptions"
-    "-XX:+UseShenandoahGC"
-    "-XX:ShenandoahGCMode=generational"
-    "-XX:+ShenandoahUncommit"
-    "-XX:+UseCompactObjectHeaders"
-    "--enable-native-access=ALL-UNNAMED"
-    "-Xms64m"
-    "-Xmx256m"
-    "-Dskiko.library.path=$APP_DIR"
-    "-Dcp.player.aotWarmup=true"
-    "-Dcp.player.releaseChannel=$RELEASE_CHANNEL"
-)
-if [[ -n "$VERSION_NAME" ]]; then
-    JVM_ARGS+=("-Dcp.player.versionName=$VERSION_NAME")
+# ⚠️ AOT 训练必须使用**与生产启动器完全一致**的 VM 参数：CPPlayer.cfg 的
+# [JavaOptions] 就是 jpackage 启动器的真值。硬编码一套参数会再次把 Windows 的
+# JDK 25 参数带进 Linux 的 JBR 21（`Unknown -XX:ShenandoahGCMode option`），
+# 而且训练/运行时参数不一致时 AOT 缓存会被 HotSpot 拒绝复用。
+JVM_ARGS=()
+if [[ -f "$CFG_FILE" ]]; then
+    while IFS= read -r line; do
+        case "$line" in
+            java-options=*)
+                opt="${line#java-options=}"
+                opt="${opt//\$APPDIR/$APP_DIR}"
+                # 旧镜像里可能已有上次注入的 AOT 参数，带进训练会与本次录制冲突。
+                case "$opt" in
+                    -XX:AOTCache=*|-XX:AOTCacheOutput=*|-XX:AOTMode=*|-XX:AOTConfiguration=*) continue ;;
+                esac
+                JVM_ARGS+=("$opt")
+                ;;
+        esac
+    done < "$CFG_FILE"
+else
+    JVM_ARGS+=(
+        "--enable-native-access=ALL-UNNAMED"
+        "-Xms64m"
+        "-Xmx256m"
+    )
 fi
-if "$JAVA_BIN" --enable-preview -version &>/dev/null; then
-    JVM_ARGS+=("--enable-preview")
-fi
+JVM_ARGS+=("-Dcp.player.aotWarmup=true")
 JVM_ARGS+=("-cp" "$EFFECTIVE_CP")
 
 # 无头 Linux 环境自动采用 xvfb-run 包裹图形上下文
@@ -165,14 +181,20 @@ if [[ -f "$OUTPUT_FILE" ]]; then
     echo "=========================================================="
 
     echo "  Validating archive mount with launcher classpath..."
-    VERIFY_ARGS=(
-        "-XX:AOTCache=$OUTPUT_FILE"
-        "-XX:+UnlockExperimentalVMOptions"
-        "-XX:+UseCompactObjectHeaders"
-        "--enable-native-access=ALL-UNNAMED"
-    )
-    if "$JAVA_BIN" --enable-preview -version &>/dev/null; then
-        VERIFY_ARGS+=("--enable-preview")
+    VERIFY_ARGS=("-XX:AOTCache=$OUTPUT_FILE")
+    if [[ -f "$CFG_FILE" ]]; then
+        while IFS= read -r line; do
+            case "$line" in
+                java-options=*)
+                    opt="${line#java-options=}"
+                    opt="${opt//\$APPDIR/$APP_DIR}"
+                    case "$opt" in
+                        -XX:AOTCache=*|-XX:AOTCacheOutput=*|-XX:AOTMode=*|-XX:AOTConfiguration=*) continue ;;
+                    esac
+                    VERIFY_ARGS+=("$opt")
+                    ;;
+            esac
+        done < "$CFG_FILE"
     fi
     VERIFY_ARGS+=("-cp" "$EFFECTIVE_CP" "-version")
     VERIFY_OUT="$("$JAVA_BIN" "${VERIFY_ARGS[@]}" 2>&1 || true)"

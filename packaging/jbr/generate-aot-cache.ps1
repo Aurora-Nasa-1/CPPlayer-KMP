@@ -118,12 +118,16 @@ if (-not (Test-Path (Join-Path $appDir "CPPlayer.cfg"))) {
         $gradleArgs = @(
             ":app:createDistributable",
             "-Pcp.jbrHome=$jbrDir",
-            "-Pcp.jdk25=true",
-            "-Pcp.gc=shenandoah",
-            "-Pcp.compactHeaders=true",
             "-x", "test",
             "--quiet"
         )
+        # JDK 21（官方 JBR 21）没有分代 Shenandoah 与 Compact Object Headers，
+        # 只有 JDK 25 才加这组参数，否则启动器与 AOT 训练都会在 VM 初始化阶段失败。
+        if ($isJdk25) {
+            $gradleArgs += @("-Pcp.gc=shenandoah", "-Pcp.compactHeaders=true")
+        } else {
+            $gradleArgs += "-Pcp.gc=g1"
+        }
         if ($VersionName) { $gradleArgs += "-Papp.versionName=$VersionName" }
         if ($ReleaseChannel) { $gradleArgs += "-Papp.releaseChannel=$ReleaseChannel" }
         ./gradlew @gradleArgs
@@ -150,30 +154,26 @@ if (Test-Path $cfgPath) {
         $matches[1].Replace('$APPDIR', 'app')
     }
     $effectiveClasspath = ($cpEntries -join ";")
+    # ⚠️ AOT 训练必须与生产启动器使用完全一致的 VM 参数：[JavaOptions] 就是
+    # jpackage 启动器的真值。硬编码参数会与 Linux 的 JBR 21 冲突，也会让训练与
+    # 运行时的参数不一致，导致 AOT 缓存被 HotSpot 拒绝复用。
+    Write-Host "  Reading exact JVM options from CPPlayer.cfg..." -ForegroundColor Gray
+    $launcherJvmArgs = @(
+        Get-Content $cfgPath |
+            Where-Object { $_ -match "^java-options=(.+)$" } |
+            ForEach-Object { $matches[1].Replace('$APPDIR', 'app') } |
+            Where-Object { $_ -notmatch "^-XX:AOT(Cache|CacheOutput|Mode|Configuration)=" }
+    )
 } else {
     $effectiveClasspath = "app/*"
+    $launcherJvmArgs = @(
+        "--enable-native-access=ALL-UNNAMED",
+        "-Xms64m",
+        "-Xmx256m"
+    )
 }
 
-$jvmTrainingArgs = @(
-    "-XX:+UnlockExperimentalVMOptions",
-    "-XX:+UseShenandoahGC",
-    "-XX:ShenandoahGCMode=generational",
-    "-XX:+ShenandoahUncommit",
-    "-XX:+UseCompactObjectHeaders",
-    "--enable-native-access=ALL-UNNAMED",
-    "-Xms64m",
-    "-Xmx256m",
-    "-Dskiko.library.path=app",
-    "-Dcp.player.aotWarmup=true",
-    "-Dcp.player.releaseChannel=$ReleaseChannel"
-)
-if ($VersionName) {
-    $jvmTrainingArgs += "-Dcp.player.versionName=$VersionName"
-}
-if ($isJdk25) {
-    $jvmTrainingArgs += "--enable-preview"
-}
-$jvmTrainingArgs += @("-cp", $effectiveClasspath)
+$jvmTrainingArgs = $launcherJvmArgs + @("-Dcp.player.aotWarmup=true", "-cp", $effectiveClasspath)
 
 Push-Location $appImageDir
 try {
@@ -226,14 +226,7 @@ if (Test-Path $outputPath) {
     Write-Host "  Validating archive mount with launcher classpath..." -ForegroundColor Yellow
     Push-Location $appImageDir
     try {
-        $verifyArgs = @(
-            "-XX:AOTCache=$outputPath",
-            "-XX:+UnlockExperimentalVMOptions",
-            "-XX:+UseCompactObjectHeaders",
-            "--enable-native-access=ALL-UNNAMED"
-        )
-        if ($isJdk25) { $verifyArgs += "--enable-preview" }
-        $verifyArgs += @(
+        $verifyArgs = @("-XX:AOTCache=$outputPath") + $launcherJvmArgs + @(
             "-cp", $effectiveClasspath,
             "-version"
         )

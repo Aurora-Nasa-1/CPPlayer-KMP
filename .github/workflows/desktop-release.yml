@@ -119,6 +119,9 @@ jobs:
             jbrExt: tar.gz
             jbrSha: 8994b26c31eb4ce4e171296e9e50970ce44d7142ba39d54b8eee67e4cb4761a2
             jbrUrl: "https://github.com/Aurora-Nasa-1/CPPlayer-KMP/releases/download/jbr-assets-v1/jbr25-windows-x64-custom.tar.gz"
+            # 定制 JBR 25：分代 Shenandoah + Compact Object Headers 都可用。
+            gc: shenandoah
+            compactHeaders: true
           - os: ubuntu-latest
             platform: linux
             gradleTasks: ":app:packageDeb :app:packageLinuxTarGz"
@@ -128,6 +131,12 @@ jobs:
             # ⚠️ Linux 侧 **只有 .tar.gz**：同名的 .zip 是 403。
             jbrExt: tar.gz
             jbrSha: 482b63da8ac63b8f108878d1bd8a23df15fd78cc9dfd23f3b824fbfe2512c81f
+            # ⚠️ Linux 用的是官方 JBR 21（见 env.JBR_VERSION），没有分代 Shenandoah
+            # （JEP 404 在 JDK 24 才有），也没有 Compact Object Headers。
+            # 2026-11-10 的 v1.8.8 发布就栽在这里：上一版把 Windows 的 JDK 25 参数
+            # 一并传给了 Linux，AOT 训练直接 `Unknown -XX:ShenandoahGCMode option`。
+            gc: g1
+            compactHeaders: false
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -220,9 +229,8 @@ jobs:
             -Pcp.vpkPath="${{ github.workspace }}/.tools/vpk.exe" `
             -Papp.versionName="${{ needs.meta.outputs.version }}" `
             -Papp.releaseChannel="${{ needs.meta.outputs.channel }}" `
-            -Pcp.jdk25=true `
-            -Pcp.gc=shenandoah `
-            -Pcp.compactHeaders=true `
+            -Pcp.gc=${{ matrix.gc }} `
+            -Pcp.compactHeaders=${{ matrix.compactHeaders }} `
             --no-daemon
           ./packaging/jbr/generate-aot-cache.ps1 `
             -JavaExe "${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64/bin/java.exe" `
@@ -243,9 +251,8 @@ jobs:
             -Pcp.jbrHome="${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64" \
             -Papp.versionName="${{ needs.meta.outputs.version }}" \
             -Papp.releaseChannel="${{ needs.meta.outputs.channel }}" \
-            -Pcp.jdk25=true \
-            -Pcp.gc=shenandoah \
-            -Pcp.compactHeaders=true \
+            -Pcp.gc=${{ matrix.gc }} \
+            -Pcp.compactHeaders=${{ matrix.compactHeaders }} \
             --no-daemon
           CP_JBR_HOME="${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64" \
             xvfb-run -a bash packaging/jbr/generate-aot-cache.sh \
@@ -273,9 +280,8 @@ jobs:
             -Pcp.vpkPath="${{ github.workspace }}/.tools/vpk.exe" \
             -Papp.versionName="${{ needs.meta.outputs.version }}" \
             -Papp.releaseChannel="${{ needs.meta.outputs.channel }}" \
-            -Pcp.gc=shenandoah \
-            -Pcp.compactHeaders=true \
-            -Pcp.jdk25=true
+            -Pcp.gc=${{ matrix.gc }} \
+            -Pcp.compactHeaders=${{ matrix.compactHeaders }}
       - name: Verify Windows AOT Cache Injection
         if: matrix.platform == 'windows'
         shell: pwsh
