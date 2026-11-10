@@ -194,14 +194,8 @@ fun RepositoryPlugin.compatibility(target: PluginTarget): Pair<PluginArtifact?, 
     val best = ranked.getValue(ranked.keys.max())
     if (best.size != 1) return null to "Ambiguous platform packages"
     val artifact = best.single()
-    if (kind == RepositoryPluginKind.PROVIDER && artifact.runtime !in setOf("http", "jni", "binary") ||
+    if (kind == RepositoryPluginKind.PROVIDER && artifact.runtime !in setOf("js", "script") ||
         kind == RepositoryPluginKind.LYRICS && artifact.runtime != "rhino-js"
     ) return null to "Unsupported plugin runtime"
-    if (target.platform == "android" && artifact.runtime == "binary") {
-        return null to "Android requires a JNI package, not an executable"
-    }
-    if (artifact.runtime in setOf("jni", "binary") &&
-        (artifact.platform == "any" || artifact.arch == "any")
-    ) return null to "Native packages must declare a platform and architecture"
     return artifact to null
 }

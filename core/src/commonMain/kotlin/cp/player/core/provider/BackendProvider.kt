@@ -1,28 +1,21 @@
 package cp.player.core.provider
 
-import cp.player.core.util.PlatformContext
 import cp.player.core.util.defaultSettingsStorage
 
 /**
- * 音乐后端 Provider 接口（KMP 版）。
- *
- * 每个音乐数据源（如 NeteaseCloudMusicApi、自建后端等）都实现此接口。
- * CPPlayer 通过此接口与不同的音乐服务通信，无需关心底层实现。
- *
- * ### 实现类型
- * - [HttpProvider] — 连接到已有的 HTTP API 服务（commonMain，Ktor）
- * - [BinaryProvider] — 启动独立可执行文件作为后端（平台 expect/actual）
- * - [JniProvider] — 通过 JNI 调用 Native 库（Android + Desktop）
- *
- * ### 账号隔离
- * 每个 Provider 维护独立的账号体系。用户的 cookie、歌单、推荐等数据
- * 都与特定 Provider 绑定。切换 Provider 时，会自动切换到该 Provider 的账号。
+ * Host-owned installed-provider descriptor. Provider authors implement SDK MusicProvider instead.
+ * SdkBackendProvider bridges metadata and an account-scoped session factory to this registry.
+ * Host never maps or dispatches provider method names; every request is a typed SDK call.
  *
  * @see ProviderManager 管理 Provider 生命周期和切换
  * @see ModuleManager 从模块包加载 Provider
- * @see cp.player.core.api.MusicApiService 统一的 API 调用入口
+ * @see cp.player.core.music.UnifiedMusicSource
  */
 interface BackendProvider {
+    /** Typed session factory. A missing factory is an error, never a legacy fallback. */
+    fun createSdkProvider(context: cp.player.sdk.ProviderContext): cp.player.sdk.MusicProvider? = null
+    val sdkAllowedOrigins: Set<String> get() = emptySet()
+    fun onSdkSessionRetired(listener: () -> Unit): () -> Unit = {}
     /** Provider 唯一标识符（如 "netease"、"my-custom"） */
     val id: String
 
@@ -35,17 +28,6 @@ interface BackendProvider {
     /** Provider 实现类型 */
     val type: ProviderType
 
-    /**
-     * API 方法名映射表。
-     *
-     * key = CPPlayer 内部标准方法名（如 "cloudsearch"）
-     * value = Provider 实际端点名（如 "search"）
-     *
-     * - 如果映射为 "unsupported"，该功能会被标记为不支持
-     * - 如果为 null，CPPlayer 会直接使用内部方法名
-     */
-    val apiMap: Map<String, String>?
-
     /** 检查更新 URL（可选），指向返回最新版本信息的 JSON 端点 */
     val updateUrl: String?
 
@@ -57,21 +39,15 @@ interface BackendProvider {
     val targetAppPackage: String?
 
     /**
-     * 音源声明的登录方式（可选）。
-     *
-     * 取值见 [ModuleManifest.loginMethods]：`qr` / `email` / `sms` / `cookie` /
-     * `captchaImage`。null = 未声明，登录页按网易云系默认展示全部方式。
-     * 内置网易云 Provider 不用声明（走默认分支）；外部模块由 manifest 带入。
+     * Reserved UI metadata. Installed SDK descriptors expose an empty list until auth is implemented.
      */
     val loginMethods: List<String>? get() = null
 
     /**
      * 音源声称支持的能力（见 [ProviderCapability]），可选。
      *
-     * null = 未声明，保守展示旧模块的功能；非 null 时按声明开关界面入口。
-     * 显式空列表表示不开放任何已知能力，不能回退成未声明。
-     * 内置 Provider 可以不给（返回 null）；外部模块由 manifest 带入，
-     * 并经 [PlatformSupport] 侧的 [ModuleManifest.knownCapabilities] 过滤。
+     * UI labels only. The module loader maps supported SDK methods via
+     * [ModuleManifest.knownCapabilities]; runtime dispatch checks MusicProvider.capabilities().
      *
      * 带默认实现：`core` 接口新增成员必须给默认实现（见 AGENTS.md）。
      */
@@ -84,19 +60,11 @@ interface BackendProvider {
     val apiVersion: Int get() = 1
 
     /**
-     * 接口代际标签（可选，如 `"netease-v3"` / `"v123"`），仅用于展示与区分。
-     *
-     * **纯标签，不参与任何行为分支**：不拼请求 URL、不切换解析分支、不作加载闸门
-     * （判据只有 [ModuleManifest.minHostApiVersion]）。语义详见 [ModuleManifest.apiVersionTag]。
-     *
-     * 与 [apiVersion] 是两个维度：[apiVersion] 是**插件契约编号**（宿主按它判断兼容性），
-     * 本字段是**音源自身接口代际的自由命名**（宿主不认识也照常加载）。
-     *
-     * 带默认实现：`core` 接口新增成员必须给默认实现（见 AGENTS.md）。
+     * Optional display label. It never chooses a protocol or bypasses the contract gate.
      */
     val apiVersionTag: String? get() = null
 
-    /** 协议契约模式（"standard" | "netease-legacy"），缺省为 null（按 legacy 模式） */
+    /** Must equal [PROVIDER_SDK_CONTRACT] to be activated. Null is not an implicit legacy mode. */
     val contract: String? get() = null
 
     /** 声明式自定义设置项规范（可选） */
@@ -187,62 +155,25 @@ interface BackendProvider {
     }
 
     /**
-     * 判定当前 Provider 是否支持某特定能力。
-     * - 未声明 [capabilities] 时返回 true（保守兼容老模块与内置源）
-     * - 声明了 [capabilities] 时以声明为准，用于 UI 动态隐藏与自适应降级
+     * Do not expose unimplemented SDK features even if old metadata claims them.
      */
     fun isFeatureAvailable(capability: String): Boolean =
-        capabilities?.contains(capability) ?: true
+        capability in ProviderCapability.sdkLabels(capabilities)
 
     /** 是否明确声称支持 [capability]（见 [ProviderCapability]）。 */
     fun supports(capability: String): Boolean =
-        capabilities?.contains(capability) == true
+        isFeatureAvailable(capability)
+
+    /** 让当前账号会话失效，但保留已安装的 descriptor（下次取数重新建会话）。 */
+    fun retireSessions() {}
 
     /**
-     * 启动 Provider 服务。
-     *
-     * 对于 BinaryProvider，会启动可执行文件；
-     * 对于 JniProvider，会启动本地服务；
-     * 对于 HttpProvider，此方法为空操作（服务由外部启动）。
-     */
-    fun startServer(context: PlatformContext, port: Int)
-
-    /** 停止 Provider 服务。 */
-    fun stopServer()
-
-    /**
-     * 调用 Provider API。
-     *
-     * @param method 已通过 [apiMap] 映射后的实际方法名
-     * @param params 请求参数（包含 cookie 等认证信息）
-     * @return JSON 格式的响应字符串
-     */
-    fun callApi(method: String, params: Map<String, String>): String
-
-    /**
-     * 分析音频文件（可选）。
-     *
-     * @param path 音频文件路径
-     * @return JSON 格式的分析结果
-     */
-    fun analyzeAudio(path: String): String = """{"code": 500, "msg": "Not supported"}"""
-
-    /**
-     * 检查 Provider 是否已就绪，可以正常提供服务。
-     *
-     * 对于 JNI 类型的 Provider，此方法会在 .so 加载失败时返回 false。
-     * 调用方应在切换/使用 Provider 前检查此状态，避免使用不可用的 Provider。
-     *
-     * 默认返回 true（BinaryProvider、HttpProvider 始终就绪）。
+     * Descriptor readiness only. Session factories and requests may still return typed failures.
      */
     fun isReady(): Boolean = true
 
     /**
-     * 释放该 Provider 持有的资源（HTTP 连接池、子进程等）。
-     *
-     * 默认空实现 —— 无状态实现（内置内嵌单例等）不需要释放，靠默认值自动继承。
-     * 有持有资源的实现（[HttpProvider] 的 Ktor 客户端、[BinaryProvider] 的子进程 + 客户端）
-     * 必须覆写，否则 Provider 重载 / [cp.player.core.MusicBackend.reset] 会泄漏连接池与线程。
+     * Dispose the installed descriptor and retire its sessions. Session owners drain adapters.
      */
     fun close() {}
 }
@@ -250,17 +181,17 @@ interface BackendProvider {
 /**
  * Provider 实现类型枚举。
  */
+/**
+ * 音源的加载形态。当前只有两种，且都由 host 显式构造：
+ * - [JNI]：受信的原生 SDK 库，经 `jniSdkProvider` 注册；
+ * - [SCRIPT]：模块包里的 JS/TS 脚本，经 `ProviderFactory.create` 加载。
+ *
+ * 旧版的自起 HTTP 服务 / 独立可执行文件 / FFM / WebSocket 都已随 JSON 兼容层退役，
+ * 不再有可安装的实现，保留枚举值只会让「类型」展示出现永远取不到的分支。
+ */
 enum class ProviderType {
-    /** JNI 本地库（C/C++/Rust 编写的 .so 文件，标准 JNI 命名） */
+    /** 受信 JNI 原生库（每账号一个 session）。 */
     JNI,
-    /** JNA 本地库（C/C++/Rust 动态共享库，标准 C 调用规范） */
-    JNA,
-    /** 独立可执行文件（通过 HTTP 与 CPPlayer 通信） */
-    BINARY,
-    /** WebSocket 通信（预留） */
-    WEBSOCKET,
-    /** HTTP API 服务（如 NeteaseCloudMusicApi） */
-    HTTP,
-    /** 脚本化执行源（JS/TS 插件脚本） */
-    SCRIPT
+    /** KMP SDK 脚本包（JS/TS）。 */
+    SCRIPT,
 }

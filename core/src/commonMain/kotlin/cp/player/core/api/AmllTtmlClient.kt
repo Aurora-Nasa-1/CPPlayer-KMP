@@ -1,7 +1,6 @@
 package cp.player.core.api
 
 import cp.player.core.lyrics.LyricsMatchScorer
-import cp.player.core.util.SettingsStorage
 import cp.player.core.util.createHttpClient
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
@@ -93,19 +92,20 @@ data class AmllSearchResponseDto(val status: Int = 0, val data: AmllSearchDataDt
  * 2. 标题/歌手/专辑搜索回退：`/v1/lyrics/search` → 命中后按 `id` 精确取
  *    （旧版没有搜索能力，本地歌曲 / 无平台 ID 的歌拿不到 TTML，这里补上了）
  *
- * 缓存策略（官方建议，见 https://amll.dev/reference/http-api/overview）：
- * - 按 id / filename 取到的内容**永久不变** → 内存 LRU + [diskCache] 持久层
- * - 搜索结果可能随词库更新变化 → 不持久化，只做本次会话内存缓存
- * - 404 记入负缓存，避免重复打 404
+ * ### 缓存只有内存一层（刻意）
+ * 按 id / filename 取到的内容官方保证不变，所以 [memo] 里存一份就够本会话反复切歌用。
+ * 之前还有一层 `SettingsStorage` 磁盘缓存，已经删掉：
+ * - 它把 TTML 原文塞进 properties 文件 ⇒ **每次写入都要整文件重写**（条目越多越慢）；
+ * - 容量上限只有十几条（再大就更慢），实际命中率极低；
+ * - 真离线时音源本身也拿不到音频，磁盘里那点歌词并没有使用场景。
  *
  * 限流：单 IP 50 rps；客户端每曲最多 2 个请求，触发 429 时退避重试一次。
- *
- * @param diskCache 可选持久层（键值存储）。传 null 则只有内存缓存。
  */
 class AmllTtmlClient(
-    private val baseUrl: String = DEFAULT_BASE_URL,
-    private val diskCache: SettingsStorage? = null,
+    baseUrl: String = DEFAULT_BASE_URL,
 ) {
+    /** 由 [baseUrl] 派生，**不要**在方法里再引用常量：换镜像时构造参数必须生效。 */
+    private val apiBase: String = baseUrl.trimEnd('/') + "/v1"
 
     private val client: HttpClient by lazy { createHttpClient() }
     private val json = Json { ignoreUnknownKeys = true }
@@ -117,7 +117,7 @@ class AmllTtmlClient(
         }
     }
 
-    /** 已知不存在的 key，避免重复打 404 */
+    /** 已知不存在的 key，避免重复打 404。**只收「上游明确说没有」的结论**，见 [Lookup]。 */
     private val notFound = mutableSetOf<String>()
 
     /**
@@ -146,14 +146,18 @@ class AmllTtmlClient(
             val key = "p:${platform.name}:$songId"
             cachedTtml(key)?.let { return@withContext it }
             if (isNotFound(key)) return@withContext searchFallback(platform, songId, name, artist, album, durationMs)
-            getByPlatform(platform, songId)?.let { item ->
-                val ttml = item.lyrics?.takeIf { it.isNotBlank() }
-                if (ttml != null) {
-                    memoPut(key, ttml)
-                    diskPut(key, ttml)
-                }
+            val lookup = lookupByPlatform(platform, songId)
+            val item = lookup.item
+            if (item == null) {
+                // ⚠️ 只有「明确没有」才能进负缓存。网络超时 / 5xx 也走这里，
+                // 若一并记成「这首歌没词」，弱网时听过的那批歌会在整个进程内永远无词。
+                if (lookup.absent) notFoundAdd(key)
+                return@withContext searchFallback(platform, songId, name, artist, album, durationMs)
+            }
+            val ttml = item.lyrics?.takeIf { it.isNotBlank() }
+            if (ttml != null) {
+                memoPut(key, ttml)
                 return@withContext ttml
-                    ?: searchFallback(platform, songId, name, artist, album, durationMs)
             }
             notFoundAdd(key)
             return@withContext searchFallback(platform, songId, name, artist, album, durationMs)
@@ -174,7 +178,7 @@ class AmllTtmlClient(
     ): String? {
         if (name.isNullOrBlank()) return null
         // ⚠️ 搜索键必须带歌手：本地曲目 platform / songId 都是 null，只按歌名会撞车 ——
-        // 不同歌手的同名曲共用同一 key，会把**错误的歌词**当作正确结果缓存并落盘。
+        // 不同歌手的同名曲共用同一 key，会把**错误的歌词**当作正确结果缓存。
         val searchKey = "s:$platform:$songId:${name.lowercase()}:${artist.orEmpty().lowercase()}"
         cachedTtml(searchKey)?.let { return it }
 
@@ -209,38 +213,37 @@ class AmllTtmlClient(
             memoPut(searchKey, hit.lyrics)
             return hit.lyrics
         }
-        val ttml = getById(hit.id)?.lyrics?.takeIf { it.isNotBlank() } ?: run {
-            notFoundAdd(searchKey)
+        val lookup = lookupById(hit.id)
+        val ttml = lookup.item?.lyrics?.takeIf { it.isNotBlank() }
+        if (ttml == null) {
+            if (lookup.absent) notFoundAdd(searchKey)
             return null
         }
         memoPut(searchKey, ttml)
-        // 命中的条目有稳定 id/filename，同时写进平台键与磁盘（内容按 id 永久不变）
-        diskPut(searchKey, ttml)
-        hit.filename?.let { fn -> diskPut("f:$fn", ttml) }
         return ttml
     }
 
-    /** `GET /v1/lyrics/get?<queryParam>=<songId>`，HTTP/业务失败返回 null。 */
-    internal suspend fun getByPlatform(platform: AmllPlatform, songId: String): AmllSongItemDto? {
-        val text = httpGet("$BASE_API/lyrics/get", listOf(platform.queryParam to songId)) ?: return null
-        return runCatching { json.decodeFromString<AmllGetResponseDto>(text) }
-            .getOrNull()
-            ?.takeIf { it.status == 200 }
-            ?.data
-    }
+    /** `GET /v1/lyrics/get?<queryParam>=<songId>`。 */
+    private suspend fun lookupByPlatform(platform: AmllPlatform, songId: String): Lookup =
+        lookup(listOf(platform.queryParam to songId))
 
-    internal suspend fun getById(id: Long): AmllSongItemDto? {
-        val text = httpGet("$BASE_API/lyrics/get", listOf("id" to id.toString())) ?: return null
-        return runCatching { json.decodeFromString<AmllGetResponseDto>(text) }
-            .getOrNull()
-            ?.takeIf { it.status == 200 }
-            ?.data
+    private suspend fun lookupById(id: Long): Lookup = lookup(listOf("id" to id.toString()))
+
+    /** `GET /v1/lyrics/get` 的统一解析 + **三态**判定（见 [Lookup]）。 */
+    private suspend fun lookup(params: List<Pair<String, String>>): Lookup {
+        val (code, body) = httpGet("$apiBase/lyrics/get", params)
+        if (body == null) return Lookup(null, absent = code == 404 || code == 204)
+        val dto = runCatching { json.decodeFromString<AmllGetResponseDto>(body) }.getOrNull()
+        val item = dto?.takeIf { it.status == 200 }?.data
+        // 200 但没有数据 / status 非 200：上游明确表示「查无此词」。
+        return Lookup(item, absent = item == null)
     }
 
     /** `GET /v1/lyrics/search`。失败返回 null（调用方回退音源 API）。 */
     internal suspend fun search(params: List<Pair<String, String>>): List<AmllSongItemDto>? {
-        val text = httpGet("$BASE_API/lyrics/search", params + ("pageSize" to "10")) ?: return null
-        return runCatching { json.decodeFromString<AmllSearchResponseDto>(text) }
+        val (_, body) = httpGet("$apiBase/lyrics/search", params + ("pageSize" to "10"))
+        if (body == null) return null
+        return runCatching { json.decodeFromString<AmllSearchResponseDto>(body) }
             .getOrNull()
             ?.takeIf { it.status == 200 }
             ?.data
@@ -248,9 +251,12 @@ class AmllTtmlClient(
     }
 
     /**
-     * GET + 429 退避重试一次。返回响应体文本；HTTP 非 2xx 或网络失败返回 null。
+     * GET + 429 退避重试一次。
+     *
+     * @return `(HTTP 状态码, 响应体)`；网络异常时状态码为 0、响应体为 null。
+     *   调用方靠这个码区分「404 = 真没有」与「超时 = 不知道」。
      */
-    private suspend fun httpGet(url: String, params: List<Pair<String, String>>): String? {
+    private suspend fun httpGet(url: String, params: List<Pair<String, String>>): Pair<Int, String?> {
         repeat(2) { attempt ->
             val code: Int
             val body: String
@@ -266,26 +272,20 @@ class AmllTtmlClient(
                 // —— 取消被延迟，且已取消的协程继续联网。取消必须原样上抛。
                 throw e
             } catch (_: Exception) {
-                return null
+                return 0 to null
             }
             when {
                 code == 429 && attempt == 0 -> delay(RETRY_BACKOFF_MS)
-                code in 200..299 -> return body
-                else -> return null
+                code in 200..299 -> return code to body
+                else -> return code to null
             }
         }
-        return null
+        return 0 to null
     }
 
     // ============ 缓存 ============
 
-    private fun cachedTtml(key: String): String? {
-        synchronized(memo) { memo[key] }?.let { return it }
-        // 磁盘命中后回填内存（按 id/filename 的内容官方保证不变，可放心长存）
-        val disk = diskCache?.getString(diskKey(key))?.takeIf { it.isNotBlank() } ?: return null
-        synchronized(memo) { memo[key] = disk }
-        return disk
-    }
+    private fun cachedTtml(key: String): String? = synchronized(memo) { memo[key] }
 
     private fun memoPut(key: String, ttml: String) {
         synchronized(memo) { memo[key] = ttml }
@@ -301,36 +301,7 @@ class AmllTtmlClient(
     /** 负缓存查询也必须加锁：写入在别的歌词协程里，裸读会有集合并发问题。 */
     private fun isNotFound(key: String): Boolean = synchronized(notFound) { key in notFound }
 
-    /**
-     * 磁盘持久缓存（只存「内容永久不变」的键）。
-     *
-     * [SettingsStorage] 是 KV 接口，没有按前缀枚举能力，用索引键维护 LRU：
-     * 索引是换行分隔的键列表，超容量时从最旧一端淘汰（连同其数据键）。
-     */
-    private fun diskPut(key: String, ttml: String) {
-        val disk = diskCache ?: return
-        // ⚠️ 「读索引 → 改 → 写回」不是原子操作。本函数可能被多个歌词协程并发调用
-        // （多首预取 / 快速切歌），不加锁会互相覆盖索引 ⇒ 条目丢失、数据键成为孤儿
-        // （占空间且永远回收不到）。整个读改写必须串行。
-        synchronized(this) {
-            val dataKey = diskKey(key)
-            val indexRaw = disk.getString(INDEX_KEY) ?: ""
-            val index = indexRaw.split('\n').filter { it.isNotBlank() }.toMutableList()
-            if (disk.getString(dataKey) == null) {
-                index.add(key)
-            }
-            while (index.size > MAX_DISK_ENTRIES) {
-                val evicted = index.removeAt(0)
-                disk.remove(diskKey(evicted))
-            }
-            disk.putString(dataKey, ttml)
-            disk.putString(INDEX_KEY, index.joinToString("\n"))
-        }
-    }
-
-    private fun diskKey(key: String): String = "ttml:$key"
-
-    /** 清空内存缓存（磁盘缓存内容按官方承诺不变，不清）。 */
+    /** 清空内存缓存。 */
     fun clearMemo() {
         synchronized(memo) { memo.clear() }
         synchronized(notFound) { notFound.clear() }
@@ -345,13 +316,18 @@ class AmllTtmlClient(
         runCatching { client.close() }
     }
 
+    /**
+     * 一次取词的结果。
+     *
+     * [absent] 区分**结论**与**失败**：上游明确说「没有这首」（404 / 200 但空）才为 true，
+     * 网络异常与 5xx 一律 false —— 只有前者允许写进 [notFound]。
+     */
+    private class Lookup(val item: AmllSongItemDto?, val absent: Boolean)
+
     companion object {
         const val DEFAULT_BASE_URL = "https://api.amll.dev"
-        private const val BASE_API = "$DEFAULT_BASE_URL/v1"
         private const val MAX_MEMO_SIZE = 100
         private const val MAX_NOT_FOUND_SIZE = 500
-        private const val MAX_DISK_ENTRIES = 15
-        private const val INDEX_KEY = "ttml:index"
         private const val RETRY_BACKOFF_MS = 1_000L
     }
 }

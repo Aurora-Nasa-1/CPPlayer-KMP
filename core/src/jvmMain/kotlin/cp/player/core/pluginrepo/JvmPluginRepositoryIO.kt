@@ -240,28 +240,11 @@ internal fun verifyRepositoryPackage(
             require(manifest.resolvedApiVersion == plugin.apiVersion &&
                 manifest.resolvedMinHostApiVersion == plugin.minHostApiVersion
             ) { "Provider package API does not match the catalog" }
-            if (manifest.type == "http") {
-                val uri = URI(manifest.entryPoint)
-                require(uri.scheme in setOf("https", "http") && !uri.host.isNullOrBlank() && uri.userInfo == null) {
-                    "Invalid provider service URL"
-                }
-            } else if (manifest.type == "js" || manifest.type == "script") {
-                requireSafePluginPath(manifest.entryPoint)
-                require(zip.getEntry(manifest.entryPoint)?.isDirectory == false) {
-                    "JS entry script is missing"
-                }
-            } else {
-                requireSafePluginPath(manifest.entryPoint)
-                // Online packages deliberately require an explicit entry, not legacy filename guessing.
-                val abi = when (artifact.arch) {
-                    "x64" -> "x86_64"
-                    "arm64" -> "arm64-v8a"
-                    "armv7" -> "armeabi-v7a"
-                    else -> error("Unknown native architecture")
-                }
-                require(listOf(manifest.entryPoint, "lib/$abi/${manifest.entryPoint}").any {
-                    zip.getEntry(it)?.isDirectory == false
-                }) { "Native entry is missing; use an exact root or lib/ABI entry filename" }
+            require(manifest.isLoadable) { manifest.loadabilityError.orEmpty() }
+            requireSafePluginPath(manifest.entryPoint)
+            val entry = zip.getEntry(manifest.entryPoint)
+            require(entry != null && !entry.isDirectory && entry.size in 0..1024 * 1024) {
+                "SDK entry script is missing or exceeds 1 MiB"
             }
         }
     }

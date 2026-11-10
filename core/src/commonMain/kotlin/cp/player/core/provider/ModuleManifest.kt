@@ -3,14 +3,8 @@ package cp.player.core.provider
 import kotlinx.serialization.Serializable
 
 /**
- * 音源插件的能力标识（manifest 的 `capabilities` 数组）。
- *
- * 用途：宿主在**安装前**就能知道这个音源声称支持什么，从而
- * ① 在音源管理页显示能力标签，② 在用户想用某能力（如扫码登录、逐字歌词）
- * 而当前音源没声明时给出明确原因，而不是让功能静默失效。
- *
- * 取值刻意用裸字符串（不走 enum）：manifest 是外部输入，遇到未识别的能力名
- * 必须**忽略而不是解析失败** —— 新宿主能力出现时，旧宿主仍应能加载该音源。
+ * UI capability labels. SDK method capabilities are mapped here, not treated as old API endpoints.
+ * Keep unsupported labels for existing screens, but never advertise them for the current SDK.
  */
 object ProviderCapability {
     /** 歌曲与歌单搜索。 */
@@ -60,6 +54,28 @@ object ProviderCapability {
         SEARCH, PLAYBACK, QR_LOGIN, WEBVIEW_LOGIN, WORD_SYNCED_LYRICS, COMMENTS, CLOUD_DRIVE, RECOMMEND,
         LYRICS_SEARCH, CHARTS, USER_PLAYLISTS, ARTIST_EXPLORER, ALBUM_EXPLORER, DIRECTORY_BROWSER,
     )
+
+    val SDK_SUPPORTED: Set<String> = setOf(
+        SEARCH, PLAYBACK, LYRICS_SEARCH, USER_PLAYLISTS, ARTIST_EXPLORER, ALBUM_EXPLORER,
+    )
+
+    fun sdkLabels(capabilities: List<String>?): List<String> {
+        val declared = capabilities.orEmpty().toSet()
+        return buildList {
+            if (SEARCH in declared || listOf(
+                cp.player.sdk.Capability.SEARCH, cp.player.sdk.Capability.SEARCH_PLAYLISTS,
+                cp.player.sdk.Capability.SEARCH_ALBUMS, cp.player.sdk.Capability.SEARCH_ARTISTS,
+            ).any { it in declared }) add(SEARCH)
+            if (PLAYBACK in declared || cp.player.sdk.Capability.RESOLVE in declared) add(PLAYBACK)
+            if (LYRICS_SEARCH in declared || cp.player.sdk.Capability.LYRICS in declared) add(LYRICS_SEARCH)
+            if (USER_PLAYLISTS in declared || cp.player.sdk.Capability.USER_PLAYLISTS in declared) add(USER_PLAYLISTS)
+            if (ARTIST_EXPLORER in declared || listOf(
+                cp.player.sdk.Capability.ARTIST, cp.player.sdk.Capability.ARTIST_TRACKS,
+                cp.player.sdk.Capability.ARTIST_ALBUMS,
+            ).all { it in declared }) add(ARTIST_EXPLORER)
+            if (ALBUM_EXPLORER in declared || cp.player.sdk.Capability.ALBUM in declared) add(ALBUM_EXPLORER)
+        }
+    }
 }
 
 
@@ -86,36 +102,23 @@ data class ProviderSettingOption(
 )
 
 /**
- * 本宿主支持的最高 **插件 API 版本**。
- *
- * 与歌词源插件的 `apiVersion` 是两套独立编号：音源插件走本字段，
- * 歌词源插件走 `LyricsPluginManifest.pluginApiVersion`。两者不要互相套用。
- *
- * 版本语义：
- * - **1**：初代契约（`apiMap` 里以 Kotlin 函数名 → 远端接口名映射，宿主按需调用）。
- *   所有既有音源包都是 v1，**必须永远可加载**。
- * - **2**：在 v1 之上增加 `capabilities` 声明的语义约束（宿主会按声明裁剪 UI，
- *   未声明不等同于不支持——只是不展示标签）。
- * - **3**：统一来源插件体系（本仓库当前推进的目标）。音源与歌词源共用
- *   **一套外置插件管理界面**；`capabilities` 成为可选但被推荐的元数据。
- *
- * ⚠️ 判定「能不能装」用的是 [ModuleManifest.minHostApiVersion]，不是本字段。
+ * Retained host/catalog compatibility number, not the SDK contract major.
+ * A compatible number never enables retired v1/v3 protocols; [PROVIDER_SDK_CONTRACT] is required.
  */
 const val HOST_PROVIDER_API_VERSION: Int = 3
+
+/** The only installable music-provider contract. Its major is unrelated to old API versions. */
+const val PROVIDER_SDK_CONTRACT: String = "kmp-sdk-v1"
 
 @Serializable
 data class ModuleManifest(
     val id: String,
     val name: String,
     val version: String,
-    val type: String, // "jni", "jna", "binary", "http", "script"
+    val type: String, // "js" or "script"; native SDK adapters require trusted registration
     val entryPoint: String,
-    val apiMap: Map<String, String>? = null,
     /**
-     * 插件自己实现的 API 版本（缺省 = **1**，即所有历史包的行为）。
-     *
-     * ⚠️ 缺省必须是 1 而不是 [HOST_PROVIDER_API_VERSION]：历史包的 manifest 里
-     * 根本没有这个字段，默认成 3 会让老包被误判为「新格式」而走上 v3 专属路径。
+     * Catalog metadata only. Omission does not select a legacy runtime.
      */
     val apiVersion: Int? = null,
     /**
@@ -126,37 +129,18 @@ data class ModuleManifest(
      */
     val minHostApiVersion: Int? = null,
     /**
-     * 接口代际标签（可选，自由字符串，如 `"netease-v3"` / `"v123"`）。
-     *
-     * 用途：让宿主与用户在音源管理页把「这是哪一代接口的包」区分开——
-     * 同样是网易云，`netease-legacy` 与 `netease-v3` 两套包并存时，
-     * 只看 `version`（音源作者自己的语义化版本）分不出代际。
-     *
-     * ⚠️ **当前是纯标签，不参与任何行为分支**：
-     * - 不拼进请求 URL（HTTP 音源仍按 `${entryPoint}/<method>` 请求，版本段要拼请自己写进 `entryPoint`）；
-     * - 不切换响应解析（解析器本就同时兼容扁平 / 嵌套两种形状）；
-     * - 不作为加载闸门（判据只有 [minHostApiVersion]），也**不**要求宿主认识这个值。
-     *
-     * 刻意用裸字符串而不是 enum：manifest 是外部输入，新代际名出现时旧宿主
-     * 必须照常加载该包，只是在界面上照原样显示这个串。
+     * Optional display label. It never selects a transport or response parser.
      */
     val apiVersionTag: String? = null,
     /**
-     * 声称支持的能力列表（见 [ProviderCapability]，可选）。
-     *
-     * 未识别的条目**忽略而不报错**（前向兼容）。null / 缺省 = 未声明，
-     * 宿主按「保守展示」处理：不显示能力标签，但不禁用任何功能。
+     * UI labels (search/playback) or SDK method names, used for installation metadata.
+     * Runtime dispatch is gated by MusicProvider.capabilities(), not by this declaration.
      */
     val capabilities: List<String>? = null,
     /** 检查更新 URL（可选），指向返回最新版本信息的 JSON 端点 */
     val updateUrl: String? = null,
     /**
-     * 支持的 ABI 列表（可选）。
-     * 用于声明模块支持的 CPU 架构，如 ["arm64-v8a", "armeabi-v7a"]。
-     * 当 zip 包含 per-ABI 目录结构（lib/{abi}/）时，
-     * 加载器会自动根据设备 ABI 选择正确的 native library。
-     *
-     * 为 null 或空时，表示单架构模块（向后兼容旧格式）。
+     * Legacy metadata retained for decoding only. Installed script packages have no native ABI.
      */
     val supportedAbis: List<String>? = null,
     /**
@@ -167,16 +151,7 @@ data class ModuleManifest(
      */
     val targetAppPackage: String? = null,
     /**
-     * 音源支持的登录方式声明（可选）。
-     *
-     * 取值：`"qr"`（扫码）、`"email"`（邮箱）、`"sms"`（手机验证码）、
-     * `"cookie"`（粘贴 Cookie）、`"captchaImage"`（图形验证码人机校验）、
-     * `"webview"` / `"web"`（WebView 网页登录）。
-     *
-     * - **null / 缺省**：按旧行为展示全部常用方式（网易云系音源默认展示 QR/SMS/EMAIL/COOKIE/WEBVIEW）；
-     * - **声明了列表**：登录页展示声明的方式（`cookie` 是宿主端兜底能力，始终可用）；
-     *   `"captchaImage"` 表示登录流程支持图形验证码（见 `captcha/image` 方法）；
-     *   `"webview"` / `"web"` 表示支持在内置/系统 WebView 中加载登录网址。
+     * Reserved legacy metadata. The current SDK has no authentication workflow; the loader ignores it.
      */
     val loginMethods: List<String>? = null,
     /**
@@ -190,11 +165,12 @@ data class ModuleManifest(
     @Deprecated("压缩包内校验自身 sha256 无法实现，已废弃且宿主不再校验")
     val sha256: String? = null,
     /**
-     * 协议契约模式（可选）。
-     * - "standard": 现代语义化领域协议（扁平响应模型）
-     * - "netease-legacy" 或 null: 兼容现有网易云旧协议
+     * Required contract selector. Only [PROVIDER_SDK_CONTRACT] can be installed.
+     * Null, standard, netease-legacy and unknown majors are rejected, never guessed.
      */
     val contract: String? = null,
+    /** Exact HTTP origins available to a kmp-sdk-v1 session. Empty denies HTTP. */
+    val sdkOrigins: List<String> = emptyList(),
     /**
      * 声明式音源设置界面配置项（可选）。
      * 宿主可根据此配置自动渲染设置表单，并持久化用户配置。
@@ -229,34 +205,41 @@ data class ModuleManifest(
         get() = apiVersionTag?.trim()?.takeIf { it.isNotEmpty() }
 
     /**
-     * 本包能否被当前宿主加载。
-     *
-     * 唯一判据是 `minHostApiVersion <= HOST_PROVIDER_API_VERSION`。
-     * 包**声明的** `apiVersion` 高于宿主时**不算错误**（前向兼容的常见做法是
-     * 包同时声明 minHostApiVersion，宿主只看后者）。
+     * Contract, runtime, identity, entry path and host-version validation.
      */
-    val isLoadable: Boolean get() = resolvedMinHostApiVersion <= HOST_PROVIDER_API_VERSION
+    val isLoadable: Boolean get() = loadabilityError == null
 
-    /**
-     * 声明且被宿主**认识**的能力（按 [ProviderCapability.ALL] 的稳定顺序）。
-     *
-     * 未声明的能力不在这里 —— 但**不代表宿主会禁用对应功能**：
-     * 能力标签只用于展示与「为什么这个按钮没有」的解释。
-     */
-    val knownCapabilities: List<String>
-        get() {
-            val declared = capabilities.orEmpty().toSet()
-            return ProviderCapability.ALL.filter { it in declared }
+    /** Validate before touching an installed module or executing any provider code. */
+    val loadabilityError: String?
+        get() = when {
+            !Regex("[a-z0-9][a-z0-9._-]{0,127}").matches(id) || ".." in id || id == "local" ->
+                "Invalid provider ID"
+            contract != PROVIDER_SDK_CONTRACT ->
+                "Legacy Provider v1/v3 is retired; rebuild with provider-sdk-kmp ($PROVIDER_SDK_CONTRACT)"
+            type !in setOf("js", "script") ->
+                "Only SDK JavaScript packages can be imported; native providers require trusted registration"
+            entryPoint.isBlank() || entryPoint.startsWith("/") || '\\' in entryPoint ||
+                ':' in entryPoint || entryPoint.split('/').any { it.isEmpty() || it == "." || it == ".." } ->
+                "Provider entryPoint must be a relative path inside the package"
+            resolvedApiVersion < 1 || resolvedMinHostApiVersion < 1 ->
+                "Invalid provider API version"
+            resolvedMinHostApiVersion > HOST_PROVIDER_API_VERSION ->
+                "Provider requires host API $resolvedMinHostApiVersion (supported: $HOST_PROVIDER_API_VERSION)"
+            else -> null
         }
 
+    /**
+     * Only currently implemented SDK capabilities can become UI labels.
+     */
+    val knownCapabilities: List<String>
+        get() = ProviderCapability.sdkLabels(capabilities)
+
     /** 是否声称支持 [capability]（见 [ProviderCapability]）。 */
-    fun supports(capability: String): Boolean = capability in capabilities.orEmpty()
+    fun supports(capability: String): Boolean = capability in knownCapabilities
 
     /**
-     * 判定某项能力在当前音源下是否可用。
-     * - 当 [capabilities] 为 null（未声明，如历史遗留包）：保守兼容返回 true，不主动禁用功能。
-     * - 当 [capabilities] 明确提供时：严格按照声明列表判断，支持 UI 动态隐藏与功能降级。
+     * No legacy permissive fallback: omitted metadata does not advertise unsupported features.
      */
     fun isFeatureAvailable(capability: String): Boolean =
-        capabilities?.contains(capability) ?: true
+        supports(capability)
 }

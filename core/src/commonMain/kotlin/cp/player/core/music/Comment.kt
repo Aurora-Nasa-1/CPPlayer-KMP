@@ -3,8 +3,8 @@ package cp.player.core.music
 /**
  * 评论（歌曲 / 歌单 / 专辑等资源的评论区条目）。
  *
- * 从 app 层上收的领域模型：UI 只渲染它，解析集中在
- * [MusicSourceFromApi.parseComments] / [MusicSourceFromApi.parseFloorComments]。
+ * 从 app 层上收的领域模型：UI 只渲染它；映射集中在
+ * `UnifiedMusicSourceImpl.getComments` / `getFloorComments`（SDK 强类型 → 领域模型）。
  *
  * ### 顶层评论 vs 楼层回复
  * - **顶层评论**：[parentCommentId] == 0，挂在资源下；[replyCount] 是它的楼层回复数。
@@ -64,6 +64,8 @@ data class CommentPage(
     val hasMore: Boolean = false,
     val cursor: String = "",
     val sortType: Int = 1,
+    /** Null denotes offset-only paging; an empty cursor is still an opaque cursor. */
+    val nextCursor: String? = null,
 )
 
 /**
