@@ -26,11 +26,11 @@ Provider 唯一开发入口：[KMP SDK 快速上手](docs/dev/QUICK_PROVIDER_DEV
 - **纯正跨平台一致体验**：基于 Compose Multiplatform 打造，桌面端原生窗口手势吸附、移动端沉浸体验。
 - **KMP Provider SDK**：
   - 极简契约：实现 `search`、`get`、`resolve`，批量详情有保序默认实现；无需端点映射、JSON 宿主封套或本地服务。
-  - Kotlin、JavaScript 与受信任 JNI/Native 适配器共用同一组类型化业务操作；Provider 的上游 HTTP 通过会话 runtime 发起。
+  - Kotlin、JavaScript 与 JNI/Native 适配器共用同一组类型化业务操作；Provider 的上游 HTTP 通过会话 runtime 发起。
   - 原生声明式设置：音源在 `manifest.json` 中声明配置字段，客户端自动渲染 Material 3 原生设置面板。
   - 账号会话隔离，切换时取消旧请求；媒体流只转发显式请求头。
-  - 当前契约含 160 个 typed 业务操作，覆盖登录、目录读写、多类型搜索、评论/私信/通知、一起听、MV/视频、DJ、日历/动态、账号绑定、排序/导入及分块上传；具体音源按能力声明实现，未实现仍明确返回不支持。完整清单见 [SDK 操作表](docs/dev/SDK_OPERATIONS.md)，剩余工作见 [移植状态](docs/dev/SDK_MIGRATION_STATUS.md)。
-  - JavaScript SDK 包可导入；Kotlin/JNI Provider 由可信宿主代码注册，不能作为插件 ZIP 安装。独立 [Lyrico 歌词插件](docs/dev/LYRICS_PLUGIN_DEV_GUIDE.md)、AMLL 与本地边车歌词照常使用。
+  - 当前契约含 161 个 typed 业务操作，覆盖登录、目录读写、多类型搜索、评论/私信/通知、一起听、MV/视频、DJ、日历/动态、账号绑定、排序/导入及分块上传；具体音源按能力声明实现，未实现仍明确返回不支持。完整清单见 [SDK 操作表](docs/dev/SDK_OPERATIONS.md)，剩余工作见 [移植状态](docs/dev/SDK_MIGRATION_STATUS.md)。
+  - JavaScript 与 JNI/Native SDK 包均可直接导入或从仓库安装，无需宿主预先注册或信任授权。独立 [Lyrico 歌词插件](docs/dev/LYRICS_PLUGIN_DEV_GUIDE.md)、AMLL 与本地边车歌词照常使用。
 - **发烧级音频解码引擎**：
   - 支持 WASAPI Exclusive 硬件独占直通推流、DSD 解码与无损流落盘缓存。
   - 10 频段参数均衡器 (PEQ)、声道平衡、响度归一化与防爆音削顶。

@@ -97,7 +97,10 @@ class PluginRepositoryTest {
         assertNotNull(lyrics.compatibility(desktop).second)
         val binary = plugin.copy(artifacts = listOf(artifact.copy(platform = "android", arch = "arm64", runtime = "binary")))
         assertNotNull(binary.compatibility(PluginTarget("android", "arm64")).second)
-        for (runtime in listOf("http", "jni", "binary", "ffm")) {
+        for (runtime in listOf("jni", "native")) {
+            assertEquals(null, plugin.copy(artifacts = listOf(artifact.copy(runtime = runtime))).compatibility(desktop).second)
+        }
+        for (runtime in listOf("http", "binary", "ffm")) {
             assertNotNull(plugin.copy(artifacts = listOf(artifact.copy(runtime = runtime))).compatibility(desktop).second)
         }
         assertNotNull(plugin.copy(artifacts = listOf(artifact, artifact)).compatibility(desktop).second)
@@ -268,6 +271,33 @@ class PluginRepositoryTest {
             val entry = service.state.value.entries.single()
             assertFalse(entry.managed!!.pendingRestart)
             assertTrue(entry.updateAvailable)
+        }
+    }
+
+    @Test
+    fun `legacy default source is migrated on startup`() {
+        runBlocking {
+            val settings = MemorySettings()
+            val io = MemoryIO()
+            val savedSources = listOf(
+                PluginRepositorySource(PluginRepositoryService.LEGACY_DEFAULT_CATALOG_URL, "Legacy"),
+                PluginRepositorySource("https://custom.repo.org/index.json", "Custom"),
+            )
+            settings.putString("sources", Json.encodeToString(savedSources))
+
+            val service = PluginRepositoryService(
+                settings, io, PluginTarget("windows", "x64"),
+                { emptyList() },
+            ) { _, _ -> PluginInstallOutcome() }
+
+            val sources = service.state.value.sources
+            assertEquals(2, sources.size)
+            assertEquals(PluginRepositoryService.DEFAULT_CATALOG_URL, sources[0].url)
+            assertEquals("https://custom.repo.org/index.json", sources[1].url)
+
+            val persisted = Json.decodeFromString<List<PluginRepositorySource>>(settings.getString("sources")!!)
+            assertEquals(PluginRepositoryService.DEFAULT_CATALOG_URL, persisted[0].url)
+            assertEquals("https://custom.repo.org/index.json", persisted[1].url)
         }
     }
 }

@@ -243,8 +243,8 @@ internal fun verifyRepositoryPackage(
             require(manifest.isLoadable) { manifest.loadabilityError.orEmpty() }
             requireSafePluginPath(manifest.entryPoint)
             val entry = zip.getEntry(manifest.entryPoint)
-            require(entry != null && !entry.isDirectory && entry.size in 0..1024 * 1024) {
-                "SDK entry script is missing or exceeds 1 MiB"
+            require(entry != null && !entry.isDirectory && entry.size in 0..manifest.maxEntryPointBytes) {
+                "SDK entryPoint is missing or exceeds ${manifest.maxEntryPointBytes} bytes"
             }
         }
     }

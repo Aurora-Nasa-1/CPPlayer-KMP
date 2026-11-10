@@ -194,7 +194,7 @@ fun RepositoryPlugin.compatibility(target: PluginTarget): Pair<PluginArtifact?, 
     val best = ranked.getValue(ranked.keys.max())
     if (best.size != 1) return null to "Ambiguous platform packages"
     val artifact = best.single()
-    if (kind == RepositoryPluginKind.PROVIDER && artifact.runtime !in setOf("js", "script") ||
+    if (kind == RepositoryPluginKind.PROVIDER && artifact.runtime !in setOf("js", "script", "jni", "native") ||
         kind == RepositoryPluginKind.LYRICS && artifact.runtime != "rhino-js"
     ) return null to "Unsupported plugin runtime"
     return artifact to null

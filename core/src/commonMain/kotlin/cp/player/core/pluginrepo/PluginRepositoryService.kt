@@ -51,19 +51,36 @@ class PluginRepositoryService(
     private var refreshJob: Job? = null
     private var installJob: Job? = null
     private var installed = emptyList<InstalledRepositoryPlugin>()
+    private inline fun <reified T> read(key: String): T? =
+        settings.getString(key)?.let { runCatching { json.decodeFromString<T>(it) }.getOrNull() }
+
+    private fun loadInitialSources(): List<PluginRepositorySource> {
+        val saved = read<List<PluginRepositorySource>>("sources") ?: return defaultSources
+        var migrated = false
+        val updated = saved.map { source ->
+            if (source.url == LEGACY_DEFAULT_CATALOG_URL) {
+                migrated = true
+                source.copy(url = DEFAULT_CATALOG_URL)
+            } else {
+                source
+            }
+        }
+        if (migrated) {
+            settings.putString("sources", json.encodeToString(updated))
+        }
+        return updated
+    }
+
     private var managed = read<List<ManagedPluginInstall>>("installed") ?: emptyList()
     private val _state = MutableStateFlow(
         PluginRepositoryState(
-            sources = read<List<PluginRepositorySource>>("sources") ?: defaultSources,
+            sources = loadInitialSources(),
             networkEnabled = settings.getString("network") == "true",
             autoCheck = settings.getString("auto_check") == "true",
             lastCheckedAt = settings.getString("last_checked")?.toLongOrNull(),
         ),
     )
     val state = _state.asStateFlow()
-
-    private inline fun <reified T> read(key: String): T? =
-        settings.getString(key)?.let { runCatching { json.decodeFromString<T>(it) }.getOrNull() }
 
     fun setNetworkEnabled(enabled: Boolean) {
         settings.putString("network", enabled.toString())
@@ -299,8 +316,10 @@ class PluginRepositoryService(
     }
 
     companion object {
-        const val DEFAULT_CATALOG_URL =
+        const val LEGACY_DEFAULT_CATALOG_URL =
             "https://raw.githubusercontent.com/Aurora-Nasa-1/CPPlayer-Plugins/main/index.json"
+        const val DEFAULT_CATALOG_URL =
+            "https://raw.githubusercontent.com/Aurora-Nasa-1/CPPlayer-Plugins-KMP/main/index.json"
         const val CHECK_INTERVAL_MS = 24L * 60L * 60L * 1000L
         const val MAX_PACKAGE_BYTES = 256L * 1024L * 1024L
         const val MAX_CATALOG_BYTES = 5 * 1024 * 1024
