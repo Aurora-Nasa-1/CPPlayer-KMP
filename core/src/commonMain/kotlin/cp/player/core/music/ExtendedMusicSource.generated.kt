@@ -322,6 +322,9 @@ interface ExtendedMusicSource {
     /** Get a user's comment history with an opaque continuation cursor. Capability: comments.userHistory. Tag: 165. Undeclared or unimplemented capabilities fail with Unsupported. */
     suspend fun getUserCommentHistory(request: cp.player.sdk.UserCursorRequest): BackendResult<cp.player.sdk.CommentPage> =
         BackendResult.Unsupported("comments.userHistory is not supported")
+    /** Page liked track IDs with item offsets and explicit continuation; self addresses the current account. Use this operation for collections larger than 500 IDs. Capability: accounts.likes.page. Tag: 166. Undeclared or unimplemented capabilities fail with Unsupported. */
+    suspend fun getLikeListPage(request: cp.player.sdk.PagedIdRequest): BackendResult<cp.player.sdk.IdPage> =
+        BackendResult.Unsupported("accounts.likes.page is not supported")
 }
 
 abstract class ExtendedMusicSourceBase : ExtendedMusicSource {
@@ -536,4 +539,6 @@ abstract class ExtendedMusicSourceBase : ExtendedMusicSource {
         extendedOperation { it.sendResourceMessage(request) }
     override suspend fun getUserCommentHistory(request: cp.player.sdk.UserCursorRequest): BackendResult<cp.player.sdk.CommentPage> =
         extendedOperation { it.getUserCommentHistory(request) }
+    override suspend fun getLikeListPage(request: cp.player.sdk.PagedIdRequest): BackendResult<cp.player.sdk.IdPage> =
+        extendedOperation { it.getLikeListPage(request) }
 }

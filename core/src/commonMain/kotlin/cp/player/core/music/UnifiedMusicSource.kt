@@ -2,11 +2,21 @@ package cp.player.core.music
 
 data class SearchTerm(val keyword: String, val description: String = "")
 
+/** Opaque account/configuration identity; never contains raw credentials. */
+data class MusicSourceIdentity(val providerId: String, val namespace: String)
+
+class MusicSourceAccountContext(
+    val changes: kotlinx.coroutines.flow.Flow<Unit> = kotlinx.coroutines.flow.emptyFlow(),
+    val identity: () -> MusicSourceIdentity?,
+)
+
 /**
  * 前端统一调用的音乐源接口，整合了多 Provider 和本地音乐。
  * 所有涉及到资源定位的入参全部采用带有 Provider 命名空间的 [CPMediaId] (String)。
  */
 interface UnifiedMusicSource : ExtendedMusicSource {
+    fun accountIdentity(): MusicSourceIdentity? = null
+    val accountChanges: kotlinx.coroutines.flow.Flow<Unit> get() = kotlinx.coroutines.flow.emptyFlow()
     suspend fun getRecommendedSongs(limit: Int = 30): MusicResult<List<TrackSummary>> =
         cp.player.core.BackendResult.Unsupported("Recommendations not supported")
     suspend fun getRecommendedPlaylists(limit: Int = 30): MusicResult<List<PlaylistSummary>> =

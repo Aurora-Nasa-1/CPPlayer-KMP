@@ -291,6 +291,17 @@ class ListenTogetherEngine(
         playlistJob?.cancel(); playlistJob = null
     }
 
+    /** Account/provider changes retire room state and all queued room mutations together. */
+    fun resetSession() {
+        val wasRunning = loop?.isActive == true
+        stop()
+        teardownSync()
+        while (reportChannel.tryReceive().isSuccess) { }
+        while (playlistChannel.tryReceive().isSuccess) { }
+        _state.value = ListenTogetherState(supported = backend.isSupported(), myUserId = myUserId())
+        if (wasRunning) start()
+    }
+
     /** 手动刷新（进入房间页时调用，让页面立刻有数据而不是等一个轮询周期）。 */
     suspend fun refresh() = refreshInternal()
 

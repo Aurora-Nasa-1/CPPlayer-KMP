@@ -69,6 +69,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -184,7 +185,26 @@ class MusicBackend private constructor(
             localMusicSource = source,
             activeProvider = { providerManager.currentProvider ?: state.activeProvider },
             sdkHost = { providerManager.sdkSessions.current() },
+            accountContext = cp.player.core.music.MusicSourceAccountContext(
+                changes = providerManager.sdkSessions.changes.map { Unit },
+                identity = { activeProvider()?.let { cp.player.core.music.MusicSourceIdentity(it.id, sdkAccountNamespace()) } },
+            ),
         )
+
+    private fun sdkAccountNamespace(): String {
+        val provider = activeProvider()
+        val account = providerManager.sdkSessions.selectedAccountId
+        return cp.player.core.util.cacheKey(
+            providerId = provider?.id.orEmpty(), method = "stream", params = emptyMap(),
+            cookie = provider?.let { providerManager.cookieStorage.getCookie(it.id, account) },
+            providerConfig = provider?.getCustomSettings().orEmpty() + mapOf(
+                "__sdkAccount" to account,
+                "__sdkCredentialEpoch" to (provider?.let {
+                    providerManager.cookieStorage.revision(it.id, account)
+                } ?: 0).toString(),
+            ),
+        )
+    }
 
     // ============ 统一音乐源 (统一 MediaId) ============
 
@@ -322,21 +342,7 @@ class MusicBackend private constructor(
             // 桌面是空实现；Android 上是真实投放，但**所有渠道默认关闭**，
             // 只有用户在设置页显式打开后才会对外写数据。
             lyricPusher = lyricPusherLazy.value,
-            cacheNamespace = {
-                val provider = activeProvider()
-                val account = providerManager.sdkSessions.selectedAccountId
-                cp.player.core.util.cacheKey(
-                    providerId = provider?.id.orEmpty(), method = "stream", params = emptyMap(),
-                    cookie = provider?.let { providerManager.cookieStorage.getCookie(it.id, account) },
-                    providerConfig = provider?.getCustomSettings().orEmpty() +
-                        mapOf(
-                            "__sdkAccount" to account,
-                            "__sdkCredentialEpoch" to (provider?.let {
-                                providerManager.cookieStorage.revision(it.id, account)
-                            } ?: 0).toString(),
-                        ),
-                )
-            },
+            cacheNamespace = { sdkAccountNamespace() },
             downloadedFileResolver = { mediaId ->
                 val identity = cp.player.core.music.CPMediaId.parseOrNull(mediaId)
                 downloadManager.tasksFlow.value.firstOrNull {
@@ -1002,7 +1008,7 @@ class MusicBackend private constructor(
     /** 释放后端单例（主要供测试用）。 */
     fun reset() {
         providerManager.sdkSessions.invalidate()
-        CoroutineScope(Dispatchers.Default).launch { providerManager.sdkSessions.close() }
+        CoroutineScope(Dispatchers.Default).launch { providerManager.close() }
         runCatching { stopAutoPush() }
         runCatching { localServerStatusJob?.cancel() }
         runCatching { localServer?.stop() }

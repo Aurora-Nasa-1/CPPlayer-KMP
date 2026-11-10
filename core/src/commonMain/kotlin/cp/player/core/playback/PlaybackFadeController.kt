@@ -88,6 +88,7 @@ internal class PlaybackFadeController(
     }
 
     fun maybeStartFadeOut(pos: Long, durationMs: Long?, currentMediaId: String?, engineReady: Boolean) {
+        if (useNativeCrossfade) return
         val cfg = fadeConfig
         if (!cfg.enabled || !cfg.fadeOut) return
         if (!engineReady) return

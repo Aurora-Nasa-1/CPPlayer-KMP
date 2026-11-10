@@ -13,6 +13,7 @@ import cp.player.core.provider.typed.searchMvs
 import cp.player.core.provider.typed.searchVideos
 import cp.player.core.provider.typed.searchUsers
 import cp.player.core.provider.typed.searchDjRadios
+import cp.player.core.provider.typed.getLikeListPage
 import cp.player.core.provider.typed.getCommentPage
 import cp.player.core.monitor.HealthMonitor
 import cp.player.core.util.PlatformSupport
@@ -23,11 +24,30 @@ import kotlinx.coroutines.CancellationException
 private const val UNKNOWN_PROVIDER = "unknown"
 
 /** Local media or an account-scoped SDK session. No legacy transport or JSON normalization. */
-class UnifiedMusicSourceImpl(
+class UnifiedMusicSourceImpl private constructor(
     private val localMusicSource: LocalMediaSource,
-    private val sdkHost: suspend () -> ProviderHost? = { null },
-    private val activeProvider: () -> BackendProvider? = { null },
+    private val sdkHost: suspend () -> ProviderHost?,
+    private val activeProvider: () -> BackendProvider?,
+    private val accountContext: MusicSourceAccountContext?,
 ) : ExtendedMusicSourceBase(), UnifiedMusicSource {
+    constructor(
+        localMusicSource: LocalMediaSource,
+        sdkHost: suspend () -> ProviderHost? = { null },
+        activeProvider: () -> BackendProvider? = { null },
+    ) : this(localMusicSource, sdkHost, activeProvider, null)
+
+    constructor(
+        localMusicSource: LocalMediaSource,
+        sdkHost: suspend () -> ProviderHost?,
+        accountContext: MusicSourceAccountContext,
+        activeProvider: () -> BackendProvider? = { null },
+    ) : this(localMusicSource, sdkHost, activeProvider, accountContext)
+
+    override fun accountIdentity(): MusicSourceIdentity? =
+        if (accountContext != null) accountContext.identity()
+        else activeProvider()?.let { MusicSourceIdentity(it.id, it.id) }
+    override val accountChanges: kotlinx.coroutines.flow.Flow<Unit>
+        get() = accountContext?.changes ?: kotlinx.coroutines.flow.emptyFlow()
     override suspend fun <T> extendedOperation(block: suspend (ProviderHost) -> T): BackendResult<T> = boundary("extendedOperation") {
         val host = sdkHost() ?: return@boundary BackendResult.Error("No active SDK provider")
         BackendResult.Success(block(host))
@@ -228,7 +248,22 @@ class UnifiedMusicSourceImpl(
 
     override suspend fun getLikeList(uid: String): MusicResult<Set<String>> = boundary("getLikeList") {
         val host = sdkHost() ?: return@boundary BackendResult.Error("No active SDK provider")
-        BackendResult.Success(host.getLikeList(UserRequest(uid)).items.toSet())
+        if (ExtendedCapability.GETLIKELISTPAGE !in host.capabilities().supported)
+            return@boundary BackendResult.Success(host.getLikeList(UserRequest(uid)).items.toSet())
+        val ids = linkedSetOf<String>()
+        var offset = 0
+        while (true) {
+            val page = host.getLikeListPage(PagedIdRequest(uid, MAX_ITEMS, offset))
+            val previousSize = ids.size
+            require(offset <= 1_000_000 - page.items.size) { "Like-list pagination exceeds collection bounds" }
+            ids.addAll(page.items)
+            offset += page.items.size
+            if (!page.hasMore) break
+            require(page.items.isNotEmpty() && ids.size > previousSize) {
+                "Like-list pagination made no progress"
+            }
+        }
+        BackendResult.Success(ids)
     }
 
     override suspend fun getUserAlbums(uid: String, limit: Int, offset: Int): MusicResult<List<AlbumSummary>> = boundary("getUserAlbums") {

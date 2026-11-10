@@ -309,7 +309,7 @@ internal class PlaybackMediaLoader(
             var summary = entry.summary ?: downloadedSummary ?: source.getTrackDetail(mediaId).getOrNull()?.also { entry.summary = it }
             if (summary == null) {
                 // findByMediaId 只查旁车索引；别在这里用 entries() —— 那会列目录 + 解析标签。
-                summary = streamLocalizer.findByMediaId(mediaId)?.let { cacheEntry ->
+                summary = streamLocalizer.findByMediaId(mediaId, namespace)?.let { cacheEntry ->
                     TrackSummary(
                         id = mediaId,
                         name = cacheEntry.title?.ifBlank { null } ?: "离线曲目",
@@ -394,7 +394,7 @@ internal class PlaybackMediaLoader(
                     val actualLevelBeforeFallback = remoteSongUrl?.level?.ifBlank { requestedLevel } ?: requestedLevel
                     val tempCacheKey = cacheKeyOf(mediaId, actualLevelBeforeFallback, namespace)
                     val cachedStream = streamLocalizer.cachedPath(tempCacheKey)
-                        ?: streamLocalizer.findByMediaId(mediaId)?.let { streamLocalizer.entryPath(it.id) }
+                        ?: streamLocalizer.findByMediaId(mediaId, namespace)?.let { streamLocalizer.entryPath(it.id) }
                     if (cachedStream != null) {
                         val ext = cachedStream.substringAfterLast('.', "").lowercase()
                         val inferredLevel = if (ext == "flac") "lossless" else "standard"

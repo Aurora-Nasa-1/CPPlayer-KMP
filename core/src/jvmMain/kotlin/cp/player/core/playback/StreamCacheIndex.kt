@@ -18,6 +18,7 @@ internal data class StreamCacheMetaRecord(
     val title: String? = null,
     val artist: String? = null,
     val recordedAtMs: Long = 0L,
+    val namespaceHash: String? = null,
 )
 
 /** 索引文件的结构。 */
@@ -110,9 +111,11 @@ internal class StreamCacheIndex(private val file: File) {
      * `findByMediaId` 使用。同一首歌多音质缓存时取最后写入的那条。
      */
     @Synchronized
-    fun entryOfMediaId(mediaId: String): Pair<String, StreamCacheMetaRecord>? {
+    fun entryOfMediaId(mediaId: String, namespaceHash: String? = null, scoped: Boolean = false): Pair<String, StreamCacheMetaRecord>? {
         ensureLoaded()
-        return records.entries.lastOrNull { it.value.mediaId == mediaId }?.let { it.key to it.value }
+        return records.entries.lastOrNull {
+            it.value.mediaId == mediaId && (!scoped || it.value.namespaceHash == namespaceHash)
+        }?.let { it.key to it.value }
     }
 
     /** 丢弃不在 [existing] 里的记录：被外部（文件管理器）删掉的文件不该在索引里留尸。带宽限期防并发落盘未就绪。 */

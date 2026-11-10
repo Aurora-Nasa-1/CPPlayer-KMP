@@ -1,13 +1,5 @@
 package cp.player.core.listentogether
 
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.longOrNull
-
 /**
  * 「一起听」领域模型（纯数据，不依赖任何音源实现）。
  *
@@ -21,7 +13,12 @@ import kotlinx.serialization.json.longOrNull
  * 上游响应的层级是 `{code, data:{...}}` 且字段名与语义不完全对应（例如
  * `playStatus` 与 `commandType` 是两套枚举，实测还大小写不敏感）。
  * 直接绑 `@Serializable` 会把**上游的偶然命名**固化进领域模型——上游改字段名就全线崩。
- * 这里只对**稳定字段**做显式取值，取不到就是 null。
+ * 解析方只对**稳定字段**做显式取值，取不到就是 null。
+ *
+ * ### 解析代码不在这里
+ * 本文件刻意只放数据类。JSON 取值器与 `listentogether/status`、`sync/playlist/get`
+ * 的解析原本也在这里，2026-11-10 随 JSON 兼容层一并清退（调用方改为从强类型返回值
+ * 直接构造模型），已无任何调用方，故删除。
  */
 
 /** 一起听房间（只读视图）。 */
@@ -129,96 +126,3 @@ data class RoomSnapshot(
     val command: RoomPlaybackCommand?,
     val playlist: RoomPlaylist?,
 )
-
-// ======================== 解析 ========================
-
-/**
- * 解析 `listentogether/status` 的响应。
- *
- * 实测原文：`{"code":200,"data":{"anotherDeviceInfo":null,"anotherFollowStatus":false,
- * "inRoom":false,"roomInfo":null,"status":null},"message":""}`
- */
-fun parseMembership(root: JsonElement): ListenTogetherMembership {
-    val data = root.obj("data") ?: return ListenTogetherMembership(false, null, null)
-    return ListenTogetherMembership(
-        inRoom = data.bool("inRoom") ?: false,
-        room = data.obj("roomInfo")?.let(::parseRoom),
-        connectionStatus = data.str("status"),
-    )
-}
-
-/** 解析 `roomInfo`（实测结构见方案 §9.2）。 */
-fun parseRoom(o: JsonObject): ListenTogetherRoom = ListenTogetherRoom(
-    roomId = o.str("roomId").orEmpty(),
-    creatorId = o.long("creatorId") ?: 0L,
-    roomType = o.str("roomType"),
-    createdAtMs = o.long("roomCreateTime"),
-    effectiveDurationMs = o.long("effectiveDurationMs"),
-    waitMs = o.long("waitMs"),
-    members = o["roomUsers"]?.asArray()?.mapNotNull { e ->
-        val m = e.obj() ?: return@mapNotNull null
-        val uid = m.long("userId") ?: return@mapNotNull null
-        ListenTogetherMember(
-            userId = uid,
-            nickname = m.str("nickname").orEmpty(),
-            avatarUrl = m.str("avatarUrl"),
-        )
-    }.orEmpty(),
-)
-
-/**
- * 解析 `listentogether/sync/playlist/get` 的响应。
- *
- * 实测：上报过队列之后，`data` 里会同时带 `playCommand` 与 `playlist`；
- * 从没上报过时 `data` 是空对象 `{}` ⇒ 两个字段都为 null。
- */
-fun parseSnapshot(root: JsonElement): RoomSnapshot {
-    val data = root.obj("data") ?: return RoomSnapshot(null, null)
-    return RoomSnapshot(
-        command = data.obj("playCommand")?.let(::parseCommand),
-        playlist = data.obj("playlist")?.let(::parsePlaylist),
-    )
-}
-
-private fun parseCommand(o: JsonObject): RoomPlaybackCommand = RoomPlaybackCommand(
-    commandType = LtCommandType.from(o.str("commandType")),
-    playStatus = LtCommandType.from(o.str("playStatus")),
-    progressMs = o.long("progress") ?: 0L,
-    targetSongId = o.str("targetSongId")?.takeIf { it.isNotEmpty() },
-    formerSongId = o.str("formerSongId")?.takeIf { it.isNotEmpty() },
-    userId = o.long("userId") ?: 0L,
-    clientSeq = o.long("clientSeq") ?: 0L,
-    serverSeq = o.long("serverSeq") ?: 0L,
-)
-
-private fun parsePlaylist(o: JsonObject): RoomPlaylist = RoomPlaylist(
-    songIds = o.obj("displayList")?.get("result")?.asArray()
-        ?.mapNotNull { it.jsonPrimitive.contentOrNull }
-        .orEmpty(),
-    replace = o.bool("replace") ?: false,
-    versions = o["version"]?.asArray()?.mapNotNull { e ->
-        val v = e.obj() ?: return@mapNotNull null
-        val uid = v.long("userId") ?: return@mapNotNull null
-        uid to (v.long("version") ?: 0L)
-    }?.toMap().orEmpty(),
-)
-
-// ======================== 安全取值 ========================
-// 上游任何一层都可能是 null 或类型漂移（实测 progress 上报字符串、回读数字），
-// 所以一律走这几个不抛异常的取值器，而不是 `!!` 或强转。
-
-private fun JsonElement.obj(): JsonObject? = runCatching { jsonObject }.getOrNull()
-internal fun JsonElement.obj(key: String): JsonObject? =
-    runCatching { (this as? JsonObject)?.get(key)?.jsonObject }.getOrNull()
-internal fun JsonObject.str(key: String): String? =
-    runCatching { get(key)?.jsonPrimitive?.contentOrNull }.getOrNull()
-
-internal fun JsonObject.bool(key: String): Boolean? =
-    runCatching { get(key)?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() }.getOrNull()
-
-/** 同时接受数字与字符串形态（实测 `progress` 上报字符串、回读数字）。 */
-internal fun JsonObject.long(key: String): Long? =
-    runCatching { get(key)?.jsonPrimitive?.longOrNull }.getOrNull()
-        ?: runCatching { get(key)?.jsonPrimitive?.contentOrNull?.toLongOrNull() }.getOrNull()
-
-private fun JsonElement.asArray(): List<JsonElement>? = runCatching { jsonArray }.getOrNull()?.toList()

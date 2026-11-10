@@ -378,7 +378,7 @@ class DownloadEngine(
                     val resolved = allocatePathLocked(
                         task.title,
                         task.artist,
-                        inferExtension(songUrl.url, task.mediaType),
+                        mediaExtension(songUrl, task.mediaType),
                     )
                     updateTask(task.id) { it.copy(localPath = resolved) }
                     resolved
@@ -414,7 +414,7 @@ class DownloadEngine(
             throw DownloadFailedException("下载临时文件重命名失败: $partPath")
         }
         val downloaded = resumeBytes + written
-        val enriched = downloadCompanionAssets(task, targetPath)
+        val enriched = downloadCompanionAssets(taskById(task.id) ?: task, targetPath)
         // 条件式完成迁移：仅从 PENDING/DOWNLOADING → COMPLETED，不覆盖并发写入的 PAUSED/CANCELLED
         val completed = updateTaskIf(
             task.id,
@@ -455,13 +455,29 @@ class DownloadEngine(
     private suspend fun fetchSongUrl(task: DownloadTask): SongUrl {
         var lastError: String? = null
         repeat(URL_FETCH_ATTEMPTS) {
-            when (val result = source.getSongUrl(task.mediaId, task.qualityLevel)) {
+            val resolved = if (task.mediaType == MediaType.VIDEO) {
+                when (val video = source.resolveVideoResource(task.mediaId, task.qualityLevel.toIntOrNull() ?: 1080)) {
+                    is BackendResult.Success -> video.data.let {
+                        BackendResult.Success(SongUrl(
+                            it.url, it.actualQuality, it.sizeBytes, it.expiresAtEpochMs,
+                            headers = it.headers.associate { header -> header.name to header.value },
+                            codec = it.format, bitrate = it.bitrate, qualityKey = it.actualQuality,
+                        ))
+                    }
+                    is BackendResult.Error -> video
+                    is BackendResult.Unsupported -> video
+                }
+            } else source.getSongUrl(task.mediaId, task.qualityLevel)
+            when (val result = resolved) {
                 is BackendResult.Success -> {
                     val songUrl = result.data
                     when {
                         songUrl.url.isBlank() -> lastError = "取直链失败：地址为空"
                         songUrl.expireAt == null ||
-                            songUrl.expireAt > currentTimeMillis() + EXPIRE_GUARD_MS -> return songUrl
+                            songUrl.expireAt > currentTimeMillis() + EXPIRE_GUARD_MS -> {
+                                updateTask(task.id) { it.copy(qualityLevel = songUrl.level) }
+                                return songUrl
+                            }
                         else -> lastError = "直链已过期，重试取链"
                     }
                 }
@@ -514,6 +530,13 @@ class DownloadEngine(
             MediaType.VIDEO -> "mp4"
             MediaType.OTHER -> "bin"
         }
+    }
+
+    private fun mediaExtension(resource: SongUrl, mediaType: MediaType): String {
+        val format = resource.codec?.lowercase()
+        if (mediaType == MediaType.VIDEO && format in setOf("mp4", "webm", "mkv", "mov", "m4v", "avi"))
+            return format!!
+        return inferExtension(resource.url, mediaType)
     }
 
     /** 清洗文件名非法字符（Windows/Unix 通用），限长并折叠空白。 */

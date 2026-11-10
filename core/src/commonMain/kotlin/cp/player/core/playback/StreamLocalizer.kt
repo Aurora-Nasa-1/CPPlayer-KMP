@@ -208,6 +208,10 @@ interface StreamLocalizer {
      */
     fun findByMediaId(mediaId: String): SongCacheEntry? = null
 
+    /** Playback lookup must stay inside the current credential/configuration namespace. */
+    fun findByMediaId(mediaId: String, namespace: String): SongCacheEntry? =
+        if (namespace.isEmpty()) findByMediaId(mediaId) else null
+
     /**
      * 按 [SongCacheEntry.id]（文件名）删除单条。
      *

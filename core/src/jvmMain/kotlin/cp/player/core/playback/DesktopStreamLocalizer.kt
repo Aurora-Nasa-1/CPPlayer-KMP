@@ -87,7 +87,7 @@ class DesktopStreamLocalizer(
         val stem = sanitize(cacheKey)
         val hit = cachedFile(stem) ?: return
         val existing = index.metaOf(hit.name)
-        if (existing?.title.isNullOrBlank()) {
+        if (existing?.title.isNullOrBlank() || (existing.namespaceHash == null && '#' in cacheKey.substringAfterLast('@'))) {
             recordMeta(hit.name, cacheKey, meta)
         }
     }
@@ -261,6 +261,7 @@ class DesktopStreamLocalizer(
                             qualityLevel = inferredQuality,
                             title = tagInfo?.title ?: record?.title,
                             artist = tagInfo?.artist ?: record?.artist,
+                            namespaceHash = record?.namespaceHash,
                         )
                         index.put(file.name, updated)
                         record = updated
@@ -303,7 +304,14 @@ class DesktopStreamLocalizer(
      * 它会在播放失败的回退路径上被调用，那里一分钟都不能多花。
      */
     override fun findByMediaId(mediaId: String): SongCacheEntry? {
-        val (name, meta) = index.entryOfMediaId(mediaId) ?: return null
+        return findEntry(index.entryOfMediaId(mediaId))
+    }
+
+    override fun findByMediaId(mediaId: String, namespace: String): SongCacheEntry? =
+        findEntry(index.entryOfMediaId(mediaId, namespace.takeIf { it.isNotEmpty() }?.let(::stableHash64), scoped = true))
+
+    private fun findEntry(entry: Pair<String, StreamCacheMetaRecord>?): SongCacheEntry? {
+        val (name, meta) = entry ?: return null
         val file = File(cacheDir, name).takeIf { it.isFile && it.length() > 0L } ?: return null
         return SongCacheEntry(
             id = file.name,
@@ -451,6 +459,7 @@ class DesktopStreamLocalizer(
                 qualityLevel = level.takeIf { it.isNotBlank() },
                 title = meta?.title,
                 artist = meta?.artist,
+                namespaceHash = qualityKey.substringAfter('#', "").takeIf { it.isNotEmpty() },
             ),
         )
     }
