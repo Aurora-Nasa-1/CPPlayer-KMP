@@ -40,7 +40,7 @@ import kotlin.math.sqrt
  * 旧实现为了下发声道平衡/立体声宽度把 `enabled` 置真，却把 `mix`/`feedback` 留在默认值 ⇒
  * **用户只是想往左偏一点，听到的是一条 240 ms 的混响尾巴**。
  */
-internal object DesktopPeqMapper {
+object FlickPeqMapper {
 
     /** 低于这个增益（dB）的段视作「平直」，不下发。配置量化步长是 0.1 dB，留一半余量。 */
     const val MIN_AUDIBLE_GAIN_DB = 0.05f

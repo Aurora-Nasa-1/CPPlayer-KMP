@@ -61,6 +61,12 @@ class DesktopHiResPlatformPlayer(
     private val _seekFailures = MutableSharedFlow<SeekFailure>(extraBufferCapacity = 8)
     override val seekFailures: SharedFlow<SeekFailure> = _seekFailures.asSharedFlow()
 
+    private val _nativeTrackTransitions = MutableStateFlow<NativeTrackTransition?>(null)
+    override val nativeTrackTransitions: StateFlow<NativeTrackTransition?> = _nativeTrackTransitions.asStateFlow()
+    private var nativeTransitionSequence = 0L
+    private var currentMediaId: String? = null
+    private val queuedMediaIds = mutableMapOf<String, String>()
+
     override val supportsExclusiveAudio: Boolean get() = isExclusive
 
     /**
@@ -99,6 +105,11 @@ class DesktopHiResPlatformPlayer(
             }
             if (!ok) logger.fine("queueNext rejected: $source")
         }
+    }
+
+    override fun queueNext(mediaId: String, source: String, headers: Map<String, String>) {
+        queuedMediaIds[source] = mediaId
+        queueNext(source, headers)
     }
 
     override val supportsNativeCrossfade: Boolean get() = DesktopHiResEngine.supportsExtendedFeatures
@@ -161,7 +172,9 @@ class DesktopHiResPlatformPlayer(
                     is DesktopAudioEvent.StateChanged -> handleStateChanged(event.state)
                     is DesktopAudioEvent.Progress -> handleProgress(event)
                     is DesktopAudioEvent.FormatChanged -> handleFormatChanged(event)
-                    is DesktopAudioEvent.TrackEnded -> handleTrackEnded()
+                    is DesktopAudioEvent.TrackEnded -> handleTrackEnded(event.path)
+                    is DesktopAudioEvent.CrossfadeStarted -> handleNativeTransition(event.toPath)
+                    is DesktopAudioEvent.NextTrackReady -> handleNativeTransition(event.path)
                     is DesktopAudioEvent.Error -> handleError(event.message)
                     else -> {}
                 }
@@ -176,6 +189,16 @@ class DesktopHiResPlatformPlayer(
             "buffering" -> PlatformPlaybackState.Buffering
             "idle", "stopped" -> PlatformPlaybackState.Idle
             else -> _state.value
+        }
+        // ⚠️ 引擎播完（无 gapless 队列）时先发 TrackEnded 紧跟 StateChanged(Stopped)
+        // （engine.rs finished_rx 处理），StateFlow 合并快速赋值会让 Ended 被 Idle 吞掉
+        // ⇒ PlaybackControllerImpl.onTrackEnded() 永远不触发、播完不切下一首。
+        // 与 PlatformPlayer.android.kt 的 STATE_ENDED 保护同构：Ended 只能被
+        // Playing/Buffering（新曲开始）覆写，不能被 Idle/Paused 吞掉。
+        if (_state.value == PlatformPlaybackState.Ended &&
+            (newState == PlatformPlaybackState.Idle || newState == PlatformPlaybackState.Paused)
+        ) {
+            return
         }
         _state.value = newState
     }
@@ -221,6 +244,20 @@ class DesktopHiResPlatformPlayer(
         _state.value = PlatformPlaybackState.Ended
     }
 
+    private fun handleTrackEnded(path: String) {
+        if (isNativeQueuedTrackEnding(currentMediaId, queuedMediaIds, path)) return
+        handleTrackEnded()
+    }
+
+    private fun handleNativeTransition(path: String) {
+        val mediaId = queuedMediaIds[path] ?: return
+        seekTracker.cancel()
+        val previous = currentMediaId
+        currentMediaId = mediaId
+        _positionMs.value = 0L
+        _nativeTrackTransitions.value = NativeTrackTransition(mediaId, previous, ++nativeTransitionSequence)
+    }
+
     private fun handleError(message: String) {
         if (message.contains("seek", ignoreCase = true)) {
             logger.warning("Desktop Hi-Res seek error (non-fatal): $message")
@@ -240,6 +277,8 @@ class DesktopHiResPlatformPlayer(
         headers: Map<String, String>,
         metadata: PlaybackMetadata?,
     ) {
+        queuedMediaIds.clear()
+        currentMediaId = metadata?.id
         seekTracker.cancel()
         _durationMs.value = metadata?.durationMs ?: 0L
         _positionMs.value = startPositionMs
@@ -416,7 +455,7 @@ class DesktopHiResPlatformPlayer(
     /**
      * 应用音效配置（全量覆盖语义，内部做 diff + 去抖）。
      *
-     * 参数怎么算、为什么这么算，全部在 [DesktopPeqMapper] 里（可单测）。
+     * 参数怎么算、为什么这么算，全部在 [FlickPeqMapper] 里（可单测）。
      * 这里只负责「什么时候真的下发」：
      * - 指纹相同的重复提交直接返回 —— 设置页每次重组都会提交同一份配置；
      * - 指纹变了才排队，且与上一次下发至少间隔 [EFFECT_MIN_INTERVAL_MS]；
@@ -425,9 +464,9 @@ class DesktopHiResPlatformPlayer(
     override fun applyAudioEffect(config: AudioEffectConfig) {
         if (!DesktopHiResEngine.isAvailable) return
 
-        val peq = DesktopPeqMapper.peqPlan(config.equalizer)
-        val fx = DesktopPeqMapper.fxPlan(config.mixer)
-        val dynamics = DesktopPeqMapper.dynamicsPlan(config.leveling, config.enabled)
+        val peq = FlickPeqMapper.peqPlan(config.equalizer)
+        val fx = FlickPeqMapper.fxPlan(config.mixer)
+        val dynamics = FlickPeqMapper.dynamicsPlan(config.leveling, config.enabled)
         val dynamicsSupported = DesktopHiResEngine.supportsExtendedFeatures
         val peqSignature = peq.signature()
         val fxSignature = fx.signature()
@@ -477,10 +516,10 @@ class DesktopHiResPlatformPlayer(
                             balance = fx.balance,
                             width = fx.width,
                             // ⚠️ 这三个必须显式写 0：引擎的 enabled 开关**同时**带着一条 240 ms 混响，
-                            // 不清零的话「调左右平衡」会听到混响尾巴（见 DesktopPeqMapper.CLEAN_FX_*）。
-                            mix = DesktopPeqMapper.CLEAN_FX_MIX,
-                            feedback = DesktopPeqMapper.CLEAN_FX_FEEDBACK,
-                            damp = DesktopPeqMapper.CLEAN_FX_DAMP,
+                            // 不清零的话「调左右平衡」会听到混响尾巴（见 FlickPeqMapper.CLEAN_FX_*）。
+                            mix = FlickPeqMapper.CLEAN_FX_MIX,
+                            feedback = FlickPeqMapper.CLEAN_FX_FEEDBACK,
+                            damp = FlickPeqMapper.CLEAN_FX_DAMP,
                         )
                     } else {
                         true

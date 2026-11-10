@@ -107,6 +107,78 @@ class DesktopFlickEngineTest {
         assertEquals(false, DesktopHiResEngine.isExclusiveMode)
     }
 
+    // ---------------------------------------------------------------- 独占缺省回归
+    //
+    // 真实事故：设置页明明是「共享」，冷启动照样
+    // `SUCCESS: Initialized in EXCLUSIVE (Bit-Perfect) hardware mode!`（其它应用全静音）。
+    // 三层各有各的「默认值」，漏一处就回到独占 —— 这里钉源码：
+    // ① setExclusiveMode 必须无条件把开关下发到 Rust（`std::env::set_var` 是可靠通道）；
+    // ② setProcessEnv 的 FFM 兜底不许用 `invokeExact`（调用点返回类型 Object ≠ handle 的 int
+    //    ⇒ WrongMethodTypeException 被静默吞掉，环境变量从未写成）；
+    // ③ vendored cpal（真正选 AUDCLNT_SHAREMODE 的地方）缺省必须是 shared。
+
+    private fun readSource(relative: String): String {
+        var dir: java.io.File? = java.io.File("").absoluteFile
+        val found = buildList {
+            while (dir != null) {
+                java.io.File(dir, relative).takeIf { it.isFile }?.let { add(it) }
+                val underModule = java.io.File(java.io.File(dir, "core"), relative)
+                if (underModule.isFile) add(underModule)
+                dir = dir.parentFile
+            }
+        }.firstOrNull()
+        check(found != null) { "找不到 $relative" }
+        return found.readText()
+    }
+
+    private fun functionBody(source: String, signature: String): String =
+        source.substringAfter(signature).substringBefore("\n    }")
+
+    @Test
+    fun `setExclusiveMode 必须无条件下发 JNI 不许被 isInitialized 挡住`() {
+        val src = readSource("src/desktopMain/kotlin/cp/player/core/playback/DesktopHiResEngine.kt")
+        val body = functionBody(src, "fun setExclusiveMode(enabled: Boolean): Boolean {")
+        assertTrue(
+            body.contains("nativeSetExclusiveMode(enabled)"),
+            "setExclusiveMode 必须调用 nativeSetExclusiveMode —— 它才是 Rust 侧可靠的 env 写入通道",
+        )
+        assertFalse(
+            body.contains("isInitialized"),
+            "nativeSetExclusiveMode 不许被 isInitialized 门控：" +
+                "冷启动时 setExclusiveMode 先于 initEngine() 执行，被挡掉后 CP_WASAPI_EXCLUSIVE 永远没人写",
+        )
+    }
+
+    @Test
+    fun `setProcessEnv 不许用 invokeExact 且宽串分配不得依赖 JDK 22 的 allocateFrom`() {
+        val src = readSource("src/desktopMain/kotlin/cp/player/core/playback/DesktopHiResEngine.kt")
+        val body = functionBody(src, "private fun setProcessEnv(key: String, value: String) {")
+        assertFalse(
+            body.contains("invokeExact("),
+            "invokeExact 的调用点描述符会被 Kotlin 编译成 (MemorySegment,MemorySegment)Object，" +
+                "与 downcall handle 的 (MemorySegment,MemorySegment)int 不一致 ⇒ WrongMethodTypeException " +
+                "被 catch 静默吞掉，环境变量从未写成。用 invokeWithArguments（asType 适配）",
+        )
+        assertTrue(body.contains("invokeWithArguments"), "FFM 兜底通道必须真的调用 SetEnvironmentVariableW")
+        assertTrue(body.contains("allocWideCString"), "宽字符分配走 allocWideCString（JDK 21 可用）")
+        val allocBody = functionBody(src, "private fun allocWideCString(")
+        assertFalse(
+            allocBody.contains("allocateFrom("),
+            "Arena.allocateFrom(String, Charset) 是 JDK 22+ API，生产运行时 JBR 21 上是 NoSuchMethodError",
+        )
+    }
+
+    @Test
+    fun `vendored cpal 的 CP_WASAPI_EXCLUSIVE 缺省必须是共享`() {
+        val src = readSource("native/flick-player-engine/vendor/cpal/src/host/wasapi/device.rs")
+        val block = src.substringAfter("CP_WASAPI_EXCLUSIVE").substringBefore(";")
+        assertTrue(
+            block.contains("unwrap_or(false)"),
+            "cpal 是真正选 AUDCLNT_SHAREMODE 的地方：环境变量缺失时必须回落 shared，" +
+                "与 engine.rs::desired_output_signature 及 DEFAULT_WASAPI_EXCLUSIVE 一致（缺省=独占曾是事故根因）",
+        )
+    }
+
     @Test
     fun `DesktopHiResPlatformPlayer reports correct audio effect capabilities`() {
         val player = DesktopHiResPlatformPlayer(isExclusive = false)
@@ -114,7 +186,9 @@ class DesktopFlickEngineTest {
         assertTrue(caps.supportsEqualizer)
         assertTrue(caps.supportsBalance)
         assertTrue(caps.supportsVirtualizer)
-        assertFalse(caps.supportsLeveling)
+        // leveling 跟随引擎能力位（apiLevel ≥ 2 的 DLL 才有 compressor/limiter 导出），
+        // 不硬编码 true/false —— 测试环境可能拿到新旧任意一版 DLL。
+        assertEquals(DesktopHiResEngine.supportsExtendedFeatures, caps.supportsLeveling)
         player.release()
     }
 }

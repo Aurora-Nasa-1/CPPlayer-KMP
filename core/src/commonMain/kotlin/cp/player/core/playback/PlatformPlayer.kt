@@ -26,6 +26,13 @@ import io.github.kdroidfilter.composemediaplayer.audio.AudioPlayerState
  */
 data class SeekFailure(val targetMs: Long, val actualMs: Long)
 
+data class NativeTrackTransition(val mediaId: String, val previousMediaId: String?, val sequence: Long)
+
+internal fun isNativeQueuedTrackEnding(currentMediaId: String?, queuedMediaIds: Map<String, String>, path: String): Boolean {
+    val queued = queuedMediaIds[path] ?: return false
+    return queued != currentMediaId
+}
+
 /**
  * 「无需上报 seek 失败」的实现共用的空流。
  *
@@ -77,6 +84,14 @@ interface PlatformMediaPlayer {
      */
     fun queueNext(source: String, headers: Map<String, String> = emptyMap()) {}
 
+    /** 带队列标识的预取；原生换源事件用它避免仅按易失效的 URL 猜曲目。 */
+    fun queueNext(mediaId: String, source: String, headers: Map<String, String>) {
+        queueNext(source, headers)
+    }
+
+    /** 引擎已完成双源切换；宿主只提交对应队列项，不得再次 load。 */
+    val nativeTrackTransitions: StateFlow<NativeTrackTransition?> get() = NoNativeTrackTransitions
+
     /**
      * 是否支持**引擎侧真交叉淡化**（两个解码源重叠）。
      *
@@ -113,6 +128,8 @@ interface PlatformMediaPlayer {
     fun setVolume(volume: Float)
     fun getVolume(): Float
 }
+
+private val NoNativeTrackTransitions: StateFlow<NativeTrackTransition?> = MutableStateFlow(null)
 
 interface PlatformPlayer : PlatformMediaPlayer {
     val formatInfo: StateFlow<AudioFormatInfo?>

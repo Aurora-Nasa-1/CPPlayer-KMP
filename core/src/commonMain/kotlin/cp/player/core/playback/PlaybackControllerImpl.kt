@@ -262,6 +262,11 @@ class PlaybackControllerImpl(
                 updateState { it.copy(formatInfo = info) }
             }
         }.launchIn(scope)
+
+        platform.nativeTrackTransitions.onEach { transition ->
+            if (transition == null) return@onEach
+            onNativeTrackTransition(transition)
+        }.launchIn(scope)
     }
 
     private data class Quad(val playing: Boolean, val buffering: Boolean, val error: String?, val ended: Boolean)
@@ -622,6 +627,37 @@ class PlaybackControllerImpl(
 
     private suspend fun playCurrent() {
         mediaLoader.playCurrent(advanceNavSeq = { navigationSeq += 1 })
+    }
+
+    private fun onNativeTrackTransition(transition: NativeTrackTransition) {
+        val mediaId = transition.mediaId
+        scope.launch {
+            val seqAtTransition = navigationSeq
+            if (navigationSeq != seqAtTransition || sleepAfterTrack || queueManager.repeatMode == RepeatMode.ONE) {
+                return@launch
+            }
+            val entry = navMutex.withLock {
+                if (navigationSeq != seqAtTransition) return@withLock null
+                val expected = queueManager.computeNext(autoAdvance = true) ?: return@withLock null
+                val entry = queueManager.getEntry(expected) ?: return@withLock null
+                if (entry.mediaId != mediaId) return@withLock null
+                queueManager.advanceTo(expected)
+                entry
+            } ?: return@launch
+            navigationSeq += 1
+            mediaLoader.onNativeTrackStarted(mediaId, entry.summary)
+            pushQueueState()
+            updateState {
+                it.copy(
+                    currentTrack = entry.summary,
+                    durationMs = entry.summary?.durationMs?.takeIf { duration -> duration > 0L } ?: 0L,
+                    positionMs = 0L,
+                    isBuffering = false,
+                    error = null,
+                )
+            }
+            ensureLyricsForCurrentIfNeeded()
+        }
     }
 
     private fun onTrackEnded() {

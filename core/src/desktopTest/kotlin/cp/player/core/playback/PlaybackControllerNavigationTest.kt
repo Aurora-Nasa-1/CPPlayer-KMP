@@ -42,6 +42,23 @@ class PlaybackControllerNavigationTest {
         val loadedUrls = mutableListOf<String>()
         val seekCalls = mutableListOf<Long>()
         var stopCount = 0
+        override val nativeTrackTransitions = MutableStateFlow<NativeTrackTransition?>(null)
+        private var transitionSequence = 0L
+        override val supportsGaplessQueue: Boolean get() = true
+        val queuedMediaIds = mutableListOf<String>()
+        private var nativePlaying = false
+
+        override fun queueNext(mediaId: String, source: String, headers: Map<String, String>) {
+            queuedMediaIds += mediaId
+        }
+
+        fun emitNativeTransition(mediaId: String) {
+            val previous = queuedMediaIds.firstOrNull()
+            nativePlaying = true
+            nativeTrackTransitions.value = NativeTrackTransition(mediaId, previous, ++transitionSequence)
+        }
+
+        fun emitEndedForQueuedSource() = Unit
 
         override suspend fun load(
             url: String,
@@ -50,6 +67,7 @@ class PlaybackControllerNavigationTest {
             metadata: PlaybackMetadata?,
         ) {
             loadedUrls += url
+            nativePlaying = false
             state.value = PlatformPlaybackState.Playing
         }
 
@@ -65,7 +83,10 @@ class PlaybackControllerNavigationTest {
         override fun getVolume(): Float = 1f
 
         /** 模拟底层播放器上报「自然播完」。 */
-        fun emitEnded() { state.value = PlatformPlaybackState.Ended }
+        fun emitEnded() {
+            if (nativePlaying) return
+            state.value = PlatformPlaybackState.Ended
+        }
     }
 
     private class FakeSource : UnifiedMusicSource {
@@ -129,6 +150,45 @@ class PlaybackControllerNavigationTest {
 
         assertEquals(1, c.state.value.currentIndex)
         assertEquals("https://cdn/2", platform.loadedUrls.last())
+    }
+
+    @Test
+    fun `native transition advances metadata without reloading the playing source`() = runBlocking {
+        val platform = FakePlatformPlayer()
+        val c = controller(platform, FakeSource())
+        c.playQueue(listOf(mid(1), mid(2), mid(3)), startIndex = 0)
+
+        platform.emitNativeTransition(mid(2))
+
+        assertEquals(1, c.state.value.currentIndex)
+        assertEquals(mid(2), c.state.value.currentTrack?.id)
+        assertEquals(1, platform.loadedUrls.size, "引擎已换源，宿主不得再 load 一次")
+        platform.emitEndedForQueuedSource()
+        assertEquals(1, c.state.value.currentIndex, "换源后的 TrackEnded 不得再次前进")
+    }
+
+    @Test
+    fun `queued old source ending is consumed but final queued track ending is not`() {
+        val queued = mapOf("https://cdn/2" to mid(2))
+        assertTrue(isNativeQueuedTrackEnding(mid(1), queued, "https://cdn/2"))
+        assertFalse(isNativeQueuedTrackEnding(mid(2), queued, "https://cdn/2"))
+        assertFalse(isNativeQueuedTrackEnding(mid(1), queued, "https://cdn/unknown"))
+    }
+
+    @Test
+    fun `stale native transition cannot undo a manual skip`() {
+        val platform = FakePlatformPlayer()
+        val dispatcher = ManualDispatcher()
+        val c = controller(platform, FakeSource(), dispatcher)
+        runBlocking { c.playQueue(listOf(mid(1), mid(2), mid(3)), startIndex = 0) }
+        dispatcher.drain()
+
+        platform.emitNativeTransition(mid(2))
+        c.skipNext()
+        dispatcher.drain()
+
+        assertEquals(1, c.state.value.currentIndex)
+        assertEquals(2, platform.loadedUrls.size)
     }
 
     @Test

@@ -25,6 +25,13 @@ class PlaybackControllerPreloadTest {
 
         val loadedUrls = mutableListOf<String>()
         val loadedHeaders = mutableListOf<Map<String, String>>()
+        val queued = mutableListOf<Triple<String, String, Map<String, String>>>()
+        var gapless = false
+        override val supportsGaplessQueue: Boolean get() = gapless
+
+        override fun queueNext(mediaId: String, source: String, headers: Map<String, String>) {
+            queued += Triple(mediaId, source, headers)
+        }
 
         override suspend fun load(
             url: String,
@@ -187,6 +194,26 @@ class PlaybackControllerPreloadTest {
 
         assertTrue(source.preloadedMediaIds.contains("netease://song/inserted"), "插入的下一首应被预加载")
 
+        c.release()
+    }
+
+    @Test
+    fun `gapless capable engine receives the resolved next stream and auth headers`() = runBlocking {
+        val platform = FakePlatformPlayer().apply { gapless = true }
+        val source = FakePreloadSource()
+        val c = PlaybackControllerImpl(
+            platform = platform,
+            source = source,
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        )
+
+        c.playQueue(listOf("netease://song/1", "netease://song/2"), startIndex = 0)
+        delay(1800)
+
+        assertEquals(
+            listOf(Triple("netease://song/2", "https://cdn/netease://song/2", mapOf("X-Stream-Token" to "explicit"))),
+            platform.queued,
+        )
         c.release()
     }
 }

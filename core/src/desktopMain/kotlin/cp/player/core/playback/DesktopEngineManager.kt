@@ -110,6 +110,7 @@ class DynamicDesktopPlatformPlayer(
     override val supportsPlaybackSpeed: Boolean get() = activePlayer.supportsPlaybackSpeed
     override val playbackSpeed: Float get() = activePlayer.playbackSpeed
     override val supportsGaplessQueue: Boolean get() = activePlayer.supportsGaplessQueue
+    override val nativeTrackTransitions: StateFlow<NativeTrackTransition?> get() = activePlayer.nativeTrackTransitions
     override val supportsNativeCrossfade: Boolean get() = activePlayer.supportsNativeCrossfade
     override val supportsSeekableRemoteStreams: Boolean get() = activePlayer.supportsSeekableRemoteStreams
 
@@ -295,6 +296,10 @@ class DynamicDesktopPlatformPlayer(
 
     override fun queueNext(source: String, headers: Map<String, String>) {
         activePlayer.queueNext(source, headers)
+    }
+
+    override fun queueNext(mediaId: String, source: String, headers: Map<String, String>) {
+        activePlayer.queueNext(mediaId, source, headers)
     }
 
     override fun setNativeCrossfade(enabled: Boolean, durationMs: Long) {

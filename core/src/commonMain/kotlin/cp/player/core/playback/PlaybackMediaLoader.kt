@@ -138,6 +138,24 @@ internal class PlaybackMediaLoader(
         playingMediaId = null
     }
 
+    fun onNativeTrackStarted(mediaId: String, summary: TrackSummary?) {
+        fadeController.onTrackPreparing()
+        loadJob?.cancel()
+        preloadJob?.cancel()
+        scrobbler.flush()
+        scrobbler.resetCounts()
+        scrobbler.setActiveTrack(mediaId, summary, getSourceId() ?: summary?.album ?: "0")
+        playingMediaId = mediaId
+        preloadedKey = null
+        engineReady = true
+        deferredSeek = null
+        restoredResume = null
+        localized = null
+        playingFromLocal = false
+        loadGeneration++
+        triggerPreloadNext()
+    }
+
     fun cancelAll() {
         loadJob?.cancel()
         preloadJob?.cancel()
@@ -246,6 +264,9 @@ internal class PlaybackMediaLoader(
 
             val downloadedNext = downloadedFileResolver(nextMediaId)
             if (downloadedNext != null) {
+                if (platform.supportsGaplessQueue) {
+                    platform.queueNext(nextMediaId, downloadedNext, emptyMap())
+                }
                 preloadedKey = requestKey
                 return@launch
             }
@@ -263,6 +284,14 @@ internal class PlaybackMediaLoader(
             }
 
             if (!isCurrentRequest()) return@launch
+
+            if (platform.supportsGaplessQueue) {
+                val cacheKey = cacheKeyOf(nextMediaId, actualLevel, namespace)
+                val cached = downloadedNext ?: streamLocalizer.cachedPath(cacheKey)
+                platform.queueNext(nextMediaId, cached ?: songUrl.url, headers)
+                preloadedKey = requestKey
+                return@launch
+            }
 
             val localizing = streamLocalizer.isLocalizing(actualLevel)
             if (localizing && streamLocalizer.cachedPath(cacheKey) == null) {
