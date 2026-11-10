@@ -85,18 +85,23 @@ AGENTS.md
 # 要给它单独加一条 `!` 反规则放行，别整目录提交。
 .workbuddy/
 
-# JVM 崩溃日志（hs_err_pid<pid>.log）：本机运行时产物，不进版本库。
+# JVM 崩溃日志（hs_err_pid<pid>.log）与临时运行日志：本机运行时产物，不进版本库。
+*.log
 hs_err_pid*.log
 replay_pid*.log
+
+# Node.js 依赖
+node_modules/
 
 # --- Proprietary native engine & local builds ----------------------------
 # FlickPlayer Hi-Res native Rust audio engine source & local cargo artifacts.
 # 闭源 Rust 源码与本地编译生成物严格排除。
 native/flick-player-engine/
+native/provider-runtime/
 native/*.dll
 native/*.so
 native/*.dylib
-native/target/
+native/target*/
 
 # 放行发布所需的预编译二进制库
 !app/native/
