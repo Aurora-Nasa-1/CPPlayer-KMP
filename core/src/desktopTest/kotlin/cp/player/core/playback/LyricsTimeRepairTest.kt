@@ -1,8 +1,6 @@
 package cp.player.core.playback
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonPrimitive
+import cp.player.core.music.TrackLyrics
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -25,17 +23,14 @@ import kotlin.test.assertTrue
  */
 class LyricsTimeRepairTest {
 
-    private fun lrcJson(lyric: String): JsonElement =
-        Json.parseToJsonElement("""{"code":0,"data":{"lyric":${JsonPrimitive(lyric)}}}""")
-
     // ============ 1. 与时长不相容 ⇒ 按百分秒读 ============
 
     @Test
     fun `a colon-centisecond file is re-read as mm ss cc when h mm ss contradicts the duration`() {
-        val json = lrcJson("[00:12:34]第一行\n[00:15:00]第二行\n[00:20:00]第三行")
+        val lyrics = TrackLyrics(lrc = "[00:12:34]第一行\n[00:15:00]第二行\n[00:20:00]第三行")
 
         // 时长 4 分钟：按 h:mm:ss 读最大到 20 分钟 ⇒ 整首歌词永远落不到歌里。
-        val lines = LyricsParser.parse(json, durationMs = 240_000L)
+        val lines = LyricsParser.parseTrackLyrics(lyrics, durationMs = 240_000L)
 
         assertEquals(3, lines.size)
         assertEquals(
@@ -49,16 +44,12 @@ class LyricsTimeRepairTest {
 
     @Test
     fun `the repair also applies to the translation track`() {
-        val json = Json.parseToJsonElement(
-            """
-            {"code":0,"data":{
-              "lyric":"[00:12:34]A\n[00:15:00]B",
-              "tlyric":{"lyric":"[00:12:34]甲\n[00:15:00]乙"}
-            }}
-            """.trimIndent(),
+        val lyrics = TrackLyrics(
+            lrc = "[00:12:34]A\n[00:15:00]B",
+            translation = "[00:12:34]甲\n[00:15:00]乙",
         )
 
-        val lines = LyricsParser.parse(json, durationMs = 240_000L)
+        val lines = LyricsParser.parseTrackLyrics(lyrics, durationMs = 240_000L)
 
         assertEquals(12_340L, lines[0].time)
         assertEquals(
@@ -97,10 +88,10 @@ class LyricsTimeRepairTest {
 
     @Test
     fun `a genuine h mm ss file stays untouched when it fits inside the track`() {
-        val json = lrcJson("[00:12:34]第一行\n[00:19:00]第二行")
+        val lyrics = TrackLyrics(lrc = "[00:12:34]第一行\n[00:19:00]第二行")
 
         // 20 分钟的组曲：按 h:mm:ss 读恰好落在歌里，说明作者就是这么写的。
-        val lines = LyricsParser.parse(json, durationMs = 1_200_000L)
+        val lines = LyricsParser.parseTrackLyrics(lyrics, durationMs = 1_200_000L)
 
         assertEquals(754_000L, lines[0].time, "12 分 34 秒是合法的，不能因为「看着像方言」就改写")
         assertEquals(1_140_000L, lines[1].time)
@@ -108,7 +99,7 @@ class LyricsTimeRepairTest {
 
     @Test
     fun `without a duration the ambiguous dialect is left alone`() {
-        val lines = LyricsParser.parse(lrcJson("[00:12:34]第一行"), durationMs = 0L)
+        val lines = LyricsParser.parseTrackLyrics(TrackLyrics(lrc = "[00:12:34]第一行"), durationMs = 0L)
 
         assertEquals(
             754_000L,
@@ -119,7 +110,7 @@ class LyricsTimeRepairTest {
 
     @Test
     fun `a standard lrc is not touched at all`() {
-        val lines = LyricsParser.parse(lrcJson("[00:12.34]第一行\n[00:15.00]第二行"), durationMs = 240_000L)
+        val lines = LyricsParser.parseTrackLyrics(TrackLyrics(lrc = "[00:12.34]第一行\n[00:15.00]第二行"), durationMs = 240_000L)
 
         assertEquals(12_340L, lines[0].time)
         assertEquals(15_000L, lines[1].time)
@@ -141,7 +132,7 @@ class LyricsTimeRepairTest {
     @Test
     fun `out-of-order timestamps are recovered instead of dropping the whole lyric`() {
         // 库对逆序会抛 "Failed requirement."，旧实现 runCatching 之后整份歌词变空。
-        val lines = LyricsParser.parse(lrcJson("[00:20.00]A\n[00:12.34]B\n[00:30.00]C"))
+        val lines = LyricsParser.parseTrackLyrics(TrackLyrics(lrc = "[00:20.00]A\n[00:12.34]B\n[00:30.00]C"))
 
         assertEquals(3, lines.size, "逆序文件必须按时间戳重排救回来，而不是整份丢弃")
         assertEquals(listOf(12_340L, 20_000L, 30_000L), lines.map { it.time })
@@ -150,7 +141,7 @@ class LyricsTimeRepairTest {
 
     @Test
     fun `an ordered file is parsed exactly as before`() {
-        val lines = LyricsParser.parse(lrcJson("[00:12.34]A\n[00:20.00]B"))
+        val lines = LyricsParser.parseTrackLyrics(TrackLyrics(lrc = "[00:12.34]A\n[00:20.00]B"))
 
         assertEquals(listOf(12_340L, 20_000L), lines.map { it.time })
         assertTrue(lines.all { it.endTime != null }, "末行也要有 endTime（沿用 finalize 的补齐规则）")

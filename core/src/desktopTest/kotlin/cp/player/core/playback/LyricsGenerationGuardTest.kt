@@ -1,8 +1,8 @@
 package cp.player.core.playback
 
 import cp.player.core.BackendResult
-import cp.player.core.api.MusicApiService
 import cp.player.core.music.SongUrl
+import cp.player.core.music.TrackLyrics
 import cp.player.core.music.TrackSummary
 import cp.player.core.music.UnifiedMusicSource
 import cp.player.core.testing.ManualDispatcher
@@ -13,7 +13,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.JsonElement
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -61,7 +60,14 @@ class LyricsGenerationGuardTest {
         override fun getVolume(): Float = 1f
     }
 
-    private class FakeSource : UnifiedMusicSource {
+    private class FakeSource(
+        private val gates: Map<String, CompletableDeferred<Unit>> = emptyMap(),
+    ) : UnifiedMusicSource {
+        override suspend fun getLyrics(mediaId: String): cp.player.core.music.MusicResult<TrackLyrics> {
+            gates[mediaId]?.await() ?: throw UnsupportedOperationException("测试未为 mediaId=$mediaId 准备闸门")
+            return BackendResult.Success(TrackLyrics(lrc = "[00:00.00]line"))
+        }
+
         override suspend fun getTrackDetail(mediaId: String) = BackendResult.Success(summaryOf(mediaId))
         override suspend fun getTrackDetails(mediaIds: List<String>) =
             BackendResult.Success(mediaIds.map { summaryOf(it) })
@@ -82,31 +88,6 @@ class LyricsGenerationGuardTest {
             BackendResult.Error("not used in this test")
     }
 
-    /**
-     * 歌词接口可控挂起：每个 songId 一个闸门，测试不放行就永远停在 `await()`。
-     *
-     * 用 `by StubApi` 拿到其余 120+ 个方法的「调用即抛」默认实现。
-     * 委托基类必须放在**本嵌套类自己的 companion** 里 —— 嵌套类默认不是 `inner`，
-     * 引用外层类的成员会报 `Outer class of non-inner class cannot be used as receiver`。
-     */
-    private class GatedLyricApi(
-        private val gates: Map<String, CompletableDeferred<JsonElement>>,
-    ) : MusicApiService by StubApi {
-        override suspend fun getLyric(songId: String): JsonElement =
-            gates[songId]?.await()
-                ?: throw UnsupportedOperationException("测试未为 songId=$songId 准备闸门")
-
-        private companion object {
-            @Suppress("UNCHECKED_CAST")
-            val StubApi: MusicApiService = java.lang.reflect.Proxy.newProxyInstance(
-                MusicApiService::class.java.classLoader,
-                arrayOf(MusicApiService::class.java),
-            ) { _, method, _ ->
-                throw UnsupportedOperationException("stub api: ${method.name}")
-            } as MusicApiService
-        }
-    }
-
     // ============ 测试 ============
 
     @Test
@@ -114,14 +95,12 @@ class LyricsGenerationGuardTest {
         val platform = FakePlatformPlayer()
         val dispatcher = ManualDispatcher()
         val gates = mapOf(
-            "1" to CompletableDeferred<JsonElement>(),
-            "2" to CompletableDeferred<JsonElement>(),
+            mid(1) to CompletableDeferred<Unit>(),
+            mid(2) to CompletableDeferred<Unit>(),
         )
         val controller = PlaybackControllerImpl(
             platform = platform,
-            source = FakeSource(),
-            api = GatedLyricApi(gates),
-            cookieProvider = { null },
+            source = FakeSource(gates),
             scope = CoroutineScope(SupervisorJob() + dispatcher),
         )
 
@@ -163,12 +142,10 @@ class LyricsGenerationGuardTest {
     fun `同曲目重复刷新歌词时旧请求也不会写成错误`() {
         val platform = FakePlatformPlayer()
         val dispatcher = ManualDispatcher()
-        val gates = mapOf("1" to CompletableDeferred<JsonElement>())
+        val gates = mapOf(mid(1) to CompletableDeferred<Unit>())
         val controller = PlaybackControllerImpl(
             platform = platform,
-            source = FakeSource(),
-            api = GatedLyricApi(gates),
-            cookieProvider = { null },
+            source = FakeSource(gates),
             scope = CoroutineScope(SupervisorJob() + dispatcher),
         )
 

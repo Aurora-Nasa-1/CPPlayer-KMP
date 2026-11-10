@@ -1,7 +1,6 @@
 package cp.player.core.playback
 
 import cp.player.core.BackendResult
-import cp.player.core.api.MusicApiService
 import cp.player.core.music.SongUrl
 import cp.player.core.music.TrackSummary
 import cp.player.core.music.UnifiedMusicSource
@@ -25,6 +24,7 @@ class PlaybackControllerPreloadTest {
         override val formatInfo = MutableStateFlow<AudioFormatInfo?>(null)
 
         val loadedUrls = mutableListOf<String>()
+        val loadedHeaders = mutableListOf<Map<String, String>>()
 
         override suspend fun load(
             url: String,
@@ -33,6 +33,7 @@ class PlaybackControllerPreloadTest {
             metadata: PlaybackMetadata?,
         ) {
             loadedUrls += url
+            loadedHeaders += headers
             state.value = PlatformPlaybackState.Playing
         }
 
@@ -57,7 +58,8 @@ class PlaybackControllerPreloadTest {
 
         override suspend fun getSongUrl(mediaId: String, level: String): BackendResult<SongUrl> {
             requestedUrls += mediaId
-            return BackendResult.Success(SongUrl("https://cdn/$mediaId", level, null, null))
+            return BackendResult.Success(SongUrl("https://cdn/$mediaId", level, null, null,
+                headers = mapOf("X-Stream-Token" to "explicit")))
         }
 
         override suspend fun preloadTrack(mediaId: String, level: String): BackendResult<SongUrl> {
@@ -75,6 +77,7 @@ class PlaybackControllerPreloadTest {
     private class FakeLocalizer : StreamLocalizer {
         val preloadedKeys = mutableListOf<String>()
         val cached = mutableMapOf<String, String>()
+        val receivedHeaders = mutableListOf<Map<String, String>>()
 
         override fun isLocalizing(qualityLevel: String): Boolean = qualityLevel in StreamLocalizer.LOSSLESS_LEVELS
 
@@ -87,6 +90,7 @@ class PlaybackControllerPreloadTest {
             meta: SongCacheMeta?,
         ): String? {
             val path = "/local/$cacheKey"
+            receivedHeaders += headers
             cached[cacheKey] = path
             return path
         }
@@ -103,14 +107,6 @@ class PlaybackControllerPreloadTest {
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun throwingApi(): MusicApiService =
-        java.lang.reflect.Proxy.newProxyInstance(
-            MusicApiService::class.java.classLoader,
-            arrayOf(MusicApiService::class.java),
-        ) { _, method, _ ->
-            throw UnsupportedOperationException("stub api: ${method.name}")
-        } as MusicApiService
-
     @Test
     fun `playing current track triggers preload for next track after debounce`() = runBlocking {
         val platform = FakePlatformPlayer()
@@ -120,8 +116,6 @@ class PlaybackControllerPreloadTest {
         val c = PlaybackControllerImpl(
             platform = platform,
             source = source,
-            api = throwingApi(),
-            cookieProvider = { null },
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
             streamLocalizer = localizer,
         )
@@ -135,6 +129,11 @@ class PlaybackControllerPreloadTest {
         // 验证下一首 "netease://song/2" 触发了预加载
         assertTrue(source.preloadedMediaIds.contains("netease://song/2"), "下一首应被预加载")
         assertTrue(localizer.preloadedKeys.any { it.startsWith("netease://song/2@lossless") }, "无损下一首应触发本地预落盘")
+        assertTrue(platform.loadedHeaders.isNotEmpty())
+        assertTrue(localizer.receivedHeaders.size >= 2)
+        assertTrue((platform.loadedHeaders + localizer.receivedHeaders).all {
+            it == mapOf("X-Stream-Token" to "explicit")
+        })
 
         c.release()
     }
@@ -148,8 +147,6 @@ class PlaybackControllerPreloadTest {
         val c = PlaybackControllerImpl(
             platform = platform,
             source = source,
-            api = throwingApi(),
-            cookieProvider = { null },
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
             streamLocalizer = localizer,
         )
@@ -178,8 +175,6 @@ class PlaybackControllerPreloadTest {
         val c = PlaybackControllerImpl(
             platform = platform,
             source = source,
-            api = throwingApi(),
-            cookieProvider = { null },
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
         )
 

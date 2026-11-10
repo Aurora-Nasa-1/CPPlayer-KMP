@@ -54,7 +54,7 @@ class PluginRepositoryTest {
     }
 
     private val source = "https://example.org/index.json"
-    private val artifact = PluginArtifact("any", runtime = "http", url = "https://example.org/demo.zip", sha256 = "a".repeat(64), bytes = 100)
+    private val artifact = PluginArtifact("any", runtime = "js", url = "https://example.org/demo.zip", sha256 = "a".repeat(64), bytes = 100)
     private val plugin = RepositoryPlugin("demo", RepositoryPluginKind.PROVIDER, "Demo", "1.2.0", artifacts = listOf(artifact))
     private fun catalog(plugin: RepositoryPlugin = this.plugin) =
         Json.encodeToString(PluginCatalog(name = "Example", plugins = listOf(plugin)))
@@ -97,6 +97,9 @@ class PluginRepositoryTest {
         assertNotNull(lyrics.compatibility(desktop).second)
         val binary = plugin.copy(artifacts = listOf(artifact.copy(platform = "android", arch = "arm64", runtime = "binary")))
         assertNotNull(binary.compatibility(PluginTarget("android", "arm64")).second)
+        for (runtime in listOf("http", "jni", "binary", "ffm")) {
+            assertNotNull(plugin.copy(artifacts = listOf(artifact.copy(runtime = runtime))).compatibility(desktop).second)
+        }
         assertNotNull(plugin.copy(artifacts = listOf(artifact, artifact)).compatibility(desktop).second)
     }
 
@@ -166,7 +169,7 @@ class PluginRepositoryTest {
     }
 
     @Test
-    fun `unmanaged replacements need consent and pending native updates do not claim to be applied`() {
+    fun `unmanaged replacements need consent and pending updates do not claim to be applied`() {
         runBlocking {
             val io = MemoryIO().apply { responses[source] = catalog() }
             val inventory = listOf(InstalledRepositoryPlugin(plugin.key, "1.0.0"))

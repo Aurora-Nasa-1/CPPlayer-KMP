@@ -1,176 +1,77 @@
 package cp.player.core.media
 
 import cp.player.core.BackendResult
-import cp.player.core.api.MusicApiService
-import cp.player.core.local.LocalFavorites
 import cp.player.core.local.LocalMediaSource
-import cp.player.core.local.LocalScanSettingsStore
-import cp.player.core.local.ScanProgress
-import kotlinx.coroutines.flow.Flow
+import cp.player.core.music.*
+import cp.player.core.provider.SdkEmptyLocal
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import java.lang.reflect.Proxy
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 class UnifiedMediaResolverTest {
-
-    private class FakeLocalMediaSource(
-        initialItems: List<LocalMediaItem> = emptyList(),
-    ) : LocalMediaSource {
-        private val _items = MutableStateFlow(initialItems)
-        override suspend fun scan(): Flow<ScanProgress> = emptyFlow()
-        override suspend fun importFolder(uri: String): Int = 0
-        override fun removeItem(item: LocalMediaItem) {}
-        override fun items(): StateFlow<List<LocalMediaItem>> = _items
-        override val isScanningFlow: StateFlow<Boolean> = MutableStateFlow(false)
-        override fun addExternalItems(items: List<LocalMediaItem>) {}
-        override val favorites: LocalFavorites = LocalFavorites("")
-        override val scanSettings: LocalScanSettingsStore = LocalScanSettingsStore("")
+    private class Local(items: List<LocalMediaItem> = emptyList()) : LocalMediaSource by SdkEmptyLocal() {
+        private val state = MutableStateFlow(items)
+        override fun items() = state
     }
 
-    private fun mockMusicApi(
-        mvDetailJson: JsonElement,
-        mvUrlJson: JsonElement,
-    ): MusicApiService {
-        val proxy = Proxy.newProxyInstance(
-            MusicApiService::class.java.classLoader,
-            arrayOf(MusicApiService::class.java),
-        ) { _, method, _ ->
-            throw UnsupportedOperationException("Mock未实现方法: ${method.name}")
-        } as MusicApiService
-
-        return object : MusicApiService by proxy {
-            override suspend fun getMvDetail(mvId: String): JsonElement = mvDetailJson
-            override suspend fun getMvUrl(mvId: String, resolution: Int): JsonElement = mvUrlJson
+    @Test
+    fun `registered local media works and resource types cannot be confused`() {
+        runBlocking {
+            val local = Local(listOf(LocalMediaItem(
+                "D:/concert.mp4", "Concert", mediaType = MediaType.VIDEO, durationMs = 9_500,
+            )))
+            val resolver = UnifiedMediaResolverImpl(local, UnifiedMusicSourceImpl(local))
+            val stream = assertNotNull(resolver.resolveStream("local://video/D:/concert.mp4").getOrNull())
+            assertEquals("Concert", stream.title)
+            assertEquals(9_500L, stream.durationMs)
+            assertEquals("original", stream.currentQuality?.id)
+            assertIs<BackendResult.Error>(resolver.resolveStream("local://audio/D:/concert.mp4"))
+            assertIs<BackendResult.Error>(resolver.resolveStream("local://video/D:/missing.mp4"))
+            assertIs<BackendResult.Error>(resolver.getAvailableQualities("local://video/D:/missing.mp4"))
         }
     }
 
     @Test
-    fun `本地视频必须成功解析流与原画档位`() = runBlocking {
-        val localVideo = LocalMediaItem(
-            path = "D:/Videos/concert_live.mp4",
-            title = "Concert Live 2026",
-            artist = "Band",
-            durationMs = 120_000L,
-            mediaType = MediaType.VIDEO,
-            sizeBytes = 100_000_000L,
-        )
-        val resolver = UnifiedMediaResolverImpl(
-            localMediaSource = FakeLocalMediaSource(listOf(localVideo)),
-            musicApiService = mockMusicApi(Json.parseToJsonElement("{}"), Json.parseToJsonElement("{}")),
-        )
-
-        val result = resolver.resolveStream("local://video/D:/Videos/concert_live.mp4")
-        assertTrue(result is BackendResult.Success, "解析应成功，实际: $result")
-        val stream = result.data
-        assertEquals("D:/Videos/concert_live.mp4", stream.url)
-        assertEquals(MediaType.VIDEO, stream.mediaType)
-        assertEquals("Concert Live 2026", stream.title)
-        assertEquals(120_000L, stream.durationMs)
-        assertEquals("original", stream.currentQuality?.id)
+    fun `audio resolver uses unified source exactly once and forwards only explicit headers`() {
+        runBlocking {
+            val local = Local()
+            var calls = 0
+            val source = object : UnifiedMusicSource by UnifiedMusicSourceImpl(local) {
+                override suspend fun getSongUrl(mediaId: String, level: String): MusicResult<SongUrl> {
+                    calls++
+                    assertEquals("test://song/001", mediaId)
+                    assertEquals("hires", level)
+                    return BackendResult.Success(SongUrl(
+                        "https://audio.example/stream", "lossless", 123L, null,
+                        headers = mapOf("Authorization" to "resource-token"), qualityKey = "flac",
+                    ))
+                }
+            }
+            val resolver = UnifiedMediaResolverImpl(local, source)
+            val stream = assertNotNull(resolver.resolveStream("test://song/001", "hires").getOrNull())
+            assertEquals(1, calls)
+            assertEquals(mapOf("Authorization" to "resource-token"), stream.headers)
+            assertEquals("flac", stream.currentQuality?.id)
+            assertEquals(1, stream.availableQualities.size)
+            // Video now has a typed route, but this fixture has no active provider session.
+            assertIs<BackendResult.Error>(resolver.resolveStream("test://mv/001"))
+            assertIs<BackendResult.Error>(resolver.getAvailableQualities("test://song/001"))
+            assertEquals(1, calls)
+        }
     }
 
     @Test
-    fun `未登记的本地路径必须返回明确错误而非崩溃`() = runBlocking {
-        val resolver = UnifiedMediaResolverImpl(
-            localMediaSource = FakeLocalMediaSource(emptyList()),
-            musicApiService = mockMusicApi(Json.parseToJsonElement("{}"), Json.parseToJsonElement("{}")),
-        )
-
-        val result = resolver.resolveStream("local://video/ghost_movie.mp4")
-        assertTrue(result is BackendResult.Error, "未登记条目必须返回 Error，实际: $result")
-    }
-
-    @Test
-    fun `云端 MV 应正确解析详情与多清晰度档位`() = runBlocking {
-        val mvDetailJson = Json.parseToJsonElement("""
-            {
-                "data": {
-                    "id": 142857,
-                    "name": "Never Gonna Give You Up",
-                    "artistName": "Rick Astley",
-                    "duration": 213000,
-                    "cover": "https://p1.music.126.net/cover.jpg",
-                    "brs": {
-                        "1080": "https://vod.music.126.net/1080.mp4",
-                        "720": "https://vod.music.126.net/720.mp4",
-                        "480": "https://vod.music.126.net/480.mp4"
-                    }
-                }
+    fun `resolver preserves cancellation from SDK`() {
+        runBlocking {
+            val local = Local()
+            val source = object : UnifiedMusicSource by UnifiedMusicSourceImpl(local) {
+                override suspend fun getSongUrl(mediaId: String, level: String): MusicResult<SongUrl> =
+                    throw CancellationException("cancelled")
             }
-        """.trimIndent())
-
-        val mvUrlJson = Json.parseToJsonElement("""
-            {
-                "data": {
-                    "id": 142857,
-                    "url": "https://vod.music.126.net/1080.mp4",
-                    "r": 1080,
-                    "size": 52428800
-                }
+            assertFailsWith<CancellationException> {
+                UnifiedMediaResolverImpl(local, source).resolveStream("test://song/001")
             }
-        """.trimIndent())
-
-        val resolver = UnifiedMediaResolverImpl(
-            localMediaSource = FakeLocalMediaSource(),
-            musicApiService = mockMusicApi(mvDetailJson, mvUrlJson),
-        )
-
-        val result = resolver.resolveStream("netease://mv/142857", preferredQuality = "1080")
-        assertTrue(result is BackendResult.Success, "MV 流解析应成功: $result")
-        val stream = result.data
-        assertEquals("https://vod.music.126.net/1080.mp4", stream.url)
-        assertEquals(MediaType.VIDEO, stream.mediaType)
-        assertEquals("Never Gonna Give You Up", stream.title)
-        assertEquals("Rick Astley", stream.artist)
-        assertEquals(3, stream.availableQualities.size)
-        assertEquals(1080, stream.currentQuality?.resolution)
-        assertTrue(stream.headers.containsKey("Referer"))
-    }
-
-    @Test
-    fun `当1080P返回空流时应自动降级至720P并纠正秒级时长`() = runBlocking {
-        val mvDetailJson = Json.parseToJsonElement("""
-            {
-                "data": {
-                    "id": 99999,
-                    "name": "Fallback Test Song",
-                    "duration": 213,
-                    "brs": {
-                        "720": "https://vod.music.126.net/fallback_720.mp4"
-                    }
-                }
-            }
-        """.trimIndent())
-
-        val emptyUrlJson = Json.parseToJsonElement("""
-            {
-                "data": {
-                    "id": 99999,
-                    "url": null,
-                    "r": 0
-                }
-            }
-        """.trimIndent())
-
-        val resolver = UnifiedMediaResolverImpl(
-            localMediaSource = FakeLocalMediaSource(),
-            musicApiService = mockMusicApi(mvDetailJson, emptyUrlJson),
-        )
-
-        // 请求 1080P，虽然 1080P API 返回 url: null，但应自动降级命中 brs 中的 720P 直链
-        val result = resolver.resolveStream("netease://mv/99999", preferredQuality = "1080")
-        assertTrue(result is BackendResult.Success, "解析应降级成功: $result")
-        val stream = result.data
-        assertEquals("https://vod.music.126.net/fallback_720.mp4", stream.url)
-        assertEquals(720, stream.currentQuality?.resolution)
-        // 213 秒应自动转换为 213,000 毫秒
-        assertEquals(213_000L, stream.durationMs)
+        }
     }
 }

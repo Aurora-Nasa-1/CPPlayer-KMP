@@ -13,6 +13,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ModuleImportAndAutoUpdateTest {
@@ -47,9 +48,13 @@ class ModuleImportAndAutoUpdateTest {
 
     @AfterTest
     fun tearDown() {
+        moduleManager.getAvailableProviders().forEach { it.close() }
+        runBlockingCloseSessions()
         tempModulesDir.deleteRecursively()
         tempZipDir.deleteRecursively()
     }
+
+    private fun runBlockingCloseSessions() = kotlinx.coroutines.runBlocking { providerManager.sdkSessions.close() }
 
     private fun createZip(fileName: String, manifestContent: String, extraFiles: Map<String, String> = emptyMap()): File {
         val zipFile = File(tempZipDir, fileName)
@@ -58,7 +63,7 @@ class ModuleImportAndAutoUpdateTest {
             zos.write(manifestContent.toByteArray(Charsets.UTF_8))
             zos.closeEntry()
 
-            for ((path, content) in extraFiles) {
+            for ((path, content) in mapOf("index.js" to "globalThis.provider = {capabilities: []};") + extraFiles) {
                 zos.putNextEntry(ZipEntry(path))
                 zos.write(content.toByteArray(Charsets.UTF_8))
                 zos.closeEntry()
@@ -72,7 +77,7 @@ class ModuleImportAndAutoUpdateTest {
         // 先导入酷狗
         val kugouZip = createZip(
             "kugou.zip",
-            """{"id":"kugou","name":"酷狗音乐","type":"http","entryPoint":"http://127.0.0.1:8001","version":"1.0.0"}"""
+            """{"id":"kugou","name":"酷狗音乐","type":"js","entryPoint":"index.js","contract":"kmp-sdk-v1","version":"1.0.0"}"""
         )
         val kugouResult = moduleManager.importModuleDetails(kugouZip.absolutePath)
         assertNotNull(kugouResult)
@@ -82,7 +87,7 @@ class ModuleImportAndAutoUpdateTest {
         // 再导入咪咕
         val miguZip = createZip(
             "migu.zip",
-            """{"id":"migu","name":"咪咕音乐","type":"http","entryPoint":"http://127.0.0.1:8002","version":"1.0.0"}"""
+            """{"id":"migu","name":"咪咕音乐","type":"js","entryPoint":"index.js","contract":"kmp-sdk-v1","version":"1.0.0"}"""
         )
         val miguResult = moduleManager.importModuleDetails(miguZip.absolutePath)
         assertNotNull(miguResult)
@@ -92,7 +97,7 @@ class ModuleImportAndAutoUpdateTest {
         // 再次导入酷狗的新版包（ID不变）
         val kugouV2Zip = createZip(
             "kugou_v2.zip",
-            """{"id":"kugou","name":"酷狗音乐","type":"http","entryPoint":"http://127.0.0.1:8003","version":"2.0.0"}"""
+            """{"id":"kugou","name":"酷狗音乐","type":"js","entryPoint":"index.js","contract":"kmp-sdk-v1","version":"2.0.0"}"""
         )
         val kugouV2Result = moduleManager.importModuleDetails(kugouV2Zip.absolutePath)
         assertNotNull(kugouV2Result)
@@ -104,11 +109,11 @@ class ModuleImportAndAutoUpdateTest {
     }
 
     @Test
-    fun importAutoDetectsSameNameWithDifferentIdAndReplacesOldDirectory() {
+    fun importRejectsSameNameDifferentIdAndExactUpdateMismatch() {
         // 先导入旧版酷狗，ID 为 kugou-music-rs
         val oldKugouZip = createZip(
             "kugou_old.zip",
-            """{"id":"kugou-music-rs","name":"酷狗音乐","type":"http","entryPoint":"http://127.0.0.1:8001","version":"0.1.0"}"""
+            """{"id":"kugou-music-rs","name":"酷狗音乐","type":"js","entryPoint":"index.js","contract":"kmp-sdk-v1","version":"0.1.0"}"""
         )
         val r1 = moduleManager.importModuleDetails(oldKugouZip.absolutePath)
         assertNotNull(r1)
@@ -118,18 +123,14 @@ class ModuleImportAndAutoUpdateTest {
         // 用户导入新包，名称同为「酷狗音乐」，但作者将包 ID 改为了 kugou
         val newKugouZip = createZip(
             "kugou_new.zip",
-            """{"id":"kugou","name":"酷狗音乐","type":"http","entryPoint":"http://127.0.0.1:8002","version":"0.2.0"}"""
+            """{"id":"kugou","name":"酷狗音乐","type":"js","entryPoint":"index.js","contract":"kmp-sdk-v1","version":"0.2.0"}"""
         )
         val r2 = moduleManager.importModuleDetails(newKugouZip.absolutePath)
-        assertNotNull(r2)
-        assertEquals("kugou", r2.provider.id)
-        assertEquals("酷狗音乐", r2.provider.name)
-        assertTrue(r2.isUpdate, "同名模块导入必须被自动识别为更新")
-        assertEquals("kugou-music-rs", r2.replacedProviderId, "必须记录被替换的旧模块 ID")
-
-        // 校验目录替换
-        assertTrue(File(tempModulesDir, "kugou").exists(), "新模块目录必须存在")
-        assertTrue(!File(tempModulesDir, "kugou-music-rs").exists(), "旧模块目录必须被清理，避免重复冗余")
+        assertNull(r2)
+        assertNull(moduleManager.updateModuleDetails(newKugouZip.absolutePath, "kugou-music-rs"))
+        assertEquals(r1.provider, moduleManager.getProvider("kugou-music-rs"))
+        assertFalse(File(tempModulesDir, "kugou").exists())
+        assertTrue(File(tempModulesDir, "kugou-music-rs").exists())
     }
 
     @Test
@@ -137,7 +138,7 @@ class ModuleImportAndAutoUpdateTest {
         // 历史 manifest 中包含 sha256 字段的包不再因循环校验失败，而应兼容导入
         val legacyShaZip = createZip(
             "legacy_sha.zip",
-            """{"id":"legacy-sha","name":"带SHA音源","type":"http","entryPoint":"http://127.0.0.1:8004","version":"1.0.0","sha256":"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}"""
+            """{"id":"legacy-sha","name":"带SHA音源","type":"js","entryPoint":"index.js","contract":"kmp-sdk-v1","version":"1.0.0","sha256":"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}"""
         )
         val result = moduleManager.importModuleDetails(legacyShaZip.absolutePath)
         assertNotNull(result, "包含历史 sha256 字段的包应成功导入，不应因包内自哈希自相矛盾而报错")
@@ -145,35 +146,22 @@ class ModuleImportAndAutoUpdateTest {
     }
 
     @Test
-    fun updatingModuleWhileFilesLockedStagesPendingUpdateForRestart() {
+    fun stagedSdkUpdateAppliesAfterRestart() {
         // 导入初始版本
         val v1Zip = createZip(
             "test_source_v1.zip",
-            """{"id":"test-src","name":"测试音源","type":"http","entryPoint":"http://127.0.0.1:8005","version":"1.0.0"}""",
-            extraFiles = mapOf("lib/lock.dll" to "locked bytes")
+            """{"id":"test-src","name":"测试音源","type":"js","entryPoint":"index.js","contract":"kmp-sdk-v1","version":"1.0.0"}""",
         )
         val r1 = moduleManager.importModuleDetails(v1Zip.absolutePath)
         assertNotNull(r1)
         assertEquals("1.0.0", r1.provider.version)
 
-        // 模拟 Windows 上音源使用中：打开目录下的文件流锁定文件
-        val targetFile = File(tempModulesDir, "test-src/lib/lock.dll")
-        assertTrue(targetFile.exists())
-        val lockStream = java.io.FileInputStream(targetFile)
-        try {
-            // 此时尝试更新模块（新版本 2.0.0）
-            val v2Zip = createZip(
-                "test_source_v2.zip",
-                """{"id":"test-src","name":"测试音源","type":"http","entryPoint":"http://127.0.0.1:8006","version":"2.0.0"}""",
-                extraFiles = mapOf("lib/lock.dll" to "new bytes")
-            )
-            val r2 = moduleManager.updateModuleDetails(v2Zip.absolutePath, "test-src")
-            assertNotNull(r2, "即使文件被锁定无法立即覆盖，也应成功暂存为待重启更新")
-            assertTrue(r2.pendingRestart, "应标记 pendingRestart 为 true")
-            assertTrue(moduleManager.hasPendingRepositoryUpdate("test-src"), "应在 .repository-pending 登记待更新")
-        } finally {
-            lockStream.close()
-        }
+        val v2Zip = createZip(
+            "test_source_v2.zip",
+            """{"id":"test-src","name":"测试音源","type":"js","entryPoint":"index.js","contract":"kmp-sdk-v1","version":"2.0.0"}""",
+        )
+        assertTrue(moduleManager.queueRepositoryUpdate(v2Zip.absolutePath, "test-src"))
+        assertEquals("1.0.0", moduleManager.getProvider("test-src")?.version)
 
         // 模拟应用重启：重新初始化 ModuleManager
         val newManager = ModuleManager(tempModulesDir.absolutePath, context)
@@ -183,5 +171,23 @@ class ModuleImportAndAutoUpdateTest {
         val updatedProvider = newManager.getProvider("test-src")
         assertNotNull(updatedProvider)
         assertEquals("2.0.0", updatedProvider.version, "重启后音源版本应已成功更新至 2.0.0")
+        updatedProvider.close()
+    }
+
+    @Test
+    fun rejectedPackagesLeaveInstalledScriptAndDescriptorUntouched() {
+        val validManifest = """{"id":"test-src","name":"Test","type":"js","entryPoint":"index.js","contract":"kmp-sdk-v1","version":"1.0.0"}"""
+        val original = assertNotNull(moduleManager.importModuleDetails(createZip("v1.zip", validManifest).absolutePath))
+        val oldScript = File(tempModulesDir, "test-src/index.js").readText()
+        listOf(
+            validManifest.replace("index.js", "missing.js"),
+            validManifest.replace("kmp-sdk-v1", "standard"),
+            validManifest.replace("\"test-src\"", "\"../escape\""),
+        ).forEachIndexed { index, manifest ->
+            assertNull(moduleManager.updateModuleDetails(createZip("bad-$index.zip", manifest).absolutePath, "test-src"))
+            assertEquals(original.provider, moduleManager.getProvider("test-src"))
+            assertEquals(oldScript, File(tempModulesDir, "test-src/index.js").readText())
+        }
+        assertFalse(moduleManager.queueRepositoryUpdate(createZip("cross.zip", validManifest).absolutePath, "test-src", "../other"))
     }
 }

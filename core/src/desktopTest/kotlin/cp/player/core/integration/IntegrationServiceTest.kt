@@ -188,7 +188,7 @@ class IntegrationServiceTest {
 
     @Test
     fun `音源不支持取详情时返回 501`() = runBlocking {
-        val source = RecordingSource(detailResult = { BackendResult.Unsupported("apiMap 标记为 unsupported") })
+        val source = RecordingSource(detailResult = { BackendResult.Unsupported("音源未声明该能力") })
         assertFailure(FailureKind.UNSUPPORTED, service(source).track("netease://song/1"))
     }
 

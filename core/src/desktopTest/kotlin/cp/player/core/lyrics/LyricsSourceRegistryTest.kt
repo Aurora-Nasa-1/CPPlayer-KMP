@@ -2,7 +2,6 @@ package cp.player.core.lyrics
 
 import cp.player.core.api.AmllTtmlClient
 import cp.player.core.api.LyricsSourceMode
-import cp.player.core.api.MusicApiService
 import cp.player.core.lyricsplugin.LyricsPluginService
 import cp.player.core.lyricsplugin.LyricsPluginSourceInfo
 import cp.player.core.lyricsplugin.PluginCapability
@@ -80,7 +79,6 @@ class LyricsSourceRegistryTest {
         return FileLyricsSourceRegistry(
             rootDir = root,
             plugins = FakePlugins(plugins),            amllClient = if (withAmll) FakeAmll else null,
-            api = FakeApi,
             legacySettings = settings,
         )
     }
@@ -236,7 +234,6 @@ class LyricsSourceRegistryTest {
             rootDir = tempDir(),
             plugins = fakePlugins,
             amllClient = FakeAmll,
-            api = FakeApi,
             legacySettings = MemorySettings(),
         )
         assertEquals(false, r.allSources().any { it.id == "new-plugin" })
@@ -256,14 +253,6 @@ class LyricsSourceRegistryTest {
 
     private companion object {
         /** 迁移与排序都不需要真正联网，用最小可构造实例。 */
-        val FakeAmll: AmllTtmlClient = AmllTtmlClient(diskCache = null)
-
-        /** 只有 `getLyric` 会被真正调用；其余方法调用即抛，防止测试间互相污染。 */
-        val FakeApi: MusicApiService = java.lang.reflect.Proxy.newProxyInstance(
-            MusicApiService::class.java.classLoader,
-            arrayOf(MusicApiService::class.java),
-        ) { _, method, _ ->
-            throw UnsupportedOperationException("stub api: ${method.name}")
-        } as MusicApiService
+        val FakeAmll: AmllTtmlClient = AmllTtmlClient()
     }
 }

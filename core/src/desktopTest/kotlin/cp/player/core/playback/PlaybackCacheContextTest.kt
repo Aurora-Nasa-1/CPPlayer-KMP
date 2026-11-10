@@ -1,8 +1,7 @@
 package cp.player.core.playback
 
 import cp.player.core.BackendResult
-import cp.player.core.api.MusicApiService
-import cp.player.core.cache.stableHash64
+import cp.player.core.util.stableHash64
 import cp.player.core.music.SongUrl
 import cp.player.core.music.TrackSummary
 import cp.player.core.music.UnifiedMusicSource
@@ -91,14 +90,9 @@ class PlaybackCacheContextTest {
             }
         }
         @Suppress("UNCHECKED_CAST")
-        private val api = java.lang.reflect.Proxy.newProxyInstance(
-            MusicApiService::class.java.classLoader, arrayOf(MusicApiService::class.java),
-        ) { _, method, _ -> error("unused: ${method.name}") } as MusicApiService
         val controller = PlaybackControllerImpl(
             platform = platform,
             source = source,
-            api = api,
-            cookieProvider = { namespace },
             scope = scope,
             streamLocalizer = localizer,
             cacheNamespace = { namespace },

@@ -28,6 +28,7 @@ class LocalServerSmokeTest {
 
     private var upstream: HttpServer? = null
     private var server: LocalServer? = null
+    private val upstreamHeaders = java.util.concurrent.atomic.AtomicReference<Map<String, String>>(emptyMap())
 
     @AfterTest
     fun tearDown() {
@@ -48,7 +49,10 @@ class LocalServerSmokeTest {
         )
         val local = createLocalServer(config) { mediaId ->
             if (mediaId == null) null
-            else StreamTarget(url = "http://127.0.0.1:$upstreamPort/audio", cookie = "SESS=abc")
+            else StreamTarget(
+                url = "http://127.0.0.1:$upstreamPort/audio",
+                headers = mapOf("Authorization" to "Bearer stream-only", "Cookie" to "SESS=stream", "X-SDK-Track" to "demo"),
+            )
         }
         server = local
         local.start()
@@ -70,6 +74,10 @@ class LocalServerSmokeTest {
         assertEquals(200, full.code, "stream 应返回 200")
         assertEquals(payload.size, full.bytes.size, "转发字节数应与上游一致")
         assertTrue(payload.contentEquals(full.bytes), "转发内容应与上游一致")
+        fun received(name: String) = upstreamHeaders.get().entries.firstOrNull { it.key.equals(name, true) }?.value
+        assertEquals("Bearer stream-only", received("Authorization"))
+        assertEquals("SESS=stream", received("Cookie"))
+        assertEquals("demo", received("X-SDK-Track"))
 
         // 4) Range 转发
         val ranged = get(
@@ -80,6 +88,7 @@ class LocalServerSmokeTest {
         assertEquals(100, ranged.bytes.size, "Range 长度应为 100")
         assertNotNull(ranged.contentRange, "Range 响应必须带 Content-Range")
         assertTrue(ranged.contentRange.startsWith("bytes 100-199/"), "Content-Range 异常: ${ranged.contentRange}")
+        assertEquals("bytes=100-199", received("Range"))
 
         // 5) 解析不到曲目 → 404
         val missing = get("http://127.0.0.1:$streamPort/stream?token=secret")
@@ -90,10 +99,9 @@ class LocalServerSmokeTest {
 
     /** 起一个支持 Range 的上游服务，记录收到的 Cookie 以便断言。 */
     private fun startUpstream(): Int {
-        var receivedCookie: String? = null
         val http = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         http.createContext("/audio") { exchange: HttpExchange ->
-            receivedCookie = exchange.requestHeaders.getFirst("Cookie")
+            upstreamHeaders.set(exchange.requestHeaders.entries.associate { it.key to it.value.joinToString(",") })
             val range = exchange.requestHeaders.getFirst("Range")
             if (range == null) {
                 exchange.responseHeaders.add("Content-Type", "audio/mpeg")

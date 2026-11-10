@@ -203,7 +203,7 @@ class DesktopStreamLocalizerTest {
         val key = "cp_api://song/resume@lossless"
 
         val safe = key.map { if (it.isLetterOrDigit() || it == '-' || it == '_') it else '_' }.joinToString("").take(96)
-        val stem = "$safe-${cp.player.core.cache.stableHash64(key)}"
+        val stem = "$safe-${cp.player.core.util.stableHash64(key)}"
         val part = File(cacheDir, "$stem.part")
         part.writeBytes(flac.copyOfRange(0, 1000))
 

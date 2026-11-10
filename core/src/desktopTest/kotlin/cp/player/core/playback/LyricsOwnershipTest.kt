@@ -1,8 +1,8 @@
 package cp.player.core.playback
 
 import cp.player.core.BackendResult
-import cp.player.core.api.MusicApiService
 import cp.player.core.music.SongUrl
+import cp.player.core.music.TrackLyrics
 import cp.player.core.music.TrackSummary
 import cp.player.core.music.UnifiedMusicSource
 import kotlinx.coroutines.CoroutineScope
@@ -76,35 +76,20 @@ class LyricsOwnershipTest {
         override suspend fun getSongUrl(mediaId: String, level: String) = BackendResult.Success(
             SongUrl("https://cdn/${bareOf(mediaId)}", level, null, null),
         )
+
+        /** 每个 id 返回一首不同的词，用行文本区分「是哪一首的词」。 */
+        override suspend fun getLyrics(mediaId: String) =
+            BackendResult.Success(TrackLyrics(lrc = "[00:00.00]词-${bareOf(mediaId)}"))
         override suspend fun search(keywords: String, type: Int, providers: List<String>?) =
             BackendResult.Error("not used")
         override suspend fun getUserPlaylists(providerId: String, uid: Long) =
             BackendResult.Error("not used")
     }
 
-    /** 每个 songId 返回一首不同的词，用行文本区分「是哪一首的词」。 */
-    private class LyricApi : MusicApiService by StubApi {
-        override suspend fun getLyric(songId: String): JsonElement = JsonObject(
-            mapOf("lrc" to JsonObject(mapOf("lyric" to JsonPrimitive("[00:00.00]词-$songId")))),
-        )
-
-        private companion object {
-            @Suppress("UNCHECKED_CAST")
-            val StubApi: MusicApiService = java.lang.reflect.Proxy.newProxyInstance(
-                MusicApiService::class.java.classLoader,
-                arrayOf(MusicApiService::class.java),
-            ) { _, method, _ ->
-                throw UnsupportedOperationException("stub api: ${method.name}")
-            } as MusicApiService
-        }
-    }
-
     private fun controller(source: UnifiedMusicSource = BareIdListSource()): PlaybackControllerImpl =
         PlaybackControllerImpl(
             platform = FakePlatformPlayer(),
             source = source,
-            api = LyricApi(),
-            cookieProvider = { null },
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
         )
 

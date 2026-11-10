@@ -1,723 +1,148 @@
 package cp.player.core.music
 
 import cp.player.core.BackendResult
-import cp.player.core.api.MusicApiService
-import cp.player.core.api.MusicApiMethod
-import cp.player.core.local.LocalFavorites
 import cp.player.core.local.LocalMediaSource
-import cp.player.core.local.LocalScanSettingsStore
-import cp.player.core.local.ScanProgress
 import cp.player.core.media.LocalMediaItem
-import kotlinx.coroutines.flow.Flow
+import cp.player.core.media.MediaType
+import cp.player.core.provider.*
+import cp.player.core.provider.typed.*
+import cp.player.sdk.*
+import java.nio.file.Files
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
-import kotlin.test.fail
+import kotlin.test.*
 
-/**
- * `UnifiedMusicSource` 的**契约测试**。
- *
- * 钉住四件此前「说的和做的不一致」的事（详见 `docs/history/INTEGRATION_PLAN.md` §3.1）：
- *
- * 1. **畸形 mediaId 必须返回 `BackendResult.Error`，不能抛异常。**
- *    原先三处 `CPMediaId.parse()` 都在 `try` 之外，`IllegalArgumentException` 会直接抛给调用方
- *    —— 违反 `MusicBackend` KDoc 承诺的「可失败操作一律返回 BackendResult」，
- *    在对外 API 场景下表现为 500 而不是 400。
- *
- * 2. **`providers` / `providerId` 指定非活跃音源时必须显式报错。**
- *    KDoc 曾写「支持跨多个 provider 搜索并聚合」，但实现里该参数**从未被读取** ——
- *    调用方传参后拿到的是活跃 Provider 的结果，属静默错误结果。
- *    跨 Provider 聚合尚未实现，正确行为是报 `Unsupported`，而不是假装成功。
- *
- * 3. **两条解析路径对同一份上游 JSON 必须产出相同结果。**
- *    `MusicSourceFromApi` 与 `UnifiedMusicSourceImpl` 曾各有一份 `toTrackSummary` 且已分叉。
- *
- * 4. **本地曲目必须命中已登记条目（白名单）。**
- *    这是 `/stream` 对外暴露后的安全边界：裸路径不得伪装成可播放成功。
- */
 class UnifiedMusicSourceContractTest {
-
-    // ============ 测试替身 ============
-
-    private class FakeLocalSource : LocalMediaSource {
-        private val items = MutableStateFlow<List<LocalMediaItem>>(emptyList())
-        private val scanning = MutableStateFlow(false)
-        override suspend fun scan(): Flow<ScanProgress> = emptyFlow()
-        override suspend fun importFolder(uri: String): Int = 0
-        override fun removeItem(item: LocalMediaItem) {}
-        override fun items(): StateFlow<List<LocalMediaItem>> = items
-        override val isScanningFlow: StateFlow<Boolean> = scanning
-        override fun addExternalItems(items: List<LocalMediaItem>) {}
-        // 空文件名：测试替身不落盘，收藏 / 扫描规则读写都会被 runCatching 吞掉
-        override val favorites: LocalFavorites = LocalFavorites("")
-        override val scanSettings: LocalScanSettingsStore = LocalScanSettingsStore("")
+    private class Local(items: List<LocalMediaItem> = emptyList()) : LocalMediaSource by SdkEmptyLocal() {
+        private val state = MutableStateFlow(items)
+        override fun items() = state
     }
 
-    private fun source(
-        api: MusicApiService = throwingApi(),
-        activeProviderId: String? = ACTIVE,
-    ) = UnifiedMusicSourceImpl(
-        musicApiService = api,
-        localMusicSource = FakeLocalSource(),
-        activeProviderId = { activeProviderId },
-    )
-
-    // ============ 1. 畸形 mediaId 不抛异常 ============
-
-    @Test
-    fun `畸形 mediaId 返回 Error 而不是抛异常`() = runBlocking {
-        val s = source()
-
-        val detail = s.getTrackDetail("这不是一个 mediaId")
-        assertTrue(detail is BackendResult.Error, "应返回 Error，实际=$detail")
-
-        // 有 "://" 但缺少 resourceType 分隔符
-        val url = s.getSongUrl("netease://song")
-        assertTrue(url is BackendResult.Error, "应返回 Error，实际=$url")
-    }
-
-    @Test
-    fun `批量取详情遇到畸形 id 不抛异常`() = runBlocking {
-        val s = source()
-
-        val allBad = s.getTrackDetails(listOf("bad-one", "bad-two"))
-        assertTrue(allBad is BackendResult.Error, "全部非法时应返回 Error，实际=$allBad")
-
-        val empty = s.getTrackDetails(emptyList())
-        assertTrue(empty is BackendResult.Success, "空输入应返回空成功，实际=$empty")
-        assertEquals(0, empty.getOrNull()?.size)
-    }
-
-    @Test
-    fun `批量取详情只跳过个别畸形 id，其余照常解析`() = runBlocking {
-        // 队列里混入一个旧数据 / 本地路径形态的坏 id 时，不能把整批（整个队列）的元信息
-        // 一起丢掉 —— 那会让队列全部停在「加载中…」且没有任何错误提示。
-        val s = source(api = detailApi(SONG_DETAIL_JSON))
-
-        val mixed = s.getTrackDetails(listOf("bad-one", "netease://song/999"))
-        assertTrue(mixed is BackendResult.Success, "个别畸形项不应让整批失败，实际=$mixed")
-        assertEquals(1, mixed.getOrNull()?.size, "合法项应被正常解析")
-        assertEquals("netease://song/999", mixed.getOrNull()?.first()?.id)
-    }
-
-    // ============ 2. providers / providerId 不再被静默忽略 ============
-
-    @Test
-    fun `providers 指定非活跃音源时返回 Unsupported 而不是静默用活跃音源`() = runBlocking {
-        val s = source(api = searchApi(SEARCH_JSON))
-
-        val other = s.search("周杰伦", 1, listOf("qqmusic"))
-        assertTrue(
-            other is BackendResult.Unsupported,
-            "指定非活跃音源必须报 Unsupported（曾经是静默返回活跃音源的结果），实际=$other",
+    private fun provider(onGet: (String) -> Unit = {}) = object : MusicProvider {
+        override suspend fun capabilities() = Capabilities(listOf(Capability.SEARCH, Capability.GET, Capability.RESOLVE))
+        override suspend fun search(request: SearchRequest) = TrackPage(
+            listOf(Track("001", "Short", listOf(Artist("artist-A", "Artist")), 9_500)), null, null,
+        )
+        override suspend fun get(request: IdRequest): Track {
+            onGet(request.id)
+            if (request.id == "missing") throw ProviderException(Failure(FailureCategory.NOT_FOUND, "Missing"))
+            return Track(request.id, request.id, durationMs = 9_500)
+        }
+        override suspend fun resolve(request: ResolveRequest) = MediaResource(
+            "https://audio.example/track", "actual-quality", listOf(Header("X-Track", request.id)),
+            format = null, bitrate = null,
         )
     }
 
-    @Test
-    fun `providers 为 null 或含活跃音源时照常搜索`() = runBlocking {
-        val s = source(api = searchApi(SEARCH_JSON))
-
-        val unspecified = s.search("周杰伦", 1, null)
-        assertTrue(unspecified is BackendResult.Success, "null 应使用活跃音源，实际=$unspecified")
-
-        val matching = s.search("周杰伦", 1, listOf(ACTIVE))
-        assertTrue(matching is BackendResult.Success, "含活跃音源应放行，实际=$matching")
-        assertEquals("七里香", matching.getOrNull()?.songs?.firstOrNull()?.name)
-    }
+    private fun host(provider: MusicProvider = provider()) =
+        ProviderHost(ProviderCallContext(ProviderSessionKey("test", "default", 0)), provider)
 
     @Test
-    fun `providers 为空列表时报错而不是当成不限`() = runBlocking {
-        val s = source(api = searchApi(SEARCH_JSON))
-        val result = s.search("周杰伦", 1, emptyList())
-        assertTrue(result is BackendResult.Error, "空列表语义不明，应显式报错，实际=$result")
-    }
-
-    @Test
-    fun `没有活跃音源时按 providers 限定会报错`() = runBlocking {
-        val s = source(api = searchApi(SEARCH_JSON), activeProviderId = null)
-        val result = s.search("周杰伦", 1, listOf(ACTIVE))
-        assertTrue(result is BackendResult.Error, "无活跃音源无法判定，应报错，实际=$result")
-    }
-
-    @Test
-    fun `getUserPlaylists 指定非活跃音源时返回 Unsupported`() = runBlocking {
-        val s = source(api = searchApi(SEARCH_JSON))
-
-        val other = s.getUserPlaylists("qqmusic", 123L)
-        assertTrue(other is BackendResult.Unsupported, "应报 Unsupported，实际=$other")
-
-        val blank = s.getUserPlaylists("", 123L)
-        assertTrue(blank is BackendResult.Error, "空 providerId 应报错，实际=$blank")
-    }
-
-    // ============ 3. 两条解析路径结果一致 ============
-
-    @Test
-    fun `统一音源与搜索路径对同一份曲目 JSON 解析出相同字段`() = runBlocking {
-        val s = source(api = detailApi(SONG_DETAIL_JSON))
-
-        val viaUnified = s.getTrackDetail("netease://song/999").getOrNull()
-            ?: fail("统一音源路径应能解析出曲目")
-        val viaSearch = MusicSourceFromApi.parseSearchSongs(SEARCH_JSON).getOrNull()
-            ?.songs?.firstOrNull()
-            ?: fail("搜索路径应能解析出曲目")
-
-        // id 语义不同是**有意为之**：统一音源用调用方给的带命名空间 mediaId，
-        // 搜索路径用上游返回的裸 id。其余字段必须完全一致。
-        assertEquals("netease://song/999", viaUnified.id)
-        assertEquals("999", viaSearch.id)
-        assertEquals(viaSearch.name, viaUnified.name)
-        assertEquals(viaSearch.artist, viaUnified.artist)
-        assertEquals(viaSearch.album, viaUnified.album)
-        assertEquals(viaSearch.coverUrl, viaUnified.coverUrl)
-        assertEquals(viaSearch.durationMs, viaUnified.durationMs)
-        // 歌手条目同样必须一致：播放页「点歌手进主页」依赖它，两条路径分叉就会
-        // 出现「从搜索点进去能跳、从详情点进去不能跳」。
-        assertEquals(viaSearch.artists, viaUnified.artists)
-    }
-
-    @Test
-    fun `字段回退键名 artists 与 album 与 duration 也能解析`() = runBlocking {
-        val s = source(api = detailApi(FALLBACK_KEY_JSON))
-
-        val track = s.getTrackDetail("netease://song/1").getOrNull()
-            ?: fail("应能解析回退键名")
-        assertEquals("回退键名", track.name)
-        assertEquals("甲 / 乙", track.artist, "artists 数组应拼成 ' / ' 分隔")
-        assertEquals("回退专辑", track.album)
-        assertEquals(123_000L, track.durationMs, "duration 应作为 dt 的回退")
-    }
-
-    @Test
-    fun `多歌手逐条带 id，缺 id 的那位照常出名字但不给 id`() = runBlocking {
-        val s = source(api = detailApi(MULTI_ARTIST_JSON))
-
-        val track = s.getTrackDetail("netease://song/100").getOrNull()
-            ?: fail("应能解析多歌手曲目")
-        assertEquals("周杰伦 / 杨瑞代 / 无名", track.artist, "歌手串仍是**全部**名字，缺 id 的不丢")
-        assertEquals(listOf("周杰伦", "杨瑞代", "无名"), track.artists.map { it.name })
-        // 0L = 「上游没给 id」的哨兵：播放页据此把这一位渲染成不可点，
-        // 而不是塞一个错的人的主页进去。
-        assertEquals(listOf(6452L, 12345L, 0L), track.artists.map { it.id })
-    }
-
-    @Test
-    fun `上游只给 artist 字符串时没有可跳转的歌手条目`() = runBlocking {
-        val s = source(api = detailApi(ARTIST_STRING_JSON))
-
-        val track = s.getTrackDetail("netease://song/1").getOrNull()
-            ?: fail("应能解析 artist 字符串")
-        assertEquals("甲", track.artist)
-        assertTrue(track.artists.isEmpty(), "没有 id 就没有可跳转条目，实际=${track.artists}")
-    }
-
-    @Test
-    fun `songId 与 song 可作为 id 与 name 的回退`() = runBlocking {
-        // 这两条回退原先只存在于 MusicSourceFromApi 的那份拷贝里，
-        // 合并到 TrackJsonMapper 后统一音源路径也应生效。
-        val viaSearch = MusicSourceFromApi.parseSearchSongs(SONG_ID_FALLBACK_JSON).getOrNull()
-            ?.songs?.firstOrNull()
-            ?: fail("搜索路径应能解析出曲目")
-        assertEquals("777", viaSearch.id)
-        assertEquals("回退曲名", viaSearch.name)
-
-        val s = source(api = detailApi(SONG_ID_FALLBACK_JSON))
-        val unified = s.getTrackDetail("netease://song/777").getOrNull()
-        assertEquals("回退曲名", unified?.name)
-    }
-
-    @Test
-    fun `非 JSON 对象响应不会让批量解析抛出`() = runBlocking {
-        val s = source(api = detailApi(Json.parseToJsonElement("[1,2,3]")))
-
-        val result = s.getTrackDetails(listOf("netease://song/1"))
-        // songs 字段取不到 ⇒ 空结果，但必须是 Success 而不是异常
-        assertTrue(result is BackendResult.Success, "实际=$result")
-        assertEquals(0, result.getOrNull()?.size)
-    }
-
-    @Test
-    fun `Standard v3 - 支持从 data_tracks 解析曲目详情与批量详情`() = runBlocking {
-        val standardJson = Json.parseToJsonElement(
-            """
-            {
-              "code": 0,
-              "data": {
-                "tracks": [{
-                  "id": "c138da64149fa469e8020942ff903c72",
-                  "title": "晴天",
-                  "artist": "周杰伦",
-                  "album": "叶惠美",
-                  "duration": 269,
-                  "coverUrl": "https://img.kugou.com/cover.jpg"
-                }]
-              }
-            }
-            """
-        )
-        val s = source(api = detailApi(standardJson))
-
-        val single = s.getTrackDetail("kugou-music-rs://song/c138da64149fa469e8020942ff903c72").getOrNull()
-        assertEquals("晴天", single?.name)
-        assertEquals("周杰伦", single?.artist)
-        assertEquals("叶惠美", single?.album)
-        assertEquals(269000L, single?.durationMs)
-
-        val batch = s.getTrackDetails(listOf("kugou-music-rs://song/c138da64149fa469e8020942ff903c72")).getOrNull()
-        assertEquals(1, batch?.size)
-        assertEquals("晴天", batch?.first()?.name)
-    }
-
-    @Test
-    fun `Standard v3 - 支持从 data 提取播放直链、大小与请求头`() = runBlocking {
-        val standardUrlJson = Json.parseToJsonElement(
-            """
-            {
-              "code": 0,
-              "data": {
-                "url": "https://stream.example.com/audio/track_1001.flac",
-                "format": "flac",
-                "quality": "lossless",
-                "size": 25165824,
-                "headers": {
-                  "User-Agent": "CPPlayer/1.6",
-                  "Referer": "https://example.com"
-                }
-              }
-            }
-            """
-        )
-        val s = source(api = songUrlApi(standardUrlJson))
-        val result = s.getSongUrl("kugou-music-rs://song/track_1001", "lossless").getOrNull()
-            ?: fail("应成功解析 Standard v3 播放地址")
-
-        assertEquals("https://stream.example.com/audio/track_1001.flac", result.url)
-        assertEquals("lossless", result.level)
-        assertEquals(25165824L, result.sizeBytes)
-        assertEquals("CPPlayer/1.6", result.headers?.get("User-Agent"))
-        assertEquals("https://example.com", result.headers?.get("Referer"))
-    }
-
-    @Test
-    fun `Standard v3 - 支持从 data 解析歌曲信息弹窗与详情`() {
-        val detailJson = Json.parseToJsonElement(
-            """
-            {
-              "code": 0,
-              "data": {
-                "tracks": [{
-                  "id": "1001",
-                  "title": "夜曲",
-                  "artist": "周杰伦",
-                  "album": "十一月的萧邦",
-                  "duration": 226,
-                  "coverUrl": "https://img/cover.jpg",
-                  "publishTime": 1130774400000,
-                  "bitrate": 320000
-                }]
-              }
-            }
-            """
-        )
-        val info = MusicSourceFromApi.parseSongDetailInfo(detailJson).getOrNull()
-            ?: fail("应成功解析 Standard v3 歌曲详情信息")
-        assertEquals("夜曲", info.name)
-        assertEquals("周杰伦", info.artist)
-        assertEquals("十一月的萧邦", info.album)
-        assertEquals(226000L, info.durationMs)
-        assertEquals(1130774400000L, info.publishTimeMs)
-        assertEquals(320000, info.maxBitrate)
-    }
-
-    @Test
-    fun `Standard v3 - 支持扁平歌单与歌单详情曲目`() {
-        val playlistJson = Json.parseToJsonElement(
-            """
-            {
-              "code": 0,
-              "data": {
-                "id": 9999,
-                "title": "经典华语流行",
-                "coverUrl": "https://img/pl_cover.jpg",
-                "total": 50,
-                "author": "官方编辑",
-                "tracks": [{
-                  "id": "t1",
-                  "title": "晴天",
-                  "artist": "周杰伦",
-                  "album": "叶惠美",
-                  "duration": 269
-                }]
-              }
-            }
-            """
-        )
-        val detail = MusicSourceFromApi.parsePlaylistDetail(playlistJson).getOrNull()
-            ?: fail("应成功解析 Standard v3 歌单详情")
-        assertEquals(9999L, detail.summary.id)
-        assertEquals("经典华语流行", detail.summary.name)
-        assertEquals("https://img/pl_cover.jpg", detail.summary.coverUrl)
-        assertEquals(50, detail.summary.trackCount)
-        assertEquals("官方编辑", detail.summary.creatorName)
-        assertEquals(1, detail.tracks.size)
-        assertEquals("晴天", detail.tracks.first().name)
-    }
-
-    @Test
-    fun `Standard v3 - 支持扁平歌手主页资料与歌手专辑列表`() {
-        val artistJson = Json.parseToJsonElement(
-            """
-            {
-              "code": 0,
-              "data": {
-                "id": 6452,
-                "name": "周杰伦",
-                "avatar": "https://img/jay.jpg",
-                "briefDesc": "华语流行音乐天王",
-                "alias": ["Jay Chou"],
-                "fans": 12000000
-              }
-            }
-            """
-        )
-        val profile = MusicSourceFromApi.parseArtistProfile(artistJson)
-            ?: fail("应成功解析 Standard v3 扁平歌手资料")
-        assertEquals(6452L, profile.id)
-        assertEquals("周杰伦", profile.name)
-        assertEquals("https://img/jay.jpg", profile.avatarUrl)
-        assertEquals("华语流行音乐天王", profile.briefDesc)
-        assertEquals(listOf("Jay Chou"), profile.alias)
-        assertEquals(12000000, profile.followeds)
-
-        val albumsJson = Json.parseToJsonElement(
-            """
-            {
-              "code": 0,
-              "data": [
-                {
-                  "id": 101,
-                  "title": "叶惠美",
-                  "cover": "https://img/album.jpg",
-                  "artist": "周杰伦",
-                  "publishDate": 1058284800000
-                }
-              ]
-            }
-            """
-        )
-        val albums = MusicSourceFromApi.parseArtistAlbums(albumsJson).getOrNull()
-            ?: fail("应成功从 Standard v3 data 数组解析专辑列表")
-        assertEquals(1, albums.size)
-        assertEquals(101L, albums.first().id)
-        assertEquals("叶惠美", albums.first().name)
-        assertEquals("https://img/album.jpg", albums.first().coverUrl)
-    }
-
-    @Test
-    fun `Standard v3 - 支持扁平专辑详情与嵌套 tracks`() {
-        val albumDetailJson = Json.parseToJsonElement(
-            """
-            {
-              "code": 0,
-              "data": {
-                "id": 101,
-                "title": "叶惠美",
-                "cover": "https://img/album.jpg",
-                "artist": "周杰伦",
-                "tracks": [
-                  {
-                    "id": "t_101_1",
-                    "title": "以父之名",
-                    "artist": "周杰伦",
-                    "duration": 342
-                  }
-                ]
-              }
-            }
-            """
-        )
-        val album = MusicSourceFromApi.parseAlbumDetail(albumDetailJson).getOrNull()
-            ?: fail("应成功解析 Standard v3 专辑详情")
-        assertEquals(101L, album.id)
-        assertEquals("叶惠美", album.name)
-        assertEquals("https://img/album.jpg", album.coverUrl)
-        assertEquals("周杰伦", album.artistName)
-        assertEquals(1, album.tracks.size)
-        assertEquals("以父之名", album.tracks.first().name)
-    }
-
-    @Test
-    fun `Standard v3 - 支持评论解析 name 与 avatar 字段`() {
-        val commentsJson = Json.parseToJsonElement(
-            """
-            {
-              "code": 0,
-              "data": {
-                "totalCount": 1,
-                "hasMore": false,
-                "comments": [
-                  {
-                    "id": 8888,
-                    "content": "前奏一响，青春回来了",
-                    "time": 1700000000000,
-                    "likedCount": 99,
-                    "user": {
-                      "userId": 5555,
-                      "name": "杰迷小明",
-                      "avatar": "https://img/avatar.jpg"
-                    }
-                  }
-                ]
-              }
-            }
-            """
-        )
-        val page = MusicSourceFromApi.parseComments(commentsJson).getOrNull()
-            ?: fail("应成功解析 Standard v3 评论")
-        assertEquals(1, page.comments.size)
-        val comment = page.comments.first()
-        assertEquals(8888L, comment.id)
-        assertEquals("前奏一响，青春回来了", comment.content)
-        assertEquals("杰迷小明", comment.user)
-        assertEquals("https://img/avatar.jpg", comment.avatar)
-        assertEquals(99, comment.likedCount)
-    }
-
-    // ============ 4. 本地曲目白名单（安全边界） ============
-
-    @Test
-    fun `explicit duration units never use legacy seconds heuristic`() {
-        for ((field, expected) in listOf("durationMs" to 9500L, "dt" to 9500L, "durationSeconds" to 9500000L)) {
-            val json = Json.parseToJsonElement("""{"code":0,"data":{"tracks":[{"id":"short","title":"Short","$field":9500}]}}""")
-            assertEquals(expected, MusicSourceFromApi.parseSearchSongs(json).getOrNull()?.songs?.single()?.durationMs)
-            assertEquals(expected, MusicSourceFromApi.parseSongDetailInfo(json).getOrNull()?.durationMs)
+    fun `invalid IDs return errors and local lookup never creates an SDK session`() {
+        runBlocking {
+            val item = LocalMediaItem("/audio/short.wav", "Short", durationMs = 9_500, mediaType = MediaType.AUDIO)
+            val source = UnifiedMusicSourceImpl(Local(listOf(item)), { error("Local operation opened a provider") })
+            assertIs<BackendResult.Error>(source.getTrackDetail("bad"))
+            assertIs<BackendResult.Error>(source.getSongUrl("test://song"))
+            assertIs<BackendResult.Error>(source.getTrackDetail("local://song/"))
+            assertIs<BackendResult.Error>(source.getSongUrl("local://audio//not-registered"))
+            assertEquals(9_500L, source.getTrackDetail("local://audio//audio/short.wav").getOrNull()?.durationMs)
+            assertEquals("/audio/short.wav", source.preloadTrack("local://audio//audio/short.wav").getOrNull()?.url)
+            assertEquals(emptyList(), source.getTrackDetails(emptyList()).getOrNull())
+            assertEquals(1, source.getTrackDetails(listOf("bad", "local://audio//audio/short.wav")).getOrNull()?.size)
         }
     }
 
     @Test
-    fun `null duration retains known detail metadata`() {
-        val fallback = SongDetailInfo("short", "Short", "", "", durationMs = 9500L)
-        val result = MusicSourceFromApi.parseSongDetailInfo(
-            Json.parseToJsonElement("""{"code":0,"data":{"tracks":[{"id":"short","durationMs":null}]}}"""),
-            fallback,
-        ).getOrNull() ?: fail("Expected detail metadata")
-        assertEquals(9500L, result.durationMs)
+    fun `mixed batches preserve order duplicates and case without querying a foreign provider`() {
+        runBlocking {
+            val calls = mutableListOf<String>()
+            val host = host(provider { calls += it })
+            val local = Local(listOf(LocalMediaItem("/audio/local.wav", "Local", mediaType = MediaType.AUDIO)))
+            val source = UnifiedMusicSourceImpl(local, { host })
+            val ids = listOf("bad", "local://audio//audio/local.wav", "other://song/A",
+                "test://song/A", "test://song/a", "test://song/missing", "test://song/A")
+            try {
+                val outcomes = assertNotNull(source.getTrackOutcomes(ids).getOrNull())
+                assertEquals(ids, outcomes.map { it.mediaId })
+                assertEquals(listOf("InvalidId", null, "Unsupported", null, null, "NotFound", null), outcomes.map { it.error })
+                assertEquals(listOf("A", "a", "missing", "A"), calls)
+                assertEquals("A", outcomes[3].track?.name)
+                assertEquals("a", outcomes[4].track?.name)
+                assertEquals(9_500L, outcomes[3].track?.durationMs)
+            } finally { host.close() }
+        }
     }
 
     @Test
-    fun `artist top songs preserves legacy endpoint and falls back only when unsupported`() = runBlocking {
-        val calls = mutableListOf<Pair<String, Map<String, String>>>()
-        var topCode = 0
-        val api = object : MusicApiService by throwingApi() {
-            override suspend fun callApi(method: String, params: Map<String, String>, cookie: String?): JsonElement {
-                calls += method to params
-                return if (method == MusicApiMethod.ARTIST_TOP_SONG && topCode != 0) {
-                    Json.parseToJsonElement("""{"code":$topCode}""")
-                } else Json.parseToJsonElement("""{"code":0,"songs":[{"id":"track","name":"Track"}]}""")
+    fun `local items survive missing provider and oversized IDs in a batch`() {
+        runBlocking {
+            val local = Local(listOf(LocalMediaItem("/short.wav", "Local", mediaType = MediaType.AUDIO)))
+            val source = UnifiedMusicSourceImpl(local)
+            val ids = listOf("test://song/${"x".repeat(1025)}", "test://song/A", "local://audio//short.wav")
+            val outcomes = assertNotNull(source.getTrackOutcomes(ids).getOrNull())
+            assertEquals(listOf("InvalidId", "NoProvider", null), outcomes.map { it.error })
+            assertEquals("Local", outcomes.last().track?.name)
+            val brokenSession = UnifiedMusicSourceImpl(local, { error("Factory is broken") })
+            val partial = assertNotNull(brokenSession.getTrackOutcomes(ids).getOrNull())
+            assertEquals(listOf("InvalidId", "InvalidResponse", null), partial.map { it.error })
+            assertEquals("Local", partial.last().track?.name)
+        }
+    }
+
+    @Test
+    fun `downloaded originals remain available without activating their provider`() {
+        val file = Files.createTempFile("sdk-offline-", ".flac").toFile()
+        try {
+            runBlocking {
+                val local = Local(listOf(LocalMediaItem(
+                    file.absolutePath, "Offline", durationMs = 9_500, mediaType = MediaType.AUDIO,
+                    originalMediaId = "old-provider://song/001",
+                )))
+                val source = UnifiedMusicSourceImpl(local, { error("Offline request opened a provider") })
+                assertEquals("Offline", source.getTrackDetail("old-provider://song/001").getOrNull()?.name)
+                assertEquals(file.absolutePath, source.getSongUrl("old-provider://song/001").getOrNull()?.url)
+                assertEquals(2, source.getTrackDetails(List(2) { "old-provider://song/001" }).getOrNull()?.size)
             }
-
-            override suspend fun getArtistTopSong(id: Long): JsonElement =
-                callApi(MusicApiMethod.ARTIST_TOP_SONG, mapOf("id" to id.toString()), null)
-
-            override suspend fun getArtistSongs(id: Long, limit: Int): JsonElement =
-                callApi(MusicApiMethod.ARTIST_SONGS, mapOf("id" to id.toString(), "limit" to limit.toString()), null)
-        }
-        assertEquals(1, MusicSourceFromApi.getArtistTopSongs(api, "001").getOrNull()?.size)
-        assertEquals(listOf(MusicApiMethod.ARTIST_TOP_SONG to mapOf("id" to "001")), calls)
-
-        for (code in listOf(-1, 404, 501)) {
-            topCode = code
-            calls.clear()
-            assertEquals(1, MusicSourceFromApi.getArtistTopSongs(api, "artist-uuid").getOrNull()?.size)
-            assertEquals(listOf(MusicApiMethod.ARTIST_TOP_SONG, MusicApiMethod.ARTIST_SONGS), calls.map { it.first })
-            assertEquals("artist-uuid", calls.last().second["id"])
-            assertEquals("50", calls.last().second["limit"])
-        }
-
-        topCode = 401
-        calls.clear()
-        assertTrue(MusicSourceFromApi.getArtistTopSongs(api, "artist-uuid") is BackendResult.Error)
-        assertEquals(1, calls.size)
-
-        topCode = -1
-        calls.clear()
-        assertEquals(1, MusicSourceFromApi.getArtistTopSongs(api, 123L).getOrNull()?.size)
-        assertEquals(listOf(MusicApiMethod.ARTIST_TOP_SONG, MusicApiMethod.ARTIST_SONGS), calls.map { it.first })
+        } finally { file.delete() }
     }
 
     @Test
-    fun `playlist pagination reads nested flags including explicit false`() {
-        val page = MusicSourceFromApi.parsePlaylistTracks(
-            Json.parseToJsonElement("""{"code":0,"hasMore":false,"data":{"tracks":[],"hasMore":true}}"""),
-        ).getOrNull() ?: fail("Expected playlist page")
-        assertTrue(page.hasMore)
-        val last = MusicSourceFromApi.parsePlaylistTracks(
-            Json.parseToJsonElement("""{"code":0,"hasMore":true,"data":{"tracks":[],"hasMore":false}}"""),
-        ).getOrNull() ?: fail("Expected playlist page")
-        assertEquals(false, last.hasMore)
+    fun `search pagination IDs duration and unknown metadata are not guessed`() {
+        runBlocking {
+            val host = host()
+            val source = UnifiedMusicSourceImpl(Local(), { host })
+            try {
+                val page = assertNotNull(source.searchPage("q", 1, 30, 3).getOrNull())
+                assertEquals("test://song/001", page.songs.single().id)
+                assertEquals(9_500L, page.songs.single().durationMs)
+                assertEquals("artist-A", page.songs.single().artists.single().resourceId)
+                assertNull(page.hasMore)
+                assertNull(page.total)
+                assertIs<BackendResult.Error>(source.search("q", providers = emptyList()))
+                assertIs<BackendResult.Unsupported>(source.search("q", providers = listOf("test", "other")))
+                assertIs<BackendResult.Unsupported>(source.search("q", type = 10))
+                assertIs<BackendResult.Unsupported>(source.getTrackDetail("other://song/001"))
+                assertIs<BackendResult.Unsupported>(source.getLyric("test://song/001"))
+                val resource = assertNotNull(source.getSongUrl("test://song/001", "lossless").getOrNull())
+                assertEquals("actual-quality", resource.level)
+                assertEquals(mapOf("X-Track" to "001"), resource.headers)
+                assertNull(resource.codec)
+                assertNull(resource.bitrate)
+                assertNull(resource.cookie)
+            } finally { host.close() }
+        }
     }
 
     @Test
-    fun `liked tracks support nested ids without swallowing errors`() {
-        for (fields in listOf(
-            """"ids":["song-hash","001"]""",
-            """"data":["song-hash","001"]""",
-            """"data":{"ids":["song-hash","001"]}""",
-            """"data":{"trackIds":[{"id":"song-hash"},{"id":"001"}]}""",
-        )) {
-            val result = MusicSourceFromApi.parseLikedTrackIds(Json.parseToJsonElement("""{"code":0,$fields}"""))
-            assertEquals(setOf("song-hash", "001"), result.getOrNull())
+    fun `cancellation is not converted into an empty batch success`() {
+        runBlocking {
+            val host = host(provider { throw CancellationException("cancelled") })
+            val source = UnifiedMusicSourceImpl(Local(), { host })
+            try {
+                assertFailsWith<CancellationException> { source.getTrackDetails(listOf("test://song/001")) }
+            } finally { host.close() }
         }
-        assertEquals(emptySet(), MusicSourceFromApi.parseLikedTrackIds(Json.parseToJsonElement(
-            """{"code":0,"data":{"ids":[]}}""",
-        )).getOrNull())
-        assertTrue(MusicSourceFromApi.parseLikedTrackIds(Json.parseToJsonElement(
-            """{"code":401,"data":{"ids":[]}}""",
-        )) is BackendResult.Error)
-        assertTrue(MusicSourceFromApi.parseLikedTrackIds(Json.parseToJsonElement(
-            """{"code":0,"data":{}}""",
-        )) is BackendResult.Error)
-    }
-
-    @Test
-    fun `opaque and leading zero resource ids survive every catalog parser`() {
-        val playlists = MusicSourceFromApi.parseRecommendedPlaylists(Json.parseToJsonElement(
-            """{"code":0,"data":[{"id":"pl-uuid","title":"First"},{"id":"001","title":"Second"}]}""",
-        )).getOrNull() ?: fail("Expected playlists")
-        assertEquals(listOf("pl-uuid", "001"), playlists.map { it.resourceId })
-        assertTrue(playlists.all { it.isRemote })
-        assertEquals(listOf(0L, 1L), playlists.map { it.id })
-        val search = MusicSourceFromApi.parseSearchSongs(Json.parseToJsonElement(
-            """{"code":0,"data":{"playlists":[{"id":"pl-uuid","title":"List"}],"artists":[{"id":"ar-hash","name":"Artist"}],"albums":[{"id":"al-uuid","title":"Album","artist":{"id":"ar-hash","name":"Artist"}}],"total":47,"hasMore":true}}""",
-        )).getOrNull() ?: fail("Expected search")
-        assertEquals("pl-uuid", search.playlists.single().resourceId)
-        assertEquals("ar-hash", search.artists.single().resourceId)
-        assertEquals("al-uuid", search.albums.single().resourceId)
-        assertEquals("ar-hash", search.albums.single().artistResourceId)
-        assertEquals(47L, search.total)
-        assertEquals(true, search.hasMore)
-        assertEquals("rank-uuid", MusicSourceFromApi.parseRankings(Json.parseToJsonElement(
-            """{"code":0,"data":[{"id":"rank-uuid","title":"Ranking"}]}""",
-        )).getOrNull()?.single()?.resourceId)
-        assertEquals("ar-hash", MusicSourceFromApi.parseArtistProfile(Json.parseToJsonElement(
-            """{"code":0,"data":{"id":"ar-hash","name":"Artist"}}""",
-        ))?.resourceId)
-        assertEquals("al-uuid", MusicSourceFromApi.parseAlbumDetail(Json.parseToJsonElement(
-            """{"code":0,"data":{"id":"al-uuid","title":"Album","tracks":[]}}""",
-        )).getOrNull()?.resourceId)
-        assertEquals("user-uuid", MusicSourceFromApi.parseUserDetail(Json.parseToJsonElement(
-            """{"code":0,"data":{"userId":"user-uuid","name":"User"}}""",
-        ))?.resourceId)
-        assertEquals("new-uuid", MusicSourceFromApi.parseCreatedPlaylistId(Json.parseToJsonElement(
-            """{"code":0,"data":{"id":"new-uuid"}}""",
-        )).getOrNull())
-        val track = trackSummaryOf(Json.parseToJsonElement(
-            """{"id":"t","title":"Track","artists":[{"id":"ar-hash","name":"Artist"}]}""",
-        ) as kotlinx.serialization.json.JsonObject, "t")
-        assertEquals("ar-hash", track.artists.single().resourceId)
-    }
-
-    @Test
-    fun `本地曲目必须命中已登记条目，裸路径不得伪装成功`() = runBlocking {
-        val s = source()
-
-        val detail = s.getTrackDetail("local://audio//etc/passwd")
-        assertTrue(detail is BackendResult.Error, "未登记的本地路径必须报错，实际=$detail")
-
-        val url = s.getSongUrl("local://audio//etc/passwd")
-        assertTrue(url is BackendResult.Error, "未登记的本地路径不得返回可播放地址，实际=$url")
-    }
-
-    // ============ 固定数据 ============
-
-    private companion object {
-        const val ACTIVE = "netease"
-
-        /** 网易云风格：`ar` / `al` / `dt`。 */
-        const val TRACK_NETEASE = """
-            {
-              "id": 999,
-              "name": "七里香",
-              "ar": [{"name": "周杰伦"}],
-              "al": {"name": "七里香", "picUrl": "https://cdn/cover.jpg"},
-              "dt": 269000
-            }
-        """
-
-        val SONG_DETAIL_JSON: JsonElement =
-            Json.parseToJsonElement("""{"code":200,"songs":[$TRACK_NETEASE]}""")
-
-        val SEARCH_JSON: JsonElement =
-            Json.parseToJsonElement("""{"code":200,"result":{"songs":[$TRACK_NETEASE]}}""")
-
-        /** 通用风格：`artists` / `album` / `duration`。 */
-        val FALLBACK_KEY_JSON: JsonElement = Json.parseToJsonElement(
-            """
-            {"code":200,"songs":[{
-              "id": 1,
-              "name": "回退键名",
-              "artists": [{"name": "甲"}, {"name": "乙"}],
-              "album": {"name": "回退专辑"},
-              "duration": 123000
-            }]}
-            """
-        )
-
-        /** 只给 `songId` / `song`：检验 id 与 name 的回退。 */
-        val SONG_ID_FALLBACK_JSON: JsonElement = Json.parseToJsonElement(
-            """{"code":200,"songs":[{"songId":"777","song":"回退曲名","artists":[{"name":"丙"}]}]}"""
-        )
-
-        /** 多歌手（合唱）：第三位缺 id —— 名字要留在歌手串里，但不得带出可跳转的 id。 */
-        val MULTI_ARTIST_JSON: JsonElement = Json.parseToJsonElement(
-            """
-            {"code":200,"songs":[{
-              "id": 100,
-              "name": "合唱",
-              "ar": [
-                {"id": 6452, "name": "周杰伦"},
-                {"id": 12345, "name": "杨瑞代"},
-                {"name": "无名"}
-              ],
-              "dt": 200000
-            }]}
-            """
-        )
-
-        /** 只有 `artist` 字符串、没有任何数组 ⇒ 拿不到 id，不应伪造歌手条目。 */
-        val ARTIST_STRING_JSON: JsonElement = Json.parseToJsonElement(
-            """{"code":200,"songs":[{"id":1,"name":"独唱","artist":"甲"}]}"""
-        )
-
-        fun detailApi(json: JsonElement) = object : MusicApiService by throwingApi() {
-            override suspend fun getSongDetail(ids: List<String>): JsonElement = json
-        }
-
-        fun searchApi(json: JsonElement) = object : MusicApiService by throwingApi() {
-            override suspend fun search(keywords: String, type: Int): JsonElement = json
-        }
-
-        fun songUrlApi(json: JsonElement) = object : MusicApiService by throwingApi() {
-            override suspend fun getSongUrl(songId: String, level: String): JsonElement = json
-        }
-
-        /**
-         * [MusicApiService] 有 120+ 个方法，逐个实现没有意义。
-         * 用「调用即抛」的代理做委托基类，再按需覆写本测试真正会走到的那几个方法。
-         */
-        @Suppress("UNCHECKED_CAST")
-        fun throwingApi(): MusicApiService =
-            java.lang.reflect.Proxy.newProxyInstance(
-                MusicApiService::class.java.classLoader,
-                arrayOf(MusicApiService::class.java),
-            ) { _, method, _ ->
-                throw UnsupportedOperationException("stub api: ${method.name}")
-            } as MusicApiService
     }
 }

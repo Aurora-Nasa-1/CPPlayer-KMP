@@ -1,7 +1,6 @@
 package cp.player.core.playback
 
 import cp.player.core.BackendResult
-import cp.player.core.api.MusicApiService
 import cp.player.core.music.SongUrl
 import cp.player.core.music.TrackSummary
 import cp.player.core.music.UnifiedMusicSource
@@ -92,19 +91,11 @@ class PlaybackControllerNavigationTest {
     }
 
     /**
-     * [MusicApiService] 有 120+ 个 suspend 方法，逐个实现没有意义。
+     * [UnifiedMusicSource] 有几十个 suspend 方法，逐个实现没有意义。
      * 控制器里所有调用点都被 `runCatching` / `try-catch` 包住，
      * 因此一个「调用即抛」的代理完全够用。
      */
     @Suppress("UNCHECKED_CAST")
-    private fun throwingApi(): MusicApiService =
-        java.lang.reflect.Proxy.newProxyInstance(
-            MusicApiService::class.java.classLoader,
-            arrayOf(MusicApiService::class.java),
-        ) { _, method, _ ->
-            throw UnsupportedOperationException("stub api: ${method.name}")
-        } as MusicApiService
-
     private fun controller(
         platform: PlatformPlayer,
         source: UnifiedMusicSource,
@@ -112,8 +103,6 @@ class PlaybackControllerNavigationTest {
     ): PlaybackControllerImpl = PlaybackControllerImpl(
         platform = platform,
         source = source,
-        api = throwingApi(),
-        cookieProvider = { null },
         scope = CoroutineScope(SupervisorJob() + dispatcher),
     )
 

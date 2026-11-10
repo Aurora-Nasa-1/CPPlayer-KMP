@@ -219,7 +219,7 @@ class IntegrationDataApiTest {
             Regex("\"active\":true").findAll(res.body).count(),
             "最多一个音源为活跃: ${res.body}",
         )
-        // apiMap / 模块路径 / cookie 属于内部信息，不对外
+        // 模块路径 / 端点映射 / cookie 属于内部信息，不对外
         assertTrue(!res.body.contains("apiMap"), "不该暴露 apiMap: ${res.body}")
     }
 

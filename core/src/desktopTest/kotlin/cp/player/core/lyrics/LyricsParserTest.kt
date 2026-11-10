@@ -1,70 +1,62 @@
 package cp.player.core.lyrics
 
+import cp.player.core.music.TrackLyrics
 import cp.player.core.playback.LyricsParser
-import kotlinx.serialization.json.Json
+import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 
 class LyricsParserTest {
 
     @Test
-    fun `Standard v3 - 支持从 data_lyric 解析扁平 LRC`() {
-        val json = Json.parseToJsonElement(
-            """
-            {
-              "code": 0,
-              "data": {
-                "lyric": "[00:00.00]晴天 - 周杰伦\n[00:29.00]故事的小黄花 从出生那年就飘着\n[00:33.50]童年的荡秋千 随记忆一直晃到现在"
-              }
-            }
-            """
-        )
-        val lines = LyricsParser.parse(json)
-        assertEquals(3, lines.size)
-        assertEquals(0L, lines[0].time)
-        assertEquals("晴天 - 周杰伦", lines[0].text)
-        assertEquals(29000L, lines[1].time)
-        assertEquals("故事的小黄花 从出生那年就飘着", lines[1].text)
-        assertEquals(33500L, lines[2].time)
-    }
+    fun `ProviderLyricsSource - 格式识别判定正确`() {
+        val provider = ProviderLyricsSource()
+        val lrcLines = LyricsParser.parseTrackLyrics(TrackLyrics(lrc = "[00:01.00]A"))
+        val typedLrcInfo = provider.infoOf(TrackLyrics(lrc = "[00:01.00]A"), lrcLines)
+        assertEquals("LRC", typedLrcInfo.format)
 
-    @Test
-    fun `Standard v3 - 支持从 data_ttml 或 XML 文本直接解析逐字歌词`() {
-        val ttmlJson = Json.parseToJsonElement(
-            """
-            {
-              "code": 0,
-              "data": {
-                "ttml": "<tt><body><div><p begin=\"1.000\" end=\"4.000\"><span begin=\"1.000\" end=\"2.500\">测试逐字歌词</span></p></div></body></tt>"
-              }
-            }
-            """
-        )
-        val lines = LyricsParser.parse(ttmlJson)
-        assertEquals(1, lines.size)
-        assertEquals(1000L, lines[0].time)
-        assertEquals("测试逐字歌词", lines[0].text)
-    }
-
-    @Test
-    fun `Legacy 与 Standard v3 - 格式识别判定正确`() {
-        val provider = ProviderLyricsSource(throwingApi())
-
-        val lrcJson = Json.parseToJsonElement("""{"code":0,"data":{"lyric":"[00:01.00]A"}}""")
-        val lrcLines = LyricsParser.parse(lrcJson)
-        val lrcInfo = provider.infoOf(lrcJson, lrcLines)
-        assertEquals("LRC", lrcInfo.format)
-
-        val ttmlJson = Json.parseToJsonElement("""{"code":0,"data":{"ttml":"<tt><body/></tt>"}}""")
-        val ttmlInfo = provider.infoOf(ttmlJson, emptyList())
+        val ttmlInfo = provider.infoOf(TrackLyrics(ttml = "<tt><body/></tt>"), emptyList())
         assertEquals("TTML", ttmlInfo.format)
     }
 
-    private fun throwingApi(): cp.player.core.api.MusicApiService =
-        java.lang.reflect.Proxy.newProxyInstance(
-            cp.player.core.api.MusicApiService::class.java.classLoader,
-            arrayOf(cp.player.core.api.MusicApiService::class.java),
+    @Test
+    fun `parseTrackLyrics - 直接解析强类型 TrackLyrics`() {
+        val trackLyrics = TrackLyrics(
+            lrc = "[00:01.00]Line 1\n[00:02.00]Line 2",
+            translation = "[00:01.00]翻译 1\n[00:02.00]翻译 2",
+        )
+        val lines = LyricsParser.parseTrackLyrics(trackLyrics)
+        assertEquals(2, lines.size)
+        assertEquals("Line 1", lines[0].text)
+        assertEquals("翻译 1", lines[0].translation)
+    }
+
+    @Test
+    fun `ProviderLyricsSource - 支持从 UnifiedMusicSource 读取`() = runBlocking {
+        @Suppress("UNCHECKED_CAST")
+        val source = java.lang.reflect.Proxy.newProxyInstance(
+            cp.player.core.music.UnifiedMusicSource::class.java.classLoader,
+            arrayOf(cp.player.core.music.UnifiedMusicSource::class.java),
         ) { _, method, _ ->
-            throw UnsupportedOperationException("stub api: ${method.name}")
-        } as cp.player.core.api.MusicApiService
+            when (method.name) {
+                "getLyrics" -> cp.player.core.BackendResult.Success(
+                    TrackLyrics(lrc = "[00:01.00]Hello world")
+                )
+                else -> cp.player.core.BackendResult.Unsupported("unused")
+            }
+        } as cp.player.core.music.UnifiedMusicSource
+        val provider = ProviderLyricsSource(unifiedSource = source)
+        val result = provider.fetch(
+            LyricsRequest(
+                mediaId = cp.player.core.music.CPMediaId("netease", "song", "123"),
+                title = "Hello",
+                artist = "World",
+                album = "Album",
+            )
+        )
+        assertNotNull(result)
+        assertEquals(1, result.lines.size)
+        assertEquals("Hello world", result.lines[0].text)
+    }
 }

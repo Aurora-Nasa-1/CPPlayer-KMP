@@ -24,13 +24,16 @@ import kotlin.test.assertTrue
 class PluginRepositoryArchiveTest {
     private val plugin = RepositoryPlugin("test-provider", RepositoryPluginKind.PROVIDER, "Test", "1.0.0",
         artifacts = emptyList())
-    private fun manifest(version: String = "1.0.0", type: String = "http", id: String = "test-provider") =
-        """{"id":"$id","name":"Test","version":"$version","type":"$type","entryPoint":"https://example.org"}"""
+    private fun manifest(version: String = "1.0.0", type: String = "js", id: String = "test-provider") =
+        """{"id":"$id","name":"Test","version":"$version","type":"$type","entryPoint":"index.js","contract":"kmp-sdk-v1"}"""
 
     private fun zip(root: File, name: String, entries: Map<String, String>): File =
         File(root, name).also { file ->
             ZipOutputStream(file.outputStream()).use { output ->
-                entries.forEach { (path, text) ->
+                val files = if (entries["manifest.json"]?.contains("kmp-sdk-v1") == true) {
+                    mapOf("index.js" to "globalThis.provider = {capabilities: []};") + entries
+                } else entries
+                files.forEach { (path, text) ->
                     output.putNextEntry(ZipEntry(path))
                     output.write(text.toByteArray(Charsets.UTF_8))
                     output.closeEntry()
@@ -38,7 +41,7 @@ class PluginRepositoryArchiveTest {
             }
         }
 
-    private fun artifact(file: File) = PluginArtifact("any", runtime = "http", url = "https://example.org/p.zip",
+    private fun artifact(file: File) = PluginArtifact("any", runtime = "js", url = "https://example.org/p.zip",
         sha256 = MessageDigest.getInstance("SHA-256").digest(file.readBytes()).joinToString("") { "%02x".format(it) },
         bytes = file.length())
 
@@ -52,6 +55,8 @@ class PluginRepositoryArchiveTest {
         inTemporaryDirectory { root ->
             val valid = zip(root, "valid.zip", mapOf("manifest.json" to manifest()))
             verifyRepositoryPackage(valid, plugin, artifact(valid))
+            val legacy = zip(root, "legacy.zip", mapOf("manifest.json" to manifest().replace("kmp-sdk-v1", "standard")))
+            assertFailsWith<IllegalArgumentException> { verifyRepositoryPackage(legacy, plugin, artifact(legacy)) }
             assertFailsWith<IllegalArgumentException> { verifyRepositoryPackage(valid, plugin, artifact(valid).copy(bytes = 1)) }
             assertFailsWith<IllegalArgumentException> { verifyRepositoryPackage(valid, plugin, artifact(valid).copy(sha256 = "0".repeat(64))) }
             assertFailsWith<IllegalArgumentException> { verifyRepositoryPackage(valid, plugin.copy(version = "2.0.0"), artifact(valid)) }

@@ -1,7 +1,6 @@
 package cp.player.core.playback
 
 import cp.player.core.BackendResult
-import cp.player.core.api.MusicApiService
 import cp.player.core.music.SongUrl
 import cp.player.core.music.TrackSummary
 import cp.player.core.music.UnifiedMusicSource
@@ -91,19 +90,9 @@ class SeekFailureReportingTest {
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun throwingApi(): MusicApiService =
-        java.lang.reflect.Proxy.newProxyInstance(
-            MusicApiService::class.java.classLoader,
-            arrayOf(MusicApiService::class.java),
-        ) { _, method, _ ->
-            throw UnsupportedOperationException("stub api: ${method.name}")
-        } as MusicApiService
-
     private fun controller(platform: PlatformPlayer): PlaybackControllerImpl = PlaybackControllerImpl(
         platform = platform,
         source = StubSource(),
-        api = throwingApi(),
-        cookieProvider = { null },
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
     )
 
