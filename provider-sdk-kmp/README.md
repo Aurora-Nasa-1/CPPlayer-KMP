@@ -13,9 +13,12 @@ a published Maven release. `publishAllPublicationsToProviderPreviewRepository`
 writes a file-based preview repository to `artifacts/provider-sdk/maven`, never
 to a remote repository or the user's Maven local cache. Android and desktop JVM targets are configured.
 The JVM artifact includes a typed JNI session adapter generated from the same
-contract; JNI providers are trusted host-registered code, not installable ZIP
-plugins. Kotlin/Native compiler targets and dynamically installed Kotlin
-binaries are not yet distribution products.
+contract. JNI packages can be installed directly without host registration or
+trust approval. A native library can use the standard `NativeSession` JNI exports
+without a JAR or `nativeFactoryClass`. A custom `NativeProviderFactory` adapter
+is optional. See the
+[native package manifest](../docs/dev/MANIFEST_REFERENCE.md#原生-sdk-包).
+Kotlin/Native compiler targets are not supplied by this SDK.
 
 ```kotlin
 class MyProvider(private val context: ProviderContext) : MusicProvider {
@@ -103,12 +106,13 @@ node provider-contract/generate.mjs
 node provider-contract/generate.mjs --check
 ```
 
-The schema contains 160 typed business operations. Tags 61..126 cover comment
+The schema contains 161 typed business operations. Tags 61..126 cover comment
 deletion, messaging, listen-together rooms/sync, MV/video, DJ, calendar/events,
 playlist metadata and account/library operations. Tags 127..165 add extended
 search, cursor comments, distinct album browsing, notifications, ordering,
 imports, binary uploads, video/DJ browsing, recent media, account bindings and
-media-quality enumeration.
+media-quality enumeration. Tag 166 adds bounded liked-ID pagination
+(`accounts.likes.page`); the host aggregates complete favorite collections.
 See the generated [operation table](../docs/dev/SDK_OPERATIONS.md).
 The generated [field/type reference](../docs/dev/SDK_TYPES.md) covers every DTO,
 its defaults, nullability, units and operation-specific constraints.

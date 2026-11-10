@@ -50,15 +50,15 @@ test("unknown capabilities are forward compatible", () => {
 });
 test("every generated capability requires exactly its declared typed method", () => {
     const operations = Object.entries(schema.operations).filter(([, op]) => op.capability);
-    assert.equal(operations.length, 160);
-    assert.equal(operations.filter(([, op]) => op.extended).length, 105);
+    assert.equal(operations.length, 161);
+    assert.equal(operations.filter(([, op]) => op.extended).length, 106);
     for (const [name, operation] of operations) {
         assert.equal(providerMethods[operation.capability], name);
         assert.throws(() => defineProvider({ capabilities: [operation.capability] }), TypeError, name);
         const provider = { capabilities: [operation.capability], [name]: async () => ({}) };
         assert.equal(defineProvider(provider), provider, name);
     }
-    assert.equal(new Set(Object.values(schema.operations).map(op => op.tag)).size, 165);
+    assert.equal(new Set(Object.values(schema.operations).map(op => op.tag)).size, 166);
 });
 test("undefined capabilities do not silently enable everything", () => {
     assert.throws(() => defineProvider({}), TypeError);

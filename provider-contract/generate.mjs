@@ -133,6 +133,22 @@ const extendedJni = banner + `package cp.player.sdk.jni\n\nimport cp.player.sdk.
   `    protected abstract suspend fun dispatch(operation: Int, request: Any): Any\n` +
   extended.map(([n, op]) => `    override suspend fun ${signature(n, op)} =\n` +
     `        dispatch(ProviderProtocol.${n.toUpperCase()}, request) as ${op.response}`).join("\n") + `\n}\n`;
+const nativeWire = banner + `package cp.player.sdk.jni\n\nimport cp.player.sdk.*\n\n` +
+  `/** Standard native SDK wire codec, generated from the same DTO contract. */\n` +
+  `object NativeWireCodec {\n` +
+  `    fun encodeRequest(operation: Int, request: Any): ByteArray {\n` +
+  `        val writer = WireWriter()\n        when (operation) {\n` +
+  Object.entries(schema.operations).map(([n, op]) =>
+    `            ProviderProtocol.${n.toUpperCase()} -> (request as ${op.request}).write(writer)`).join("\n") +
+  `\n            else -> error("Unknown native SDK operation: $operation")\n        }\n        return writer.finish()\n    }\n\n` +
+  `    fun decodeResponse(operation: Int, bytes: ByteArray): Any {\n` +
+  `        val reader = WireReader(bytes)\n        if (reader.bool()) {\n` +
+  `            val failure = Failure.read(reader)\n            reader.finish()\n            throw ProviderException(failure)\n        }\n` +
+  `        val result = when (operation) {\n` +
+  Object.entries(schema.operations).map(([n, op]) =>
+    `            ProviderProtocol.${n.toUpperCase()} -> ${op.response}.read(reader)`).join("\n") +
+  `\n            else -> error("Unknown native SDK operation: $operation")\n        }\n` +
+  `        reader.finish()\n        return result\n    }\n}\n`;
 const extendedJs = banner + `package cp.player.core.provider.typed\n\nimport cp.player.sdk.*\n\n` +
   `abstract class ExtendedJsProviderMethods : MusicProvider {\n` +
   `    protected abstract suspend fun <T> extendedBusiness(method: String, input: Map<String, Any?>, decode: (Map<String, Any?>) -> T): T\n` +
@@ -149,6 +165,7 @@ const hostKotlin = banner + `package cp.player.core.provider.typed\n\nimport cp.
     `    return callExtended(ExtendedCapability.${n.toUpperCase()}) { provider ->\n` +
     `        provider.${n}(${input}).also {\n` +
     `            validateExtendedResult(it.values(), ${input}.values())\n` +
+    (op.response === "IdPage" ? `            validateIdPage(it)\n` : "") +
     (schema.records[op.request].id && schema.records[op.response].id && op.response !== "MutationResult"
       ? `            require(it.id == request.id)\n` : "") +
     `            it.write(WireWriter())\n        }\n    }\n}\n`;
@@ -353,6 +370,7 @@ const outputs = [
   ["provider-sdk-kmp/js/methods.generated.mjs", methods],
   ["provider-sdk-kmp/src/commonMain/kotlin/cp/player/sdk/ExtendedOperations.generated.kt", extendedKotlin],
   ["provider-sdk-kmp/src/jvmMain/kotlin/cp/player/sdk/jni/ExtendedJniProviderMethods.generated.kt", extendedJni],
+  ["provider-sdk-kmp/src/jvmMain/kotlin/cp/player/sdk/jni/NativeWireCodec.generated.kt", nativeWire],
   ["core/src/jvmMain/kotlin/cp/player/core/provider/typed/ExtendedJsProviderMethods.generated.kt", extendedJs],
   ["core/src/commonMain/kotlin/cp/player/core/provider/typed/ExtendedProviderHost.generated.kt", hostKotlin],
   ["core/src/commonMain/kotlin/cp/player/core/music/ExtendedMusicSource.generated.kt", sourceKotlin],

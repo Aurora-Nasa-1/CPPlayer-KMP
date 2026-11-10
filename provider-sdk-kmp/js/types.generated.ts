@@ -256,6 +256,16 @@ export interface IdList {
   readonly items?: string[];
 }
 
+/** A bounded page of opaque IDs with explicit continuation; each item is a provider-local track ID. */
+export interface IdPage {
+  /** Ordered result items. Preserve upstream order; unknown pagination metadata stays null. */
+  readonly items?: string[];
+  /** Known total count, not current-page length; null means unknown. */
+  readonly total?: number | null;
+  /** Known continuation state; null means unknown, not false. */
+  readonly hasMore: boolean;
+}
+
 /** Mutation acknowledgement with an optional created/affected resource ID. */
 export interface MutationResult {
   /** Explicit mutation/authentication acknowledgement; false is not an empty successful data page. */
@@ -1799,7 +1809,8 @@ export type KnownCapability =
   | "accounts.phone.replace"
   | "media.qualities"
   | "messages.sendResource"
-  | "comments.userHistory";
+  | "comments.userHistory"
+  | "accounts.likes.page";
 
 export interface Tracks {
   /** Search audio tracks using item-offset pagination. Capability: tracks.search. Tag: 2. Undeclared or unimplemented capabilities fail with Unsupported. */
@@ -1901,6 +1912,8 @@ export interface Accounts {
   getUserAlbums(request: UserListRequest, context: Context): Promise<AlbumPage>;
   /** Inspect current-session login state without replacing the immutable session credential. Capability: accounts.session. Tag: 59. Undeclared or unimplemented capabilities fail with Unsupported. */
   getCurrentAccount(request: Bytes, context: Context): Promise<AccountSession>;
+  /** Page liked track IDs with item offsets and explicit continuation; self addresses the current account. Use this operation for collections larger than 500 IDs. Capability: accounts.likes.page. Tag: 166. Undeclared or unimplemented capabilities fail with Unsupported. */
+  getLikeListPage(request: PagedIdRequest, context: Context): Promise<IdPage>;
 }
 
 export interface PlaylistMutations {

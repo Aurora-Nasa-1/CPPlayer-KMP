@@ -213,6 +213,8 @@ interface ExtendedOperations {
     suspend fun sendResourceMessage(request: ResourceMessageRequest): MutationResult = unsupported()
     /** Get a user's comment history with an opaque continuation cursor. Capability: comments.userHistory. Tag: 165. Undeclared or unimplemented capabilities fail with Unsupported. */
     suspend fun getUserCommentHistory(request: UserCursorRequest): CommentPage = unsupported()
+    /** Page liked track IDs with item offsets and explicit continuation; self addresses the current account. Use this operation for collections larger than 500 IDs. Capability: accounts.likes.page. Tag: 166. Undeclared or unimplemented capabilities fail with Unsupported. */
+    suspend fun getLikeListPage(request: PagedIdRequest): IdPage = unsupported()
 }
 
 object ExtendedCapability {
@@ -321,4 +323,5 @@ object ExtendedCapability {
     const val GETMEDIAQUALITIES = "media.qualities"
     const val SENDRESOURCEMESSAGE = "messages.sendResource"
     const val GETUSERCOMMENTHISTORY = "comments.userHistory"
+    const val GETLIKELISTPAGE = "accounts.likes.page"
 }

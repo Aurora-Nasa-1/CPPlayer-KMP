@@ -159,5 +159,6 @@ export const providerMethods = Object.freeze({
   "accounts.phone.replace": "replacePhone",
   "media.qualities": "getMediaQualities",
   "messages.sendResource": "sendResourceMessage",
-  "comments.userHistory": "getUserCommentHistory"
+  "comments.userHistory": "getUserCommentHistory",
+  "accounts.likes.page": "getLikeListPage"
 });

@@ -847,6 +847,39 @@ data class IdList(
     }
 }
 
+/** A bounded page of opaque IDs with explicit continuation; each item is a provider-local track ID. */
+data class IdPage(
+    /** Ordered result items. Preserve upstream order; unknown pagination metadata stays null. */
+    val items: List<String> = emptyList(),
+    /** Known total count, not current-page length; null means unknown. */
+    val total: Long? = null,
+    /** Known continuation state; null means unknown, not false. */
+    val hasMore: Boolean,
+) {
+    fun write(w: WireWriter) { with(w) {
+        list(this@IdPage.items) { v -> string(v) }
+        optional(this@IdPage.total) { v -> long(v) }
+        bool(this@IdPage.hasMore)
+    } }
+    fun values(): Map<String, Any?> = mapOf(
+        "items" to items.map { it },
+        "total" to total?.let { it },
+        "hasMore" to hasMore,
+    )
+    companion object {
+        fun read(r: WireReader): IdPage = with(r) { IdPage(
+            list { string() },
+            optional { long() },
+            bool(),
+        ) }
+        fun fromValues(v: Map<String, Any?>): IdPage = IdPage(
+            valueList(v["items"] ?: emptyList<Any?>()).map { valueString(it) },
+            v["total"]?.let { valueLong(it) },
+            valueBool(v["hasMore"]),
+        )
+    }
+}
+
 /** Mutation acknowledgement with an optional created/affected resource ID. */
 data class MutationResult(
     /** Explicit mutation/authentication acknowledgement; false is not an empty successful data page. */
@@ -5538,4 +5571,5 @@ object ProviderProtocol {
     const val GETMEDIAQUALITIES = 163
     const val SENDRESOURCEMESSAGE = 164
     const val GETUSERCOMMENTHISTORY = 165
+    const val GETLIKELISTPAGE = 166
 }

@@ -22,7 +22,7 @@ npm run --prefix provider-sdk-kmp/js check:types
 ```
 
 `--check` fails on missing/stale documentation metadata or changed generated
-output. All 160 business methods and 154 DTOs currently have documentation.
+output. All 161 business methods and 155 DTOs currently have documentation.
 The generator maintains SDK method KDoc in MusicProvider.kt/CatalogProvider.kt
 while preserving their handwritten implementation/default bodies. Runtime and
 lifecycle declarations remain handwritten.

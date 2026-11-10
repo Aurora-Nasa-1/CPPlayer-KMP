@@ -48,6 +48,7 @@ export default {
     "UserListRequest": { "id": "string", "limit": "int", "offset": "int" },
     "UserProfile": { "id": "string", "nickname": "string", "avatarUrl": "string?", "signature": "string?", "playlistCount": "int", "follows": "int", "followeds": "int" },
     "IdList": { "items": "string[]" },
+    "IdPage": { "items": "string[]", "total": "long?", "hasMore": "bool" },
     "MutationResult": { "success": "bool", "id": "string?" },
     "PlaylistTracksRequest": { "playlistId": "string", "trackIds": "string[]" },
     "PlaylistNameRequest": { "playlistId": "string", "name": "string" },
@@ -340,6 +341,7 @@ export default {
     "replacePhone": { "tag": 162, "request": "PhoneReplacementRequest", "response": "MutationResult", "group": "AccountBindings", "capability": "accounts.phone.replace", "extended": true },
     "getMediaQualities": { "tag": 163, "request": "MediaQualityRequest", "response": "QualityPage", "group": "MediaQualities", "capability": "media.qualities", "extended": true },
     "sendResourceMessage": { "tag": 164, "request": "ResourceMessageRequest", "response": "MutationResult", "group": "Notifications", "capability": "messages.sendResource", "extended": true },
-    "getUserCommentHistory": { "tag": 165, "request": "UserCursorRequest", "response": "CommentPage", "group": "Notifications", "capability": "comments.userHistory", "extended": true }
+    "getUserCommentHistory": { "tag": 165, "request": "UserCursorRequest", "response": "CommentPage", "group": "Notifications", "capability": "comments.userHistory", "extended": true },
+    "getLikeListPage": { "tag": 166, "request": "PagedIdRequest", "response": "IdPage", "group": "Accounts", "capability": "accounts.likes.page", "extended": true }
   }
 };
