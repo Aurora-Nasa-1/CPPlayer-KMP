@@ -1,22 +1,7 @@
 package cp.player.app.repository
 
 import cp.player.app.AppModel
-import cp.player.core.api.extractUserResourceId
-import cp.player.core.api.getPlaylistDetail
-import cp.player.core.api.getPlaylistTracks
-import cp.player.core.api.addTracksToPlaylist
-import cp.player.core.api.removeTracksFromPlaylist
-import cp.player.core.api.deletePlaylist
-import cp.player.core.api.subscribePlaylist
-import cp.player.core.api.updatePlaylistName
-import cp.player.core.api.getAlbumDetail
-import cp.player.core.api.subscribeAlbum
-import cp.player.core.api.getArtistDetail
-import cp.player.core.api.getUserDetail
-import cp.player.core.api.getUserPlaylists
-import cp.player.core.api.getLikeList
 import cp.player.core.BackendResult
-import cp.player.core.api.MusicApiService
 import cp.player.core.music.AlbumDetail
 import cp.player.core.music.AlbumSummary
 import cp.player.core.music.ArtistProfile
@@ -26,7 +11,6 @@ import cp.player.core.music.Comment
 import cp.player.core.music.CommentFloorPage
 import cp.player.core.music.CommentPage
 import cp.player.core.music.MusicResult
-import cp.player.core.music.MusicSourceFromApi
 import cp.player.core.music.PlaylistDetail
 import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.PlaylistTracksPage
@@ -35,78 +19,170 @@ import cp.player.core.music.RankingSummary
 import cp.player.core.music.SearchResult
 import cp.player.core.music.SongDetailInfo
 import cp.player.core.music.TrackSummary
-import cp.player.core.util.runCatchingExceptCancellation
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.intOrNull
+
+data class HotSearch(
+    val keyword: String,
+    val description: String = "",
+)
 
 /** Application-facing music facade. UI models do not depend on raw Provider/API wiring. */
-class MusicRepository(private val api: MusicApiService) {
-    suspend fun getHotSearches(): JsonElement = api.getHotSearches()
+class MusicRepository(
+    private val unifiedSource: cp.player.core.music.UnifiedMusicSource? = null,
+) {
 
-    suspend fun getSearchSuggestions(keyword: String): JsonElement =
-        api.getSearchSuggestions(keyword)
+    suspend fun getHotSearches(): List<HotSearch> {
+        return when (val result = unifiedSource?.getHotSearches()) {
+            is BackendResult.Success -> result.data.map { HotSearch(it.keyword, it.description) }
+            else -> emptyList()
+        }
+    }
+
+    suspend fun getSearchSuggestions(keyword: String, exclude: String = ""): List<String> {
+        return when (val result = unifiedSource?.getSearchSuggestions(keyword)) {
+            is BackendResult.Success -> result.data
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+                .filterNot { exclude.isNotBlank() && it.equals(exclude, ignoreCase = true) }
+                .distinct()
+                .take(8)
+            else -> emptyList()
+        }
+    }
 
     suspend fun search(keyword: String, type: Int): MusicResult<SearchResult> =
-        MusicSourceFromApi.search(api, keyword, type)
+        unifiedSource?.search(keyword, type) ?: BackendResult.Unsupported("Unified music source is not configured")
 
     suspend fun search(keyword: String, type: Int, limit: Int, offset: Int): MusicResult<SearchResult> =
-        MusicSourceFromApi.search(api, keyword, type, limit, offset)
+        unifiedSource?.searchPage(keyword, type, limit, offset) ?: BackendResult.Unsupported("Unified music source is not configured")
 
-    suspend fun getPlaylistDetail(id: String): MusicResult<PlaylistDetail> =
-        MusicSourceFromApi.getPlaylistDetail(api, id)
+    suspend fun getPlaylistDetail(id: String): MusicResult<PlaylistDetail> {
+        val source = unifiedSource ?: return BackendResult.Unsupported("Unified music source is not configured")
+        val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(
+            id, AppModel.activeProviderId() ?: "netease", "playlist"
+        )
+        return when (val result = source.getPlaylistDetail(canonicalId)) {
+            is BackendResult.Success -> {
+                val detail = result.data
+                if (detail.tracks.isEmpty()) {
+                    when (val tracksResult = source.getPlaylistTracks(canonicalId, limit = 300, offset = 0)) {
+                        is BackendResult.Success -> BackendResult.Success(detail.copy(tracks = tracksResult.data.items))
+                        else -> result
+                    }
+                } else result
+            }
+            is BackendResult.Error -> result
+            is BackendResult.Unsupported -> result
+        }
+    }
 
-    suspend fun getPlaylistTracks(id: String, limit: Int = 300, offset: Int = 0): MusicResult<PlaylistTracksPage> =
-        MusicSourceFromApi.getPlaylistTracks(api, id, limit, offset)
+    suspend fun getPlaylistTracks(id: String, limit: Int = 300, offset: Int = 0): MusicResult<PlaylistTracksPage> {
+        val source = unifiedSource ?: return BackendResult.Unsupported("Unified music source is not configured")
+        val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(
+            id, AppModel.activeProviderId() ?: "netease", "playlist"
+        )
+        return when (val result = source.getPlaylistTracks(canonicalId, limit, offset)) {
+            is BackendResult.Success -> BackendResult.Success(
+                PlaylistTracksPage(result.data.items, result.data.hasMore ?: false)
+            )
+            is BackendResult.Error -> result
+            is BackendResult.Unsupported -> result
+        }
+    }
 
-    suspend fun getAlbumDetail(id: String): MusicResult<AlbumDetail> = MusicSourceFromApi.getAlbumDetail(api, id)
+    suspend fun getAlbumDetail(id: String): MusicResult<AlbumDetail> {
+        val source = unifiedSource ?: return BackendResult.Unsupported("Unified music source is not configured")
+        val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(
+            id, AppModel.activeProviderId() ?: "netease", "album"
+        )
+        return source.getAlbumDetail(canonicalId)
+    }
 
     suspend fun subscribeAlbum(id: String, subscribe: Boolean): Boolean {
-        val ok = isApiSuccess(api.subscribeAlbum(id, if (subscribe) 1 else 2))
+        val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(
+            id, AppModel.activeProviderId() ?: "netease", "album",
+        )
+        val ok = (unifiedSource?.subscribeAlbum(canonicalId, subscribe) as? BackendResult.Success)?.data == true
         if (ok) AppModel.notifyAlbumFavoriteResourceChanged(id)
         return ok
     }
 
-    suspend fun getArtistProfile(id: String): ArtistProfile? =
-        runCatchingExceptCancellation { MusicSourceFromApi.parseArtistProfile(api.getArtistDetail(id)) }.getOrNull()
+    suspend fun getArtistProfile(id: String): ArtistProfile? {
+        val source = unifiedSource ?: return null
+        val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(
+            id, AppModel.activeProviderId() ?: "netease", "artist"
+        )
+        return (source.getArtistProfile(canonicalId) as? BackendResult.Success)?.data
+    }
 
-    suspend fun getArtistTopSongs(id: String): MusicResult<List<TrackSummary>> =
-        MusicSourceFromApi.getArtistTopSongs(api, id)
+    suspend fun getArtistTopSongs(id: String): MusicResult<List<TrackSummary>> {
+        val source = unifiedSource ?: return BackendResult.Unsupported("Unified music source is not configured")
+        val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(
+            id, AppModel.activeProviderId() ?: "netease", "artist"
+        )
+        return when (val result = source.getArtistTracks(canonicalId, limit = 50, offset = 0)) {
+            is BackendResult.Success -> BackendResult.Success(result.data.items)
+            is BackendResult.Error -> result
+            is BackendResult.Unsupported -> result
+        }
+    }
 
-    suspend fun getArtistAlbums(id: String, limit: Int = 50): MusicResult<List<AlbumSummary>> =
-        MusicSourceFromApi.getArtistAlbums(api, id, limit)
+    suspend fun getArtistAlbums(id: String, limit: Int = 50): MusicResult<List<AlbumSummary>> {
+        val source = unifiedSource ?: return BackendResult.Unsupported("Unified music source is not configured")
+        val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(
+            id, AppModel.activeProviderId() ?: "netease", "artist"
+        )
+        return when (val result = source.getArtistAlbums(canonicalId, limit = limit, offset = 0)) {
+            is BackendResult.Success -> BackendResult.Success(result.data.items)
+            is BackendResult.Error -> result
+            is BackendResult.Unsupported -> result
+        }
+    }
 
-    suspend fun getUserPlaylistsOf(uid: String): MusicResult<List<PlaylistSummary>> =
-        MusicSourceFromApi.getUserPlaylists(api, uid)
+    suspend fun getUserPlaylistsOf(uid: String): MusicResult<List<PlaylistSummary>> {
+        val source = unifiedSource ?: return BackendResult.Unsupported("Unified music source is not configured")
+        val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(
+            uid, AppModel.activeProviderId() ?: "netease", "user"
+        )
+        return when (val result = source.getUserPlaylistPage(canonicalId, limit = 100, offset = 0)) {
+            is BackendResult.Success -> BackendResult.Success(result.data.items)
+            is BackendResult.Error -> result
+            is BackendResult.Unsupported -> result
+        }
+    }
 
-    suspend fun deletePlaylist(id: String): Boolean = playlistWrite(id) { this.deletePlaylist(id) }
-    suspend fun unsubscribePlaylist(id: String): Boolean = playlistWrite(id) { this.subscribePlaylist(id, 2) }
+    suspend fun deletePlaylist(id: String): Boolean =
+        playlistMutation(id, unifiedSource?.deletePlaylist(canonicalPlaylistId(id)))
+    suspend fun unsubscribePlaylist(id: String): Boolean = subscribePlaylist(id, false)
     suspend fun subscribePlaylist(id: String, subscribe: Boolean): Boolean =
-        playlistWrite(id) { this.subscribePlaylist(id, if (subscribe) 1 else 2) }
+        playlistMutation(id, unifiedSource?.subscribePlaylist(canonicalPlaylistId(id), subscribe))
     suspend fun addTracksToPlaylist(playlistId: String, ids: List<String>): Boolean {
-        val rawIds = ids.map { cp.player.core.music.CPMediaId.toRawResourceId(it) }.filter { it.isNotBlank() }
-        val rawPid = cp.player.core.music.CPMediaId.toRawResourceId(playlistId)
-        return playlistWrite(playlistId) { this.addTracksToPlaylist(rawPid, rawIds) }
+        val providerId = AppModel.activeProviderId() ?: "netease"
+        val tracks = ids.map { cp.player.core.music.CPMediaId.toCanonicalMediaId(it, providerId, "song") }
+        return playlistMutation(playlistId, unifiedSource?.addTracksToPlaylist(canonicalPlaylistId(playlistId), tracks))
     }
     suspend fun removeTracksFromPlaylist(playlistId: String, ids: List<String>): Boolean {
-        val rawIds = ids.map { cp.player.core.music.CPMediaId.toRawResourceId(it) }.filter { it.isNotBlank() }
-        val rawPid = cp.player.core.music.CPMediaId.toRawResourceId(playlistId)
-        return playlistWrite(playlistId) { this.removeTracksFromPlaylist(rawPid, rawIds) }
+        val providerId = AppModel.activeProviderId() ?: "netease"
+        val tracks = ids.map { cp.player.core.music.CPMediaId.toCanonicalMediaId(it, providerId, "song") }
+        return playlistMutation(playlistId, unifiedSource?.removeTracksFromPlaylist(canonicalPlaylistId(playlistId), tracks))
     }
     suspend fun renamePlaylist(playlistId: String, name: String): Boolean =
-        playlistWrite(playlistId) { this.updatePlaylistName(playlistId, name) }
+        playlistMutation(playlistId, unifiedSource?.renamePlaylist(canonicalPlaylistId(playlistId), name))
 
-    private suspend fun playlistWrite(id: String, block: suspend MusicApiService.() -> JsonElement): Boolean {
-        val ok = isApiSuccess(api.block())
-        if (ok) AppModel.notifyPlaylistChanged(id)
+    private fun canonicalPlaylistId(id: String): String =
+        cp.player.core.music.CPMediaId.toCanonicalMediaId(id, AppModel.activeProviderId() ?: "netease", "playlist")
+
+    private suspend fun playlistMutation(
+        id: String,
+        result: MusicResult<Boolean>?,
+    ): Boolean {
+        val ok = (result as? BackendResult.Success)?.data == true
+        if (ok) AppModel.notifyPlaylistChanged(cp.player.core.music.CPMediaId.toRawResourceId(id))
         return ok
     }
 
     suspend fun createPlaylistResource(name: String): MusicResult<String> {
-        val result = MusicSourceFromApi.parseCreatedPlaylistId(api.createPlaylist(name))
+        val result = unifiedSource?.createPlaylist(name)
+            ?: BackendResult.Unsupported("Unified music source is not configured")
         if (result is BackendResult.Success) AppModel.notifyPlaylistChanged(result.data)
         return result
     }
@@ -118,14 +194,25 @@ class MusicRepository(private val api: MusicApiService) {
      * 真实歌单（约定用「我喜欢的音乐」收藏夹），传 `0` 会直接报错或返回空 ——
      * 与旧项目 `PlaybackRepository.getHeartbeatSongs(songId, playlistId)` 的行为一致。
      */
-    suspend fun getIntelligenceSongs(songId: String, playlistId: Long): MusicResult<List<TrackSummary>> =
-        MusicSourceFromApi.parseFmSongs(api.getIntelligenceList(songId, playlistId))
+    suspend fun getIntelligenceSongs(songId: String, playlistId: Long): MusicResult<List<TrackSummary>> {
+        val providerId = AppModel.activeProviderId() ?: "netease"
+        val song = cp.player.core.music.CPMediaId.toCanonicalMediaId(songId, providerId, "song")
+        val playlist = cp.player.core.music.CPMediaId.toCanonicalMediaId(playlistId.toString(), providerId, "playlist")
+        return unifiedSource?.getIntelligenceSongs(song, playlist)
+            ?: BackendResult.Unsupported("Unified music source is not configured")
+    }
 
-    suspend fun getSimilarSongs(seedId: String): MusicResult<List<TrackSummary>> =
-        MusicSourceFromApi.parseFmSongs(api.getSimilarSongs(seedId))
+    suspend fun getSimilarSongs(seedId: String): MusicResult<List<TrackSummary>> {
+        val providerId = AppModel.activeProviderId() ?: "netease"
+        val song = cp.player.core.music.CPMediaId.toCanonicalMediaId(seedId, providerId, "song")
+        return unifiedSource?.getSimilarSongs(song)
+            ?: BackendResult.Unsupported("Unified music source is not configured")
+    }
 
-    suspend fun getPersonalFm(): MusicResult<List<TrackSummary>> =
-        MusicSourceFromApi.getPersonalFm(api)
+    suspend fun getPersonalFm(): MusicResult<List<TrackSummary>> {
+        return unifiedSource?.getPersonalFm()
+            ?: BackendResult.Unsupported("Unified music source is not configured")
+    }
 
     suspend fun getPersonalFmBatch(targetSize: Int = 18, maxRequests: Int = 8): MusicResult<List<TrackSummary>> {
         val merged = mutableListOf<TrackSummary>()
@@ -145,81 +232,97 @@ class MusicRepository(private val api: MusicApiService) {
     }
 
     suspend fun getRecommendedSongs(): MusicResult<List<TrackSummary>> =
-        MusicSourceFromApi.parseRecommendedSongs(api.getRecommendedSongs())
+        unifiedSource?.getRecommendedSongs() ?: BackendResult.Unsupported("Unified music source is not configured")
 
     suspend fun getRecommendedPlaylists(): MusicResult<List<PlaylistSummary>> =
-        MusicSourceFromApi.parseRecommendedPlaylists(api.getRecommendedPlaylists())
+        unifiedSource?.getRecommendedPlaylists() ?: BackendResult.Unsupported("Unified music source is not configured")
 
-    suspend fun getPersonalizedPlaylists(limit: Int): MusicResult<List<PlaylistSummary>> =
-        MusicSourceFromApi.parseRecommendedPlaylists(api.getPersonalizedPlaylists(limit))
+    suspend fun getPersonalizedPlaylists(limit: Int): MusicResult<List<PlaylistSummary>> {
+        return unifiedSource?.getPersonalizedPlaylists(limit)
+            ?: BackendResult.Unsupported("Unified music source is not configured")
+    }
 
-    suspend fun getTopPlaylists(limit: Int): MusicResult<List<PlaylistSummary>> =
-        MusicSourceFromApi.parseRecommendedPlaylists(api.getTopPlaylists(limit = limit))
+    suspend fun getTopPlaylists(limit: Int): MusicResult<List<PlaylistSummary>> {
+        return unifiedSource?.getTopPlaylists(limit = limit)
+            ?: BackendResult.Unsupported("Unified music source is not configured")
+    }
 
-    suspend fun getPersonalizedNewSongs(limit: Int): MusicResult<List<TrackSummary>> =
-        MusicSourceFromApi.parseRecommendedSongs(api.getPersonalizedNewSongs(limit))
+    suspend fun getHighqualityPlaylists(category: String = "全部", limit: Int = 30): MusicResult<List<PlaylistSummary>> =
+        unifiedSource?.getHighqualityPlaylists(category, limit)
+            ?: BackendResult.Unsupported("Unified music source is not configured")
+
+    suspend fun getPersonalizedNewSongs(limit: Int): MusicResult<List<TrackSummary>> {
+        return unifiedSource?.getPersonalizedNewSongs(limit)
+            ?: BackendResult.Unsupported("Unified music source is not configured")
+    }
 
     // ======================== 首页发现区 ========================
     //
-    // 这几项此前只存在于 [MusicApiService]，首页够不到，于是首页只能靠
-    // 「日推 + 两个歌单栅格」撑版面，其余位置用纯入口卡片填空。
-    // 这里把它们按首页真正需要的粒度暴露出来。
+    // 首页需要的粒度：焦点图 / 榜单 / 新碟 / 区域新歌 / 热门歌手。
+    // 全部经 UnifiedMusicSource，音源没声明能力时返回 Unsupported。
 
     /** 首页焦点图（已过滤掉应用内无法跳转的类型）。 */
-    suspend fun getBanners(): MusicResult<List<BannerItem>> =
-        MusicSourceFromApi.getBanners(api)
+    suspend fun getBanners(): MusicResult<List<BannerItem>> {
+        return unifiedSource?.getBanners()
+            ?: BackendResult.Unsupported("Unified music source is not configured")
+    }
 
     /** 榜单列表（飙升榜 / 新歌榜 / 原创榜 …）。 */
-    suspend fun getRankings(): MusicResult<List<RankingSummary>> =
-        MusicSourceFromApi.getRankings(api)
+    suspend fun getRankings(): MusicResult<List<RankingSummary>> {
+        return unifiedSource?.getRankings()
+            ?: BackendResult.Unsupported("Unified music source is not configured")
+    }
 
     /** 新碟上架。 */
-    suspend fun getNewAlbums(limit: Int = 30): MusicResult<List<AlbumSummary>> =
-        MusicSourceFromApi.getNewAlbums(api, limit = limit)
+    suspend fun getNewAlbums(limit: Int = 30): MusicResult<List<AlbumSummary>> {
+        return unifiedSource?.getNewAlbums(limit = limit)
+            ?: BackendResult.Unsupported("Unified music source is not configured")
+    }
 
     /**
      * 用户收藏的专辑 —— 专辑墙的主数据源。
      *
-     * 走 [MusicApiService] 而**不是** `MusicSource` 接口：后者是"统一音乐源"的抽象，
-     * 加成员要带默认实现（AGENTS §5），而墙只是 app 侧的一个视图模式，
-     * 没必要为它污染所有 Provider 的实现面。
+     * 统一走 [cp.player.core.music.UnifiedMusicSource]；音源声明了
+     * `accounts.albums` 能力才有数据，否则返回 Unsupported。
      */
-    suspend fun getUserAlbums(limit: Int = 100, offset: Int = 0): MusicResult<List<AlbumSummary>> =
-        MusicSourceFromApi.getUserAlbums(api, limit = limit, offset = offset)
+    suspend fun getUserAlbums(limit: Int = 100, offset: Int = 0): MusicResult<List<AlbumSummary>> {
+        val uid = AppModel.userProfileFlow.value?.resourceId
+            ?: AppModel.activeProviderId()?.let { cp.player.app.auth.AccountStore.activeUid(it) }
+            ?: return BackendResult.Error("未登录或登录已过期")
+        return unifiedSource?.getUserAlbums(uid, limit, offset)
+            ?: BackendResult.Unsupported("Unified music source is not configured")
+    }
 
     /**
      * 新歌速递。
      * @param type 地区：0=全部, 7=华语, 96=欧美, 8=日本, 16=韩国
      */
-    suspend fun getNewSongsByRegion(type: Int, limit: Int = 20): MusicResult<List<TrackSummary>> =
-        MusicSourceFromApi.getTopSongs(api, type).let { result ->
-            when (result) {
-                is BackendResult.Success -> BackendResult.Success(result.data.take(limit))
-                else -> result
-            }
-        }
+    suspend fun getNewSongsByRegion(type: Int, limit: Int = 20): MusicResult<List<TrackSummary>> {
+        return unifiedSource?.getTopSongs(type, limit)
+            ?: BackendResult.Unsupported("Unified music source is not configured")
+    }
 
     /** 热门歌手。 */
-    suspend fun getHotArtists(limit: Int = 30): MusicResult<List<ArtistSummary>> =
-        MusicSourceFromApi.getHotArtists(api, limit = limit)
+    suspend fun getHotArtists(limit: Int = 30): MusicResult<List<ArtistSummary>> {
+        return unifiedSource?.getHotArtists(limit)
+            ?: BackendResult.Unsupported("Unified music source is not configured")
+    }
 
     /** 精品歌单。 */
-    suspend fun getHighQualityPlaylists(limit: Int = 30): MusicResult<List<PlaylistSummary>> =
-        MusicSourceFromApi.getHighQualityPlaylists(api, limit = limit)
+    suspend fun getHighQualityPlaylists(limit: Int = 30): MusicResult<List<PlaylistSummary>> {
+        return unifiedSource?.getHighqualityPlaylists(limit = limit)
+            ?: BackendResult.Unsupported("Unified music source is not configured")
+    }
 
-    suspend fun getPlaylistDetail(id: Long): MusicResult<PlaylistDetail> =
-        MusicSourceFromApi.getPlaylistDetail(api, id)
+    suspend fun getPlaylistDetail(id: Long): MusicResult<PlaylistDetail> = getPlaylistDetail(id.toString())
 
     // ======================== 专辑 / 歌手 / 用户主页 ========================
     //
-    // 这三组此前只存在于 [MusicApiService]（原始 JsonElement），UI 够不到 ——
-    // 于是首页把「点专辑 / 点歌手」一律退化成「按名字再搜一次」，
-    // 搜索结果里的专辑页签也因为拿不到 `result.albums` 而恒空。
-    // 这里按页面真正需要的粒度暴露解析后的模型。
+    // 专辑 / 歌手 / 他人主页：按页面真正需要的粒度暴露模型，
+    // 避免 UI 再退化成「按名字重新搜一次」。
 
     /** 专辑详情（含曲目）。 */
-    suspend fun getAlbumDetail(id: Long): MusicResult<AlbumDetail> =
-        MusicSourceFromApi.getAlbumDetail(api, id)
+    suspend fun getAlbumDetail(id: Long): MusicResult<AlbumDetail> = getAlbumDetail(id.toString())
 
     /**
      * 收藏 / 取消收藏专辑（上游 `album/sub`，`t` = 1 收藏 / 2 取消收藏）。
@@ -231,23 +334,17 @@ class MusicRepository(private val api: MusicApiService) {
      * 与详情页都拿 `album/sublist` 当收藏真值，不发信号的话用户收藏完回到墙上
      * 找不到刚收的专辑。
      */
-    suspend fun subscribeAlbum(id: Long, subscribe: Boolean): Boolean {
-        val ok = isApiSuccess(api.subscribeAlbum(id, t = if (subscribe) 1 else 2))
-        if (ok) AppModel.notifyAlbumFavoriteChanged(id)
-        return ok
-    }
+    suspend fun subscribeAlbum(id: Long, subscribe: Boolean): Boolean = subscribeAlbum(id.toString(), subscribe)
 
     /** 歌手介绍/资料；返回 null 表示这个 id 不是歌手。取消（如快速离开页面）会正常上抛。 */
-    suspend fun getArtistProfile(id: Long): ArtistProfile? =
-        runCatchingExceptCancellation { MusicSourceFromApi.parseArtistProfile(api.getArtistDetail(id)) }.getOrNull()
+    suspend fun getArtistProfile(id: Long): ArtistProfile? = getArtistProfile(id.toString())
 
     /** 歌手热门歌曲（最多 50 首）。 */
-    suspend fun getArtistTopSongs(id: Long): MusicResult<List<TrackSummary>> =
-        MusicSourceFromApi.getArtistTopSongs(api, id)
+    suspend fun getArtistTopSongs(id: Long): MusicResult<List<TrackSummary>> = getArtistTopSongs(id.toString())
 
     /** 歌手专辑。 */
     suspend fun getArtistAlbums(id: Long, limit: Int = 50): MusicResult<List<AlbumSummary>> =
-        MusicSourceFromApi.getArtistAlbums(api, id, limit)
+        getArtistAlbums(id.toString(), limit)
 
     /**
      * 拉取「他人主页」的完整数据包（歌手优先，否则按普通用户）。
@@ -283,8 +380,12 @@ class MusicRepository(private val api: MusicApiService) {
             )
         }
 
-        val profile = runCatching { MusicSourceFromApi.parseUserDetail(api.getUserDetail(uid)) }.getOrNull()
-            ?: return BackendResult.Error("没有找到该用户")
+        val profile = when (val profileResult = unifiedSource?.getUserProfile(uid)
+            ?: BackendResult.Unsupported("No SDK source")) {
+            is BackendResult.Success -> profileResult.data
+            is BackendResult.Error -> return profileResult
+            is BackendResult.Unsupported -> return profileResult
+        }
         val playlists = (getUserPlaylistsOf(uid) as? BackendResult.Success)?.data.orEmpty()
         return BackendResult.Success(
             ProfileBundle(
@@ -303,62 +404,65 @@ class MusicRepository(private val api: MusicApiService) {
     }
 
     /** 他人歌单列表（不含「我喜欢的音乐」这类只属于本人的条目）。 */
-    suspend fun getUserPlaylistsOf(uid: Long): MusicResult<List<PlaylistSummary>> =
-        MusicSourceFromApi.getUserPlaylists(api, uid)
+    suspend fun getUserPlaylistsOf(uid: Long): MusicResult<List<PlaylistSummary>> = getUserPlaylistsOf(uid.toString())
 
     /** 用户听歌排行；`type` 0=所有时间, 1=最近一周。 */
-    suspend fun getUserRecords(uid: Long, type: Int = 0): MusicResult<List<TrackSummary>> =
-        MusicSourceFromApi.parseUserRecords(api.getUserRecord(uid, type))
-
-    /** 关注 / 粉丝列表。 */
-    suspend fun getFollows(uid: Long, limit: Int = 50): MusicResult<List<ArtistSummary>> =
-        MusicSourceFromApi.parseUserList(api.getUserFollows(uid, limit = limit))
-
-    suspend fun getFolloweds(uid: Long, limit: Int = 50): MusicResult<List<ArtistSummary>> =
-        MusicSourceFromApi.parseUserList(api.getUserFolloweds(uid, limit = limit))
-
-    suspend fun getPlaylistTracks(id: Long, limit: Int = 300, offset: Int = 0): MusicResult<PlaylistTracksPage> =
-        MusicSourceFromApi.getPlaylistTracks(api, id, limit, offset)
-
-    suspend fun getCurrentUserPlaylists(): MusicResult<List<PlaylistSummary>> {
-        val uid = extractUserResourceId(api.getLoginStatus())
-            ?: return BackendResult.Error("未登录或登录已过期")
-        return MusicSourceFromApi.getUserPlaylists(api, uid)
+    suspend fun getUserRecords(uid: Long, type: Int = 0): MusicResult<List<TrackSummary>> {
+        return unifiedSource?.getUserRecords(uid.toString(), type)
+            ?: BackendResult.Unsupported("Unified music source is not configured")
     }
 
-    suspend fun getUserCloud(limit: Int = 200, offset: Int = 0): MusicResult<List<TrackSummary>> =
-        MusicSourceFromApi.getUserCloud(api, limit, offset)
+    /** 关注 / 粉丝列表。 */
+    suspend fun getFollows(uid: Long, limit: Int = 50): MusicResult<List<ArtistSummary>> {
+        return unifiedSource?.getUserFollows(uid.toString(), limit)
+            ?: BackendResult.Unsupported("Unified music source is not configured")
+    }
+
+    suspend fun getFolloweds(uid: Long, limit: Int = 50): MusicResult<List<ArtistSummary>> {
+        return unifiedSource?.getUserFolloweds(uid.toString(), limit)
+            ?: BackendResult.Unsupported("Unified music source is not configured")
+    }
+
+    suspend fun getPlaylistTracks(id: Long, limit: Int = 300, offset: Int = 0): MusicResult<PlaylistTracksPage> =
+        getPlaylistTracks(id.toString(), limit, offset)
+
+    suspend fun getCurrentUserPlaylists(): MusicResult<List<PlaylistSummary>> {
+        val cachedUid = AppModel.userProfileFlow.value?.resourceId
+            ?: AppModel.activeProviderId()?.let { cp.player.app.auth.AccountStore.activeUid(it) }
+        val uid = cachedUid
+            ?: return BackendResult.Error("未登录或登录已过期")
+        return getUserPlaylistsOf(uid)
+    }
+
+    suspend fun getUserCloud(limit: Int = 200, offset: Int = 0): MusicResult<List<TrackSummary>> {
+        return unifiedSource?.getUserCloud(limit, offset)
+            ?: BackendResult.Unsupported("Unified music source is not configured")
+    }
 
     suspend fun getLikeList(): MusicResult<Set<String>> {
-        val uid = extractUserResourceId(api.getLoginStatus())
+        val cachedUid = AppModel.userProfileFlow.value?.resourceId
+            ?: AppModel.activeProviderId()?.let { cp.player.app.auth.AccountStore.activeUid(it) }
+        val uid = cachedUid
             ?: return BackendResult.Error("未登录或登录已过期")
-        return MusicSourceFromApi.parseLikedTrackIds(api.getLikeList(uid))
+        return unifiedSource?.getLikeList(uid)
+            ?: BackendResult.Unsupported("Unified music source is not configured")
     }
 
     suspend fun deletePlaylist(id: Long): Boolean {
-        val ok = isApiSuccess(api.deletePlaylist(id))
-        if (ok) AppModel.notifyPlaylistChanged(id)
-        return ok
+        return deletePlaylist(id.toString())
     }
 
     suspend fun unsubscribePlaylist(id: Long): Boolean {
-        val ok = isApiSuccess(api.subscribePlaylist(id, t = 2))
-        if (ok) AppModel.notifyPlaylistChanged(id)
-        return ok
+        return unsubscribePlaylist(id.toString())
     }
 
     /** 收藏 / 取消收藏歌单。 */
     suspend fun subscribePlaylist(id: Long, subscribe: Boolean): Boolean {
-        val ok = isApiSuccess(api.subscribePlaylist(id, t = if (subscribe) 1 else 2))
-        if (ok) AppModel.notifyPlaylistChanged(id)
-        return ok
+        return subscribePlaylist(id.toString(), subscribe)
     }
 
     suspend fun addTracksToPlaylist(playlistId: Long, ids: List<String>): Boolean {
-        val rawIds = ids.map { cp.player.core.music.CPMediaId.toRawResourceId(it) }.filter { it.isNotBlank() }
-        val ok = isApiSuccess(api.addTracksToPlaylist(playlistId, rawIds))
-        if (ok) AppModel.notifyPlaylistChanged(playlistId)
-        return ok
+        return addTracksToPlaylist(playlistId.toString(), ids)
     }
 
     /**
@@ -368,24 +472,25 @@ class MusicRepository(private val api: MusicApiService) {
      * 后者要求同时带上 `desc` / `tags`，漏传会把歌单简介与标签清空。
      */
     suspend fun renamePlaylist(playlistId: Long, name: String): Boolean {
-        val ok = isApiSuccess(api.updatePlaylistName(playlistId, name))
-        if (ok) AppModel.notifyPlaylistChanged(playlistId)
-        return ok
+        return renamePlaylist(playlistId.toString(), name)
     }
 
     suspend fun removeTracksFromPlaylist(playlistId: Long, ids: List<String>): Boolean {
-        val rawIds = ids.map { cp.player.core.music.CPMediaId.toRawResourceId(it) }.filter { it.isNotBlank() }
-        val ok = isApiSuccess(api.removeTracksFromPlaylist(playlistId, rawIds))
-        if (ok) AppModel.notifyPlaylistChanged(playlistId)
-        return ok
+        return removeTracksFromPlaylist(playlistId.toString(), ids)
     }
 
-    suspend fun likeSong(songId: String, like: Boolean): Boolean =
-        isApiSuccess(api.likeSong(cp.player.core.music.CPMediaId.toRawResourceId(songId), like))
+    suspend fun likeSong(songId: String, like: Boolean): Boolean {
+        val providerId = AppModel.activeProviderId() ?: "netease"
+        val mediaId = cp.player.core.music.CPMediaId.toCanonicalMediaId(songId, providerId, "song")
+        return (unifiedSource?.likeSong(mediaId, like) as? BackendResult.Success)?.data == true
+    }
 
     /** 标记「不感兴趣」（推荐流去重）。 */
-    suspend fun dislikeSong(songId: String): Boolean =
-        isApiSuccess(api.dislikeSong(cp.player.core.music.CPMediaId.toRawResourceId(songId)))
+    suspend fun dislikeSong(songId: String): Boolean {
+        val providerId = AppModel.activeProviderId() ?: "netease"
+        val mediaId = cp.player.core.music.CPMediaId.toCanonicalMediaId(songId, providerId, "song")
+        return (unifiedSource?.dislikeSong(mediaId) as? BackendResult.Success)?.data == true
+    }
 
     /**
      * 新建歌单，返回新歌单 id。
@@ -393,16 +498,32 @@ class MusicRepository(private val api: MusicApiService) {
      * ⚠️ 这是**写操作**，不在缓存名单内——每次都直连网络，不存在「建完马上查不到」的缓存窗口。
      */
     suspend fun createPlaylist(name: String): MusicResult<Long> {
-        val result = MusicSourceFromApi.parseCreatePlaylist(api.createPlaylist(name))
-        if (result is BackendResult.Success) {
-            AppModel.notifyPlaylistChanged(result.data)
+        return when (val result = createPlaylistResource(name)) {
+            is BackendResult.Success -> result.data.toLongOrNull()?.let { BackendResult.Success(it) }
+                ?: BackendResult.Error("Provider returned an invalid playlist ID")
+            is BackendResult.Error -> result
+            is BackendResult.Unsupported -> result
         }
-        return result
     }
 
     /** 歌曲详情信息（信息弹窗用）；[fallback] 提供列表里已知的回退字段。 */
-    suspend fun getSongDetailInfo(songId: String, fallback: SongDetailInfo? = null): MusicResult<SongDetailInfo> =
-        MusicSourceFromApi.parseSongDetailInfo(api.getSongDetail(listOf(songId)), fallback)
+    suspend fun getSongDetailInfo(songId: String, fallback: SongDetailInfo? = null): MusicResult<SongDetailInfo> {
+        val source = unifiedSource ?: return BackendResult.Unsupported("Unified music source is not configured")
+        return when (val result = source.getTrackDetail(songId)) {
+            is BackendResult.Success -> {
+                val track = result.data
+                val known = fallback?.takeIf { it.songId == songId || it.songId == track.id }
+                BackendResult.Success(SongDetailInfo(
+                    songId = track.id, name = track.name, artist = track.artist,
+                    album = track.album ?: known?.album.orEmpty(), durationMs = track.durationMs,
+                    publishTimeMs = known?.publishTimeMs, commentCount = known?.commentCount,
+                    mvId = known?.mvId, maxBitrate = known?.maxBitrate, fee = known?.fee,
+                ))
+            }
+            is BackendResult.Error -> result
+            is BackendResult.Unsupported -> result
+        }
+    }
 
     /**
      * 评论列表（顶层评论，分页）。
@@ -424,8 +545,11 @@ class MusicRepository(private val api: MusicApiService) {
         limit: Int = 20,
         offset: Int = 0,
         sortType: Int = 1,
-    ): MusicResult<CommentPage> =
-        MusicSourceFromApi.parseComments(api.getComments(rawId, type, limit, offset, sortType))
+        cursor: String? = null,
+    ): MusicResult<CommentPage> {
+        return unifiedSource?.getCommentsPage(canonicalCommentId(rawId, type), type, limit, offset, sortType, cursor)
+            ?: BackendResult.Unsupported("Unified music source is not configured")
+    }
 
     /**
      * 楼层（某条顶层评论下的回复），分页。
@@ -438,11 +562,11 @@ class MusicRepository(private val api: MusicApiService) {
         type: String,
         limit: Int = 20,
         time: Long = 0L,
-    ): MusicResult<CommentFloorPage> =
-        MusicSourceFromApi.parseFloorComments(
-            api.getFloorComments(rawId, parentCommentId, type, limit, time),
-            parentCommentId,
-        )
+    ): MusicResult<CommentFloorPage> {
+        return unifiedSource?.getFloorComments(
+            canonicalCommentId(rawId, type), parentCommentId, type, limit, time,
+        ) ?: BackendResult.Unsupported("Unified music source is not configured")
+    }
 
     /**
      * 发表评论 / 回复。
@@ -456,39 +580,41 @@ class MusicRepository(private val api: MusicApiService) {
         content: String,
         replyToCommentId: Long? = null,
         parentCommentId: Long = 0L,
-    ): MusicResult<Comment?> =
-        MusicSourceFromApi.parseCreatedComment(
-            api.postComment(rawId, type, content, replyToCommentId),
-            parentCommentId,
-        )
+    ): MusicResult<Comment?> {
+        return unifiedSource?.postComment(
+            canonicalCommentId(rawId, type), type, content, replyToCommentId, parentCommentId,
+        ) ?: BackendResult.Unsupported("Unified music source is not configured")
+    }
 
     /** 点赞 / 取消点赞评论。 */
-    suspend fun likeComment(rawId: String, commentId: Long, type: String, like: Boolean): Boolean =
-        isApiSuccess(api.likeComment(rawId, commentId, type, like))
+    suspend fun likeComment(rawId: String, commentId: Long, type: String, like: Boolean): Boolean {
+        return (unifiedSource?.likeComment(
+            canonicalCommentId(rawId, type), commentId, type, like,
+        ) as? BackendResult.Success)?.data == true
+    }
+
+    private fun canonicalCommentId(rawId: String, type: String): String {
+        val resourceType = when (type) {
+            "music" -> "song"
+            else -> type
+        }
+        return cp.player.core.music.CPMediaId.toCanonicalMediaId(
+            rawId, AppModel.activeProviderId() ?: "netease", resourceType,
+        )
+    }
 
     /** 从云盘删除歌曲（上游 `user/cloud/del`）。 */
-    suspend fun deleteUserCloud(songId: String): Boolean =
-        isApiSuccess(api.deleteUserCloud(listOf(songId)))
-
-    suspend fun getLoginStatus(): JsonElement = api.getLoginStatus()
-
-    /** Transitional escape hatch for operations not yet migrated to typed repositories. */
-    suspend fun raw(block: suspend MusicApiService.() -> JsonElement): JsonElement = api.block()
-
-    private fun isApiSuccess(json: JsonElement): Boolean {
-        val root = json as? JsonObject
-        val code = ((root?.get("body") as? JsonObject)?.get("code") as? JsonPrimitive)?.intOrNull
-            ?: (root?.get("code") as? JsonPrimitive)?.intOrNull
-            ?: (root?.get("status") as? JsonPrimitive)?.intOrNull
-        return code == null || code == 200 || code == 0 || code == 201
+    suspend fun deleteUserCloud(songId: String): Boolean {
+        val providerId = AppModel.activeProviderId() ?: "netease"
+        val mediaId = cp.player.core.music.CPMediaId.toCanonicalMediaId(songId, providerId, "song")
+        return (unifiedSource?.deleteUserCloud(mediaId) as? BackendResult.Success)?.data == true
     }
 }
 
 /**
  * 搜索类型（UI 侧语义化常量）。
  *
- * 与上游 `cloudsearch` 的 `type` 取值一致，但 UI 只认这里，不直接 import
- * `core.api.MusicApiMethod`（边界规则见 docs/dev/ARCHITECTURE.md §3.2）。
+ * 与上游 `cloudsearch` 的 `type` 取值一致，但 UI 只认这里（边界规则见 docs/dev/ARCHITECTURE.md §3.2）。
  */
 object SearchType {
     const val SONG = 1

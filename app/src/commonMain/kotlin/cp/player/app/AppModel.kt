@@ -5,8 +5,6 @@ import cp.player.core.BackendResult
 import cp.player.core.BackendState
 import cp.player.core.ImportResult
 import cp.player.core.MusicBackend
-import cp.player.core.api.extractUserResourceId
-import cp.player.core.api.unwrapLoginStatusData
 import cp.player.core.control.LocalServerConfig
 import cp.player.core.control.LocalServerConfigStore
 import cp.player.core.control.LocalServerStatus
@@ -242,17 +240,17 @@ object AppModel {
     val settings: SettingsStorage by lazy { cp.player.core.util.defaultSettingsStorage() }
 
     /** Application-facing repository; new UI code should use this instead of raw API. */
-    val musicRepository: MusicRepository get() = MusicRepository(backend.musicApi)
+    val musicRepository: MusicRepository get() = MusicRepository(backend.unifiedSource)
 
     /**
      * 私信 / 联系人门面。
      *
-     * 与 [musicRepository] 同样每次访问新建 —— 它只是 `MusicApiService` 的一层**无状态**
-     * 解析包装（真正有状态、需要单例的是 [settings] 那一类）。
+     * 与 [musicRepository] 同样每次访问新建 —— 它只是统一音源之上的一层**无状态**
+     * 映射包装（真正有状态、需要单例的是 [settings] 那一类）。
      */
-    val socialRepository: SocialRepository get() = SocialRepository(backend.musicApi)
+    val socialRepository: SocialRepository get() = SocialRepository(backend.unifiedSource)
 
-    val authRepository: AuthRepository get() = AuthRepository(backend.musicApi)
+    val authRepository: AuthRepository get() = AuthRepository(backend.unifiedSource)
 
     /**
      * 睡眠定时「播完当前曲目后暂停」的哨兵值。
@@ -308,7 +306,7 @@ object AppModel {
      */
     val listenTogether: cp.player.core.listentogether.ListenTogetherEngine by lazy {
         cp.player.core.listentogether.ListenTogetherEngine(
-            backend = cp.player.core.listentogether.NeteaseListenTogetherBackend(backend.musicApi),
+            backend = cp.player.core.listentogether.UnsupportedListenTogetherBackend,
             scope = modelScope,
             myUserId = { userProfileFlow.value?.uid ?: 0L },
             heartbeatInfo = {
@@ -731,6 +729,28 @@ object AppModel {
         runCatching { playback.reloadEngine() }
     }
 
+    // ============ WASAPI 硬件独占（桌面，VIP，默认关） ============
+    //
+    // 「用哪个内核」在桌面端没得选（只有 FlickEngine），真正要用户点头的是
+    // 「要不要抢走声卡」。因此它有自己的键与开关，默认关 —— 理由见
+    // `PlaybackSessionSettings.KEY_WASAPI_EXCLUSIVE`。
+    //
+    // VIP 门禁写在两层：UI（未激活时弹卡密框、不改值）+ 引擎管理器
+    // （`resolveDesiredEngine` 里非 VIP 一律回落共享）。这里不重复判断，
+    // 因为卡密可能在本次会话中途失效/激活，判在最后一刻才准。
+
+    private val _wasapiExclusive = MutableStateFlow(PlaybackSessionSettings.wasapiExclusive(settings))
+
+    /** 独占开关当前值（设置页渲染用）。 */
+    val wasapiExclusiveFlow: StateFlow<Boolean> = _wasapiExclusive.asStateFlow()
+
+    /** 切换独占模式并**立刻**重建引擎（独占/共享必须重新打开设备才生效）。 */
+    fun setWasapiExclusive(enabled: Boolean) {
+        settings.putString(PlaybackSessionSettings.KEY_WASAPI_EXCLUSIVE, enabled.toString())
+        _wasapiExclusive.value = enabled
+        runCatching { playback.reloadEngine() }
+    }
+
     // ============ 音效（持久化，Android 生效 / 桌面明示不支持） ============
     //
     // 这里只做三件事：
@@ -1018,6 +1038,8 @@ object AppModel {
     private const val KEY_MOBILE_PLAYER_KARAOKE = "mobile_player_karaoke"
     private const val KEY_MOBILE_PLAYER_SHOW_TRANSLATION = "mobile_player_show_translation"
     private const val KEY_MOBILE_PLAYER_CONTROLS_SIZE = "mobile_player_controls_size"
+    private const val KEY_MOBILE_PLAYER_LYRICS_IMMERSIVE = "mobile_player_lyrics_immersive"
+    private const val KEY_MOBILE_PLAYER_IMMERSIVE_TIMEOUT = "mobile_player_immersive_timeout"
 
     private fun loadMobilePlayerCustomConfig(): cp.player.app.ui.model.MobilePlayerCustomConfig {
         return cp.player.app.ui.model.MobilePlayerCustomConfig(
@@ -1034,6 +1056,8 @@ object AppModel {
             karaokeEnabled = settings.getString(KEY_MOBILE_PLAYER_KARAOKE)?.toBooleanStrictOrNull() ?: true,
             showTranslation = settings.getString(KEY_MOBILE_PLAYER_SHOW_TRANSLATION)?.toBooleanStrictOrNull() ?: true,
             controlsScale = settings.getString(KEY_MOBILE_PLAYER_CONTROLS_SIZE)?.toFloatOrNull() ?: 1.0f,
+            lyricsImmersiveEnabled = settings.getString(KEY_MOBILE_PLAYER_LYRICS_IMMERSIVE)?.toBooleanStrictOrNull() ?: true,
+            lyricsImmersiveTimeoutSeconds = settings.getString(KEY_MOBILE_PLAYER_IMMERSIVE_TIMEOUT)?.toIntOrNull()?.coerceIn(2, 15) ?: 4,
         )
     }
 
@@ -1061,6 +1085,8 @@ object AppModel {
         settings.putString(KEY_MOBILE_PLAYER_KARAOKE, updated.karaokeEnabled.toString())
         settings.putString(KEY_MOBILE_PLAYER_SHOW_TRANSLATION, updated.showTranslation.toString())
         settings.putString(KEY_MOBILE_PLAYER_CONTROLS_SIZE, updated.controlsScale.toString())
+        settings.putString(KEY_MOBILE_PLAYER_LYRICS_IMMERSIVE, updated.lyricsImmersiveEnabled.toString())
+        settings.putString(KEY_MOBILE_PLAYER_IMMERSIVE_TIMEOUT, updated.lyricsImmersiveTimeoutSeconds.toString())
         _mobilePlayerCustomConfig.value = updated
     }
 
@@ -1768,6 +1794,8 @@ object AppModel {
                     coverUrl = track.coverUrl,
                     mediaType = cp.player.core.media.MediaType.AUDIO,
                     level = level,
+                    album = track.album,
+                    durationMs = track.durationMs,
                 )
             }.getOrNull()
             // 命中同音质缓存时 enqueue 会直接返回一个「已完成、来自缓存」的任务：
@@ -1800,6 +1828,8 @@ object AppModel {
                         coverUrl = track.coverUrl,
                         mediaType = cp.player.core.media.MediaType.AUDIO,
                         level = level,
+                        album = track.album,
+                        durationMs = track.durationMs,
                     )
                 }.getOrNull()
                 if (task != null) {
@@ -1834,12 +1864,32 @@ object AppModel {
 
 
     /**
+     * 从本地持久化的 [cp.player.app.auth.AccountStore] 恢复当前音源的已保存账号资料。
+     * 用于冷启动、弱网或离线时秒级恢复身份，避免界面闪烁或误显示「未登录」。
+     */
+    fun getCachedUserProfile(): UserProfile? {
+        val pId = activeProvider()?.id ?: activeProviderId() ?: return null
+        val activeUid = cp.player.app.auth.AccountStore.activeUid(pId) ?: return null
+        val saved = cp.player.app.auth.AccountStore.list(pId).firstOrNull { it.uid == activeUid } ?: return null
+        return UserProfile(
+            uid = saved.uid.toLongOrNull() ?: 0L,
+            resourceId = saved.uid,
+            nickname = saved.nickname,
+            avatarUrl = saved.avatarUrl,
+        )
+    }
+
+    /**
      * 拉取当前登录用户资料（uid/昵称/头像），并顺带刷新收藏列表。
-     * 未登录时清空资料。可在 App 启动、登录成功、登出后调用。
+     * 弱网/离线时自动保留缓存资料；仅在明确登出或鉴权彻底失效时清空资料。可在 App 启动、登录成功、登出后调用。
      */
     fun refreshUserProfile() {
         profileRefreshJob?.cancel()
-        _userProfile.value = null
+        // 弱网离线优化：不清空既有资料，若当前尚未加载资料则先从 AccountStore 恢复缓存，
+        // 确保离线或弱网启动时不会闪烁或显示「未登录」。
+        if (_userProfile.value == null) {
+            _userProfile.value = getCachedUserProfile()
+        }
         profileRefreshJob = modelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             refreshUserProfileAwait()
         }
@@ -1849,47 +1899,65 @@ object AppModel {
      * [refreshUserProfile] 的可挂起版本：登录/登出流程需要**拿到这次拉取的结果**
      * （多账号管理要把 uid/昵称/头像连同 cookie 一起存起来），所以把「取资料」拆出来。
      *
-     * 返回 null 表示当前音源没有登录态（或拉取失败）。
+     * 离线或弱网时返回已缓存资料；未登录（或服务端明确无会话）时返回 null。
      */
     suspend fun refreshUserProfileAwait(): UserProfile? {
         val provider = activeProvider()
         val generation = sourceGeneration.value
         val cookie = provider?.let { cookieStorage.getCookie(it.id) }
-        val profile = runCatching {
-            val status = backend.musicApi.getLoginStatus()
-            val root = status as? kotlinx.serialization.json.JsonObject ?: return@runCatching null
-            val uid = extractUserResourceId(root) ?: return@runCatching null
-            val data = unwrapLoginStatusData(root) ?: return@runCatching null
-            val prof = (data["profile"] as? kotlinx.serialization.json.JsonObject)
-                ?: (data["account"] as? kotlinx.serialization.json.JsonObject)
-                ?: data
-            UserProfile(
-                uid = uid.toLongOrNull() ?: 0L,
-                resourceId = uid,
-                nickname = (prof["nickname"] as? kotlinx.serialization.json.JsonPrimitive)?.content
-                    ?: (prof["name"] as? kotlinx.serialization.json.JsonPrimitive)?.content
-                    ?: (prof["userName"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "",
-                avatarUrl = (prof["avatarUrl"] as? kotlinx.serialization.json.JsonPrimitive)?.content
-                    ?: (prof["avatar"] as? kotlinx.serialization.json.JsonPrimitive)?.content
-                    ?: (prof["headImg"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "",
-            )
-        }.getOrNull()
+        var isNetworkError = false
+        val profile = try {
+            when (val result = backend.unifiedSource.getCurrentAccount()) {
+                is BackendResult.Success -> result.data
+                    .takeIf { it.loggedIn }
+                    ?.let { session ->
+                        val uid = session.userId ?: return@let null
+                        UserProfile(
+                            uid = uid.toLongOrNull() ?: 0L,
+                            resourceId = uid,
+                            nickname = session.nickname.orEmpty(),
+                            avatarUrl = session.avatarUrl.orEmpty(),
+                        )
+                    }
+                is BackendResult.Error,
+                is BackendResult.Unsupported -> {
+                    isNetworkError = true
+                    null
+                }
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            isNetworkError = true
+            null
+        }
+
         currentCoroutineContext().ensureActive()
         if (activeProvider() !== provider || sourceGeneration.value != generation ||
             provider?.let { cookieStorage.getCookie(it.id) } != cookie) return null
         val previousUid = _userProfile.value?.resourceId
-        _userProfile.value = profile
+        val finalProfile = if (isNetworkError) {
+            // 弱网或离线异常：保留当前资料或从 AccountStore 恢复，绝不抹除成未登录
+            _userProfile.value ?: getCachedUserProfile()
+        } else {
+            profile
+        }
+        _userProfile.value = finalProfile
         // 换人了 ⇒ 发一次账号代际（见 [accountGeneration]）。首次恢复不算：
         // 那一刻各页面首屏还在用同一份 cookie 拉数据，多发一次就是白拉一遍。
-        if (profileResolvedOnce && previousUid != profile?.resourceId) bumpAccountGeneration()
+        if (profileResolvedOnce && previousUid != finalProfile?.resourceId) bumpAccountGeneration()
         profileResolvedOnce = true
         // 收藏列表与账号绑定，资料刷新后同步刷新
         runCatching { playback.refreshFavorites() }
         // 未读私信数同样绑定账号：登出 / 切号后角标必须跟着变，否则会留着上一个账号的数字。
-        if (profile != null) refreshUnreadMessages() else _unreadMessages.value = 0
+        if (finalProfile != null) {
+            if (!isNetworkError) refreshUnreadMessages()
+        } else {
+            _unreadMessages.value = 0
+        }
         // 私信轮询同样绑定账号（未登录时必须停）。
         syncMessageWatch()
-        return profile
+        return finalProfile
     }
 
     /**
@@ -2051,13 +2119,8 @@ object AppModel {
      * profileRefreshJob / unreadRefreshJob 跑在 IO 上，登出瞬间它们手里还握着
      * **旧 cookie 的那次请求**；不取消的话，慢响应回来会把旧 uid 写回 _userProfile
      * 并再 bump 一次账号代际 —— 界面表现为「刚注销，昵称又冒出来了」。
-     *
-     * @param clearCache 是否一并清空接口缓存。默认 true：
-     *   缓存的键只含 providerId + cookie 哈希，同一音源换号后旧响应仍可能被命中。
-     *   走服务端 logout() 时它自己也会清（见 CachedMusicApiService.logout），
-     *   这里是给「不走 logout 的入口」（移除账号 / 音源隔离页清除登录态）兜底。
      */
-    fun clearUserProfile(clearCache: Boolean = true) {
+    fun clearUserProfile() {
         // 1) 先掐掉在途请求，再谈清状态 —— 顺序反了就会被慢响应写回。
         profileRefreshJob?.cancel()
         profileRefreshJob = null
@@ -2081,9 +2144,8 @@ object AppModel {
         // 3) 播放现场：队列 + 「保留上次播放」快照。不清的话重启会把这些恢复出来。
         runCatching { playback.clearQueue() }
 
-        // 4) 收藏集合（内存）与接口缓存（同音源换号可能命中旧账号响应）。
+        // 4) 收藏集合（内存）。
         modelScope.launch { runCatching { playback.refreshFavorites() } }
-        if (clearCache) runCatching { backend.clearApiCache() }
     }
 
     /** 清空「最近播放」：内存列表与持久化键一起清（登出时调用）。 */
