@@ -56,7 +56,8 @@ object ProviderCapability {
     )
 
     val SDK_SUPPORTED: Set<String> = setOf(
-        SEARCH, PLAYBACK, LYRICS_SEARCH, USER_PLAYLISTS, ARTIST_EXPLORER, ALBUM_EXPLORER,
+        SEARCH, PLAYBACK, QR_LOGIN, WORD_SYNCED_LYRICS, COMMENTS, CLOUD_DRIVE, RECOMMEND,
+        LYRICS_SEARCH, CHARTS, USER_PLAYLISTS, ARTIST_EXPLORER, ALBUM_EXPLORER,
     )
 
     fun sdkLabels(capabilities: List<String>?): List<String> {
@@ -67,7 +68,19 @@ object ProviderCapability {
                 cp.player.sdk.Capability.SEARCH_ALBUMS, cp.player.sdk.Capability.SEARCH_ARTISTS,
             ).any { it in declared }) add(SEARCH)
             if (PLAYBACK in declared || cp.player.sdk.Capability.RESOLVE in declared) add(PLAYBACK)
+            if (QR_LOGIN in declared || cp.player.sdk.Capability.AUTH_ACTIONS in declared) add(QR_LOGIN)
+            if (WORD_SYNCED_LYRICS in declared) add(WORD_SYNCED_LYRICS)
+            if (COMMENTS in declared || listOf(
+                cp.player.sdk.Capability.COMMENTS_LIST,
+                cp.player.sdk.Capability.COMMENTS_POST,
+            ).all { it in declared }) add(COMMENTS)
+            if (CLOUD_DRIVE in declared || cp.player.sdk.Capability.ACCOUNT_CLOUD in declared) add(CLOUD_DRIVE)
+            if (RECOMMEND in declared || listOf(
+                cp.player.sdk.Capability.RECOMMENDED_SONGS,
+                cp.player.sdk.Capability.PERSONAL_FM,
+            ).all { it in declared }) add(RECOMMEND)
             if (LYRICS_SEARCH in declared || cp.player.sdk.Capability.LYRICS in declared) add(LYRICS_SEARCH)
+            if (CHARTS in declared || cp.player.sdk.Capability.DISCOVERY_RANKINGS in declared) add(CHARTS)
             if (USER_PLAYLISTS in declared || cp.player.sdk.Capability.USER_PLAYLISTS in declared) add(USER_PLAYLISTS)
             if (ARTIST_EXPLORER in declared || listOf(
                 cp.player.sdk.Capability.ARTIST, cp.player.sdk.Capability.ARTIST_TRACKS,

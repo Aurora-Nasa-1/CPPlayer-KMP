@@ -70,7 +70,7 @@ class ProviderHost(
                     throw ProviderException(Failure(FailureCategory.INVALID_RESPONSE, "Invalid provider failure"))
                 throw e
             } catch (e: Exception) {
-                throw ProviderException(Failure(FailureCategory.INVALID_RESPONSE, "Provider returned an invalid result"))
+                throw ProviderException(Failure(FailureCategory.INVALID_RESPONSE, "Provider returned an invalid result: ${e.message.orEmpty()}"))
             }
         }
         return try { task.await().also { fence() } }

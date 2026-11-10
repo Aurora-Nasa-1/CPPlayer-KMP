@@ -29,10 +29,12 @@ class ProviderConvergenceTest {
             assertTrue(manifest().copy(type = type, nativeFactoryClass = "example.Factory").isLoadable)
         }
         assertFalse(manifest().copy(minHostApiVersion = HOST_PROVIDER_API_VERSION + 1).isLoadable)
-        assertEquals(listOf("search", "playback"), manifest().copy(
+        // 声明了的能力以声明为准（typed 层已实现 comments/auth 等操作）：
+        // 标签映射放行 qrLogin/comments，而不仅是 search/playback。
+        assertEquals(listOf("search", "playback", "qrLogin", "comments"), manifest().copy(
             capabilities = listOf(Capability.SEARCH, Capability.RESOLVE, "comments", "qrLogin"),
         ).knownCapabilities)
-        assertFalse(manifest().copy(capabilities = listOf("comments")).isFeatureAvailable("comments"))
+        assertTrue(manifest().copy(capabilities = listOf("comments")).isFeatureAvailable("comments"))
     }
 
     @Test

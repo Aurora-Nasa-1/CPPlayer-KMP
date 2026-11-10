@@ -1,5 +1,7 @@
 package cp.player.core.provider
 
+import cp.player.core.BackendResult
+import cp.player.core.music.UnifiedMusicSourceImpl
 import cp.player.core.provider.typed.createSdkRuntime
 import cp.player.core.util.PlatformContext
 import cp.player.sdk.*
@@ -10,19 +12,18 @@ import kotlin.test.*
 
 class KugouNativeIntegrationTest {
 
-    @Test
-    fun `import kugou native package zip and verify live operations`() {
-        // Locate generated kugou-provider.zip
+    private fun findZip(): File? {
         val candidates = listOf(
             File("../../kugouMusic-api-cpplayer/target/kugou-provider.zip"),
             File("../kugouMusic-api-cpplayer/target/kugou-provider.zip"),
             File("E:/project/kugouMusic-api-cpplayer/target/kugou-provider.zip"),
         )
-        val zip = candidates.firstOrNull { it.isFile }
-        if (zip == null) {
-            println("Skipping KugouNativeIntegrationTest: kugou-provider.zip not found")
-            return
-        }
+        return candidates.firstOrNull { it.isFile }
+    }
+
+    @Test
+    fun `import kugou native package zip and verify live operations`() {
+        val zip = findZip() ?: return
 
         println("Found Kugou native package: ${zip.absolutePath} (${zip.length()} bytes)")
 
@@ -81,7 +82,6 @@ class KugouNativeIntegrationTest {
                 assertTrue(rankings.items.isNotEmpty(), "Rankings should return items")
 
                 // 9. Test resolve playback stream URL
-                // Find a free track to verify playback resolution
                 var resolvedResource: MediaResource? = null
                 for (item in searchPage.items) {
                     try {
@@ -103,6 +103,89 @@ class KugouNativeIntegrationTest {
                 session?.close()
                 manager.getAvailableProviders().forEach { it.close() }
                 runtime.close()
+                root.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun `verify kugou provider through UnifiedMusicSourceImpl`() {
+        val zip = findZip() ?: return
+
+        runBlocking {
+            val root = Files.createTempDirectory("kugou-unified-test-").toFile()
+            val moduleManager = ModuleManager(File(root, "modules").absolutePath, PlatformContext())
+            val settings = SdkMemorySettings()
+            val cookies = ProviderCookieStorage(settings)
+            val providerManager = ProviderManager(settings, cookies)
+            moduleManager.init(providerManager)
+
+            try {
+                val imported = moduleManager.importModuleDetails(zip.absolutePath)
+                assertNotNull(imported, "Import failed: ${moduleManager.lastLoadError}")
+                assertTrue(providerManager.switchProvider(imported.provider, save = false))
+
+                val unifiedSource = UnifiedMusicSourceImpl(
+                    localMusicSource = SdkEmptyLocal(),
+                    sdkHost = { providerManager.sdkSessions.current() },
+                    activeProvider = { providerManager.currentProvider },
+                )
+
+                println("Testing unifiedSource.searchPage...")
+                val searchResult = unifiedSource.searchPage("纯音乐", 1, 10, 0, null)
+                println("searchPage result: $searchResult")
+                if (searchResult is BackendResult.Error) {
+                    println("Search error: ${searchResult.message}, cause: ${searchResult.cause}")
+                    searchResult.cause?.printStackTrace()
+                }
+                assertTrue(searchResult is BackendResult.Success, "searchPage should succeed")
+                val songs = (searchResult as BackendResult.Success).data.songs
+                assertTrue(songs.isNotEmpty(), "searchPage should return songs")
+                println("Found ${songs.size} songs, first: ${songs.first().name} (${songs.first().id})")
+
+                val firstMediaId = songs.first().id
+                println("Testing unifiedSource.getTrackDetail for $firstMediaId...")
+                val trackDetail = unifiedSource.getTrackDetail(firstMediaId)
+                println("getTrackDetail result: $trackDetail")
+                if (trackDetail is BackendResult.Error) {
+                    println("getTrackDetail error: ${trackDetail.message}, cause: ${trackDetail.cause}")
+                    trackDetail.cause?.printStackTrace()
+                }
+                assertTrue(trackDetail is BackendResult.Success, "getTrackDetail should succeed")
+
+                println("Testing unifiedSource.getLyric for $firstMediaId...")
+                val lyricResult = unifiedSource.getLyric(firstMediaId)
+                println("getLyric result: ${if (lyricResult is BackendResult.Success) "Success (len=${lyricResult.data.length})" else lyricResult}")
+                if (lyricResult is BackendResult.Error) {
+                    println("getLyric error: ${lyricResult.message}, cause: ${lyricResult.cause}")
+                    lyricResult.cause?.printStackTrace()
+                }
+                assertTrue(lyricResult is BackendResult.Success, "getLyric should succeed")
+
+                println("Testing unifiedSource.getSongUrl for $firstMediaId...")
+                val songUrlResult = unifiedSource.getSongUrl(firstMediaId, "standard")
+                println("getSongUrl result: $songUrlResult")
+                if (songUrlResult is BackendResult.Error) {
+                    println("getSongUrl error: ${songUrlResult.message}, cause: ${songUrlResult.cause}")
+                    songUrlResult.cause?.printStackTrace()
+                }
+                assertTrue(songUrlResult is BackendResult.Success, "getSongUrl should succeed")
+                val songUrl = (songUrlResult as BackendResult.Success).data
+                assertTrue(songUrl.url.startsWith("http://") || songUrl.url.startsWith("https://"))
+
+                println("Testing unifiedSource.getRankings...")
+                val rankingsResult = unifiedSource.getRankings()
+                println("getRankings result: ${if (rankingsResult is BackendResult.Success) "Success (${rankingsResult.data.size} items)" else rankingsResult}")
+                if (rankingsResult is BackendResult.Error) {
+                    println("getRankings error: ${rankingsResult.message}, cause: ${rankingsResult.cause}")
+                    rankingsResult.cause?.printStackTrace()
+                }
+                assertTrue(rankingsResult is BackendResult.Success, "getRankings should succeed")
+
+                println("All UnifiedMusicSourceImpl operations PASSED!")
+            } finally {
+                providerManager.sdkSessions.close()
+                moduleManager.getAvailableProviders().forEach { it.close() }
                 root.deleteRecursively()
             }
         }
