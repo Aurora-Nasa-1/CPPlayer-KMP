@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Info
@@ -37,6 +38,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -99,6 +101,9 @@ fun PlayerMoreBottomSheet(
     /** 当前音源自定义音质文案（由 [PlayerMoreSheets] 从 PlaybackUiState 传入）。 */
     sourceQualityLabel: String? = null,
     onSelectQuality: (String) -> Unit = {},
+    immersiveLyrics: Boolean = false,
+    onToggleImmersiveLyrics: () -> Unit = {},
+    onOpenPlayerSettings: () -> Unit = {},
 ) {
     LegacyModalBottomSheet(onDismissRequest = onDismiss) {
         PlayerMoreContent(
@@ -123,6 +128,9 @@ fun PlayerMoreBottomSheet(
             trackQualityLevel = trackQualityLevel,
             sourceQualityLabel = sourceQualityLabel,
             onSelectQuality = onSelectQuality,
+            immersiveLyrics = immersiveLyrics,
+            onToggleImmersiveLyrics = onToggleImmersiveLyrics,
+            onOpenPlayerSettings = onOpenPlayerSettings,
             onClose = onDismiss,
         )
     }
@@ -157,6 +165,9 @@ fun PlayerMoreContent(
     trackQualityLevel: String = "",
     sourceQualityLabel: String? = null,
     onSelectQuality: (String) -> Unit = {},
+    immersiveLyrics: Boolean = false,
+    onToggleImmersiveLyrics: () -> Unit = {},
+    onOpenPlayerSettings: () -> Unit = {},
     onClose: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -393,6 +404,31 @@ fun PlayerMoreContent(
                         },
                     )
                 }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    PlayerPillButton(
+                        modifier = Modifier.weight(1f),
+                        text = if (immersiveLyrics) "沉浸歌词 (已开启)" else "沉浸歌词 (已关闭)",
+                        icon = Icons.Filled.Fullscreen,
+                        bgColor = if (immersiveLyrics) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        textColor = if (immersiveLyrics) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                        onClick = onToggleImmersiveLyrics,
+                    )
+                    PlayerPillButton(
+                        modifier = Modifier.weight(1f),
+                        text = "播放界面设置",
+                        icon = Icons.Filled.Tune,
+                        bgColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        textColor = MaterialTheme.colorScheme.onSurface,
+                        onClick = {
+                            onOpenPlayerSettings()
+                            onDismiss()
+                        },
+                    )
+                }
             }
 
             // 音质：档位是**全局设置**（写盘 + 同步给控制器），不是「只对这首生效」。
@@ -617,6 +653,7 @@ fun PlayerMoreSheets(
         // CompositionLocal 只能在 @Composable 上下文里读，而 onClick 回调不是组合上下文。
         // 所以在这里（组合期）取出根 Navigator，回调里用捕获的引用。
         val rootNavigator = cp.player.app.ui.util.LocalRootNavigator.current
+        val mobileConfig by AppModel.mobilePlayerCustomConfigFlow.collectAsState()
         PlayerMoreBottomSheet(
             track = track,
             isDownloaded = AppModel.isDownloaded(track.id),
@@ -653,6 +690,13 @@ fun PlayerMoreSheets(
             trackQualityLevel = state.qualityLevel,
             sourceQualityLabel = state.sourceQualityLabel,
             onSelectQuality = AppModel::setPlaybackQuality,
+            immersiveLyrics = mobileConfig.lyricsImmersiveEnabled,
+            onToggleImmersiveLyrics = {
+                AppModel.updateMobilePlayerCustomConfig { it.copy(lyricsImmersiveEnabled = !it.lyricsImmersiveEnabled) }
+            },
+            onOpenPlayerSettings = {
+                rootNavigator.pushOrNotify(cp.player.app.ui.screen.MobilePlayerSettingsScreen())
+            },
         )
     }
 

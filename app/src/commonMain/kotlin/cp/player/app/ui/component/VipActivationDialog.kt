@@ -50,7 +50,9 @@ fun VipActivationDialog(
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 CpText(
-                    text = "FlickEngine 提供专有的 WASAPI 硬件独占（Windows）与 USB DAC 免驱直通（Android），绕开操作系统混音器，实现零损耗 Bit-Perfect 源码输出与 DSD 原生解码。",
+                    text = "FlickEngine 在 Windows 上提供 WASAPI 硬件独占（Bit-Perfect 源码直通），"
+                        + "在 Android 上提供 Oboe 低延迟与 USB DAC 直通；两者都内置 DSD64/128 软解与"
+                        + "64 位浮点 DSP。独占模式默认关闭，激活后仍需你在设置里手动开启。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

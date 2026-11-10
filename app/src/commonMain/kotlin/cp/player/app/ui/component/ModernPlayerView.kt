@@ -71,8 +71,17 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
     var showQueue by remember { mutableStateOf(false) }
     var showComments by remember { mutableStateOf(false) }
     val more = rememberPlayerMoreSheetState()
+    var isImmersiveActive by remember { mutableStateOf(false) }
 
-    BackHandler(enabled = lyricsExpanded && !showQueue && !showComments) {
+    val anySheetOpen = showQueue || showComments || more.showMoreMenu || more.showSimilarSongs ||
+        more.showAddToPlaylist || more.showSleepTimer || more.showSongInfo || more.showDevicePicker || more.showLyricOffset
+    val isImmersive = lyricsExpanded && config.lyricsImmersiveEnabled && isImmersiveActive && !anySheetOpen
+
+    BackHandler(enabled = isImmersive) {
+        isImmersiveActive = false
+    }
+
+    BackHandler(enabled = !isImmersive && lyricsExpanded && !showQueue && !showComments) {
         lyricsExpanded = false
     }
 
@@ -137,7 +146,11 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
             onBack = onBack,
             onToggleLyrics = {
                 haptics.perform(CpHaptic.Tick)
-                lyricsExpanded = !lyricsExpanded
+                val target = !lyricsExpanded
+                lyricsExpanded = target
+                if (!target) {
+                    isImmersiveActive = false
+                }
             },
             onToggleTranslation = {
                 AppModel.updateMobilePlayerCustomConfig { it.copy(showTranslation = !it.showTranslation) }
@@ -161,6 +174,14 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
             ),
             titleModifier = titleModifier,
             artistModifier = artistModifier,
+            isImmersive = isImmersive,
+            onToggleImmersive = {
+                haptics.perform(CpHaptic.Tick)
+                isImmersiveActive = !isImmersiveActive
+            },
+            onImmersiveChange = { active ->
+                isImmersiveActive = active
+            },
         ) { modifier ->
             LyricContent(
                 state = state,

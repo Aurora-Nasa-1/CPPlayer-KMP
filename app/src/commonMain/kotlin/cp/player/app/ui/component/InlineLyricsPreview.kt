@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.model.MobilePlayerCustomConfig
+import cp.player.app.ui.theme.containsKana
 import cp.player.app.ui.util.LyricOffsetManager
 import cp.player.core.lyrics.RubyText
 import cp.player.core.playback.LyricsState
@@ -39,8 +40,10 @@ fun InlineLyricsPreview(
     val offset = trackId?.let(LyricOffsetManager::getOffset) ?: 0L
     val position = (positionMs + offset).coerceAtLeast(0L)
     val lines = (lyricsState as? LyricsState.Success)?.lines.orEmpty()
+    val isJapaneseLyrics = remember(lines) { lines.any { it.text.containsKana() } }
     val index = remember(lines, position) { lines.indexOfLast { it.time <= position } }
     val line = lines.getOrNull(index)
+    val isLineJapanese = isJapaneseLyrics || line?.text?.containsKana() == true
     val label = when (lyricsState) {
         LyricsState.Loading -> s.player.lyricsLoading
         LyricsState.NoLyrics -> s.player.lyricsEmpty
@@ -68,6 +71,7 @@ fun InlineLyricsPreview(
     }
     val translation = line?.translation?.takeIf { config.showTranslation && it.isNotBlank() }
     val nextLine = lines.getOrNull(index + 1)?.let { RubyText.strip(it.text) }?.takeIf(String::isNotBlank)
+    val isNextJapanese = translation == null && (isJapaneseLyrics || nextLine?.containsKana() == true)
     Column(
         modifier.fillMaxWidth().heightIn(min = if (compact) CpSpacing.touchTarget else 64.dp)
             .clickable(role = Role.Button, onClickLabel = "展开完整歌词", onClick = onClick)
@@ -82,6 +86,7 @@ fun InlineLyricsPreview(
             ),
             color = if (line != null) colors.onSurface else colors.onSurfaceVariant,
             maxLines = 1, reveal = CpTextReveal.Marquee,
+            isJapanese = isLineJapanese,
         )
         if (!compact) {
             CpText(
@@ -90,6 +95,7 @@ fun InlineLyricsPreview(
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.onSurfaceVariant,
                 maxLines = 1, reveal = CpTextReveal.Marquee,
+                isJapanese = isNextJapanese,
             )
         }
     }

@@ -59,7 +59,14 @@ fun CpRouteScaffold(
     content: @Composable (Modifier) -> Unit,
 ) {
     if (embedded || LocalEmbeddedInPane.current) {
-        content(modifier.fillMaxSize())
+        // 双栏右栏：宿主已画标题与返回，这里只出正文。
+        // 但 [floatingActionButton] 仍要照常叠加 —— 这个分支此前直接 `content(...); return`，
+        // 于是在桌面宽屏（设置页右栏，「音源与歌词管理」就走这里）丢掉了唯一的主入口：
+        // 列表为空时连列表项都没有，整页只剩一句「点击右下角 +」，而右下角什么都没有。
+        Box(modifier.fillMaxSize()) {
+            content(Modifier.fillMaxSize())
+            RouteFabSlot(floatingActionButton, Modifier.align(Alignment.BottomEnd))
+        }
         return
     }
 
@@ -108,12 +115,7 @@ fun CpRouteScaffold(
             }
             // `floatingActionButton` 为空 lambda 时这里不产生任何绘制，无需判空
             // （`@Composable () -> Unit` 没法判空）。
-            Box(
-                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                floatingActionButton()
-            }
+            RouteFabSlot(floatingActionButton, Modifier.align(Alignment.BottomEnd))
         }
         return
     }
@@ -126,5 +128,29 @@ fun CpRouteScaffold(
         containerColor = MaterialTheme.colorScheme.background,
     ) { _ ->
         content(Modifier.fillMaxSize())
+    }
+}
+
+/**
+ * 页面右下角的 FAB 槽位 —— [CpRouteScaffold] 的两个自绘分支共用（embedded 与窗口 chrome）。
+ *
+ * 底部让位要叠加 [LocalMiniPlayerTailSpace]：小播放器**浮在页面内容之上**
+ * （`GlobalMiniPlayerHost` 是 `Box { pageContent(); MiniPlayer(align = BottomCenter) }`），
+ * 只留 16dp 的话 FAB 会被它压住半截、点不到。没有播放条时该值是 `0.dp`，位置与之前一致。
+ *
+ * ⚠️ 之前两个分支各写了一份 `Box(Modifier.align(BottomEnd).padding(16.dp))`，其中 embedded
+ * 那个连 FAB 都没画（见上）。合成一个函数，免得再各改一份。
+ */
+@Composable
+private fun RouteFabSlot(
+    fab: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tail = LocalMiniPlayerTailSpace.current.coerceAtLeast(0.dp)
+    Box(
+        modifier = modifier.padding(end = 16.dp, bottom = 16.dp + tail),
+        contentAlignment = Alignment.Center,
+    ) {
+        fab()
     }
 }

@@ -725,7 +725,7 @@ fun SettingsSliderItem(
     value: Float,
     onValueChange: (Float) -> Unit,
     valueRange: ClosedFloatingPointRange<Float>,
-    onValueChangeFinished: (() -> Unit)?,
+    onValueChangeFinished: (() -> Unit)? = null,
     index: Int,
     total: Int,
     modifier: Modifier = Modifier,

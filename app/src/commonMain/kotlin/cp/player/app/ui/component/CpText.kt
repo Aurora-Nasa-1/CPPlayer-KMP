@@ -182,6 +182,7 @@ fun CpText(
     fontStyle: FontStyle? = null,
     textDecoration: TextDecoration? = null,
     fontFamily: FontFamily? = null,
+    isJapanese: Boolean? = null,
 ) {
     // 字重 / 字号 / 行距等参与测量，颜色不影响宽度 ⇒ 合入样式。
     val merged = when {
@@ -198,10 +199,10 @@ fun CpText(
         if (textDecoration != null) cur = cur.copy(textDecoration = textDecoration)
         cur
     }
-    // 含假名的文本自动补上 `lang=ja` + `palt`（见 JapaneseText.kt）。
-    val resolvedStyle = merged.localizedForLanguage(text)
+    // 含假名或显式指定日文的文本自动补上 `lang=ja` + `palt`（见 JapaneseText.kt）。
+    val resolvedStyle = merged.localizedForLanguage(text, isJapanese)
     // 字体按字符脚本逐 run 切换：拉丁 / 数字 → Google Sans Flex，假名 → Noto Sans JP，
-    // 汉字 / 全角标点 → MiSans（声明与路由见 theme/FontStack.kt）。
+    // 汉字 / 全角标点 → MiSans 或 Noto Sans JP（声明与路由见 theme/FontStack.kt）。
     val families = LocalAppFontFamilies.current
 
     var hasVisualOverflow by remember(text, resolvedStyle, maxLines) { mutableStateOf(false) }
@@ -227,19 +228,19 @@ fun CpText(
     val smartEnabled = hasVisualOverflow && maxLines == 1 &&
         ellipsisMode != CpEllipsisMode.Tail &&
         maxWidthPx > 0 && maxWidthPx != Int.MAX_VALUE
-    val shown = remember(measurer, text, resolvedStyle, families, maxWidthPx, ellipsisMode, smartEnabled) {
+    val shown = remember(measurer, text, resolvedStyle, families, maxWidthPx, ellipsisMode, smartEnabled, isJapanese) {
         if (smartEnabled) {
             // ⚠️ 测量时必须用**切好 run 的**文本：中文字符在 MiSans 与系统回退字体里的
             // 宽度不同，拿纯字符串量出来的宽度对不上真实渲染 ⇒ 省略号落点会偏。
             fitText(measurer, text, resolvedStyle, maxWidthPx, ellipsisMode) {
-                buildAppStyledText(it, families)
+                buildAppStyledText(it, families, isJapanese = isJapanese)
             }
         } else {
             text
         }
     }
     // 截断之后再切 run：截断是按字符数二分出来的，先切再多段截会破坏 span 边界。
-    val styled = remember(shown, families) { buildAppStyledText(shown, families) }
+    val styled = remember(shown, families, isJapanese) { buildAppStyledText(shown, families, isJapanese = isJapanese) }
 
     val effective = when (reveal) {
         CpTextReveal.None -> CpTextReveal.None
@@ -325,6 +326,7 @@ fun CpText(
     textDecoration: TextDecoration? = null,
     fontFamily: FontFamily? = null,
     inlineContent: Map<String, InlineTextContent> = mapOf(),
+    isJapanese: Boolean? = null,
 ) {
     val rawText = text.text
     val merged = when {
@@ -341,7 +343,7 @@ fun CpText(
         if (textDecoration != null) cur = cur.copy(textDecoration = textDecoration)
         cur
     }
-    val resolvedStyle = merged.localizedForLanguage(rawText)
+    val resolvedStyle = merged.localizedForLanguage(rawText, isJapanese)
     val families = LocalAppFontFamilies.current
 
     // Karaoke color updates do not change glyph metrics. Resetting overflow for each
@@ -368,7 +370,7 @@ fun CpText(
         }
     }
 
-    val styled = remember(text, families) { buildAppStyledText(text, families) }
+    val styled = remember(text, families, isJapanese) { buildAppStyledText(text, families, isJapanese = isJapanese) }
 
     val effective = when (reveal) {
         CpTextReveal.None -> CpTextReveal.None

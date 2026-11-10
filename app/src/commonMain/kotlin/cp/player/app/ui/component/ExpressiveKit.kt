@@ -1044,14 +1044,15 @@ fun CpPlayPauseButton(
  * —— 同一个「没有封面」在四处长得不一样，一眼就能看出哪块是后补的。
  *
  * @param corner 占位块圆角，应与调用处真实封面的圆角一致
- * @param animated 形状是否持续变形。**小于约 72dp 时关掉** —— 那个尺寸下变形根本看不出来，
- *   却要一直跑一条 `Animatable`；小尺寸退化成静态图标反而更清楚。
+ * @param animated 形状是否持续变形。**默认 false**：避免在列表/卡片/弹窗中挂载常驻无限动画
+ *   （[MorphingShape] 逐帧计算多边形拓扑并在 Canvas 重绘），导致静止时 CPU 满频出帧与设备耗电。
+ *   仅在明确需要动态表现的 Hero/欢迎大尺寸展示场景手动开启。
  */
 @Composable
 fun CpCoverPlaceholder(
     modifier: Modifier = Modifier,
     corner: Dp = 20.dp,
-    animated: Boolean = true,
+    animated: Boolean = false,
 ) {
     val ink = MaterialTheme.colorScheme.onPrimaryContainer
     // ⚠️ Brush 必须 remember：占位块常出现在**每 200ms 重组一次**的列表行 / 迷你播放器里

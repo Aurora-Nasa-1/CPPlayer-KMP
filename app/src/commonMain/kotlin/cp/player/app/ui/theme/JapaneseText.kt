@@ -37,13 +37,15 @@ fun String.containsKana(): Boolean = any { it.isKana() }
 /**
  * 按文本语言补上「语言标签 + 假名比例排版特性」。
  *
- * 只对**含假名**的文本生效；其余原样返回（返回的是同一个实例，`remember` 的 key 稳定）。
+ * 只对**含假名**或显式指定日文的文本生效；其余原样返回（返回的是同一个实例，`remember` 的 key 稳定）。
  *
  * ⚠️ 这里**不换字体**（改造前会换）。字体是逐 run 的事情，见 [buildAppStyledText]：
  * 一行里「Tokyo 東京」的拉丁与汉字本来就该用不同字体，而 `TextStyle` 只能装一个家族。
  */
-fun TextStyle.forTextLanguage(text: String): TextStyle =
-    if (text.containsKana()) withJapaneseLocale() else this
+fun TextStyle.forTextLanguage(text: String, isJapanese: Boolean? = null): TextStyle {
+    val isJa = isJapanese ?: text.containsKana()
+    return if (isJa) withJapaneseLocale() else this
+}
 
 /**
  * 只打日语的语言标签与 OpenType 特性，**不动字体**。
@@ -104,5 +106,5 @@ fun TextStyle.withCjkTypography(cjkFamily: FontFamily?): TextStyle {
  * 下游（`Text` 的测量缓存、`remember(style)`）不会因为每次重组新建对象而失效。
  */
 @Composable
-fun TextStyle.localizedForLanguage(text: String): TextStyle =
-    remember(this, text) { forTextLanguage(text) }
+fun TextStyle.localizedForLanguage(text: String, isJapanese: Boolean? = null): TextStyle =
+    remember(this, text, isJapanese) { forTextLanguage(text, isJapanese) }

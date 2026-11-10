@@ -178,10 +178,12 @@ fun PlaylistCoverCard(
             // URL 有值、图还在路上（或已经 404）。那时 AsyncImage 什么都没画出来，
             // 只剩底部那条压暗渐变悬在卡片底色上 —— 整块磁贴看起来像渲染坏了。
             // 放在底层就三种情况都成立：图到位被盖住，图挂了/没到就露出占位块。
+            // ⚠️ animated 必须为 false：桌面与手机首页一屏展示多张歌单卡片，若开动画会导致十几个
+            // MorphingShape 在底层逐帧拓扑计算与重绘，引起静止时 CPU 占用与耗电。
             CpCoverPlaceholder(
                 modifier = Modifier.fillMaxSize(),
                 corner = 28.dp,
-                animated = true,
+                animated = false,
             )
             if (overImage) {
                 // [Bolt] Limit playlist thumbnail downloads to 300px to avoid large memory footprints

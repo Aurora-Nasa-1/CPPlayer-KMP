@@ -22,6 +22,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 import cp.player.app.ui.component.CpText
+import cp.player.app.ui.theme.containsKana
 
 @Composable
 internal fun PosterSpatialLyrics(
@@ -32,6 +33,9 @@ internal fun PosterSpatialLyrics(
     time: State<Float>,
     modifier: Modifier = Modifier
 ) {
+    val isJapanese = remember(line.text, nextLine?.text) {
+        line.text.containsKana() || nextLine?.text?.containsKana() == true
+    }
     val tokens = remember(line, nextLine) { posterLyricWords(line, nextLine) }
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()
@@ -86,6 +90,7 @@ internal fun PosterSpatialLyrics(
                     fontSize = (desiredSize * fit).sp,
                     fontWeight = FontWeight.ExtraBold,
                     textAlign = TextAlign.Center,
+                    isJapanese = isJapanese,
                     modifier = Modifier
                         .align(Alignment.Center)
                         .width(wordWidth)

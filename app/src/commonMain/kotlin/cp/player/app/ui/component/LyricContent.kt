@@ -44,6 +44,7 @@ import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.LocalAppFontFamilies
 import cp.player.app.ui.theme.LocalIsDarkTheme
+import cp.player.app.ui.theme.containsHan
 import cp.player.app.ui.theme.containsKana
 import cp.player.app.ui.theme.withJapaneseTypesetting
 import cp.player.core.lyrics.RubySegment
@@ -219,39 +220,62 @@ fun LyricContent(
         }
     }
 
-    // ⚠️ 这里**不再**按整首歌词换 fontFamily：字体是逐 run 的事，由
-    // [ScriptFontLyricsProfile] 在库内部按脚本切 span（拉丁 → 样式默认家族 Google Sans Flex，
-    // 假名 → Noto Sans JP，汉字 → 本段语言的 CJK 字体）。
-    // 整行换家族会把同一句里的英文 / 数字 / ASCII 标点也一起拖进 Noto 或 MiSans 的字形。
-    // 样式在这里只负责字号 / 字重 / 行高，以及 `lang=ja` + `palt`（见 JapaneseText.kt）。
+    // ⚠️ 歌词字体路由策略：
+    // - 逐字行（KaraokeLine）由 [ScriptFontLyricsProfile] 在库内部切 span：拉丁 → Google Sans Flex，
+    //   日文汉字/假名 → Noto Sans JP，中文汉字 → MiSans。
+    // - 普通行（SyncedLine，无逐字时间戳）库直接通过 Text(style) 渲染、不走 profile；
+    //   因此 normalStyle 与 accompanimentStyle 需显式绑定日文/中文字体家族，
+    //   防止普通行的日文汉字回退到系统简中/MiSans。
     val currentTextStyle = MaterialTheme.typography.headlineMedium
-    val normalStyle = remember(currentTextStyle, japaneseLyrics, wordSegmentation) {
-        currentTextStyle.lyricLineStyle().forLyricLanguage(japaneseLyrics, wordSegmentation)
+    val normalStyle = remember(currentTextStyle, japaneseLyrics, wordSegmentation, appFonts) {
+        val base = currentTextStyle.lyricLineStyle().forLyricLanguage(japaneseLyrics, wordSegmentation)
+        if (japaneseLyrics && appFonts.japanese != null) {
+            base.copy(fontFamily = appFonts.japanese)
+        } else if (lines.any { it.text.containsHan() } && appFonts.misans != null) {
+            base.copy(fontFamily = appFonts.misans)
+        } else {
+            base
+        }
     }
 
-    val accompanimentStyle = remember(currentTextStyle, japaneseLyrics, wordSegmentation) {
-        currentTextStyle.copy(
+    val accompanimentStyle = remember(currentTextStyle, japaneseLyrics, wordSegmentation, appFonts) {
+        val base = currentTextStyle.copy(
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
             textMotion = TextMotion.Animated,
         ).forLyricLanguage(japaneseLyrics, wordSegmentation)
+        if (japaneseLyrics && appFonts.japanese != null) {
+            base.copy(fontFamily = appFonts.japanese)
+        } else if (lines.any { it.text.containsHan() } && appFonts.misans != null) {
+            base.copy(fontFamily = appFonts.misans)
+        } else {
+            base
+        }
     }
 
     // 注音（振り仮名）的字号：正文的 **1/4**，位置由库画在音节上方。
     // 没有注音时这一档仍是「行级罗马音」的字号（正文的一半），两者不要混用同一个值。
     val basePhoneticStyle = MaterialTheme.typography.bodyMedium
     val phoneticTextStyle = remember(
-        basePhoneticStyle, hasRuby, japaneseLyrics, wordSegmentation,
+        basePhoneticStyle, hasRuby, japaneseLyrics, wordSegmentation, appFonts,
     ) {
         val size = if (hasRuby) RubyFontRatio else 0.5f
-        basePhoneticStyle.copy(
+        val base = basePhoneticStyle.copy(
             fontSize = (28 * size).sp,
             lineHeight = (28 * if (hasRuby) 0.32f else 0.7f).sp,
         ).forLyricLanguage(japaneseLyrics, wordSegmentation)
+        if (japaneseLyrics && appFonts.japanese != null) {
+            base.copy(fontFamily = appFonts.japanese)
+        } else {
+            base
+        }
     }
 
     // 逐 run 的字体路由（唯一实例：库按它切分组，每次重组新建会让整份歌词重新测量）。
-    val scriptProfiles = remember(appFonts) { listOf(ScriptFontLyricsProfile(appFonts)) }
+    // 注入 japaneseLyrics，使分词后的单个日文汉字词/音节均能准确路由到 Noto Sans JP。
+    val scriptProfiles = remember(appFonts, japaneseLyrics) {
+        listOf(ScriptFontLyricsProfile(appFonts, isJapaneseLyrics = japaneseLyrics))
+    }
 
     val lyricOffsetMs = if (!currentTrackId.isNullOrBlank()) {
         cp.player.app.ui.util.LyricOffsetManager.getOffset(currentTrackId)
@@ -432,7 +456,10 @@ private fun rubySyllables(
     val visible = segments.filter { it.base.isNotEmpty() }
     val total = visible.sumOf { it.base.length }
     if (total == 0) return emptyList()
-    val span = (lineEnd - lineStart).coerceAtLeast(1)
+    // 行 endTime 是「焦点窗口」（到下一行起唱），不是「扫光结束」。
+    // 逐字行必须用最后一个字的 endTime 收尾，否则注音音节会在演唱空隙里继续高亮。
+    val timingEnd = words.lastOrNull()?.endTime?.toInt() ?: lineEnd
+    val span = (timingEnd - lineStart).coerceAtLeast(1)
 
     val useWords = words.isNotEmpty() &&
         words.joinToString("") { it.text } == visible.joinToString("") { it.base }
@@ -448,7 +475,7 @@ private fun rubySyllables(
             }
             acc += len
         }
-        return lineEnd
+        return timingEnd
     }
 
     var acc = 0

@@ -159,10 +159,14 @@ val LocalAppFontFamilies = staticCompositionLocalOf { AppFontFamilies.Empty }
  * ⚠️ 没有可切换的字体时**原样返回**（`AnnotatedString(text)`，零 span 开销）——
  * 这条路径覆盖「安卓还没下载字体」「离屏测试没装主题」两种常见情况。
  */
-fun buildAppStyledText(text: String, families: AppFontFamilies): AnnotatedString {
+fun buildAppStyledText(
+    text: String,
+    families: AppFontFamilies,
+    isJapanese: Boolean? = null,
+): AnnotatedString {
     if (families.isEmpty || text.isEmpty()) return AnnotatedString(text)
 
-    val cjkFace = cjkFaceFor(text, families) ?: return AnnotatedString(text)
+    val cjkFace = cjkFaceFor(text, families, isJapanese) ?: return AnnotatedString(text)
     return buildAnnotatedString {
         appendAppFontRuns(
             text = text,
@@ -176,10 +180,14 @@ fun buildAppStyledText(text: String, families: AppFontFamilies): AnnotatedString
 /**
  * 把已有的 [annotated]（可能带颜色、下划线等样式）保留原有 span 并叠加字体路由。
  */
-fun buildAppStyledText(annotated: AnnotatedString, families: AppFontFamilies): AnnotatedString {
+fun buildAppStyledText(
+    annotated: AnnotatedString,
+    families: AppFontFamilies,
+    isJapanese: Boolean? = null,
+): AnnotatedString {
     if (families.isEmpty || annotated.isEmpty()) return annotated
     val raw = annotated.text
-    val cjkFace = cjkFaceFor(raw, families) ?: return annotated
+    val cjkFace = cjkFaceFor(raw, families, isJapanese) ?: return annotated
     val cjkFamily = if (cjkFace == AppFontFace.NOTO_SANS_JP) families.japanese else families.misans
     val otherFamily = families.misans
 
@@ -226,14 +234,19 @@ fun buildAppStyledText(annotated: AnnotatedString, families: AppFontFamilies): A
 /**
  * 这段文本的 **CJK 字体身份**（汉字 / 全角标点落到哪一款）。
  *
- * - 含假名 ⇒ [AppFontFace.NOTO_SANS_JP]（日文的汉字要用日式写法）
+ * - 含假名或显式指定日文 ⇒ [AppFontFace.NOTO_SANS_JP]（日文的汉字要用日式写法）
  * - 其余 ⇒ [AppFontFace.MISANS]（中文 / 未知语言，汉字用大陆写法）
  * - **返回 null** ⇒ 本段不该切换字体：含假名但日文字体不可用（Android 没下载）时，
  *   保持平台回退（系统按 locale 挑 CJK 字体），而不是拿 MiSans 的汉字写法去凑日文。
  */
-internal fun cjkFaceFor(text: String, families: AppFontFamilies): AppFontFace? {
+internal fun cjkFaceFor(
+    text: String,
+    families: AppFontFamilies,
+    isJapanese: Boolean? = null,
+): AppFontFace? {
     if (families.isEmpty) return null
-    if (!text.any { it.isKana() }) return if (families.misans != null) AppFontFace.MISANS else null
+    val isJa = isJapanese ?: text.any { it.isKana() }
+    if (!isJa) return if (families.misans != null) AppFontFace.MISANS else null
     return if (families.japanese != null) AppFontFace.NOTO_SANS_JP else null
 }
 

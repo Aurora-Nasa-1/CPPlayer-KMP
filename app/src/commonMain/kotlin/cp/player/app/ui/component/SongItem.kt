@@ -44,7 +44,9 @@ import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.resized
 import cp.player.core.music.TrackSummary
-import cp.player.core.playback.PlaybackUiState
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 
 /**
  * M3 Expressive 风格歌曲列表项。
@@ -84,19 +86,26 @@ fun SongItem(
     val globalShowAlbum by AppModel.showSongAlbumFlow.collectAsState()
     val actualShowAlbum = showAlbum ?: globalShowAlbum
     // 预览和启动早期没有后端；观察初始化信号，完成后再切换到真实播放状态。
+    // ⚠️ 必须通过 map + distinctUntilChanged 派生布尔状态：`AppModel.playback.state` 随位置轮询
+    // 每 200ms 推送一次全新实例。若直接 collect 完整状态，列表中几十个 SongItem 每秒会重组 5 次，
+    // 造成极大的无效重组开销。这里仅在「是否为当前曲」或「是否在播放」发生翻转时才触发重组。
     val initialized by AppModel.initialized.collectAsState()
-    val playbackState = if (initialized) {
-        val state by AppModel.playback.state.collectAsState()
-        state
-    } else {
-        remember { PlaybackUiState() }
-    }
-    // `currentTrack.id` 在解析链路中可能是裸 id，也可能是带命名空间的 mediaId；权威播放身份
-    // 是当前队列项的 mediaId。普通列表用裸 id，因此同时比较 mediaId 尾段，避免歌单里永远匹配不到。
-    val currentMediaId = playbackState.queue.getOrNull(playbackState.currentIndex)?.mediaId
-    val isCurrent = isCurrentlyPlaying || playbackState.currentTrack?.id == track.id ||
-        currentMediaId == track.id || currentMediaId?.substringAfterLast('/') == track.id
-    val isActivelyPlaying = isCurrent && playbackState.isPlaying
+    val activeState by remember(track.id, isCurrentlyPlaying, initialized) {
+        if (!initialized) {
+            flowOf(isCurrentlyPlaying to false)
+        } else {
+            AppModel.playback.state
+                .map { st ->
+                    val currentMediaId = st.queue.getOrNull(st.currentIndex)?.mediaId
+                    val isCurr = isCurrentlyPlaying || st.currentTrack?.id == track.id ||
+                        currentMediaId == track.id || currentMediaId?.substringAfterLast('/') == track.id
+                    isCurr to (isCurr && st.isPlaying)
+                }
+                .distinctUntilChanged()
+        }
+    }.collectAsState(initial = isCurrentlyPlaying to false)
+    val isCurrent = activeState.first
+    val isActivelyPlaying = activeState.second
 
     val hasContextMenu = !contextMenu.isNullOrEmpty()
     val showMoreButton = !selectionMode && (onOptionsClick != null || hasContextMenu)

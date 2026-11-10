@@ -1,9 +1,12 @@
 package cp.player.app.ui.component
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,6 +31,8 @@ import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.AccessAlarm
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.MoreHoriz
@@ -45,8 +50,10 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -59,6 +66,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -81,6 +89,8 @@ import cp.player.core.music.ArtistSummary
 import cp.player.core.music.TrackSummary
 import cp.player.core.playback.PlaybackUiState
 import cp.player.core.playback.RepeatMode
+import cp.player.core.util.currentTimeMillis
+import kotlinx.coroutines.delay
 
 /**
  * One mobile player with two focus states. Only the content above the transport
@@ -112,10 +122,52 @@ internal fun MobileNowPlayingLayout(
     artworkModifier: Modifier = Modifier,
     titleModifier: Modifier = Modifier,
     artistModifier: Modifier = Modifier,
+    isImmersive: Boolean = false,
+    onToggleImmersive: () -> Unit = {},
+    onImmersiveChange: (Boolean) -> Unit = {},
     lyricsContent: @Composable (Modifier) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val s = cpStrings()
+    var lastInteractionTime by remember { mutableLongStateOf(currentTimeMillis()) }
+
+    LaunchedEffect(
+        lyricsExpanded,
+        isImmersive,
+        lastInteractionTime,
+        config.lyricsImmersiveEnabled,
+        config.lyricsImmersiveTimeoutSeconds,
+    ) {
+        if (!lyricsExpanded || !config.lyricsImmersiveEnabled || isImmersive) {
+            return@LaunchedEffect
+        }
+        val timeoutMs = config.lyricsImmersiveTimeoutSeconds.coerceIn(2, 15) * 1000L
+        while (true) {
+            val elapsed = currentTimeMillis() - lastInteractionTime
+            val remaining = timeoutMs - elapsed
+            if (remaining <= 0L) {
+                onImmersiveChange(true)
+                break
+            }
+            delay(remaining.coerceAtLeast(100L))
+        }
+    }
+
+    val immersiveInteractionModifier = if (lyricsExpanded && config.lyricsImmersiveEnabled) {
+        Modifier.pointerInput(isImmersive) {
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                    lastInteractionTime = currentTimeMillis()
+                    if (isImmersive) {
+                        onImmersiveChange(false)
+                        event.changes.forEach { it.consume() }
+                    }
+                }
+            }
+        }
+    } else Modifier
+
     BoxWithConstraints(
         modifier.background(
             Brush.verticalGradient(
@@ -127,26 +179,33 @@ internal fun MobileNowPlayingLayout(
         val compact = maxHeight < 700.dp || LocalDensity.current.fontScale > 1.25f
         Column(
             contentModifier.widthIn(max = CpSpacing.playerMaxWidth).fillMaxSize()
-                .padding(horizontal = CpSpacing.playerHorizontal),
+                .padding(horizontal = CpSpacing.playerHorizontal)
+                .then(immersiveInteractionModifier),
         ) {
-            Row(
-                Modifier.fillMaxWidth().height(56.dp).then(dismissGesture),
-                verticalAlignment = Alignment.CenterVertically,
+            AnimatedVisibility(
+                visible = !isImmersive,
+                enter = fadeIn(CpMotion.effects()) + expandVertically(CpMotion.spatial()),
+                exit = fadeOut(CpMotion.effects()) + shrinkVertically(CpMotion.spatial()),
             ) {
-                PlayerIconButton(
-                    Icons.Filled.KeyboardArrowDown, s.player.collapse, onBack,
-                    modifier = Modifier.testTag("player-collapse"),
-                )
-                CpText(
-                    state.currentTrack?.album?.takeIf(String::isNotBlank) ?: s.player.nowPlaying,
-                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp).testTag("player-album"),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = colors.onSurfaceVariant,
-                    maxLines = 1,
-                    reveal = CpTextReveal.Marquee,
-                    textAlign = TextAlign.Center,
-                )
-                PlayerIconButton(Icons.Filled.MoreHoriz, s.player.more, onMore)
+                Row(
+                    Modifier.fillMaxWidth().height(56.dp).then(dismissGesture),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PlayerIconButton(
+                        Icons.Filled.KeyboardArrowDown, s.player.collapse, onBack,
+                        modifier = Modifier.testTag("player-collapse"),
+                    )
+                    CpText(
+                        state.currentTrack?.album?.takeIf(String::isNotBlank) ?: s.player.nowPlaying,
+                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp).testTag("player-album"),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = colors.onSurfaceVariant,
+                        maxLines = 1,
+                        reveal = CpTextReveal.Marquee,
+                        textAlign = TextAlign.Center,
+                    )
+                    PlayerIconButton(Icons.Filled.MoreHoriz, s.player.more, onMore)
+                }
             }
             val track = state.currentTrack
             if (track == null) {
@@ -170,23 +229,35 @@ internal fun MobileNowPlayingLayout(
             ) { expanded ->
                 if (expanded) {
                     Column(Modifier.fillMaxSize()) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                        AnimatedVisibility(
+                            visible = !isImmersive,
+                            enter = fadeIn(CpMotion.effects()) + expandVertically(CpMotion.spatial()),
+                            exit = fadeOut(CpMotion.effects()) + shrinkVertically(CpMotion.spatial()),
                         ) {
-                            PlayerArtwork(
-                                track, state.isPlaying, config, onSkipNext, onSkipPrevious,
-                                Modifier.size(52.dp).clickable(
-                                    role = Role.Button, onClickLabel = "收起歌词",
-                                    onClick = onToggleLyrics,
-                                ),
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            TrackHeading(track, false, onArtistClick, Modifier.weight(1f))
-                            PlayerIconButton(
-                                Icons.Filled.Translate, s.player.translation, onToggleTranslation,
-                                selected = config.showTranslation,
-                            )
+                            Row(
+                                Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                PlayerArtwork(
+                                    track, state.isPlaying, config, onSkipNext, onSkipPrevious,
+                                    Modifier.size(52.dp).clickable(
+                                        role = Role.Button, onClickLabel = "收起歌词",
+                                        onClick = onToggleLyrics,
+                                    ),
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                TrackHeading(track, false, onArtistClick, Modifier.weight(1f))
+                                PlayerIconButton(
+                                    if (isImmersive) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                                    if (isImmersive) "退出沉浸" else "沉浸歌词",
+                                    onToggleImmersive,
+                                    selected = isImmersive,
+                                )
+                                PlayerIconButton(
+                                    Icons.Filled.Translate, s.player.translation, onToggleTranslation,
+                                    selected = config.showTranslation,
+                                )
+                            }
                         }
                         Box(Modifier.weight(1f).fillMaxWidth().lyricEdgeFade()) {
                             lyricsContent(Modifier.fillMaxSize().testTag("player-full-lyrics"))
@@ -236,70 +307,76 @@ internal fun MobileNowPlayingLayout(
                     }
                 }
             }
-            Column(Modifier.fillMaxWidth().testTag("player-transport")) {
-                PlayerTimeline(state, onSeek)
-                Row(
-                    Modifier.fillMaxWidth().height(if (compact) 72.dp else 84.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    PlayerIconButton(
-                        Icons.Filled.Shuffle, s.player.shuffle, onShuffle,
-                        selected = state.shuffleEnabled,
-                    )
-                    PlayerIconButton(
-                        Icons.Filled.SkipPrevious, s.player.previousTrack, onSkipPrevious, iconSize = 34,
-                    )
-                    Box(contentAlignment = Alignment.Center) {
+            AnimatedVisibility(
+                visible = !isImmersive,
+                enter = fadeIn(CpMotion.effects()) + expandVertically(CpMotion.spatial()),
+                exit = fadeOut(CpMotion.effects()) + shrinkVertically(CpMotion.spatial()),
+            ) {
+                Column(Modifier.fillMaxWidth().testTag("player-transport")) {
+                    PlayerTimeline(state, onSeek)
+                    Row(
+                        Modifier.fillMaxWidth().height(if (compact) 72.dp else 84.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         PlayerIconButton(
-                            if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            s.player.playOrPause(state.isPlaying),
-                            onTogglePlay, iconSize = 48,
-                            modifier = Modifier.size(72.dp).testTag("player-play-pause"),
+                            Icons.Filled.Shuffle, s.player.shuffle, onShuffle,
+                            selected = state.shuffleEnabled,
                         )
-                        if (state.isBuffering) {
-                            CpLoadingIndicator(Modifier.align(Alignment.BottomCenter).size(12.dp))
+                        PlayerIconButton(
+                            Icons.Filled.SkipPrevious, s.player.previousTrack, onSkipPrevious, iconSize = 34,
+                        )
+                        Box(contentAlignment = Alignment.Center) {
+                            PlayerIconButton(
+                                if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                s.player.playOrPause(state.isPlaying),
+                                onTogglePlay, iconSize = 48,
+                                modifier = Modifier.size(72.dp).testTag("player-play-pause"),
+                            )
+                            if (state.isBuffering) {
+                                CpLoadingIndicator(Modifier.align(Alignment.BottomCenter).size(12.dp))
+                            }
                         }
-                    }
-                    PlayerIconButton(
-                        Icons.Filled.SkipNext, s.player.nextTrack, onSkipNext, iconSize = 34,
-                    )
-                    PlayerIconButton(
-                        if (state.repeatMode == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
-                        s.player.repeat, onRepeat, selected = state.repeatMode != RepeatMode.OFF,
-                    )
-                }
-                state.error?.takeIf(String::isNotBlank)?.let { error ->
-                    CpText(
-                        error, modifier = Modifier.fillMaxWidth(),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.error, textAlign = TextAlign.Center,
-                        maxLines = 1, reveal = CpTextReveal.Marquee,
-                    )
-                }
-                Row(
-                    Modifier.fillMaxWidth().height(if (compact) 56.dp else 64.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    PlayerIconButton(
-                        Icons.Filled.Lyrics,
-                        if (lyricsExpanded) "收起歌词" else "展开完整歌词",
-                        onToggleLyrics, selected = lyricsExpanded,
-                        modifier = Modifier.testTag("player-lyrics-toggle"),
-                    )
-                    if (supportsComments) {
                         PlayerIconButton(
-                            Icons.AutoMirrored.Filled.Comment, "歌曲评论", onComments,
-                            modifier = Modifier.testTag("player-comments"),
+                            Icons.Filled.SkipNext, s.player.nextTrack, onSkipNext, iconSize = 34,
                         )
-                    } else {
-                        Spacer(Modifier.size(CpSpacing.touchTarget))
+                        PlayerIconButton(
+                            if (state.repeatMode == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
+                            s.player.repeat, onRepeat, selected = state.repeatMode != RepeatMode.OFF,
+                        )
                     }
-                    PlayerIconButton(
-                        Icons.AutoMirrored.Filled.QueueMusic, s.player.queue, onQueue,
-                        modifier = Modifier.testTag("player-queue"),
-                    )
+                    state.error?.takeIf(String::isNotBlank)?.let { error ->
+                        CpText(
+                            error, modifier = Modifier.fillMaxWidth(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.error, textAlign = TextAlign.Center,
+                            maxLines = 1, reveal = CpTextReveal.Marquee,
+                        )
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().height(if (compact) 56.dp else 64.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        PlayerIconButton(
+                            Icons.Filled.Lyrics,
+                            if (lyricsExpanded) "收起歌词" else "展开完整歌词",
+                            onToggleLyrics, selected = lyricsExpanded,
+                            modifier = Modifier.testTag("player-lyrics-toggle"),
+                        )
+                        if (supportsComments) {
+                            PlayerIconButton(
+                                Icons.AutoMirrored.Filled.Comment, "歌曲评论", onComments,
+                                modifier = Modifier.testTag("player-comments"),
+                            )
+                        } else {
+                            Spacer(Modifier.size(CpSpacing.touchTarget))
+                        }
+                        PlayerIconButton(
+                            Icons.AutoMirrored.Filled.QueueMusic, s.player.queue, onQueue,
+                            modifier = Modifier.testTag("player-queue"),
+                        )
+                    }
                 }
             }
         }
