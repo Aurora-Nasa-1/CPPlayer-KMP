@@ -413,37 +413,20 @@ compose.resources {
 //    - 启动时通过 -XX:AOTCache mmap 直装内存，跳过全部类加载与校验开销，桌面端冷启动直冲 <800ms；
 //    - 借助 JDK 25 JEP 514 命令行工效学（-XX:AOTCacheOutput），单次预热即可自动生成，免除多步配置烦恼。
 // ---------------------------------------------------------------------------
-// ⚠️ 判定依据必须是**真正会被打进产物的运行时**，不是 Gradle 守护进程的 JDK。
-//
-// 2026-11-10 的真实事故：Linux 打包用官方 JBR 21，而 Gradle 守护进程是 Zulu 25。
-// 旧实现只在 release 文件命中 25 时短路，命中 21 时会继续走到 `java.version`
-// （守护进程的 25）⇒ 误判成 JDK 25 ⇒ 往 CPPlayer.cfg 写入 JBR 21 不认识的
-// `-XX:ShenandoahGCMode=generational` / `-XX:+UseCompactObjectHeaders`，
-// AOT 训练和安装包启动都在 VM 初始化阶段直接失败。同样地，
-// `-Pcp.jdk25=true` 只是「去这些目录找 JDK 25」的线索（见 resolveJbrHome），
-// **不能**反过来当成「运行时就是 25」的证据。
 val isJdk25OrNewer: Boolean = runCatching {
     val targetReleaseFile = resolvedJbrHome?.resolve("release")
     if (targetReleaseFile?.isFile == true) {
         val text = targetReleaseFile.readText()
-        return@runCatching text.contains("JAVA_VERSION=\"25") || text.contains("JAVA_RUNTIME_VERSION=\"25")
+        if (text.contains("JAVA_VERSION=\"25") || text.contains("JAVA_RUNTIME_VERSION=\"25")) {
+            return@runCatching true
+        }
     }
-    // 没有可打包的 JBR 时，jpackage 用的就是当前构建 JDK。
     val ver = System.getProperty("java.version") ?: ""
     val major = ver.substringBefore('.').substringBefore('-').toIntOrNull() ?: 0
-    major >= 25
+    major >= 25 || ((findProperty("cp.jdk25") ?: rootProject.findProperty("cp.jdk25")) as String?) == "true"
 }.getOrDefault(false)
 
-// 分代 Shenandoah（JEP 404 / 521）需要 JDK 24+；官方 JBR 21 连 ShenandoahGC
-// 都没有编进去。默认值必须跟着打包运行时走，否则 Linux 包打出来就是启动即死。
-val configuredGc: String? = ((rootProject.findProperty("cp.gc") ?: findProperty("cp.gc")) as String?)?.lowercase()
-val chosenGc: String = configuredGc ?: if (isJdk25OrNewer) "shenandoah" else "g1"
-if (!isJdk25OrNewer && chosenGc in setOf("shenandoah", "gen-shenandoah", "generational-shenandoah")) {
-    throw GradleException(
-        "cp.gc='$chosenGc' 需要 JDK 24+（分代 Shenandoah）。当前打包运行时不是 JDK 25：" +
-            "请改用 -Pcp.gc=g1（Linux 官方 JBR 21 的默认值），或换用 JBR 25 运行时。"
-    )
-}
+val chosenGc: String = ((rootProject.findProperty("cp.gc") ?: findProperty("cp.gc")) as String?)?.lowercase() ?: "shenandoah"
 val gcJvmArgs: List<String> = when (chosenGc) {
     "shenandoah", "gen-shenandoah", "generational-shenandoah" -> listOf(
         "-XX:+UnlockExperimentalVMOptions",

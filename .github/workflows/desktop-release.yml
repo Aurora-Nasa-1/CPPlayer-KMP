@@ -119,9 +119,6 @@ jobs:
             jbrExt: tar.gz
             jbrSha: 8994b26c31eb4ce4e171296e9e50970ce44d7142ba39d54b8eee67e4cb4761a2
             jbrUrl: "https://github.com/Aurora-Nasa-1/CPPlayer-KMP/releases/download/jbr-assets-v1/jbr25-windows-x64-custom.tar.gz"
-            # 定制 JBR 25：分代 Shenandoah + Compact Object Headers 都可用。
-            gc: shenandoah
-            compactHeaders: true
           - os: ubuntu-latest
             platform: linux
             gradleTasks: ":app:packageDeb :app:packageLinuxTarGz"
@@ -131,12 +128,6 @@ jobs:
             # ⚠️ Linux 侧 **只有 .tar.gz**：同名的 .zip 是 403。
             jbrExt: tar.gz
             jbrSha: 482b63da8ac63b8f108878d1bd8a23df15fd78cc9dfd23f3b824fbfe2512c81f
-            # ⚠️ Linux 用的是官方 JBR 21（见 env.JBR_VERSION），没有分代 Shenandoah
-            # （JEP 404 在 JDK 24 才有），也没有 Compact Object Headers。
-            # 2026-11-10 的 v1.8.8 发布就栽在这里：上一版把 Windows 的 JDK 25 参数
-            # 一并传给了 Linux，AOT 训练直接 `Unknown -XX:ShenandoahGCMode option`。
-            gc: g1
-            compactHeaders: false
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -154,13 +145,14 @@ jobs:
       # JBR 只是**被打进产物**的运行时。两者不是二选一，别顺手删掉上面那个 step。
       - name: Cache JBR
         id: jbr-cache
+        if: matrix.platform == 'windows'
         uses: actions/cache@v4
         with:
           path: .jbr
           key: jbr-${{ env.JBR_VERSION }}-${{ matrix.platform }}-${{ matrix.jbrExt }}-${{ matrix.jbrSha }}
 
       - name: Fetch JBR (JetBrains Runtime)
-        if: steps.jbr-cache.outputs.cache-hit != 'true'
+        if: matrix.platform == 'windows' && steps.jbr-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -229,8 +221,9 @@ jobs:
             -Pcp.vpkPath="${{ github.workspace }}/.tools/vpk.exe" `
             -Papp.versionName="${{ needs.meta.outputs.version }}" `
             -Papp.releaseChannel="${{ needs.meta.outputs.channel }}" `
-            -Pcp.gc=${{ matrix.gc }} `
-            -Pcp.compactHeaders=${{ matrix.compactHeaders }} `
+            -Pcp.jdk25=true `
+            -Pcp.gc=shenandoah `
+            -Pcp.compactHeaders=true `
             --no-daemon
           ./packaging/jbr/generate-aot-cache.ps1 `
             -JavaExe "${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64/bin/java.exe" `
@@ -247,14 +240,17 @@ jobs:
           command -v xvfb-run >/dev/null 2>&1 || { sudo apt-get update -y && sudo apt-get install -y xvfb; }
           # Linux 包（deb/tar.gz）的 Gradle 任务会复用 createDistributable 产物，
           # 必须传入与最终打包完全相同的版本号与渠道属性，保证 ProGuard 产物 100% 匹配且后续不会因输入变化而重构。
+          # Linux 腿直接使用 setup-java 装好的 JDK 25（Zulu）：
+          # AOT 缓存必须由和产物完全相同的运行时生成，Windows 才用定制 JBR 25。
           ./gradlew :app:createDistributable \
-            -Pcp.jbrHome="${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64" \
+            -Pcp.jbrHome="$JAVA_HOME" \
             -Papp.versionName="${{ needs.meta.outputs.version }}" \
             -Papp.releaseChannel="${{ needs.meta.outputs.channel }}" \
-            -Pcp.gc=${{ matrix.gc }} \
-            -Pcp.compactHeaders=${{ matrix.compactHeaders }} \
+            -Pcp.jdk25=true \
+            -Pcp.gc=shenandoah \
+            -Pcp.compactHeaders=true \
             --no-daemon
-          CP_JBR_HOME="${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64" \
+          CP_JBR_HOME="$JAVA_HOME" \
             xvfb-run -a bash packaging/jbr/generate-aot-cache.sh \
             "${{ github.workspace }}/packaging/jbr/app-aot.aot" \
             "${{ needs.meta.outputs.version }}" \
@@ -275,13 +271,19 @@ jobs:
           # （构建照样"成功"，但 WindowDraggableArea 失去原生 WindowMove、贴边吸附全废），
           # vpkPath 解析不了则报「找不到 vpk」。GitHub 原生 runner 两种风格都接受，
           # 但混用是最隐蔽的坑：同一行里一个对一个错。
+          # Linux 腿用 setup-java 的 JDK 25（Zulu）；Windows 腿用定制 JBR 25。
+          jbr_home="${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64"
+          if [[ "${{ matrix.platform }}" == "linux" ]]; then
+            jbr_home="$JAVA_HOME"
+          fi
           ./gradlew ${{ matrix.gradleTasks }} --no-daemon \
-            -Pcp.jbrHome="${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64" \
+            -Pcp.jbrHome="$jbr_home" \
             -Pcp.vpkPath="${{ github.workspace }}/.tools/vpk.exe" \
             -Papp.versionName="${{ needs.meta.outputs.version }}" \
             -Papp.releaseChannel="${{ needs.meta.outputs.channel }}" \
-            -Pcp.gc=${{ matrix.gc }} \
-            -Pcp.compactHeaders=${{ matrix.compactHeaders }}
+            -Pcp.gc=shenandoah \
+            -Pcp.compactHeaders=true \
+            -Pcp.jdk25=true
       - name: Verify Windows AOT Cache Injection
         if: matrix.platform == 'windows'
         shell: pwsh
