@@ -6,6 +6,10 @@ build/
 .externalNativeBuild/
 /captures
 
+# 文档站构建产物（scripts/build-docs-site.py 输出）。源文档在 docs/，
+# 站点每次由 CI 重新生成，不入库。
+site/
+
 # Verification scratch dirs used to bypass a locked Gradle cache.
 # The tag suffix is per-session (see AGENTS.md §3): the Groovy init script is
 # <tag>.init.gradle, and it repoints buildDirectory at build-<tag>/ while
