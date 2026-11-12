@@ -652,7 +652,10 @@ private fun LazyListScope.playlistsSection(
                 }
             }
         }
-        else -> items(state.playlists) { playlist ->
+        else -> items(
+            items = state.playlists,
+            key = { playlist -> "playlist:${playlist.resourceId}:${playlist.id}" },
+        ) { playlist ->
             PlaylistItem(
                 playlist = playlist,
                 isOwner = isOwner(playlist),

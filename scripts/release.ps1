@@ -46,7 +46,13 @@ if (Test-Path $profPath) {
 } else {
     Write-Warning "Android Baseline Profile not found at $profPath. Consider running scripts/collect-baseline-profile.ps1 before release."
 }
-Write-Host "Pre-flight: Desktop packages will build GraalVM Native Image (G1GC) for Windows and JVM for Linux in CI." -ForegroundColor Gray
+Write-Host "Pre-flight: Windows uses Oracle GraalVM Native Image (Serial GC, 128 MiB max Java heap, CompactingOldGen); Linux packages remain JVM. PGO applies when its profile exists." -ForegroundColor Gray
+$pgoProfilePath = Join-Path $PSScriptRoot "..\app\graalvm\pgo\default.iprof"
+if (Test-Path $pgoProfilePath) {
+    Write-Host "Pre-flight: Windows PGO profile detected at $pgoProfilePath." -ForegroundColor Gray
+} else {
+    Write-Warning "Windows PGO profile is not trained yet. Run .\gradlew :app:runWithPgoInstrument on Windows with representative usage before the optimized release build."
+}
 
 # 5. Execute Gradle build
 # Do NOT pass app.versionCode by default: Gradle derives it from app.versionName

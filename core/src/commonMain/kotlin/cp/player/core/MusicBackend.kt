@@ -55,6 +55,7 @@ import cp.player.core.pluginrepo.createPluginRepositoryIO
 import cp.player.core.pluginrepo.currentPluginTarget
 import cp.player.core.pluginrepo.compatibility
 import cp.player.core.util.PlatformContext
+import cp.player.core.util.PlatformSupport
 import cp.player.core.util.SettingsStorage
 import cp.player.core.util.defaultSettingsStorage
 import kotlin.coroutines.ContinuationInterceptor
@@ -470,10 +471,14 @@ class MusicBackend private constructor(
     /**
      * 歌词源插件服务（前端「设置 → 歌词源插件」管理页使用）。
      *
-     * 惰性创建；插件目录落在 [PlatformSupport.dataDir] 下的 `lyrics-plugins/`。
+     * 惰性创建；插件目录落在 [PlatformSupport.dataDir] 下的 `lyrics-plugins/`，
+     * 脚本 key/value 缓存单独落在 `lyrics-plugin-cache/`，避免无目录时回退成无界堆内缓存。
      */
     val lyricsPlugins: cp.player.core.lyricsplugin.LyricsPluginService by lazy {
-        cp.player.core.lyricsplugin.createLyricsPluginService(context)
+        cp.player.core.lyricsplugin.createLyricsPluginService(
+            context = context,
+            cacheDir = PlatformSupport.dataDir(context) + "/lyrics-plugin-cache",
+        )
     }
 
     private val pluginRepositoriesLazy = lazy {

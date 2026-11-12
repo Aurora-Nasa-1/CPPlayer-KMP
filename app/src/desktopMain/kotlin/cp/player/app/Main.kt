@@ -22,7 +22,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
-import androidx.compose.ui.window.WindowDecoration
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowScope
@@ -262,17 +261,14 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
             alwaysOnTop = isMiniMode && isMiniPinned,
             resizable = !isMiniMode,
             onKeyEvent = ::handleDesktopShortcut,
-            // 两条装饰路线的选择，见上方 main() 的 KDoc。
-            // 窗口 decoration 在 AWT 中不可在窗口 displayable 后动态变更（否则抛 IllegalComponentStateException: The frame is displayable），
-            // 因此必须使用固定配置：JBR 路走 SystemDefault，无边框自绘路走 Undecorated(6.dp)。
-            // 手机预览模式统一通过 MobilePreviewTitleBar / JBR 自定义高度完成控制与拖动。
-            decoration = if (useJbrChrome) {
-                WindowDecoration.SystemDefault
-            } else {
-                // 无边框：系统标题栏整体交给 DesktopTitleBar 自绘。
-                WindowDecoration.Undecorated(6.dp)
-            },
+            // Nucleus DecoratedWindow 暴露 undecorated 布尔值；JBR 路保留系统装饰，
+            // 其它路线由 DesktopTitleBar 自绘标题栏，手机预览模式同样走自定义高度/拖动。
+            undecorated = !useJbrChrome,
         ) {
+            val awtWindow = checkNotNull(nucleusWindow.unsafe.awtWindow) {
+                "CPPlayer desktop integrations require an AWT window"
+            }
+            val window = awtWindow
             // JBR 自定义标题栏的安装状态。null = 尚未装上 / 不走 JBR 路；
             // DesktopTitleBar 据此在「原生窗口钮」与「自绘窗口钮」两套 chrome 间切换。
             var jbrChrome by remember { mutableStateOf<JbrWindowChrome.Controller?>(null) }
@@ -500,7 +496,9 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
                 DesktopTray.onExit = { exitApplication() }
             }
 
-            val windowScope: WindowScope = this
+            val windowScope: WindowScope = object : WindowScope {
+                override val window: java.awt.Window = awtWindow
+            }
             if (isMiniMode) {
                 AppTheme {
                     DesktopMiniPlayer(
@@ -682,7 +680,7 @@ private fun loadWindowSize(): DpSize {
     if (parts.size != 2) return DefaultWindowSize
     val width = parts[0].toFloatOrNull() ?: return DefaultWindowSize
     val height = parts[1].toFloatOrNull() ?: return DefaultWindowSize
-    if (width < MinWindowSize.width || height < MinWindowSize.height) return DefaultWindowSize
+    if (width < MinWindowDpSize.width.value || height < MinWindowDpSize.height.value) return DefaultWindowSize
     // ⚠️ 上限取**工作区**，不是 `Toolkit.screenSize`（整屏）。
     // 存过一个「整屏尺寸」的窗口会在下次启动时直接铺满整个输出 —— 而无边框窗口铺满输出会被
     // Windows 提升为全屏呈现（Fullscreen Optimizations），在 HDR 显示器上可能连带切显示模式，

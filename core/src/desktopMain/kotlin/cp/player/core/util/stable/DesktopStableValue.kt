@@ -230,7 +230,7 @@ internal class NativeStableValue<T>(
 
 /**
  * 在低于 Java 25 或未开启预览特性时的平滑回退实现。
- * 基于无锁 CAS 与快速 volatile 读取，保证严格的并发单次赋值与可见性。
+ * 基于原子快速读取与单次初始化锁，保证并发访问时工厂函数最多执行一次并安全发布。
  */
 internal class FallbackStableValue<T>(
     initialValue: T? = null,
@@ -266,14 +266,21 @@ internal class FallbackStableValue<T>(
             return if (current === NULL_SENTINEL) null as T else current as T
         }
 
-        val computed = supplier()
-        val wrapped = computed ?: NULL_SENTINEL
-        if (state.compareAndSet(UNSET, wrapped)) {
-            return computed
+        return synchronized(state) {
+            current = state.get()
+            if (current !== UNSET) {
+                if (current === NULL_SENTINEL) null as T else current as T
+            } else {
+                val computed = supplier()
+                val wrapped = computed ?: NULL_SENTINEL
+                if (state.compareAndSet(UNSET, wrapped)) {
+                    computed
+                } else {
+                    current = state.get()
+                    if (current === NULL_SENTINEL) null as T else current as T
+                }
+            }
         }
-
-        current = state.get()
-        return if (current === NULL_SENTINEL) null as T else current as T
     }
 
     override fun setOrThrow(value: T) {

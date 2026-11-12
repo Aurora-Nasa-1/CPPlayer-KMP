@@ -7,7 +7,8 @@ import org.gradle.api.file.RegularFile
 import org.gradle.jvm.toolchain.JavaInstallationMetadata
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.jvm.toolchain.JavaLauncher
-import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.desktop.application.dsl.NativeImageGarbageCollector
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -414,7 +415,7 @@ compose.resources {
 //    - JDK 25 下正式晋升为 Product 特性（非默认开启，需显式传入 -XX:+UseCompactObjectHeaders；Gradle 构建自动嗅探运行时并在支持时注入，无需 Experimental 标志）。
 // 4. 双轨执行架构 (Dual-Execution Strategy):
 //    - 本地开发/调试测试：采用标准 JVM（JetBrains Runtime / OpenJDK），支持快速增量编译与热重载；
-//    - Windows 生产发布：采用最新高版本 GraalVM Native Image 与 G1GC（--gc=G1），实现零 JIT/零解释器瞬时冷启动与极低内存驻留；
+//    - Windows 生产发布：采用 GraalVM Native Image 与跨平台 Serial GC，生成无需 JIT 的独立原生机器码；
 //    - Linux 生产发布：保持高兼容性与高稳定性标准 JVM（DEB / Tar.gz 交付）。
 // ---------------------------------------------------------------------------
 val isJdk25OrNewer: Boolean = runCatching {
@@ -508,7 +509,7 @@ val desktopCommonJvmArgs = (listOf(
     "-Dcp.player.gitSha=$gitSha",
 ) + previewJvmArgs + gcJvmArgs + compactHeadersArgs).distinct()
 
-compose.desktop {
+nucleus {
     application {
         mainClass = "cp.player.app.MainKt"
         logger.lifecycle("CPPlayer: 桌面端 JVM 调优模式: GC=$chosenGc, CompactHeaders=$enableCompactHeaders, JDK25+=$isJdk25OrNewer")
@@ -660,27 +661,45 @@ compose.desktop {
 // 路线划分：
 // 1. 本地开发与测试：走标准 JVM（支持 desktopRun / desktopRunMobile / desktopTest，快速迭代与热重载）
 // 2. 生产发版：
-//    - Windows：采用最新高性能 GraalVM Native Image 与 G1GC 编译为原生机器码（最佳冷启动、最佳常驻内存与流畅度）
-//    - Linux：保持为通用 JVM 产物（deb 与 tar.gz 分发）
+//    - Windows：采用 Oracle GraalVM Native Image 与 Serial GC 编译为原生机器码；
+//    - Linux：保持为通用 JVM 产物（deb 与 tar.gz 分发），不注册 Native Image 构建。
 // ---------------------------------------------------------------------------
 nucleus {
     application {
         mainClass = "cp.player.app.MainKt"
         graalvm {
-            isEnabled.set(true)
+            isEnabled.set(System.getProperty("os.name").startsWith("Windows", ignoreCase = true))
             imageName.set(cpPackageName)
+            toolchain {
+                distribution.set(dev.nucleusframework.desktop.application.dsl.GraalvmDistribution.ORACLE)
+                version.set("25.3.4.1")
+            }
+            // 无应用 PGO profile 时使用 Oracle 的 ML Profile Inference；应用 PGO 时 Native Image 会自动停用它。
+            mlProfileInference.set(true)
+            // 这是成品运行时 Java heap 上限（Nucleus 映射为 Native Image runtime 参数），不限制构建器 -Xmx。
+            maxHeapSize.set("128m")
+            val pgoProfile = layout.projectDirectory.file("graalvm/pgo/default.iprof")
+            pgo {
+                // 保留 runWithPgoInstrument 训练任务；Nucleus 仅在 profile 文件存在时给正式构建传 --pgo。
+                enabled.set(true)
+                profile.set(pgoProfile)
+            }
+            // Windows Native Image 使用 Serial；Windows 不支持 G1 Native Image collector。
+            garbageCollector.set(NativeImageGarbageCollector.SERIAL)
+            // Oracle-only 最高优化级别；25.3.4.1 对符合条件的数组算术循环默认执行 SIMD 向量化。
+            optimization.set(dev.nucleusframework.desktop.application.dsl.NativeImageOptimization.LEVEL_3)
             buildArgs.addAll(
-                // 启用 GraalVM G1 垃圾收集器：并发分代回收，极低停顿，适配 120/144Hz 高刷界面
-                "--gc=G1",
-                // 启用 -O3 最高优化级别，激活深度内联与向量化
-                "-O3",
                 "-H:+UnlockExperimentalVMOptions",
+                "-H:+CompactingOldGen",
+                // Oracle Native Image 默认启用 32 位压缩引用；显式固定以保持运行时对象引用占用。
+                "-H:+UseCompressedReferences",
                 // 引入所有字符集编码支持
                 "-H:+AddAllCharsets",
-                // 构建期类元数据预初始化：跳过全部运行时类加载开销，达到极致初始化速度与更低内存占用
-                "--initialize-at-build-time",
-                // ⚠️ 运行时必须延迟初始化的动态/原生状态类（避免烘焙构建期静态状态/OS句柄/协程单例导致崩溃）
-                "--initialize-at-run-time=kotlin.coroutines.intrinsics.CoroutineSingletons,kotlinx.coroutines.internal.FastServiceLoader,kotlinx.coroutines.EventLoopImplBase,io.ktor.utils.io.jvm.javaio.Pollers,cp.player.core.playback.flick.FlickNativeEngine,cp.player.core.playback.DesktopHiResEngine,cp.player.core.provider.typed.QuickJsWarmup,cp.player.app.platform.DesktopTray,cp.player.app.platform.DesktopWindowPlacement",
+                // 不强制第三方 GUI/native 类在构建期初始化；使用 GraalVM 对安全类的默认判定，
+                // 避免把宿主机 Skia、Win32、X11、字体或 AWT 状态写入镜像。
+                // Native state/OS handles stay runtime-initialized. Skiko/Skia must not load
+                // during analysis; Win32 JNA and Windows AWT backends need target OS libraries.
+                "--initialize-at-run-time=kotlin.coroutines.intrinsics.CoroutineSingletons,kotlinx.coroutines.internal.FastServiceLoader,kotlinx.coroutines.EventLoopImplBase,io.ktor.utils.io.jvm.javaio.Pollers,cp.player.core.playback.flick.FlickNativeEngine,cp.player.core.playback.DesktopHiResEngine,cp.player.core.provider.typed.QuickJsWarmup,cp.player.app.platform.DesktopTray,cp.player.app.platform.DesktopWindowPlacement,org.jetbrains.skiko,org.jetbrains.skia,org.jetbrains.skia.impl,com.sun.jna.platform.win32,sun.awt.windows,sun.font",
                 // 确保生成 100% 独立原生机器码产物，禁止任何回落 JVM 依赖
                 "--no-fallback",
                 "-H:+ReportExceptionStackTraces",
@@ -695,7 +714,7 @@ nucleus {
 // 默认情况下 jlink 不开启压缩与字节码符号剥离，导致 lib/modules 达 55.6MB。
 // 启用 --compress=zip-6、--strip-debug、--no-header-files、--no-man-pages
 // 可直接把 modules 压至 25.3MB（骤减 54.5%），分发包全目录仅 57.3MB。
-tasks.withType<org.jetbrains.compose.desktop.application.tasks.AbstractJLinkTask>().configureEach {
+tasks.withType<dev.nucleusframework.desktop.application.tasks.AbstractJLinkTask>().configureEach {
     freeArgs.addAll(
         "--compress=zip-6",
         "--strip-debug",
@@ -897,7 +916,7 @@ val packageWindowsVelopack = tasks.register<Exec>("packageWindowsVelopack") {
         check(icoFile.isFile) { "缺图标文件：${icoFile.absolutePath}（先跑 scripts/gen_app_icon.py）" }
         val appDir = appImageDir.get().asFile
 
-        // 生产发版（Windows）：优先采用 GraalVM Native Image G1GC 编译产出的独立原生可执行文件
+        // 生产发版（Windows）：优先采用 GraalVM Native Image 编译产出的独立原生可执行文件
         val nativeCandidates = listOf(
             layout.buildDirectory.file("nucleus/binaries/main/$cpPackageName.exe").get().asFile,
             layout.buildDirectory.file("compose/tmp/main/graalvm/output/$cpPackageName.exe").get().asFile,
@@ -908,7 +927,7 @@ val packageWindowsVelopack = tasks.register<Exec>("packageWindowsVelopack") {
             appDir.mkdirs()
             val destExe = appDir.resolve("$cpPackageName.exe")
             foundNativeExe.copyTo(destExe, overwrite = true)
-            logger.lifecycle("已装配 GraalVM Native Image (G1GC) 原生可执行文件: ${foundNativeExe.absolutePath} -> ${destExe.absolutePath}")
+            logger.lifecycle("已装配 GraalVM Native Image 原生可执行文件: ${foundNativeExe.absolutePath} -> ${destExe.absolutePath}")
         }
 
         check(appDir.resolve("$cpPackageName.exe").isFile) {

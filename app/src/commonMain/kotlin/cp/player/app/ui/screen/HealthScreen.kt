@@ -243,14 +243,35 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTabContent(
 }
 
 // internal：离屏渲染预览测试（desktopTest）直接组合这几张卡片核对「不截断」。
+private data class GlobalHealthSummary(
+    val totalSuccess: Int,
+    val totalUnsupported: Int,
+    val avgResponse: Long,
+)
+
 @Composable
 internal fun GlobalHealthCard(records: List<ApiCallRecord>, overall: HealthLevel) {
     val totalCalls = records.size
-    val totalSuccess = records.count { it.success }
+    val summary = remember(records) {
+        var totalSuccess = 0
+        var totalUnsupported = 0
+        var totalDuration = 0L
+        records.forEach { record ->
+            if (record.success) totalSuccess++
+            if (record.level == HealthLevel.WARNING) totalUnsupported++
+            totalDuration += record.durationMs
+        }
+        GlobalHealthSummary(
+            totalSuccess = totalSuccess,
+            totalUnsupported = totalUnsupported,
+            avgResponse = if (totalCalls > 0) totalDuration / totalCalls else 0L,
+        )
+    }
+    val totalSuccess = summary.totalSuccess
     val totalFail = totalCalls - totalSuccess
-    val totalUnsupported = records.count { it.level == HealthLevel.WARNING }
+    val totalUnsupported = summary.totalUnsupported
     val globalSuccessRate = if (totalCalls > 0) totalSuccess * 100f / totalCalls else 100f
-    val avgResponse = if (totalCalls > 0) records.sumOf { it.durationMs } / totalCalls else 0L
+    val avgResponse = summary.avgResponse
 
     val accentColor = when (overall) {
         HealthLevel.OK -> Color(0xFF4CAF50)
@@ -873,5 +894,4 @@ private fun androidx.compose.foundation.lazy.LazyListScope.statusTabContent() {
 }
 
 // ======================== 辅助函数 ========================
-
 

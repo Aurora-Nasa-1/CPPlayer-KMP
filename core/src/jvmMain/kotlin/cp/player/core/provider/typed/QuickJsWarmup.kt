@@ -2,6 +2,7 @@ package cp.player.core.provider.typed
 
 import com.dokar.quickjs.QuickJs
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 
 /**
  * QuickJS 运行时异步预热器。
@@ -21,7 +22,7 @@ object QuickJsWarmup {
                 if (isWarmed) return@runCatching
                 val qjs = QuickJs.create(Dispatchers.Default)
                 try {
-                    qjs.evaluate<Int>("1 + 1")
+                    runBlocking { qjs.evaluate<Int>("1 + 1") }
                 } finally {
                     qjs.close()
                 }
