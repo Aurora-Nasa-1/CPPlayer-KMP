@@ -33,9 +33,8 @@ import kotlin.system.exitProcess
  * 应用自己按需创建，快捷方式与卸载项都归 Velopack 管。所以唯一正确的实现就是
  * **立刻以 0 退出**（非 0 会被当成失败）。
  *
- * ⚠️ **判据必须放在 `main()` 的第一行，不能放进 [runDesktopApp]**：`main()` 在调用
- * `runDesktopApp` 之前就已经 `DesktopSplashWindow.show(...)` 了，而 AWT/Swing 建窗在
- * 部分机器上本身就要一两秒 —— 钩子路径必须连启动画面都不进。
+ * ⚠️ **判据必须放在 `main()` 的第一行，不能放进 [runDesktopApp]**：`main()` 必须在任何
+ * 框架初始化或建窗前执行钩子检测，确保 Velopack 安装/升级过程秒级响应。
  *
  * ⚠️ 也**不要**改成 `return`：`main` 返回只结束当前线程，Swing EDT / 托盘 / 音频这些
  * 非守护线程还在（钩子路径走不到那儿，但将来有人把这段挪位置就会踩）。

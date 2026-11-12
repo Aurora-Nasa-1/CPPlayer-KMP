@@ -1,17 +1,8 @@
 package cp.player.app
 
-import cp.player.app.platform.DesktopSplashWindow
-
-/**
- * 手机版界面预览的独立启动入口。
- *
- * 开发者可直接在 IDE (IntelliJ IDEA / Android Studio) 中右键本文件或点击 main 函数旁的
- * 运行按钮（Run 'MainMobileKt'）直接以手机版尺寸与布局运行桌面端。
- */
 fun main(args: Array<String>) {
     // 与 Main.kt 同一条纪律：钩子路径不建窗、不初始化，立刻以 0 退出。见 VelopackHooks.kt。
     exitIfVelopackHook(args)
-    DesktopSplashWindow.show(isMobilePreview = true)
     System.setProperty("cp.player.mobilePreview", "true")
     if (System.getProperty("cp.player.releaseChannel").isNullOrBlank()) {
         System.setProperty("cp.player.releaseChannel", "debug")

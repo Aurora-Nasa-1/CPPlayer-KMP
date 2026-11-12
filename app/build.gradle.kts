@@ -16,6 +16,7 @@ plugins {
     alias(libs.plugins.compose)
     alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.nucleus)
 }
 
 // 版本元数据只有一处实现：根 build.gradle.kts。这里只做取值，**不要再自己算**。
@@ -375,6 +376,9 @@ kotlin {
         val desktopMain by getting {
             dependencies {
                 implementation(compose.desktop.currentOs)
+                implementation(libs.nucleus.application)
+                implementation(libs.nucleus.decorated.window.tao)
+                implementation(libs.nucleus.graalvm.runtime)
                 implementation(libs.kotlinx.coroutines.swing)
                 implementation(libs.ktor.client.okhttp)
                 implementation(libs.sentry.core)
@@ -408,10 +412,10 @@ compose.resources {
 //    - 将 64 位 HotSpot 对象头压缩至 8 字节（节省 33%~50% 对象头空间）；
 //    - 针对海量 SongItem / LyricLine / State 对象，全应用堆物理占用立减 15%~25%，大幅提升 CPU L1/L2 缓存行命中率；
 //    - JDK 25 下正式晋升为 Product 特性（非默认开启，需显式传入 -XX:+UseCompactObjectHeaders；Gradle 构建自动嗅探运行时并在支持时注入，无需 Experimental 标志）。
-// 4. Ahead-of-Time Class Loading & Linking (JEP 483) 与 AOT Ergonomics (JEP 514):
-//    - 彻底超越传统 CDS/AppCDS，在构建/预热阶段完成全部类元数据预加载、预校验与符号链接（Preparation & Linking）；
-//    - 启动时通过 -XX:AOTCache mmap 直装内存，跳过全部类加载与校验开销，桌面端冷启动直冲 <800ms；
-//    - 借助 JDK 25 JEP 514 命令行工效学（-XX:AOTCacheOutput），单次预热即可自动生成，免除多步配置烦恼。
+// 4. 双轨执行架构 (Dual-Execution Strategy):
+//    - 本地开发/调试测试：采用标准 JVM（JetBrains Runtime / OpenJDK），支持快速增量编译与热重载；
+//    - Windows 生产发布：采用最新高版本 GraalVM Native Image 与 G1GC（--gc=G1），实现零 JIT/零解释器瞬时冷启动与极低内存驻留；
+//    - Linux 生产发布：保持高兼容性与高稳定性标准 JVM（DEB / Tar.gz 交付）。
 // ---------------------------------------------------------------------------
 val isJdk25OrNewer: Boolean = runCatching {
     val targetReleaseFile = resolvedJbrHome?.resolve("release")
@@ -492,42 +496,12 @@ val compactHeadersArgs: List<String> = if (enableCompactHeaders) {
     emptyList()
 }
 
-// ---------------------------------------------------------------------------
-// AOT Cache (Ahead-of-Time Class Loading & Linking - JEP 483 / JEP 514) 优化支持
-//
-// 全面替代传统 AppCDS：在预热阶段完成全部类元数据预加载、预校验与符号链接（Preparation & Linking），
-// 启动时 HotSpot 经操作系统 mmap 直装内存，跳过全部类加载与校验损耗，冷启动耗时大幅压低至 <800ms。
-//
-// ⚠️ 类路径隔离纪律：
-// 1. 生产打包镜像（createDistributable / packageWindowsVelopack）：类路径为 $APPDIR/*（即 app/*.jar）。
-//    其 AOT 归档固定存放在 packaging/jbr/app-aot.aot，通过 JEP 514 / generate-aot-cache 脚本基于 app/ 目录生成。
-// 2. 本地开发任务（desktopRun / runMobile 等）：类路径为 Gradle 构建 classes + ~/.gradle 缓存 jar。
-//    绝不能在 desktopRun 上盲目注入 packaging/jbr/app-aot.aot（否则必定因类路径不一致报 shared class paths mismatch）；
-//    本地开发如需 AOT 加速，使用 -Pcp.aotRecord=true 将其单步录制到 build/aot/desktop-dev.aot。
-// ---------------------------------------------------------------------------
-val productionAotArchiveFile: File = rootProject.layout.projectDirectory.file("packaging/jbr/app-aot.aot").asFile
-val devAotArchiveFile: File = layout.buildDirectory.file("aot/desktop-dev.aot").get().asFile
-
-val aotCacheProp = (findProperty("cp.aotCache") ?: rootProject.findProperty("cp.aotCache")
-    ?: findProperty("cp.aot") ?: rootProject.findProperty("cp.aot")) as String?
-val explicitAotFile: File? = aotCacheProp?.let { File(it) }
-
-val aotOutputProp = (findProperty("cp.aotOutput") ?: rootProject.findProperty("cp.aotOutput")) as String?
-val aotRecordRequested: Boolean = ((findProperty("cp.aotRecord") ?: rootProject.findProperty("cp.aotRecord")) as String?) == "true" ||
-    aotOutputProp != null
-
-val legacyCdsRequested: Boolean = ((rootProject.findProperty("cp.cds") ?: findProperty("cp.cds")) as String?) == "true"
-if (legacyCdsRequested) {
-    logger.lifecycle("CPPlayer: 检测到 -Pcp.cds=true，AppCDS 已由 Project Leyden AOT Cache (JEP 483 / 514) 完全替代，已自动切换为 AOT Cache 加速。")
-}
-
 val previewJvmArgs: List<String> = if (isJdk25OrNewer) listOf("--enable-preview") else emptyList()
 
 val desktopCommonJvmArgs = (listOf(
     "--enable-native-access=ALL-UNNAMED",
     "-Xms64m",
     "-Xmx256m",
-    "-Dsun.awt.windows.useCommonItemDialog=true",
     "-Dcp.player.versionName=$appVersionName",
     "-Dcp.player.versionCode=$appVersionCode",
     "-Dcp.player.releaseChannel=$appReleaseChannel",
@@ -537,15 +511,7 @@ val desktopCommonJvmArgs = (listOf(
 compose.desktop {
     application {
         mainClass = "cp.player.app.MainKt"
-
-        val aotStatus = when {
-            aotRecordRequested -> "AOTCacheOutput (Record)"
-            explicitAotFile?.isFile == true -> "AOTCache (${explicitAotFile.name})"
-            devAotArchiveFile.isFile -> "AOTCache (Dev: ${devAotArchiveFile.name})"
-            productionAotArchiveFile.isFile -> "AOTCache (Production: ${productionAotArchiveFile.name})"
-            else -> "None"
-        }
-        logger.lifecycle("CPPlayer: 桌面端 JVM 调优模式: GC=$chosenGc, CompactHeaders=$enableCompactHeaders, Acceleration=$aotStatus, JDK25+=$isJdk25OrNewer")
+        logger.lifecycle("CPPlayer: 桌面端 JVM 调优模式: GC=$chosenGc, CompactHeaders=$enableCompactHeaders, JDK25+=$isJdk25OrNewer")
 
         // 换 JBR：让 jpackage 用 JetBrains Runtime 做运行时镜像。
         //
@@ -602,12 +568,6 @@ compose.desktop {
         //   -XX:+UseStringDeduplication —— G1 免费午餐：歌单里海量重复字符串
         //     （歌手名 / 来源 / URL 前缀）共享同一份 char[]，省堆且几乎零成本。
         jvmArgs += desktopCommonJvmArgs
-        buildTypes.release.proguard {
-            isEnabled.set(true)
-            configurationFiles.from(project.file("desktop-proguard-rules.pro"))
-            optimize.set(true)
-            obfuscate.set(false)
-        }
         nativeDistributions {
             // ⚠️ 故意没有 TargetFormat.Msi：Windows 安装包改由 Velopack 从 app-image 打
             // （见文件末尾的 `packageWindowsVelopack`）。jpackage 的 MSI 是内置 WiX 模板
@@ -696,6 +656,41 @@ compose.desktop {
 }
 
 // ---------------------------------------------------------------------------
+// Nucleus 2.x & GraalVM Native Image 构建与运行配置
+// 路线划分：
+// 1. 本地开发与测试：走标准 JVM（支持 desktopRun / desktopRunMobile / desktopTest，快速迭代与热重载）
+// 2. 生产发版：
+//    - Windows：采用最新高性能 GraalVM Native Image 与 G1GC 编译为原生机器码（最佳冷启动、最佳常驻内存与流畅度）
+//    - Linux：保持为通用 JVM 产物（deb 与 tar.gz 分发）
+// ---------------------------------------------------------------------------
+nucleus {
+    application {
+        mainClass = "cp.player.app.MainKt"
+        graalvm {
+            isEnabled.set(true)
+            imageName.set(cpPackageName)
+            buildArgs.addAll(
+                // 启用 GraalVM G1 垃圾收集器：并发分代回收，极低停顿，适配 120/144Hz 高刷界面
+                "--gc=G1",
+                // 启用 -O3 最高优化级别，激活深度内联与向量化
+                "-O3",
+                "-H:+UnlockExperimentalVMOptions",
+                // 引入所有字符集编码支持
+                "-H:+AddAllCharsets",
+                // 构建期类元数据预初始化：跳过全部运行时类加载开销，达到极致初始化速度与更低内存占用
+                "--initialize-at-build-time",
+                // ⚠️ 运行时必须延迟初始化的动态/原生状态类（避免烘焙构建期静态状态/OS句柄/协程单例导致崩溃）
+                "--initialize-at-run-time=kotlin.coroutines.intrinsics.CoroutineSingletons,kotlinx.coroutines.internal.FastServiceLoader,kotlinx.coroutines.EventLoopImplBase,io.ktor.utils.io.jvm.javaio.Pollers,cp.player.core.playback.flick.FlickNativeEngine,cp.player.core.playback.DesktopHiResEngine,cp.player.core.provider.typed.QuickJsWarmup,cp.player.app.platform.DesktopTray,cp.player.app.platform.DesktopWindowPlacement",
+                // 确保生成 100% 独立原生机器码产物，禁止任何回落 JVM 依赖
+                "--no-fallback",
+                "-H:+ReportExceptionStackTraces",
+                "--enable-native-access=ALL-UNNAMED",
+            )
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 运行时镜像深度压缩与符号裁剪（jlink 优化）：
 // 默认情况下 jlink 不开启压缩与字节码符号剥离，导致 lib/modules 达 55.6MB。
 // 启用 --compress=zip-6、--strip-debug、--no-header-files、--no-man-pages
@@ -763,29 +758,6 @@ val packageLinuxTarGz = tasks.register<Tar>("packageLinuxTarGz") {
         check(appDir.resolve("bin").isDirectory && appDir.resolve("lib/runtime").isDirectory) {
             "createDistributable 产物布局不符合预期（缺 bin/ 或 lib/runtime/）：${appDir.absolutePath}\n" +
                 "若 compose 插件改了输出目录，请按本任务上方注释里的出处同步更新路径。"
-        }
-        val targetAot = explicitAotFile ?: productionAotArchiveFile
-        if (targetAot.isFile) {
-            val linuxAppDir = appDir.resolve("lib/app")
-            if (linuxAppDir.isDirectory) {
-                val linuxDest = linuxAppDir.resolve(targetAot.name)
-                targetAot.copyTo(linuxDest, overwrite = true)
-                val cfgFile = linuxAppDir.resolve("$cpPackageName.cfg")
-                if (cfgFile.isFile) {
-                    val text = cfgFile.readText()
-                    val aotOption = "java-options=-XX:AOTCache=\$APPDIR/${targetAot.name}"
-                    val safeReplacement = Regex.escapeReplacement(aotOption)
-                    val updated = if (text.contains("-XX:AOTCache=")) {
-                        text.replace(Regex("java-options=-XX:AOTCache=[^\r\n]+"), safeReplacement)
-                    } else if (text.contains("[JavaOptions]")) {
-                        text.replace("[JavaOptions]", "[JavaOptions]\n$aotOption")
-                    } else {
-                        "$text\n\n[JavaOptions]\n$aotOption\n"
-                    }
-                    cfgFile.writeText(updated)
-                }
-                logger.lifecycle("已注入 AOT Cache 归档至 Linux 安装镜像: ${linuxDest.name}")
-            }
         }
 
         // 打包前将预编译原生动态库（如 libsentry.so、librust_lib_flick_player.so）注入到 Linux app-image
@@ -863,7 +835,12 @@ val packageWindowsVelopack = tasks.register<Exec>("packageWindowsVelopack") {
         "把 createDistributable 的 Windows 应用镜像打成 Velopack 安装包（Setup.exe + 更新源）。仅限 Windows 宿主。"
     val onWindows = System.getProperty("os.name").lowercase().contains("win")
     if (onWindows) {
-        dependsOn(tasks.named("createDistributable"))
+        val nativeTask = tasks.findByName("packageGraalvmNative")
+        if (nativeTask != null) {
+            dependsOn(nativeTask)
+        } else {
+            dependsOn(tasks.named("createDistributable"))
+        }
     }
 
     val vpkOverride = (project.findProperty("cp.vpkPath") as String?)?.trim()?.ifBlank { null }
@@ -919,14 +896,23 @@ val packageWindowsVelopack = tasks.register<Exec>("packageWindowsVelopack") {
         }
         check(icoFile.isFile) { "缺图标文件：${icoFile.absolutePath}（先跑 scripts/gen_app_icon.py）" }
         val appDir = appImageDir.get().asFile
-        // Windows 的 app-image 布局是 `<name>/<name>.exe` + `<name>/app/`（jar 与 .cfg）
-        // + `<name>/runtime/`（jlink 裁剪的 JBR）——与 Linux 的 bin/ + lib/ 不同。
-        check(
-            appDir.resolve("$cpPackageName.exe").isFile &&
-                (appDir.resolve("app").isDirectory || appDir.resolve("runtime").isDirectory)
-        ) {
-            "createDistributable 产物布局不符合预期（缺 $cpPackageName.exe，或 app/ 与 runtime/ 都没有）：${appDir.absolutePath}\n" +
-                "若 compose 插件改了输出目录，请按本任务上方注释里的出处同步更新路径。"
+
+        // 生产发版（Windows）：优先采用 GraalVM Native Image G1GC 编译产出的独立原生可执行文件
+        val nativeCandidates = listOf(
+            layout.buildDirectory.file("nucleus/binaries/main/$cpPackageName.exe").get().asFile,
+            layout.buildDirectory.file("compose/tmp/main/graalvm/output/$cpPackageName.exe").get().asFile,
+            layout.buildDirectory.file("native/nativeCompile/$cpPackageName.exe").get().asFile,
+        )
+        val foundNativeExe = nativeCandidates.firstOrNull { it.isFile }
+        if (foundNativeExe != null) {
+            appDir.mkdirs()
+            val destExe = appDir.resolve("$cpPackageName.exe")
+            foundNativeExe.copyTo(destExe, overwrite = true)
+            logger.lifecycle("已装配 GraalVM Native Image (G1GC) 原生可执行文件: ${foundNativeExe.absolutePath} -> ${destExe.absolutePath}")
+        }
+
+        check(appDir.resolve("$cpPackageName.exe").isFile) {
+            "未找到主程序 $cpPackageName.exe（路径：${appDir.absolutePath}）。"
         }
 
         // 打包前将预编译原生动态库（如 rust_lib_flick_player.dll）注入到 app-image 多重关键位置（exe 同级、app 目录、JRE bin 目录）
@@ -945,30 +931,6 @@ val packageWindowsVelopack = tasks.register<Exec>("packageWindowsVelopack") {
                         logger.lifecycle("已注入原生动态库至安装镜像: ${f.name} -> ${dest.absolutePath}")
                     }
                 }
-            }
-        }
-
-        // 若存在预生成的 AOT Cache 归档（JEP 483 / 514），一并复制进应用镜像以供生产加速，并修复 CPPlayer.cfg 相对路径
-        val targetAot = explicitAotFile ?: productionAotArchiveFile
-        if (targetAot.isFile) {
-            val appDest = appDir.resolve("app/${targetAot.name}")
-            targetAot.copyTo(appDest, overwrite = true)
-            logger.lifecycle("已注入 AOT Cache 预链接归档至安装镜像: ${appDest.name}")
-
-            val cfgFile = appDir.resolve("app/$cpPackageName.cfg")
-            if (cfgFile.isFile) {
-                val text = cfgFile.readText()
-                val aotOption = "java-options=-XX:AOTCache=\$APPDIR\\${targetAot.name}"
-                val safeReplacement = Regex.escapeReplacement(aotOption)
-                val updated = if (text.contains("-XX:AOTCache=")) {
-                    text.replace(Regex("java-options=-XX:AOTCache=[^\r\n]+"), safeReplacement)
-                } else if (text.contains("[JavaOptions]")) {
-                    text.replace("[JavaOptions]", "[JavaOptions]\n$aotOption")
-                } else {
-                    "$text\n\n[JavaOptions]\n$aotOption\n"
-                }
-                cfgFile.writeText(updated)
-                logger.lifecycle("已更新 $cpPackageName.cfg 注入生产 AOTCache 参数: $aotOption")
             }
         }
 
@@ -1065,24 +1027,7 @@ afterEvaluate {
     )
     val configureRunTask: (JavaExec) -> Unit = { task ->
         val existing = task.jvmArgs ?: emptyList()
-        val runAotArgs = when {
-            aotRecordRequested -> {
-                val targetOutput = aotOutputProp?.let { File(it) } ?: devAotArchiveFile
-                targetOutput.parentFile?.mkdirs()
-                listOf(
-                    "-XX:AOTCacheOutput=${targetOutput.absolutePath}",
-                    "-Dcp.player.aotWarmup=true",
-                )
-            }
-            explicitAotFile != null && explicitAotFile.isFile -> {
-                listOf("-XX:AOTCache=${explicitAotFile.absolutePath}")
-            }
-            devAotArchiveFile.isFile -> {
-                listOf("-XX:AOTCache=${devAotArchiveFile.absolutePath}")
-            }
-            else -> emptyList()
-        }
-        val merged = (listOf("-XX:+UnlockExperimentalVMOptions") + existing + desktopCommonJvmArgs + runAotArgs)
+        val merged = (listOf("-XX:+UnlockExperimentalVMOptions") + existing + desktopCommonJvmArgs)
             .filterNot { it.startsWith("-Dcp.player.releaseChannel=") }
             .plus(listOf("-Dcp.player.releaseChannel=debug", "-Dcp.player.isDesktopRun=true"))
             .distinct()

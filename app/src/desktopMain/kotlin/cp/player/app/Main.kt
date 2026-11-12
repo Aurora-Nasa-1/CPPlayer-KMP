@@ -26,12 +26,12 @@ import androidx.compose.ui.window.WindowDecoration
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowScope
-import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import dev.nucleusframework.application.DecoratedWindow
+import dev.nucleusframework.application.nucleusApplication
 import cp.player.app.platform.DesktopBackDispatcher
 import cp.player.app.platform.DesktopCloseBehavior
 import cp.player.app.platform.DesktopRenderTuning
-import cp.player.app.platform.DesktopSplashWindow
 import cp.player.app.platform.DesktopTray
 import cp.player.app.platform.TrayMenuPopup
 import cp.player.app.platform.DesktopWindowPlacement
@@ -48,7 +48,6 @@ import cp.player.app.ui.component.TitleBarHeight
 import cp.player.app.ui.util.DesktopShell
 import cp.player.app.ui.util.next
 import cp.player.app.ui.util.popToMainShell
-import cp.player.app.warmup.AotWarmupRunner
 import cp.player.app.version.AppVersion
 import cp.player.core.MusicBackend
 import cp.player.core.music.TrackSummary
@@ -69,23 +68,19 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
-import java.awt.Dimension
-import java.awt.Toolkit
 
 /**
  * 窗口最小尺寸。
  *
  * 再窄下去 Expanded（≥840dp）布局会退化成手机布局，而且播放页的「封面 + 队列」双栏
  * 会被挤到互相压住——桌面窗口可以拖小，所以下限必须由程序兜住。
- * 注意单位是**物理像素**：高 DPI 缩放 150% 时约等于 600dp 逻辑宽度，仍能容纳紧凑布局。
  */
-private val MinWindowSize = Dimension(900, 640)
+private val MinWindowDpSize = DpSize(900.dp, 640.dp)
 
 /** 手机预览模式窗口最小尺寸：允许开发者自由拉伸测试小屏与紧凑布局。 */
-private val MobilePreviewMinWindowSize = Dimension(360, 520)
+private val MobilePreviewMinWindowDpSize = DpSize(360.dp, 520.dp)
 
 /** 迷你小窗模式的尺寸与下限 */
-private val MiniWindowSize = Dimension(380, 140)
 private val MiniWindowDpSize = DpSize(380.dp, 140.dp)
 
 /** 初始窗口尺寸：一次到位展开侧边栏 + 主内容，避免用户第一眼看到手机布局。 */
@@ -139,10 +134,6 @@ fun main(args: Array<String> = emptyArray()) {
     // 3. Provider 模块与后端曲库异步预热
     startBackendAsyncPrewarm()
 
-    DesktopSplashWindow.show(
-        isMobilePreview = args.contains("--mobile") || args.contains("-m") ||
-            System.getProperty("cp.player.mobilePreview") == "true"
-    )
     runDesktopApp(args)
 }
 
@@ -159,17 +150,9 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
         args.contains("--mobile") ||
         args.contains("-m")
 
-    DesktopSplashWindow.show(isMobilePreview = mobilePreview)
-    DesktopSplashWindow.updateStatus("正在优化渲染后端...")
-
     // 必须最先执行：Skiko 在创建渲染器时首次读取 skiko.* 属性并固化，
     // 晚于这一步再写就不生效了。见 DesktopRenderTuning 的时序约束说明。
     DesktopRenderTuning.applyBeforeSkikoInit()
-
-    // 启用 JBR 在 Windows 10/11 上的现代原生文件对话框（Common Item Dialog / IFileDialog）
-    if (System.getProperty("os.name").orEmpty().startsWith("Windows")) {
-        System.setProperty("sun.awt.windows.useCommonItemDialog", "true")
-    }
 
     // Coil 内存缓存上限必须在任何图片请求之前装上（SingletonImageLoader 首次
     // get() 后 factory 固化，晚了 setSafe 直接抛），见 DesktopImageCacheTuning 的说明。
@@ -202,41 +185,11 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
         }
     }
 
-    application {
-        DesktopSplashWindow.updateStatus("正在连接音频引擎与曲库...")
+    nucleusApplication {
         ensureBackendInitialized()
         // 放在其它初始化之后立字据：这样音频原生库加载失败之类的无关崩溃
         // 不会被算到渲染后端头上，导致下次启动无端回退用户的设置。
         DesktopRenderTuning.beginStartupProbe()
-
-        // AOT 预热自动退出机制：在预热执行期，等待首帧与基础组件初始化完毕后优雅退出应用，
-        // 触发 HotSpot JVM 的 shutdown hook 以生成最终的 .aot (JEP 514 / JEP 483) 归档。
-        val isAotWarmup = System.getProperty("cp.player.aotWarmup") == "true" ||
-            System.getProperty("cp.player.cdsDump") == "true"
-        if (isAotWarmup) {
-            // 启动看门狗守护线程：45 秒超时强制 halt，避免慢速 CI 环境假死并绝不阻塞构建
-            val aotTimeoutMs = System.getProperty("cp.player.aotTimeoutMs")?.toLongOrNull() ?: 45000L
-            kotlin.concurrent.thread(isDaemon = true, name = "AotWarmupGlobalWatchdog") {
-                Thread.sleep(aotTimeoutMs)
-                println("[CPPlayer] AOT 全局看门狗超时触发（${aotTimeoutMs}ms），强制退出 JVM...")
-                Runtime.getRuntime().halt(0)
-            }
-
-            LaunchedEffect(Unit) {
-                try {
-                    println("[CPPlayer] AOT 预热模式激活：正在执行全系统深度热点预热...")
-                    runCatching { AotWarmupRunner.runAllWarmups() }.onFailure {
-                        println("[CPPlayer] AOT 预热遇到非致命警告: ${it.message}")
-                    }
-                } finally {
-                    delay(300L)
-                    println("[CPPlayer] 预热完成，正在优雅关闭应用以触发 AOTCache 归档生成 (JEP 514)...")
-                    exitApplication()
-                    delay(300L)
-                    kotlin.system.exitProcess(0)
-                }
-            }
-        }
 
         val windowState = rememberWindowState(
             size = remember { if (mobilePreview) loadMobileWindowSize() else loadWindowSize() },
@@ -249,18 +202,13 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
         var showCloseDialog by remember { mutableStateOf(false) }
         var dontAskAgain by remember { mutableStateOf(false) }
         // 关窗回调定义在 `Window(...)` 的参数位置上，那里拿不到 `window`，所以先把窗口存起来。
-        val windowRef = remember { mutableStateOf<java.awt.Window?>(null) }
+        val windowRef = remember { mutableStateOf<Any?>(null) }
 
         // 接管托盘的右键。**必须尽早注入**：`DesktopTray` 一旦看到有接管方就不再装
         // AWT 原生菜单（两者并存会让右键同时弹两个菜单），所以这段放在
         // `Window(...)` 之前 —— 通知订阅那条路径可能在窗口建好之前就把图标装上了。
-        //
-        // ⚠️ 菜单是**纯 AWT**（`TrayMenuPopup`），不经过 Compose 的组合与渲染循环。
-        // 之前用 Compose 独立窗口做过一版：事件收到了、窗口也建了，但内容是空的
-        // （窗口不可见时 Compose 不跑渲染），而且任务栏还多一个图标。托盘菜单最典型的
-        // 使用场景恰恰是主窗口隐藏着 —— 它不能依赖任何一条会随窗口可见性停摆的链路。
         DisposableEffect(Unit) {
-            DesktopTray.onContextMenu = { x, y -> TrayMenuPopup.show(java.awt.Point(x, y)) }
+            DesktopTray.onContextMenu = { x, y -> runCatching { TrayMenuPopup.show(java.awt.Point(x, y)) } }
             DesktopTray.refreshMenu()
             onDispose {
                 DesktopTray.onContextMenu = null
@@ -271,9 +219,10 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
         // 把窗口捞回来。托盘左键、托盘菜单「显示主界面」、迷你模式切换都走这一条 ——
         // 三处各写一遍的话，「隐藏后唤不回」这类问题会变成要找三个地方才开始查。
         val showMainWindow: () -> Unit = {
+            windowState.isMinimized = false
             windowRef.value?.let { w ->
-                w.isVisible = true
-                w.toFront()
+                runCatching { w::class.java.getMethod("setVisible", Boolean::class.javaPrimitiveType).invoke(w, true) }
+                runCatching { w::class.java.getMethod("toFront").invoke(w) }
             }
         }
 
@@ -281,7 +230,10 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
         // 叫回来，应用就变成一个人间蒸发的僵尸进程（任务栏里也找不到，只能去杀进程）。
         val hideToTray: () -> Unit = {
             if (DesktopTray.ensureInstalled()) {
-                windowRef.value?.isVisible = false
+                windowState.isMinimized = true
+                windowRef.value?.let { w ->
+                    runCatching { w::class.java.getMethod("setVisible", Boolean::class.javaPrimitiveType).invoke(w, false) }
+                }
             } else {
                 println("[CPPlayer] 本机没有系统托盘，无法最小化到托盘，改为退出")
                 exitApplication()
@@ -292,9 +244,8 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
         val isMiniPinned = DesktopShell.isMiniPinned
         val isMobileMode = DesktopShell.isMobileMode
 
-        if (!isAotWarmup) {
-            Window(
-                onCloseRequest = {
+        DecoratedWindow(
+            onCloseRequest = {
                 when (closeBehavior) {
                     DesktopCloseBehavior.EXIT -> exitApplication()
                     DesktopCloseBehavior.TRAY -> hideToTray()
@@ -319,15 +270,6 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
                 WindowDecoration.SystemDefault
             } else {
                 // 无边框：系统标题栏整体交给 DesktopTitleBar 自绘。
-                //
-                // 拖拽缩放**不需要额外代码**：ComposeWindow 内置 UndecoratedWindowResizer，
-                // 在 isUndecorated() && isResizable() 时自动在窗口四周铺一圈透明抓手并切换光标。
-                // 注意 resizable 默认就是 true，别为了「无边框」把它关掉，否则缩放会一起消失。
-                //
-                // ⚠️ 抓手厚度**刻意指定**而不是用默认 8dp：那圈抓手压在窗口最外圈、会和
-                // 贴边的控件抢手势 —— 桌面滚条就贴在右边缘（`Alignment.CenterEnd`），
-                // 厚 8dp 时「拖滚条」会变成「缩放窗口」。这里压到 6dp，滚条那边还额外
-                // 内缩了同样距离（见 DesktopScrollbars.desktop.kt）。
                 WindowDecoration.Undecorated(6.dp)
             },
         ) {
@@ -337,9 +279,12 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
             // 最小尺寸只能命令式设置：WindowState 没有 minSize 字段。
             LaunchedEffect(Unit) {
                 AppModel.startCoverColorTracking()
-                window.minimumSize = if (mobilePreview) MobilePreviewMinWindowSize else MinWindowSize
-                // 主界面排版就绪，关闭启动提示窗口
-                DesktopSplashWindow.dismiss()
+                val minSize = if (mobilePreview) MobilePreviewMinWindowDpSize else MinWindowDpSize
+                runCatching {
+                    (window as? java.awt.Window)?.setMinimumSize(
+                        java.awt.Dimension(minSize.width.value.toInt(), minSize.height.value.toInt())
+                    )
+                }
             }
 
             // JBR 路：装自定义标题栏。窗口 peer 可能还没就绪，带重试；试满就放弃，
@@ -418,15 +363,23 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
                         frame.extendedState = java.awt.Frame.NORMAL
                     }
 
-                    window.minimumSize = MobilePreviewMinWindowSize
+                    runCatching {
+                        (window as? java.awt.Window)?.setMinimumSize(
+                            java.awt.Dimension(MobilePreviewMinWindowDpSize.width.value.toInt(), MobilePreviewMinWindowDpSize.height.value.toInt())
+                        )
+                    }
                     val targetSize = loadMobileWindowSize()
                     windowState.size = targetSize
-                    window.setSize(targetSize.width.value.toInt(), targetSize.height.value.toInt())
+                    runCatching { (window as? java.awt.Window)?.setSize(targetSize.width.value.toInt(), targetSize.height.value.toInt()) }
                 } else {
-                    window.minimumSize = MinWindowSize
+                    runCatching {
+                        (window as? java.awt.Window)?.setMinimumSize(
+                            java.awt.Dimension(MinWindowDpSize.width.value.toInt(), MinWindowDpSize.height.value.toInt())
+                        )
+                    }
                     previousNormalSize?.let { normalSize ->
                         windowState.size = normalSize
-                        window.setSize(normalSize.width.value.toInt(), normalSize.height.value.toInt())
+                        runCatching { (window as? java.awt.Window)?.setSize(normalSize.width.value.toInt(), normalSize.height.value.toInt()) }
                     }
                     previousPlacement?.let { placement ->
                         windowState.placement = placement
@@ -453,18 +406,29 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
                     }
 
                     // 2. 禁用窗口缩放（防止 Mini 模式下被系统或手势最大化/拉伸）
-                    frame?.isResizable = false
+                    runCatching { (window as? java.awt.Frame)?.isResizable = false }
 
                     // 3. 缩小窗口 minimumSize 并调整尺寸
-                    window.minimumSize = MiniWindowSize
+                    runCatching {
+                        (window as? java.awt.Window)?.setMinimumSize(
+                            java.awt.Dimension(MiniWindowDpSize.width.value.toInt(), MiniWindowDpSize.height.value.toInt())
+                        )
+                    }
                     windowState.size = MiniWindowDpSize
-                    window.setSize(MiniWindowSize.width, MiniWindowSize.height)
+                    runCatching {
+                        (window as? java.awt.Window)?.setSize(MiniWindowDpSize.width.value.toInt(), MiniWindowDpSize.height.value.toInt())
+                    }
                 } else {
-                    frame?.isResizable = true
-                    window.minimumSize = if (DesktopShell.isMobileMode) MobilePreviewMinWindowSize else MinWindowSize
+                    runCatching { (window as? java.awt.Frame)?.isResizable = true }
+                    val minSize = if (DesktopShell.isMobileMode) MobilePreviewMinWindowDpSize else MinWindowDpSize
+                    runCatching {
+                        (window as? java.awt.Window)?.setMinimumSize(
+                            java.awt.Dimension(minSize.width.value.toInt(), minSize.height.value.toInt())
+                        )
+                    }
                     previousNormalSize?.let { normalSize ->
                         windowState.size = normalSize
-                        window.setSize(normalSize.width.value.toInt(), normalSize.height.value.toInt())
+                        runCatching { (window as? java.awt.Window)?.setSize(normalSize.width.value.toInt(), normalSize.height.value.toInt()) }
                     }
                     previousPlacement?.let { placement ->
                         windowState.placement = placement
@@ -476,7 +440,7 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
             }
 
             LaunchedEffect(isMiniMode, isMiniPinned) {
-                window.isAlwaysOnTop = isMiniMode && isMiniPinned
+                runCatching { (window as? java.awt.Window)?.isAlwaysOnTop = isMiniMode && isMiniPinned }
             }
 
             // 守护：在 Mini 模式期间，绝不允许 placement 变为 Maximized 或 Fullscreen
@@ -488,7 +452,9 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
                         frame.extendedState = java.awt.Frame.NORMAL
                     }
                     windowState.size = MiniWindowDpSize
-                    window.setSize(MiniWindowSize.width, MiniWindowSize.height)
+                    runCatching {
+                        (window as? java.awt.Window)?.setSize(MiniWindowDpSize.width.value.toInt(), MiniWindowDpSize.height.value.toInt())
+                    }
                 }
             }
 
@@ -692,7 +658,6 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
                     onDismiss = { showCloseDialog = false },
                 )
             }
-        }
         }
     }
 }

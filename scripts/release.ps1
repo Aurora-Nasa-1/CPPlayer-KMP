@@ -38,7 +38,7 @@ $remoteTag = git ls-remote --tags origin "refs/tags/$tagName"
 if ($LASTEXITCODE -ne 0) { throw "Could not reach 'origin' to check for existing tags." }
 if ($remoteTag) { throw "Tag '$tagName' already exists on origin." }
 
-# 4.1 Pre-flight checks: Android Baseline Profile & Desktop AOT reminders
+# 4.1 Pre-flight checks: Android Baseline Profile & Desktop Native/JVM reminders
 $profPath = Join-Path $PSScriptRoot "..\app-android\src\main\baselineProfiles\baseline-prof.txt"
 if (Test-Path $profPath) {
     $profTime = (Get-Item $profPath).LastWriteTime
@@ -46,7 +46,7 @@ if (Test-Path $profPath) {
 } else {
     Write-Warning "Android Baseline Profile not found at $profPath. Consider running scripts/collect-baseline-profile.ps1 before release."
 }
-Write-Host "Pre-flight: Desktop packages will automatically generate 100% ProGuard-matched AOT Cache archives in CI." -ForegroundColor Gray
+Write-Host "Pre-flight: Desktop packages will build GraalVM Native Image (G1GC) for Windows and JVM for Linux in CI." -ForegroundColor Gray
 
 # 5. Execute Gradle build
 # Do NOT pass app.versionCode by default: Gradle derives it from app.versionName
