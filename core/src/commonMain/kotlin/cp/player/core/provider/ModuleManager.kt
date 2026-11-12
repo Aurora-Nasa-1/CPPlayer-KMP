@@ -2,9 +2,15 @@ package cp.player.core.provider
 
 import cp.player.core.util.PlatformContext
 import cp.player.core.util.PlatformSupport
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -38,21 +44,72 @@ class ModuleManager(
     fun init(providerManager: ProviderManager) {
         recoverRepositoryBackups()
         applyPendingRepositoryUpdates()
-        for (directory in PlatformSupport.listChildDirectories(modulesDir)) {
-            val name = lastPathSegment(directory)
-            if (name.startsWith(".repository-") || name in providers) continue
-            try {
-                val provider = readProvider(directory)
-                require(provider.id == name) { "Provider directory must match manifest.id" }
-                providers[provider.id] = provider
-            } catch (error: Exception) {
-                lastLoadError = error.message ?: "Cannot load provider"
-            }
+        val allChildDirs = PlatformSupport.listChildDirectories(modulesDir)
+        val validDirs = allChildDirs.filter { dir ->
+            val name = lastPathSegment(dir)
+            !name.startsWith(".repository-") && name !in providers
         }
-        updateProvidersFlow()
-        val restored = providerManager.restoreLastProvider(getAvailableProviders(), context)
-        if (!restored && providerManager.currentProvider == null) {
-            providers.values.firstOrNull()?.let { providerManager.switchProvider(it, context, save = false) }
+
+        if (validDirs.isNotEmpty()) {
+            val lastActiveId = providerManager.getLastActiveProviderId()
+            // 快速定位目标激活音源目录：优先上次活跃音源，否则取第一个有效模块
+            val targetDir = (if (lastActiveId != null) validDirs.find { lastPathSegment(it) == lastActiveId } else null)
+                ?: validDirs.firstOrNull()
+
+            // 1. 【极速就绪】：启动主链路只立刻加载当前需要使用的这 1 个 Provider 并立即激活
+            if (targetDir != null) {
+                val name = lastPathSegment(targetDir)
+                try {
+                    val activeProvider = readProvider(targetDir)
+                    require(activeProvider.id == name) { "Provider directory must match manifest.id" }
+                    providers[activeProvider.id] = activeProvider
+                    updateProvidersFlow()
+                    providerManager.switchProvider(activeProvider, context, save = false)
+                } catch (error: Exception) {
+                    lastLoadError = error.message ?: "Cannot load provider"
+                }
+            }
+
+            // 2. 【多核后台并发】：其余未激活的模块完全不阻塞启动，放至后台多核协程并行加载
+            val remainingDirs = validDirs.filter { it != targetDir }
+            if (remainingDirs.isNotEmpty()) {
+                CoroutineScope(Dispatchers.IO).launch {
+                    val remainingLoaded = remainingDirs.map { directory ->
+                        async {
+                            val name = lastPathSegment(directory)
+                            try {
+                                val provider = readProvider(directory)
+                                require(provider.id == name) { "Provider directory must match manifest.id" }
+                                provider
+                            } catch (e: Exception) {
+                                synchronized(providers) {
+                                    lastLoadError = e.message ?: "Cannot load provider"
+                                }
+                                null
+                            }
+                        }
+                    }.awaitAll().filterNotNull()
+
+                    synchronized(providers) {
+                        for (provider in remainingLoaded) {
+                            if (provider.id !in providers) {
+                                providers[provider.id] = provider
+                            }
+                        }
+                    }
+                    updateProvidersFlow()
+                }
+            }
+        } else {
+            updateProvidersFlow()
+        }
+
+        // 保底：若目标音源启动失败且没有成功激活，回退尝试 restoreLastProvider
+        if (providerManager.currentProvider == null) {
+            val restored = providerManager.restoreLastProvider(getAvailableProviders(), context)
+            if (!restored) {
+                providers.values.firstOrNull()?.let { providerManager.switchProvider(it, context, save = false) }
+            }
         }
     }
 

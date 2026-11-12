@@ -68,10 +68,30 @@ object DesktopHiResEngine {
      */
     private const val PROGRESS_POLL_INTERVAL_MS = 100L
 
+    @Volatile
     private var _isAvailable = false
     val isAvailable: Boolean get() = _isAvailable
 
+    @Volatile
     private var isInitialized = false
+
+    /**
+     * 异步预热桌面原生音频库。在 JVM / 应用启动入口尽早调用，
+     * 利用后台守护线程提前完成动态库查找、dlopen 加载与 native context 注册，
+     * 避免首播时在主线程/音频线程卡顿。
+     */
+    fun preloadAsync() {
+        Thread {
+            runCatching {
+                if (isAvailable && !isInitialized) {
+                    initEngine()
+                }
+            }
+        }.apply {
+            isDaemon = true
+            name = "DesktopHiResEngine-Prewarm"
+        }.start()
+    }
 
     /**
      * 专用引擎线程调度器。
@@ -189,6 +209,7 @@ object DesktopHiResEngine {
         logger.info("Desktop Hi-Res native library not present. Standard Rodio fallback active.")
     }
 
+    @Synchronized
     fun initEngine(): Boolean {
         if (!_isAvailable) return false
         if (isInitialized) return true

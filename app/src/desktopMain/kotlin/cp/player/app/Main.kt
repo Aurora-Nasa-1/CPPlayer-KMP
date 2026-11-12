@@ -52,8 +52,10 @@ import cp.player.app.warmup.AotWarmupRunner
 import cp.player.app.version.AppVersion
 import cp.player.core.MusicBackend
 import cp.player.core.music.TrackSummary
+import cp.player.core.playback.DesktopHiResEngine
 import cp.player.core.playback.PlaybackController
 import cp.player.core.playback.PlaybackUiState
+import cp.player.core.provider.typed.QuickJsWarmup
 import cp.player.app.ui.util.SeekAvailability
 import cp.player.app.shortcut.ShortcutAction
 import cp.player.core.util.PlatformContext
@@ -128,6 +130,15 @@ fun main(args: Array<String> = emptyArray()) {
     // 卸载时它会用 `--veloapp-*` 参数把本 exe 当钩子拉起并要求 15~30 秒内退出，
     // 超时直接杀掉 ⇒ 安装器报「安装未完成」。见 VelopackHooks.kt。
     exitIfVelopackHook(args)
+
+    // JVM 启动后即刻派发多核并行加载：
+    // 1. JNI 原生音频库提前完成动态库查找与 dlopen 加载
+    DesktopHiResEngine.preloadAsync()
+    // 2. JS QuickJS 原生运行库与环境预热
+    QuickJsWarmup.warmupAsync()
+    // 3. Provider 模块与后端曲库异步预热
+    startBackendAsyncPrewarm()
+
     DesktopSplashWindow.show(
         isMobilePreview = args.contains("--mobile") || args.contains("-m") ||
             System.getProperty("cp.player.mobilePreview") == "true"
@@ -870,11 +881,21 @@ private fun StartupHealthProbe() {
     }
 }
 
+private val backendInitLock = Any()
 @Volatile private var backendReady = false
+
+private fun startBackendAsyncPrewarm() {
+    Thread {
+        ensureBackendInitialized()
+    }.apply {
+        isDaemon = true
+        name = "DesktopBackend-Prewarm"
+    }.start()
+}
 
 private fun ensureBackendInitialized() {
     if (backendReady) return
-    synchronized(Any()) {
+    synchronized(backendInitLock) {
         if (backendReady) return
         MusicBackend.init(
             context = PlatformContext(),

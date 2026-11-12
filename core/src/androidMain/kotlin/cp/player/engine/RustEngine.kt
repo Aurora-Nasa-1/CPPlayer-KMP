@@ -66,10 +66,30 @@ object RustEngine {
      */
     private const val PROGRESS_POLL_INTERVAL_MS = 100L
 
+    @Volatile
     private var _isAvailable = false
     val isAvailable: Boolean get() = _isAvailable
 
+    @Volatile
     private var isInitialized = false
+
+    /**
+     * 异步预热 JNI 原生引擎。
+     * 在 Application.onCreate 或 JVM 启动时尽早调用，提前在后台守护线程完成 dlopen 与 native context 注册，
+     * 避免首次播放或初始化时产生主线程阻塞或音频毛刺。
+     */
+    fun preloadAsync(context: Context? = null) {
+        Thread {
+            runCatching {
+                if (isAvailable && context != null && !isInitialized) {
+                    initEngine(context)
+                }
+            }
+        }.apply {
+            isDaemon = true
+            name = "RustEngine-Prewarm"
+        }.start()
+    }
 
     /**
      * 专用引擎线程调度器。
@@ -107,6 +127,7 @@ object RustEngine {
         }
     }
 
+    @Synchronized
     fun initEngine(context: Context): Boolean {
         if (!_isAvailable) return false
         if (isInitialized) return true

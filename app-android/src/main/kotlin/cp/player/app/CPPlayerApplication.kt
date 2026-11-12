@@ -5,9 +5,11 @@ import cp.player.app.monitoring.AppMonitoring
 import cp.player.app.platform.installAndroidImageCacheLimit
 import cp.player.core.MusicBackend
 import cp.player.core.lyricpush.HiddenApiExemptions
+import cp.player.core.provider.typed.QuickJsWarmup
 import cp.player.core.util.defaultSettingsStorage
 import cp.player.core.util.initKmpAndroidContext
 import cp.player.core.util.toPlatformContext
+import cp.player.engine.RustEngine
 
 class CPPlayerApplication : Application() {
     val backend: MusicBackend by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -28,6 +30,18 @@ class CPPlayerApplication : Application() {
         // 必须在 backend（可能触发首次图片请求）之前：Coil 单例 factory 首次
         // get() 后固化，晚了 setSafe 直接抛。见 AndroidImageCacheTuning 的说明。
         installAndroidImageCacheLimit()
-        backend
+
+        // JVM 启动后即刻派发多核并行加载：
+        // 1. JNI 原生音频库提前完成 dlopen 与 context 绑定
+        RustEngine.preloadAsync(this)
+        // 2. JS QuickJS 原生运行库与环境预热
+        QuickJsWarmup.warmupAsync()
+        // 3. Provider 与后端曲库异步预热（避免主线程 Application.onCreate 阻塞，MainActivity 启动时安全衔接）
+        Thread {
+            backend
+        }.apply {
+            isDaemon = true
+            name = "Backend-Prewarm"
+        }.start()
     }
 }

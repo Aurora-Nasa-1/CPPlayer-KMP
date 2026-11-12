@@ -63,11 +63,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -1107,14 +1109,14 @@ class MusicBackend private constructor(
                     cp.player.core.util.PlatformSupport.modulesDir(context),
                     context,
                 )
-                moduleManager.init(providerManager)
-                lateinit var backend: MusicBackend
-                backend = MusicBackend(
+                val backend = MusicBackend(
                     context = context,
                     settings = settings,
                     providerManager = providerManager,
                     moduleManager = moduleManager,
                 )
+                backend._stateFlow.value = BackendState.Initializing
+
                 // 监听 Provider 切换，同步后端状态机
                 providerManager.addOnProviderChangedListener { p ->
                     if (p != null) {
@@ -1128,12 +1130,19 @@ class MusicBackend private constructor(
                         backend._stateFlow.value = BackendState.NoProvider
                     }
                 }
+
+                // 多核并发并行加载：音源模块加载 与 本地媒体曲库装配/持久化输出配置读取并发执行
+                runBlocking(Dispatchers.IO) {
+                    val moduleJob = async { moduleManager.init(providerManager) }
+                    val localJob = async { backend.bootstrapLocalStack() }
+                    val configJob = async { backend.activeOutputConfig = LocalServerConfigStore.read(settings) }
+                    moduleJob.await()
+                    localJob.await()
+                    configJob.await()
+                }
+
                 // 初始化完成后计算终态
                 backend.stateFromInit()
-                // 读取持久化输出配置：playbackController 首次创建时据此决定是否静默
-                backend.activeOutputConfig = LocalServerConfigStore.read(settings)
-                // 装配本地媒体源与下载管理器（恢复持久化下载任务）
-                backend.bootstrapLocalStack()
                 INSTANCE = backend
                 backend.startPluginRepositoryChecks()
                 return backend

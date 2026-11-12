@@ -152,6 +152,9 @@ class ProviderManager(
         return switchProviderById(lastId, providers, context)
     }
 
+    /** 获取最近一次活跃的 Provider ID（若已保存）。用于启动时快速匹配快路径。 */
+    fun getLastActiveProviderId(): String? = settings.getString(KEY_LAST_PROVIDER_ID)
+
     fun getCurrentProviderName(): String = currentProvider?.name ?: "No Provider"
     fun getCurrentProviderId(): String = currentProvider?.id ?: "default"
 }
