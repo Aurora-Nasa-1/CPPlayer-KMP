@@ -14,15 +14,31 @@ internal interface ManagedProviderRuntime : ProviderRuntime {
 
 internal expect fun createSdkRuntime(allowedOrigins: Set<String>): ManagedProviderRuntime
 
+private class SdkRuntimeFactory(val create: (Set<String>) -> ManagedProviderRuntime)
+
 /**
  * The existing registry owns metadata; this owns typed account-session instances.
  * No typed response enters the legacy JSON cache.
  */
-class ProviderSdkSessions(
+class ProviderSdkSessions private constructor(
     private val active: () -> BackendProvider?,
     private val cookie: (String, String) -> String?,
-    private val credentialVersion: (String, String) -> Long = { _, _ -> 0 },
+    private val credentialVersion: (String, String) -> Long,
+    private val runtimeFactory: SdkRuntimeFactory,
 ) {
+    constructor(
+        active: () -> BackendProvider?,
+        cookie: (String, String) -> String?,
+        credentialVersion: (String, String) -> Long = { _, _ -> 0 },
+    ) : this(active, cookie, credentialVersion, SdkRuntimeFactory(::createSdkRuntime))
+
+    internal constructor(
+        active: () -> BackendProvider?,
+        cookie: (String, String) -> String?,
+        credentialVersion: (String, String) -> Long,
+        runtimeFactory: (Set<String>) -> ManagedProviderRuntime,
+    ) : this(active, cookie, credentialVersion, SdkRuntimeFactory(runtimeFactory))
+
     private val mutex = Mutex()
     private val retirement = CoroutineScope(SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, _ ->
         println("[ProviderHost] Retired session disposal failed")
@@ -80,16 +96,35 @@ class ProviderSdkSessions(
         owner = provider
         if (provider == null || provider.contract != "kmp-sdk-v1") return@withLock null
         val key = ProviderSessionKey(provider.id, account, generation)
-        val runtime = createSdkRuntime(provider.sdkAllowedOrigins)
+        val runtime = runtimeFactory.create(provider.sdkAllowedOrigins)
+        val resourceLock = Any()
+        var resourcesClosed = false
+        var implementation: MusicProvider? = null
+        var unsubscribe: () -> Unit = {}
+        suspend fun closeResources() {
+            val shouldClose = synchronized(resourceLock) {
+                if (resourcesClosed) false else { resourcesClosed = true; true }
+            }
+            if (!shouldClose) return
+
+            var failure: Throwable? = null
+            fun record(error: Throwable) {
+                val first = failure
+                if (first == null) failure = error
+                else if (first !== error) first.addSuppressed(error)
+            }
+            try { implementation?.close() } catch (error: Throwable) { record(error) }
+            try { unsubscribe() } catch (error: Throwable) { record(error) }
+            try { runtime.close() } catch (error: Throwable) { record(error) }
+            failure?.let { throw it }
+        }
         try {
             val sdkContext = ProviderContext(provider.id, account, settings, credential, runtime)
-            val implementation = provider.createSdkProvider(sdkContext)
+            val sessionProvider = provider.createSdkProvider(sdkContext)
                 ?: error("SDK provider has no session factory")
-            var unsubscribe: () -> Unit = {}
-            val adapter = object : MusicProvider by implementation {
-                override suspend fun close() {
-                    try { implementation.close() } finally { unsubscribe(); runtime.close() }
-                }
+            implementation = sessionProvider
+            val adapter = object : MusicProvider by sessionProvider {
+                override suspend fun close() = closeResources()
             }
             val created = ProviderHost(ProviderCallContext(key, settings, credential, credentialEpoch), adapter, isCurrent = {
                 active() === provider && provider.isReady() &&
@@ -106,11 +141,17 @@ class ProviderSdkSessions(
                 else { host = created; true }
             }
             if (!accepted) {
-                created.close()
-                throw CancellationException("Session changed during creation")
+                val failure = CancellationException("Session changed during creation")
+                try { created.close() } catch (cleanupError: Throwable) { failure.addSuppressed(cleanupError) }
+                throw failure
             }
             created
-        } catch (e: Throwable) { runtime.close(); throw e }
+        } catch (error: Throwable) {
+            try { closeResources() } catch (cleanupError: Throwable) {
+                if (cleanupError !== error) error.addSuppressed(cleanupError)
+            }
+            throw error
+        }
     } }
 
     suspend fun close() {

@@ -87,13 +87,14 @@ internal fun installedNativeSdkProvider(manifest: ModuleManifest, root: File, co
 }
 
 /** Keep the adapter and its files alive until cancelled JNI calls have drained and closed. */
-private class NativePackageRuntime(
+internal class NativePackageRuntime(
     private val loader: ClassLoader,
     private val snapshot: File,
     private val factory: (ProviderContext) -> JniProviderSession,
 ) {
     private var retired = false
     private var sessions = 0
+    private var cleanupAttempted = false
 
     @Synchronized
     fun open(context: ProviderContext): JniProviderSession {
@@ -124,9 +125,21 @@ private class NativePackageRuntime(
     }
 
     private fun cleanupIfDrained() {
-        if (!retired || sessions != 0) return
-        (loader as? java.io.Closeable)?.close()
-        // Windows can retain a DLL until its defining class loader is collected.
-        snapshot.deleteRecursively()
+        if (!retired || sessions != 0 || cleanupAttempted) return
+        cleanupAttempted = true
+
+        var failure: Throwable? = null
+        try { (loader as? java.io.Closeable)?.close() } catch (error: Throwable) { failure = error }
+        try {
+            // Windows can retain a DLL until its defining class loader is collected.
+            if (!snapshot.deleteRecursively() && snapshot.exists()) {
+                throw IllegalStateException("Cannot delete native SDK runtime snapshot: ${snapshot.absolutePath}")
+            }
+        } catch (error: Throwable) {
+            val closeFailure = failure
+            if (closeFailure == null) failure = error
+            else if (closeFailure !== error) closeFailure.addSuppressed(error)
+        }
+        failure?.let { throw it }
     }
 }
