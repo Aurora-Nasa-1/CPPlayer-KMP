@@ -100,7 +100,7 @@ import kotlinx.coroutines.delay
  * | 行水平内边距 | 16dp | `CpSpacing.formRowHorizontal` |
  * | 行垂直内边距 | 10dp | `CpSpacing.formRowVertical` |
  * | 行内横向间隔 | 14dp | `CpSpacing.formRowGap` |
- * | 组内行距 | 4dp | `CpSpacing.listRowGap` |
+ * | 组内行距 | 2dp | `CpSpacing.listRowGap` |
  *
  * ⚠️ **页面容器只认 [SettingsPage]（静态）与 [SettingsLazyPage]（长列表）**，
  * 不要在页面里自行拼装自定义容器，以保证所有设置页的宽度上限、页边距与区块间距一致。
@@ -151,11 +151,8 @@ fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) 
         )
         Column(
             modifier = Modifier.fillMaxWidth(),
-            // 组内行距。**2026-10-01 从 2dp 改到 4dp（= CpSpacing.listRowGap）**，理由：
-            // 行现在按下时圆角会从 4dp 撑到 20dp，2dp 的缝太窄 —— 变形后的行会与
-            // 邻行视觉粘连，"这一行弹出来了"读不出来。4dp 也是 Kazumi `SplitListRow`
-            // 的缝宽（`reference/Kazumi/lib/bean/widget/split_list_row.dart`）。
-            // ⚠️ 这不是"随手改数字"：缝宽与形状变形是**一对**参数，改一个要回头看另一个。
+            // 组内行距统一取 CpSpacing.listRowGap（2dp），与全应用 segmented list 保持一致。
+            // 形状变形由行本身处理，列表容器只负责提供紧凑且可见的间隔。
             verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
             content = content,
         )

@@ -169,13 +169,12 @@ object CpSpacing {
     /**
      * 分组列表的**行间距**。
      *
-     * 4dp 是 M3 分组列表的规范缝宽 —— 行与行之间留一道细缝，同时每行的圆角
-     * 从「组内圆角」变形成「容器圆角」时才有空间可看（见 `LegacyListItem`）。
-     * 缝太宽会散成一张张独立卡片，太窄则看不出分组。
+     * 2dp 是全应用 segmented list 的统一缝宽：行间保留轻微分隔，同时让分组保持紧凑。
+     * 行的圆角形变仍能提供交互反馈（见 `LegacyListItem`）。
      *
      * ⚠️ 缝宽与形状变形是**一对**参数：改这个值要回头看 `SegmentInnerRadius`。
      */
-    val listRowGap = 4.dp
+    val listRowGap = 2.dp
 
     /**
      * 桌面端页面的**统一最大内容宽度**。
