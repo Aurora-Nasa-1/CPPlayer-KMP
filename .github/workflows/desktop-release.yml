@@ -25,6 +25,10 @@ on:
         type: boolean
         required: false
         default: false
+      source_ref:
+        description: "构建源码 ref；补发已有版本时可指定原 tag。留空使用当前 ref。"
+        required: false
+        default: ""
   push:
     tags:
       - "debug-v*"
@@ -50,6 +54,7 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       tag: ${{ steps.meta.outputs.tag }}
       channel: ${{ steps.meta.outputs.channel }}
+      source_ref: ${{ steps.meta.outputs.source_ref }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -61,6 +66,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            source_ref="${GITHUB_REF_NAME}"
             # ⚠️ 旧实现写的是 `if [[ "$tag" == "$GITHUB_SHA" ]]` —— GITHUB_REF_NAME
             # 永远不等于 SHA，该条件恒为假，于是手动触发时版本号 = 分支名。
             if [[ "${GITHUB_REF_NAME}" == debug-v* ]]; then
@@ -75,6 +81,8 @@ jobs:
             # github.event.inputs 在非 dispatch 事件里稳定为空，不影响 workflow 解析。
             channel="${{ github.event.inputs.channel }}"
             version="${{ github.event.inputs.version }}"
+            source_ref="${{ github.event.inputs.source_ref }}"
+            if [[ -z "$source_ref" ]]; then source_ref="${GITHUB_REF_NAME}"; fi
             if [[ -z "$version" ]]; then
               version="$(grep -E '^app\.versionName=' gradle.properties | head -1 | cut -d= -f2- | tr -d '[:space:]')"
             fi
@@ -88,6 +96,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=${tag_prefix}v$version" >> "$GITHUB_OUTPUT"
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "source_ref=$source_ref" >> "$GITHUB_OUTPUT"
 
   desktop:
     needs: meta
@@ -114,6 +123,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ needs.meta.outputs.source_ref }}
+      - name: Apply v1.8.9 Linux deb metadata fix
+        if: matrix.platform == 'linux' && needs.meta.outputs.tag == 'v1.8.9' && needs.meta.outputs.source_ref == 'v1.8.9'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git diff v1.8.9..3776d9c -- app/build.gradle.kts > "$RUNNER_TEMP/deb-metadata.patch"
+          grep -q 'debMaintainer' "$RUNNER_TEMP/deb-metadata.patch"
+          git apply --check "$RUNNER_TEMP/deb-metadata.patch"
+          git apply "$RUNNER_TEMP/deb-metadata.patch"
+          git diff --check
       # Gradle/Kotlin 构建统一使用 JDK 25；Native Image 工具链由 Nucleus
       # 按 app/build.gradle.kts 中固定的 Oracle GraalVM 25.3.4.1 配置获取。
       - uses: actions/setup-java@v4
@@ -266,16 +287,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ needs.meta.outputs.source_ref }}
       - uses: actions/download-artifact@v4
         with:
           path: release-assets
           pattern: CPPlayer-*
           merge-multiple: true
       - name: Generate release notes
+        if: github.event_name != 'workflow_dispatch'
         shell: bash
         run: |
           bash scripts/generate_release_notes.sh "${{ needs.meta.outputs.tag }}" "${{ runner.temp }}/RELEASE_NOTES.md"
       - name: Publish desktop assets
+        if: github.event_name != 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           # 用 meta 解析出来的 tag，不用 github.ref_name（手动触发时那是分支名）。
@@ -284,6 +308,22 @@ jobs:
           prerelease: ${{ needs.meta.outputs.channel != 'stable' }}
           body_path: ${{ runner.temp }}/RELEASE_NOTES.md
           files: release-assets/**/*
+      - name: Attach assets to existing release only
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.meta.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "$RELEASE_TAG" >/dev/null
+          mapfile -d '' assets < <(find release-assets -type f -print0)
+          if (( ${#assets[@]} == 0 )); then
+            echo "::error::No desktop assets were downloaded."
+            exit 1
+          fi
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
 
   # ---------------------------------------------------------------------------
   # AUR 自动发布（cpplayer-bin）：仅 stable 渠道。
@@ -324,6 +364,8 @@ jobs:
           id builder
 
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.meta.outputs.source_ref }}
 
       - name: Check AUR key configured
         id: guard
