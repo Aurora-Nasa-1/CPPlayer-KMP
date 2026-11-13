@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -25,6 +26,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -38,6 +40,7 @@ import cp.player.app.ui.model.CommentScreenModel
 import cp.player.app.ui.screen.LyricsPluginSettingsScreen
 import cp.player.app.ui.screen.UserProfileScreen
 import cp.player.app.ui.theme.CpMotion
+import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.pushOrNotify
 import cp.player.core.music.ArtistSummary
 import cp.player.core.playback.PlaybackUiState
@@ -133,8 +136,19 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
         )
     } else Modifier
 
+    val isDark = LocalIsDarkTheme.current
+    val surfaceTop = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh
+    else MaterialTheme.colorScheme.surfaceVariant
+    val surfaceBottom = if (isDark) MaterialTheme.colorScheme.surfaceContainerLowest
+    else MaterialTheme.colorScheme.surface
+    val backgroundBrush = remember(surfaceTop, surfaceBottom) {
+        Brush.verticalGradient(listOf(surfaceTop, surfaceBottom))
+    }
+    val fluidBackground by AppModel.fluidBackgroundFlow.collectAsState()
+
     Box(
         Modifier.fillMaxSize()
+            .cpFluidBackground(enabled = fluidBackground, fallback = backgroundBrush)
             .sharedBounds(rememberSharedContentState("player-container"), animatedVisibilityScope)
             .graphicsLayer { translationY = dragOffset.value },
     ) {
