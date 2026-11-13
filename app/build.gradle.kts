@@ -616,6 +616,7 @@ nucleus {
             // 注意：值来自上面的 appDescription，那里写了为什么必须是 ASCII。
             description = appDescription
             vendor = "CPPlayer"
+            homepage = "https://github.com/Aurora-Nasa-1/CPPlayer-KMP"
             // ⚠️ 不能直接写 `java.time.Year.now()`：Kotlin 默认只导入 java.lang/io/util，
             // 而 `java` 在这个脚本作用域里被 Gradle 的属性遮蔽了，会报
             // "Unresolved reference 'time'"。所以走文件顶部的 import。
@@ -649,8 +650,8 @@ nucleus {
                 iconFile.set(project.file("desktop-icons/icon.png"))
                 shortcut = true
                 appCategory = "Audio"
-                // ⚠️ 别在这儿填 debMaintainer：deb 的 Maintainer 字段必须是
-                // "Name <email>" 形式，填错 dpkg-deb 直接失败；不填 jpackage 有默认值。
+                // electron-builder 生成 .deb 时需要明确的 maintainer 元数据。
+                debMaintainer = "CPPlayer <noreply@github.com>"
             }
         }
     }
