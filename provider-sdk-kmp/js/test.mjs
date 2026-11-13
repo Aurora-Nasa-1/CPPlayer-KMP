@@ -63,4 +63,25 @@ test("every generated capability requires exactly its declared typed method", ()
 test("undefined capabilities do not silently enable everything", () => {
     assert.throws(() => defineProvider({}), TypeError);
 });
+test("async authentication preserves typed country code and challenge result", async () => {
+    const request = { action: "login.phone", phone: "447361501642", countryCode: "44", md5: false };
+    const challenge = {
+        success: false,
+        status: 201,
+        challenge: true,
+        verifyUrl: "https://verify.example.test/session"
+    };
+    let received;
+    const provider = defineProvider({
+        capabilities: ["auth.actions"],
+        async authenticate(input) {
+            received = input;
+            await Promise.resolve();
+            return challenge;
+        }
+    });
+
+    assert.equal(await provider.authenticate(request, {}), challenge);
+    assert.deepEqual(received, request);
+});
 });

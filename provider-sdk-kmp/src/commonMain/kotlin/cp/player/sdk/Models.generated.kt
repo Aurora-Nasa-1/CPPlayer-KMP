@@ -1687,7 +1687,7 @@ data class AccountSession(
     }
 }
 
-/** Named authentication workflow input; only fields relevant to action should be supplied. */
+/** Named authentication workflow input; only fields relevant to action should be supplied. Phone actions may specify a calling-country code; omission preserves the provider's existing default. */
 data class AuthActionRequest(
     /** One of AuthAction's documented action names; required fields depend on the selected flow. */
     val action: String,
@@ -1713,6 +1713,8 @@ data class AuthActionRequest(
     val verifyId: String? = null,
     /** Legacy authentication-only extension text, not a generic endpoint passthrough. */
     val extraJson: String? = null,
+    /** Optional digits-only calling-country code for login.phone or captcha.send, 1..4 digits without '+'. Omission preserves the provider default (86 for the existing NetEase flow). */
+    val countryCode: String? = null,
 ) {
     fun write(w: WireWriter) { with(w) {
         string(this@AuthActionRequest.action)
@@ -1727,6 +1729,7 @@ data class AuthActionRequest(
         optional(this@AuthActionRequest.sessionId) { v -> string(v) }
         optional(this@AuthActionRequest.verifyId) { v -> string(v) }
         optional(this@AuthActionRequest.extraJson) { v -> string(v) }
+        optional(this@AuthActionRequest.countryCode) { v -> string(v) }
     } }
     fun values(): Map<String, Any?> = mapOf(
         "action" to action,
@@ -1741,6 +1744,7 @@ data class AuthActionRequest(
         "sessionId" to sessionId?.let { it },
         "verifyId" to verifyId?.let { it },
         "extraJson" to extraJson?.let { it },
+        "countryCode" to countryCode?.let { it },
     )
     companion object {
         fun read(r: WireReader): AuthActionRequest = with(r) { AuthActionRequest(
@@ -1750,6 +1754,7 @@ data class AuthActionRequest(
             optional { string() },
             optional { string() },
             bool(),
+            optional { string() },
             optional { string() },
             optional { string() },
             optional { string() },
@@ -1770,6 +1775,7 @@ data class AuthActionRequest(
             v["sessionId"]?.let { valueString(it) },
             v["verifyId"]?.let { valueString(it) },
             v["extraJson"]?.let { valueString(it) },
+            v["countryCode"]?.let { valueString(it) },
         )
     }
 }

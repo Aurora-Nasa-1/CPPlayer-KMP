@@ -133,14 +133,47 @@ const extendedJni = banner + `package cp.player.sdk.jni\n\nimport cp.player.sdk.
   `    protected abstract suspend fun dispatch(operation: Int, request: Any): Any\n` +
   extended.map(([n, op]) => `    override suspend fun ${signature(n, op)} =\n` +
     `        dispatch(ProviderProtocol.${n.toUpperCase()}, request) as ${op.response}`).join("\n") + `\n}\n`;
+const nativeRequestEncode = Object.entries(schema.operations).map(([n, op]) =>
+  n === "authenticate"
+    ? `            ProviderProtocol.${n.toUpperCase()} -> writeNativeAuthActionRequest(writer, request as AuthActionRequest)`
+    : `            ProviderProtocol.${n.toUpperCase()} -> (request as ${op.request}).write(writer)`
+).join("\n");
 const nativeWire = banner + `package cp.player.sdk.jni\n\nimport cp.player.sdk.*\n\n` +
   `/** Standard native SDK wire codec, generated from the same DTO contract. */\n` +
   `object NativeWireCodec {\n` +
   `    fun encodeRequest(operation: Int, request: Any): ByteArray {\n` +
   `        val writer = WireWriter()\n        when (operation) {\n` +
-  Object.entries(schema.operations).map(([n, op]) =>
-    `            ProviderProtocol.${n.toUpperCase()} -> (request as ${op.request}).write(writer)`).join("\n") +
+  nativeRequestEncode +
   `\n            else -> error("Unknown native SDK operation: $operation")\n        }\n        return writer.finish()\n    }\n\n` +
+  `    // Keep Native v1's positional AuthActionRequest layout; legacy providers read countryCode from auth-only extraJson.\n` +
+  `    private fun writeNativeAuthActionRequest(writer: WireWriter, request: AuthActionRequest) {\n` +
+  `        val countryCode = request.countryCode\n` +
+  `        val extraJson = if (countryCode == null) request.extraJson else {\n` +
+  `            require(Regex("[0-9]{1,4}").matches(countryCode)) { "countryCode must contain 1..4 digits" }\n` +
+  `            val source = request.extraJson?.trim()\n` +
+  `            if (source != null && source.startsWith("{") && source.endsWith("}")) {\n` +
+  `                val close = source.lastIndexOf('}')\n` +
+  `                val members = source.substring(1, close).trim()\n` +
+  `                val member = "\\\"countryCode\\\":\\\"$countryCode\\\""\n` +
+  `                val merged = if (members.isEmpty()) member else "$members,$member"\n` +
+  `                source.substring(0, 1) + merged + source.substring(close)\n` +
+  `            } else "{\\\"countryCode\\\":\\\"$countryCode\\\"}"\n` +
+  `        }\n` +
+  `        with(writer) {\n` +
+  `            string(request.action)\n` +
+  `            optional(request.email) { v -> string(v) }\n` +
+  `            optional(request.phone) { v -> string(v) }\n` +
+  `            optional(request.password) { v -> string(v) }\n` +
+  `            optional(request.captcha) { v -> string(v) }\n` +
+  `            bool(request.md5)\n` +
+  `            optional(request.imageCaptcha) { v -> string(v) }\n` +
+  `            optional(request.challengeCookie) { v -> string(v) }\n` +
+  `            optional(request.key) { v -> string(v) }\n` +
+  `            optional(request.sessionId) { v -> string(v) }\n` +
+  `            optional(request.verifyId) { v -> string(v) }\n` +
+  `            optional(extraJson) { v -> string(v) }\n` +
+  `        }\n` +
+  `    }\n\n` +
   `    fun decodeResponse(operation: Int, bytes: ByteArray): Any {\n` +
   `        val reader = WireReader(bytes)\n        if (reader.bool()) {\n` +
   `            val failure = Failure.read(reader)\n            reader.finish()\n            throw ProviderException(failure)\n        }\n` +

@@ -651,7 +651,7 @@ Used by: `getCurrentAccount`.
 
 ## AuthActionRequest
 
-Named authentication workflow input; only fields relevant to action should be supplied.
+Named authentication workflow input; only fields relevant to action should be supplied. Phone actions may specify a calling-country code; omission preserves the provider's existing default.
 
 Used by: `authenticate`.
 
@@ -669,6 +669,7 @@ Used by: `authenticate`.
 | `sessionId` | `String?` | `string \| null` | `null` | Opaque authentication-flow session identity. |
 | `verifyId` | `String?` | `string \| null` | `null` | Opaque verification-flow identity. |
 | `extraJson` | `String?` | `string \| null` | `null` | Legacy authentication-only extension text, not a generic endpoint passthrough. |
+| `countryCode` | `String?` | `string \| null` | `null` | Optional digits-only calling-country code for login.phone or captcha.send, 1..4 digits without '+'. Omission preserves the provider default (86 for the existing NetEase flow). |
 
 ## AuthActionResult
 

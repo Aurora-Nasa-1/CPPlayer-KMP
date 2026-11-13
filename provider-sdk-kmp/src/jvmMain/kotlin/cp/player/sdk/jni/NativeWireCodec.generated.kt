@@ -67,7 +67,7 @@ object NativeWireCodec {
             ProviderProtocol.GETSEARCHSUGGESTIONS -> (request as SearchSuggestionRequest).write(writer)
             ProviderProtocol.SCROBBLE -> (request as ScrobbleRequest).write(writer)
             ProviderProtocol.GETCURRENTACCOUNT -> (request as Bytes).write(writer)
-            ProviderProtocol.AUTHENTICATE -> (request as AuthActionRequest).write(writer)
+            ProviderProtocol.AUTHENTICATE -> writeNativeAuthActionRequest(writer, request as AuthActionRequest)
             ProviderProtocol.DELETECOMMENT -> (request as DeleteCommentRequest).write(writer)
             ProviderProtocol.GETUNREADCOUNT -> (request as Bytes).write(writer)
             ProviderProtocol.GETRECENTCONTACTS -> (request as PageRequest).write(writer)
@@ -177,6 +177,36 @@ object NativeWireCodec {
             else -> error("Unknown native SDK operation: $operation")
         }
         return writer.finish()
+    }
+
+    // Keep Native v1's positional AuthActionRequest layout; legacy providers read countryCode from auth-only extraJson.
+    private fun writeNativeAuthActionRequest(writer: WireWriter, request: AuthActionRequest) {
+        val countryCode = request.countryCode
+        val extraJson = if (countryCode == null) request.extraJson else {
+            require(Regex("[0-9]{1,4}").matches(countryCode)) { "countryCode must contain 1..4 digits" }
+            val source = request.extraJson?.trim()
+            if (source != null && source.startsWith("{") && source.endsWith("}")) {
+                val close = source.lastIndexOf('}')
+                val members = source.substring(1, close).trim()
+                val member = "\"countryCode\":\"$countryCode\""
+                val merged = if (members.isEmpty()) member else "$members,$member"
+                source.substring(0, 1) + merged + source.substring(close)
+            } else "{\"countryCode\":\"$countryCode\"}"
+        }
+        with(writer) {
+            string(request.action)
+            optional(request.email) { v -> string(v) }
+            optional(request.phone) { v -> string(v) }
+            optional(request.password) { v -> string(v) }
+            optional(request.captcha) { v -> string(v) }
+            bool(request.md5)
+            optional(request.imageCaptcha) { v -> string(v) }
+            optional(request.challengeCookie) { v -> string(v) }
+            optional(request.key) { v -> string(v) }
+            optional(request.sessionId) { v -> string(v) }
+            optional(request.verifyId) { v -> string(v) }
+            optional(extraJson) { v -> string(v) }
+        }
     }
 
     fun decodeResponse(operation: Int, bytes: ByteArray): Any {

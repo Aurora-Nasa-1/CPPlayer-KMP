@@ -512,7 +512,7 @@ export interface AccountSession {
   readonly avatarUrl?: string | null;
 }
 
-/** Named authentication workflow input; only fields relevant to action should be supplied. */
+/** Named authentication workflow input; only fields relevant to action should be supplied. Phone actions may specify a calling-country code; omission preserves the provider's existing default. */
 export interface AuthActionRequest {
   /** One of AuthAction's documented action names; required fields depend on the selected flow. */
   readonly action: string;
@@ -538,6 +538,8 @@ export interface AuthActionRequest {
   readonly verifyId?: string | null;
   /** Legacy authentication-only extension text, not a generic endpoint passthrough. */
   readonly extraJson?: string | null;
+  /** Optional digits-only calling-country code for login.phone or captcha.send, 1..4 digits without '+'. Omission preserves the provider default (86 for the existing NetEase flow). */
+  readonly countryCode?: string | null;
 }
 
 /** Authentication result/challenge. The host owns credential storage and session replacement. */

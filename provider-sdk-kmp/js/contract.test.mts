@@ -1,10 +1,36 @@
-import { defineProvider, type Provider, type Track, type Context, type KnownCapability } from "./index.mjs";
+import { defineProvider, type AuthActionRequest, type AuthActionResult, type Provider, type Track, type Context, type KnownCapability } from "./index.mjs";
 
 const commentCapability: KnownCapability = "comments.page";
 // @ts-expect-error KnownCapability detects typos while Provider still permits future capability strings.
 const typoCapability: KnownCapability = "comments.pages";
 const futureProvider: Provider = { capabilities: ["future.business"] };
 void commentCapability; void typoCapability; void futureProvider;
+
+const authRequest: AuthActionRequest = {
+    action: "login.phone",
+    phone: "447361501642",
+    md5: false,
+    countryCode: "44",
+};
+const authRequestWithProviderDefault: AuthActionRequest = {
+    action: "login.phone",
+    md5: false,
+};
+const omittedCountryCode: string | null | undefined = authRequestWithProviderDefault.countryCode;
+const authChallenge: AuthActionResult = {
+    success: false,
+    challenge: true,
+    verifyUrl: "https://verify.example.test/session",
+};
+const authProvider: Provider = defineProvider({
+    capabilities: ["auth.actions"],
+    async authenticate(request) {
+        const countryCode: string | null | undefined = request.countryCode;
+        void countryCode;
+        return authChallenge;
+    },
+});
+void authRequest; void omittedCountryCode; void authProvider;
 
 const provider: Provider = defineProvider({
     capabilities: [

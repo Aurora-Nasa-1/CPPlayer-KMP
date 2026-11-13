@@ -31,6 +31,11 @@ Do not change existing field order, types or operation tags when adding a
 capability. A record's binary serialization is positional. New optional business
 methods must retain an Unsupported default; altering an existing wire layout
 requires an explicit compatibility/version decision.
+`AuthActionRequest.countryCode` is exposed in Kotlin/TypeScript DTOs but is not
+appended to Native v1's positional request bytes: the native codec mirrors an
+explicit value into the existing auth-only `extraJson` field, while omission
+leaves that field unchanged so providers keep their prior default (including
+`86` where applicable).
 
 Generated reference pages are
 [SDK_OPERATIONS.md](../docs/dev/SDK_OPERATIONS.md) and

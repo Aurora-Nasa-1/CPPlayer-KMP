@@ -234,8 +234,8 @@ runtime HTTP 的实际上传 origin 必须在 sdkOrigins 中；动态上传域�
 | `qr.create` | 使用 key 创建二维码 URL |
 | `qr.check` | 使用 key 轮询状态，成功时可返回 credential cookie |
 | `login.email` | email/password 及所需 challenge；md5 表示密码是否已预哈希 |
-| `login.phone` | phone 与 password 或 captcha，按音源支持的流程 |
-| `captcha.send` | phone，用于申请验证码 |
+| `login.phone` | phone 与 password 或 captcha，按音源支持的流程；可选 `countryCode` 为不带 `+` 的 1–4 位数字 |
+| `captcha.send` | phone，用于申请验证码；可选 `countryCode` 为不带 `+` 的 1–4 位数字 |
 | `captcha.image` | 获取当前流程的图片验证码，结果可带 imageBase64 |
 | `webview.url` | 获取登录页 URL 与流程状态 |
 | `webview.check` | 以 sessionId 等流程标识检查登录结果 |
@@ -247,6 +247,8 @@ runtime HTTP 的实际上传 origin 必须在 sdkOrigins 中；动态上传域�
 `AuthActionResult.success/code/status/challenge` 应表达真实状态；不要把“尚在扫码”
 当最终失败，或把异常当登录成功。错误类别使用 `Authentication`，原始凭证不进日志。
 宿主保存新凭证并替换会话；Provider 不保留旧 context 跨账号续用。
+省略 `countryCode` 时继续采用 Provider 原有默认区号（现有网易云 Native flow 为 `86`）；
+Native v1 通过既有 auth-only `extraJson` 传递显式区号，不改变位置 wire 布局。
 JS 引擎由宿主关闭，不存在可依赖的 JS `provider.close` 回调；
 可信 Kotlin 实现的 `close()` 应释放资源。
 

@@ -72,7 +72,7 @@ export default {
     "KeywordPage": { "items": "Keyword[]" },
     "ScrobbleRequest": { "id": "string", "sourceId": "string", "playedSeconds": "int" },
     "AccountSession": { "loggedIn": "bool", "userId": "string?", "nickname": "string?", "avatarUrl": "string?" },
-    "AuthActionRequest": { "action": "string", "email": "string?", "phone": "string?", "password": "string?", "captcha": "string?", "md5": "bool", "imageCaptcha": "string?", "challengeCookie": "string?", "key": "string?", "sessionId": "string?", "verifyId": "string?", "extraJson": "string?" },
+    "AuthActionRequest": { "action": "string", "email": "string?", "phone": "string?", "password": "string?", "captcha": "string?", "md5": "bool", "imageCaptcha": "string?", "challengeCookie": "string?", "key": "string?", "sessionId": "string?", "verifyId": "string?", "extraJson": "string?", "countryCode": "string?" },
     "AuthActionResult": { "success": "bool", "code": "int?", "status": "int?", "key": "string?", "url": "string?", "imageBase64": "string?", "cookie": "string?", "verifyUrl": "string?", "challenge": "bool", "message": "string?" },
     "SuggestionPage": { "items": "string[]" },
     "Lyrics": { "id": "string", "lrc": "string?", "ttml": "string?", "yrc": "string?", "translation": "string?", "romanization": "string?" },
