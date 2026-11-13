@@ -1,6 +1,6 @@
 name: Desktop Release
 
-# 桌面产物：Windows `.exe`（Velopack，由 jpackage 的 app-image 打）/ Linux `.deb`
+# 桌面产物：Windows GraalVM Native Image `.exe`（Velopack 安装器/更新源）/ Linux JVM `.deb`
 # + 通用 `.tar.gz`，在各自原生 runner 上构建。
 # stable 渠道还会把 tar.gz 发布到 AUR（cpplayer-bin）。
 # 与 release.yml（稳定版 Android） / debug-release.yml（预发布 Android）共用同一个
@@ -34,21 +34,6 @@ concurrency:
 
 env:
   JAVA_VERSION: "25"
-  # JetBrains Runtime —— **打进产物**的运行时（jpackage 的 --runtime-image）。
-  # 目的只有一个：让 WindowDraggableArea 走原生 WindowMove（贴边吸附 / 拖出还原 / 跟手）。
-  #
-  # ⚠️ 四点必须记住：
-  #   1. 来源是 JetBrains 官方 cache-redirector，**不是 GitHub Releases** ——
-  #      JetBrains/JetBrainsRuntime 的 release assets 全是 0（已扫过 3 页 100/页）。
-  #   2. 官方**不提供** .sha256 文件，所以哈希由本仓库记录，且是**实际下载后算的**。
-  #   3. 版本钉 21（不是 25）：desktop 的 jvmTarget 就是 JVM_21，
-  #      「换厂商」与「升主版本」必须分开做。
-  #   4. 取的是 **`jbrsdk-` 变体**（完整 JDK，含 jlink/jpackage/jmods），不是裸 `jbr-`：
-  #      裸包是 JRE，Compose 的 checkRuntime 会报 "'jlink', 'jpackage' are missing"。
-  #      打进产物的是 jlink 裁剪后的运行时，SDK 包不会让安装包变大。
-  JBR_VERSION: "21.0.8"
-  JBR_BUILD: "b1163.62"
-  JBR_URL_BASE: "https://cache-redirector.jetbrains.com/intellij-jbr"
 
 jobs:
   # 版本号 / tag / 渠道只在这里解析一次。
@@ -106,33 +91,25 @@ jobs:
         include:
           - os: windows-latest
             platform: windows
-            # 空格分隔的多任务列表；Linux 腿同时打 deb 与通用 tar.gz。
-            #
-            # Windows **不再出 MSI**（jpackage 的 WiX 模板直出：升级不继承上次安装目录、
-            # 目录选择框是老式对话框、向导步骤多，而 `--resource-dir` 不暴露 ⇒ 改不动）。
-            # 改由 Velopack 从 jpackage 的 app-image 打：
-            # `Setup.exe` + 更新源（`*.nupkg` / `RELEASES`）+ 便携 zip。
-            gradleTasks: ":app:packageWindowsVelopack"
+            # Windows 原生编译主程序，再由 Velopack 输出 Setup.exe 与更新源。
+            # Native Image 版本、GC、O3、PGO 等参数集中在 app/build.gradle.kts。
+            gradleTasks: ":app:packageGraalvmNative :app:packageWindowsVelopack"
             assetPaths: |
               app/build/compose/binaries/main/velopack/*
-            # Windows 采用自编译、深度裁剪并集成 Compact Object Headers 的定制 JBR 25
-            jbrExt: tar.gz
-            jbrSha: 8994b26c31eb4ce4e171296e9e50970ce44d7142ba39d54b8eee67e4cb4761a2
-            jbrUrl: "https://github.com/Aurora-Nasa-1/CPPlayer-KMP/releases/download/jbr-assets-v1/jbr25-windows-x64-custom.tar.gz"
           - os: ubuntu-latest
             platform: linux
+            # Linux 继续发布 JVM 运行时包（deb + 通用 tar.gz）。
             gradleTasks: ":app:packageDeb :app:packageLinuxTarGz"
             assetPaths: |
               app/build/compose/binaries/main/deb/*
               app/build/compose/binaries/main/targz/*
-            # ⚠️ Linux 侧 **只有 .tar.gz**：同名的 .zip 是 403。
-            jbrExt: tar.gz
-            jbrSha: 482b63da8ac63b8f108878d1bd8a23df15fd78cc9dfd23f3b824fbfe2512c81f
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      # Gradle/Kotlin 构建统一使用 JDK 25；Native Image 工具链由 Nucleus
+      # 按 app/build.gradle.kts 中固定的 Oracle GraalVM 25.3.4.1 配置获取。
       - uses: actions/setup-java@v4
         with:
           distribution: zulu
@@ -140,58 +117,6 @@ jobs:
       - name: Setup Gradle
         # 与两个 Android 工作流对齐：缓存命中 + 守护进程复用，否则桌面包每次全量冷启动。
         uses: gradle/actions/setup-gradle@v3
-
-      # ⚠️ 仍然保留 setup-java：Gradle 守护进程 / Kotlin 编译 / 测试都跑在 temurin 上，
-      # JBR 只是**被打进产物**的运行时。两者不是二选一，别顺手删掉上面那个 step。
-      - name: Cache JBR
-        id: jbr-cache
-        if: matrix.platform == 'windows'
-        uses: actions/cache@v4
-        with:
-          path: .jbr
-          key: jbr-${{ env.JBR_VERSION }}-${{ matrix.platform }}-${{ matrix.jbrExt }}-${{ matrix.jbrSha }}
-
-      - name: Fetch JBR (JetBrains Runtime)
-        if: matrix.platform == 'windows' && steps.jbr-cache.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .jbr
-          # ⚠️ 必须用 `jbrsdk-` 前缀（完整 JDK，含 jlink / jpackage / jmods），
-          # 不能用裸 `jbr-`（那是 JRE）—— Compose 的 checkRuntime 会在
-          # javaHome 里找 jlink/jpackage，找不到直接失败：
-          # "Failed to check JDK distribution: 'jlink', 'jpackage' are missing"。
-          # 最终打进安装包的是 jlink 的裁剪产物，SDK 包不会让产物变大。
-          if [[ -n "${{ matrix.jbrUrl || '' }}" ]]; then
-            url="${{ matrix.jbrUrl }}"
-            file="jbr-${{ matrix.platform }}-x64.${{ matrix.jbrExt }}"
-          else
-            file="jbrsdk-${JBR_VERSION}-${{ matrix.platform }}-x64-${JBR_BUILD}.${{ matrix.jbrExt }}"
-            url="${JBR_URL_BASE}/${file}"
-          fi
-          # 先下临时文件、校验通过再落位 —— 中断留下的半截包若直接落位，
-          # 下次会因目录存在被误判成已就绪，打出**损坏的运行时**。
-          out=".jbr/${file}.part"
-          echo "Fetching $url"
-          curl -fsSL --retry 3 --retry-delay 2 -o "$out" "$url"
-          echo "${{ matrix.jbrSha }}  $out" | sha256sum -c - || { rm -f "$out"; exit 1; }
-
-          # 解压 + **剥掉单层目录**：包内是 `jbr-<version>-<platform>-x64-<build>/` 一层，
-          # 留着 javaHome 就指错一层（jpackage 只会报 invalid runtime image）。
-          dest=".jbr/${{ matrix.platform }}-x64"
-          mkdir -p "$dest"
-          if [[ "${{ matrix.jbrExt }}" == "zip" ]]; then
-            unzip -q "$out" -d .jbr/_unpack
-          else
-            mkdir -p .jbr/_unpack
-            tar -xzf "$out" -C .jbr/_unpack
-          fi
-          inner="$(find .jbr/_unpack -mindepth 1 -maxdepth 1 -type d | head -1)"
-          cp -a "$inner/." "$dest/"
-          rm -rf .jbr/_unpack "$out"
-          # 兜底断言：javaHome 必须正好是含 `release` 的那层。
-          test -f "$dest/release" || { echo "::error::JBR 解压布局不对，缺 $dest/release"; exit 1; }
-          "$dest/bin/java" -version 2>&1 | head -3
 
       # Velopack 的 CLI 是 .NET global tool。装到工作区内的 `.tools/` 而不是默认的
       # `~/.dotnet/tools` —— 后者**不保证在 runner 的 PATH 上**，而 Gradle 侧只认
@@ -211,27 +136,8 @@ jobs:
           # 也是核对命令行参数的唯一权威来源。
           .tools/vpk.exe pack -H | head -40
 
-      - name: Generate AOT Cache (Ahead-of-Time Class Loading & Linking - JEP 483 / 514)
-        if: matrix.platform == 'windows'
-        shell: pwsh
-        timeout-minutes: 8
-        run: |
-          ./gradlew :app:createDistributable `
-            -Pcp.jbrHome="${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64" `
-            -Pcp.vpkPath="${{ github.workspace }}/.tools/vpk.exe" `
-            -Papp.versionName="${{ needs.meta.outputs.version }}" `
-            -Papp.releaseChannel="${{ needs.meta.outputs.channel }}" `
-            -Pcp.jdk25=true `
-            -Pcp.gc=shenandoah `
-            -Pcp.compactHeaders=true `
-            --no-daemon
-          ./packaging/jbr/generate-aot-cache.ps1 `
-            -JavaExe "${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64/bin/java.exe" `
-            -OutputFile "${{ github.workspace }}/packaging/jbr/app-aot.aot" `
-            -VersionName "${{ needs.meta.outputs.version }}" `
-            -ReleaseChannel "${{ needs.meta.outputs.channel }}"
-
-      - name: Generate AOT Cache (Linux - JEP 483 / 514)
+      # AOT Cache 是 JVM 的类加载/链接缓存，不是 Native Image；只用于 Linux JVM 包。
+      - name: Generate Linux JVM AOT Cache (JEP 483 / 514)
         if: matrix.platform == 'linux'
         shell: bash
         timeout-minutes: 8
@@ -241,7 +147,7 @@ jobs:
           # Linux 包（deb/tar.gz）的 Gradle 任务会复用 createDistributable 产物，
           # 必须传入与最终打包完全相同的版本号与渠道属性，保证 ProGuard 产物 100% 匹配且后续不会因输入变化而重构。
           # Linux 腿直接使用 setup-java 装好的 JDK 25（Zulu）：
-          # AOT 缓存必须由和产物完全相同的运行时生成，Windows 才用定制 JBR 25。
+          # AOT 缓存必须由和产物完全相同的运行时生成（Linux Zulu JDK 25）。
           ./gradlew :app:createDistributable \
             -Pcp.jbrHome="$JAVA_HOME" \
             -Papp.versionName="${{ needs.meta.outputs.version }}" \
@@ -258,48 +164,27 @@ jobs:
 
       - name: Build desktop package
         shell: bash
-        # versionCode 由 Gradle 从 versionName 派生，不需要传；
-        # releaseChannel 会经 jvmArgs 注入桌面 BuildInfo，供「关于」页与更新检查使用。
-        #
-        # -Pcp.jbrHome 让 app/build.gradle.kts 把 javaHome 指向刚下好的 JBR。
-        # ⚠️ 没设这个属性时构建**不会失败**，只是静默用 temurin 打运行时 ——
-        # 那种「看起来成功、其实没换」是最坏的结局，所以这里显式指定 + 上面有断言。
         run: |
-          # ⚠️ **两个路径属性都必须用 Windows 风格的 `${{ github.workspace }}`**，
-          # 不能写 `$PWD/...`：Git Bash 的 `$PWD` 是 `/d/a/...`，Java 在 Windows 上
-          # **解析不了**这种路径 —— jbrHome 解析不了会静默回落到 temurin 打运行时
-          # （构建照样"成功"，但 WindowDraggableArea 失去原生 WindowMove、贴边吸附全废），
-          # vpkPath 解析不了则报「找不到 vpk」。GitHub 原生 runner 两种风格都接受，
-          # 但混用是最隐蔽的坑：同一行里一个对一个错。
-          # Linux 腿用 setup-java 的 JDK 25（Zulu）；Windows 腿用定制 JBR 25。
-          jbr_home="${{ github.workspace }}/.jbr/${{ matrix.platform }}-x64"
-          if [[ "${{ matrix.platform }}" == "linux" ]]; then
-            jbr_home="$JAVA_HOME"
+          set -euo pipefail
+          gradle_args=(
+            "-Papp.versionName=${{ needs.meta.outputs.version }}"
+            "-Papp.releaseChannel=${{ needs.meta.outputs.channel }}"
+          )
+          if [[ "${{ matrix.platform }}" == "windows" ]]; then
+            # Windows native build uses GraalVM's Serial GC / Native Image options,
+            # not JVM GC flags or a JVM AOT Cache.
+            gradle_args+=("-Pcp.vpkPath=${{ github.workspace }}/.tools/vpk.exe")
+          else
+            # Keep the Linux JVM runtime, GC, compact headers, and JDK level identical
+            # to the settings used while generating its AOT Cache above.
+            gradle_args+=(
+              "-Pcp.jbrHome=$JAVA_HOME"
+              "-Pcp.gc=shenandoah"
+              "-Pcp.compactHeaders=true"
+              "-Pcp.jdk25=true"
+            )
           fi
-          ./gradlew ${{ matrix.gradleTasks }} --no-daemon \
-            -Pcp.jbrHome="$jbr_home" \
-            -Pcp.vpkPath="${{ github.workspace }}/.tools/vpk.exe" \
-            -Papp.versionName="${{ needs.meta.outputs.version }}" \
-            -Papp.releaseChannel="${{ needs.meta.outputs.channel }}" \
-            -Pcp.gc=shenandoah \
-            -Pcp.compactHeaders=true \
-            -Pcp.jdk25=true
-      - name: Verify Windows AOT Cache Injection
-        if: matrix.platform == 'windows'
-        shell: pwsh
-        run: |
-          $aotPath = "app/build/compose/binaries/main/app/CPPlayer/app/app-aot.aot"
-          if (-not (Test-Path $aotPath)) {
-            Write-Error "Windows app-image missing app-aot.aot! AOT Cache injection failed."
-            exit 1
-          }
-          $cfgPath = "app/build/compose/binaries/main/app/CPPlayer/app/CPPlayer.cfg"
-          $cfgContent = Get-Content $cfgPath -Raw
-          if ($cfgContent -notmatch "-XX:AOTCache=") {
-            Write-Error "CPPlayer.cfg missing -XX:AOTCache entry!"
-            exit 1
-          }
-          Write-Host "Verified Windows AOT Cache and CPPlayer.cfg successfully configured." -ForegroundColor Green
+          ./gradlew ${{ matrix.gradleTasks }} --no-daemon "${gradle_args[@]}"
 
       # tar.gz 的执行位全靠打包时原样保留，这里只做布局断言（缺关键文件立刻失败，
       # 别等到用户解压才发现）。执行位无法从 tar 列表读出，AUR 的 package() 里有
@@ -312,7 +197,7 @@ jobs:
           f="$(ls app/build/compose/binaries/main/targz/CPPlayer-*-linux-x64.tar.gz)"
           echo "tar.gz: $f"
           # ⚠️ **不能**写成 `tar -tzf "$f" | grep -qx '...'`：`grep -q` 命中即退出、
-          # 关掉管道读端，而内置 JBR 运行时的清单（几千条）远超 64 KiB 管道缓冲，此刻
+          # 关掉管道读端，而内置 JVM 运行时的清单（几千条）远超 64 KiB 管道缓冲，此刻
           # tar 还在写 ⇒ 被 SIGPIPE 杀死（实测 `PIPESTATUS=141 0`；部分 tar 版本改报
           # `tar: stdout: write error` 后以 2 退出）。`set -o pipefail` 会把这个**假的**
           # 非零当成断言失败 —— 于是**文件在不在都红**，报的却是「缺启动器」，把排查
@@ -350,7 +235,7 @@ jobs:
             }
           done
           # 运行时模块清单断言（2026-10-05）：`nativeDistributions.modules(...)` 里少一个模块
-          # **本地永远看不出来** —— `desktopRun` 跑在完整的 JBR SDK 上，模块一个不缺；
+          # **本地永远看不出来** —— `desktopRun` 跑在完整的 JDK 上，模块一个不缺；
           # 只有 jpackage 出的安装包才按这份清单裁剪。而它在用户机器上的表现是启动器只打一句
           # `Failed to launch JVM`：缺类若发生在**类初始化期**，栈里连模块名都不出现。
           # 1.4.3 就是这么死的 —— 缺 `jdk.unsupported` ⇒ `JbrWindowChrome.<clinit>` 抛
