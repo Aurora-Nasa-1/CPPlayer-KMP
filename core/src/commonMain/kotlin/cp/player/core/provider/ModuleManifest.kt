@@ -106,13 +106,13 @@ data class ProviderSettingItemSchema(
     val options: List<ProviderSettingOption>? = null,
     val required: Boolean = false,
     val description: String? = null
-)
+) : cp.player.core.util.JavaSerializable
 
 @Serializable
 data class ProviderSettingOption(
     val label: String,
     val value: String
-)
+) : cp.player.core.util.JavaSerializable
 
 /**
  * Retained host/catalog compatibility number, not the SDK contract major.
