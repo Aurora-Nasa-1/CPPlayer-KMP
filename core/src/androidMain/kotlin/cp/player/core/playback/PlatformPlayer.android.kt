@@ -13,6 +13,7 @@ import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
@@ -322,7 +323,13 @@ internal class Media3PlatformPlayer(context: android.content.Context) : Platform
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            _state.value = PlatformPlaybackState.Error(error.message ?: "Media playback error")
+            val httpStatus = generateSequence(error as Throwable?) { it.cause }
+                .filterIsInstance<HttpDataSource.InvalidResponseCodeException>()
+                .firstOrNull()?.responseCode
+            val statusSuffix = httpStatus?.let { " HTTP status $it" }.orEmpty()
+            _state.value = PlatformPlaybackState.Error(
+                "${error.errorCodeName}: ${error.message ?: "Media playback error"}$statusSuffix",
+            )
         }
 
         override fun onAudioSessionIdChanged(audioSessionId: Int) {

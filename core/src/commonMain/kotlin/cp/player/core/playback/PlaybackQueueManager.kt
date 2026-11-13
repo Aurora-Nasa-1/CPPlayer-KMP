@@ -1,5 +1,6 @@
 package cp.player.core.playback
 
+import cp.player.core.BackendResult
 import cp.player.core.music.CPMediaId
 import cp.player.core.music.TrackSummary
 import cp.player.core.music.UnifiedMusicSource
@@ -235,13 +236,16 @@ internal class PlaybackQueueManager(
 
     fun resolveQueueInBackground(
         startFrom: Int,
+        skipStartEntry: Boolean = false,
         onCurrentTrackUpdated: (TrackSummary) -> Unit,
         onQueueStructureChanged: () -> Unit,
     ) {
         resolveJob?.cancel()
         val gen = ++queueGeneration
 
-        val toResolveIndices = _queue.indices.sortedBy { if (it == startFrom) 0 else 1 + kotlin.math.abs(it - startFrom) }
+        val toResolveIndices = _queue.indices
+            .filter { !skipStartEntry || it != startFrom }
+            .sortedBy { if (it == startFrom) 0 else 1 + kotlin.math.abs(it - startFrom) }
         val toResolveEntries = toResolveIndices.filter { _queue.getOrNull(it)?.summary == null }
         if (toResolveEntries.isEmpty()) return
 
@@ -293,18 +297,24 @@ internal class PlaybackQueueManager(
         index: Int,
         onCurrentTrackUpdated: (TrackSummary) -> Unit,
         onQueueStructureChanged: () -> Unit,
-    ) {
-        val entry = _queue.getOrNull(index) ?: return
-        if (entry.summary != null) return
+    ): BackendResult<TrackSummary> {
+        val entry = _queue.getOrNull(index)
+            ?: return BackendResult.Error("Queue entry no longer exists")
+        entry.summary?.let { return BackendResult.Success(it) }
         val downloaded = downloadedTrackResolver(entry.mediaId)
-        val summary = downloaded ?: (source.getTrackDetail(entry.mediaId) as? cp.player.core.BackendResult.Success)?.data
+        val result = downloaded?.let { BackendResult.Success(it) } ?: source.getTrackDetail(entry.mediaId)
+        val summary = (result as? BackendResult.Success)?.data
         if (summary != null) {
             entry.summary = summary
             if (index == _index) {
                 onCurrentTrackUpdated(summary)
             }
             onQueueStructureChanged()
+            return BackendResult.Success(summary)
         }
+        // A concurrent batch resolver may have filled this entry while the single request was in flight.
+        entry.summary?.let { return BackendResult.Success(it) }
+        return result
     }
 
     fun cancel() {

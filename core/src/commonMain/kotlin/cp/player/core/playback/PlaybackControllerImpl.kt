@@ -2,6 +2,7 @@ package cp.player.core.playback
 
 import cp.player.core.api.AmllTtmlClient
 import cp.player.core.api.LyricsSourceMode
+import cp.player.core.BackendResult
 import cp.player.core.music.TrackSummary
 import cp.player.core.music.UnifiedMusicSource
 import cp.player.core.util.SettingsStorage
@@ -234,11 +235,17 @@ class PlaybackControllerImpl(
                 PlatformPlaybackState.Ended -> Quad(false, false, null, true)
                 is PlatformPlaybackState.Error -> Quad(false, false, ps.message, false)
             }
+            val retrying = (ps as? PlatformPlaybackState.Error)
+                ?.let { mediaLoader.onPlatformError(it.message) } == true
+            if (playing || ps == PlatformPlaybackState.Ready) mediaLoader.onPlatformRecovered()
             updateState {
                 it.copy(
                     isPlaying = playing,
-                    isBuffering = buffering,
-                    error = if (playing || ps == PlatformPlaybackState.Ready) null else (error ?: it.error),
+                    isBuffering = buffering || retrying,
+                    error = when {
+                        retrying || playing || ps == PlatformPlaybackState.Ready || ps == PlatformPlaybackState.Buffering -> null
+                        else -> error ?: it.error
+                    },
                 )
             }
             if (ended) onTrackEnded()
@@ -278,11 +285,12 @@ class PlaybackControllerImpl(
 
     override suspend fun playQueue(mediaIds: List<String>, startIndex: Int, sourceId: String?) {
         if (mediaIds.isEmpty()) return
+        mediaLoader.onQueueReplaced()
         navMutex.withLock {
             queueManager.replaceQueue(mediaIds, startIndex, sourceId)
         }
         pushQueueState()
-        resolveQueueInBackground(startFrom = queueManager.currentIndex)
+        resolveQueueInBackground(startFrom = queueManager.currentIndex, skipStartEntry = true)
         playCurrent()
     }
 
@@ -699,9 +707,10 @@ class PlaybackControllerImpl(
         }
     }
 
-    private fun resolveQueueInBackground(startFrom: Int) {
+    private fun resolveQueueInBackground(startFrom: Int, skipStartEntry: Boolean = false) {
         queueManager.resolveQueueInBackground(
             startFrom = startFrom,
+            skipStartEntry = skipStartEntry,
             onCurrentTrackUpdated = { summary ->
                 updateState {
                     it.copy(
@@ -720,21 +729,30 @@ class PlaybackControllerImpl(
         )
     }
 
-    private suspend fun resolveEntry(index: Int) {
-        queueManager.resolveEntry(
-            index = index,
-            onCurrentTrackUpdated = { summary ->
-                updateState {
-                    it.copy(
-                        currentTrack = summary,
-                        currentIndex = queueManager.currentIndex,
-                        durationMs = summary.durationMs.takeIf { d -> d > 0 } ?: it.durationMs,
+    private suspend fun resolveEntry(index: Int): BackendResult<TrackSummary> {
+        val expectedMediaId = queueManager.getEntry(index)?.mediaId
+            ?: return BackendResult.Error("Queue entry no longer exists")
+        return PlaybackRetryPolicy.retryTransient(
+            isCurrent = { queueManager.getEntry(index)?.mediaId == expectedMediaId },
+            request = {
+                if (queueManager.getEntry(index)?.mediaId != expectedMediaId) {
+                    BackendResult.Error("Queue entry changed")
+                } else {
+                    queueManager.resolveEntry(
+                        index = index,
+                        onCurrentTrackUpdated = { summary ->
+                            updateState {
+                                it.copy(
+                                    currentTrack = summary,
+                                    currentIndex = queueManager.currentIndex,
+                                    durationMs = summary.durationMs.takeIf { d -> d > 0 } ?: it.durationMs,
+                                )
+                            }
+                            ensureLyricsForCurrentIfNeeded()
+                        },
+                        onQueueStructureChanged = { pushQueueState() },
                     )
                 }
-                ensureLyricsForCurrentIfNeeded()
-            },
-            onQueueStructureChanged = {
-                pushQueueState()
             },
         )
     }

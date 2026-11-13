@@ -1,15 +1,18 @@
 package cp.player.core.playback
 
+import cp.player.core.BackendResult
 import cp.player.core.music.SongUrl
 import cp.player.core.music.TrackSummary
 import cp.player.core.music.UnifiedMusicSource
 import cp.player.core.util.PlatformSupport
 import cp.player.core.util.SettingsStorage
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * 播放媒体装载、格式解析、网络/本地回退、流缓存与预加载协同管理组件。
@@ -38,12 +41,26 @@ internal class PlaybackMediaLoader(
     private val getSourceId: () -> String?,
     private val getNextIndex: suspend (autoAdvance: Boolean) -> Int?,
     private val getEntryAt: (index: Int) -> PlaybackQueueManager.Entry?,
-    private val resolveEntry: suspend (index: Int) -> Unit,
+    private val resolveEntry: suspend (index: Int) -> BackendResult<TrackSummary>,
     private val getState: () -> PlaybackUiState,
     private val updateState: ((PlaybackUiState) -> PlaybackUiState) -> Unit,
     private val refreshLyrics: suspend () -> Unit,
     private val persistSession: () -> Unit,
 ) {
+    private data class PreloadAttempt(
+        val mediaId: String,
+        val requestedLevel: String,
+        val namespace: String,
+        val urlResult: CompletableDeferred<BackendResult<SongUrl>?>,
+    )
+
+    private data class ResolvedPreload(
+        val mediaId: String,
+        val requestedLevel: String,
+        val namespace: String,
+        val songUrl: SongUrl,
+    )
+
     var qualityLevel: String = "exhigh"
         private set
 
@@ -66,8 +83,14 @@ internal class PlaybackMediaLoader(
     private var loadJob: Job? = null
     private var localizeJob: Job? = null
     private var preloadJob: Job? = null
+    private var retryJob: Job? = null
+    private var retryMediaId: String? = null
+    private var retryAttempts = 0
+    @Volatile private var preloadAttempt: PreloadAttempt? = null
+    @Volatile private var resolvedPreload: ResolvedPreload? = null
     @Volatile private var preloadedKey: String? = null
     private var loadGeneration = 0
+    private var preloadGeneration = 0
 
     @Volatile private var lastHeaders: Map<String, String> = emptyMap()
     @Volatile private var lastMetadata: PlaybackMetadata? = null
@@ -91,7 +114,7 @@ internal class PlaybackMediaLoader(
         if (qualityLevel == level) return
         qualityLevel = level
         updateState { it.copy(qualityLevel = level) }
-        preloadedKey = null
+        cancelPreload()
         triggerPreloadNext()
     }
 
@@ -99,9 +122,7 @@ internal class PlaybackMediaLoader(
         preloadNextEnabled = enabled
         playbackModeSettings?.putString(PlaybackSessionSettings.KEY_PRELOAD_NEXT, enabled.toString())
         if (!enabled) {
-            preloadJob?.cancel()
-            preloadJob = null
-            preloadedKey = null
+            cancelPreload()
         } else {
             triggerPreloadNext()
         }
@@ -112,14 +133,16 @@ internal class PlaybackMediaLoader(
     }
 
     fun onQueueReplaced() {
+        cancelRetry()
+        cancelPreload()
         loadJob?.cancel()
         loadGeneration++
         restoredResume = null
     }
 
     fun onQueueCleared() {
-        preloadJob?.cancel()
-        preloadedKey = null
+        cancelRetry()
+        cancelPreload()
         loadJob?.cancel()
         loadGeneration++
         engineReady = false
@@ -131,6 +154,8 @@ internal class PlaybackMediaLoader(
     }
 
     fun onCurrentRemoved() {
+        cancelRetry()
+        cancelPreload()
         loadJob?.cancel()
         loadGeneration++
         engineReady = false
@@ -139,9 +164,10 @@ internal class PlaybackMediaLoader(
     }
 
     fun onNativeTrackStarted(mediaId: String, summary: TrackSummary?) {
+        cancelRetry()
+        cancelPreload()
         fadeController.onTrackPreparing()
         loadJob?.cancel()
-        preloadJob?.cancel()
         scrobbler.flush()
         scrobbler.resetCounts()
         scrobbler.setActiveTrack(mediaId, summary, getSourceId() ?: summary?.album ?: "0")
@@ -157,11 +183,67 @@ internal class PlaybackMediaLoader(
     }
 
     fun cancelAll() {
+        cancelRetry()
+        cancelPreload()
         loadJob?.cancel()
-        preloadJob?.cancel()
         localizeJob?.cancel()
         engineReady = false
         deferredSeek = null
+    }
+
+    fun onPlatformError(message: String): Boolean {
+        val mediaId = playingMediaId ?: getCurrentEntry()?.mediaId ?: return false
+        return schedulePlaybackRetry(mediaId, loadGeneration, message, requirePlatformError = true)
+    }
+
+    /** Cancel a pending error retry if the engine recovered on its own. */
+    fun onPlatformRecovered() {
+        retryJob?.cancel()
+        retryJob = null
+    }
+
+    private fun schedulePlaybackRetry(
+        mediaId: String,
+        expectedGeneration: Int,
+        message: String,
+        requirePlatformError: Boolean,
+    ): Boolean {
+        if (!PlaybackRetryPolicy.isTransient(message)) return false
+        if (retryMediaId != mediaId) {
+            retryJob?.cancel()
+            retryMediaId = mediaId
+            retryAttempts = 0
+        }
+        if (retryAttempts >= 2) return false
+        val attempt = ++retryAttempts
+        retryJob?.cancel()
+        retryJob = scope.launch {
+            delay(PlaybackRetryPolicy.retryDelayMs(attempt))
+            if (loadGeneration != expectedGeneration || playingMediaId != mediaId ||
+                getCurrentEntry()?.mediaId != mediaId
+            ) return@launch
+            if (requirePlatformError && platform.state.value !is PlatformPlaybackState.Error) return@launch
+            retryJob = null
+            playCurrent()
+        }
+        return true
+    }
+
+    private fun cancelRetry() {
+        retryJob?.cancel()
+        retryJob = null
+        retryMediaId = null
+        retryAttempts = 0
+    }
+
+    private fun cancelPreload() {
+        preloadGeneration++
+        preloadJob?.cancel()
+        preloadJob = null
+        preloadAttempt?.urlResult?.complete(null)
+        preloadAttempt = null
+        resolvedPreload = null
+        preloadedKey = null
     }
 
     fun requestSeek(positionMs: Long) {
@@ -233,6 +315,10 @@ internal class PlaybackMediaLoader(
         if (!preloadNextEnabled) return
         val currentGen = loadGeneration
         preloadJob?.cancel()
+        preloadJob = null
+        preloadAttempt?.urlResult?.complete(null)
+        preloadAttempt = null
+        val requestGeneration = ++preloadGeneration
         preloadJob = scope.launch {
             delay(1200)
             if (loadGeneration != currentGen) return@launch
@@ -244,15 +330,23 @@ internal class PlaybackMediaLoader(
             val requestedLevel = qualityLevel
             val namespace = cacheNamespaceOf(nextMediaId)
             val requestKey = cacheKeyOf(nextMediaId, requestedLevel, namespace)
-            fun isCurrentRequest() = loadGeneration == currentGen &&
+            fun isCurrentRequest() = preloadGeneration == requestGeneration &&
+                (loadGeneration == currentGen || getCurrentEntry()?.mediaId == nextMediaId) &&
                 qualityLevel == requestedLevel && cacheNamespaceOf(nextMediaId) == namespace
             if (preloadedKey == requestKey) return@launch
-
-            if (targetEntry.summary == null) {
-                resolveEntry(nextIndex)
+            if (resolvedPreload?.let {
+                    it.mediaId == nextMediaId && it.requestedLevel == requestedLevel && it.namespace == namespace
+                } != true
+            ) {
+                resolvedPreload = null
+                preloadedKey = null
             }
-            val summary = targetEntry.summary
-                ?: source.getTrackDetail(nextMediaId).getOrNull()?.also { targetEntry.summary = it }
+
+            var detailResult: BackendResult<TrackSummary>? = null
+            if (targetEntry.summary == null && getCurrentEntry()?.mediaId != nextMediaId) {
+                detailResult = resolveEntry(nextIndex)
+            }
+            val summary = targetEntry.summary ?: (detailResult as? BackendResult.Success)?.data
 
             if (!isCurrentRequest()) return@launch
 
@@ -271,10 +365,42 @@ internal class PlaybackMediaLoader(
                 return@launch
             }
 
-            val urlResult = source.preloadTrack(nextMediaId, level = requestedLevel)
-            if (!isCurrentRequest()) return@launch
-            val songUrl = urlResult.getOrNull() ?: return@launch
-            if (songUrl.url.isBlank()) return@launch
+            val attempt = PreloadAttempt(
+                mediaId = nextMediaId,
+                requestedLevel = requestedLevel,
+                namespace = namespace,
+                urlResult = CompletableDeferred(),
+            )
+            preloadAttempt = attempt
+            val urlResult = try {
+                PlaybackRetryPolicy.retryTransient(
+                    isCurrent = { isCurrentRequest() },
+                    request = { source.preloadTrack(nextMediaId, level = requestedLevel) },
+                )
+            } catch (e: CancellationException) {
+                attempt.urlResult.complete(null)
+                if (preloadAttempt === attempt) preloadAttempt = null
+                throw e
+            } catch (e: Throwable) {
+                val failed = BackendResult.Error(e.message ?: e::class.simpleName.orEmpty())
+                attempt.urlResult.complete(failed)
+                if (preloadAttempt === attempt) preloadAttempt = null
+                return@launch
+            }
+            if (!isCurrentRequest()) {
+                attempt.urlResult.complete(null)
+                if (preloadAttempt === attempt) preloadAttempt = null
+                return@launch
+            }
+            val songUrl = urlResult.getOrNull()
+            if (songUrl == null || songUrl.url.isBlank()) {
+                attempt.urlResult.complete(urlResult)
+                if (preloadAttempt === attempt) preloadAttempt = null
+                return@launch
+            }
+            resolvedPreload = ResolvedPreload(nextMediaId, requestedLevel, namespace, songUrl)
+            attempt.urlResult.complete(urlResult)
+            if (preloadAttempt === attempt) preloadAttempt = null
             val actualLevel = songUrl.level.ifBlank { requestedLevel }
             val cacheKey = cacheKeyOf(nextMediaId, actualLevel, namespace)
 
@@ -312,11 +438,25 @@ internal class PlaybackMediaLoader(
 
     suspend fun playCurrent(advanceNavSeq: () -> Unit = {}) {
         val entry = getCurrentEntry() ?: return
+        val requestedLevel = qualityLevel
+        val namespace = cacheNamespaceOf(entry.mediaId)
+        val pendingPreload = preloadAttempt?.takeIf {
+            it.mediaId == entry.mediaId && it.requestedLevel == requestedLevel && it.namespace == namespace
+        }
+        val readyPreload = resolvedPreload?.takeIf {
+            it.mediaId == entry.mediaId && it.requestedLevel == requestedLevel && it.namespace == namespace
+        }
+        if (pendingPreload == null && readyPreload == null) cancelPreload()
+        retryJob?.cancel()
+        retryJob = null
+        if (retryMediaId != entry.mediaId) {
+            retryMediaId = entry.mediaId
+            retryAttempts = 0
+        }
         fadeController.onTrackPreparing()
         advanceNavSeq()
         engineReady = false
         loadJob?.cancel()
-        preloadJob?.cancel()
         scrobbler.flush()
         scrobbler.resetCounts()
         scrobbler.setActiveTrack(entry.mediaId, entry.summary, getSourceId() ?: entry.summary?.album ?: "0")
@@ -327,15 +467,14 @@ internal class PlaybackMediaLoader(
             fun emit(u: PlaybackUiState) { if (loadGeneration == gen) updateState { u } }
 
             val mediaId = entry.mediaId
-            val requestedLevel = qualityLevel
-            val namespace = cacheNamespaceOf(mediaId)
             val downloadedSummary = downloadedTrackResolver(mediaId)
+            var detailResult: BackendResult<TrackSummary>? = null
             if (entry.summary == null && downloadedSummary != null) {
                 entry.summary = downloadedSummary
             } else if (entry.summary == null) {
-                resolveEntry(getCurrentIndex())
+                detailResult = resolveEntry(getCurrentIndex())
             }
-            var summary = entry.summary ?: downloadedSummary ?: source.getTrackDetail(mediaId).getOrNull()?.also { entry.summary = it }
+            var summary = entry.summary ?: downloadedSummary ?: (detailResult as? BackendResult.Success)?.data
             if (summary == null) {
                 // findByMediaId 只查旁车索引；别在这里用 entries() —— 那会列目录 + 解析标签。
                 summary = streamLocalizer.findByMediaId(mediaId, namespace)?.let { cacheEntry ->
@@ -383,6 +522,9 @@ internal class PlaybackMediaLoader(
                 isFavorite = favoritesManager.isFavorite(mediaId),
             ))
             val downloadedLocal = downloadedFileResolver(mediaId)
+            if (downloadedLocal != null && (pendingPreload != null || readyPreload != null)) {
+                cancelPreload()
+            }
             val finalSongUrl: SongUrl = if (downloadedLocal != null) {
                 val ext = downloadedLocal.substringAfterLast('.', "").lowercase()
                 val inferredCodec = when (ext) {
@@ -405,11 +547,38 @@ internal class PlaybackMediaLoader(
                     codec = inferredCodec,
                 )
             } else {
-                var urlResult = source.getSongUrl(mediaId, level = requestedLevel)
+                var preloadedSongUrl = readyPreload?.songUrl
+                if (preloadedSongUrl == null && pendingPreload != null) {
+                    val pendingResult = withTimeoutOrNull(1_500L) { pendingPreload.urlResult.await() }
+                    preloadedSongUrl = (pendingResult as? BackendResult.Success)?.data
+                        ?.takeIf { it.url.isNotBlank() }
+                }
+                if (pendingPreload != null || readyPreload != null) {
+                    pendingPreload?.urlResult?.complete(null)
+                    if (preloadAttempt === pendingPreload) preloadAttempt = null
+                    preloadJob?.cancel()
+                    preloadJob = null
+                    if (resolvedPreload?.let {
+                            it.mediaId == mediaId && it.requestedLevel == requestedLevel && it.namespace == namespace
+                        } == true
+                    ) resolvedPreload = null
+                    preloadedKey = null
+                }
+                var urlResult = if (preloadedSongUrl != null) {
+                    BackendResult.Success(preloadedSongUrl)
+                } else {
+                    PlaybackRetryPolicy.retryTransient(
+                        isCurrent = { loadGeneration == gen && cacheNamespaceOf(mediaId) == namespace },
+                        request = { source.getSongUrl(mediaId, level = requestedLevel) },
+                    )
+                }
                 if (restartIfSourceChanged(mediaId, namespace, gen)) return@launch
                 var remoteSongUrl = urlResult.getOrNull()
                 if ((remoteSongUrl == null || remoteSongUrl.url.isBlank()) && requestedLevel != "standard") {
-                    val fallbackResult = source.getSongUrl(mediaId, level = "standard")
+                    val fallbackResult = PlaybackRetryPolicy.retryTransient(
+                        isCurrent = { loadGeneration == gen && cacheNamespaceOf(mediaId) == namespace },
+                        request = { source.getSongUrl(mediaId, level = "standard") },
+                    )
                     if (restartIfSourceChanged(mediaId, namespace, gen)) return@launch
                     val fallbackUrl = fallbackResult.getOrNull()
                     if (fallbackUrl != null && fallbackUrl.url.isNotBlank()) {
@@ -438,11 +607,13 @@ internal class PlaybackMediaLoader(
                         deferredSeek = null
                         platform.stop()
                         playingMediaId = null
-                        val errMsg = (urlResult as? cp.player.core.BackendResult.Error)?.message
-                        val hint = if (errMsg?.contains("Network", ignoreCase = true) == true ||
-                            errMsg?.contains("Connect", ignoreCase = true) == true ||
-                            errMsg?.contains("Timeout", ignoreCase = true) == true
-                        ) "网络连接失败且无离线缓存" else (errMsg ?: "无法获取播放地址")
+                        val errMsg = (urlResult as? BackendResult.Error)?.message
+                        // A missing cache entry is expected; only the failed Provider lookup is an error.
+                        val hint = if (PlaybackRetryPolicy.isTransient(urlResult)) {
+                            "播放地址暂时不可用，且当前没有离线缓存"
+                        } else {
+                            errMsg ?: "无法获取播放地址"
+                        }
                         emit(getState().copy(
                             isBuffering = false,
                             error = hint,
@@ -547,6 +718,10 @@ internal class PlaybackMediaLoader(
             } catch (e: Throwable) {
                 if (restartIfSourceChanged(mediaId, namespace, gen)) return@launch
                 val msg = e.message ?: e.javaClass.simpleName
+                if (schedulePlaybackRetry(mediaId, gen, msg, requirePlatformError = false)) {
+                    emit(getState().copy(isBuffering = true, error = null))
+                    return@launch
+                }
                 if (actualLevel != "standard") {
                     val retried = retryWithStandardQuality(mediaId, gen, namespace)
                     if (retried) return@launch
