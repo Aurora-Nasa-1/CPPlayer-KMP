@@ -29,6 +29,14 @@ on:
         description: "构建源码 ref；补发已有版本时可指定原 tag。留空使用当前 ref。"
         required: false
         default: ""
+      platform:
+        description: "手动触发时只构建所选平台；push tag 始终构建全部平台。"
+        type: choice
+        options:
+          - all
+          - windows
+          - linux
+        default: all
   push:
     tags:
       - "debug-v*"
@@ -55,6 +63,7 @@ jobs:
       tag: ${{ steps.meta.outputs.tag }}
       channel: ${{ steps.meta.outputs.channel }}
       source_ref: ${{ steps.meta.outputs.source_ref }}
+      matrix: ${{ steps.meta.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -63,6 +72,8 @@ jobs:
       - name: Resolve version
         id: meta
         shell: bash
+        env:
+          BUILD_PLATFORM: ${{ github.event.inputs.platform }}
         run: |
           set -euo pipefail
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
@@ -97,27 +108,33 @@ jobs:
           echo "tag=${tag_prefix}v$version" >> "$GITHUB_OUTPUT"
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
           echo "source_ref=$source_ref" >> "$GITHUB_OUTPUT"
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+
+          windows = {
+              "os": "windows-latest",
+              "platform": "windows",
+              "gradleTasks": ":app:packageGraalvmNative :app:packageWindowsVelopack",
+              "assetPaths": "app/build/compose/binaries/main/velopack/*",
+          }
+          linux = {
+              "os": "ubuntu-latest",
+              "platform": "linux",
+              "gradleTasks": ":app:packageDeb :app:packageLinuxTarGz",
+              "assetPaths": "app/build/compose/binaries/main/deb/*\napp/build/compose/binaries/main/targz/*",
+          }
+          selected = (os.environ.get("BUILD_PLATFORM") or "all").strip()
+          choices = {"all": [windows, linux], "windows": [windows], "linux": [linux]}
+          if selected not in choices:
+              raise SystemExit(f"Unsupported platform selection: {selected}")
+          print("matrix=" + json.dumps({"include": choices[selected]}, separators=(",", ":")))
+          PY
 
   desktop:
     needs: meta
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            platform: windows
-            # Windows 原生编译主程序，再由 Velopack 输出 Setup.exe 与更新源。
-            # Native Image 版本、GC、O3、PGO 等参数集中在 app/build.gradle.kts。
-            gradleTasks: ":app:packageGraalvmNative :app:packageWindowsVelopack"
-            assetPaths: |
-              app/build/compose/binaries/main/velopack/*
-          - os: ubuntu-latest
-            platform: linux
-            # Linux 继续发布 JVM 运行时包（deb + 通用 tar.gz）。
-            gradleTasks: ":app:packageDeb :app:packageLinuxTarGz"
-            assetPaths: |
-              app/build/compose/binaries/main/deb/*
-              app/build/compose/binaries/main/targz/*
+      matrix: ${{ fromJSON(needs.meta.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -144,6 +161,38 @@ jobs:
       - name: Setup Gradle
         # 与两个 Android 工作流对齐：缓存命中 + 守护进程复用，否则桌面包每次全量冷启动。
         uses: gradle/actions/setup-gradle@v3
+
+      - name: Install Oracle GraalVM 25.3.4.1 from GDS archive
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://gds.oracle.com/download/graal/25i3/archive/graalvm-jdk-25i3-25.0.4.1_windows-x64_bin.zip'
+          $archive = Join-Path $env:RUNNER_TEMP 'graalvm-25.3.4.1-windows-x64.zip'
+          $destination = Join-Path $env:RUNNER_TEMP 'graalvm-25.3.4.1'
+          curl.exe --fail --location --retry 3 --progress-bar --output $archive $url
+          # Pinned from the verified Oracle GDS archive; this is not the Community Edition hash.
+          $expectedSha256 = '5ad639be17b91a994eab49221698155513c26818df65f65a08139b2997f02c71'
+          $actualSha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualSha256 -ne $expectedSha256) { throw "GraalVM archive SHA-256 mismatch: $actualSha256" }
+          Expand-Archive -LiteralPath $archive -DestinationPath $destination -Force
+          $graalvmHome = $null
+          foreach ($directory in Get-ChildItem -LiteralPath $destination -Directory) {
+            if (Test-Path (Join-Path $directory.FullName 'bin\native-image.cmd')) {
+              $graalvmHome = $directory.FullName
+              break
+            }
+          }
+          if (-not $graalvmHome) { throw 'Oracle GraalVM archive did not contain bin/native-image.cmd.' }
+          $release = Get-Content -LiteralPath (Join-Path $graalvmHome 'release')
+          $versionLine = $release | Where-Object { $_ -like 'GRAALVM_VERSION=*' } | Select-Object -First 1
+          $vendorLine = $release | Where-Object { $_ -match '^(IMPLEMENTOR|VENDOR)=' } | Select-Object -First 1
+          if ($versionLine -ne 'GRAALVM_VERSION="25.3.4.1"') { throw "Unexpected GraalVM version: $versionLine" }
+          if ($vendorLine -notmatch 'Oracle') { throw "Expected Oracle GraalVM, got: $vendorLine" }
+          & (Join-Path $graalvmHome 'bin\native-image.cmd') --version
+          if ($LASTEXITCODE -ne 0) { throw 'Oracle native-image version check failed.' }
+          "GRAALVM_HOME=$graalvmHome" >> $env:GITHUB_ENV
+          Remove-Item -LiteralPath $archive
 
       # Velopack 的 CLI 是 .NET global tool。装到工作区内的 `.tools/` 而不是默认的
       # `~/.dotnet/tools` —— 后者**不保证在 runner 的 PATH 上**，而 Gradle 侧只认
