@@ -133,6 +133,7 @@ class PlaylistDetailScreenModel : ScreenModel {
         val gen = ++loadGen
         // 记下发请求这一刻的音源：曲目就绪后 mediaIds 用它拼，避免切源后被新 Provider 解释。
         val requestProvider = AppModel.activeProviderId()
+        val sortKey = _state.value.sortType.name
         loadedPlaylistId = summary.resourceId
         fetchingPlaylistId = summary.resourceId
         val silent = force && _state.value.tracks.isNotEmpty()
@@ -145,9 +146,11 @@ class PlaylistDetailScreenModel : ScreenModel {
             val results = withContext(Dispatchers.IO) {
                 runCatching {
                     coroutineScope {
-                        val detail = async { AppModel.musicRepository.getPlaylistDetail(summary.resourceId) }
+                        val detail = async { AppModel.musicRepository.getPlaylistDetail(summary.resourceId, sortKey) }
                         val tracks = async {
-                            AppModel.musicRepository.getPlaylistTracks(summary.resourceId, limit = PAGE_SIZE, offset = 0)
+                            AppModel.musicRepository.getPlaylistTracks(
+                                summary.resourceId, limit = PAGE_SIZE, offset = 0, sortKey = sortKey,
+                            )
                         }
                         detail.await() to tracks.await()
                     }
@@ -281,11 +284,14 @@ class PlaylistDetailScreenModel : ScreenModel {
         }
         if (!acquired) return
         val playlistId = _state.value.summary?.resourceId ?: return
+        val sortKey = _state.value.sortType.name
         screenModelScope.launch {
             val offset = _state.value.nextOffset
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    AppModel.musicRepository.getPlaylistTracks(playlistId, limit = PAGE_SIZE, offset = offset)
+                    AppModel.musicRepository.getPlaylistTracks(
+                        playlistId, limit = PAGE_SIZE, offset = offset, sortKey = sortKey,
+                    )
                 }.getOrNull()
             }
             if (fetchingPlaylistId == playlistId) {
