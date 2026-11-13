@@ -45,13 +45,7 @@ object ShizukuPermissions {
     @Volatile
     private var pendingResult: ((Boolean) -> Unit)? = null
 
-    /**
-     * 权限结果监听器。
-     *
-     * **常驻注册**而不是「注册-摘除」：摘除要求持有同一个实例引用，而把它存进
-     * 另一个属性再自引用初始化很别扭；常驻一个监听器没有任何代价（回调里按
-     * [pendingResult] 是否为空过滤），也避免了「摘除失败 ⇒ 下次多收一次回调」。
-     */
+    /** 常驻监听器；回调按 [pendingResult] 是否为空过滤。 */
     private val resultListener = Shizuku.OnRequestPermissionResultListener { code, grantResult ->
         if (code != REQUEST_CODE) return@OnRequestPermissionResultListener
         val granted = grantResult == PackageManager.PERMISSION_GRANTED
@@ -139,17 +133,19 @@ object ShizukuPermissions {
         }
     }
 
-    /**
-     * binder 就绪时回调一次（sticky：注册时若已就绪会立即触发）。
-     *
-     * 由 [ShizukuKeepAlive] 使用：它要「binder 一就绪就重连」，而不是等下一次播放。
-     */
-    internal fun addBinderReceivedListener(listener: Shizuku.OnBinderReceivedListener) {
-        runCatching { Shizuku.addBinderReceivedListenerSticky(listener) }
-            .onFailure { Log.w(TAG, "addBinderReceivedListener failed", it) }
-    }
+    /** Register sticky listener; success is reported so failed registration remains retryable. */
+    internal fun addBinderReceivedListener(listener: Shizuku.OnBinderReceivedListener): Boolean =
+        runCatching {
+            Shizuku.addBinderReceivedListenerSticky(listener)
+            true
+        }.onFailure { Log.w(TAG, "addBinderReceivedListener failed", it) }
+            .getOrDefault(false)
 
-    internal fun removeBinderReceivedListener(listener: Shizuku.OnBinderReceivedListener) {
-        runCatching { Shizuku.removeBinderReceivedListener(listener) }
-    }
+    /** Remove a sticky listener; retain its reference on failure so a later cleanup can retry. */
+    internal fun removeBinderReceivedListener(listener: Shizuku.OnBinderReceivedListener): Boolean =
+        runCatching {
+            Shizuku.removeBinderReceivedListener(listener)
+            true
+        }.onFailure { Log.w(TAG, "removeBinderReceivedListener failed", it) }
+            .getOrDefault(false)
 }

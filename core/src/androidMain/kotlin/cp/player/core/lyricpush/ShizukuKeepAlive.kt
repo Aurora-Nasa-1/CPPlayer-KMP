@@ -13,9 +13,7 @@ import android.os.IBinder
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import rikka.shizuku.Shizuku
 
@@ -43,9 +41,9 @@ class ShizukuKeepAliveService(
 /**
  * daemon UserService 的绑定管理。
  *
- * 绑定失败或 `onServiceDisconnected()` 之后延迟重试；**权限未授予时不请求**，
- * 只安排重试（移植指南 §4.2）。用户在设置页手动授权成功后由调用方再调一次
- * [ensureBound]（`ShizukuPermissions.requestPermission` 的回调里已接上）。
+ * 重复请求在连接回调到达前也会合并；绑定失败、权限暂不可用、连接断开时按轮次重试。
+ * 所有 Shizuku API 调用与 listener 清理都在主线程执行；关闭后迟到的 binder/连接回调
+ * 不会重新启用功能。用户手动授权成功后由调用方再次调 [ensureBound]。
  */
 object ShizukuKeepAlive {
 
@@ -53,80 +51,79 @@ object ShizukuKeepAlive {
     private const val RETRY_DELAY_MS = 5_000L
     private const val SERVICE_TAG = "cp_player_keepalive"
 
-    /** 绑定回调必须在主线程；Shizuku 的 API 也要求主线程调用。 */
+    /** Shizuku binder/listener APIs 和 ServiceConnection 均通过主线程 scope 串行化。 */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     @Volatile
     private var appContext: Context? = null
 
-    @Volatile
-    private var bound = false
-
-    @Volatile
-    private var retryJob: Job? = null
-
-    @Volatile
-    private var listenerRegistered = false
-
     private val argsLock = Any()
     private var cachedArgs: Shizuku.UserServiceArgs? = null
+    private var binderReceivedListener: Shizuku.OnBinderReceivedListener? = null
+
+    private lateinit var bindingController: KeepAliveBindingController
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            bound = true
             Log.d(TAG, "Shizuku user service connected")
+            bindingController.onServiceConnected()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
-            bound = false
             Log.d(TAG, "Shizuku user service disconnected")
-            scheduleRetry()
+            bindingController.onServiceDisconnected()
         }
     }
 
-    /** Shizuku 重启后 binder 会重新到达 —— 那时必须重绑，否则连接永远停在断开状态。 */
-    private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
-        Log.d(TAG, "Shizuku binder received; rebinding keepalive")
-        bound = false
-        appContext?.let { ensureBound(it) }
+    private val backend = object : KeepAliveBindingBackend {
+        override fun isInstalled(): Boolean = appContext?.let(ShizukuPermissions::isInstalled) ?: false
+
+        override fun hasPermission(): Boolean = ShizukuPermissions.isGranted()
+
+        override fun addBinderListener(listener: () -> Unit): Boolean {
+            val platformListener = Shizuku.OnBinderReceivedListener { listener() }
+            binderReceivedListener = platformListener
+            val added = ShizukuPermissions.addBinderReceivedListener(platformListener)
+            if (!added) binderReceivedListener = null
+            return added
+        }
+
+        override fun removeBinderListener(): Boolean {
+            val listener = binderReceivedListener ?: return true
+            val removed = ShizukuPermissions.removeBinderReceivedListener(listener)
+            if (removed) binderReceivedListener = null
+            return removed
+        }
+
+        override fun bindUserService() {
+            val context = appContext ?: error("Shizuku keepalive has no application context")
+            Shizuku.bindUserService(argsFor(context), connection)
+        }
+
+        override fun unbindUserService() {
+            val args = cachedArgs ?: return
+            Shizuku.unbindUserService(args, connection, true)
+        }
     }
 
-    /** 绑定（幂等）。权限未授予 / 未装 Shizuku 时只安排重试，不弹窗。 */
+    init {
+        bindingController = KeepAliveBindingController(
+            scope = scope,
+            backend = backend,
+            retryDelayMs = RETRY_DELAY_MS,
+            onFailure = { Log.w(TAG, "Shizuku keepalive operation failed", it) },
+        )
+    }
+
+    /** 启动或确保绑定；重复调用安全，调用线程会自动切换到主线程。 */
     fun ensureBound(context: Context) {
-        val ctx = context.applicationContext
-        appContext = ctx
-        if (!ShizukuPermissions.isInstalled(ctx)) return
-        if (!listenerRegistered) {
-            ShizukuPermissions.addBinderReceivedListener(binderReceivedListener)
-            listenerRegistered = true
-        }
-        if (!ShizukuPermissions.isGranted()) {
-            scheduleRetry()
-            return
-        }
-        if (bound) return
-        runCatching { Shizuku.bindUserService(argsFor(ctx), connection) }.onFailure {
-            Log.w(TAG, "bindUserService failed", it)
-            scheduleRetry()
-        }
+        appContext = context.applicationContext
+        bindingController.activate()
     }
 
-    /** 解绑（进程退出 / 用户关闭功能时）。 */
+    /** 关闭功能或退出时禁用 keepalive；调用线程会自动切换到主线程清理资源。 */
     fun unbind() {
-        retryJob?.cancel()
-        retryJob = null
-        val args = cachedArgs ?: return
-        runCatching { Shizuku.unbindUserService(args, connection, true) }
-        bound = false
-    }
-
-    private fun scheduleRetry() {
-        if (appContext == null) return
-        if (retryJob?.isActive == true) return
-        retryJob = scope.launch {
-            delay(RETRY_DELAY_MS)
-            appContext?.let { ensureBound(it) }
-        }
+        bindingController.deactivate()
     }
 
     private fun argsFor(context: Context): Shizuku.UserServiceArgs = synchronized(argsLock) {
