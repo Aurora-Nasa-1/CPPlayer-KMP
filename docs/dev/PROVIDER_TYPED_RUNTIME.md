@@ -22,7 +22,8 @@ JNI is not sandboxed.
 
 ## Source audit
 
-Confirmed from the working tree, including pre-existing uncommitted changes:
+The findings below are a historical working-tree snapshot from 2026-11-10,
+including pre-existing uncommitted changes; they are not claims about the current source state.
 
 - `BackendProvider.callApi(String, Map<String, String>): String` is synchronous.
   `ProviderManager` dispatches it to IO, but its catch-all `Exception` also catches
@@ -80,7 +81,7 @@ changes are pre-existing work and must be preserved.
   interface, generated DTOs, TS declarations, and compiled Kotlin/JS examples.
 - `UnifiedMusicSourceImpl` maps SDK objects once into domain models. Search UI's
   `MusicRepository` receives this source; playback and downloads already use it.
-  Legacy normalization lives in `provider/compat/LegacyMusicSourceAdapter`.
+  `LegacyMusicSourceAdapter` was removed with the legacy JSON layer (see below).
 - `ProviderHost` owns session child tasks, deadline including queue wait, permits,
   validation, caller cancellation/draining and dispose-once release.
 - `ProviderSdkSessions` replaces instances on provider/account/config/credential
@@ -134,7 +135,8 @@ CancellationException, never a Failure or successful empty page.
 - [x] B: search/detail/batch/resolve SDK route into unified music source and UI
   repository wiring (not a claim of an observed interactive UI playback session).
 - [x] C: automated Kotlin/JS local HTTP contract suite and desktop native worker
-  gate; generated PCM downloaded and checked. See validation record for outcomes.
+  gate; generated PCM downloaded and checked. Reproduce these local checks with
+  [verify-provider-chain.ps1](../../scripts/verify-provider-chain.ps1).
 - [ ] D: account/cache/auth and remaining business capability migration.
 - [ ] E: packaging matrix, legacy retirement and removal after reference audit.
 
@@ -154,9 +156,11 @@ packages remain opt-in compatibility packages. Removing the new package restores
 legacy behavior without a data conversion. Ephemeral SDK storage intentionally
 does not pretend to migrate or persist old JS provider storage.
 
-See [PROVIDER_KMP_VALIDATION.md](PROVIDER_KMP_VALIDATION.md) for actual test/build
-results, limitations and measured costs. Neither these fixtures nor a passing
-build proves production-service integration, UI playback, zero-copy or a speedup.
+Run [verify-provider-chain.ps1](../../scripts/verify-provider-chain.ps1) on Windows
+to reproduce the build/test gates; it writes JUnit XML and logs under
+`artifacts/provider-chain/`. No separate measured-cost report is checked in.
+Neither these fixtures nor a passing build proves production-service integration,
+UI playback, zero-copy or a speedup.
 
 ## Legacy JSON layer removal (2026-11-10)
 

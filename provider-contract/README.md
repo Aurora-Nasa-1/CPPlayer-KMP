@@ -41,5 +41,6 @@ runtime implementation before documenting it as enforced. Describe provider
 responsibilities separately from host checks.
 
 Run the repository's required desktop compilation after declaration changes.
-The verification scripts include the documentation tests and retain JUnit XML;
+Both PowerShell verification scripts are Windows-only because they invoke `gradlew.bat`.
+They include the documentation tests and retain JUnit XML;
 the docs tests do not replace upstream/provider integration tests.

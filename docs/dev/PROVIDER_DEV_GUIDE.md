@@ -49,7 +49,7 @@
 歌手搜索/详情/曲目/专辑。Kotlin、JavaScript 与 JNI/Native 适配器使用同一业务契约。
 
 **扩展业务契约**：已接入登录、推荐、评论/私信、一起听、MV/视频、DJ、日历/动态、
-账号/云盘和目录写操作。共 160 个业务操作，完整签名与能力名由 schema 生成到
+账号/云盘和目录写操作。共 161 个业务操作，完整签名与能力名由 schema 生成到
 [SDK 操作表](SDK_OPERATIONS.md)。新增 Kotlin 常量位于 `ExtendedCapability`；
 旧常量与协议编号不变，未实现方法默认返回 `Unsupported`。
 这些是可实现、可调用的 SDK 能力，不代表某个生产音源已经完成上游实现或真机联调。
@@ -147,6 +147,8 @@ npm ci --prefix provider-sdk-kmp/js --ignore-scripts
 npm run --prefix provider-sdk-kmp/js check:types
 pwsh -File scripts/verify-provider-chain.ps1
 ```
+
+最后一条验证脚本仅支持 Windows（调用 `gradlew.bat`）；前面的 Node/npm 命令可在相应工具支持的平台运行。
 
 TS 命令使用新 SDK 包锁定的开发依赖；独立音源项目使用自己的 TypeScript 编译器，
 不需要依赖旧 SDK 目录。`--check` 同时检查字段参考、操作参考、

@@ -76,7 +76,7 @@ my-provider.zip
 3. 流返回真实档位和显式请求头，不让宿主猜音质或替你加账号 Cookie。
 4. 未接入的能力返回 `Unsupported`，不要偷偷切回旧协议。
 
-当前 SDK 契约含 160 个 typed 业务操作，包含登录、目录读写、推荐、评论/私信、
+当前 SDK 契约含 161 个 typed 业务操作，包含登录、目录读写、推荐、评论/私信、
 一起听、MV/视频、DJ、日历/动态与账号操作。见 [完整操作表](SDK_OPERATIONS.md)；
 这不表示任何一个音源已实现全部能力。Kotlin 新增能力常量见 `ExtendedCapability`，
 JS 按操作表声明能力名并实现对应方法，默认实现仍返回 `Unsupported`。
@@ -86,6 +86,8 @@ JS 按操作表声明能力名并实现对应方法，默认实现仍返回 `Uns
 本地媒体、边车与独立歌词插件照常使用。
 
 ## 5. 验证
+
+此验证脚本仅支持 Windows（调用 `gradlew.bat`）；macOS/Linux 不支持运行该脚本。
 
 ```powershell
 pwsh -File scripts/verify-provider-chain.ps1

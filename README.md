@@ -51,7 +51,7 @@ app-android ──▶ app ──▶ core ──▶ provider-sdk-kmp
 | 模块 | 职责 | 说明 |
 |------|------|------|
 | `provider-sdk-kmp` | **Provider 强类型开发契约** | 独立 KMP SDK，业务方法、数据类型及受控宿主能力，不依赖 core/UI/具体 Provider |
-| `core` | **后端领域核心** | SDK 会话、统一数据层、播放内核、本地媒体库、下载与流输出；保留部分旧页面的输出投影。**无任何 UI 代码** |
+| `core` | **后端领域核心** | SDK 会话、统一数据层、播放内核、本地媒体库、下载与流输出；旧 JSON 页面输出投影已删除。**无任何 UI 代码** |
 | `app` | **前端跨平台共享** | Compose Multiplatform UI、Voyager 导航、ScreenModel、主题系统，以及桌面端入口 `Main.kt` |
 | `app-android` | **Android 平台入口** | 依 AGP 规范独立的应用模块：`MainActivity`、`Application`、Media3 `MediaSessionService` |
 
@@ -86,6 +86,8 @@ pwsh -File scripts/verify-provider-chain.ps1
 ./gradlew :app:packageWindowsVelopack  # Windows 安装包 (Velopack)
 ./gradlew :app-android:assembleDebug   # Android 安装包
 ```
+
+`scripts/verify-provider-chain.ps1` 是 Windows 专用验证脚本（内部调用 `gradlew.bat`）；macOS/Linux 不能运行该脚本。
 
 发布细节请参阅 [`docs/dev/RELEASE.md`](docs/dev/RELEASE.md)。
 
