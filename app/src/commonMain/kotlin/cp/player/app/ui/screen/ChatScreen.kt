@@ -54,8 +54,11 @@ import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.ui.util.formatChatTime
 import cp.player.core.BackendResult
 import cp.player.core.model.Message
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.ProvideCpTextFullDisplay
@@ -97,11 +100,25 @@ internal data class ChatUiState(
     val sending: Boolean = false,
 )
 
-internal class ChatModel : ScreenModel {
+internal class ChatModel(
+    private val fetchMessages: suspend (peerUid: Long, myUid: Long) -> BackendResult<List<Message>> =
+        { peerUid, myUid -> AppModel.socialRepository.getMessages(peerUid, myUid) },
+    private val sendText: suspend (peerUid: Long, text: String) -> Boolean =
+        { peerUid, text -> AppModel.socialRepository.sendMessage(peerUid, text) },
+    private val requestScope: CoroutineScope? = null,
+) : ScreenModel {
     private val _state = MutableStateFlow(ChatUiState())
     val state: StateFlow<ChatUiState> = _state
 
-    private var loadedUid: Long? = null
+    private var loadedSession: ChatSessionIdentity? = null
+    private val requestGate = ChatRequestGate()
+    private var loadJob: Job? = null
+    private var sendJob: Job? = null
+    private val scope: CoroutineScope get() = requestScope ?: screenModelScope
+
+    /** Mask a previous account/provider conversation on the first composition frame after a switch. */
+    fun stateFor(session: ChatSessionIdentity, observedState: ChatUiState): ChatUiState =
+        if (loadedSession == session) observedState else ChatUiState()
 
     /**
      * 换会话时必须把上一段对话清掉再拉。
@@ -113,21 +130,53 @@ internal class ChatModel : ScreenModel {
      * @param strings 失败兜底文案要按**当前语言**组 —— 协程里读不到 CompositionLocal，
      *   由组合侧传进来（见 I18N.md §5.9）。
      */
-    fun load(peerUid: Long, myUid: Long, force: Boolean = false, strings: CpStrings) {
-        if (!force && loadedUid == peerUid && _state.value.messages.isNotEmpty()) return
-        val switchingPeer = loadedUid != peerUid
-        loadedUid = peerUid
-        screenModelScope.launch {
-            _state.value = if (switchingPeer) ChatUiState(loading = true)
-            else _state.value.copy(loading = true, error = null)
-            val result = runCatching { AppModel.socialRepository.getMessages(peerUid, myUid) }
-                .getOrElse { BackendResult.Error(it.message ?: strings.social.chat.loadFailed) }
+    fun load(
+        peerUid: Long,
+        myUid: Long,
+        force: Boolean = false,
+        strings: CpStrings,
+        providerId: String = AppModel.activeProviderId(),
+        sourceGeneration: Int = AppModel.sourceGeneration.value,
+    ) {
+        val session = ChatSessionIdentity(providerId, sourceGeneration, myUid, peerUid)
+        if (!force && loadedSession == session && _state.value.messages.isNotEmpty()) return
+        val switchingSession = loadedSession != session
+        loadedSession = session
+        val requestToken = requestGate.begin(session)
+        loadJob?.cancel()
+        loadJob = null
+        sendJob?.cancel()
+        sendJob = null
+        // Publish synchronously so a recomposition cannot render the previous account/provider.
+        _state.value = if (switchingSession) ChatUiState(loading = true)
+        else _state.value.copy(loading = true, error = null, sending = false)
+        loadJob = scope.launch {
+            if (!requestGate.isCurrent(session, requestToken)) return@launch
+            val result = try {
+                fetchMessages(peerUid, myUid)
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                BackendResult.Error(error.message ?: strings.social.chat.loadFailed)
+            }
+            if (!requestGate.isCurrent(session, requestToken)) return@launch
             _state.value = when (result) {
                 is BackendResult.Success -> ChatUiState(loading = false, messages = result.data)
                 is BackendResult.Error -> _state.value.copy(loading = false, error = result.message)
                 is BackendResult.Unsupported -> _state.value.copy(loading = false, error = result.message)
             }
         }
+    }
+
+    /** Drop private conversation state immediately on logout or when its host leaves. */
+    fun reset() {
+        loadedSession = null
+        requestGate.invalidate()
+        loadJob?.cancel()
+        loadJob = null
+        sendJob?.cancel()
+        sendJob = null
+        _state.value = ChatUiState(loading = false)
     }
 
     /**
@@ -142,15 +191,40 @@ internal class ChatModel : ScreenModel {
         myUid: Long,
         text: String,
         strings: CpStrings,
+        providerId: String = AppModel.activeProviderId(),
+        sourceGeneration: Int = AppModel.sourceGeneration.value,
         onResult: (Boolean) -> Unit,
     ) {
         val body = text.trim()
         if (body.isEmpty() || _state.value.sending) return
+        val session = ChatSessionIdentity(providerId, sourceGeneration, myUid, peerUid)
+        val requestToken = requestGate.currentToken(session) ?: return
         _state.value = _state.value.copy(sending = true)
-        screenModelScope.launch {
-            val ok = AppModel.socialRepository.sendMessage(peerUid, body)
+        sendJob = scope.launch {
+            val ok = try {
+                sendText(peerUid, body)
+            } catch (cancel: CancellationException) {
+                if (requestGate.isCurrent(session, requestToken)) {
+                    _state.value = _state.value.copy(sending = false)
+                    sendJob = null
+                }
+                throw cancel
+            } catch (_: Exception) {
+                false
+            }
+            if (!requestGate.isCurrent(session, requestToken)) return@launch
             _state.value = _state.value.copy(sending = false)
-            if (ok) load(peerUid, myUid, force = true, strings = strings)
+            sendJob = null
+            if (ok) {
+                load(
+                    peerUid,
+                    myUid,
+                    force = true,
+                    strings = strings,
+                    providerId = providerId,
+                    sourceGeneration = sourceGeneration,
+                )
+            }
             onResult(ok)
         }
     }
@@ -174,29 +248,45 @@ internal fun ChatContent(
     embedded: Boolean = false,
     clearGlobalUnread: Boolean = !embedded,
 ) {
-    val state by model.state.collectAsState()
+    val observedState by model.state.collectAsState()
     val me by AppModel.userProfileFlow.collectAsState()
     val myUid = me?.uid ?: 0L
+    val activeProvider by AppModel.activeProviderFlow.collectAsState()
+    val providerId = activeProvider?.id ?: AppModel.activeProviderId()
+    val sourceGeneration by AppModel.sourceGeneration.collectAsState()
+    val session = ChatSessionIdentity(providerId, sourceGeneration, myUid, peerUid)
+    val state = model.stateFor(session, observedState)
     var draft by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val s = cpStrings()
     val chat = s.social.chat
     val messageKeys = remember(state.messages) { stableChatMessageKeys(state.messages) }
-    val previousMessageKeys = remember(peerUid) { mutableStateOf(emptyList<String>()) }
+    val previousMessageKeys = remember(peerUid, myUid, providerId, sourceGeneration) {
+        mutableStateOf(emptyList<String>())
+    }
 
-    LaunchedEffect(peerUid, myUid) {
+    LaunchedEffect(peerUid, myUid, providerId, sourceGeneration) {
         if (myUid != 0L) {
             // ⚠️ `force = true` 不能省：双栏模式下左栏点谁就切谁，`peerUid` 一变这里就要
             // 重新拉。`ChatModel` 自己只按 `loadedUid` 判重，页面这层不再兜一遍。
-            model.load(peerUid, myUid, force = true, strings = s)
+            model.load(
+                peerUid,
+                myUid,
+                force = true,
+                strings = s,
+                providerId = providerId,
+                sourceGeneration = sourceGeneration,
+            )
             // 进对话即视为已读（列表页已经本地标过一次，这里补上报服务端）。
             AppModel.socialRepository.markRead(peerUid)
             if (clearGlobalUnread) AppModel.clearUnreadMessages()
             AppModel.refreshUnreadMessages()
             // 通知栏里这一条该收走了 —— 用户正在看这个会话。
             cp.player.app.platform.cancelMessageNotification(
-                cp.player.app.notify.MessageNotification.keyOf(AppModel.activeProviderId(), peerUid)
+                cp.player.app.notify.MessageNotification.keyOf(providerId, peerUid)
             )
+        } else {
+            model.reset()
         }
     }
 
@@ -220,7 +310,7 @@ internal fun ChatContent(
 
     // 列表只在纯追加时做滚动动画；历史被替换、删除或重排时直接定位，避免动画继续
     // 驱动已从 LazyColumn 移除的行节点。消息字段刷新但条数不变时仍不触发滚动。
-    LaunchedEffect(messageKeys, peerUid) {
+    LaunchedEffect(messageKeys, peerUid, myUid, providerId, sourceGeneration) {
         val previous = previousMessageKeys.value
         if (messageKeys.isNotEmpty() && messageKeys.size != previous.size) {
             if (isStrictlyAppendedChatList(previous, messageKeys)) {
@@ -236,7 +326,14 @@ internal fun ChatContent(
     val submit: () -> Unit = {
         val body = draft
         if (body.isNotBlank()) {
-            model.send(peerUid, myUid, body, strings = s) { ok ->
+            model.send(
+                peerUid,
+                myUid,
+                body,
+                strings = s,
+                providerId = providerId,
+                sourceGeneration = sourceGeneration,
+            ) { ok ->
                 if (ok) draft = "" else UiEvents.notify(chat.sendFailed)
             }
         }
@@ -269,7 +366,14 @@ internal fun ChatContent(
                         actionLabel = if (state.error != null) s.player.retry else null,
                         onAction = if (state.error != null) (
                             {
-                                model.load(peerUid, myUid, force = true, strings = s)
+                                model.load(
+                                    peerUid,
+                                    myUid,
+                                    force = true,
+                                    strings = s,
+                                    providerId = providerId,
+                                    sourceGeneration = sourceGeneration,
+                                )
                             }
                             ) else null,
                     )

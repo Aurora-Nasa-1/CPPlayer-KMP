@@ -1,8 +1,6 @@
 package cp.player.core.util
 
-import java.lang.invoke.MethodHandle
-import java.lang.invoke.MethodHandles
-import java.lang.invoke.MethodType
+import java.lang.reflect.Method
 import java.lang.reflect.InvocationTargetException
 import java.util.NoSuchElementException
 import kotlinx.coroutines.asContextElement
@@ -35,7 +33,7 @@ class DesktopScopedValue<T> internal constructor(
         // 2. 检查 Java 25 原生 ScopedValue（同步 runWith 路径）
         if (nativeScopedValue != null && NativeBinding.isSupported) {
             try {
-                if (NativeBinding.isBoundHandle!!.invoke(nativeScopedValue) as Boolean) {
+                if (NativeBinding.isBoundMethod!!.invoke(nativeScopedValue) as Boolean) {
                     return true
                 }
             } catch (_: Throwable) {
@@ -59,8 +57,8 @@ class DesktopScopedValue<T> internal constructor(
         // 2. 检查 Java 25 原生 ScopedValue
         if (nativeScopedValue != null && NativeBinding.isSupported) {
             try {
-                if (NativeBinding.isBoundHandle!!.invoke(nativeScopedValue) as Boolean) {
-                    return NativeBinding.getHandle!!.invoke(nativeScopedValue) as T
+                if (NativeBinding.isBoundMethod!!.invoke(nativeScopedValue) as Boolean) {
+                    return NativeBinding.getMethod!!.invoke(nativeScopedValue) as T
                 }
             } catch (e: NoSuchElementException) {
                 throw e
@@ -133,7 +131,7 @@ class DesktopScopedValue<T> internal constructor(
         fun <T> create(name: String): DesktopScopedValue<T> {
             val nativeObj = if (NativeBinding.isSupported) {
                 try {
-                    NativeBinding.newInstanceHandle!!.invoke()
+                    NativeBinding.newInstanceMethod!!.invoke(null)
                 } catch (_: Throwable) {
                     null
                 }
@@ -144,48 +142,46 @@ class DesktopScopedValue<T> internal constructor(
         }
     }
 
-    /** JEP 506 原生反射绑定门面（保证桌面 JBR 25 高性能同时避免 Android ART 类加载链接错误）。 */
+    /** JEP 506 原生反射绑定门面；只使用旧版 Android 可链接的 java.lang.reflect API。 */
     internal object NativeBinding {
         val isSupported: Boolean
-        val newInstanceHandle: MethodHandle?
-        val whereHandle: MethodHandle?
-        val getHandle: MethodHandle?
-        val isBoundHandle: MethodHandle?
-        val carrierWhereHandle: MethodHandle?
-        val carrierRunHandle: MethodHandle?
+        val newInstanceMethod: Method?
+        val whereMethod: Method?
+        val getMethod: Method?
+        val isBoundMethod: Method?
+        val carrierWhereMethod: Method?
+        val carrierRunMethod: Method?
 
         init {
             var supported = false
-            var newInstH: MethodHandle? = null
-            var whereH: MethodHandle? = null
-            var getH: MethodHandle? = null
-            var isBoundH: MethodHandle? = null
-            var carrierWhereH: MethodHandle? = null
-            var carrierRunH: MethodHandle? = null
+            var newInst: Method? = null
+            var where: Method? = null
+            var get: Method? = null
+            var isBound: Method? = null
+            var carrierWhere: Method? = null
+            var carrierRun: Method? = null
 
-            runCatching {
-                val svClass = Class.forName("java.lang.ScopedValue")
-                val carrierClass = Class.forName("java.lang.ScopedValue\$Carrier")
-                val lookup = MethodHandles.publicLookup()
-
-                newInstH = lookup.findStatic(svClass, "newInstance", MethodType.methodType(svClass))
-                whereH = lookup.findStatic(svClass, "where", MethodType.methodType(carrierClass, svClass, Any::class.java))
-                getH = lookup.findVirtual(svClass, "get", MethodType.methodType(Any::class.java))
-                isBoundH = lookup.findVirtual(svClass, "isBound", MethodType.methodType(Boolean::class.javaPrimitiveType))
-
-                carrierWhereH = lookup.findVirtual(carrierClass, "where", MethodType.methodType(carrierClass, svClass, Any::class.java))
-                carrierRunH = lookup.findVirtual(carrierClass, "run", MethodType.methodType(Void.TYPE, Runnable::class.java))
-
-                supported = true
+            if (!PlatformInfo.isAndroid) {
+                runCatching {
+                    val svClass = Class.forName("java.lang.ScopedValue")
+                    val carrierClass = Class.forName("java.lang.ScopedValue\$Carrier")
+                    newInst = svClass.getMethod("newInstance")
+                    where = svClass.getMethod("where", svClass, Any::class.java)
+                    get = svClass.getMethod("get")
+                    isBound = svClass.getMethod("isBound")
+                    carrierWhere = carrierClass.getMethod("where", svClass, Any::class.java)
+                    carrierRun = carrierClass.getMethod("run", Runnable::class.java)
+                    supported = true
+                }
             }
 
             isSupported = supported
-            newInstanceHandle = newInstH
-            whereHandle = whereH
-            getHandle = getH
-            isBoundHandle = isBoundH
-            carrierWhereHandle = carrierWhereH
-            carrierRunHandle = carrierRunH
+            newInstanceMethod = newInst
+            whereMethod = where
+            getMethod = get
+            isBoundMethod = isBound
+            carrierWhereMethod = carrierWhere
+            carrierRunMethod = carrierRun
         }
     }
 
@@ -245,13 +241,14 @@ object DesktopScopedContext {
             if (validBindings.size == bindings.size && validBindings.isNotEmpty()) {
                 try {
                     val first = validBindings.first()
-                    var carrier = DesktopScopedValue.NativeBinding.whereHandle!!.invoke(
+                    var carrier = DesktopScopedValue.NativeBinding.whereMethod!!.invoke(
+                        null,
                         first.first.nativeScopedValue,
                         first.second,
                     )
                     for (i in 1 until validBindings.size) {
                         val item = validBindings[i]
-                        carrier = DesktopScopedValue.NativeBinding.carrierWhereHandle!!.invoke(
+                        carrier = DesktopScopedValue.NativeBinding.carrierWhereMethod!!.invoke(
                             carrier,
                             item.first.nativeScopedValue,
                             item.second,
@@ -269,7 +266,7 @@ object DesktopScopedContext {
                         }
                     }
 
-                    DesktopScopedValue.NativeBinding.carrierRunHandle!!.invoke(carrier, runnable)
+                    DesktopScopedValue.NativeBinding.carrierRunMethod!!.invoke(carrier, runnable)
                     failure?.let { throw it }
                     @Suppress("UNCHECKED_CAST")
                     return result as R

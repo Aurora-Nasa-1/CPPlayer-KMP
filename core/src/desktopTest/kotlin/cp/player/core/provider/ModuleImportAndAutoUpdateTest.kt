@@ -190,4 +190,18 @@ class ModuleImportAndAutoUpdateTest {
         }
         assertFalse(moduleManager.queueRepositoryUpdate(createZip("cross.zip", validManifest).absolutePath, "test-src", "../other"))
     }
+
+    @Test
+    fun `deleting a missing module directory also removes its stale descriptor`() {
+        val manifest = """{"id":"missing-dir","name":"Missing directory","type":"js","entryPoint":"index.js","contract":"kmp-sdk-v1","version":"1.0.0"}"""
+        assertNotNull(moduleManager.importModuleDetails(createZip("missing-dir.zip", manifest).absolutePath))
+        assertNotNull(moduleManager.getProvider("missing-dir"))
+        assertTrue(File(tempModulesDir, "missing-dir").deleteRecursively())
+
+        // The filesystem deletion already happened, but the manager must still invalidate a
+        // descriptor and any startup scan token for this ID.
+        assertFalse(moduleManager.deleteModule("missing-dir"))
+        assertNull(moduleManager.getProvider("missing-dir"))
+        assertTrue(moduleManager.providersFlow.value.none { it.id == "missing-dir" })
+    }
 }

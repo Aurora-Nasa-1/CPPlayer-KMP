@@ -2,6 +2,7 @@ package cp.player.app.platform
 
 import java.awt.FileDialog
 import java.awt.Frame
+import java.awt.GraphicsEnvironment
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -20,6 +21,10 @@ class JbrFileDialogBridgeTest {
 
     @Test
     fun `configureZipFilter and configureDirectoryPicker run safely on FileDialog`() {
+        if (GraphicsEnvironment.isHeadless()) {
+            println("[skip] FileDialog construction requires a graphics environment")
+            return
+        }
         val dialog = FileDialog(null as Frame?, "Test Dialog", FileDialog.LOAD)
         // Ensure no exception is thrown
         JbrFileDialogBridge.configureZipFilter(dialog, "音源模块 (*.zip)", arrayOf("zip"))

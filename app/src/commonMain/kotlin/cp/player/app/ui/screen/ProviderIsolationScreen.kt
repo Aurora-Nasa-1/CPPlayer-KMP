@@ -122,11 +122,13 @@ class ProviderIsolationScreen : Screen {
                                     // 与账号页的「退出登录」保持一致：也要打一次服务端 logout，
                                     // 否则接口缓存里仍留着该账号的响应（键含 cookie 哈希，
                                     // 同一音源再登录会被读透层直接命中）。
-                                    scope.launch { runCatching { AppModel.authRepository.logout() } }
-                                    AppModel.cookieStorage.clear(providerId)
-                                    AccountStore.setActive(providerId, null)
-                                    AppModel.clearUserProfile()
                                     confirmClear = false
+                                    scope.launch {
+                                        runCatching { AppModel.authRepository.logout() }
+                                        AppModel.cookieStorage.clear(providerId)
+                                        AccountStore.setActive(providerId, null)
+                                        AppModel.clearUserProfile()
+                                    }
                                 }
                             },
                         )

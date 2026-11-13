@@ -68,7 +68,7 @@ interface PlaybackController {
     suspend fun moveQueueItem(from: Int, to: Int)
 
     /** 清空队列并停止。 */
-    fun clearQueue()
+    suspend fun clearQueue()
 
     /** 跳到队列指定索引并播放。 */
     suspend fun playAt(index: Int)

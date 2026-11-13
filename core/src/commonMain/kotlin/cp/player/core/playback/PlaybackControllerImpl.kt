@@ -336,13 +336,11 @@ class PlaybackControllerImpl(
         }
     }
 
-    override fun clearQueue() {
-        queueManager.cancel()
-        mediaLoader.onQueueCleared()
-        scope.launch {
-            navMutex.withLock {
-                queueManager.clear()
-            }
+    override suspend fun clearQueue() {
+        navMutex.withLock {
+            queueManager.cancel()
+            mediaLoader.onQueueCleared()
+            queueManager.clear()
             platform.stop()
             clearState()
             pushQueueState()

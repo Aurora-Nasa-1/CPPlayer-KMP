@@ -33,6 +33,9 @@ import cp.player.app.shortcut.ShortcutAction
 import cp.player.app.shortcut.ShortcutBinding
 import cp.player.app.shortcut.UNBOUND_SHORTCUT_MARKER
 import cp.player.app.ui.theme.AppFontFace
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -50,6 +53,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -2049,10 +2053,7 @@ object AppModel {
      * 3. 该音源至少有一个订阅（没有目标就不该占连接）。
      */
     fun syncMessageWatch() {
-        val shouldRun = userProfileFlow.value != null &&
-            messageNotifyPrefs.isMasterEnabled() &&
-            messageNotifyPrefs.subscribedCount(activeProviderId()) > 0
-        if (shouldRun) messageWatch.start(modelScope) else messageWatch.stop()
+        messageWatch.sync(modelScope)
     }
 
     /** 该联系人是否已开启新消息通知（当前音源下）。 */
@@ -2073,7 +2074,7 @@ object AppModel {
     fun messageNotifyMasterEnabled(): Boolean = messageNotifyPrefs.isMasterEnabled()
 
     fun setMessageNotifyMasterEnabled(enabled: Boolean) {
-        messageNotifyPrefs.setMasterEnabled(enabled)
+        messageWatch.setMasterEnabled(enabled)
         syncMessageWatch()
         if (enabled) messageWatch.tickNow(modelScope)
     }
@@ -2087,8 +2088,7 @@ object AppModel {
      * @return 切换后的状态
      */
     fun toggleMessageNotify(uid: Long, enabled: Boolean = !isMessageNotifySubscribed(uid)): Boolean {
-        if (enabled && !messageNotifyPrefs.isMasterEnabled()) messageNotifyPrefs.setMasterEnabled(true)
-        messageNotifyPrefs.setSubscribed(activeProviderId(), uid, enabled)
+        messageWatch.setSubscription(activeProviderId(), uid, enabled)
         syncMessageWatch()
         // 立刻跑一轮：用户刚开开关，马上看到效果才像「生效了」（否则最多等 45s）。
         if (enabled) messageWatch.tickNow(modelScope)
@@ -2143,7 +2143,7 @@ object AppModel {
      * **旧 cookie 的那次请求**；不取消的话，慢响应回来会把旧 uid 写回 _userProfile
      * 并再 bump 一次账号代际 —— 界面表现为「刚注销，昵称又冒出来了」。
      */
-    fun clearUserProfile() {
+    suspend fun clearUserProfile() {
         // 1) 先掐掉在途请求，再谈清状态 —— 顺序反了就会被慢响应写回。
         profileRefreshJob?.cancel()
         profileRefreshJob = null
@@ -2165,7 +2165,15 @@ object AppModel {
         runCatching { clearListeningRecords() }
 
         // 3) 播放现场：队列 + 「保留上次播放」快照。不清的话重启会把这些恢复出来。
-        runCatching { playback.clearQueue() }
+        // 清队列必须属于登出完成屏障：若丢到 Default 上 fire-and-forget，
+        // 新会话可能先开始播放，之后迟到的清理会把新队列也停掉。
+        try {
+            withContext(NonCancellable + Dispatchers.Default) { playback.clearQueue() }
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            // 账号清理不因播放器异常而失败；但不吞协程取消。
+        }
 
         // 4) 收藏集合（内存）。
         modelScope.launch { runCatching { playback.refreshFavorites() } }

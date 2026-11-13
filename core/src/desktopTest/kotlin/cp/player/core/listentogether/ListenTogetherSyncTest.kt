@@ -160,7 +160,7 @@ class ListenTogetherSyncTest {
             calls += "moveQueueItem"
         }
 
-        override fun clearQueue() {
+        override suspend fun clearQueue() {
             calls += "clearQueue"
         }
 

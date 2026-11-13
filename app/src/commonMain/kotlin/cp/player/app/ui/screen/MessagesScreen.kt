@@ -58,6 +58,10 @@ import cp.player.app.ui.util.formatChatListTime
 import cp.player.app.ui.util.formatChatTime
 import cp.player.core.BackendResult
 import cp.player.core.model.Contact
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -93,6 +97,13 @@ internal data class MessagesUiState(
     val subscribedUids: Set<Long> = emptySet(),
 )
 
+/** Provider and account identity for a contact-list request. */
+internal data class MessagesSessionKey(
+    val providerId: String,
+    val sourceGeneration: Int,
+    val accountUid: Long?,
+)
+
 /**
  * 会话列表的数据源。
  *
@@ -101,30 +112,85 @@ internal data class MessagesUiState(
  * 不同的 Screen / 不同的组合位置**，共用实例反而会在宽窄切换时把加载态搅在一起。
  * 这里提升成 `internal` 只是为了让 `MessagesPane` 够得到，不是共享实例。
  */
-internal class MessagesModel : ScreenModel {
+internal class MessagesModel(
+    private val fetchContacts: suspend () -> BackendResult<List<Contact>> = {
+        AppModel.socialRepository.getContacts()
+    },
+    private val subscribedUids: () -> Set<Long> = { AppModel.messageNotifySubscribedUids() },
+    private val requestScope: CoroutineScope? = null,
+) : ScreenModel {
     private val _state = MutableStateFlow(MessagesUiState())
     val state: StateFlow<MessagesUiState> = _state
+    private val requestLock = Any()
+    private var activeSession: MessagesSessionKey? = null
+    private var requestGeneration = 0L
+    private var loadJob: Job? = null
+    private val scope: CoroutineScope get() = requestScope ?: screenModelScope
+
+    fun isCurrentSession(sessionKey: MessagesSessionKey): Boolean =
+        synchronized(requestLock) { activeSession == sessionKey }
+
+    fun stateFor(sessionKey: MessagesSessionKey, observedState: MessagesUiState): MessagesUiState =
+        if (isCurrentSession(sessionKey)) observedState else MessagesUiState()
 
     /**
      * @param strings 失败兜底文案按**当前语言**组 —— 协程里读不到 CompositionLocal，
      *   由组合侧传进来（见 I18N.md §5.9）。
      */
-    fun load(strings: CpStrings) {
-        screenModelScope.launch {
-            _state.value = _state.value.copy(loading = true, error = null)
-            val result = runCatching { AppModel.socialRepository.getContacts() }
-                .getOrElse { BackendResult.Error(it.message ?: strings.social.messages.loadFailed) }
+    fun load(strings: CpStrings, sessionKey: MessagesSessionKey) {
+        val (token, switchingSession, previousJob) = synchronized(requestLock) {
+            val changed = activeSession != sessionKey
+            activeSession = sessionKey
+            requestGeneration += 1L
+            val previous = loadJob
+            loadJob = null
+            Triple(requestGeneration, changed, previous)
+        }
+        previousJob?.cancel()
+        _state.value = if (switchingSession) MessagesUiState(loading = true)
+        else _state.value.copy(loading = true, error = null)
+
+        val request = scope.launch(start = CoroutineStart.LAZY) {
+            val result = try {
+                fetchContacts()
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                BackendResult.Error(error.message ?: strings.social.messages.loadFailed)
+            }
+            if (!isCurrent(sessionKey, token)) return@launch
             _state.value = when (result) {
                 is BackendResult.Success -> MessagesUiState(
                     loading = false,
                     contacts = result.data,
-                    subscribedUids = AppModel.messageNotifySubscribedUids(),
+                    subscribedUids = subscribedUids(),
                 )
                 is BackendResult.Error -> MessagesUiState(loading = false, error = result.message)
                 is BackendResult.Unsupported -> MessagesUiState(loading = false, error = result.message)
             }
         }
+        synchronized(requestLock) {
+            if (activeSession == sessionKey && requestGeneration == token) loadJob = request
+            else request.cancel()
+        }
+        request.start()
     }
+
+    /** Remove account/provider conversation data and invalidate every in-flight response. */
+    fun reset() {
+        val previousJob = synchronized(requestLock) {
+            activeSession = null
+            requestGeneration += 1L
+            val previous = loadJob
+            loadJob = null
+            previous
+        }
+        previousJob?.cancel()
+        _state.value = MessagesUiState(loading = false)
+    }
+
+    private fun isCurrent(sessionKey: MessagesSessionKey, token: Long): Boolean =
+        synchronized(requestLock) { activeSession == sessionKey && requestGeneration == token }
 
     /**
      * 切换某人的新消息推送。
@@ -153,17 +219,24 @@ private fun MessagesContent(
     onBack: () -> Unit,
     onOpenChat: (Contact) -> Unit,
 ) {
-    val state by model.state.collectAsState()
+    val observedState by model.state.collectAsState()
     val profile by AppModel.userProfileFlow.collectAsState()
     val loggedIn = profile != null
+    val activeProvider by AppModel.activeProviderFlow.collectAsState()
+    val providerId = activeProvider?.id ?: AppModel.activeProviderId()
+    val sourceGeneration by AppModel.sourceGeneration.collectAsState()
+    val sessionKey = MessagesSessionKey(providerId, sourceGeneration, profile?.uid)
+    val state = model.stateFor(sessionKey, observedState)
     val scope = rememberCoroutineScope()
     val s = cpStrings()
     val messages = s.social.messages
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(sessionKey) {
         if (loggedIn) {
-            model.load(strings = s)
+            model.load(strings = s, sessionKey = sessionKey)
             AppModel.refreshUnreadMessages()
+        } else {
+            model.reset()
         }
     }
 
@@ -194,7 +267,9 @@ private fun MessagesContent(
                 message = state.error ?: messages.emptyHint,
                 error = state.error != null,
                 actionLabel = if (state.error != null) s.player.retry else null,
-                onAction = if (state.error != null) ({ model.load(strings = s) }) else null,
+                onAction = if (state.error != null) ({
+                    model.load(strings = s, sessionKey = sessionKey)
+                }) else null,
                 modifier = pageModifier.padding(top = 32.dp),
             )
             else -> LazyScrollColumn(

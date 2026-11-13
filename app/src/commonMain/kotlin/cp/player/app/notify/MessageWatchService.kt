@@ -2,10 +2,13 @@ package cp.player.app.notify
 
 import cp.player.core.model.Contact
 import cp.player.core.util.currentTimeMillis
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * 私信新消息的**本地轮询**。
@@ -39,13 +42,16 @@ class MessageWatchService(
     private val isReady: () -> Boolean,
     /** 一次拿回全部最近联系人（失败应返回空表，不要抛）。 */
     private val fetchContacts: suspend () -> List<Contact>,
-    /** 真正发通知。 */
+    /** 真正发通知。这个同步回调应快速返回；投递期间会与 stop() 互斥。 */
     private val post: (MessageNotification) -> Unit,
     private val now: () -> Long = { currentTimeMillis() },
     private val intervalMs: Long = DEFAULT_INTERVAL_MS,
 ) {
-
+    /** 同步保护生命周期代际、job 与投递边界；网络请求期间不会持有该锁。 */
+    private val lifecycleLock = Any()
     private var job: Job? = null
+    private var runGeneration = 0L
+    private val runOnceMutex = Mutex()
 
     /**
      * 用户此刻正开着的会话。
@@ -53,16 +59,54 @@ class MessageWatchService(
      * 由 `ChatContent` / `MessagesPane` 在进出组合时设置（**不是**由本服务自己推断）——
      * 「用户正在看谁」是 UI 才知道的事。开着的时候不弹这个人的通知（他已经看见了）。
      */
-    var activePeerUid: Long? = null
+    private var _activePeerUid: Long? = null
+    var activePeerUid: Long?
+        get() = synchronized(lifecycleLock) { _activePeerUid }
+        set(value) { synchronized(lifecycleLock) { _activePeerUid = value } }
 
-    val isRunning: Boolean get() = job?.isActive == true
+    val isRunning: Boolean
+        get() = synchronized(lifecycleLock) { job?.isActive == true }
 
     /** 启动轮询。**幂等** —— 重复调用只保留一个 job。 */
     fun start(scope: CoroutineScope) {
+        synchronized(lifecycleLock) {
+            startLocked(scope)
+        }
+    }
+
+    /** Reconcile the polling job and its gates under the same lock as preference updates. */
+    fun sync(scope: CoroutineScope) {
+        synchronized(lifecycleLock) {
+            val shouldRun = isReady() && prefs.isMasterEnabled() &&
+                prefs.subscribedCount(providerId()) > 0
+            if (shouldRun) startLocked(scope) else stopLocked()
+        }
+    }
+
+    /** Serialize a master-toggle write with the final notification-delivery check. */
+    fun setMasterEnabled(enabled: Boolean) {
+        synchronized(lifecycleLock) { prefs.setMasterEnabled(enabled) }
+    }
+
+    /** Enable the master gate and update one subscription as one delivery-atomic change. */
+    fun setSubscription(provider: String, peerUid: Long, enabled: Boolean): Int =
+        synchronized(lifecycleLock) {
+            if (enabled && !prefs.isMasterEnabled()) prefs.setMasterEnabled(true)
+            prefs.setSubscribed(provider, peerUid, enabled)
+        }
+
+    private fun startLocked(scope: CoroutineScope) {
         if (job?.isActive == true) return
+        val generation = ++runGeneration
         job = scope.launch {
-            while (true) {
-                runOnce()
+            while (isGenerationCurrent(generation)) {
+                try {
+                    runOnce(generation)
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (_: Exception) {
+                    // A single failed tick must not permanently stop future polling.
+                }
                 delay(intervalMs)
             }
         }
@@ -70,6 +114,11 @@ class MessageWatchService(
 
     /** 停止轮询（登出 / 总开关关 / 订阅清零）。 */
     fun stop() {
+        synchronized(lifecycleLock) { stopLocked() }
+    }
+
+    private fun stopLocked() {
+        runGeneration += 1L
         job?.cancel()
         job = null
     }
@@ -81,7 +130,8 @@ class MessageWatchService(
      * 否则最多要等 [intervalMs] 才看到第一条提醒，观感像没生效。
      */
     fun tickNow(scope: CoroutineScope) {
-        scope.launch { runOnce() }
+        val generation = currentGeneration()
+        scope.launch { runOnce(generation) }
     }
 
     /**
@@ -91,38 +141,80 @@ class MessageWatchService(
      * [MessageNotifyPrefs.cursor] + [MessageNotifyPolicy] —— 游标推进即代表「已提醒过」，
      * 再加一层时间窗只会让两条规则互相打架。
      */
-    internal suspend fun runOnce(): Int {
-        if (!isReady()) return 0
-        if (!prefs.isMasterEnabled()) return 0
+    internal suspend fun runOnce(): Int = runOnce(currentGeneration())
+
+    private suspend fun runOnce(expectedGeneration: Long): Int = runOnceMutex.withLock {
+        if (!isGenerationCurrent(expectedGeneration) || !isReady()) return@withLock 0
+        if (!prefs.isMasterEnabled()) return@withLock 0
 
         val provider = providerId()
         val subscribed = prefs.subscribedUids(provider)
-        if (subscribed.isEmpty()) return 0
+        if (subscribed.isEmpty()) return@withLock 0
 
-        val contacts = runCatching { fetchContacts() }.getOrDefault(emptyList())
-        if (contacts.isEmpty()) return 0
+        val contacts = try {
+            fetchContacts()
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            emptyList()
+        }
+        if (!isGenerationCurrent(expectedGeneration) || !isReady() ||
+            !prefs.isMasterEnabled() || providerId() != provider
+        ) {
+            return@withLock 0
+        }
+        val currentSubscriptions = prefs.subscribedUids(provider)
+        if (contacts.isEmpty() || currentSubscriptions.isEmpty()) return@withLock 0
 
         val nowMs = now()
         var sent = 0
         for (contact in contacts) {
-            if (contact.userId !in subscribed) continue
+            if (!isGenerationCurrent(expectedGeneration)) return@withLock sent
+            if (contact.userId !in subscribed || contact.userId !in currentSubscriptions) continue
             val cursor = prefs.cursor(provider, contact.userId)
             if (!MessageNotifyPolicy.shouldNotify(contact, cursor, activePeerUid, nowMs)) continue
 
-            post(
-                MessageNotification(
-                    providerId = provider,
-                    peerUid = contact.userId,
-                    title = contact.nickname.ifBlank { UNKNOWN_NAME },
-                    body = contact.lastMessage.orEmpty(),
-                )
-            )
+            val delivered = try {
+                synchronized(lifecycleLock) {
+                    if (expectedGeneration != runGeneration ||
+                        !isReady() ||
+                        !prefs.isMasterEnabled() ||
+                        providerId() != provider ||
+                        contact.userId !in prefs.subscribedUids(provider) ||
+                        _activePeerUid == contact.userId
+                    ) {
+                        false
+                    } else {
+                        // Preference mutations, active-chat changes and stop() use this same lock.
+                        post(
+                            MessageNotification(
+                                providerId = provider,
+                                peerUid = contact.userId,
+                                title = contact.nickname.ifBlank { UNKNOWN_NAME },
+                                body = contact.lastMessage.orEmpty(),
+                            )
+                        )
+                        true
+                    }
+                }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                continue
+            }
+            if (!delivered) return@withLock sent
+
             // 只有真发了才推进游标 —— 见 MessageNotifyPrefs.cursor 的 KDoc。
             contact.lastMessageTime?.let { prefs.setCursor(provider, contact.userId, it) }
             sent++
         }
-        return sent
+        sent
     }
+
+    private fun currentGeneration(): Long = synchronized(lifecycleLock) { runGeneration }
+
+    private fun isGenerationCurrent(generation: Long): Boolean =
+        synchronized(lifecycleLock) { generation == runGeneration }
 
     companion object {
         /** 轮询间隔。太短费电费流量，太长不像「推送」；45s 是两者的折中。 */

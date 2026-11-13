@@ -21,9 +21,10 @@ class ModuleManager(
     private val context: PlatformContext,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
-    private val providers = mutableMapOf<String, BackendProvider>()
+    private val providers = VersionedProviderRegistry<BackendProvider> { it.id }
     private val _providersFlow = MutableStateFlow<List<BackendProvider>>(emptyList())
     val providersFlow: StateFlow<List<BackendProvider>> = _providersFlow.asStateFlow()
+    private val providersFlowLock = Any()
 
     var lastLoadError: String? = null
         private set
@@ -32,7 +33,17 @@ class ModuleManager(
     var lastPendingUpdateError: String? = null
         private set
 
-    private fun updateProvidersFlow() { _providersFlow.value = providers.values.toList() }
+    private fun updateProvidersFlow() {
+        synchronized(providersFlowLock) {
+            _providersFlow.value = providers.all()
+        }
+    }
+
+    private fun recordLoadErrorIfCurrent(id: String, generation: Long, message: String) {
+        synchronized(this) {
+            if (providers.generation(id) == generation) lastLoadError = message
+        }
+    }
 
     private companion object {
         const val TEMP_PREFIX = ".repository-import-"
@@ -41,13 +52,15 @@ class ModuleManager(
         fun lastPathSegment(path: String): String = path.substring(maxOf(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1)
     }
 
+    @Synchronized
     fun init(providerManager: ProviderManager) {
         recoverRepositoryBackups()
         applyPendingRepositoryUpdates()
         val allChildDirs = PlatformSupport.listChildDirectories(modulesDir)
+        val loadedProviderIds = providers.ids()
         val validDirs = allChildDirs.filter { dir ->
             val name = lastPathSegment(dir)
-            !name.startsWith(".repository-") && name !in providers
+            !name.startsWith(".repository-") && name !in loadedProviderIds
         }
 
         if (validDirs.isNotEmpty()) {
@@ -60,9 +73,8 @@ class ModuleManager(
             if (targetDir != null) {
                 val name = lastPathSegment(targetDir)
                 try {
-                    val activeProvider = readProvider(targetDir)
-                    require(activeProvider.id == name) { "Provider directory must match manifest.id" }
-                    providers[activeProvider.id] = activeProvider
+                    val activeProvider = readProvider(targetDir, expectedDirectoryId = name)
+                    providers.put(activeProvider)
                     updateProvidersFlow()
                     providerManager.switchProvider(activeProvider, context, save = false)
                 } catch (error: Exception) {
@@ -77,26 +89,22 @@ class ModuleManager(
                     val remainingLoaded = remainingDirs.map { directory ->
                         async {
                             val name = lastPathSegment(directory)
+                            val generation = providers.generation(name)
+                            if (!PlatformSupport.exists(directory)) return@async null
                             try {
-                                val provider = readProvider(directory)
-                                require(provider.id == name) { "Provider directory must match manifest.id" }
-                                provider
+                                val provider = readProvider(directory, expectedDirectoryId = name)
+                                provider to generation
                             } catch (e: Exception) {
-                                synchronized(providers) {
-                                    lastLoadError = e.message ?: "Cannot load provider"
-                                }
+                                recordLoadErrorIfCurrent(name, generation, e.message ?: "Cannot load provider")
                                 null
                             }
                         }
                     }.awaitAll().filterNotNull()
 
-                    synchronized(providers) {
-                        for (provider in remainingLoaded) {
-                            if (provider.id !in providers) {
-                                providers[provider.id] = provider
-                            }
-                        }
+                    val staleProviders = remainingLoaded.filterNot { (provider, generation) ->
+                        providers.putIfUnchanged(provider, generation)
                     }
+                    staleProviders.forEach { (provider, _) -> runCatching(provider::close) }
                     updateProvidersFlow()
                 }
             }
@@ -108,7 +116,7 @@ class ModuleManager(
         if (providerManager.currentProvider == null) {
             val restored = providerManager.restoreLastProvider(getAvailableProviders(), context)
             if (!restored) {
-                providers.values.firstOrNull()?.let { providerManager.switchProvider(it, context, save = false) }
+                getAvailableProviders().firstOrNull()?.let { providerManager.switchProvider(it, context, save = false) }
             }
         }
     }
@@ -142,12 +150,12 @@ class ModuleManager(
             replacement = provider
             id = provider.id
             require(expectedId == null || id == expectedId) { "Package ID does not match $expectedId" }
-            require(providers.values.none {
+            require(providers.all().none {
                 it.id != id && it.name.trim().equals(provider.name.trim(), ignoreCase = true)
             }) { "A different provider already uses this name; it will not be overwritten" }
             val target = "$modulesDir/$id"
             val backup = "$modulesDir/.repository-backup-$id"
-            val previous = providers[id]
+            val previous = providers.get(id)
             val existed = PlatformSupport.exists(target)
             check(!PlatformSupport.exists(backup)) { "An interrupted installation needs recovery; restart the application" }
             removePendingRepositoryUpdate(id)
@@ -163,7 +171,7 @@ class ModuleManager(
                 backedUp = false
                 PlatformSupport.deleteRecursively(committed)
             }
-            providers[id] = provider
+            providers.put(provider)
             runCatching { previous?.close() }
             updateProvidersFlow()
             return ModuleImportSuccess(provider, existed, id.takeIf { existed })
@@ -182,18 +190,27 @@ class ModuleManager(
         }
     }
 
-    private fun readProvider(directory: String): BackendProvider {
+    private fun readProvider(directory: String, expectedDirectoryId: String? = null): BackendProvider {
         val manifest = json.decodeFromString<ModuleManifest>(
             PlatformSupport.readTextFile("$directory/manifest.json") ?: error("Missing manifest.json"),
         )
         require(manifest.isLoadable) { manifest.loadabilityError.orEmpty() }
         val implementation = ProviderFactory.create(manifest, directory, context)
             ?: error("SDK entryPoint is missing, outside the package, or exceeds ${manifest.maxEntryPointBytes} bytes")
-        check(implementation.isReady()) { implementation.loadError ?: "SDK provider is not ready" }
-        return object : BackendProvider by implementation {
-            override val updateUrl = manifest.updateUrl
-            override val qualityOptions = manifest.qualityOptions
-            override val loginMethods = emptyList<String>()
+        try {
+            check(implementation.isReady()) { implementation.loadError ?: "SDK provider is not ready" }
+            val provider = object : BackendProvider by implementation {
+                override val updateUrl = manifest.updateUrl
+                override val qualityOptions = manifest.qualityOptions
+                override val loginMethods = emptyList<String>()
+            }
+            if (expectedDirectoryId != null) {
+                require(provider.id == expectedDirectoryId) { "Provider directory must match manifest.id" }
+            }
+            return provider
+        } catch (error: Throwable) {
+            runCatching { implementation.close() }
+            throw error
         }
     }
 
@@ -262,8 +279,8 @@ class ModuleManager(
         }
     }
 
-    fun getAvailableProviders(): List<BackendProvider> = providers.values.toList()
-    fun getProvider(id: String): BackendProvider? = providers[id]
+    fun getAvailableProviders(): List<BackendProvider> = providers.all()
+    fun getProvider(id: String): BackendProvider? = providers.get(id)
     fun getModuleDir(id: String): String {
         require(validId(id)) { "Invalid provider ID" }
         return "$modulesDir/$id"
@@ -277,7 +294,13 @@ class ModuleManager(
             lastLoadError = error.message
             return false
         }
-        if (!PlatformSupport.exists(directory)) return false
+        if (!PlatformSupport.exists(directory)) {
+            // A directory can disappear outside this manager while a scan is reading it.
+            // remove() also advances the generation so that scan cannot resurrect the provider.
+            runCatching { providers.remove(id)?.close() }
+            updateProvidersFlow()
+            return false
+        }
         if (!PlatformSupport.deleteRecursively(directory)) return false
         runCatching { providers.remove(id)?.close() }
         updateProvidersFlow()

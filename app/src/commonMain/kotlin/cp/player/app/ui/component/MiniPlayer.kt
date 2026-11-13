@@ -378,7 +378,7 @@ fun SharedTransitionScope.MiniPlayer(
                 onPlayAt = { index -> scope.launch { controller.playAt(index) } },
                 onRemove = { index -> scope.launch { controller.removeQueueItem(index) } },
                 onMove = { from, to -> scope.launch { controller.moveQueueItem(from, to) } },
-                onClear = { controller.clearQueue() },
+                onClear = { scope.launch { controller.clearQueue() } },
                 onClose = { showQueueSheet = false },
             )
         }

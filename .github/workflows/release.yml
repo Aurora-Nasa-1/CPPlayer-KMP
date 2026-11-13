@@ -133,8 +133,20 @@ jobs:
           body_path: ${{ runner.temp }}/RELEASE_NOTES.md
           files: CPPlayer-${{ steps.meta.outputs.version }}-android.apk
 
+      - name: Check for Sentry auth token
+        id: sentry-auth
+        shell: bash
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: |
+          if [[ -n "$SENTRY_AUTH_TOKEN" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create Sentry release
-        if: ${{ env.SENTRY_AUTH_TOKEN != '' }}
+        if: ${{ steps.sentry-auth.outputs.available == 'true' }}
         uses: getsentry/action-release@v1
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}

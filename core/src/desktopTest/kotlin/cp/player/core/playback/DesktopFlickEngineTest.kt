@@ -2,6 +2,7 @@ package cp.player.core.playback
 
 import cp.player.core.license.VipLicenseManager
 import cp.player.core.util.SettingsStorage
+import org.junit.Assume.assumeTrue
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -23,6 +24,8 @@ class DesktopFlickEngineTest {
     }
 
     private lateinit var storage: FakeStorage
+    private val isWindowsHost: Boolean
+        get() = System.getProperty("os.name").orEmpty().startsWith("Windows", ignoreCase = true)
 
     @BeforeTest
     fun setUp() {
@@ -37,6 +40,7 @@ class DesktopFlickEngineTest {
 
     @Test
     fun `DesktopEngineManager detects flick player engine availability`() {
+        assumeTrue("FlickEngine DLL packaging check is Windows-only", isWindowsHost)
         // DesktopHiResEngine should detect DLL in app/native or native
         val available = DesktopEngineManager.isHiResEngineSupported
         println("[Test] DesktopHiResEngine isAvailable: $available")
@@ -68,6 +72,7 @@ class DesktopFlickEngineTest {
 
     @Test
     fun `VIP with explicit switch enables exclusive`() {
+        assumeTrue("WASAPI exclusive mode requires the Windows native FlickEngine", isWindowsHost)
         storage.putString(PlaybackSessionSettings.KEY_WASAPI_EXCLUSIVE, "true")
         val player = DesktopEngineManager.createPlayer(storage = storage, isVipUser = true)
         assertNotNull(player)
@@ -170,6 +175,7 @@ class DesktopFlickEngineTest {
 
     @Test
     fun `vendored cpal 的 CP_WASAPI_EXCLUSIVE 缺省必须是共享`() {
+        assumeTrue("vendored WASAPI source is only available in the Windows native-engine workspace", isWindowsHost)
         val src = readSource("native/flick-player-engine/vendor/cpal/src/host/wasapi/device.rs")
         val block = src.substringAfter("CP_WASAPI_EXCLUSIVE").substringBefore(";")
         assertTrue(
