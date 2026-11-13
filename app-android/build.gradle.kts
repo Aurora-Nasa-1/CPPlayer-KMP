@@ -1,3 +1,12 @@
+import com.android.build.api.instrumentation.AsmClassVisitorFactory
+import com.android.build.api.instrumentation.ClassContext
+import com.android.build.api.instrumentation.ClassData
+import com.android.build.api.instrumentation.FramesComputationMode
+import com.android.build.api.instrumentation.InstrumentationParameters
+import com.android.build.api.instrumentation.InstrumentationScope
+import org.objectweb.asm.ClassVisitor
+import org.objectweb.asm.MethodVisitor
+import org.objectweb.asm.Opcodes
 import java.util.Properties
 
 // 版本元数据只有一处实现：根 build.gradle.kts。这里只做取值，**不要再自己算**。
@@ -130,6 +139,18 @@ android {
     }
 }
 
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        // accompanist lyrics-ui 2.0.0-rc.2 directly invokes API-29 Trace methods on API 28.
+        // Rewrite only that library's diagnostics class; the helper safely no-ops below API 29.
+        variant.instrumentation.transformClassesWith(
+            LyricsTraceCompatClassVisitorFactory::class.java,
+            InstrumentationScope.ALL,
+        ) {}
+        variant.instrumentation.setAsmFramesComputationMode(FramesComputationMode.COPY_FRAMES)
+    }
+}
+
 dependencies {
     implementation(project(":app"))
     implementation(libs.androidx.activity.compose)
@@ -143,4 +164,71 @@ dependencies {
     // 与 compileOptions.isCoreLibraryDesugaringEnabled 是一对，缺任何一个都不生效：
     // 只开开关不引依赖 → AGP 报 "coreLibraryDesugaring configuration contains no dependencies"。
     coreLibraryDesugaring(libs.desugar.jdk.libs)
+}
+
+/** Rewrites the unsafe Trace calls in one known lyrics-ui diagnostics class only. */
+abstract class LyricsTraceCompatClassVisitorFactory :
+    AsmClassVisitorFactory<InstrumentationParameters.None> {
+
+    override fun isInstrumentable(classData: ClassData): Boolean = classData.className == TARGET_CLASS
+
+    override fun createClassVisitor(
+        classContext: ClassContext,
+        nextClassVisitor: ClassVisitor,
+    ): ClassVisitor {
+        if (classContext.currentClassData.className != TARGET_CLASS) return nextClassVisitor
+
+        return object : ClassVisitor(Opcodes.ASM9, nextClassVisitor) {
+            override fun visitMethod(
+                access: Int,
+                name: String,
+                descriptor: String,
+                signature: String?,
+                exceptions: Array<out String>?,
+            ): MethodVisitor? {
+                val downstream = super.visitMethod(access, name, descriptor, signature, exceptions)
+                    ?: return null
+                return object : MethodVisitor(Opcodes.ASM9, downstream) {
+                    override fun visitMethodInsn(
+                        opcode: Int,
+                        owner: String,
+                        name: String,
+                        descriptor: String,
+                        isInterface: Boolean,
+                    ) {
+                        if (owner != TRACE_OWNER) {
+                            super.visitMethodInsn(opcode, owner, name, descriptor, isInterface)
+                            return
+                        }
+                        check(opcode == Opcodes.INVOKESTATIC) {
+                            "Unexpected non-static android.os.Trace call in $TARGET_CLASS: $name$descriptor"
+                        }
+                        val compatName = TRACE_METHODS["$name$descriptor"]
+                            ?: error("Add API-safe lyrics Trace mapping for $name$descriptor")
+                        super.visitMethodInsn(
+                            Opcodes.INVOKESTATIC,
+                            COMPAT_OWNER,
+                            compatName,
+                            descriptor,
+                            false,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private companion object {
+        const val TARGET_CLASS =
+            "com.mocharealm.accompanist.lyrics.ui.internal.diagnostics.LyricsTrace_androidKt"
+        const val TRACE_OWNER = "android/os/Trace"
+        const val COMPAT_OWNER = "cp/player/core/lyricpush/LyricsTraceCompat"
+
+        val TRACE_METHODS = mapOf(
+            "isEnabled()Z" to "isEnabled",
+            "beginSection(Ljava/lang/String;)V" to "beginSection",
+            "endSection()V" to "endSection",
+            "setCounter(Ljava/lang/String;J)V" to "setCounter",
+        )
+    }
 }
