@@ -14,6 +14,19 @@ import cp.player.sdk.SendMessageRequest
 import cp.player.sdk.SocialUser
 import cp.player.sdk.UserRequest
 
+internal fun cp.player.sdk.PrivateMessage.toMessage(myUid: Long): Message? {
+    val fromUserId = sender.id.toLongOrNull() ?: return null
+    return Message(
+        id = id,
+        fromUserId = fromUserId,
+        fromNickname = sender.nickname,
+        fromAvatarUrl = sender.avatarUrl.orEmpty(),
+        text = text,
+        time = sentAtEpochMs,
+        isMe = myUid != 0L && sender.id == myUid.toString(),
+    )
+}
+
 /**
  * 私信 / 联系人的应用侧门面。
  *
@@ -92,19 +105,6 @@ class SocialRepository(private val source: UnifiedMusicSource) {
     private fun SocialUser.toContact(): Contact? {
         val userId = id.toLongOrNull() ?: return null
         return Contact(userId = userId, nickname = nickname, avatarUrl = avatarUrl.orEmpty())
-    }
-
-    private fun cp.player.sdk.PrivateMessage.toMessage(myUid: Long): Message? {
-        val fromUserId = sender.id.toLongOrNull() ?: return null
-        return Message(
-            id = id.toLongOrNull() ?: return null,
-            fromUserId = fromUserId,
-            fromNickname = sender.nickname,
-            fromAvatarUrl = sender.avatarUrl.orEmpty(),
-            text = text,
-            time = sentAtEpochMs,
-            isMe = myUid != 0L && sender.id == myUid.toString(),
-        )
     }
 
     /** 成功时返回 null；失败原样转成目标类型（便于 `?:` / `let` 提前返回）。 */

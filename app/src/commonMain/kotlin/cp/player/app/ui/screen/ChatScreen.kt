@@ -181,6 +181,8 @@ internal fun ChatContent(
     val listState = rememberLazyListState()
     val s = cpStrings()
     val chat = s.social.chat
+    val messageKeys = remember(state.messages) { stableChatMessageKeys(state.messages) }
+    val previousMessageKeys = remember(peerUid) { mutableStateOf(emptyList<String>()) }
 
     LaunchedEffect(peerUid, myUid) {
         if (myUid != 0L) {
@@ -216,10 +218,18 @@ internal fun ChatContent(
         }
     }
 
-    // 新消息到达后滚到底部。用 `size` 而不是 `messages` 作 key：内容变化（例如重拉后
-    // 同一条消息的 id 变了）不该触发一次滚动。
-    LaunchedEffect(state.messages.size, peerUid) {
-        if (state.messages.isNotEmpty()) listState.animateScrollToItem(state.messages.size - 1)
+    // 列表只在纯追加时做滚动动画；历史被替换、删除或重排时直接定位，避免动画继续
+    // 驱动已从 LazyColumn 移除的行节点。消息字段刷新但条数不变时仍不触发滚动。
+    LaunchedEffect(messageKeys, peerUid) {
+        val previous = previousMessageKeys.value
+        if (messageKeys.isNotEmpty() && messageKeys.size != previous.size) {
+            if (isStrictlyAppendedChatList(previous, messageKeys)) {
+                listState.animateScrollToItem(messageKeys.lastIndex)
+            } else {
+                listState.scrollToItem(messageKeys.lastIndex)
+            }
+        }
+        previousMessageKeys.value = messageKeys
     }
 
     // 先声明后使用：Kotlin 的局部函数不能前向引用，写成 lambda 变量最直观。
@@ -272,11 +282,7 @@ internal fun ChatContent(
                         ),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        items(state.messages.size, key = { index ->
-                            // ⚠️ key 里带上 index：上游同一页里出现重复 `id` 时，
-                            // 纯 id 作 key 会让 Compose 直接抛「Key was already used」。
-                            "${state.messages[index].id}-$index"
-                        }) { index ->
+                        items(state.messages.size, key = { index -> messageKeys[index] }) { index ->
                             MessageBubble(state.messages[index], emptyText = chat.emptyMessage)
                         }
                     }

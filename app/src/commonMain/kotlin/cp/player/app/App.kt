@@ -183,10 +183,39 @@ fun App(
                 // 那层之上，用户返回时看到的还是原来的页面，观感像「跳歪了」。
                 // 引导流程（尚未进主壳层）里不导航：那时还没有消息页可回。
                 val pendingOpen = AppModel.pendingMessageOpenFlow.collectAsState().value
-                LaunchedEffect(pendingOpen) {
+                LaunchedEffect(pendingOpen, startDestination) {
                     val target = pendingOpen ?: return@LaunchedEffect
+                    if (!MessageDeepLinkRouting.shouldHandle(
+                            isMain = startDestination is AppStartDestination.Main,
+                            hasPendingRequest = true,
+                        )
+                    ) return@LaunchedEffect
+                    val provider = MessageDeepLinkRouting.resolveProvider(
+                        requestedProviderId = target.providerId,
+                        providers = AppModel.availableProviders(),
+                        providerId = { it.id },
+                    )
+                    if (provider == null) {
+                        AppModel.consumePendingMessageOpen()
+                        println("通知会话未打开：找不到音源 ${target.providerId}")
+                        return@LaunchedEffect
+                    }
+                    if (!MessageDeepLinkRouting.isAlreadyActive(target.providerId, AppModel.activeProviderId())) {
+                        when (val result = AppModel.switchProvider(provider)) {
+                            is cp.player.core.BackendResult.Success -> Unit
+                            is cp.player.core.BackendResult.Error -> {
+                                AppModel.consumePendingMessageOpen()
+                                println("通知会话未打开：切换音源失败 (${result.message})")
+                                return@LaunchedEffect
+                            }
+                            is cp.player.core.BackendResult.Unsupported -> {
+                                AppModel.consumePendingMessageOpen()
+                                println("通知会话未打开：音源不支持切换 (${result.message})")
+                                return@LaunchedEffect
+                            }
+                        }
+                    }
                     AppModel.consumePendingMessageOpen()
-                    if (startDestination !is AppStartDestination.Main) return@LaunchedEffect
                     navigator.popToMainShell()
                     navigator.push(
                         cp.player.app.ui.screen.ChatScreen(
