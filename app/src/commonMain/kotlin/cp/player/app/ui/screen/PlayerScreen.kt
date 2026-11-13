@@ -581,7 +581,11 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                 sharedContentState = rememberSharedContentState(key = "player-container"),
                 animatedVisibilityScope = animatedVisibilityScope
             )
-            .cpFluidBackground(enabled = fluidBackground, fallback = bgBrush)
+            .cpFluidBackground(
+                enabled = fluidBackground,
+                fallback = bgBrush,
+                pauseShaderRendering = animatedVisibilityScope.transition.isRunning,
+            )
             .windowInsetsPadding(WindowInsets.systemBars)
     ) {
         CpContextMenu(

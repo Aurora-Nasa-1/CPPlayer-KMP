@@ -56,9 +56,8 @@ import kotlinx.coroutines.isActive
  *
  * ### 性能与帧率控制
  *
- * 着色器靠物理时钟节拍分频驱动（见 [FluidFpsConfig]）：
- * - 桌面端：显示屏刷新率的一半（60Hz -> 30fps, 120Hz -> 60fps, 144Hz -> 72fps）；
- * - 手机端：根据屏幕 Hz 在 2..5 范围内取整除因子，目标帧率最大 60fps（120Hz -> 60fps, 90Hz -> 45fps, 60Hz -> 30fps）；
+ * 着色器靠物理时钟节拍分频驱动（见 [FluidFpsConfig]），最大帧率由用户设置（15/30/60fps），
+ * 桌面和 Android 按 VSync 整数分频；缓慢背景不必追满屏幕刷新率。
  * 非渲染帧跳过 state 更新，使 Compose 智能抑制重绘，既省电又保持物理流动速度完全一致。
  *
  * @param enabled 设置项「流体背景」。false 时只画 [fallback]。
@@ -68,6 +67,7 @@ import kotlinx.coroutines.isActive
  * @param scale 色团尺度。**越大 → 色团越小**（库的 `MeshGradient` 原话是
  *   「board 越大 → 色团越小」）。它会被拼进 SkSL 源码（编译期常量），
  *   改它会重建着色器 —— 别接在会逐帧变化的值上。
+ * @param pauseShaderRendering 页面转场运行期间跳过 shader 绘制并显示 [fallback]。
  */
 @Composable
 fun Modifier.cpFluidBackground(
@@ -75,7 +75,7 @@ fun Modifier.cpFluidBackground(
     fallback: Brush,
     speed: Float = CpFluidBackgroundDefaults.SPEED,
     scale: Float = CpFluidBackgroundDefaults.SCALE,
-    dither: Boolean = AppModel.fluidBackgroundDitherFlow.collectAsState().value,
+    pauseShaderRendering: Boolean = false,
 ): Modifier {
     if (!enabled) return this.background(fallback)
 
@@ -97,18 +97,20 @@ fun Modifier.cpFluidBackground(
             // 库把这个 `speed` 拼进 SkSL（`$speed`），改它要重编译；总速度交给 uniform 控制。
             speed = 1f,
             scale = scale,
-            dither = dither,
+            dither = true,
         )
     }
 
-    val fpsConfig = rememberFluidFpsConfig()
+    val targetFps by AppModel.fluidBackgroundFpsFlow.collectAsState()
+    val fpsConfig = rememberFluidFpsConfig(targetFps)
 
     return this.cpPacedShaderBackground(
         shader = shader,
         fallback = fallback,
         speed = speed,
         fpsConfig = fpsConfig,
-        dither = dither,
+        dither = true,
+        pauseShaderRendering = pauseShaderRendering,
     )
 }
 
@@ -122,6 +124,7 @@ private fun Modifier.cpPacedShaderBackground(
     speed: Float,
     fpsConfig: FluidFpsConfig,
     dither: Boolean = true,
+    pauseShaderRendering: Boolean = false,
 ): Modifier {
     val effect = remember(shader) { buildRuntimeEffect(shader) }
     if (!effect.supported) return this.background(fallback)
@@ -129,16 +132,19 @@ private fun Modifier.cpPacedShaderBackground(
     val speedModifier = shader.speedModifier
     var reportedSize by remember { mutableStateOf(Size.Zero) }
 
-    val time by produceState(initialValue = 0f, key1 = fpsConfig) {
+    val time by produceState(initialValue = 0f, key1 = fpsConfig, key2 = pauseShaderRendering) {
+        if (pauseShaderRendering) return@produceState
+
         var frameCount = 0L
         var startNanos = 0L
+        val resumeTime = value
         val divisor = fpsConfig.divisor.coerceAtLeast(1)
         while (isActive) {
             withInfiniteAnimationFrameNanos { frameTimeNanos ->
                 if (startNanos == 0L) startNanos = frameTimeNanos
                 frameCount++
                 if (frameCount % divisor == 0L) {
-                    value = (frameTimeNanos - startNanos) / 1_000_000_000f
+                    value = resumeTime + (frameTimeNanos - startNanos) / 1_000_000_000f
                 }
             }
         }
@@ -147,16 +153,20 @@ private fun Modifier.cpPacedShaderBackground(
     return this
         .onGloballyPositioned { reportedSize = it.size.toSize() }
         .drawBehind {
-            val w = if (reportedSize.width > 0f) reportedSize.width else size.width
-            val h = if (reportedSize.height > 0f) reportedSize.height else size.height
-            if (shader is CpFluidMeshGradient) {
-                shader.dither = dither
-            }
-            effect.update(shader, time * speed * speedModifier, w, h)
-            if (effect.ready) {
-                drawRect(effect.build())
-            } else {
+            if (pauseShaderRendering) {
                 drawRect(fallback)
+            } else {
+                val w = if (reportedSize.width > 0f) reportedSize.width else size.width
+                val h = if (reportedSize.height > 0f) reportedSize.height else size.height
+                if (shader is CpFluidMeshGradient) {
+                    shader.dither = dither
+                }
+                effect.update(shader, time * speed * speedModifier, w, h)
+                if (effect.ready) {
+                    drawRect(effect.build())
+                } else {
+                    drawRect(fallback)
+                }
             }
         }
 }
@@ -294,29 +304,18 @@ vec4 main( vec2 fragCoord ) {
 
     vec2 base = uv / 2.0;
 
-    float tilt = -0.5 * uv.y;
-    float incline = uv.x * 0.1;
-
-    float offset = incline * mix(-0.25, 0.25, uv.y);
-
-    float noise = snoise(vec3(base.x + uTime * 0.2, base.y, uTime * 0.2));
-
-    noise = max(0.0, noise);
-
     vColor = uColor[MAX_COLORS - 1];
 
+    // 这两个独立噪声场交替供色团使用：原先每种非底色都单独算一次 Simplex，4 色板即每像素 3 次；
+    // 复用两组缓慢漂移的场仍保留两团交错流动，同时把最重的噪声求值降为每像素 2 次。
+    float noiseA = snoise(vec3(base.x * 0.3 + uTime * 0.025, base.y * 0.7, uTime * 0.03 + 1.0));
+    float noiseB = snoise(vec3(base.x * 0.3 - uTime * 0.027 + 4.1, base.y * 0.7 + 1.7, uTime * 0.033 + 5.0));
+
     for(int i = 0; i < MAX_COLORS - 1; i++) {
-        float flow = 5.0 + float(i) * 0.3;
-        float speed = 6.0 * $speed + float(i) * 0.3;
-        float seed = 1.0 + float(i) * 4.0;
-
-        vec2 frequency = vec2(0.3, 0.7);
-
+        float noiseField = (mod(float(i), 2.0) < 1.0) ? noiseA : noiseB;
         float noiseFloor = 0.00001;
         float noiseCeil = 0.6 + float(i) * 0.07;
-
-        float noiseVal = smoothstep(noiseFloor, noiseCeil, snoise(vec3(base.x * frequency.x + uTime * 0.005 * flow, base.y * frequency.y, uTime * 0.005 * speed + seed)));
-
+        float noiseVal = smoothstep(noiseFloor, noiseCeil, noiseField);
         vColor = mix(vColor, uColor[i], noiseVal);
     }
 

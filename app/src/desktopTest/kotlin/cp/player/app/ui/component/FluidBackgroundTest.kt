@@ -5,6 +5,7 @@ import com.mikepenz.hypnoticcanvas.NonAndroidRuntimeEffect
 import cp.player.app.AppModel
 import org.jetbrains.skia.RuntimeEffect
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -22,12 +23,14 @@ class FluidBackgroundTest {
             colors = colors,
             speed = 1f,
             scale = 2f,
-            dither = true,
         )
+        assertTrue(shader.dither, "抗色阶抖动默认应开启")
 
         val sksl = shader.sksl
         assertTrue(sksl.contains("uniform float uDither;"))
         assertTrue(sksl.contains("TPDF"))
+        assertEquals(2, Regex("snoise\\(vec3\\(").findAll(sksl).count(), "每像素只应计算两组 Simplex 噪声场")
+        assertTrue(!sksl.contains("base.x + uTime * 0.2"), "未使用的额外 Simplex 噪声不应逐像素计算")
 
         // 使用 Skia RuntimeEffect 验证 SkSL 语法完全合法
         val effect = RuntimeEffect.makeForShader(sksl)
@@ -37,24 +40,34 @@ class FluidBackgroundTest {
         val runtimeEffect = NonAndroidRuntimeEffect(shader)
         assertTrue(runtimeEffect.supported)
 
-        // 开启抖动
-        shader.dither = true
         shader.applyUniforms(runtimeEffect, 1.0f, 800f, 600f)
-
-        // 关闭抖动
-        shader.dither = false
-        shader.applyUniforms(runtimeEffect, 2.0f, 800f, 600f)
     }
 
     @Test
-    fun `AppModel抖动设置默认开启并支持切换`() {
-        val initial = AppModel.fluidBackgroundDither()
-        assertTrue(initial, "流体背景抗色阶断层默认应开启")
+    fun `流体背景默认开启且帧率默认30并支持切换`() {
+        assertTrue(AppModel.fluidBackground(), "流体背景默认应开启")
+        assertEquals(30, AppModel.fluidBackgroundFps())
 
-        AppModel.setFluidBackgroundDither(false)
-        assertTrue(!AppModel.fluidBackgroundDither())
+        AppModel.setFluidBackgroundFps(60)
+        assertEquals(60, AppModel.fluidBackgroundFps())
+        AppModel.setFluidBackgroundFps(24)
+        assertEquals(30, AppModel.fluidBackgroundFps(), "不支持的 FPS 值应回落到默认30")
+        AppModel.setFluidBackgroundFps(30)
+    }
 
-        AppModel.setFluidBackgroundDither(true)
-        assertTrue(AppModel.fluidBackgroundDither())
+    @Test
+    fun `流体帧率按显示器刷新率整数分频且不超过所选上限`() {
+        val low = calculateFluidFpsConfig(screenHz = 60, targetFps = 15)
+        assertEquals(4, low.divisor)
+        assertEquals(15, low.targetFps)
+
+        val balanced = calculateFluidFpsConfig(screenHz = 60, targetFps = 30)
+        assertEquals(2, balanced.divisor)
+        assertEquals(30, balanced.targetFps)
+
+        val highRefresh = calculateFluidFpsConfig(screenHz = 144, targetFps = 60)
+        assertEquals(3, highRefresh.divisor)
+        assertEquals(48, highRefresh.targetFps)
+        assertTrue(highRefresh.targetFps <= 60)
     }
 }

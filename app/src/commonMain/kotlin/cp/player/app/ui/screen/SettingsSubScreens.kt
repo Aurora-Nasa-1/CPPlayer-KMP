@@ -84,7 +84,8 @@ class AppearanceSettingsScreen(
         val bottomBarAutoHide by AppModel.bottomBarAutoHideFlow.collectAsState()
         val coverFlightAnimation by AppModel.coverFlightAnimationFlow.collectAsState()
         val fluidBackground by AppModel.fluidBackgroundFlow.collectAsState()
-        val fluidBackgroundDither by AppModel.fluidBackgroundDitherFlow.collectAsState()
+        val fluidBackgroundFps by AppModel.fluidBackgroundFpsFlow.collectAsState()
+        val fluidFpsOptions = listOf(15, 30, 60)
         val showSongAlbum by AppModel.showSongAlbumFlow.collectAsState()
         val fontRoundness by AppModel.fontRoundnessFlow.collectAsState()
         val fontFaceEnabled by AppModel.fontFaceEnabledFlow.collectAsState()
@@ -186,12 +187,15 @@ class AppearanceSettingsScreen(
                         index = 1,
                         total = 4,
                     )
-                    SettingsSwitchItem(
-                        title = s.appearance.fluidBackgroundDither,
-                        modifier = Modifier.settingsSearchTarget("appearance_fluid_background_dither", targetSettingId),
-                        subtitle = s.appearance.fluidBackgroundDitherNote,
-                        checked = fluidBackgroundDither,
-                        onCheckedChange = AppModel::setFluidBackgroundDither,
+                    SettingsSegmentedItem(
+                        title = s.appearance.fluidBackgroundFps,
+                        modifier = Modifier.settingsSearchTarget("appearance_fluid_background_fps", targetSettingId),
+                        subtitle = s.appearance.fluidBackgroundFpsNote,
+                        options = fluidFpsOptions.map { "$it FPS" },
+                        selectedIndex = fluidFpsOptions.indexOf(fluidBackgroundFps).coerceAtLeast(0),
+                        onSelect = { index ->
+                            fluidFpsOptions.getOrNull(index)?.let(AppModel::setFluidBackgroundFps)
+                        },
                         enabled = fluidBackground,
                         index = 2,
                         total = 4,

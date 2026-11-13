@@ -81,7 +81,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -448,20 +447,10 @@ internal fun DesktopPlayerLayout(
         // 沉浸态要从内容区扣掉标题栏让出的那一条（背景不受影响，它画在最外层），
         // 刻度也必须按**剩下的**高度算 —— 否则封面会按整窗高度定尺寸，把音量滑条顶出可视区。
 
-        val rawEffectiveHeight = (maxHeight - topChromeInset).coerceAtLeast(200.dp)
-        var effectiveHeight by remember { mutableStateOf(rawEffectiveHeight) }
-
-        LaunchedEffect(rawEffectiveHeight) {
-            // 沉浸态动画期间（400ms），maxHeight（布局）和 topChromeInset（状态）的更新存在微小相位差，
-            // 导致两者之差发生抖动。在这里使用 40ms 的防抖来过滤掉这个抖动，彻底消除进入全屏时「弹一下」的视觉闪烁。
-            if (kotlin.math.abs(rawEffectiveHeight.value - effectiveHeight.value) > 2f) {
-                kotlinx.coroutines.delay(40)
-                effectiveHeight = rawEffectiveHeight
-            } else {
-                effectiveHeight = rawEffectiveHeight
-            }
-        }
-
+        // 直接跟随 inset 动画计算刻度。基于 LaunchedEffect 的防抖会在 inset 每帧变化时
+        // 反复取消并重启 delay，最终只能在动画停止后才提交高度，导致封面/控件尺寸迟到地跳一下。
+        // inset 本身已是平滑值，这里无需再叠一层异步防抖。
+        val effectiveHeight = (maxHeight - topChromeInset).coerceAtLeast(200.dp)
         val metrics = remember(maxWidth, effectiveHeight) {
             playerMetrics(maxWidth, effectiveHeight)
         }

@@ -170,9 +170,8 @@ object CpStringsZh : CpStrings {
         override val fluidBackgroundNote = "播放页使用缓慢流动的渐变底色（仿 Apple Music），" +
             "配色跟随当前主题与封面取色；Android 13 以下自动改用静态渐变。关闭可省电"
 
-        override val fluidBackgroundDither = "流体背景抗色阶断层"
-        override val fluidBackgroundDitherNote = "在动态渐变末端注入微量高频抖动（Dithering），" +
-            "在 8-bit 显示设备上消除暗部色带断层，视觉平滑度逼近 10-bit。默认开启"
+        override val fluidBackgroundFps = "流体背景帧率"
+        override val fluidBackgroundFpsNote = "设置流体动画的最高帧率；高帧率更流畅，也会增加耗电。"
 
         override val showSongAlbum = "显示歌曲专辑名"
         override val showSongAlbumNote = "在歌曲列表副标题中显示所属专辑；默认关闭以保持界面清爽"

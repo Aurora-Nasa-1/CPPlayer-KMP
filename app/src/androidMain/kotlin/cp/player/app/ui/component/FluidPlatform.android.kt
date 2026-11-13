@@ -37,9 +37,9 @@ actual fun buildRuntimeEffect(shader: Shader): RuntimeEffect {
 }
 
 @Composable
-actual fun rememberFluidFpsConfig(): FluidFpsConfig {
+actual fun rememberFluidFpsConfig(targetFps: Int): FluidFpsConfig {
     val context = LocalContext.current
-    return remember(context) {
+    return remember(context, targetFps) {
         val display = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
                 context.display
@@ -53,29 +53,6 @@ actual fun rememberFluidFpsConfig(): FluidFpsConfig {
         val rate = display?.refreshRate ?: 60f
         val screenHz = if (rate > 0f) rate.roundToInt().coerceIn(30, 360) else 60
 
-        // 手机端流体背景帧率根据屏幕 hz 整除 2-5，最大 60fps
-        var chosenDivisor = 2
-        var chosenFps = screenHz / 2
-        for (k in 2..5) {
-            if (screenHz % k == 0 && screenHz / k <= 60) {
-                chosenDivisor = k
-                chosenFps = screenHz / k
-                break
-            }
-        }
-        if (chosenFps > 60) {
-            for (k in 2..5) {
-                if (screenHz / k <= 60) {
-                    chosenDivisor = k
-                    chosenFps = screenHz / k
-                    break
-                }
-            }
-        }
-        FluidFpsConfig(
-            divisor = chosenDivisor,
-            targetFps = chosenFps.coerceIn(1, 60),
-            screenHz = screenHz,
-        )
+        calculateFluidFpsConfig(screenHz, targetFps)
     }
 }

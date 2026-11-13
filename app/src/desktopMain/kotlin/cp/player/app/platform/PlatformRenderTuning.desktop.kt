@@ -27,11 +27,10 @@ import cp.player.app.ui.component.CpText
 /**
  * 「渲染后端」设置页（仅桌面端）。
  *
- * 用途是给 Windows 上「开 VRR 后刷新率被拉低 / 面板闪烁」这类问题留一个可切换的开关：
- * Compose Desktop 由 Skiko 绘制，Skiko 在 Windows 的出厂默认走 Direct3D 12，其
- * `Present(FLIP_DISCARD)` + `DwmFlush` 的出帧节奏会与 DWM 合成节奏（也就是 VRR 与
- * 系统帧节奏控制的作用对象）互相影响。因此本应用在 Windows 上**默认选择 OpenGL**，
- * 换后端则是上游给出的另一个规避手段。
+ * 提供 Windows 渲染后端与 VSync 选择。Windows 未选择时默认 Direct3D 12，VSync 关闭；
+ * 其它平台后端交给 Skiko AUTO、VSync 属性不干预。OpenGL 保留为诊断/手动选择项。
+ * Skiko 0.150.2 的 VSync=false 仅设置 Present interval 0，不暴露 tearing 标志，不能保证
+ * 或声称启用了 windowed VRR。
  *
  * 具体机制、取值来源与优先级见 [DesktopRenderTuning]。
  *
@@ -68,7 +67,7 @@ actual fun PlatformRenderTuningContent() {
                 )
             }
 
-            SettingsNote("改完需要重启应用才生效。若开 VRR / G-SYNC 后出现刷新率被拉低、动鼠标就顿挫或面板闪烁，先试「OpenGL」。")
+            SettingsNote("改完需要重启应用才生效。OpenGL 保留作手动对照；VSync 关闭仅设置 interval 0，不代表启用 VRR。")
             if (restartPending) {
                 SettingsNote("已保存，重启应用后生效。", color = MaterialTheme.colorScheme.primary)
             }
@@ -95,10 +94,10 @@ actual fun PlatformRenderTuningContent() {
                 }
             }
 
-            SettingsNote("Windows 上默认使用 OpenGL（针对 VRR 闪烁的规避手段）；其余平台交给 Skiko 决定。仅在换后端后仍抖动时，才需要动这一项做对照。")
+            SettingsNote("Windows 未选择时默认 Direct3D 12；OpenGL 是诊断/手动选择项。其它平台交给 Skiko AUTO。")
             SettingsSection("垂直同步") {
                 listOf(
-                    Triple("不干预", null as Boolean?, "交给 Skiko 决定"),
+                    Triple("不覆盖", null as Boolean?, if (DesktopRenderTuning.isWindows) "平台默认：关闭 VSync" else "平台默认：交给 Skiko 决定"),
                     Triple("强制开启", true, "skiko.vsync.enabled=true"),
                     Triple("强制关闭", false, "skiko.vsync.enabled=false"),
                 ).forEachIndexed { index, (label, value, note) ->
@@ -125,7 +124,7 @@ actual fun PlatformRenderTuningContent() {
                     EffectiveLine(
                         "垂直同步",
                         when (DesktopRenderTuning.effectiveVsyncOverride()) {
-                            null -> "未干预（Skiko 默认）"
+                            null -> if (DesktopRenderTuning.isWindows) "未覆盖（平台默认：关闭 VSync）" else "未覆盖（平台默认：Skiko 决定）"
                             else -> "skiko.vsync.enabled=${DesktopRenderTuning.effectiveVsyncOverride()}"
                         },
                     )

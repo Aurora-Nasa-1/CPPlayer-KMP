@@ -12,8 +12,8 @@ actual fun buildRuntimeEffect(shader: Shader): RuntimeEffect =
     NonAndroidRuntimeEffect(shader)
 
 @Composable
-actual fun rememberFluidFpsConfig(): FluidFpsConfig {
-    return remember {
+actual fun rememberFluidFpsConfig(targetFps: Int): FluidFpsConfig {
+    return remember(targetFps) {
         val hz = try {
             val ge = GraphicsEnvironment.getLocalGraphicsEnvironment()
             val gd = ge.defaultScreenDevice
@@ -22,9 +22,6 @@ actual fun rememberFluidFpsConfig(): FluidFpsConfig {
         } catch (_: Throwable) {
             60
         }
-        // 桌面端则是显示屏帧率一半（分频因子固定为 2）
-        val divisor = 2
-        val targetFps = (hz / divisor).coerceAtLeast(1)
-        FluidFpsConfig(divisor = divisor, targetFps = targetFps, screenHz = hz)
+        calculateFluidFpsConfig(hz, targetFps)
     }
 }

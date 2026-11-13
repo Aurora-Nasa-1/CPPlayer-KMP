@@ -9,15 +9,12 @@ import java.io.File
  *
  * ## 为什么需要它
  *
- * Compose Desktop 的绘制由 Skiko 承担。Skiko 0.144.6 在 Windows **默认走 Direct3D 12**，
- * 其 swap chain 使用 `DXGI_SWAP_EFFECT_FLIP_DISCARD` + `IDXGISwapChain3::Present`，
- * 且 native 侧会调用 `DwmFlush`——也就是说**出帧节奏被挂在 DWM 合成器上**，
- * 而 DWM 的合成节奏正是可变刷新率（VRR / G-SYNC / FreeSync）与 Windows「帧节奏控制」
- * 的作用对象。
- *
- * 上游 JetBrains/compose-multiplatform#1648「G-SYNC causes stuttering and flickering」
- * 记录了该组合的典型症状：VRR 开启且 Compose 窗口获焦时刷新率被显著拉低，移动鼠标
- * 即顿挫、面板闪烁。官方给出的规避手段就是换渲染后端。
+ * Compose Desktop 的绘制由 Skiko 承担。Skiko 0.150.2 的 Windows Direct3D 路径使用
+ * `DXGI_SWAP_EFFECT_FLIP_DISCARD`，opaque HWND 路径通过 `CreateSwapChainForHwnd` 创建
+ * swap chain，并以 `Present((int)isVsyncEnabled, 0)` 呈现。该版本 native Kotlin API 不暴露
+ * `DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING` / `DXGI_PRESENT_ALLOW_TEARING`，swap-chain Flags
+ * 默认是 0。因此 `VSync=false` 仅将 Present interval 设为 0，不能据此声称已启用或保证
+ * 真正的 windowed VRR。
  *
  * ## 时序约束（关键，别改坏）
  *
@@ -31,8 +28,8 @@ import java.io.File
  *    ——视为外部显式指定，本模块**不覆盖**，只在日志里说明。
  * 2. `-Dcp.player.renderApi=...` / 环境变量 `CPPLAYER_RENDER_API`（自救通道，见下）。
  * 3. 设置页写入的持久化项（**含显式选择的「自动」**——一旦落盘，平台默认不再生效）。
- * 4. 平台默认：**Windows 上默认使用 OpenGL**（即上游针对 VRR 闪烁推荐的规避手段，
- *    用户没做过任何选择时就直接受益），其余平台不写任何属性、交给 Skiko 自行选择。
+ * 4. 平台默认：Windows 后端为 Direct3D 12，其他平台不写后端属性、交给 Skiko AUTO；
+ *    Windows 未明确选择 VSync 时写入 `false`，其他平台不写 VSync 属性。
  *
  * 之所以让 1/2 压过持久化，是为了留一条**自救通道**：万一选到本机跑不起来的后端
  * （表现是启动即崩或窗口不出现，进不了设置页），仍可用 `-Dcp.player.renderApi=AUTO`
@@ -43,7 +40,7 @@ import java.io.File
  * 上面那条自救通道要求用户会加 JVM 启动参数或会手改配置文件——而应用**起不来**的时候，
  * 恰恰是普通用户最没法做这两件事的时候。所以再加一层自动兜底：
  *
- * 1. 应用了「设置页选定的非默认后端」或「平台默认 OpenGL」时，在其它初始化都跑完之后
+ * 1. 应用了「设置页选定的非默认后端」或「平台默认后端」时，在其它初始化都跑完之后
  *    （[beginStartupProbe]）写一个探测文件；
  * 2. 窗口连续出满 [HEALTHY_FRAME_COUNT] 帧后，由 `Main` 调 [markStartupHealthy] 删掉它；
  *    进程**正常退出**时也会删掉（见 [disarmProbeOnGracefulExit]）；
@@ -106,12 +103,12 @@ internal object DesktopRenderTuning {
         AUTO(
             "",
             "自动（跟随 Skiko 默认）",
-            "不写 skiko.renderApi，交给 Skiko 决定（Windows 上即 Direct3D 12）。性能最好；与 VRR 冲突时会出现刷新率抖动与闪烁。",
+            "不写 skiko.renderApi，交给 Skiko 决定（Windows 上即 Direct3D 12）。",
         ),
         OPENGL(
             "OPENGL",
             "OpenGL",
-            "绕开 D3D 呈现路径，上游针对 VRR 问题推荐的规避手段。Windows 上未做选择时的平台默认。",
+            "显式诊断/手动选择项；切换后可用于对照不同呈现路径，不是 Windows 平台默认。",
         ),
         ANGLE(
             "ANGLE",
@@ -121,7 +118,7 @@ internal object DesktopRenderTuning {
         DIRECT3D(
             "DIRECT3D",
             "Direct3D 12（强制）",
-            "显式强制 D3D12，用于与「自动」对照，确认默认确实走了这条路径。",
+            "显式强制 D3D12；Windows 未做选择时的平台默认。",
         ),
         SOFTWARE_COMPAT(
             "SOFTWARE_COMPAT",
@@ -149,7 +146,7 @@ internal object DesktopRenderTuning {
      * 若还提示「重启后生效」就是在骗人。见 [isRestartPending]。
      *
      * [SETTINGS] 表示持久化文件里**有**用户的选择（包括显式选择的「自动」）；
-     * [DEFAULT] 表示用户从未做过选择，本次取的是平台默认（Windows=OpenGL，其余=Skiko 默认）。
+     * [DEFAULT] 表示用户从未做过选择，本次取的是平台默认（Windows=Direct3D，其余=Skiko 默认）。
      * 两者的区别决定要不要立探测字据（见 [shouldArmProbe]）。
      */
     internal enum class BackendSource { EXTERNAL, OVERRIDE, SETTINGS, DEFAULT }
@@ -174,11 +171,16 @@ internal object DesktopRenderTuning {
         get() = System.getProperty("os.name").orEmpty().lowercase().contains("windows")
 
     /**
-     * 平台默认后端：**Windows 上默认 OpenGL**（上游针对 VRR 闪烁推荐的规避手段，
-     * 让用户不做任何选择就默认避开 Direct3D 12 的呈现路径问题）；其余平台不干预、
-     * 交给 Skiko 自行选择。
+     * 平台默认后端：Windows 显式请求 Direct3D 12；其余平台不干预、交给 Skiko 自行选择。
      */
-    fun platformDefaultBackend(): Backend = if (isWindows) Backend.OPENGL else Backend.AUTO
+    fun platformDefaultBackend(): Backend = if (isWindows) Backend.DIRECT3D else Backend.AUTO
+
+    /** Windows 未作 VSync 选择时关闭同步；其它平台保持 Skiko 自身默认。 */
+    internal fun platformDefaultVsyncOverride(): Boolean? = if (isWindows) false else null
+
+    /** 已保存的显式选择优先于平台默认；两者都为空时不干预 Skiko。 */
+    internal fun resolveVsyncOverride(stored: Boolean?, platformDefault: Boolean?): Boolean? =
+        stored ?: platformDefault
 
     /**
      * 设置页展示 / 生效的后端取值。
@@ -194,7 +196,7 @@ internal object DesktopRenderTuning {
 
     fun storeBackend(backend: Backend) {
         // 「自动」也要显式落盘而不是删键：删键 == 「从未选择」，会让 Windows 上的
-        // 平台默认（OpenGL）重新生效。显式落盘才能表达「用户就是要 Skiko 默认」，
+        // 平台默认（Direct3D）重新生效。显式落盘才能表达「用户就是要 Skiko 默认」，
         // 安全模式的自动回退也依赖这一点来跳出「默认 → 崩 → 回退 → 又默认」的循环。
         prefs.putString(KEY_BACKEND, backend.name)
     }
@@ -274,7 +276,7 @@ internal object DesktopRenderTuning {
     /**
      * 纯逻辑：本次启动该不该为渲染后端「立字据」。
      *
-     * 「设置页选定的非默认后端」与「平台默认 OpenGL」都该记账——后者在用户没做过
+     * 「设置页选定的非默认后端」与「平台默认后端」都该记账——后者在用户没做过
      * 任何选择时就会生效，一旦在本机跑不起来，同样会陷入「起不来 → 进不去设置页」
      * 的循环，必须能自动回退（回退会显式落盘 `AUTO`，从而把平台默认一并关掉）。
      * 不该记账的：
@@ -436,7 +438,7 @@ internal object DesktopRenderTuning {
             System.getProperty(OVERRIDE_VSYNC) != null || System.getenv(ENV_VSYNC) != null ->
                 (System.getProperty(OVERRIDE_VSYNC) ?: System.getenv(ENV_VSYNC))
                     ?.toBooleanStrictOrNull()
-            else -> storedVsyncOverride()
+            else -> resolveVsyncOverride(storedVsyncOverride(), platformDefaultVsyncOverride())
         }
         vsyncOverride?.let { System.setProperty(PROP_VSYNC, it.toString()) }
 

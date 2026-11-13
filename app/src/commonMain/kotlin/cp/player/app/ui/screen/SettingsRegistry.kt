@@ -223,10 +223,10 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 sectionOf = { "界面动效与视觉表现" },
             ),
             SettingsSubItem(
-                id = "appearance_fluid_background_dither",
-                titleOf = { it.appearance.fluidBackgroundDither },
-                subtitleOf = { it.appearance.fluidBackgroundDitherNote },
-                keywords = listOf("抖动", "dither", "色阶", "断层", "色带", "10bit", "平滑", "渐变", "banding"),
+                id = "appearance_fluid_background_fps",
+                titleOf = { it.appearance.fluidBackgroundFps },
+                subtitleOf = { it.appearance.fluidBackgroundFpsNote },
+                keywords = listOf("流体", "帧率", "FPS", "刷新率", "省电", "fluid", "frame rate"),
                 sectionOf = { "界面动效与视觉表现" },
             ),
             SettingsSubItem(

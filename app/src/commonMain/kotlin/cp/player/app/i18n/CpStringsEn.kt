@@ -170,10 +170,9 @@ object CpStringsEn : CpStrings {
                 "current theme and artwork palette; Android 13 and below falls back to a static gradient. " +
                 "Turn it off to save power."
 
-        override val fluidBackgroundDither = "Fluid background dithering"
-        override val fluidBackgroundDitherNote =
-            "Applies high-frequency dithering to eliminate color banding on 8-bit displays, " +
-                "achieving 10-bit visual smoothness. Enabled by default."
+        override val fluidBackgroundFps = "Fluid background frame rate"
+        override val fluidBackgroundFpsNote =
+            "Sets the maximum animation rate. Higher rates look smoother but use more power."
 
         override val showSongAlbum = "Show album name"
         override val showSongAlbumNote =

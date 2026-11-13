@@ -8,7 +8,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -169,11 +168,7 @@ internal fun MobileNowPlayingLayout(
     } else Modifier
 
     BoxWithConstraints(
-        modifier.background(
-            Brush.verticalGradient(
-                listOf(colors.surfaceContainerHigh, colors.surfaceContainerLow, colors.surface),
-            ),
-        ),
+        modifier,
         contentAlignment = Alignment.TopCenter,
     ) {
         val compact = maxHeight < 700.dp || LocalDensity.current.fontScale > 1.25f

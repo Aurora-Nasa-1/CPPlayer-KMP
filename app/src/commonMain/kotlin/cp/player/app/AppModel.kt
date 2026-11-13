@@ -394,7 +394,7 @@ object AppModel {
     private val KEY_COLOR_SOURCE = "color_source"
     private val KEY_PURE_BLACK = "pure_black"
     private val KEY_FLUID_BACKGROUND = "fluid_background"
-    private val KEY_FLUID_BACKGROUND_DITHER = "fluid_background_dither"
+    private val KEY_FLUID_BACKGROUND_FPS = "fluid_background_fps"
     private val KEY_PLAYBACK_QUALITY = "playback_quality"
     private val KEY_METERED_PLAYBACK_QUALITY = "playback_quality_metered"
     private val KEY_LISTEN_TOGETHER_ADD_NEXT = "listen_together_add_next"
@@ -521,23 +521,24 @@ object AppModel {
         _fluidBackground.value = enabled
     }
 
-    private val _fluidBackgroundDither = MutableStateFlow(fluidBackgroundDither())
+    private val _fluidBackgroundFps = MutableStateFlow(fluidBackgroundFps())
+    val fluidBackgroundFpsFlow: StateFlow<Int> = _fluidBackgroundFps.asStateFlow()
 
-    /**
-     * 播放页流体背景着色器是否开启抗色阶断层高频抖动（TPDF Dithering）。
-     *
-     * 默认开。在 8-bit SDR 帧缓冲区下消除大面积渐变的暗部色阶断层，
-     * 计算仅占几条 GPU 算术指令，不占显存带宽。
-     */
-    val fluidBackgroundDitherFlow: StateFlow<Boolean> = _fluidBackgroundDither.asStateFlow()
+    fun fluidBackgroundFps(): Int =
+        settings.getString(KEY_FLUID_BACKGROUND_FPS)?.toIntOrNull()
+            ?.let(::normalizeFluidBackgroundFps) ?: 30
 
-    fun fluidBackgroundDither(): Boolean =
-        settings.getString(KEY_FLUID_BACKGROUND_DITHER)?.toBooleanStrictOrNull() ?: true
-
-    fun setFluidBackgroundDither(enabled: Boolean) {
-        settings.putString(KEY_FLUID_BACKGROUND_DITHER, enabled.toString())
-        _fluidBackgroundDither.value = enabled
+    fun setFluidBackgroundFps(fps: Int) {
+        val normalized = normalizeFluidBackgroundFps(fps)
+        settings.putString(KEY_FLUID_BACKGROUND_FPS, normalized.toString())
+        _fluidBackgroundFps.value = normalized
     }
+
+    private fun normalizeFluidBackgroundFps(fps: Int): Int =
+        when (fps) {
+            15, 30, 60 -> fps
+            else -> 30
+        }
 
     // ============ 保留上次播放（持久化） ============
 

@@ -74,6 +74,7 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowScope
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.zIndex
@@ -158,11 +159,14 @@ private val DoubleClickIntervalMs: Long =
  * 播放页自己会用 `LocalPlayerTopInset` 把让出的高度补成内边距，内容位置全程不动 ——
  * 那一条正是窗口钮所在的位置，内容要是跟着顶上去就会撞在一起。
  *
- * ## 两种窗口模式（[jbr] 决定）
+ * ## 三种窗口模式（[jbr] 与 [systemWindowControls] 决定）
  *
- * - **无边框模式**（`jbr == null`，运行在普通 JDK / Linux）：本组件画**全部** chrome，
+ * - **无边框模式**（`jbr == null && !systemWindowControls`，运行在普通 JDK / Linux，或显式选择无边框）：本组件画**全部** chrome，
  *   含最小化 / 最大化 / 关闭；拖拽走 `WindowDraggableArea`（AWT MouseListener）；
  *   双击最大化 / 拖动几何由 [WindowMaximizer] 接管。
+ * - **标准系统装饰模式**（`jbr == null && systemWindowControls`，Windows 无 JBR）：Win32 绘制
+ *   标题栏与窗口钮；本组件仍画应用工具栏，但不重复画窗控，并保持左右空白对称。
+ *   系统标题栏与客户端工具栏各自位于窗口框架 / 内容区，沉浸播放仍只收缩客户端工具栏。
  * - **JBR 模式**（`jbr != null`，运行在 JBR b1367.22+，见 `JbrWindowChrome`）：窗口在系统
  *   层面**保持有边框**，JBR 把最小化 / 最大化 / 关闭画在客户区右上（`rightInsetPx` 留位，
  *   本组件的三个窗口钮与分隔线**不再渲染**）；拖拽 / 双击最大化 / 右键系统菜单 /
@@ -176,13 +180,13 @@ private val DoubleClickIntervalMs: Long =
  * 而那个值只在「桌面内嵌面板打开」时为真，于是**所有 push 出去的路由页在标题栏上都没有返回键**，
  * 宽窗口下更是一整页没有返回入口（页内顶栏也正好在宽屏分支里被省掉了）。
  *
- * ## 为什么不用系统标题栏
+ * ## 系统窗口框架与应用工具栏
  *
- * 无边框模式下窗口以 `WS_POPUP` 创建（见 `Main.kt` 的 `WindowDecoration.Undecorated`），
- * 系统边框整体消失，标题栏由应用自绘，这样顶栏的配色、圆角、动效才能和正文一致。
- * JBR 模式下系统边框保留但原生标题栏被移除，视觉同样是一整条自绘顶栏。
+ * 无边框模式下系统边框整体消失，窗口顶部由应用完整自绘；JBR 模式保留系统边框并由 JBR
+ * 将原生标题栏换成客户区顶栏。Windows 标准系统装饰回退时，Win32 标题栏位于客户区外，
+ * 本组件只保留客户区里的应用工具栏，不再绘制重复的系统窗控。
  * 缩放能力**不归这里管**：无边框模式由 ComposeWindow 内置的 `UndecoratedWindowResizer`
- * 负责，JBR 模式走原生缩放边框。
+ * 负责，标准系统装饰 / JBR 模式走原生缩放边框。
  *
  * ## ⚠️ 无边框模式的最大化**不用** `WindowState.placement`
  *
@@ -233,6 +237,7 @@ fun DesktopTitleBar(
     windowScope: WindowScope,
     windowState: WindowState,
     jbr: JbrWindowChrome.Controller?,
+    systemWindowControls: Boolean = false,
     title: String,
     canGoBack: Boolean,
     onBack: () -> Unit,
@@ -247,6 +252,7 @@ fun DesktopTitleBar(
 ) {
     val window = windowScope.window
     val useJbr = jbr != null
+    val useSystemControls = systemWindowControls && !useJbr
     // 播放页沉浸态：背景让给页面自己的流体渐变，除窗口钮外全部淡出（见 LocalWindowImmersive）。
     val immersive = LocalWindowImmersive.current
     val chromeAlpha by animateFloatAsState(
@@ -269,23 +275,38 @@ fun DesktopTitleBar(
     val chromeBridge = if (immersive) null else bridge
 
     val maximizer = remember(window) { WindowMaximizer(window) }
-    // JBR 模式下最大化走原生 extendedState，WindowMaximizer 的「按工作区设 bounds」
-    // 那一套**绝不能**插手 —— 会跟系统的最大化状态打架。
-    if (!useJbr) {
+    // JBR / 标准系统装饰模式下最大化走原生 WindowState；WindowMaximizer 的「按工作区设 bounds」
+    // 只供无边框模式使用，不能插手系统窗口框架的最大化。
+    if (!useJbr && !useSystemControls) {
         DisposableEffect(maximizer) {
             val uninstall = maximizer.install()
             onDispose { uninstall() }
         }
     }
-    val maximized = maximizer.isMaximized
-    val toggleMaximize: () -> Unit = { maximizer.toggle() }
+    val maximized = if (useSystemControls) {
+        windowState.placement == WindowPlacement.Maximized
+    } else {
+        maximizer.isMaximized
+    }
+    val toggleMaximize: () -> Unit = {
+        if (useSystemControls) {
+            windowState.placement = if (maximized) WindowPlacement.Floating else WindowPlacement.Maximized
+        } else {
+            maximizer.toggle()
+        }
+    }
 
     // JBR 在客户区右上画原生窗口钮，右侧要给它们留位（Swing 逻辑像素即 dp，保底不少于 141dp）。
     val nativeControlsWidth = if (useJbr) jbr.rightInsetDp.dp else 0.dp
     // 右侧按钮组总宽：JBR 模式 = 账号 + 消息 + (仅desktopRun/debug: 手机预览) + 迷你模式 + 设置 + 原生窗口钮区；无边框模式 = 全自绘。
     val showMobilePreview = AppVersion.isDesktopRunOrDebug
     val slotsCount = if (showMobilePreview) 5 else 4
-    val rightGroupWidth = if (useJbr) ChromeSlotWidth * slotsCount + nativeControlsWidth else ChromeActionsWidth
+    val businessGroupWidth = ChromeSlotWidth * slotsCount
+    val rightGroupWidth = when {
+        useJbr -> businessGroupWidth + nativeControlsWidth
+        useSystemControls -> businessGroupWidth + ChromeSeparatorWidth
+        else -> ChromeActionsWidth
+    }
 
     // 原生窗口钮的明暗跟随应用主题。判据用 surface 亮度而不是 isSystemInDarkTheme()：
     // 后者只反映系统设置，追不上应用内的主题覆盖（深色模式 / 纯黑等）。
@@ -376,7 +397,7 @@ fun DesktopTitleBar(
                             windowScope = windowScope,
                             enabled = !maximized,
                             modifier = Modifier
-                                .width((ChromeActionsWidth - animatedBackSlotWidth).coerceAtLeast(0.dp))
+                                .width((rightGroupWidth - animatedBackSlotWidth).coerceAtLeast(0.dp))
                                 .fillMaxHeight()
                                 // ⚠️ 拖拽**不**跟着淡出：AWT 的 MouseListener 不吃 Compose 的命中测试，
                                 // 沉浸态里这 300 多 dp 的顶边还能拖窗口，是用户最顺手的抓取位置。
@@ -501,7 +522,7 @@ fun DesktopTitleBar(
                         WindowDragRegion(
                             windowScope = windowScope,
                             enabled = !maximized,
-                            modifier = Modifier.width(ChromeActionsWidth).fillMaxHeight(),
+                            modifier = Modifier.width(rightGroupWidth).fillMaxHeight(),
                         )
                         WindowDragRegion(
                             windowScope = windowScope,
@@ -519,7 +540,7 @@ fun DesktopTitleBar(
                     // 给 JBR 画的「最小化 / 最大化 / 关闭」留位。点击 / 悬停 / Snap Layouts
                     // 浮层全部由 JBR 原生处理，本组件不画、不拦。
                     Spacer(Modifier.width(nativeControlsWidth))
-                } else {
+                } else if (!useSystemControls) {
                     // 分隔线跟着一起淡：它划的是「业务入口 ↔ 窗口钮」的分界，业务入口没了，
                     // 只剩一条孤零零的竖线压在窗口钮左边，比没有更显脏。
                     ChromeSeparator(Modifier.chromeFade(chromeAlpha, interactive = true))
@@ -534,6 +555,9 @@ fun DesktopTitleBar(
                         onClick = toggleMaximize,
                     )
                     WindowControlButton(Icons.Filled.Close, "关闭", danger = true, onClick = onClose)
+                } else {
+                    // 系统标题栏已有窗控；保持两侧槽位对称以确保搜索框居中。
+                    Spacer(Modifier.width(ChromeSeparatorWidth))
                 }
             }
             // 标题栏与正文在浅色主题下都接近白色，靠 1dp 分隔线划出层次。

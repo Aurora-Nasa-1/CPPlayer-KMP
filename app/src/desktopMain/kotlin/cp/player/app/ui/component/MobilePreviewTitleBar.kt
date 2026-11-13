@@ -39,12 +39,13 @@ import cp.player.app.ui.theme.LocalIsDarkTheme
  * 1. 窗口拖拽区域（整条可拖动窗口）；
  * 2. 状态提示（手机版界面 412×892）；
  * 3. 一键「切回桌面端」入口；
- * 4. 最小化与关闭窗口控制按钮（JBR 模式下由系统原生绘制与响应）。
+ * 4. 最小化与关闭窗口控制按钮（JBR / 标准系统装饰模式下由系统绘制与响应）。
  */
 @Composable
 fun MobilePreviewTitleBar(
     windowScope: WindowScope,
     jbr: JbrWindowChrome.Controller? = null,
+    systemWindowControls: Boolean = false,
     onRestoreDesktop: () -> Unit,
     onMinimize: () -> Unit,
     onClose: () -> Unit,
@@ -57,6 +58,7 @@ fun MobilePreviewTitleBar(
     }
 
     val useJbr = jbr != null
+    val useSystemControls = systemWindowControls && !useJbr
     val nativeControlsWidth = if (useJbr) jbr.rightInsetDp.dp else 0.dp
     val bridge = remember(jbr) { jbr?.let { JbrHitTestBridge(it) } }
 
@@ -123,7 +125,7 @@ fun MobilePreviewTitleBar(
                         )
                     }
 
-                    if (!useJbr) {
+                    if (!useJbr && !useSystemControls) {
                         // 最小化
                         Box(
                             modifier = Modifier
@@ -155,7 +157,7 @@ fun MobilePreviewTitleBar(
                                 tint = MaterialTheme.colorScheme.error,
                             )
                         }
-                    } else {
+                    } else if (useJbr) {
                         // JBR 模式预留原生按钮位（Windows 上标准 3 按钮：最小化/最大化/关闭，需完整留出）
                         Spacer(Modifier.width(nativeControlsWidth))
                     }

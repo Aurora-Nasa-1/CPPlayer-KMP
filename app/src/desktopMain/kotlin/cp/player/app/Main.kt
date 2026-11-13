@@ -113,7 +113,9 @@ private const val WindowRetryDelayMs = 100L
  *   缩放边框 / Aero Snap / 原生最大化 / Win11 自动圆角全部白拿，**「假全屏」就此根治** ——
  *   原生最大化尊重任务栏，窗口永远不会铺满整个输出，Windows 也就没有理由把窗口
  *   提升为全屏呈现并切换显示模式（HDR 屏上退出后桌面 SDR 闪烁的那个坑）。
- * - **无边框路**（普通 JDK / Linux，或 JBR 太旧）：`Undecorated(6dp)` 纯 `WS_POPUP`，
+ * - **标准系统装饰路**（Windows 上 AUTO / JBR 不可用）：保留 Win32 标准标题栏与窗控，
+ *   客户区仍使用应用工具栏；系统边框保证窗口不走透明无边框呈现路径。
+ * - **无边框路**（显式选择无边框，或非 Windows 上 JBR 不可用）：`Undecorated(6dp)` 纯 `WS_POPUP`，
  *   一切靠手补（`WindowsWindowCorners` / `WindowMaximizer` / 内置缩放抓手）。
  *   `Undecorated` 目前还是实验 API（要显式 opted-in）。用它的唯一理由是**能指定缩放
  *   抓手厚度**：默认等价 8dp，那圈抓手会压住贴着窗口边缘的控件。
@@ -163,23 +165,33 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
     // 另：`javaHome` 只喂给 jpackage（打包产物）；run 家族的 launcher 由
     // `app/build.gradle.kts` 的 afterEvaluate 指到 `.jbr`（desktopRun 原生指守护进程 JDK）。
     //
-    // 三态开关见 [WindowDecorChoice]：auto / jbr / undecorated —— 给想要无边框外观、
-    // 或 JBR 标题栏在某台机器上装不上（那时窗口会保留系统标题栏）的用户留自救通道。
+    // 三态开关见 [WindowDecorChoice]：auto / jbr / undecorated —— 显式 undecorated 保留无边框，
+    // Windows 上 JBR 不可用则保留标准系统标题栏，其它平台维持原回退行为。
     val decorMode = WindowDecorChoice.resolve()
     val useJbrChrome = when (decorMode) {
         WindowDecorChoice.Mode.UNDECORATED -> false
         WindowDecorChoice.Mode.JBR -> JbrWindowChrome.isSupported
         WindowDecorChoice.Mode.AUTO -> JbrWindowChrome.isSupported
     }
+    val isWindows = System.getProperty("os.name").orEmpty().startsWith("Windows", ignoreCase = true)
+    val useSystemDecorations = WindowDecorChoice.useSystemDecorations(
+        mode = decorMode,
+        isWindows = isWindows,
+        jbrSupported = JbrWindowChrome.isSupported,
+    )
     if (mobilePreview) {
         DesktopShell.isMobileMode = true
         println("[CPPlayer] 启动模式 = 手机版界面预览 (Mobile Preview，412×892 Compact 布局)")
     } else {
-        println("[CPPlayer] 窗口装饰 = $decorMode（来源：${WindowDecorChoice.lastSource}）→ " +
-            if (useJbrChrome) "JBR 路（系统边框 + 自定义标题栏，原生贴边吸附）" else "无边框自绘路")
+        println("[CPPlayer] 窗口装饰 = $decorMode（来源：${WindowDecorChoice.lastSource}）→ " + when {
+            useJbrChrome -> "JBR 路（系统边框 + 自定义标题栏，原生贴边吸附）"
+            useSystemDecorations -> "标准系统装饰窗口"
+            else -> "无边框自绘路"
+        })
         if (decorMode == WindowDecorChoice.Mode.JBR && !JbrWindowChrome.isSupported) {
-            println("[CPPlayer] 显式指定了 JBR 路，但当前运行时不支持（需跑在 JBR 上，Windows/macOS），回退无边框方案")
-        } else if (!useJbrChrome) {
+            val fallback = if (useSystemDecorations) "系统装饰窗口" else "自绘无边框方案"
+            println("[CPPlayer] 显式指定了 JBR 路，但当前运行时不支持（需跑在 JBR 上，Windows/macOS），回退$fallback")
+        } else if (!useJbrChrome && !useSystemDecorations) {
             println("[CPPlayer] 未走 JBR 自定义标题栏，窗口走自绘无边框方案")
         }
     }
@@ -261,9 +273,9 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
             alwaysOnTop = isMiniMode && isMiniPinned,
             resizable = !isMiniMode,
             onKeyEvent = ::handleDesktopShortcut,
-            // Nucleus DecoratedWindow 暴露 undecorated 布尔值；JBR 路保留系统装饰，
-            // 其它路线由 DesktopTitleBar 自绘标题栏，手机预览模式同样走自定义高度/拖动。
-            undecorated = !useJbrChrome,
+            // Nucleus DecoratedWindow 暴露 undecorated 布尔值；JBR 路和 Windows 系统边框回退
+            // 都保留系统装饰，其它路线由 DesktopTitleBar 自绘标题栏。
+            undecorated = !useSystemDecorations,
         ) {
             val awtWindow = checkNotNull(nucleusWindow.unsafe.awtWindow) {
                 "CPPlayer desktop integrations require an AWT window"
@@ -323,7 +335,7 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
                         cp.player.app.ui.theme.ThemeMode.LIGHT -> false
                         cp.player.app.ui.theme.ThemeMode.SYSTEM -> true
                     }
-                    val awtBg = if (isDark) java.awt.Color(0x1F, 0x1F, 0x1F) else java.awt.Color(0xF5, 0xF5, 0xF5)
+                    val awtBg = if (isDark) java.awt.Color(0x1F, 0x1F, 0x1F, 255) else java.awt.Color(0xF5, 0xF5, 0xF5, 255)
                     runCatching { window.background = awtBg }
                 }
             }
@@ -332,7 +344,7 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
             // 手动 opt-in。窗口此刻可能还没真正 map 出来（IsWindowVisible 为假就找不到
             // 句柄），所以带重试；试满就放弃，圆角只是外观。
             // ⚠️ JBR 路与手机原生窗口不需要：窗口带边框，Win11 圆角由系统自动给。
-            if (!useJbrChrome && !mobilePreview) {
+            if (!useSystemDecorations && !mobilePreview) {
                 LaunchedEffect(Unit) {
                     repeat(WindowRetryAttempts) {
                         if (WindowsWindowCorners.applyRoundCorners()) return@LaunchedEffect
@@ -530,6 +542,7 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
                         cp.player.app.ui.component.MobilePreviewTitleBar(
                             windowScope = windowScope,
                             jbr = jbrChrome,
+                            systemWindowControls = useSystemDecorations && jbrChrome == null,
                             onRestoreDesktop = { DesktopShell.isMobileMode = false },
                             onMinimize = { windowState.isMinimized = true },
                             onClose = {
@@ -552,8 +565,11 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
                                 windowScope = windowScope,
                                 windowState = windowState,
                                 // 非 null 时 DesktopTitleBar 切到 JBR 模式：不画窗口钮、拖拽 / 双击
-                                // 交给原生 hit-test（见 DesktopTitleBar 的「两种窗口模式」一节）。
+                                // 交给原生 hit-test（见 DesktopTitleBar 的「三种窗口模式」一节）。
                                 jbr = jbrChrome,
+                                // 系统装饰（Windows 标准标题栏）由系统绘制窗控，只在内容工具栏
+                                // 保留对称空白，不重复绘制最小化 / 最大化 / 关闭按钮。
+                                systemWindowControls = useSystemDecorations && jbrChrome == null,
                                 // 标题：当前路由页自己声明的优先（`CpRouteScaffold` / `DesktopRouteTitle`），
                                 // 没有声明时回落到 `MainScreen` 发布的主壳层标题。`MainScreen` 被 push 出去的
                                 // 页面盖住后会离开组合、不再发布，所以没有这一层回落之外的上层来源，

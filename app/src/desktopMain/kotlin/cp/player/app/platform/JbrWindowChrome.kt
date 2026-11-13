@@ -20,7 +20,8 @@ import java.lang.reflect.Method
  *
  * 这套 API（`WindowDecorations`，随 JBR 分发；仓库内钉死的 JBR 21.0.8-b1163.62
  * 已用探针实测含 `java.awt.Window$WindowDecorations`，普通 JDK（如 Zulu）里没有这些类；
- * 本项目又要保留「探测不到 JBR 就回退自绘无边框」的双轨能力，
+ * 本项目又要保留「探测不到 JBR 就由调用方按平台策略回退」的能力：Windows 保留标准系统边框，
+ * 其它平台可走自绘无边框，
  * 所以**全程反射**：本文件在普通 JDK 上编译运行都不报错，`isSupported` 为 false 而已。
  *
  * ## 平台支持
@@ -38,7 +39,7 @@ import java.lang.reflect.Method
  * 缺了它连取句柄的机会都没有 —— 缺类会在 `JbrWindowChrome` 的 `<clinit>` 期就炸成
  * `NoClassDefFoundError`（静态类型引用在类初始化期必须解析），整个应用直接起不来。
  * 所以本文件全程**不出现 `sun.misc.Unsafe` 这个类型**，只用 `Class.forName` 拿句柄：
- * 模块缺失时这里只是拿到 null，回退自绘无边框的链路仍然成立。
+ * 模块缺失时这里只是拿到 null，调用方的平台回退链路仍然成立。
  * 打包侧对应 `app/build.gradle.kts` 的 `nativeDistributions.modules(...)`（含 `jdk.unsupported`）。
  * （此手法来自 ButterCam/compose-jetbrains-theme 与 JetBrains 自家的用法，已被广泛验证。）
  *
@@ -62,7 +63,7 @@ object JbrWindowChrome {
     /** `java.awt.Window$WindowDecorations` 的探测与缓存。探测失败不抛出，只置空。 */
     private val api: WindowDecorationsApi? by lazy {
         runCatching { WindowDecorationsApi.discover() }
-            .onFailure { println("[JbrWindowChrome] JBR WindowDecorations 探测失败（将回退自绘无边框方案）：$it") }
+            .onFailure { println("[JbrWindowChrome] JBR WindowDecorations 探测失败（将由调用方按平台策略回退）：$it") }
             .getOrNull()
     }
 
@@ -240,7 +241,7 @@ object JbrWindowChrome {
      * 它只存在于 `jdk.unsupported` 模块，而 release 的 jlink 镜像是按模块清单裁过的：
      * 一旦镜像里没有它，**类常量池里的静态类型引用会在 `JbrWindowChrome` 的 `<clinit>` 期
      * 炸成 `NoClassDefFoundError: sun/misc/Unsafe`** —— 整个类初始化失败 ⇒ `main()` 直接退出，
-     * 本文件所有「探测失败就回退无边框」的兜底一行都跑不到。
+     * 本文件所有「探测失败后由调用方回退」的兜底一行都跑不到。
      * （2026-10-05 真实事故：1.4.3 安装包启动即 `Failed to launch JVM`，本地 `desktopRun` 因跑在
      * 完整 JBR SDK 上无法复现。打包侧已补 `modules("jdk.unsupported")`，这里再兜一层：
      * 缺模块时只是拿到 null，回退链路才真的成立。）
@@ -273,7 +274,7 @@ object JbrWindowChrome {
             }.onFailure {
                 println(
                     "[JbrWindowChrome] 取不到 sun.misc.Unsafe（运行时是否缺 jdk.unsupported 模块？），" +
-                        "JBR 反射兜底不可用（将回退自绘无边框方案）：$it",
+                        "JBR 反射兜底不可用（将由调用方按平台策略回退）：$it",
                 )
             }.getOrNull()
         }
