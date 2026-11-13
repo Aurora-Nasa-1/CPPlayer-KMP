@@ -13,6 +13,7 @@ import cp.player.core.media.MediaType
 import cp.player.core.local.LocalLibraryAggregator
 import cp.player.core.local.LocalGridSort
 import cp.player.app.repository.HotSearch
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -52,6 +53,9 @@ class SearchScreenModel(private val initialQuery: String = "") : ScreenModel {
     private val _state = MutableStateFlow(SearchUiState(query = initialQuery))
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
     private var suggestionJob: Job? = null
+    private var searchJob: Job? = null
+    @Volatile
+    private var searchGeneration = 0
 
     init {
         _state.value = _state.value.copy(searchHistory = readHistory())
@@ -84,7 +88,9 @@ class SearchScreenModel(private val initialQuery: String = "") : ScreenModel {
     }
 
     fun setQuery(query: String) {
-        _state.value = _state.value.copy(query = query, error = null, result = null)
+        searchJob?.cancel()
+        searchGeneration++
+        _state.value = _state.value.copy(query = query, error = null, result = null, loading = false)
         suggestionJob?.cancel()
         if (query.isBlank()) {
             _state.value = _state.value.copy(suggestions = emptyList())
@@ -107,7 +113,9 @@ class SearchScreenModel(private val initialQuery: String = "") : ScreenModel {
 
     fun clear() {
         suggestionJob?.cancel()
-        _state.value = _state.value.copy(query = "", result = null, error = null, suggestions = emptyList())
+        searchJob?.cancel()
+        searchGeneration++
+        _state.value = _state.value.copy(query = "", result = null, error = null, suggestions = emptyList(), loading = false)
     }
 
     fun clearHistory() {
@@ -123,7 +131,14 @@ class SearchScreenModel(private val initialQuery: String = "") : ScreenModel {
 
     fun search(keyword: String = _state.value.query, type: Int = _state.value.searchType) {
         val finalKeyword = keyword.trim()
-        if (finalKeyword.isEmpty() || _state.value.loading) return
+        if (finalKeyword.isEmpty()) {
+            searchJob?.cancel()
+            searchGeneration++
+            _state.value = _state.value.copy(result = null, error = null, loading = false)
+            return
+        }
+        searchJob?.cancel()
+        val generation = ++searchGeneration
         suggestionJob?.cancel()
         val history = listOf(finalKeyword) + _state.value.searchHistory.filterNot { it.equals(finalKeyword, true) }
         val trimmedHistory = history.take(MAX_SEARCH_HISTORY)
@@ -135,7 +150,7 @@ class SearchScreenModel(private val initialQuery: String = "") : ScreenModel {
             suggestions = emptyList(),
             result = null,
         )
-        screenModelScope.launch {
+        searchJob = screenModelScope.launch {
             _state.value = _state.value.copy(loading = true, error = null)
             if (AppModel.activeProvider() == null) {
                 val localItems = AppModel.localMedia.items().value
@@ -168,6 +183,7 @@ class SearchScreenModel(private val initialQuery: String = "") : ScreenModel {
                             avatarUrl = artist.coverUri,
                         )
                     }
+                if (generation != searchGeneration) return@launch
                 _state.value = _state.value.copy(
                     result = SearchResult(
                         songs = matchedSongs,
@@ -179,8 +195,21 @@ class SearchScreenModel(private val initialQuery: String = "") : ScreenModel {
                 )
                 return@launch
             }
-            val response = runCatching { AppModel.musicRepository.search(finalKeyword, type) }
-                .getOrElse { BackendResult.Error(it.message ?: "搜索失败") }
+            val response = try {
+                AppModel.musicRepository.search(finalKeyword, type, onRefresh = { refreshed ->
+                    val updated = (refreshed as? BackendResult.Success)?.data
+                    if (updated != null && generation == searchGeneration &&
+                        _state.value.query == finalKeyword && _state.value.searchType == type
+                    ) {
+                        _state.value = _state.value.copy(result = updated)
+                    }
+                })
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                BackendResult.Error(error.message ?: "搜索失败")
+            }
+            if (generation != searchGeneration) return@launch
             _state.value = when (response) {
                 is BackendResult.Success -> _state.value.copy(result = response.data, loading = false)
                 is BackendResult.Error -> _state.value.copy(error = response.message, loading = false)

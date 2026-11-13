@@ -51,6 +51,7 @@ import cp.player.app.ui.util.resized
 import cp.player.core.BackendResult
 import cp.player.core.music.CPMediaId
 import cp.player.core.music.TrackSummary
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /**
@@ -85,12 +86,17 @@ fun SimilarSongsPanel(
     var unsupported by remember { mutableStateOf(false) }
     var tracks by remember { mutableStateOf<List<TrackSummary>>(emptyList()) }
     var fetchedFor by remember { mutableStateOf<String?>(null) }
+    var activeSeed by remember { mutableStateOf(seed) }
     var refreshToken by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
+    val visibleTracks = tracks.takeIf { fetchedFor == seed }.orEmpty()
+    val visibleError = errorMessage.takeIf { fetchedFor == seed }
+    val visibleUnsupported = unsupported && fetchedFor == seed
     val isDark = LocalIsDarkTheme.current
     val toMediaId = { id: String -> AppModel.toMediaId(id) }
 
     LaunchedEffect(seed, refreshToken) {
+        activeSeed = seed
         if (seed.isBlank()) return@LaunchedEffect
         val alreadyFetched = fetchedFor == seed &&
             (tracks.isNotEmpty() || errorMessage != null || unsupported)
@@ -99,7 +105,21 @@ fun SimilarSongsPanel(
         errorMessage = null
         unsupported = false
         val result = try {
-            AppModel.musicRepository.getSimilarSongs(seed)
+            AppModel.musicRepository.getSimilarSongs(seed, onRefresh = { refreshed ->
+                val updated = (refreshed as? BackendResult.Success)?.data
+                if (updated != null) {
+                    scope.launch {
+                        if (activeSeed == seed) {
+                            tracks = updated
+                            fetchedFor = seed
+                            errorMessage = null
+                            unsupported = false
+                        }
+                    }
+                }
+            })
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             BackendResult.Error(e.message ?: "获取相似歌曲失败", cause = e)
         }
@@ -171,7 +191,7 @@ fun SimilarSongsPanel(
                         maxLines = 1,
                     )
                     CpText(
-                        if (tracks.isNotEmpty()) "${tracks.size} 首相似好歌 · 点击即播" else "基于在播歌曲探索推荐",
+                        if (visibleTracks.isNotEmpty()) "${visibleTracks.size} 首相似好歌 · 点击即播" else "基于在播歌曲探索推荐",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -179,12 +199,12 @@ fun SimilarSongsPanel(
                 }
             }
 
-            if (tracks.isNotEmpty()) {
+            if (visibleTracks.isNotEmpty()) {
                 Surface(
                     onClick = {
                         scope.launch {
                             AppModel.playback.playQueue(
-                                tracks.map { toMediaId(it.id) },
+                                visibleTracks.map { toMediaId(it.id) },
                                 startIndex = 0,
                             )
                         }
@@ -218,28 +238,28 @@ fun SimilarSongsPanel(
 
         when {
             // 拉取中且还没有旧数据：整页 loading。
-            loading && tracks.isEmpty() -> {
+            loading && visibleTracks.isEmpty() -> {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CpLoadingIndicator(Modifier.size(40.dp))
                 }
             }
-            unsupported -> {
+            visibleUnsupported -> {
                 PanelMessage(
                     title = "当前音源暂不支持相似歌曲",
                     message = "切换到支持该功能的音源后再试试",
                 )
             }
-            errorMessage != null && tracks.isEmpty() -> {
+            visibleError != null && visibleTracks.isEmpty() -> {
                 PanelMessage(
                     title = "获取相似歌曲失败",
-                    message = errorMessage,
+                    message = visibleError,
                 ) {
                     Button(onClick = { refreshToken++ }, modifier = Modifier.padding(top = 16.dp)) {
                         CpText("重试")
                     }
                 }
             }
-            tracks.isEmpty() && (fetchedFor == seed || seed.isBlank()) -> {
+            visibleTracks.isEmpty() && (fetchedFor == seed || seed.isBlank()) -> {
                 PanelMessage(
                     title = if (seed.isBlank()) "没有正在播放的歌曲" else "没有找到相似歌曲",
                     message = if (seed.isBlank()) "播放一首歌后再来看相似推荐" else "换一首歌再试试",
@@ -250,14 +270,14 @@ fun SimilarSongsPanel(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    itemsIndexed(tracks, key = { _, item -> item.id }) { index, item ->
+                    itemsIndexed(visibleTracks, key = { _, item -> item.id }) { index, item ->
                         val playingSeed = item.id == seed
                         Surface(
                             onClick = {
                                 CoverFlight.play(item.id, item.coverUrl)
                                 AppModel.playTrackClicked(toMediaId(item.id)) {
                                     AppModel.playback.playQueue(
-                                        tracks.map { toMediaId(it.id) },
+                                        visibleTracks.map { toMediaId(it.id) },
                                         startIndex = index,
                                     )
                                 }

@@ -70,6 +70,7 @@ import cp.player.app.ui.util.UiEvents
 import cp.player.core.BackendResult
 import cp.player.core.music.ProfileBundle
 import cp.player.core.music.TrackSummary
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -115,6 +116,7 @@ private class UserProfileModel : ScreenModel {
     val state: StateFlow<ProfileUiState> = _state
 
     private var loadedUid: String? = null
+    private var loadGeneration = 0
 
     /**
      * @param strings 失败兜底文案按**当前语言**组 —— 协程里读不到 CompositionLocal，
@@ -123,16 +125,48 @@ private class UserProfileModel : ScreenModel {
     fun load(uid: String, fallbackName: String?, strings: CpStrings) {
         if (loadedUid == uid && _state.value.bundle != null) return
         loadedUid = uid
+        val generation = ++loadGeneration
+        val previousBundle = _state.value.bundle?.takeIf { it.resourceId == uid }
         screenModelScope.launch {
-            _state.value = ProfileUiState(loading = true)
-            val result = runCatching { AppModel.musicRepository.getProfileBundle(uid) }
-                .getOrElse { BackendResult.Error(it.message ?: strings.account.profileLoadFailed) }
+            _state.value = ProfileUiState(loading = previousBundle == null, bundle = previousBundle)
+            val result = try {
+                AppModel.musicRepository.getProfileBundle(
+                    uid,
+                    onRefresh = { refreshed ->
+                        screenModelScope.launch {
+                            if (generation != loadGeneration || loadedUid != uid) return@launch
+                            val freshBundle = (refreshed as? BackendResult.Success)?.data ?: return@launch
+                            if (_state.value.bundle?.resourceId == uid) {
+                                _state.value = _state.value.copy(bundle = freshBundle)
+                            }
+                        }
+                    },
+                    onPartial = { partial ->
+                        screenModelScope.launch {
+                            if (generation != loadGeneration || loadedUid != uid) return@launch
+                            val base = (partial as? BackendResult.Success)?.data ?: return@launch
+                            val previous = _state.value.bundle?.takeIf { it.resourceId == uid }
+                            val visible = if (previous == null) base else base.copy(
+                                albums = previous.albums,
+                                songs = previous.songs,
+                                playlists = previous.playlists,
+                            )
+                            _state.value = _state.value.copy(loading = false, error = null, bundle = visible)
+                        }
+                    },
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                BackendResult.Error(error.message ?: strings.account.profileLoadFailed)
+            }
+            if (generation != loadGeneration || loadedUid != uid) return@launch
             _state.value = when (result) {
                 is BackendResult.Success -> ProfileUiState(loading = false, bundle = result.data)
                 is BackendResult.Error -> ProfileUiState(
                     loading = false,
                     error = result.message,
-                    bundle = fallbackName?.let {
+                    bundle = previousBundle ?: fallbackName?.let {
                         ProfileBundle(
                             uid = uid.toLongOrNull() ?: 0L, resourceId = uid, isArtist = false, nickname = it,
                             avatarUrl = null, signature = null,
@@ -140,7 +174,11 @@ private class UserProfileModel : ScreenModel {
                         )
                     },
                 )
-                is BackendResult.Unsupported -> ProfileUiState(loading = false, error = result.message)
+                is BackendResult.Unsupported -> ProfileUiState(
+                    loading = false,
+                    error = result.message,
+                    bundle = previousBundle,
+                )
             }
         }
     }
@@ -166,6 +204,9 @@ private fun UserProfileContent(
     val playbackState by AppModel.playback.state.collectAsState()
     val currentTrackId = playbackState.currentTrack?.id
     val likedIds by AppModel.playback.likedIds.collectAsState()
+    val sourceGeneration by AppModel.sourceGeneration.collectAsState()
+    val accountGeneration by AppModel.accountGeneration.collectAsState()
+    val playlistGeneration by AppModel.playlistGeneration.collectAsState()
     val scope = rememberCoroutineScope()
     val provider = AppModel.activeProviderId()
 
@@ -190,7 +231,9 @@ private fun UserProfileContent(
     var addToPlaylistTrack by remember { mutableStateOf<TrackSummary?>(null) }
     var showInfoTarget by remember { mutableStateOf<TrackSummary?>(null) }
 
-    LaunchedEffect(uid) { model.load(uid, displayName, strings = s) }
+    LaunchedEffect(uid, sourceGeneration, accountGeneration, playlistGeneration) {
+        model.reload(uid, displayName, strings = s)
+    }
 
     val bundle = state.bundle
     val songs = bundle?.songs.orEmpty()

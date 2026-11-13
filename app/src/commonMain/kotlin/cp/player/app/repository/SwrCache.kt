@@ -46,6 +46,7 @@ internal class SwrCache<T : Any>(
         key: String,
         scope: CoroutineScope,
         shouldCache: (T) -> Boolean = { true },
+        onRefresh: ((MusicResult<T>) -> Unit)? = null,
         fetch: suspend () -> MusicResult<T>,
     ): MusicResult<T> {
         val snapshot = mutex.withLock {
@@ -60,8 +61,19 @@ internal class SwrCache<T : Any>(
             if (age < staleTtlMs) {
                 // 旧数据先上屏；若失效恰好发生在 launch 前，expectedGeneration 会阻止旧刷新启动。
                 scope.launch {
-                    runCatching {
+                    val result = try {
                         fetchAndStore(key, fetch, shouldCache, expectedGeneration = snapshot.second)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Throwable) {
+                        null
+                    }
+                    if (result != null) {
+                        mutex.withLock {
+                            if (generation == snapshot.second) {
+                                runCatching { onRefresh?.invoke(result) }
+                            }
+                        }
                     }
                 }
                 return BackendResult.Success(cached.value)

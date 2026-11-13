@@ -170,7 +170,7 @@ class HomeScreen : Screen {
 @Composable
 private fun HomeScreenContent(model: HomeScreenModel) {
     val state by model.state.collectAsState()
-    val loading = state.loading
+    val loading = state.loading && !state.hasAnyContent
     var selectedTrack by remember { mutableStateOf<TrackSummary?>(null) }
     var addToPlaylistTrack by remember { mutableStateOf<TrackSummary?>(null) }
     // 「歌曲信息」的目标曲目。与其余页面同款：弹层里点「歌曲信息」→ 打开共享的
@@ -2725,4 +2725,3 @@ private fun CompactTrackCard(
         }
     }
 }
-

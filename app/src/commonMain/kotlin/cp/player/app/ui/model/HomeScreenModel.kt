@@ -59,6 +59,7 @@ data class HomeUiState(
     val hotArtists: List<ArtistSummary> = emptyList(),
     val newSongs: List<TrackSummary> = emptyList(),
     val recommendedPlaylists: List<PlaylistSummary> = emptyList(),
+    val personalizedPlaylists: List<PlaylistSummary> = emptyList(),
     val hotPlaylists: List<PlaylistSummary> = emptyList(),
     val premiumPlaylists: List<PlaylistSummary> = emptyList(),
     val userPlaylists: List<PlaylistSummary> = emptyList(),
@@ -73,7 +74,7 @@ data class HomeUiState(
     /** 当前「发现歌单」区块该展示的列表。 */
     val visiblePlaylists: List<PlaylistSummary>
         get() = when (playlistSource) {
-            PlaylistSource.Recommended -> recommendedPlaylists
+            PlaylistSource.Recommended -> (recommendedPlaylists + personalizedPlaylists).distinctBy { it.resourceId }
             PlaylistSource.Hot -> hotPlaylists
             PlaylistSource.Premium -> premiumPlaylists
         }
@@ -120,6 +121,7 @@ data class HomeUiState(
             hotArtists.isNotEmpty() ||
             newSongs.isNotEmpty() ||
             recommendedPlaylists.isNotEmpty() ||
+            personalizedPlaylists.isNotEmpty() ||
             hotPlaylists.isNotEmpty() ||
             premiumPlaylists.isNotEmpty() ||
             userPlaylists.isNotEmpty()
@@ -188,6 +190,7 @@ class HomeScreenModel(
      * 把新结果盖回去」。世代号负责丢弃过期结果。
      */
     private var refreshJob: Job? = null
+    @Volatile
     private var refreshGen = 0
 
     init {
@@ -200,10 +203,8 @@ class HomeScreenModel(
         screenModelScope.launch {
             AppModel.sourceGeneration.drop(1).collect {
                 newSongsByRegion.clear()
-                // 按音源缓存的新歌速递整批作废，否则切源后再切回旧地区候选会拿到上个
-                // 音源的 `newSongRegion` 值 —— 新状态体里留着全空的新歌列表，
-                // 「新歌速递」区块就一直是空的，直到用户手动再点一次那个地区。
-                _state.update { it.copy(newSongRegion = NewSongRegion.All) }
+                // 不让前一个音源的公开/个性化区块在新请求期间混在新 Provider 页面里。
+                _state.value = HomeUiState(loading = loadDiscovery)
                 refresh(force = true)
             }
         }
@@ -216,7 +217,8 @@ class HomeScreenModel(
         screenModelScope.launch {
             AppModel.accountGeneration.drop(1).collect {
                 newSongsByRegion.clear()
-                _state.update { it.copy(newSongRegion = NewSongRegion.All) }
+                // 日推、歌单和个性化内容都可能与账号绑定，切号后不展示前一个账户快照。
+                _state.value = HomeUiState(loading = loadDiscovery)
                 refresh(force = true)
             }
         }
@@ -384,15 +386,17 @@ class HomeScreenModel(
             try {
                 if (!silent) _state.value = _state.value.copy(loading = true, error = null)
                 val next = withContext(Dispatchers.IO) {
-                    if (loadDiscovery) loadDiscoveryHome() else loadUserLibraryOnly()
+                    if (loadDiscovery) loadDiscoveryHome(gen) else loadUserLibraryOnly(gen)
                 }
                 // 已被更新的刷新取代（或本协程刚被取消）—— 丢弃过期结果，别覆盖新数据。
                 if (gen != refreshGen) return@launch
                 // 首屏拿到的「全部」新歌速递顺手进缓存：这样用户点开地区筛选再切回「全部」
                 // 时不会重新请求、也不会闪一遍加载态。写在这里而不是 loadDiscoveryHome 内部，
                 // 是因为那边跑在 IO 线程，而这张表只在主线程读写。
-                if (next.newSongs.isNotEmpty()) newSongsByRegion[NewSongRegion.All] = next.newSongs
-                _state.value = next.copy(loading = false)
+                _state.value.takeIf { it.newSongRegion == NewSongRegion.All }
+                    ?.newSongs?.takeIf { it.isNotEmpty() }
+                    ?.let { newSongsByRegion[NewSongRegion.All] = it }
+                _state.update { it.copy(loading = false, error = next.error) }
             } finally {
                 // 只有仍是最新一轮才复位指示器，否则会把新一轮刚打开的 refreshing 提前关掉。
                 if (gen == refreshGen) _refreshing.value = false
@@ -406,21 +410,34 @@ class HomeScreenModel(
     fun selectPlaylistSource(source: PlaylistSource) {
         if (_state.value.playlistSource == source) return
         _state.value = _state.value.copy(playlistSource = source)
-        val alreadyLoaded = when (source) {
-            PlaylistSource.Recommended -> _state.value.recommendedPlaylists.isNotEmpty()
-            PlaylistSource.Hot -> _state.value.hotPlaylists.isNotEmpty()
-            PlaylistSource.Premium -> _state.value.premiumPlaylists.isNotEmpty()
-        }
-        if (alreadyLoaded) return
+        // 推荐歌单已由首屏并发请求覆盖；热门/精品每次切回时仍需经过仓库 SWR，
+        // 否则本地 StateFlow 会绕过 TTL，让旧列表永久留在页面内。
+        if (source == PlaylistSource.Recommended) return
 
         screenModelScope.launch {
             val gen = refreshGen
+            val sourceGen = AppModel.sourceGeneration.value
+            val accountGen = AppModel.accountGeneration.value
             _state.value = _state.value.copy(playlistSourceLoading = true)
             val result = withContext(Dispatchers.IO) {
                 safe {
                     when (source) {
-                        PlaylistSource.Hot -> AppModel.musicRepository.getTopPlaylists(limit = 30)
-                        PlaylistSource.Premium -> AppModel.musicRepository.getHighQualityPlaylists(limit = 30)
+                        PlaylistSource.Hot -> AppModel.musicRepository.getTopPlaylists(
+                            limit = 30,
+                            onRefresh = { refreshed ->
+                                applyCachedRefresh(gen, sourceGen, accountGen, refreshed) { state, items ->
+                                    state.copy(hotPlaylists = items)
+                                }
+                            },
+                        )
+                        PlaylistSource.Premium -> AppModel.musicRepository.getHighQualityPlaylists(
+                            limit = 30,
+                            onRefresh = { refreshed ->
+                                applyCachedRefresh(gen, sourceGen, accountGen, refreshed) { state, items ->
+                                    state.copy(premiumPlaylists = items)
+                                }
+                            },
+                        )
                         // Recommended 在首屏已拉过，走到这里说明上游返回了空列表 —— 不再重试。
                         PlaylistSource.Recommended -> BackendResult.Success(emptyList())
                     }
@@ -428,13 +445,15 @@ class HomeScreenModel(
             }
             val items = (result as? BackendResult.Success)?.data.orEmpty()
             // 切源会经 refresh() 递增世代号 —— 命中说明这批结果属于旧音源，丢弃。
-            if (gen != refreshGen) return@launch
+            if (!isRefreshCurrent(gen, sourceGen, accountGen)) return@launch
             // 切换可能发生在请求在途期间：按当前 state 合并，别用发起时的快照覆盖回去。
-            _state.value = _state.value.copy(
-                playlistSourceLoading = false,
-                hotPlaylists = if (source == PlaylistSource.Hot) items else _state.value.hotPlaylists,
-                premiumPlaylists = if (source == PlaylistSource.Premium) items else _state.value.premiumPlaylists,
-            )
+            _state.update { current ->
+                current.copy(
+                    playlistSourceLoading = if (current.playlistSource == source) false else current.playlistSourceLoading,
+                    hotPlaylists = if (source == PlaylistSource.Hot) items else current.hotPlaylists,
+                    premiumPlaylists = if (source == PlaylistSource.Premium) items else current.premiumPlaylists,
+                )
+            }
         }
     }
 
@@ -442,95 +461,234 @@ class HomeScreenModel(
     fun selectNewSongRegion(region: NewSongRegion) {
         if (_state.value.newSongRegion == region) return
         _state.value = _state.value.copy(newSongRegion = region)
-        newSongsByRegion[region]?.let { cached ->
-            _state.value = _state.value.copy(newSongs = cached, newSongsLoading = false)
-            return
-        }
+        val cached = newSongsByRegion[region]
+        cached?.let { _state.value = _state.value.copy(newSongs = it, newSongsLoading = false) }
         screenModelScope.launch {
             val gen = refreshGen
-            _state.value = _state.value.copy(newSongsLoading = true)
+            val sourceGen = AppModel.sourceGeneration.value
+            val accountGen = AppModel.accountGeneration.value
+            if (cached == null) _state.value = _state.value.copy(newSongsLoading = true)
             val result = withContext(Dispatchers.IO) {
-                safe { AppModel.musicRepository.getNewSongsByRegion(region.type, limit = 20) }
+                safe {
+                    AppModel.musicRepository.getNewSongsByRegion(
+                        region.type,
+                        limit = 20,
+                        onRefresh = { refreshed ->
+                            applyCachedRefresh(gen, sourceGen, accountGen, refreshed) { state, items ->
+                                if (state.newSongRegion == region) state.copy(newSongs = items) else state
+                            }
+                        },
+                    )
+                }
             }
             val items = (result as? BackendResult.Success)?.data.orEmpty()
             if (items.isNotEmpty()) newSongsByRegion[region] = items
             // 切源会经 refresh() 递增世代号 —— 命中说明这批结果属于旧音源，丢弃。
-            if (gen != refreshGen) return@launch
+            if (!isRefreshCurrent(gen, sourceGen, accountGen)) return@launch
             // 用户在请求在途期间又切了地区：结果只写回对应的那个地区，且仅在仍选中它时上屏。
-            _state.value = if (_state.value.newSongRegion == region) {
-                _state.value.copy(newSongs = items, newSongsLoading = false)
-            } else {
-                _state.value.copy(newSongsLoading = false)
+            if (_state.value.newSongRegion == region) {
+                _state.value = _state.value.copy(newSongs = items, newSongsLoading = false)
             }
         }
     }
 
     // ======================== 加载 ========================
 
-    private suspend fun loadUserLibraryOnly(): HomeUiState {
-        if (AppModel.activeProvider() == null) {
-            return HomeUiState(loading = false, error = null)
+    private suspend fun loadUserLibraryOnly(gen: Int): HomeUiState {
+        if (AppModel.activeProvider() == null) return HomeUiState(loading = false)
+        val sourceGen = AppModel.sourceGeneration.value
+        val accountGen = AppModel.accountGeneration.value
+        val userResult = safe {
+            AppModel.musicRepository.getCurrentUserPlaylists(onRefresh = { refreshed ->
+                applyCachedRefresh(gen, sourceGen, accountGen, refreshed) { state, items ->
+                    state.copy(userPlaylists = items, likedPlaylist = pickLikedPlaylist(items))
+                }
+            })
         }
-        val userResult = safe { AppModel.musicRepository.getCurrentUserPlaylists() }
-        val user = userResult.dataOrEmpty()
-        return HomeUiState(
-            userPlaylists = user,
-            likedPlaylist = pickLikedPlaylist(user),
-            loading = false,
-            error = userResult.errorOrNull(),
-        )
+        applyLoadResult(gen, sourceGen, accountGen, userResult) { state, result ->
+            val user = result.dataOrEmpty()
+            state.copy(userPlaylists = user, likedPlaylist = pickLikedPlaylist(user))
+        }
+        return _state.value.copy(error = userResult.errorOrNull())
     }
 
-    private suspend fun loadDiscoveryHome(): HomeUiState {
-        if (AppModel.activeProvider() == null) {
-            return HomeUiState(loading = false, error = null)
-        }
+    private suspend fun loadDiscoveryHome(gen: Int): HomeUiState {
+        if (AppModel.activeProvider() == null) return HomeUiState(loading = false)
+        val sourceGen = AppModel.sourceGeneration.value
+        val accountGen = AppModel.accountGeneration.value
+
         return coroutineScope {
-        // 首页一屏有 8 个互相独立的数据源。串行拉的话总延迟是八者之和，
-        // 而它们之间没有任何依赖关系 —— 全部并发，总延迟取决于最慢的那个。
-        val daily = async { safe { AppModel.musicRepository.getRecommendedSongs() } }
-        val recommended = async { safe { AppModel.musicRepository.getRecommendedPlaylists() } }
-        val personalized = async { safe { AppModel.musicRepository.getPersonalizedPlaylists(30) } }
-        val banners = async { safe { AppModel.musicRepository.getBanners() } }
-        val rankings = async { safe { AppModel.musicRepository.getRankings() } }
-        val albums = async { safe { AppModel.musicRepository.getNewAlbums(limit = 24) } }
-        val artists = async { safe { AppModel.musicRepository.getHotArtists(limit = 18) } }
-        val newSongs = async {
-            safe { AppModel.musicRepository.getNewSongsByRegion(NewSongRegion.All.type, limit = 20) }
+            // Each request publishes its section as soon as it completes. A slow banner or artist
+            // endpoint can no longer keep already cached daily songs hidden behind the skeleton.
+            val daily = async {
+                val result = safe {
+                    AppModel.musicRepository.getRecommendedSongs(onRefresh = { refreshed ->
+                        applyCachedRefresh(gen, sourceGen, accountGen, refreshed) { state, items ->
+                            state.copy(dailySongs = items)
+                        }
+                    })
+                }
+                applyLoadResult(gen, sourceGen, accountGen, result) { state, loaded ->
+                    state.copy(dailySongs = loaded.dataOrEmpty())
+                }
+                result
+            }
+            val recommended = async {
+                val result = safe {
+                    AppModel.musicRepository.getRecommendedPlaylists(onRefresh = { refreshed ->
+                        applyCachedRefresh(gen, sourceGen, accountGen, refreshed) { state, items ->
+                            state.copy(recommendedPlaylists = items)
+                        }
+                    })
+                }
+                applyLoadResult(gen, sourceGen, accountGen, result) { state, loaded ->
+                    state.copy(recommendedPlaylists = loaded.dataOrEmpty())
+                }
+                result
+            }
+            val personalized = async {
+                val result = safe {
+                    AppModel.musicRepository.getPersonalizedPlaylists(30, onRefresh = { refreshed ->
+                        applyCachedRefresh(gen, sourceGen, accountGen, refreshed) { state, items ->
+                            state.copy(personalizedPlaylists = items)
+                        }
+                    })
+                }
+                applyLoadResult(gen, sourceGen, accountGen, result) { state, loaded ->
+                    state.copy(personalizedPlaylists = loaded.dataOrEmpty())
+                }
+                result
+            }
+            val banners = async {
+                val result = safe {
+                    AppModel.musicRepository.getBanners(onRefresh = { refreshed ->
+                        applyCachedRefresh(gen, sourceGen, accountGen, refreshed) { state, items ->
+                            state.copy(banners = items)
+                        }
+                    })
+                }
+                applyLoadResult(gen, sourceGen, accountGen, result) { state, loaded ->
+                    state.copy(banners = loaded.dataOrEmpty())
+                }
+                result
+            }
+            val rankings = async {
+                val result = safe {
+                    AppModel.musicRepository.getRankings(onRefresh = { refreshed ->
+                        applyCachedRefresh(gen, sourceGen, accountGen, refreshed) { state, items ->
+                            state.copy(rankings = items)
+                        }
+                    })
+                }
+                applyLoadResult(gen, sourceGen, accountGen, result) { state, loaded ->
+                    state.copy(rankings = loaded.dataOrEmpty())
+                }
+                result
+            }
+            val albums = async {
+                val result = safe {
+                    AppModel.musicRepository.getNewAlbums(limit = 24, onRefresh = { refreshed ->
+                        applyCachedRefresh(gen, sourceGen, accountGen, refreshed) { state, items ->
+                            state.copy(newAlbums = items)
+                        }
+                    })
+                }
+                applyLoadResult(gen, sourceGen, accountGen, result) { state, loaded ->
+                    state.copy(newAlbums = loaded.dataOrEmpty())
+                }
+                result
+            }
+            val artists = async {
+                val result = safe {
+                    AppModel.musicRepository.getHotArtists(limit = 18, onRefresh = { refreshed ->
+                        applyCachedRefresh(gen, sourceGen, accountGen, refreshed) { state, items ->
+                            state.copy(hotArtists = items)
+                        }
+                    })
+                }
+                applyLoadResult(gen, sourceGen, accountGen, result) { state, loaded ->
+                    state.copy(hotArtists = loaded.dataOrEmpty())
+                }
+                result
+            }
+            val newSongs = async {
+                val result = safe {
+                    AppModel.musicRepository.getNewSongsByRegion(
+                        NewSongRegion.All.type, limit = 20, onRefresh = { refreshed ->
+                            applyCachedRefresh(gen, sourceGen, accountGen, refreshed) { state, items ->
+                                if (state.newSongRegion == NewSongRegion.All) state.copy(newSongs = items) else state
+                            }
+                        },
+                    )
+                }
+                applyLoadResult(gen, sourceGen, accountGen, result) { state, loaded ->
+                    if (state.newSongRegion == NewSongRegion.All) {
+                        state.copy(newSongs = loaded.dataOrEmpty())
+                    } else {
+                        state
+                    }
+                }
+                result
+            }
+            val user = async {
+                val result = safe {
+                    AppModel.musicRepository.getCurrentUserPlaylists(onRefresh = { refreshed ->
+                        applyCachedRefresh(gen, sourceGen, accountGen, refreshed) { state, items ->
+                            state.copy(userPlaylists = items, likedPlaylist = pickLikedPlaylist(items))
+                        }
+                    })
+                }
+                applyLoadResult(gen, sourceGen, accountGen, result) { state, loaded ->
+                    val items = loaded.dataOrEmpty()
+                    state.copy(userPlaylists = items, likedPlaylist = pickLikedPlaylist(items))
+                }
+                result
+            }
+
+            val dailyResult = daily.await()
+            val userResult = user.await()
+            recommended.await()
+            personalized.await()
+            banners.await()
+            rankings.await()
+            albums.await()
+            artists.await()
+            newSongs.await()
+            val hasAnyCachedContent = _state.value.hasAnyContent
+
+            // 有任何区块可展示时不把单项失败升级成整页错误；否则保留日推/用户歌单的首要失败提示。
+            val error = if (hasAnyCachedContent) null else (dailyResult.errorOrNull() ?: userResult.errorOrNull())
+            _state.value.copy(error = error)
         }
-        val user = async { safe { AppModel.musicRepository.getCurrentUserPlaylists() } }
-
-        val dailyResult = daily.await()
-        val userResult = user.await()
-        val mergedRecommended = (
-            recommended.await().dataOrEmpty() + personalized.await().dataOrEmpty()
-            ).distinctBy { it.resourceId }
-
-        val allRegionSongs = newSongs.await().dataOrEmpty()
-        val hasAnyCachedContent = dailyResult.dataOrEmpty().isNotEmpty() ||
-            userResult.dataOrEmpty().isNotEmpty() ||
-            mergedRecommended.isNotEmpty() ||
-            allRegionSongs.isNotEmpty()
-
-        // 只有「日推」和「用户歌单」失败才升级成页面级错误；若已命中任何缓存内容（如歌单或速递），
-        // 则静默展示已有缓存内容，不弹出阻断性错误红卡。
-        val error = if (hasAnyCachedContent) null else (dailyResult.errorOrNull() ?: userResult.errorOrNull())
-
-        HomeUiState(
-            dailySongs = dailyResult.dataOrEmpty(),
-            banners = banners.await().dataOrEmpty(),
-            rankings = rankings.await().dataOrEmpty(),
-            newAlbums = albums.await().dataOrEmpty(),
-            hotArtists = artists.await().dataOrEmpty(),
-            newSongs = allRegionSongs,
-            recommendedPlaylists = mergedRecommended,
-            userPlaylists = userResult.dataOrEmpty(),
-            likedPlaylist = pickLikedPlaylist(userResult.dataOrEmpty()),
-            loading = false,
-            error = error,
-        )
     }
-}
+
+    private fun isRefreshCurrent(gen: Int, sourceGen: Int, accountGen: Int): Boolean =
+        gen == refreshGen && sourceGen == AppModel.sourceGeneration.value && accountGen == AppModel.accountGeneration.value
+
+    private fun <T> applyLoadResult(
+        gen: Int,
+        sourceGen: Int,
+        accountGen: Int,
+        result: MusicResult<T>,
+        transform: (HomeUiState, MusicResult<T>) -> HomeUiState,
+    ) {
+        if (isRefreshCurrent(gen, sourceGen, accountGen)) {
+            _state.update { transform(it, result) }
+        }
+    }
+
+    private fun <T : Any> applyCachedRefresh(
+        gen: Int,
+        sourceGen: Int,
+        accountGen: Int,
+        result: MusicResult<T>,
+        transform: (HomeUiState, T) -> HomeUiState,
+    ) {
+        val data = (result as? BackendResult.Success)?.data ?: return
+        if (isRefreshCurrent(gen, sourceGen, accountGen)) {
+            _state.update { transform(it, data) }
+        }
+    }
 
     /**
      * 挑出收藏夹歌单：先按 [isLikedPlaylistName] 精确匹配，匹配不到再退回宽松的
