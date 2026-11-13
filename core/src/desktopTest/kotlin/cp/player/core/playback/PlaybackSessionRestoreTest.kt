@@ -8,8 +8,15 @@ import cp.player.core.util.SettingsStorage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -25,16 +32,15 @@ import kotlin.test.assertTrue
  * 2. 恢复出来的进度在用户点播放时才交给引擎（「接着听」而非「从头开始」）；
  * 3. 开关关闭 / 清空队列时**不恢复**、且快照被删干净。
  *
- * ⚠️ 用 `Dispatchers.Unconfined`：恢复与落盘都挂在 `scope.launch` 上，
- * Unconfined 会**立即**把它们跑到第一个挂起点，于是构造完即可断言 ——
- * 生产环境的单线程 Main 队列同理（顺序执行），所以这不算「作弊」。
+ * ⚠️ 控制器作用域用 `Dispatchers.Unconfined` 保持调用顺序明确；快照写盘仍会
+ * 切到 IO 并异步完成，因此涉及写入的断言先等待存储值达到预期。
  */
 class PlaybackSessionRestoreTest {
 
     // ============ 测试替身 ============
 
     private class MapSettings : SettingsStorage {
-        private val map = mutableMapOf<String, String>()
+        private val map = ConcurrentHashMap<String, String>()
         override fun getString(key: String, default: String?): String? = map[key] ?: default
         override fun putString(key: String, value: String?) {
             if (value == null) map.remove(key) else map[key] = value
@@ -121,6 +127,17 @@ class PlaybackSessionRestoreTest {
         )
     }
 
+    private suspend fun awaitLastSession(
+        settings: MapSettings,
+        condition: (String?) -> Boolean,
+    ) {
+        withTimeout(2_000L) {
+            while (!condition(settings.getString(PlaybackSessionSettings.KEY_LAST_SESSION))) {
+                delay(10)
+            }
+        }
+    }
+
     // ============ 测试 ============
 
     @Test
@@ -174,6 +191,7 @@ class PlaybackSessionRestoreTest {
         val c = controller(FakePlatformPlayer(), FakeSource(), settings)
 
         c.playQueue(listOf(mid(1), mid(2)), startIndex = 0)
+        awaitLastSession(settings) { it != null }
 
         val raw = settings.getString(PlaybackSessionSettings.KEY_LAST_SESSION)
         assertNotNull(raw, "播放后应写入快照")
@@ -188,12 +206,14 @@ class PlaybackSessionRestoreTest {
         val settings = MapSettings()
         val c = controller(FakePlatformPlayer(), FakeSource(), settings)
         c.playQueue(listOf(mid(1), mid(2)), startIndex = 0)
+        awaitLastSession(settings) { it != null }
         assertNotNull(
             settings.getString(PlaybackSessionSettings.KEY_LAST_SESSION),
             "前置条件：播放后应已有快照",
         )
 
         c.clearQueue()
+        awaitLastSession(settings) { it == null }
 
         assertNull(
             settings.getString(PlaybackSessionSettings.KEY_LAST_SESSION),
@@ -226,6 +246,60 @@ class PlaybackSessionRestoreTest {
 
         platform.state.value = PlatformPlaybackState.Playing
         assertNull(c.state.value.error, "播放态应自动清理历史错误提示")
+    }
+
+    @Test
+    fun `session writes commit in invocation order including remove and blocking final write`() = runBlocking {
+        val settings = MapSettings().apply {
+            putString(PlaybackSessionSettings.KEY_KEEP_LAST_PLAYBACK, "true")
+        }
+        val store = PlaybackSessionStore(
+            settings,
+            CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+        )
+        fun session(id: String) = PlaybackSessionStore.Session(listOf(id), 0, null, 0L)
+
+        store.persistSession { session("older") }
+        store.persistSession { session("newer") }
+        withTimeout(2_000L) {
+            while (store.readSession()?.ids != listOf("newer")) delay(10)
+        }
+        assertEquals(listOf("newer"), store.readSession()?.ids)
+
+        store.persistSession { session("stale") }
+        store.persistSession { null }
+        store.persistSessionBlocking { null }
+        assertNull(settings.getString(PlaybackSessionSettings.KEY_LAST_SESSION))
+
+        store.persistSession { session("queued-old") }
+        store.persistSessionBlocking { session("release-final") }
+        assertEquals(listOf("release-final"), store.readSession()?.ids)
+    }
+
+    @Test
+    fun `blocking final write does not deadlock on a single-thread scope dispatcher`() = runBlocking {
+        val dispatcher = Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "playback-session-test").apply { isDaemon = true }
+        }.asCoroutineDispatcher()
+        val scope = CoroutineScope(SupervisorJob() + dispatcher)
+        val settings = MapSettings().apply {
+            putString(PlaybackSessionSettings.KEY_KEEP_LAST_PLAYBACK, "true")
+        }
+        val store = PlaybackSessionStore(settings, scope)
+        fun session(id: String) = PlaybackSessionStore.Session(listOf(id), 0, null, 0L)
+
+        try {
+            withTimeout(2_000L) {
+                withContext(dispatcher) {
+                    store.persistSession { session("queued-old") }
+                    store.persistSessionBlocking { session("release-final") }
+                }
+            }
+            assertEquals(listOf("release-final"), store.readSession()?.ids)
+        } finally {
+            scope.cancel()
+            dispatcher.close()
+        }
     }
 }
 
