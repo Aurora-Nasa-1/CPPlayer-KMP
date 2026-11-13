@@ -1,6 +1,5 @@
 package cp.player.app.ui.screen
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -268,7 +267,9 @@ class AudioEffectSettingsScreen : Screen {
                             )
                         }
 
-                        AnimatedVisibility(visible = showFrequencyTuning) {
+                        // The root Navigator already animates pages inside SharedTransitionLayout.
+                        // Keep this small, static control group out of a second nested subcomposition.
+                        if (showFrequencyTuning) {
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 eq.bands.forEachIndexed { bandIndex, band ->
                                     SettingsSliderItem(
