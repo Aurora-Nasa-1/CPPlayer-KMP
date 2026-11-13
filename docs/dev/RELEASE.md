@@ -147,9 +147,17 @@ on the default JDK and says so on stdout — `javaHome` is never set to a bogus 
 
 1. The About page calls the GitHub Releases API.
 2. It compares SemVer, including prerelease suffixes.
-3. Android selects the APK asset and queues it through `DownloadManager` into `Downloads`, with a completion notification.
+3. Android selects the APK asset and downloads it through `DownloadManager` into `Downloads`, with a completion notification.
 4. Windows selects the `-Setup.exe` asset; Linux prefers the DEB and falls back to TAR.GZ; Android selects the APK. The selected asset's GitHub `browser_download_url` is passed directly to the platform downloader.
-5. Android queues the APK with `DownloadManager`; desktop streams the installer/archive into CPPlayer's managed download directory without opening a browser. If no matching asset exists, the release page remains available as a manual fallback.
+5. Android waits for `DownloadManager` completion; desktop streams the installer/archive into CPPlayer's managed download directory without opening a browser. The app verifies non-empty output and the published size, and verifies GitHub's SHA-256 digest when present. After a confirmed destructive update, it records a deferred cleanup marker; it then opens the Android system APK installer, starts the Windows Velopack Setup executable, or opens a Linux `.deb` with the system package handler. OS/user confirmation remains required; this is not a silent install. Cleanup occurs only when the target-or-newer version starts. A `.tar.gz` fallback is opened with the system's default handler, since it has no native installer.
+
+### Remote notices and confirmed destructive updates
+
+`app-update.json` is fetched independently from the repository's `main` branch. Use its `announcements` array for version-bounded notices (`id`, `title`, `message`, optional `url`, `fromVersionInclusive`, and `untilVersionExclusive`). The app records the last dismissed announcement ID and shows each ID once.
+
+`destructiveUpdates` entries gate a warning and a second explicit confirmation using SemVer bounds `fromVersionAtMost` and `toVersionAtLeast`. The checked-in policy covers upgrades from **1.8.5 or earlier** to **1.8.8 or later**, including this **1.8.9** release. It scans module directories and offers cleanup only for manifests whose `apiVersion` is 1 or 3, whose `contract` is not `kmp-sdk-v1`, and whose manifest ID matches the directory name. After confirmation and verified package download, the app only writes a pending cleanup marker; it does not delete anything before installation. On startup, the target-or-newer app revalidates the selected IDs and removes only still-matching legacy module folders before loading providers. If installation is cancelled or fails, the older app version does not apply the marker and keeps the folders. SDK packages and account/cookie data are never selected.
+
+No rollback package is configured or offered by this update flow. The existing v1.8.5 APK may have a lower Android `versionCode` than later installs; Android can reject it as a downgrade, and uninstalling first may erase app data. This release does not silently uninstall or claim a no-data-loss in-place rollback.
 
 Desktop build metadata reaches the app through `compose.desktop.application.jvmArgs` in `app/build.gradle.kts` (`-Dcp.player.versionName`, `.versionCode`, `.releaseChannel`, `.gitSha`) and is read by `BuildInfo`. **Gradle properties do not become JVM system properties on their own** — dropping those lines silently makes the About page report `v1.0.0 (1)` / `unknown` forever, regardless of the tag.
 

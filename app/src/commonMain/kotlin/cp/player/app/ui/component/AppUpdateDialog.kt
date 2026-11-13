@@ -156,6 +156,48 @@ fun AppUpdateDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
+                result.announcement?.let { notice ->
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            CpText(
+                                text = notice.title,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            )
+                            CpText(
+                                text = notice.message,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            )
+                        }
+                    }
+                }
+                result.destructivePolicy?.let { policy ->
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            CpText(
+                                text = policy.title,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                            CpText(
+                                text = policy.message,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                        }
+                    }
+                }
                 // 属性标签行：发布时间、安装包匹配类型
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -319,35 +361,37 @@ fun AppUpdateDialog(
             }
         },
         dismissButton = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                OutlinedButton(
-                    onClick = { openUrl(result.releaseUrl) },
-                    shape = MaterialTheme.shapes.medium,
-                    modifier = Modifier.height(42.dp),
+            Column(horizontalAlignment = Alignment.End) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
-                        contentDescription = null,
-                        modifier = Modifier.size(CpIconSize.inline),
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    CpText(
-                        text = s.releasePage,
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                }
-                TextButton(
-                    onClick = onDismiss,
-                    shape = MaterialTheme.shapes.medium,
-                    modifier = Modifier.height(42.dp),
-                ) {
-                    CpText(
-                        text = s.later,
-                        style = MaterialTheme.typography.labelLarge,
-                    )
+                    OutlinedButton(
+                        onClick = { openUrl(result.releaseUrl) },
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.height(42.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                            contentDescription = null,
+                            modifier = Modifier.size(CpIconSize.inline),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        CpText(
+                            text = s.releasePage,
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                    TextButton(
+                        onClick = onDismiss,
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.height(42.dp),
+                    ) {
+                        CpText(
+                            text = s.later,
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
                 }
             }
         },

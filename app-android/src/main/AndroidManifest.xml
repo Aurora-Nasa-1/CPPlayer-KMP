@@ -41,6 +41,7 @@
         tools:overrideLibrary="com.mocharealm.accompanist.lyrics.ui,com.xzakota.hyper.notification.focus,com.hchen.superlyricapi" />
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- 激进保活（设置 → 连接与集成 → 激进保活）需要：持 Wi-Fi 高性能锁，熄屏后不让 Wi-Fi
          进入省电模式（否则组播发现包会被丢弃 ⇒「手机在旁边却搜不到」）。

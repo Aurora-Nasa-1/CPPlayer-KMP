@@ -879,6 +879,7 @@ private fun ensureBackendInitialized() {
         MusicBackend.init(
             context = PlatformContext(),
             settings = defaultSettingsStorage(),
+            applicationVersionName = BuildInfo.VERSION_NAME,
         )
         AppModel.markInitialized()
         val isDesktopRun = System.getProperty("cp.player.isDesktopRun") == "true" ||

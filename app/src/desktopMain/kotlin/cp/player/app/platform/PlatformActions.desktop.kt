@@ -62,7 +62,19 @@ actual fun openWebview(url: String, title: String?) {
     openUrl(url)
 }
 
-actual suspend fun downloadUpdate(url: String, fileName: String): Boolean = withContext(Dispatchers.IO) {
+actual suspend fun downloadUpdate(url: String, fileName: String): Boolean =
+    downloadAndInstallUpdate(
+        url, fileName, expectedSha256 = null, expectedSize = null,
+        beforeInstall = { true },
+    )
+
+actual suspend fun downloadAndInstallUpdate(
+    url: String,
+    fileName: String,
+    expectedSha256: String?,
+    expectedSize: Long?,
+    beforeInstall: suspend () -> Boolean,
+): Boolean = withContext(Dispatchers.IO) {
     val safeFileName = fileName
         .substringAfterLast('/')
         .substringAfterLast('\\')
@@ -73,23 +85,46 @@ actual suspend fun downloadUpdate(url: String, fileName: String): Boolean = with
 
     runCatching {
         directory.mkdirs()
-        if (target.isFile && target.length() > 0L) return@runCatching true
-        val resumeBytes = part.length().takeIf { part.isFile } ?: 0L
-        defaultDownloadExecutor().download(
-            url = url,
-            headers = emptyMap(),
-            targetPartPath = part.absolutePath,
-            resumeBytes = resumeBytes,
-        ) { _, _ -> }
-        if (target.exists() && !target.delete()) {
-            error("无法替换已有更新包")
+        if (!isVerifiedUpdateFile(target, expectedSha256, expectedSize)) {
+            if (target.exists() && !target.delete()) error("无法替换已有更新包")
+            val resumeBytes = part.length().takeIf { part.isFile } ?: 0L
+            defaultDownloadExecutor().download(
+                url = url,
+                headers = emptyMap(),
+                targetPartPath = part.absolutePath,
+                resumeBytes = resumeBytes,
+            ) { _, _ -> }
+            if (target.exists() && !target.delete()) error("无法替换已有更新包")
+            if (!part.renameTo(target)) error("无法保存更新包")
         }
-        if (!part.renameTo(target)) {
-            error("无法保存更新包")
-        }
+        check(isVerifiedUpdateFile(target, expectedSha256, expectedSize)) { "更新包完整性校验失败，已阻止启动安装器" }
+        check(beforeInstall()) { "更新前清理任务未能保存，已阻止启动安装器；现有模块未删除" }
+        check(openDownloadedInstaller(target)) { "已下载更新包，但无法打开平台安装器" }
         true
     }.getOrDefault(false)
 }
+
+private fun isVerifiedUpdateFile(file: File, expectedSha256: String?, expectedSize: Long?): Boolean {
+    if (!file.isFile || file.length() <= 0L) return false
+    if (expectedSize != null && file.length() != expectedSize) return false
+    val expectedHash = expectedSha256?.removePrefix("sha256:")?.takeIf { it.isNotBlank() } ?: return true
+    val actualHash = runCatching { PlatformSupport.sha256Hex(file.absolutePath) }.getOrNull() ?: return false
+    return actualHash.equals(expectedHash, ignoreCase = true)
+}
+
+/** Launches the OS installer/UI only; Windows UAC and Linux package-manager confirmation remain in control. */
+private fun openDownloadedInstaller(file: File): Boolean = runCatching {
+    when {
+        desktopPlatform() == "windows" && file.name.endsWith("-Setup.exe", ignoreCase = true) ->
+            ProcessBuilder(file.absolutePath).directory(file.parentFile).start()
+        desktopPlatform() == "linux" && file.name.endsWith(".deb", ignoreCase = true) ->
+            ProcessBuilder("xdg-open", file.absolutePath).start()
+        Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN) ->
+            Desktop.getDesktop().open(file)
+        else -> return false
+    }
+    true
+}.getOrDefault(false)
 
 
 /**

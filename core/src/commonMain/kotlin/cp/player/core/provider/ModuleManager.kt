@@ -14,6 +14,16 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+
+/** A legacy V1/V3 module that is not an installed KMP SDK package. */
+data class LegacyProviderModule(
+    val id: String,
+    val name: String,
+    val apiVersion: Int,
+)
 
 /** SDK packages. Manual import and repository installation share one transaction. */
 class ModuleManager(
@@ -53,9 +63,10 @@ class ModuleManager(
     }
 
     @Synchronized
-    fun init(providerManager: ProviderManager) {
+    fun init(providerManager: ProviderManager, currentVersionName: String? = null) {
         recoverRepositoryBackups()
         applyPendingRepositoryUpdates()
+        if (currentVersionName != null) applyPendingLegacyProviderCleanup(currentVersionName)
         val allChildDirs = PlatformSupport.listChildDirectories(modulesDir)
         val loadedProviderIds = providers.ids()
         val validDirs = allChildDirs.filter { dir ->
@@ -214,12 +225,103 @@ class ModuleManager(
         }
     }
 
+    /** Detect only old API V1/V3 manifests that do not declare the current SDK contract. */
+    fun findLegacyProviderModules(): List<LegacyProviderModule> =
+        PlatformSupport.listChildDirectories(modulesDir).mapNotNull { directory ->
+            val directoryId = lastPathSegment(directory)
+            if (!validId(directoryId) || directoryId.startsWith(".repository-")) return@mapNotNull null
+            val text = PlatformSupport.readTextFile("$directory/manifest.json") ?: return@mapNotNull null
+            val manifest = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return@mapNotNull null
+            val id = runCatching { manifest["id"]?.jsonPrimitive?.contentOrNull }.getOrNull() ?: return@mapNotNull null
+            if (id != directoryId) return@mapNotNull null
+            val contract = runCatching { manifest["contract"]?.jsonPrimitive?.contentOrNull }.getOrNull()
+            if (contract == PROVIDER_SDK_CONTRACT) return@mapNotNull null
+            val versionValue = manifest["apiVersion"] ?: manifest["api_version"] ?: return@mapNotNull null
+            val versionText = runCatching { versionValue.jsonPrimitive.content }.getOrNull() ?: return@mapNotNull null
+            val apiVersion = versionText.removePrefix("v").toIntOrNull() ?: return@mapNotNull null
+            if (apiVersion != 1 && apiVersion != 3) return@mapNotNull null
+            val name = runCatching { manifest["name"]?.jsonPrimitive?.contentOrNull }
+                .getOrNull()?.takeIf { it.isNotBlank() } ?: id
+            LegacyProviderModule(id = id, name = name, apiVersion = apiVersion)
+        }.sortedBy { it.id }
+
+    /** Persist a confirmed cleanup request; folders remain intact until the target app version starts. */
+    @Synchronized
+    fun queueLegacyProviderCleanup(ids: Set<String>, targetVersionName: String): Boolean {
+        if (ids.isEmpty()) return true
+        if (!isValidReleaseVersion(targetVersionName)) return false
+        val legacyIds = findLegacyProviderModules().map { it.id }.toSet()
+        if (!legacyIds.containsAll(ids)) return false
+        val marker = PendingLegacyProviderCleanup(ids = ids.sorted(), targetVersionName = targetVersionName)
+        return PlatformSupport.writeTextFile(
+            "$modulesDir/.pending-legacy-provider-cleanup.json",
+            json.encodeToString(marker),
+        )
+    }
+
+    private fun applyPendingLegacyProviderCleanup(currentVersionName: String) {
+        val markerPath = "$modulesDir/.pending-legacy-provider-cleanup.json"
+        if (!PlatformSupport.exists(markerPath)) return
+        val pending = runCatching {
+            json.decodeFromString<PendingLegacyProviderCleanup>(
+                PlatformSupport.readTextFile(markerPath) ?: error("Cannot read pending legacy provider cleanup"),
+            )
+        }.getOrElse {
+            lastPendingUpdateError = it.message ?: "Cannot read pending legacy provider cleanup"
+            return
+        }
+        if (!isVersionAtLeast(currentVersionName, pending.targetVersionName)) return
+
+        val stillLegacyIds = findLegacyProviderModules().map { it.id }.toSet()
+        for (id in pending.ids.distinct()) {
+            // An install may have been cancelled; never delete a module that has since been upgraded/replaced.
+            if (id !in stillLegacyIds) continue
+            if (!deleteModule(id)) {
+                lastPendingUpdateError = "Cannot remove confirmed legacy provider $id"
+                return
+            }
+        }
+        if (!PlatformSupport.deleteRecursively(markerPath)) {
+            lastPendingUpdateError = "Cannot clear pending legacy provider cleanup marker"
+        }
+    }
+
+    private fun isValidReleaseVersion(version: String): Boolean =
+        Regex("^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$").matches(version)
+
+    private fun isVersionAtLeast(current: String, target: String): Boolean {
+        fun parse(value: String): Pair<List<Int>, String?> {
+            val normalized = value.removePrefix("v")
+            val core = normalized.substringBefore('-').substringBefore('+')
+            val prerelease = normalized.substringAfter('-', "").takeIf { it.isNotEmpty() }
+            return core.split('.').map { it.toIntOrNull() ?: 0 } to prerelease
+        }
+        val (currentParts, currentPre) = parse(current)
+        val (targetParts, targetPre) = parse(target)
+        for (index in 0 until maxOf(currentParts.size, targetParts.size)) {
+            val a = currentParts.getOrElse(index) { 0 }
+            val b = targetParts.getOrElse(index) { 0 }
+            if (a != b) return a > b
+        }
+        return when {
+            targetPre == null -> currentPre == null
+            currentPre == null -> true
+            else -> currentPre >= targetPre
+        }
+    }
+
     @Serializable
     private data class PendingRepositoryUpdate(
         val id: String,
         val sha256: String,
         // Read old activation markers, but never allow them to delete a different provider.
         val replacedId: String? = null,
+    )
+
+    @Serializable
+    private data class PendingLegacyProviderCleanup(
+        val ids: List<String>,
+        val targetVersionName: String,
     )
 
     fun hasPendingRepositoryUpdate(id: String): Boolean =

@@ -21,6 +21,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.security.MessageDigest
+import kotlinx.coroutines.delay
 
 actual fun isAndroidPlatform(): Boolean = true
 actual fun desktopPlatform(): String = "android"
@@ -208,29 +210,114 @@ actual fun openWebview(url: String, title: String?) {
 }
 
 
-actual suspend fun downloadUpdate(url: String, fileName: String): Boolean {
+actual suspend fun downloadUpdate(url: String, fileName: String): Boolean =
+    downloadAndInstallUpdate(
+        url, fileName, expectedSha256 = null, expectedSize = null,
+        beforeInstall = { true },
+    )
+
+actual suspend fun downloadAndInstallUpdate(
+    url: String,
+    fileName: String,
+    expectedSha256: String?,
+    expectedSize: Long?,
+    beforeInstall: suspend () -> Boolean,
+): Boolean {
     val ctx = ctxOrNull ?: return false
     val safeFileName = fileName
         .substringAfterLast('/')
         .substringAfterLast('\\')
         .ifBlank { "CPPlayer-update.apk" }
     try {
+        val uniqueFileName = if (safeFileName.endsWith(".apk", ignoreCase = true)) {
+            "${safeFileName.dropLast(4)}-${System.currentTimeMillis()}.apk"
+        } else {
+            "$safeFileName-${System.currentTimeMillis()}"
+        }
         val request = android.app.DownloadManager.Request(Uri.parse(url))
-            .setTitle(safeFileName)
+            .setTitle(uniqueFileName)
             .setDescription("CPPlayer 更新包")
+            .setMimeType("application/vnd.android.package-archive")
             .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, safeFileName)
+            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, uniqueFileName)
             .setAllowedOverMetered(true)
             .setAllowedOverRoaming(false)
         val manager = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
-        manager.enqueue(request)
-        sendPlatformToast("已开始下载更新")
+        val downloadId = manager.enqueue(request)
+        sendPlatformToast("正在下载更新，完成后将打开系统安装界面")
+        while (true) {
+            val cursor = manager.query(android.app.DownloadManager.Query().setFilterById(downloadId))
+                ?: return false
+            val status = cursor.use {
+                if (!it.moveToFirst()) return false
+                it.getInt(it.getColumnIndexOrThrow(android.app.DownloadManager.COLUMN_STATUS))
+            }
+            when (status) {
+                android.app.DownloadManager.STATUS_SUCCESSFUL -> break
+                android.app.DownloadManager.STATUS_FAILED -> {
+                    sendPlatformToast("更新下载失败，错误码：${downloadFailureReason(manager, downloadId)}")
+                    return false
+                }
+            }
+            delay(750)
+        }
+        val uri = manager.getUriForDownloadedFile(downloadId) ?: return false
+        if (!verifyDownloadedUpdate(ctx, uri, expectedSha256, expectedSize)) {
+            manager.remove(downloadId)
+            sendPlatformToast("更新包完整性校验失败，已阻止安装")
+            return false
+        }
+        if (!beforeInstall()) {
+            sendPlatformToast("更新前清理任务未能保存，已阻止安装；现有模块未删除")
+            return false
+        }
+        val installIntent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        ctx.startActivity(installIntent)
+        sendPlatformToast("系统安装界面已打开，请按提示确认")
         return true
     } catch (e: Exception) {
         sendPlatformToast("更新下载失败: ${e.message ?: "未知错误"}")
         return false
     }
 }
+
+private fun downloadFailureReason(manager: android.app.DownloadManager, downloadId: Long): Int =
+    runCatching {
+        manager.query(android.app.DownloadManager.Query().setFilterById(downloadId))?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getInt(cursor.getColumnIndexOrThrow(android.app.DownloadManager.COLUMN_REASON)) else -1
+        } ?: -1
+    }.getOrDefault(-1)
+
+private fun verifyDownloadedUpdate(
+    context: Context,
+    uri: Uri,
+    expectedSha256: String?,
+    expectedSize: Long?,
+): Boolean = runCatching {
+    val input = context.contentResolver.openInputStream(uri) ?: return false
+    val digest = MessageDigest.getInstance("SHA-256")
+    var total = 0L
+    input.use { stream ->
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val count = stream.read(buffer)
+            if (count < 0) break
+            if (count == 0) continue
+            digest.update(buffer, 0, count)
+            total += count
+        }
+    }
+    if (total <= 0L || (expectedSize != null && total != expectedSize)) return false
+    val expectedHash = expectedSha256?.removePrefix("sha256:")?.takeIf { it.isNotBlank() }
+    if (expectedHash != null) {
+        val actualHash = digest.digest().joinToString("") { "%02x".format(it) }
+        if (!actualHash.equals(expectedHash, ignoreCase = true)) return false
+    }
+    true
+}.getOrDefault(false)
 
 actual fun clearImageCache(): Boolean {
     val ctx = ctxOrNull ?: return false

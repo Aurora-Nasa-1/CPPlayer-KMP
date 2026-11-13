@@ -1,0 +1,13 @@
+{
+  "announcements": [],
+  "destructiveUpdates": [
+    {
+      "id": "legacy-provider-v1-v3-1.8.8",
+      "fromVersionAtMost": "1.8.5",
+      "toVersionAtLeast": "1.8.8",
+      "title": "重要兼容性更新",
+      "message": "从 1.8.8 起将移除旧版非 SDK Provider API V1/V3。下载前会列出符合条件的模块并再次询问；只有目标版本成功启动后才清理这些旧模块文件，不删除 SDK Provider 或账号数据。若安装失败或取消，旧版本会保留模块。",
+      "removeLegacyProviders": true
+    }
+  ]
+}

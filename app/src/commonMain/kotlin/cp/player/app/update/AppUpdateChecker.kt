@@ -25,6 +25,41 @@ object AppUpdateChecker {
         val publishedAt: String?,
         val releaseUrl: String,
         val assetName: String? = null,
+        val assetSha256: String? = null,
+        val assetSize: Long? = null,
+        val announcement: RemoteAnnouncement? = null,
+        val destructivePolicy: DestructiveUpdatePolicy? = null,
+    )
+
+    @Serializable
+    data class RemoteAnnouncement(
+        val id: String,
+        val title: String,
+        val message: String,
+        val url: String? = null,
+        val fromVersionInclusive: String? = null,
+        val untilVersionExclusive: String? = null,
+    )
+
+    @Serializable
+    data class DestructiveUpdatePolicy(
+        val id: String,
+        val fromVersionAtMost: String,
+        val toVersionAtLeast: String,
+        val title: String,
+        val message: String,
+        val removeLegacyProviders: Boolean = false,
+    )
+
+    data class UpdateStatus(
+        val update: UpdateResult?,
+        val announcement: RemoteAnnouncement?,
+    )
+
+    @Serializable
+    private data class RemoteUpdateManifest(
+        val announcements: List<RemoteAnnouncement> = emptyList(),
+        val destructiveUpdates: List<DestructiveUpdatePolicy> = emptyList(),
     )
 
     @Serializable
@@ -44,6 +79,8 @@ object AppUpdateChecker {
         val name: String,
         @SerialName("browser_download_url") val browserDownloadUrl: String,
         @SerialName("content_type") val contentType: String? = null,
+        val size: Long? = null,
+        val digest: String? = null,
     )
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
@@ -51,6 +88,10 @@ object AppUpdateChecker {
     private val client = HttpClient {
         install(ContentNegotiation) { json(this@AppUpdateChecker.json) }
     }
+
+    /** Public, independently editable remote announcements and migration policy. */
+    private const val REMOTE_MANIFEST_URL =
+        "https://raw.githubusercontent.com/${AppVersion.REPO_OWNER}/${AppVersion.REPO_NAME}/main/app-update.json"
 
     /** 正式版 tag：`v1.2.3` / `v1.2.3-beta.1`。 */
     private val stableTag = Regex("^v\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$")
@@ -91,46 +132,79 @@ object AppUpdateChecker {
     private fun newer(a: GitHubRelease, b: GitHubRelease): GitHubRelease =
         if (compareVersions(a.versionName(), b.versionName()) >= 0) a else b
 
-    suspend fun checkUpdate(): UpdateResult? {
-        return try {
+    suspend fun checkUpdate(): UpdateResult? = checkStatus().update
+
+    suspend fun checkStatus(): UpdateStatus {
+        val remoteManifest = fetchRemoteManifest()
+        val announcement = remoteManifest?.announcements
+            ?.firstOrNull { it.isVisibleFor(AppVersion.versionName) }
+        val fetched = try {
             val response = client.get(AppVersion.RELEASES_API) {
                 header("Accept", "application/vnd.github.v3+json")
                 header("User-Agent", "CPPlayer/${AppVersion.versionName}")
                 header("Cache-Control", "no-cache")
                 parameter("per_page", "100")
             }
-            if (!response.status.isSuccess()) return null
-            // 先落到一个带显式类型的局部变量：`response.body()` 是 reified 的，
-            // 直接串 `.filter { … }` 时接收者类型没有约束，T 推不出来。
-            val fetched: List<GitHubRelease> = response.body()
-            val releases = fetched.filter { it.isCandidate() }
-            if (releases.isEmpty()) return null
-
-            // ⚠️ 不能取 `releases.first()`：GitHub 按**创建时间**倒序返回，
-            // 而创建时间不等于版本号大小（补发旧版本、并行 workflow 都会打乱顺序）。
-            // 按 SemVer 取最大的那条才是「最新版本」。
-            val latest = releases.reduceOrNull { acc, r -> newer(acc, r) } ?: return null
-            val remoteVersionName = latest.versionName()
-
-            if (compareVersions(AppVersion.versionName, remoteVersionName) >= 0) return null
-
-            val changelog = buildChangelog(releases, AppVersion.versionName)
-            val asset = selectPlatformAsset(latest.assets)
-            val downloadUrl = asset?.browserDownloadUrl
-
-            UpdateResult(
-                versionName = remoteVersionName,
-                versionCode = 0,
-                downloadUrl = downloadUrl,
-                changelog = changelog.ifBlank { latest.body },
-                publishedAt = latest.publishedAt,
-                releaseUrl = latest.htmlUrl,
-                assetName = asset?.name,
-            )
+            if (!response.status.isSuccess()) emptyList() else response.body<List<GitHubRelease>>()
         } catch (_: Exception) {
-            null
+            emptyList()
         }
+
+        val releases = fetched.filter { it.isCandidate() }
+        val latest = releases.reduceOrNull { acc, release -> newer(acc, release) }
+        val update = latest?.takeIf {
+            compareVersions(AppVersion.versionName, it.versionName()) < 0
+        }?.let { release ->
+            val targetVersion = release.versionName()
+            val policy = remoteManifest?.destructiveUpdates?.firstOrNull {
+                matchesDestructivePolicy(it, AppVersion.versionName, targetVersion)
+            }
+            val asset = selectPlatformAsset(release.assets)
+            UpdateResult(
+                versionName = targetVersion,
+                versionCode = 0,
+                downloadUrl = asset?.browserDownloadUrl,
+                changelog = buildChangelog(releases, AppVersion.versionName).ifBlank { release.body.orEmpty() },
+                publishedAt = release.publishedAt,
+                releaseUrl = release.htmlUrl,
+                assetName = asset?.name,
+                assetSha256 = asset?.sha256(),
+                assetSize = asset?.size,
+                announcement = announcement,
+                destructivePolicy = policy,
+            )
+        }
+        return UpdateStatus(update = update, announcement = announcement)
     }
+
+    private suspend fun fetchRemoteManifest(): RemoteUpdateManifest? = try {
+        val response = client.get(REMOTE_MANIFEST_URL) {
+            header("Accept", "application/vnd.github.raw+json")
+            header("User-Agent", "CPPlayer/${AppVersion.versionName}")
+            header("Cache-Control", "no-cache")
+        }
+        if (response.status.isSuccess()) response.body<RemoteUpdateManifest>() else null
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun RemoteAnnouncement.isVisibleFor(currentVersion: String): Boolean {
+        if (id.isBlank() || title.isBlank() || message.isBlank()) return false
+        if (fromVersionInclusive != null && compareVersions(currentVersion, fromVersionInclusive) < 0) return false
+        if (untilVersionExclusive != null && compareVersions(currentVersion, untilVersionExclusive) >= 0) return false
+        return true
+    }
+
+    fun matchesDestructivePolicy(
+        policy: DestructiveUpdatePolicy,
+        currentVersion: String,
+        targetVersion: String,
+    ): Boolean = compareVersions(currentVersion, policy.fromVersionAtMost) <= 0 &&
+        compareVersions(targetVersion, policy.toVersionAtLeast) >= 0
+
+    private fun GitHubAsset.sha256(): String? = digest
+        ?.removePrefix("sha256:")
+        ?.takeIf { Regex("^[0-9a-fA-F]{64}$").matches(it) }
 
     private fun selectPlatformAsset(assets: List<GitHubAsset>): GitHubAsset? {
         val candidates = assets.filter { asset ->

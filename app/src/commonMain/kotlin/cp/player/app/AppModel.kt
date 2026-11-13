@@ -3284,5 +3284,13 @@ object AppModel {
         return result
     }
 
+    /** 旧版非 SDK Provider API V1/V3 的待清理列表；仅用于确认弹窗展示。 */
+    fun legacyProviderModulesToRemove(): List<cp.player.core.provider.LegacyProviderModule> =
+        backend.findLegacyProviderModules()
+
+    /** 保存用户确认的清理请求；目标版本真正启动后才删除仍匹配的旧模块目录。 */
+    fun scheduleLegacyProviderCleanup(ids: Set<String>, targetVersionName: String): BackendResult<Unit> =
+        backend.queueLegacyProviderCleanup(ids, targetVersionName)
+
     val lastLoadError: String? get() = backend.lastLoadError
 }

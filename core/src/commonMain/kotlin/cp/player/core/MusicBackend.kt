@@ -997,6 +997,15 @@ class MusicBackend private constructor(
         return BackendResult.Success(Unit)
     }
 
+    /** List removable non-SDK Provider API V1/V3 module folders for explicit confirmation. */
+    fun findLegacyProviderModules(): List<cp.player.core.provider.LegacyProviderModule> =
+        moduleManager.findLegacyProviderModules()
+
+    /** Queue an explicitly confirmed cleanup; deletion is deferred until the target app version starts. */
+    fun queueLegacyProviderCleanup(ids: Set<String>, targetVersionName: String): BackendResult<Unit> =
+        if (moduleManager.queueLegacyProviderCleanup(ids, targetVersionName)) BackendResult.Success(Unit)
+        else BackendResult.Error("旧版 Provider 清理未能排队；模块状态可能已变化")
+
     /** 所有已加载 Provider 的快照。 */
     fun getAvailableProviders(): List<BackendProvider> = moduleManager.getAvailableProviders()
 
@@ -1105,6 +1114,7 @@ class MusicBackend private constructor(
         fun init(
             context: PlatformContext,
             settings: SettingsStorage,
+            applicationVersionName: String? = null,
         ): MusicBackend {
             synchronized(COMPA) {
                 INSTANCE?.let { return it }
@@ -1138,7 +1148,7 @@ class MusicBackend private constructor(
 
                 // 多核并发并行加载：音源模块加载 与 本地媒体曲库装配/持久化输出配置读取并发执行
                 runBlocking(Dispatchers.IO) {
-                    val moduleJob = async { moduleManager.init(providerManager) }
+                    val moduleJob = async { moduleManager.init(providerManager, applicationVersionName) }
                     val localJob = async { backend.bootstrapLocalStack() }
                     val configJob = async { backend.activeOutputConfig = LocalServerConfigStore.read(settings) }
                     moduleJob.await()

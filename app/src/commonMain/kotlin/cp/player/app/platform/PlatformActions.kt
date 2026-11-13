@@ -78,6 +78,15 @@ expect fun openWebview(url: String, title: String? = null)
  */
 expect suspend fun downloadUpdate(url: String, fileName: String): Boolean
 
+/** Download, verify when metadata is available, run a confirmed pre-install action, then open the native installer. */
+expect suspend fun downloadAndInstallUpdate(
+    url: String,
+    fileName: String,
+    expectedSha256: String?,
+    expectedSize: Long?,
+    beforeInstall: suspend () -> Boolean,
+): Boolean
+
 /**
  * 清空应用图片缓存（Coil 内存 + 磁盘）。
  *
@@ -237,4 +246,3 @@ expect fun shizukuState(): ShizukuState
  * @param onResult 结果回调，参数是**请求后**重新读到的状态。
  */
 expect fun requestShizukuPermission(onResult: (ShizukuState) -> Unit)
-

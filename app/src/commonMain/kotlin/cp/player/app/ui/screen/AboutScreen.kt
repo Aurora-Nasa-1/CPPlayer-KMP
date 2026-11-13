@@ -18,6 +18,8 @@ import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,7 +34,8 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.i18n.cpStrings
-import cp.player.app.platform.downloadUpdate
+import cp.player.app.AppModel
+import cp.player.app.platform.downloadAndInstallUpdate
 import cp.player.app.platform.openUrl
 import cp.player.app.ui.component.CpIconSize
 import cp.player.app.ui.component.CpSpacing
@@ -50,6 +53,8 @@ import cp.player.app.ui.component.SponsorInlineCard
 import cp.player.app.ui.component.SponsorPaymentType
 import cp.player.app.update.AppUpdateChecker
 import cp.player.app.version.AppVersion
+import cp.player.core.BackendResult
+import cp.player.core.provider.LegacyProviderModule
 import kotlinx.coroutines.launch
 
 /**
@@ -66,6 +71,8 @@ class AboutScreen : Screen {
         var isChecking by remember { mutableStateOf(false) }
         var updateResult by remember { mutableStateOf<AppUpdateChecker.UpdateResult?>(null) }
         var showUpdateDialog by remember { mutableStateOf(false) }
+        var showDestructiveConfirm by remember { mutableStateOf(false) }
+        var legacyModules by remember { mutableStateOf<List<LegacyProviderModule>>(emptyList()) }
         var showSponsorDialog by remember { mutableStateOf(false) }
         var sponsorDialogType by remember { mutableStateOf(SponsorPaymentType.WECHAT) }
 
@@ -191,16 +198,68 @@ class AboutScreen : Screen {
                 onDismiss = { showUpdateDialog = false },
                 onDownload = {
                     updateResult?.let { result ->
-                        val url = result.downloadUrl
-                        if (url == null) {
-                            openUrl(result.releaseUrl)
+                        if (result.destructivePolicy != null) {
+                            legacyModules = if (result.destructivePolicy.removeLegacyProviders) {
+                                AppModel.legacyProviderModulesToRemove()
+                            } else emptyList()
+                            showDestructiveConfirm = true
                         } else {
-                            scope.launch {
-                                downloadUpdate(url, result.assetName ?: "CPPlayer-${result.versionName}")
+                            val url = result.downloadUrl
+                            if (url == null) openUrl(result.releaseUrl) else scope.launch {
+                                downloadAndInstallUpdate(
+                                    url = url,
+                                    fileName = result.assetName ?: "CPPlayer-${result.versionName}",
+                                    expectedSha256 = result.assetSha256,
+                                    expectedSize = result.assetSize,
+                                    beforeInstall = { true },
+                                )
                             }
                         }
                     }
                     showUpdateDialog = false
+                },
+            )
+        }
+
+        if (showDestructiveConfirm && updateResult?.destructivePolicy != null) {
+            val result = updateResult!!
+            val policy = result.destructivePolicy!!
+            AlertDialog(
+                onDismissRequest = { showDestructiveConfirm = false },
+                title = { CpText(policy.title) },
+                text = {
+                    Column {
+                        CpText(policy.message)
+                        Spacer(Modifier.height(10.dp))
+                        if (legacyModules.isEmpty()) {
+                            CpText("未发现符合条件的旧版 Provider V1/V3 模块目录，不会删除 SDK Provider 或账号数据。")
+                        } else {
+                            CpText("以下旧模块目录将在确认后排队，并仅在目标更新版本成功启动后删除；如果安装被取消或失败，旧版本会保留这些目录：")
+                            legacyModules.forEach { CpText("${it.name} · API V${it.apiVersion} · ${it.id}") }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        showDestructiveConfirm = false
+                        val ids = legacyModules.map { it.id }.toSet()
+                        val url = result.downloadUrl
+                        if (url == null) openUrl(result.releaseUrl) else scope.launch {
+                            downloadAndInstallUpdate(
+                                url = url,
+                                fileName = result.assetName ?: "CPPlayer-${result.versionName}",
+                                expectedSha256 = result.assetSha256,
+                                expectedSize = result.assetSize,
+                                beforeInstall = {
+                                    if (!policy.removeLegacyProviders || ids.isEmpty()) true
+                                    else AppModel.scheduleLegacyProviderCleanup(ids, result.versionName) is BackendResult.Success
+                                },
+                            )
+                        }
+                    }) { CpText("确认并下载") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDestructiveConfirm = false }) { CpText("取消") }
                 },
             )
         }
