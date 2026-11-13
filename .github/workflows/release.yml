@@ -66,18 +66,17 @@ jobs:
         # ⚠️ 守卫**必须**写在脚本里，不能写成 `if: ${{ secrets.X != '' }}`：
         # `secrets` 上下文在 `if` 里不可用，GitHub 会在解析阶段直接判这个 workflow
         # 非法（Unrecognized named-value: 'secrets'），整个 workflow 一个 job 都跑不起来。
-        # 要按条件跳过就先把 secret 落到 env，再在脚本里判 —— 这里直接判空最省事。
-        #
-        # 未配置时**不**创建 keystore 目录：留下 0 字节的 release.jks 会让
-        # app-android 的签名守卫看到「文件存在」而尝试用它签名，报出来的是难以
-        # 定位的 keystore 损坏错，而不是「未签名」。
+        # 稳定版必须有签名材料；缺失时明确失败，绝不把未签名 APK 作为正式更新发布。
         env:
           KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          if [ -z "${KEYSTORE_BASE64:-}" ]; then
-            echo "RELEASE_KEYSTORE_BASE64 未配置 —— 本次产出未签名的 release APK。"
-            exit 0
+          if [[ -z "${KEYSTORE_BASE64:-}" || -z "${KEYSTORE_PASSWORD:-}" || -z "${KEY_ALIAS:-}" || -z "${KEY_PASSWORD:-}" ]]; then
+            echo "::error::All Android release signing secrets are required to publish a stable APK."
+            exit 1
           fi
           mkdir -p keystore
           # 用 printf 而不是 echo：secret 里若含反斜杠/前导 -，echo 会改写内容。
@@ -99,13 +98,26 @@ jobs:
             -Papp.versionName="${{ steps.meta.outputs.version }}" \
             -Papp.releaseChannel=stable
 
+      - name: Upload Android R8 mapping
+        uses: actions/upload-artifact@v4
+        with:
+          name: CPPlayer-${{ steps.meta.outputs.version }}-android-mapping
+          path: app-android/build/outputs/mapping/release/mapping.txt
+          if-no-files-found: error
+
       - name: Rename asset
         # 与 debug 资产（CPPlayer-<version>-android-debug.apk）保持同一套命名。
         # 应用内更新只按扩展名挑资产，改名不影响它。
         shell: bash
         run: |
-          cp app-android/build/outputs/apk/release/app-android-release.apk \
-             "CPPlayer-${{ steps.meta.outputs.version }}-android.apk"
+          set -euo pipefail
+          apk_dir="app-android/build/outputs/apk/release"
+          signed_apk="$apk_dir/app-android-release.apk"
+          if [[ ! -s "$signed_apk" ]]; then
+            echo "::error::Signed release APK was not produced; refusing to publish an unsigned artifact."
+            exit 1
+          fi
+          cp "$signed_apk" "CPPlayer-${{ steps.meta.outputs.version }}-android.apk"
 
       - name: Generate release notes
         shell: bash
