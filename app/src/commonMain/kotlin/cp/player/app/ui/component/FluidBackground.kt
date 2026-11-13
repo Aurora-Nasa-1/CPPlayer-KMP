@@ -67,7 +67,7 @@ import kotlinx.coroutines.isActive
  * @param scale 色团尺度。**越大 → 色团越小**（库的 `MeshGradient` 原话是
  *   「board 越大 → 色团越小」）。它会被拼进 SkSL 源码（编译期常量），
  *   改它会重建着色器 —— 别接在会逐帧变化的值上。
- * @param pauseShaderRendering 页面转场运行期间跳过 shader 绘制并显示 [fallback]。
+ * @param pauseShaderAnimation 页面转场期间正常更新 shader；转场结束后停止推进时间，并保留最后绘制的流体帧。
  */
 @Composable
 fun Modifier.cpFluidBackground(
@@ -75,7 +75,7 @@ fun Modifier.cpFluidBackground(
     fallback: Brush,
     speed: Float = CpFluidBackgroundDefaults.SPEED,
     scale: Float = CpFluidBackgroundDefaults.SCALE,
-    pauseShaderRendering: Boolean = false,
+    pauseShaderAnimation: Boolean = false,
 ): Modifier {
     if (!enabled) return this.background(fallback)
 
@@ -110,9 +110,13 @@ fun Modifier.cpFluidBackground(
         speed = speed,
         fpsConfig = fpsConfig,
         dither = true,
-        pauseShaderRendering = pauseShaderRendering,
+        pauseShaderAnimation = pauseShaderAnimation,
     )
 }
+
+/** Keep fluid frames advancing during a navigation transition, then freeze the settled frame. */
+internal fun shouldPauseFluidShaderAfterNavigation(transitionIsRunning: Boolean): Boolean =
+    !transitionIsRunning
 
 /**
  * 带有精准垂直同步（VSync）节拍分频控制的着色器背景修饰符。
@@ -124,7 +128,7 @@ private fun Modifier.cpPacedShaderBackground(
     speed: Float,
     fpsConfig: FluidFpsConfig,
     dither: Boolean = true,
-    pauseShaderRendering: Boolean = false,
+    pauseShaderAnimation: Boolean = false,
 ): Modifier {
     val effect = remember(shader) { buildRuntimeEffect(shader) }
     if (!effect.supported) return this.background(fallback)
@@ -132,8 +136,8 @@ private fun Modifier.cpPacedShaderBackground(
     val speedModifier = shader.speedModifier
     var reportedSize by remember { mutableStateOf(Size.Zero) }
 
-    val time by produceState(initialValue = 0f, key1 = fpsConfig, key2 = pauseShaderRendering) {
-        if (pauseShaderRendering) return@produceState
+    val time by produceState(initialValue = 0f, key1 = fpsConfig, key2 = pauseShaderAnimation) {
+        if (pauseShaderAnimation) return@produceState
 
         var frameCount = 0L
         var startNanos = 0L
@@ -153,20 +157,18 @@ private fun Modifier.cpPacedShaderBackground(
     return this
         .onGloballyPositioned { reportedSize = it.size.toSize() }
         .drawBehind {
-            if (pauseShaderRendering) {
-                drawRect(fallback)
+            val w = if (reportedSize.width > 0f) reportedSize.width else size.width
+            val h = if (reportedSize.height > 0f) reportedSize.height else size.height
+            if (shader is CpFluidMeshGradient) {
+                shader.dither = dither
+            }
+            // Pausing stops time updates, not drawing: reusing the last time value keeps the
+            // rendered fluid frame visible after the route transition settles.
+            effect.update(shader, time * speed * speedModifier, w, h)
+            if (effect.ready) {
+                drawRect(effect.build())
             } else {
-                val w = if (reportedSize.width > 0f) reportedSize.width else size.width
-                val h = if (reportedSize.height > 0f) reportedSize.height else size.height
-                if (shader is CpFluidMeshGradient) {
-                    shader.dither = dither
-                }
-                effect.update(shader, time * speed * speedModifier, w, h)
-                if (effect.ready) {
-                    drawRect(effect.build())
-                } else {
-                    drawRect(fallback)
-                }
+                drawRect(fallback)
             }
         }
 }

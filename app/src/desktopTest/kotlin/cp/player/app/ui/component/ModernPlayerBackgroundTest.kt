@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.Density
 import cp.player.app.ui.model.MobilePlayerCustomConfig
 import cp.player.app.ui.theme.CpTheme
@@ -16,6 +18,7 @@ import java.io.ByteArrayInputStream
 import javax.imageio.ImageIO
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 
 class ModernPlayerBackgroundTest {
 
@@ -66,5 +69,32 @@ class ModernPlayerBackgroundTest {
             listOf(colorScheme.surfaceContainerHigh, colorScheme.surfaceContainerLow, colorScheme.surface),
             modernPlayerFallbackColors(colorScheme),
         )
+    }
+
+    @Test
+    fun `paused fluid animation keeps the rendered shader instead of showing fallback`() {
+        val fallback = Color.Magenta
+        val scene = ImageComposeScene(width = 240, height = 240, density = Density(1f)) {
+            CpTheme(themeMode = ThemeMode.DARK) {
+                Box(
+                    Modifier.fillMaxSize().cpFluidBackground(
+                        enabled = true,
+                        fallback = SolidColor(fallback),
+                        pauseShaderAnimation = true,
+                    ),
+                )
+            }
+        }
+        try {
+            val encoded = scene.render().encodeToData() ?: error("ImageComposeScene PNG encode failed")
+            val image = ImageIO.read(ByteArrayInputStream(encoded.bytes))
+            assertNotEquals(
+                fallback.toArgb(),
+                image.getRGB(120, 120),
+                "pausing shader time must keep the last fluid frame visible, not replace it with fallback",
+            )
+        } finally {
+            scene.close()
+        }
     }
 }

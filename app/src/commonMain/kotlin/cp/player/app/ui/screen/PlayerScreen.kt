@@ -124,6 +124,7 @@ import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.LegacyModalBottomSheet
 import cp.player.app.ui.component.cpFluidBackground
+import cp.player.app.ui.component.shouldPauseFluidShaderAfterNavigation
 import cp.player.app.ui.component.desktopPagerMouseControl
 import cp.player.app.ui.component.PlayerMoreSheets
 import cp.player.app.ui.component.ModernPlayerScreenContent
@@ -584,7 +585,9 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             .cpFluidBackground(
                 enabled = fluidBackground,
                 fallback = bgBrush,
-                pauseShaderRendering = animatedVisibilityScope.transition.isRunning,
+                pauseShaderAnimation = shouldPauseFluidShaderAfterNavigation(
+                    animatedVisibilityScope.transition.isRunning,
+                ),
             )
             .windowInsetsPadding(WindowInsets.systemBars)
     ) {

@@ -156,7 +156,9 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
             .cpFluidBackground(
                 enabled = fluidBackground,
                 fallback = backgroundBrush,
-                pauseShaderRendering = animatedVisibilityScope.transition.isRunning,
+                pauseShaderAnimation = shouldPauseFluidShaderAfterNavigation(
+                    animatedVisibilityScope.transition.isRunning,
+                ),
             )
             .sharedBounds(rememberSharedContentState("player-container"), animatedVisibilityScope)
             .graphicsLayer { translationY = dragOffset.value },

@@ -6,10 +6,17 @@ import cp.player.app.AppModel
 import org.jetbrains.skia.RuntimeEffect
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class FluidBackgroundTest {
+
+    @Test
+    fun `流体背景在导航转场期间继续动画且结束后暂停`() {
+        assertFalse(shouldPauseFluidShaderAfterNavigation(transitionIsRunning = true))
+        assertTrue(shouldPauseFluidShaderAfterNavigation(transitionIsRunning = false))
+    }
 
     @Test
     fun `CpFluidMeshGradient着色器SkSL编译无错误且支持Dither`() {
