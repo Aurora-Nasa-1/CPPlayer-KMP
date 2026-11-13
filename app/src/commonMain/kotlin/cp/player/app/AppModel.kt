@@ -28,6 +28,7 @@ import cp.player.core.util.SettingsStorage
 import cp.player.core.util.runCatchingExceptCancellation
 import cp.player.app.repository.AuthRepository
 import cp.player.app.repository.MusicRepository
+import cp.player.app.repository.MusicRepositoryProvider
 import cp.player.app.repository.SocialRepository
 import cp.player.app.shortcut.ShortcutAction
 import cp.player.app.shortcut.ShortcutBinding
@@ -243,14 +244,17 @@ object AppModel {
      */
     val settings: SettingsStorage by lazy { cp.player.core.util.defaultSettingsStorage() }
 
-    /** Application-facing repository; new UI code should use this instead of raw API. */
-    val musicRepository: MusicRepository get() = MusicRepository(backend.unifiedSource)
+    /** Application-facing repository; keep its in-memory read caches across screen opens. */
+    private val musicRepositoryProvider by lazy {
+        MusicRepositoryProvider { backend.unifiedSource }
+    }
+    val musicRepository: MusicRepository get() = musicRepositoryProvider.get()
 
     /**
      * 私信 / 联系人门面。
      *
-     * 与 [musicRepository] 同样每次访问新建 —— 它只是统一音源之上的一层**无状态**
-     * 映射包装（真正有状态、需要单例的是 [settings] 那一类）。
+     * 每次访问新建 —— 它只是统一音源之上的一层**无状态**映射包装；
+     * 像歌单读缓存这样的有状态职责由 [musicRepository] 持有。
      */
     val socialRepository: SocialRepository get() = SocialRepository(backend.unifiedSource)
 

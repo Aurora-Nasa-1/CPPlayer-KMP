@@ -725,6 +725,24 @@ class MusicRepository(
     }
 }
 
+/** Reuses the cache-owning repository while the application music source remains the same instance. */
+internal class MusicRepositoryProvider(
+    private val source: () -> cp.player.core.music.UnifiedMusicSource,
+) {
+    private var currentSource: cp.player.core.music.UnifiedMusicSource? = null
+    private var currentRepository: MusicRepository? = null
+
+    @Synchronized
+    fun get(): MusicRepository {
+        val activeSource = source()
+        if (currentRepository == null || currentSource !== activeSource) {
+            currentSource = activeSource
+            currentRepository = MusicRepository(activeSource)
+        }
+        return currentRepository!!
+    }
+}
+
 /**
  * 搜索类型（UI 侧语义化常量）。
  *

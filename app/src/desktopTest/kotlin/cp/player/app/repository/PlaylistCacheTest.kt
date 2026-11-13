@@ -13,6 +13,8 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotSame
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class PlaylistCacheTest {
@@ -198,5 +200,41 @@ class PlaylistCacheTest {
         assertTrue(repository.renamePlaylist("list-shared", "Renamed"))
         assertEquals(listOf(track), repository.getPlaylistTracks("list-shared", 300, 0).getOrNull()?.tracks)
         assertEquals(2, pageCalls, "successful write should invalidate the playlist page")
+    }
+
+    @Test
+    fun `reopening a playlist reuses the source repository and its cached first page`() = runBlocking {
+        val track = TrackSummary("track-1", "Track", "Artist", null, null, 10_000L)
+        var pageCalls = 0
+        fun source() = java.lang.reflect.Proxy.newProxyInstance(
+            cp.player.core.music.UnifiedMusicSource::class.java.classLoader,
+            arrayOf(cp.player.core.music.UnifiedMusicSource::class.java),
+        ) { _, method, _ ->
+            when (method.name) {
+                "getPlaylistTracks" -> {
+                    pageCalls++
+                    BackendResult.Success(CatalogPage(listOf(track), 1, false))
+                }
+                else -> BackendResult.Unsupported("unused")
+            }
+        } as cp.player.core.music.UnifiedMusicSource
+
+        var activeSource = source()
+        val repositories = MusicRepositoryProvider { activeSource }
+        val firstOpenRepository = repositories.get()
+        val firstPage = firstOpenRepository.getPlaylistTracks("list-1", 300, 0)
+        val secondOpenRepository = repositories.get()
+        val secondPage = secondOpenRepository.getPlaylistTracks("list-1", 300, 0)
+
+        assertSame(firstOpenRepository, secondOpenRepository)
+        assertEquals(listOf(track), firstPage.getOrNull()?.tracks)
+        assertEquals(listOf(track), secondPage.getOrNull()?.tracks)
+        assertEquals(1, pageCalls, "reopening the same playlist should hit the first page cache")
+
+        activeSource = source()
+        val reboundRepository = repositories.get()
+        assertNotSame(firstOpenRepository, reboundRepository)
+        assertEquals(listOf(track), reboundRepository.getPlaylistTracks("list-1", 300, 0).getOrNull()?.tracks)
+        assertEquals(2, pageCalls, "a replaced UnifiedMusicSource must not reuse the old source cache")
     }
 }
