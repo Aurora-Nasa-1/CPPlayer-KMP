@@ -81,7 +81,30 @@ data class CommentUiState(
     val draft: String = "",
     val sending: Boolean = false,
     val sendError: String? = null,
+    /** 推荐排序是否成功返回过非空评论；用于决定是否显示「推荐」排序项。 */
+    val recommendHasResults: Boolean = false,
 ) {
+    /** 推荐结果尚未确认非空时隐藏推荐项；热度与最新始终可选。 */
+    val visibleSortTypes: List<Int>
+        get() = CommentSort.ALL.filter { it != CommentSort.RECOMMEND || recommendHasResults }
+
+    /** 切换排序时清除旧列表状态，但保留已确认的推荐可用性。 */
+    fun forSortSelection(sortType: Int): CommentUiState = copy(
+        sortType = sortType,
+        comments = emptyList(),
+        floors = emptyMap(),
+        hasMore = false,
+        error = null,
+    )
+
+    /** 只由推荐请求的成功结果更新推荐项可见性；其他排序不覆盖该判据。 */
+    fun withSortResults(requestedSort: Int, results: List<Comment>): CommentUiState =
+        if (requestedSort == CommentSort.RECOMMEND) {
+            copy(recommendHasResults = results.isNotEmpty())
+        } else {
+            this
+        }
+
     /** 草稿是否超出长度上限（按码点计）。 */
     val draftTooLong: Boolean get() = commentCodePointLength(draft) > COMMENT_MAX_LENGTH
 
@@ -150,13 +173,7 @@ class CommentScreenModel(val id: String, val type: String) : ScreenModel {
         nextOffset = 0
         nextCursor = null
         _state.update {
-            it.copy(
-                sortType = sortType,
-                comments = emptyList(),
-                floors = emptyMap(),
-                hasMore = false,
-                error = null,
-            )
+            it.forSortSelection(sortType)
         }
         reload(force = true)
     }
@@ -221,7 +238,7 @@ class CommentScreenModel(val id: String, val type: String) : ScreenModel {
                                 loading = false,
                                 // 用上游内联的 topReplies 预置楼层：入口立刻可见，展开不用先转圈。
                                 floors = seedFloors(page.comments),
-                            )
+                            ).withSortResults(requestedSort, page.comments)
                         }
                         is BackendResult.Error -> s.copy(error = result.message, loading = false)
                         is BackendResult.Unsupported -> s.copy(error = result.message, loading = false)

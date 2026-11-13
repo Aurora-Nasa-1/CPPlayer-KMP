@@ -92,6 +92,7 @@ fun CommentPane(
         CommentSortRow(
             selected = state.sortType,
             totalCount = state.totalCount,
+            sortTypes = state.visibleSortTypes,
             onSelect = model::setSort,
         )
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -124,14 +125,19 @@ fun CommentPane(
 }
 
 @Composable
-private fun CommentSortRow(selected: Int, totalCount: Long, onSelect: (Int) -> Unit) {
+private fun CommentSortRow(
+    selected: Int,
+    totalCount: Long,
+    sortTypes: List<Int>,
+    onSelect: (Int) -> Unit,
+) {
     val s = cpStrings().social.comment
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        CommentSort.ALL.forEach { sort ->
+        sortTypes.forEach { sort ->
             CpToggleChip(
                 checked = selected == sort,
                 onCheckedChange = { onSelect(sort) },
