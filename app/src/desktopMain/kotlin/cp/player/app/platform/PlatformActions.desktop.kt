@@ -17,9 +17,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.awt.Desktop
 import java.io.File
-import java.net.URI
 
 actual fun isAndroidPlatform(): Boolean = false
 actual fun desktopPlatform(): String = when {
@@ -51,12 +49,27 @@ actual fun openTargetApp(packageName: String) {}
 actual fun isPackageInstalled(packageName: String): Boolean = false
 
 actual fun openUrl(url: String) {
-    try {
-        if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-            Desktop.getDesktop().browse(URI(url))
-        }
-    } catch (_: Exception) {}
+    systemOpen(url)
 }
+
+/**
+ * 用系统默认程序打开 URL 或文件，不经过 `java.awt.Desktop`。
+ *
+ * Windows 的 `rundll32 url.dll,FileProtocolHandler` 同时认 URL 与本地路径；
+ * Linux / macOS 分别是 `xdg-open` / `open`。进程起不来一律返回 false，
+ * 调用方按「功能不可用」处理而不是抛异常。
+ */
+private fun systemOpen(target: String): Boolean = runCatching {
+    val os = System.getProperty("os.name").orEmpty()
+    val command = when {
+        os.startsWith("Windows", ignoreCase = true) ->
+            listOf("rundll32", "url.dll,FileProtocolHandler", target)
+        os.startsWith("Mac OS", ignoreCase = true) -> listOf("open", target)
+        else -> listOf("xdg-open", target)
+    }
+    ProcessBuilder(command).start()
+    true
+}.getOrDefault(false)
 
 actual fun openWebview(url: String, title: String?) {
     openUrl(url)
@@ -115,15 +128,16 @@ private fun isVerifiedUpdateFile(file: File, expectedSha256: String?, expectedSi
 /** Launches the OS installer/UI only; Windows UAC and Linux package-manager confirmation remain in control. */
 private fun openDownloadedInstaller(file: File): Boolean = runCatching {
     when {
-        desktopPlatform() == "windows" && file.name.endsWith("-Setup.exe", ignoreCase = true) ->
+        desktopPlatform() == "windows" && file.name.endsWith("-Setup.exe", ignoreCase = true) -> {
             ProcessBuilder(file.absolutePath).directory(file.parentFile).start()
-        desktopPlatform() == "linux" && file.name.endsWith(".deb", ignoreCase = true) ->
+            true
+        }
+        desktopPlatform() == "linux" && file.name.endsWith(".deb", ignoreCase = true) -> {
             ProcessBuilder("xdg-open", file.absolutePath).start()
-        Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN) ->
-            Desktop.getDesktop().open(file)
-        else -> return false
+            true
+        }
+        else -> systemOpen(file.absolutePath)
     }
-    true
 }.getOrDefault(false)
 
 
@@ -151,13 +165,14 @@ actual fun imageCacheSizeBytes(): Long = runCatching {
 }.getOrDefault(-1L)
 
 actual fun openInFileManager(path: String): Boolean = runCatching {
-    val dir = java.io.File(path)
+    val dir = File(path)
     if (!dir.isDirectory) return@runCatching false
-    if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
-        Desktop.getDesktop().open(dir)
+    if (System.getProperty("os.name").orEmpty().startsWith("Windows", ignoreCase = true)) {
+        // explorer.exe 直接定位目录，比 rundll32 更贴近「在文件管理器中显示」。
+        ProcessBuilder("explorer.exe", dir.absolutePath).start()
         true
     } else {
-        false
+        systemOpen(dir.absolutePath)
     }
 }.getOrDefault(false)
 

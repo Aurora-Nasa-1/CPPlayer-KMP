@@ -23,7 +23,7 @@ import kotlinx.coroutines.launch
  * Desktop 端视频播放内核实现。
  *
  * 具备完整的视频播放生命周期、状态机、清晰度平滑切换和 [PendingSeekTracker] 保护。
- * 支持挂载 AWT [java.awt.Component] / [java.awt.Canvas] 或原生窗口句柄 (HWND / Window ID) 给底层硬解引擎（如 libmpv）。
+ * 通过 [attachSurface] 接收平台原生窗口句柄 (HWND / Window ID) 交给底层硬解引擎（如 libmpv）。
  */
 class DesktopVideoPlayer : PlatformVideoPlayer {
 

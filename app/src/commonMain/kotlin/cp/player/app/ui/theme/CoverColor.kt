@@ -54,7 +54,7 @@ internal fun extractSeedColor(image: ImageBitmap): Color? {
  * 从裸 ARGB 像素数组提取种子色。
  *
  * 单独抽出来是为了让**非 `ImageBitmap`** 的来源复用同一套逻辑：桌面壁纸走
- * `ImageIO` 降采样解码（见 `PlatformSeed.desktop.kt`），拿到的本来就是 `IntArray`，
+ * Skia 解码后抽样（见 `PlatformSeed.desktop.kt`），拿到的本来就是 `IntArray`，
  * 没必要先绕成一个 `ImageBitmap` 再拆回数组。
  *
  * ⚠️ 调用方必须保证数组**已经降采样过**（约 [CoverSampleSizePx] 量级）：

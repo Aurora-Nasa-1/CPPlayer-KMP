@@ -12,9 +12,8 @@ import androidx.compose.ui.unit.dp
 import cp.player.app.ui.theme.CpTheme
 import cp.player.app.ui.theme.ThemeMode
 import cp.player.core.music.TrackSummary
-import java.io.ByteArrayInputStream
 import java.io.File
-import javax.imageio.ImageIO
+import cp.player.app.readPng
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -68,7 +67,7 @@ class SongItemMobileMoreButtonTest {
         return try {
             val image = scene.render()
             val bytes = image.encodeToData()?.bytes ?: error("PNG encoding failed")
-            val bitmap = ImageIO.read(ByteArrayInputStream(bytes))
+            val bitmap = readPng(bytes)
             val pixels = IntArray(bitmap.width * bitmap.height)
             bitmap.getRGB(0, 0, bitmap.width, bitmap.height, pixels, 0, bitmap.width)
             pixels

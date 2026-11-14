@@ -1,64 +1,6 @@
 {
   "reflection": [
     {
-      "type": "sun.awt.windows.WFileDialogPeer",
-      "jniAccessible": true,
-      "fields": [
-        {
-          "name": "parent"
-        },
-        {
-          "name": "fileFilter"
-        }
-      ],
-      "methods": [
-        {
-          "name": "setHWnd",
-          "parameterTypes": [
-            "long"
-          ]
-        },
-        {
-          "name": "handleSelected",
-          "parameterTypes": [
-            "char[]"
-          ]
-        },
-        {
-          "name": "handleCancel",
-          "parameterTypes": []
-        },
-        {
-          "name": "checkFilenameFilter",
-          "parameterTypes": [
-            "java.lang.String"
-          ]
-        },
-        {
-          "name": "isMultipleMode",
-          "parameterTypes": []
-        }
-      ]
-    },
-    {
-      "type": "java.awt.FileDialog",
-      "jniAccessible": true,
-      "fields": [
-        {
-          "name": "mode"
-        },
-        {
-          "name": "dir"
-        },
-        {
-          "name": "file"
-        },
-        {
-          "name": "filter"
-        }
-      ]
-    },
-    {
       "type": "java.util.Locale",
       "methods": [
         {
@@ -127,6 +69,144 @@
         "returnType": "void",
         "parameterTypes": [
           "jlong"
+        ]
+      },
+      {
+        "returnType": "jlong",
+        "parameterTypes": [
+          "jlong"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jlong"
+        ]
+      },
+      {
+        "returnType": "jlong",
+        "parameterTypes": [
+          "jlong",
+          "jint"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jlong",
+          "void*"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jlong",
+          "jint",
+          "void*",
+          "jint"
+        ]
+      },
+      {
+        "returnType": "void*",
+        "parameterTypes": [
+          "jint"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "void*"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "void*",
+          "void*",
+          "void*"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "void*",
+          "void*",
+          "void*",
+          "void*"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "void*",
+          "void*",
+          "jint",
+          "void*"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "void*",
+          "void*",
+          "jint"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "void*",
+          "jint"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "void*",
+          "void*",
+          "jint",
+          "void*",
+          "void*"
+        ]
+      },
+      {
+        "returnType": "void",
+        "parameterTypes": [
+          "void*"
+        ]
+      },
+      {
+        "returnType": "void",
+        "parameterTypes": []
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jlong",
+          "jint"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jlong",
+          "jint",
+          "void*"
+        ]
+      },
+      {
+        "returnType": "jlong",
+        "parameterTypes": [
+          "jint",
+          "jlong"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "void*",
+          "jint",
+          "void*"
         ]
       }
     ]

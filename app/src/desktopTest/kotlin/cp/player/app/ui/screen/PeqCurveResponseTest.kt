@@ -7,9 +7,8 @@ import androidx.compose.ui.unit.Density
 import cp.player.app.ui.theme.CpTheme
 import cp.player.app.ui.theme.ThemeMode
 import cp.player.core.playback.EqBand
-import java.io.ByteArrayInputStream
 import java.io.File
-import javax.imageio.ImageIO
+import cp.player.app.readPng
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -99,7 +98,7 @@ class PeqCurveResponseTest {
             assertEquals(140, image.height)
             val bytes = image.encodeToData()?.bytes ?: error("PNG encoding failed")
             File(output, "$name.png").writeBytes(bytes)
-            val bitmap = ImageIO.read(ByteArrayInputStream(bytes))
+            val bitmap = readPng(bytes)
             IntArray(bitmap.width * bitmap.height).also {
                 bitmap.getRGB(0, 0, bitmap.width, bitmap.height, it, 0, bitmap.width)
             }

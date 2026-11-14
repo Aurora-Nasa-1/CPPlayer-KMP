@@ -35,6 +35,20 @@ import java.lang.invoke.MethodHandle
  * ⚠️ 但需要 `--enable-native-access=ALL-UNNAMED`（见 `app/build.gradle.kts` 的 `jvmArgs`）：
  * 不放行目前只是打警告，后续 JDK 会直接拒绝。
  *
+ * ## ⚠️ 原生镜像：每个 downcall 签名都要登记
+ *
+ * 发行版是 GraalVM Native Image，而镜像里 `Linker.downcallHandle(...)` **要求签名在构建期
+ * 登记**，否则抛 `MissingForeignRegistrationError`（JVM 上完全不需要，单测覆盖不到）。
+ * 本文件用到的 5 个签名已写进 `app/graalvm/reachability-metadata.json` 的
+ * `foreign.downcalls`（`long(long)` / `long(long,int)` / `int(long)` / `int(long,void*)` /
+ * `int(long,int,void*,int)`）。
+ *
+ * 2026-11-14 的真实事故：这 5 条漏登记 ⇒ 每次 `downcallHandle` 都抛 ⇒ 被下面的
+ * `runCatching` 吞掉 ⇒ 重试 50 次全是同一个异常 ⇒ 原生包里窗口一直是直角、也没有
+ * Win11 那圈 1px 细边框（两者都由 DWM 在 `DWMWCP_ROUND` 下才画）。
+ * **加/改这里的任何调用点，必须同步改那份 JSON**，并用 `-Ob` 迷你镜像验一次
+ * （做法见 `app/graalvm/README.md`）。
+ *
  * ## 怎么找到窗口句柄
  *
  * 刻意**不按标题找**（`FindWindowW(null, title)`）—— 本应用的窗口标题会随曲目变化，

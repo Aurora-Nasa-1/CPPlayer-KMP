@@ -25,8 +25,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import cp.player.app.ui.theme.CpTheme
 import cp.player.app.ui.theme.ThemeMode
-import java.io.ByteArrayInputStream
-import javax.imageio.ImageIO
+import cp.player.app.readPng
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -146,7 +145,7 @@ class CpContextMenuRightClickTest {
 
 /** 把一帧渲染结果解成 ARGB 像素数组（走 PNG 编解码，避免依赖 Skia 内部布局）。 */
 private fun org.jetbrains.skia.Image.toRgb(): IntArray {
-    val png = ImageIO.read(ByteArrayInputStream(encodeToData()?.bytes ?: error("encode failed")))
+    val png = readPng(encodeToData()?.bytes ?: error("encode failed"))
     return IntArray(png.width * png.height).also { out ->
         png.getRGB(0, 0, png.width, png.height, out, 0, png.width)
     }

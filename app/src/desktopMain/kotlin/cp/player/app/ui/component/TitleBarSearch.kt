@@ -34,15 +34,15 @@ private val SearchFieldMaxWidth = 420.dp
  * 布局是 `[拖拽空白] [搜索框] [拖拽空白]` 三段**首尾相接、互不重叠**，由 [dragArea] 这个槽位
  * 提供两端的拖拽能力。
  *
- * ⚠️ **不能让调用方给一个更宽的槽位、让本组件在里面居中**：拖拽靠的是 AWT 层的
- * `MouseListener`（见 [DesktopTitleBar] 的说明），它**不认 Compose 的命中测试** —— 只要
+ * ⚠️ **不能让调用方给一个更宽的槽位、让本组件在里面居中**：拖拽靠的是窗口层的
+ * 原生 hit-test（见 [DesktopTitleBar] 的说明），它**不认 Compose 的命中测试** —— 只要
  * 「按下的那一点」落在拖拽区内，之后整段拖动都会移动窗口。槽位比搜索框宽出来的那部分
  * 如果不属于任何拖拽区，就成了**拖不动的死区**（第一版正是如此：槽位 601px、框 420px，
  * 两侧各 90px 拖不动）。
  *
  * ## 下拉为什么不用 `Popup`
  *
- * `Popup` 在桌面是**独立的 AWT 窗口**：位置要自己跟、阴影与父窗口不同步、拖动窗口时容易错位。
+ * `Popup` 在桌面是**独立窗口**：位置要自己跟、阴影与父窗口不同步、拖动窗口时容易错位。
  * 这里只需要在标题栏正下方铺一块内容，用**内联 overlay** 就够：Compose 的布局默认不裁剪，
  * 下拉超出标题栏 44dp 的部分会自然画在正文之上 —— 前提是标题栏整体带 `zIndex`，
  * 见 [DesktopTitleBar]。
@@ -66,7 +66,7 @@ internal fun TitleBarSearch(
     onSearch: (String) -> Unit,
     dragArea: @Composable (Modifier) -> Unit,
     // JBR 模式专用：挂在搜索框锚点容器上，把它登记成「客户区」（原生 hit-test 不抢）。
-    // 无边框模式传空即可 —— 拖拽由 [dragArea] 的 AWT MouseListener 承担，互不相干。
+    // 无边框模式传空即可 —— 拖拽由 [dragArea] 的原生 hit-test 承担，互不相干。
     fieldModifier: Modifier = Modifier,
     modifier: Modifier = Modifier,
 ) {
