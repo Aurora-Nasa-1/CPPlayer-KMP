@@ -30,6 +30,21 @@ import androidx.compose.runtime.setValue
  */
 object DesktopShell {
 
+    /**
+     * 主窗口当前是否被**隐藏到托盘**（不是最小化到任务栏）。
+     *
+     * ## 为什么单独记一个状态
+     *
+     * Tao 后端的 `hide()` 只调 `nativeSetVisible(false)`，窗口既不是 `isMinimized`
+     * 也不一定被判成 `occluded` —— 于是 Nucleus 的 `isOutOfSight()` 返回 false，
+     * 渲染循环照旧按 VSync 出帧。而页面里的常驻动画（流体背景、EQ 跳动、歌词逐帧
+     * 外推）会持续 `withFrameNanos`，等于窗口看不见了还在满速烧 GPU。
+     *
+     * 所以由 `Main.kt` 在 `hide()` / `show()` 时显式置位，动画侧统一读它来停掉帧请求。
+     * 这是**唯一事实来源**，不要在别处各自推断窗口可见性。
+     */
+    var isWindowHidden by mutableStateOf(false)
+
     /** 请求桌面壳层打开「设置」内嵌面板。 */
     var settingsRequested by mutableStateOf(false)
 

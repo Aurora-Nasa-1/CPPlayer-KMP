@@ -62,6 +62,7 @@ import cp.player.app.ui.screen.OnboardingScreen
 import cp.player.app.ui.screen.PlayerScreen
 import cp.player.app.ui.screen.StartupScreen
 import cp.player.app.ui.theme.CpMotion
+import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.PlatformMediaControlsEffect
 import cp.player.app.update.AppUpdateHost
 import cp.player.app.ui.util.popToMainShell
@@ -134,6 +135,7 @@ fun App(
     }
 
     AppTheme {
+        val s = cpStrings()
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background,
@@ -146,9 +148,9 @@ fun App(
             val startDestination = remember(initialized, state, onboardingDone) {
                 AppState.startDestination(initialized, state, onboardingDone)
             }
-            val start = remember(startDestination) {
+            val start = remember(startDestination, s) {
                 when (startDestination) {
-                    AppStartDestination.Loading -> StartupScreen("正在初始化后端…")
+                    AppStartDestination.Loading -> StartupScreen(s.common.initializingBackend)
                     AppStartDestination.Onboarding -> OnboardingScreen()
                     AppStartDestination.Main -> MainScreen()
                     is AppStartDestination.Error -> BackendErrorScreen(startDestination.message)
@@ -158,7 +160,7 @@ fun App(
                 // 当 state 变为 Ready 时自动替换为 MainScreen
                 LaunchedEffect(startDestination) {
                     val target = when (startDestination) {
-                        AppStartDestination.Loading -> StartupScreen("正在初始化后端…")
+                        AppStartDestination.Loading -> StartupScreen(s.common.initializingBackend)
                         AppStartDestination.Onboarding -> OnboardingScreen()
                         AppStartDestination.Main -> MainScreen()
                         is AppStartDestination.Error -> BackendErrorScreen(startDestination.message)
@@ -378,11 +380,12 @@ fun App(
                                                 // 小播放器浮层会把它盖住并吞掉点击。
                                                 // 桌面宽屏的对话在 `MessagesPane` 右栏里、不在这条根栈上，
                                                 // 由 `MainScreen` 自己那份宿主处理。
-                                                show = startDestination is AppStartDestination.Main &&
-                                                    navigator.lastItem !is PlayerScreen &&
-                                                    navigator.lastItem !is ChatScreen &&
-                                                    navigator.lastItem !is cp.player.app.ui.screen.VideoPlayerScreen &&
-                                                    !cp.player.app.ui.util.DesktopShell.miniPlayerBlockedByChat,
+                                                show = shouldShowGlobalMiniPlayer(
+                                                    startDestination = startDestination,
+                                                    lastItem = navigator.lastItem,
+                                                    miniPlayerBlockedByChat =
+                                                        cp.player.app.ui.util.DesktopShell.miniPlayerBlockedByChat,
+                                                ),
                                                 mainScreenVisible = navigator.lastItem is MainScreen,
                                                 onClick = { navigator.push(PlayerScreen()) },
                                             ) {
@@ -531,6 +534,24 @@ fun App(
         }
     }
 }
+
+/**
+ * 根栈当前页是否应该显示全局迷你播放器。
+ *
+ * 首次启动时 `startDestination` 还不是 [AppStartDestination.Main]，本来就不会显示；
+ * 真正漏的是「从设置里重看引导」——那时 `startDestination` 仍是 Main，只有按当前
+ * 路由排除 [OnboardingScreen] 才能把它藏掉。
+ */
+internal fun shouldShowGlobalMiniPlayer(
+    startDestination: AppStartDestination,
+    lastItem: Any?,
+    miniPlayerBlockedByChat: Boolean,
+): Boolean = startDestination is AppStartDestination.Main &&
+    lastItem !is PlayerScreen &&
+    lastItem !is ChatScreen &&
+    lastItem !is cp.player.app.ui.screen.VideoPlayerScreen &&
+    lastItem !is OnboardingScreen &&
+    !miniPlayerBlockedByChat
 
 /**
  * 全局 MiniPlayer 宿主（根 Navigator 上的路由页通用底栏；MainScreen 自己有一份）。

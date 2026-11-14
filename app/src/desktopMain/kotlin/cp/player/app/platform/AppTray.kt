@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -65,6 +66,8 @@ private data class TrayPlayback(
     val title: String?,
     val artist: String?,
     val isPlaying: Boolean,
+    val trackId: String? = null,
+    val coverUrl: String? = null,
 )
 
 /**
@@ -102,7 +105,9 @@ internal fun AppTray(
     // 只收集「曲名 / 歌手 / 是否在播」这三个字段：直接 collect 整个 PlaybackUiState
     // 会让进度每 200ms 把托盘菜单重组一遍。
     var playback by remember {
-        mutableStateOf(TrayPlayback(title = null, artist = null, isPlaying = false))
+        mutableStateOf(
+            TrayPlayback(title = null, artist = null, isPlaying = false, trackId = null, coverUrl = null),
+        )
     }
     LaunchedEffect(Unit) {
         runCatching { AppModel.playback.state }.getOrNull()?.let { state ->
@@ -112,6 +117,8 @@ internal fun AppTray(
                         title = current.currentTrack?.name?.takeIf { it.isNotBlank() },
                         artist = current.currentTrack?.artist?.takeIf { it.isNotBlank() },
                         isPlaying = current.isPlaying,
+                        trackId = current.currentTrack?.id,
+                        coverUrl = current.currentTrack?.coverUrl,
                     )
                 }
                 .distinctUntilChanged()
@@ -124,8 +131,21 @@ internal fun AppTray(
     } ?: strings.trayNothingPlaying
     val hasTrack = playback.title != null
 
+    // 封面解码完成时自增，用来触发一次重组把 Painter 换进菜单。只在**换歌**或
+    // **首次解码完成**时发生，不会随菜单开合或播放进度变化。
+    var coverRevision by remember { mutableIntStateOf(0) }
+    val cover = remember(playback.trackId, playback.coverUrl, coverRevision) {
+        TrayCoverPainter.painterFor(playback.trackId, playback.coverUrl) {
+            coverRevision++
+        }
+    }
+
     val menu: @Composable ComposableTrayMenuScope.() -> Unit = {
-        Item(label = nowPlaying, isEnabled = false)
+        if (cover != null) {
+            Item(label = nowPlaying, icon = cover, isEnabled = false)
+        } else {
+            Item(label = nowPlaying, isEnabled = false)
+        }
         Divider()
         Item(
             label = strings.trayPrevious,

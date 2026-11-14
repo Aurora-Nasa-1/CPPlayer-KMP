@@ -200,15 +200,47 @@ actual fun imageCacheSizeBytes(): Long = runCatching {
     coil3.SingletonImageLoader.get(coil3.PlatformContext.INSTANCE).diskCache?.size ?: -1L
 }.getOrDefault(-1L)
 
+/**
+ * 在系统文件管理器中定位 [path]。
+ *
+ * 入参既可能是**目录**（设置页的下载 / 缓存目录），也可能是**文件**（歌曲行的
+ * 「在文件管理器中打开」）。此前这里先 `if (!dir.isDirectory) return false`，
+ * 于是所有歌曲行传进来的文件路径恒为 false —— 按钮点了没反应，且调用方没有
+ * 失败提示。现在按目标类型分流：
+ *
+ * - Windows：目录用 `explorer.exe <dir>`；文件用 `explorer.exe /select,<file>`，
+ *   资源管理器会打开父目录并选中该文件。
+ * - macOS：文件用 `open -R`（Reveal in Finder），目录用 `open`。
+ * - Linux：`xdg-open <dir>`（没有「选中文件」的统一协议）。
+ */
 actual fun openInFileManager(path: String): Boolean = runCatching {
-    val dir = File(path)
+    val target = File(path)
+    if (!target.exists()) return@runCatching false
+    val isDirectory = target.isDirectory
+    val dir = if (isDirectory) target else target.parentFile ?: return@runCatching false
     if (!dir.isDirectory) return@runCatching false
-    if (System.getProperty("os.name").orEmpty().startsWith("Windows", ignoreCase = true)) {
-        // explorer.exe 直接定位目录，比 rundll32 更贴近「在文件管理器中显示」。
-        ProcessBuilder("explorer.exe", dir.absolutePath).start()
-        true
-    } else {
-        systemOpen(dir.absolutePath)
+    val os = System.getProperty("os.name").orEmpty()
+    when {
+        os.startsWith("Windows", ignoreCase = true) -> {
+            val command = if (isDirectory) {
+                listOf("explorer.exe", dir.absolutePath)
+            } else {
+                // `/select,` 与路径必须是同一个参数：拆成两个参数 explorer 只会打开默认目录。
+                listOf("explorer.exe", "/select,${target.absolutePath}")
+            }
+            ProcessBuilder(command).start()
+            true
+        }
+        os.startsWith("Mac OS", ignoreCase = true) -> {
+            val command = if (isDirectory) {
+                listOf("open", target.absolutePath)
+            } else {
+                listOf("open", "-R", target.absolutePath)
+            }
+            ProcessBuilder(command).start()
+            true
+        }
+        else -> systemOpen(dir.absolutePath)
     }
 }.getOrDefault(false)
 

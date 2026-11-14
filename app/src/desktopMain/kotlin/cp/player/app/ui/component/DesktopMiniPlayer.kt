@@ -332,6 +332,9 @@ fun DesktopMiniPlayer(
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.primary,
                                 maxLines = 1,
+                                // 当前歌词是桌面底栏的焦点位：溢出时滚动，而不是
+                                // 只把半句留在屏幕上（与手机底栏行为一致）。
+                                emphasized = true,
                                 isJapanese = isJapaneseLyrics,
                             )
                         } else {
@@ -340,6 +343,7 @@ fun DesktopMiniPlayer(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
+                                emphasized = true,
                             )
                         }
                     }

@@ -246,16 +246,37 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
         val showMainWindow: () -> Unit = {
             windowState.isMinimized = false
             windowRef.value?.let { w ->
+                // 与 `hideToTray` 对称：隐藏时补过 `setMinimized(true)`，这里要一并退掉，
+                // 否则渲染侧会一直把窗口当成「不可见」，唤回后仍然不出帧。
+                runCatching { w.setMinimized(false) }
                 runCatching { w.show() }
                 runCatching { w.toFront() }
             }
+            DesktopShell.isWindowHidden = false
         }
 
         // 隐藏到托盘。⚠️ 没有托盘实现时必须**退回真退出** —— 否则窗口藏了、又没有图标能
         // 把它叫回来，应用就变成一个人间蒸发的僵尸进程（任务栏里也找不到，只能去杀进程）。
         val hideToTray: () -> Unit = {
             if (DesktopTrayState.ensureInstalled()) {
-                windowRef.value?.let { w -> runCatching { w.hide() } }
+                // 先置位再 hide()：置位会让页面里的常驻动画停掉帧请求，避免窗口已经
+                // 不可见、渲染循环还在按 VSync 空转。顺序反过来会多出若干帧的空转。
+                DesktopShell.isWindowHidden = true
+                windowRef.value?.let { w ->
+                    // 先最小化、再 hide()。
+                    //
+                    // 依据：Tao 的 `hide()` 只调 `nativeSetVisible(false)`，而 Nucleus
+                    // `TaoComposeSceneHost.isOutOfSight()` 只看
+                    // `TaoWindow.isMinimized || occluded` ⇒ 单纯 `hide()` 之后
+                    // `renderFrameSuspending` 不会提前返回，仍会整帧渲染；
+                    // `onMinimizedChanged(true)` 里的 `purgeGpuResourceCacheAtRest()`
+                    // 也不会被调用。补一次 `setMinimized(true)` 才进入这条早退分支。
+                    //
+                    // ⚠️ 最终的可视状态（任务栏是否残留图标）需要实机核对；
+                    // 若出现「最小化到托盘却还在任务栏」就调换这两行顺序再测。
+                    runCatching { w.setMinimized(true) }
+                    runCatching { w.hide() }
+                }
             } else {
                 println("[CPPlayer] 本机没有系统托盘，无法最小化到托盘，改为退出")
                 exitApplication()

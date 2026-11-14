@@ -126,7 +126,8 @@ fun AppUpdateHost() {
             title = { CpText(notice.title) },
             text = {
                 Column {
-                    CpText(notice.message)
+                    // 公告正文是多段文字，默认单行只会显示第一行。
+                    CpText(notice.message, maxLines = Int.MAX_VALUE)
                     notice.url?.let { url ->
                         Spacer(Modifier.height(10.dp))
                         TextButton(onClick = { openUrl(url) }) { CpText("查看公告详情") }
@@ -146,15 +147,25 @@ fun AppUpdateHost() {
             title = { CpText(policy.title) },
             text = {
                 Column {
-                    CpText(policy.message)
+                    CpText(policy.message, maxLines = Int.MAX_VALUE)
                     Spacer(Modifier.height(10.dp))
                     if (legacyModules.isEmpty()) {
-                        CpText("未发现符合条件的旧版 Provider V1/V3 模块目录，不会删除 SDK Provider 或账号数据。")
+                        CpText(
+                            "未发现符合条件的旧版 Provider V1/V3 模块目录，不会删除 SDK Provider 或账号数据。",
+                            maxLines = Int.MAX_VALUE,
+                        )
                     } else {
-                        CpText("以下旧模块目录将在确认后排队，并仅在目标更新版本成功启动后删除；如果安装被取消或失败，旧版本会保留这些目录：")
+                        // 这是「到底会删哪些目录」的说明，用户必须读全才敢确认。
+                        CpText(
+                            "以下旧模块目录将在确认后排队，并仅在目标更新版本成功启动后删除；如果安装被取消或失败，旧版本会保留这些目录：",
+                            maxLines = Int.MAX_VALUE,
+                        )
                         Spacer(Modifier.height(6.dp))
                         legacyModules.forEach { module ->
-                            CpText("${module.name} · API V${module.apiVersion} · ${module.id}")
+                            CpText(
+                                "${module.name} · API V${module.apiVersion} · ${module.id}",
+                                maxLines = Int.MAX_VALUE,
+                            )
                         }
                     }
                 }
@@ -190,7 +201,8 @@ fun AppUpdateHost() {
         AlertDialog(
             onDismissRequest = { operationError = null },
             title = { CpText("更新未能启动") },
-            text = { CpText(error) },
+            // 失败原因是排查唯一线索（可能带命令行输出），不能截断。
+            text = { CpText(error, maxLines = Int.MAX_VALUE) },
             confirmButton = { TextButton(onClick = { operationError = null }) { CpText("知道了") } },
         )
     }
