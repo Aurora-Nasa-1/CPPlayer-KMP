@@ -1,0 +1,17 @@
+[package]
+name = "cpplayer-provider-sdk"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "CPPlayer kmp-sdk-v1 provider SDK: Wire codec, typed dispatch, JNI and C ABI exports"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+jni = "0.21"
+
+[profile.release]
+lto = "thin"
+codegen-units = 8
