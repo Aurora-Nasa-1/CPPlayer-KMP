@@ -3,6 +3,7 @@ package cp.player.app
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,6 +60,7 @@ import cp.player.core.playback.DesktopHiResEngine
 import cp.player.core.playback.PlaybackController
 import cp.player.core.playback.PlaybackUiState
 import cp.player.core.provider.typed.QuickJsWarmup
+import cp.player.core.provider.ProviderCapability
 import cp.player.app.ui.util.SeekAvailability
 import cp.player.app.shortcut.ShortcutAction
 import cp.player.core.util.PlatformContext
@@ -485,6 +487,17 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
                         // 手机版预览模式下不注入桌面自绘标题栏，由顶部抓手栏提供拖拽与切回桌面支持，
                         // 内部自动激活 LocalWindowChromeActive = false，呈现原汁原味的手机版界面与顶栏
                         titleBar = if (isMobileMode) null else { navigator ->
+                            val activeProvider by AppModel.activeProviderFlow.collectAsState()
+                            val hideMessagesEntry by AppModel.hideMessagesEntryFlow.collectAsState()
+                            val hideDynamicEntry by AppModel.hideDynamicEntryFlow.collectAsState()
+                            val dynamicReplacesSearch by AppModel.dynamicReplacesSearchFlow.collectAsState()
+                            val showMessages = activeProvider
+                                ?.isFeatureAvailable(ProviderCapability.MESSAGES) == true &&
+                                !hideMessagesEntry
+                            val showDynamic = activeProvider
+                                ?.isFeatureAvailable(ProviderCapability.SOCIAL_FEED) == true &&
+                                !hideDynamicEntry &&
+                                !dynamicReplacesSearch
                             DesktopTitleBar(
                                 taoWindow = taoWindow,
                                 windowState = windowState,
@@ -537,6 +550,12 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
                                 onOpenMessages = {
                                     navigator.popToMainShell()
                                     DesktopShell.messagesRequested = true
+                                },
+                                showMessages = showMessages,
+                                showDynamic = showDynamic,
+                                onOpenDynamic = {
+                                    navigator.popToMainShell()
+                                    DesktopShell.dynamicRequested = true
                                 },
                                 // 「账号」是**内容区路由页**不是全屏面板：MainScreen 把 AccountScreen
                                 // push 进内容区的内嵌 Navigator，左侧导航栏保留、返回还能回到原处。

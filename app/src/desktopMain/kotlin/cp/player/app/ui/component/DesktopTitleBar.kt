@@ -35,6 +35,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CropSquare
+import androidx.compose.material.icons.filled.DynamicFeed
 import androidx.compose.material.icons.filled.FilterNone
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhoneAndroid
@@ -66,6 +67,7 @@ import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.version.AppVersion
 import dev.nucleusframework.window.tao.TaoWindow
@@ -84,20 +86,6 @@ private val ChromeSlotWidth = 44.dp
 
 /** 分隔线占用的横向宽度：左右各 8dp 内缩 + 1dp 的线本身。 */
 private val ChromeSeparatorWidth = 8.dp * 2 + 1.dp
-
-/**
- * 右侧按钮组的总宽度：账号 + 消息 + 设置 + 分隔线 + 最小化 / 最大化 / 关闭。
- *
- * ⚠️ **左侧区域刻意取同样宽**：这样中间的搜索框才是在**整条标题栏里**居中，而不是被右侧
- * 这 281dp 挤偏（第一版就是这样，看着别扭）。两侧等宽 ⇒ 搜索框真正居中，也更接近标准桌面应用。
- *
- * ⚠️ 这个值必须与 [DesktopTitleBar] 里 actions 区**实际渲染的槽位数**严格对齐：
- * 少算一格右侧就宽出去 44dp、搜索框整体左偏 22dp；多算一格则反过来。改动按钮组时
- * 数一遍 —— 这里曾经因为「消息」搬进来而差点漏掉（5 槽 → 6 槽）。
- *
- * Tao 后端没有原生窗口钮，右侧组永远是「业务槽 + 分隔线 + 三颗自绘窗口钮」。
- */
-private val ChromeActionsWidth: Dp = ChromeSlotWidth * 7 + ChromeSeparatorWidth
 
 /**
  * 桌面端自绘标题栏。
@@ -202,10 +190,14 @@ fun DesktopTitleBar(
     onOpenAccount: () -> Unit,
     onOpenSettings: () -> Unit,
     onSearch: (String) -> Unit,
+    onOpenDynamic: () -> Unit = {},
+    showMessages: Boolean = true,
+    showDynamic: Boolean = false,
     onToggleMiniMode: () -> Unit = { cp.player.app.ui.util.DesktopShell.isMiniMode = true },
     onToggleMobileMode: () -> Unit = { cp.player.app.ui.util.DesktopShell.isMobileMode = true },
     modifier: Modifier = Modifier,
 ) {
+    val s = cpStrings()
     // 播放页沉浸态：背景让给页面自己的流体渐变，除窗口钮外全部淡出（见 LocalWindowImmersive）。
     val immersive = LocalWindowImmersive.current
     val chromeAlpha by animateFloatAsState(
@@ -225,11 +217,16 @@ fun DesktopTitleBar(
         windowState.placement = if (maximized) WindowPlacement.Floating else WindowPlacement.Maximized
     }
 
-    // 右侧按钮组总宽：账号 + 消息 + (仅 desktopRun/debug: 手机预览) + 迷你模式 + 设置
-    // + 分隔线 + 三颗窗口钮。
+    // 右侧按钮组总宽：账号 + 消息 + 动态 + (仅 desktopRun/debug: 手机预览) + 迷你模式
+    // + 设置 + 分隔线 + 三颗窗口钮。消息 / 动态被隐藏时**连槽位一起消失**，
+    // 否则搜索框会为一个看不见的按钮保留 44dp，左右不再对称。
     val showMobilePreview = AppVersion.isDesktopRunOrDebug
-    val slotsCount = if (showMobilePreview) 5 else 4
-    val rightGroupWidth = ChromeActionsWidth
+    val businessSlots = 3 +
+        (if (showMessages) 1 else 0) +
+        (if (showDynamic) 1 else 0) +
+        (if (showMobilePreview) 1 else 0)
+    val rightGroupWidth =
+        ChromeSlotWidth * (businessSlots + 3) + ChromeSeparatorWidth
 
     Box(
         modifier = modifier
@@ -265,7 +262,7 @@ fun DesktopTitleBar(
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "返回",
+                                contentDescription = s.common.back,
                                 modifier = Modifier.size(18.dp),
                             )
                         }
@@ -332,10 +329,20 @@ fun DesktopTitleBar(
                         onClick = onOpenAccount,
                         modifier = Modifier.chromeFade(chromeAlpha, interactive = !immersive),
                     )
-                    MessageSlot(
-                        onClick = onOpenMessages,
-                        modifier = Modifier.chromeFade(chromeAlpha, interactive = !immersive),
-                    )
+                    if (showDynamic) {
+                        ChromeSlot(
+                            onClick = onOpenDynamic,
+                            modifier = Modifier.chromeFade(chromeAlpha, interactive = !immersive),
+                        ) {
+                            Icon(Icons.Filled.DynamicFeed, s.navigation.tabDynamic, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    if (showMessages) {
+                        MessageSlot(
+                            onClick = onOpenMessages,
+                            modifier = Modifier.chromeFade(chromeAlpha, interactive = !immersive),
+                        )
+                    }
                     if (showMobilePreview) {
                         ChromeSlot(
                             onClick = onToggleMobileMode,
@@ -354,7 +361,7 @@ fun DesktopTitleBar(
                         onClick = onOpenSettings,
                         modifier = Modifier.chromeFade(chromeAlpha, interactive = !immersive),
                     ) {
-                        Icon(Icons.Filled.Settings, "设置", modifier = Modifier.size(18.dp))
+                        Icon(Icons.Filled.Settings, s.navigation.settings, modifier = Modifier.size(18.dp))
                     }
                 } else {
                     // 沉浸态兜底：**把内容从组合里摘掉**，换成等宽留白。
@@ -369,7 +376,7 @@ fun DesktopTitleBar(
                     //
                     // 摘掉就必须自己把宽度补回来 —— 这一段决定了右侧三颗窗口钮的横向位置。
                     // 左侧块 = 右侧按钮组宽度，中间是原来的 weight(1f)，
-                    // 右侧业务槽按 slotsCount 补。沉浸态下窗口顶边仍然可以拖。
+                    // 右侧业务槽按 businessSlots 补。沉浸态下窗口顶边仍然可以拖。
                     WindowDragRegion(
                         taoWindow = taoWindow,
                         modifier = Modifier.width(rightGroupWidth).fillMaxHeight(),
@@ -378,7 +385,7 @@ fun DesktopTitleBar(
                         taoWindow = taoWindow,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                     )
-                    Spacer(Modifier.width(ChromeSlotWidth * slotsCount))
+                    Spacer(Modifier.width(ChromeSlotWidth * businessSlots))
                 }
 
                 // 分隔线跟着一起淡：它划的是「业务入口 ↔ 窗口钮」的分界，业务入口没了，
@@ -441,10 +448,11 @@ private fun WindowDragRegion(
  */
 @Composable
 private fun MessageSlot(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val s = cpStrings()
     ChromeSlot(onClick = onClick, modifier = modifier) {
         Icon(
             Icons.AutoMirrored.Filled.Message,
-            contentDescription = "消息",
+            contentDescription = s.navigation.messages,
             modifier = Modifier.size(18.dp),
         )
     }
@@ -460,16 +468,17 @@ private fun MessageSlot(onClick: () -> Unit, modifier: Modifier = Modifier) {
 private fun AccountSlot(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val profile by AppModel.userProfileFlow.collectAsState()
     val avatarUrl = profile?.avatarUrl
+    val s = cpStrings()
     ChromeSlot(onClick = onClick, modifier = modifier) {
         if (!avatarUrl.isNullOrBlank()) {
             AsyncImage(
                 model = avatarUrl,
-                contentDescription = "账号",
+                contentDescription = s.navigation.account,
                 modifier = Modifier.size(24.dp).clip(CircleShape),
                 contentScale = ContentScale.Crop,
             )
         } else {
-            Icon(Icons.Filled.Person, "账号", modifier = Modifier.size(18.dp))
+            Icon(Icons.Filled.Person, s.navigation.account, modifier = Modifier.size(18.dp))
         }
     }
 }

@@ -1,9 +1,14 @@
 package cp.player.app.platform
 
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import cp.player.app.ui.theme.loadCoverBitmap
 import kotlinx.coroutines.CoroutineScope
@@ -11,6 +16,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * 托盘菜单左上角那张封面。
@@ -25,9 +33,10 @@ import kotlinx.coroutines.withContext
  * ## 为什么同步拿不到就返回 null
  *
  * `Item(label = ..., icon = painter)` 是**组合期同步**取值，而封面走 Coil 是挂起的。
- * 因此这里采用「先返回上一次的结果，解码完再写回状态触发一次重组」的写法：
- * 首次打开菜单可能还是占位图标，下一次打开（或 Coil 命中缓存后）就是真封面了。
- * 解码只在**换歌**时发生一次，不随菜单开合重复。
+ * 因此这里采用「缓存命中就同步返回，未命中先返回 null、解码完再回调触发一次重组」
+ * 的写法：首次打开菜单时若还没解码完，这一项暂时没有图标；解码完成会重建原生菜单，
+ * 已经弹出的那一份弹窗要重新打开才会换成新菜单。解码只在**换歌**时发生一次，
+ * 不随菜单开合重复。
  *
  * 尺寸按 [COVER_SCENE_PX] 取：菜单图标场景是 64px（`IconRenderProperties.forMenuItem()`），
  * 这里多给一些，确保 200% DPI 下 `64×64` 那一档 ICO 帧仍是原生分辨率、不被放大。
@@ -46,23 +55,23 @@ internal object TrayCoverPainter {
      */
     fun painterFor(trackId: String?, coverUrl: String?, onReady: () -> Unit): Painter? {
         if (trackId == null || coverUrl.isNullOrBlank()) return null
-        synchronized(cache) {
+        synchronized(lock) {
             cache[trackId]?.let { return it }
+            // 同一首歌只允许一条解码任务：菜单重组、封面 revision 变化都可能重复调用。
+            if (!inFlight.add(trackId)) return null
         }
-        if (inFlight.add(trackId)) {
-            scope.launch {
-                val bitmap = runCatching { loadCoverBitmap(coverUrl, COVER_SCENE_PX) }.getOrNull()
+        scope.launch {
+            val bitmap = runCatching { loadCoverBitmap(coverUrl, COVER_SCENE_PX) }.getOrNull()
+            synchronized(lock) {
                 if (bitmap != null) {
-                    synchronized(cache) {
-                        cache[trackId] = BitmapPainter(trackId, bitmap)
-                        while (cache.size > MAX_CACHED_COVERS) {
-                            cache.remove(cache.keys.first())
-                        }
+                    cache[trackId] = BitmapPainter(trackId, bitmap)
+                    while (cache.size > MAX_CACHED_COVERS) {
+                        cache.remove(cache.keys.first())
                     }
                 }
                 inFlight.remove(trackId)
-                if (bitmap != null) withContext(Dispatchers.Main) { onReady() }
             }
+            if (bitmap != null) withContext(Dispatchers.Main) { onReady() }
         }
         return null
     }
@@ -73,6 +82,7 @@ internal object TrayCoverPainter {
      */
     private const val MAX_CACHED_COVERS = 4
 
+    private val lock = Any()
     private val cache = LinkedHashMap<String, BitmapPainter>()
     private val inFlight = HashSet<String>()
 
@@ -91,10 +101,29 @@ internal object TrayCoverPainter {
             Size(bitmap.width.toFloat(), bitmap.height.toFloat())
 
         override fun DrawScope.onDraw() {
-            drawImage(
-                image = bitmap,
-                dstSize = IntSize(size.width.toInt(), size.height.toInt()),
-            )
+            val w = size.width
+            val h = size.height
+            if (w <= 0f || h <= 0f) return
+            // 等比铺满再居中裁切：封面不一定是正方形，直接拉伸会把人脸压扁。
+            val scale = max(w / bitmap.width, h / bitmap.height)
+            val dstW = (bitmap.width * scale).roundToInt()
+            val dstH = (bitmap.height * scale).roundToInt()
+            // Windows 11 的菜单图标是直角小方块；给封面一点圆角，和系统圆角语言一致。
+            val clip = Path().apply {
+                addRoundRect(RoundRect(0f, 0f, w, h, CornerRadius(min(w, h) * 0.18f)))
+            }
+            clipPath(clip) {
+                drawImage(
+                    image = bitmap,
+                    srcOffset = IntOffset.Zero,
+                    srcSize = IntSize(bitmap.width, bitmap.height),
+                    dstOffset = IntOffset(
+                        ((w - dstW) / 2f).roundToInt(),
+                        ((h - dstH) / 2f).roundToInt(),
+                    ),
+                    dstSize = IntSize(dstW, dstH),
+                )
+            }
         }
 
         override fun equals(other: Any?): Boolean =

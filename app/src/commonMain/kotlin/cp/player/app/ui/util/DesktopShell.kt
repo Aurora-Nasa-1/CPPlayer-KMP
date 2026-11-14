@@ -78,6 +78,15 @@ object DesktopShell {
     var messagesRequested by mutableStateOf(false)
 
     /**
+     * 请求主壳层打开「动态」。
+     *
+     * 动态可能占主 tab，也可能只在顶栏 / 窗口标题栏出现（设置里让它替代搜索时，
+     * 搜索移到顶栏；反过来动态就作为动作位）。入口在 `Navigator` 之上，所以仍走
+     * 同一条单向指令：写入方只置 `true`，`MainScreen` 消费后立刻置回 `false`。
+     */
+    var dynamicRequested by mutableStateOf(false)
+
+    /**
      * 请求主壳层打开「账号」内容页。
      *
      * 与 [settingsRequested] / [messagesRequested] 同一条单向指令通道（入口在窗口标题栏上，
