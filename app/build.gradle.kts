@@ -373,6 +373,10 @@ kotlin {
         val androidMain by getting {
             dependencies {
                 implementation(libs.androidx.activity.compose)
+                // FileProvider（本地歌曲「在文件管理器中打开」的私有目录兜底）。
+                // core 的 androidMain 虽然也引了它，但那是 `implementation`，不会传递到 :app，
+                // 在 :app 里直接 import 会编译不过。
+                implementation(libs.androidx.core.ktx)
                 implementation(libs.androidx.media.compat)
                 implementation(libs.kotlinx.coroutines.android)
                 implementation(libs.ktor.client.okhttp)

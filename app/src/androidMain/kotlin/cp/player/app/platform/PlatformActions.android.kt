@@ -10,9 +10,11 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Base64
 import androidx.compose.runtime.Composable
+import androidx.core.content.FileProvider
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -368,7 +370,157 @@ actual fun imageCacheSizeBytes(): Long {
     }
 }
 
-actual fun openInFileManager(path: String): Boolean = false
+/**
+ * 在系统文件管理器中定位 [path]（目录或文件）。
+ *
+ * 此前这里是 `= false` 的占位实现 —— 本地歌曲行的「在文件管理器中打开」在
+ * Android 上**任何输入都返回失败**，点下去没有任何反馈。
+ *
+ * Android 没有「选中某个文件」的统一 Intent，因此按目标类型分层：
+ *
+ * 1. **`content://`**（SAF 导入）：用 DocumentsUI 打开该文档 / 目录树。
+ * 2. **主外部存储下的绝对路径**：映射成 ExternalStorageProvider 的
+ *    `primary:<相对路径>` 文档 URI，让 DocumentsUI 列出父目录。
+ * 3. **兜底**（应用私有目录）：经 FileProvider 授权，让用户自选应用打开文件。
+ *
+ * ⚠️ 应用私有目录（`Android/data/<pkg>/files/...`，即下载产物）在 Android 11+
+ * 对文件管理器不可见 —— 那是系统限制，没有绕过方式；第 3 步至少能让文件被打开。
+ * 两条都失败时返回 false，由调用方给用户一条明确提示，而不是静默无反应。
+ */
+actual fun openInFileManager(path: String): Boolean {
+    val ctx = ctxOrNull ?: return false
+    if (path.isBlank()) return false
+    return runCatching {
+        if (path.startsWith("content://")) {
+            revealContentUri(ctx, Uri.parse(path))
+        } else {
+            revealFilePath(ctx, path)
+        }
+    }.getOrDefault(false)
+}
+
+private const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
+
+/**
+ * SAF 文档 / 目录树 → DocumentsUI。
+ *
+ * - 树 URI：先换成根文档 URI，DocumentsUI 会列出该目录；
+ * - 普通文档 URI（导入的单个文件）：ExternalStorageProvider 的 documentId 是分层路径
+ *   （`primary:Music/专辑/1.flac`），去掉最后一段就是父目录 —— 打开父目录才算「在文件
+ *   管理器中定位」，否则 ACTION_VIEW 会直接拉一个播放器把歌放起来。
+ */
+private fun revealContentUri(ctx: Context, uri: Uri): Boolean {
+    val type = runCatching { ctx.contentResolver.getType(uri) }.getOrNull()
+    if (runCatching { DocumentsContract.isTreeUri(uri) }.getOrDefault(false)) {
+        val rootUri = runCatching {
+            DocumentsContract.buildDocumentUriUsingTree(
+                uri,
+                DocumentsContract.getTreeDocumentId(uri),
+            )
+        }.getOrNull() ?: uri
+        if (launchDocumentsUi(ctx, rootUri)) return true
+        return launchView(ctx, rootUri, type ?: DocumentsContract.Document.MIME_TYPE_DIR)
+    }
+    if (uri.authority == EXTERNAL_STORAGE_AUTHORITY) {
+        val documentId = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
+        val parentId = documentId?.substringBeforeLast('/', missingDelimiterValue = "")
+        if (!parentId.isNullOrEmpty() && parentId != documentId) {
+            val parentUri = DocumentsContract.buildDocumentUri(EXTERNAL_STORAGE_AUTHORITY, parentId)
+            if (launchDocumentsUi(ctx, parentUri)) return true
+        }
+    }
+    return launchView(ctx, uri, type)
+}
+
+/** 绝对路径 → 主外部存储的父目录；私有目录不可达时回退到 FileProvider。 */
+private fun revealFilePath(ctx: Context, path: String): Boolean {
+    val file = File(path)
+    val dir = if (file.isDirectory) file else file.parentFile
+    val root = Environment.getExternalStorageDirectory()?.absolutePath
+    if (dir != null && !root.isNullOrBlank()) {
+        val dirPath = dir.absolutePath
+        if (dirPath == root || dirPath.startsWith("$root/")) {
+            val relative = dirPath.removePrefix(root).trimStart('/')
+            val documentId = if (relative.isEmpty()) "primary:" else "primary:$relative"
+            val documentUri = DocumentsContract.buildDocumentUri(EXTERNAL_STORAGE_AUTHORITY, documentId)
+            if (launchDocumentsUi(ctx, documentUri)) return true
+        }
+    }
+    // 应用私有目录（下载产物）文件管理器看不到，只能把文件本身交出去。
+    return launchSharedFile(ctx, file)
+}
+
+/**
+ * 私有目录文件的最后手段：FileProvider + `ACTION_VIEW`（用户自选应用打开）。
+ *
+ * Android 11+ 的文件管理器打不开 `Android/data/…`，但**别的应用**仍可以通过
+ * 一次性 URI 授权读取。白名单见 `app-android/src/main/res/xml/file_paths.xml`；
+ * 不在白名单里的路径 FileProvider 会抛 `IllegalArgumentException`，由外层降级为失败。
+ */
+private fun launchSharedFile(ctx: Context, file: File): Boolean = runCatching {
+    if (!file.exists()) return@runCatching false
+    val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
+    val mimeType = ctx.contentResolver.getType(uri) ?: guessMimeType(file.name)
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, mimeType)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    tryStartActivity(ctx, intent)
+}.getOrDefault(false)
+
+/** 兜底 MIME：ContentResolver 给不出类型时按扩展名猜（只覆盖本项目会下载的格式）。 */
+private fun guessMimeType(fileName: String): String = when (fileName.substringAfterLast('.', "").lowercase()) {
+    "mp3" -> "audio/mpeg"
+    "flac" -> "audio/flac"
+    "m4a", "aac" -> "audio/mp4"
+    "ogg", "opus" -> "audio/ogg"
+    "wav" -> "audio/wav"
+    "mp4", "m4v" -> "video/mp4"
+    "mkv" -> "video/x-matroska"
+    "webm" -> "video/webm"
+    else -> "*/*"
+}
+
+/**
+ * 显式点名系统「文件」应用（DocumentsUI）。
+ *
+ * ⚠️ 目录 URI**必须**这样发：`ACTION_VIEW` 的隐式解析会把 `vnd.android.document/directory`
+ * 交给任意声明了该 MIME 的应用，实测会被播放器接走 —— 用户点「在文件管理器中打开」，
+ * 结果歌直接开始播。点名组件在 AOSP / 主流 ROM 上稳定存在；自定义 ROM 上找不到时
+ * 返回 false，由调用方降级。
+ */
+private fun launchDocumentsUi(ctx: Context, uri: Uri): Boolean = tryStartActivity(
+    ctx,
+    Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, DocumentsContract.Document.MIME_TYPE_DIR)
+        setClassName(
+            "com.android.documentsui",
+            "com.android.documentsui.files.FilesActivity",
+        )
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    },
+)
+
+/** [mimeType] 为 null 时用通配 MIME：系统仍会按 provider 给出的实际类型挑应用。 */
+private fun launchView(ctx: Context, uri: Uri, mimeType: String?): Boolean {
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, mimeType ?: "*/*")
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    return tryStartActivity(ctx, intent)
+}
+
+/**
+ * 直接 startActivity + 捕获异常，不用 `resolveActivity`：
+ * Android 11+ 的包可见性会让 `resolveActivity` 对未声明的 `<queries>` 返回 null，
+ * 把「其实能打开」误判成失败（隐式 Intent 的启动本身不受该限制）。
+ */
+private fun tryStartActivity(ctx: Context, intent: Intent): Boolean = try {
+    ctx.startActivity(intent)
+    true
+} catch (_: Exception) {
+    false
+}
 
 // ============ 媒体扫描运行时权限（app 模块不依赖 app-android，经回调桥接 MainActivity） ============
 

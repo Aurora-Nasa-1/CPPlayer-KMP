@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider 白名单（manifest 里 `${applicationId}.fileprovider` 引用）。
+
+  下载产物在 `getExternalFilesDir(DOWNLOADS)`；导入 / 备案的兜底目录在 filesDir / cacheDir。
+  Music 目录下用户自行导入的文件走 DocumentsUI，不需要登记在这里。
+
+  ⚠️ 只登记真正需要的子目录；`<root-path>` 会把整个文件系统暴露给拿到 URI 的应用。
+-->
+<paths>
+    <external-files-path name="downloads" path="Download/" />
+    <files-path name="files" path="." />
+    <cache-path name="cache" path="." />
+</paths>
