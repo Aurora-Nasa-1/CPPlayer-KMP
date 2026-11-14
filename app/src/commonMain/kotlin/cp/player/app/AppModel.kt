@@ -2251,7 +2251,7 @@ object AppModel {
                                 val songs = (result as? cp.player.core.BackendResult.Success<List<cp.player.core.music.TrackSummary>>)?.data.orEmpty()
                                 val provider = activeProviderId()
                                 val existingIds = playback.state.value.queue.map { it.mediaId }.toSet()
-                                val newIds = songs.map { "$provider://song/${it.id}" }.filter { it !in existingIds }
+                                val newIds = songs.map { toMediaId(it.id, provider) }.filter { it !in existingIds }
                                 for (mediaId in newIds) {
                                     playback.addToQueue(mediaId)
                                 }

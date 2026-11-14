@@ -45,9 +45,16 @@ internal fun cp.player.sdk.PrivateMessage.toMessage(myUid: Long): Message? {
 class SocialRepository(private val source: UnifiedMusicSource) {
 
     /** 未读私信数。取不到时返回 0 —— 角标不该让整页变错误态。 */
-    suspend fun getUnreadCount(): Int =
-        (source.getUnreadCount(Bytes(ByteArray(0))) as? BackendResult.Success)
+    suspend fun getUnreadCount(): Int {
+        val remoteCount = (source.getUnreadCount(Bytes(ByteArray(0))) as? BackendResult.Success)
             ?.data?.privateMessages?.coerceAtLeast(0) ?: 0
+        if (remoteCount > 0) return remoteCount
+        // 兜底：若 pl/count 端点返回 0 或未解析，从会话列表中汇总各联系人未读数
+        return runCatching {
+            (source.getPrivateMessages(CursorRequest()) as? BackendResult.Success)
+                ?.data?.items?.sumOf { it.unreadCount.coerceAtLeast(0) } ?: 0
+        }.getOrDefault(0)
+    }
 
     /**
      * 最近联系人。

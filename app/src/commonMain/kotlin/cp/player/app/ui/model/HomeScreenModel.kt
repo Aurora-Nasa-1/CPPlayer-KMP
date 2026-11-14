@@ -257,7 +257,7 @@ class HomeScreenModel(
             }
             val provider = AppModel.activeProviderId()
             AppModel.playback.playQueue(
-                songs.map { "$provider://song/${it.id}" },
+                songs.map { AppModel.toMediaId(it.id, provider) },
                 startIndex = 0,
                 sourceId = "personal_fm"
             )
