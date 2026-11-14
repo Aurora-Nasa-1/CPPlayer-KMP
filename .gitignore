@@ -110,6 +110,9 @@ native/*.so
 native/*.dylib
 native/target*/
 
+# Rust SDK crate 的本地 cargo 产物（provider-sdk-kmp/rust 本身入库）。
+provider-sdk-kmp/rust/target/
+
 # 放行发布所需的预编译二进制库
 !app/native/
 !app/native/*

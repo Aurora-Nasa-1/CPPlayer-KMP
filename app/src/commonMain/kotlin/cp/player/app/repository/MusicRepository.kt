@@ -240,7 +240,13 @@ class MusicRepository(
         return playlistTracksCache.get(key, playlistCacheScope) {
             when (val result = source.getPlaylistTracks(canonicalId, limit, offset)) {
                 is BackendResult.Success -> BackendResult.Success(
-                    PlaylistTracksPage(result.data.items, result.data.hasMore ?: false)
+                    PlaylistTracksPage(
+                        tracks = result.data.items,
+                        // 上游没给 hasMore 时不要谎称「没有下一页」：按满页兜底，
+                        // 让调用方继续翻页，最终以空页结束（见 PlaylistTracksPage.paginationSpecified）。
+                        hasMore = result.data.hasMore ?: (result.data.items.size >= limit),
+                        paginationSpecified = result.data.hasMore != null,
+                    )
                 )
                 is BackendResult.Error -> result
                 is BackendResult.Unsupported -> result
