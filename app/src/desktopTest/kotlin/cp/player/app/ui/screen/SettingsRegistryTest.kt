@@ -107,7 +107,7 @@ class SettingsRegistryTest {
                 "「通用」组的内容或顺序变了",
             )
             assertEquals(
-                listOf("account", "providers", "plugin_repository"),
+                listOf("account", "plugins"),
                 byGroup[SettingsGroup.ACCOUNT_AND_PROVIDER]?.map { it.id },
                 "「账号与音源」组的内容或顺序变了",
             )
