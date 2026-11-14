@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,7 +21,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -37,14 +37,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
+import cp.player.app.recent.isRecentTrackPlayable
+import cp.player.app.recent.recentPlaybackPlan
+import cp.player.app.recent.recentPlayableTracks
+import cp.player.app.recent.recentTrackProviderId
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpConnectedChoice
 import cp.player.app.ui.component.CpConfirmHost
@@ -128,12 +132,31 @@ private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
     // `LazyListScope` 扩展（非 @Composable），在里面读 collectAsState 编译不过。
     val recentTracks by AppModel.recentTracksFlow.collectAsState()
     val recentScope = rememberCoroutineScope()
-    val recentProvider = AppModel.activeProviderId()
+    val activeProvider by AppModel.activeProviderFlow.collectAsState()
+    val recentProvider = activeProvider?.id ?: AppModel.activeProviderId()
+    val providerNames = remember(activeProvider) {
+        runCatching { AppModel.availableProviders().associate { it.id to it.name } }
+            .getOrDefault(emptyMap())
+    }
+    val recentPlayable = remember(recentTracks, recentProvider) {
+        recentPlayableTracks(recentTracks, recentProvider)
+    }
+    val recentHasForeign = remember(recentTracks, recentProvider) {
+        recentTracks.any { !isRecentTrackPlayable(it, recentProvider) }
+    }
+    val recentSourceLabelOf: (cp.player.core.music.TrackSummary) -> String = { track ->
+        val sourceId = recentTrackProviderId(track, recentProvider)
+        if (sourceId == "local") {
+            s.insights.recentLocalSource
+        } else {
+            providerNames[sourceId]?.takeIf { it.isNotBlank() } ?: sourceId
+        }
+    }
     // 与独立整页同一套口径（HomeScreen 里是 maxWidth >= 900.dp）。
     // 列数在 `recentTab` 里没法自己算（LazyListScope 扩展不是 @Composable），从外面传。
     val recentColumns = if (LocalIsExpanded.current) 2 else 1
     val recentToMediaId: (String) -> String = { id ->
-        if (id.contains("://")) id else "$recentProvider://song/$id"
+        cp.player.core.music.CPMediaId.toCanonicalMediaId(id, providerId = recentProvider)
     }
 
     // 「今天」只取一次：日历墙与聚合必须用同一个判据，否则跨零点时
@@ -170,6 +193,7 @@ private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
                 item {
                     InsightsTabs(selected = tab, labels = labels, onSelect = { tab = it })
                 }
+                item { Spacer(Modifier.height(12.dp)) }
 
                 if (writeError != null) {
                     item {
@@ -213,9 +237,14 @@ private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
                     else -> recentTab(
                         strings = s,
                         recentTracks = recentTracks,
+                        playableTracks = recentPlayable,
+                        hasForeignTracks = recentHasForeign,
                         columns = recentColumns,
                         scope = recentScope,
                         toMediaId = recentToMediaId,
+                        sourceLabelOf = recentSourceLabelOf,
+                        playableOf = { isRecentTrackPlayable(it, recentProvider) },
+                        activeProviderId = recentProvider,
                         onSelectionChange = { recentSelection = it },
                         likedIds = likedIds,
                         localFavoritePaths = localFavoritePaths,
@@ -271,9 +300,14 @@ private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
 private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
     strings: CpStrings,
     recentTracks: List<cp.player.core.music.TrackSummary>,
+    playableTracks: List<cp.player.core.music.TrackSummary>,
+    hasForeignTracks: Boolean,
     columns: Int,
     scope: kotlinx.coroutines.CoroutineScope,
     toMediaId: (String) -> String,
+    sourceLabelOf: (cp.player.core.music.TrackSummary) -> String,
+    playableOf: (cp.player.core.music.TrackSummary) -> Boolean,
+    activeProviderId: String,
     onSelectionChange: (cp.player.core.music.TrackSummary?) -> Unit,
     likedIds: Set<String>,
     localFavoritePaths: Set<String>,
@@ -295,7 +329,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
 
     item {
         Row(
-            Modifier.fillMaxWidth().padding(bottom = 4.dp),
+            Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SectionHeader(
@@ -303,15 +337,37 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
                 supportingText = strings.insights.recentCount(recentTracks.size),
                 modifier = Modifier.weight(1f),
             )
-            TextButton(
-                onClick = {
-                    recentTracks.firstOrNull()?.let { CoverFlight.play(it.id, it.coverUrl) }
-                    scope.launch {
-                        AppModel.playback.playQueue(recentTracks.map { toMediaId(it.id) }, startIndex = 0)
-                    }
-                },
+            if (playableTracks.isNotEmpty()) {
+                TextButton(
+                    onClick = {
+                        playableTracks.firstOrNull()?.let { CoverFlight.play(it.id, it.coverUrl) }
+                        scope.launch {
+                            AppModel.playback.playQueue(
+                                playableTracks.map { toMediaId(it.id) },
+                                startIndex = 0,
+                            )
+                        }
+                    },
+                ) {
+                    CpText(strings.library.playAll)
+                }
+            }
+        }
+    }
+
+    if (hasForeignTracks) {
+        item {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
             ) {
-                CpText(strings.library.playAll)
+                CpText(
+                    strings.insights.recentOtherSourceNote,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                )
             }
         }
     }
@@ -321,13 +377,24 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
         columns = columns,
         onPlay = { index ->
             val track = recentTracks[index]
-            CoverFlight.play(track.id, track.coverUrl)
-            AppModel.playTrackClicked(toMediaId(track.id)) {
-                AppModel.playback.playQueue(recentTracks.map { toMediaId(it.id) }, startIndex = index)
+            val plan = recentPlaybackPlan(recentTracks, activeProviderId, track.id)
+            if (plan == null) {
+                cp.player.app.ui.util.UiEvents.notify(strings.insights.recentOtherSourceBlocked)
+            } else {
+                CoverFlight.play(track.id, track.coverUrl)
+                AppModel.playTrackClicked(toMediaId(track.id)) {
+                    AppModel.playback.playQueue(
+                        plan.tracks.map { toMediaId(it.id) },
+                        startIndex = plan.startIndex,
+                    )
+                }
             }
         },
         onOptions = onSelectionChange,
+        sourceLabelOf = sourceLabelOf,
+        playableOf = playableOf,
         contextMenu = { track ->
+            val playable = playableOf(track)
             val isLocal = track.id.startsWith("local://")
             val cloudId = track.originalMediaId ?: (if (!isLocal) track.id else null)
             val cloudFavId = cloudId?.let { runCatching { cp.player.core.music.CPMediaId.parse(it).resourceId }.getOrDefault(it) }
@@ -338,17 +405,21 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
 
             songContextMenuItems(
                 SongMenuActions(
-                    onPlay = {
-                        CoverFlight.play(track.id, track.coverUrl)
-                        scope.launch {
-                            AppModel.playback.playQueue(
-                                recentTracks.map { toMediaId(it.id) },
-                                startIndex = recentTracks.indexOf(track),
-                            )
+                    onPlay = if (playable) {
+                        {
+                            CoverFlight.play(track.id, track.coverUrl)
+                            scope.launch {
+                                val plan = recentPlaybackPlan(recentTracks, activeProviderId, track.id)
+                                    ?: return@launch
+                                AppModel.playback.playQueue(
+                                    plan.tracks.map { toMediaId(it.id) },
+                                    startIndex = plan.startIndex,
+                                )
+                            }
                         }
-                    },
+                    } else null,
                     isFavorite = isFav,
-                    onToggleFavorite = if (cloudId != null) {
+                    onToggleFavorite = if (playable && cloudId != null) {
                         {
                             scope.launch {
                                 val target = cloudFavId !in likedIds
@@ -356,7 +427,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
                                 cp.player.app.ui.util.UiEvents.notify(if (target) "已收藏到云端" else "已取消云端收藏")
                             }
                         }
-                    } else if (localPath != null) {
+                    } else if (playable && localPath != null) {
                         {
                             val now = AppModel.localMedia.favorites.toggle(localPath)
                             cp.player.app.ui.util.UiEvents.notify(if (now) "已添加到本地喜欢" else "已从本地喜欢移除")
@@ -367,22 +438,26 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
                     } else {
                         if (isLocalFav) "取消喜欢" else "喜欢"
                     },
-                    onAddToQueue = {
-                        scope.launch { AppModel.playback.addToQueue(toMediaId(track.id)) }
-                        cp.player.app.ui.util.UiEvents.notify(strings.library.queuedToPlay)
-                    },
-                    onPlayNext = {
-                        scope.launch { AppModel.playback.addNextToQueue(toMediaId(track.id)) }
-                        cp.player.app.ui.util.UiEvents.notify(strings.library.playNext)
-                    },
+                    onAddToQueue = if (playable) {
+                        {
+                            scope.launch { AppModel.playback.addToQueue(toMediaId(track.id)) }
+                            cp.player.app.ui.util.UiEvents.notify(strings.library.queuedToPlay)
+                        }
+                    } else null,
+                    onPlayNext = if (playable) {
+                        {
+                            scope.launch { AppModel.playback.addNextToQueue(toMediaId(track.id)) }
+                            cp.player.app.ui.util.UiEvents.notify(strings.library.playNext)
+                        }
+                    } else null,
                     isDownloaded = cloudId != null && (isLocal || AppModel.isDownloaded(cloudId)),
-                    onDownload = if (cloudId != null && !isLocal) {
+                    onDownload = if (playable && cloudId != null && !isLocal) {
                         { AppModel.downloadTrack(track) }
                     } else null,
-                    onAddToPlaylist = if (cloudId != null) {
+                    onAddToPlaylist = if (playable && cloudId != null) {
                         { onAddToPlaylist(track) }
                     } else null,
-                    onAddToLocalPlaylist = if (localPath != null) {
+                    onAddToLocalPlaylist = if (playable && localPath != null) {
                         { onAddToLocalPlaylist(localPath) }
                     } else null,
                     onOpenInFileManager = if (localPath != null) {
@@ -434,11 +509,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTab(
     item {
         Surface(
             modifier = Modifier.fillMaxWidth().clickable { onOpenScrobble() },
-            shape = MaterialTheme.shapes.medium,
+            shape = MaterialTheme.shapes.extraLarge,
             color = MaterialTheme.colorScheme.surfaceContainerLow,
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
@@ -482,21 +557,17 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTab(
         }
     }
 
+    item { Spacer(Modifier.height(12.dp)) }
+
     item {
-        MetricRow(
+        MetricGrid(
             listOf(
-                // 指标卡三列并排、窄屏每张 ~110dp ⇒ 这里用**极短**格式。
-                // 用 `formatDurationShort`（「2 小时 41 分」）在本仓离屏出图时被硬裁成
-                // 「2 小时」，而裁掉的恰好是分钟 —— 看起来像统计漏了。
+                // 指标卡在窄屏两列、宽屏三列 ⇒ 这里仍用**极短**格式。
+                // 用 `formatDurationShort`（「2 小时 41 分」）在窄屏两列下也会被裁掉分钟，
+                // 看起来像统计漏了。
                 formatDurationCompact(summary.todayMs, strings) to strings.insights.metricToday,
                 formatDurationCompact(summary.weekMs, strings) to strings.insights.metricWeek,
                 formatDurationCompact(summary.totalMs, strings) to strings.insights.metricTotal,
-            ),
-        )
-    }
-    item {
-        MetricRow(
-            listOf(
                 strings.insights.daysLabel(summary.currentStreak) to strings.insights.metricStreak,
                 strings.insights.daysLabel(summary.longestStreak) to strings.insights.metricLongestStreak,
                 strings.insights.tracksLabel(summary.uniqueTrackCount) to strings.insights.metricUniqueTracks,
@@ -504,18 +575,15 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTab(
         )
     }
 
+    item { Spacer(Modifier.height(20.dp)) }
+
     item {
-        Row(
-            Modifier.fillMaxWidth().padding(top = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            SectionHeader(
-                title = strings.insights.calendarTitle,
-                supportingText = strings.insights.calendarNote,
-                modifier = Modifier.weight(1f),
-            )
-        }
+        SectionHeader(
+            title = strings.insights.calendarTitle,
+            supportingText = strings.insights.calendarNote,
+        )
     }
+    item { Spacer(Modifier.height(8.dp)) }
 
     if (daily.isEmpty()) {
         item {
@@ -528,70 +596,81 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTab(
         }
     } else {
         item {
-            // 年视图 53 列 ≈ 690dp，放不进手机屏宽 ⇒ 窄屏换月历视图。
-            // 两者共用同一份 daily 与同一套分档，绝不允许各算一套（否则同一天在两端颜色不同）。
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                if (maxWidth >= CpBreakpoints.medium) {
-                    val gap = 3.dp
-                    // 单元格宽度按可用宽度反算，但**封顶 16dp**：不封顶时 1400dp 页面上
-                    // 单格会到 22dp 以上，整面墙变成一坨方块、失去「密度感」。
-                    val cell = ((maxWidth - gap * 52) / 53).coerceIn(5.dp, 16.dp)
-                    ListeningCalendar(
-                        daily = daily,
-                        scale = scale,
-                        todayKey = todayKey,
-                        classicGreen = green,
-                        cellSize = cell,
-                        gap = gap,
-                        modifier = Modifier.align(Alignment.TopCenter),
-                        onDayClick = onSelectDay,
-                    )
-                } else {
-                    val now = remember { localDateTimeOf(cp.player.core.util.currentTimeMillis()) }
-                    MonthListeningCalendar(
-                        daily = daily,
-                        scale = scale,
-                        year = now.year,
-                        month = now.month,
-                        todayKey = todayKey,
-                        classicGreen = green,
-                        onDayClick = onSelectDay,
-                    )
+            InsightCard {
+                // 年视图 53 列 ≈ 690dp，放不进手机屏宽 ⇒ 窄屏换月历视图。
+                // 两者共用同一份 daily 与同一套分档，绝不允许各算一套（否则同一天在两端颜色不同）。
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    if (maxWidth >= CpBreakpoints.medium) {
+                        val gap = 3.dp
+                        // 单元格宽度按可用宽度反算，但**封顶 16dp**：不封顶时 1400dp 页面上
+                        // 单格会到 22dp 以上，整面墙变成一坨方块、失去「密度感」。
+                        val cell = ((maxWidth - gap * 52) / 53).coerceIn(5.dp, 16.dp)
+                        ListeningCalendar(
+                            daily = daily,
+                            scale = scale,
+                            todayKey = todayKey,
+                            classicGreen = green,
+                            cellSize = cell,
+                            gap = gap,
+                            modifier = Modifier.align(Alignment.TopCenter),
+                            onDayClick = onSelectDay,
+                        )
+                    } else {
+                        val now = remember { localDateTimeOf(cp.player.core.util.currentTimeMillis()) }
+                        MonthListeningCalendar(
+                            daily = daily,
+                            scale = scale,
+                            year = now.year,
+                            month = now.month,
+                            todayKey = todayKey,
+                            classicGreen = green,
+                            onDayClick = onSelectDay,
+                        )
+                    }
                 }
-            }
-        }
-        item {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                ListeningCalendarLegend(classicGreen = green)
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = onToggleGreen) {
-                    CpText(strings.insights.paletteLabel(green))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ListeningCalendarLegend(classicGreen = green)
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = onToggleGreen) {
+                        CpText(strings.insights.paletteLabel(green))
+                    }
                 }
             }
         }
     }
 
     selectedDay?.let { day ->
+        item { Spacer(Modifier.height(12.dp)) }
         item {
             SelectedDayCard(dayKey = day, records = records, strings = strings)
         }
     }
 
-        if (summary.topArtists.isNotEmpty()) {
+    if (summary.topArtists.isNotEmpty()) {
+        item { Spacer(Modifier.height(20.dp)) }
         item {
-            SectionHeader(title = strings.insights.topArtistsTitle, supportingText = strings.insights.rankedByPlayTime, modifier = Modifier.padding(top = 12.dp))
+            SectionHeader(
+                title = strings.insights.topArtistsTitle,
+                supportingText = strings.insights.rankedByPlayTime,
+            )
         }
-        items(summary.topArtists.size, key = { "artist-${summary.topArtists[it].key}" }) { index ->
-            RankRow(summary.topArtists[index], summary.topArtists.first().playedMs, strings)
+        item { Spacer(Modifier.height(8.dp)) }
+        item {
+            InsightCard(spacing = 8.dp) {
+                summary.topArtists.forEach { artist ->
+                    RankRow(artist, summary.topArtists.first().playedMs, strings)
+                }
+            }
         }
     }
 
     if (daily.isNotEmpty()) {
+        item { Spacer(Modifier.height(12.dp)) }
         item {
-            Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.Center) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
                 TextButton(onClick = onClear) { CpText(strings.insights.clearTitle) }
             }
         }
@@ -607,11 +686,11 @@ private fun SelectedDayCard(
 ) {
     // 日期键形如 `yyyy-MM-dd`，直接拆比再走一次日期库便宜，也不会引入时区换算的边界。
     val parts = remember(dayKey) { dayKey.split('-') }
-    val dayLabel = remember(parts) {
+    val dayLabel = remember(parts, strings) {
         val y = parts.getOrNull(0).orEmpty()
         val m = parts.getOrNull(1)?.trimStart('0').orEmpty()
         val d = parts.getOrNull(2)?.trimStart('0').orEmpty()
-        "${y} 年 ${m} 月 ${d} 日"
+        strings.insights.dateTitle(y, m, d)
     }
     val dayRecords = remember(records, dayKey) {
         records.filter { Insights.dateKeyOf(it.startedAt) == dayKey }.sortedBy { it.startedAt }
@@ -661,7 +740,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.habitsTab(
     strings: CpStrings,
 ) {
     item {
-        MetricRow(
+        MetricGrid(
             listOf(
                 percent(summary.completedCount, summary.playCount) to strings.insights.metricCompletionRate,
                 percent(summary.skippedCount, summary.playCount) to strings.insights.metricSkipRate,
@@ -669,30 +748,44 @@ private fun androidx.compose.foundation.lazy.LazyListScope.habitsTab(
             ),
         )
     }
+    item { Spacer(Modifier.height(20.dp)) }
     item {
-        SectionHeader(title = strings.insights.hourlyTitle, supportingText = strings.insights.hourlyNote, modifier = Modifier.padding(top = 12.dp))
+        SectionHeader(title = strings.insights.hourlyTitle, supportingText = strings.insights.hourlyNote)
     }
+    item { Spacer(Modifier.height(8.dp)) }
     item {
-        BarChart(
-            values = summary.hourBuckets,
-            labels = (0..23).map { if (it % 6 == 0) it.toString() else "" },
-        )
+        InsightCard {
+            BarChart(
+                values = summary.hourBuckets,
+                labels = (0..23).map { if (it % 6 == 0) it.toString() else "" },
+            )
+        }
     }
+    item { Spacer(Modifier.height(20.dp)) }
     item {
-        SectionHeader(title = strings.insights.weekdayTitle, supportingText = strings.insights.weekdayNote, modifier = Modifier.padding(top = 12.dp))
+        SectionHeader(title = strings.insights.weekdayTitle, supportingText = strings.insights.weekdayNote)
     }
+    item { Spacer(Modifier.height(8.dp)) }
     item {
-        BarChart(
-            values = summary.weekdayBuckets,
-            labels = listOf("一", "二", "三", "四", "五", "六", "日"),
-        )
+        InsightCard {
+            BarChart(
+                values = summary.weekdayBuckets,
+                labels = strings.insights.calendar.weekdayLabels,
+            )
+        }
     }
     if (summary.topTracks.isNotEmpty()) {
+        item { Spacer(Modifier.height(20.dp)) }
         item {
-            SectionHeader(title = strings.insights.topTracksTitle, supportingText = strings.insights.rankedByPlayTime, modifier = Modifier.padding(top = 12.dp))
+            SectionHeader(title = strings.insights.topTracksTitle, supportingText = strings.insights.rankedByPlayTime)
         }
-        items(summary.topTracks.size, key = { "track-${summary.topTracks[it].key}" }) { index ->
-            RankRow(summary.topTracks[index], summary.topTracks.first().playedMs, strings)
+        item { Spacer(Modifier.height(8.dp)) }
+        item {
+            InsightCard(spacing = 8.dp) {
+                summary.topTracks.forEach { track ->
+                    RankRow(track, summary.topTracks.first().playedMs, strings)
+                }
+            }
         }
     }
 }
@@ -704,31 +797,82 @@ private fun percent(part: Int, total: Int): String =
 // 小组件
 // ============================================================
 
+/**
+ * 听歌报告的统一卡片。
+ *
+ * 报告页的图表、排行、日历都落在同一档 surfaceContainerLow + extraLarge 圆角上，
+ * 避免「有的块是裸内容、有的块是卡片」造成的节奏断裂。
+ */
 @Composable
-private fun MetricRow(metrics: List<Pair<String, String>>) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        metrics.forEach { (value, label) ->
-            Surface(
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier.weight(1f),
-            ) {
-                Column(Modifier.padding(14.dp)) {
-                    CpText(
-                        label,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    CpText(
-                        value,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        // 兜底省略号由 CpText 自己接管：溢出时桌面端悬停可看全，
-                        // 这里不再手写 `overflow`（CpText 固定用 Ellipsis）。
-                    )
+private fun InsightCard(
+    modifier: Modifier = Modifier,
+    spacing: Dp = 12.dp,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(spacing),
+            content = content,
+        )
+    }
+}
+
+/**
+ * 指标卡网格。
+ *
+ * 三列在手机上每张只有约 100dp，`headlineSmall` 的数字会被截成「2 小…」。
+ * 这里按可用宽度降到两列，让六张卡排成 3×2；宽屏仍保持 3×2 的紧凑节奏。
+ */
+@Composable
+private fun MetricGrid(metrics: List<Pair<String, String>>) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val columns = if (maxWidth >= 560.dp) 3 else 2
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            metrics.chunked(columns).forEach { row ->
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    row.forEach { (value, label) ->
+                        MetricCard(value, label, Modifier.weight(1f))
+                    }
+                    repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun MetricCard(value: String, label: String, modifier: Modifier = Modifier) {
+    Surface(
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = modifier,
+    ) {
+        Column(
+            Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            CpText(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+            CpText(
+                value,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                // 兜底省略号由 CpText 自己接管：溢出时桌面端悬停可看全，
+                // 这里不再手写 `overflow`（CpText 固定用 Ellipsis）。
+            )
         }
     }
 }
@@ -737,11 +881,11 @@ private fun MetricRow(metrics: List<Pair<String, String>>) {
 @Composable
 private fun RankRow(item: RankItem, maxMs: Long, strings: CpStrings) {
     val fraction = if (maxMs <= 0L) 0f else (item.playedMs.toFloat() / maxMs).coerceIn(0f, 1f)
-    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             CpText(
                 item.label,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyLarge,
                 maxLines = 1,
                 modifier = Modifier.weight(1f),
             )
@@ -751,18 +895,18 @@ private fun RankRow(item: RankItem, maxMs: Long, strings: CpStrings) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(6.dp))
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(6.dp)
+                .height(8.dp)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest),
         ) {
             Box(
                 Modifier
                     .fillMaxWidth(fraction)
-                    .height(6.dp)
+                    .height(8.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.primary),
             )
@@ -780,8 +924,8 @@ private fun RankRow(item: RankItem, maxMs: Long, strings: CpStrings) {
 private fun BarChart(values: List<Long>, labels: List<String>) {
     val max = values.maxOrNull() ?: 0L
     Row(
-        Modifier.fillMaxWidth().height(96.dp),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        Modifier.fillMaxWidth().height(112.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
         values.forEachIndexed { index, v ->
@@ -794,8 +938,8 @@ private fun BarChart(values: List<Long>, labels: List<String>) {
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .height((72 * fraction).dp)
-                        .clip(MaterialTheme.shapes.extraSmall)
+                        .height((84 * fraction).dp)
+                        .clip(MaterialTheme.shapes.small)
                         .background(MaterialTheme.colorScheme.primary),
                 )
                 CpText(
@@ -804,6 +948,69 @@ private fun BarChart(values: List<Long>, labels: List<String>) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * 离屏预览夹具：只组合报告页的「卡片节奏」骨架（指标 / 图表 / 排行）。
+ *
+ * 真实页面依赖 `AppModel`，在 desktopTest 的离屏场景里会拉起后端初始化；
+ * 这里用同一批私有组件与同一组间距常量出图，专门核对卡片圆角、内边距与区块间距。
+ */
+@Composable
+internal fun InsightsReportPreview() {
+    val strings = CpStrings.zh
+    Column(
+        Modifier.fillMaxWidth().padding(CpSpacing.pageHorizontal),
+        verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
+    ) {
+        InsightsTabs(
+            selected = 0,
+            labels = listOf(
+                strings.insights.tabOverview,
+                strings.insights.tabHabits,
+                strings.insights.tabRecent,
+            ),
+            onSelect = {},
+        )
+        Spacer(Modifier.height(12.dp))
+        MetricGrid(
+            listOf(
+                "2.7 小时" to strings.insights.metricToday,
+                "12.1 小时" to strings.insights.metricWeek,
+                "286 小时" to strings.insights.metricTotal,
+                "18 天" to strings.insights.metricStreak,
+                "42 天" to strings.insights.metricLongestStreak,
+                "1,284 首" to strings.insights.metricUniqueTracks,
+            ),
+        )
+        Spacer(Modifier.height(20.dp))
+        SectionHeader(
+            title = strings.insights.hourlyTitle,
+            supportingText = strings.insights.hourlyNote,
+        )
+        Spacer(Modifier.height(8.dp))
+        InsightCard {
+            BarChart(
+                values = listOf(0, 2, 5, 8, 12, 18, 24, 30, 36, 28, 20, 16, 22, 30, 34, 28, 24, 20, 18, 16, 12, 8, 4, 2),
+                labels = (0..23).map { if (it % 6 == 0) it.toString() else "" },
+            )
+        }
+        Spacer(Modifier.height(20.dp))
+        SectionHeader(
+            title = strings.insights.topArtistsTitle,
+            supportingText = strings.insights.rankedByPlayTime,
+        )
+        Spacer(Modifier.height(8.dp))
+        InsightCard(spacing = 8.dp) {
+            listOf(
+                RankItem("a", "椎名林檎", 28_000_000L, 128),
+                RankItem("b", "宇多田ヒカル", 21_000_000L, 96),
+                RankItem("c", "東京事変", 15_000_000L, 72),
+            ).forEach { item ->
+                RankRow(item, 28_000_000L, strings)
             }
         }
     }

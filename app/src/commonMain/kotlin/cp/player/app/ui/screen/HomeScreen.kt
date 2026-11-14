@@ -89,6 +89,10 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
+import cp.player.app.i18n.cpStrings
+import cp.player.app.recent.isRecentTrackPlayable
+import cp.player.app.recent.recentMediaId
+import cp.player.app.recent.recentPlaybackPlan
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.anim.coverFlightSource
 import cp.player.app.ui.component.CpLinearProgress
@@ -169,6 +173,7 @@ class HomeScreen : Screen {
  */
 @Composable
 private fun HomeScreenContent(model: HomeScreenModel) {
+    val strings = cpStrings()
     val state by model.state.collectAsState()
     val loading = state.loading && !state.hasAnyContent
     var selectedTrack by remember { mutableStateOf<TrackSummary?>(null) }
@@ -224,13 +229,26 @@ private fun HomeScreenContent(model: HomeScreenModel) {
     // 点歌统一走 [AppModel.playTrackClicked]：一起听进行中 = 「下一首播放」，
     // 否则原样立即播放（下同，不再逐处注释）。
     val playRecentAt: (Int) -> Unit = { index ->
-        recentTracks.getOrNull(index)?.let { CoverFlight.play(it.id, it.coverUrl) }
-        val ids = recentTracks.map { toMediaId(it.id) }
-        val clicked = ids.getOrNull(index)
-        if (clicked != null) {
-            AppModel.playTrackClicked(clicked) {
-                AppModel.playback.playQueue(ids, startIndex = index)
+        val track = recentTracks.getOrNull(index)
+        val plan = track?.let { recentPlaybackPlan(recentTracks, provider, it.id) }
+        if (track == null || plan == null) {
+            if (track != null) {
+                cp.player.app.ui.util.UiEvents.notify(strings.insights.recentOtherSourceBlocked)
             }
+        } else {
+            CoverFlight.play(track.id, track.coverUrl)
+            val ids = plan.tracks.map { recentMediaId(it, provider) }
+            AppModel.playTrackClicked(recentMediaId(track, provider)) {
+                AppModel.playback.playQueue(ids, startIndex = plan.startIndex)
+            }
+        }
+    }
+    val playRecentAll: () -> Unit = {
+        val firstPlayable = recentTracks.indexOfFirst { isRecentTrackPlayable(it, provider) }
+        if (firstPlayable >= 0) {
+            playRecentAt(firstPlayable)
+        } else if (recentTracks.isNotEmpty()) {
+            cp.player.app.ui.util.UiEvents.notify(strings.insights.recentOtherSourceBlocked)
         }
     }
     val playTracks: (List<TrackSummary>, Int) -> Unit = { tracks, index ->
@@ -351,7 +369,7 @@ private fun HomeScreenContent(model: HomeScreenModel) {
         // 首页这个位置换成「最近播放」入口 —— 不依赖登录与日推数据，且与
         // 桌面焦点区有在播时的「继续收听」卡同一语义族。
         onRecentTrackClick = { _, index -> playRecentAt(index) },
-        onRecentPlayAll = { playRecentAt(0) },
+        onRecentPlayAll = playRecentAll,
         onOpenRecentPlays = { navigator.push(RecentPlaysScreen()) },
         onNewSongPlay = playTracks,
         onTrackOptions = { selectedTrack = it },

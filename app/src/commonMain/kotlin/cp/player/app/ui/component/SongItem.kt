@@ -82,6 +82,14 @@ fun SongItem(
      * 自定义副标题文本（非空时覆盖默认的 "歌手 · 专辑" 格式，用于本地歌曲的时长/码率展示）。
      */
     supportingText: String? = null,
+    /** 副标题末尾追加的音源名（不覆盖歌手 / 专辑的既有展示规则）。 */
+    supportingSource: String? = null,
+    /**
+     * 副标题行尾的轻量徽标（如「其他音源」）。为 null 时不占位。
+     * [supportingBadgeAlert] 为 true 时使用错误色容器，用于不可播放等需要立刻扫到的状态。
+     */
+    supportingBadge: String? = null,
+    supportingBadgeAlert: Boolean = false,
 ) {
     val globalShowAlbum by AppModel.showSongAlbumFlow.collectAsState()
     val actualShowAlbum = showAlbum ?: globalShowAlbum
@@ -237,19 +245,49 @@ fun SongItem(
                 }
             },
             supportingContent = {
-                CpText(
-                    text = supportingText ?: buildString {
-                        append(track.artist)
-                        if (actualShowAlbum && !track.album.isNullOrBlank()) {
-                            append(" · ")
-                            append(track.album)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CpText(
+                        text = supportingText ?: buildString {
+                            append(track.artist)
+                            if (actualShowAlbum && !track.album.isNullOrBlank()) {
+                                append(" · ")
+                                append(track.album)
+                            }
+                            if (!supportingSource.isNullOrBlank()) {
+                                if (isNotEmpty()) append(" · ")
+                                append(supportingSource)
+                            }
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        emphasized = isCurrent,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (!supportingBadge.isNullOrBlank()) {
+                        Spacer(Modifier.width(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (supportingBadgeAlert) {
+                                MaterialTheme.colorScheme.errorContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHighest
+                            },
+                        ) {
+                            CpText(
+                                text = supportingBadge,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (supportingBadgeAlert) {
+                                    MaterialTheme.colorScheme.onErrorContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                maxLines = 1,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
                         }
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    emphasized = isCurrent,
-                )
+                    }
+                }
             },
             trailingContent = if (showMoreButton) {{
             // 桌面端：MoreVert 点击弹出锚定菜单（与右键同一份 items，见 CpAnchoredMenu），

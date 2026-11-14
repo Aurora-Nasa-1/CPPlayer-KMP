@@ -1055,7 +1055,7 @@ object AppModel {
         _showRubyLyrics.value = enabled
     }
 
-    // ============ 手机端播放界面样式（三段式 / 标准）与布局微调（持久化） ============
+    // ============ 手机端播放界面样式（标准 / 三段式）与布局微调（持久化） ============
 
     private const val KEY_MODERN_MOBILE_PLAYER = "modern_mobile_player"
     private const val KEY_MOBILE_PLAYER_COVER_SCALE = "mobile_player_cover_scale"
@@ -2203,7 +2203,7 @@ object AppModel {
     // ============ 最近播放（持久化） ============
 
     private val KEY_RECENT_TRACKS = "recent_tracks"
-    private val RECENT_LIMIT = 30
+    private val RECENT_LIMIT = cp.player.app.recent.RECENT_TRACKS_LIMIT
 
     /**
      * 搜索历史键。必须与 `SearchScreenModel` 里的 `SEARCH_HISTORY_KEY` 保持**同一个字面量** ——
@@ -2224,9 +2224,15 @@ object AppModel {
             var lastRecordedId: String? = null
             playback.state.collect { st ->
                 val track = st.currentTrack
-                if (track != null && st.isPlaying && track.id != lastRecordedId) {
-                    lastRecordedId = track.id
-                    recordRecentTrack(track)
+                // 队列条目持有的是规范 mediaId；用它覆盖裸 id，后续切源后
+                // 才能仅凭最近播放条目判断它属于哪个音源。
+                val queueMediaId = st.queue.getOrNull(st.currentIndex)?.mediaId
+                val recordedId = queueMediaId?.takeIf { it.isNotBlank() } ?: track?.id
+                if (track != null && st.isPlaying && recordedId != null && recordedId != lastRecordedId) {
+                    lastRecordedId = recordedId
+                    recordRecentTrack(
+                        if (recordedId == track.id) track else track.copy(id = recordedId),
+                    )
                 }
             }
         }
@@ -2269,7 +2275,7 @@ object AppModel {
         // update 为原子 CAS，避免与 enrich 回写的读改写窗口互覆
         var recorded: List<cp.player.core.music.TrackSummary>? = null
         _recentTracks.update { list ->
-            ((listOf(track) + list.filter { it.id != track.id }).take(RECENT_LIMIT)).also {
+            cp.player.app.recent.mergeRecentTrack(list, track, RECENT_LIMIT).also {
                 recorded = it
             }
         }
@@ -2318,7 +2324,7 @@ object AppModel {
                         ?.let { runCatching { it.content.toLong() }.getOrNull() } ?: 0L,
                     originalMediaId = str("originalMediaId").ifBlank { null },
                 )
-            }
+            }.take(RECENT_LIMIT)
         }.getOrDefault(emptyList())
     }
 
@@ -2350,10 +2356,13 @@ object AppModel {
                 val details = (result as? cp.player.core.BackendResult.Success)?.data
                     ?: return@runCatching
                 if (details.isEmpty()) return@runCatching
-                // mediaId → 详情；同时按裸 id 建索引（新记录条目可能已存完整 mediaId）
+                // mediaId → 详情；裸 id 的旧条目按「音源 + 资源 id」建索引。
+                // 不能只用裸 id：两个音源可以有相同的数字 id，混用会把封面补到别的歌上。
                 val byMediaId = details.associateBy { it.id }
-                val byBareId = details.associateBy {
-                    it.id.substringAfterLast("/", it.id)
+                val byProviderRawId = details.associateBy { detail ->
+                    val detailProvider = cp.player.core.music.CPMediaId.parseOrNull(detail.id)?.providerId
+                        ?: providerId
+                    detailProvider to cp.player.core.music.CPMediaId.toRawResourceId(detail.id)
                 }
                 // 以「最新」列表为基线按 id 合并，仅回填缺失字段，
                 // 保留挂起期间 historyRecorder 新写入的条目与顺序（避免旧快照整体覆盖）
@@ -2362,7 +2371,9 @@ object AppModel {
                 _recentTracks.update { latest ->
                     val merged = latest.map { t ->
                         val mediaId = if (t.id.contains("://")) t.id else "$providerId://song/${t.id}"
-                        val fresh = byMediaId[mediaId] ?: byBareId[t.id]
+                        val trackProvider = cp.player.app.recent.recentTrackProviderId(t, providerId)
+                        val rawId = cp.player.core.music.CPMediaId.toRawResourceId(t.id)
+                        val fresh = byMediaId[mediaId] ?: byProviderRawId[trackProvider to rawId]
                         ?: return@map t
                         if (fresh.coverUrl.isNullOrBlank()) return@map t
                         // 仅回填缺失字段（幂等：字段已有时保持原值）
