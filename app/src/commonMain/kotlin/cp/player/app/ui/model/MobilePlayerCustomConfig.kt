@@ -7,7 +7,7 @@ package cp.player.app.ui.model
  * 新版由版式统一决定视觉，使用手势、歌词字号、逐字高亮和翻译偏好。
  */
 data class MobilePlayerCustomConfig(
-    /** 是否启用全新单页播放布局（关闭则退回经典多页 HorizontalPager 布局）。 */
+    /** true = 三段式播放器（单页三段布局）；false = 标准播放器（经典多页 HorizontalPager）。 */
     val enabled: Boolean = true,
 
     /** 封面宽度占屏幕宽度的比例 (0.55f ~ 0.95f，默认 0.72f)。 */

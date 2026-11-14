@@ -184,8 +184,6 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
             onSeek = onSeek,
             onSkipNext = onSkipNext,
             onSkipPrevious = onSkipPrev,
-            onRepeat = onRepeat,
-            onShuffle = onShuffle,
             onLike = { AppModel.toggleFavoriteOf(state.currentTrack?.id) },
             onArtistClick = onArtist,
             onQueue = { showQueue = true },
@@ -237,6 +235,10 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
                 showQueue = false
                 more.showSimilarSongs = true
             },
+            shuffleEnabled = state.shuffleEnabled,
+            repeatMode = state.repeatMode,
+            onShuffle = onShuffle,
+            onRepeat = onRepeat,
         )
     }
     PlayerMoreSheets(state = state, sheets = more)

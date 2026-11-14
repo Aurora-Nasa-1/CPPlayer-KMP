@@ -7,13 +7,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import cp.player.app.ui.theme.CpMotion
-import cp.player.app.ui.theme.LocalIsDarkTheme
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,21 +27,25 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.DragIndicator
-import androidx.compose.material.icons.filled.LocationSearching
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.DragIndicator
+import androidx.compose.material.icons.rounded.LocationSearching
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Repeat
+import androidx.compose.material.icons.rounded.RepeatOne
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -56,8 +60,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
@@ -67,13 +71,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
+import cp.player.app.i18n.cpStrings
+import cp.player.app.platform.shareText
+import cp.player.app.ui.component.LazyScrollColumn
+import cp.player.app.ui.theme.CpMotion
+import cp.player.app.ui.theme.LocalIsDarkTheme
+import cp.player.app.ui.util.resized
 import cp.player.core.music.CPMediaId
 import cp.player.core.music.TrackSummary
 import cp.player.core.playback.QueueItem
-import cp.player.app.platform.shareText
-import cp.player.app.i18n.cpStrings
-import cp.player.app.ui.component.LazyScrollColumn
-import cp.player.app.ui.util.resized
+import cp.player.core.playback.RepeatMode
 import kotlinx.coroutines.launch
 
 /**
@@ -94,6 +101,10 @@ fun QueueBottomSheet(
     onClear: () -> Unit,
     onClose: () -> Unit,
     onOpenSimilar: (() -> Unit)? = null,
+    shuffleEnabled: Boolean = false,
+    repeatMode: RepeatMode = RepeatMode.OFF,
+    onShuffle: (() -> Unit)? = null,
+    onRepeat: (() -> Unit)? = null,
 ) {
     // 统一走 LegacyModalBottomSheet 外壳（形状 / 拖拽手柄 / 容器色与其他弹层一致），
     // 列表型弹层跳过半展开档位。
@@ -107,6 +118,10 @@ fun QueueBottomSheet(
             onClear = onClear,
             onClose = onClose,
             onOpenSimilar = onOpenSimilar,
+            shuffleEnabled = shuffleEnabled,
+            repeatMode = repeatMode,
+            onShuffle = onShuffle,
+            onRepeat = onRepeat,
         )
     }
 }
@@ -127,6 +142,10 @@ fun QueueContent(
     onClear: () -> Unit,
     onClose: (() -> Unit)? = null,
     onOpenSimilar: (() -> Unit)? = null,
+    shuffleEnabled: Boolean = false,
+    repeatMode: RepeatMode = RepeatMode.OFF,
+    onShuffle: (() -> Unit)? = null,
+    onRepeat: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -141,7 +160,6 @@ fun QueueContent(
     // 而重建一份刚才的队列没有任何后悔药。
     val confirm = rememberConfirmState()
     val s = cpStrings()
-    val likedIds by cp.player.app.AppModel.playback.likedIds.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
@@ -214,7 +232,7 @@ fun QueueContent(
                             },
                         ) {
                             Icon(
-                                imageVector = if (isSearchActive) Icons.Filled.Close else androidx.compose.material.icons.Icons.Filled.Search,
+                                imageVector = if (isSearchActive) Icons.Rounded.Close else Icons.Rounded.Search,
                                 contentDescription = s.player.searchQueue,
                                 tint = if (isSearchActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -223,7 +241,7 @@ fun QueueContent(
                     if (onClose != null) {
                         IconButton(onClick = onClose) {
                             Icon(
-                                imageVector = Icons.Filled.Close,
+                                imageVector = Icons.Rounded.Close,
                                 contentDescription = "关闭",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -245,7 +263,7 @@ fun QueueContent(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
-                            imageVector = androidx.compose.material.icons.Icons.Filled.Search,
+                            imageVector = Icons.Rounded.Search,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp),
@@ -277,7 +295,7 @@ fun QueueContent(
                                 modifier = Modifier.size(24.dp),
                             ) {
                                 Icon(
-                                    imageVector = Icons.Filled.Close,
+                                    imageVector = Icons.Rounded.Close,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(16.dp),
@@ -293,6 +311,8 @@ fun QueueContent(
             LazyScrollColumn(
                 Modifier.fillMaxWidth().weight(1f, fill = false).padding(horizontal = 16.dp),
                 state = listState,
+                // 工具条是悬浮层：队尾内容必须能滚到它上方，否则最后几首会被永久遮住。
+                contentPadding = PaddingValues(bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 // 空队列不能是**纯空白**：清空后列表区只剩头顶计数，用户会以为弹层没加载完。
@@ -326,16 +346,16 @@ fun QueueContent(
                         onMove = onMoveAndScroll,
                         // 桌面端右键菜单：动作与行内 More 菜单一致并补一个分享入口。
                         contextMenu = buildList {
-                            add(CpContextMenuItem(s.player.play, Icons.Filled.PlayArrow, onClick = { onPlayAt(originalIndex) }))
+                            add(CpContextMenuItem(s.player.play, Icons.Rounded.PlayArrow, onClick = { onPlayAt(originalIndex) }))
                             add(
                                 CpContextMenuItem(
                                     s.player.removeFromQueue,
-                                    Icons.Filled.Close,
+                                    Icons.Rounded.Close,
                                     onClick = { onRemove(originalIndex) },
                                     danger = true,
                                 ),
                             )
-                            add(CpContextMenuItem(s.player.share, Icons.Filled.Share, onClick = {
+                            add(CpContextMenuItem(s.player.share, Icons.Rounded.Share, onClick = {
                                 val rid = runCatching { CPMediaId.parse(item.mediaId).resourceId }.getOrDefault(item.mediaId)
                                 shareText("「${item.title}」 https://music.163.com/#/song?id=$rid")
                             }))
@@ -360,7 +380,7 @@ fun QueueContent(
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
                                 Icon(
-                                    Icons.Filled.AutoAwesome,
+                                    Icons.Rounded.AutoAwesome,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(20.dp),
@@ -378,7 +398,7 @@ fun QueueContent(
                                     )
                                 }
                                 Icon(
-                                    Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                    Icons.AutoMirrored.Rounded.ArrowForwardIos,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(14.dp),
@@ -389,65 +409,77 @@ fun QueueContent(
                 }
             }
 
-            // 底部工具行：居中浮动胶囊条，与播放页视觉语言统一
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                CpFloatingToolbar {
-                    IconButton(
-                        onClick = {
-                            scope.launch {
-                                if (currentIndex in queue.indices) listState.animateScrollToItem(currentIndex)
-                            }
-                        },
-                    ) {
-                        Icon(
-                            Icons.Filled.LocationSearching,
-                            contentDescription = s.player.locateCurrent,
-                            tint = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                    IconButton(
-                        onClick = {
-                            if (queue.isEmpty()) return@IconButton
-                            val isAllLocal = queue.all { it.mediaId.startsWith("local://") }
-                            if (isAllLocal) {
-                                showLocalSaveDialog = true
-                            } else {
-                                showSaveSheet = true
-                            }
-                        },
-                        enabled = queue.isNotEmpty(),
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.PlaylistAdd,
-                            contentDescription = s.player.saveAsPlaylist,
-                            tint = if (queue.isNotEmpty()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                        )
-                    }
-                    IconButton(
-                        onClick = {
-                            if (queue.isEmpty()) return@IconButton
-                            confirm.request(
-                                title = s.player.queueClearTitle,
-                                message = s.player.queueClearMessage(queue.size),
-                                confirmLabel = s.player.clearQueue,
-                                onConfirm = onClear,
-                            )
-                        },
-                        enabled = queue.isNotEmpty(),
-                    ) {
-                        Icon(
-                            Icons.Filled.DeleteSweep,
-                            contentDescription = s.player.clearQueue,
-                            tint = if (queue.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                        )
-                    }
+        }
+        // 悬浮工具条：不占布局行，覆盖在播放列表之上（M3E 次级工具悬浮于主视觉流之上）。
+        // 滚动时列表从它下方穿过；留白由上面的 contentPadding 提供。
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            QueueFloatingToolbar {
+                if (onShuffle != null) {
+                    QueueToolButton(
+                        icon = Icons.Rounded.Shuffle,
+                        label = s.player.shuffle,
+                        onClick = onShuffle,
+                        selected = shuffleEnabled,
+                    )
                 }
+                if (onRepeat != null) {
+                    QueueToolButton(
+                        icon = if (repeatMode == RepeatMode.ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+                        label = s.player.repeat,
+                        onClick = onRepeat,
+                        selected = repeatMode != RepeatMode.OFF,
+                    )
+                }
+                if (onShuffle != null || onRepeat != null) {
+                    // 分组竖线：两侧各留 6dp、线本身更实，避免被相邻的选中圆吞掉，
+                    // 也不会被误看成圆形高亮的边缘。
+                    Box(
+                        Modifier
+                            .padding(horizontal = 6.dp)
+                            .size(width = 2.dp, height = 24.dp)
+                            .clip(RoundedCornerShape(1.dp))
+                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.8f)),
+                    )
+                }
+                QueueToolButton(
+                    icon = Icons.Rounded.LocationSearching,
+                    label = s.player.locateCurrent,
+                    onClick = {
+                        scope.launch {
+                            if (currentIndex in queue.indices) listState.animateScrollToItem(currentIndex)
+                        }
+                    },
+                )
+                QueueToolButton(
+                    icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
+                    label = s.player.saveAsPlaylist,
+                    enabled = queue.isNotEmpty(),
+                    onClick = {
+                        val isAllLocal = queue.all { it.mediaId.startsWith("local://") }
+                        if (isAllLocal) showLocalSaveDialog = true else showSaveSheet = true
+                    },
+                )
+                QueueToolButton(
+                    icon = Icons.Rounded.DeleteSweep,
+                    label = s.player.clearQueue,
+                    enabled = queue.isNotEmpty(),
+                    danger = true,
+                    onClick = {
+                        confirm.request(
+                            title = s.player.queueClearTitle,
+                            message = s.player.queueClearMessage(queue.size),
+                            confirmLabel = s.player.clearQueue,
+                            onConfirm = onClear,
+                        )
+                    },
+                )
             }
         }
     }
@@ -478,6 +510,9 @@ fun QueueContent(
     }
 
     optionsTarget?.let { (index, item) ->
+        // 后端只在真实启动时初始化：把收藏态订阅收敛到弹层展开分支，
+        // 否则预览 / 离屏出图环境组合 QueueContent 会抛 MusicBackend.init() not called。
+        val likedIds by cp.player.app.AppModel.playback.likedIds.collectAsState()
         val track = item.toTrackSummary()
         SongOptionsSheet(
             songName = item.title,
@@ -543,6 +578,78 @@ fun QueueContent(
     }
 
     CpConfirmHost(confirm)
+}
+
+/**
+ * 队列专用悬浮胶囊。
+ *
+ * 不复用 [CpFloatingToolbar]：官方 `HorizontalFloatingToolbar` 的 content Row 以 Start
+ * 排列并为尾部 overflow 预留空间，按钮会被挤向左侧；同时它只给约 2dp 的槽位间距，
+ * 两个选中态圆底会直接相切。这里用 wrapContent 的 Surface + 间距明确的 Row，
+ * 由外层 Box 的 Center 保证整条胶囊在画布中居中，左右内边距严格对称。
+ */
+@Composable
+private fun QueueFloatingToolbar(content: @Composable RowScope.() -> Unit) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 3.dp,
+        shadowElevation = 6.dp,
+    ) {
+        Row(
+            modifier = Modifier.height(56.dp).padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            content = content,
+        )
+    }
+}
+
+/**
+ * 队列悬浮工具条的统一按钮。
+ *
+ * 选中态（随机 / 循环已开启）用 `primaryContainer` 圆形底 + `onPrimaryContainer` 图标，
+ * 危险动作（清空）用 error 色，禁用态沿用 M3 的 38% 不透明度约定。
+ */
+@Composable
+private fun QueueToolButton(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    selected: Boolean = false,
+    danger: Boolean = false,
+) {
+    val colors = MaterialTheme.colorScheme
+    val contentColor = when {
+        !enabled -> colors.onSurface.copy(alpha = 0.38f)
+        selected -> colors.onPrimaryContainer
+        danger -> colors.error
+        else -> colors.onSurface
+    }
+    Box(
+        modifier = modifier.size(44.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        // 选中底比槽位小 4dp：配合 Row 的 4dp 间距，两个相邻的选中圆之间会留出
+        // 8dp 容器底色，不会再连成一整块。
+        if (selected && enabled) {
+            Box(
+                Modifier.size(40.dp)
+                    .clip(CircleShape)
+                    .background(colors.primaryContainer),
+            )
+        }
+        IconButton(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = Modifier.size(44.dp).clip(CircleShape),
+            colors = IconButtonDefaults.iconButtonColors(contentColor = contentColor),
+        ) {
+            Icon(icon, label, Modifier.size(22.dp))
+        }
+    }
 }
 
 private fun QueueItem.toTrackSummary(): TrackSummary {
@@ -688,7 +795,7 @@ private fun QueueRow(
                 }
 
                 Icon(
-                    Icons.Filled.DragIndicator,
+                    Icons.Rounded.DragIndicator,
                     if (canDrag) s.player.queueReorderHint else null,
                     tint = if (canDrag) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
                     modifier = dragModifier,
@@ -740,7 +847,7 @@ private fun QueueRow(
                 }
             }
             IconButton(onClick = onOptions) {
-                Icon(Icons.Filled.MoreVert, s.player.more)
+                Icon(Icons.Rounded.MoreVert, s.player.more)
             }
             if (isCurrent) {
                 Spacer(Modifier.width(8.dp))

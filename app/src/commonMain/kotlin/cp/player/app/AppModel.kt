@@ -1055,7 +1055,7 @@ object AppModel {
         _showRubyLyrics.value = enabled
     }
 
-    // ============ 全新手机端播放界面与布局微调（持久化） ============
+    // ============ 手机端播放界面样式（三段式 / 标准）与布局微调（持久化） ============
 
     private const val KEY_MODERN_MOBILE_PLAYER = "modern_mobile_player"
     private const val KEY_MOBILE_PLAYER_COVER_SCALE = "mobile_player_cover_scale"

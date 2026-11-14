@@ -46,30 +46,30 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Comment
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material.icons.filled.AccessAlarm
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Cast
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Lyrics
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.RepeatOne
-import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material.icons.filled.SmartDisplay
-import androidx.compose.material.icons.filled.ThumbUp
-import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.automirrored.rounded.Comment
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.AccessAlarm
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Cast
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.Lyrics
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Repeat
+import androidx.compose.material.icons.rounded.RepeatOne
+import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.SmartDisplay
+import androidx.compose.material.icons.rounded.ThumbUp
+import androidx.compose.material.icons.rounded.Translate
 import cp.player.app.ui.component.CpContextMenu
 import cp.player.app.ui.component.CpContextMenuItem
 import cp.player.app.ui.component.CpContextMenuSeparator
@@ -404,28 +404,28 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             add(
                 CpContextMenuItem(
                     label = if (state.isPlaying) "暂停" else "播放",
-                    icon = if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    icon = if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                     onClick = onTogglePlay,
                 )
             )
             add(
                 CpContextMenuItem(
                     label = "下一首",
-                    icon = Icons.Filled.SkipNext,
+                    icon = Icons.Rounded.SkipNext,
                     onClick = onSkipNext,
                 )
             )
             add(
                 CpContextMenuItem(
                     label = "上一首",
-                    icon = Icons.Filled.SkipPrevious,
+                    icon = Icons.Rounded.SkipPrevious,
                     onClick = onSkipPrev,
                 )
             )
             add(
                 CpContextMenuItem(
                     label = if (state.isFavorite) "取消收藏" else "收藏歌曲",
-                    icon = if (state.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                    icon = if (state.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     isSelected = state.isFavorite,
                     onClick = { AppModel.toggleFavoriteOf(track.id) },
                 )
@@ -433,7 +433,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             add(
                 CpContextMenuItem(
                     label = if (state.shuffleEnabled) "关闭随机播放" else "开启随机播放",
-                    icon = Icons.Filled.Shuffle,
+                    icon = Icons.Rounded.Shuffle,
                     isSelected = state.shuffleEnabled,
                     onClick = onShuffle,
                 )
@@ -445,7 +445,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                         RepeatMode.ALL -> "列表循环"
                         RepeatMode.OFF -> "顺序播放"
                     },
-                    icon = if (state.repeatMode == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
+                    icon = if (state.repeatMode == RepeatMode.ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
                     isSelected = state.repeatMode != RepeatMode.OFF,
                     onClick = onRepeat,
                 )
@@ -457,7 +457,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             add(
                 CpContextMenuItem(
                     label = "显示歌词",
-                    icon = Icons.Filled.Lyrics,
+                    icon = Icons.Rounded.Lyrics,
                     isSelected = pagerState.currentPage == 0,
                     onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
                 )
@@ -465,7 +465,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             add(
                 CpContextMenuItem(
                     label = "播放主界面",
-                    icon = Icons.Filled.MusicNote,
+                    icon = Icons.Rounded.MusicNote,
                     isSelected = pagerState.currentPage == 1,
                     onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
                 )
@@ -473,7 +473,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             add(
                 CpContextMenuItem(
                     label = "显示评论",
-                    icon = Icons.AutoMirrored.Filled.Comment,
+                    icon = Icons.AutoMirrored.Rounded.Comment,
                     isSelected = pagerState.currentPage == 2,
                     onClick = { scope.launch { pagerState.animateScrollToPage(2) } },
                 )
@@ -482,7 +482,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                 add(
                     CpContextMenuItem(
                         label = if (showTranslation) "隐藏歌词翻译" else "显示歌词翻译",
-                        icon = Icons.Filled.Translate,
+                        icon = Icons.Rounded.Translate,
                         isSelected = showTranslation,
                         onClick = { showTranslation = !showTranslation },
                     )
@@ -492,7 +492,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                 add(
                     CpContextMenuItem(
                         label = "歌词插件设置",
-                        icon = Icons.Filled.AutoAwesome,
+                        icon = Icons.Rounded.AutoAwesome,
                         onClick = changeSource,
                     )
                 )
@@ -501,7 +501,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                 add(
                     CpContextMenuItem(
                         label = "播放 MV",
-                        icon = Icons.Filled.SmartDisplay,
+                        icon = Icons.Rounded.SmartDisplay,
                         onClick = { navigator?.push(VideoPlayerScreen("netease://mv/$mvId")) },
                     )
                 )
@@ -513,42 +513,42 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             add(
                 CpContextMenuItem(
                     label = "当前播放队列",
-                    icon = Icons.AutoMirrored.Filled.QueueMusic,
+                    icon = Icons.AutoMirrored.Rounded.QueueMusic,
                     onClick = { showQueueSheet = true },
                 )
             )
             add(
                 CpContextMenuItem(
                     label = "添加到歌单...",
-                    icon = Icons.AutoMirrored.Filled.PlaylistAdd,
+                    icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
                     onClick = { moreSheets.showAddToPlaylist = true },
                 )
             )
             add(
                 CpContextMenuItem(
                     label = "歌曲详情...",
-                    icon = Icons.Filled.Info,
+                    icon = Icons.Rounded.Info,
                     onClick = { moreSheets.showSongInfo = true },
                 )
             )
             add(
                 CpContextMenuItem(
                     label = "设备接力 / 投送...",
-                    icon = Icons.Filled.Cast,
+                    icon = Icons.Rounded.Cast,
                     onClick = { moreSheets.showDevicePicker = true },
                 )
             )
             add(
                 CpContextMenuItem(
                     label = "定时关闭...",
-                    icon = Icons.Filled.AccessAlarm,
+                    icon = Icons.Rounded.AccessAlarm,
                     onClick = { moreSheets.showSleepTimer = true },
                 )
             )
             add(
                 CpContextMenuItem(
                     label = "复制歌曲信息",
-                    icon = Icons.Filled.ContentCopy,
+                    icon = Icons.Rounded.ContentCopy,
                     onClick = {
                         val info = "${track.name} - ${track.artist}"
                         cp.player.app.platform.shareText(info)
@@ -558,8 +558,8 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
 
             add(
                 CpContextMenuItem(
-                    label = "切换到新版单页播放器",
-                    icon = Icons.Filled.AutoAwesome,
+                    label = "切换到三段式播放器",
+                    icon = Icons.Rounded.AutoAwesome,
                     onClick = { AppModel.setModernMobilePlayerEnabled(true) },
                 )
             )
@@ -568,7 +568,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             add(
                 CpContextMenuItem(
                     label = "收起播放页",
-                    icon = Icons.Filled.KeyboardArrowDown,
+                    icon = Icons.Rounded.KeyboardArrowDown,
                     onClick = onBack,
                 )
             )
@@ -685,7 +685,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                         navigationIcon = {
                             IconButton(onClick = onBack) {
                                 Icon(
-                                    imageVector = Icons.Filled.KeyboardArrowDown,
+                                    imageVector = Icons.Rounded.KeyboardArrowDown,
                                     contentDescription = s.player.collapse,
                                     tint = MaterialTheme.colorScheme.onSurface,
                                 )
@@ -704,7 +704,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                                 modifier = Modifier.padding(end = 4.dp)
                                             ) {
                                                 Icon(
-                                                    imageVector = Icons.Filled.Translate,
+                                                    imageVector = Icons.Rounded.Translate,
                                                     contentDescription = s.player.translation,
                                                     tint = if (showTranslation) MaterialTheme.colorScheme.primary
                                                     else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -719,7 +719,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                                 ),
                                             ) {
                                                 Icon(
-                                                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                                    imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
                                                     contentDescription = s.player.queue,
                                                 )
                                             }
@@ -735,7 +735,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                             ),
                                         ) {
                                             Icon(
-                                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                                imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
                                                 contentDescription = s.player.queue,
                                             )
                                         }
@@ -879,8 +879,8 @@ private fun LyricsPage(
             ) {
                 IconButton(onClick = onRepeat) {
                     val icon = when (state.repeatMode) {
-                        RepeatMode.ONE -> Icons.Filled.RepeatOne
-                        else -> Icons.Filled.Repeat
+                        RepeatMode.ONE -> Icons.Rounded.RepeatOne
+                        else -> Icons.Rounded.Repeat
                     }
                     Icon(
                         icon, s.player.repeat, Modifier.size(24.dp),
@@ -1087,7 +1087,7 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                             },
                         ) {
                             Icon(
-                                Icons.Filled.SmartDisplay,
+                                Icons.Rounded.SmartDisplay,
                                 contentDescription = "播放 MV",
                                 tint = MaterialTheme.colorScheme.primary,
                             )
@@ -1145,28 +1145,28 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                 cp.player.app.ui.component.CpModeToggle(
                     active = state.shuffleEnabled,
                     onClick = onShuffle,
-                    icon = Icons.Filled.Shuffle,
+                    icon = Icons.Rounded.Shuffle,
                     label = s.player.shuffle,
                 )
                 cp.player.app.ui.component.CpModeToggle(
                     active = state.repeatMode != RepeatMode.OFF,
                     onClick = onRepeat,
                     icon = when (state.repeatMode) {
-                        RepeatMode.ONE -> Icons.Filled.RepeatOne
-                        else -> Icons.Filled.Repeat
+                        RepeatMode.ONE -> Icons.Rounded.RepeatOne
+                        else -> Icons.Rounded.Repeat
                     },
                     label = s.player.repeat,
                 )
                 cp.player.app.ui.component.CpModeToggle(
                     active = (state.sleepTimerRemainingMs ?: 0L) > 0 || state.sleepAfterTrack,
                     onClick = onSleepTimer,
-                    icon = Icons.Filled.AccessAlarm,
+                    icon = Icons.Rounded.AccessAlarm,
                     label = s.player.sleepTimer,
                     activeTint = MaterialTheme.colorScheme.primary,
                 )
                 IconButton(onClick = onMoreClick) {
                     Icon(
-                        Icons.Filled.MoreVert, s.player.more,
+                        Icons.Rounded.MoreVert, s.player.more,
                         Modifier.size(24.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1304,7 +1304,7 @@ private fun ProgressRow(
             if (sleepActive) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        Icons.Filled.AccessAlarm,
+                        Icons.Rounded.AccessAlarm,
                         contentDescription = null,
                         modifier = Modifier.size(13.dp),
                         tint = MaterialTheme.colorScheme.primary,

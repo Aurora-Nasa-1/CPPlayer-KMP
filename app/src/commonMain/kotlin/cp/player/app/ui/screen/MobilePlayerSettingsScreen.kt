@@ -2,7 +2,6 @@ package cp.player.app.ui.screen
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Fullscreen
-import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -20,6 +19,7 @@ import cp.player.app.ui.component.SettingsButtonItem
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSliderItem
+import cp.player.app.ui.component.SettingsSegmentedItem
 import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.settingsSearchTarget
 import cp.player.app.ui.feedback.CpHaptic
@@ -40,12 +40,12 @@ class MobilePlayerSettingsScreen(private val targetSettingId: String? = null) : 
         CpRouteScaffold(title = "手机播放界面", onBack = { navigator.popOrNotify() }) { modifier ->
             SettingsPage(modifier) {
                 SettingsSection("播放器") {
-                    SettingsSwitchItem(
-                        title = "单页播放布局",
-                        subtitle = "封面优先，轻触歌词切换沉浸阅读",
-                        icon = Icons.Filled.PhoneAndroid,
-                        checked = config.enabled,
-                        onCheckedChange = AppModel::setModernMobilePlayerEnabled,
+                    SettingsSegmentedItem(
+                        title = "播放器样式",
+                        subtitle = "选择封面、歌词与播放控制的排布方式",
+                        options = listOf("三段式播放器", "标准播放器"),
+                        selectedIndex = if (config.enabled) 0 else 1,
+                        onSelect = { index -> AppModel.setModernMobilePlayerEnabled(index == 0) },
                         index = 0, total = 2,
                         modifier = Modifier.settingsSearchTarget("appearance_modern_mobile_player", targetSettingId),
                     )

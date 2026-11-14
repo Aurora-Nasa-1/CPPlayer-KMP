@@ -228,12 +228,13 @@ class AppearanceSettingsScreen(
                 val mobilePlayerConfig by AppModel.mobilePlayerCustomConfigFlow.collectAsState()
 
                 SettingsSection("手机端播放界面与布局") {
-                    SettingsSwitchItem(
-                        title = "全新单页播放布局",
+                    SettingsSegmentedItem(
+                        title = "播放器样式",
                         modifier = Modifier.settingsSearchTarget("appearance_modern_mobile_player", targetSettingId),
-                        subtitle = if (mobilePlayerConfig.enabled) "已开启 · 封面、双行歌词与控制整合一屏" else "已关闭 · 使用经典三页横滑播放界面",
-                        checked = mobilePlayerConfig.enabled,
-                        onCheckedChange = AppModel::setModernMobilePlayerEnabled,
+                        subtitle = "选择封面、歌词与播放控制的排布方式",
+                        options = listOf("三段式播放器", "标准播放器"),
+                        selectedIndex = if (mobilePlayerConfig.enabled) 0 else 1,
+                        onSelect = { index -> AppModel.setModernMobilePlayerEnabled(index == 0) },
                         index = 0,
                         total = 2,
                     )

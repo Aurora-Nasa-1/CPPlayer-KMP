@@ -245,9 +245,9 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
             ),
             SettingsSubItem(
                 id = "appearance_modern_mobile_player",
-                titleOf = { "全新单页播放布局" },
-                subtitleOf = { "将封面、双行歌词预览与控制整合在一个页面中展示" },
-                keywords = listOf("单页", "播放页", "新版播放器", "播放界面", "歌词", "apple music", "封面", "布局", "手机播放器"),
+                titleOf = { "播放器样式" },
+                subtitleOf = { "在三段式播放器与标准播放器之间切换" },
+                keywords = listOf("三段式", "标准", "播放器样式", "单页", "播放页", "播放界面", "歌词", "封面", "布局", "手机播放器", "player", "layout"),
                 sectionOf = { "手机端播放界面与布局" },
             ),
             SettingsSubItem(
@@ -905,6 +905,15 @@ private fun otherEntries(): List<SettingsEntry> = listOf(
                 titleOf = { "垂直同步 (V-Sync)" },
                 subtitleOf = { "画面帧率与显示器刷新率同步，防止画面撕裂" },
                 keywords = listOf("垂直同步", "vsync", "撕裂", "刷新率", "帧率", "掉帧"),
+                sectionOf = { "渲染性能" },
+                desktopOnly = true,
+                debugOnly = true,
+            ),
+            SettingsSubItem(
+                id = "render_tuning_vrr",
+                titleOf = { "VRR / G-SYNC（逐程序）" },
+                subtitleOf = { "把本程序在 NVIDIA 驱动里设为「固定刷新率」，避免刷新率随界面跳动导致闪烁" },
+                keywords = listOf("vrr", "g-sync", "gsync", "可变刷新率", "刷新率", "闪烁", "nvidia", "驱动"),
                 sectionOf = { "渲染性能" },
                 desktopOnly = true,
                 debugOnly = true,

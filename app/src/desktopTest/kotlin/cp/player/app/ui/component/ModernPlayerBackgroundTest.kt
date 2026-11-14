@@ -14,8 +14,7 @@ import cp.player.app.ui.model.MobilePlayerCustomConfig
 import cp.player.app.ui.theme.CpTheme
 import cp.player.app.ui.theme.ThemeMode
 import cp.player.core.playback.PlaybackUiState
-import java.io.ByteArrayInputStream
-import javax.imageio.ImageIO
+import cp.player.app.readPng
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -39,8 +38,6 @@ class ModernPlayerBackgroundTest {
                         onSeek = {},
                         onSkipNext = {},
                         onSkipPrevious = {},
-                        onRepeat = {},
-                        onShuffle = {},
                         onLike = {},
                         onArtistClick = null,
                         onQueue = {},
@@ -55,7 +52,7 @@ class ModernPlayerBackgroundTest {
         try {
             scene.render()
             val encoded = scene.render().encodeToData() ?: error("ImageComposeScene PNG encode failed")
-            val image = ImageIO.read(ByteArrayInputStream(encoded.bytes))
+            val image = readPng(encoded.bytes)
             assertEquals(0xFFFF00FF.toInt(), image.getRGB(1, 1), "layout must not paint an opaque full-screen background")
         } finally {
             scene.close()
@@ -87,7 +84,7 @@ class ModernPlayerBackgroundTest {
         }
         try {
             val encoded = scene.render().encodeToData() ?: error("ImageComposeScene PNG encode failed")
-            val image = ImageIO.read(ByteArrayInputStream(encoded.bytes))
+            val image = readPng(encoded.bytes)
             assertNotEquals(
                 fallback.toArgb(),
                 image.getRGB(120, 120),

@@ -25,24 +25,21 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Comment
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material.icons.filled.AccessAlarm
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Fullscreen
-import androidx.compose.material.icons.filled.FullscreenExit
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Lyrics
-import androidx.compose.material.icons.filled.MoreHoriz
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.RepeatOne
-import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.automirrored.rounded.Comment
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.AccessAlarm
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Fullscreen
+import androidx.compose.material.icons.rounded.FullscreenExit
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.Lyrics
+import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -87,7 +84,6 @@ import cp.player.app.ui.util.formatTimeMs
 import cp.player.core.music.ArtistSummary
 import cp.player.core.music.TrackSummary
 import cp.player.core.playback.PlaybackUiState
-import cp.player.core.playback.RepeatMode
 import cp.player.core.util.currentTimeMillis
 import kotlinx.coroutines.delay
 
@@ -108,8 +104,6 @@ internal fun MobileNowPlayingLayout(
     onSeek: (Long) -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
-    onRepeat: () -> Unit,
-    onShuffle: () -> Unit,
     onLike: () -> Unit,
     onArtistClick: ((ArtistSummary) -> Unit)?,
     onQueue: () -> Unit,
@@ -187,7 +181,7 @@ internal fun MobileNowPlayingLayout(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     PlayerIconButton(
-                        Icons.Filled.KeyboardArrowDown, s.player.collapse, onBack,
+                        Icons.Rounded.KeyboardArrowDown, s.player.collapse, onBack,
                         modifier = Modifier.testTag("player-collapse"),
                     )
                     CpText(
@@ -199,7 +193,7 @@ internal fun MobileNowPlayingLayout(
                         reveal = CpTextReveal.Marquee,
                         textAlign = TextAlign.Center,
                     )
-                    PlayerIconButton(Icons.Filled.MoreHoriz, s.player.more, onMore)
+                    PlayerIconButton(Icons.Rounded.MoreHoriz, s.player.more, onMore)
                 }
             }
             val track = state.currentTrack
@@ -243,13 +237,13 @@ internal fun MobileNowPlayingLayout(
                                 Spacer(Modifier.width(12.dp))
                                 TrackHeading(track, false, onArtistClick, Modifier.weight(1f))
                                 PlayerIconButton(
-                                    if (isImmersive) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                                    if (isImmersive) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
                                     if (isImmersive) "退出沉浸" else "沉浸歌词",
                                     onToggleImmersive,
                                     selected = isImmersive,
                                 )
                                 PlayerIconButton(
-                                    Icons.Filled.Translate, s.player.translation, onToggleTranslation,
+                                    Icons.Rounded.Translate, s.player.translation, onToggleTranslation,
                                     selected = config.showTranslation,
                                 )
                             }
@@ -286,7 +280,7 @@ internal fun MobileNowPlayingLayout(
                             )
                             Spacer(Modifier.width(8.dp))
                             PlayerIconButton(
-                                if (state.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                                if (state.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                                 if (state.isFavorite) s.player.unlike else s.player.like,
                                 onLike, selected = state.isFavorite,
                                 modifier = Modifier.testTag("player-favorite"),
@@ -315,15 +309,11 @@ internal fun MobileNowPlayingLayout(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         PlayerIconButton(
-                            Icons.Filled.Shuffle, s.player.shuffle, onShuffle,
-                            selected = state.shuffleEnabled,
-                        )
-                        PlayerIconButton(
-                            Icons.Filled.SkipPrevious, s.player.previousTrack, onSkipPrevious, iconSize = 34,
+                            Icons.Rounded.SkipPrevious, s.player.previousTrack, onSkipPrevious, iconSize = 34,
                         )
                         Box(contentAlignment = Alignment.Center) {
                             PlayerIconButton(
-                                if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                                 s.player.playOrPause(state.isPlaying),
                                 onTogglePlay, iconSize = 48,
                                 modifier = Modifier.size(72.dp).testTag("player-play-pause"),
@@ -333,11 +323,7 @@ internal fun MobileNowPlayingLayout(
                             }
                         }
                         PlayerIconButton(
-                            Icons.Filled.SkipNext, s.player.nextTrack, onSkipNext, iconSize = 34,
-                        )
-                        PlayerIconButton(
-                            if (state.repeatMode == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
-                            s.player.repeat, onRepeat, selected = state.repeatMode != RepeatMode.OFF,
+                            Icons.Rounded.SkipNext, s.player.nextTrack, onSkipNext, iconSize = 34,
                         )
                     }
                     state.error?.takeIf(String::isNotBlank)?.let { error ->
@@ -354,21 +340,21 @@ internal fun MobileNowPlayingLayout(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         PlayerIconButton(
-                            Icons.Filled.Lyrics,
+                            Icons.Rounded.Lyrics,
                             if (lyricsExpanded) "收起歌词" else "展开完整歌词",
                             onToggleLyrics, selected = lyricsExpanded,
                             modifier = Modifier.testTag("player-lyrics-toggle"),
                         )
                         if (supportsComments) {
                             PlayerIconButton(
-                                Icons.AutoMirrored.Filled.Comment, "歌曲评论", onComments,
+                                Icons.AutoMirrored.Rounded.Comment, "歌曲评论", onComments,
                                 modifier = Modifier.testTag("player-comments"),
                             )
                         } else {
                             Spacer(Modifier.size(CpSpacing.touchTarget))
                         }
                         PlayerIconButton(
-                            Icons.AutoMirrored.Filled.QueueMusic, s.player.queue, onQueue,
+                            Icons.AutoMirrored.Rounded.QueueMusic, s.player.queue, onQueue,
                             modifier = Modifier.testTag("player-queue"),
                         )
                     }
@@ -494,7 +480,7 @@ private fun PlayerTimeline(state: PlaybackUiState, onSeek: (Long) -> Unit) {
                     horizontalArrangement = Arrangement.Center,
                 ) {
                     Icon(
-                        Icons.Filled.AccessAlarm, null, Modifier.size(12.dp),
+                        Icons.Rounded.AccessAlarm, null, Modifier.size(12.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.width(4.dp))
