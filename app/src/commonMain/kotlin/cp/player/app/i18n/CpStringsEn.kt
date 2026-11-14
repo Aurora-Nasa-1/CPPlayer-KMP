@@ -22,6 +22,29 @@ object CpStringsEn : CpStrings {
 
     override val settings: SettingsStrings = object : SettingsStrings {
         override val screenTitle = "Settings"
+        override val isolationTitle = "Provider isolation"
+        override val isolationIntro = "Each provider keeps its own sign-in state, cache and account list. " +
+            "Switch providers and you will see that provider's accounts, favorites and playlists."
+        override val isolationSectionAccounts = "Sign-in state"
+        override val isolationRefreshProfile = "Refresh the profile when switching providers"
+        override val isolationRefreshProfileNote = "Sign-in state still switches (Cookies are stored per provider); " +
+            "this only skips refetching the nickname and avatar right away"
+        override val isolationCurrentAccounts = "Accounts for the active provider"
+        override val isolationUnknownProvider = "Unknown provider"
+        override val isolationSaved = "Sign-in state saved"
+        override val isolationNotSignedIn = "Not signed in"
+        override fun isolationAccountCount(count: Int) = "$count accounts"
+        override val isolationSwitchProvider = "Switch provider"
+        override val isolationSwitchProviderNote = "Providers never leak sign-in state or cache into each other"
+        override val isolationSectionCache = "Cache"
+        override val isolationStorage = "Storage and cleanup"
+        override val isolationStorageNote = "Artwork cache, download folders and other per-provider data are managed here"
+        override val isolationSectionDanger = "Danger zone"
+        override val isolationClearConfirm = "Tap again to confirm"
+        override val isolationClearSession = "Clear this provider's sign-in state"
+        override val isolationClearNote = "Clears only this provider; saved accounts remain and can be switched back in one tap"
+        override fun isolationProfileNote(name: String) =
+            "Profile: $name. Clearing the sign-in state does not touch downloaded music."
         override val groupGeneral = "General"
         override val groupAccountProvider = "Accounts & Sources"
         override val groupConnectivity = "Connections & Integrations"
@@ -79,11 +102,16 @@ object CpStringsEn : CpStrings {
             title = "Replay Onboarding",
             subtitle = "Walk through first-time setup again",
         )
+        override val itemNavigation = CpTextPair(
+            title = "Navigation",
+            subtitle = "Dynamic instead of Search, hide Dynamic/Messages, and provider support",
+        )
     }
 
     override val common: CommonStrings = object : CommonStrings {
         override val confirm = "Confirm"
         override val dismiss = "Cancel"
+        override val save = "Save"
         override val apply = "Apply"
         override val refresh = "Refresh"
         override val unsavedBlocked = "Not saved · fix the problem above first"
@@ -91,6 +119,8 @@ object CpStringsEn : CpStrings {
         override val back = "Back"
         override val close = "Close"
         override val search = "Search"
+        override val clearSearch = "Clear search"
+        override val initializingBackend = "Initializing backend…"
     }
 
     override val messageNotify: MessageNotifyStrings = object : MessageNotifyStrings {
@@ -105,7 +135,7 @@ object CpStringsEn : CpStrings {
         override val sheetBody = "When on, you are only notified about new messages from this person. Off by default."
 
         override val settingsTitle = "Message notifications"
-        override val settingsSubtitle = "Which contacts may raise a system notification"
+        override val settingsSubtitle = "Direct-message alerts and close behavior"
         override val masterLabel = "Allow direct-message notifications"
         override val masterHint = "Nothing is polled while this is off. Only works while the app is running"
         override val subscribedSection = "Contacts you follow"
@@ -137,12 +167,20 @@ object CpStringsEn : CpStrings {
     override val appearance: AppearanceStrings = object : AppearanceStrings {
         override val screenTitle = "Appearance & Theme"
         override val sectionLook = "Look"
+        override val sectionMotion = "Motion and visual effects"
+        override val sectionContent = "Content and list presentation"
+        override val sectionMobile = "Mobile player layout"
         override val sectionFont = "Typography"
 
         override val themeMode = "Theme mode"
         override val themeModeSystem = "Follow system"
         override val themeModeLight = "Light"
         override val themeModeDark = "Dark"
+        override val themeModeSystemNote = "Switch automatically with the system day/night state"
+        override val themeModeLightNote = "Always use the bright, clean light theme"
+        override val themeModeDarkNote = "Always use the dark theme, easier on the eyes at night"
+        override val sectionDarkEnhancements = "Dark display enhancements"
+        override val pureBlackDetail = "With pure black enabled, the app background drops from dark gray to true black (#000000) in dark mode. OLED pixels stay off, which improves contrast and saves power."
 
         override val colorSource = "Color source"
         override val colorSourcePlatform = "Follow system"
@@ -179,15 +217,38 @@ object CpStringsEn : CpStrings {
             "Display the album name in track list items; off by default for a cleaner look"
 
         override val fontRoundness = "Font roundness"
-        override fun fontRoundnessNote(defaultRoundness: Int) =
-            "The ROND variable axis of Google Sans Flex: 0 is square, 100 is roundest. " +
-                "Android 16 and above default to 100; other platforms default to $defaultRoundness."
-        override val roundnessDefaultTag = " · Default"
-        override val resetPlatformDefault = "Restore platform default"
-        override val resetPlatformDefaultNote = "Clear the custom value and go back to this platform's default"
-        override val roundnessNote =
-            "Roundness applies immediately to Latin glyphs and digits in Google Sans Flex. " +
-                "The Chinese and Japanese fonts (MiSans / Noto Sans JP) have no ROND axis and are unaffected."
+        override val fontRoundnessRounded = "Rounded"
+        override val fontRoundnessSquare = "Square"
+
+        override fun themeSummary(mode: String, color: String, pureBlack: Boolean) =
+            "$mode${if (pureBlack) " · Pure black on" else ""} · $color"
+
+        override val playerStyle = "Player style"
+        override val playerStyleNote = "Switch the player page layout"
+        override val playerStyleThreePane = "Three-pane player"
+        override val playerStyleStandard = "Standard player"
+        override val playerStyleThreePaneNote = "Swipe between lyrics, player and comments"
+        override val playerStyleStandardNote = "Artwork, lyrics and controls on one page"
+        override val mobilePreferences = "Player settings"
+        override val mobilePreferencesNote = "Lyrics translation, immersive mode and reset"
+        override val playerSettingsTitle = "Player settings"
+        override val playerSettingsHeroNote = "Lyrics and player appearance"
+        override val playerLyricsPresentation = "Lyrics display"
+        override val playerLyricsTranslation = "Show lyric translation"
+        override val playerLyricsTranslationNote = "Show the translation under each line"
+        override val playerLyricsImmersive = "Immersive lyrics"
+        override val playerLyricsImmersiveToggle = "Auto-hide controls"
+        override val playerLyricsImmersiveNote = "Hide the control bars after you stop interacting"
+        override val playerLyricsImmersiveTimeout = "Idle delay"
+        override val playerLyricsImmersiveTimeoutNote = "How long to wait before hiding the controls"
+        override fun playerLyricsImmersiveSeconds(seconds: Int) = "$seconds sec"
+        override val playerResetSection = "Reset"
+        override val playerReset = "Restore player defaults"
+        override val playerResetNote = "Reset lyric presentation and immersive lyric options"
+        override val sectionPreview = "Layout preview"
+        override val mobilePreview = "Mobile layout preview (412×892)"
+        override val mobilePreviewOn = "Currently in the compact mobile layout; tap to restore the desktop window"
+        override val mobilePreviewOff = "Switch to the 412×892 compact mobile layout with bottom navigation and mobile top bar"
     }
 
     override val fontPacks: FontPackStrings = object : FontPackStrings {
@@ -242,15 +303,21 @@ object CpStringsEn : CpStrings {
         override val customCapacity = "Custom capacity"
         override val customCapacityDialogTitle = "Custom Cache Limit"
         override val customCapacityDialogNote = "Enter a custom capacity limit. Lowering the limit trims older tracks right away."
+        override fun customCapacityPlaceholderGb() = "e.g. 10"
+        override fun customCapacityPlaceholderMb() = "e.g. 2048"
+        override fun customCapacityPreview(bytes: String) = "Capacity: $bytes"
+        override val customCapacityInvalid = "Enter a valid capacity (128 MB – 1024 GB)"
         override val customCapacityUnitGb = "GB"
         override val customCapacityUnitMb = "MB"
         override fun customCapacitySubtitle(capacity: String) = "Current custom limit: $capacity. Click to edit"
+        override fun customCapacityCurrent(capacity: String) = "Current limit: $capacity. Click to set any size"
         override val cacheDir = "Cache folder"
         override val migrateCacheDir = "Migrate cache folder"
         override val migrateCacheDirNote = "Change song cache folder and move existing cached files"
         override val migrateCacheDirConfirmTitle = "Migrate Cache Folder"
         override fun migrateCacheDirConfirmMessage(target: String) =
             "Are you sure you want to migrate song cache to:\n$target\n\nExisting cached files will be copied automatically."
+        override val confirmMigrate = "Migrate"
         override val cacheDirMigrating = "Migrating cache folder..."
         override val clearStaleCache = "Clear tracks unplayed for 30 days"
         override val clearStaleCacheNote = "Only drops what you haven't listened to lately"
@@ -333,6 +400,47 @@ object CpStringsEn : CpStrings {
         override val meteredQualityNote =
             "Applies on cellular and hotspots; takes effect from the next track after you switch networks"
 
+        override val sectionAudioEngineAndroid = "Playback engine"
+        override val sectionAudioOutputDesktop = "Audio output mode"
+        override val engineMedia3 = "System Media3 (default)"
+        override val engineFlick = "FlickEngine (VIP)"
+        override val outputShared = "Shared (default)"
+        override val outputExclusive = "Exclusive (VIP)"
+        override val activeKernel = "Active engine"
+        override val wasapiMode = "WASAPI output mode"
+        override val kernelVipInactive = "License not activated — fell back to the system engine"
+        override val kernelFlickActive = "FlickEngine low-latency passthrough · applies from the next track"
+        override val kernelMedia3 = "System Media3: steadier compatibility and power use; audiophile features unavailable"
+        override val kernelExclusiveActive = "Exclusive audio device: other apps are muted during playback"
+        override val kernelShared = "Shared audio device: other apps can play at the same time"
+        override val engineDetailAndroid = "Oboe passthrough, USB DAC and DSD"
+        override val engineDetailDesktop = "Exclusive mode, Bit-Perfect and DSD"
+        override val engineDetailAndroidNote = "Oboe low-latency passthrough · UAC 2.0 USB DAC bit-perfect output · DSD64/128 software decode"
+        override val engineDetailDesktopNote = "WASAPI exclusive · Bit-Perfect sample-rate adaptation · DSD64/128 software decode"
+        override val engineDetailDesktopUnsupportedNote = "This platform has no WASAPI exclusive path — shared output only"
+        override val featureDetails = "Details"
+        override val vipManagement = "Audiophile license"
+        override fun vipActivated(plan: String) = "Activated: $plan"
+        override fun vipActivatedWithKey(plan: String, key: String) = "Activated: $plan ($key)"
+        override val vipInactiveNote = "Not activated. Enter a license key to unlock FlickEngine and exclusive passthrough"
+        override val vipDialogTitle = "Unlock Hi-Res Audiophile Privileges"
+        override val vipDialogNote = "On Windows, FlickEngine offers WASAPI hardware-exclusive output " +
+            "(bit-perfect passthrough); on Android it offers low-latency Oboe and USB DAC output. " +
+            "Both include DSD64/128 software decoding and 64-bit floating-point DSP. Exclusive mode " +
+            "is off by default; turn it on in Settings after activation."
+        override val vipKeyLabel = "License key"
+        override val vipKeyPlaceholder = "Enter the 16-character license key"
+        override val vipActivateFailed = "Activation failed. Check the license key."
+        override val vipActivateNow = "Activate"
+        override val vipActivateLater = "Not now"
+        override val changeLicenseKey = "Change key"
+        override val activatePrivilege = "Activate"
+        override val dspSection = "DSP effects and mixer"
+        override val dspNote = "5-band parametric EQ (PEQ), style presets, channel balance and stereo width"
+        override val mixer = "Mixer"
+        override val edit = "Edit"
+        override val set = "Set"
+
         override val sectionLyrics = "Lyrics"
         override val lyricsSource = "Lyrics source"
         override val lyricsSourceNote =
@@ -373,6 +481,7 @@ object CpStringsEn : CpStrings {
         override val autoPlayTypePlaylist = "Playlist"
         override val autoPlayTypeTrack = "Track"
         override val autoPlayInputIdPlaceholder = "Enter playlist/song ID or URL"
+        override fun autoPlayPlaylistLabel(id: String) = "Playlist $id"
         override val autoPlayInputTitlePlaceholder = "Display title (optional)"
         override val autoPlayClearTarget = "Clear Target"
 
@@ -388,11 +497,14 @@ object CpStringsEn : CpStrings {
             "Preload and buffer the next track in the background for instant switching and smooth transitions"
 
         override val sectionFade = "Fade in / out"
+        override val fadeToggle = "Enable fades"
+        override val fadeNote = "Smooth volume transitions between tracks"
         override val fadeIn = "Fade in on start"
         override val fadeInNote = "Ramp volume up from silence when a new track begins"
         override val fadeOut = "Fade out before end"
         override val fadeOutNote = "Lower the volume near the end so the next track does not cut in"
         override val fadeDuration = "Transition length"
+        override val fadeDurationNote = "Applies to both fade-in and fade-out"
         override fun fadeDurationSeconds(seconds: String) = "$seconds sec"
 
         override val sectionBackground = "Background playback"
@@ -433,6 +545,17 @@ object CpStringsEn : CpStrings {
         override val unsupportedNote =
             "This platform's audio engine only exposes volume — it has no equalizer or effect " +
                 "processing available, so nothing on this page can be adjusted on desktop."
+        override val kernelStatusSection = "Audio engine status"
+        override val kernelNotReadyTitle = "The FlickEngine native audio library isn't ready"
+        override val kernelNotReadyNote = "Desktop decoding, effects and output all come from FlickEngine; " +
+            "without the library, neither effects nor playback work. Check that the installation is complete, " +
+            "or open the audio output page to inspect the engine status."
+        override val viewStatus = "View status"
+        override val equalizerEnabledSummary = "Enabled · 5-band parametric EQ is active"
+        override val resetFlat = "Reset to flat"
+        override val advancedFrequencyTuning = "Advanced: center frequency tuning (PEQ)"
+        override val advancedFrequencyTuningNote = "Adjust the cutoff frequency of each band filter"
+        override fun bandCenterFrequency(index: Int) = "Band ${index + 1} center frequency"
 
         override val sectionEqualizer = "Parametric equalizer"
         override val equalizerEnabled = "Enable equalizer"
@@ -763,6 +886,7 @@ object CpStringsEn : CpStrings {
 
     override val player: PlayerStrings = object : PlayerStrings {
         override val share = "Share"
+        override val shareUnavailableLocal = "Local songs have no online share link"
         override val addToPlaylist = "Add to playlist"
         override val downloaded = "Downloaded"
         override val download = "Download"
@@ -807,6 +931,8 @@ object CpStringsEn : CpStrings {
         override val infoBitDepth = "Bit depth"
         override val infoBitrate = "Bitrate"
         override val infoChannels = "Channels"
+        override val infoSize = "File size"
+        override val infoPath = "File path"
         override val unknownAlbum = "Unknown album"
 
         // 分享文本是**逐行**拼的（要进剪贴板），所以每行的「标签：值」都在文案层，
@@ -836,6 +962,12 @@ object CpStringsEn : CpStrings {
 
         override val nowPlaying = "Now Playing"
         override val collapse = "Collapse"
+        override val lyricsCollapse = "Collapse lyrics"
+        override val lyricsExpand = "Show full lyrics"
+        override val immersive = "Immersive lyrics"
+        override val exitImmersive = "Exit immersive mode"
+        override val songComments = "Song comments"
+        override val audioOutputDevice = "Audio output"
         override val translation = "Translation"
         override val queue = "Queue"
         override val repeat = "Repeat"
@@ -889,7 +1021,67 @@ object CpStringsEn : CpStrings {
         override val miniModePin = "Always on top"
         override val miniModeUnpin = "Unpin"
 
+        override val exploreSimilar = "Explore similar songs"
+        override val exploreSimilarNote = "Find more tracks in the same style as what's playing"
+        override val immersiveLyricsOn = "Immersive lyrics (on)"
+        override val immersiveLyricsOff = "Immersive lyrics (off)"
+        override val playerSettings = "Player screen settings"
+        override val viewFullMetadata = "View full metadata →"
+        override val wordByWordLyrics = "Word-by-word lyrics"
+        override val dynamicLyrics = "Synced lyrics"
+        override val lyricOffsetChip = "Fine-tune"
+        override fun lyricOffsetChipValue(label: String, seconds: String) = "$label ($seconds)"
+
+        override val similarSongs = "Similar songs"
+        override fun similarCount(count: Int) = "$count similar tracks · tap to play"
+        override val similarEmptyNote = "Recommendations based on what's playing"
+        override val similarLoadFailed = "Couldn't load similar songs"
+        override val similarUnsupported = "This provider doesn't support similar songs yet"
+        override val similarUnsupportedNote = "Switch to a provider that supports it and try again"
+        override val similarNothingPlaying = "Nothing is playing"
+        override val similarNothingPlayingNote = "Play a song to see similar recommendations"
+        override val similarNoMatch = "No similar songs found"
+        override val similarNoMatchNote = "Try another song"
+
         override val searchQueue = "Search queue…"
+
+        override val favoriteTrack = "Favorite this song"
+        override val unfavoriteTrack = "Remove favorite"
+        override val repeatOne = "Repeat one"
+        override val repeatAll = "Repeat all"
+        override val repeatOff = "Play in order"
+        override val showLyrics = "Show lyrics"
+        override val showQueue = "Show queue"
+        override val showComments = "Show comments"
+        override val playMainView = "Show player"
+        override val backToPlayer = "Back to the player"
+        override val showLyricsTranslation = "Show lyric translation"
+        override val hideLyricsTranslation = "Hide lyric translation"
+        override val lyricsPluginSettings = "Lyrics plugin settings"
+        override val playMv = "Play MV"
+        override val addToPlaylistMenu = "Add to playlist…"
+        override val songDetailsMenu = "Track details…"
+        override val transferDeviceMenu = "Hand off / cast…"
+        override val sleepTimerMenu = "Sleep timer…"
+        override val copyTrackInfo = "Copy track info"
+        override val switchToStandardPlayer = "Switch to the standard player"
+        override val switchToThreePanePlayer = "Switch to the three-pane player"
+        override val collapsePlayer = "Collapse the player"
+
+        override val tabLyrics = "Lyrics"
+        override val tabSong = "Song"
+        override val tabQueue = "Queue"
+        override val tabComments = "Comments"
+
+        override fun switchToTab(tab: String) = "Switch to $tab"
+        override val lyricsTranslation = "Lyric translation"
+        override val closeLyricsTranslation = "Hide lyric translation"
+        override val miniPlayer = "Mini player"
+        override val restoreVolume = "Restore volume"
+        override val maxVolume = "Maximum volume"
+
+        override val commentsUnsupported = "This provider doesn't support comments"
+        override val exclusiveBadge = "WASAPI exclusive · Bit-Perfect"
     }
 
     override val library: LibraryStrings = object : LibraryStrings {
@@ -920,6 +1112,38 @@ object CpStringsEn : CpStrings {
         override val playNext = "Will play next"
         override val operationFailed = "Couldn't complete the action"
         override val importFromPlaylist = "Import from playlist"
+
+        override fun playlistRefreshed() = "Refreshed"
+        override val playlistDetailRefreshFailed = "Couldn't refresh the playlist"
+        override val playlistDetailLoadFailed = "Couldn't load the playlist"
+        override val loadMoreFailed = "Couldn't load more"
+        override fun playlistDeleted(name: String) = "Deleted \"$name\""
+        override fun playlistUnsubscribed(name: String) = "Removed \"$name\" from favorites"
+        override val ownerOnlyAddTracks = "You can only add tracks to your own playlists"
+        override val tracksAlreadyInPlaylist = "Every selected track is already in this playlist"
+        override fun tracksAdded(count: Int) = if (count == 1) "Added 1 track" else "Added $count tracks"
+        override val addTracksFailed = "Couldn't add tracks to the playlist"
+        override fun tracksRemoved(count: Int) = if (count == 1) "Removed 1 track" else "Removed $count tracks"
+        override val playlistFavorited = "Added to favorites"
+        override val playlistUnfavorited = "Removed from favorites"
+        override fun emptyPlaylist(name: String) = "\"$name\" has no tracks yet"
+        override fun playlistQueued(name: String) = "Added \"$name\" to the play queue"
+        override val localLibraryEmpty = "Your local library is empty. Scan or import music first."
+        override val personalFmUnavailable = "Personal FM isn't available right now. Try again later."
+        override fun playlistSourceLabel(key: String) = when (key) {
+            "Recommended" -> "Recommended"
+            "Hot" -> "Trending"
+            "Premium" -> "Curated"
+            else -> key
+        }
+        override fun newSongRegionLabel(key: String) = when (key) {
+            "All" -> "All"
+            "Chinese" -> "Chinese"
+            "Western" -> "Western"
+            "Japanese" -> "Japanese"
+            "Korean" -> "Korean"
+            else -> key
+        }
 
         override val songDetails = "Track details"
         override val paidType = "Payment"
@@ -1023,6 +1247,13 @@ object CpStringsEn : CpStrings {
         override val play = "Play"
         override val shuffle = "Shuffle"
         override val add = "Add"
+
+        override val searchFieldHint = "Search songs, artists, or albums"
+        override val trackSearchHint = "Search songs, artists, albums..."
+        override val trackSearchClear = "Clear"
+        override val trackSearchClose = "Close search"
+        override fun trackSearchResultCount(count: Int) = if (count == 1) "1 track" else "$count tracks"
+        override val trackAdd = "Add"
     }
 
     override val album: AlbumStrings = object : AlbumStrings {
@@ -1102,6 +1333,10 @@ object CpStringsEn : CpStrings {
         override fun saveDailyToPlaylistSuccess(name: String, count: Int) = "Saved as playlist \"$name\" ($count tracks)"
         override val saveDailyToPlaylistAlreadySaved = "Note: Today's recommendations have already been saved to a playlist."
         override val saveDailyToPlaylistFailed = "Failed to create playlist, please check your connection or login status"
+        override fun saveDailyToPlaylistPartial(name: String) =
+            "Playlist \"$name\" was created, but some tracks could not be added"
+        override fun dailyRecommendationPlaylistName(date: String) = "Daily Mix · $date"
+        override val artistFallback = "Artist"
     }
     override val playlistImport = PlaylistImportStringsEn
     override val account = AccountStringsEn
@@ -1110,6 +1345,9 @@ object CpStringsEn : CpStrings {
     override val social = SocialStringsEn
     override val lyricsPlugin = LyricsPluginStringsEn
     override val pluginRepository = PluginRepositoryStringsEn
+    override val onboarding = OnboardingStringsEn
+    override val providerManagement = ProviderManagementStringsEn
+    override val contextMenu = ContextMenuStringsEn
     override val lyricPush = LyricPushStringsEn
     override val scrobble = ScrobbleStringsEn
     override val wall = WallStringsEn
@@ -1148,6 +1386,11 @@ object CpStringsEn : CpStrings {
         override val qrSaveFailed = "Save failed. Check storage permission or disk space."
         override val close = "Close"
         override val footerNote = "CPPlayer · Compose Multiplatform"
+        override val legacyCleanupNone = "No legacy Provider V1/V3 module directories were found; SDK providers and account data will not be deleted."
+        override val legacyCleanupHint = "The following legacy module directories will be queued after you confirm " +
+            "and removed only once the updated version starts successfully. If the install is cancelled or fails, " +
+            "the old version keeps these directories:"
+        override val updateConfirmDownload = "Confirm and download"
     }
 
     override val update: AppUpdateStrings = object : AppUpdateStrings {
@@ -1158,6 +1401,242 @@ object CpStringsEn : CpStrings {
         override val downloadNow = "Download update now"
         override val releasePage = "Releases"
         override val later = "Later"
+        override fun publishedAt(date: String) = "Published $date"
+        override val packageAndroid = "Android package (.apk)"
+        override val packageWindows = "Windows installer (.exe)"
+        override val packageLinuxDeb = "Linux Debian/Ubuntu (.deb)"
+        override val packageLinuxTar = "Linux universal package (.tar.gz)"
+        override val packageLinux = "Linux package"
+        override val packageUniversal = "Cross-platform package"
+    }
+
+    override val video: VideoStrings = object : VideoStrings {
+        override val playbackFailed = "Playback failed"
+        override val retry = "Retry"
+        override val videoTitle = "Video"
+        override val nowPlaying = "Now playing"
+        override val resolvedQuality = "Resolution"
+        override val standardQuality = "Standard"
+        override val desktopPlayerHint = "Use a system player for full hardware decoding"
+        override val openInSystemPlayer = "Open in system player (PotPlayer recommended)"
+        override val copiedDirectLink = "Direct link copied"
+        override val copyDirectLink = "Copy direct link"
+        override val playPause = "Play/Pause"
+        override val quality = "Quality"
+        override val fullscreen = "Toggle fullscreen"
+        override val scalingMode = "Scaling mode"
+        override val openExternally = "Open in system player"
+    }
+
+    override val home: HomeStrings = object : HomeStrings {
+        override val title = "Discover"
+        override val subtitle = "Your music, always fresh"
+        override val posterWall = "Cover wall"
+
+        override val dailyTitle = "Daily Mix"
+        override fun dailySubtitle(count: Int) = if (count == 1) "1 pick for you" else "$count picks for you"
+        override val intelligenceTitle = "Heartbeat mode"
+
+        override val discoveryTitle = "Discover playlists"
+        override val rankingTitle = "Charts"
+        override val rankingSubtitle = "Open a chart to browse its tracks"
+        override val newAlbumsTitle = "New releases"
+        override val newAlbumsSubtitle = "Open an album to see its tracks"
+        override val hotArtistsTitle = "Popular artists"
+        override val hotArtistsSubtitle = "Open an artist to see their tracks"
+        override val newSongsTitle = "New songs"
+        override val newSongsSubtitle = "Browse the latest releases by region"
+
+        override val recentTitle = "Recently played"
+        override val recentSubtitle = "Pick up a familiar tune"
+        override val recentEmptySubtitle = "Songs you play will appear here"
+        override val continueListening = "Continue listening"
+        override val continueListeningSubtitle = "Pick up where you left off"
+
+        override val playlistSourceRecommended = "For you"
+        override val playlistSourceRecommendedHint = "Updated from what you've been playing"
+        override val playlistSourceHot = "Popular"
+        override val playlistSourceHotHint = "Playlists everyone is saving"
+        override val playlistSourcePremium = "Curated"
+        override val playlistSourcePremiumHint = "Hand-picked high-quality playlists"
+
+        override val quickEntry = "Quick access"
+        override val quickRadio = "Quick radio"
+        override val localShuffle = "Shuffle local"
+        override val localShuffleNote = "Shuffle music stored on this device"
+        override val personalFm = "Personal FM"
+        override val personalFmNote = "Continuous playback, no picking"
+        override val localLibrary = "Local library"
+        override val localLibraryNote = "Browse music files on this device"
+        override val intelligenceNote = "Built around today's picks"
+        override val intelligenceNeedsDaily = "Needs today's picks first"
+        override val recentNote = "Pick up where you left off"
+
+        override val nowPlaying = "Now playing"
+        override val paused = "Paused"
+
+        override val loadIncompleteTitle = "Some recommendations didn't load"
+        override val loadFailed = "Could not load"
+        override val localModeTitle = "Local music mode"
+        override val localModeNoteDesktop =
+            "No online provider plugin is installed. Use Shuffle local or Local library above to play or scan music on this device."
+        override val localModeNoteMobile =
+            "No online provider plugin is installed. Use Shuffle local or Local library above to play or manage music on this device."
+        override val openLocalLibrary = "Open local library"
+        override val noPersonalizedTitle = "No personalized picks yet"
+        override val noPersonalizedNote = "Sign in to sync your daily songs and playlists"
+
+        override fun trackCount(count: Int) = if (count == 1) "1 track" else "$count tracks"
+        override val rankingFallback = "Chart"
+        override val viewTracks = "View tracks"
+        override val unknownArtist = "Unknown artist"
+
+        override val recommendedPlaylistFallback = "Recommended playlist"
+        override val rankingCreator = "Chart"
+    }
+
+    override val engine: EngineStrings = object : EngineStrings {
+        override val titleAndroid = "Playback engine & audiophile features"
+        override val titleDesktop = "Audio output & hardware exclusivity"
+
+        override val heroExclusive = "WASAPI Exclusive · Bit-perfect passthrough · Exclusive device access"
+        override val heroSharedWasapi = "WASAPI Shared · Mixed by the system · Shares audio with other apps"
+        override val heroSharedSystem = "Shared system output · Mixed by the system · Shares audio with other apps"
+        override val heroAndroidFlick = "Rust Oboe · Low-latency passthrough · USB DAC · DSD decoding"
+        override val heroAndroidStandard = "System default engine · Best network compatibility · Lowest power use"
+
+        override val badgeExclusive = "Exclusive"
+        override val badgeSharedDefault = "Shared · Default"
+        override val badgeVip = "VIP"
+        override val badgeDefault = "Default"
+
+        override val sectionKernel = "Playback engine"
+        override val kernelCurrent = "Active engine"
+        override val kernelNeedsVip = "License not activated: fell back to the system engine (FlickEngine requires VIP)"
+        override val kernelEnabled = "FlickEngine is enabled and will take effect on the next playback"
+        override val kernelSystemNote = "System Media3 engine: steadier compatibility and power use; audiophile features unavailable"
+        override val kernelSystemOption = "System Media3 (default)"
+        override val kernelFlickOption = "FlickEngine (VIP)"
+        override val kernelSwitchNote = "Switching engines won't interrupt playback; it applies on the next start (track change or replay)."
+
+        override val sectionOutputMode = "Output mode"
+        override val wasapiMode = "WASAPI output mode"
+        override val wasapiExclusiveNote = "Device is exclusive: system sounds, browsers and meeting apps are muted during playback"
+        override val wasapiSharedNote = "Device is shared: other apps can play audio too, but output goes through the system mixer"
+        override val wasapiSharedOption = "Shared (default)"
+        override val wasapiExclusiveOption = "Exclusive (VIP)"
+        override val sharedOutput = "Shared output"
+        override val sharedOutputNote = "This platform has no WASAPI exclusive path; audio always goes through the system mixer"
+        override val ready = "Ready"
+        override val exclusiveWarning =
+            "Exclusive mode is off by default and requires VIP plus a manual opt-in. Once on, CPPlayer takes over " +
+                "the audio device until you switch back to shared mode or quit — that is the cost of bit-perfect " +
+                "output, not a fault. Switching reopens the audio device, so playback stops; press play again."
+
+        override val sectionCapabilities = "FlickEngine audiophile features"
+        override val oboeTitle = "Oboe / AAudio low-latency passthrough"
+        override val oboeNote = "Bypasses AudioFlinger resampling and talks directly to the audio HAL or a USB DAC"
+        override val usbDacTitle = "USB DAC passthrough (UAC 2.0)"
+        override val usbDacNote = "An external DAC outputs at its own supported sample rate and bit depth, without system resampling"
+        override val dsdTitle = "DSD master decoding"
+        override val dsdNoteAndroid = "Built-in DSF / DFF decoding; DSD64 / DSD128 play directly (decoded to PCM)"
+        override val dsdNoteDesktop =
+            "Built-in DSF / DFF decoding; DSD64 / DSD128 play directly (decoded to PCM) in both modes"
+        override val wasapiExclusiveTitle = "WASAPI exclusive passthrough"
+        override val wasapiExclusiveNoteWindows = "Bypasses the Windows session mixer and system effects; the engine takes over the audio device"
+        override val wasapiExclusiveNoteOther = "Only Windows provides a WASAPI exclusive path; this platform always uses shared output"
+        override val bitPerfectTitle = "Bit-perfect output"
+        override val bitPerfectNoteActive =
+            "Sample rate is renegotiated to each track's native rate (44.1k / 48k / 96k / 192k) without system resampling"
+        override val bitPerfectNoteOther =
+            "Requires an exclusive audio path, which only Windows provides; this platform always resamples through the system mixer"
+        override val bitPerfectNoteInactive =
+            "Only applies in exclusive mode; shared mode resamples to the device's default rate through the system mixer"
+        override val dspTitle = "64-bit floating-point DSP pipeline"
+        override val dspNote = "5-band parametric EQ, channel balance and stereo width run inside the engine, not the system effect chain"
+
+        override val badgeActive = "Active"
+        override val badgeNeedsFlick = "Needs FlickEngine"
+        override val badgeAvailable = "Available"
+        override val badgeUnsupported = "Unsupported here"
+        override val badgeNeedsVip = "Needs VIP"
+        override val badgeNeedsExclusive = "Needs exclusive mode"
+        override val badgeOff = "Off"
+
+        override val sectionEffects = "Mixer & effects"
+        override val openEffects = "Open audio effects"
+        override val effectsNoteAndroid = "5-band parametric EQ, style presets, channel balance and loudness normalization"
+        override val effectsNoteDesktop = "5-band parametric EQ, style presets, channel balance and stereo width"
+
+        override val sectionCredits = "Open-source engine credits"
+        override val creditsNote = "FlickEngine's core technology comes from the open-source moss-apps/Flick project (MIT); credit to its authors"
+    }
+
+    override val health: HealthStrings = object : HealthStrings {
+        override val screenTitle = "Diagnostics & health"
+        override val clearLogAction = "Clear log"
+        override val clearTitle = "Clear diagnostics"
+        override fun clearMessage(count: Int) =
+            if (count == 1) "Clear the 1 recorded call?" else "Clear all $count recorded calls?"
+        override val clearConfirm = "Clear"
+
+        override val tabOverview = "Overview"
+        override val tabMethods = "Operations"
+        override val tabLogs = "Call log"
+        override val tabStatus = "Provider status"
+
+        override val providerHealthSection = "Provider health scores & metrics"
+        override val noLoadedProviders = "No providers loaded"
+        override val systemStatus = "Overall system status"
+        override fun callsSummary(totalCalls: Int, avgResponseMs: Long) =
+            if (totalCalls == 1) "1 call · ${avgResponseMs}ms average" else "$totalCalls calls · ${avgResponseMs}ms average"
+        override val levelOk = "Healthy"
+        override val levelWarning = "Warning"
+        override val levelError = "Error"
+        override val success = "Success"
+        override val failure = "Failed"
+        override val unsupported = "Unsupported"
+        override val activeNow = "Active"
+        override fun providerMeta(id: String, type: String, version: String) =
+            "ID: $id · Type: $type · Version: $version"
+        override fun score(value: Int) = "$value pts"
+        override fun loadError(error: String) = "Load error: $error"
+        override val noCalls = "No calls recorded"
+        override val successRate = "Success rate"
+        override val metricCalls = "Calls"
+        override val metricAverage = "Average"
+        override val metricWarning = "Warnings"
+        override fun recentError(error: String) = "Last error: $error"
+        override val diagnostics = "Low-level diagnostics"
+
+        override val noOperationStats = "No operation statistics yet"
+        override val operationStatsHeader = "Operation performance by UnifiedMusicSource method"
+        override fun operationSummary(totalCalls: Int, successRate: Int, avgResponseMs: Long) =
+            if (totalCalls == 1) {
+                "1 call · $successRate% success · ${avgResponseMs}ms average"
+            } else {
+                "$totalCalls calls · $successRate% success · ${avgResponseMs}ms average"
+            }
+        override fun failCount(count: Int) = "$count failed"
+        override fun warningCount(count: Int) = "$count warnings"
+        override val recentSamples = "Recent samples"
+
+        override fun history(count: Int) =
+            if (count == 1) "Call history (latest 1)" else "Call history (latest $count)"
+        override val resultPrefix = "Result: "
+        override val resultSuccess = "Success"
+        override val resultUnsupported = "Provider doesn't support this operation"
+        override val resultFailed = "Call failed"
+        override fun errorMessage(message: String) = "Error: $message"
+
+        override val providerListSection = "Registered & loaded providers"
+        override val noRegisteredProviders = "No providers registered"
+        override val switchToProvider = "Switch to this provider"
+        override fun providerTypeVersion(type: String, version: String, apiVersion: Int) =
+            "Type: $type  ·  Version: $version  ·  API v$apiVersion"
+        override fun apiGeneration(tag: String) = "API generation: $tag"
+        override fun startupFailed(error: String) = "Startup/load failed: $error"
+        override val runtimeDiagnostics = "Runtime diagnostics"
     }
 
 }

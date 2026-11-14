@@ -27,7 +27,15 @@ interface PluginRepositoryStrings {
     val noUpdatesHint: String
     val noSourcesHint: String
     val importProvider: String
+    val importProviderNote: String
     val importLyrics: String
+    val importLyricsNote: String
+    val discoverPluginsNote: String
+    val autoCheckProvider: String
+    val autoCheckProviderNote: String
+    val deleteProviderTitle: String
+    fun deleteProviderMessage(name: String, id: String, isActive: Boolean): String
+    val deleteProvider: String
     val providerSettings: String
     val checkProviderUpdates: String
     val updateAvailable: String
@@ -48,6 +56,9 @@ interface PluginRepositoryStrings {
     val search: String
     val refresh: String
     val refreshing: String
+    val checkAllUpToDate: String
+    fun checkAllResult(updates: Int, failures: Int): String
+    fun checkAllCatalogSkipped(providerUpdates: Int): String
     val network: String
     val networkNote: String
     val autoCheck: String
@@ -93,6 +104,7 @@ interface PluginRepositoryStrings {
     fun statLyrics(enabled: Int, total: Int): String
     fun statRepositories(enabled: Int, total: Int): String
     fun providerUpdateSummary(name: String, from: String, to: String): String
+    fun updateFromTo(from: String, to: String): String
 }
 
 object PluginRepositoryStringsZh : PluginRepositoryStrings {
@@ -122,7 +134,19 @@ object PluginRepositoryStringsZh : PluginRepositoryStrings {
     override val noUpdatesHint = "检查更新后，有新版本的插件会出现在这里。"
     override val noSourcesHint = "添加 HTTPS 目录后即可浏览和安装插件。"
     override val importProvider = "导入音源模块"
+    override val importProviderNote = "选择 .zip 模块包（需含 manifest.json）"
     override val importLyrics = "导入歌词插件"
+    override val importLyricsNote = "选择 .zip 歌词插件包"
+    override val discoverPluginsNote = "从仓库浏览并安装音源与歌词插件"
+    override val autoCheckProvider = "自动检查音源更新"
+    override val autoCheckProviderNote = "进入插件中心时检查音源新版本，不自动安装。"
+    override val deleteProviderTitle = "删除音源模块"
+    override fun deleteProviderMessage(name: String, id: String, isActive: Boolean) = buildString {
+        append("确定删除「").append(name).append("」（").append(id).append("）吗？\n")
+        append("模块文件与该音源下的登录态会被移除，需要重新导入才能使用。")
+        if (isActive) append("\n它正是当前音源，删除后会自动切换到其他可用音源。")
+    }
+    override val deleteProvider = "删除"
     override val providerSettings = "音源配置"
     override val checkProviderUpdates = "检查音源更新"
     override val updateAvailable = "可更新"
@@ -143,6 +167,17 @@ object PluginRepositoryStringsZh : PluginRepositoryStrings {
     override val search = "搜索名称、作者或插件 ID"
     override val refresh = "检查更新"
     override val refreshing = "正在刷新目录"
+    override val checkAllUpToDate = "检查完成，暂无可用的插件或音源更新。"
+    override fun checkAllResult(updates: Int, failures: Int) = buildString {
+        append("检查完成，发现 ").append(updates).append(" 项可更新。")
+        if (failures > 0) append("另有 ").append(failures).append(" 项检查失败，可查看上方错误详情。")
+    }
+    override fun checkAllCatalogSkipped(providerUpdates: Int) = buildString {
+        append("已检查音源模块：")
+        if (providerUpdates > 0) append("发现 ").append(providerUpdates).append(" 项可更新。")
+        else append("均为最新版本。")
+        append("仓库联网已关闭，未检查插件目录。")
+    }
     override val network = "允许仓库联网"
     override val networkNote = "仅访问启用的仓库和所选安装包，不上传账号、Cookie 或曲库。"
     override val autoCheck = "自动检查插件更新"
@@ -190,6 +225,7 @@ object PluginRepositoryStringsZh : PluginRepositoryStrings {
     override fun statRepositories(enabled: Int, total: Int) = "$enabled/$total 仓库启用"
     override fun providerUpdateSummary(name: String, from: String, to: String) =
         "$name · v$from → v$to"
+    override fun updateFromTo(from: String, to: String) = "v$from → v$to"
 }
 
 object PluginRepositoryStringsEn : PluginRepositoryStrings {
@@ -219,7 +255,19 @@ object PluginRepositoryStringsEn : PluginRepositoryStrings {
     override val noUpdatesHint = "After checking, plugins with a newer version will appear here."
     override val noSourcesHint = "Add an HTTPS catalog to browse and install plugins."
     override val importProvider = "Import provider module"
+    override val importProviderNote = "Choose a .zip module (manifest.json required)"
     override val importLyrics = "Import lyric plugin"
+    override val importLyricsNote = "Choose a .zip lyric plugin package"
+    override val discoverPluginsNote = "Browse catalogs and install providers and lyric plugins"
+    override val autoCheckProvider = "Check for provider updates automatically"
+    override val autoCheckProviderNote = "Check for newer provider versions when opening the plugin center; never installs automatically."
+    override val deleteProviderTitle = "Delete provider module"
+    override fun deleteProviderMessage(name: String, id: String, isActive: Boolean) = buildString {
+        append("Delete \"").append(name).append("\" (").append(id).append(")?\n")
+        append("The module files and sign-in state for this provider will be removed; import it again to use it.")
+        if (isActive) append("\nThis is the active provider; another available provider will be selected automatically.")
+    }
+    override val deleteProvider = "Delete"
     override val providerSettings = "Provider settings"
     override val checkProviderUpdates = "Check provider updates"
     override val updateAvailable = "Update available"
@@ -240,6 +288,17 @@ object PluginRepositoryStringsEn : PluginRepositoryStrings {
     override val search = "Search name, author or plugin ID"
     override val refresh = "Check for updates"
     override val refreshing = "Refreshing catalogs"
+    override val checkAllUpToDate = "Check complete; no plugin or provider updates are available."
+    override fun checkAllResult(updates: Int, failures: Int) = buildString {
+        append("Check complete; ").append(updates).append(" update(s) available.")
+        if (failures > 0) append(" ").append(failures).append(" check(s) failed; see the error details above.")
+    }
+    override fun checkAllCatalogSkipped(providerUpdates: Int) = buildString {
+        append("Provider modules checked: ")
+        if (providerUpdates > 0) append(providerUpdates).append(" update(s) available.")
+        else append("all up to date.")
+        append(" Catalogs were not checked because repository networking is off.")
+    }
     override val network = "Allow repository networking"
     override val networkNote = "Contact enabled catalogs and selected packages only. No account, cookies or library are uploaded."
     override val autoCheck = "Check for plugin updates automatically"
@@ -287,4 +346,5 @@ object PluginRepositoryStringsEn : PluginRepositoryStrings {
     override fun statRepositories(enabled: Int, total: Int) = "$enabled/$total catalogs on"
     override fun providerUpdateSummary(name: String, from: String, to: String) =
         "$name · v$from → v$to"
+    override fun updateFromTo(from: String, to: String) = "v$from → v$to"
 }

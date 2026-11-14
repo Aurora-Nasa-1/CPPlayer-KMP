@@ -64,6 +64,9 @@ interface CpStrings {
      */
     val audioEffect: AudioEffectStrings
 
+    /** 音频输出内核与硬件独占（`AudioEngineSettingsScreen`）。 */
+    val engine: EngineStrings
+
     val shortcuts: ShortcutStrings
     val quality: QualityStrings
 
@@ -90,6 +93,9 @@ interface CpStrings {
      */
     val player: PlayerStrings
 
+    /** 视频播放页（`VideoPlayerView`）。 */
+    val video: VideoStrings
+
     /** 媒体库 / 歌单：列表页、详情页、上下文菜单、多选工具条。 */
     val library: LibraryStrings
     val album: AlbumStrings
@@ -110,8 +116,14 @@ interface CpStrings {
     /** 下载管理。 */
     val downloads: DownloadStrings
 
+    /** 首页（`HomeScreen` / `HomeScreenModel`）。 */
+    val home: HomeStrings
+
     /** 音乐洞察、听歌诊断、关于、听歌日历。 */
     val insights: InsightStrings
+
+    /** 诊断与健康页（`HealthScreen`）。 */
+    val health: HealthStrings
 
     /** 一起听、私信、消息、评论。 */
     val social: SocialStrings
@@ -123,6 +135,15 @@ interface CpStrings {
      */
     val lyricsPlugin: LyricsPluginStrings
     val pluginRepository: PluginRepositoryStrings
+
+    /** 首次使用引导（欢迎 / 音源 / 登录 / 完成）。 */
+    val onboarding: OnboardingStrings
+
+    /** 音源模块管理（导入 / 切换 / 更新 / 导出 / 删除）。 */
+    val providerManagement: ProviderManagementStrings
+
+    /** 歌曲 / 歌单「更多」弹层（跨十几个入口复用）。 */
+    val contextMenu: ContextMenuStrings
 
     /**
      * 专辑墙模式（`ui/wall`）。
@@ -177,6 +198,26 @@ interface LanguageStrings {
 
 interface SettingsStrings {
     val screenTitle: String
+    val isolationTitle: String
+    val isolationIntro: String
+    val isolationSectionAccounts: String
+    val isolationRefreshProfile: String
+    val isolationRefreshProfileNote: String
+    val isolationCurrentAccounts: String
+    val isolationUnknownProvider: String
+    val isolationSaved: String
+    val isolationNotSignedIn: String
+    fun isolationAccountCount(count: Int): String
+    val isolationSwitchProvider: String
+    val isolationSwitchProviderNote: String
+    val isolationSectionCache: String
+    val isolationStorage: String
+    val isolationStorageNote: String
+    val isolationSectionDanger: String
+    val isolationClearConfirm: String
+    val isolationClearSession: String
+    val isolationClearNote: String
+    fun isolationProfileNote(name: String): String
     val groupGeneral: String
     val groupAccountProvider: String
     val groupConnectivity: String
@@ -194,6 +235,7 @@ interface SettingsStrings {
     val itemDiagnostics: CpTextPair
     val itemRenderTuning: CpTextPair
     val itemOnboarding: CpTextPair
+    val itemNavigation: CpTextPair
 }
 
 /**
@@ -206,6 +248,7 @@ interface SettingsStrings {
 interface CommonStrings {
     val confirm: String
     val dismiss: String
+    val save: String
     val apply: String
     val refresh: String
     val unsavedBlocked: String
@@ -213,6 +256,8 @@ interface CommonStrings {
     val back: String
     val close: String
     val search: String
+    val clearSearch: String
+    val initializingBackend: String
 }
 
 // ---------------------------------------------------------------------------
@@ -285,12 +330,20 @@ interface MessageNotifyStrings {
 interface AppearanceStrings {
     val screenTitle: String
     val sectionLook: String
+    val sectionMotion: String
+    val sectionContent: String
+    val sectionMobile: String
     val sectionFont: String
 
     val themeMode: String
     val themeModeSystem: String
     val themeModeLight: String
     val themeModeDark: String
+    val themeModeSystemNote: String
+    val themeModeLightNote: String
+    val themeModeDarkNote: String
+    val sectionDarkEnhancements: String
+    val pureBlackDetail: String
 
     val colorSource: String
     val colorSourcePlatform: String
@@ -317,15 +370,38 @@ interface AppearanceStrings {
     val showSongAlbumNote: String
 
     val fontRoundness: String
+    val fontRoundnessRounded: String
+    val fontRoundnessSquare: String
 
-    /** @param defaultRoundness 当前平台的默认圆滑度（各平台不一样，所以是参数）。 */
-    fun fontRoundnessNote(defaultRoundness: Int): String
+    /** 主题摘要：模式 + 纯黑标记 + 取色方式。 */
+    fun themeSummary(mode: String, color: String, pureBlack: Boolean): String
 
-    /** 滑条右侧的「· 默认」后缀。 */
-    val roundnessDefaultTag: String
-    val resetPlatformDefault: String
-    val resetPlatformDefaultNote: String
-    val roundnessNote: String
+    val playerStyle: String
+    val playerStyleNote: String
+    val playerStyleThreePane: String
+    val playerStyleStandard: String
+    val playerStyleThreePaneNote: String
+    val playerStyleStandardNote: String
+    val mobilePreferences: String
+    val mobilePreferencesNote: String
+    val playerSettingsTitle: String
+    val playerSettingsHeroNote: String
+    val playerLyricsPresentation: String
+    val playerLyricsTranslation: String
+    val playerLyricsTranslationNote: String
+    val playerLyricsImmersive: String
+    val playerLyricsImmersiveToggle: String
+    val playerLyricsImmersiveNote: String
+    val playerLyricsImmersiveTimeout: String
+    val playerLyricsImmersiveTimeoutNote: String
+    fun playerLyricsImmersiveSeconds(seconds: Int): String
+    val playerResetSection: String
+    val playerReset: String
+    val playerResetNote: String
+    val sectionPreview: String
+    val mobilePreview: String
+    val mobilePreviewOn: String
+    val mobilePreviewOff: String
 }
 
 // ---------------------------------------------------------------------------
@@ -406,14 +482,20 @@ interface StorageStrings {
     val customCapacity: String
     val customCapacityDialogTitle: String
     val customCapacityDialogNote: String
+    fun customCapacityPlaceholderGb(): String
+    fun customCapacityPlaceholderMb(): String
+    fun customCapacityPreview(bytes: String): String
+    val customCapacityInvalid: String
     val customCapacityUnitGb: String
     val customCapacityUnitMb: String
     fun customCapacitySubtitle(capacity: String): String
+    fun customCapacityCurrent(capacity: String): String
     val cacheDir: String
     val migrateCacheDir: String
     val migrateCacheDirNote: String
     val migrateCacheDirConfirmTitle: String
     fun migrateCacheDirConfirmMessage(target: String): String
+    val confirmMigrate: String
     val cacheDirMigrating: String
     val clearStaleCache: String
     val clearStaleCacheNote: String
@@ -502,6 +584,45 @@ interface PlaybackStrings {
     val meteredQuality: String
     val meteredQualityNote: String
 
+    // —— 音频输出内核 / 输出模式 ——
+    val sectionAudioEngineAndroid: String
+    val sectionAudioOutputDesktop: String
+    val engineMedia3: String
+    val engineFlick: String
+    val outputShared: String
+    val outputExclusive: String
+    val activeKernel: String
+    val wasapiMode: String
+    val kernelVipInactive: String
+    val kernelFlickActive: String
+    val kernelMedia3: String
+    val kernelExclusiveActive: String
+    val kernelShared: String
+    val engineDetailAndroid: String
+    val engineDetailDesktop: String
+    val engineDetailAndroidNote: String
+    val engineDetailDesktopNote: String
+    val engineDetailDesktopUnsupportedNote: String
+    val featureDetails: String
+    val vipManagement: String
+    fun vipActivated(plan: String): String
+    fun vipActivatedWithKey(plan: String, key: String): String
+    val vipInactiveNote: String
+    val vipDialogTitle: String
+    val vipDialogNote: String
+    val vipKeyLabel: String
+    val vipKeyPlaceholder: String
+    val vipActivateFailed: String
+    val vipActivateNow: String
+    val vipActivateLater: String
+    val changeLicenseKey: String
+    val activatePrivilege: String
+    val dspSection: String
+    val dspNote: String
+    val mixer: String
+    val edit: String
+    val set: String
+
     val sectionLyrics: String
     val lyricsSource: String
     val lyricsSourceNote: String
@@ -541,6 +662,7 @@ interface PlaybackStrings {
     val autoPlayTypeTrack: String
     val autoPlayInputIdPlaceholder: String
     val autoPlayInputTitlePlaceholder: String
+    fun autoPlayPlaylistLabel(id: String): String
     val autoPlayClearTarget: String
 
     val sectionLastPlayback: String
@@ -556,11 +678,16 @@ interface PlaybackStrings {
     // 注意这一组属于**播放设置页**（不是音效页）：淡入淡出只改音量，
     // 桌面端同样可用，所以不能和「仅 Android」的 PEQ 混在一页。
     val sectionFade: String
+    /** 总开关的标题：分组标题已经叫「淡入淡出」，行内不再重复。 */
+    val fadeToggle: String
+    /** 单一开关的说明：同时控制淡入与淡出。 */
+    val fadeNote: String
     val fadeIn: String
     val fadeInNote: String
     val fadeOut: String
     val fadeOutNote: String
     val fadeDuration: String
+    val fadeDurationNote: String
     /** 时长滑杆的当前值标签（如「3.0 秒」）。含数字 ⇒ 必须是函数（语序不同）。 */
     fun fadeDurationSeconds(seconds: String): String
 
@@ -631,6 +758,15 @@ interface AudioEffectStrings {
      */
     val entrySubtitle: String
     val unsupportedNote: String
+    val kernelStatusSection: String
+    val kernelNotReadyTitle: String
+    val kernelNotReadyNote: String
+    val viewStatus: String
+    val equalizerEnabledSummary: String
+    val resetFlat: String
+    val advancedFrequencyTuning: String
+    val advancedFrequencyTuningNote: String
+    fun bandCenterFrequency(index: Int): String
 
     // ---- PEQ ----
     val sectionEqualizer: String
@@ -937,6 +1073,7 @@ interface StandbyStrings {
 interface PlayerStrings {
     // —— 通用动作 ——
     val share: String
+    val shareUnavailableLocal: String
     val addToPlaylist: String
     val downloaded: String
     val download: String
@@ -979,6 +1116,10 @@ interface PlayerStrings {
     val infoBitDepth: String
     val infoBitrate: String
     val infoChannels: String
+    /** 本地曲目的「歌曲信息」：文件体积。 */
+    val infoSize: String
+    /** 本地曲目的「歌曲信息」：文件路径。 */
+    val infoPath: String
     val unknownAlbum: String
 
     /** 分享文本：整段拼进剪贴板，**带换行**，所以逐项都要独立文案。 */
@@ -994,6 +1135,12 @@ interface PlayerStrings {
     // —— 播放页控件 ——
     val nowPlaying: String
     val collapse: String
+    val lyricsCollapse: String
+    val lyricsExpand: String
+    val immersive: String
+    val exitImmersive: String
+    val songComments: String
+    val audioOutputDevice: String
     val translation: String
     val queue: String
     val repeat: String
@@ -1058,6 +1205,30 @@ interface PlayerStrings {
     val lyricOffsetReset: String
     val lyricOffsetHint: String
 
+    // —— 「更多」弹层（播放页） ——
+    val exploreSimilar: String
+    val exploreSimilarNote: String
+    val immersiveLyricsOn: String
+    val immersiveLyricsOff: String
+    val playerSettings: String
+    val viewFullMetadata: String
+    val wordByWordLyrics: String
+    val dynamicLyrics: String
+    val lyricOffsetChip: String
+    fun lyricOffsetChipValue(label: String, seconds: String): String
+
+    // —— 相似歌曲 ——
+    val similarSongs: String
+    fun similarCount(count: Int): String
+    val similarEmptyNote: String
+    val similarLoadFailed: String
+    val similarUnsupported: String
+    val similarUnsupportedNote: String
+    val similarNothingPlaying: String
+    val similarNothingPlayingNote: String
+    val similarNoMatch: String
+    val similarNoMatchNote: String
+
     // —— 桌面迷你模式 ——
     val miniMode: String
     val miniModeRestore: String
@@ -1066,6 +1237,53 @@ interface PlayerStrings {
 
     // —— 队列搜索 ——
     val searchQueue: String
+
+    // —— 播放页右键菜单 ——
+    //
+    // 与 `contextMenu` 那组分开：那一组是「歌曲/歌单更多弹层」的菜单项，
+    // 这一组是**播放页整页右键**（走带控制 + 视图切换 + 收起），语义与作用域都不同。
+    val favoriteTrack: String
+    val unfavoriteTrack: String
+    val repeatOne: String
+    val repeatAll: String
+    val repeatOff: String
+    val showLyrics: String
+    val showQueue: String
+    val showComments: String
+    val playMainView: String
+    val backToPlayer: String
+    val showLyricsTranslation: String
+    val hideLyricsTranslation: String
+    val lyricsPluginSettings: String
+    val playMv: String
+    val addToPlaylistMenu: String
+    val songDetailsMenu: String
+    val transferDeviceMenu: String
+    val sleepTimerMenu: String
+    val copyTrackInfo: String
+    val switchToStandardPlayer: String
+    val switchToThreePanePlayer: String
+    val collapsePlayer: String
+
+    // —— 播放页页签与顶栏控件 ——
+    val tabLyrics: String
+    val tabSong: String
+    val tabQueue: String
+    val tabComments: String
+
+    /** 页签的无障碍点击说明（`onClickLabel`），如「切换到歌词」。 */
+    fun switchToTab(tab: String): String
+    val lyricsTranslation: String
+    val closeLyricsTranslation: String
+    val miniPlayer: String
+    val restoreVolume: String
+    val maxVolume: String
+
+    /** 音源不支持评论时，评论页签里的占位说明。 */
+    val commentsUnsupported: String
+
+    /** 桌面播放页的引擎徽标：WASAPI 独占已生效。 */
+    val exclusiveBadge: String
 }
 
 /**
@@ -1153,6 +1371,27 @@ interface LibraryStrings {
     fun trackCountLabel(count: Int, duration: String): String
     fun playlistCountLabel(count: Int, duration: String): String
 
+    // —— 歌单详情动作反馈（ScreenModel）——
+    fun playlistRefreshed(): String
+    val playlistDetailRefreshFailed: String
+    val playlistDetailLoadFailed: String
+    val loadMoreFailed: String
+    fun playlistDeleted(name: String): String
+    fun playlistUnsubscribed(name: String): String
+    val ownerOnlyAddTracks: String
+    val tracksAlreadyInPlaylist: String
+    fun tracksAdded(count: Int): String
+    val addTracksFailed: String
+    fun tracksRemoved(count: Int): String
+    val playlistFavorited: String
+    val playlistUnfavorited: String
+    fun emptyPlaylist(name: String): String
+    fun playlistQueued(name: String): String
+    val localLibraryEmpty: String
+    val personalFmUnavailable: String
+    fun playlistSourceLabel(key: String): String
+    fun newSongRegionLabel(key: String): String
+
     // —— 列表状态 ——
     val playlistEmpty: String
     val loadFailedRetry: String
@@ -1229,6 +1468,16 @@ interface LibraryStrings {
     val play: String
     val shuffle: String
     val add: String
+
+    // —— 曲目列表壳（TrackListShell）——
+    val searchFieldHint: String
+    val trackSearchHint: String
+    val trackSearchClear: String
+    val trackSearchClose: String
+    fun trackSearchResultCount(count: Int): String
+
+    /** 曲目壳的「添加」次级动作（不是新建歌单）。 */
+    val trackAdd: String
 }
 
 
@@ -1336,6 +1585,9 @@ interface PlaylistSheetStrings {
     fun saveDailyToPlaylistSuccess(name: String, count: Int): String
     val saveDailyToPlaylistAlreadySaved: String
     val saveDailyToPlaylistFailed: String
+    fun saveDailyToPlaylistPartial(name: String): String
+    fun dailyRecommendationPlaylistName(date: String): String
+    val artistFallback: String
 }
 
 interface AboutStrings {
@@ -1372,6 +1624,9 @@ interface AboutStrings {
     val qrSaveFailed: String get() = "保存失败，请检查存储权限或磁盘空间"
     val close: String get() = "关闭"
     val footerNote: String
+    val legacyCleanupNone: String
+    val legacyCleanupHint: String
+    val updateConfirmDownload: String
 }
 
 interface AppUpdateStrings {
@@ -1382,6 +1637,251 @@ interface AppUpdateStrings {
     val downloadNow: String
     val releasePage: String
     val later: String
+    fun publishedAt(date: String): String
+    val packageAndroid: String
+    val packageWindows: String
+    val packageLinuxDeb: String
+    val packageLinuxTar: String
+    val packageLinux: String
+    val packageUniversal: String
+}
+
+/**
+ * 视频播放页的文案。
+ *
+ * 单独成组：这页是**播放器内部**的沉浸式浮层（不是设置 / 媒体库那种页面），
+ * 它的错误态、桌面系统播放器引导与质量控制条只在 `VideoPlayerView` 里出现；
+ * 塞进 `player` 会让「上一首 / 下一首」所在的组继续膨胀，且两者生命周期不同 ——
+ * 音频播放页在后台也常驻，视频页只在打开视频时组合。
+ */
+interface VideoStrings {
+    val playbackFailed: String
+    val retry: String
+    val videoTitle: String
+    val nowPlaying: String
+    val resolvedQuality: String
+    val standardQuality: String
+    val desktopPlayerHint: String
+    val openInSystemPlayer: String
+    val copiedDirectLink: String
+    val copyDirectLink: String
+    val playPause: String
+    val quality: String
+    val fullscreen: String
+    val scalingMode: String
+    val openExternally: String
+}
+
+/**
+ * 首页文案。
+ *
+ * 单独成组：桌面与移动两套布局共用同一批区块标题 / 空态 / 快捷入口，
+ * 而 [HomeScreenModel] 的歌单动作提示也归这里 —— 它与页面是同一个生命周期，
+ * 放进 `library` 会让「首页每日推荐」与「歌单详情」的同名文案各说各话。
+ */
+interface HomeStrings {
+    val title: String
+    val subtitle: String
+    val posterWall: String
+
+    val dailyTitle: String
+    fun dailySubtitle(count: Int): String
+    val intelligenceTitle: String
+
+    val discoveryTitle: String
+    val rankingTitle: String
+    val rankingSubtitle: String
+    val newAlbumsTitle: String
+    val newAlbumsSubtitle: String
+    val hotArtistsTitle: String
+    val hotArtistsSubtitle: String
+    val newSongsTitle: String
+    val newSongsSubtitle: String
+
+    val recentTitle: String
+    val recentSubtitle: String
+    val recentEmptySubtitle: String
+    val continueListening: String
+    val continueListeningSubtitle: String
+
+    val playlistSourceRecommended: String
+    val playlistSourceRecommendedHint: String
+    val playlistSourceHot: String
+    val playlistSourceHotHint: String
+    val playlistSourcePremium: String
+    val playlistSourcePremiumHint: String
+
+    val quickEntry: String
+    val quickRadio: String
+    val localShuffle: String
+    val localShuffleNote: String
+    val personalFm: String
+    val personalFmNote: String
+    val localLibrary: String
+    val localLibraryNote: String
+    val intelligenceNote: String
+    val intelligenceNeedsDaily: String
+    val recentNote: String
+
+    val nowPlaying: String
+    val paused: String
+
+    val loadIncompleteTitle: String
+    val loadFailed: String
+    val localModeTitle: String
+    val localModeNoteDesktop: String
+    val localModeNoteMobile: String
+    val openLocalLibrary: String
+    val noPersonalizedTitle: String
+    val noPersonalizedNote: String
+
+    fun trackCount(count: Int): String
+    val rankingFallback: String
+    val viewTracks: String
+    val unknownArtist: String
+
+    val recommendedPlaylistFallback: String
+    val rankingCreator: String
+}
+
+/**
+ * 音频输出内核与硬件独占页。
+ *
+ * ⚠️ 这一页的核心难点是**平台差异**（Windows / 其它桌面 / Android 各有一套真实能力），
+ * 所以文案按「平台分支」成组而不是按控件拆：同一条「独占」在 Windows 是 WASAPI、
+ * 在 Android 是 Oboe 直通，混用会写出系统里根本不存在的开关。
+ */
+interface EngineStrings {
+    val titleAndroid: String
+    val titleDesktop: String
+
+    val heroExclusive: String
+    val heroSharedWasapi: String
+    val heroSharedSystem: String
+    val heroAndroidFlick: String
+    val heroAndroidStandard: String
+
+    val badgeExclusive: String
+    val badgeSharedDefault: String
+    val badgeVip: String
+    val badgeDefault: String
+
+    val sectionKernel: String
+    val kernelCurrent: String
+    val kernelNeedsVip: String
+    val kernelEnabled: String
+    val kernelSystemNote: String
+    val kernelSystemOption: String
+    val kernelFlickOption: String
+    val kernelSwitchNote: String
+
+    val sectionOutputMode: String
+    val wasapiMode: String
+    val wasapiExclusiveNote: String
+    val wasapiSharedNote: String
+    val wasapiSharedOption: String
+    val wasapiExclusiveOption: String
+    val sharedOutput: String
+    val sharedOutputNote: String
+    val ready: String
+    val exclusiveWarning: String
+
+    val sectionCapabilities: String
+    val oboeTitle: String
+    val oboeNote: String
+    val usbDacTitle: String
+    val usbDacNote: String
+    val dsdTitle: String
+    val dsdNoteAndroid: String
+    val dsdNoteDesktop: String
+    val wasapiExclusiveTitle: String
+    val wasapiExclusiveNoteWindows: String
+    val wasapiExclusiveNoteOther: String
+    val bitPerfectTitle: String
+    val bitPerfectNoteActive: String
+    val bitPerfectNoteOther: String
+    val bitPerfectNoteInactive: String
+    val dspTitle: String
+    val dspNote: String
+
+    val badgeActive: String
+    val badgeNeedsFlick: String
+    val badgeAvailable: String
+    val badgeUnsupported: String
+    val badgeNeedsVip: String
+    val badgeNeedsExclusive: String
+    val badgeOff: String
+
+    val sectionEffects: String
+    val openEffects: String
+    val effectsNoteAndroid: String
+    val effectsNoteDesktop: String
+
+    val sectionCredits: String
+    val creditsNote: String
+}
+
+/**
+ * 诊断与健康页。
+ *
+ * ⚠️ 这一页的原始错误串 / 操作名 / Provider ID 刻意**不译**：它们是排查输入，
+ * 翻译后就没法拿去搜日志或对上游了。这里只译「标签」与「状态词」。
+ */
+interface HealthStrings {
+    val screenTitle: String
+    val clearLogAction: String
+    val clearTitle: String
+    fun clearMessage(count: Int): String
+    val clearConfirm: String
+
+    val tabOverview: String
+    val tabMethods: String
+    val tabLogs: String
+    val tabStatus: String
+
+    val providerHealthSection: String
+    val noLoadedProviders: String
+    val systemStatus: String
+    fun callsSummary(totalCalls: Int, avgResponseMs: Long): String
+    val levelOk: String
+    val levelWarning: String
+    val levelError: String
+    val success: String
+    val failure: String
+    val unsupported: String
+    val activeNow: String
+    fun providerMeta(id: String, type: String, version: String): String
+    fun score(value: Int): String
+    fun loadError(error: String): String
+    val noCalls: String
+    val successRate: String
+    val metricCalls: String
+    val metricAverage: String
+    val metricWarning: String
+    fun recentError(error: String): String
+    val diagnostics: String
+
+    val noOperationStats: String
+    val operationStatsHeader: String
+    fun operationSummary(totalCalls: Int, successRate: Int, avgResponseMs: Long): String
+    fun failCount(count: Int): String
+    fun warningCount(count: Int): String
+    val recentSamples: String
+
+    fun history(count: Int): String
+    val resultPrefix: String
+    val resultSuccess: String
+    val resultUnsupported: String
+    val resultFailed: String
+    fun errorMessage(message: String): String
+
+    val providerListSection: String
+    val noRegisteredProviders: String
+    val switchToProvider: String
+    fun providerTypeVersion(type: String, version: String, apiVersion: Int): String
+    fun apiGeneration(tag: String): String
+    fun startupFailed(error: String): String
+    val runtimeDiagnostics: String
 }
 
 // ---------------------------------------------------------------------------

@@ -29,6 +29,10 @@ interface ScrobbleStrings {
     val lastFmAuthDialogCancel: String
     val lastFmAuthSuccessToast: String
     val lastFmAuthFailToast: String
+    fun lastFmAuthStartFailed(message: String): String
+    fun lastFmAuthIncomplete(message: String): String
+    val morePlatformsTitle: String
+    val morePlatformsNote: String
 
     // 功能开关
     val enableScrobbleTitle: String
@@ -45,6 +49,7 @@ interface ScrobbleStrings {
     val pendingQueueCount: (Int) -> String
     val queueEmpty: String
     val flushQueueBtn: String
+    val flushQueueStarted: String
     val clearQueueBtn: String
     val clearQueueConfirmTitle: String
     val clearQueueConfirmMessage: String
@@ -89,6 +94,10 @@ object ScrobbleStringsZh : ScrobbleStrings {
     override val lastFmAuthDialogCancel = "取消"
     override val lastFmAuthSuccessToast = "Last.fm 绑定成功"
     override val lastFmAuthFailToast = "Last.fm 授权失败，请重试"
+    override fun lastFmAuthStartFailed(message: String) = "发起授权失败: $message"
+    override fun lastFmAuthIncomplete(message: String) = "授权未完成: $message"
+    override val morePlatformsTitle = "更多平台"
+    override val morePlatformsNote = "即将支持更多开放打卡与自由音乐档案服务"
 
     override val enableScrobbleTitle = "启用听歌打卡"
     override val enableScrobbleDesc = "当有效播放达到歌曲时长的 50% 或满 4 分钟时自动提交记录"
@@ -103,6 +112,7 @@ object ScrobbleStringsZh : ScrobbleStrings {
     override val pendingQueueCount: (Int) -> String = { "离线待提交 $it 条" }
     override val queueEmpty = "暂无离线待办条目"
     override val flushQueueBtn = "立即同步离线记录"
+    override val flushQueueStarted = "已开始同步离线记录"
     override val clearQueueBtn = "清空离线队列"
     override val clearQueueConfirmTitle = "清空离线待办队列？"
     override val clearQueueConfirmMessage = "未提交成功的离线打卡记录将被丢弃且无法恢复。"
@@ -145,6 +155,10 @@ object ScrobbleStringsEn : ScrobbleStrings {
     override val lastFmAuthDialogCancel = "Cancel"
     override val lastFmAuthSuccessToast = "Last.fm connected successfully"
     override val lastFmAuthFailToast = "Failed to connect Last.fm. Please try again."
+    override fun lastFmAuthStartFailed(message: String) = "Couldn't start authorization: $message"
+    override fun lastFmAuthIncomplete(message: String) = "Authorization not completed: $message"
+    override val morePlatformsTitle = "More platforms"
+    override val morePlatformsNote = "More open scrobbling and free music-archive services are coming"
 
     override val enableScrobbleTitle = "Enable Scrobbling"
     override val enableScrobbleDesc = "Scrobble when 50% of track length or 4 minutes has played"
@@ -159,6 +173,7 @@ object ScrobbleStringsEn : ScrobbleStrings {
     override val pendingQueueCount: (Int) -> String = { "$it offline pending" }
     override val queueEmpty = "No pending offline scrobbles"
     override val flushQueueBtn = "Retry Offline Queue Now"
+    override val flushQueueStarted = "Syncing offline scrobbles…"
     override val clearQueueBtn = "Clear Offline Queue"
     override val clearQueueConfirmTitle = "Clear offline queue?"
     override val clearQueueConfirmMessage = "Pending offline scrobbles will be discarded."
