@@ -6,9 +6,7 @@
 use cpplayer_provider_sdk::*;
 
 /// The smallest useful provider: three capabilities, no network.
-struct Catalog {
-    context: ProviderContext,
-}
+struct Catalog;
 
 impl MusicProvider for Catalog {
     fn capabilities(&self, _context: &ProviderContext) -> Vec<&'static str> {
@@ -58,8 +56,8 @@ impl MusicProvider for Catalog {
     }
 }
 
-fn create(context: &ProviderContext) -> Box<dyn MusicProvider> {
-    Box::new(Catalog { context: context.clone() })
+fn create(_context: &ProviderContext) -> Box<dyn MusicProvider> {
+    Box::new(Catalog)
 }
 
 export_provider!(create);
@@ -119,7 +117,7 @@ fn capabilities_come_back_as_a_wire_record() {
     let capabilities = Capabilities::read(&mut reader).unwrap();
     reader.finish().unwrap();
     assert!(capabilities.supported.contains(&Capability::SEARCH.to_string()));
-    unsafe { cpp_close(handle) };
+    cpp_close(handle);
 }
 
 #[test]
@@ -156,7 +154,7 @@ fn small_buffers_report_required_capacity_and_retry_cleanly() {
         )
     };
     assert_eq!(code, 0, "retry is idempotent");
-    unsafe { cpp_close(handle) };
+    cpp_close(handle);
 }
 
 #[test]
@@ -182,18 +180,16 @@ fn undeclared_capability_returns_the_unsupported_envelope() {
     let mut reader = WireReader::new(&out[1..]).unwrap();
     let failure = WireFailure::read(&mut reader).unwrap();
     assert_eq!(failure.category, FailureCategory::Unsupported.as_str());
-    unsafe { cpp_close(handle) };
+    cpp_close(handle);
 }
 
 #[test]
 fn cancel_and_double_close_are_safe() {
     // Tests share the process-wide session registry, so compare against a baseline.
     let handle = create_session();
-    unsafe {
-        cpp_cancel(handle);
-        cpp_close(handle);
-        cpp_close(handle);
-    }
+    cpp_cancel(handle);
+    cpp_close(handle);
+    cpp_close(handle);
     // Other tests in this binary hold sessions concurrently; only assert that
     // this handle no longer dispatches.
     let mut out = vec![0u8; 64];
@@ -207,7 +203,7 @@ fn cancel_and_double_close_are_safe() {
 #[test]
 fn closed_handles_do_not_dispatch() {
     let handle = create_session();
-    unsafe { cpp_close(handle) };
+    cpp_close(handle);
     let mut out = vec![0u8; 64];
     let mut out_len = 0i32;
     let code = unsafe {

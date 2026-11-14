@@ -256,6 +256,207 @@ data class MediaResource(
     }
 }
 
+/** DRM signaling and license acquisition metadata; never contains content keys or reusable license bytes. */
+data class DrmDescriptor(
+    /** Canonical host DRM identifier: widevine, playready, fairplay or clearkey. */
+    val keySystem: String,
+    /** Absolute provider license endpoint when direct HTTP exchange is possible; null when exchangeLicense is required. */
+    val licenseUrl: String? = null,
+    /** Explicit headers; no implicit account Cookie or Authorization forwarding. */
+    val headers: List<Header> = emptyList(),
+    /** DRM signaling scheme from the media manifest, such as an HLS KEYFORMAT or DASH schemeIdUri. */
+    val schemeIdUri: String? = null,
+    /** Opaque initialization data, at most 1048576 bytes; never a content key. */
+    val initData: ByteArray? = null,
+    /** Optional content key identifier; never key material. */
+    val keyId: ByteArray? = null,
+    /** Provider-specific key reference used during license exchange, such as an Apple skd URI or data URI. */
+    val keyUri: String? = null,
+    /** Optional certificate bytes, at most 1048576; never a private device key. */
+    val serverCertificate: ByteArray? = null,
+    /** Whether the provider supports a persistent license/session; the host may reject it when unsupported. */
+    val persistent: Boolean,
+) {
+    fun write(w: WireWriter) { with(w) {
+        string(this@DrmDescriptor.keySystem)
+        optional(this@DrmDescriptor.licenseUrl) { v -> string(v) }
+        list(this@DrmDescriptor.headers) { v -> v.write(this) }
+        optional(this@DrmDescriptor.schemeIdUri) { v -> string(v) }
+        optional(this@DrmDescriptor.initData) { v -> bytes(v) }
+        optional(this@DrmDescriptor.keyId) { v -> bytes(v) }
+        optional(this@DrmDescriptor.keyUri) { v -> string(v) }
+        optional(this@DrmDescriptor.serverCertificate) { v -> bytes(v) }
+        bool(this@DrmDescriptor.persistent)
+    } }
+    fun values(): Map<String, Any?> = mapOf(
+        "keySystem" to keySystem,
+        "licenseUrl" to licenseUrl?.let { it },
+        "headers" to headers.map { it.values() },
+        "schemeIdUri" to schemeIdUri?.let { it },
+        "initData" to initData?.let { it },
+        "keyId" to keyId?.let { it },
+        "keyUri" to keyUri?.let { it },
+        "serverCertificate" to serverCertificate?.let { it },
+        "persistent" to persistent,
+    )
+    companion object {
+        fun read(r: WireReader): DrmDescriptor = with(r) { DrmDescriptor(
+            string(),
+            optional { string() },
+            list { Header.read(this) },
+            optional { string() },
+            optional { bytes() },
+            optional { bytes() },
+            optional { string() },
+            optional { bytes() },
+            bool(),
+        ) }
+        fun fromValues(v: Map<String, Any?>): DrmDescriptor = DrmDescriptor(
+            valueString(v["keySystem"]),
+            v["licenseUrl"]?.let { valueString(it) },
+            valueList(v["headers"] ?: emptyList<Any?>()).map { Header.fromValues(valueObject(it)) },
+            v["schemeIdUri"]?.let { valueString(it) },
+            v["initData"]?.let { valueBytes(it) },
+            v["keyId"]?.let { valueBytes(it) },
+            v["keyUri"]?.let { valueString(it) },
+            v["serverCertificate"]?.let { valueBytes(it) },
+            valueBool(v["persistent"]),
+        )
+    }
+}
+
+/** DRM-aware audio resolution input. keySystems lists the host-supported identifiers in preference order. */
+data class DrmResolveRequest(
+    /** Opaque, case-sensitive provider-local identity; preserve leading zeros and punctuation. */
+    val id: String,
+    /** Provider-defined requested quality key; do not report it as actual quality without verification. */
+    val quality: String,
+    /** 1..8 distinct host-supported key systems; the provider must not return a descriptor outside this list. */
+    val keySystems: List<String> = emptyList(),
+) {
+    fun write(w: WireWriter) { with(w) {
+        string(this@DrmResolveRequest.id)
+        string(this@DrmResolveRequest.quality)
+        list(this@DrmResolveRequest.keySystems) { v -> string(v) }
+    } }
+    fun values(): Map<String, Any?> = mapOf(
+        "id" to id,
+        "quality" to quality,
+        "keySystems" to keySystems.map { it },
+    )
+    companion object {
+        fun read(r: WireReader): DrmResolveRequest = with(r) { DrmResolveRequest(
+            string(),
+            string(),
+            list { string() },
+        ) }
+        fun fromValues(v: Map<String, Any?>): DrmResolveRequest = DrmResolveRequest(
+            valueString(v["id"]),
+            valueString(v["quality"]),
+            valueList(v["keySystems"] ?: emptyList<Any?>()).map { valueString(it) },
+        )
+    }
+}
+
+/** One resolved media resource and its optional DRM descriptor; a null descriptor means the resource is clear. */
+data class ResolvedMedia(
+    /** The resolved media resource. */
+    val resource: MediaResource,
+    /** Null only when the resource is clear; a protected resource requires a matching descriptor. */
+    val drm: DrmDescriptor? = null,
+) {
+    fun write(w: WireWriter) { with(w) {
+        this@ResolvedMedia.resource.write(this)
+        optional(this@ResolvedMedia.drm) { v -> v.write(this) }
+    } }
+    fun values(): Map<String, Any?> = mapOf(
+        "resource" to resource.values(),
+        "drm" to drm?.let { it.values() },
+    )
+    companion object {
+        fun read(r: WireReader): ResolvedMedia = with(r) { ResolvedMedia(
+            MediaResource.read(this),
+            optional { DrmDescriptor.read(this) },
+        ) }
+        fun fromValues(v: Map<String, Any?>): ResolvedMedia = ResolvedMedia(
+            MediaResource.fromValues(valueObject(v["resource"])),
+            v["drm"]?.let { DrmDescriptor.fromValues(valueObject(it)) },
+        )
+    }
+}
+
+/** One host CDM challenge plus the opaque provider context needed to exchange it for a license. */
+data class LicenseRequest(
+    /** Opaque, case-sensitive provider-local identity; preserve leading zeros and punctuation. */
+    val id: String,
+    /** Canonical host DRM identifier: widevine, playready, fairplay or clearkey. */
+    val keySystem: String,
+    /** Raw host CDM challenge bytes, at most 1048576; the provider performs any required encoding. */
+    val challenge: ByteArray,
+    /** Absolute provider license endpoint when direct HTTP exchange is possible; null when exchangeLicense is required. */
+    val licenseUrl: String? = null,
+    /** Explicit headers; no implicit account Cookie or Authorization forwarding. */
+    val headers: List<Header> = emptyList(),
+    /** Provider-specific key reference used during license exchange, such as an Apple skd URI or data URI. */
+    val keyUri: String? = null,
+) {
+    fun write(w: WireWriter) { with(w) {
+        string(this@LicenseRequest.id)
+        string(this@LicenseRequest.keySystem)
+        bytes(this@LicenseRequest.challenge)
+        optional(this@LicenseRequest.licenseUrl) { v -> string(v) }
+        list(this@LicenseRequest.headers) { v -> v.write(this) }
+        optional(this@LicenseRequest.keyUri) { v -> string(v) }
+    } }
+    fun values(): Map<String, Any?> = mapOf(
+        "id" to id,
+        "keySystem" to keySystem,
+        "challenge" to challenge,
+        "licenseUrl" to licenseUrl?.let { it },
+        "headers" to headers.map { it.values() },
+        "keyUri" to keyUri?.let { it },
+    )
+    companion object {
+        fun read(r: WireReader): LicenseRequest = with(r) { LicenseRequest(
+            string(),
+            string(),
+            bytes(),
+            optional { string() },
+            list { Header.read(this) },
+            optional { string() },
+        ) }
+        fun fromValues(v: Map<String, Any?>): LicenseRequest = LicenseRequest(
+            valueString(v["id"]),
+            valueString(v["keySystem"]),
+            valueBytes(v["challenge"]),
+            v["licenseUrl"]?.let { valueString(it) },
+            valueList(v["headers"] ?: emptyList<Any?>()).map { Header.fromValues(valueObject(it)) },
+            v["keyUri"]?.let { valueString(it) },
+        )
+    }
+}
+
+/** Opaque license bytes returned by the provider; never log, cache or expose them to UI code. */
+data class LicenseResponse(
+    /** Opaque license response bytes; never a content key and never logged. */
+    val license: ByteArray,
+) {
+    fun write(w: WireWriter) { with(w) {
+        bytes(this@LicenseResponse.license)
+    } }
+    fun values(): Map<String, Any?> = mapOf(
+        "license" to license,
+    )
+    companion object {
+        fun read(r: WireReader): LicenseResponse = with(r) { LicenseResponse(
+            bytes(),
+        ) }
+        fun fromValues(v: Map<String, Any?>): LicenseResponse = LicenseResponse(
+            valueBytes(v["license"]),
+        )
+    }
+}
+
 /** Sanitized, categorized business failure; never include credentials or private request bodies. */
 data class Failure(
     /** Unsupported, NotFound, Authentication, Network, RateLimit, Timeout, InvalidResponse or Runtime. */
@@ -5771,4 +5972,6 @@ object ProviderProtocol {
     const val GETUSERCOMMENTHISTORY = 165
     const val GETLIKELISTPAGE = 166
     const val LIKERESOURCE = 167
+    const val RESOLVEDRM = 168
+    const val EXCHANGELICENSE = 169
 }

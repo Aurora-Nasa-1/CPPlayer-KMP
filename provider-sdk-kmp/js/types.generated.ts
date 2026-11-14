@@ -80,6 +80,68 @@ export interface MediaResource {
   readonly sizeBytes?: number | null;
 }
 
+/** DRM signaling and license acquisition metadata; never contains content keys or reusable license bytes. */
+export interface DrmDescriptor {
+  /** Canonical host DRM identifier: widevine, playready, fairplay or clearkey. */
+  readonly keySystem: string;
+  /** Absolute provider license endpoint when direct HTTP exchange is possible; null when exchangeLicense is required. */
+  readonly licenseUrl?: string | null;
+  /** Explicit headers; no implicit account Cookie or Authorization forwarding. */
+  readonly headers?: Header[];
+  /** DRM signaling scheme from the media manifest, such as an HLS KEYFORMAT or DASH schemeIdUri. */
+  readonly schemeIdUri?: string | null;
+  /** Opaque initialization data, at most 1048576 bytes; never a content key. */
+  readonly initData?: Binary | null;
+  /** Optional content key identifier; never key material. */
+  readonly keyId?: Binary | null;
+  /** Provider-specific key reference used during license exchange, such as an Apple skd URI or data URI. */
+  readonly keyUri?: string | null;
+  /** Optional certificate bytes, at most 1048576; never a private device key. */
+  readonly serverCertificate?: Binary | null;
+  /** Whether the provider supports a persistent license/session; the host may reject it when unsupported. */
+  readonly persistent: boolean;
+}
+
+/** DRM-aware audio resolution input. keySystems lists the host-supported identifiers in preference order. */
+export interface DrmResolveRequest {
+  /** Opaque, case-sensitive provider-local identity; preserve leading zeros and punctuation. */
+  readonly id: string;
+  /** Provider-defined requested quality key; do not report it as actual quality without verification. */
+  readonly quality: string;
+  /** 1..8 distinct host-supported key systems; the provider must not return a descriptor outside this list. */
+  readonly keySystems?: string[];
+}
+
+/** One resolved media resource and its optional DRM descriptor; a null descriptor means the resource is clear. */
+export interface ResolvedMedia {
+  /** The resolved media resource. */
+  readonly resource: MediaResource;
+  /** Null only when the resource is clear; a protected resource requires a matching descriptor. */
+  readonly drm?: DrmDescriptor | null;
+}
+
+/** One host CDM challenge plus the opaque provider context needed to exchange it for a license. */
+export interface LicenseRequest {
+  /** Opaque, case-sensitive provider-local identity; preserve leading zeros and punctuation. */
+  readonly id: string;
+  /** Canonical host DRM identifier: widevine, playready, fairplay or clearkey. */
+  readonly keySystem: string;
+  /** Raw host CDM challenge bytes, at most 1048576; the provider performs any required encoding. */
+  readonly challenge: Binary;
+  /** Absolute provider license endpoint when direct HTTP exchange is possible; null when exchangeLicense is required. */
+  readonly licenseUrl?: string | null;
+  /** Explicit headers; no implicit account Cookie or Authorization forwarding. */
+  readonly headers?: Header[];
+  /** Provider-specific key reference used during license exchange, such as an Apple skd URI or data URI. */
+  readonly keyUri?: string | null;
+}
+
+/** Opaque license bytes returned by the provider; never log, cache or expose them to UI code. */
+export interface LicenseResponse {
+  /** Opaque license response bytes; never a content key and never logged. */
+  readonly license: Binary;
+}
+
 /** Sanitized, categorized business failure; never include credentials or private request bodies. */
 export interface Failure {
   /** Unsupported, NotFound, Authentication, Network, RateLimit, Timeout, InvalidResponse or Runtime. */
@@ -1875,7 +1937,9 @@ export type KnownCapability =
   | "messages.sendResource"
   | "comments.userHistory"
   | "accounts.likes.page"
-  | "social.likeResource";
+  | "social.likeResource"
+  | "tracks.resolveDrm"
+  | "tracks.exchangeLicense";
 
 export interface Tracks {
   /** Search audio tracks using item-offset pagination. Capability: tracks.search. Tag: 2. Undeclared or unimplemented capabilities fail with Unsupported. */
@@ -1886,6 +1950,10 @@ export interface Tracks {
   getMany(request: BatchRequest, context: Context): Promise<TrackBatch>;
   /** Resolve playable audio with the actual quality and explicit resource headers, not the account credential. Capability: tracks.resolve. Tag: 5. Undeclared or unimplemented capabilities fail with Unsupported. */
   resolve(request: ResolveRequest, context: Context): Promise<MediaResource>;
+  /** Resolve audio for one of the host-supported DRM key systems and return its resource plus license descriptor; unsupported key systems must fail explicitly. Capability: tracks.resolveDrm. Tag: 168. Undeclared or unimplemented capabilities fail with Unsupported. */
+  resolveDrm(request: DrmResolveRequest, context: Context): Promise<ResolvedMedia>;
+  /** Exchange one host CDM challenge for a provider license. Treat challenge and license bytes as sensitive and never log or persist them. Capability: tracks.exchangeLicense. Tag: 169. Undeclared or unimplemented capabilities fail with Unsupported. */
+  exchangeLicense(request: LicenseRequest, context: Context): Promise<LicenseResponse>;
 }
 
 export interface LyricsProvider {

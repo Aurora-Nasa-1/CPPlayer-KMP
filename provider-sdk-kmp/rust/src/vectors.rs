@@ -46,25 +46,49 @@ fn vector_3_media_resource() {
 }
 
 #[test]
-fn vector_4_batch_request() {
+fn vector_4_drm_descriptor() {
+    let value: DrmDescriptor = DrmDescriptor { key_system: "widevine".to_string(), license_url: Some("https://play.itunes.apple.com/WebObjects/MZPlay.woa/wa/acquireWebPlaybackLicense".to_string()), headers: vec![Header { name: "X-License-Token".to_string(), value: "opaque".to_string() }], scheme_id_uri: Some("urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed".to_string()), init_data: Some(vec![0, 1, 2, 0xffu8]), key_id: Some(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]), key_uri: Some("data:application/octet-stream;base64,AQID".to_string()), server_certificate: None, persistent: false };
+    round_trip(value, "080000007769646576696e65015000000068747470733a2f2f706c61792e6974756e65732e6170706c652e636f6d2f5765624f626a656374732f4d5a506c61792e776f612f77612f61637175697265576562506c61796261636b4c6963656e7365010000000f000000582d4c6963656e73652d546f6b656e060000006f7061717565012d00000075726e3a757569643a65646566386261392d373964362d346163652d613363382d3237646364353164323165640104000000000102ff0110000000000102030405060708090a0b0c0d0e0f0129000000646174613a6170706c69636174696f6e2f6f637465742d73747265616d3b6261736536342c415149440000", DrmDescriptor::write, DrmDescriptor::read);
+}
+
+#[test]
+fn vector_5_resolved_media() {
+    let value: ResolvedMedia = ResolvedMedia { resource: MediaResource { url: "https://cdn.example.test/track.m3u8".to_string(), actual_quality: "lossless".to_string(), headers: vec![], expires_at_epoch_ms: None, format: Some("hls".to_string()), bitrate: Some(1411200i32), size_bytes: None }, drm: None };
+    round_trip(value, "2300000068747470733a2f2f63646e2e6578616d706c652e746573742f747261636b2e6d337538080000006c6f73736c65737300000000000103000000686c7301808815000000", ResolvedMedia::write, ResolvedMedia::read);
+}
+
+#[test]
+fn vector_6_license_request() {
+    let value: LicenseRequest = LicenseRequest { id: "269573303".to_string(), key_system: "widevine".to_string(), challenge: vec![0, 1, 2, 0xffu8], license_url: None, headers: vec![], key_uri: Some("data:application/octet-stream;base64,AQID".to_string()) };
+    round_trip(value, "09000000323639353733333033080000007769646576696e6504000000000102ff00000000000129000000646174613a6170706c69636174696f6e2f6f637465742d73747265616d3b6261736536342c41514944", LicenseRequest::write, LicenseRequest::read);
+}
+
+#[test]
+fn vector_7_license_response() {
+    let value: LicenseResponse = LicenseResponse { license: vec![0, 127, 0x80u8, 0xffu8] };
+    round_trip(value, "04000000007f80ff", LicenseResponse::write, LicenseResponse::read);
+}
+
+#[test]
+fn vector_8_batch_request() {
     let value: BatchRequest = BatchRequest { ids: vec!["A".to_string(), "a".to_string(), "A".to_string()] };
     round_trip(value, "03000000010000004101000000610100000041", BatchRequest::write, BatchRequest::read);
 }
 
 #[test]
-fn vector_5_bytes() {
+fn vector_9_bytes() {
     let value: Bytes = Bytes { value: vec![0, 127, 0x80u8, 0xffu8] };
     round_trip(value, "04000000007f80ff", Bytes::write, Bytes::read);
 }
 
 #[test]
-fn vector_6_social_event() {
+fn vector_10_social_event() {
     let value: SocialEvent = SocialEvent { id: "event-1".to_string(), user: SocialUser { id: "u1".to_string(), nickname: "User".to_string(), avatar_url: None }, text: "text".to_string(), published_at_epoch_ms: 1i64, resource_id: None, resource_type: None, resource_title: None, resource_cover_url: None, resource_subtitle: None, image_urls: vec![], liked: false, liked_count: 0i32, comment_count: 0i32, forward_count: 0i32, forwarded_from: None, location: None };
     round_trip(value, "070000006576656e742d3102000000753104000000557365720004000000746578740100000000000000000000000000000000000000000000000000000000000000", SocialEvent::write, SocialEvent::read);
 }
 
 #[test]
-fn vector_7_capabilities() {
+fn vector_11_capabilities() {
     let value: Capabilities = Capabilities { supported: vec!["tracks.search".to_string(), "tracks.resolve".to_string()] };
     round_trip(value, "020000000d000000747261636b732e7365617263680e000000747261636b732e7265736f6c7665", Capabilities::write, Capabilities::read);
 }

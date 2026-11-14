@@ -27,6 +27,11 @@ export default {
     "ResolveRequest": { "id": "string", "quality": "string" },
     "Header": { "name": "string", "value": "string" },
     "MediaResource": { "url": "string", "actualQuality": "string", "headers": "Header[]", "expiresAtEpochMs": "long?", "format": "string?", "bitrate": "int?", "sizeBytes": "long?" },
+    "DrmDescriptor": { "keySystem": "string", "licenseUrl": "string?", "headers": "Header[]", "schemeIdUri": "string?", "initData": "bytes?", "keyId": "bytes?", "keyUri": "string?", "serverCertificate": "bytes?", "persistent": "bool" },
+    "DrmResolveRequest": { "id": "string", "quality": "string", "keySystems": "string[]" },
+    "ResolvedMedia": { "resource": "MediaResource", "drm": "DrmDescriptor?" },
+    "LicenseRequest": { "id": "string", "keySystem": "string", "challenge": "bytes", "licenseUrl": "string?", "headers": "Header[]", "keyUri": "string?" },
+    "LicenseResponse": { "license": "bytes" },
     "Failure": { "category": "string", "message": "string" },
     "TrackOutcome": { "id": "string", "track": "Track?", "failure": "Failure?" },
     "TrackBatch": { "items": "TrackOutcome[]" },
@@ -345,6 +350,8 @@ export default {
     "sendResourceMessage": { "tag": 164, "request": "ResourceMessageRequest", "response": "MutationResult", "group": "Notifications", "capability": "messages.sendResource", "extended": true },
     "getUserCommentHistory": { "tag": 165, "request": "UserCursorRequest", "response": "CommentPage", "group": "Notifications", "capability": "comments.userHistory", "extended": true },
     "getLikeListPage": { "tag": 166, "request": "PagedIdRequest", "response": "IdPage", "group": "Accounts", "capability": "accounts.likes.page", "extended": true },
-    "likeResource": { "tag": 167, "request": "ResourceLikeRequest", "response": "MutationResult", "group": "SocialOperations", "capability": "social.likeResource", "extended": true }
+    "likeResource": { "tag": 167, "request": "ResourceLikeRequest", "response": "MutationResult", "group": "SocialOperations", "capability": "social.likeResource", "extended": true },
+    "resolveDrm": { "tag": 168, "request": "DrmResolveRequest", "response": "ResolvedMedia", "group": "Tracks", "capability": "tracks.resolveDrm", "extended": true },
+    "exchangeLicense": { "tag": 169, "request": "LicenseRequest", "response": "LicenseResponse", "group": "Tracks", "capability": "tracks.exchangeLicense", "extended": true }
   }
 };

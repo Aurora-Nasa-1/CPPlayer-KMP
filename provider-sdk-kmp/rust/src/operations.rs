@@ -175,6 +175,8 @@ pub mod tags {
     pub const GET_USER_COMMENT_HISTORY: i32 = 165;
     pub const GET_LIKE_LIST_PAGE: i32 = 166;
     pub const LIKE_RESOURCE: i32 = 167;
+    pub const RESOLVE_DRM: i32 = 168;
+    pub const EXCHANGE_LICENSE: i32 = 169;
 }
 
 pub mod Capability {
@@ -340,6 +342,8 @@ pub mod Capability {
     pub const GET_USER_COMMENT_HISTORY: &'static str = "comments.userHistory";
     pub const GET_LIKE_LIST_PAGE: &'static str = "accounts.likes.page";
     pub const LIKE_RESOURCE: &'static str = "social.likeResource";
+    pub const RESOLVE_DRM: &'static str = "tracks.resolveDrm";
+    pub const EXCHANGE_LICENSE: &'static str = "tracks.exchangeLicense";
 }
 
 /// Every capability name this contract version defines. Declaring a capability
@@ -507,6 +511,8 @@ pub const ALL_CAPABILITIES: &[&str] = &[
     "comments.userHistory",
     "accounts.likes.page",
     "social.likeResource",
+    "tracks.resolveDrm",
+    "tracks.exchangeLicense",
 ];
 
 pub fn all_capabilities() -> Vec<&'static str> {
@@ -1495,6 +1501,18 @@ pub trait MusicProvider: Send {
 
     /// Set the current account's liked state for one typed social resource, including an event. Capability: `social.likeResource`. Tag: 167.
     fn like_resource(&mut self, request: ResourceLikeRequest, context: &ProviderContext) -> ProviderResult<MutationResult> {
+        let _ = (request, context);
+        unsupported()
+    }
+
+    /// Resolve audio for one of the host-supported DRM key systems and return its resource plus license descriptor; unsupported key systems must fail explicitly. Capability: `tracks.resolveDrm`. Tag: 168.
+    fn resolve_drm(&mut self, request: DrmResolveRequest, context: &ProviderContext) -> ProviderResult<ResolvedMedia> {
+        let _ = (request, context);
+        unsupported()
+    }
+
+    /// Exchange one host CDM challenge for a provider license. Treat challenge and license bytes as sensitive and never log or persist them. Capability: `tracks.exchangeLicense`. Tag: 169.
+    fn exchange_license(&mut self, request: LicenseRequest, context: &ProviderContext) -> ProviderResult<LicenseResponse> {
         let _ = (request, context);
         unsupported()
     }
@@ -2841,6 +2859,22 @@ pub fn dispatch(
             }
             let value = provider.like_resource(request, context)?;
             encode(&value, MutationResult::write)
+        }
+        168 => {
+            let request = decode(&mut r, DrmResolveRequest::read)?;
+            if !supported(provider, context, "tracks.resolveDrm") {
+                return unsupported();
+            }
+            let value = provider.resolve_drm(request, context)?;
+            encode(&value, ResolvedMedia::write)
+        }
+        169 => {
+            let request = decode(&mut r, LicenseRequest::read)?;
+            if !supported(provider, context, "tracks.exchangeLicense") {
+                return unsupported();
+            }
+            let value = provider.exchange_license(request, context)?;
+            encode(&value, LicenseResponse::write)
         }
         _ => Err(Failure::new(FailureCategory::Unsupported, format!("Unknown operation {operation}"))),
     };

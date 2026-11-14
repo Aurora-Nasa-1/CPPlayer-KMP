@@ -39,6 +39,34 @@ class WireVectorTest {
     }
 
     @Test
+    fun `DrmDescriptor matches rust vectors`() {
+        val value = DrmDescriptor(keySystem = "widevine", licenseUrl = "https://play.itunes.apple.com/WebObjects/MZPlay.woa/wa/acquireWebPlaybackLicense", headers = listOf(Header(name = "X-License-Token", value = "opaque")), schemeIdUri = "urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed", initData = byteArrayOf(0, 1, 2, -1), keyId = byteArrayOf(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15), keyUri = "data:application/octet-stream;base64,AQID", serverCertificate = null, persistent = false)
+        val bytes = WireWriter().also { value.write(it) }.finish()
+        assertEquals("080000007769646576696e65015000000068747470733a2f2f706c61792e6974756e65732e6170706c652e636f6d2f5765624f626a656374732f4d5a506c61792e776f612f77612f61637175697265576562506c61796261636b4c6963656e7365010000000f000000582d4c6963656e73652d546f6b656e060000006f7061717565012d00000075726e3a757569643a65646566386261392d373964362d346163652d613363382d3237646364353164323165640104000000000102ff0110000000000102030405060708090a0b0c0d0e0f0129000000646174613a6170706c69636174696f6e2f6f637465742d73747265616d3b6261736536342c415149440000", bytes.joinToString("") { "%02x".format(it) })
+    }
+
+    @Test
+    fun `ResolvedMedia matches rust vectors`() {
+        val value = ResolvedMedia(resource = MediaResource(url = "https://cdn.example.test/track.m3u8", actualQuality = "lossless", headers = listOf(), expiresAtEpochMs = null, format = "hls", bitrate = 1411200, sizeBytes = null), drm = null)
+        val bytes = WireWriter().also { value.write(it) }.finish()
+        assertEquals("2300000068747470733a2f2f63646e2e6578616d706c652e746573742f747261636b2e6d337538080000006c6f73736c65737300000000000103000000686c7301808815000000", bytes.joinToString("") { "%02x".format(it) })
+    }
+
+    @Test
+    fun `LicenseRequest matches rust vectors`() {
+        val value = LicenseRequest(id = "269573303", keySystem = "widevine", challenge = byteArrayOf(0, 1, 2, -1), licenseUrl = null, headers = listOf(), keyUri = "data:application/octet-stream;base64,AQID")
+        val bytes = WireWriter().also { value.write(it) }.finish()
+        assertEquals("09000000323639353733333033080000007769646576696e6504000000000102ff00000000000129000000646174613a6170706c69636174696f6e2f6f637465742d73747265616d3b6261736536342c41514944", bytes.joinToString("") { "%02x".format(it) })
+    }
+
+    @Test
+    fun `LicenseResponse matches rust vectors`() {
+        val value = LicenseResponse(license = byteArrayOf(0, 127, -128, -1))
+        val bytes = WireWriter().also { value.write(it) }.finish()
+        assertEquals("04000000007f80ff", bytes.joinToString("") { "%02x".format(it) })
+    }
+
+    @Test
     fun `BatchRequest matches rust vectors`() {
         val value = BatchRequest(ids = listOf("A", "a", "A"))
         val bytes = WireWriter().also { value.write(it) }.finish()

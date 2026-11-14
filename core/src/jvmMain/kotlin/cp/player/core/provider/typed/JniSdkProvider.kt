@@ -16,6 +16,7 @@ fun jniSdkProvider(
     capabilities: List<String> = emptyList(),
     settingsSchema: List<ProviderSettingItemSchema>? = null,
     sdkAllowedOrigins: Set<String> = emptySet(),
+    defaultCountryCode: String? = null,
     openSession: (ProviderContext) -> JniProviderSession,
 ): SdkBackendProvider = SdkBackendProvider(
     id = id, name = name, version = version, type = ProviderType.JNI,
@@ -23,4 +24,5 @@ fun jniSdkProvider(
     // 单会话排队会把上游往返叠加成「平均 1s+」。池化只放宽会话数，单会话仍串行。
     factory = { context -> JniMusicProvider.pooled { openSession(context) } },
     capabilities = capabilities, settingsSchema = settingsSchema, sdkAllowedOrigins = sdkAllowedOrigins,
+    defaultCountryCode = defaultCountryCode,
 )

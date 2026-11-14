@@ -44,6 +44,14 @@ interface BackendProvider {
     val loginMethods: List<String>? get() = null
 
     /**
+     * Provider-declared calling-country code for phone login and captcha send.
+     *
+     * When non-null, the host hides the country-code input and uses this value
+     * instead of any per-request value. Null keeps the manual input visible.
+     */
+    val defaultCountryCode: String? get() = null
+
+    /**
      * 音源声称支持的能力（见 [ProviderCapability]），可选。
      *
      * UI labels only. The module loader maps supported SDK methods via

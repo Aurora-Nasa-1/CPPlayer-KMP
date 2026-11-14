@@ -118,7 +118,53 @@ let models = `${banner}#![allow(unused_imports, clippy::all, non_snake_case)]
 use crate::wire::{WireError, WireReader, WireWriter};
 
 `;
+// Native v1's AuthActionRequest positional layout predates the typed countryCode
+// field. Keep the 12-slot layout and carry the value through the auth-only
+// extraJson slot so older hosts and providers stay wire-compatible.
+if (Object.hasOwn(schema.records, "AuthActionRequest")) {
+  models += `/// Map the typed SDK field through Native v1's existing auth-only extraJson slot.
+/// The host's NativeWireCodec performs the same bridge to preserve positional compatibility.
+fn native_auth_extra_json(extra_json: Option<&str>, country_code: Option<&str>) -> Option<String> {
+    let Some(country_code) = country_code else {
+        return extra_json.map(String::from);
+    };
+    let mut object = extra_json
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    object.insert(
+        "countryCode".to_string(),
+        serde_json::Value::String(country_code.to_string()),
+    );
+    Some(serde_json::Value::Object(object).to_string())
+}
+
+/// Decode the Native v1 bridge into the typed request field at the wire boundary.
+fn country_code_from_native_extra_json(
+    extra_json: Option<&str>,
+) -> Result<Option<String>, WireError> {
+    let Some(raw) = extra_json else {
+        return Ok(None);
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return Ok(None);
+    };
+    let Some(value) = value
+        .get("countryCode")
+        .or_else(|| value.get("countrycode"))
+    else {
+        return Ok(None);
+    };
+    value
+        .as_str()
+        .map(|code| Some(code.to_string()))
+        .ok_or(WireError::InvalidLength)
+}
+
+`;
+}
 for (const [name, fields] of Object.entries(schema.records)) {
+  const isAuthAction = name === "AuthActionRequest";
   models += doc(recordDocs[name]);
   models += "#[derive(Debug, Clone, PartialEq, Default)]\n";
   models += `pub struct ${rustRecord(name)} {\n`;
@@ -129,14 +175,37 @@ for (const [name, fields] of Object.entries(schema.records)) {
   models += "}\n\n";
   models += `impl ${rustRecord(name)} {\n`;
   models += "    pub fn write(&self, w: &mut WireWriter) -> Result<(), WireError> {\n";
+  if (isAuthAction) {
+    models += "        // Keep the Native v1 positional layout stable; the host sends typed\n";
+    models += "        // countryCode through this auth-only bridge until the wire version changes.\n";
+    models += "        let extra_json =\n";
+    models += `            native_auth_extra_json(self.${rustField("extraJson")}.as_deref(), self.${rustField("countryCode")}.as_deref());\n`;
+  }
   for (const [field, type] of Object.entries(fields)) {
+    if (isAuthAction && field === "countryCode") continue;
+    if (isAuthAction && field === "extraJson") {
+      models += "        w.optional(extra_json.as_deref(), |w, s| w.string(s))?;\n";
+      continue;
+    }
     models += `        ${writeExpr(type, `self.${rustField(field)}`, `${name}.${field}`)}\n`;
   }
   models += "        Ok(())\n    }\n\n";
   models += "    pub fn read(r: &mut WireReader<'_>) -> Result<Self, WireError> {\n";
-  models += "        Ok(Self {\n";
-  for (const [field, type] of Object.entries(fields)) {
-    models += `            ${rustField(field)}: ${readExpr(type, `${name}.${field}`)},\n`;
+  if (isAuthAction) {
+    for (const [field, type] of Object.entries(fields)) {
+      if (field === "countryCode") continue;
+      models += `        let ${rustField(field)} = ${readExpr(type, `${name}.${field}`)};\n`;
+    }
+    models += `        let ${rustField("countryCode")} = country_code_from_native_extra_json(${rustField("extraJson")}.as_deref())?;\n`;
+    models += "        Ok(Self {\n";
+    for (const field of Object.keys(fields)) {
+      models += `            ${rustField(field)}: ${rustField(field)},\n`;
+    }
+  } else {
+    models += "        Ok(Self {\n";
+    for (const [field, type] of Object.entries(fields)) {
+      models += `            ${rustField(field)}: ${readExpr(type, `${name}.${field}`)},\n`;
+    }
   }
   models += "        })\n    }\n}\n\n";
 }
@@ -363,6 +432,54 @@ const vectors = [
       bitrate: 1411200,
       sizeBytes: null,
     },
+  },
+  {
+    name: "DrmDescriptor",
+    type: "DrmDescriptor",
+    value: {
+      keySystem: "widevine",
+      licenseUrl: "https://play.itunes.apple.com/WebObjects/MZPlay.woa/wa/acquireWebPlaybackLicense",
+      headers: [{ name: "X-License-Token", value: "opaque" }],
+      schemeIdUri: "urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed",
+      initData: [0, 1, 2, 255],
+      keyId: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+      keyUri: "data:application/octet-stream;base64,AQID",
+      serverCertificate: null,
+      persistent: false,
+    },
+  },
+  {
+    name: "ResolvedMedia",
+    type: "ResolvedMedia",
+    value: {
+      resource: {
+        url: "https://cdn.example.test/track.m3u8",
+        actualQuality: "lossless",
+        headers: [],
+        expiresAtEpochMs: null,
+        format: "hls",
+        bitrate: 1411200,
+        sizeBytes: null,
+      },
+      drm: null,
+    },
+  },
+  {
+    name: "LicenseRequest",
+    type: "LicenseRequest",
+    value: {
+      id: "269573303",
+      keySystem: "widevine",
+      challenge: [0, 1, 2, 255],
+      licenseUrl: null,
+      headers: [],
+      keyUri: "data:application/octet-stream;base64,AQID",
+    },
+  },
+  {
+    name: "LicenseResponse",
+    type: "LicenseResponse",
+    value: { license: [0, 127, 128, 255] },
   },
   {
     name: "BatchRequest",

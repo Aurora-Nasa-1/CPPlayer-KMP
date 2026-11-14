@@ -34,6 +34,7 @@ actual object ProviderFactory {
             settingsSchema = manifest.settingsSchema,
             sdkAllowedOrigins = manifest.sdkOrigins.toSet(),
             capabilities = manifest.knownCapabilities,
+            defaultCountryCode = manifest.resolvedDefaultCountryCode,
         )
     }
 }

@@ -13,6 +13,9 @@ object ProviderCapability {
     /** 音频播放串流。 */
     const val PLAYBACK = "playback"
 
+    /** DRM 加密流播放（需要宿主平台提供 CDM）。 */
+    const val DRM_PLAYBACK = "drmPlayback"
+
     /** 扫码登录。 */
     const val QR_LOGIN = "qrLogin"
 
@@ -57,13 +60,13 @@ object ProviderCapability {
 
     /** 全部已知能力，供 UI 按稳定顺序展示。 */
     val ALL: List<String> = listOf(
-        SEARCH, PLAYBACK, QR_LOGIN, WEBVIEW_LOGIN, WORD_SYNCED_LYRICS, COMMENTS, CLOUD_DRIVE, RECOMMEND,
+        SEARCH, PLAYBACK, DRM_PLAYBACK, QR_LOGIN, WEBVIEW_LOGIN, WORD_SYNCED_LYRICS, COMMENTS, CLOUD_DRIVE, RECOMMEND,
         LYRICS_SEARCH, CHARTS, USER_PLAYLISTS, ARTIST_EXPLORER, ALBUM_EXPLORER, DIRECTORY_BROWSER,
         SOCIAL_FEED, MESSAGES,
     )
 
     val SDK_SUPPORTED: Set<String> = setOf(
-        SEARCH, PLAYBACK, QR_LOGIN, WORD_SYNCED_LYRICS, COMMENTS, CLOUD_DRIVE, RECOMMEND,
+        SEARCH, PLAYBACK, DRM_PLAYBACK, QR_LOGIN, WORD_SYNCED_LYRICS, COMMENTS, CLOUD_DRIVE, RECOMMEND,
         LYRICS_SEARCH, CHARTS, USER_PLAYLISTS, ARTIST_EXPLORER, ALBUM_EXPLORER,
         SOCIAL_FEED, MESSAGES,
     )
@@ -76,6 +79,10 @@ object ProviderCapability {
                 cp.player.sdk.Capability.SEARCH_ALBUMS, cp.player.sdk.Capability.SEARCH_ARTISTS,
             ).any { it in declared }) add(SEARCH)
             if (PLAYBACK in declared || cp.player.sdk.Capability.RESOLVE in declared) add(PLAYBACK)
+            if (DRM_PLAYBACK in declared || listOf(
+                cp.player.sdk.ExtendedCapability.RESOLVEDRM,
+                cp.player.sdk.ExtendedCapability.EXCHANGELICENSE,
+            ).all { it in declared }) add(DRM_PLAYBACK)
             if (QR_LOGIN in declared || cp.player.sdk.Capability.AUTH_ACTIONS in declared) add(QR_LOGIN)
             if (WORD_SYNCED_LYRICS in declared) add(WORD_SYNCED_LYRICS)
             if (COMMENTS in declared || listOf(
@@ -184,6 +191,14 @@ data class ModuleManifest(
      */
     val loginMethods: List<String>? = null,
     /**
+     * Provider-declared calling-country code for phone login and captcha send.
+     *
+     * When present, the host hides the country-code input and uses this value for
+     * every phone action. 1..4 ASCII digits, without '+'. Blank is equivalent to absent.
+     * The NetEase provider declares "86" because its web login is fixed to that region.
+     */
+    val defaultCountryCode: String? = null,
+    /**
      * @deprecated 压缩包内声明并校验自身 zip 的 sha256 逻辑自相矛盾且无法实现
      *
      * （修改 manifest.json 写入哈希后重新打包必然改变 zip 的 sha256）。
@@ -235,6 +250,10 @@ data class ModuleManifest(
     val resolvedApiVersionTag: String?
         get() = apiVersionTag?.trim()?.takeIf { it.isNotEmpty() }
 
+    /** Trimmed provider country code; blank is equivalent to absent. */
+    val resolvedDefaultCountryCode: String?
+        get() = defaultCountryCode?.trim()?.takeIf { it.isNotEmpty() }
+
     /**
      * Contract, runtime, identity, entry path and host-version validation.
      */
@@ -252,6 +271,8 @@ data class ModuleManifest(
             isNative && nativeFactoryClass != null &&
                 !Regex("[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)+").matches(nativeFactoryClass) ->
                 "Invalid native SDK adapter class name"
+            resolvedDefaultCountryCode?.let { !Regex("[0-9]{1,4}").matches(it) } == true ->
+                "Invalid provider defaultCountryCode"
             entryPoint.isBlank() || entryPoint.startsWith("/") || '\\' in entryPoint ||
                 ':' in entryPoint || entryPoint.split('/').any { it.isEmpty() || it == "." || it == ".." } ->
                 "Provider entryPoint must be a relative path inside the package"

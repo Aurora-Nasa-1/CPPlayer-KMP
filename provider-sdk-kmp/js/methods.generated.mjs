@@ -161,5 +161,7 @@ export const providerMethods = Object.freeze({
   "messages.sendResource": "sendResourceMessage",
   "comments.userHistory": "getUserCommentHistory",
   "accounts.likes.page": "getLikeListPage",
-  "social.likeResource": "likeResource"
+  "social.likeResource": "likeResource",
+  "tracks.resolveDrm": "resolveDrm",
+  "tracks.exchangeLicense": "exchangeLicense"
 });

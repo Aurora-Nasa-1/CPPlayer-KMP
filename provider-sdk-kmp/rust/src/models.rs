@@ -3,6 +3,45 @@
 
 use crate::wire::{WireError, WireReader, WireWriter};
 
+/// Map the typed SDK field through Native v1's existing auth-only extraJson slot.
+/// The host's NativeWireCodec performs the same bridge to preserve positional compatibility.
+fn native_auth_extra_json(extra_json: Option<&str>, country_code: Option<&str>) -> Option<String> {
+    let Some(country_code) = country_code else {
+        return extra_json.map(String::from);
+    };
+    let mut object = extra_json
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    object.insert(
+        "countryCode".to_string(),
+        serde_json::Value::String(country_code.to_string()),
+    );
+    Some(serde_json::Value::Object(object).to_string())
+}
+
+/// Decode the Native v1 bridge into the typed request field at the wire boundary.
+fn country_code_from_native_extra_json(
+    extra_json: Option<&str>,
+) -> Result<Option<String>, WireError> {
+    let Some(raw) = extra_json else {
+        return Ok(None);
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return Ok(None);
+    };
+    let Some(value) = value
+        .get("countryCode")
+        .or_else(|| value.get("countrycode"))
+    else {
+        return Ok(None);
+    };
+    value
+        .as_str()
+        .map(|code| Some(code.to_string()))
+        .ok_or(WireError::InvalidLength)
+}
+
 /// A track/video creator with an optional provider-local identity.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Artist {
@@ -211,6 +250,170 @@ impl MediaResource {
             format: r.optional(|r| r.string())?,
             bitrate: r.optional(|r| r.int())?,
             size_bytes: r.optional(|r| r.long())?,
+        })
+    }
+}
+
+/// DRM signaling and license acquisition metadata; never contains content keys or reusable license bytes.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct DrmDescriptor {
+    /// Canonical host DRM identifier: widevine, playready, fairplay or clearkey.
+    pub key_system: String,
+    /// Absolute provider license endpoint when direct HTTP exchange is possible; null when exchangeLicense is required.
+    pub license_url: Option<String>,
+    /// Explicit headers; no implicit account Cookie or Authorization forwarding.
+    pub headers: Vec<Header>,
+    /// DRM signaling scheme from the media manifest, such as an HLS KEYFORMAT or DASH schemeIdUri.
+    pub scheme_id_uri: Option<String>,
+    /// Opaque initialization data, at most 1048576 bytes; never a content key.
+    pub init_data: Option<Vec<u8>>,
+    /// Optional content key identifier; never key material.
+    pub key_id: Option<Vec<u8>>,
+    /// Provider-specific key reference used during license exchange, such as an Apple skd URI or data URI.
+    pub key_uri: Option<String>,
+    /// Optional certificate bytes, at most 1048576; never a private device key.
+    pub server_certificate: Option<Vec<u8>>,
+    /// Whether the provider supports a persistent license/session; the host may reject it when unsupported.
+    pub persistent: bool,
+}
+
+impl DrmDescriptor {
+    pub fn write(&self, w: &mut WireWriter) -> Result<(), WireError> {
+        w.string(&self.key_system)?;
+        w.optional(self.license_url.as_deref(), |w, value| w.string(value))?;
+        w.list(&self.headers, |w, item| (item).write(w))?;
+        w.optional(self.scheme_id_uri.as_deref(), |w, value| w.string(value))?;
+        w.optional(self.init_data.as_deref(), |w, value| w.bytes(value))?;
+        w.optional(self.key_id.as_deref(), |w, value| w.bytes(value))?;
+        w.optional(self.key_uri.as_deref(), |w, value| w.string(value))?;
+        w.optional(self.server_certificate.as_deref(), |w, value| w.bytes(value))?;
+        w.bool(*&self.persistent)?;
+        Ok(())
+    }
+
+    pub fn read(r: &mut WireReader<'_>) -> Result<Self, WireError> {
+        Ok(Self {
+            key_system: r.string()?,
+            license_url: r.optional(|r| r.string())?,
+            headers: r.list(|r| Header::read(r))?,
+            scheme_id_uri: r.optional(|r| r.string())?,
+            init_data: r.optional(|r| r.bytes())?,
+            key_id: r.optional(|r| r.bytes())?,
+            key_uri: r.optional(|r| r.string())?,
+            server_certificate: r.optional(|r| r.bytes())?,
+            persistent: r.bool()?,
+        })
+    }
+}
+
+/// DRM-aware audio resolution input. keySystems lists the host-supported identifiers in preference order.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct DrmResolveRequest {
+    /// Opaque, case-sensitive provider-local identity; preserve leading zeros and punctuation.
+    pub id: String,
+    /// Provider-defined requested quality key; do not report it as actual quality without verification.
+    pub quality: String,
+    /// 1..8 distinct host-supported key systems; the provider must not return a descriptor outside this list.
+    pub key_systems: Vec<String>,
+}
+
+impl DrmResolveRequest {
+    pub fn write(&self, w: &mut WireWriter) -> Result<(), WireError> {
+        w.string(&self.id)?;
+        w.string(&self.quality)?;
+        w.list(&self.key_systems, |w, item| w.string(item))?;
+        Ok(())
+    }
+
+    pub fn read(r: &mut WireReader<'_>) -> Result<Self, WireError> {
+        Ok(Self {
+            id: r.string()?,
+            quality: r.string()?,
+            key_systems: r.list(|r| r.string())?,
+        })
+    }
+}
+
+/// One resolved media resource and its optional DRM descriptor; a null descriptor means the resource is clear.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ResolvedMedia {
+    /// The resolved media resource.
+    pub resource: MediaResource,
+    /// Null only when the resource is clear; a protected resource requires a matching descriptor.
+    pub drm: Option<DrmDescriptor>,
+}
+
+impl ResolvedMedia {
+    pub fn write(&self, w: &mut WireWriter) -> Result<(), WireError> {
+        (&self.resource).write(w)?;
+        w.optional(self.drm.as_ref(), |w, value| (value).write(w))?;
+        Ok(())
+    }
+
+    pub fn read(r: &mut WireReader<'_>) -> Result<Self, WireError> {
+        Ok(Self {
+            resource: MediaResource::read(r)?,
+            drm: r.optional(|r| DrmDescriptor::read(r))?,
+        })
+    }
+}
+
+/// One host CDM challenge plus the opaque provider context needed to exchange it for a license.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct LicenseRequest {
+    /// Opaque, case-sensitive provider-local identity; preserve leading zeros and punctuation.
+    pub id: String,
+    /// Canonical host DRM identifier: widevine, playready, fairplay or clearkey.
+    pub key_system: String,
+    /// Raw host CDM challenge bytes, at most 1048576; the provider performs any required encoding.
+    pub challenge: Vec<u8>,
+    /// Absolute provider license endpoint when direct HTTP exchange is possible; null when exchangeLicense is required.
+    pub license_url: Option<String>,
+    /// Explicit headers; no implicit account Cookie or Authorization forwarding.
+    pub headers: Vec<Header>,
+    /// Provider-specific key reference used during license exchange, such as an Apple skd URI or data URI.
+    pub key_uri: Option<String>,
+}
+
+impl LicenseRequest {
+    pub fn write(&self, w: &mut WireWriter) -> Result<(), WireError> {
+        w.string(&self.id)?;
+        w.string(&self.key_system)?;
+        w.bytes(&self.challenge)?;
+        w.optional(self.license_url.as_deref(), |w, value| w.string(value))?;
+        w.list(&self.headers, |w, item| (item).write(w))?;
+        w.optional(self.key_uri.as_deref(), |w, value| w.string(value))?;
+        Ok(())
+    }
+
+    pub fn read(r: &mut WireReader<'_>) -> Result<Self, WireError> {
+        Ok(Self {
+            id: r.string()?,
+            key_system: r.string()?,
+            challenge: r.bytes()?,
+            license_url: r.optional(|r| r.string())?,
+            headers: r.list(|r| Header::read(r))?,
+            key_uri: r.optional(|r| r.string())?,
+        })
+    }
+}
+
+/// Opaque license bytes returned by the provider; never log, cache or expose them to UI code.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct LicenseResponse {
+    /// Opaque license response bytes; never a content key and never logged.
+    pub license: Vec<u8>,
+}
+
+impl LicenseResponse {
+    pub fn write(&self, w: &mut WireWriter) -> Result<(), WireError> {
+        w.bytes(&self.license)?;
+        Ok(())
+    }
+
+    pub fn read(r: &mut WireReader<'_>) -> Result<Self, WireError> {
+        Ok(Self {
+            license: r.bytes()?,
         })
     }
 }
@@ -1472,6 +1675,10 @@ pub struct AuthActionRequest {
 
 impl AuthActionRequest {
     pub fn write(&self, w: &mut WireWriter) -> Result<(), WireError> {
+        // Keep the Native v1 positional layout stable; the host sends typed
+        // countryCode through this auth-only bridge until the wire version changes.
+        let extra_json =
+            native_auth_extra_json(self.extra_json.as_deref(), self.country_code.as_deref());
         w.string(&self.action)?;
         w.optional(self.email.as_deref(), |w, value| w.string(value))?;
         w.optional(self.phone.as_deref(), |w, value| w.string(value))?;
@@ -1483,26 +1690,38 @@ impl AuthActionRequest {
         w.optional(self.key.as_deref(), |w, value| w.string(value))?;
         w.optional(self.session_id.as_deref(), |w, value| w.string(value))?;
         w.optional(self.verify_id.as_deref(), |w, value| w.string(value))?;
-        w.optional(self.extra_json.as_deref(), |w, value| w.string(value))?;
-        w.optional(self.country_code.as_deref(), |w, value| w.string(value))?;
+        w.optional(extra_json.as_deref(), |w, s| w.string(s))?;
         Ok(())
     }
 
     pub fn read(r: &mut WireReader<'_>) -> Result<Self, WireError> {
+        let action = r.string()?;
+        let email = r.optional(|r| r.string())?;
+        let phone = r.optional(|r| r.string())?;
+        let password = r.optional(|r| r.string())?;
+        let captcha = r.optional(|r| r.string())?;
+        let md5 = r.bool()?;
+        let image_captcha = r.optional(|r| r.string())?;
+        let challenge_cookie = r.optional(|r| r.string())?;
+        let key = r.optional(|r| r.string())?;
+        let session_id = r.optional(|r| r.string())?;
+        let verify_id = r.optional(|r| r.string())?;
+        let extra_json = r.optional(|r| r.string())?;
+        let country_code = country_code_from_native_extra_json(extra_json.as_deref())?;
         Ok(Self {
-            action: r.string()?,
-            email: r.optional(|r| r.string())?,
-            phone: r.optional(|r| r.string())?,
-            password: r.optional(|r| r.string())?,
-            captcha: r.optional(|r| r.string())?,
-            md5: r.bool()?,
-            image_captcha: r.optional(|r| r.string())?,
-            challenge_cookie: r.optional(|r| r.string())?,
-            key: r.optional(|r| r.string())?,
-            session_id: r.optional(|r| r.string())?,
-            verify_id: r.optional(|r| r.string())?,
-            extra_json: r.optional(|r| r.string())?,
-            country_code: r.optional(|r| r.string())?,
+            action: action,
+            email: email,
+            phone: phone,
+            password: password,
+            captcha: captcha,
+            md5: md5,
+            image_captcha: image_captcha,
+            challenge_cookie: challenge_cookie,
+            key: key,
+            session_id: session_id,
+            verify_id: verify_id,
+            extra_json: extra_json,
+            country_code: country_code,
         })
     }
 }

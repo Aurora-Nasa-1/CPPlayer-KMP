@@ -219,4 +219,8 @@ abstract class ExtendedJsProviderMethods : MusicProvider {
         extendedBusiness("getLikeListPage", request.values(), IdPage::fromValues)
     override suspend fun likeResource(request: ResourceLikeRequest): MutationResult =
         extendedBusiness("likeResource", request.values(), MutationResult::fromValues)
+    override suspend fun resolveDrm(request: DrmResolveRequest): ResolvedMedia =
+        extendedBusiness("resolveDrm", request.values(), ResolvedMedia::fromValues)
+    override suspend fun exchangeLicense(request: LicenseRequest): LicenseResponse =
+        extendedBusiness("exchangeLicense", request.values(), LicenseResponse::fromValues)
 }

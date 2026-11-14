@@ -223,6 +223,7 @@ function sample(t, field = "", record = "", depth = 0) {
   if (t.endsWith("?")) return sample(t.slice(0, -1), field, record, depth);
   if (t.endsWith("[]")) {
     if (field === "topReplies") return [];
+    if (field === "keySystems") return ["widevine"];
     if (field.endsWith("Ids") && ["PlaylistOrderRequest", "PlaylistTrackOrderRequest"].includes(record))
       return ["Opaque-A", "a"];
     if (field.endsWith("Ids")) return ["Opaque-A", "a", "Opaque-A"];
@@ -242,6 +243,8 @@ function sample(t, field = "", record = "", depth = 0) {
     return 1;
   }
   if (t === "string") {
+    if (field === "keySystem") return "widevine";
+    if (field === "schemeIdUri") return "urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed";
     if (field === "id" || field.endsWith("Id") || field.endsWith("Ids")) return "Opaque-A";
     if (field.endsWith("Url") || field === "url" || field === "imageUrls") return "https://example.test/media";
     if (field === "date" || field === "dates") return "2026-11-10";
@@ -262,6 +265,19 @@ function sample(t, field = "", record = "", depth = 0) {
   }
   if (t === "PlaylistImportRequest") return {
     name: "Imported", tracks: [sample("ImportTrack")], text: null, links: [], importLiked: false
+  };
+  // A DRM descriptor must carry at least one usable reference; the host
+  // rejects an all-null descriptor before it ever reaches the player.
+  if (t === "DrmDescriptor") return {
+    keySystem: "widevine",
+    licenseUrl: "https://example.test/license",
+    headers: [sample("Header", "name", t)],
+    schemeIdUri: "urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed",
+    initData: null,
+    keyId: null,
+    keyUri: "skd://example.test/key",
+    serverCertificate: null,
+    persistent: false,
   };
   if (t === "MediaQualityRequest") return { id: "Opaque-A", type: "song" };
   if (t === "ResourceMessageRequest") return {

@@ -14,8 +14,8 @@ class KmpSdkExtendedOperationsTest {
     @Test
     fun `all additive operations round trip nested wire records`() {
         val cases = extendedOperationCases()
-        assertEquals(107, cases.size)
-        assertEquals((61..167).toList(), cases.map { it.tag })
+        assertEquals(109, cases.size)
+        assertEquals((61..169).toList(), cases.map { it.tag })
         cases.forEach { assertTrue(it.checkWire(), it.method) }
     }
 
@@ -37,7 +37,7 @@ class KmpSdkExtendedOperationsTest {
             }
             val host = host(SessionMusicProvider(JniMusicProvider(binding)))
             try {
-                assertEquals(107, host.capabilities().supported.size)
+                assertEquals(109, host.capabilities().supported.size)
                 val source = UnifiedMusicSourceImpl(SdkEmptyLocal(), { host })
                 for (case in cases) {
                     assertEquals(case.responseValues, case.invoke(host), case.method)
@@ -85,9 +85,9 @@ class KmpSdkExtendedOperationsTest {
             try {
                 val source = UnifiedMusicSourceImpl(SdkEmptyLocal(), { host })
                 for (case in cases) {
-                    assertEquals(case.responseValues, case.invoke(host), case.method)
+                    assertEquals(extendedValues(case.responseValues), extendedValues(case.invoke(host)), case.method)
                     val result = assertIs<BackendResult.Success<Map<String, Any?>>>(case.invokeSource(source))
-                    assertEquals(case.responseValues, result.data, case.method)
+                    assertEquals(extendedValues(case.responseValues), extendedValues(result.data), case.method)
                 }
             } finally { host.close() }
         }

@@ -18,7 +18,7 @@
 //!     }
 //! }
 //!
-//! fn create(context: &ProviderContext) -> Box<dyn MusicProvider + Send> {
+//! fn create(context: &ProviderContext) -> Box<dyn MusicProvider> {
 //!     Box::new(MyProvider)
 //! }
 //!
@@ -42,7 +42,7 @@ pub use abi::active_sessions;
 
 /// Emits the fixed JNI and C ABI symbols for `$factory`.
 ///
-/// `$factory` must be a `fn(&ProviderContext) -> Box<dyn MusicProvider + Send>`.
+/// `$factory` must be a `fn(&ProviderContext) -> Box<dyn MusicProvider>`.
 #[macro_export]
 macro_rules! export_provider {
     ($factory:path) => {

@@ -108,6 +108,7 @@ internal fun installedNativeSdkProvider(manifest: ModuleManifest, root: File, co
             settingsSchema = manifest.settingsSchema,
             sdkAllowedOrigins = manifest.sdkOrigins.toSet(),
             capabilities = manifest.knownCapabilities,
+            defaultCountryCode = manifest.resolvedDefaultCountryCode,
         )
         return object : BackendProvider by descriptor {
             override fun close() {

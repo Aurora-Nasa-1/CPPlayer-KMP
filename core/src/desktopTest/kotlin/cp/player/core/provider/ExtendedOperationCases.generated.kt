@@ -131,6 +131,8 @@ internal fun extendedOperationCases(): List<ExtendedOperationCase> = listOf(
     extendedCase165(),
     extendedCase166(),
     extendedCase167(),
+    extendedCase168(),
+    extendedCase169(),
 )
 
 private fun extendedCase61(): ExtendedOperationCase {
@@ -2698,5 +2700,53 @@ private fun extendedCase167(): ExtendedOperationCase {
                     extendedValues(response.values()) == extendedValues(responseRoundTrip.values())
             },
             { actual -> actual is ResourceLikeRequest && extendedValues(actual.values()) == extendedValues(request.values()) },
+        )
+}
+
+private fun extendedCase168(): ExtendedOperationCase {
+        val request = DrmResolveRequest(id = "Opaque-A", quality = "quality", keySystems = listOf("widevine"))
+        val response = ResolvedMedia(resource = MediaResource(url = "https://example.test/media", actualQuality = "actualQuality", headers = listOf(Header(name = "X-Test", value = "value")), expiresAtEpochMs = null, format = null, bitrate = null, sizeBytes = null), drm = DrmDescriptor(keySystem = "widevine", licenseUrl = "https://example.test/license", headers = listOf(Header(name = "X-Test", value = "value")), schemeIdUri = "urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed", initData = null, keyId = null, keyUri = "skd://example.test/key", serverCertificate = null, persistent = false))
+        return ExtendedOperationCase("resolveDrm", "tracks.resolveDrm", 168, request, request.values(), response, response.values(),
+            { it.resolveDrm(request).values() },
+            { source -> when (val result = source.resolveDrm(request)) {
+                is BackendResult.Success -> BackendResult.Success(result.data.values())
+                is BackendResult.Error -> result
+                is BackendResult.Unsupported -> result
+            } },
+            {
+                val requestReader = WireReader(WireWriter().also(request::write).finish())
+                val requestRoundTrip = DrmResolveRequest.read(requestReader)
+                requestReader.finish()
+                val responseReader = WireReader(WireWriter().also(response::write).finish())
+                val responseRoundTrip = ResolvedMedia.read(responseReader)
+                responseReader.finish()
+                extendedValues(request.values()) == extendedValues(requestRoundTrip.values()) &&
+                    extendedValues(response.values()) == extendedValues(responseRoundTrip.values())
+            },
+            { actual -> actual is DrmResolveRequest && extendedValues(actual.values()) == extendedValues(request.values()) },
+        )
+}
+
+private fun extendedCase169(): ExtendedOperationCase {
+        val request = LicenseRequest(id = "Opaque-A", keySystem = "widevine", challenge = byteArrayOf(0, 127, -128, -1), licenseUrl = "https://example.test/media", headers = listOf(Header(name = "X-Test", value = "value")), keyUri = "keyUri")
+        val response = LicenseResponse(license = byteArrayOf(0, 127, -128, -1))
+        return ExtendedOperationCase("exchangeLicense", "tracks.exchangeLicense", 169, request, request.values(), response, response.values(),
+            { it.exchangeLicense(request).values() },
+            { source -> when (val result = source.exchangeLicense(request)) {
+                is BackendResult.Success -> BackendResult.Success(result.data.values())
+                is BackendResult.Error -> result
+                is BackendResult.Unsupported -> result
+            } },
+            {
+                val requestReader = WireReader(WireWriter().also(request::write).finish())
+                val requestRoundTrip = LicenseRequest.read(requestReader)
+                requestReader.finish()
+                val responseReader = WireReader(WireWriter().also(response::write).finish())
+                val responseRoundTrip = LicenseResponse.read(responseReader)
+                responseReader.finish()
+                extendedValues(request.values()) == extendedValues(requestRoundTrip.values()) &&
+                    extendedValues(response.values()) == extendedValues(responseRoundTrip.values())
+            },
+            { actual -> actual is LicenseRequest && extendedValues(actual.values()) == extendedValues(request.values()) },
         )
 }
