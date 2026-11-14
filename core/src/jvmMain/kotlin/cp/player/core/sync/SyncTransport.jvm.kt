@@ -195,7 +195,7 @@ object SyncTransport {
     }
 
     private fun request(method: String, url: String, body: String?, readTimeoutMs: Int = 8_000): String? = runCatching {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+        val conn = (java.net.URI.create(url).toURL().openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = 3_000
             readTimeout = readTimeoutMs

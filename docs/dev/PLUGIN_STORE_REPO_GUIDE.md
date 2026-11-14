@@ -15,7 +15,7 @@
 
 新版本客户端（KMP SDK 架构）
     └── 请求：https://raw.githubusercontent.com/Aurora-Nasa-1/CPPlayer-Plugins-KMP/main/index.json
-         └── 包含：kmp-sdk-v1 脚本插件（runtime: js / script）
+         └── 包含：kmp-sdk-v1 插件（runtime: js / script / jni / native）
 ```
 
 ### 客户端无感自动迁移（`PluginRepositoryService`）
@@ -28,7 +28,7 @@
 
 ## 2. 新仓库 `CPPlayer-Plugins-KMP` 组织规范
 
-新仓库只托管基于 `kmp-sdk-v1` 的 JS 插件，不再包含历史 JNI DLL / EXE / SO 二进制，保持仓库轻量。
+新仓库只托管基于 `kmp-sdk-v1` 的新一代插件。目录中的 `version`、`apiVersion`、`minHostApiVersion`、`runtime` 必须与包内 `manifest.json` 逐项一致；缺省字段按 `1` 处理。旧版本仓库 `CPPlayer-Plugins` 保持网易云 1.1.1，不随新版本升级。
 
 ### 推荐目录结构
 
@@ -36,24 +36,17 @@
 CPPlayer-Plugins-KMP/
 ├── .github/
 │   └── workflows/
-│       └── release-plugins.yml      # 自动打包校验与更新 index.json
-├── packages/
-│   ├── netease/                     # 插件 1
-│   │   ├── manifest.json
-│   │   └── index.js
-│   └── qqmusic/                     # 插件 2
-│       ├── manifest.json
-│       └── index.js
-├── dist/                            # 编译/打包输出的 zip 工件（或通过 GitHub Releases 托管）
-│   ├── netease-1.0.0.zip
-│   └── qqmusic-1.0.0.zip
+│       └── validate.yml             # 校验目录，并在 push 时核对已发布 ZIP
+├── scripts/
+│   └── validate_catalog.py
+├── LICENSE
 ├── index.json                       # 核心商店目录清单
 └── README.md
 ```
 
 ---
 
-## 3. `index.json` 官方清单示例（含已验证的网易云 v1.2.1）
+## 3. `index.json` 官方清单示例（含已验证的网易云 v1.2.2）
 
 新仓库根目录的 `index.json` 完整内容：
 
@@ -66,53 +59,53 @@ CPPlayer-Plugins-KMP/
       "id": "netease-cloudmusic-rs",
       "kind": "provider",
       "name": "NeteaseCloudMusicApi-RS",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "description": "基于 KMP SDK v1 重构的网易云原生音源，支持 161 项业务操作、动态音质与 Native 会话。",
       "author": "Aurora-Nasa-1",
       "homepage": "https://github.com/Aurora-Nasa-1/3rd-CPPlayer-netcloudMusic-Muti",
-      "changelog": "v1.2.1: 基于 kmp-sdk-v1 规范全面重构，支持 161 项业务操作，导出 NativeSession 标准符号与免反射 DLL/SO 直接加载。",
+      "changelog": "v1.2.2: 修复 SDK v1 下每日推荐、私人 FM 与心动模式不可用的问题，补全推荐能力声明并严格限制返回数量。",
       "apiVersion": 1,
-      "minHostApiVersion": 3,
+      "minHostApiVersion": 1,
       "artifacts": [
         {
           "platform": "windows",
           "arch": "x64",
           "runtime": "jni",
-          "url": "https://github.com/Aurora-Nasa-1/3rd-CPPlayer-netcloudMusic-Muti/releases/download/v1.2.1/ncm-api-rs-windows-1.2.1.zip",
-          "sha256": "51a23aa19ba4a2946afddf4b73517f2fab18c807b9ca45b90898c40f85830dc5",
-          "bytes": 9805879
+          "url": "https://github.com/Aurora-Nasa-1/3rd-CPPlayer-netcloudMusic-Muti/releases/download/v1.2.2/ncm-api-rs-windows-1.2.2.zip",
+          "sha256": "9b3c58b9ea15b52a85eb37f3c63043d0f2db2015b4cf4add5a54802a26a9868e",
+          "bytes": 9296667
         },
         {
           "platform": "linux",
           "arch": "x64",
           "runtime": "jni",
-          "url": "https://github.com/Aurora-Nasa-1/3rd-CPPlayer-netcloudMusic-Muti/releases/download/v1.2.1/ncm-api-rs-linux-1.2.1.zip",
-          "sha256": "7cfa079d6bfa71991c5fb1a32bb7169df582c8f2837efa0611d0bb2401a4cdd5",
-          "bytes": 10624800
+          "url": "https://github.com/Aurora-Nasa-1/3rd-CPPlayer-netcloudMusic-Muti/releases/download/v1.2.2/ncm-api-rs-linux-1.2.2.zip",
+          "sha256": "080595b6cd20654ed3ccd49116421ddf2f7a54ada92b2e568037ca02399ea00c",
+          "bytes": 10040572
         },
         {
           "platform": "android",
           "arch": "arm64",
           "runtime": "jni",
-          "url": "https://github.com/Aurora-Nasa-1/3rd-CPPlayer-netcloudMusic-Muti/releases/download/v1.2.1/ncm-api-rs-android-1.2.1.zip",
-          "sha256": "536e05b7f18842c377db604bf069b5825de3b45497ca0f3014b46deca33b1761",
-          "bytes": 17482660
+          "url": "https://github.com/Aurora-Nasa-1/3rd-CPPlayer-netcloudMusic-Muti/releases/download/v1.2.2/ncm-api-rs-android-1.2.2.zip",
+          "sha256": "02663e4700253f956fffa1a8a391c83faff5da29469b0e86126e08ea66215139",
+          "bytes": 16771121
         },
         {
           "platform": "android",
           "arch": "armv7",
           "runtime": "jni",
-          "url": "https://github.com/Aurora-Nasa-1/3rd-CPPlayer-netcloudMusic-Muti/releases/download/v1.2.1/ncm-api-rs-android-1.2.1.zip",
-          "sha256": "536e05b7f18842c377db604bf069b5825de3b45497ca0f3014b46deca33b1761",
-          "bytes": 17482660
+          "url": "https://github.com/Aurora-Nasa-1/3rd-CPPlayer-netcloudMusic-Muti/releases/download/v1.2.2/ncm-api-rs-android-1.2.2.zip",
+          "sha256": "02663e4700253f956fffa1a8a391c83faff5da29469b0e86126e08ea66215139",
+          "bytes": 16771121
         },
         {
           "platform": "android",
           "arch": "x64",
           "runtime": "jni",
-          "url": "https://github.com/Aurora-Nasa-1/3rd-CPPlayer-netcloudMusic-Muti/releases/download/v1.2.1/ncm-api-rs-android-1.2.1.zip",
-          "sha256": "536e05b7f18842c377db604bf069b5825de3b45497ca0f3014b46deca33b1761",
-          "bytes": 17482660
+          "url": "https://github.com/Aurora-Nasa-1/3rd-CPPlayer-netcloudMusic-Muti/releases/download/v1.2.2/ncm-api-rs-android-1.2.2.zip",
+          "sha256": "02663e4700253f956fffa1a8a391c83faff5da29469b0e86126e08ea66215139",
+          "bytes": 16771121
         }
       ]
     }
@@ -121,18 +114,19 @@ CPPlayer-Plugins-KMP/
 ```
 
 ### 关键字段说明
-- `runtime`：必须为 `"js"` 或 `"script"`（新客户端硬性校验要求；旧客户端会主动跳过，互不冲突）。
-- `platform` 与 `arch`：统一设为 `"any"`，由客户端统一调度跨平台 JS 运行时。
+- `runtime`：JS 插件用 `"js"` / `"script"`；原生插件用 `"jni"` / `"native"`，且 `type` 必须与之一致。
+- `platform` 与 `arch`：JS 插件可设为 `"any"`；原生插件必须写明确切平台与架构。
 - `sha256` 与 `bytes`：对应 ZIP 压缩包的实际外部校验值。
-- `minHostApiVersion`：通常设为 `3`（对应当前 `HOST_PROVIDER_API_VERSION = 3`）。
+- `minHostApiVersion`：必须与包内 manifest 一致；未声明时按 `1` 填写，不能凭宿主上限补成 `3`。
 
 ---
 
 ## 4. 插件 ZIP 结构要求
 
 每个插件 ZIP 包的根目录必须包含：
-- `manifest.json`：声明 `contract: "kmp-sdk-v1"`、`type: "js"` 以及白名单域名 `sdkOrigins`。
-- `index.js`（或自定义相对路径 `entryPoint`）：导出的 JS 业务实现。
+- `manifest.json`：声明 `contract: "kmp-sdk-v1"`、`type` 以及白名单域名 `sdkOrigins`。
+- JS 包：`index.js`（或自定义相对路径 `entryPoint`），导出的 JS 业务实现。
+- 原生包：`entryPoint` 指向的 DLL / SO，位于根目录或 `lib/<abi>/`。
 
 ```text
 netease-1.0.0.zip

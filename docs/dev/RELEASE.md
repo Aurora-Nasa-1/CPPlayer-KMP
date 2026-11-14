@@ -143,6 +143,69 @@ on the default JDK and says so on stdout — `javaHome` is never set to a bogus 
 
 > The old MSI `upgradeUuid` (`4A6A38AA-6BC8-4526-9EEF-92A5499DEB9C`) is **no longer consumed**. Do not lose the value: should Windows packaging ever revert to MSI, it must come back **verbatim** — Windows Installer uses it to recognise a new package as an upgrade of the same product, and a changed UUID makes installs fail with "another version of this product is already installed" while the old version can no longer be removed cleanly.
 
+### Windows Native Image — Nucleus 3.0 and reachability metadata
+
+Nucleus is pinned to `3.0.0-dev-202611061347` in `gradle/libs.versions.toml`. 3.0 removed
+`NucleusBackend` / `LocalNucleusBackend`: `nucleusApplication(args) { ... }` is the only entry
+point, and `args` must be forwarded (single-instance hand-off, deep links, and
+`--veloapp-*` hooks all arrive there).
+
+The GraalVM toolchain requests `version.set("25i3")` instead of a dotted `25.3.4.1`. Nucleus 3.0's
+Oracle downloader treats a dotted version as an archive patch and builds
+`.../archive/graalvm-jdk-25.3.4.1_...zip`, which is a 404; `25i3` uses the GDS innovation channel
+and currently resolves to the same GraalVM 25.3.4.1. CI keeps its own
+`GRAALVM_HOME` download, and Nucleus prefers that over provisioning, so release builds stay
+deterministic.
+
+Native Image metadata is managed in three layers by `app/build.gradle.kts`:
+
+| Layer | Source | Scope |
+|-------|--------|-------|
+| L1 | `nucleus.graalvm-runtime` JAR | common reflection / JNI / resource globs |
+| L2 | Oracle Reachability Metadata Repository, pinned `1.1.4` | third-party libraries on `runtimeClasspath` |
+| L3 | `nucleus/graalvm/platform-metadata/windows-*.json` | AWT / Java2D / fonts on Windows |
+
+`headless = false` keeps the L3 GUI metadata (required for Compose/Skiko),
+`autoIncludeResources = true` registers project resource roots, and
+`detectOrphanProjectClasses = true` adds no-arg constructors for annotation-processor output.
+Do not add hand-written reflection entries first: run
+`:app:cleanupGraalvmMetadata` (it reports entries already covered by L1–L3 or static analysis).
+
+#### Profile-Guided Optimization (PGO)
+
+To train and collect a PGO profile on Windows:
+1. **GitHub Actions 云端编译（推荐）**：触发 `.github/workflows/desktop-pgo-instrument.yml` 工作流，由 CI 自动使用 Oracle GraalVM 构建插桩版绿色压缩包（`CPPlayer-win-x64-pgo-instrument.zip`）。下载后解压并在本机运行 `CPPlayer.exe`，体验代表性用户场景（播放歌曲、搜索、滚动列表、切歌等），退出后将在同目录下自动落盘 `default.iprof`。
+2. **本地编译**：运行 `./gradlew :app:runWithPgoInstrument`。
+
+由于分析期存在 21.8 万个可达方法，GraalVM 在 `--pgo-instrument` 下强制以 level 2 进行插桩编译。配置将并发编译线程限制为 2 (`-H:NumberOfThreads=2`) 并预留 10 GB 堆空间 (`-J-Xmx10g`)，以彻底避免编译器 IR 图膨胀导致的 Java heap space OOM。
+
+采集到的 `default.iprof` 提交到 `app/graalvm/pgo/default.iprof` 后，生产发布构建（CI 与本地）会自动消费该 profile 并启用 `-O3` 终极原生优化。
+
+### Desktop tray and notifications — no AWT
+
+Nucleus 3.0 has no AWT window backend, so the desktop shell also dropped the AWT tray:
+
+- Tray icon + right-click menu: `dev.nucleusframework:composenativetray` (`2.1.6`).
+  Windows uses `Shell_NotifyIcon`, macOS `NSStatusItem`, Linux AppIndicator /
+  StatusNotifierItem. The old `SystemTray` / `TrayIcon` / `PopupMenu`, the off-screen
+  `TrayMenuScene` image and the `JWindow` menu popup are gone.
+- Message notifications: Nucleus `notification-windows` (WinRT Toast) and
+  `notification-linux` (freedesktop D-Bus). macOS notification support is
+  intentionally not shipped. Clicks carry the `MessageNotification.key`, so each
+  conversation can be routed and cancelled precisely; the tray no longer owns
+  notification state.
+- The old `DesktopWindowPlacement` / `WindowMaximizer` (AWT bounds and work-area
+  math) and `JbrWindowChrome` (AWT `WindowDecorations` reflection) are deleted.
+  Window placement/maximize now comes from Tao's `WindowState`; `jdk.unsupported`
+  remains in the runtime image because `JbrFileDialogBridge` still uses
+  `sun.misc.Unsafe` to enable JBR's modern file dialog.
+
+Do **not** re-enable `headless = true` or delete the L3 AWT metadata: Compose/Skiko still
+needs AWT/Java2D classes for rendering. The tray and notifications merely stop using AWT
+as a window/tray host. Their JNI classes are listed in
+`--initialize-at-run-time=...,dev.nucleusframework.composenativetray,dev.nucleusframework.notification,...`
+so Native Image does not try to load platform libraries at build time.
+
 ## In-app update chain
 
 1. The About page calls the GitHub Releases API.

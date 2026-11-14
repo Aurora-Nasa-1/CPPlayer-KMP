@@ -50,8 +50,8 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
@@ -333,12 +333,12 @@ fun PlaylistDetailContent(
             )
             add(CpContextMenuItem(s.common.refresh, Icons.Filled.Refresh, onClick = { model.refresh() }))
             add(CpContextMenuItem(s.library.playAll, Icons.Filled.PlayArrow, onClick = { model.playAll() }))
-            add(CpContextMenuItem(s.library.addToQueue, Icons.Filled.QueueMusic, onClick = { model.queueAll() }))
+            add(CpContextMenuItem(s.library.addToQueue, Icons.AutoMirrored.Filled.QueueMusic, onClick = { model.queueAll() }))
             add(CpContextMenuItem(s.library.downloadAll, Icons.Filled.Download, onClick = { AppModel.downloadTracks(displayTracks) }))
         } else {
             add(CpContextMenuItem(s.common.refresh, Icons.Filled.Refresh, onClick = { model.refresh() }))
             add(CpContextMenuItem(s.library.playAll, Icons.Filled.PlayArrow, onClick = { model.playAll() }))
-            add(CpContextMenuItem(s.library.addToQueue, Icons.Filled.QueueMusic, onClick = { model.queueAll() }))
+            add(CpContextMenuItem(s.library.addToQueue, Icons.AutoMirrored.Filled.QueueMusic, onClick = { model.queueAll() }))
             add(CpContextMenuItem(s.library.downloadAll, Icons.Filled.Download, onClick = { AppModel.downloadTracks(displayTracks) }))
             add(CpContextMenuSeparator)
             add(CpContextMenuItem(s.library.sharePlaylist, Icons.Filled.Share, onClick = {
@@ -791,7 +791,7 @@ private fun NarrowLayout(
                 )
                 add(
                     TopBarAction(
-                        icon = { Icon(Icons.Filled.QueueMusic, contentDescription = s.library.addToQueue) },
+                        icon = { Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = s.library.addToQueue) },
                         onClick = {
                             model.queueSelected()
                             model.exitSelection()
@@ -812,7 +812,7 @@ private fun NarrowLayout(
                 )
                 add(
                     TopBarAction(
-                        icon = { Icon(Icons.Filled.PlaylistAdd, contentDescription = s.player.addToPlaylist) },
+                        icon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = s.player.addToPlaylist) },
                         onClick = onAddSelectedToPlaylist,
                     )
                 )
@@ -1320,7 +1320,7 @@ private fun WideLayout(
                                 model.exitSelection()
                             },
                         ) {
-                            Icon(Icons.Filled.QueueMusic, contentDescription = s.library.addToQueue)
+                            Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = s.library.addToQueue)
                         }
                         IconButton(
                             onClick = {
@@ -1334,7 +1334,7 @@ private fun WideLayout(
                             Icon(Icons.Filled.Download, contentDescription = s.player.download)
                         }
                         IconButton(onClick = onAddSelectedToPlaylist) {
-                            Icon(Icons.Filled.PlaylistAdd, contentDescription = s.player.addToPlaylist)
+                            Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = s.player.addToPlaylist)
                         }
                         if (isOwner) {
                             IconButton(onClick = { onRemoveSelected(state.selectedIds.toList()) }) {
@@ -1932,7 +1932,7 @@ private fun M3ESecondaryActionsRail(
                 SecondaryActionItem(
                     id = "add",
                     label = "添加",
-                    icon = Icons.Filled.PlaylistAdd,
+                    icon = Icons.AutoMirrored.Filled.PlaylistAdd,
                     onClick = onAdd,
                 )
             )

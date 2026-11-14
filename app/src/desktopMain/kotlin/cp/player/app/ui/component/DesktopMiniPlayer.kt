@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.window.WindowDraggableArea
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CropSquare
@@ -56,11 +55,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.WindowScope
+import dev.nucleusframework.window.tao.TaoWindow
+import dev.nucleusframework.window.windowDragArea
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
-import cp.player.app.platform.JbrWindowChrome
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.theme.containsKana
@@ -87,8 +86,7 @@ import cp.player.core.playback.PlaybackUiState
  */
 @Composable
 fun DesktopMiniPlayer(
-    windowScope: WindowScope,
-    jbr: JbrWindowChrome.Controller? = null,
+    taoWindow: TaoWindow,
     onRestore: () -> Unit,
     onMinimize: () -> Unit = {},
     onClose: () -> Unit,
@@ -97,13 +95,6 @@ fun DesktopMiniPlayer(
     val s = cpStrings()
     val isDark = LocalIsDarkTheme.current
     val density = LocalDensity.current
-    val bridge = remember(jbr) { jbr?.let { JbrHitTestBridge(it) } }
-
-    // 迷你模式下彻底隐藏 Windows 原生三按钮并同步深色模式
-    LaunchedEffect(jbr, isDark) {
-        jbr?.setControlsVisible(false)
-        jbr?.setControlsDark(isDark)
-    }
 
     val playbackState by AppModel.playback.state.collectAsState()
     val controller = AppModel.playback
@@ -150,7 +141,7 @@ fun DesktopMiniPlayer(
     val coverShape = remember(coverCorner) { RoundedCornerShape(coverCorner) }
 
     Surface(
-        modifier = modifier.fillMaxSize().jbrHitTest(bridge),
+        modifier = modifier.fillMaxSize(),
         shape = RectangleShape,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         border = BorderStroke(
@@ -188,8 +179,11 @@ fun DesktopMiniPlayer(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     // 左侧与中间可拖拽区域：胶囊微徽标与标题
-                    windowScope.WindowDraggableArea(
-                        modifier = Modifier.weight(1f).height(26.dp),
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(26.dp)
+                            .windowDragArea(taoWindow),
                     ) {
                         Row(
                             modifier = Modifier.fillMaxSize(),
@@ -219,7 +213,7 @@ fun DesktopMiniPlayer(
                         }
                     }
 
-                    // ⚠️ 按钮组必须在 WindowDraggableArea 外面：
+                    // ⚠️ 按钮组必须在 windowDragArea 外面：
                     // 右侧完全自绘的 M3 Expressive 控制按钮组（置顶 / 最小化 / 还原 / 关闭）
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -241,8 +235,7 @@ fun DesktopMiniPlayer(
                             onClick = { DesktopShell.isMiniPinned = !DesktopShell.isMiniPinned },
                             modifier = Modifier
                                 .size(24.dp)
-                                .cpPressScale()
-                                .jbrClientZone(bridge, "mini_pin"),
+                                .cpPressScale(),
                             shape = MaterialTheme.shapes.small,
                             color = pinBg,
                             contentColor = pinFg,
@@ -261,8 +254,6 @@ fun DesktopMiniPlayer(
                             icon = Icons.Filled.Remove,
                             contentDescription = "最小化",
                             onClick = onMinimize,
-                            bridge = bridge,
-                            key = "mini_minimize",
                         )
 
                         // 还原完整主窗口
@@ -270,8 +261,6 @@ fun DesktopMiniPlayer(
                             icon = Icons.Filled.CropSquare,
                             contentDescription = s.player.miniModeRestore,
                             onClick = onRestore,
-                            bridge = bridge,
-                            key = "mini_restore",
                         )
 
                         // 关闭按钮（悬停 M3 危险色反馈）
@@ -280,8 +269,6 @@ fun DesktopMiniPlayer(
                             contentDescription = "关闭",
                             isDanger = true,
                             onClick = onClose,
-                            bridge = bridge,
-                            key = "mini_close",
                         )
                     }
                 }
@@ -427,8 +414,6 @@ private fun MiniWindowActionButton(
     contentDescription: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    bridge: JbrHitTestBridge? = null,
-    key: String = "",
     isDanger: Boolean = false,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -454,8 +439,7 @@ private fun MiniWindowActionButton(
         onClick = onClick,
         modifier = modifier
             .size(24.dp)
-            .cpPressScale()
-            .then(if (key.isNotEmpty()) Modifier.jbrClientZone(bridge, key) else Modifier),
+            .cpPressScale(),
         shape = MaterialTheme.shapes.small,
         color = bg,
         contentColor = fg,

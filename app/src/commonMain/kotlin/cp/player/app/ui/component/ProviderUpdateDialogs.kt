@@ -61,6 +61,7 @@ fun ProviderUpdateDetailsDialog(
     onDownloadAndUpdate: () -> Unit,
 ) {
     val isDark = LocalIsDarkTheme.current
+    @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
 
     val containerColor = if (isDark) {

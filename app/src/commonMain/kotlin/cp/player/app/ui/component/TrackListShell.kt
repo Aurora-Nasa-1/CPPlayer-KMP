@@ -33,7 +33,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Shuffle
@@ -562,7 +562,7 @@ fun TrackSecondaryActionRow(spec: TrackSecondarySpec) {
     ) {
         spec.actions.forEach { action ->
             val (label, icon) = when (action) {
-                TrackSecondaryAction.Add -> "添加" to Icons.Filled.PlaylistAdd
+                TrackSecondaryAction.Add -> "添加" to Icons.AutoMirrored.Filled.PlaylistAdd
                 TrackSecondaryAction.DownloadAll -> "下载全部" to Icons.Filled.Download
                 TrackSecondaryAction.Sort -> "排序" to Icons.AutoMirrored.Filled.Sort
             }

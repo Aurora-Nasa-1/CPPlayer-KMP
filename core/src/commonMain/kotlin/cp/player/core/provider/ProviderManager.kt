@@ -168,7 +168,11 @@ class ProviderCookieStorage(private val settings: SettingsStorage) {
     private val listeners = mutableSetOf<(String, String) -> Unit>()
     fun onChanged(listener: (String, String) -> Unit): () -> Unit {
         synchronized(versions) { listeners.add(listener) }
-        return { synchronized(versions) { listeners.remove(listener); Unit } }
+        return {
+            synchronized(versions) {
+                listeners.remove(listener)
+            }
+        }
     }
     private fun changed(providerId: String, accountId: String) {
         // Never call a session owner while holding the storage lock.

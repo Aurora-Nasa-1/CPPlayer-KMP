@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.window.WindowDraggableArea
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Message
@@ -48,42 +47,29 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPlacement
-import androidx.compose.ui.window.WindowScope
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
-import cp.player.app.platform.JbrWindowChrome
-import cp.player.app.platform.WindowMaximizer
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.version.AppVersion
+import dev.nucleusframework.window.tao.TaoWindow
+import dev.nucleusframework.window.windowDragArea
 
 /**
  * 自绘标题栏高度。留得下 32dp 以上的点击目标，同时不侵占正文。
@@ -109,20 +95,9 @@ private val ChromeSeparatorWidth = 8.dp * 2 + 1.dp
  * 少算一格右侧就宽出去 44dp、搜索框整体左偏 22dp；多算一格则反过来。改动按钮组时
  * 数一遍 —— 这里曾经因为「消息」搬进来而差点漏掉（5 槽 → 6 槽）。
  *
- * 仅**无边框模式**使用；JBR 模式的右侧组 = 4 个业务槽 + JBR 原生窗口钮区（运行时取值）。
+ * Tao 后端没有原生窗口钮，右侧组永远是「业务槽 + 分隔线 + 三颗自绘窗口钮」。
  */
 private val ChromeActionsWidth: Dp = ChromeSlotWidth * 7 + ChromeSeparatorWidth
-
-/**
- * 双击判定窗口（毫秒）。
- *
- * 取系统的「双击间隔」设置（AWT 的 `awt.multiClickInterval`，Windows 上就是
- * `GetDoubleClickTime()`），拿不到再回落到 400ms —— 手感和系统里其它窗口保持一致，
- * 而不是硬编码一个和系统设置打架的值。
- */
-private val DoubleClickIntervalMs: Long =
-    (java.awt.Toolkit.getDefaultToolkit().getDesktopProperty("awt.multiClickInterval") as? Int)
-        ?.toLong()?.coerceIn(200L, 1_000L) ?: 400L
 
 /**
  * 桌面端自绘标题栏。
@@ -159,20 +134,17 @@ private val DoubleClickIntervalMs: Long =
  * 播放页自己会用 `LocalPlayerTopInset` 把让出的高度补成内边距，内容位置全程不动 ——
  * 那一条正是窗口钮所在的位置，内容要是跟着顶上去就会撞在一起。
  *
- * ## 三种窗口模式（[jbr] 与 [systemWindowControls] 决定）
+ * ## 窗口后端：Tao
  *
- * - **无边框模式**（`jbr == null && !systemWindowControls`，运行在普通 JDK / Linux，或显式选择无边框）：本组件画**全部** chrome，
- *   含最小化 / 最大化 / 关闭；拖拽走 `WindowDraggableArea`（AWT MouseListener）；
- *   双击最大化 / 拖动几何由 [WindowMaximizer] 接管。
- * - **标准系统装饰模式**（`jbr == null && systemWindowControls`，Windows 无 JBR）：Win32 绘制
- *   标题栏与窗口钮；本组件仍画应用工具栏，但不重复画窗控，并保持左右空白对称。
- *   系统标题栏与客户端工具栏各自位于窗口框架 / 内容区，沉浸播放仍只收缩客户端工具栏。
- * - **JBR 模式**（`jbr != null`，运行在 JBR b1367.22+，见 `JbrWindowChrome`）：窗口在系统
- *   层面**保持有边框**，JBR 把最小化 / 最大化 / 关闭画在客户区右上（`rightInsetPx` 留位，
- *   本组件的三个窗口钮与分隔线**不再渲染**）；拖拽 / 双击最大化 / 右键系统菜单 /
- *   贴边分屏全部由原生 hit-test 承担，本组件只负责按事件回 [JbrWindowChrome.Controller.forceClient]：
- *   可交互控件上回 `true`（客户区），空白处回 `false`（交还原生）。注册表见
- *   [JbrHitTestBridge]。原生窗口钮的明暗随应用主题切换。
+ * 窗口由 Nucleus Tao 创建，没有 `java.awt.Window`。本组件是**唯一**的窗口 chrome：
+ * 拖拽、双击最大化 / 还原、最小化 / 最大化 / 关闭全部由这里驱动。
+ *
+ * - 拖拽走 [windowDragArea]（Compose 指针事件 → `TaoWindow.dragWindow()`，双击 →
+ *   `ToggleMaximize`）。它不依赖 AWT MouseListener，也不吃原生 hit-test。
+ * - 最大化状态直接读 `windowState.placement`；按钮写同一个状态，Tao 负责把
+ *   `Maximized` 映射到尊重任务栏的原生最大化。
+ * - 窗口最小尺寸与 `resizable` 由 `DecoratedWindow` 的参数下发；本组件不再命令式
+ *   `setMinimumSize` / `setResizable`。
  *
  * ⚠️ **本组件是纯展示的**：[title] / [canGoBack] / [onBack] 都由 `Main.kt` 从 Navigator
  * 现算现传（那里同时拿得到 `navigator.size`、`navigator.lastItem` 与 `DesktopShell`）。
@@ -180,24 +152,11 @@ private val DoubleClickIntervalMs: Long =
  * 而那个值只在「桌面内嵌面板打开」时为真，于是**所有 push 出去的路由页在标题栏上都没有返回键**，
  * 宽窗口下更是一整页没有返回入口（页内顶栏也正好在宽屏分支里被省掉了）。
  *
- * ## 系统窗口框架与应用工具栏
+ * ## 窗口框架
  *
- * 无边框模式下系统边框整体消失，窗口顶部由应用完整自绘；JBR 模式保留系统边框并由 JBR
- * 将原生标题栏换成客户区顶栏。Windows 标准系统装饰回退时，Win32 标题栏位于客户区外，
- * 本组件只保留客户区里的应用工具栏，不再绘制重复的系统窗控。
- * 缩放能力**不归这里管**：无边框模式由 ComposeWindow 内置的 `UndecoratedWindowResizer`
- * 负责，标准系统装饰 / JBR 模式走原生缩放边框。
- *
- * ## ⚠️ 无边框模式的最大化**不用** `WindowState.placement`
- *
- * `placement = Maximized` 会把无边框窗口撑到整个显示器、连任务栏一起盖住；更糟的是 Compose
- * 是用 `setSize()` 与 `setLocation()` **两个独立调用**写回窗口的（javap 核实），于是
- * 「全屏尺寸」会配上「还没更新的旧位置」，产生一个**全屏大小、却飘在半路**的窗口 —— 尺寸恰好
- * 等于输出，Windows 的全屏优化就会把它提升为全屏呈现并切换显示模式（HDR 屏上退出后桌面
- * SDR 内容闪烁）。实测与取舍见 [WindowMaximizer] / `DesktopWindowPlacement` 的说明。
- * 这里改用 [WindowMaximizer]，它用**单次 `setBounds`** 按**工作区**设（尺寸永远小于输出）。
- * JBR 模式没有这个问题：窗口带边框，原生最大化天然尊重任务栏 —— 这正是切到 JBR 的理由之一，
- * 也是「假全屏」的根治。
+ * Windows / Linux 上 Nucleus 为 Tao 窗口画 CSD 边框与阴影，客户区从 (0,0) 开始；
+ * 缩放边框由 Tao 原生窗口负责。`undecorated = true` 时连 CSD 边框与阴影一起去掉，
+ * 但本组件的拖拽、窗控与布局完全不变。
  *
  * ## 调用位置有硬约束（别挪）
  *
@@ -207,12 +166,11 @@ private val DoubleClickIntervalMs: Long =
  *   `SettingsScreen`，标题栏会被目标页面盖住。窗口已经没有系统边框了，那意味着用户
  *   **既移不动也关不掉窗口**。
  *
- * ## 为什么要显式传 [windowScope]
+ * ## 为什么要显式传 [taoWindow]
  *
- * `WindowDraggableArea` 是 `WindowScope` 的扩展，而 `WindowScope` **不是** CompositionLocal
- * —— 树内深层拿不到。Compose 里确实有一个 `androidx.compose.ui.window.LocalWindow`，但它标了
- * `internal`（模块内可见），应用侧用不了。所以只能在 `Main.kt` 的 `Window { }` 里把
- * `FrameWindowScope` 捕获成 [WindowScope] 再沿参数传下来。
+ * `windowDragArea` 可以读 `LocalTaoWindow`，但这个组件也会被塞进别的窗口场景（例如
+ * 迷你播放器 / 手机预览），显式传句柄能保证拖拽永远落在**本窗口**，不会因为
+ * CompositionLocal 被父场景桥接而驱动错窗口。
  *
  * ## 为什么根节点是 `Box` 而不是 `Surface`，而且必须带 `zIndex`
  *
@@ -222,22 +180,20 @@ private val DoubleClickIntervalMs: Long =
  * 2. 标题栏必须画在正文**之后**。它是 `App()` 里那个 `Column` 的第一个子节点，
  *    不抬 z 就会被后面的正文 `Box` 盖住 —— `zIndex` 只在同级之间比较，这里正好同级。
  *
- * ## 无边框模式：拖拽区必须与可交互控件严格错开
+ * ## 拖拽区必须与可交互控件严格错开
  *
- * [WindowDraggableArea] 走 `StandardMoveHandler`：它给 AWT 窗口挂一个 `MouseListener`，
- * 在 `mouseDragged` 里直接移动窗口。这层在 AWT 上，**Compose 消费不掉**，而且**不认 Compose
- * 的命中测试** —— 只要「按下的那一点」落在拖拽区内，之后整段拖动都会移动窗口。所以：
- * - 返回键、账号、设置、窗口控制必须全部留在拖拽区**外面**；
- * - 标题**可以**放在拖拽区里（纯 `Text` 不吃指针事件）；
+ * [windowDragArea] 在 `PointerEventPass.Final` 上武装拖拽：可交互控件在 `Main` pass 消费
+ * Press 后就自动退出拖拽。所以：
+ * - 返回键、账号、设置、窗口控制必须留在拖拽区**外面**；
+ * - 标题可以放在拖拽区里（纯 `Text` 不吃指针事件）；
  * - 搜索框两侧的空白必须各自是独立拖拽区，与框首尾相接 —— 见 [TitleBarSearch]。
- * （JBR 模式没有这套约束：原生 hit-test 由 [JbrHitTestBridge] 按几何注册表动态回应。）
+ * - 只在「指针移动后才接管」的控件（滑条、滚动条）必须加 `Modifier.noWindowDrag()`，
+ *   否则按下的一瞬间会先拖动窗口。
  */
 @Composable
 fun DesktopTitleBar(
-    windowScope: WindowScope,
+    taoWindow: TaoWindow,
     windowState: WindowState,
-    jbr: JbrWindowChrome.Controller?,
-    systemWindowControls: Boolean = false,
     title: String,
     canGoBack: Boolean,
     onBack: () -> Unit,
@@ -250,9 +206,6 @@ fun DesktopTitleBar(
     onToggleMobileMode: () -> Unit = { cp.player.app.ui.util.DesktopShell.isMobileMode = true },
     modifier: Modifier = Modifier,
 ) {
-    val window = windowScope.window
-    val useJbr = jbr != null
-    val useSystemControls = systemWindowControls && !useJbr
     // 播放页沉浸态：背景让给页面自己的流体渐变，除窗口钮外全部淡出（见 LocalWindowImmersive）。
     val immersive = LocalWindowImmersive.current
     val chromeAlpha by animateFloatAsState(
@@ -267,53 +220,16 @@ fun DesktopTitleBar(
     // 判据用「不是沉浸态」或「alpha 还没走到 0」：摘得太早会看不到淡出，摘得太晚
     // 会留下一排看不见但仍可悬停 / 可点的控件（光标与小手的来源）。
     val showChrome = !immersive || chromeAlpha > 0.01f
-    // JBR 模式的命中注册表：可交互控件把自己的窗口内矩形登记进来，桥接层据此决定
-    // 每个鼠标事件回「客户区」还是「标题栏」。随 controller 重建（重装 / 换 DPI）。
-    val bridge = remember(jbr) { jbr?.let { JbrHitTestBridge(it) } }
-    // 沉浸态下这些槽位已经不画了，命中注册也要一起撤掉 —— 否则 JBR 模式里那块「看不见
-    // 但还在」的矩形仍然被判成客户区，用户想在窗口顶边拖动窗口会发现一片死区。
-    val chromeBridge = if (immersive) null else bridge
-
-    val maximizer = remember(window) { WindowMaximizer(window) }
-    // JBR / 标准系统装饰模式下最大化走原生 WindowState；WindowMaximizer 的「按工作区设 bounds」
-    // 只供无边框模式使用，不能插手系统窗口框架的最大化。
-    if (!useJbr && !useSystemControls) {
-        DisposableEffect(maximizer) {
-            val uninstall = maximizer.install()
-            onDispose { uninstall() }
-        }
-    }
-    val maximized = if (useSystemControls) {
-        windowState.placement == WindowPlacement.Maximized
-    } else {
-        maximizer.isMaximized
-    }
+    val maximized = windowState.placement == WindowPlacement.Maximized
     val toggleMaximize: () -> Unit = {
-        if (useSystemControls) {
-            windowState.placement = if (maximized) WindowPlacement.Floating else WindowPlacement.Maximized
-        } else {
-            maximizer.toggle()
-        }
+        windowState.placement = if (maximized) WindowPlacement.Floating else WindowPlacement.Maximized
     }
 
-    // JBR 在客户区右上画原生窗口钮，右侧要给它们留位（Swing 逻辑像素即 dp，保底不少于 141dp）。
-    val nativeControlsWidth = if (useJbr) jbr.rightInsetDp.dp else 0.dp
-    // 右侧按钮组总宽：JBR 模式 = 账号 + 消息 + (仅desktopRun/debug: 手机预览) + 迷你模式 + 设置 + 原生窗口钮区；无边框模式 = 全自绘。
+    // 右侧按钮组总宽：账号 + 消息 + (仅 desktopRun/debug: 手机预览) + 迷你模式 + 设置
+    // + 分隔线 + 三颗窗口钮。
     val showMobilePreview = AppVersion.isDesktopRunOrDebug
     val slotsCount = if (showMobilePreview) 5 else 4
-    val businessGroupWidth = ChromeSlotWidth * slotsCount
-    val rightGroupWidth = when {
-        useJbr -> businessGroupWidth + nativeControlsWidth
-        useSystemControls -> businessGroupWidth + ChromeSeparatorWidth
-        else -> ChromeActionsWidth
-    }
-
-    // 原生窗口钮的明暗跟随应用主题。判据用 surface 亮度而不是 isSystemInDarkTheme()：
-    // 后者只反映系统设置，追不上应用内的主题覆盖（深色模式 / 纯黑等）。
-    val isDarkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    LaunchedEffect(jbr, isDarkTheme) {
-        jbr?.setControlsDark(isDarkTheme)
-    }
+    val rightGroupWidth = ChromeActionsWidth
 
     Box(
         modifier = modifier
@@ -323,8 +239,7 @@ fun DesktopTitleBar(
             // ⚠️ 这里只淡**颜色**，高度始终是 TitleBarHeight —— 顶栏一旦跟着变矮，
             // 右侧窗口钮就会跟着窗口顶边移动，而它们必须是全程钉死的。
             .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = chromeAlpha))
-            .zIndex(1f)
-            .jbrHitTest(bridge),
+            .zIndex(1f),
     ) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -338,7 +253,7 @@ fun DesktopTitleBar(
                     // 返回键：**窗口 chrome 是桌面端唯一的返回入口** —— 页面内一律不自绘
                     // （见 `AppScaffold` / `CpRouteScaffold`）。是否可返回由调用方（`Main.kt`）
                     // 依据 Navigator 栈与内嵌面板状态算好，这里只负责画。
-                    // 必须在拖拽区**外面**（JBR 模式由注册表豁免，无边框模式见下面的说明）。
+                    // 必须在拖拽区**外面**（可交互控件会在 Main pass 消费 Press）。
                     AnimatedVisibility(
                         visible = canGoBack,
                         enter = fadeIn(tween(180)) + expandHorizontally(tween(200)),
@@ -346,9 +261,7 @@ fun DesktopTitleBar(
                     ) {
                         ChromeSlot(
                             onClick = onBack,
-                            modifier = Modifier
-                                .chromeFade(chromeAlpha, interactive = !immersive)
-                                .jbrClientZone(chromeBridge, "back"),
+                            modifier = Modifier.chromeFade(chromeAlpha, interactive = !immersive),
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
@@ -363,63 +276,29 @@ fun DesktopTitleBar(
                     // 宽度 = 右侧按钮组宽度（若显示了返回键就减掉它占的那格）—— 两侧等宽，中间的
                     // 搜索框才是**真正居中**。标题是纯 Text，不吃指针事件，可以待在拖拽区里。
                     //
-                    // JBR 模式：这块空白不需要任何拖拽代码 —— 命中桥接对未注册的区域回
-                    // `forceClient(false)`，原生侧自动获得拖拽 / 双击最大化 / 右键系统菜单。
-                    if (useJbr) {
-                        Box(
-                            Modifier
-                                .width((rightGroupWidth - animatedBackSlotWidth).coerceAtLeast(0.dp))
-                                .fillMaxHeight()
-                                .chromeFade(chromeAlpha, interactive = !immersive),
-                            contentAlignment = Alignment.CenterStart,
-                        ) {
-                            // CpText 而不是 Text：页面标题（"每日推荐 · 2026 年 10 月" 这类）
-                            // 被左侧固定宽度的拖拽区挤断后仍可读全。
-                            AnimatedContent(
-                                targetState = title,
-                                transitionSpec = {
-                                    (fadeIn(tween(220)) + slideInHorizontally(tween(220)) { it / 8 }) togetherWith
-                                        (fadeOut(tween(160)) + slideOutHorizontally(tween(160)) { -it / 8 })
-                                },
-                                label = "desktopTitleBarText",
-                            ) { currentTitle ->
-                                CpText(
-                                    text = currentTitle,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    modifier = Modifier.padding(start = CpSpacing.pageHorizontal),
-                                )
-                            }
-                        }
-                    } else {
-                        WindowDragRegion(
-                            windowScope = windowScope,
-                            enabled = !maximized,
-                            modifier = Modifier
-                                .width((rightGroupWidth - animatedBackSlotWidth).coerceAtLeast(0.dp))
-                                .fillMaxHeight()
-                                // ⚠️ 拖拽**不**跟着淡出：AWT 的 MouseListener 不吃 Compose 的命中测试，
-                                // 沉浸态里这 300 多 dp 的顶边还能拖窗口，是用户最顺手的抓取位置。
-                                .chromeFade(chromeAlpha, interactive = !immersive)
-                                .onTitleBarDoubleClick(toggleMaximize),
-                        ) {
-                            AnimatedContent(
-                                targetState = title,
-                                transitionSpec = {
-                                    (fadeIn(tween(220)) + slideInHorizontally(tween(220)) { it / 8 }) togetherWith
-                                        (fadeOut(tween(160)) + slideOutHorizontally(tween(160)) { -it / 8 })
-                                },
-                                label = "desktopTitleBarText",
-                            ) { currentTitle ->
-                                CpText(
-                                    text = currentTitle,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    modifier = Modifier.padding(start = CpSpacing.pageHorizontal),
-                                )
-                            }
+                    WindowDragRegion(
+                        taoWindow = taoWindow,
+                        modifier = Modifier
+                            .width((rightGroupWidth - animatedBackSlotWidth).coerceAtLeast(0.dp))
+                            .fillMaxHeight()
+                            // 拖拽区跟随淡出：沉浸态下节点会被摘掉，只留可视的窗口钮。
+                            .chromeFade(chromeAlpha, interactive = !immersive),
+                    ) {
+                        AnimatedContent(
+                            targetState = title,
+                            transitionSpec = {
+                                (fadeIn(tween(220)) + slideInHorizontally(tween(220)) { it / 8 }) togetherWith
+                                    (fadeOut(tween(160)) + slideOutHorizontally(tween(160)) { -it / 8 })
+                            },
+                            label = "desktopTitleBarText",
+                        ) { currentTitle ->
+                            CpText(
+                                text = currentTitle,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                modifier = Modifier.padding(start = CpSpacing.pageHorizontal),
+                            )
                         }
                     }
 
@@ -428,20 +307,11 @@ fun DesktopTitleBar(
                     // ⚠️ 为什么不是「给搜索框一个更宽的槽位、让它自己在里面居中」：槽位比框宽出来的
                     // 那部分如果不属于任何拖拽区，就成了**拖不动的死区**（第一版就是这样）。
                     // 所以空白必须拆成两块、与框首尾相接、互不重叠 —— 见 [TitleBarSearch]。
-                    // JBR 模式下 `dragArea` 退化为普通 Box（原生拖拽覆盖），搜索框本体注册成客户区。
                     TitleBarSearch(
                         onSearch = onSearch,
-                        fieldModifier = Modifier.jbrClientZone(chromeBridge, "search"),
+                        fieldModifier = Modifier,
                         dragArea = { searchDragModifier ->
-                            if (useJbr) {
-                                Box(searchDragModifier)
-                            } else {
-                                WindowDragRegion(
-                                    windowScope = windowScope,
-                                    enabled = !maximized,
-                                    modifier = searchDragModifier,
-                                )
-                            }
+                            WindowDragRegion(taoWindow = taoWindow, modifier = searchDragModifier)
                         },
                         modifier = Modifier
                             .weight(1f)
@@ -458,43 +328,31 @@ fun DesktopTitleBar(
                     //
                     // ⚠️ 顺序（2026-10-02 调整）：**消息排在设置左边** —— 越靠右离窗口控制越近，
                     // 而「设置」是最常点的一个，紧贴分隔线比被夹在中间更好找。窗口控制组
-                    // 永远固定在最右，别往它们左边塞业务入口（JBR 模式下窗口控制组是 JBR 画的
-                    // 原生钮，位于 `nativeControlsWidth` 那格 spacer 的右边）。
                     AccountSlot(
                         onClick = onOpenAccount,
-                        modifier = Modifier
-                            .chromeFade(chromeAlpha, interactive = !immersive)
-                            .jbrClientZone(chromeBridge, "account"),
+                        modifier = Modifier.chromeFade(chromeAlpha, interactive = !immersive),
                     )
                     MessageSlot(
                         onClick = onOpenMessages,
-                        modifier = Modifier
-                            .chromeFade(chromeAlpha, interactive = !immersive)
-                            .jbrClientZone(chromeBridge, "messages"),
+                        modifier = Modifier.chromeFade(chromeAlpha, interactive = !immersive),
                     )
                     if (showMobilePreview) {
                         ChromeSlot(
                             onClick = onToggleMobileMode,
-                            modifier = Modifier
-                                .chromeFade(chromeAlpha, interactive = !immersive)
-                                .jbrClientZone(chromeBridge, "mobile_mode"),
+                            modifier = Modifier.chromeFade(chromeAlpha, interactive = !immersive),
                         ) {
                             Icon(Icons.Filled.PhoneAndroid, "手机版界面预览", modifier = Modifier.size(18.dp))
                         }
                     }
                     ChromeSlot(
                         onClick = onToggleMiniMode,
-                        modifier = Modifier
-                            .chromeFade(chromeAlpha, interactive = !immersive)
-                            .jbrClientZone(chromeBridge, "mini_mode"),
+                        modifier = Modifier.chromeFade(chromeAlpha, interactive = !immersive),
                     ) {
                         Icon(Icons.Filled.PictureInPictureAlt, "迷你模式", modifier = Modifier.size(18.dp))
                     }
                     ChromeSlot(
                         onClick = onOpenSettings,
-                        modifier = Modifier
-                            .chromeFade(chromeAlpha, interactive = !immersive)
-                            .jbrClientZone(chromeBridge, "settings"),
+                        modifier = Modifier.chromeFade(chromeAlpha, interactive = !immersive),
                     ) {
                         Icon(Icons.Filled.Settings, "设置", modifier = Modifier.size(18.dp))
                     }
@@ -510,55 +368,33 @@ fun DesktopTitleBar(
                     // 所以淡完之后直接把节点摘掉：命中测试、光标、焦点随之一起消失。
                     //
                     // 摘掉就必须自己把宽度补回来 —— 这一段决定了右侧三颗窗口钮的横向位置。
-                    // 左侧块 = 右侧按钮组宽度（JBR：业务槽 + 原生钮区；无边框：ChromeActionsWidth），
-                    // 中间是原来的 weight(1f)，右侧业务槽按 slotsCount 补。
-                    if (useJbr) {
-                        // 原生 hit-test 对未注册区域回 forceClient(false) ⇒ 空白处照样拖窗口。
-                        Spacer(Modifier.width(rightGroupWidth).fillMaxHeight())
-                        Spacer(Modifier.weight(1f).fillMaxHeight())
-                    } else {
-                        // 无边框模式就剩 AWT 的 MouseListener 这一条拖拽链路，得留住：
-                        // 沉浸态下窗口顶边是用户最顺手的抓取位置。
-                        WindowDragRegion(
-                            windowScope = windowScope,
-                            enabled = !maximized,
-                            modifier = Modifier.width(rightGroupWidth).fillMaxHeight(),
-                        )
-                        WindowDragRegion(
-                            windowScope = windowScope,
-                            enabled = !maximized,
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .onTitleBarDoubleClick(toggleMaximize),
-                        )
-                    }
+                    // 左侧块 = 右侧按钮组宽度，中间是原来的 weight(1f)，
+                    // 右侧业务槽按 slotsCount 补。沉浸态下窗口顶边仍然可以拖。
+                    WindowDragRegion(
+                        taoWindow = taoWindow,
+                        modifier = Modifier.width(rightGroupWidth).fillMaxHeight(),
+                    )
+                    WindowDragRegion(
+                        taoWindow = taoWindow,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                    )
                     Spacer(Modifier.width(ChromeSlotWidth * slotsCount))
                 }
 
-                if (useJbr) {
-                    // 给 JBR 画的「最小化 / 最大化 / 关闭」留位。点击 / 悬停 / Snap Layouts
-                    // 浮层全部由 JBR 原生处理，本组件不画、不拦。
-                    Spacer(Modifier.width(nativeControlsWidth))
-                } else if (!useSystemControls) {
-                    // 分隔线跟着一起淡：它划的是「业务入口 ↔ 窗口钮」的分界，业务入口没了，
-                    // 只剩一条孤零零的竖线压在窗口钮左边，比没有更显脏。
-                    ChromeSeparator(Modifier.chromeFade(chromeAlpha, interactive = true))
+                // 分隔线跟着一起淡：它划的是「业务入口 ↔ 窗口钮」的分界，业务入口没了，
+                // 只剩一条孤零零的竖线压在窗口钮左边，比没有更显脏。
+                ChromeSeparator(Modifier.chromeFade(chromeAlpha, interactive = true))
 
-                    // ⚠️ 刻意用 `Remove`（居中横线）而不是 `Minimize`：后者的横线贴在该字形框
-                    // 底部，与相邻的 CropSquare / Close 不在同一条水平线上（实测低了约 5px，
-                    // 肉眼扫过去只是「有点歪」，量像素才看得出来）。
-                    WindowControlButton(Icons.Filled.Remove, "最小化") { windowState.isMinimized = true }
-                    WindowControlButton(
-                        icon = if (maximized) Icons.Filled.FilterNone else Icons.Filled.CropSquare,
-                        contentDescription = if (maximized) "向下还原" else "最大化",
-                        onClick = toggleMaximize,
-                    )
-                    WindowControlButton(Icons.Filled.Close, "关闭", danger = true, onClick = onClose)
-                } else {
-                    // 系统标题栏已有窗控；保持两侧槽位对称以确保搜索框居中。
-                    Spacer(Modifier.width(ChromeSeparatorWidth))
-                }
+                // ⚠️ 刻意用 `Remove`（居中横线）而不是 `Minimize`：后者的横线贴在该字形框
+                // 底部，与相邻的 CropSquare / Close 不在同一条水平线上（实测低了约 5px，
+                // 肉眼扫过去只是「有点歪」，量像素才看得出来）。
+                WindowControlButton(Icons.Filled.Remove, "最小化") { windowState.isMinimized = true }
+                WindowControlButton(
+                    icon = if (maximized) Icons.Filled.FilterNone else Icons.Filled.CropSquare,
+                    contentDescription = if (maximized) "向下还原" else "最大化",
+                    onClick = toggleMaximize,
+                )
+                WindowControlButton(Icons.Filled.Close, "关闭", danger = true, onClick = onClose)
             }
             // 标题栏与正文在浅色主题下都接近白色，靠 1dp 分隔线划出层次。
             // 沉浸态跟着底栏一起淡掉：留一条灰线压在播放页的渐变上，比什么都没有更显脏。
@@ -571,125 +407,26 @@ fun DesktopTitleBar(
 }
 
 /**
- * JBR 模式的 hit-test 注册表：谁可点（客户区）、谁可拖（交还原生）。
+ * 一块可拖拽区域（内部内容左对齐垂直居中）。
  *
- * 可交互控件通过 [Modifier.jbrClientZone] 把自己的矩形登记进 [clientRects]（键隔离，
- * 控件离开组合时注销）；桥接层在每个鼠标事件上把「光标点是否落在任一已登记矩形内」
- * 回给 [JbrWindowChrome.Controller.forceClient]。全部坐标都在**组合根**坐标系里比较，
- * 换算关系：`根坐标 = 根节点 positionInRoot + 事件局部坐标`。
- *
- * 纯 HashMap + 普通读写即可：登记（布局回调）与查询（指针回调）都发生在 EDT。
- */
-internal class JbrHitTestBridge(val controller: JbrWindowChrome.Controller) {
-    var rootOrigin: Offset = Offset.Zero
-    val clientRects = HashMap<String, Rect>()
-
-    fun isClient(posInRoot: Offset): Boolean =
-        clientRects.values.any { it.contains(posInRoot) }
-}
-
-/**
- * 把调用方标记成「客户区」：光标落在这个矩形里时，原生侧不抢事件（按钮可点、
- * 文本可选中）。JBR 模式专用；`bridge == null`（无边框模式）时原样返回。
- *
- * ⚠️ 必须挂在**可交互控件本身**的 modifier 链上，宽高即点击边界 —— 不要挂在整条
- * 标题栏上，否则空白区也会被判成客户区、原生拖拽就没了。
- */
-@Composable
-internal fun Modifier.jbrClientZone(bridge: JbrHitTestBridge?, key: String): Modifier {
-    if (bridge == null) return this
-    // 控件离开组合（例如返回键消失）时注销，否则那块区域永远点不动窗口。
-    DisposableEffect(key) {
-        onDispose { bridge.clientRects.remove(key) }
-    }
-    return onGloballyPositioned { coords ->
-        bridge.clientRects[key] = coords.boundsInRoot()
-    }
-}
-
-/**
- * JBR 模式的 hit-test 桥接：按官方约定，除 Exit 与 Scroll 外**每个**鼠标事件都要回一次
- * hit-test（原生侧用的是上一次的值）。挂在整个标题栏根节点上；具体回 `true` 还是 `false`
- * 由光标点是否落在 [JbrHitTestBridge.clientRects] 内决定。
- *
- * `bridge == null`（无边框模式）时是空操作。
- */
-internal fun Modifier.jbrHitTest(bridge: JbrHitTestBridge?): Modifier {
-    if (bridge == null) return this
-    return onGloballyPositioned { coords ->
-        bridge.rootOrigin = coords.positionInRoot()
-    }.pointerInput(bridge) {
-        awaitPointerEventScope {
-            while (true) {
-                val event = awaitPointerEvent(PointerEventPass.Final)
-                if (event.type == PointerEventType.Exit || event.type == PointerEventType.Scroll) continue
-                val change = event.changes.firstOrNull() ?: continue
-                val posInRoot = bridge.rootOrigin + change.position
-                bridge.controller.forceClient(bridge.isClient(posInRoot))
-            }
-        }
-    }
-}
-
-/**
- * 双击标题栏空白区切换最大化 / 还原（仅无边框模式；JBR 模式由原生标题栏行为承担）。
- *
- * 为什么必须自己做：[WindowDraggableArea] **不提供**这个行为（两种 handler 都不提供）——
- * 双击标题栏最大化是 Windows 给**原生标题栏**的行为，而无边框模式没有原生标题栏。
- *
- * 为什么用 `PointerEventPass.Final`：同一块区域上并存着两套事件机制 —— AWT 层的
- * `MouseListener`（拖动）和 Compose 的 `awaitFirstDown`（给拖动上膛）。这里必须
- * **只观察、不消费**，否则会和拖拽抢事件。Final 是最后一个 pass，事件已经派发完毕，
- * 读它不会改变任何人的消费结果。
- */
-@Composable
-private fun Modifier.onTitleBarDoubleClick(onDoubleClick: () -> Unit): Modifier {
-    val current by rememberUpdatedState(onDoubleClick)
-    return this.pointerInput(Unit) {
-        awaitPointerEventScope {
-            var lastDownAt = 0L
-            while (true) {
-                val event = awaitPointerEvent(PointerEventPass.Final)
-                val down = event.changes.firstOrNull { it.changedToDown() } ?: continue
-                val now = down.uptimeMillis
-                if (lastDownAt != 0L && now - lastDownAt <= DoubleClickIntervalMs) {
-                    lastDownAt = 0L
-                    current()
-                } else {
-                    lastDownAt = now
-                }
-            }
-        }
-    }
-}
-
-/**
- * 一块可拖拽区域（内部内容左对齐垂直居中）。**无边框模式专用** —— JBR 模式的拖拽
- * 由原生 hit-test 承担，不走这里。
- *
- * [enabled] 为 false 时退化成普通 `Box` —— 最大化状态下必须禁用拖拽：
- * `WindowDraggableArea` 没有「拖出即还原」的语义，放任拖动只会让最大化窗口被平移。
- * JBR 模式没有这个限制：拖最大化窗口是 Windows 原生行为（拖出即还原并跟随光标），
- * 当年那条「不建议手写」的 TODO 由切换 JBR 路径一并解决。
+ * [Modifier.windowDragArea] 在 Final pass 上观察未被消费的 Press，移动后调用
+ * `TaoWindow.dragWindow()`；双击由 Nucleus 的 `ToggleMaximize` 处理。最大化状态下
+ * **不禁用**拖拽：Windows 原生行为就是「拖出即还原并跟随光标」。
  *
  * 之所以抽成一个函数而不是各处内联：拖拽区与可交互控件必须**严格错开**（见 [DesktopTitleBar]
  * 的说明），把「怎么拖」收敛到一处，改的时候才不会漏掉某一个调用点。
  */
 @Composable
 private fun WindowDragRegion(
-    windowScope: WindowScope,
-    enabled: Boolean,
+    taoWindow: TaoWindow,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit = {},
 ) {
-    if (enabled) {
-        with(windowScope) {
-            WindowDraggableArea(modifier = modifier) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) { content() }
-            }
-        }
-    } else {
-        Box(modifier, contentAlignment = Alignment.CenterStart) { content() }
+    Box(
+        modifier = modifier.windowDragArea(taoWindow),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        content()
     }
 }
 
@@ -758,8 +495,9 @@ private fun AccountSlot(onClick: () -> Unit, modifier: Modifier = Modifier) {
  * 输入框都走 `Main` pass 且要求事件未被消费，所以这 200ms 里的误触不会真的点下去。
  * （它**挡不住**光标形状，那要等节点被摘掉。）
  *
- * ⚠️ AWT 层的 `WindowDraggableArea` **不受影响**（它不认 Compose 的命中测试）——
- * 沉浸态下窗口顶边仍然可以拖动，这正是我们想要的。
+ * ⚠️ `windowDragArea` 会在 Final pass 上看到这里已经消费掉的 Press，所以淡出的
+ * 那几百毫秒内拖不动；淡完之后节点被摘掉，[DesktopTitleBar] 的兜底分支会换成
+ * 不带 `chromeFade` 的纯拖拽区，窗口顶边又能拖了。
  */
 private fun Modifier.chromeFade(alpha: Float, interactive: Boolean): Modifier {
     val faded = graphicsLayer { this.alpha = alpha }
@@ -838,7 +576,7 @@ private fun ChromeSlot(
     }
 }
 
-/** 窗口控制按钮（最小化 / 最大化 / 关闭）。仅无边框模式渲染；JBR 模式由原生窗口钮接管。 */
+/** 窗口控制按钮（最小化 / 最大化 / 关闭）。Tao 后端全部自绘。 */
 @Composable
 private fun WindowControlButton(
     icon: ImageVector,

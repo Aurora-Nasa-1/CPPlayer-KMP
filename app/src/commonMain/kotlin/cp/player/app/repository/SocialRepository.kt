@@ -108,7 +108,7 @@ class SocialRepository(private val source: UnifiedMusicSource) {
     }
 
     /** 成功时返回 null；失败原样转成目标类型（便于 `?:` / `let` 提前返回）。 */
-    private inline fun <T> BackendResult<*>.failureOrUnsupported(): MusicResult<T>? = when (this) {
+    private fun <T> BackendResult<*>.failureOrUnsupported(): MusicResult<T>? = when (this) {
         is BackendResult.Error -> BackendResult.Error(message, code, cause)
         is BackendResult.Unsupported -> BackendResult.Unsupported(message)
         is BackendResult.Success -> null

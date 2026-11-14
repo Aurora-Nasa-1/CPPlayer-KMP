@@ -73,6 +73,7 @@ val LocalEmbeddedInPane = staticCompositionLocalOf { false }
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
 fun ProvideIsExpanded(content: @Composable () -> Unit) {
+    @Suppress("DEPRECATION")
     val adaptiveInfo = currentWindowAdaptiveInfo()
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val expanded = CpBreakpoints.isExpanded(maxWidth)

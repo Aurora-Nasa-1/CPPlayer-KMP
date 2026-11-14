@@ -382,7 +382,7 @@ private fun AlbumDetailContent(
                         SectionHeader(
                             title = s.album.tracks,
                             supportingText = if (allTracks.isEmpty()) {
-                                detail?.let { state.error ?: s.album.noPlayableTracks }.orEmpty()
+                                detail.let { state.error ?: s.album.noPlayableTracks }
                             } else if (searchQuery.isNotBlank()) {
                                 "${filteredTracks.size} / ${allTracks.size}"
                             } else {

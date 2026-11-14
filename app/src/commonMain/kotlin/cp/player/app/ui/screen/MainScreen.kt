@@ -1174,7 +1174,7 @@ private fun DesktopSidebar(
                 // 功能区：图标装在圆角方片里 —— 与下方歌单区的封面缩略图形成对照。
                 item { SidebarSection("我的音乐") }
                 item {
-                    val isLocalFav = selectedPane is DesktopPane.LocalLibrary && (selectedPane as DesktopPane.LocalLibrary).initialTab == 3
+                    val isLocalFav = selectedPane is DesktopPane.LocalLibrary && selectedPane.initialTab == 3
                     val isOnlineFav = selectedPlaylistId != null &&
                         selectedPlaylistId == homeState.likedPlaylist?.resourceId
                     SidebarAction(

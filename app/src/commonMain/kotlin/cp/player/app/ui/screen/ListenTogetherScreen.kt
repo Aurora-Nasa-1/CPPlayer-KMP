@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.MaterialTheme
@@ -328,7 +328,7 @@ private fun ColumnScope.roomContent(
         SettingsButtonItem(
             text = together.leaveRoom,
             subtitle = together.leaveRoomNote,
-            icon = Icons.Filled.ExitToApp,
+            icon = Icons.AutoMirrored.Filled.ExitToApp,
             index = 0,
             total = 1,
             enabled = !busy,

@@ -52,6 +52,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -97,6 +98,9 @@ import cp.player.app.ui.component.CpSearchField
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.CpToggleChip
+import cp.player.app.ui.component.CpWavyProgressIndeterminate
+import cp.player.app.ui.component.CpCircularWavyProgressIndeterminate
+import cp.player.app.ui.component.cpPressScale
 import cp.player.app.ui.component.PlaylistOptionsSheet
 import cp.player.app.ui.component.SongDetailInfoDialog
 import cp.player.app.ui.component.SongItem
@@ -783,7 +787,8 @@ private fun LocalLibraryToolbar(
             FilledTonalButton(
                 onClick = onScan,
                 enabled = !state.scanning,
-                modifier = Modifier.weight(1f),
+                shape = MaterialTheme.shapes.large,
+                modifier = Modifier.weight(1f).cpPressScale(),
             ) {
                 if (state.scanning) {
                     CpLoadingIndicator(
@@ -804,7 +809,8 @@ private fun LocalLibraryToolbar(
             FilledTonalButton(
                 onClick = onImport,
                 enabled = !state.importing,
-                modifier = Modifier.weight(1f),
+                shape = MaterialTheme.shapes.large,
+                modifier = Modifier.weight(1f).cpPressScale(),
             ) {
                 if (state.importing) {
                     CpLoadingIndicator(
@@ -817,6 +823,36 @@ private fun LocalLibraryToolbar(
                     Icon(Icons.Filled.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     CpText(s.importFolder, maxLines = 1)
+                }
+            }
+        }
+        if (state.scanning) {
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CpCircularWavyProgressIndeterminate(
+                            modifier = Modifier.size(16.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        CpText(
+                            state.scanProgress?.let { s.scanningFound(it.scanned) } ?: s.scanning,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    CpWavyProgressIndeterminate(
+                        modifier = Modifier.fillMaxWidth().height(4.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                    )
                 }
             }
         }
@@ -1134,12 +1170,22 @@ private fun ColumnScope.SongList(
                     maxLines = 1,
                 )
                 if (songs.isNotEmpty()) {
-                    IconButton(onClick = { model.playAll(songs) }) {
-                        Icon(Icons.Filled.PlayArrow, contentDescription = s.playAll)
+                    FilledTonalIconButton(
+                        onClick = { model.shuffleAll(songs) },
+                        modifier = Modifier.size(36.dp).cpPressScale(),
+                        shape = MaterialTheme.shapes.medium,
+                    ) {
+                        Icon(Icons.Filled.Shuffle, contentDescription = s.shuffleAll, modifier = Modifier.size(18.dp))
                     }
-                    IconButton(onClick = { model.shuffleAll(songs) }) {
-                        Icon(Icons.Filled.Shuffle, contentDescription = s.shuffleAll)
+                    Spacer(Modifier.width(6.dp))
+                    FilledTonalIconButton(
+                        onClick = { model.playAll(songs) },
+                        modifier = Modifier.size(36.dp).cpPressScale(),
+                        shape = MaterialTheme.shapes.medium,
+                    ) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = s.playAll, modifier = Modifier.size(18.dp))
                     }
+                    Spacer(Modifier.width(6.dp))
                 }
                 if (showSort) {
                     SortMenu(

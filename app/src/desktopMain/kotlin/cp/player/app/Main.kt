@@ -2,7 +2,6 @@ package cp.player.app
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -11,6 +10,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
@@ -18,23 +24,22 @@ import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
-import androidx.compose.ui.window.WindowScope
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.application.DecoratedWindow
+import dev.nucleusframework.application.NucleusWindow
 import dev.nucleusframework.application.nucleusApplication
+import dev.nucleusframework.window.tao.LocalTaoWindow
+import cp.player.app.platform.AppTray
 import cp.player.app.platform.DesktopBackDispatcher
 import cp.player.app.platform.DesktopCloseBehavior
 import cp.player.app.platform.DesktopRenderTuning
-import cp.player.app.platform.DesktopTray
-import cp.player.app.platform.TrayMenuPopup
-import cp.player.app.platform.DesktopWindowPlacement
-import cp.player.app.platform.JbrWindowChrome
+import cp.player.app.platform.DesktopTrayState
+import cp.player.app.platform.desktopTraySupported
+import cp.player.app.platform.TaoPrimaryDisplay
 import cp.player.app.platform.WindowDecorChoice
 import cp.player.app.platform.WindowsWindowCorners
 import cp.player.app.platform.WindowsSmtcControls
@@ -43,7 +48,6 @@ import cp.player.app.monitoring.DesktopMonitoring
 import cp.player.app.ui.component.DesktopTitleBar
 import cp.player.app.ui.component.DesktopCloseDialog
 import cp.player.app.ui.component.DesktopMiniPlayer
-import cp.player.app.ui.component.TitleBarHeight
 import cp.player.app.ui.util.DesktopShell
 import cp.player.app.ui.util.next
 import cp.player.app.ui.util.popToMainShell
@@ -95,30 +99,61 @@ private const val SeekStepMs = 5_000L
 private const val WindowSizeSaveDelayMs = 400L
 
 /**
- * DWM 圆角与 JBR 自定义标题栏的重试次数与间隔。
+ * DWM 圆角的重试次数与间隔。
  *
- * 窗口从「创建」到「真正 map 出来、`IsWindowVisible` 为真」之间有一小段窗口期，
- * 在那之前按进程 ID 找不到任何可见窗口（圆角）、peer 也没准备好（JBR 安装）。
- * 20 × 100ms 足够覆盖冷启动。
+ * 窗口从创建到真正 map 出来之间有一小段窗口期：那之前 `IsWindowVisible` 为假，
+ * `WindowsWindowCorners` 按进程 ID 枚举顶层窗口时找不到它。50 × 100ms 覆盖冷启动；
+ * 只有**主窗口**真的被读回成 ROUND 才算成功（Tao 的 16×16 事件窗口不算），
+ * 所以试满之前不会提前退出。
  */
-private const val WindowRetryAttempts = 20
-private const val WindowRetryDelayMs = 100L
+private const val WindowCornerRetryAttempts = 50
+private const val WindowCornerRetryDelayMs = 100L
 
 /**
- * 窗口装饰走哪条路，**必须在建窗之前**决定：`decoration` 参数决定窗口是否带系统边框，
- * AWT 不允许窗口显示之后再改 `undecorated`，这个选择没法事后补。
+ * 窗口发丝线的墨色：中性灰 10%。
  *
- * - **JBR 路**（运行在 JBR 且 `JbrWindowChrome.isSupported`，见 `JbrWindowChrome`）：
- *   `SystemDefault` 保持窗口有边框，随后把客户区向上扩展盖过标题栏。原生阴影 /
- *   缩放边框 / Aero Snap / 原生最大化 / Win11 自动圆角全部白拿，**「假全屏」就此根治** ——
- *   原生最大化尊重任务栏，窗口永远不会铺满整个输出，Windows 也就没有理由把窗口
- *   提升为全屏呈现并切换显示模式（HDR 屏上退出后桌面 SDR 闪烁的那个坑）。
- * - **标准系统装饰路**（Windows 上 AUTO / JBR 不可用）：保留 Win32 标准标题栏与窗控，
- *   客户区仍使用应用工具栏；系统边框保证窗口不走透明无边框呈现路径。
- * - **无边框路**（显式选择无边框，或非 Windows 上 JBR 不可用）：`Undecorated(6dp)` 纯 `WS_POPUP`，
- *   一切靠手补（`WindowsWindowCorners` / `WindowMaximizer` / 内置缩放抓手）。
- *   `Undecorated` 目前还是实验 API（要显式 opted-in）。用它的唯一理由是**能指定缩放
- *   抓手厚度**：默认等价 8dp，那圈抓手会压住贴着窗口边缘的控件。
+ * **刻意不按明暗主题换色**：这一层在 `AppTheme` 之外（主题宿主在 `App` 内部），
+ * 读 `LocalIsDarkTheme` 会落到 CompositionLocal 的默认值 `false` —— 深色窗口上
+ * 会画出一条 10% 黑线（实测就是一整圈 3 个亮度级的暗线，几乎看不见）。
+ * 中性灰在深浅底上都各偏 ~13 个亮度级，两种主题下都是「看得见但不抢眼」。
+ */
+private val WindowEdgeHairlineInk = Color(0x1A808080)
+
+/**
+ * 窗口最外圈的 1px 半透明发丝线。
+ *
+ * Tao 的无边框窗口把非客户区整个吃掉，Win11 本来随边框一起画的那条 1px 窗口描边
+ * 也就没了 —— 圆角有了，但窗口和背景之间是「糊」的，没有普通 Win11 窗口那种
+ * 一圈极细的轮廓。这里自己补一条：半透明而不是实色，深色底上不会变成一条硬亮的线。
+ *
+ * 半径取 8dp：DWM `DWMWCP_ROUND` 的圆角在 96dpi 下就是 8px、随系统缩放走，
+ * 而 Compose 的 dp 与系统缩放同一把尺，所以两层圆弧能对得上。
+ * 画在内容的绘制末尾，纯绘制、不参与布局，不会挤动任何页面。
+ */
+private fun Modifier.windowEdgeHairline(): Modifier = drawWithContent {
+    drawContent()
+    val stroke = 1.dp.toPx()
+    drawRoundRect(
+        color = WindowEdgeHairlineInk,
+        topLeft = Offset(stroke / 2f, stroke / 2f),
+        size = Size(size.width - stroke, size.height - stroke),
+        cornerRadius = CornerRadius(8.dp.toPx() - stroke / 2f),
+        style = Stroke(width = stroke),
+    )
+}
+
+/**
+ * 窗口装饰固定为 **Tao 自绘标题栏路**，且必须在建窗之前定下来：
+ *
+ * - 窗口由 Nucleus Tao 创建并固定 `undecorated = true`，内容从客户区 (0,0) 开始；
+ * - 标题栏、拖拽、双击最大化与三颗窗口钮只由 `DesktopTitleBar` 提供；
+ * - 缩放边框由 Tao 的 `ResizeFrameDecoration` 负责，全程没有 `java.awt.Window`。
+ *
+ * ⚠️ 不能改回 `undecorated = false`：Tao 会在窗口顶部再画一套 CSD 窗口钮，
+ * 与自绘标题栏叠在同一位置（2026-11-14「点 X 不进托盘」就是两套关闭入口）。
+ *
+ * [WindowDecorChoice] 的三态仍保留，用于日志与历史配置兼容；JBR 路依赖 AWT，
+ * Tao 后端下不再提供。
  */
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 fun main(args: Array<String> = emptyArray()) {
@@ -159,44 +194,28 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
     // get() 后 factory 固化，晚了 setSafe 直接抛），见 DesktopImageCacheTuning 的说明。
     installDesktopImageCacheLimit()
 
-    // 探测本身是纯反射 + 类加载，必须在建窗前完成（见上方 KDoc）。
-    // ⚠️ 只是「跑在 JBR 上」不会让窗口变原生 —— 这条路必须像这样显式 opt-in，
-    // JBR 的 WindowDecorations 完全不碰 `setUndecorated` 的默认行为。
-    // 另：`javaHome` 只喂给 jpackage（打包产物）；run 家族的 launcher 由
-    // `app/build.gradle.kts` 的 afterEvaluate 指到 `.jbr`（desktopRun 原生指守护进程 JDK）。
-    //
-    // 三态开关见 [WindowDecorChoice]：auto / jbr / undecorated —— 显式 undecorated 保留无边框，
-    // Windows 上 JBR 不可用则保留标准系统标题栏，其它平台维持原回退行为。
+    // Tao 窗口没有 AWT 对象，JBR 的 WindowDecorations 只能装在 `java.awt.Window` 上，
+    // 所以「JBR 路」在 Tao 后端上不可用。这里只保留 [WindowDecorChoice] 里用户真正
+    // 关心的那一层意图：UNDECORATED ⇒ Tao 完全无边框；其余 ⇒ Tao 自绘标题栏
+    // （Windows/Linux 附带 CSD 边框与 DWM/GTK 阴影）。
     val decorMode = WindowDecorChoice.resolve()
-    val useJbrChrome = when (decorMode) {
-        WindowDecorChoice.Mode.UNDECORATED -> false
-        WindowDecorChoice.Mode.JBR -> JbrWindowChrome.isSupported
-        WindowDecorChoice.Mode.AUTO -> JbrWindowChrome.isSupported
-    }
-    val isWindows = System.getProperty("os.name").orEmpty().startsWith("Windows", ignoreCase = true)
-    val useSystemDecorations = WindowDecorChoice.useSystemDecorations(
-        mode = decorMode,
-        isWindows = isWindows,
-        jbrSupported = JbrWindowChrome.isSupported,
-    )
     if (mobilePreview) {
         DesktopShell.isMobileMode = true
         println("[CPPlayer] 启动模式 = 手机版界面预览 (Mobile Preview，412×892 Compact 布局)")
     } else {
-        println("[CPPlayer] 窗口装饰 = $decorMode（来源：${WindowDecorChoice.lastSource}）→ " + when {
-            useJbrChrome -> "JBR 路（系统边框 + 自定义标题栏，原生贴边吸附）"
-            useSystemDecorations -> "标准系统装饰窗口"
-            else -> "无边框自绘路"
-        })
-        if (decorMode == WindowDecorChoice.Mode.JBR && !JbrWindowChrome.isSupported) {
-            val fallback = if (useSystemDecorations) "系统装饰窗口" else "自绘无边框方案"
-            println("[CPPlayer] 显式指定了 JBR 路，但当前运行时不支持（需跑在 JBR 上，Windows/macOS），回退$fallback")
-        } else if (!useJbrChrome && !useSystemDecorations) {
-            println("[CPPlayer] 未走 JBR 自定义标题栏，窗口走自绘无边框方案")
+        println(
+            "[CPPlayer] 窗口装饰 = $decorMode（来源：${WindowDecorChoice.lastSource}）→ " +
+                "Tao 无边框路（窗控全部自绘，避免 CSD 与自绘标题栏叠出两套关闭钮）",
+        )
+        if (decorMode == WindowDecorChoice.Mode.JBR) {
+            println("[CPPlayer] JBR 路依赖 AWT 窗口，Tao 后端无法启用；已改用 Tao 自绘标题栏")
         }
     }
 
-    nucleusApplication {
+    // Nucleus 3.0 只剩 Tao 一个窗口后端（AWT 后端已移除），窗口操作一律走
+    // `NucleusWindow` / `TaoWindow`。必须把 `args` 传给 `nucleusApplication`：
+    // 单实例转发、deep link 与 Windows AUMID 都靠原始命令行，空数组会静默丢掉它们。
+    nucleusApplication(args) {
         ensureBackendInitialized()
         // 放在其它初始化之后立字据：这样音频原生库加载失败之类的无关崩溃
         // 不会被算到渲染后端头上，导致下次启动无端回退用户的设置。
@@ -212,257 +231,173 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
         var closeBehavior by remember { mutableStateOf(DesktopCloseBehavior.load()) }
         var showCloseDialog by remember { mutableStateOf(false) }
         var dontAskAgain by remember { mutableStateOf(false) }
-        // 关窗回调定义在 `Window(...)` 的参数位置上，那里拿不到 `window`，所以先把窗口存起来。
-        val windowRef = remember { mutableStateOf<Any?>(null) }
-
-        // 接管托盘的右键。**必须尽早注入**：`DesktopTray` 一旦看到有接管方就不再装
-        // AWT 原生菜单（两者并存会让右键同时弹两个菜单），所以这段放在
-        // `Window(...)` 之前 —— 通知订阅那条路径可能在窗口建好之前就把图标装上了。
-        DisposableEffect(Unit) {
-            DesktopTray.onContextMenu = { x, y -> runCatching { TrayMenuPopup.show(java.awt.Point(x, y)) } }
-            DesktopTray.refreshMenu()
-            onDispose {
-                DesktopTray.onContextMenu = null
-                TrayMenuPopup.dismiss()
-            }
-        }
+        // 关窗回调定义在 `DecoratedWindow(...)` 的参数位置上，那里拿不到窗口句柄，
+        // 所以先把 `NucleusWindow` 存起来（Tao 窗口没有 AWT 句柄可借）。
+        val windowRef = remember { mutableStateOf<NucleusWindow?>(null) }
 
         // 把窗口捞回来。托盘左键、托盘菜单「显示主界面」、迷你模式切换都走这一条 ——
         // 三处各写一遍的话，「隐藏后唤不回」这类问题会变成要找三个地方才开始查。
         val showMainWindow: () -> Unit = {
             windowState.isMinimized = false
             windowRef.value?.let { w ->
-                runCatching { w::class.java.getMethod("setVisible", Boolean::class.javaPrimitiveType).invoke(w, true) }
-                runCatching { w::class.java.getMethod("toFront").invoke(w) }
+                runCatching { w.show() }
+                runCatching { w.toFront() }
             }
         }
 
-        // 隐藏到托盘。⚠️ 托盘装不上时必须**退回真退出** —— 否则窗口藏了、又没有图标能把它
-        // 叫回来，应用就变成一个人间蒸发的僵尸进程（任务栏里也找不到，只能去杀进程）。
+        // 隐藏到托盘。⚠️ 没有托盘实现时必须**退回真退出** —— 否则窗口藏了、又没有图标能
+        // 把它叫回来，应用就变成一个人间蒸发的僵尸进程（任务栏里也找不到，只能去杀进程）。
         val hideToTray: () -> Unit = {
-            if (DesktopTray.ensureInstalled()) {
-                windowState.isMinimized = true
-                windowRef.value?.let { w ->
-                    runCatching { w::class.java.getMethod("setVisible", Boolean::class.javaPrimitiveType).invoke(w, false) }
-                }
+            if (DesktopTrayState.ensureInstalled()) {
+                windowRef.value?.let { w -> runCatching { w.hide() } }
             } else {
                 println("[CPPlayer] 本机没有系统托盘，无法最小化到托盘，改为退出")
                 exitApplication()
             }
         }
 
+        // 关闭入口只有这一条：原生 Alt+F4 / 任务栏关闭（`onCloseRequest`）与自绘的
+        // 标题栏 / 迷你窗 / 手机预览关闭钮都走它。三处各写一套会让「关闭进托盘」在
+        // 某一个入口上失效 —— 2026-11-14 自绘关闭钮直接 exitApplication 就是这么漏的。
+        val requestClose: () -> Unit = {
+            when (closeBehavior) {
+                DesktopCloseBehavior.EXIT -> exitApplication()
+                DesktopCloseBehavior.TRAY -> hideToTray()
+                DesktopCloseBehavior.ASK -> {
+                    // 每次都从「未勾选」开始：上一次勾没勾不该影响这一次的默认值。
+                    dontAskAgain = false
+                    showCloseDialog = true
+                }
+            }
+        }
+
+        // 托盘必须在窗口内容之外：窗口 hide() 之后它仍是唯一入口。菜单动作与文案都在
+        // composable 内部维护，不再需要往一个全局 AWT 对象里注入回调。
+        // 选择「最小化到托盘」的用户启动时就把图标装上：否则第一次关窗要等托盘
+        // 首次渲染，窗口已经藏了、图标还没出来，中间会有一段「没有入口」的空窗期。
+        LaunchedEffect(closeBehavior) {
+            if (closeBehavior == DesktopCloseBehavior.TRAY) DesktopTrayState.ensureInstalled()
+        }
+        if (desktopTraySupported && DesktopTrayState.isVisible) {
+            AppTray(
+                onShowWindow = showMainWindow,
+                onExit = { exitApplication() },
+            )
+        }
+
         val isMiniMode = DesktopShell.isMiniMode
         val isMiniPinned = DesktopShell.isMiniPinned
         val isMobileMode = DesktopShell.isMobileMode
 
+        // 标题跟随当前曲目。只收敛成标题字符串再进组合，避免播放进度每 ~200ms
+        // 刷新一次就把整个窗口内容重组一遍。
+        var windowTitle by remember {
+            mutableStateOf(windowTitleOf(AppModel.playback.state.value.currentTrack, isMobileMode))
+        }
+        LaunchedEffect(isMobileMode) {
+            AppModel.playback.state
+                .map { windowTitleOf(it.currentTrack, isMobileMode) }
+                .distinctUntilChanged()
+                .collect { windowTitle = it }
+        }
+
         DecoratedWindow(
-            onCloseRequest = {
-                when (closeBehavior) {
-                    DesktopCloseBehavior.EXIT -> exitApplication()
-                    DesktopCloseBehavior.TRAY -> hideToTray()
-                    DesktopCloseBehavior.ASK -> {
-                        // 每次都从「未勾选」开始：上一次勾没勾不该影响这一次的默认值。
-                        dontAskAgain = false
-                        showCloseDialog = true
-                    }
-                }
-            },
+            onCloseRequest = requestClose,
             state = windowState,
-            title = if (isMobileMode) "CPPlayer (手机版预览)" else "CPPlayer",
+            title = windowTitle,
             icon = AppWindowIcon.painter,
             alwaysOnTop = isMiniMode && isMiniPinned,
             resizable = !isMiniMode,
             onKeyEvent = ::handleDesktopShortcut,
-            // Nucleus DecoratedWindow 暴露 undecorated 布尔值；JBR 路和 Windows 系统边框回退
-            // 都保留系统装饰，其它路线由 DesktopTitleBar 自绘标题栏。
-            undecorated = !useSystemDecorations,
+            // ⚠️ 固定 `undecorated = true`：Tao 后端下 `false` 时 Nucleus 会在窗口
+            // 顶部再画一套 CSD 标题栏（最小化 / 最大化 / 关闭），与 DesktopTitleBar
+            // 的三颗窗口钮**叠在同一位置** —— 点击落到哪一层取决于绘制顺序。
+            // 2026-11-14 的「点 X 不进托盘」就是两套关闭入口并存导致的。
+            // 缩放边框由 Tao 的 ResizeFrameDecoration 负责；标题栏、拖拽、双击最大化
+            // 与窗口钮只由本组件提供，是唯一的窗口 chrome。
+            undecorated = true,
+            // 创建期的初始下限；运行期模式切换由内容里的 LaunchedEffect 显式下发，
+            // 因为 Tao 只在建窗时读取这个参数。
+            minimumSize = when {
+                isMiniMode -> MiniWindowDpSize
+                isMobileMode -> MobilePreviewMinWindowDpSize
+                else -> MinWindowDpSize
+            },
         ) {
-            val awtWindow = checkNotNull(nucleusWindow.unsafe.awtWindow) {
-                "CPPlayer desktop integrations require an AWT window"
+            val taoWindow = checkNotNull(LocalTaoWindow.current) {
+                "CPPlayer desktop integrations require a Tao window"
             }
-            val window = awtWindow
-            // JBR 自定义标题栏的安装状态。null = 尚未装上 / 不走 JBR 路；
-            // DesktopTitleBar 据此在「原生窗口钮」与「自绘窗口钮」两套 chrome 间切换。
-            var jbrChrome by remember { mutableStateOf<JbrWindowChrome.Controller?>(null) }
-            // 最小尺寸只能命令式设置：WindowState 没有 minSize 字段。
+            LaunchedEffect(Unit) { AppModel.startCoverColorTracking() }
+
+            // Win11 圆角：Tao 的窗口虽然有 WS_CAPTION | WS_THICKFRAME，但它的窗口壳
+            // 会主动把 DWM 的 DWMWA_WINDOW_CORNER_PREFERENCE 写成 DONOTROUND（自己画 chrome），
+            // 于是系统圆角被显式关掉了 —— 必须等窗口真正 map 出来后再改回 ROUND。
+            // 原来的 AWT 路有一模一样的调用，Tao 迁移时被连带删掉了，才出现「圆角没了」。
+            // 窗口 map 出来之前按 PID 找不到句柄，所以带重试；试满就放弃（圆角只是外观）。
             LaunchedEffect(Unit) {
-                AppModel.startCoverColorTracking()
-                val minSize = if (mobilePreview) MobilePreviewMinWindowDpSize else MinWindowDpSize
-                runCatching {
-                    (window as? java.awt.Window)?.setMinimumSize(
-                        java.awt.Dimension(minSize.width.value.toInt(), minSize.height.value.toInt())
-                    )
+                repeat(WindowCornerRetryAttempts) {
+                    if (WindowsWindowCorners.applyRoundCorners()) return@LaunchedEffect
+                    delay(WindowCornerRetryDelayMs)
                 }
             }
 
-            // JBR 路：装自定义标题栏。窗口 peer 可能还没就绪，带重试；试满就放弃，
-            // 放弃后的表现是窗口保留系统标题栏（功能完好，只是丑），绝不能因此挡住启动。
-            // 高度单位是 Swing 逻辑像素（JBR 的口径，即 Compose 的 dp）。
-            LaunchedEffect(window) {
-                if (!useJbrChrome) return@LaunchedEffect
-                val initialHeight = when {
-                    mobilePreview -> 34f
-                    else -> TitleBarHeight.value
-                }
-                repeat(WindowRetryAttempts) {
-                    val installed = JbrWindowChrome.install(window, initialHeight)
-                    if (installed != null) {
-                        jbrChrome = installed
-                        return@LaunchedEffect
-                    }
-                    delay(WindowRetryDelayMs)
-                }
-                println("[CPPlayer] JBR 自定义标题栏安装失败，窗口保留系统标题栏")
-            }
-
-            // 监听窗口模式动态同步 JBR 标题栏高度（常规 48dp / 手机预览 34dp / 迷你播放器 26dp）
-            LaunchedEffect(isMiniMode, isMobileMode, jbrChrome) {
-                val targetHeight = when {
-                    isMiniMode -> 26f
-                    isMobileMode -> 34f
-                    else -> TitleBarHeight.value
-                }
-                jbrChrome?.setHeight(targetHeight)
-                // 迷你模式下隐藏原生窗口控制钮，交由自绘 M3e 控制组处理
-                jbrChrome?.setControlsVisible(!isMiniMode)
-            }
-
-            // 同步窗口底层 AWT 容器背景色，防止窗口四角或转场出现默认白底
-            LaunchedEffect(Unit) {
-                AppModel.themeModeFlow.collect { mode ->
-                    val isDark = when (mode) {
-                        cp.player.app.ui.theme.ThemeMode.DARK -> true
-                        cp.player.app.ui.theme.ThemeMode.LIGHT -> false
-                        cp.player.app.ui.theme.ThemeMode.SYSTEM -> true
-                    }
-                    val awtBg = if (isDark) java.awt.Color(0x1F, 0x1F, 0x1F, 255) else java.awt.Color(0xF5, 0xF5, 0xF5, 255)
-                    runCatching { window.background = awtBg }
-                }
-            }
-
-            // 无边框路专属：Win11 的 DWM 圆角。纯 WS_POPUP 吃不到系统的自动圆角，
-            // 手动 opt-in。窗口此刻可能还没真正 map 出来（IsWindowVisible 为假就找不到
-            // 句柄），所以带重试；试满就放弃，圆角只是外观。
-            // ⚠️ JBR 路与手机原生窗口不需要：窗口带边框，Win11 圆角由系统自动给。
-            if (!useSystemDecorations && !mobilePreview) {
-                LaunchedEffect(Unit) {
-                    repeat(WindowRetryAttempts) {
-                        if (WindowsWindowCorners.applyRoundCorners()) return@LaunchedEffect
-                        delay(WindowRetryDelayMs)
-                    }
-                }
-            }
-            // 记录进入 Mini / Mobile 模式前的常规窗口尺寸与状态，以便还原
-            var previousNormalSize by remember { mutableStateOf<DpSize?>(null) }
-            var previousPlacement by remember { mutableStateOf<WindowPlacement?>(null) }
+            // 记录进入 Mini / Mobile 模式前的常规窗口尺寸与状态，以便还原。
+            // 两套模式各记各的：手机预览里又切迷你时，退出迷你不能把手机尺寸覆盖掉。
+            var mobilePreviousSize by remember { mutableStateOf<DpSize?>(null) }
+            var mobilePreviousPlacement by remember { mutableStateOf<WindowPlacement?>(null) }
+            var miniPreviousSize by remember { mutableStateOf<DpSize?>(null) }
+            var miniPreviousPlacement by remember { mutableStateOf<WindowPlacement?>(null) }
 
             // 监听手机版预览模式动态切换
             LaunchedEffect(isMobileMode) {
                 if (DesktopShell.isMiniMode) return@LaunchedEffect
-                val frame = window as? java.awt.Frame
                 if (isMobileMode) {
-                    previousPlacement = windowState.placement
-                    previousNormalSize = windowState.size
+                    mobilePreviousPlacement = windowState.placement
+                    mobilePreviousSize = windowState.size
 
                     if (windowState.placement != WindowPlacement.Floating) {
                         windowState.placement = WindowPlacement.Floating
                     }
-                    if (frame != null && (frame.extendedState and java.awt.Frame.MAXIMIZED_BOTH) != 0) {
-                        frame.extendedState = java.awt.Frame.NORMAL
-                    }
-
-                    runCatching {
-                        (window as? java.awt.Window)?.setMinimumSize(
-                            java.awt.Dimension(MobilePreviewMinWindowDpSize.width.value.toInt(), MobilePreviewMinWindowDpSize.height.value.toInt())
-                        )
-                    }
-                    val targetSize = loadMobileWindowSize()
-                    windowState.size = targetSize
-                    runCatching { (window as? java.awt.Window)?.setSize(targetSize.width.value.toInt(), targetSize.height.value.toInt()) }
+                    windowState.size = loadMobileWindowSize()
                 } else {
-                    runCatching {
-                        (window as? java.awt.Window)?.setMinimumSize(
-                            java.awt.Dimension(MinWindowDpSize.width.value.toInt(), MinWindowDpSize.height.value.toInt())
-                        )
-                    }
-                    previousNormalSize?.let { normalSize ->
-                        windowState.size = normalSize
-                        runCatching { (window as? java.awt.Window)?.setSize(normalSize.width.value.toInt(), normalSize.height.value.toInt()) }
-                    }
-                    previousPlacement?.let { placement ->
-                        windowState.placement = placement
-                        if (placement == WindowPlacement.Maximized) {
-                            frame?.extendedState = java.awt.Frame.MAXIMIZED_BOTH
-                        }
-                    }
+                    mobilePreviousSize?.let { windowState.size = it }
+                    mobilePreviousPlacement?.let { windowState.placement = it }
                 }
             }
 
-            // 监听 Mini 模式切换：动态放宽/还原窗口 minimumSize，并切换窗口尺寸与置顶属性
+            // 监听 Mini 模式切换：切尺寸、退出最大化；resizable 与 alwaysOnTop
+            // 由 `DecoratedWindow` 的参数响应式下发，不再命令式操作窗口。
             LaunchedEffect(isMiniMode) {
-                val frame = window as? java.awt.Frame
                 if (isMiniMode) {
-                    previousPlacement = windowState.placement
-                    previousNormalSize = windowState.size
+                    miniPreviousPlacement = windowState.placement
+                    miniPreviousSize = windowState.size
 
-                    // 1. 如果此前处于最大化或全屏状态，必须先退出，变回复位浮动状态
                     if (windowState.placement != WindowPlacement.Floating) {
                         windowState.placement = WindowPlacement.Floating
-                    }
-                    if (frame != null && (frame.extendedState and java.awt.Frame.MAXIMIZED_BOTH) != 0) {
-                        frame.extendedState = java.awt.Frame.NORMAL
-                    }
-
-                    // 2. 禁用窗口缩放（防止 Mini 模式下被系统或手势最大化/拉伸）
-                    runCatching { (window as? java.awt.Frame)?.isResizable = false }
-
-                    // 3. 缩小窗口 minimumSize 并调整尺寸
-                    runCatching {
-                        (window as? java.awt.Window)?.setMinimumSize(
-                            java.awt.Dimension(MiniWindowDpSize.width.value.toInt(), MiniWindowDpSize.height.value.toInt())
-                        )
                     }
                     windowState.size = MiniWindowDpSize
-                    runCatching {
-                        (window as? java.awt.Window)?.setSize(MiniWindowDpSize.width.value.toInt(), MiniWindowDpSize.height.value.toInt())
-                    }
                 } else {
-                    runCatching { (window as? java.awt.Frame)?.isResizable = true }
-                    val minSize = if (DesktopShell.isMobileMode) MobilePreviewMinWindowDpSize else MinWindowDpSize
-                    runCatching {
-                        (window as? java.awt.Window)?.setMinimumSize(
-                            java.awt.Dimension(minSize.width.value.toInt(), minSize.height.value.toInt())
-                        )
-                    }
-                    previousNormalSize?.let { normalSize ->
-                        windowState.size = normalSize
-                        runCatching { (window as? java.awt.Window)?.setSize(normalSize.width.value.toInt(), normalSize.height.value.toInt()) }
-                    }
-                    previousPlacement?.let { placement ->
-                        windowState.placement = placement
-                        if (placement == WindowPlacement.Maximized) {
-                            frame?.extendedState = java.awt.Frame.MAXIMIZED_BOTH
-                        }
-                    }
+                    miniPreviousSize?.let { windowState.size = it }
+                    miniPreviousPlacement?.let { windowState.placement = it }
                 }
             }
 
-            LaunchedEffect(isMiniMode, isMiniPinned) {
-                runCatching { (window as? java.awt.Window)?.isAlwaysOnTop = isMiniMode && isMiniPinned }
+            // Tao 只在建窗时读 `minimumSize`，模式切换必须显式再下发一次。
+            LaunchedEffect(isMiniMode, isMobileMode) {
+                nucleusWindow.setMinimumSize(
+                    when {
+                        isMiniMode -> MiniWindowDpSize
+                        isMobileMode -> MobilePreviewMinWindowDpSize
+                        else -> MinWindowDpSize
+                    },
+                )
             }
 
             // 守护：在 Mini 模式期间，绝不允许 placement 变为 Maximized 或 Fullscreen
             LaunchedEffect(isMiniMode, windowState.placement) {
                 if (isMiniMode && windowState.placement != WindowPlacement.Floating) {
                     windowState.placement = WindowPlacement.Floating
-                    val frame = window as? java.awt.Frame
-                    if (frame != null && (frame.extendedState and java.awt.Frame.MAXIMIZED_BOTH) != 0) {
-                        frame.extendedState = java.awt.Frame.NORMAL
-                    }
                     windowState.size = MiniWindowDpSize
-                    runCatching {
-                        (window as? java.awt.Window)?.setSize(MiniWindowDpSize.width.value.toInt(), MiniWindowDpSize.height.value.toInt())
-                    }
                 }
             }
 
@@ -484,77 +419,39 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
                         }
                     }
             }
-            // 标题跟随当前曲目。不依赖 Window(title = ...) 的更新时机，直接写窗口属性。
-            //
-            // 刻意**不**在组合里 collect 整份 playback.state：它每 ~200ms 就因位置刷新
-            // 发射一次，会让这层窗口内容每秒重组 5 次，而标题其实只有换歌时才变。
-            // 这里把它彻底移出组合 —— 先收敛成标题字符串，重组次数为 0。
-            LaunchedEffect(window, isMobileMode) {
-                AppModel.playback.state
-                    .map { windowTitleOf(it.currentTrack, isMobileMode) }
-                    .distinctUntilChanged()
-                    .collect { window.title = it }
-            }
             StartupHealthProbe()
-            // WindowDraggableArea 是 WindowScope 的扩展，而 WindowScope 不是 CompositionLocal，
-            // 树内深层拿不到；Compose 自带的 LocalWindow 又标了 internal。所以在这里把
-            // FrameWindowScope 捕获成 WindowScope 再传下去，标题栏才能在任意深度拖窗口。
-            // 托盘菜单的两个动作（托盘图标本身由 DesktopTray 懒创建）。
-            // `windowRef` 也要在这里补上 —— 关窗回调在 Window 之外，拿不到 window 对象。
-            LaunchedEffect(window) {
-                windowRef.value = window
-                WindowsSmtcControls.primaryWindow = window
-                DesktopTray.onShowWindow = showMainWindow
-                DesktopTray.onExit = { exitApplication() }
+            // `windowRef` 要在这里补上 —— 关窗回调在 `DecoratedWindow` 参数里，
+            // 那里拿不到窗口句柄。
+            LaunchedEffect(nucleusWindow) {
+                windowRef.value = nucleusWindow
+                WindowsSmtcControls.primaryWindowHandle = taoWindow.nativeHandle
             }
 
-            val windowScope: WindowScope = object : WindowScope {
-                override val window: java.awt.Window = awtWindow
-            }
             if (isMiniMode) {
                 AppTheme {
                     DesktopMiniPlayer(
-                        windowScope = windowScope,
-                        jbr = jbrChrome,
+                        taoWindow = taoWindow,
                         onRestore = { DesktopShell.isMiniMode = false },
                         onMinimize = {
-                            if (DesktopTray.isSupported) {
+                            if (DesktopTrayState.ensureInstalled()) {
                                 hideToTray()
                             } else {
                                 windowState.isMinimized = true
                             }
                         },
-                        onClose = {
-                            when (closeBehavior) {
-                                DesktopCloseBehavior.EXIT -> exitApplication()
-                                DesktopCloseBehavior.TRAY -> hideToTray()
-                                DesktopCloseBehavior.ASK -> {
-                                    dontAskAgain = false
-                                    showCloseDialog = true
-                                }
-                            }
-                        },
+                        onClose = requestClose,
                     )
                 }
             } else {
-                androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.fillMaxSize()) {
+                androidx.compose.foundation.layout.Column(
+                    androidx.compose.ui.Modifier.fillMaxSize().windowEdgeHairline(),
+                ) {
                     if (isMobileMode) {
                         cp.player.app.ui.component.MobilePreviewTitleBar(
-                            windowScope = windowScope,
-                            jbr = jbrChrome,
-                            systemWindowControls = useSystemDecorations && jbrChrome == null,
+                            taoWindow = taoWindow,
                             onRestoreDesktop = { DesktopShell.isMobileMode = false },
                             onMinimize = { windowState.isMinimized = true },
-                            onClose = {
-                                when (closeBehavior) {
-                                    DesktopCloseBehavior.EXIT -> exitApplication()
-                                    DesktopCloseBehavior.TRAY -> hideToTray()
-                                    DesktopCloseBehavior.ASK -> {
-                                        dontAskAgain = false
-                                        showCloseDialog = true
-                                    }
-                                }
-                            },
+                            onClose = requestClose,
                         )
                     }
                     App(
@@ -562,14 +459,8 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
                         // 内部自动激活 LocalWindowChromeActive = false，呈现原汁原味的手机版界面与顶栏
                         titleBar = if (isMobileMode) null else { navigator ->
                             DesktopTitleBar(
-                                windowScope = windowScope,
+                                taoWindow = taoWindow,
                                 windowState = windowState,
-                                // 非 null 时 DesktopTitleBar 切到 JBR 模式：不画窗口钮、拖拽 / 双击
-                                // 交给原生 hit-test（见 DesktopTitleBar 的「三种窗口模式」一节）。
-                                jbr = jbrChrome,
-                                // 系统装饰（Windows 标准标题栏）由系统绘制窗控，只在内容工具栏
-                                // 保留对称空白，不重复绘制最小化 / 最大化 / 关闭按钮。
-                                systemWindowControls = useSystemDecorations && jbrChrome == null,
                                 // 标题：当前路由页自己声明的优先（`CpRouteScaffold` / `DesktopRouteTitle`），
                                 // 没有声明时回落到 `MainScreen` 发布的主壳层标题。`MainScreen` 被 push 出去的
                                 // 页面盖住后会离开组合、不再发布，所以没有这一层回落之外的上层来源，
@@ -600,9 +491,9 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
                                         // 快捷键 / 手势入口：静默什么都不做才是真正的问题。
                                     }
                                 },
-                                // ⚠️ `onClose` 只有无边框模式的自绘关闭钮在用；JBR 模式的关闭是
-                                // 原生窗口钮 → windowClosing → `onCloseRequest`，不走这里。
-                                onClose = ::exitApplication,
+                                // Tao 后端没有原生窗口钮，自绘关闭钮与 `onCloseRequest`
+                                // 共用同一条 [requestClose] 链路（托盘 / 确认框都生效）。
+                                onClose = requestClose,
                                 // ⚠️ 下面三个入口**都必须先 `popToMainShell()`**，理由一致，写在
                                 // `Navigation.popToMainShell` 的 KDoc 里，这里只说结论：
                                 //
@@ -697,16 +588,15 @@ private fun loadWindowSize(): DpSize {
     val width = parts[0].toFloatOrNull() ?: return DefaultWindowSize
     val height = parts[1].toFloatOrNull() ?: return DefaultWindowSize
     if (width < MinWindowDpSize.width.value || height < MinWindowDpSize.height.value) return DefaultWindowSize
-    // ⚠️ 上限取**工作区**，不是 `Toolkit.screenSize`（整屏）。
-    // 存过一个「整屏尺寸」的窗口会在下次启动时直接铺满整个输出 —— 而无边框窗口铺满输出会被
-    // Windows 提升为全屏呈现（Fullscreen Optimizations），在 HDR 显示器上可能连带切显示模式，
-    // 退出后桌面停在坏的色彩状态、SDR 内容闪烁。这类「窗口不该大于工作区」的约束在这里收口，
-    // 比事后补救可靠。详见 DesktopWindowPlacement 的说明。
-    val work = runCatching { DesktopWindowPlacement.primaryWorkArea() }.getOrNull()
+    // ⚠️ 上限取**工作区**，不是整屏（任务栏也算进来就会铺满输出）。
+    // 窗口一旦铺满输出，Windows 的 Fullscreen Optimizations 可能把它提升为全屏呈现，
+    // HDR 显示器上退出时桌面可能停在坏的色彩状态。这里用 Tao 原生显示器查询收口，
+    // 不依赖 AWT Toolkit。
+    val work = runCatching { TaoPrimaryDisplay.workAreaDp() }.getOrNull()
         ?: return DpSize(width.dp, height.dp)
     return DpSize(
-        width.coerceAtMost(work.width.toFloat()).dp,
-        height.coerceAtMost(work.height.toFloat()).dp,
+        width.coerceAtMost(work.width.value).dp,
+        height.coerceAtMost(work.height.value).dp,
     )
 }
 
@@ -730,11 +620,11 @@ private fun loadMobileWindowSize(): DpSize {
     val width = parts[0].toFloatOrNull() ?: return MobilePreviewDefaultWindowSize
     val height = parts[1].toFloatOrNull() ?: return MobilePreviewDefaultWindowSize
     if (width < 320 || height < 400) return MobilePreviewDefaultWindowSize
-    val work = runCatching { DesktopWindowPlacement.primaryWorkArea() }.getOrNull()
+    val work = runCatching { TaoPrimaryDisplay.workAreaDp() }.getOrNull()
         ?: return DpSize(width.dp, height.dp)
     return DpSize(
-        width.coerceAtMost(work.width.toFloat()).dp,
-        height.coerceAtMost(work.height.toFloat()).dp,
+        width.coerceAtMost(work.width.value).dp,
+        height.coerceAtMost(work.height.value).dp,
     )
 }
 

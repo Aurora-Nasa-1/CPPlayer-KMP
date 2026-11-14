@@ -743,7 +743,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                 }
                             }
                         },
-                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        colors = TopAppBarDefaults.topAppBarColors(
                             containerColor = Color.Transparent
                         )
                     )

@@ -176,7 +176,6 @@ class DesktopHiResPlatformPlayer(
                     is DesktopAudioEvent.CrossfadeStarted -> handleNativeTransition(event.toPath)
                     is DesktopAudioEvent.NextTrackReady -> handleNativeTransition(event.path)
                     is DesktopAudioEvent.Error -> handleError(event.message)
-                    else -> {}
                 }
             }
         }

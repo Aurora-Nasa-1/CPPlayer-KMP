@@ -224,7 +224,7 @@ internal class NativeStableValue<T>(
     }
 
     override fun toString(): String {
-        return if (isSet()) "DesktopStableValue[set=${orElse(null as T)}]" else "DesktopStableValue[unset]"
+        return if (isSet()) "DesktopStableValue[set=${orElseThrow()}]" else "DesktopStableValue[unset]"
     }
 }
 
@@ -296,7 +296,7 @@ internal class FallbackStableValue<T>(
     }
 
     override fun toString(): String {
-        return if (isSet()) "DesktopStableValue[set=${orElse(null as T)}]" else "DesktopStableValue[unset]"
+        return if (isSet()) "DesktopStableValue[set=${orElseThrow()}]" else "DesktopStableValue[unset]"
     }
 }
 

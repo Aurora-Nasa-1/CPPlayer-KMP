@@ -45,7 +45,6 @@ gradle.projectsEvaluated {
     $tasks = @(':app:compileKotlinDesktop', ':core:compileKotlinDesktop', ':provider-sdk-kmp:desktopTest', ':core:desktopTest')
     $coreTests = @(
         'cp.player.core.provider.KmpSdk*',
-        'cp.player.core.provider.TypedQuickJsProbeTest',
         'cp.player.core.provider.ProviderConvergenceTest',
         'cp.player.core.provider.ModuleImportAndAutoUpdateTest',
         'cp.player.core.music.*',

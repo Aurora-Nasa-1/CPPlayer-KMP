@@ -175,28 +175,7 @@ class MessageWatchService(
             if (!MessageNotifyPolicy.shouldNotify(contact, cursor, activePeerUid, nowMs)) continue
 
             val delivered = try {
-                synchronized(lifecycleLock) {
-                    if (expectedGeneration != runGeneration ||
-                        !isReady() ||
-                        !prefs.isMasterEnabled() ||
-                        providerId() != provider ||
-                        contact.userId !in prefs.subscribedUids(provider) ||
-                        _activePeerUid == contact.userId
-                    ) {
-                        false
-                    } else {
-                        // Preference mutations, active-chat changes and stop() use this same lock.
-                        post(
-                            MessageNotification(
-                                providerId = provider,
-                                peerUid = contact.userId,
-                                title = contact.nickname.ifBlank { UNKNOWN_NAME },
-                                body = contact.lastMessage.orEmpty(),
-                            )
-                        )
-                        true
-                    }
-                }
+                deliverIfStillCurrent(expectedGeneration, provider, contact)
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (_: Exception) {
@@ -209,6 +188,41 @@ class MessageWatchService(
             sent++
         }
         sent
+    }
+
+    /**
+     * 在 [lifecycleLock] 内做最终投递检查。
+     *
+     * 单独成方法而不是把 `synchronized` 留在 suspend 的 [runOnce] 里：GraalVM Native Image
+     * 25.3 解析「循环 + suspend 方法内 synchronized + 异常分派」时会命中
+     * `unexpected non-null predecessor ... MonitorExit` 的分析器断言。抽成非挂起方法后，
+     * monitor 只出现在结构化直线控制流里，instrumented 与生产镜像都能过分析。
+     */
+    private fun deliverIfStillCurrent(
+        expectedGeneration: Long,
+        provider: String,
+        contact: Contact,
+    ): Boolean = synchronized(lifecycleLock) {
+        if (expectedGeneration != runGeneration ||
+            !isReady() ||
+            !prefs.isMasterEnabled() ||
+            providerId() != provider ||
+            contact.userId !in prefs.subscribedUids(provider) ||
+            _activePeerUid == contact.userId
+        ) {
+            false
+        } else {
+            // Preference mutations, active-chat changes and stop() use this same lock.
+            post(
+                MessageNotification(
+                    providerId = provider,
+                    peerUid = contact.userId,
+                    title = contact.nickname.ifBlank { UNKNOWN_NAME },
+                    body = contact.lastMessage.orEmpty(),
+                )
+            )
+            true
+        }
     }
 
     private fun currentGeneration(): Long = synchronized(lifecycleLock) { runGeneration }

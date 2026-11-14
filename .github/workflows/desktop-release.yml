@@ -287,6 +287,7 @@ jobs:
           # `Failed to launch JVM`：缺类若发生在**类初始化期**，栈里连模块名都不出现。
           # 1.4.3 就是这么死的 —— 缺 `jdk.unsupported` ⇒ `JbrWindowChrome.<clinit>` 抛
           # `NoClassDefFoundError: sun/misc/Unsafe` ⇒ `main()` 直接退出。
+          # （`JbrWindowChrome` 已随 TAO 迁移删除；当前 `JbrFileDialogBridge` 仍依赖该模块。）
           # 真值在 jlink 写出的 `release` 里，直接读它，别去猜插件会带哪些模块
           # （`suggestModules` 只打日志、不参与打包，见 app/build.gradle.kts 的说明）。
           # ⚠️ 增删依赖后重跑 `./gradlew :app:suggestModules`，把输出同步进

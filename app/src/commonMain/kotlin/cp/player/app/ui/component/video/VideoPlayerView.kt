@@ -452,6 +452,7 @@ fun VideoPlayerView(
 
                 // 桌面端专属：原生播放器引导卡片（在控制栏显示时呈现）
                 if (!isAndroidPlatform() && state.currentMedia != null) {
+                    @Suppress("DEPRECATION")
                     val clipboardManager = LocalClipboardManager.current
                     var copied by remember { mutableStateOf(false) }
 

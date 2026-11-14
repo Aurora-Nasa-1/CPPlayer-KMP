@@ -74,7 +74,7 @@ class LibraryScreenModel : ScreenModel {
             _refreshing.value = true
             try {
                 // 无激活音源插件时直接返回空列表（本地曲库模式），不发起报错网络请求
-                if (AppModel.activeProviderId() == null) {
+                if (AppModel.activeProvider() == null) {
                     if (gen == refreshGen) {
                         _state.update { s -> s.copy(playlists = emptyList(), loading = false, error = null) }
                     }

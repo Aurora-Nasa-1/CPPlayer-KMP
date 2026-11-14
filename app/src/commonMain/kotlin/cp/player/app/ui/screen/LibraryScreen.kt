@@ -38,6 +38,14 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
@@ -91,6 +99,21 @@ import cp.player.app.ui.component.SectionHeader
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.playlistShareText
 import cp.player.app.ui.component.rememberActiveProviderSupports
+import cp.player.app.ui.component.AddToLocalPlaylistDialog
+import cp.player.app.ui.component.AddToPlaylistSheet
+import cp.player.app.ui.component.CpConfirmDialog
+import cp.player.app.ui.component.CpWavyProgressIndeterminate
+import cp.player.app.ui.component.CpCircularWavyProgressIndeterminate
+import cp.player.app.ui.component.SongDetailInfoDialog
+import cp.player.app.ui.component.SongOptionsSheet
+import cp.player.app.ui.component.cpPressScale
+import cp.player.app.ui.util.UiEvents
+import cp.player.core.local.LocalFolderTree
+import cp.player.core.local.LocalGridSort
+import cp.player.core.local.LocalLibraryAggregator
+import cp.player.core.media.LocalMediaItem
+import cp.player.core.media.LocalMediaOrigin
+import cp.player.core.music.TrackSummary
 import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.app.ui.model.DownloadsUiState
 import cp.player.app.ui.model.LibraryScreenModel
@@ -209,7 +232,8 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
             LocalLibrarySection(
                 s = s,
                 state = downloadsState,
-                onOpenLocal = { navigator.push(LocalLibraryScreen()) },
+                model = downloadsModel,
+                onOpenLocal = { initialTab -> navigator.push(LocalLibraryScreen(initialTab = initialTab)) },
                 onOpenDownloads = { navigator.push(DownloadsScreen()) },
             )
         }
@@ -764,56 +788,96 @@ private fun PlaylistQuickGrid(
 }
 
 /**
- * 「本地音乐」分段的内联概览。
+ * 「本地音乐」分段的内联概览（M3 Expressive 风格）。
  *
  * 完整清单在 [LocalLibraryScreen]（歌曲 / 专辑 / 艺术家 / 收藏 / 文件夹）。
- * 这里提供本地曲库的直达入口与统计卡片，并将下载管理作为配套辅助入口保留。
+ * 这里提供本地曲库的直达控制台、分类磁贴导航与最近添加歌曲速览，将下载管理作为配套辅助入口保留。
  */
 @Composable
 private fun LocalLibrarySection(
     s: CpStrings,
     state: DownloadsUiState,
-    onOpenLocal: () -> Unit,
+    model: DownloadsScreenModel,
+    onOpenLocal: (Int) -> Unit,
     onOpenDownloads: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val scope = rememberCoroutineScope()
     val localCount = state.localAudioItems.size
+    val losslessCount = state.losslessCount
     val completedCount = state.completedTasks.size
     val activeCount = state.activeTasks.size
+    val playbackState by AppModel.playback.state.collectAsState()
+    val currentPlayingTrackId = playbackState.currentTrack?.id
+    val likedIds by AppModel.playback.likedIds.collectAsState()
+    val confirm = cp.player.app.ui.component.rememberConfirmState()
 
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // 主卡片：本地音乐库入口
-        BentoCard(
-            onClick = onOpenLocal,
+    var optionsTargetSong by remember { mutableStateOf<LocalMediaItem?>(null) }
+    var showInfoTrack by remember { mutableStateOf<TrackSummary?>(null) }
+    var addToCloudPlaylistTrack by remember { mutableStateOf<TrackSummary?>(null) }
+    var addToLocalPlaylistPath by remember { mutableStateOf<String?>(null) }
+    var deleteTargetSong by remember { mutableStateOf<LocalMediaItem?>(null) }
+    var removeTargetSong by remember { mutableStateOf<LocalMediaItem?>(null) }
+
+    val albumsCount = remember(state.localAudioItems) {
+        LocalLibraryAggregator.albums(state.localAudioItems, LocalGridSort.NAME).size
+    }
+    val artistsCount = remember(state.localAudioItems) {
+        LocalLibraryAggregator.artists(state.localAudioItems, LocalGridSort.NAME).size
+    }
+    val foldersCount = remember(state.localAudioItems) {
+        LocalFolderTree.build(state.localAudioItems).size
+    }
+    val favoritesCount = state.favoritePaths.size
+    val playlistsCount = state.localPlaylists.size
+
+    val toggleCloudFav: (String) -> Unit = remember(likedIds) {
+        { cloudId: String ->
+            scope.launch {
+                val cloudFavId = runCatching {
+                    cp.player.core.music.CPMediaId.parse(cloudId).resourceId
+                }.getOrDefault(cloudId)
+                val target = cloudFavId !in likedIds
+                AppModel.playback.toggleFavoriteFor(cloudId)
+                UiEvents.notify(s.downloads.favoriteCloudDone(target))
+            }
+        }
+    }
+    val toggleLocalFav: (String) -> Unit = {
+        val now = AppModel.localMedia.favorites.toggle(it)
+        UiEvents.notify(if (now) s.downloads.addedToFavorites else s.downloads.removedFromFavorites)
+    }
+
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // ── 1. M3E 核心控制台卡片 ──
+        Surface(
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
             modifier = Modifier.fillMaxWidth(),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            contentPadding = PaddingValues(20.dp),
-            fillHeight = false,
         ) {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f),
                 ) {
                     Surface(
-                        shape = MaterialTheme.shapes.medium,
+                        shape = MaterialTheme.shapes.large,
                         color = MaterialTheme.colorScheme.primaryContainer,
-                        modifier = Modifier.size(52.dp),
+                        modifier = Modifier.size(48.dp),
                     ) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Icon(
                                 Icons.Filled.FolderOpen,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.size(28.dp),
+                                modifier = Modifier.size(24.dp),
                             )
                         }
                     }
-                    Spacer(Modifier.width(16.dp))
+                    Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         CpText(
                             s.downloads.tabLocalLibrary,
@@ -821,22 +885,215 @@ private fun LocalLibrarySection(
                             fontWeight = FontWeight.Bold,
                         )
                         CpText(
-                            "共 $localCount 首本地歌曲",
-                            style = MaterialTheme.typography.bodyMedium,
+                            if (localCount > 0) {
+                                buildString {
+                                    append(s.downloads.localSongCount(localCount))
+                                    if (losslessCount > 0) {
+                                        append(" · ")
+                                        append(s.downloads.losslessCount(losslessCount))
+                                    }
+                                }
+                            } else {
+                                s.downloads.emptyLocalTitle
+                            },
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    TextButton(
+                        onClick = { onOpenLocal(0) },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    ) {
+                        CpText(s.downloads.browseLibrary, style = MaterialTheme.typography.labelLarge)
+                        Spacer(Modifier.width(2.dp))
+                        Icon(Icons.Filled.ChevronRight, null, Modifier.size(16.dp))
+                    }
                 }
-                FilledTonalButton(
-                    onClick = onOpenLocal,
-                    modifier = Modifier.padding(start = 12.dp),
+
+                // 扫描动态状态条
+                if (state.scanning) {
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CpCircularWavyProgressIndeterminate(
+                                    modifier = Modifier.size(16.dp),
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                CpText(
+                                    state.scanProgress?.let { s.downloads.scanningFound(it.scanned) }
+                                        ?: s.downloads.scanning,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            CpWavyProgressIndeterminate(
+                                modifier = Modifier.fillMaxWidth().height(4.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                }
+
+                // 快捷主动作组 (随机漫游 / 顺序播放 / 扫描设备)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    CpText("浏览曲库")
+                    if (localCount > 0) {
+                        FilledTonalButton(
+                            onClick = { model.shuffleAll(state.localAudioItems) },
+                            shape = MaterialTheme.shapes.large,
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                            modifier = Modifier.weight(1f).cpPressScale(),
+                        ) {
+                            Icon(Icons.Filled.Shuffle, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            CpText(s.downloads.quickShuffle, maxLines = 1)
+                        }
+                        FilledTonalButton(
+                            onClick = { model.playAll(state.localAudioItems) },
+                            shape = MaterialTheme.shapes.large,
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                            modifier = Modifier.weight(1f).cpPressScale(),
+                        ) {
+                            Icon(Icons.Filled.PlayArrow, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            CpText(s.downloads.quickPlay, maxLines = 1)
+                        }
+                        FilledTonalIconButton(
+                            onClick = { model.startScan(s) },
+                            enabled = !state.scanning,
+                            shape = MaterialTheme.shapes.large,
+                            modifier = Modifier.cpPressScale(),
+                        ) {
+                            Icon(Icons.Filled.Refresh, contentDescription = s.downloads.scanDevice, Modifier.size(18.dp))
+                        }
+                    } else {
+                        FilledTonalButton(
+                            onClick = { model.startScan(s) },
+                            enabled = !state.scanning,
+                            shape = MaterialTheme.shapes.large,
+                            modifier = Modifier.fillMaxWidth().cpPressScale(),
+                        ) {
+                            Icon(Icons.Filled.Refresh, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            CpText(s.downloads.scanDevice)
+                        }
+                    }
                 }
             }
         }
 
-        // 次级卡片：下载传输管理
+        // ── 2. M3E 分类磁贴导航 (2x3 网格) ──
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LocalCategoryPill(
+                    title = s.downloads.tabSongs,
+                    count = localCount,
+                    icon = Icons.Filled.MusicNote,
+                    onClick = { onOpenLocal(0) },
+                    modifier = Modifier.weight(1f),
+                )
+                LocalCategoryPill(
+                    title = s.downloads.tabAlbums,
+                    count = albumsCount,
+                    icon = Icons.Filled.Album,
+                    onClick = { onOpenLocal(1) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LocalCategoryPill(
+                    title = s.downloads.tabArtists,
+                    count = artistsCount,
+                    icon = Icons.Filled.Person,
+                    onClick = { onOpenLocal(2) },
+                    modifier = Modifier.weight(1f),
+                )
+                LocalCategoryPill(
+                    title = s.downloads.tabLocalFavorites,
+                    count = favoritesCount,
+                    icon = Icons.Filled.Favorite,
+                    onClick = { onOpenLocal(3) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LocalCategoryPill(
+                    title = s.downloads.tabLocalPlaylists,
+                    count = playlistsCount,
+                    icon = Icons.AutoMirrored.Filled.QueueMusic,
+                    onClick = { onOpenLocal(4) },
+                    modifier = Modifier.weight(1f),
+                )
+                LocalCategoryPill(
+                    title = s.downloads.tabFolders,
+                    count = foldersCount,
+                    icon = Icons.Filled.FolderOpen,
+                    onClick = { onOpenLocal(5) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+
+        // ── 3. 最近添加歌曲速览 ──
+        if (state.recentAudioItems.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    CpText(
+                        s.downloads.recentAdded,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    TextButton(onClick = { onOpenLocal(0) }) {
+                        CpText(s.downloads.viewAll, style = MaterialTheme.typography.labelMedium)
+                        Icon(Icons.Filled.ChevronRight, null, Modifier.size(16.dp))
+                    }
+                }
+                state.recentAudioItems.forEachIndexed { index, song ->
+                    val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
+                    val mediaId = if (isVideo) "local://video/${song.path}" else "local://audio/${song.path}"
+                    LocalSongRow(
+                        song = song,
+                        isCurrentlyPlaying = currentPlayingTrackId == mediaId,
+                        likedIds = likedIds,
+                        favoritePaths = state.favoritePaths,
+                        model = model,
+                        strings = s,
+                        onPlay = {
+                            val allIdx = state.localAudioItems.indexOfFirst { it.path == song.path }.coerceAtLeast(0)
+                            model.playAll(state.localAudioItems, allIdx)
+                        },
+                        onToggleCloudFav = toggleCloudFav,
+                        onToggleLocalFav = toggleLocalFav,
+                        onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
+                        onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
+                        onRemoveSong = { removeTargetSong = it },
+                        onDeleteSong = { deleteTargetSong = it },
+                        onShowInfo = { showInfoTrack = it },
+                        onOptionsClick = { optionsTargetSong = it },
+                        index = index,
+                        total = state.recentAudioItems.size,
+                    )
+                }
+            }
+        }
+
+        // ── 4. 离线下载管理卡片 ──
         BentoCard(
             onClick = onOpenDownloads,
             modifier = Modifier.fillMaxWidth(),
@@ -869,7 +1126,7 @@ private fun LocalLibrarySection(
                             color = MaterialTheme.colorScheme.primary,
                         ) {
                             CpText(
-                                "$activeCount 下载中",
+                                s.downloads.downloadingCount(activeCount),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
@@ -877,11 +1134,212 @@ private fun LocalLibrarySection(
                         }
                     }
                 }
-                CpText(
-                    "已下载 $completedCount 首",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CpText(
+                        s.downloads.downloadedCount(completedCount),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Icon(
+                        Icons.Filled.ChevronRight,
+                        null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            }
+        }
+    }
+
+    optionsTargetSong?.let { song ->
+        val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
+        val mediaId = if (isVideo) "local://video/${song.path}" else "local://audio/${song.path}"
+        val isDownloaded = song.source == LocalMediaOrigin.DOWNLOADED || !song.originalMediaId.isNullOrBlank()
+        val cloudMediaId = song.originalMediaId
+        val cloudFavId = cloudMediaId?.let { runCatching { cp.player.core.music.CPMediaId.parse(it).resourceId }.getOrDefault(it) }
+        val isCloudFav = cloudFavId != null && cloudFavId in likedIds
+        val isLocalFav = song.path in state.favoritePaths
+        val isFav = if (isDownloaded && cloudMediaId != null) isCloudFav else isLocalFav
+        val trackSummary = remember(song) {
+            TrackSummary(
+                id = mediaId,
+                name = song.title,
+                artist = song.artist ?: s.downloads.unknownArtist,
+                album = song.album,
+                coverUrl = song.coverUri,
+                durationMs = song.durationMs,
+                originalMediaId = song.originalMediaId,
+            )
+        }
+
+        SongOptionsSheet(
+            songName = song.title,
+            artistName = song.artist ?: s.downloads.unknownArtist,
+            isFavorite = isFav,
+            isDownloaded = true,
+            onDismiss = { optionsTargetSong = null },
+            onPlay = {
+                val allIdx = state.localAudioItems.indexOfFirst { it.path == song.path }.coerceAtLeast(0)
+                model.playAll(state.localAudioItems, allIdx)
+            },
+            onToggleFavorite = {
+                if (isDownloaded && cloudMediaId != null) {
+                    toggleCloudFav(cloudMediaId)
+                } else {
+                    toggleLocalFav(song.path)
+                }
+            },
+            onAddToQueue = {
+                if (!isVideo) {
+                    scope.launch {
+                        AppModel.playback.addToQueue(mediaId)
+                        UiEvents.notify(s.library.queuedToPlay)
+                    }
+                }
+            },
+            onPlayNext = {
+                if (!isVideo) {
+                    scope.launch {
+                        AppModel.playback.addNextToQueue(mediaId)
+                        UiEvents.notify(s.library.playNext)
+                    }
+                }
+            },
+            onAddToPlaylist = {
+                if (isDownloaded && cloudMediaId != null) {
+                    addToCloudPlaylistTrack = trackSummary
+                } else {
+                    addToLocalPlaylistPath = song.path
+                }
+            },
+            onAddToLocalPlaylist = if (isDownloaded && cloudMediaId != null) {
+                { addToLocalPlaylistPath = song.path }
+            } else null,
+            onDownload = {},
+            onShowInfo = {
+                showInfoTrack = trackSummary
+            },
+            onShare = {
+                if (!song.originalMediaId.isNullOrBlank()) {
+                    val share = cp.player.app.ui.component.songShareText(trackSummary)
+                    cp.player.app.platform.shareText(share)
+                } else {
+                    cp.player.app.platform.shareText("${song.title} - ${song.artist ?: s.downloads.unknownArtist}")
+                }
+            },
+            coverUrl = song.coverUri,
+            onOpenInFileManager = {
+                cp.player.app.platform.openInFileManager(song.path)
+            },
+            onRemoveFromLibrary = {
+                removeTargetSong = song
+            },
+            onDelete = {
+                deleteTargetSong = song
+            },
+            deleteLabel = s.downloads.deleteLocalFile,
+        )
+    }
+
+    cp.player.app.ui.component.CpConfirmHost(confirm)
+
+    addToCloudPlaylistTrack?.let { track ->
+        val cloudId = track.originalMediaId ?: track.id
+        AddToPlaylistSheet(
+            trackIds = listOf(cloudId),
+            onDismiss = { addToCloudPlaylistTrack = null },
+        )
+    }
+
+    addToLocalPlaylistPath?.let { path ->
+        AddToLocalPlaylistDialog(
+            trackPaths = listOf(path),
+            onDismiss = { addToLocalPlaylistPath = null },
+        )
+    }
+
+    removeTargetSong?.let { song ->
+        CpConfirmDialog(
+            title = s.downloads.removeConfirmTitle,
+            message = s.downloads.removeConfirmMessage(song.title),
+            confirmLabel = s.downloads.removeFromLibrary,
+            destructive = false,
+            onConfirm = {
+                model.removeLocalItem(song, s)
+                removeTargetSong = null
+            },
+            onDismiss = { removeTargetSong = null },
+        )
+    }
+
+    deleteTargetSong?.let { song ->
+        CpConfirmDialog(
+            title = s.downloads.deleteLocalFile,
+            message = s.downloads.deleteLocalFileMessage(song.title),
+            confirmLabel = s.downloads.delete,
+            destructive = true,
+            onConfirm = {
+                model.deleteLocalFile(song, s)
+                deleteTargetSong = null
+            },
+            onDismiss = { deleteTargetSong = null },
+        )
+    }
+
+    showInfoTrack?.let { track ->
+        SongDetailInfoDialog(
+            track = track,
+            onDismiss = { showInfoTrack = null },
+        )
+    }
+}
+
+@Composable
+private fun LocalCategoryPill(
+    title: String,
+    count: Int,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = modifier
+            .cpPressScale()
+            .clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+            CpText(
+                title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+            )
+            if (count > 0) {
+                Surface(
+                    shape = MaterialTheme.shapes.extraSmall,
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                ) {
+                    CpText(
+                        count.toString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
             }
         }
     }

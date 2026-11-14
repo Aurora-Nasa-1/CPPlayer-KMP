@@ -117,6 +117,7 @@ fun TrackArtistText(
     var overflow by remember(annotated, resolvedStyle, maxLines) { androidx.compose.runtime.mutableStateOf(false) }
 
     val clickable = @Composable {
+        @Suppress("DEPRECATION")
         ClickableText(
             text = annotated,
             modifier = modifier,

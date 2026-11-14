@@ -46,6 +46,7 @@ import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.ContentState
+import cp.player.app.ui.component.CpConnectedChoice
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
@@ -403,39 +404,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
 
 @Composable
 private fun InsightsTabs(selected: Int, labels: List<String>, onSelect: (Int) -> Unit) {
-    Row(
-        Modifier
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f))
-            .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        labels.forEachIndexed { index, label ->
-            val isSelected = index == selected
-            Surface(
-                onClick = { onSelect(index) },
-                shape = CircleShape,
-                color = if (isSelected) {
-                    MaterialTheme.colorScheme.secondaryContainer
-                } else {
-                    androidx.compose.ui.graphics.Color.Transparent
-                },
-                contentColor = if (isSelected) {
-                    MaterialTheme.colorScheme.onSecondaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            ) {
-                CpText(
-                    label,
-                    style = MaterialTheme.typography.labelLarge,
-                    maxLines = 1,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
-        }
-    }
+    CpConnectedChoice(
+        selectedIndex = selected,
+        labels = labels,
+        onSelect = onSelect,
+    )
 }
 
 // ============================================================

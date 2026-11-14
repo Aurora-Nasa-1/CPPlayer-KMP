@@ -1,0 +1,99 @@
+name: Build Windows PGO Instrumented Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: "是否同时发布到 GitHub Releases 供直接下载（默认仅作为 Artifact 上传）"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  JAVA_VERSION: "25"
+
+jobs:
+  build:
+    name: Build PGO Instrumented Binary
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Install Oracle GraalVM 25.3.4.1 from GDS archive
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://gds.oracle.com/download/graal/25i3/archive/graalvm-jdk-25i3-25.0.4.1_windows-x64_bin.zip'
+          $archive = Join-Path $env:RUNNER_TEMP 'graalvm-25.3.4.1-windows-x64.zip'
+          $destination = Join-Path $env:RUNNER_TEMP 'graalvm-25.3.4.1'
+          curl.exe --fail --location --retry 3 --progress-bar --output $archive $url
+          $expectedSha256 = '5ad639be17b91a994eab49221698155513c26818df65f65a08139b2997f02c71'
+          $actualSha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualSha256 -ne $expectedSha256) { throw "GraalVM archive SHA-256 mismatch: $actualSha256" }
+          Expand-Archive -LiteralPath $archive -DestinationPath $destination -Force
+          $graalvmHome = $null
+          foreach ($directory in Get-ChildItem -LiteralPath $destination -Directory) {
+            if (Test-Path (Join-Path $directory.FullName 'bin\native-image.cmd')) {
+              $graalvmHome = $directory.FullName
+              break
+            }
+          }
+          if (-not $graalvmHome) { throw 'Oracle GraalVM archive did not contain bin/native-image.cmd.' }
+          & (Join-Path $graalvmHome 'bin\native-image.cmd') --version
+          if ($LASTEXITCODE -ne 0) { throw 'Oracle native-image version check failed.' }
+          "GRAALVM_HOME=$graalvmHome" >> $env:GITHUB_ENV
+          Remove-Item -LiteralPath $archive
+
+      - name: Compile PGO Instrumented Native Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew :app:packageGraalvmNative -Pnucleus.graalvm.pgo=instrument --no-daemon
+
+      - name: Package Instrumented ZIP
+        shell: pwsh
+        run: |
+          $appDir = "app/build/compose/binaries/main/graalvm-app/CPPlayer"
+          if (-not (Test-Path "$appDir/CPPlayer.exe")) {
+            throw "CPPlayer.exe not found in $appDir"
+          }
+          $zipPath = "CPPlayer-win-x64-pgo-instrument.zip"
+          Compress-Archive -Path "$appDir/*" -DestinationPath $zipPath -Force
+          Write-Host "Created instrumented archive: $zipPath"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CPPlayer-win-x64-pgo-instrument
+          path: CPPlayer-win-x64-pgo-instrument.zip
+          retention-days: 7
+
+      - name: Release Note & Asset (Optional)
+        if: ${{ github.event.inputs.publish_release == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: pgo-instrument-latest
+          prerelease: true
+          title: "CPPlayer PGO Instrumented Binary for Windows"
+          body: |
+            This is an instrumented Windows Native Image build for collecting Profile-Guided Optimization (PGO) data.
+            
+            ### Instructions:
+            1. Unzip `CPPlayer-win-x64-pgo-instrument.zip`.
+            2. Run `CPPlayer.exe` and test typical playback, search, UI scrolling, and pause/seek workflows.
+            3. Close the application normally. GraalVM will output `default.iprof` next to `CPPlayer.exe`.
+            4. Commit `default.iprof` to `app/graalvm/pgo/default.iprof` to enable PGO on production builds.
+          files: CPPlayer-win-x64-pgo-instrument.zip

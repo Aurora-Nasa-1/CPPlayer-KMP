@@ -251,14 +251,14 @@ class MusicRepository(
     suspend fun getAlbumDetail(id: String): MusicResult<AlbumDetail> {
         val source = unifiedSource ?: return BackendResult.Unsupported("Unified music source is not configured")
         val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(
-            id, AppModel.activeProviderId() ?: "netease", "album"
+            id, AppModel.activeProviderId(), "album"
         )
         return source.getAlbumDetail(canonicalId)
     }
 
     suspend fun subscribeAlbum(id: String, subscribe: Boolean): Boolean {
         val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(
-            id, AppModel.activeProviderId() ?: "netease", "album",
+            id, AppModel.activeProviderId(), "album",
         )
         val ok = (unifiedSource?.subscribeAlbum(canonicalId, subscribe) as? BackendResult.Success)?.data == true
         if (ok) AppModel.notifyAlbumFavoriteResourceChanged(id)
@@ -268,7 +268,7 @@ class MusicRepository(
     suspend fun getArtistProfile(id: String): ArtistProfile? {
         val source = unifiedSource ?: return null
         val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(
-            id, AppModel.activeProviderId() ?: "netease", "artist"
+            id, AppModel.activeProviderId(), "artist"
         )
         return (source.getArtistProfile(canonicalId) as? BackendResult.Success)?.data
     }
@@ -276,7 +276,7 @@ class MusicRepository(
     suspend fun getArtistTopSongs(id: String): MusicResult<List<TrackSummary>> {
         val source = unifiedSource ?: return BackendResult.Unsupported("Unified music source is not configured")
         val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(
-            id, AppModel.activeProviderId() ?: "netease", "artist"
+            id, AppModel.activeProviderId(), "artist"
         )
         return when (val result = source.getArtistTracks(canonicalId, limit = 50, offset = 0)) {
             is BackendResult.Success -> BackendResult.Success(result.data.items)
@@ -288,7 +288,7 @@ class MusicRepository(
     suspend fun getArtistAlbums(id: String, limit: Int = 50): MusicResult<List<AlbumSummary>> {
         val source = unifiedSource ?: return BackendResult.Unsupported("Unified music source is not configured")
         val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(
-            id, AppModel.activeProviderId() ?: "netease", "artist"
+            id, AppModel.activeProviderId(), "artist"
         )
         return when (val result = source.getArtistAlbums(canonicalId, limit = limit, offset = 0)) {
             is BackendResult.Success -> BackendResult.Success(result.data.items)
@@ -300,7 +300,7 @@ class MusicRepository(
     suspend fun getUserPlaylistsOf(uid: String): MusicResult<List<PlaylistSummary>> {
         val source = unifiedSource ?: return BackendResult.Unsupported("Unified music source is not configured")
         val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(
-            uid, AppModel.activeProviderId() ?: "netease", "user"
+            uid, AppModel.activeProviderId(), "user"
         )
         return when (val result = source.getUserPlaylistPage(canonicalId, limit = 100, offset = 0)) {
             is BackendResult.Success -> BackendResult.Success(result.data.items)
@@ -320,13 +320,13 @@ class MusicRepository(
     }
     suspend fun addTracksToPlaylist(playlistId: String, ids: List<String>): Boolean {
         val canonicalId = canonicalPlaylistId(playlistId)
-        val providerId = AppModel.activeProviderId() ?: "netease"
+        val providerId = AppModel.activeProviderId()
         val tracks = ids.map { cp.player.core.music.CPMediaId.toCanonicalMediaId(it, providerId, "song") }
         return playlistMutation(canonicalId, unifiedSource?.addTracksToPlaylist(canonicalId, tracks))
     }
     suspend fun removeTracksFromPlaylist(playlistId: String, ids: List<String>): Boolean {
         val canonicalId = canonicalPlaylistId(playlistId)
-        val providerId = AppModel.activeProviderId() ?: "netease"
+        val providerId = AppModel.activeProviderId()
         val tracks = ids.map { cp.player.core.music.CPMediaId.toCanonicalMediaId(it, providerId, "song") }
         return playlistMutation(canonicalId, unifiedSource?.removeTracksFromPlaylist(canonicalId, tracks))
     }
@@ -336,7 +336,7 @@ class MusicRepository(
     }
 
     private fun canonicalPlaylistId(id: String): String =
-        cp.player.core.music.CPMediaId.toCanonicalMediaId(id, AppModel.activeProviderId() ?: "netease", "playlist")
+        cp.player.core.music.CPMediaId.toCanonicalMediaId(id, AppModel.activeProviderId(), "playlist")
 
     private suspend fun invalidatePlaylistReadLists() {
         MusicReadCaches.playlists.invalidateMatching {
@@ -384,7 +384,7 @@ class MusicRepository(
      * 与旧项目 `PlaybackRepository.getHeartbeatSongs(songId, playlistId)` 的行为一致。
      */
     suspend fun getIntelligenceSongs(songId: String, playlistId: Long): MusicResult<List<TrackSummary>> {
-        val providerId = AppModel.activeProviderId() ?: "netease"
+        val providerId = AppModel.activeProviderId()
         val song = cp.player.core.music.CPMediaId.toCanonicalMediaId(songId, providerId, "song")
         val playlist = cp.player.core.music.CPMediaId.toCanonicalMediaId(playlistId.toString(), providerId, "playlist")
         return unifiedSource?.getIntelligenceSongs(song, playlist)
@@ -395,7 +395,7 @@ class MusicRepository(
         seedId: String,
         onRefresh: ((MusicResult<List<TrackSummary>>) -> Unit)? = null,
     ): MusicResult<List<TrackSummary>> {
-        val providerId = AppModel.activeProviderId() ?: "netease"
+        val providerId = AppModel.activeProviderId()
         val song = cp.player.core.music.CPMediaId.toCanonicalMediaId(seedId, providerId, "song")
         return cacheRead(
             MusicReadCaches.similarSongs,
@@ -526,7 +526,7 @@ class MusicRepository(
      */
     suspend fun getUserAlbums(limit: Int = 100, offset: Int = 0): MusicResult<List<AlbumSummary>> {
         val uid = AppModel.userProfileFlow.value?.resourceId
-            ?: AppModel.activeProviderId()?.let { cp.player.app.auth.AccountStore.activeUid(it) }
+            ?: AppModel.activeProviderId().let { cp.player.app.auth.AccountStore.activeUid(it) }
             ?: return BackendResult.Error("未登录或登录已过期")
         return unifiedSource?.getUserAlbums(uid, limit, offset)
             ?: BackendResult.Unsupported("Unified music source is not configured")
@@ -716,7 +716,7 @@ class MusicRepository(
         onRefresh: ((MusicResult<List<PlaylistSummary>>) -> Unit)? = null,
     ): MusicResult<List<PlaylistSummary>> {
         val cachedUid = AppModel.userProfileFlow.value?.resourceId
-            ?: AppModel.activeProviderId()?.let { cp.player.app.auth.AccountStore.activeUid(it) }
+            ?: AppModel.activeProviderId().let { cp.player.app.auth.AccountStore.activeUid(it) }
         val uid = cachedUid
             ?: return BackendResult.Error("未登录或登录已过期")
         return cacheRead(
@@ -734,7 +734,7 @@ class MusicRepository(
 
     suspend fun getLikeList(): MusicResult<Set<String>> {
         val cachedUid = AppModel.userProfileFlow.value?.resourceId
-            ?: AppModel.activeProviderId()?.let { cp.player.app.auth.AccountStore.activeUid(it) }
+            ?: AppModel.activeProviderId().let { cp.player.app.auth.AccountStore.activeUid(it) }
         val uid = cachedUid
             ?: return BackendResult.Error("未登录或登录已过期")
         return unifiedSource?.getLikeList(uid)
@@ -773,14 +773,14 @@ class MusicRepository(
     }
 
     suspend fun likeSong(songId: String, like: Boolean): Boolean {
-        val providerId = AppModel.activeProviderId() ?: "netease"
+        val providerId = AppModel.activeProviderId()
         val mediaId = cp.player.core.music.CPMediaId.toCanonicalMediaId(songId, providerId, "song")
         return (unifiedSource?.likeSong(mediaId, like) as? BackendResult.Success)?.data == true
     }
 
     /** 标记「不感兴趣」（推荐流去重）。 */
     suspend fun dislikeSong(songId: String): Boolean {
-        val providerId = AppModel.activeProviderId() ?: "netease"
+        val providerId = AppModel.activeProviderId()
         val mediaId = cp.player.core.music.CPMediaId.toCanonicalMediaId(songId, providerId, "song")
         return (unifiedSource?.dislikeSong(mediaId) as? BackendResult.Success)?.data == true
     }
@@ -892,13 +892,13 @@ class MusicRepository(
             else -> type
         }
         return cp.player.core.music.CPMediaId.toCanonicalMediaId(
-            rawId, AppModel.activeProviderId() ?: "netease", resourceType,
+            rawId, AppModel.activeProviderId(), resourceType,
         )
     }
 
     /** 从云盘删除歌曲（上游 `user/cloud/del`）。 */
     suspend fun deleteUserCloud(songId: String): Boolean {
-        val providerId = AppModel.activeProviderId() ?: "netease"
+        val providerId = AppModel.activeProviderId()
         val mediaId = cp.player.core.music.CPMediaId.toCanonicalMediaId(songId, providerId, "song")
         return (unifiedSource?.deleteUserCloud(mediaId) as? BackendResult.Success)?.data == true
     }

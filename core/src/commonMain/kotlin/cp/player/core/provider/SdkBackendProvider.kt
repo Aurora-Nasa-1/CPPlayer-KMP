@@ -37,7 +37,11 @@ class SdkBackendProvider(
             if (disposed) true else { listeners.add(listener); false }
         }
         if (notify) listener()
-        return { synchronized(listeners) { listeners.remove(listener) }; Unit }
+        return {
+            synchronized(listeners) {
+                listeners.remove(listener)
+            }
+        }
     }
     override fun close() {
         synchronized(listeners) { disposed = true }

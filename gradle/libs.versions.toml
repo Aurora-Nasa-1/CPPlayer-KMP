@@ -9,7 +9,11 @@ datetime = "0.6.1"
 # 而 skiko 又是 Coil 选型的分水岭（见下面 coil 的注释）：两边一致时 compose 插件才不会报
 # "Skiko dependencies' versions are incompatible"。
 compose = "1.12.2"
-nucleus = "2.5.18"
+nucleus = "3.0.0-dev-202611061347"
+# Nucleus 同作者的无 AWT 托盘库：托盘图标与右键菜单都走平台原生 API
+# （Windows Shell_NotifyIcon / macOS NSStatusItem / Linux AppIndicator），
+# 不创建 `java.awt.SystemTray` / `TrayIcon`。
+composenativetray = "2.1.6"
 adaptive = "1.3.0"
 # 2.2.21-1.10.3 是「Kotlin 2.2.21 + Compose 1.10.3」的兼容性标记，不是语义版本。
 # 升它之前担心的「跨大版本破坏」经 javap 逐类核对**不成立**：61 个公共类一个没删，
@@ -59,7 +63,6 @@ hypnoticcanvas = "0.6.0"
 sentry = "8.3.0"
 # QuickJS-kt：支持 Android 与 JVM 桌面端的现代化 QuickJS KMP 引擎（ES2023、原生 async/await、协程支持）
 quickjs = "1.0.15"
-robolectric = "4.17"
 # —— 歌词对外投放（系统级歌词渠道）——
 # 这四个都是 AAR，且**只在 androidMain 用**：桌面端没有对应生态，commonMain 只留
 # 「纯协议层」（OPlus 的 LRC/JSON 构建、节流与重试策略），才能在 desktopTest 里单测。
@@ -170,7 +173,6 @@ coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" 
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
 hypnoticcanvas = { module = "com.mikepenz.hypnoticcanvas:hypnoticcanvas", version.ref = "hypnoticcanvas" }
 quickjs = { module = "io.github.dokar3:quickjs-kt", version.ref = "quickjs" }
-robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 # 词幕（Lyricon）：Provider API —— 词幕侧靠 manifest 的 lyricon_module 元数据发现本应用。
 lyricon-provider = { module = "io.github.proify.lyricon:provider", version.ref = "lyriconProvider" }
 # SuperLyric：HChenX 的广播 IPC 生态，逐字歌词发布者协议。
@@ -192,6 +194,9 @@ sentry-core = { module = "io.sentry:sentry", version.ref = "sentry" }
 nucleus-application = { module = "dev.nucleusframework:nucleus.nucleus-application", version.ref = "nucleus" }
 nucleus-decorated-window-tao = { module = "dev.nucleusframework:nucleus.decorated-window-tao", version.ref = "nucleus" }
 nucleus-graalvm-runtime = { module = "dev.nucleusframework:nucleus.graalvm-runtime", version.ref = "nucleus" }
+nucleus-notification-windows = { module = "dev.nucleusframework:nucleus.notification-windows", version.ref = "nucleus" }
+nucleus-notification-linux = { module = "dev.nucleusframework:nucleus.notification-linux", version.ref = "nucleus" }
+composenativetray = { module = "dev.nucleusframework:composenativetray", version.ref = "composenativetray" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

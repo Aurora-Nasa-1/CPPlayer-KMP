@@ -144,7 +144,7 @@ class AuthRepository(
     suspend fun getWebviewLoginUrl(): WebLoginSession? {
         val result = authenticate(AuthActionRequest(action = AuthAction.WEBVIEW_URL, md5 = false))
         val url = result?.url?.takeIf(String::isNotBlank) ?: return null
-        if (result?.success != true) return null
+        if (!result.success) return null
         return WebLoginSession(url, result.key?.takeIf(String::isNotBlank))
     }
 

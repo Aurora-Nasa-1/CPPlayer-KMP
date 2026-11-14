@@ -36,8 +36,8 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Share
@@ -199,7 +199,7 @@ fun SongOptionsSheet(
                 )
                 ActionPill(
                     label = "添加到队列",
-                    icon = Icons.Filled.QueueMusic,
+                    icon = Icons.AutoMirrored.Filled.QueueMusic,
                     color = MaterialTheme.colorScheme.tertiaryContainer,
                     contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
                     modifier = Modifier.weight(1f),
@@ -420,7 +420,7 @@ fun PlaylistOptionsSheet(
                     )
                     ActionPill(
                         label = "加入队列",
-                        icon = Icons.Filled.QueueMusic,
+                        icon = Icons.AutoMirrored.Filled.QueueMusic,
                         color = MaterialTheme.colorScheme.secondaryContainer,
                         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                         modifier = Modifier.weight(1f),

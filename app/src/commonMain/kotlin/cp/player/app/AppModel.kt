@@ -1900,7 +1900,7 @@ object AppModel {
      * 用于冷启动、弱网或离线时秒级恢复身份，避免界面闪烁或误显示「未登录」。
      */
     fun getCachedUserProfile(): UserProfile? {
-        val pId = activeProvider()?.id ?: activeProviderId() ?: return null
+        val pId = activeProvider()?.id ?: activeProviderId()
         val activeUid = cp.player.app.auth.AccountStore.activeUid(pId) ?: return null
         val saved = cp.player.app.auth.AccountStore.list(pId).firstOrNull { it.uid == activeUid } ?: return null
         return UserProfile(

@@ -29,11 +29,13 @@ fun LegacyModalBottomSheet(
     skipPartiallyExpanded: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    @Suppress("DEPRECATION")
+    val sheetState = androidx.compose.material3.rememberModalBottomSheetState(
+        skipPartiallyExpanded = skipPartiallyExpanded,
+    )
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
-        sheetState = androidx.compose.material3.rememberModalBottomSheetState(
-            skipPartiallyExpanded = skipPartiallyExpanded,
-        ),
+        sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         // 底部弹窗形状收敛到 `CpShapes.sheet` —— 原先这里、`MoreOptionsSheet`、
         // `DownloadsScreen` 各写了一遍同样的「上两角 32dp」，改一次要改三处。

@@ -197,6 +197,7 @@ class AccountScreen : Screen {
         var cookieText by remember { mutableStateOf("") }
 
         val confirm = rememberConfirmState()
+        @Suppress("DEPRECATION")
         val clipboardManager = LocalClipboardManager.current
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
@@ -225,13 +226,13 @@ class AccountScreen : Screen {
                 if (!isLogged) {
                     // ================= 未登录态：明确为登录界面 =================
                     val currentProvider = provider
-                    val unloggedHasSettings = !currentProvider?.settingsSchema.isNullOrEmpty()
+                    val schema = currentProvider?.settingsSchema
                     LoginBrandHeader(
                         providerName = currentProvider?.name,
                         providerType = currentProvider?.type?.name,
                         onSwitchProvider = { navigator.push(ProviderManagementScreen()) },
-                        onOpenSettings = if (unloggedHasSettings && currentProvider != null) {
-                            { navigator.push(ProviderCustomSettingsScreen(currentProvider.id, currentProvider.name, currentProvider.settingsSchema!!)) }
+                        onOpenSettings = if (currentProvider != null && !schema.isNullOrEmpty()) {
+                            { navigator.push(ProviderCustomSettingsScreen(currentProvider.id, currentProvider.name, schema)) }
                         } else null,
                     )
 

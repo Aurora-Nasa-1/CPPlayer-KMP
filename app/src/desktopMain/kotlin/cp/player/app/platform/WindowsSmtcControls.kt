@@ -634,8 +634,12 @@ internal class WindowsSmtcControls private constructor(
             .joinToString("") { "%02x".format(it) }
 
     companion object {
+        /**
+         * 主窗口原生句柄。Tao 后端没有 AWT 窗口，启动时由 `Main.kt` 把
+         * `TaoWindow.nativeHandle`（Windows 上即 HWND）写进来；为 0 时回退到按 PID 查找。
+         */
         @Volatile
-        var primaryWindow: java.awt.Window? = null
+        var primaryWindowHandle: Long = 0L
 
         fun create(controller: PlaybackController): PlatformMediaControlsInstance =
             WindowsSmtcControls(controller)
@@ -644,6 +648,8 @@ internal class WindowsSmtcControls private constructor(
             ptr != null && ptr != MemorySegment.NULL && ptr.address() != 0L
 
         private fun resolveHwndLong(arena: Arena): Long {
+            val explicit = primaryWindowHandle
+            if (explicit != 0L) return explicit
             return findWindowByPid(arena)
         }
 

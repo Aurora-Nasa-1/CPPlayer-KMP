@@ -221,6 +221,7 @@ class ProviderManagementScreen(
                     modifier = Modifier.fillMaxWidth(),
                     contentAlignment = Alignment.Center,
                 ) {
+                    @Suppress("DEPRECATION")
                     TabRow(
                         selectedTabIndex = selectedTab,
                         modifier = Modifier.settingsContentWidth(),
@@ -648,10 +649,11 @@ private fun ProviderRow(
     val hasPendingUpdate = remember(provider.id) { AppModel.backend.hasPendingUpdate(provider.id) }
     val pendingText = if (hasPendingUpdate) " · 待重启生效" else ""
 
-    val hasUpdate = updateState is ProviderUpdateState.UpdateAvailable
+    val availableUpdate = updateState as? ProviderUpdateState.UpdateAvailable
+    val hasUpdate = availableUpdate != null
     val isChecking = updateState is ProviderUpdateState.Checking
-    val updateSubtitle = if (hasUpdate) {
-        " · 发现新版本 v${(updateState as ProviderUpdateState.UpdateAvailable).info.version}"
+    val updateSubtitle = if (availableUpdate != null) {
+        " · 发现新版本 v${availableUpdate.info.version}"
     } else ""
 
     val subtitle = buildString {
@@ -674,8 +676,8 @@ private fun ProviderRow(
                     Icon(Icons.Filled.CheckCircle, "当前音源", tint = trailingTint)
                     Spacer(Modifier.width(8.dp))
                 }
-                if (hasUpdate) {
-                    val updateInfo = (updateState as ProviderUpdateState.UpdateAvailable).info
+                if (availableUpdate != null) {
+                    val updateInfo = availableUpdate.info
                     Surface(
                         shape = MaterialTheme.shapes.small,
                         color = MaterialTheme.colorScheme.primaryContainer,
@@ -738,8 +740,8 @@ private fun ProviderRow(
                         expanded = menuOpen,
                         onDismissRequest = { menuOpen = false },
                     ) {
-                        if (hasUpdate) {
-                            val updateInfo = (updateState as ProviderUpdateState.UpdateAvailable).info
+                        if (availableUpdate != null) {
+                            val updateInfo = availableUpdate.info
                             DropdownMenuItem(
                                 text = { CpText("更新详情 (v${updateInfo.version})") },
                                 leadingIcon = { Icon(Icons.Filled.Download, null, tint = MaterialTheme.colorScheme.primary) },

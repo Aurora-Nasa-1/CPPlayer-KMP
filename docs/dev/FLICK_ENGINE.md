@@ -265,6 +265,23 @@ seek 后引擎进 `Idle` + 无源 ⇒ 暂停/播放空转，`PendingSeekTracker`
 自动预取受「预加载下一首」开关控制。关闭预取或原生排队失败时维持原有的
 `Ended → playCurrent()` 兜底；仍可以正常自动续播，只是没有双源交叉淡化。
 
+### ⚠️ queue-next 必须复用当前输出流
+
+`audio_queue_next_url()` **不能**走 `prepare_stream()`。后者会按下一首的采样率
+调用 `ensure_audio_engine()`；排队发生在**当前曲正在出声**的时候，一旦设备默认
+采样率（如 96 kHz 共享模式）与下一首（44.1 kHz）不同，`EngineManager` 会判定
+输出签名变化，**关掉正在播放的引擎再建一个空引擎**。
+
+症状：播放约 1~2 秒后突然静音；UI 状态仍是 `playing`；`nativeGetProgress()`
+返回 `null`，进度条冻结。
+
+正确做法：queue-next 只做 `probe_http()`，当前引擎已初始化时**沿用它的
+采样率与声道数**，把下一首解码 / 重采样到当前输出格式；只有当前没有已初始化
+引擎时，才允许按下一首的采样率初始化输出。
+
+回归测试：`DesktopQueueNextUrlRegressionTest`（真实本地 HTTP 流 + 真实引擎，
+播放 1.2 秒后排队，断言 `getProgress()` 仍可用且进度继续前进）。
+
 ---
 
 ## 6. 验证方式

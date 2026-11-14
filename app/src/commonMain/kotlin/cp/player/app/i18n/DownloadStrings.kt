@@ -239,6 +239,16 @@ interface DownloadStrings {
     fun deleteLocalFileMessage(title: String): String
     fun playlistTrackCount(count: Int): String
     fun deleteLocalPlaylistMessage(name: String): String
+
+    fun localSongCount(count: Int): String = "共 $count 首本地歌曲"
+    fun losslessCount(count: Int): String = "无损 $count 首"
+    val browseLibrary: String get() = "浏览曲库"
+    val recentAdded: String get() = "最近添加"
+    val viewAll: String get() = "查看全部"
+    fun downloadingCount(count: Int): String = "$count 下载中"
+    fun downloadedCount(count: Int): String = "已下载 $count 首"
+    val quickShuffle: String get() = "随机播放"
+    val quickPlay: String get() = "顺序播放"
 }
 
 /** 简体中文实现（界面现有字面量照搬）。 */
@@ -399,6 +409,16 @@ object DownloadStringsZh : DownloadStrings {
     override fun deleteLocalFileMessage(title: String) = "确定要将《$title》从磁盘彻底删除吗？此操作无法撤销。"
     override fun playlistTrackCount(count: Int) = "$count 首歌曲"
     override fun deleteLocalPlaylistMessage(name: String) = "确定删除本地歌单《$name》吗？歌单内的本地音频文件不会被删除。"
+
+    override fun localSongCount(count: Int) = "共 $count 首本地歌曲"
+    override fun losslessCount(count: Int) = "无损 $count 首"
+    override val browseLibrary = "浏览曲库"
+    override val recentAdded = "最近添加"
+    override val viewAll = "查看全部"
+    override fun downloadingCount(count: Int) = "$count 下载中"
+    override fun downloadedCount(count: Int) = "已下载 $count 首"
+    override val quickShuffle = "随机播放"
+    override val quickPlay = "顺序播放"
 }
 
 /** 英文实现。 */
@@ -561,6 +581,16 @@ object DownloadStringsEn : DownloadStrings {
     override fun deleteLocalFileMessage(title: String) = "Permanently delete \"$title\" from disk? This can't be undone."
     override fun playlistTrackCount(count: Int) = if (count == 1) "1 song" else "$count songs"
     override fun deleteLocalPlaylistMessage(name: String) = "Delete the local playlist \"$name\"? Its audio files will remain on disk."
+
+    override fun localSongCount(count: Int) = if (count == 1) "1 local song" else "$count local songs"
+    override fun losslessCount(count: Int) = "$count lossless"
+    override val browseLibrary = "Browse library"
+    override val recentAdded = "Recently added"
+    override val viewAll = "View all"
+    override fun downloadingCount(count: Int) = "$count downloading"
+    override fun downloadedCount(count: Int) = if (count == 1) "1 downloaded" else "$count downloaded"
+    override val quickShuffle = "Shuffle all"
+    override val quickPlay = "Play all"
 
     override val collapsePlayer = "Collapse the player"
     override val lyrics = "Lyrics"

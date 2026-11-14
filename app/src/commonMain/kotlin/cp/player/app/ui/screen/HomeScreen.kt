@@ -2714,7 +2714,7 @@ private fun CompactTrackCard(
                     maxLines = 1,
                 )
             }
-            if (isCurrent && nowPlaying != null) {
+            if (isCurrent) {
                 CpPlayingEqualizer(
                     isPlaying = nowPlaying.isPlaying,
                     barColor = MaterialTheme.colorScheme.primary,

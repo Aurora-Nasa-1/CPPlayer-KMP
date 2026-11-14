@@ -101,6 +101,16 @@ data class DownloadsUiState(
     /** 本地库音频条目（视频不参与音乐库聚合与播放队列）。 */
     val localAudioItems: List<LocalMediaItem>
         get() = localItems.filter { it.mediaType == MediaType.AUDIO }
+
+    /** 本地音频中的无损音质条目总数。 */
+    val losslessCount: Int
+        get() = localAudioItems.count { it.isLossless }
+
+    /** 最近导入或修改的本地音频（最多 5 首），用于曲库主页速览。 */
+    val recentAudioItems: List<LocalMediaItem>
+        get() = localAudioItems
+            .sortedByDescending { it.lastModified }
+            .take(5)
 }
 
 /**
