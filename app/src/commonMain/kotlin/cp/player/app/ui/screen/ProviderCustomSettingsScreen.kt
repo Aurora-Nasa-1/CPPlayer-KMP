@@ -36,6 +36,7 @@ import cp.player.app.ui.util.popOrNotify
 import cp.player.core.provider.ProviderSettingItemSchema
 import cp.player.core.util.defaultSettingsStorage
 import cp.player.app.ui.component.CpText
+import cp.player.app.i18n.cpStrings
 
 /**
  * 声明式音源自定义设置页面。
@@ -52,6 +53,8 @@ class ProviderCustomSettingsScreen(
 
     @Composable
     override fun Content() {
+        val s = cpStrings().providerManagement
+        val common = cpStrings().common
         val navigator = LocalNavigator.currentOrThrow
         val storage = remember(providerId) { defaultSettingsStorage("provider_config_$providerId") }
 
@@ -70,16 +73,16 @@ class ProviderCustomSettingsScreen(
         var editingText by remember { mutableStateOf("") }
 
         CpRouteScaffold(
-            title = "$providerName 配置",
+            title = s.customSettingsTitle(providerName),
             onBack = { navigator.popOrNotify() }
         ) { pageModifier ->
             SettingsPage(pageModifier) {
                 SettingsNote(
-                    text = "在此配置该音源专属参数。保存后将在发起 API 调用时自动注入。",
+                    text = s.customSettingsNote,
                     color = MaterialTheme.colorScheme.primary
                 )
 
-                SettingsSection(title = "参数设置") {
+                SettingsSection(title = s.customSettingsSection) {
                     schemas.forEachIndexed { index, item ->
                         when (item.type.lowercase()) {
                             "switch", "boolean" -> {
@@ -126,11 +129,11 @@ class ProviderCustomSettingsScreen(
                                 val displayValue = when {
                                     isPassword && currentVal.isNotEmpty() -> "••••••••"
                                     currentVal.isNotEmpty() -> currentVal
-                                    else -> "未设置"
+                                    else -> s.settingUnset
                                 }
                                 val subtitle = buildString {
                                     item.description?.let { append(it).append("\n") }
-                                    append("当前: ").append(displayValue)
+                                    append(s.settingCurrent(displayValue))
                                 }
                                 SettingsClickItem(
                                     title = item.label,
@@ -155,7 +158,7 @@ class ProviderCustomSettingsScreen(
             val isPassword = item.type.equals("password", ignoreCase = true)
             AlertDialog(
                 onDismissRequest = { editingItem = null },
-                title = { CpText(text = "编辑 ${item.label}") },
+                title = { CpText(text = s.editSetting(item.label)) },
                 text = {
                     Column {
                         item.description?.let {
@@ -187,12 +190,12 @@ class ProviderCustomSettingsScreen(
                             editingItem = null
                         }
                     ) {
-                        CpText("保存")
+                        CpText(common.save)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { editingItem = null }) {
-                        CpText("取消")
+                        CpText(common.dismiss)
                     }
                 }
             )

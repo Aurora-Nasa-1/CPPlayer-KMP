@@ -1,26 +1,19 @@
 package cp.player.app.ui.screen
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -30,23 +23,17 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FileUpload
-import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -58,15 +45,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
@@ -76,26 +56,26 @@ import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.rememberZipPicker
 import cp.player.app.platform.sendPlatformToast
 import cp.player.app.ui.component.CpConfirmHost
+import cp.player.app.ui.component.CpConfirmState
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpText
+import cp.player.app.ui.component.CpToggleChip
 import cp.player.app.ui.component.CpViewSwitcher
 import cp.player.app.ui.component.CpViewSwitcherItem
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.ProviderUpdateDetailsDialog
 import cp.player.app.ui.component.ProviderUpdateSourceDialog
-import cp.player.app.ui.component.SettingsBadge
 import cp.player.app.ui.component.SettingsButtonItem
 import cp.player.app.ui.component.SettingsClickItem
+import cp.player.app.ui.component.SettingsLazyPage
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsNoteEmphasis
 import cp.player.app.ui.component.SettingsSearchBar
-import cp.player.app.ui.component.SettingsSegmentedItem
+import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.rememberConfirmState
-import cp.player.app.ui.component.settingsRowHighlight
-import cp.player.app.ui.component.settingsRowHighlightContent
 import cp.player.app.ui.util.popOrNotify
 import cp.player.app.update.ProviderUpdateInfo
 import cp.player.app.update.ProviderUpdateState
@@ -104,22 +84,19 @@ import cp.player.core.lyrics.LyricsSourceRegistry
 import cp.player.core.pluginrepo.PluginCatalogEntry
 import cp.player.core.pluginrepo.PluginInstallPhase
 import cp.player.core.pluginrepo.PluginRepositoryState
-import cp.player.core.pluginrepo.PluginVersion
 import cp.player.core.pluginrepo.RepositoryPluginKind
 import cp.player.core.pluginrepo.requireRepositoryHttpsUrl
 import cp.player.core.provider.BackendProvider
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 
 /**
  * 合并后的插件中心。
  *
- * 取代原先「插件中心」与「音源与歌词管理」两个入口：
- * 已安装首屏同时呈现音源模块、歌词来源与仓库插件，发现 / 更新 / 仓库作为同一页的
- * 三个视图，用 M3 Expressive 的连通切换器切换，不再使用 `TabRow`。
- *
- * @param initialView 首屏视图。设置页搜索与「歌词来源」深链会传入目标视图。
+ * 已安装首屏直接列出音源、歌词来源和仓库插件；发现 / 更新 / 仓库是同一页的三个视图，
+ * 用 M3 Expressive 连通切换器切换，不再保留 `TabRow`。列表统一走 [SettingsLazyPage]
+ * 与 [SettingsSection]，行距 2dp，与设置页其余页面保持一致。
  */
 class PluginHubScreen(
     private val initialView: PluginHubView = PluginHubView.INSTALLED,
@@ -131,6 +108,8 @@ class PluginHubScreen(
         val scope = rememberCoroutineScope()
         val repoModel = rememberScreenModel { PluginRepositoryScreenModel() }
         val providerModel = rememberScreenModel { ProviderManagementModel() }
+        val p = cpStrings().providerManagement
+        val t = cpStrings().pluginRepository
 
         LaunchedEffect(repoModel) { repoModel.load() }
 
@@ -142,6 +121,8 @@ class PluginHubScreen(
         val message by providerModel.message.collectAsState()
         val updateStates by providerModel.updateStates.collectAsState()
         val providerAutoCheck by providerModel.autoCheckEnabled.collectAsState()
+        var checkingAll by remember { mutableStateOf(false) }
+        var checkResult by remember { mutableStateOf<String?>(null) }
 
         val lyricsRegistry: LyricsSourceRegistry = AppModel.lyricsSources
         var lyricsSources by remember { mutableStateOf<List<LyricsSourceEntry>>(emptyList()) }
@@ -151,8 +132,11 @@ class PluginHubScreen(
         LaunchedEffect(Unit) {
             refreshLyrics()
             if (providerModel.isAutoCheckEnabled()) {
-                providerModel.checkAllUpdates(silent = true)
+                providerModel.checkAllUpdates(p, silent = true)
             }
+        }
+        LaunchedEffect(repoState.installedPlugins, repoState.task?.phase) {
+            refreshLyrics()
         }
 
         var updateTarget by remember { mutableStateOf<BackendProvider?>(null) }
@@ -163,7 +147,11 @@ class PluginHubScreen(
             val target = updateTarget
             updateTarget = null
             if (zipPath == null) return@rememberZipPicker
-            if (target == null) providerModel.importModule(zipPath) else providerModel.updateModule(target, zipPath)
+            if (target == null) {
+                providerModel.importModule(zipPath, p)
+            } else {
+                providerModel.updateModule(target, zipPath, p)
+            }
         })
 
         val lyricsStrings = cpStrings().lyricsPlugin
@@ -212,6 +200,8 @@ class PluginHubScreen(
             message = message,
             error = repoError,
             pendingError = repoModel.pendingError,
+            checkingAll = checkingAll,
+            checkResult = checkResult,
         )
 
         val actions = PluginHubActions(
@@ -224,17 +214,58 @@ class PluginHubScreen(
             removeSource = { url -> repoModel.change { removeSource(url) } },
             cancelDownload = repoModel.repository::cancelDownload,
             checkAllUpdates = {
-                repoModel.refresh()
-                providerModel.checkAllUpdates(silent = false)
+                if (!checkingAll) {
+                    checkResult = null
+                    checkingAll = true
+                    scope.launch {
+                        try {
+                            val catalogChecked = repoState.networkEnabled
+                            // 仓库目录与音源清单都检查完再报结果，避免「检查完成」早于请求返回。
+                            if (catalogChecked) {
+                                try {
+                                    repoModel.error.value = null
+                                    repoModel.repository.refresh()
+                                } catch (cancelled: CancellationException) {
+                                    throw cancelled
+                                } catch (failure: Exception) {
+                                    repoModel.reportError(failure)
+                                }
+                                // tryLock 失败时 refresh() 会立刻返回；等前一次刷新真正结束，
+                                // 否则会把旧目录当成这次检查的结果。
+                                repoModel.repository.state.first { !it.refreshing }
+                            }
+                            providerModel.checkAllUpdatesNow(p, silent = true)
+                            val repoUpdates = if (catalogChecked) {
+                                repoModel.repository.state.value.entries.count { it.updateAvailable }
+                            } else {
+                                0
+                            }
+                            val providerUpdates = providerModel.updateStates.value.values.count {
+                                it is ProviderUpdateState.UpdateAvailable
+                            }
+                            val failures = (if (catalogChecked) repoModel.repository.state.value.sourceErrors.size else 0) +
+                                providerModel.updateStates.value.values.count { it is ProviderUpdateState.Error }
+                            checkResult = when {
+                                !catalogChecked -> t.checkAllCatalogSkipped(providerUpdates)
+                                repoUpdates + providerUpdates == 0 && failures == 0 -> t.checkAllUpToDate
+                                else -> t.checkAllResult(repoUpdates + providerUpdates, failures)
+                            }
+                        } finally {
+                            checkingAll = false
+                        }
+                    }
+                }
             },
             importProvider = {
                 updateTarget = null
                 pickProviderZip()
             },
-            activateProvider = { id -> providers.firstOrNull { it.id == id }?.let(providerModel::activate) },
-            deleteProvider = providerModel::delete,
+            activateProvider = { id ->
+                providers.firstOrNull { it.id == id }?.let { providerModel.activate(it, p) }
+            },
+            deleteProvider = { id -> providerModel.delete(id, p) },
             exportProvider = { id, dest ->
-                providers.firstOrNull { it.id == id }?.let { providerModel.exportModuleTo(it, dest) } ?: false
+                providers.firstOrNull { it.id == id }?.let { providerModel.exportModuleTo(it, dest, p) } ?: false
             },
             updateProvider = { id ->
                 providers.firstOrNull { it.id == id }?.let { provider ->
@@ -242,7 +273,9 @@ class PluginHubScreen(
                     pickProviderZip()
                 }
             },
-            checkProviderUpdate = { id -> providers.firstOrNull { it.id == id }?.let(providerModel::checkUpdateFor) },
+            checkProviderUpdate = { id ->
+                providers.firstOrNull { it.id == id }?.let { providerModel.checkUpdateFor(it, p) }
+            },
             showProviderUpdateDetails = { id, info ->
                 providers.firstOrNull { it.id == id }?.let { updateDetailTarget = it to info }
             },
@@ -297,7 +330,7 @@ class PluginHubScreen(
                 onDismiss = { updateDetailTarget = null },
                 onDownloadAndUpdate = {
                     updateDetailTarget = null
-                    providerModel.downloadAndInstallUpdate(provider, info)
+                    providerModel.downloadAndInstallUpdate(provider, info, p)
                 },
             )
         }
@@ -311,12 +344,12 @@ class PluginHubScreen(
                 onSave = { newUrl ->
                     providerModel.setCustomUpdateUrl(provider.id, newUrl)
                     configSourceTarget = null
-                    providerModel.checkUpdateFor(provider)
+                    providerModel.checkUpdateFor(provider, p)
                 },
                 onResetDefault = {
                     providerModel.setCustomUpdateUrl(provider.id, null)
                     configSourceTarget = null
-                    providerModel.checkUpdateFor(provider)
+                    providerModel.checkUpdateFor(provider, p)
                 },
             )
         }
@@ -337,6 +370,8 @@ internal data class PluginHubUiState(
     val message: String? = null,
     val error: String? = null,
     val pendingError: String? = null,
+    val checkingAll: Boolean = false,
+    val checkResult: String? = null,
 )
 
 internal data class PluginHubActions(
@@ -385,92 +420,87 @@ internal fun PluginHubContent(
         state.repository.entries.count { it.updateAvailable } +
             state.providers.count { state.providerUpdates[it.id] is ProviderUpdateState.UpdateAvailable }
     }
-    val enabledSources = state.repository.sources.count { it.enabled }
-    val installedCount = state.providers.size + state.lyricsSources.size + state.repository.installedPlugins.size
+    val installBusy = state.busy != null || state.repository.task?.phase in setOf(
+        PluginInstallPhase.DOWNLOADING,
+        PluginInstallPhase.VERIFYING,
+        PluginInstallPhase.INSTALLING,
+    )
 
-    BoxWithConstraints(modifier.fillMaxSize()) {
-        val wide = maxWidth >= 840.dp
-        val compact = maxWidth < 600.dp
-        val hubWidth = if (wide) 1040.dp else 720.dp
-
-        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Column(
-                modifier = Modifier
-                    .widthIn(max = hubWidth)
-                    .fillMaxWidth()
-                    .padding(horizontal = CpSpacing.formHorizontal, vertical = 8.dp),
-            ) {
+    SettingsLazyPage(
+        pageModifier = modifier,
+        header = {
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
                 CpViewSwitcher(
                     items = listOf(
-                        CpViewSwitcherItem(
-                            label = t.installed,
-                            icon = Icons.Filled.CheckCircle,
-                            badge = installedCount.takeIf { it > 0 }?.toString(),
-                        ),
+                        CpViewSwitcherItem(t.installed, Icons.Filled.CheckCircle),
                         CpViewSwitcherItem(t.browse, Icons.Filled.Search),
                         CpViewSwitcherItem(
                             label = t.updates,
                             icon = Icons.Filled.Sync,
                             badge = updateCount.takeIf { it > 0 }?.toString(),
                         ),
-                        CpViewSwitcherItem(
-                            label = t.repositories,
-                            icon = Icons.Filled.Dns,
-                            badge = enabledSources.takeIf { it > 0 }?.toString(),
-                        ),
+                        CpViewSwitcherItem(t.repositories, Icons.Filled.Dns),
                     ),
                     selectedIndex = view.ordinal,
                     onSelect = { index -> view = PluginHubView.entries[index] },
-                    compact = compact,
+                    compact = maxWidth < 600.dp,
                 )
             }
-
-            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.TopCenter) {
-                when (view) {
-                    PluginHubView.INSTALLED -> PluginHubInstalledView(
-                        state = state,
-                        actions = actions,
-                        t = t,
-                        wide = wide,
-                        hubWidth = hubWidth,
-                        confirm = confirm,
-                        onShowDetails = { details = it },
-                        onOpenView = { view = it },
-                    )
-                    PluginHubView.DISCOVER -> PluginHubDiscoverView(
-                        state = state,
-                        actions = actions,
-                        t = t,
-                        wide = wide,
-                        hubWidth = hubWidth,
+            if (view == PluginHubView.DISCOVER) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    SettingsSearchBar(
                         query = query,
                         onQueryChange = { query = it },
-                        kind = kind,
-                        onKindChange = { kind = it },
-                        confirm = confirm,
-                        onShowDetails = { details = it },
-                        onOpenView = { view = it },
+                        placeholder = t.search,
+                        modifier = Modifier.weight(1f),
                     )
-                    PluginHubView.UPDATES -> PluginHubUpdatesView(
-                        state = state,
-                        actions = actions,
-                        t = t,
-                        wide = wide,
-                        hubWidth = hubWidth,
-                        confirm = confirm,
-                        onShowDetails = { details = it },
-                        onOpenView = { view = it },
-                    )
-                    PluginHubView.REPOSITORIES -> PluginHubRepositoriesView(
-                        state = state,
-                        actions = actions,
-                        t = t,
-                        hubWidth = hubWidth,
-                        confirm = confirm,
-                        onAddSource = { addingSource = true },
-                    )
+                    FilledTonalIconButton(
+                        onClick = actions.refreshRepository,
+                        modifier = Modifier.size(48.dp),
+                        enabled = state.repository.networkEnabled &&
+                            !state.repository.refreshing &&
+                            !state.checkingAll,
+                    ) {
+                        if (state.repository.refreshing || state.checkingAll) {
+                            CpLoadingIndicator(Modifier.size(20.dp))
+                        } else {
+                            Icon(Icons.Filled.Refresh, t.refresh, Modifier.size(20.dp))
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(t.all, t.providers, t.lyrics).forEachIndexed { index, label ->
+                        CpToggleChip(
+                            checked = kind == index,
+                            onCheckedChange = { checked -> if (checked) kind = index },
+                            label = label,
+                        )
+                    }
                 }
             }
+        },
+    ) {
+        when (view) {
+            PluginHubView.INSTALLED -> installedItems(state, actions, t, confirm, { details = it }, { view = it })
+            PluginHubView.DISCOVER -> discoverItems(
+                state, actions, t, query, kind, confirm,
+                onShowDetails = { details = it },
+                onOpenView = { view = it },
+                installBusy = installBusy,
+            )
+            PluginHubView.UPDATES -> updatesItems(
+                state, actions, t, confirm,
+                onShowDetails = { details = it },
+                installBusy = installBusy,
+            )
+            PluginHubView.REPOSITORIES -> repositoryItems(
+                state, actions, t, confirm,
+                onAddSource = { addingSource = true },
+            )
         }
     }
 
@@ -478,7 +508,7 @@ internal fun PluginHubContent(
         PluginDetailsDialog(
             entry = entry,
             t = t,
-            enabled = entry.blockReason(t) == null && state.repository.networkEnabled && state.busy == null,
+            enabled = entry.blockReason(t) == null && state.repository.networkEnabled && !installBusy,
             onDismiss = { details = null },
             onInstall = {
                 details = null
@@ -506,7 +536,7 @@ internal fun PluginHubContent(
 private fun requestInstall(
     entry: PluginCatalogEntry,
     t: PluginRepositoryStrings,
-    confirm: cp.player.app.ui.component.CpConfirmState,
+    confirm: CpConfirmState,
     actions: PluginHubActions,
 ) {
     val installed = entry.installed
@@ -528,692 +558,404 @@ private fun requestInstall(
 
 // ============================================================ 已安装
 
-@Composable
-private fun PluginHubInstalledView(
+private fun LazyListScope.installedItems(
     state: PluginHubUiState,
     actions: PluginHubActions,
     t: PluginRepositoryStrings,
-    wide: Boolean,
-    hubWidth: androidx.compose.ui.unit.Dp,
-    confirm: cp.player.app.ui.component.CpConfirmState,
+    confirm: CpConfirmState,
     onShowDetails: (PluginCatalogEntry) -> Unit,
     onOpenView: (PluginHubView) -> Unit,
 ) {
-    val scroll = rememberScrollState()
-    Column(
-        modifier = Modifier
-            .widthIn(max = hubWidth)
-            .fillMaxSize()
-            .verticalScroll(scroll)
-            .padding(horizontal = CpSpacing.formHorizontal),
-        verticalArrangement = Arrangement.spacedBy(CpSpacing.formSectionGap),
-    ) {
-        Spacer(Modifier.height(4.dp))
-        PluginHubHero(state, t, wide, actions, onOpenView)
-        HubBanners(state, t, actions)
-        if (wide) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(CpSpacing.formSectionGap),
-                verticalAlignment = Alignment.Top,
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(CpSpacing.formSectionGap),
-                ) {
-                    ProviderSection(state, actions, t, confirm)
-                }
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(CpSpacing.formSectionGap),
-                ) {
-                    LyricsSection(state, actions, t, confirm)
-                    RepositoryPluginsSection(state, t, onShowDetails, onOpenView)
-                }
-            }
-        } else {
-            ProviderSection(state, actions, t, confirm)
-            LyricsSection(state, actions, t, confirm)
-            RepositoryPluginsSection(state, t, onShowDetails, onOpenView)
-        }
-        Spacer(Modifier.height(CpSpacing.formBottomInset))
+    if (hasHubBanners(state)) {
+        item(key = "banners") { HubBanners(state, t, actions) }
     }
-}
+    if (state.providers.isEmpty() && state.lyricsSources.isEmpty()) {
+        item(key = "intro") { SettingsNote(t.hubSubtitle) }
+    }
 
-@Composable
-private fun PluginHubHero(
-    state: PluginHubUiState,
-    t: PluginRepositoryStrings,
-    wide: Boolean,
-    actions: PluginHubActions,
-    onOpenView: (PluginHubView) -> Unit,
-) {
-    val enabledLyrics = state.lyricsSources.count { it.enabled }
-    val enabledSources = state.repository.sources.count { it.enabled }
-    Surface(
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Filled.Extension,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(26.dp),
-                        )
-                    }
-                }
-                Spacer(Modifier.width(14.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    CpText(
-                        text = t.hubTitle,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    CpText(
-                        text = t.hubSubtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 3,
-                    )
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                HubStat(
-                    value = state.providers.size.toString(),
-                    label = t.statProviders(state.providers.size),
-                    modifier = Modifier.weight(1f),
+    item(key = "providers") {
+        SettingsSection(t.providersSection) {
+            if (state.providers.isEmpty()) {
+                SettingsButtonItem(
+                    text = t.importProvider,
+                    subtitle = t.noProvidersHint,
+                    onClick = actions.importProvider,
+                    index = 0,
+                    total = 2,
+                    icon = Icons.Filled.Add,
                 )
-                HubStat(
-                    value = "$enabledLyrics/${state.lyricsSources.size}",
-                    label = t.statLyrics(enabledLyrics, state.lyricsSources.size),
-                    modifier = Modifier.weight(1f),
+                SettingsButtonItem(
+                    text = t.discoverPlugins,
+                    subtitle = t.discoverPluginsNote,
+                    onClick = { onOpenView(PluginHubView.DISCOVER) },
+                    index = 1,
+                    total = 2,
+                    icon = Icons.Filled.Search,
                 )
-                HubStat(
-                    value = "$enabledSources/${state.repository.sources.size}",
-                    label = t.statRepositories(enabledSources, state.repository.sources.size),
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
-            if (wide) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    HubStep(1, t.stepInstall, Modifier.weight(1f))
-                    HubStep(2, t.stepEnable, Modifier.weight(1f))
-                    HubStep(3, t.stepTune, Modifier.weight(1f))
-                }
             } else {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    HubStep(1, t.stepInstall)
-                    HubStep(2, t.stepEnable)
-                    HubStep(3, t.stepTune)
+                val total = state.providers.size + 2
+                state.providers.forEachIndexed { index, provider ->
+                    ProviderRow(
+                        provider = provider,
+                        index = index,
+                        total = total,
+                        isActive = provider.id == state.activeProviderId,
+                        updateState = state.providerUpdates[provider.id],
+                        hasPendingUpdate = provider.id in state.providerPendingUpdates,
+                        onActivate = { actions.activateProvider(provider.id) },
+                        onDelete = {
+                            confirm.request(
+                                title = t.deleteProviderTitle,
+                                message = t.deleteProviderMessage(
+                                    provider.name,
+                                    provider.id,
+                                    provider.id == state.activeProviderId,
+                                ),
+                                confirmLabel = t.deleteProvider,
+                                onConfirm = { actions.deleteProvider(provider.id) },
+                            )
+                        },
+                        onExport = { dest -> actions.exportProvider(provider.id, dest) },
+                        onUpdate = { actions.updateProvider(provider.id) },
+                        onCheckUpdate = { actions.checkProviderUpdate(provider.id) },
+                        onShowUpdateDetails = { info -> actions.showProviderUpdateDetails(provider.id, info) },
+                        onConfigureUpdateSource = { actions.configureProviderUpdateSource(provider.id) },
+                        onOpenSettings = provider.settingsSchema?.takeIf { it.isNotEmpty() }?.let {
+                            { actions.openProviderSettings(provider.id) }
+                        },
+                    )
                 }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Button(onClick = { onOpenView(PluginHubView.DISCOVER) }) {
-                    Icon(Icons.Filled.Search, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    CpText(t.discoverPlugins)
-                }
-                FilledTonalButton(
-                    onClick = actions.checkAllUpdates,
-                    enabled = !state.repository.refreshing,
-                ) {
-                    Icon(Icons.Filled.Refresh, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    CpText(t.checkAllUpdates, maxLines = 1)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun HubStat(value: String, label: String, modifier: Modifier = Modifier) {
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-        modifier = modifier,
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            CpText(
-                text = value,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-            )
-            CpText(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                textAlign = TextAlign.Center,
-            )
-        }
-    }
-}
-
-@Composable
-private fun HubStep(number: Int, label: String, modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier
-            .heightIn(min = 34.dp)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(7.dp),
-    ) {
-        Surface(
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(20.dp),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                CpText(
-                    text = number.toString(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    fontWeight = FontWeight.Bold,
+                SettingsButtonItem(
+                    text = t.importProvider,
+                    subtitle = t.importProviderNote,
+                    onClick = actions.importProvider,
+                    index = state.providers.size,
+                    total = total,
+                    icon = Icons.Filled.Add,
                 )
-            }
-        }
-        CpText(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-        )
-    }
-}
-
-@Composable
-private fun ProviderSection(
-    state: PluginHubUiState,
-    actions: PluginHubActions,
-    t: PluginRepositoryStrings,
-    confirm: cp.player.app.ui.component.CpConfirmState,
-) {
-    HubSectionCard(
-        icon = Icons.Filled.Dns,
-        title = t.providersSection,
-        hint = t.providersHint,
-        action = {
-            TextButton(onClick = actions.importProvider) {
-                Icon(Icons.Filled.Add, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(4.dp))
-                CpText(t.importProvider, maxLines = 1)
-            }
-        },
-    ) {
-        if (state.providers.isEmpty()) {
-            ContentState(
-                title = t.noProviders,
-                message = t.noProvidersHint,
-                actionLabel = t.importProvider,
-                onAction = actions.importProvider,
-            )
-        } else {
-            state.providers.forEachIndexed { index, provider ->
-                ProviderRow(
-                    provider = provider,
-                    index = index,
-                    total = state.providers.size,
-                    isActive = provider.id == state.activeProviderId,
-                    updateState = state.providerUpdates[provider.id],
-                    hasPendingUpdate = provider.id in state.providerPendingUpdates,
-                    onActivate = { actions.activateProvider(provider.id) },
-                    onDelete = {
-                        confirm.request(
-                            title = "删除音源模块",
-                            message = buildString {
-                                append("确定删除「").append(provider.name)
-                                append("」（").append(provider.id).append("）吗？\n")
-                                append("模块文件与该音源下的登录态会被移除，需要重新导入才能使用。")
-                                if (provider.id == state.activeProviderId) {
-                                    append("\n它正是当前音源，删除后会自动切换到其他可用音源。")
-                                }
-                            },
-                            confirmLabel = "删除",
-                            onConfirm = { actions.deleteProvider(provider.id) },
-                        )
-                    },
-                    onExport = { dest -> actions.exportProvider(provider.id, dest) },
-                    onUpdate = { actions.updateProvider(provider.id) },
-                    onCheckUpdate = { actions.checkProviderUpdate(provider.id) },
-                    onShowUpdateDetails = { info -> actions.showProviderUpdateDetails(provider.id, info) },
-                    onConfigureUpdateSource = { actions.configureProviderUpdateSource(provider.id) },
-                    onOpenSettings = provider.settingsSchema?.takeIf { it.isNotEmpty() }?.let {
-                        { actions.openProviderSettings(provider.id) }
-                    },
-                )
-            }
-            Spacer(Modifier.height(6.dp))
-            SettingsSwitchItem(
-                title = "自动检查音源更新",
-                subtitle = "进入插件中心时自动检测音源最新版本，支持 manifest 与自定义更新源。",
-                checked = state.providerAutoCheck,
-                onCheckedChange = actions.setProviderAutoCheck,
-                index = 0,
-                total = 1,
-                icon = Icons.Filled.Sync,
-            )
-        }
-    }
-}
-
-@Composable
-private fun LyricsSection(
-    state: PluginHubUiState,
-    actions: PluginHubActions,
-    t: PluginRepositoryStrings,
-    confirm: cp.player.app.ui.component.CpConfirmState,
-) {
-    val lyricsStrings = cpStrings().lyricsPlugin
-    HubSectionCard(
-        icon = Icons.Filled.FileUpload,
-        title = t.lyricsSection,
-        hint = t.lyricsHint,
-        action = {
-            TextButton(onClick = actions.importLyrics) {
-                Icon(Icons.Filled.FileUpload, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(4.dp))
-                CpText(t.importLyrics, maxLines = 1)
-            }
-        },
-    ) {
-        if (state.lyricsSources.isEmpty()) {
-            ContentState(
-                title = t.noLyrics,
-                message = t.noLyricsHint,
-                actionLabel = t.importLyrics,
-                onAction = actions.importLyrics,
-            )
-        } else {
-            state.lyricsSources.forEachIndexed { index, source ->
                 SettingsSwitchItem(
-                    title = sourceTitle(source, lyricsStrings),
-                    subtitle = sourceSubtitle(source, lyricsStrings),
-                    checked = source.enabled,
-                    onCheckedChange = { actions.setLyricsEnabled(source.id, it) },
-                    index = index,
-                    total = state.lyricsSources.size,
-                    icon = Icons.Filled.Extension,
-                    leadingTrailingContent = {
-                        LyricsSourceRowActions(
-                            source = source,
-                            isFirst = index == 0,
-                            isLast = index == state.lyricsSources.lastIndex,
-                            t = lyricsStrings,
-                            onMoveUp = { actions.moveLyrics(source.id, -1) },
-                            onMoveDown = { actions.moveLyrics(source.id, +1) },
-                            onDelete = {
-                                confirm.request(
-                                    title = lyricsStrings.deleteConfirmTitle,
-                                    message = lyricsStrings.deleteConfirmMessage(source.name),
-                                    onConfirm = { actions.deleteLyrics(source.id) },
-                                )
-                            },
-                        )
-                    },
+                    title = t.autoCheckProvider,
+                    subtitle = t.autoCheckProviderNote,
+                    checked = state.providerAutoCheck,
+                    onCheckedChange = actions.setProviderAutoCheck,
+                    index = state.providers.size + 1,
+                    total = total,
+                    icon = Icons.Filled.Sync,
                 )
             }
         }
     }
-}
 
-@Composable
-private fun RepositoryPluginsSection(
-    state: PluginHubUiState,
-    t: PluginRepositoryStrings,
-    onShowDetails: (PluginCatalogEntry) -> Unit,
-    onOpenView: (PluginHubView) -> Unit,
-) {
-    val represented = remember(state) {
-        buildSet {
+    item(key = "lyrics") {
+        val lyricsStrings = cpStrings().lyricsPlugin
+        SettingsSection(t.lyricsSection) {
+            if (state.lyricsSources.isEmpty()) {
+                SettingsButtonItem(
+                    text = t.importLyrics,
+                    subtitle = t.noLyricsHint,
+                    onClick = actions.importLyrics,
+                    index = 0,
+                    total = 2,
+                    icon = Icons.Filled.FileUpload,
+                )
+                SettingsButtonItem(
+                    text = t.discoverPlugins,
+                    subtitle = t.discoverPluginsNote,
+                    onClick = { onOpenView(PluginHubView.DISCOVER) },
+                    index = 1,
+                    total = 2,
+                    icon = Icons.Filled.Search,
+                )
+            } else {
+                val total = state.lyricsSources.size + 1
+                state.lyricsSources.forEachIndexed { index, source ->
+                    SettingsSwitchItem(
+                        title = sourceTitle(source, lyricsStrings),
+                        subtitle = sourceSubtitle(source, lyricsStrings),
+                        checked = source.enabled,
+                        onCheckedChange = { actions.setLyricsEnabled(source.id, it) },
+                        index = index,
+                        total = total,
+                        icon = Icons.Filled.Extension,
+                        leadingTrailingContent = {
+                            LyricsSourceRowActions(
+                                source = source,
+                                isFirst = index == 0,
+                                isLast = index == state.lyricsSources.lastIndex,
+                                t = lyricsStrings,
+                                onMoveUp = { actions.moveLyrics(source.id, -1) },
+                                onMoveDown = { actions.moveLyrics(source.id, +1) },
+                                onDelete = {
+                                    confirm.request(
+                                        title = lyricsStrings.deleteConfirmTitle,
+                                        message = lyricsStrings.deleteConfirmMessage(source.name),
+                                        onConfirm = { actions.deleteLyrics(source.id) },
+                                    )
+                                },
+                            )
+                        },
+                    )
+                }
+                SettingsButtonItem(
+                    text = t.importLyrics,
+                    subtitle = t.importLyricsNote,
+                    onClick = actions.importLyrics,
+                    index = state.lyricsSources.size,
+                    total = total,
+                    icon = Icons.Filled.FileUpload,
+                )
+            }
+        }
+    }
+
+    item(key = "repository-plugins") {
+        val represented = buildSet {
             state.providers.forEach { add("provider:${it.id}") }
             state.lyricsSources.forEach { add("lyrics:${it.id}") }
         }
-    }
-    val remaining = state.repository.installedPlugins.filterNot { it.key in represented }
-    HubSectionCard(
-        icon = Icons.Filled.Extension,
-        title = t.repositoryPluginsSection,
-        hint = t.repositoryPluginsHint,
-        action = {
-            TextButton(onClick = { onOpenView(PluginHubView.DISCOVER) }) {
-                CpText(t.discoverPlugins, maxLines = 1)
-            }
-        },
-    ) {
-        if (remaining.isEmpty()) {
-            SettingsNote(t.noRepositoryPluginsHint)
-        } else {
-            remaining.forEachIndexed { index, plugin ->
-                val record = state.repository.managedInstalls.find { it.key == plugin.key }
-                val entry = state.repository.entries.find {
-                    it.plugin.key == plugin.key && it.source.url == record?.sourceUrl
+        val remaining = state.repository.installedPlugins.filterNot { it.key in represented }
+        if (remaining.isNotEmpty()) {
+            SettingsSection(t.repositoryPluginsSection) {
+                val total = remaining.size + 1
+                remaining.forEachIndexed { index, plugin ->
+                    val record = state.repository.managedInstalls.find { it.key == plugin.key }
+                    val entry = state.repository.entries.find {
+                        it.plugin.key == plugin.key && it.source.url == record?.sourceUrl
+                    }
+                    SettingsClickItem(
+                        title = plugin.name,
+                        subtitle = listOf(
+                            "${plugin.key} · v${plugin.version}",
+                            when {
+                                record?.pendingRestart == true -> t.pendingRestartShort
+                                plugin.bundled -> t.bundled
+                                record != null -> record.sourceUrl
+                                else -> t.local
+                            },
+                        ).joinToString("\n"),
+                        icon = Icons.Filled.Extension,
+                        index = index,
+                        total = total,
+                        showChevron = entry != null,
+                        onClick = entry?.let { target -> { onShowDetails(target) } },
+                    )
                 }
-                SettingsClickItem(
-                    title = plugin.name,
-                    subtitle = listOf(
-                        "${plugin.key} · v${plugin.version}",
-                        when {
-                            record?.pendingRestart == true -> t.pendingRestartShort
-                            plugin.bundled -> t.bundled
-                            record != null -> record.sourceUrl
-                            else -> t.local
-                        },
-                    ).joinToString("\n"),
-                    icon = Icons.Filled.Extension,
-                    index = index,
-                    total = remaining.size,
-                    showChevron = entry != null,
-                    onClick = entry?.let { target -> { onShowDetails(target) } },
+                SettingsButtonItem(
+                    text = t.discoverPlugins,
+                    subtitle = t.discoverPluginsNote,
+                    onClick = { onOpenView(PluginHubView.DISCOVER) },
+                    index = remaining.size,
+                    total = total,
+                    icon = Icons.Filled.Search,
                 )
             }
         }
     }
 }
 
-// ============================================================ 发现 / 更新
+// ============================================================ 发现
 
-@Composable
-private fun PluginHubDiscoverView(
+private fun LazyListScope.discoverItems(
     state: PluginHubUiState,
     actions: PluginHubActions,
     t: PluginRepositoryStrings,
-    wide: Boolean,
-    hubWidth: androidx.compose.ui.unit.Dp,
     query: String,
-    onQueryChange: (String) -> Unit,
     kind: Int,
-    onKindChange: (Int) -> Unit,
-    confirm: cp.player.app.ui.component.CpConfirmState,
+    confirm: CpConfirmState,
     onShowDetails: (PluginCatalogEntry) -> Unit,
     onOpenView: (PluginHubView) -> Unit,
+    installBusy: Boolean,
 ) {
-    val entries = remember(state.repository, query, kind) {
-        filterRepositoryEntries(state.repository, PluginRepositoryTab.BROWSE, query, kind)
-    }
-    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Column(
-            modifier = Modifier
-                .widthIn(max = hubWidth)
-                .fillMaxWidth()
-                .padding(horizontal = CpSpacing.formHorizontal, vertical = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            SettingsSearchBar(
-                query = query,
-                onQueryChange = onQueryChange,
-                placeholder = t.search,
-            )
-            SettingsSegmentedItem(
-                title = t.browse,
-                options = listOf(t.all, t.providers, t.lyrics),
-                selectedIndex = kind,
-                onSelect = onKindChange,
+    if (!state.repository.networkEnabled) {
+        item {
+            SettingsButtonItem(
+                text = t.network,
+                subtitle = t.offlineNote,
+                onClick = { onOpenView(PluginHubView.REPOSITORIES) },
                 index = 0,
                 total = 1,
+                icon = Icons.Filled.Dns,
             )
         }
-        HubLazyList(hubWidth) {
-            item { HubBanners(state, t, actions) }
-            item {
-                SettingsNote(t.discoverHint)
-            }
-            if (!state.repository.networkEnabled) {
-                item {
-                    SettingsButtonItem(
-                        text = t.network,
-                        subtitle = t.offlineNote,
-                        onClick = { onOpenView(PluginHubView.REPOSITORIES) },
-                        index = 0,
-                        total = 1,
-                        icon = Icons.Filled.Dns,
-                    )
-                }
-            }
-            if (state.repository.sources.none { it.enabled }) {
-                item {
-                    SettingsButtonItem(
-                        text = t.repositories,
-                        subtitle = t.noSourcesHint,
-                        onClick = { onOpenView(PluginHubView.REPOSITORIES) },
-                        index = 0,
-                        total = 1,
-                        icon = Icons.Filled.Add,
-                    )
-                }
-            }
-            if (entries.isEmpty()) {
-                item {
-                    ContentState(
-                        title = when {
-                            query.isNotBlank() || kind != 0 -> t.noMatches
-                            else -> t.emptyCatalog
-                        },
-                        message = if (query.isNotBlank() || kind != 0) null else t.emptyCatalog,
-                        actionLabel = t.refresh,
-                        onAction = actions.refreshRepository,
-                    )
-                }
-            } else {
-                item {
-                    CpText(
-                        text = t.cachedNote,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = CpSpacing.formHorizontal),
-                    )
-                }
-                entries.chunked(if (wide) 2 else 1).forEach { rowEntries ->
-                    item(key = rowEntries.joinToString("|") { "${it.source.url}:${it.plugin.key}" }) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = CpSpacing.formHorizontal),
-                            horizontalArrangement = Arrangement.spacedBy(CpSpacing.formSectionGap),
-                            verticalAlignment = Alignment.Top,
-                        ) {
-                            rowEntries.forEach { entry ->
-                                Box(Modifier.weight(1f)) {
-                                    PluginCatalogCard(
-                                        entry = entry,
-                                        t = t,
-                                        networkEnabled = state.repository.networkEnabled,
-                                        busy = state.busy != null,
-                                        onDetails = { onShowDetails(entry) },
-                                        onInstall = { requestInstall(entry, t, confirm, actions) },
-                                    )
-                                }
-                            }
-                            if (rowEntries.size == 1 && wide) {
-                                Spacer(Modifier.weight(1f))
-                            }
-                        }
+    }
+    if (state.repository.sources.none { it.enabled }) {
+        item {
+            SettingsButtonItem(
+                text = t.repositories,
+                subtitle = t.noSourcesHint,
+                onClick = { onOpenView(PluginHubView.REPOSITORIES) },
+                index = 0,
+                total = 1,
+                icon = Icons.Filled.Add,
+            )
+        }
+    }
+
+    // 放在联网/仓库引导之后：断网时先给可执行的入口，再解释当前状态。
+    if (hasHubBanners(state)) item { HubBanners(state, t, actions) }
+
+    val entries = filterRepositoryEntries(state.repository, PluginRepositoryTab.BROWSE, query, kind)
+    if (entries.isEmpty()) {
+        item {
+            ContentState(
+                title = if (query.isNotBlank() || kind != 0) t.noMatches else t.emptyCatalog,
+                message = if (query.isNotBlank() || kind != 0) null else t.discoverHint,
+                actionLabel = t.refresh,
+                onAction = actions.refreshRepository,
+            )
+        }
+    } else {
+        itemsIndexed(entries, key = { _, entry -> "${entry.source.url}:${entry.plugin.key}" }) { index, entry ->
+            val blocked = entry.blockReason(t)
+            SettingsClickItem(
+                title = entry.plugin.name,
+                subtitle = buildString {
+                    append("v${entry.plugin.version}")
+                    if (entry.updateAvailable) append(" · ${t.updateAvailable}")
+                    listOf(entry.plugin.author, entry.source.name)
+                        .filter { it.isNotBlank() }
+                        .forEach { append(" · ").append(it) }
+                    if (entry.plugin.description.isNotBlank()) {
+                        append("\n").append(entry.plugin.description)
                     }
-                }
-            }
+                    blocked?.let { append("\n").append(it) }
+                },
+                icon = Icons.Filled.Extension,
+                index = index,
+                total = entries.size,
+                mergeSemantics = false,
+                onClick = { onShowDetails(entry) },
+                trailingContent = {
+                    TextButton(
+                        onClick = { requestInstall(entry, t, confirm, actions) },
+                        enabled = blocked == null && state.repository.networkEnabled && !installBusy,
+                    ) {
+                        CpText(
+                            when {
+                                entry.installed == null -> t.install
+                                entry.updateAvailable -> t.update
+                                else -> t.installed
+                            },
+                            maxLines = 1,
+                        )
+                    }
+                },
+            )
         }
     }
 }
 
-@Composable
-private fun PluginHubUpdatesView(
+// ============================================================ 更新
+
+private fun LazyListScope.updatesItems(
     state: PluginHubUiState,
     actions: PluginHubActions,
     t: PluginRepositoryStrings,
-    wide: Boolean,
-    hubWidth: androidx.compose.ui.unit.Dp,
-    confirm: cp.player.app.ui.component.CpConfirmState,
+    confirm: CpConfirmState,
     onShowDetails: (PluginCatalogEntry) -> Unit,
-    onOpenView: (PluginHubView) -> Unit,
+    installBusy: Boolean,
 ) {
-    val pluginUpdates = remember(state.repository) {
-        state.repository.entries.filter { it.updateAvailable }
+    if (hasHubBanners(state)) item { HubBanners(state, t, actions) }
+    item { SettingsNote(t.updatesHint) }
+
+    val pluginUpdates = state.repository.entries.filter { it.updateAvailable }
+    val providerUpdates = state.providers.mapNotNull { provider ->
+        val update = state.providerUpdates[provider.id] as? ProviderUpdateState.UpdateAvailable
+        update?.let { provider to it.info }
     }
-    val providerUpdates = remember(state.providers, state.providerUpdates) {
-        state.providers.mapNotNull { provider ->
-            val update = state.providerUpdates[provider.id] as? ProviderUpdateState.UpdateAvailable
-            update?.let { provider to it.info }
+
+    if (pluginUpdates.isEmpty() && providerUpdates.isEmpty()) {
+        item {
+            ContentState(
+                title = if (state.checkingAll || state.repository.refreshing) t.refreshing else t.noUpdates,
+                message = t.noUpdatesHint,
+                actionLabel = t.checkAllUpdates,
+                onAction = actions.checkAllUpdates,
+            )
+        }
+        return
+    }
+
+    if (pluginUpdates.isNotEmpty()) {
+        item { SettingsSection(t.updateSectionPlugins) {} }
+        itemsIndexed(pluginUpdates, key = { _, entry -> "update:${entry.source.url}:${entry.plugin.key}" }) { index, entry ->
+            val blocked = entry.blockReason(t)
+            SettingsClickItem(
+                title = entry.plugin.name,
+                subtitle = buildString {
+                    append(t.updateFromTo(entry.installed?.version ?: t.local, entry.plugin.version))
+                    listOf(entry.plugin.author, entry.source.name)
+                        .filter { it.isNotBlank() }
+                        .forEach { append(" · ").append(it) }
+                    blocked?.let { append("\n").append(it) }
+                },
+                icon = Icons.Filled.Download,
+                index = index,
+                total = pluginUpdates.size,
+                mergeSemantics = false,
+                onClick = { onShowDetails(entry) },
+                trailingContent = {
+                    TextButton(
+                        onClick = { requestInstall(entry, t, confirm, actions) },
+                        enabled = blocked == null && state.repository.networkEnabled && !installBusy,
+                    ) {
+                        CpText(t.update, maxLines = 1)
+                    }
+                },
+            )
         }
     }
-    HubLazyList(hubWidth) {
-        item { HubBanners(state, t, actions) }
-        item { SettingsNote(t.updatesHint) }
-        if (pluginUpdates.isEmpty() && providerUpdates.isEmpty()) {
-            item {
-                ContentState(
-                    title = t.noUpdates,
-                    message = t.noUpdatesHint,
-                    actionLabel = t.checkAllUpdates,
-                    onAction = actions.checkAllUpdates,
-                )
-            }
-        } else {
-            if (pluginUpdates.isNotEmpty()) {
-                item {
-                    HubSectionTitle(t.updateSectionPlugins, Icons.Filled.Extension)
-                }
-                pluginUpdates.chunked(if (wide) 2 else 1).forEach { rowEntries ->
-                    item(key = "update:" + rowEntries.joinToString("|") { it.plugin.key }) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = CpSpacing.formHorizontal),
-                            horizontalArrangement = Arrangement.spacedBy(CpSpacing.formSectionGap),
-                            verticalAlignment = Alignment.Top,
-                        ) {
-                            rowEntries.forEach { entry ->
-                                Box(Modifier.weight(1f)) {
-                                    PluginCatalogCard(
-                                        entry = entry,
-                                        t = t,
-                                        networkEnabled = state.repository.networkEnabled,
-                                        busy = state.busy != null,
-                                        onDetails = { onShowDetails(entry) },
-                                        onInstall = { requestInstall(entry, t, confirm, actions) },
-                                    )
-                                }
-                            }
-                            if (rowEntries.size == 1 && wide) {
-                                Spacer(Modifier.weight(1f))
-                            }
-                        }
+
+    if (providerUpdates.isNotEmpty()) {
+        item { SettingsSection(t.updateSectionProviders) {} }
+        item { SettingsNote(t.updateSectionProvidersHint) }
+        itemsIndexed(providerUpdates, key = { _, item -> "provider-update:${item.first.id}" }) { index, item ->
+            val (provider, info) = item
+            SettingsClickItem(
+                title = provider.name,
+                subtitle = t.providerUpdateSummary(provider.name, provider.version, info.version),
+                icon = Icons.Filled.Download,
+                index = index,
+                total = providerUpdates.size,
+                mergeSemantics = false,
+                onClick = { actions.showProviderUpdateDetails(provider.id, info) },
+                trailingContent = {
+                    TextButton(onClick = { actions.showProviderUpdateDetails(provider.id, info) }) {
+                        CpText(t.update, maxLines = 1)
                     }
-                }
-            }
-            if (providerUpdates.isNotEmpty()) {
-                item {
-                    HubSectionTitle(t.updateSectionProviders, Icons.Filled.Dns)
-                }
-                item { SettingsNote(t.updateSectionProvidersHint) }
-                providerUpdates.forEachIndexed { index, (provider, info) ->
-                    item(key = "provider-update:${provider.id}") {
-                        SettingsClickItem(
-                            title = provider.name,
-                            subtitle = t.providerUpdateSummary(provider.name, provider.version, info.version),
-                            icon = Icons.Filled.Download,
-                            index = index,
-                            total = providerUpdates.size,
-                            showChevron = true,
-                            onClick = { actions.showProviderUpdateDetails(provider.id, info) },
-                            trailingContent = {
-                                FilledTonalButton(
-                                    onClick = { actions.showProviderUpdateDetails(provider.id, info) },
-                                ) {
-                                    CpText(t.update)
-                                }
-                            },
-                        )
-                    }
-                }
-            }
-            item {
-                SettingsButtonItem(
-                    text = t.checkAllUpdates,
-                    onClick = actions.checkAllUpdates,
-                    index = 0,
-                    total = 1,
-                    icon = Icons.Filled.Refresh,
-                )
-            }
+                },
+            )
         }
+    }
+
+    item {
+        SettingsButtonItem(
+            text = t.checkAllUpdates,
+            subtitle = if (state.checkingAll || state.repository.refreshing) t.refreshing else null,
+            onClick = actions.checkAllUpdates,
+            index = 0,
+            total = 1,
+            icon = Icons.Filled.Refresh,
+            enabled = !state.checkingAll && !state.repository.refreshing,
+        )
     }
 }
 
 // ============================================================ 仓库
 
-@Composable
-private fun PluginHubRepositoriesView(
+private fun LazyListScope.repositoryItems(
     state: PluginHubUiState,
     actions: PluginHubActions,
     t: PluginRepositoryStrings,
-    hubWidth: androidx.compose.ui.unit.Dp,
-    confirm: cp.player.app.ui.component.CpConfirmState,
+    confirm: CpConfirmState,
     onAddSource: () -> Unit,
 ) {
     val repository = state.repository
-    HubLazyList(hubWidth) {
-        item { HubBanners(state, t, actions) }
-        item {
-            Surface(
-                shape = MaterialTheme.shapes.extraLarge,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = CpSpacing.formHorizontal),
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Warning,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(22.dp),
-                    )
-                    CpText(
-                        text = t.repositoriesHint,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = Int.MAX_VALUE,
-                    )
-                }
-            }
-        }
-        item {
+    if (hasHubBanners(state)) item { HubBanners(state, t, actions) }
+    item { SettingsNote(t.repositoriesHint) }
+
+    item {
+        SettingsSection(t.repositories) {
             SettingsSwitchItem(
                 title = t.network,
                 subtitle = t.networkNote,
@@ -1222,8 +964,6 @@ private fun PluginHubRepositoriesView(
                 index = 0,
                 total = 2,
             )
-        }
-        item {
             SettingsSwitchItem(
                 title = t.autoCheck,
                 subtitle = t.autoCheckNote,
@@ -1234,58 +974,72 @@ private fun PluginHubRepositoriesView(
                 enabled = repository.networkEnabled,
             )
         }
-        item { SettingsNote(t.trustNote) }
+    }
+    item { SettingsNote(t.trustNote) }
+
+    if (repository.sources.isEmpty()) {
         item {
             SettingsButtonItem(
                 text = t.addSource,
-                subtitle = t.sourceUrl,
+                subtitle = t.noSourcesHint,
                 onClick = onAddSource,
                 index = 0,
                 total = 1,
                 icon = Icons.Filled.Add,
             )
         }
-        if (repository.sources.isEmpty()) {
-            item {
-                ContentState(
-                    title = t.noSources,
-                    message = t.noSourcesHint,
-                    actionLabel = t.addSource,
-                    onAction = onAddSource,
-                )
-            }
-        } else {
-            repository.sources.forEachIndexed { index, source ->
-                item(key = source.url) {
-                    SettingsSwitchItem(
-                        title = source.name,
-                        subtitle = source.url,
-                        checked = source.enabled,
-                        onCheckedChange = { actions.enableSource(source.url, it) },
-                        index = index,
-                        total = repository.sources.size,
-                        leadingTrailingContent = {
-                            IconButton(
-                                onClick = {
-                                    confirm.request(
-                                        title = t.removeSource,
-                                        message = t.removeSourceMessage(source.url),
-                                        destructive = false,
-                                        onConfirm = { actions.removeSource(source.url) },
-                                    )
-                                },
-                            ) {
-                                Icon(Icons.Filled.DeleteOutline, "${t.removeSource} ${source.name}")
-                            }
+    } else {
+        val total = repository.sources.size + 1
+        itemsIndexed(repository.sources, key = { _, source -> source.url }) { index, source ->
+            SettingsSwitchItem(
+                title = source.name,
+                subtitle = source.url,
+                checked = source.enabled,
+                onCheckedChange = { actions.enableSource(source.url, it) },
+                index = index,
+                total = total,
+                leadingTrailingContent = {
+                    IconButton(
+                        onClick = {
+                            confirm.request(
+                                title = t.removeSource,
+                                message = t.removeSourceMessage(source.url),
+                                destructive = false,
+                                onConfirm = { actions.removeSource(source.url) },
+                            )
                         },
-                    )
-                }
-            }
+                    ) {
+                        Icon(Icons.Filled.DeleteOutline, "${t.removeSource} ${source.name}")
+                    }
+                },
+            )
+        }
+        item {
+            SettingsButtonItem(
+                text = t.addSource,
+                subtitle = t.sourceUrl,
+                onClick = onAddSource,
+                index = repository.sources.size,
+                total = total,
+                icon = Icons.Filled.Add,
+            )
         }
     }
 }
 
-// ============================================================ 公共组件
+// ============================================================ 状态提示
+
+private fun hasHubBanners(state: PluginHubUiState): Boolean =
+    !state.repository.networkEnabled ||
+        state.error != null ||
+        state.pendingError != null ||
+        state.repository.sourceErrors.isNotEmpty() ||
+        state.repository.task != null ||
+        state.message != null ||
+        state.busy != null ||
+        state.repository.refreshing ||
+        state.checkingAll ||
+        state.checkResult != null
 
 @Composable
 private fun HubBanners(
@@ -1295,11 +1049,24 @@ private fun HubBanners(
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
     ) {
         if (!state.repository.networkEnabled) {
             SettingsNote(t.offlineNote, emphasis = SettingsNoteEmphasis.WARNING)
         }
+        if (state.repository.refreshing || state.checkingAll) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = CpSpacing.formHorizontal, vertical = CpSpacing.listRowGap),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                CpLoadingIndicator(Modifier.size(20.dp))
+                CpText(t.refreshing, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        state.checkResult?.let { SettingsNote(it) }
         state.error?.let {
             SettingsNote("${t.failed}: $it", emphasis = SettingsNoteEmphasis.ERROR)
         }
@@ -1321,7 +1088,7 @@ private fun HubBanners(
                 PluginInstallPhase.RESTART_REQUIRED -> t.pendingRestart
                 PluginInstallPhase.FAILED -> "${t.failed}: ${task.message.orEmpty()}"
             }
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap)) {
                 SettingsNote(
                     "${task.key}\n$label",
                     emphasis = when {
@@ -1353,7 +1120,7 @@ private fun HubBanners(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = CpSpacing.formHorizontal, vertical = 4.dp),
+                    .padding(horizontal = CpSpacing.formHorizontal, vertical = CpSpacing.listRowGap),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -1364,225 +1131,7 @@ private fun HubBanners(
     }
 }
 
-@Composable
-private fun HubSectionCard(
-    icon: ImageVector,
-    title: String,
-    hint: String,
-    modifier: Modifier = Modifier,
-    action: (@Composable () -> Unit)? = null,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Surface(
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Surface(
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    CpText(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    CpText(
-                        text = hint,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 4,
-                    )
-                }
-                action?.invoke()
-            }
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 4.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-            )
-            content()
-        }
-    }
-}
-
-@Composable
-private fun HubSectionTitle(title: String, icon: ImageVector) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = CpSpacing.formHorizontal, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Icon(icon, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-        CpText(
-            text = title,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-    }
-}
-
-@Composable
-private fun HubLazyList(
-    hubWidth: androidx.compose.ui.unit.Dp,
-    content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit,
-) {
-    LazyColumn(
-        modifier = Modifier
-            .widthIn(max = hubWidth)
-            .fillMaxSize(),
-        contentPadding = PaddingValues(
-            top = 4.dp,
-            bottom = CpSpacing.formBottomInset,
-        ),
-        verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
-        content = content,
-    )
-}
-
-@Composable
-private fun PluginCatalogCard(
-    entry: PluginCatalogEntry,
-    t: PluginRepositoryStrings,
-    networkEnabled: Boolean,
-    busy: Boolean,
-    onDetails: () -> Unit,
-    onInstall: () -> Unit,
-) {
-    val blocked = entry.blockReason(t)
-    val actionEnabled = blocked == null && networkEnabled && !busy
-    Surface(
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onDetails),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Row(
-                verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Surface(
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Filled.Extension,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        CpText(
-                            text = entry.plugin.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                        SettingsBadge(
-                            text = if (entry.plugin.kind == RepositoryPluginKind.PROVIDER) t.providers else t.lyrics,
-                        )
-                    }
-                    CpText(
-                        text = listOf(entry.plugin.author, entry.source.name)
-                            .filter { it.isNotBlank() }
-                            .joinToString(" · "),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                CpText(
-                    text = "v${entry.plugin.version}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (entry.plugin.description.isNotBlank()) {
-                CpText(
-                    text = entry.plugin.description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                when {
-                    entry.updateAvailable -> SettingsBadge(
-                        text = "${t.updateAvailable} v${entry.plugin.version}",
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                    )
-                    entry.installed != null -> SettingsBadge(t.installed)
-                    entry.managed != null -> SettingsBadge(t.managedByRepository)
-                }
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = onDetails) { CpText(t.details) }
-                FilledTonalButton(
-                    onClick = onInstall,
-                    enabled = actionEnabled,
-                ) {
-                    CpText(
-                        if (entry.installed == null) t.install else t.update,
-                        maxLines = 1,
-                    )
-                }
-            }
-            blocked?.let {
-                CpText(
-                    text = it,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.error,
-                    maxLines = 2,
-                )
-            }
-        }
-    }
-}
+// ============================================================ 对话框
 
 @Composable
 private fun PluginDetailsDialog(
@@ -1596,7 +1145,7 @@ private fun PluginDetailsDialog(
         onDismissRequest = onDismiss,
         title = { CpText(entry.plugin.name, maxLines = Int.MAX_VALUE) },
         text = {
-            androidx.compose.foundation.text.selection.SelectionContainer {
+            SelectionContainer {
                 Column(
                     modifier = Modifier
                         .heightIn(max = 420.dp)
@@ -1625,8 +1174,17 @@ private fun PluginDetailsDialog(
             }
         },
         confirmButton = {
-            Button(onClick = onInstall, enabled = enabled) {
-                CpText(if (entry.installed == null) t.install else t.update)
+            Button(
+                onClick = onInstall,
+                enabled = enabled && (entry.installed == null || entry.updateAvailable),
+            ) {
+                CpText(
+                    when {
+                        entry.installed == null -> t.install
+                        entry.updateAvailable -> t.update
+                        else -> t.close
+                    },
+                )
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { CpText(t.close) } },

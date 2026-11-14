@@ -122,6 +122,9 @@ class PluginRepositoryScreenModel(
     }
 
     fun refresh() = launch { repository.refresh() }
+    fun reportError(failure: Exception) {
+        error.value = failure.message ?: failure.toString()
+    }
     fun install(entry: PluginCatalogEntry, replaceLocal: Boolean) =
         launch { repository.install(entry, replaceLocal) }
     fun change(block: PluginRepository.() -> Unit) {

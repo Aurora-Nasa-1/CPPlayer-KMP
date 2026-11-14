@@ -9,6 +9,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Density
+import cp.player.app.i18n.AppLanguage
+import cp.player.app.i18n.ProvideCpStrings
 import cp.player.app.ui.component.LocalEmbeddedInPane
 import cp.player.app.ui.component.LocalWindowChromeActive
 import cp.player.app.ui.theme.CpTheme
@@ -44,22 +46,26 @@ class PluginHubPreviewTest {
         width: Int,
         height: Int,
         themeMode: ThemeMode = ThemeMode.DARK,
+        language: AppLanguage? = null,
         view: PluginHubView,
     ): ByteArray {
         val scene = ImageComposeScene(width = width, height = height, density = Density(1f)) {
             CpTheme(themeMode = themeMode) {
-                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-                    CompositionLocalProvider(
-                        LocalEmbeddedInPane provides false,
-                        LocalWindowChromeActive provides false,
-                    ) {
-                        PluginHubContent(
-                            state = sampleState(),
-                            modifier = Modifier.fillMaxSize(),
-                            initialView = view,
-                        )
+                val content: @Composable () -> Unit = {
+                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                        CompositionLocalProvider(
+                            LocalEmbeddedInPane provides false,
+                            LocalWindowChromeActive provides false,
+                        ) {
+                            PluginHubContent(
+                                state = sampleState(),
+                                modifier = Modifier.fillMaxSize(),
+                                initialView = view,
+                            )
+                        }
                     }
                 }
+                if (language == null) content() else ProvideCpStrings(language, content)
             }
         }
         return try {
@@ -87,6 +93,25 @@ class PluginHubPreviewTest {
         write("build/plugin-hub-repositories-desktop.png", desktop)
         assertTrue(phone.size > 15_000, "手机端发现页预览不应为空，实际 ${phone.size} bytes")
         assertTrue(desktop.size > 15_000, "桌面端仓库页预览不应为空，实际 ${desktop.size} bytes")
+    }
+
+    @Test
+    fun `installed first screen renders in english on phone`() {
+        val phone = render(
+            390,
+            844,
+            language = AppLanguage.ENGLISH,
+            view = PluginHubView.INSTALLED,
+        )
+        write("build/plugin-hub-installed-phone-en.png", phone)
+        assertTrue(phone.size > 20_000, "英文手机端已安装预览不应为空，实际 ${phone.size} bytes")
+    }
+
+    @Test
+    fun `updates view lists repository updates on phone`() {
+        val phone = render(390, 844, view = PluginHubView.UPDATES)
+        write("build/plugin-hub-updates-phone.png", phone)
+        assertTrue(phone.size > 15_000, "手机端更新页预览不应为空，实际 ${phone.size} bytes")
     }
 
     private fun write(path: String, bytes: ByteArray) {

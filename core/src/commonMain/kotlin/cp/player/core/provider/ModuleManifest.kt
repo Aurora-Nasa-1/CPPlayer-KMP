@@ -49,15 +49,23 @@ object ProviderCapability {
     /** 自定义目录或流派浏览。 */
     const val DIRECTORY_BROWSER = "directoryBrowser"
 
+    /** 社交动态（关注流 / 用户动态 / 转发 / 点赞 / 删除）。 */
+    const val SOCIAL_FEED = "socialFeed"
+
+    /** 私信与消息中心。 */
+    const val MESSAGES = "messages"
+
     /** 全部已知能力，供 UI 按稳定顺序展示。 */
     val ALL: List<String> = listOf(
         SEARCH, PLAYBACK, QR_LOGIN, WEBVIEW_LOGIN, WORD_SYNCED_LYRICS, COMMENTS, CLOUD_DRIVE, RECOMMEND,
         LYRICS_SEARCH, CHARTS, USER_PLAYLISTS, ARTIST_EXPLORER, ALBUM_EXPLORER, DIRECTORY_BROWSER,
+        SOCIAL_FEED, MESSAGES,
     )
 
     val SDK_SUPPORTED: Set<String> = setOf(
         SEARCH, PLAYBACK, QR_LOGIN, WORD_SYNCED_LYRICS, COMMENTS, CLOUD_DRIVE, RECOMMEND,
         LYRICS_SEARCH, CHARTS, USER_PLAYLISTS, ARTIST_EXPLORER, ALBUM_EXPLORER,
+        SOCIAL_FEED, MESSAGES,
     )
 
     fun sdkLabels(capabilities: List<String>?): List<String> {
@@ -87,6 +95,14 @@ object ProviderCapability {
                 cp.player.sdk.Capability.ARTIST_ALBUMS,
             ).all { it in declared }) add(ARTIST_EXPLORER)
             if (ALBUM_EXPLORER in declared || cp.player.sdk.Capability.ALBUM in declared) add(ALBUM_EXPLORER)
+            if (SOCIAL_FEED in declared || listOf(
+                cp.player.sdk.ExtendedCapability.GETEVENTS, cp.player.sdk.ExtendedCapability.GETUSEREVENTS,
+            ).any { it in declared }) add(SOCIAL_FEED)
+            if (MESSAGES in declared || listOf(
+                cp.player.sdk.ExtendedCapability.GETUNREADCOUNT,
+                cp.player.sdk.ExtendedCapability.GETPRIVATEMESSAGES,
+                cp.player.sdk.ExtendedCapability.GETMESSAGEHISTORY,
+            ).any { it in declared }) add(MESSAGES)
         }
     }
 }

@@ -40,11 +40,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cp.player.app.platform.openUrl
 import cp.player.app.platform.sendPlatformToast
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.update.ProviderUpdateInfo
 import cp.player.core.provider.BackendProvider
@@ -60,6 +60,7 @@ fun ProviderUpdateDetailsDialog(
     onDismiss: () -> Unit,
     onDownloadAndUpdate: () -> Unit,
 ) {
+    val p = cpStrings().providerManagement
     val isDark = LocalIsDarkTheme.current
     @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
@@ -99,7 +100,7 @@ fun ProviderUpdateDetailsDialog(
         title = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 CpText(
-                    text = "音源更新",
+                    text = p.updateDialogTitle,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                 )
@@ -132,7 +133,7 @@ fun ProviderUpdateDetailsDialog(
                     ) {
                         Column {
                             CpText(
-                                text = "当前版本",
+                                text = p.currentVersion,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -152,7 +153,7 @@ fun ProviderUpdateDetailsDialog(
 
                         Column(horizontalAlignment = Alignment.End) {
                             CpText(
-                                text = "最新版本",
+                                text = p.latestVersion,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary,
                             )
@@ -169,7 +170,7 @@ fun ProviderUpdateDetailsDialog(
                 if (!info.publishedAt.isNullOrBlank()) {
                     Spacer(Modifier.height(8.dp))
                     CpText(
-                        text = "发布日期: ${info.publishedAt}",
+                        text = p.publishedAt(info.publishedAt),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -179,7 +180,7 @@ fun ProviderUpdateDetailsDialog(
 
                 // 更新说明
                 CpText(
-                    text = "更新说明",
+                    text = p.changelogTitle,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -198,9 +199,12 @@ fun ProviderUpdateDetailsDialog(
                             .verticalScroll(rememberScrollState()),
                     ) {
                         CpText(
-                            text = if (info.changelog.isNullOrBlank()) "作者未提供更新日志说明" else info.changelog,
+                            text = if (info.changelog.isNullOrBlank()) p.changelogMissing else info.changelog,
                             style = MaterialTheme.typography.bodySmall,
                             lineHeight = 18.sp,
+                            // 更新说明是**整段多行正文**：容器已经套了滚动，放开行数
+                            // 才能真正读完全部条目；默认单行只剩第一行。
+                            maxLines = Int.MAX_VALUE,
                             color = if (info.changelog.isNullOrBlank()) {
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             } else {
@@ -214,7 +218,7 @@ fun ProviderUpdateDetailsDialog(
 
                 // 下载链接与操作
                 CpText(
-                    text = "下载地址",
+                    text = p.downloadUrl,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -229,8 +233,9 @@ fun ProviderUpdateDetailsDialog(
                             text = info.downloadUrl,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
+                            // 下载地址是用户核对镜像 / 手动复制的唯一凭据：原来两行截断，
+                            // 后面的路径与签名参数直接消失。外层 Column 已可滚动，放开行数。
+                            maxLines = Int.MAX_VALUE,
                         )
                         Spacer(Modifier.height(8.dp))
                         Row(
@@ -240,7 +245,7 @@ fun ProviderUpdateDetailsDialog(
                             OutlinedButton(
                                 onClick = {
                                     clipboardManager.setText(AnnotatedString(info.downloadUrl))
-                                    sendPlatformToast("下载链接已复制到剪贴板")
+                                    sendPlatformToast(p.linkCopied)
                                 },
                                 shape = MaterialTheme.shapes.small,
                                 modifier = Modifier.height(34.dp),
@@ -251,7 +256,7 @@ fun ProviderUpdateDetailsDialog(
                                     modifier = Modifier.size(14.dp),
                                 )
                                 Spacer(Modifier.width(4.dp))
-                                CpText("复制链接", style = MaterialTheme.typography.labelSmall)
+                                CpText(p.copyLink, style = MaterialTheme.typography.labelSmall)
                             }
 
                             OutlinedButton(
@@ -265,7 +270,7 @@ fun ProviderUpdateDetailsDialog(
                                     modifier = Modifier.size(14.dp),
                                 )
                                 Spacer(Modifier.width(4.dp))
-                                CpText("在浏览器打开", style = MaterialTheme.typography.labelSmall)
+                                CpText(p.openInBrowser, style = MaterialTheme.typography.labelSmall)
                             }
                         }
                     }
@@ -283,7 +288,7 @@ fun ProviderUpdateDetailsDialog(
                     modifier = Modifier.size(16.dp),
                 )
                 Spacer(Modifier.width(6.dp))
-                CpText("立即更新")
+                CpText(p.updateNow)
             }
         },
         dismissButton = {
@@ -291,7 +296,7 @@ fun ProviderUpdateDetailsDialog(
                 onClick = onDismiss,
                 shape = MaterialTheme.shapes.medium,
             ) {
-                CpText("稍后再说")
+                CpText(p.later)
             }
         },
     )
@@ -310,6 +315,7 @@ fun ProviderUpdateSourceDialog(
     onSave: (String) -> Unit,
     onResetDefault: () -> Unit,
 ) {
+    val p = cpStrings().providerManagement
     val isDark = LocalIsDarkTheme.current
     var urlText by remember { mutableStateOf(currentCustomUrl ?: manifestDefaultUrl ?: "") }
 
@@ -348,7 +354,7 @@ fun ProviderUpdateSourceDialog(
         title = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 CpText(
-                    text = "设置更新源",
+                    text = p.updateSourceTitle,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                 )
@@ -369,21 +375,25 @@ fun ProviderUpdateSourceDialog(
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         CpText(
-                            text = "说明：支持标准更新 JSON 端点或 GitHub Releases API（如 https://api.github.com/repos/owner/repo/releases/latest）。",
+                            text = p.updateSourceNote,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 18.sp,
+                            // 这是几行说明文字，默认单行会被截断。
+                            maxLines = Int.MAX_VALUE,
                         )
                         Spacer(Modifier.height(6.dp))
                         CpText(
-                            text = "Manifest 默认源: ${manifestDefaultUrl ?: "（未声明）"}",
+                            text = p.manifestDefaultSource(manifestDefaultUrl),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            // URL 必须完整可读（用户要判断是否与自己的镜像一致）。
+                            maxLines = Int.MAX_VALUE,
                         )
                         if (!currentCustomUrl.isNullOrBlank()) {
                             Spacer(Modifier.height(2.dp))
                             CpText(
-                                text = "当前已应用自定义更新源",
+                                text = p.customSourceApplied,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary,
                             )
@@ -396,7 +406,7 @@ fun ProviderUpdateSourceDialog(
                 OutlinedTextField(
                     value = urlText,
                     onValueChange = { urlText = it },
-                    label = { CpText("更新检测 URL") },
+                    label = { CpText(p.updateCheckUrl) },
                     placeholder = { CpText(manifestDefaultUrl ?: "https://...") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -410,7 +420,7 @@ fun ProviderUpdateSourceDialog(
                 enabled = urlText.isNotBlank(),
                 shape = MaterialTheme.shapes.medium,
             ) {
-                CpText("保存并检测")
+                CpText(p.saveAndCheck)
             }
         },
         dismissButton = {
@@ -420,7 +430,7 @@ fun ProviderUpdateSourceDialog(
                         onClick = onResetDefault,
                         shape = MaterialTheme.shapes.medium,
                     ) {
-                        CpText("恢复默认")
+                        CpText(p.restoreDefault)
                     }
                     Spacer(Modifier.width(4.dp))
                 }
@@ -428,7 +438,7 @@ fun ProviderUpdateSourceDialog(
                     onClick = onDismiss,
                     shape = MaterialTheme.shapes.medium,
                 ) {
-                    CpText("取消")
+                    CpText(cpStrings().common.dismiss)
                 }
             }
         },

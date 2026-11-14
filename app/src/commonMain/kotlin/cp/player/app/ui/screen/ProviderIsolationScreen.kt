@@ -19,6 +19,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.auth.AccountStore
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.component.SettingsButtonItem
@@ -45,6 +46,7 @@ class ProviderIsolationScreen : Screen {
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         val scope = rememberCoroutineScope()
+        val s = cpStrings()
         val provider by AppModel.activeProviderFlow.collectAsState()
         val switchAccount by AppModel.isolationSwitchAccountFlow.collectAsState()
         val profile by AppModel.userProfileFlow.collectAsState()
@@ -58,14 +60,13 @@ class ProviderIsolationScreen : Screen {
         val body: @Composable (androidx.compose.ui.Modifier) -> Unit = { pageModifier ->
             SettingsPage(pageModifier) {
                 SettingsNote(
-                    "每个音源都有自己的登录态、缓存和账号列表，互相不共享：换一个音源，" +
-                        "看到的账号、红心和歌单就是那个音源自己的。",
+                    s.settings.isolationIntro,
                 )
 
-                SettingsSection("登录态") {
+                SettingsSection(s.settings.isolationSectionAccounts) {
                     SettingsSwitchItem(
-                        title = "切音源时同步刷新账号资料",
-                        subtitle = "关掉后仍会换登录态（Cookie 本来就按音源存），只是不立即重新拉取昵称与头像",
+                        title = s.settings.isolationRefreshProfile,
+                        subtitle = s.settings.isolationRefreshProfileNote,
                         checked = switchAccount,
                         onCheckedChange = { AppModel.setIsolationSwitchAccount(it) },
                         index = 0,
@@ -73,12 +74,15 @@ class ProviderIsolationScreen : Screen {
                         icon = Icons.Filled.PrivacyTip,
                     )
                     SettingsClickItem(
-                        title = "当前音源的账号",
+                        title = s.settings.isolationCurrentAccounts,
                         subtitle = buildString {
-                            append(provider?.name ?: "未知音源")
+                            append(provider?.name ?: s.settings.isolationUnknownProvider)
                             append(" · ")
-                            append(if (cookieSaved) "登录态已保存" else "未登录")
-                            if (savedAccounts > 0) append(" · $savedAccounts 个账号")
+                            append(if (cookieSaved) s.settings.isolationSaved else s.settings.isolationNotSignedIn)
+                            if (savedAccounts > 0) {
+                                append(" · ")
+                                append(s.settings.isolationAccountCount(savedAccounts))
+                            }
                         },
                         index = 1,
                         total = 3,
@@ -86,8 +90,8 @@ class ProviderIsolationScreen : Screen {
                         onClick = { navigator.push(AccountScreen()) },
                     )
                     SettingsClickItem(
-                        title = "切换音乐源",
-                        subtitle = "不同音源之间不会互相污染登录态与缓存",
+                        title = s.settings.isolationSwitchProvider,
+                        subtitle = s.settings.isolationSwitchProviderNote,
                         index = 2,
                         total = 3,
                         icon = Icons.Filled.Dns,
@@ -95,10 +99,10 @@ class ProviderIsolationScreen : Screen {
                     )
                 }
 
-                SettingsSection("缓存") {
+                SettingsSection(s.settings.isolationSectionCache) {
                     SettingsClickItem(
-                        title = "存储与清理",
-                        subtitle = "封面缓存、下载目录等按音源隔离的数据都在这里管理",
+                        title = s.settings.isolationStorage,
+                        subtitle = s.settings.isolationStorageNote,
                         index = 0,
                         total = 1,
                         icon = Icons.Filled.FolderOpen,
@@ -107,10 +111,14 @@ class ProviderIsolationScreen : Screen {
                 }
 
                 if (cookieSaved) {
-                    SettingsSection("危险操作") {
+                    SettingsSection(s.settings.isolationSectionDanger) {
                         SettingsButtonItem(
-                            text = if (confirmClear) "再次点击确认清除" else "清除当前音源的登录态",
-                            subtitle = "只清这一个音源；已保存的账号仍在，可一键切回",
+                            text = if (confirmClear) {
+                                s.settings.isolationClearConfirm
+                            } else {
+                                s.settings.isolationClearSession
+                            },
+                            subtitle = s.settings.isolationClearNote,
                             index = 0,
                             total = 1,
                             containerColor = MaterialTheme.colorScheme.errorContainer,
@@ -136,13 +144,15 @@ class ProviderIsolationScreen : Screen {
                 }
 
                 SettingsNote(
-                    "资料展示：${profile?.nickname ?: "未登录"}。清除登录态不会动本地下载的歌曲。",
+                    s.settings.isolationProfileNote(
+                        profile?.nickname ?: s.settings.isolationNotSignedIn,
+                    ),
                 )
             }
         }
 
         CpRouteScaffold(
-            title = "音源隔离",
+            title = s.settings.isolationTitle,
             onBack = { navigator.popOrNotify() },
         ) { pageModifier -> body(pageModifier) }
     }

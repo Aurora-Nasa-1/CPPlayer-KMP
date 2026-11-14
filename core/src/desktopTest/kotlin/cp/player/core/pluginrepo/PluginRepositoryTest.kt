@@ -275,6 +275,23 @@ class PluginRepositoryTest {
     }
 
     @Test
+    fun `locally imported older plugins are offered as catalog updates`() {
+        runBlocking {
+            val io = MemoryIO().apply { responses[source] = catalog() }
+            val service = PluginRepositoryService(
+                MemorySettings(), io, PluginTarget("windows", "x64"),
+                { listOf(InstalledRepositoryPlugin(plugin.key, "1.0.0")) },
+            ) { _, _ -> PluginInstallOutcome() }
+            service.addSource(source)
+            service.setNetworkEnabled(true)
+            service.refresh()
+            val entry = service.state.value.entries.single()
+            assertEquals(null, entry.managed)
+            assertTrue(entry.updateAvailable)
+        }
+    }
+
+    @Test
     fun `legacy default source is migrated on startup`() {
         runBlocking {
             val settings = MemorySettings()

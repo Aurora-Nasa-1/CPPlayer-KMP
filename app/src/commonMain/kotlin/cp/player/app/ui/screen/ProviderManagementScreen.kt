@@ -32,7 +32,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
@@ -51,7 +50,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.ScreenModel
@@ -61,6 +59,7 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
+import cp.player.app.i18n.ProviderManagementStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.rememberZipPicker
 import cp.player.app.platform.rememberZipSaver
@@ -111,6 +110,7 @@ class ProviderManagementScreen(
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         val s = cpStrings()
+        val p = s.providerManagement
         val t = s.lyricsPlugin
         val scope = rememberCoroutineScope()
 
@@ -134,7 +134,11 @@ class ProviderManagementScreen(
             val target = updateTarget
             updateTarget = null
             if (zipPath == null) return@rememberZipPicker
-            if (target == null) model.importModule(zipPath) else model.updateModule(target, zipPath)
+            if (target == null) {
+                model.importModule(zipPath, p)
+            } else {
+                model.updateModule(target, zipPath, p)
+            }
         })
 
         // 歌词来源体系
@@ -147,7 +151,7 @@ class ProviderManagementScreen(
         LaunchedEffect(Unit) {
             refreshLyrics()
             if (model.isAutoCheckEnabled()) {
-                model.checkAllUpdates(silent = true)
+                model.checkAllUpdates(p, silent = true)
             }
         }
 
@@ -183,14 +187,14 @@ class ProviderManagementScreen(
         }
 
         CpRouteScaffold(
-            title = "音源与歌词管理",
+            title = p.screenTitle,
             onBack = { navigator.popOrNotify() },
             topBarActions = listOf(
                 cp.player.app.ui.component.TopBarAction(
-                    icon = { Icon(Icons.Filled.Sync, "检查音源更新") },
+                    icon = { Icon(Icons.Filled.Sync, p.checkUpdatesContentDesc) },
                     onClick = {
                         if (selectedTab == 0) {
-                            model.checkAllUpdates(silent = false)
+                            model.checkAllUpdates(p, silent = false)
                         }
                     },
                 ),
@@ -210,7 +214,11 @@ class ProviderManagementScreen(
                 }) {
                     Icon(
                         imageVector = if (selectedTab == 0) Icons.Filled.Add else Icons.Filled.FileUpload,
-                        contentDescription = if (selectedTab == 0) "导入音源模块" else "导入歌词插件",
+                        contentDescription = if (selectedTab == 0) {
+                            p.importProviderContentDesc
+                        } else {
+                            p.importLyricsContentDesc
+                        },
                     )
                 }
             },
@@ -230,12 +238,12 @@ class ProviderManagementScreen(
                         Tab(
                             selected = selectedTab == 0,
                             onClick = { selectedTab = 0 },
-                            text = { CpText("音源模块") },
+                            text = { CpText(p.tabProviders) },
                         )
                         Tab(
                             selected = selectedTab == 1,
                             onClick = { selectedTab = 1 },
-                            text = { CpText("歌词来源") },
+                            text = { CpText(p.tabLyrics) },
                         )
                     }
                 }
@@ -253,9 +261,9 @@ class ProviderManagementScreen(
                                 verticalArrangement = Arrangement.Center,
                             ) {
                                 ContentState(
-                                    title = "尚未加载任何音源模块",
-                                    message = "导入 .zip 模块包即可开始使用，模块包需含 manifest.json",
-                                    actionLabel = "导入音源模块",
+                                    title = p.noProvidersTitle,
+                                    message = p.noProvidersMessage,
+                                    actionLabel = p.importProvider,
                                     onAction = {
                                         updateTarget = null
                                         pickProviderZip()
@@ -272,8 +280,8 @@ class ProviderManagementScreen(
                             ) {
                                 item(key = "__import__") {
                                     SettingsButtonItem(
-                                        text = "导入音源模块",
-                                        subtitle = "选择 .zip 模块包（需含 manifest.json）",
+                                        text = p.importProvider,
+                                        subtitle = p.importProviderNote,
                                         icon = Icons.Filled.Add,
                                         index = 0,
                                         total = 1,
@@ -285,8 +293,8 @@ class ProviderManagementScreen(
                                 }
                                 item(key = "__auto_check__") {
                                     SettingsSwitchItem(
-                                        title = "自动检查音源更新",
-                                        subtitle = "进入本页时自动检测音源最新版本，支持 manifest 及自定义更新源",
+                                        title = p.autoCheck,
+                                        subtitle = p.autoCheckNote,
                                         checked = autoCheck,
                                         onCheckedChange = { model.setAutoCheckEnabled(it) },
                                         index = 0,
@@ -308,28 +316,25 @@ class ProviderManagementScreen(
                                         isActive = provider.id == active?.id,
                                         updateState = updateStates[provider.id],
                                         hasPendingUpdate = AppModel.backend.hasPendingUpdate(provider.id),
-                                        onActivate = { model.activate(provider) },
+                                        onActivate = { model.activate(provider, p) },
                                         onDelete = {
                                             confirm.request(
-                                                title = "删除音源模块",
-                                                message = buildString {
-                                                    append("确定删除「").append(provider.name)
-                                                    append("」（").append(provider.id).append("）吗？\n")
-                                                    append("模块文件与该音源下的登录态会被移除，需要重新导入才能使用。")
-                                                    if (provider.id == active?.id) {
-                                                        append("\n它正是当前音源，删除后会自动切换到其他可用音源。")
-                                                    }
-                                                },
-                                                confirmLabel = "删除",
-                                                onConfirm = { model.delete(provider.id) },
+                                                title = p.deleteTitle,
+                                                message = p.deleteMessage(
+                                                    provider.name,
+                                                    provider.id,
+                                                    provider.id == active?.id,
+                                                ),
+                                                confirmLabel = p.deleteConfirm,
+                                                onConfirm = { model.delete(provider.id, p) },
                                             )
                                         },
-                                        onExport = { dest -> model.exportModuleTo(provider, dest) },
+                                        onExport = { dest -> model.exportModuleTo(provider, dest, p) },
                                         onUpdate = {
                                             updateTarget = provider
                                             pickProviderZip()
                                         },
-                                        onCheckUpdate = { model.checkUpdateFor(provider) },
+                                        onCheckUpdate = { model.checkUpdateFor(provider, p) },
                                         onShowUpdateDetails = { info -> updateDetailTarget = provider to info },
                                         onConfigureUpdateSource = { configSourceTarget = provider },
                                         onOpenSettings = if (!schemas.isNullOrEmpty()) {
@@ -441,7 +446,7 @@ class ProviderManagementScreen(
                 onDismiss = { updateDetailTarget = null },
                 onDownloadAndUpdate = {
                     updateDetailTarget = null
-                    model.downloadAndInstallUpdate(provider, info)
+                    model.downloadAndInstallUpdate(provider, info, p)
                 },
             )
         }
@@ -455,12 +460,12 @@ class ProviderManagementScreen(
                 onSave = { newUrl ->
                     model.setCustomUpdateUrl(provider.id, newUrl)
                     configSourceTarget = null
-                    model.checkUpdateFor(provider)
+                    model.checkUpdateFor(provider, p)
                 },
                 onResetDefault = {
                     model.setCustomUpdateUrl(provider.id, null)
                     configSourceTarget = null
-                    model.checkUpdateFor(provider)
+                    model.checkUpdateFor(provider, p)
                 },
             )
         }
@@ -493,118 +498,157 @@ class ProviderManagementModel : ScreenModel {
         updateManager.setCustomUpdateUrl(providerId, url)
     }
 
-    fun checkUpdateFor(provider: BackendProvider) {
+    fun checkUpdateFor(provider: BackendProvider, strings: ProviderManagementStrings) {
         screenModelScope.launch {
             val state = updateManager.checkUpdate(provider)
             when (state) {
                 is ProviderUpdateState.UpdateAvailable -> {
-                    message.value = "${provider.name} 发现新版本 v${state.info.version}"
+                    message.value = strings.updateAvailable(provider.name, state.info.version)
                 }
                 is ProviderUpdateState.UpToDate -> {
-                    message.value = "${provider.name} 已是最新版本"
+                    message.value = strings.upToDate(provider.name)
                 }
                 is ProviderUpdateState.Error -> {
-                    message.value = "${provider.name} 检查更新失败: ${state.message}"
+                    message.value = strings.checkFailed(provider.name, state.message)
                 }
                 else -> Unit
             }
         }
     }
 
-    fun checkAllUpdates(silent: Boolean = false) {
+    fun checkAllUpdates(strings: ProviderManagementStrings, silent: Boolean = false) {
         screenModelScope.launch {
-            val list = providers.value
-            if (!silent) busy.value = "正在检查音源更新…"
-            updateManager.checkAllUpdates(list)
-            if (!silent) {
-                busy.value = null
-                val availableCount = updateManager.updateStates.value.values.count { it is ProviderUpdateState.UpdateAvailable }
-                message.value = if (availableCount > 0) {
-                    "检查完成，发现 $availableCount 个音源有新版本"
-                } else {
-                    "检查完成，所有音源均为最新版本"
-                }
-            }
+            checkAllUpdatesNow(strings, silent)
         }
     }
 
-    fun downloadAndInstallUpdate(provider: BackendProvider, info: ProviderUpdateInfo) {
+    /**
+     * 在当前协程里完成全部音源检查，供插件中心与仓库刷新串联。
+     *
+     * 与 [checkAllUpdates] 共用同一套忙态 / 结果提示，区别只在于完成后才返回。
+     */
+    suspend fun checkAllUpdatesNow(strings: ProviderManagementStrings, silent: Boolean = false) {
+        try {
+            if (!silent) busy.value = strings.checkingAll
+            updateManager.checkAllUpdates(providers.value)
+            if (!silent) {
+                val availableCount = updateManager.updateStates.value.values.count {
+                    it is ProviderUpdateState.UpdateAvailable
+                }
+                message.value = if (availableCount > 0) {
+                    strings.checkAllDoneAvailable(availableCount)
+                } else {
+                    strings.checkAllDoneUpToDate
+                }
+            }
+        } finally {
+            if (!silent) busy.value = null
+        }
+    }
+
+    fun downloadAndInstallUpdate(
+        provider: BackendProvider,
+        info: ProviderUpdateInfo,
+        strings: ProviderManagementStrings,
+    ) {
         screenModelScope.launch {
-            busy.value = "正在下载 ${provider.name} v${info.version}…"
+            busy.value = strings.downloading(provider.name, info.version)
             val result = runCatching {
                 updateManager.downloadAndInstall(provider, info) { written, total ->
                     if (total != null && total > 0) {
-                        val pct = ((written * 100) / total).coerceIn(0, 100)
-                        busy.value = "正在下载 ${provider.name} v${info.version} ($pct%)…"
+                        val pct = ((written * 100) / total).coerceIn(0L, 100L).toInt()
+                        busy.value = strings.downloadingPercent(provider.name, info.version, pct)
                     }
                 }
             }.fold(
                 onSuccess = { it },
-                onFailure = { ImportResult.Failed(it.message ?: "下载更新失败") },
+                onFailure = { ImportResult.Failed(it.message ?: strings.downloadFailed) },
             )
             busy.value = null
             message.value = when (result) {
-                is ImportResult.Activated -> "已更新并激活 ${result.provider.name} (v${info.version})"
-                is ImportResult.Loaded -> "已更新 ${result.provider.name} (v${info.version})"
+                is ImportResult.Activated -> strings.updatedAndActivatedVersioned(result.provider.name, info.version)
+                is ImportResult.Loaded -> strings.updatedVersioned(result.provider.name, info.version)
                 is ImportResult.PendingRestart -> result.message
                 is ImportResult.Failed -> result.message
             }
         }
     }
 
-    fun importModule(zipPath: String?) {
-        if (zipPath == null) { message.value = "未选择文件"; return }
+    fun importModule(zipPath: String?, strings: ProviderManagementStrings) {
+        if (zipPath == null) { message.value = strings.noFileSelected; return }
         screenModelScope.launch {
-            busy.value = "正在导入…"
+            busy.value = strings.importing
             val result = withContext(Dispatchers.IO) { AppModel.importModule(zipPath) }
             busy.value = null
             message.value = when (result) {
-                is ImportResult.Activated -> if (result.isUpdate) "已自动更新并激活 ${result.provider.name}" else "已导入并自动激活 ${result.provider.name}"
-                is ImportResult.Loaded -> if (result.isUpdate) "已自动更新 ${result.provider.name}（当前仍使用 ${AppModel.activeProvider()?.name ?: "无"}）" else "已导入 ${result.provider.name}（当前仍使用 ${AppModel.activeProvider()?.name ?: "无"}）"
+                is ImportResult.Activated -> if (result.isUpdate) {
+                    strings.updatedAndActivated(result.provider.name)
+                } else {
+                    strings.importedAndActivated(result.provider.name)
+                }
+                is ImportResult.Loaded -> {
+                    val active = AppModel.activeProvider()?.name ?: strings.noActiveProvider
+                    if (result.isUpdate) {
+                        strings.updated(result.provider.name, active)
+                    } else {
+                        strings.imported(result.provider.name, active)
+                    }
+                }
                 is ImportResult.PendingRestart -> result.message
                 is ImportResult.Failed -> result.message
             }
         }
     }
 
-    fun updateModule(provider: BackendProvider, zipPath: String?) {
-        if (zipPath == null) { message.value = "未选择文件"; return }
+    fun updateModule(provider: BackendProvider, zipPath: String?, strings: ProviderManagementStrings) {
+        if (zipPath == null) { message.value = strings.noFileSelected; return }
         screenModelScope.launch {
-            busy.value = "正在更新 ${provider.name}…"
+            busy.value = strings.updating(provider.name)
             val result = withContext(Dispatchers.IO) { AppModel.updateModule(zipPath, provider.id) }
             busy.value = null
             message.value = when (result) {
-                is ImportResult.Activated -> "已更新并激活 ${result.provider.name}"
-                is ImportResult.Loaded -> "已更新 ${result.provider.name}（当前仍使用 ${AppModel.activeProvider()?.name ?: "无"}）"
+                is ImportResult.Activated -> strings.updatedAndActivated(result.provider.name)
+                is ImportResult.Loaded -> strings.updated(
+                    result.provider.name,
+                    AppModel.activeProvider()?.name ?: strings.noActiveProvider,
+                )
                 is ImportResult.PendingRestart -> result.message
                 is ImportResult.Failed -> result.message
             }
         }
     }
 
-    fun exportModuleTo(provider: BackendProvider, destPath: String?): Boolean {
+    fun exportModuleTo(
+        provider: BackendProvider,
+        destPath: String?,
+        strings: ProviderManagementStrings,
+    ): Boolean {
         if (destPath == null) return false
-        busy.value = "正在导出 ${provider.name}…"
+        busy.value = strings.exporting(provider.name)
         val result = AppModel.exportModule(provider.id, destPath)
         busy.value = null
         message.value = when (result) {
-            is BackendResult.Success -> "已导出 ${provider.name} → ${fileNameOf(destPath)}"
+            is BackendResult.Success -> strings.exported(provider.name, fileNameOf(destPath))
             is BackendResult.Error -> result.message
             is BackendResult.Unsupported -> result.message
         }
         return result is BackendResult.Success
     }
 
-    fun activate(provider: BackendProvider) {
+    fun activate(provider: BackendProvider, strings: ProviderManagementStrings) {
         val ok = AppModel.switchOrReport(provider)
-        message.value = if (ok) "已切换到 ${provider.name}" else AppModel.lastSwitchError ?: "切换失败"
+        message.value = if (ok) {
+            strings.activated(provider.name)
+        } else {
+            AppModel.lastSwitchError ?: strings.switchFailed
+        }
     }
 
-    fun delete(id: String) {
+    fun delete(id: String, strings: ProviderManagementStrings) {
         screenModelScope.launch {
             val result = withContext(Dispatchers.IO) { AppModel.deleteProvider(id) }
             message.value = when (result) {
-                is BackendResult.Success<*> -> "已删除模块 $id"
+                is BackendResult.Success<*> -> strings.deleted(id)
                 is BackendResult.Error -> result.message
                 is BackendResult.Unsupported -> result.message
             }
@@ -641,24 +685,18 @@ internal fun ProviderRow(
     )
 
     val s = cpStrings()
+    val p = s.providerManagement
     val capabilityText = provider.capabilities.orEmpty()
         .mapNotNull { s.player.capabilityLabel(it) }
         .joinToString(" · ")
-    val apiText = if (provider.apiVersion > 1) " · API v${provider.apiVersion}" else ""
-    val tagText = provider.apiVersionTag?.let { " · $it" }.orEmpty()
     val hasConfig = !provider.settingsSchema.isNullOrEmpty()
-    val configText = if (hasConfig) " · 支持自定义配置" else ""
-    val pendingText = if (hasPendingUpdate) " · 待重启生效" else ""
+    val pendingText = if (hasPendingUpdate) " · ${p.pendingRestartTag}" else ""
 
     val availableUpdate = updateState as? ProviderUpdateState.UpdateAvailable
-    val hasUpdate = availableUpdate != null
     val isChecking = updateState is ProviderUpdateState.Checking
-    val updateSubtitle = if (availableUpdate != null) {
-        " · 发现新版本 v${availableUpdate.info.version}"
-    } else ""
 
     val subtitle = buildString {
-        append("${provider.type.name} · v${provider.version} · ${provider.id}$tagText$apiText$configText$pendingText$updateSubtitle")
+        append("v${provider.version} · ${provider.type.name}$pendingText")
         if (capabilityText.isNotEmpty()) append("\n$capabilityText")
     }
 
@@ -674,7 +712,7 @@ internal fun ProviderRow(
         trailingContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (isActive) {
-                    Icon(Icons.Filled.CheckCircle, "当前音源", tint = trailingTint)
+                    Icon(Icons.Filled.CheckCircle, p.activeProviderContentDesc, tint = trailingTint)
                     Spacer(Modifier.width(8.dp))
                 }
                 if (availableUpdate != null) {
@@ -696,7 +734,7 @@ internal fun ProviderRow(
                             )
                             Spacer(Modifier.width(4.dp))
                             CpText(
-                                text = "可更新 v${updateInfo.version}",
+                                text = p.updateAvailableBadge(updateInfo.version),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 fontWeight = FontWeight.Bold,
@@ -705,34 +743,14 @@ internal fun ProviderRow(
                     }
                     Spacer(Modifier.width(6.dp))
                 }
-                if (hasConfig && onOpenSettings != null) {
-                    IconButton(
-                        onClick = onOpenSettings,
-                        colors = IconButtonDefaults.iconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        ),
-                        modifier = Modifier.size(40.dp),
-                    ) {
-                        Icon(
-                            Icons.Filled.Tune,
-                            contentDescription = "音源配置 ${provider.name}",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                    Spacer(Modifier.width(6.dp))
-                }
                 Box {
                     IconButton(
                         onClick = { menuOpen = true },
-                        colors = IconButtonDefaults.iconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        ),
                         modifier = Modifier.size(40.dp),
                     ) {
                         Icon(
                             Icons.Filled.MoreVert,
-                            contentDescription = "更多操作 ${provider.name}",
+                            contentDescription = p.moreActions(provider.name),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp),
                         )
@@ -744,7 +762,7 @@ internal fun ProviderRow(
                         if (availableUpdate != null) {
                             val updateInfo = availableUpdate.info
                             DropdownMenuItem(
-                                text = { CpText("更新详情 (v${updateInfo.version})") },
+                                text = { CpText(p.updateDetails(updateInfo.version)) },
                                 leadingIcon = { Icon(Icons.Filled.Download, null, tint = MaterialTheme.colorScheme.primary) },
                                 onClick = {
                                     menuOpen = false
@@ -753,7 +771,7 @@ internal fun ProviderRow(
                             )
                         }
                         DropdownMenuItem(
-                            text = { CpText(if (isChecking) "正在检查更新…" else "检查更新") },
+                            text = { CpText(if (isChecking) p.checkingUpdate else p.checkUpdate) },
                             leadingIcon = { Icon(Icons.Filled.Sync, null) },
                             enabled = !isChecking,
                             onClick = {
@@ -762,7 +780,7 @@ internal fun ProviderRow(
                             },
                         )
                         DropdownMenuItem(
-                            text = { CpText("设置更新源") },
+                            text = { CpText(p.configureUpdateSource) },
                             leadingIcon = { Icon(Icons.Filled.Tune, null) },
                             onClick = {
                                 menuOpen = false
@@ -771,7 +789,7 @@ internal fun ProviderRow(
                         )
                         if (!provider.settingsSchema.isNullOrEmpty() && onOpenSettings != null) {
                             DropdownMenuItem(
-                                text = { CpText("音源配置") },
+                                text = { CpText(p.providerSettings) },
                                 leadingIcon = { Icon(Icons.Filled.Tune, null) },
                                 onClick = {
                                     menuOpen = false
@@ -780,7 +798,7 @@ internal fun ProviderRow(
                             )
                         }
                         DropdownMenuItem(
-                            text = { CpText("导出模块") },
+                            text = { CpText(p.exportModule) },
                             leadingIcon = { Icon(Icons.Filled.FileUpload, null) },
                             onClick = {
                                 menuOpen = false
@@ -788,7 +806,7 @@ internal fun ProviderRow(
                             },
                         )
                         DropdownMenuItem(
-                            text = { CpText("更新模块 (本地导入)") },
+                            text = { CpText(p.updateModuleLocal) },
                             leadingIcon = { Icon(Icons.Filled.Sync, null) },
                             onClick = {
                                 menuOpen = false
@@ -796,7 +814,7 @@ internal fun ProviderRow(
                             },
                         )
                         DropdownMenuItem(
-                            text = { CpText("删除模块") },
+                            text = { CpText(p.deleteModule) },
                             leadingIcon = { Icon(Icons.Filled.DeleteOutline, null) },
                             onClick = {
                                 menuOpen = false
@@ -822,54 +840,53 @@ internal fun LyricsSourceRowActions(
     onMoveDown: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    val tint = MaterialTheme.colorScheme.onSurfaceVariant
-    val label = { action: String -> "$action ${sourceTitle(source, t)}" }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        SettingsRowIconButton(
-            icon = Icons.Filled.KeyboardArrowUp,
-            contentDescription = label(t.moveUp),
-            enabled = !isFirst,
-            tint = tint,
-            onClick = onMoveUp,
-        )
-        SettingsRowIconButton(
-            icon = Icons.Filled.KeyboardArrowDown,
-            contentDescription = label(t.moveDown),
-            enabled = !isLast,
-            tint = tint,
-            onClick = onMoveDown,
-        )
-        if (source.removable) {
-            SettingsRowIconButton(
-                icon = Icons.Filled.DeleteOutline,
-                contentDescription = label(t.deleteAction),
-                enabled = true,
-                tint = MaterialTheme.colorScheme.error,
-                onClick = onDelete,
+    val p = cpStrings().providerManagement
+    var menuOpen by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { menuOpen = true }) {
+            Icon(
+                imageVector = Icons.Filled.MoreVert,
+                contentDescription = p.moreActions(sourceTitle(source, t)),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
             )
         }
-    }
-}
-
-@Composable
-private fun SettingsRowIconButton(
-    icon: ImageVector,
-    contentDescription: String,
-    enabled: Boolean,
-    tint: Color,
-    onClick: () -> Unit,
-) {
-    IconButton(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = Modifier.size(40.dp),
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = tint,
-            modifier = Modifier.size(20.dp),
-        )
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = { CpText(t.moveUp) },
+                leadingIcon = { Icon(Icons.Filled.KeyboardArrowUp, null) },
+                enabled = !isFirst,
+                onClick = {
+                    menuOpen = false
+                    onMoveUp()
+                },
+            )
+            DropdownMenuItem(
+                text = { CpText(t.moveDown) },
+                leadingIcon = { Icon(Icons.Filled.KeyboardArrowDown, null) },
+                enabled = !isLast,
+                onClick = {
+                    menuOpen = false
+                    onMoveDown()
+                },
+            )
+            if (source.removable) {
+                DropdownMenuItem(
+                    text = { CpText(t.deleteAction) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Filled.DeleteOutline,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                    },
+                    onClick = {
+                        menuOpen = false
+                        onDelete()
+                    },
+                )
+            }
+        }
     }
 }
 
@@ -883,6 +900,7 @@ internal fun sourceTitle(
         BuiltinLyricsSourceIds.SIDECAR -> t.builtinSidecar
         BuiltinLyricsSourceIds.EMBEDDED -> t.builtinEmbedded
         BuiltinLyricsSourceIds.AMLL -> t.builtinAmll
+        BuiltinLyricsSourceIds.LRCLIB -> t.builtinLrclib
         BuiltinLyricsSourceIds.PROVIDER -> t.builtinProvider
         else -> source.name
     }
@@ -926,6 +944,7 @@ internal fun builtinNote(
     BuiltinLyricsSourceIds.SIDECAR -> t.builtinSidecarNote
     BuiltinLyricsSourceIds.EMBEDDED -> t.builtinEmbeddedNote
     BuiltinLyricsSourceIds.AMLL -> t.builtinAmllNote
+    BuiltinLyricsSourceIds.LRCLIB -> t.builtinLrclibNote
     BuiltinLyricsSourceIds.PROVIDER -> t.builtinProviderNote
     else -> null
 }
