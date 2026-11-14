@@ -20,6 +20,29 @@ JDK / 第三方库里能被静态分析到的（普通调用、接口实现）�
 | `java.util.Locale.getDefault(Locale$Category)` / `setDefault(Locale$Category, Locale)` | ICU4J 的 `ULocale$JDKLocaleHelper` 用**反射**调 JDK 7+ 的分类 Locale API。`ULocale.<clinit>` 在第一次 `BreakIterator` 调用时就跑 ⇒ 歌词页一进来就 `MissingReflectionRegistrationError`。 |
 | `com.ibm.icu.text.BreakIteratorFactory` `<init>` | ICU 的 `BreakIterator.getShim()` 用 `Class.forName("com.ibm.icu.text.BreakIteratorFactory")` + `Class.newInstance()` 拿实现类。纯反射，静态分析看不见。 |
 | `resources`: `com/ibm/icu/impl/data/icudata/brkitr/*`、`com/ibm/icu/impl/data/icudata/*.res` | ICU 的断行规则（`brkitr/*.res`，含中日韩泰等字典）与语言包（顶层 `*.res`）都是运行时 `getResourceAsStream` 读的；不登记就是 `MissingResourceException`。**只登记这两个 glob（约 7 MB）**，不登记 `icudata` 下 `curr/zone/region/lang/unit/coll/rbnf/translit` 子目录（约 19 MB）—— 本项目只用 ICU 做断行，不碰它的格式化/排序数据。 |
+| `foreign.downcalls`（4 条：`int(void)`、`long(void*,void*,void*,void*,void*,int)`、`int(long,int,void*,int,void*,int,void*)`、`void(long)`） | **FFM（Project Panama）的每个 downcall 签名都必须在构建期登记**，否则运行时 `Linker.downcallHandle` 抛 `MissingForeignRegistrationError`（消息是「请把这段 JSON 加到 reachability-metadata.json」）。原生音源走 C ABI（`cpp_*`）就靠这四个签名，漏一条 ⇒ 探测失败 ⇒ 回落 JNI ⇒ 报「音源没有导出 C ABI」——**把宿主自己的问题说成音源的问题**（2026-11-14 网易云 1.3.0 真实踩到，见下）。类型名按 GraalVM 的 C 写法：`jint`/`jlong`/`void`/`void*`，不是 Java 的 `int`/`long`。 |
+
+### 关于 `foreign.downcalls` 那次事故（2026-11-14）
+
+症状：Windows 原生包里导入网易云 1.3.0（DLL 确实导出 5 个 `cpp_*`，`dumpbin` 核过）
+仍然提示「只导出了 JNI 符号，没有导出 C ABI」。
+
+排查：用同一份 GraalVM 编了个只做 FFM 调用的迷你镜像，输出是
+
+```
+imagecode=runtime
+shared=OK   auto=OK                      ← Arena 不是问题（不需要 SharedArenaSupport）
+lookup_FAIL=org.graalvm.nativeimage.MissingForeignRegistrationError:
+  Cannot perform downcall with leaf type (long)int.
+```
+
+也就是说 `Arena.ofShared()` / `SymbolLookup.libraryLookup(...)` 都正常，**卡在
+`linker.downcallHandle(...)` 的构建期登记**上。补上 `foreign.downcalls` 后同一镜像：
+`DOWNLOADS_OK abi=1` → `CREATE handle=...` → `INVOKE code=0 len=3383` → `CLOSE ok`。
+
+两点教训：① 这类「JVM 上跑得好好的 FFM 代码」在镜像里可能根本没被登记过，
+必须用迷你镜像验一次；② 探测失败的原因不能吞掉（`catch (_: Throwable) { null }`），
+否则错误信息会把方向指到音源仓库 —— 现在已经把它带进报错文本里了。
 
 ## 加条目之前先做探针（别直接改主构建）
 
