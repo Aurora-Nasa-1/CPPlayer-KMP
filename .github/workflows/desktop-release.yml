@@ -374,11 +374,40 @@ jobs:
             }
           done
           echo "tar.gz 布局 OK"
+      - name: Stage release artifacts
+        # 把匹配到的安装包**平铺**到一个目录再上传。upload-artifact 会保留匹配路径的
+        # 公共父目录结构：Linux 的 deb/*.deb 与 targz/*.tar.gz 没有共同文件层，
+        # 封出来就是 deb/ 与 targz/ 两层目录，publish 清理中间件时会把它们整包删掉。
+        shell: bash
+        env:
+          ASSET_PATHS: ${{ matrix.assetPaths }}
+        run: |
+          set -euo pipefail
+          out=build/release-stage
+          rm -rf "$out"
+          mkdir -p "$out"
+          shopt -s nullglob
+          while IFS= read -r pattern; do
+            [ -z "$pattern" ] && continue
+            for f in $pattern; do
+              cp -f "$f" "$out/"
+            done
+          done <<< "$ASSET_PATHS"
+          staged=$(find "$out" -maxdepth 1 -type f | wc -l)
+          echo "staged $staged file(s):"
+          ls -la "$out"
+          test "$staged" -gt 0
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
           name: CPPlayer-${{ needs.meta.outputs.version }}-${{ matrix.platform }}
-          path: ${{ matrix.assetPaths }}
+          path: build/release-stage/*
+          # ⚠️ 必须扁平化：Linux 的两条通配（deb/*.deb、targz/*.tar.gz）没有共同的文件层，
+          # upload-artifact 会把公共父目录以上的结构原样封进去，下载后变成
+          # `deb/xxx.deb` + `targz/xxx.tar.gz`，然后被 publish 的「清理中间件」当成
+          # 目录整包删掉 —— v1.9.2 的真实事故：Linux 包 missing，AUR 哈希 404。
+          # Windows 只有一层目录，扁平化同样安全。
+          if-no-files-found: error
       # jpackage 失败时只给 exit code，真正原因在 compose 日志里。
       # 直接 cat 到 job 日志 + 传 artifact，下次失败不用再猜。
       - name: Dump jpackage logs on failure
