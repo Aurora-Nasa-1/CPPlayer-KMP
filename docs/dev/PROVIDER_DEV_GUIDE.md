@@ -12,6 +12,7 @@
 | 内容 | 文档 / 声明 |
 |---|---|
 | 从零运行与打包 | [快速上手](QUICK_PROVIDER_DEV_GUIDE.md) |
+| 原生包（JNI）的字节格式与操作码 | [原生 Provider 的 Wire 格式](PROVIDER_NATIVE_WIRE.md) |
 | 每个方法、能力名、输入输出与行为 | [完整操作参考](SDK_OPERATIONS.md) |
 | 全部 DTO 字段、单位、空值、默认值与限制 | [字段与类型参考](SDK_TYPES.md) |
 | 评论/私信、一起听、视频/DJ、歌单、上传、账号的调用流程 | [分域实现指南](PROVIDER_WORKFLOWS.md) |
@@ -110,6 +111,12 @@ class MyProvider(private val context: ProviderContext) : MusicProvider {
 更新凭证或配置后，旧结果不能发布；会话层取消在途调用、排空任务，再释放适配器。
 不要自行跨账号缓存实例或保存旧 `ProviderContext`。
 
+**登录态必须能从会话凭证推导，不能只留在实例内存里。** `authenticate` 成功返回 `cookie`
+后，宿主保存凭证、**丢弃当前实例并重建会话**；把 `loggedIn`、用户 ID 存在模块级变量或
+成员字段里的实现，会在重建后退回未登录，表现为「登录提示成功但账号页仍是未登录」、
+「我的歌单一直为空」。正确做法：`context.credential` 非空即视为已登录，
+其余账号态（昵称、用户 ID）也从凭证或上游探得。js 与 jni 同一规则。
+
 宿主每个会话只读取一次 `capabilities()`；失败或取消不缓存。
 Kotlin 的默认 `getMany` 会逐项调用 `get`，保留失败与重复项；只有上游确实提供批量接口时才需要覆盖。
 
@@ -137,6 +144,12 @@ QuickJS 单会话线程、内存上限 32 MiB、栈 512 KiB、执行预算 250 m
 ZIP 安装支持 SDK JavaScript 与 JNI/Native 包；原生库使用宿主统一 `NativeSession`
 入口，无需 `nativeFactoryClass`、宿主预先注册或额外信任授权。
 格式见 [Manifest](MANIFEST_REFERENCE.md#原生-sdk-包)。
+
+原生包有两条 ABI：JNI（`Java_cp_player_sdk_jni_NativeSession_*`，JVM/Android）
+与 C ABI v1（`cpp_*`，Windows 的 GraalVM Native Image 构建只能走后者）。
+**建议同时导出两套**：JVM 上行为不变，原生构建才有路可走。
+规范见 [原生 Provider 的 C ABI（v1）](PROVIDER_NATIVE_ABI.md)。
+
 手动导入与仓库安装都按精确 ID 校验；同名不同 ID 不覆盖。
 入口缺失、越界、超限、未知契约等在替换文件前拒绝；更新失败保留旧安装。
 

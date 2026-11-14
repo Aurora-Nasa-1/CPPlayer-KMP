@@ -133,8 +133,19 @@ my_provider.dll
 | `closeNative` | `jlong handle` | `void`；调用排空后释放一次 |
 
 请求是对应 SDK DTO 的 Wire 字节；响应首字节 `0` 表示成功，后接响应 DTO，
-`1` 表示失败，后接 `Failure`。类型、字段顺序和操作码以 SDK 生成物为准。
+`1` 表示失败，后接 `Failure`。**完整字节定义（基本类型、可选/列表、操作码、
+`operation = 1` 的能力查询、解码后的宿主校验）见
+[原生 Provider 的 Wire 格式](PROVIDER_NATIVE_WIRE.md)** —— 只看本页无法写出可用的库。
 每个包的 JNI 绑定独立，不能复用另一音源的句柄或全局账号状态。
+
+> ⚠️ **JNI 模块只在 JVM 运行时可用；GraalVM Native Image 构建（Windows 安装包）需要库额外导出 C ABI v1。**
+> 「每个包独立绑定」是靠宿主把 `cp.player.sdk.jni.NativeSession` 按包 `defineClass` 一次实现的：
+> 类对象不同，JNI 绑定才不同。而 native image 里**类文件不是可读资源**
+> （`getResourceAsStream("...class")` 恒为 `null`），也**不支持运行时定义类**。
+> 所以原生构建改按符号直调：库同时导出 `cpp_abi_version` / `cpp_create` / `cpp_invoke` /
+> `cpp_cancel` / `cpp_close` 即可（JNI 符号保留，JVM 路径不变）。
+> 只导出 JNI 的老模块在原生构建里会明确报错并提示升级，或改用 JS 音源 / JVM 版客户端。
+> 完整规范见 [原生 Provider 的 C ABI（v1）](PROVIDER_NATIVE_ABI.md)。
 
 桌面与 Android 发布对应平台动态库；仓库 artifact 的 `runtime` 与 manifest 的 `type` 保持一致。
 宿主复制独立运行快照后加载，目录替换不会锁住已安装文件；旧会话排空后释放适配器。

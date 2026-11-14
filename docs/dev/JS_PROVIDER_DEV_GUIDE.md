@@ -58,6 +58,15 @@ const catalog = JSON.parse(context.text(response.body));
 - `utf8(text)` / `text(bytes)`：UTF-8 转换，文本解码严格校验。
 - `read(key)` / `write(key, bytesOrNull)`：当前会话临时存储，隔离且有界。
 
+无参操作（`Bytes` 请求）实际到达时是 `{ value: {} }` —— 空 `Int8Array` 跨桥后是个空对象，
+不是 `Int8Array(0)`，也不需要读它。不要对 `request.value.byteLength` 做判断。
+
+`context.credential` 非空就代表当前会话已登录。宿主在 `authenticate` 返回 `cookie` 后
+会保存凭证并**重建会话**，所以登录态不能只记在模块变量里；否则登录成功后
+`getCurrentAccount` 仍会返回未登录、`getUserPlaylists` 永远空。
+`getUserPlaylists` 的 `id` 可能是宿主的账号键（实测形如 `9084388061`），
+不是上游用户 ID，按「当前登录用户」处理即可。
+
 无全局 `fetch`、旧 `env.settings`、宿主文件系统或数据库契约。
 HTTP 只允许 manifest 中的 origin，不自动带凭证，不自动跟随重定向。
 需要认证时由业务为对应服务显式设置 Header，不能把 API Cookie 泛发到媒体域名。
