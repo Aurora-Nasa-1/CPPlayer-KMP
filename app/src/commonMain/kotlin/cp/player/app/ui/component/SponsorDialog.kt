@@ -26,6 +26,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.ZoomIn
@@ -36,12 +37,14 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,10 +55,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import cp.player.app.i18n.cpStrings
+import cp.player.app.platform.ImageSaveResult
+import cp.player.app.platform.saveImageToLocal
 import cp.player.app.resources.Res
 import cp.player.app.resources.sponsor_alipay
 import cp.player.app.resources.sponsor_wechat
 import cp.player.app.ui.theme.LocalIsDarkTheme
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
 
 /**
@@ -86,6 +92,7 @@ fun SponsorDialog(
     val s = cpStrings().about
 
     var selectedType by remember { mutableStateOf(initialType) }
+    val scope = rememberCoroutineScope()
 
     val containerColor = if (isDark) {
         MaterialTheme.colorScheme.surfaceContainerHigh
@@ -188,6 +195,9 @@ fun SponsorDialog(
                     transitionSpec = { fadeIn() togetherWith fadeOut() },
                     label = "SponsorQrSwitch",
                 ) { targetType ->
+                    var saveState by remember(targetType) {
+                        mutableStateOf<SponsorQrSaveState>(SponsorQrSaveState.Idle)
+                    }
                     val qrPainter = when (targetType) {
                         SponsorPaymentType.WECHAT -> painterResource(Res.drawable.sponsor_wechat)
                         SponsorPaymentType.ALIPAY -> painterResource(Res.drawable.sponsor_alipay)
@@ -238,6 +248,80 @@ fun SponsorDialog(
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
+
+                        OutlinedButton(
+                            enabled = saveState != SponsorQrSaveState.Saving,
+                            onClick = {
+                                saveState = SponsorQrSaveState.Saving
+                                scope.launch {
+                                    val bytes = runCatching {
+                                        when (targetType) {
+                                            SponsorPaymentType.WECHAT ->
+                                                Res.readBytes("drawable/sponsor_wechat.png")
+                                            SponsorPaymentType.ALIPAY ->
+                                                Res.readBytes("drawable/sponsor_alipay.jpg")
+                                        }
+                                    }.getOrNull()
+                                    val result = if (bytes == null || bytes.isEmpty()) {
+                                        ImageSaveResult.Failed
+                                    } else {
+                                        saveImageToLocal(
+                                            imageBytes = bytes,
+                                            fileName = when (targetType) {
+                                                SponsorPaymentType.WECHAT -> "CPPlayer-sponsor-wechat"
+                                                SponsorPaymentType.ALIPAY -> "CPPlayer-sponsor-alipay"
+                                            },
+                                            extension = when (targetType) {
+                                                SponsorPaymentType.WECHAT -> "png"
+                                                SponsorPaymentType.ALIPAY -> "jpg"
+                                            },
+                                            dialogTitle = s.saveQrCode,
+                                        )
+                                    }
+                                    saveState = when (result) {
+                                        is ImageSaveResult.Saved ->
+                                            SponsorQrSaveState.Saved(result.location)
+                                        ImageSaveResult.Cancelled -> SponsorQrSaveState.Idle
+                                        ImageSaveResult.Failed -> SponsorQrSaveState.Failed
+                                    }
+                                }
+                            },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            CpText(
+                                text = if (saveState == SponsorQrSaveState.Saving) {
+                                    s.savingQrCode
+                                } else {
+                                    s.saveQrCode
+                                },
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        }
+
+                        when (val state = saveState) {
+                            is SponsorQrSaveState.Saved -> CpText(
+                                text = state.location?.let(s::qrSavedTo) ?: s.qrSavedToGallery,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                textAlign = TextAlign.Center,
+                                maxLines = 2,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            SponsorQrSaveState.Failed -> CpText(
+                                text = s.qrSaveFailed,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                                textAlign = TextAlign.Center,
+                                maxLines = 2,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            else -> Unit
+                        }
                     }
                 }
 
@@ -414,4 +498,11 @@ private fun SponsorThumbnailItem(
             }
         }
     }
+}
+
+private sealed interface SponsorQrSaveState {
+    data object Idle : SponsorQrSaveState
+    data object Saving : SponsorQrSaveState
+    data class Saved(val location: String?) : SponsorQrSaveState
+    data object Failed : SponsorQrSaveState
 }

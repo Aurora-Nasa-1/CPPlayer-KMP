@@ -93,11 +93,7 @@ actual fun saveQrCodeToGallery(base64Image: String, fileName: String): Boolean {
             .trim()
         val decoded = Base64.decode(cleanBase64, Base64.DEFAULT)
         bitmap = BitmapFactory.decodeByteArray(decoded, 0, decoded.size) ?: return false
-        val saved = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            saveQrViaMediaStore(ctx, bitmap, fileName)
-        } else {
-            saveQrToPublicPictures(ctx, bitmap, fileName)
-        }
+        val saved = saveBitmapToGallery(ctx, bitmap, fileName)
         if (saved) {
             sendPlatformToast("二维码已保存到相册")
         }
@@ -110,6 +106,38 @@ actual fun saveQrCodeToGallery(base64Image: String, fileName: String): Boolean {
         bitmap?.recycle()
     }
 }
+
+actual fun saveImageToLocal(
+    imageBytes: ByteArray,
+    fileName: String,
+    extension: String,
+    dialogTitle: String,
+): ImageSaveResult {
+    val ctx = ctxOrNull ?: return ImageSaveResult.Failed
+    if (imageBytes.isEmpty()) return ImageSaveResult.Failed
+    var bitmap: Bitmap? = null
+    return try {
+        bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+            ?: return ImageSaveResult.Failed
+        if (saveBitmapToGallery(ctx, bitmap, fileName)) {
+            ImageSaveResult.Saved(location = null)
+        } else {
+            ImageSaveResult.Failed
+        }
+    } catch (_: Exception) {
+        ImageSaveResult.Failed
+    } finally {
+        // 回收必须放在 finally：上面每个 return 之前都别再各自 recycle 一遍。
+        bitmap?.recycle()
+    }
+}
+
+private fun saveBitmapToGallery(ctx: Context, bitmap: Bitmap, fileName: String): Boolean =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        saveQrViaMediaStore(ctx, bitmap, fileName)
+    } else {
+        saveQrToPublicPictures(ctx, bitmap, fileName)
+    }
 
 /** API 29+：走 MediaStore，不需要任何存储权限。 */
 private fun saveQrViaMediaStore(

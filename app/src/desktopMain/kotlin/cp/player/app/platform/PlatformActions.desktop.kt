@@ -44,6 +44,42 @@ actual fun defaultFontRoundness(): Int = 0
  */
 actual fun saveQrCodeToGallery(base64Image: String, fileName: String): Boolean = false
 
+/**
+ * 桌面端保存图片：走系统「另存为」对话框，把字节原样写进用户选定的路径。
+ *
+ * 不自动塞进某个固定目录：桌面上「保存到本地」的预期是**用户自己选位置**，
+ * 而且 Windows 的图片库可能被重定向到 D 盘，猜路径只会让用户找不到文件。
+ */
+actual fun saveImageToLocal(
+    imageBytes: ByteArray,
+    fileName: String,
+    extension: String,
+    dialogTitle: String,
+): ImageSaveResult {
+    if (imageBytes.isEmpty()) return ImageSaveResult.Failed
+    val safeExtension = extension.removePrefix(".").ifBlank { "png" }
+    val safeFileName = fileName
+        .substringAfterLast('/')
+        .substringAfterLast('\\')
+        .ifBlank { "CPPlayer-image" }
+    val chosen = DesktopFileDialog.saveImage(
+        title = dialogTitle,
+        defaultName = "$safeFileName.$safeExtension",
+        extension = safeExtension,
+    ) ?: return ImageSaveResult.Cancelled
+    // 系统保存框不保证补扩展名；缺了就补，避免落出一个双击打不开的无后缀文件。
+    val target = if (chosen.lowercase().endsWith(".$safeExtension")) {
+        File(chosen)
+    } else {
+        File("$chosen.$safeExtension")
+    }
+    return runCatching {
+        target.parentFile?.mkdirs()
+        target.writeBytes(imageBytes)
+        ImageSaveResult.Saved(target.absolutePath)
+    }.getOrDefault(ImageSaveResult.Failed)
+}
+
 actual fun openTargetApp(packageName: String) {}
 
 actual fun isPackageInstalled(packageName: String): Boolean = false

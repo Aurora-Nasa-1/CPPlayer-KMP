@@ -30,6 +30,20 @@ internal object DesktopFileDialog {
             external(ExternalKind.SAVE_FILE, title, defaultName)
         }
 
+    fun saveImage(title: String, defaultName: String, extension: String): String? {
+        val safeExtension = extension.removePrefix(".").ifBlank { "png" }
+        return if (Win32CommonItemDialog.isSupported()) {
+            Win32CommonItemDialog.saveFile(
+                title = title,
+                defaultName = defaultName,
+                filterName = "图片 (*.$safeExtension)",
+                filterSpec = "*.$safeExtension",
+            )
+        } else {
+            external(ExternalKind.SAVE_FILE, title, defaultName)
+        }
+    }
+
     fun pickDirectory(title: String): String? =
         if (Win32CommonItemDialog.isSupported()) {
             Win32CommonItemDialog.pickFolder(title)

@@ -1141,6 +1141,11 @@ object CpStringsEn : CpStrings {
         override val alipay = "Alipay"
         override val sponsorAccount = "Recipient: Aurora星空(*森)"
         override val sponsorThanks = "Thanks to every supporter for your encouragement ❤️"
+        override val saveQrCode = "Save QR code"
+        override val savingQrCode = "Saving…"
+        override val qrSavedToGallery = "Saved to gallery"
+        override fun qrSavedTo(path: String) = "Saved to $path"
+        override val qrSaveFailed = "Save failed. Check storage permission or disk space."
         override val close = "Close"
         override val footerNote = "CPPlayer · Compose Multiplatform"
     }

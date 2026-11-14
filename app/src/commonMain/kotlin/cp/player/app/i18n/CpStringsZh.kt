@@ -1077,6 +1077,11 @@ object CpStringsZh : CpStrings {
         override val alipay = "支付宝"
         override val sponsorAccount = "收款人: Aurora星空(*森)"
         override val sponsorThanks = "感谢每一位支持者的认可与鼓励 ❤️"
+        override val saveQrCode = "保存二维码"
+        override val savingQrCode = "保存中…"
+        override val qrSavedToGallery = "已保存到相册"
+        override fun qrSavedTo(path: String) = "已保存到 $path"
+        override val qrSaveFailed = "保存失败，请检查存储权限或磁盘空间"
         override val close = "关闭"
         override val footerNote = "CPPlayer · Compose Multiplatform"
     }

@@ -40,6 +40,43 @@ expect fun defaultFontRoundness(): Int
 expect fun saveQrCodeToGallery(base64Image: String, fileName: String): Boolean
 
 /**
+ * 保存图片到用户可访问的本地位置。
+ *
+ * - Desktop：弹系统「另存为」对话框，用户选定路径后写入；
+ * - Android：写入系统相册（Pictures/CPPlayer）。
+ *
+ * 与 [saveQrCodeToGallery] 的区别：这里接受**原始图片字节**，因此资源里的赞助收款码
+ * 也能复用同一套保存流程，不需要先在 commonMain 里做 Base64 编码。
+ *
+ * @param imageBytes 图片原始字节（PNG / JPEG）
+ * @param fileName 建议文件名（不含扩展名）
+ * @param extension 扩展名（不含点，如 "png" / "jpg"）
+ * @param dialogTitle 桌面保存对话框标题
+ */
+expect fun saveImageToLocal(
+    imageBytes: ByteArray,
+    fileName: String,
+    extension: String,
+    dialogTitle: String,
+): ImageSaveResult
+
+/**
+ * [saveImageToLocal] 的结果。
+ *
+ * 取消与失败必须分开：桌面用户点了「取消」不该看到「保存失败」。
+ */
+sealed interface ImageSaveResult {
+    /** 已写入。[location] 为 null 表示写进了系统相册（Android），桌面端为绝对路径。 */
+    data class Saved(val location: String?) : ImageSaveResult
+
+    /** 用户取消（仅桌面保存对话框）。 */
+    data object Cancelled : ImageSaveResult
+
+    /** 写入失败（磁盘 / 权限 / 解码）。 */
+    data object Failed : ImageSaveResult
+}
+
+/**
  * 通过包名打开目标 App。
  * 仅 Android 端生效。
  *

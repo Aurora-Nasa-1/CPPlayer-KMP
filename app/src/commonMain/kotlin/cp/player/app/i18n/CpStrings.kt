@@ -1365,6 +1365,11 @@ interface AboutStrings {
     val alipay: String get() = "支付宝"
     val sponsorAccount: String get() = "收款人: Aurora星空(*森)"
     val sponsorThanks: String get() = "感谢每一位支持者的认可与鼓励 ❤️"
+    val saveQrCode: String get() = "保存二维码"
+    val savingQrCode: String get() = "保存中…"
+    val qrSavedToGallery: String get() = "已保存到相册"
+    fun qrSavedTo(path: String): String = "已保存到 $path"
+    val qrSaveFailed: String get() = "保存失败，请检查存储权限或磁盘空间"
     val close: String get() = "关闭"
     val footerNote: String
 }
