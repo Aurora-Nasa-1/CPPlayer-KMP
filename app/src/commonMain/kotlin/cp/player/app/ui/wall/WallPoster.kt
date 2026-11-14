@@ -173,7 +173,7 @@ internal fun WallPosterOverlay(
                     it,
                     color = Color.White.copy(alpha = 0.86f),
                     fontSize = 13.5.sp,
-                    maxLines = 1,
+                    maxLines = 2,
                 )
             }
             Spacer(Modifier.height(18.dp))

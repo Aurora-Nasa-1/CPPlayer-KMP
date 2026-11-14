@@ -214,9 +214,25 @@ internal fun PosterLyricScene(
                             fontSize = 32.sp,
                             fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.Center,
+                            emphasized = true,
                             modifier = Modifier.fillMaxWidth()
                         )
                     } else {
+                        val activeFontSize = when (style) {
+                            PosterLyricStyle.Orbit -> 40.sp
+                            PosterLyricStyle.Clock -> 30.sp
+                            PosterLyricStyle.ColorField -> 42.sp
+                            PosterLyricStyle.Glow -> 36.sp
+                        }
+                        // CpText 的 fontSize 参数只覆盖字号，不会自动放大默认 lineHeight。
+                        // 主歌词现在允许多行，行高必须跟着字号走，否则 36sp 的字会叠在
+                        // 24sp 的行距上（离屏出图实锤）。
+                        val activeLineHeight = when (style) {
+                            PosterLyricStyle.Orbit -> 48.sp
+                            PosterLyricStyle.Clock -> 36.sp
+                            PosterLyricStyle.ColorField -> 50.sp
+                            PosterLyricStyle.Glow -> 44.sp
+                        }
                         Column(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalAlignment = if (style == PosterLyricStyle.Clock) Alignment.Start else Alignment.CenterHorizontally
@@ -224,13 +240,10 @@ internal fun PosterLyricScene(
                             CpText(
                                 text = activeLine.text,
                                 color = if (style == PosterLyricStyle.Glow) Color(0xFFFFF6DC) else Color.White,
-                                fontSize = when (style) {
-                                    PosterLyricStyle.Orbit -> 40.sp
-                                    PosterLyricStyle.Clock -> 30.sp
-                                    PosterLyricStyle.ColorField -> 42.sp
-                                    PosterLyricStyle.Glow -> 36.sp
-                                },
+                                fontSize = activeFontSize,
+                                lineHeight = activeLineHeight,
                                 fontWeight = FontWeight.ExtraBold,
+                                maxLines = Int.MAX_VALUE,
                                 textAlign = if (style == PosterLyricStyle.Clock) TextAlign.Start else TextAlign.Center,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -240,6 +253,7 @@ internal fun PosterLyricScene(
                                     text = activeTrans,
                                     color = Color.White.copy(alpha = 0.58f),
                                     fontSize = 16.sp,
+                                    maxLines = Int.MAX_VALUE,
                                     textAlign = if (style == PosterLyricStyle.Clock) TextAlign.Start else TextAlign.Center,
                                     modifier = Modifier.padding(top = 8.dp).fillMaxWidth()
                                 )

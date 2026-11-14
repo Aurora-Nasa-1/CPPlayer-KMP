@@ -150,6 +150,7 @@ internal fun PosterLyricTheaterScreen(
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
+                        emphasized = true,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier
                             .weight(1f)

@@ -198,7 +198,7 @@ fun WallImmersive(
                         track.artist,
                         color = Color.White.copy(alpha = 0.78f),
                         fontSize = 14.sp,
-                        maxLines = 1,
+                        maxLines = 2,
                         modifier = Modifier.widthIn(max = 560.dp),
                     )
 
