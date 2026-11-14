@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import cp.player.app.AppModel
+import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.desktopPlatform
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.openUrl
@@ -178,31 +179,28 @@ internal fun AudioEngineSettingsContent(
     onBack: () -> Unit,
 ) {
     val isAndroid = state.isAndroid
+    val s = cpStrings()
+    val engine = s.engine
 
     val body: @Composable (Modifier) -> Unit = { pageModifier ->
         SettingsPage(pageModifier) {
             SettingsHeroCard(
                 title = if (!isAndroid || state.flickEngineActive) "FlickEngine" else "Media3 ExoPlayer",
                 subtitle = when {
-                    !isAndroid && state.exclusiveActive ->
-                        "WASAPI Exclusive · Bit-Perfect 源码直通 · 独占声卡"
+                    !isAndroid && state.exclusiveActive -> engine.heroExclusive
                     // ⚠️ 「WASAPI」只属于 Windows。其它桌面（Linux/macOS）上写它，
                     // 用户会照着去系统里找一个并不存在的设置（离屏出图时抓到的第一处）。
-                    !isAndroid && state.isWindowsDesktop ->
-                        "WASAPI Shared · 经系统混音器输出 · 与其他应用共存"
-                    !isAndroid ->
-                        "系统共享输出 · 经系统混音器混音 · 与其他应用共存"
-                    state.flickEngineActive ->
-                        "Rust Oboe · 低延迟直通 · USB DAC · DSD 软解"
-                    else ->
-                        "系统默认内核 · 网络流兼容性最好 · 功耗最省"
+                    !isAndroid && state.isWindowsDesktop -> engine.heroSharedWasapi
+                    !isAndroid -> engine.heroSharedSystem
+                    state.flickEngineActive -> engine.heroAndroidFlick
+                    else -> engine.heroAndroidStandard
                 },
                 icon = Icons.Filled.GraphicEq,
                 badgeText = when {
-                    !isAndroid && state.exclusiveActive -> "独占中"
-                    !isAndroid -> "共享 · 默认"
-                    state.flickEngineActive -> "VIP"
-                    else -> "默认"
+                    !isAndroid && state.exclusiveActive -> engine.badgeExclusive
+                    !isAndroid -> engine.badgeSharedDefault
+                    state.flickEngineActive -> engine.badgeVip
+                    else -> engine.badgeDefault
                 },
                 badgeContainerColor = if ((!isAndroid && state.exclusiveActive) || (isAndroid && state.flickEngineActive)) {
                     MaterialTheme.colorScheme.primaryContainer
@@ -218,36 +216,35 @@ internal fun AudioEngineSettingsContent(
 
             // ---------------- 内核 / 输出模式 ----------------
             if (isAndroid) {
-                SettingsSection("播放内核") {
+                SettingsSection(engine.sectionKernel) {
                     SettingsSegmentedItem(
-                        title = "当前生效内核",
+                        title = engine.kernelCurrent,
                         subtitle = when {
                             state.engineKey == PlaybackSessionSettings.ENGINE_FLICK_HIRES && !state.vipActivated ->
-                                "卡密未激活：已自动回落到系统内核（FlickEngine 需 VIP）"
+                                engine.kernelNeedsVip
                             state.engineKey == PlaybackSessionSettings.ENGINE_FLICK_HIRES ->
-                                "已启用 FlickEngine，当前歌曲在下次起播时切过去"
-                            else ->
-                                "系统 Media3 内核：兼容性与耗电表现更稳，发烧特性不可用"
+                                engine.kernelEnabled
+                            else -> engine.kernelSystemNote
                         },
-                        options = listOf("系统 Media3（默认）", "FlickEngine（VIP）"),
+                        options = listOf(engine.kernelSystemOption, engine.kernelFlickOption),
                         selectedIndex = if (state.engineKey == PlaybackSessionSettings.ENGINE_FLICK_HIRES) 1 else 0,
                         onSelect = onSelectEngine,
                         index = 0,
                         total = 1,
                     )
                 }
-                SettingsNote("切换内核不会打断正在播放的音频：下一次起播（切歌或重新播放）时生效。")
+                SettingsNote(engine.kernelSwitchNote)
             } else {
-                SettingsSection("输出模式") {
+                SettingsSection(engine.sectionOutputMode) {
                     if (state.isWindowsDesktop) {
                         SettingsSegmentedItem(
-                            title = "WASAPI 输出模式",
+                            title = engine.wasapiMode,
                             subtitle = if (state.exclusiveActive) {
-                                "已接管声卡：播放期间系统提示音、浏览器、会议软件都会静音"
+                                engine.wasapiExclusiveNote
                             } else {
-                                "未接管声卡：可与其它应用同时出声，代价是经过系统混音器"
+                                engine.wasapiSharedNote
                             },
-                            options = listOf("共享（默认）", "独占（VIP）"),
+                            options = listOf(engine.wasapiSharedOption, engine.wasapiExclusiveOption),
                             selectedIndex = if (state.exclusiveActive) 1 else 0,
                             onSelect = onSelectExclusive,
                             index = 0,
@@ -255,105 +252,97 @@ internal fun AudioEngineSettingsContent(
                         )
                     } else {
                         SettingsClickItem(
-                            title = "共享输出",
-                            subtitle = "当前平台没有 WASAPI 独占通道，音频始终经系统混音器输出",
+                            title = engine.sharedOutput,
+                            subtitle = engine.sharedOutputNote,
                             index = 0,
                             total = 1,
-                            trailingContent = { StatusBadge("已就绪", active = true) },
+                            trailingContent = { StatusBadge(engine.ready, active = true) },
                         )
                     }
                 }
                 if (state.isWindowsDesktop) {
-                    SettingsNote(
-                        "独占模式默认关闭，需要 VIP 授权且由你手动打开。开启后 CPPlayer 会接管声卡终端，"
-                            + "直到切回共享模式或退出应用为止 —— 这是 Bit-Perfect 的必要代价，不是故障。"
-                            + "切换会重新打开音频设备，当前歌曲会停止，重新点播放即可。",
-                        emphasis = SettingsNoteEmphasis.INFO,
-                    )
+                    SettingsNote(engine.exclusiveWarning, emphasis = SettingsNoteEmphasis.INFO)
                 }
             }
 
             // ---------------- 能力矩阵 ----------------
             if (isAndroid) {
-                SettingsSection("FlickEngine 发烧特性") {
+                SettingsSection(engine.sectionCapabilities) {
                     FeatureRow(
-                        title = "Oboe / AAudio 低延迟直通",
-                        subtitle = "绕过 AudioFlinger 重采样，直接与底层音频 HAL 或 USB DAC 握手",
-                        badge = if (state.flickEngineActive) "生效中" else "需 FlickEngine",
+                        title = engine.oboeTitle,
+                        subtitle = engine.oboeNote,
+                        badge = if (state.flickEngineActive) engine.badgeActive else engine.badgeNeedsFlick,
                         active = state.flickEngineActive,
                         index = 0,
                         total = 3,
                     )
                     FeatureRow(
-                        title = "USB DAC 直通 (UAC 2.0)",
-                        subtitle = "外接解码器按自身支持的采样率与位深直接输出，不经过系统重采样",
-                        badge = if (state.flickEngineActive) "生效中" else "需 FlickEngine",
+                        title = engine.usbDacTitle,
+                        subtitle = engine.usbDacNote,
+                        badge = if (state.flickEngineActive) engine.badgeActive else engine.badgeNeedsFlick,
                         active = state.flickEngineActive,
                         index = 1,
                         total = 3,
                     )
                     FeatureRow(
-                        title = "DSD 母带软解",
-                        subtitle = "引擎内置 DSF / DFF 解码，DSD64 / DSD128 直接播放（软解为 PCM）",
-                        badge = if (state.flickEngineActive) "可用" else "需 FlickEngine",
+                        title = engine.dsdTitle,
+                        subtitle = engine.dsdNoteAndroid,
+                        badge = if (state.flickEngineActive) engine.badgeAvailable else engine.badgeNeedsFlick,
                         active = state.flickEngineActive,
                         index = 2,
                         total = 3,
                     )
                 }
             } else {
-                SettingsSection("FlickEngine 发烧特性") {
+                SettingsSection(engine.sectionCapabilities) {
                     FeatureRow(
-                        title = "WASAPI 独占直通",
+                        title = engine.wasapiExclusiveTitle,
                         subtitle = if (state.isWindowsDesktop) {
-                            "绕过 Windows 会话混音器与系统音效增强，由引擎直接接管声卡终端"
+                            engine.wasapiExclusiveNoteWindows
                         } else {
-                            "仅 Windows 提供 WASAPI 独占通道，当前平台始终为共享输出"
+                            engine.wasapiExclusiveNoteOther
                         },
                         badge = when {
-                            !state.isWindowsDesktop -> "当前平台不支持"
-                            state.exclusiveActive -> "生效中"
-                            !state.vipActivated -> "需 VIP"
-                            else -> "未开启"
+                            !state.isWindowsDesktop -> engine.badgeUnsupported
+                            state.exclusiveActive -> engine.badgeActive
+                            !state.vipActivated -> engine.badgeNeedsVip
+                            else -> engine.badgeOff
                         },
                         active = state.exclusiveActive,
                         index = 0,
                         total = 4,
                     )
                     FeatureRow(
-                        title = "Bit-Perfect 源码输出",
+                        title = engine.bitPerfectTitle,
                         subtitle = when {
-                            state.exclusiveActive ->
-                                "采样率按音轨物理规格重协商（44.1k / 48k / 96k / 192k），不经系统重采样"
-                            !state.isWindowsDesktop ->
-                                "需要能接管声卡的独占通道，仅 Windows 提供；当前平台始终经系统混音器重采样"
-                            else ->
-                                "仅在独占模式下成立；共享模式会被系统混音器重采样到设备默认采样率"
+                            state.exclusiveActive -> engine.bitPerfectNoteActive
+                            !state.isWindowsDesktop -> engine.bitPerfectNoteOther
+                            else -> engine.bitPerfectNoteInactive
                         },
                         // 徽标只写**当前缺的那一环**：非 Windows 上「需独占」会让人去找一个
                         // 根本不存在的开关；VIP 未激活时先说 VIP，别让用户先去开独占再被拦一次。
                         badge = when {
-                            !state.isWindowsDesktop -> "当前平台不支持"
-                            state.exclusiveActive -> "生效中"
-                            !state.vipActivated -> "需 VIP"
-                            else -> "需独占"
+                            !state.isWindowsDesktop -> engine.badgeUnsupported
+                            state.exclusiveActive -> engine.badgeActive
+                            !state.vipActivated -> engine.badgeNeedsVip
+                            else -> engine.badgeNeedsExclusive
                         },
                         active = state.exclusiveActive,
                         index = 1,
                         total = 4,
                     )
                     FeatureRow(
-                        title = "DSD 母带软解",
-                        subtitle = "引擎内置 DSF / DFF 解码，DSD64 / DSD128 直接播放（软解为 PCM），两种模式均可用",
-                        badge = "可用",
+                        title = engine.dsdTitle,
+                        subtitle = engine.dsdNoteDesktop,
+                        badge = engine.badgeAvailable,
                         active = true,
                         index = 2,
                         total = 4,
                     )
                     FeatureRow(
-                        title = "64 位浮点 DSP 管线",
-                        subtitle = "5 段参数均衡器 (PEQ)、左右声道平衡与立体声宽度，跑在引擎内而非系统音效链",
-                        badge = "可用",
+                        title = engine.dspTitle,
+                        subtitle = engine.dspNote,
+                        badge = engine.badgeAvailable,
                         active = true,
                         index = 3,
                         total = 4,
@@ -361,13 +350,13 @@ internal fun AudioEngineSettingsContent(
                 }
             }
 
-            SettingsSection("调音台与音效") {
+            SettingsSection(engine.sectionEffects) {
                 SettingsClickItem(
-                    title = "前往音效设置",
+                    title = engine.openEffects,
                     subtitle = if (isAndroid) {
-                        "5 段参数均衡器、风格预设、声道平衡与响度均衡"
+                        engine.effectsNoteAndroid
                     } else {
-                        "5 段参数均衡器、风格预设、声道平衡与立体声宽度"
+                        engine.effectsNoteDesktop
                     },
                     icon = Icons.Filled.Equalizer,
                     index = 0,
@@ -377,37 +366,10 @@ internal fun AudioEngineSettingsContent(
                 )
             }
 
-            // ---------------- VIP ----------------
-            SettingsSection("VIP 发烧特权授权") {
-                SettingsClickItem(
-                    title = "特权授权状态",
-                    subtitle = if (state.vipActivated) {
-                        // 只在真的有卡密时才补括号 —— 卡密丢失时旧写法会拼出
-                        // 「Hi-Res 专业发烧版 (永久授权) (永久授权)」这种叠字。
-                        val key = state.vipLicenseKey?.takeIf { it.isNotBlank() }
-                        if (key != null) "已激活：${state.vipPlanName} ($key)" else "已激活：${state.vipPlanName}"
-                    } else if (isAndroid) {
-                        "未激活（需输入有效卡密解锁 FlickEngine 内核与硬件直通）"
-                    } else {
-                        "未激活（需输入有效卡密解锁 FlickEngine 与独占直通）"
-                    },
-                    index = 0,
-                    total = 1,
-                    onClick = onOpenVipDialog,
-                    trailingContent = {
-                        CpText(
-                            text = if (state.vipActivated) "更换卡密" else "激活特权",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    },
-                )
-            }
-
-            SettingsSection("开源内核致谢与归属") {
+            SettingsSection(engine.sectionCredits) {
                 SettingsClickItem(
                     title = "moss-apps / Flick",
-                    subtitle = "FlickEngine 核心技术源自开源项目 moss-apps/Flick (MIT)，特此致敬原作者",
+                    subtitle = engine.creditsNote,
                     index = 0,
                     total = 1,
                     onClick = onOpenFlickHome,
@@ -417,7 +379,7 @@ internal fun AudioEngineSettingsContent(
     }
 
     CpRouteScaffold(
-        title = if (isAndroid) "播放内核与发烧特性" else "音频输出与硬件独占",
+        title = if (isAndroid) engine.titleAndroid else engine.titleDesktop,
         onBack = onBack,
         content = body,
     )

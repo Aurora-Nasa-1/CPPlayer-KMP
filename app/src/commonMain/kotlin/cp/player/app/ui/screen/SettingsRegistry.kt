@@ -246,50 +246,85 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
             SettingsSubItem(
                 id = "appearance_modern_mobile_player",
                 titleOf = { "播放器样式" },
-                subtitleOf = { "在三段式播放器与标准播放器之间切换" },
+                subtitleOf = { "切换播放页排版" },
                 keywords = listOf("三段式", "标准", "播放器样式", "单页", "播放页", "播放界面", "歌词", "封面", "布局", "手机播放器", "player", "layout"),
-                sectionOf = { "手机端播放界面与布局" },
+                sectionOf = { it.appearance.sectionMobile },
             ),
             SettingsSubItem(
                 id = "appearance_mobile_player_layout",
-                titleOf = { "手机播放偏好" },
-                subtitleOf = { "切歌手势、歌词预览字号、逐字高亮与翻译" },
-                keywords = listOf("播放界面", "手势", "歌词字号", "翻译", "卡拉OK"),
-                sectionOf = { "手机端播放界面与布局" },
+                titleOf = { it.appearance.mobilePreferences },
+                subtitleOf = { it.appearance.mobilePreferencesNote },
+                keywords = listOf("播放界面", "歌词翻译", "沉浸歌词", "恢复默认", "播放器"),
+                sectionOf = { it.appearance.sectionMobile },
             ),
             SettingsSubItem(
-                id = "mobile_player_cover_swipe",
-                titleOf = { "封面左右滑动切歌手势" },
-                subtitleOf = { "在专辑封面上左右横向滑动手势触发上一首 / 下一首" },
-                keywords = listOf("滑动切歌", "手势", "切歌", "swipe gesture"),
-                sectionOf = { "手机端播放界面与布局" },
-            ),
-            SettingsSubItem(
-                id = "mobile_player_lyrics_size",
-                titleOf = { "歌词预览字号" },
-                subtitleOf = { "调整封面下方当前歌词的字体大小" },
-                keywords = listOf("歌词大小", "歌词字号", "lyrics font size"),
-                sectionOf = { "手机端播放界面与布局" },
-            ),
-            SettingsSubItem(
-                id = "mobile_player_karaoke",
-                titleOf = { "预览逐字高亮" },
-                subtitleOf = { "音源包含逐字时值时，以精准平滑的高亮推进动画展现" },
-                keywords = listOf("逐字歌词", "卡拉OK", "karaoke"),
-                sectionOf = { "手机端播放界面与布局" },
+                id = "mobile_player_lyrics_mini",
+                titleOf = { it.playback.showMiniPlayerLyrics },
+                subtitleOf = { it.playback.showMiniPlayerLyricsSubtitle },
+                keywords = listOf("迷你播放器", "歌词", "歌手", "mini player"),
+                sectionOf = { it.appearance.playerLyricsPresentation },
             ),
             SettingsSubItem(
                 id = "mobile_player_translation",
-                titleOf = { "双语歌词翻译展示" },
-                subtitleOf = { "在歌曲拥有翻译歌词时，在正文下方同步显示次行译文" },
+                titleOf = { it.appearance.playerLyricsTranslation },
+                subtitleOf = { it.appearance.playerLyricsTranslationNote },
                 keywords = listOf("歌词翻译", "双语", "译文", "translation"),
-                sectionOf = { "手机端播放界面与布局" },
+                sectionOf = { it.appearance.playerLyricsPresentation },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_lyrics_ruby",
+                titleOf = { it.playback.showRubyLyrics },
+                subtitleOf = { it.playback.showRubyLyricsSubtitle },
+                keywords = listOf("注音", "假名", "振假名", "日文", "furigana"),
+                sectionOf = { it.appearance.playerLyricsPresentation },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_lyrics_segmentation",
+                titleOf = { it.playback.lyricsWordSegmentation },
+                subtitleOf = { it.playback.lyricsWordSegmentationSubtitle },
+                keywords = listOf("分词", "断句", "换行", "日文", "segmentation"),
+                sectionOf = { it.appearance.playerLyricsPresentation },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_lyrics_karaoke",
+                titleOf = { it.playback.smartKaraokeLrc },
+                subtitleOf = { it.playback.smartKaraokeLrcSubtitle },
+                keywords = listOf("逐字", "卡拉OK", "高亮", "karaoke"),
+                sectionOf = { it.appearance.playerLyricsPresentation },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_lyrics_source",
+                titleOf = { it.playback.lyricsSource },
+                subtitleOf = { it.playback.lyricsSourceNote },
+                keywords = listOf("歌词来源", "AMLL", "歌词库", "lyrics source"),
+                sectionOf = { it.appearance.playerLyricsPresentation },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_lyrics_immersive",
+                titleOf = { it.appearance.playerLyricsImmersiveToggle },
+                subtitleOf = { it.appearance.playerLyricsImmersiveNote },
+                keywords = listOf("沉浸歌词", "全屏歌词", "隐藏控制栏", "immersive"),
+                sectionOf = { it.appearance.playerLyricsImmersive },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_lyrics_timeout",
+                titleOf = { it.appearance.playerLyricsImmersiveTimeout },
+                subtitleOf = { it.appearance.playerLyricsImmersiveTimeoutNote },
+                keywords = listOf("沉浸歌词", "等待时间", "自动隐藏", "timeout"),
+                sectionOf = { it.appearance.playerLyricsImmersive },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_reset",
+                titleOf = { it.appearance.playerReset },
+                subtitleOf = { "重置歌词呈现与沉浸歌词选项" },
+                keywords = listOf("恢复默认", "重置", "播放器设置", "reset"),
+                sectionOf = { it.appearance.playerResetSection },
             ),
             SettingsSubItem(
                 id = "appearance_font_roundness",
                 titleOf = { it.appearance.fontRoundness },
-                subtitleOf = { "调节界面部件形状与字体笔画的圆润程度" },
-                keywords = listOf("圆角", "字体", "几何", "笔画", "圆润", "形状", "radius", "roundness", "font"),
+                subtitleOf = { "选择字体的圆滑或方正形态" },
+                keywords = listOf("圆滑", "方正", "字体", "字形", "圆润", "roundness", "font"),
                 sectionOf = { it.appearance.sectionFont },
             ),
             SettingsSubItem(
@@ -326,8 +361,10 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
         screen = { targetId ->
             if (targetId != null && targetId.startsWith("mobile_player_")) {
                 MobilePlayerSettingsScreen(targetId)
-            } else if (targetId in listOf("appearance_modern_mobile_player", "appearance_mobile_player_layout")) {
+            } else if (targetId == "appearance_mobile_player_layout") {
                 MobilePlayerSettingsScreen(targetId)
+            } else if (targetId == "appearance_modern_mobile_player") {
+                AppearanceSettingsScreen(targetId)
             } else {
                 AppearanceSettingsScreen(targetId)
             }
@@ -337,11 +374,11 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
         id = "playback",
         group = SettingsGroup.GENERAL,
         titleOf = { it.settings.itemPlayback.title },
-        subtitleOf = { "流媒体音质、FlickEngine 发烧架构、淡入淡出与定时播放" },
+        subtitleOf = { "默认音质、音频输出与淡入淡出" },
         icon = Icons.Filled.PlayArrow,
         accent = SettingsAccent.SECONDARY,
         keywords = listOf(
-            "音质", "无损", "hires", "定时", "睡眠", "关闭", "quality", "sleep",
+            "音质", "无损", "hires", "quality",
             "flick", "engine", "wasapi", "exclusive", "独占", "bit-perfect", "源码",
             "内核", "发烧", "dsd", "asio", "声卡", "音频", "输出", "dac",
             "音效", "均衡器", "均衡", "eq", "peq", "调音", "混音", "平衡", "响度",
@@ -369,13 +406,6 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 subtitleOf = { "提前缓冲即将播放的曲目，消除切歌等待与卡顿" },
                 keywords = listOf("预加载", "缓冲", "预读", "提前加载", "preload", "buffer"),
                 sectionOf = { "流媒体与音频音质" },
-            ),
-            SettingsSubItem(
-                id = "playback_speed",
-                titleOf = { "播放速度" },
-                subtitleOf = { "0.5× ~ 2.0× 变速，由音频引擎处理、不改变音调" },
-                keywords = listOf("倍速", "播放速度", "变速", "快放", "慢放", "speed", "tempo"),
-                sectionOf = { "播放速度" },
             ),
             SettingsSubItem(
                 id = "playback_audio_engine",
@@ -411,13 +441,6 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 subtitleOf = { "重新启动应用时恢复上次播放的曲目及播放时间点" },
                 keywords = listOf("记忆播放", "断点续播", "进度", "恢复播放", "历史进度", "resume", "progress"),
                 sectionOf = { "播放控制与过渡" },
-            ),
-            SettingsSubItem(
-                id = "playback_sleep_timer",
-                titleOf = { "睡眠定时器" },
-                subtitleOf = { "倒计时停止播放或在当前歌曲播放完毕后自动退出" },
-                keywords = listOf("睡眠", "定时", "倒计时", "定时关闭", "自动停止", "播完停止", "sleep", "timer"),
-                sectionOf = { "定时与自动化" },
             ),
             SettingsSubItem(
                 id = "playback_auto_play",
@@ -547,6 +570,52 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
         ),
         desktopOnly = true,
         screen = { _ -> ShortcutSettingsScreen() },
+    ),
+    SettingsEntry(
+        id = "navigation",
+        group = SettingsGroup.GENERAL,
+        titleOf = { it.settings.itemNavigation.title },
+        subtitleOf = { it.settings.itemNavigation.subtitle },
+        icon = Icons.Filled.Tune,
+        accent = SettingsAccent.SECONDARY,
+        keywords = listOf(
+            "动态", "朋友圈", "社交", "feed", "dynamic", "social",
+            "导航", "入口", "tab", "底部导航", "侧栏", "隐藏入口", "navigation",
+            "消息", "私信", "messages", "chat",
+            "搜索", "search", "替代搜索", "顶栏",
+            "音源不支持", "能力", "capability", "隐藏功能",
+        ),
+        subItems = listOf(
+            SettingsSubItem(
+                id = "navigation_dynamic_tab",
+                titleOf = { "用「动态」替代「搜索」tab" },
+                subtitleOf = { "第 2 个 tab 变成动态，搜索移到顶栏动作位" },
+                keywords = listOf("动态", "搜索", "tab", "替代", "顶栏", "dynamic", "search"),
+                sectionOf = { "主 tab" },
+            ),
+            SettingsSubItem(
+                id = "navigation_hide_dynamic",
+                titleOf = { "隐藏「动态」入口" },
+                subtitleOf = { "导航入口隐藏，动态数据与页面仍然可用" },
+                keywords = listOf("动态", "隐藏", "入口", "dynamic", "hide"),
+                sectionOf = { "入口可见性" },
+            ),
+            SettingsSubItem(
+                id = "navigation_hide_messages",
+                titleOf = { "隐藏「消息」入口" },
+                subtitleOf = { "隐藏顶栏 / 侧栏 / 底栏的消息入口" },
+                keywords = listOf("消息", "私信", "隐藏", "入口", "messages", "hide"),
+                sectionOf = { "入口可见性" },
+            ),
+            SettingsSubItem(
+                id = "navigation_provider_support",
+                titleOf = { "音源功能支持清单" },
+                subtitleOf = { "列出动态 / 消息 / 搜索在当前音源是否可用；不支持时对应入口直接隐藏" },
+                keywords = listOf("音源", "支持", "能力", "不支持", "隐藏", "capability", "provider"),
+                sectionOf = { "当前音源的功能支持" },
+            ),
+        ),
+        screen = { targetId -> NavigationSettingsScreen(targetId) },
     ),
 )
 
@@ -806,6 +875,14 @@ private fun connectivityEntries(): List<SettingsEntry> = listOf(
                 titleOf = { "关闭主窗口时最小化到系统托盘" },
                 subtitleOf = { "点击窗口关闭按钮时不退出程序，保持后台音乐播放" },
                 keywords = listOf("托盘", "系统托盘", "最小化", "关闭窗口", "后台播放", "关窗", "tray", "minimize"),
+                sectionOf = { "桌面行为" },
+                desktopOnly = true,
+            ),
+            SettingsSubItem(
+                id = "msg_notify_close_behavior",
+                titleOf = { "关闭窗口时" },
+                subtitleOf = { it.messageNotify.closeBehaviorHint },
+                keywords = listOf("关闭行为", "关窗", "托盘", "退出", "询问", "close behavior"),
                 sectionOf = { "桌面行为" },
                 desktopOnly = true,
             ),

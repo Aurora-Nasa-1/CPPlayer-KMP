@@ -229,13 +229,24 @@ class AboutScreen : Screen {
                 title = { CpText(policy.title) },
                 text = {
                     Column {
-                        CpText(policy.message)
+                        CpText(policy.message, maxLines = Int.MAX_VALUE)
                         Spacer(Modifier.height(10.dp))
                         if (legacyModules.isEmpty()) {
-                            CpText("未发现符合条件的旧版 Provider V1/V3 模块目录，不会删除 SDK Provider 或账号数据。")
+                            CpText(
+                                s.legacyCleanupNone,
+                                maxLines = Int.MAX_VALUE,
+                            )
                         } else {
-                            CpText("以下旧模块目录将在确认后排队，并仅在目标更新版本成功启动后删除；如果安装被取消或失败，旧版本会保留这些目录：")
-                            legacyModules.forEach { CpText("${it.name} · API V${it.apiVersion} · ${it.id}") }
+                            CpText(
+                                s.legacyCleanupHint,
+                                maxLines = Int.MAX_VALUE,
+                            )
+                            legacyModules.forEach {
+                                CpText(
+                                    "${it.name} · API V${it.apiVersion} · ${it.id}",
+                                    maxLines = Int.MAX_VALUE,
+                                )
+                            }
                         }
                     }
                 },
@@ -256,10 +267,10 @@ class AboutScreen : Screen {
                                 },
                             )
                         }
-                    }) { CpText("确认并下载") }
+                    }) { CpText(s.updateConfirmDownload) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showDestructiveConfirm = false }) { CpText("取消") }
+                    TextButton(onClick = { showDestructiveConfirm = false }) { CpText(cpStrings().common.dismiss) }
                 },
             )
         }

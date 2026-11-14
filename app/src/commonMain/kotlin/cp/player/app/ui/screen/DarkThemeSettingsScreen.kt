@@ -66,13 +66,13 @@ class DarkThemeSettingsScreen : Screen {
         ) { pageModifier ->
             SettingsPage(pageModifier) {
                 // 1. 外观主题模式
-                SettingsSection("外观模式") {
+                SettingsSection(s.appearance.themeMode) {
                     ThemeMode.entries.forEachIndexed { index, mode ->
                         val selected = mode == themeMode
                         val (modeIcon, modeDesc) = when (mode) {
-                            ThemeMode.SYSTEM -> Icons.Filled.Brightness4 to "根据系统日间/夜间状态自动切换"
-                            ThemeMode.LIGHT -> Icons.Filled.LightMode to "始终保持明亮清爽的浅色视觉"
-                            ThemeMode.DARK -> Icons.Filled.DarkMode to "始终保持深色暗黑风格，夜间更护眼"
+                            ThemeMode.SYSTEM -> Icons.Filled.Brightness4 to s.appearance.themeModeSystemNote
+                            ThemeMode.LIGHT -> Icons.Filled.LightMode to s.appearance.themeModeLightNote
+                            ThemeMode.DARK -> Icons.Filled.DarkMode to s.appearance.themeModeDarkNote
                         }
 
                         SettingsClickItem(
@@ -98,7 +98,7 @@ class DarkThemeSettingsScreen : Screen {
                 }
 
                 // 3. 深色优化项
-                SettingsSection("深色显示增强") {
+                SettingsSection(s.appearance.sectionDarkEnhancements) {
                     SettingsSwitchItem(
                         title = s.appearance.pureBlack,
                         subtitle = s.appearance.pureBlackNote,
@@ -108,7 +108,7 @@ class DarkThemeSettingsScreen : Screen {
                         total = 1,
                     )
                 }
-                SettingsNote("开启纯黑后，在深色模式下应用底色将由深灰压至绝对纯黑 (#000000)，OLED 屏幕黑色像素不发光，不仅对比度更突出，还能有效节省电量。")
+                SettingsNote(s.appearance.pureBlackDetail)
 
                 // 4. 色彩系统与取色来源
                 SettingsSection(s.appearance.colorSource) {

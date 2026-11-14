@@ -127,11 +127,10 @@ class AudioEffectSettingsScreen : Screen {
                         // 本来就在 FlickEngine 的 DSP 管线里，`supported == false` 只有一种原因
                         // —— 原生库没加载起来（此时连播放都没声音）。
                         // 旧文案写「开启 FlickEngine Hi-Res 发烧内核」，会让人以为换个开关就能用。
-                        SettingsSection("音频内核状态") {
+                        SettingsSection(s.audioEffect.kernelStatusSection) {
                             SettingsClickItem(
-                                title = "FlickEngine 原生音频库未就绪",
-                                subtitle = "桌面端的解码、音效与输出全部由 FlickEngine 提供；库缺失时音效与播放都不可用。"
-                                    + "请确认安装完整，或到音频输出页查看引擎状态。",
+                                title = s.audioEffect.kernelNotReadyTitle,
+                                subtitle = s.audioEffect.kernelNotReadyNote,
                                 index = 0,
                                 total = 1,
                                 onClick = {
@@ -139,7 +138,7 @@ class AudioEffectSettingsScreen : Screen {
                                 },
                                 trailingContent = {
                                     CpText(
-                                        text = "查看状态",
+                                        text = s.audioEffect.viewStatus,
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.primary,
                                     )
@@ -171,7 +170,7 @@ class AudioEffectSettingsScreen : Screen {
                                     style = MaterialTheme.typography.titleMedium,
                                 )
                                 CpText(
-                                    text = if (eq.enabled) "已启用 · 5 段参数均衡生效中" else s.audioEffect.equalizerEnabledNote,
+                                    text = if (eq.enabled) s.audioEffect.equalizerEnabledSummary else s.audioEffect.equalizerEnabledNote,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -185,11 +184,11 @@ class AudioEffectSettingsScreen : Screen {
                                 ) {
                                     Icon(
                                         Icons.Filled.RestartAlt,
-                                        contentDescription = "重置平直",
+                                        contentDescription = s.audioEffect.resetFlat,
                                         modifier = Modifier.size(18.dp),
                                     )
                                     Spacer(Modifier.width(4.dp))
-                                    CpText("平直", style = MaterialTheme.typography.labelMedium)
+                                    CpText(s.audioEffect.presetFlat, style = MaterialTheme.typography.labelMedium)
                                 }
                                 androidx.compose.material3.Switch(
                                     checked = eq.enabled,
@@ -250,12 +249,12 @@ class AudioEffectSettingsScreen : Screen {
                         ) {
                             Column {
                                 CpText(
-                                    text = "高级：中心频点微调 (PEQ)",
+                                    text = s.audioEffect.advancedFrequencyTuning,
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                                 CpText(
-                                    text = "逐段调整频段滤波截止频率",
+                                    text = s.audioEffect.advancedFrequencyTuningNote,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -273,7 +272,7 @@ class AudioEffectSettingsScreen : Screen {
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 eq.bands.forEachIndexed { bandIndex, band ->
                                     SettingsSliderItem(
-                                        title = "频段 ${bandIndex + 1} 中心频率",
+                                        title = s.audioEffect.bandCenterFrequency(bandIndex),
                                         subtitle = "${formatHz(band.frequencyHz)} (${formatGain(band.gainDb)} dB)",
                                         value = band.frequencyHz,
                                         onValueChange = { hz ->

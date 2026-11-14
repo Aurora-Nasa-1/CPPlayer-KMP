@@ -1,8 +1,6 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bedtime
-import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Memory
@@ -38,7 +36,6 @@ import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.settingsSearchTarget
 import cp.player.app.ui.component.AutoPlayCustomTargetDialog
 import cp.player.app.ui.component.PlaylistPickerSheet
-import cp.player.app.ui.component.SleepTimerDialog
 import cp.player.app.ui.component.VipActivationDialog
 import cp.player.core.license.VipLicenseManager
 import cp.player.core.playback.AutoPlayCustomType
@@ -72,7 +69,6 @@ class PlaybackSettingsScreen(
         // 因为 SettingsStorage 是全量文件回写，拖一次就写一次盘会很浪费）。
         val fadePersisted by AppModel.fadeFlow.collectAsState()
         var fadeDraft by remember { mutableStateOf(fadePersisted) }
-        var showSleepTimer by remember { mutableStateOf(false) }
         var showAutoPlayTargetDialog by remember { mutableStateOf(false) }
         var showPlaylistPicker by remember { mutableStateOf(false) }
 
@@ -157,33 +153,6 @@ class PlaybackSettingsScreen(
                     )
                 }
 
-                // 1.5 播放速度（ExoPlayer 式能力位：不支持的引擎上整块隐藏）
-                //
-                // 能力位来自平台播放器而不是写死"桌面才显示"：将来 Android 补齐
-                // Media3 的 PlaybackParameters，只要那边把 supportsPlaybackSpeed 打开，
-                // 这个控件就会自动出现，不需要再改设置页。
-                if (AppModel.playback.supportsPlaybackSpeed) {
-                    SettingsSection("播放速度") {
-                        val speedValues = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
-                        val speedLabels = speedValues.map { "${it}×" }
-                        val selectedSpeed = speedValues
-                            .indexOfFirst { kotlin.math.abs(it - playbackState.playbackSpeed) < 0.01f }
-                            .coerceAtLeast(0)
-                        SettingsDropdownItem(
-                            title = "播放速度",
-                            modifier = Modifier.settingsSearchTarget("playback_speed", targetSettingId),
-                            subtitle = "由音频引擎变速，不改变音调",
-                            options = speedLabels,
-                            selectedIndex = selectedSpeed,
-                            onSelect = { index ->
-                                speedValues.getOrNull(index)?.let(AppModel.playback::setPlaybackSpeed)
-                            },
-                            index = 0,
-                            total = 1,
-                        )
-                    }
-                }
-
                 // 2. 音频输出内核 / 输出模式
                 //
                 // ⚠️ 两端的「选择」不是同一件事，文案必须分开写（详见 AudioEngineSettingsScreen 的对照表）：
@@ -191,32 +160,34 @@ class PlaybackSettingsScreen(
                 // - 桌面：共享（默认）↔ WASAPI 独占（VIP），换的是**同一内核的输出模式**。
                 //   这里曾写成「系统标准引擎 / FlickEngine 发烧引擎」—— 桌面端根本没有第二个
                 //   引擎，用户以为关掉就能回系统播放器，实际关掉的只是独占。
-                SettingsSection(if (isAndroid) "播放内核" else "音频输出模式") {
+                SettingsSection(
+                    if (isAndroid) s.playback.sectionAudioEngineAndroid else s.playback.sectionAudioOutputDesktop,
+                ) {
                     val engineOptions = if (isAndroid) {
-                        listOf("系统 Media3（默认）", "FlickEngine（VIP）")
+                        listOf(s.playback.engineMedia3, s.playback.engineFlick)
                     } else {
-                        listOf("共享（默认）", "独占（VIP）")
+                        listOf(s.playback.outputShared, s.playback.outputExclusive)
                     }
                     val selectedKernel = if (isAndroid) {
                         if (audioEngine == PlaybackSessionSettings.ENGINE_FLICK_HIRES) 1 else 0
                     } else {
                         if (exclusiveActive) 1 else 0
                     }
-                    val kernelTotal = 4
+                    val kernelTotal = 3
                     SettingsSegmentedItem(
-                        title = if (isAndroid) "当前生效内核" else "WASAPI 输出模式",
+                        title = if (isAndroid) s.playback.activeKernel else s.playback.wasapiMode,
                         modifier = Modifier.settingsSearchTarget("playback_audio_engine", targetSettingId),
                         subtitle = when {
                             isAndroid && audioEngine == PlaybackSessionSettings.ENGINE_FLICK_HIRES && !vipInfo.isActivated ->
-                                "卡密未激活：已自动回落到系统内核"
+                                s.playback.kernelVipInactive
                             isAndroid && flickEngineActive ->
-                                "FlickEngine 低延迟直通 · 下次起播生效"
+                                s.playback.kernelFlickActive
                             isAndroid ->
-                                "系统 Media3：兼容与耗电更稳，发烧特性不可用"
+                                s.playback.kernelMedia3
                             exclusiveActive ->
-                                "已接管声卡：播放期间其它应用静音"
+                                s.playback.kernelExclusiveActive
                             else ->
-                                "共享声卡：可与其它应用同时出声"
+                                s.playback.kernelShared
                         },
                         options = engineOptions,
                         selectedIndex = selectedKernel,
@@ -251,61 +222,42 @@ class PlaybackSettingsScreen(
                         total = kernelTotal,
                     )
                     SettingsClickItem(
-                        title = if (isAndroid) "Oboe 直通、USB DAC 与 DSD" else "独占、Bit-Perfect 与 DSD",
+                        title = if (isAndroid) {
+                            s.playback.engineDetailAndroid
+                        } else {
+                            s.playback.engineDetailDesktop
+                        },
                         modifier = Modifier.settingsSearchTarget("playback_wasapi_exclusive", targetSettingId),
                         subtitle = if (isAndroid) {
-                            "Oboe 低延迟直通 · UAC 2.0 USB DAC 源码输出 · DSD64/128 软解"
+                            s.playback.engineDetailAndroidNote
                         } else if (!isWindowsDesktop) {
-                            "当前平台没有 WASAPI 独占通道，仅提供共享输出"
+                            s.playback.engineDetailDesktopUnsupportedNote
                         } else {
-                            "WASAPI 独占 · Bit-Perfect 采样率自适应 · DSD64/128 软解"
+                            s.playback.engineDetailDesktopNote
                         },
                         index = 1,
                         total = kernelTotal,
                         onClick = { navigator.push(AudioEngineSettingsScreen()) },
                         trailingContent = {
                             SettingsBadge(
-                                text = "特性说明",
+                                text = s.playback.featureDetails,
                                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                             )
                         },
                     )
                     SettingsClickItem(
-                        title = "发烧特权授权管理",
-                        subtitle = if (vipInfo.isActivated) {
-                            // 没有卡密时不补括号（否则会拼出「… (永久授权) (永久授权)」）
-                            val key = vipInfo.licenseKey?.takeIf { it.isNotBlank() }
-                            if (key != null) "已激活：${vipInfo.planName} ($key)" else "已激活：${vipInfo.planName}"
-                        } else {
-                            "未激活，点击输入卡密解锁 FlickEngine 与独占直通"
-                        },
-                        index = 2,
-                        total = kernelTotal,
-                        onClick = {
-                            afterVipAction = null
-                            showVipDialog = true
-                        },
-                        trailingContent = {
-                            CpText(
-                                text = if (vipInfo.isActivated) "更换卡密" else "激活特权",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        },
-                    )
-                    SettingsClickItem(
-                        title = "DSP 音效与调音台",
+                        title = s.playback.dspSection,
                         // ⚠️ 不要写成「空间环绕」：引擎的 FX 只有「拉宽侧声道」（set_fx 的 width），
                         // 不是真正的环绕声。见 docs/dev/FLICK_ENGINE.md §2 能力矩阵。
-                        subtitle = "5 段参数均衡器 (PEQ)、风格预设、声道平衡与立体声宽度",
+                        subtitle = s.playback.dspNote,
                         icon = Icons.Filled.Equalizer,
-                        index = 3,
+                        index = 2,
                         total = kernelTotal,
                         onClick = { navigator.push(AudioEffectSettingsScreen()) },
                         trailingContent = {
                             CpText(
-                                text = "调音台",
+                                text = s.playback.mixer,
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary,
                             )
@@ -316,31 +268,32 @@ class PlaybackSettingsScreen(
                 // 3. 播放控制与过渡
                 SettingsSection(s.playback.sectionFade) {
                     fun commitFade(next: cp.player.core.playback.FadeConfig) {
+                        // 单一开关必须两段同时生效：旧版允许只开一半，
+                        // 这里顺手规整，避免“开关开着却只淡出”。
+                        val half = next.fadeIn != next.fadeOut
+                        val both = next.fadeIn || next.fadeOut
                         val normalized = next.copy(
-                            enabled = next.fadeIn || next.fadeOut,
+                            fadeIn = if (half) both else next.fadeIn,
+                            fadeOut = if (half) both else next.fadeOut,
+                            enabled = both,
                         )
                         fadeDraft = normalized
                         AppModel.setFade(normalized)
                     }
                     SettingsSwitchItem(
-                        title = s.playback.fadeIn,
+                        title = s.playback.fadeToggle,
                         modifier = Modifier.settingsSearchTarget("playback_crossfade", targetSettingId),
-                        subtitle = s.playback.fadeInNote,
-                        checked = fadeDraft.fadeIn,
-                        onCheckedChange = { commitFade(fadeDraft.copy(fadeIn = it)) },
+                        subtitle = s.playback.fadeNote,
+                        checked = fadeDraft.enabled,
+                        onCheckedChange = { enabled ->
+                            commitFade(fadeDraft.copy(fadeIn = enabled, fadeOut = enabled))
+                        },
                         index = 0,
-                        total = 3,
-                    )
-                    SettingsSwitchItem(
-                        title = s.playback.fadeOut,
-                        subtitle = s.playback.fadeOutNote,
-                        checked = fadeDraft.fadeOut,
-                        onCheckedChange = { commitFade(fadeDraft.copy(fadeOut = it)) },
-                        index = 1,
-                        total = 3,
+                        total = 2,
                     )
                     SettingsSliderItem(
                         title = s.playback.fadeDuration,
+                        subtitle = s.playback.fadeDurationNote,
                         value = fadeDraft.durationMs.toFloat(),
                         valueLabel = fadeDurationLabel(s, fadeDraft.durationMs),
                         valueRange = cp.player.core.playback.FadeConfig.MIN_DURATION_MS.toFloat()..
@@ -353,8 +306,8 @@ class PlaybackSettingsScreen(
                         enabled = fadeDraft.enabled,
                         onValueChange = { fadeDraft = fadeDraft.copy(durationMs = it.toInt()) },
                         onValueChangeFinished = { commitFade(fadeDraft) },
-                        index = 2,
-                        total = 3,
+                        index = 1,
+                        total = 2,
                     )
                 }
 
@@ -372,26 +325,6 @@ class PlaybackSettingsScreen(
                         },
                         index = 0,
                         total = 1,
-                    )
-                }
-
-                // 4. 定时与自动化
-                SettingsSection(s.playback.sectionSleepTimer) {
-                    SettingsClickItem(
-                        title = s.playback.sleepTimer,
-                        modifier = Modifier.settingsSearchTarget("playback_sleep_timer", targetSettingId),
-                        subtitle = when {
-                            playbackState.sleepAfterTrack -> s.playback.sleepAfterTrack
-                            playbackState.sleepTimerRemainingMs != null ->
-                                s.playback.sleepRemaining(
-                                    (playbackState.sleepTimerRemainingMs!! / 60_000L) + 1,
-                                )
-                            else -> s.playback.sleepOff
-                        },
-                        icon = Icons.Filled.Bedtime,
-                        index = 0,
-                        total = 1,
-                        onClick = { showSleepTimer = true },
                     )
                 }
 
@@ -447,61 +380,13 @@ class PlaybackSettingsScreen(
                             onClick = { showAutoPlayTargetDialog = true },
                             trailingContent = {
                                 CpText(
-                                    text = if (autoPlayCustomId.isNotBlank()) "修改" else "设置",
+                                    text = if (autoPlayCustomId.isNotBlank()) s.playback.edit else s.playback.set,
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                             },
                         )
                     }
-                }
-
-                // 5. 歌词呈现与解析
-                SettingsSection(s.playback.sectionLyrics) {
-                    val showMiniPlayerLyrics by AppModel.showMiniPlayerLyricsFlow.collectAsState()
-                    val showRuby by AppModel.showRubyLyricsFlow.collectAsState()
-                    val wordSeg by AppModel.lyricsWordSegmentationFlow.collectAsState()
-                    val smartKaraoke by AppModel.smartKaraokeLrcFlow.collectAsState()
-                    SettingsSwitchItem(
-                        title = s.playback.showMiniPlayerLyrics,
-                        subtitle = s.playback.showMiniPlayerLyricsSubtitle,
-                        checked = showMiniPlayerLyrics,
-                        onCheckedChange = { AppModel.setShowMiniPlayerLyrics(it) },
-                        index = 0,
-                        total = 5,
-                    )
-                    SettingsSwitchItem(
-                        title = s.playback.showRubyLyrics,
-                        subtitle = s.playback.showRubyLyricsSubtitle,
-                        checked = showRuby,
-                        onCheckedChange = { AppModel.setShowRubyLyrics(it) },
-                        index = 1,
-                        total = 5,
-                    )
-                    SettingsSwitchItem(
-                        title = s.playback.lyricsWordSegmentation,
-                        subtitle = s.playback.lyricsWordSegmentationSubtitle,
-                        checked = wordSeg,
-                        onCheckedChange = { AppModel.setLyricsWordSegmentation(it) },
-                        index = 2,
-                        total = 5,
-                    )
-                    SettingsSwitchItem(
-                        title = s.playback.smartKaraokeLrc,
-                        subtitle = s.playback.smartKaraokeLrcSubtitle,
-                        checked = smartKaraoke,
-                        onCheckedChange = { AppModel.setSmartKaraokeLrc(it) },
-                        index = 3,
-                        total = 5,
-                    )
-                    SettingsClickItem(
-                        title = s.playback.lyricsSource,
-                        subtitle = s.playback.lyricsSourceNote,
-                        icon = Icons.Filled.ClosedCaption,
-                        index = 4,
-                        total = 5,
-                        onClick = { navigator.push(LyricsPluginSettingsScreen()) },
-                    )
                 }
 
                 // 6. 社交互动与系统协作
@@ -545,18 +430,7 @@ class PlaybackSettingsScreen(
                     }
                     SettingsNote(s.playback.vendorNote)
                 }
-                SettingsNote(s.playback.sharedTimerNote)
             }
-        }
-
-        if (showSleepTimer) {
-            SleepTimerDialog(
-                activeRemainingMs = playbackState.sleepTimerRemainingMs,
-                afterTrackActive = playbackState.sleepAfterTrack,
-                onSelect = AppModel.playback::setSleepTimer,
-                onCancelTimer = AppModel.playback::cancelSleepTimer,
-                onDismiss = { showSleepTimer = false },
-            )
         }
 
         if (showAutoPlayTargetDialog) {

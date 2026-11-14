@@ -20,7 +20,6 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.runtime.Composable
@@ -31,7 +30,6 @@ import cp.player.app.i18n.displayNote
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -51,7 +49,6 @@ import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSegmentedItem
-import cp.player.app.ui.component.SettingsSliderItem
 import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.settingsSearchTarget
 import cp.player.app.ui.model.SONG_CACHE_CAPACITY_OPTIONS
@@ -66,7 +63,6 @@ import cp.player.app.ui.theme.displayName
 import cp.player.app.ui.theme.isPlatformColorSourceAvailable
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.popOrNotify
-import kotlin.math.roundToInt
 
 /**
  * 外观与主题设置页面（设计贴合 Android 16 现代原生风格）。
@@ -94,16 +90,11 @@ class AppearanceSettingsScreen(
         val defaultRoundness = cp.player.app.platform.defaultFontRoundness()
         val isDark = LocalIsDarkTheme.current
 
-        // 拖动中的临时值：松手前只改显示，不写盘
-        var draggingRoundness by remember { mutableIntStateOf(-1) }
-        val displayedRoundness = if (draggingRoundness >= 0) draggingRoundness
-        else fontRoundness ?: defaultRoundness
+        val displayedRoundness = fontRoundness ?: defaultRoundness
 
         val themeSummary = remember(themeMode, pureBlack, colorSource, s) {
             val modeStr = themeMode.displayName(s)
-            val pureBlackStr = if (pureBlack) " · 纯黑已开启" else ""
-            val colorStr = " · " + colorSource.displayName(s)
-            "$modeStr$pureBlackStr$colorStr"
+            s.appearance.themeSummary(modeStr, colorSource.displayName(s), pureBlack)
         }
 
         val availableSources = remember(platformAvailable) {
@@ -168,7 +159,7 @@ class AppearanceSettingsScreen(
                 }
 
                 // 3. 界面与交互动效
-                SettingsSection("界面动效与视觉表现") {
+                SettingsSection(s.appearance.sectionMotion) {
                     SettingsSwitchItem(
                         title = s.appearance.coverFlight,
                         modifier = Modifier.settingsSearchTarget("appearance_cover_flight", targetSettingId),
@@ -212,7 +203,7 @@ class AppearanceSettingsScreen(
                 }
 
                 // 3. 内容与列表呈现
-                SettingsSection("内容与列表呈现") {
+                SettingsSection(s.appearance.sectionContent) {
                     SettingsSwitchItem(
                         title = s.appearance.showSongAlbum,
                         modifier = Modifier.settingsSearchTarget("appearance_show_song_album", targetSettingId),
@@ -226,85 +217,62 @@ class AppearanceSettingsScreen(
 
                 // 4. 手机端播放界面与布局
                 val mobilePlayerConfig by AppModel.mobilePlayerCustomConfigFlow.collectAsState()
-                // 标准播放器（enabled = true）只在外观页保留样式切换；播放偏好入口
-                // 仅在三段式播放器下展示，避免标准模式下出现无处生效的定制项。
-                val showMobilePlayerPreferences = !mobilePlayerConfig.enabled
-                val mobilePlayerSectionTotal = if (showMobilePlayerPreferences) 2 else 1
-
-                SettingsSection("手机端播放界面与布局") {
+                SettingsSection(s.appearance.sectionMobile) {
                     SettingsSegmentedItem(
-                        title = "播放器样式",
+                        title = s.appearance.playerStyle,
                         modifier = Modifier.settingsSearchTarget("appearance_modern_mobile_player", targetSettingId),
-                        subtitle = "选择封面、歌词与播放控制的排布方式",
-                        options = listOf("三段式播放器", "标准播放器"),
+                        subtitle = s.appearance.playerStyleNote,
+                        options = listOf(
+                            s.appearance.playerStyleThreePane,
+                            s.appearance.playerStyleStandard,
+                        ),
                         // 三段式 = 经典多页横滑；标准 = 默认单页整合布局（enabled = true）。
                         selectedIndex = if (mobilePlayerConfig.enabled) 1 else 0,
                         onSelect = { index -> AppModel.setModernMobilePlayerEnabled(index == 1) },
                         index = 0,
-                        total = mobilePlayerSectionTotal,
+                        total = 2,
                     )
-                    if (showMobilePlayerPreferences) {
-                        SettingsClickItem(
-                            title = "手机播放偏好",
-                            subtitle = "切歌手势 · 歌词 ${mobilePlayerConfig.lyricsFontSizeSp}sp · 翻译",
-                            icon = Icons.Filled.Tune,
-                            showChevron = true,
-                            index = 1,
-                            total = mobilePlayerSectionTotal,
-                            modifier = Modifier.settingsSearchTarget("appearance_mobile_player_layout", targetSettingId),
-                            onClick = { navigator.push(MobilePlayerSettingsScreen()) },
-                        )
-                    }
+                    SettingsClickItem(
+                        title = s.appearance.mobilePreferences,
+                        subtitle = s.appearance.mobilePreferencesNote,
+                        icon = Icons.Filled.Tune,
+                        showChevron = true,
+                        index = 1,
+                        total = 2,
+                        modifier = Modifier.settingsSearchTarget("appearance_mobile_player_layout", targetSettingId),
+                        onClick = { navigator.push(MobilePlayerSettingsScreen()) },
+                    )
                 }
 
                 // 4. 字体排版与几何形态
                 SettingsSection(s.appearance.sectionFont) {
-                    SettingsSliderItem(
+                    SettingsSegmentedItem(
                         title = s.appearance.fontRoundness,
                         modifier = Modifier.settingsSearchTarget("appearance_font_roundness", targetSettingId),
-                        subtitle = s.appearance.fontRoundnessNote(defaultRoundness),
-                        value = displayedRoundness.toFloat(),
-                        onValueChange = { draggingRoundness = it.toInt() },
-                        valueRange = 0f..100f,
-                        steps = 19,
-                        onValueChangeFinished = {
-                            AppModel.setFontRoundness(displayedRoundness)
-                            draggingRoundness = -1
+                        options = listOf(
+                            s.appearance.fontRoundnessRounded,
+                            s.appearance.fontRoundnessSquare,
+                        ),
+                        selectedIndex = if (displayedRoundness >= 50) 0 else 1,
+                        onSelect = { index ->
+                            AppModel.setFontRoundness(if (index == 0) 100 else 0)
                         },
-                        valueLabel = displayedRoundness.toString() +
-                            if (fontRoundness == null && displayedRoundness == defaultRoundness) {
-                                s.appearance.roundnessDefaultTag
-                            } else {
-                                ""
-                            },
                         enabled = googleSansEnabled,
                         index = 0,
-                        total = if (fontRoundness != null) 2 else 1,
+                        total = 1,
                     )
-                    if (fontRoundness != null) {
-                        SettingsButtonItem(
-                            text = s.appearance.resetPlatformDefault,
-                            subtitle = s.appearance.resetPlatformDefaultNote,
-                            icon = Icons.Filled.RestartAlt,
-                            enabled = googleSansEnabled,
-                            index = 1,
-                            total = 2,
-                            onClick = { AppModel.setFontRoundness(null) },
-                        )
-                    }
                 }
-                SettingsNote(s.appearance.roundnessNote)
                 FontPacksSection(targetSettingId = targetSettingId)
 
                 if (!cp.player.app.platform.isAndroidPlatform() && cp.player.app.version.AppVersion.isDesktopRunOrDebug) {
-                    SettingsSection("布局与视图预览") {
+                    SettingsSection(s.appearance.sectionPreview) {
                         SettingsSwitchItem(
-                            title = "手机版界面预览 (412×892)",
+                            title = s.appearance.mobilePreview,
                             modifier = Modifier.settingsSearchTarget("appearance_mobile_preview", targetSettingId),
                             subtitle = if (cp.player.app.ui.util.DesktopShell.isMobileMode) {
-                                "当前为手机版紧凑视图，点击恢复桌面端大窗口"
+                                s.appearance.mobilePreviewOn
                             } else {
-                                "切换为 412×892 紧凑手机版布局、底部导航栏与手机顶栏"
+                                s.appearance.mobilePreviewOff
                             },
                             icon = Icons.Filled.PhoneAndroid,
                             checked = cp.player.app.ui.util.DesktopShell.isMobileMode,
@@ -494,7 +462,7 @@ private fun StorageSettingsContent(
                         subtitle = if (isCustomSongCacheCapacity(state.songCacheCapacityBytes)) {
                             s.storage.customCapacitySubtitle(formatBytes(state.songCacheCapacityBytes))
                         } else {
-                            "当前上限: ${formatBytes(state.songCacheCapacityBytes)}，点击可自定义任意大小"
+                            s.storage.customCapacityCurrent(formatBytes(state.songCacheCapacityBytes))
                         },
                         index = rowIndex++,
                         total = songCacheRows,
@@ -610,6 +578,9 @@ private fun StorageSettingsContent(
                 CpText(
                     s.storage.migrateCacheDirConfirmMessage(targetPath),
                     style = MaterialTheme.typography.bodyMedium,
+                    // 文案第二行才是**目标路径**：默认 maxLines = 1 时用户根本看不到
+                    // 自己要迁去哪儿，只能盲点确认。
+                    maxLines = Int.MAX_VALUE,
                 )
             },
             confirmButton = {
@@ -620,7 +591,7 @@ private fun StorageSettingsContent(
                         pendingMigratePath = null
                     },
                 ) {
-                    CpText("确定迁移")
+                    CpText(s.storage.confirmMigrate)
                 }
             },
             dismissButton = {
@@ -628,7 +599,7 @@ private fun StorageSettingsContent(
                     shape = MaterialTheme.shapes.large,
                     onClick = { pendingMigratePath = null },
                 ) {
-                    CpText("取消")
+                    CpText(s.common.dismiss)
                 }
             },
         )

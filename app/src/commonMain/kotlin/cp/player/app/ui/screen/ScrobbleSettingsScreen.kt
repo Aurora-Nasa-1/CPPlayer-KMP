@@ -163,7 +163,7 @@ class ScrobbleSettingsScreen : Screen {
                                                     }
                                                     .onFailure { err ->
                                                         val msg = err.message ?: strings.lastFmAuthFailToast
-                                                        UiEvents.notify("发起授权失败: $msg")
+                                                        UiEvents.notify(strings.lastFmAuthStartFailed(msg))
                                                     }
                                                 isAuthorizing = false
                                             }
@@ -193,8 +193,8 @@ class ScrobbleSettingsScreen : Screen {
 
                     // 预留更多平台扩展卡片
                     SettingsClickItem(
-                        title = "ListenBrainz / Libre.fm",
-                        subtitle = "即将支持更多开放打卡与自由音乐档案服务",
+                        title = strings.morePlatformsTitle,
+                        subtitle = strings.morePlatformsNote,
                         index = 0,
                         total = 1,
                         onClick = {},
@@ -273,7 +273,7 @@ class ScrobbleSettingsScreen : Screen {
                                         FilledTonalButton(
                                             onClick = {
                                                 hub.flushPendingQueue()
-                                                UiEvents.notify("已开始同步离线打卡队列")
+                                                UiEvents.notify(strings.flushQueueStarted)
                                             },
                                         ) {
                                             Icon(
@@ -357,7 +357,8 @@ class ScrobbleSettingsScreen : Screen {
             AlertDialog(
                 onDismissRequest = { authPendingToken = null },
                 title = { CpText(strings.lastFmAuthDialogTitle) },
-                text = { CpText(strings.lastFmAuthDialogMessage) },
+                // 授权步骤是三句话的操作指引，默认单行只会留下第一句。
+                text = { CpText(strings.lastFmAuthDialogMessage, maxLines = Int.MAX_VALUE) },
                 confirmButton = {
                     Button(
                         onClick = {
@@ -369,7 +370,7 @@ class ScrobbleSettingsScreen : Screen {
                                     }
                                     .onFailure { err ->
                                         val msg = err.message ?: strings.lastFmAuthFailToast
-                                        UiEvents.notify("授权未完成: $msg")
+                                        UiEvents.notify(strings.lastFmAuthIncomplete(msg))
                                     }
                             }
                         },

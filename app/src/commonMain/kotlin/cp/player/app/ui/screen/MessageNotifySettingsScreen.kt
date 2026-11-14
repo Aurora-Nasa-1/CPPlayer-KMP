@@ -52,7 +52,8 @@ class MessageNotifySettingsScreen : Screen {
         val navigator = LocalNavigator.currentOrThrow
         val model = rememberScreenModel { MessageNotifySettingsModel() }
         val state by model.state.collectAsState()
-        val strings = cpStrings().messageNotify
+        val allStrings = cpStrings()
+        val strings = allStrings.messageNotify
 
         LaunchedEffect(Unit) { model.load() }
 
@@ -94,7 +95,7 @@ class MessageNotifySettingsScreen : Screen {
                         } else {
                             followed.forEachIndexed { index, contact ->
                                 SettingsSwitchItem(
-                                    title = contact.nickname.ifBlank { "未知用户" },
+                                    title = contact.nickname.ifBlank { allStrings.account.unknownUser },
                                     subtitle = contact.lastMessage,
                                     checked = true,
                                     onCheckedChange = { on -> model.setSubscribed(contact.userId, on) },
