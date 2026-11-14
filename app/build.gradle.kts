@@ -815,11 +815,17 @@ nucleus {
             )
             if (pgoInstrumenting) {
                 // 实测 Oracle GraalVM 在 --pgo-instrument 下强制使用 level 2 优化（218k 方法），
-                // 忽略 -Ob 降级；4 线程并发编译会撑爆 8g~10g 堆内存。
-                // 限制并发编译线程为 2 显著降低 IR 图内存峰值，搭配 10g 堆余量确保在 CI 与本地稳定通过。
+                // 忽略 -Ob 降级；若无包前缀限制则全量插桩 JDK/第三方全部 218k 方法，极度消耗内存与编译时间。
+                // 1. 限制只对应用业务、UI 渲染与核心协程进行插桩剖析；
+                // 2. 限制并发编译线程为 2，搭配 ParallelGC 降低 IR 图与 GC 开销；
+                // 3. 关闭看门狗超时中断，防止低配 CI 机器在元数据编码期被误杀。
                 buildArgs.addAll(
                     "-J-Xmx10g",
+                    "-J-XX:+UseParallelGC",
                     "-H:NumberOfThreads=2",
+                    "-H:DeadlockWatchdogInterval=0",
+                    "-H:-DeadlockWatchdogExitOnTimeout",
+                    "-H:ProfilingPackagePrefixes=cp.player,dev.nucleusframework,androidx.compose,org.jetbrains.skia,org.jetbrains.skiko,kotlinx.coroutines",
                 )
             }
         }

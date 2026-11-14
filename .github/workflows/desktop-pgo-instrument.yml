@@ -24,6 +24,13 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Configure Windows Pagefile (24 GB on D:)
+        uses: al-cheb/configure-pagefile-action@v1.5
+        with:
+          minimum-size: 16GB
+          maximum-size: 24GB
+          disk-root: "D:"
+
       - uses: actions/setup-java@v4
         with:
           distribution: zulu
