@@ -1,0 +1,17 @@
+{
+  "name": "cp-player-docs",
+  "private": true,
+  "type": "module",
+  "description": "CPPlayer 文档站（VitePress）",
+  "scripts": {
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview",
+    "check": "node ../scripts/check-docs-links.mjs"
+  },
+  "devDependencies": {
+    "pagefind": "^1.6.0",
+    "vitepress": "^1.6.4",
+    "vitepress-plugin-pagefind": "^0.4.27"
+  }
+}

@@ -11,8 +11,8 @@ const kotlin = [
   "provider-sdk-kmp/src/commonMain/kotlin/cp/player/sdk/ExtendedOperations.generated.kt",
 ].map(read).join("\n");
 const ts = read("provider-sdk-kmp/js/types.generated.ts");
-const operationTable = read("docs/dev/SDK_OPERATIONS.md");
-const typeTable = read("docs/dev/SDK_TYPES.md");
+const operationTable = read("docs/dev/providers/SDK_OPERATIONS.md");
+const typeTable = read("docs/dev/providers/SDK_TYPES.md");
 
 test("every business method has the same signature and semantic documentation in Kotlin TS and reference", () => {
   const business = Object.entries(schema.operations).filter(([, op]) => op.capability);
@@ -57,17 +57,24 @@ test("documented queue auth and selector literals match host validation and SDK 
     assert.ok(validation.includes(`"${value}"`));
     assert.ok(fieldOverrides["ListenCommand.action"].includes(value));
   }
-  const workflows = read("docs/dev/PROVIDER_WORKFLOWS.md");
+  const workflows = read("docs/dev/providers/WORKFLOWS.md");
   const authActions = [...provider.matchAll(/const val \w+ = "((?:qr|login|captcha|webview|verify)\.[^"]+|logout)"/g)];
   assert.equal(authActions.length, 13);
   for (const [, action] of authActions) assert.ok(workflows.includes(`\`${action}\``), action);
 });
 
-test("provider documentation links resolve to local reference and declaration files", () => {
+test("documentation links resolve to local files and type anchors", () => {
   for (const path of [
-    "docs/dev/PROVIDER_DEV_GUIDE.md", "docs/dev/JS_PROVIDER_DEV_GUIDE.md",
-    "docs/dev/QUICK_PROVIDER_DEV_GUIDE.md", "docs/dev/MANIFEST_REFERENCE.md",
-    "docs/dev/PROVIDER_WORKFLOWS.md", "docs/dev/SDK_OPERATIONS.md",
+    "README.md", "CONTRIBUTING.md", "AGENTS.md",
+    "docs/index.md", "docs/USER_GUIDE.md",
+    "docs/dev/ARCHITECTURE.md", "docs/dev/BUILD.md", "docs/dev/RELEASE.md",
+    "docs/dev/INTEGRATION_API.md", "docs/dev/FLICK_ENGINE.md",
+    "docs/dev/FONTS.md", "docs/dev/I18N.md",
+    "docs/dev/providers/index.md", "docs/dev/providers/QUICKSTART.md",
+    "docs/dev/providers/GUIDE.md", "docs/dev/providers/MANIFEST.md",
+    "docs/dev/providers/NATIVE.md", "docs/dev/providers/JS.md",
+    "docs/dev/providers/WORKFLOWS.md", "docs/dev/providers/SDK_OPERATIONS.md",
+    "docs/dev/lyrics/LYRICS_PLUGIN.md", "docs/history/index.md",
     "provider-contract/README.md", "provider-sdk-kmp/README.md",
   ]) {
     const base = new URL(`../${path}`, import.meta.url);

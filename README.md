@@ -1,121 +1,114 @@
 # CPPlayer
 
-> 现代化跨平台音乐播放器（Kotlin Multiplatform）。Android 与 Desktop（Windows / macOS / Linux）共用同一套播放内核、音源插件系统与 Compose Multiplatform 界面。
+> 跨平台音乐播放器（Kotlin Multiplatform）。Android 与 Desktop（Windows / macOS / Linux）共用一套播放内核、音源插件系统与 Compose Multiplatform 界面。
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.21-purple.svg)](https://kotlinlang.org)
 [![Compose Multiplatform](https://img.shields.io/badge/Compose%20Multiplatform-1.12.2-blue.svg)](https://www.jetbrains.com/lp/compose-multiplatform/)
-[![Sponsor](https://img.shields.io/badge/Sponsor-%E8%B5%9E%E5%8A%A9%E6%94%AF%E6%8C%81-ff69b4.svg)](#-赞助与支持-sponsor--support)
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E8%B5%9E%E5%8A%A9%E6%94%AF%E6%8C%81-ff69b4.svg)](#赞助与支持)
 
----
+## 为什么存在
 
-## 📌 文档入口
+在线曲库的接口一直在变，播放器内核却应该稳定。CPPlayer 把两者切开：播放、缓存、歌词、局域网同步属于内核；内容接入属于插件。
 
-Provider 唯一开发入口：[KMP SDK 快速上手](docs/dev/QUICK_PROVIDER_DEV_GUIDE.md)。
-生产链路为统一数据层 → 账号会话 → KMP SDK → 适配器；Legacy v1 / Standard v3 已退役，
-旧包不再加载。当前范围与尚未接入的能力见 [架构](docs/dev/ARCHITECTURE.md)。
+| 结果 | 做法 |
+|---|---|
+| 换音源不改播放器 | 音源实现强类型业务契约，宿主负责会话与调度 |
+| 换音源不丢数据 | 会话按音源 / 账号 / 凭证版本 / 设置隔离 |
+| 三端一致 | Compose Multiplatform 共享 UI，播放内核共用 |
 
-- 📖 **用户手册**：[用户使用指南 (USER_GUIDE.md)](docs/USER_GUIDE.md)（安装、音源导入、账号登录、推送、常见问题）
-- 🔌 **插件开发**：[SDK 快速上手](docs/dev/QUICK_PROVIDER_DEV_GUIDE.md) · [业务契约与生命周期](docs/dev/PROVIDER_DEV_GUIDE.md) · [Manifest](docs/dev/MANIFEST_REFERENCE.md)
-- 🛠️ **开发者文档**：[开发者文档总索引](docs/README.md)（架构、集成契约、各平台打包）
+播放器本身不含受版权保护的在线音源，内容全部由插件提供。
 
----
+## 特性
 
-## 🌟 核心特性
+| 能力 | 说明 |
+|---|---|
+| 跨平台一致体验 | Compose Multiplatform；桌面原生窗口手势吸附，移动端沉浸式布局 |
+| KMP Provider SDK | 实现 `search`、`get`、`resolve` 即可接入；批量详情有保序默认实现 |
+| 三类宿主共用契约 | Kotlin、JavaScript、JNI / C ABI 适配器使用同一组类型化业务操作 |
+| 声明式设置 | 音源在 `manifest.json` 声明字段，客户端渲染 Material 3 设置面板 |
+| 账号隔离 | 切换账号取消旧请求；媒体流只转发显式声明的请求头 |
+| 契约规模 | 161 个 typed 业务操作，覆盖登录、目录读写、多类型搜索、评论 / 私信 / 通知、一起听、MV / 视频、DJ、日历 / 动态、账号绑定、排序 / 导入、分块上传 |
+| 歌词 | 内置 AMLL 与本地边车（`.lrc` / `.ttml`）；独立 Lyrico 歌词插件 |
+| 音频解码 | WASAPI Exclusive 硬件独占、DSD 解码、无损流落盘缓存 |
+| 音效 | 10 频段参数均衡器（PEQ）、声道平衡、响度归一化、防爆音削顶 |
+| 本地流输出 | Ktor CIO HTTP 流媒体服务，支持字节范围与断点续传；可推送到车载或游戏电台 |
+| 局域网同步 | 自动发现对等设备，转移播放进度并双向同步听歌记录 |
 
-- **纯正跨平台一致体验**：基于 Compose Multiplatform 打造，桌面端原生窗口手势吸附、移动端沉浸体验。
-- **KMP Provider SDK**：
-  - 极简契约：实现 `search`、`get`、`resolve`，批量详情有保序默认实现；无需端点映射、JSON 宿主封套或本地服务。
-  - Kotlin、JavaScript 与 JNI/Native 适配器共用同一组类型化业务操作；Provider 的上游 HTTP 通过会话 runtime 发起。
-  - 原生声明式设置：音源在 `manifest.json` 中声明配置字段，客户端自动渲染 Material 3 原生设置面板。
-  - 账号会话隔离，切换时取消旧请求；媒体流只转发显式请求头。
-  - 当前契约含 161 个 typed 业务操作，覆盖登录、目录读写、多类型搜索、评论/私信/通知、一起听、MV/视频、DJ、日历/动态、账号绑定、排序/导入及分块上传；具体音源按能力声明实现，未实现仍明确返回不支持。完整清单见 [SDK 操作表](docs/dev/SDK_OPERATIONS.md)，剩余工作见 [移植状态](docs/dev/SDK_MIGRATION_STATUS.md)。
-  - JavaScript 与 JNI/Native SDK 包均可直接导入或从仓库安装，无需宿主预先注册或信任授权。独立 [Lyrico 歌词插件](docs/dev/LYRICS_PLUGIN_DEV_GUIDE.md)、AMLL 与本地边车歌词照常使用。
-- **发烧级音频解码引擎**：
-  - 支持 WASAPI Exclusive 硬件独占直通推流、DSD 解码与无损流落盘缓存。
-  - 10 频段参数均衡器 (PEQ)、声道平衡、响度归一化与防爆音削顶。
-- **生态集成与本地流输出**：
-  - 内置基于 Ktor CIO 的本地 HTTP 流媒体服务（支持字节范围请求与断点续传）。
-  - 支持将正在播放的曲目与音频流推送到外部接收端（如游戏 Radio 或车载系统）。
-- **多端局域网同步**：
-  - 同一局域网内自动发现对等设备，一键转移播放进度并双向同步听歌记录。
+契约存在不等于某个音源已实现；具体音源按声明能力接入，未实现仍返回 `Unsupported`。
 
----
+## 架构
 
-## 🏗️ 架构与模块划分
-
-```
+```text
 app-android ──▶ app ──▶ core ──▶ provider-sdk-kmp
 ```
 
-| 模块 | 职责 | 说明 |
-|------|------|------|
-| `provider-sdk-kmp` | **Provider 强类型开发契约** | 独立 KMP SDK，业务方法、数据类型及受控宿主能力，不依赖 core/UI/具体 Provider |
-| `core` | **后端领域核心** | SDK 会话、统一数据层、播放内核、本地媒体库、下载与流输出；旧 JSON 页面输出投影已删除。**无任何 UI 代码** |
-| `app` | **前端跨平台共享** | Compose Multiplatform UI、Voyager 导航、ScreenModel、主题系统，以及桌面端入口 `Main.kt` |
-| `app-android` | **Android 平台入口** | 依 AGP 规范独立的应用模块：`MainActivity`、`Application`、Media3 `MediaSessionService` |
+| 模块 | 职责 | 边界 |
+|---|---|---|
+| `provider-sdk-kmp` | Provider 强类型契约、数据类型、受控 runtime | 不依赖 core、Compose、宿主数据库或具体音源 |
+| `core` | 会话、统一数据层、播放内核、本地库、下载、流输出 | 无 UI 代码 |
+| `app` | Compose UI、Voyager 导航、ScreenModel、主题、桌面入口 | 经 `MusicBackend` 访问后端 |
+| `app-android` | `MainActivity`、`Application`、Media3 `MediaSessionService` | 平台入口 |
 
-前端与后端的统一交互入口为 `cp.player.core.MusicBackend`。详细架构与依赖规则见 [`docs/dev/ARCHITECTURE.md`](docs/dev/ARCHITECTURE.md)。
+前后端唯一交互入口是 `cp.player.core.MusicBackend`。依赖规则与源集划分见 [ARCHITECTURE](docs/dev/ARCHITECTURE.md)。
 
----
+## 快速开始
 
-## 🚀 构建与运行
-
-### 环境要求
-- JDK 21+（推荐使用 JetBrains Runtime 21）
-- Android SDK (API 35+)
-
-### 常用命令
+前置：JDK 21+（推荐 JetBrains Runtime 21）、Android SDK（API 35+）。
 
 ```bash
-# 桌面端直接运行
-./gradlew :app:run
-
-# 编译后端
-./gradlew :core:compileKotlinDesktop
-./gradlew :core:compileAndroidMain
-
-# 运行单元测试
-./gradlew :core:desktopTest
-./gradlew :app:desktopTest
-
-# SDK 与统一数据链路定向回归（隔离构建，检查零跳过 XML）
-pwsh -File scripts/verify-provider-chain.ps1
-
-# 打包分发产物
-./gradlew :app:packageWindowsVelopack  # Windows 安装包 (Velopack)
-./gradlew :app-android:assembleDebug   # Android 安装包
+./gradlew :app:run                    # 桌面端运行
+./gradlew :core:compileKotlinDesktop  # 编译后端
+./gradlew :app-android:assembleDebug  # Android 包
 ```
 
-`scripts/verify-provider-chain.ps1` 是 Windows 专用验证脚本（内部调用 `gradlew.bat`）；macOS/Linux 不能运行该脚本。
+| 目标 | 命令 / 文档 |
+|---|---|
+| 完整构建、测试与验证 | [BUILD](docs/dev/BUILD.md) |
+| 打包与发布 | [RELEASE](docs/dev/RELEASE.md) |
+| 写一个音源 | [QUICKSTART](docs/dev/providers/QUICKSTART.md) |
+| 使用与设置 | [USER_GUIDE](docs/USER_GUIDE.md) |
 
-发布细节请参阅 [`docs/dev/RELEASE.md`](docs/dev/RELEASE.md)。
+`scripts/verify-provider-chain.ps1` 仅 Windows 可用（内部调用 `gradlew.bat`），判据是 JUnit XML 的失败 / 错误 / 跳过全为 0。
 
----
+## 文档
 
-## ☕ 赞助与支持 (Sponsor & Support)
+在线阅读：<https://aurora-nasa-1.github.io/CPPlayer-KMP/>
 
-如果 CPPlayer 为你带来了愉悦的音乐体验，或者对你的学习与日常使用有所帮助，欢迎请作者喝杯咖啡！你的每一份支持都是项目持续迭代与完善的巨大动力 ❤️
+| 入口 | 内容 |
+|---|---|
+| [docs/index.md](docs/index.md) | 全部文档索引与名词表 |
+| [用户指南](docs/USER_GUIDE.md) | 安装、导入音源、登录、播放、外部访问、FAQ |
+| [Provider 开发](docs/dev/providers/index.md) | 契约、清单、原生库、分域实现、生成参考 |
+| [架构](docs/dev/ARCHITECTURE.md) | 模块边界、数据链、源集 |
+| [对外集成 API](docs/dev/INTEGRATION_API.md) | 第三方控制播放器的 HTTP 契约 |
+| [贡献指南](CONTRIBUTING.md) | 构建、测试、提交与文档改动流程 |
 
-| 微信支付 (WeChat Pay) | 支付宝 (Alipay) |
+## 赞助与支持
+
+如果 CPPlayer 对你有帮助，欢迎请作者喝杯咖啡。
+
+| 微信支付 | 支付宝 |
 | :---: | :---: |
 | <img src="docs/assets/sponsor_wechat.png" width="260" alt="微信支付收款码" /> | <img src="docs/assets/sponsor_alipay.jpg" width="260" alt="支付宝收款码" /> |
-| **收款人：Aurora星空 (\*\*森)** | **收款人：Aurora星空 (\*\*森)** |
+| 收款人：Aurora星空 (\*\*森) | 收款人：Aurora星空 (\*\*森) |
 
-> 💡 **提示**：扫码赞助时欢迎备注您的 GitHub 账号或昵称。感谢每一位支持 CPPlayer 的伙伴！
+扫码时欢迎备注 GitHub 账号或昵称。
 
----
+## 致谢
 
-## 🤝 致谢与开源声明 (Acknowledgments)
+Hi-Res 音频内核（FlickEngine / WASAPI 独占直通 / DSD 解码）的设计与底层实现参考开源项目 [Flick](https://github.com/moss-apps/Flick)。
 
-本项目中的 **Hi-Res 音频内核**（FlickEngine / WASAPI 独占直通 / DSD 解码）设计思想与底层实现参考并来源于开源项目 **[Flick](https://github.com/moss-apps/Flick)**。
+| 对象 | 关系 |
+|---|---|
+| [moss-apps](https://github.com/moss-apps) | 跨平台音频解码管线与低延迟推流（MIT） |
+| [Rodio](https://github.com/RustAudio/rodio) | 音频输出 |
+| [Symphonia](https://github.com/pdeljanov/Symphonia) | 解码 |
+| [cpal](https://github.com/RustAudio/cpal) | 设备与独占模式 |
+| [Lyrico](https://github.com/Replica0110/Lyrico) | 歌词插件 API |
 
-- 核心归属与致谢：感谢 **[moss-apps](https://github.com/moss-apps)** 团队及社区在跨平台音频解码管线与低延迟推流领域的开源贡献（遵循 MIT 许可证）。
-- 开源生态鸣谢：[Rodio](https://github.com/RustAudio/rodio)、[Symphonia](https://github.com/pdeljanov/Symphonia)、[cpal](https://github.com/RustAudio/cpal)、[Lyrico](https://github.com/Replica0110/Lyrico) 等优秀开源项目。
-- 完整第三方许可证清单：详见 [NOTICE](NOTICE) 与 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。
+完整清单见 [NOTICE](NOTICE) 与 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。
 
----
+## 许可证
 
-## 📄 许可证 (License)
-
-CPPlayer-KMP 项目遵循 [Apache License 2.0](LICENSE) 开源协议。
+[Apache License 2.0](LICENSE)。

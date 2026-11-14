@@ -14,7 +14,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * C ABI（`cpp_*`）宿主侧回归 —— 规范见 `docs/dev/PROVIDER_NATIVE_ABI.md`。
+ * C ABI（`cpp_*`）宿主侧回归 —— 规范见 `docs/dev/providers/NATIVE.md`。
  *
  * 注意分工：生产路径里 [cAbiSessionFactory] 只在 **GraalVM Native Image** 构建被调用
  * （JVM / Android 一律走 JNI），所以这个用例是 FFM 层在 JVM 上的**唯一**覆盖 ——

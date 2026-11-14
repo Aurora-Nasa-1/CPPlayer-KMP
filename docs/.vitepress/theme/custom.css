@@ -1,0 +1,55 @@
+:root {
+  /* 品牌色取自应用图标：primary #4F55A5，secondary #006A68 */
+  --vp-c-brand-1: #4f55a5;
+  --vp-c-brand-2: #5c63b8;
+  --vp-c-brand-3: #6e75c8;
+  --vp-c-brand-soft: rgba(79, 85, 165, 0.14);
+
+  --vp-font-family-base: "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    "Noto Sans Han Sans SC", "Source Han Sans SC", system-ui, -apple-system, sans-serif;
+  --vp-font-family-mono: "JetBrains Mono", "Cascadia Code", "SFMono-Regular", Consolas,
+    "Liberation Mono", monospace;
+
+  --vp-layout-max-width: 1560px;
+}
+
+.dark {
+  --vp-c-brand-1: #9ba2ee;
+  --vp-c-brand-2: #7f87dd;
+  --vp-c-brand-3: #6e75c8;
+  --vp-c-brand-soft: rgba(155, 162, 238, 0.16);
+}
+
+/* 文档里表格密集，正文区给到更宽的阅读宽度，长表格才不会横滚。 */
+.VPDoc:not(.has-sidebar) .content-container,
+.VPDoc.has-aside .content-container {
+  max-width: 860px;
+}
+
+.vp-doc table {
+  font-size: 14px;
+}
+
+.vp-doc th,
+.vp-doc td {
+  padding: 8px 12px;
+}
+
+/* 中文正文行高略放大，长段落更好读。 */
+.vp-doc p,
+.vp-doc li {
+  line-height: 1.75;
+}
+
+/* 首页 hero 的名字用品牌色渐变，与应用图标呼应。 */
+.VPHero .name .clip {
+  background: linear-gradient(120deg, #4f55a5 10%, #006a68 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.dark .VPHero .name .clip {
+  background: linear-gradient(120deg, #9ba2ee 10%, #4fb8b0 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}

@@ -1,7 +1,7 @@
 name: Deploy docs to GitHub Pages
 
 # 文档站构建与部署。源文档是 docs/ 下的 Markdown（唯一事实源），
-# 每次 push 都由 scripts/build-docs-site.py 重新生成静态站点。
+# 站点由 VitePress 构建，产物在 docs/.vitepress/dist。
 #
 # 仓库需在 Settings → Pages → Source 选 "GitHub Actions" 才会生效。
 
@@ -10,8 +10,7 @@ on:
     branches: [main]
     paths:
       - "docs/**"
-      - "scripts/build-docs-site.py"
-      - "scripts/check-docs-site.py"
+      - "scripts/check-docs-links.mjs"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -30,20 +29,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: "3.12"
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
 
-      # 零第三方依赖，只用标准库；不需要 pip install
-      - name: Build docs site
-        run: python scripts/build-docs-site.py --out site --quiet
+      - name: Install
+        run: npm ci --prefix docs
 
+      # VitePress 构建，收尾时由 pagefind 生成全文搜索索引
+      - name: Build site
+        run: npm --prefix docs run build
+
+      # VitePress 只校验页面是否存在；锚点由本脚本兜底
       - name: Validate links and anchors
-        run: python scripts/check-docs-site.py
+        run: node scripts/check-docs-links.mjs
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: docs/.vitepress/dist
 
   deploy:
     needs: build
