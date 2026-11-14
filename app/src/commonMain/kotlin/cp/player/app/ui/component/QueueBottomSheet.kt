@@ -583,10 +583,10 @@ fun QueueContent(
 /**
  * 队列专用悬浮胶囊。
  *
- * 不复用 [CpFloatingToolbar]：官方 `HorizontalFloatingToolbar` 的 content Row 以 Start
- * 排列并为尾部 overflow 预留空间，按钮会被挤向左侧；同时它只给约 2dp 的槽位间距，
- * 两个选中态圆底会直接相切。这里用 wrapContent 的 Surface + 间距明确的 Row，
- * 由外层 Box 的 Center 保证整条胶囊在画布中居中，左右内边距严格对称。
+ * 不复用 [CpFloatingToolbar]：官方 `HorizontalFloatingToolbar` 的 content 槽位间距极小，
+ * 实测按钮会从左侧依次紧排、两个 44dp 选中圆直接相切，1dp 的分组竖线也几乎看不见，
+ * 整组按钮在胶囊里视觉重心偏左。这里改用 wrapContent 的 Surface + 间距明确的 Row，
+ * 由外层 Box 的 Center 保证胶囊在画布中居中，左右内边距严格对称。
  */
 @Composable
 private fun QueueFloatingToolbar(content: @Composable RowScope.() -> Unit) {
