@@ -104,6 +104,7 @@ import cp.player.core.music.Comment
 import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.commentCodePointLength
 import cp.player.core.provider.ProviderCapability
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 /**
@@ -137,6 +138,7 @@ class DynamicScreen(
             activeProvider.isFeatureAvailable(ProviderCapability.SOCIAL_FEED)
         val profile by AppModel.userProfileFlow.collectAsState()
         val selfId = profile?.uid?.toString().orEmpty()
+        val scope = rememberCoroutineScope()
 
         LaunchedEffect(userId) {
             if (!userId.isNullOrBlank()) {
@@ -172,7 +174,8 @@ class DynamicScreen(
                         onConfirm = { model.delete(post.id) },
                     )
                 },
-                onOpenResource = { post -> openResource(post, providerId, navigator) },
+                onOpenResource = { post -> openResource(post, providerId, navigator, scope) },
+                onOpenOrigin = { origin -> openOriginResource(origin, providerId, navigator, scope) },
                 onOpenUser = { id, name ->
                     if (id.isNotBlank() && id != selfId) {
                         val uid = id.toLongOrNull()
@@ -185,7 +188,7 @@ class DynamicScreen(
 
         if (isRoutePage) {
             CpRouteScaffold(
-                title = if (userName.isNullOrBlank()) "动态" else userName!!,
+                title = userName?.takeIf { it.isNotBlank() } ?: "动态",
                 onBack = if (navigator.size > 1) ({ navigator.pop() }) else null,
             ) { routeModifier -> body(routeModifier) }
         } else {
@@ -226,7 +229,7 @@ class DynamicScreen(
 // ============================================================ 正文
 
 @Composable
-private fun DynamicContent(
+internal fun DynamicContent(
     state: DynamicUiState,
     supportsFeed: Boolean,
     selfId: String,
@@ -240,6 +243,7 @@ private fun DynamicContent(
     onForward: (DynamicPost) -> Unit,
     onDelete: (DynamicPost) -> Unit,
     onOpenResource: (DynamicPost) -> Unit,
+    onOpenOrigin: (DynamicOrigin) -> Unit,
     onOpenUser: (String, String) -> Unit,
     onPreviewImage: (String) -> Unit,
 ) {
@@ -272,6 +276,8 @@ private fun DynamicContent(
                 )
             }
             item {
+                val userFilter = state.filter as? DynamicFilter.User
+                val viewingOtherUser = userFilter != null && userFilter.userId != selfId
                 Row(
                     Modifier.fillMaxWidth().padding(bottom = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -284,9 +290,9 @@ private fun DynamicContent(
                         icon = Icons.Filled.DynamicFeed,
                     )
                     CpToggleChip(
-                        checked = state.filter is DynamicFilter.User,
+                        checked = userFilter != null,
                         onCheckedChange = { if (it) onSelectOwn() },
-                        label = "我的动态",
+                        label = if (viewingOtherUser) "TA 的动态" else "我的动态",
                         icon = Icons.Filled.Person,
                         enabled = selfId.isNotBlank(),
                     )
@@ -360,6 +366,7 @@ private fun DynamicContent(
                             onForward = { onForward(post) },
                             onDelete = { onDelete(post) },
                             onOpenResource = { onOpenResource(post) },
+                            onOpenOrigin = onOpenOrigin,
                             onOpenUser = onOpenUser,
                             onPreviewImage = onPreviewImage,
                             modifier = Modifier.animateItem(),
@@ -390,6 +397,7 @@ private fun DynamicPostCard(
     onForward: () -> Unit,
     onDelete: () -> Unit,
     onOpenResource: () -> Unit,
+    onOpenOrigin: (DynamicOrigin) -> Unit,
     onOpenUser: (String, String) -> Unit,
     onPreviewImage: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -478,11 +486,7 @@ private fun DynamicPostCard(
             post.forwardedFrom?.let { origin ->
                 DynamicForwardCard(
                     origin = origin,
-                    onClick = {
-                        if (!origin.resourceId.isNullOrBlank() && !origin.resourceType.isNullOrBlank()) {
-                            onOpenResource()
-                        }
-                    },
+                    onClick = { onOpenOrigin(origin) },
                     onOpenUser = onOpenUser,
                     onPreviewImage = onPreviewImage,
                     modifier = Modifier.padding(top = 12.dp),
@@ -1117,12 +1121,49 @@ private fun openResource(
     post: DynamicPost,
     providerId: String,
     navigator: cafe.adriel.voyager.navigator.Navigator,
+    scope: CoroutineScope,
+) = openTypedResource(
+    resourceId = post.resourceId,
+    resourceType = post.resourceType,
+    title = post.resourceTitle,
+    coverUrl = post.resourceCoverUrl,
+    subtitle = post.resourceSubtitle,
+    providerId = providerId,
+    navigator = navigator,
+    scope = scope,
+)
+
+private fun openOriginResource(
+    origin: DynamicOrigin,
+    providerId: String,
+    navigator: cafe.adriel.voyager.navigator.Navigator,
+    scope: CoroutineScope,
+) = openTypedResource(
+    resourceId = origin.resourceId,
+    resourceType = origin.resourceType,
+    title = origin.resourceTitle,
+    coverUrl = origin.resourceCoverUrl,
+    subtitle = origin.resourceSubtitle,
+    providerId = providerId,
+    navigator = navigator,
+    scope = scope,
+)
+
+private fun openTypedResource(
+    resourceId: String?,
+    resourceType: String?,
+    title: String?,
+    coverUrl: String?,
+    subtitle: String?,
+    providerId: String,
+    navigator: cafe.adriel.voyager.navigator.Navigator,
+    scope: CoroutineScope,
 ) {
-    val id = post.resourceId?.takeIf { it.isNotBlank() } ?: return
-    when (post.resourceType) {
+    val id = resourceId?.takeIf { it.isNotBlank() } ?: return
+    when (resourceType) {
         "song" -> {
             val mediaId = CPMediaId.toCanonicalMediaId(id, providerId, "song")
-            kotlinx.coroutines.MainScope().launch {
+            scope.launch {
                 AppModel.playback.playQueue(listOf(mediaId), startIndex = 0)
             }
         }
@@ -1130,10 +1171,10 @@ private fun openResource(
             PlaylistDetailScreen(
                 PlaylistSummary(
                     id = id.toLongOrNull() ?: 0L,
-                    name = post.resourceTitle?.takeIf { it.isNotBlank() } ?: "歌单",
-                    coverUrl = post.resourceCoverUrl,
+                    name = title?.takeIf { it.isNotBlank() } ?: "歌单",
+                    coverUrl = coverUrl,
                     trackCount = 0,
-                    creatorName = null,
+                    creatorName = subtitle,
                     resourceId = id,
                 ),
             )
@@ -1143,9 +1184,9 @@ private fun openResource(
                 albumId = id.toLongOrNull() ?: 0L,
                 fallback = AlbumSummary(
                     id = id.toLongOrNull() ?: 0L,
-                    name = post.resourceTitle?.takeIf { it.isNotBlank() } ?: "专辑",
-                    coverUrl = post.resourceCoverUrl,
-                    artistName = post.resourceSubtitle,
+                    name = title?.takeIf { it.isNotBlank() } ?: "专辑",
+                    coverUrl = coverUrl,
+                    artistName = subtitle,
                     trackCount = 0,
                     resourceId = id,
                 ),
@@ -1153,10 +1194,10 @@ private fun openResource(
         )
         "mv", "video" -> navigator.pushOrNotify(
             VideoPlayerScreen(
-                mediaId = CPMediaId.toCanonicalMediaId(id, providerId, post.resourceType ?: "video"),
-                title = post.resourceTitle,
+                mediaId = CPMediaId.toCanonicalMediaId(id, providerId, resourceType),
+                title = title,
             )
         )
-        else -> cp.player.app.ui.util.UiEvents.notify("暂不支持打开${resourceTypeLabel(post.resourceType) ?: "该内容"}")
+        else -> cp.player.app.ui.util.UiEvents.notify("暂不支持打开${resourceTypeLabel(resourceType) ?: "该内容"}")
     }
 }

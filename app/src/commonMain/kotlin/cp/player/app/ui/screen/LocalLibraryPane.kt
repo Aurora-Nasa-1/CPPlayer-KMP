@@ -1,6 +1,7 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -10,11 +11,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -41,7 +44,9 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -96,6 +101,7 @@ import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSearchField
 import cp.player.app.ui.component.CpSpacing
+import cp.player.app.ui.component.CpSplitButton
 import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.CpToggleChip
 import cp.player.app.ui.component.CpWavyProgressIndeterminate
@@ -403,6 +409,8 @@ internal fun LocalLibraryTab(
             state = state,
             model = model,
             strings = strings,
+            songs = songs,
+            albumCount = albums.size,
             onScan = { model.startScan(strings) },
             onImport = { pickFolder() },
         )
@@ -470,7 +478,7 @@ internal fun LocalLibraryTab(
                     onClick = { openedArtist = it },
                 )
                 3 -> SongList(
-                    title = "${s.tabLocalFavorites} · ${pureLocalFavorites.size}",
+                    title = s.tabLocalFavorites,
                     songs = pureLocalFavorites,
                     model = model,
                     strings = strings,
@@ -761,93 +769,120 @@ internal fun LocalLibraryTab(
     }
 }
 
-// ============ 顶部工具行 ============
+// ============ 顶部 Hero 与工具行 ============
 
 /**
- * 顶部工具行：扫描 / 导入 + 搜索 + 筛选。
+ * 本地库顶部：M3 Expressive 概览卡 + 搜索 / 筛选。
  *
- * 三条与全应用对齐的约定：
- * 1. **水平内边距取 [CpSpacing.pageHorizontal]**（栅格页标准 20dp），不是裸 16dp ——
- *    本页正文（歌曲列表 / 专辑栅格 / 文件夹树）都是 20dp，工具行用 16dp 会让
- *    「扫描设备」按钮比列表左缘缩进一格。
- * 2. **搜索框用 [CpSearchField]**（全应用唯一入口），而不是就地拼 `OutlinedTextField`。
- * 3. 间距与计数一律取自 `s`（`CpStrings`），不在页面里写死中文 —— 见 `I18N.md`。
+ * 版式参考 PixelPlayer 的 Library 首屏：
+ * - 左侧是**大标题 + 统计**，右侧是三张专辑封面叠成的「封面堆」；
+ * - 主动作是一枚 split button（播放全部 + 随机），扫描 / 导入退成 56dp 图标胶囊；
+ * - 空库时退回两枚等宽按钮，不摆一个点了没反应的播放键。
+ *
+ * 搜索框仍走全应用唯一的 [CpSearchField]，筛选按钮留在框外 —— 塞进 trailingIcon
+ * 会和「清除」抢槽位。
  */
 @Composable
 private fun LocalLibraryToolbar(
     state: DownloadsUiState,
     model: DownloadsScreenModel,
     strings: CpStrings,
+    songs: List<LocalMediaItem>,
+    albumCount: Int,
     onScan: () -> Unit,
     onImport: () -> Unit,
 ) {
     val s = strings.downloads
+    val losslessCount = remember(state.localAudioItems) {
+        state.localAudioItems.count { it.isLossless }
+    }
+
     Column(
-        // 水平内边距取 `CpSpacing.pageHorizontal`（栅格页标准 20dp），不是裸 16dp：
-        // 本页正文（列表 / 栅格）都是 20dp，工具行用 16dp 会让扫描按钮比列表左缘缩进一格。
-        Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth()
-            .padding(horizontal = CpSpacing.pageHorizontal, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FilledTonalButton(
-                onClick = onScan,
-                enabled = !state.scanning,
-                shape = MaterialTheme.shapes.large,
-                modifier = Modifier.weight(1f).cpPressScale(),
+        if (state.localItems.isNotEmpty()) {
+            LocalLibraryHero(
+                totalSongs = state.localAudioItems.size,
+                albumCount = albumCount,
+                losslessCount = losslessCount,
+                covers = state.localAudioItems,
+                canPlay = songs.isNotEmpty(),
+                scanning = state.scanning,
+                importing = state.importing,
+                onPlayAll = { model.playAll(songs) },
+                onShuffle = { model.shuffleAll(songs) },
+                onScan = onScan,
+                onImport = onImport,
+                strings = strings,
+            )
+        } else {
+            Row(
+                Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth()
+                    .padding(horizontal = CpSpacing.pageHorizontal, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                if (state.scanning) {
-                    CpLoadingIndicator(
-                        Modifier.size(18.dp),
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    CpText(
-                        state.scanProgress?.let { s.scanningFound(it.scanned) } ?: s.scanning,
-                        maxLines = 1,
-                    )
-                } else {
-                    Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    CpText(s.scanDevice, maxLines = 1)
+                FilledTonalButton(
+                    onClick = onScan,
+                    enabled = !state.scanning,
+                    shape = MaterialTheme.shapes.large,
+                    modifier = Modifier.weight(1f).cpPressScale(),
+                ) {
+                    if (state.scanning) {
+                        CpLoadingIndicator(
+                            Modifier.size(18.dp),
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        CpText(
+                            state.scanProgress?.let { s.scanningFound(it.scanned) } ?: s.scanning,
+                            maxLines = 1,
+                        )
+                    } else {
+                        Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        CpText(s.scanDevice, maxLines = 1)
+                    }
                 }
-            }
-            FilledTonalButton(
-                onClick = onImport,
-                enabled = !state.importing,
-                shape = MaterialTheme.shapes.large,
-                modifier = Modifier.weight(1f).cpPressScale(),
-            ) {
-                if (state.importing) {
-                    CpLoadingIndicator(
-                        Modifier.size(18.dp),
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    CpText(s.importing, maxLines = 1)
-                } else {
-                    Icon(Icons.Filled.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    CpText(s.importFolder, maxLines = 1)
+                FilledTonalButton(
+                    onClick = onImport,
+                    enabled = !state.importing,
+                    shape = MaterialTheme.shapes.large,
+                    modifier = Modifier.weight(1f).cpPressScale(),
+                ) {
+                    if (state.importing) {
+                        CpLoadingIndicator(
+                            Modifier.size(18.dp),
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        CpText(s.importing, maxLines = 1)
+                    } else {
+                        Icon(Icons.Filled.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        CpText(s.importFolder, maxLines = 1)
+                    }
                 }
             }
         }
+
         if (state.scanning) {
             Surface(
                 shape = MaterialTheme.shapes.medium,
                 color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth()
+                    .padding(horizontal = CpSpacing.pageHorizontal, vertical = 4.dp),
             ) {
                 Column(
-                    modifier = Modifier.padding(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CpCircularWavyProgressIndeterminate(
                             modifier = Modifier.size(16.dp),
                             color = MaterialTheme.colorScheme.primary,
                         )
-                        Spacer(Modifier.width(8.dp))
+                        Spacer(Modifier.width(10.dp))
                         CpText(
                             state.scanProgress?.let { s.scanningFound(it.scanned) } ?: s.scanning,
                             style = MaterialTheme.typography.bodySmall,
@@ -862,20 +897,17 @@ private fun LocalLibraryToolbar(
                 }
             }
         }
+
         if (state.localItems.isNotEmpty()) {
             Row(
+                Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth()
+                    .padding(horizontal = CpSpacing.pageHorizontal, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                // 搜索框走全应用唯一的 [CpSearchField]（标题栏那条 40dp 与页面里 52dp 的
-                // 都是它）。就地拼 `OutlinedTextField` 的话：高度 56dp 比别处高一档、
-                // 聚焦态容器色不过渡、清除按钮的落点也与其它页面不同。
-                // 筛选按钮留在框**外面**：它是独立动作，塞进 trailingIcon 会与「清除」抢槽位。
                 CpSearchField(
                     query = state.libraryQuery,
                     onQueryChange = { model.setLibraryQuery(it) },
-                    // 本地库是**即时筛选**（不是远端搜索）：回车无需再做别的，
-                    // 保留 IME 的「搜索」动作键只是让键盘上那一下有落点。
                     onSubmit = {},
                     modifier = Modifier.weight(1f),
                     placeholder = s.librarySearchHint,
@@ -883,6 +915,214 @@ private fun LocalLibraryToolbar(
                 )
                 LibraryFilterMenu(state = state, model = model, strings = strings)
             }
+        }
+    }
+}
+
+/**
+ * 本地库概览卡。
+ *
+ * 统计文案全部来自 `CpStrings`，不拼死中文；封面堆只取前三个不同的 coverUri，
+ * 没有封面时退回一块 tonal 占位，避免右半边空掉。
+ */
+@Composable
+internal fun LocalLibraryHero(
+    totalSongs: Int,
+    albumCount: Int,
+    losslessCount: Int,
+    covers: List<LocalMediaItem>,
+    canPlay: Boolean,
+    scanning: Boolean,
+    importing: Boolean,
+    onPlayAll: () -> Unit,
+    onShuffle: () -> Unit,
+    onScan: () -> Unit,
+    onImport: () -> Unit,
+    strings: CpStrings,
+) {
+    val s = strings.downloads
+    Surface(
+        Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth()
+            .padding(horizontal = CpSpacing.pageHorizontal, vertical = 8.dp),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    CpText(
+                        s.tabLocalLibrary,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                    )
+                    CpText(
+                        buildString {
+                            append(s.localSongCount(totalSongs))
+                            if (albumCount > 0) append(" · ").append(s.albumCount(albumCount))
+                            if (losslessCount > 0) append(" · ").append(s.losslessCount(losslessCount))
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                    )
+                }
+                LocalLibraryCoverStack(covers, Modifier.size(92.dp))
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                CpSplitButton(
+                    onLeadingClick = onPlayAll,
+                    leadingContent = {
+                        Icon(
+                            Icons.Filled.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        CpText(
+                            s.playAll,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    },
+                    onTrailingClick = onShuffle,
+                    trailingContent = {
+                        Icon(
+                            Icons.Filled.Shuffle,
+                            contentDescription = s.shuffleAll,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    },
+                    enabled = canPlay,
+                    trailingWidth = 64.dp,
+                    modifier = Modifier.weight(1f).height(56.dp),
+                )
+                LocalHeroIconAction(
+                    label = s.scanDevice,
+                    icon = Icons.Filled.Refresh,
+                    loading = scanning,
+                    enabled = !scanning,
+                    onClick = onScan,
+                )
+                LocalHeroIconAction(
+                    label = s.importFolder,
+                    icon = Icons.Filled.FolderOpen,
+                    loading = importing,
+                    enabled = !importing,
+                    onClick = onImport,
+                )
+            }
+        }
+    }
+}
+
+/** Hero 右侧的三张专辑封面堆；无封面时用 tonal 图标块兜底。 */
+@Composable
+private fun LocalLibraryCoverStack(
+    items: List<LocalMediaItem>,
+    modifier: Modifier = Modifier,
+) {
+    val covers = remember(items) {
+        items.asSequence()
+            .mapNotNull { it.coverUri?.takeIf { uri -> uri.isNotBlank() } }
+            .distinct()
+            .take(3)
+            .toList()
+    }
+    Box(modifier, contentAlignment = Alignment.Center) {
+        if (covers.isEmpty()) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.secondaryContainer,
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Filled.LibraryMusic,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.fillMaxSize(0.36f),
+                    )
+                }
+            }
+        } else {
+            // PixelPlayer 式封面簇：一枚大封面 + 两枚小圆封面，三块各占独立位置。
+            // 早前三张同尺寸封面只做旋转/偏移，加载失败时会叠成一整块不规则色斑。
+            if (covers.size > 1) {
+                LocalStackCover(
+                    uri = covers[1],
+                    modifier = Modifier.align(Alignment.TopStart).size(32.dp),
+                    circular = true,
+                )
+            }
+            if (covers.size > 2) {
+                LocalStackCover(
+                    uri = covers[2],
+                    modifier = Modifier.align(Alignment.BottomEnd).size(34.dp),
+                    circular = true,
+                )
+            }
+            LocalStackCover(
+                uri = covers[0],
+                modifier = Modifier.align(Alignment.Center).offset(x = 6.dp).size(60.dp),
+                circular = false,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LocalStackCover(
+    uri: String,
+    modifier: Modifier,
+    circular: Boolean,
+) {
+    val shape = if (circular) CircleShape else MaterialTheme.shapes.large
+    Box(
+        modifier.clip(shape)
+            .background(MaterialTheme.colorScheme.secondaryContainer)
+            .border(3.dp, MaterialTheme.colorScheme.surfaceContainerLow, shape),
+    ) {
+        AsyncImage(
+            model = uri.resized(240),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+        )
+    }
+}
+
+/** 扫描 / 导入的 56dp tonal 图标胶囊；进行中时换成 Expressive 加载器。 */
+@Composable
+private fun LocalHeroIconAction(
+    label: String,
+    icon: ImageVector,
+    loading: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    FilledTonalIconButton(
+        onClick = onClick,
+        enabled = enabled,
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier.size(56.dp).cpPressScale(),
+    ) {
+        if (loading) {
+            CpLoadingIndicator(
+                Modifier.size(20.dp),
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+        } else {
+            Icon(icon, contentDescription = label, modifier = Modifier.size(22.dp))
         }
     }
 }
@@ -1096,7 +1336,7 @@ private fun ScanSettingsDialog(
 // ============ 子页 Tab ============
 
 @Composable
-private fun LocalLibrarySubTabs(
+internal fun LocalLibrarySubTabs(
     selected: Int,
     songCount: Int,
     albumCount: Int,
@@ -1108,13 +1348,13 @@ private fun LocalLibrarySubTabs(
     onSelect: (Int) -> Unit,
 ) {
     val s = strings.downloads
-    val labels = listOf(
-        s.tabSongs to songCount,
-        s.tabAlbums to albumCount,
-        s.tabArtists to artistCount,
-        s.tabLocalFavorites to favoriteCount,
-        s.tabLocalPlaylists to playlistCount,
-        s.tabFolders to folderCount,
+    val items = listOf(
+        Triple(s.tabSongs, songCount, Icons.Filled.MusicNote),
+        Triple(s.tabAlbums, albumCount, Icons.Filled.Album),
+        Triple(s.tabArtists, artistCount, Icons.Filled.Person),
+        Triple(s.tabLocalFavorites, favoriteCount, Icons.Filled.Favorite),
+        Triple(s.tabLocalPlaylists, playlistCount, Icons.AutoMirrored.Filled.QueueMusic),
+        Triple(s.tabFolders, folderCount, Icons.Filled.FolderOpen),
     )
     Row(
         modifier = Modifier
@@ -1125,7 +1365,7 @@ private fun LocalLibrarySubTabs(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        labels.forEachIndexed { index, (label, count) ->
+        items.forEachIndexed { index, (label, count, icon) ->
             // 计数走 `badge` 槽位而不是拼进标签：拼进去之后计数与标题同字号、同颜色，
             // 「本地喜欢 12」读起来像名字的一部分；徽标退一档，扫读时才分得清。
             // 计数为 0 的页签不显徽标 —— 「本地歌单 0」比「本地歌单」更像出错。
@@ -1133,6 +1373,7 @@ private fun LocalLibrarySubTabs(
                 checked = selected == index,
                 onCheckedChange = { if (it) onSelect(index) },
                 label = label,
+                icon = icon,
                 badge = if (count > 0) "$count" else null,
             )
         }
@@ -1164,34 +1405,22 @@ private fun ColumnScope.SongList(
     val s = strings.downloads
     Column(Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth().weight(1f)) {
         if (title != null || showSort) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = CpSpacing.pageHorizontal, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CpText(
-                    title ?: "${s.tabSongs} · ${songs.size}",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                )
+            LocalSectionHeader(title = title ?: s.tabSongs, count = songs.size) {
                 if (songs.isNotEmpty()) {
                     FilledTonalIconButton(
                         onClick = { model.shuffleAll(songs) },
-                        modifier = Modifier.size(36.dp).cpPressScale(),
-                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.size(40.dp).cpPressScale(),
+                        shape = MaterialTheme.shapes.large,
                     ) {
                         Icon(Icons.Filled.Shuffle, contentDescription = s.shuffleAll, modifier = Modifier.size(18.dp))
                     }
-                    Spacer(Modifier.width(6.dp))
                     FilledTonalIconButton(
                         onClick = { model.playAll(songs) },
-                        modifier = Modifier.size(36.dp).cpPressScale(),
-                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.size(40.dp).cpPressScale(),
+                        shape = MaterialTheme.shapes.large,
                     ) {
                         Icon(Icons.Filled.PlayArrow, contentDescription = s.playAll, modifier = Modifier.size(18.dp))
                     }
-                    Spacer(Modifier.width(6.dp))
                 }
                 if (showSort) {
                     SortMenu(
@@ -1386,18 +1615,8 @@ private fun ColumnScope.LocalPlaylistGrid(
     onOptionsClick: (LocalPlaylist) -> Unit,
 ) {
     Column(Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth().weight(1f)) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = CpSpacing.pageHorizontal, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            CpText(
-                "${strings.downloads.tabLocalPlaylists} · ${playlists.size}",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.weight(1f),
-                maxLines = 1,
-            )
-            FilledTonalButton(onClick = onCreatePlaylist) {
+        LocalSectionHeader(title = strings.downloads.tabLocalPlaylists, count = playlists.size) {
+            FilledTonalButton(onClick = onCreatePlaylist, shape = MaterialTheme.shapes.large) {
                 Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 CpText(strings.downloads.newLocalPlaylist)
@@ -1442,7 +1661,7 @@ private fun ColumnScope.LocalPlaylistGrid(
 /**
  * 本地歌单格子：方形封面 + 名称 + 「N 首歌曲 · 时长」+ 行尾「更多」。
  *
- * 封面走 [LocalCover] 且**圆角按格子尺寸给 20dp**（见那里的说明）；
+ * 封面走 [LocalCover] 且**圆角按格子尺寸给 28dp**（`shapes.extraLarge`，见那里的说明）；
  * 整格用 `cpBounceClickable`，与专辑 / 艺术家格子同一手感。
  *
  * ⚠️ 行尾的「更多」是**独立可点**控件：所以整格用 `clickable` 而不是
@@ -1458,20 +1677,20 @@ private fun LocalPlaylistCell(
     onOptionsClick: () -> Unit,
 ) {
     Column(
-        Modifier.clip(MaterialTheme.shapes.largeIncreased).cpBounceClickable(onClick = onClick),
+        Modifier.clip(MaterialTheme.shapes.extraLarge).cpBounceClickable(onClick = onClick),
     ) {
         Box(
-            Modifier.fillMaxWidth().aspectRatio(1f).clip(MaterialTheme.shapes.largeIncreased),
+            Modifier.fillMaxWidth().aspectRatio(1f).clip(MaterialTheme.shapes.extraLarge),
             contentAlignment = Alignment.Center,
         ) {
             LocalCover(
                 coverUri = coverUri,
                 fallbackIcon = Icons.AutoMirrored.Filled.QueueMusic,
                 modifier = Modifier.fillMaxSize(),
-                corner = 20.dp,
+                corner = 28.dp,
             )
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
         Row(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -1479,9 +1698,9 @@ private fun LocalPlaylistCell(
             Column(Modifier.weight(1f)) {
                 CpText(
                     playlist.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
                 )
                 CpText(
                     buildString {
@@ -1532,6 +1751,7 @@ private fun ColumnScope.LocalPlaylistDetail(
         playlist.trackPaths.mapNotNull { itemsByPath[it] }
     }
     val totalDurationMs = remember(tracks) { tracks.sumOf { it.durationMs } }
+    val coverUri = remember(tracks) { tracks.firstNotNullOfOrNull { it.coverUri } }
 
     Column(Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth().weight(1f)) {
         DetailHeader(
@@ -1540,19 +1760,54 @@ private fun ColumnScope.LocalPlaylistDetail(
                 append(strings.downloads.playlistTrackCount(tracks.size))
                 if (totalDurationMs > 0) append(" · ").append(formatDuration(totalDurationMs))
             },
+            coverUri = coverUri,
+            fallbackIcon = Icons.AutoMirrored.Filled.QueueMusic,
             onBack = onBack,
             trailingActions = {
-                IconButton(onClick = onRename) {
-                    Icon(Icons.Filled.Edit, contentDescription = strings.library.renamePlaylist)
-                }
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Filled.Delete, contentDescription = strings.library.deletePlaylist, tint = MaterialTheme.colorScheme.error)
+                // 两个独立图标会把 390dp 下的标题挤成「Late Night …」；收进一个溢出菜单，
+                // 标题多出 48dp，删除也仍然要经过 CpConfirmHost 的二次确认。
+                var actionsExpanded by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { actionsExpanded = true }) {
+                        Icon(
+                            Icons.Filled.MoreVert,
+                            contentDescription = strings.downloads.playlistOptions,
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = actionsExpanded,
+                        onDismissRequest = { actionsExpanded = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { CpText(strings.library.renamePlaylist) },
+                            leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                            onClick = {
+                                actionsExpanded = false
+                                onRename()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { CpText(strings.library.deletePlaylist) },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Filled.Delete,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            },
+                            onClick = {
+                                actionsExpanded = false
+                                onDelete()
+                            },
+                        )
+                    }
                 }
             },
         )
         if (tracks.isNotEmpty()) {
             LocalPlayAllRow(
                 playAllLabel = strings.downloads.playAll,
+                enabled = tracks.isNotEmpty(),
                 onPlayAll = { model.playAll(tracks) },
                 onShuffle = { model.shuffleAll(tracks) },
             )
@@ -1674,25 +1929,61 @@ private fun RenameLocalPlaylistDialog(
 
 // ============ 专辑 / 艺术家网格 ============
 
+/**
+ * 本地库统一的区块标题：`titleLarge` 粗体 + 计数胶囊 + 行尾动作。
+ *
+ * 此前歌曲 / 专辑 / 艺术家 / 歌单四处各写一套 `titleSmall` 行，计数还拼在标题里；
+ * 同一页的区块标题字号、计数位置、动作间距都不一致。收成一个槽后，改一处全页生效。
+ */
+@Composable
+internal fun LocalSectionHeader(
+    title: String,
+    count: Int,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    Row(
+        Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth()
+            .padding(horizontal = CpSpacing.pageHorizontal, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(
+            Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            CpText(
+                title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            ) {
+                CpText(
+                    count.toString(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                )
+            }
+        }
+        actions()
+    }
+}
+
 @Composable
 private fun GridHeader(
     title: String,
+    count: Int,
     current: LocalGridSort,
     strings: CpStrings,
     onSelect: (LocalGridSort) -> Unit,
 ) {
-    Row(
-        Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth()
-            .padding(horizontal = CpSpacing.pageHorizontal, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        CpText(
-            title,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.weight(1f),
-            maxLines = 1,
-        )
+    LocalSectionHeader(title = title, count = count) {
         GridSortMenu(current = current, strings = strings, onSelect = onSelect)
     }
 }
@@ -1750,7 +2041,8 @@ private fun ColumnScope.AlbumGrid(
 ) {
     val gridState = rememberLazyGridState()
     GridHeader(
-        title = "${strings.downloads.tabAlbums} · ${albums.size}",
+        title = strings.downloads.tabAlbums,
+        count = albums.size,
         current = gridSort,
         strings = strings,
         onSelect = onSort,
@@ -1781,8 +2073,8 @@ private fun ColumnScope.AlbumGrid(
 /**
  * 专辑格子：方形封面 + 标题 + 「艺人 · N 项」。
  *
- * 封面圆角取 20dp（= `shapes.largeIncreased`）而不是原 `medium`（12dp）：
- * 12dp 是**列表缩略图**那一档，用在 180dp 的封面块上显得过方。
+ * 封面圆角取 28dp（= `shapes.extraLarge`）而不是列表缩略图的 12dp：
+ * 大块封面用列表圆角会显得过方，28dp 与 PixelPlayer 的专辑卡同一档。
  * 点击给 `cpBounceClickable`（按下轻微收缩）—— 与首页 / 曲库的封面卡同一手感。
  */
 @Composable
@@ -1791,22 +2083,22 @@ private fun AlbumCell(album: LocalAlbum, strings: CpStrings, onClick: () -> Unit
         Modifier.cpBounceClickable(onClick = onClick),
     ) {
         Box(
-            Modifier.fillMaxWidth().aspectRatio(1f).clip(MaterialTheme.shapes.largeIncreased),
+            Modifier.fillMaxWidth().aspectRatio(1f).clip(MaterialTheme.shapes.extraLarge),
             contentAlignment = Alignment.Center,
         ) {
             LocalCover(
                 coverUri = album.coverUri,
                 fallbackIcon = Icons.Filled.Album,
                 modifier = Modifier.fillMaxSize(),
-                corner = 20.dp,
+                corner = 28.dp,
             )
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
         CpText(
             album.name,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
         )
         CpText(
             buildString {
@@ -1833,7 +2125,8 @@ private fun ColumnScope.ArtistGrid(
     onClick: (LocalArtist) -> Unit,
 ) {
     GridHeader(
-        title = "${strings.downloads.tabArtists} · ${artists.size}",
+        title = strings.downloads.tabArtists,
+        count = artists.size,
         current = gridSort,
         strings = strings,
         onSelect = onSort,
@@ -1877,12 +2170,12 @@ private fun ArtistCell(artist: LocalArtist, strings: CpStrings, onClick: () -> U
                 circular = true,
             )
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
         CpText(
             artist.name,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
             textAlign = TextAlign.Center,
         )
         CpText(
@@ -1914,26 +2207,29 @@ private fun ColumnScope.FolderTreeView(
     var expanded by remember { mutableStateOf(emptySet<String>()) }
     val visible = remember(nodes, expanded) { LocalFolderTree.visibleNodes(nodes, expanded) }
 
-    LazyColumn(
-        Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize().weight(1f),
-        contentPadding = PaddingValues(
-            start = CpSpacing.pageHorizontal,
-            end = CpSpacing.pageHorizontal,
-            bottom = 96.dp,
-        ),
-        verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
-    ) {
-        items(visible, key = { it.path }) { node ->
-            FolderRow(
-                node = node,
-                isExpanded = node.path in expanded,
-                strings = strings,
-                onToggleExpand = {
-                    expanded = if (node.path in expanded) expanded - node.path else expanded + node.path
-                },
-                onOpen = { model.playAll(LocalFolderTree.allSongs(items, node)) },
-                onShowDetail = { onOpenFolder(node) },
-            )
+    Column(Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth().weight(1f)) {
+        LocalSectionHeader(title = strings.downloads.tabFolders, count = nodes.size)
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = CpSpacing.pageHorizontal,
+                end = CpSpacing.pageHorizontal,
+                bottom = 96.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
+        ) {
+            items(visible, key = { it.path }) { node ->
+                FolderRow(
+                    node = node,
+                    isExpanded = node.path in expanded,
+                    strings = strings,
+                    onToggleExpand = {
+                        expanded = if (node.path in expanded) expanded - node.path else expanded + node.path
+                    },
+                    onOpen = { model.playAll(LocalFolderTree.allSongs(items, node)) },
+                    onShowDetail = { onOpenFolder(node) },
+                )
+            }
         }
     }
 }
@@ -1992,7 +2288,7 @@ private fun FolderRow(
                 CpText(
                     node.name,
                     style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
+                    maxLines = 2,
                 )
                 CpText(
                     buildString {
@@ -2044,10 +2340,13 @@ private fun ColumnScope.LocalFolderDetail(
                 append(s.itemCount(tracks.size))
                 if (node.totalDurationMs > 0) append(" · ").append(formatDuration(node.totalDurationMs))
             },
+            coverUri = node.coverUri,
+            fallbackIcon = Icons.Filled.FolderOpen,
             onBack = onBack,
         )
         LocalPlayAllRow(
             playAllLabel = s.playAll,
+            enabled = tracks.isNotEmpty(),
             onPlayAll = { model.playAll(tracks) },
             onShuffle = { model.shuffleAll(tracks) },
         )
@@ -2126,10 +2425,13 @@ private fun ColumnScope.LocalAlbumDetail(
                 album.year?.let { append(" · ").append(it) }
                 append(" · ").append(s.itemCount(tracks.size))
             },
+            coverUri = album.coverUri,
+            fallbackIcon = Icons.Filled.Album,
             onBack = onBack,
         )
         LocalPlayAllRow(
             playAllLabel = s.playAll,
+            enabled = tracks.isNotEmpty(),
             onPlayAll = { model.playAll(tracks) },
             onShuffle = { model.shuffleAll(tracks) },
         )
@@ -2207,10 +2509,14 @@ private fun ColumnScope.LocalArtistDetail(
                 append(s.itemCount(tracks.size))
                 if (artist.albumCount > 1) append(" · ").append(s.albumCount(artist.albumCount))
             },
+            coverUri = artist.coverUri,
+            fallbackIcon = Icons.Filled.Person,
+            circular = true,
             onBack = onBack,
         )
         LocalPlayAllRow(
             playAllLabel = s.playAll,
+            enabled = tracks.isNotEmpty(),
             onPlayAll = { model.playAll(tracks) },
             onShuffle = { model.shuffleAll(tracks) },
         )
@@ -2259,23 +2565,34 @@ private fun ColumnScope.LocalArtistDetail(
  * 因此水平内边距只留 8dp：填充圆钮自带 40dp 的视觉块，再加 20dp 会把它推得离边太远。
  */
 @Composable
-private fun DetailHeader(
+internal fun DetailHeader(
     title: String,
     subtitle: String,
+    coverUri: String?,
+    fallbackIcon: ImageVector,
+    circular: Boolean = false,
     onBack: () -> Unit,
     trailingActions: (@Composable () -> Unit)? = null,
 ) {
     Row(
-        Modifier.fillMaxWidth().padding(start = 8.dp, end = 12.dp, top = 6.dp, bottom = 4.dp),
+        Modifier.fillMaxWidth().padding(start = 8.dp, end = 12.dp, top = 10.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CpBackButton(onClick = onBack)
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(8.dp))
+        LocalCover(
+            coverUri = coverUri,
+            fallbackIcon = fallbackIcon,
+            modifier = Modifier.size(60.dp),
+            circular = circular,
+            corner = 16.dp,
+        )
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             CpText(
                 title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 // 详情页标题是**焦点位**（同一屏只有一个）：文件夹名 / 歌单名可能
                 // 比标题栏宽度长得多，滚起来比让用户猜后半截好。
@@ -2316,40 +2633,51 @@ private fun LibraryEmptyState(content: @Composable () -> Unit) {
 }
 
 /**
- * 「播放全部 / 随机播放」并排两格。
+ * 「播放全部 + 随机播放」的 M3 Expressive split button。
  *
  * 抽出来的理由：这一对按钮在四个二级视图（本地歌单 / 文件夹 / 专辑 / 艺术家详情）
- * 里逐字写了四遍，任何一处改动（比如把「随机播放」换成本地化文案）都要改四遍。
- * 两格等宽是刻意的：文案长度随语言变，不定宽的话英文下两个按钮会被挤成不同宽度。
+ * 里逐字写了四遍。改成 split button 后左侧主按钮承担「播放全部」，右侧固定宽度的
+ * 胶囊承担「随机播放」—— 文案长度随语言变，但随机键的落点不会跟着漂。
  */
 @Composable
-private fun LocalPlayAllRow(
+internal fun LocalPlayAllRow(
     playAllLabel: String,
+    enabled: Boolean,
     onPlayAll: () -> Unit,
     onShuffle: () -> Unit,
 ) {
     val s = cpStrings()
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = CpSpacing.pageHorizontal, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        FilledTonalButton(onClick = onPlayAll, modifier = Modifier.weight(1f)) {
-            Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            CpText(playAllLabel)
-        }
-        FilledTonalButton(onClick = onShuffle, modifier = Modifier.weight(1f)) {
-            Icon(Icons.Filled.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            CpText(s.downloads.shuffleAll)
-        }
-    }
+    CpSplitButton(
+        onLeadingClick = onPlayAll,
+        leadingContent = {
+            Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(10.dp))
+            CpText(
+                playAllLabel,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+        },
+        onTrailingClick = onShuffle,
+        trailingContent = {
+            Icon(
+                Icons.Filled.Shuffle,
+                contentDescription = s.downloads.shuffleAll,
+                modifier = Modifier.size(20.dp),
+            )
+        },
+        enabled = enabled,
+        trailingWidth = 68.dp,
+        modifier = Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth()
+            .padding(horizontal = CpSpacing.pageHorizontal, vertical = 8.dp)
+            .height(56.dp),
+    )
 }
 
 /**
  * 本地曲库的封面块（列表缩略图 / 栅格封面 / 文件夹图标共用的唯一实现）。
  *
- * @param corner 方角圆角（`Dp`）。**栅格封面传 20dp**（= `shapes.largeIncreased`）：
+ * @param corner 方角圆角（`Dp`）。**栅格封面传 28dp**（= `shapes.extraLarge`）：
  *   大块封面用 8dp 显得过方，而列表行 40–60dp 的缩略图用 20dp 又显得过圆 ——
  *   同一个组件两种尺寸，圆角必须由调用方按尺寸给。
  * @param circular 圆形头像（艺术家）。与 [corner] 互斥。

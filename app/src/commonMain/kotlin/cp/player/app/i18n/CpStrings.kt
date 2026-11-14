@@ -44,6 +44,9 @@ interface CpStrings {
     /** 设置组件库（`SettingsKit`）里**跨页复用**的文案。 */
     val common: CommonStrings
 
+    /** 主导航：底部 tab、桌面侧栏、窗口 chrome 上的全局入口。 */
+    val navigation: NavigationStrings
+
     /** 私信新消息通知 + 桌面托盘常驻。 */
     val messageNotify: MessageNotifyStrings
 

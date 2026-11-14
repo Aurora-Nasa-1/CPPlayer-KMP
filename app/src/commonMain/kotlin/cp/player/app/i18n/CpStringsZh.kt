@@ -126,6 +126,8 @@ object CpStringsZh : CpStrings {
         override val initializingBackend = "正在初始化后端…"
     }
 
+    override val navigation = NavigationStringsZh
+
     override val messageNotify: MessageNotifyStrings = object : MessageNotifyStrings {
         override val guideTitle = "私信默认不打扰"
         override val guideBody = "想收谁的新消息，就在会话上右键（电脑）/ 长按（手机）→ 开启新消息通知。" +

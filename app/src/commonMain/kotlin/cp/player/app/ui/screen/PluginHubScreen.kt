@@ -815,10 +815,13 @@ private fun LazyListScope.discoverItems(
                     listOf(entry.plugin.author, entry.source.name)
                         .filter { it.isNotBlank() }
                         .forEach { append(" · ").append(it) }
+                    // 行副标题最多 4 行（见 SettingsKit.RowSubtitle）：拦截原因必须排在
+                    // 简介**前面**，否则长简介会把它挤出可视区 —— 用户只看到「安装」是灰的，
+                    // 却看不到为什么。完整简介在详情弹窗里仍可读。
+                    blocked?.let { append("\n").append(it) }
                     if (entry.plugin.description.isNotBlank()) {
                         append("\n").append(entry.plugin.description)
                     }
-                    blocked?.let { append("\n").append(it) }
                 },
                 icon = Icons.Filled.Extension,
                 index = index,

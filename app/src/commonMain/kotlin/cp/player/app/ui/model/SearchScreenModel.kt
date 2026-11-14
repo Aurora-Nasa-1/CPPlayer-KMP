@@ -28,7 +28,8 @@ import kotlinx.coroutines.launch
  * 界面看起来正常，只有换号之后才暴露。
  */
 private const val SEARCH_HISTORY_KEY = "search_history"
-private const val MAX_SEARCH_HISTORY = 10
+/** 最近搜索保留条数。界面默认只展示 9 条，其余由 `+N` 展开。 */
+private const val MAX_SEARCH_HISTORY = 30
 
 data class SearchUiState(
     val query: String = "",

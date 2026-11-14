@@ -1,6 +1,7 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -35,9 +37,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.zIndex
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.model.rememberScreenModel
@@ -65,6 +69,7 @@ import cp.player.app.ui.component.SectionHeader
 import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.SongMenuActions
 import cp.player.app.ui.component.StateSurface
+import cp.player.app.ui.component.cpBounceClickable
 import cp.player.app.ui.component.PlaylistItem
 import cp.player.app.ui.component.PlaylistMenuActions
 import cp.player.app.ui.component.songContextMenuItems
@@ -74,6 +79,7 @@ import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.shareText
 import cp.player.app.ui.model.SearchScreenModel
 import cp.player.app.repository.SearchType
+import cp.player.app.ui.theme.CpShapes
 import cp.player.core.music.isRemote
 import kotlinx.coroutines.launch
 
@@ -84,6 +90,25 @@ import kotlinx.coroutines.launch
  * 控件**，内部的节奏要紧；区块间距留给「最近搜索」↔「热门搜索」那种真正的分组。
  */
 private val SearchFieldTopPadding = 12.dp
+
+/** 最近搜索默认展示的条数；超出的部分折叠进 `+N` 卡片。 */
+private const val HistoryPreviewCount = 9
+
+private val HistoryCardHeight = 44.dp
+
+/**
+ * 最近搜索卡片的宽度按文字长度分级。
+ *
+ * 固定等宽会让「周杰伦」占一整行、「晴天」旁边空一大块；按长度分四档后，
+ * 短词是胶囊、长词是宽卡，扫视时更接近 M3 Expressive 的「内容决定形状」。
+ * 最大宽度仍受限，避免长关键词把一行挤成一张通栏卡。
+ */
+private fun historyCardWidth(keyword: String): Dp = when (keyword.length) {
+    in 0..3 -> 92.dp
+    in 4..6 -> 148.dp
+    in 7..10 -> 190.dp
+    else -> 228.dp
+}
 
 class SearchScreen(private val initialQuery: String = "") : Screen {
     /**
@@ -159,6 +184,8 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
         }
         // 「清空搜索历史」的二次确认：一键即生效会把积累的搜索痕迹一次抹掉。
         val confirm = cp.player.app.ui.component.rememberConfirmState()
+        // 最近搜索默认只铺 9 条；`+N` 卡片展开后显示全部（模型最多保留 30 条）。
+        var historyExpanded by remember { mutableStateOf(false) }
 
         // 搜索框焦点：既是建议下拉的显示判据（失焦即收起），也是本页「点别处关闭下拉」的
         // 唯一手段 —— 下拉是浮层，只能靠焦点语义判断「用户已经去干别的了」。
@@ -320,16 +347,14 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                         },
                                     )
                                 }
-                                items(state.searchHistory.size) { index ->
-                                    val keyword = state.searchHistory[index]
-                                    Row(
-                                        Modifier.fillMaxWidth().clickable { model.search(keyword) }.padding(vertical = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Icon(Icons.Filled.History, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        Spacer(Modifier.width(12.dp))
-                                        CpText(keyword)
-                                    }
+                                item {
+                                    SearchHistoryFlow(
+                                        history = state.searchHistory,
+                                        expanded = historyExpanded,
+                                        onSearch = { model.search(it) },
+                                        onExpand = { historyExpanded = true },
+                                        onCollapse = { historyExpanded = false },
+                                    )
                                 }
                             }
                             if (state.query.isBlank()) {
@@ -628,5 +653,102 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
         }
 
         cp.player.app.ui.component.CpConfirmHost(confirm)
+    }
+}
+
+/**
+ * 最近搜索的流式卡片布局。
+ *
+ * 默认只铺 [HistoryPreviewCount] 条，剩余记录收进 `+N` 卡片；展开后显示全部并给出
+ * 「收起」。独立成 internal composable 是为了让离屏版式探针能直接渲染真实布局，
+ * 而不是在测试里复制一份宽度规则。
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun SearchHistoryFlow(
+    history: List<String>,
+    expanded: Boolean,
+    onSearch: (String) -> Unit,
+    onExpand: () -> Unit,
+    onCollapse: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shown = if (expanded) history else history.take(HistoryPreviewCount)
+    FlowRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        shown.forEach { keyword ->
+            SearchHistoryCard(keyword = keyword, onClick = { onSearch(keyword) })
+        }
+        if (!expanded && history.size > HistoryPreviewCount) {
+            SearchHistoryMoreCard(
+                label = "+${history.size - HistoryPreviewCount}",
+                onClick = onExpand,
+            )
+        }
+        if (expanded && history.size > HistoryPreviewCount) {
+            SearchHistoryMoreCard(label = "收起", onClick = onCollapse)
+        }
+    }
+}
+
+/**
+ * 一条最近搜索。短词用胶囊、长词用更大的圆角卡 —— 形状本身携带「这条有多长」，
+ * 比一排等宽行更容易扫读。宽度上限 208dp，长关键词只截断显示，不撑破 FlowRow。
+ */
+@Composable
+private fun SearchHistoryCard(
+    keyword: String,
+    onClick: () -> Unit,
+) {
+    val shape = if (keyword.length <= 4) CpShapes.full else MaterialTheme.shapes.large
+    Row(
+        modifier = Modifier
+            .width(historyCardWidth(keyword))
+            .height(HistoryCardHeight)
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .cpBounceClickable(onClick = onClick)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Filled.History,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        CpText(
+            keyword,
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+        )
+    }
+}
+
+/** `+N` / 收起卡片：用次级容器色把「这不是一条历史记录」和真实关键词区分开。 */
+@Composable
+private fun SearchHistoryMoreCard(
+    label: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .height(HistoryCardHeight)
+            .clip(CpShapes.full)
+            .background(MaterialTheme.colorScheme.secondaryContainer)
+            .cpBounceClickable(onClick = onClick)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CpText(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            maxLines = 1,
+        )
     }
 }

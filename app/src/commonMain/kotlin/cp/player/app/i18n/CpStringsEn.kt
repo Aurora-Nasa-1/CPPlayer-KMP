@@ -123,6 +123,8 @@ object CpStringsEn : CpStrings {
         override val initializingBackend = "Initializing backend…"
     }
 
+    override val navigation = NavigationStringsEn
+
     override val messageNotify: MessageNotifyStrings = object : MessageNotifyStrings {
         override val guideTitle = "Messages stay quiet by default"
         override val guideBody = "To be notified about someone, right-click (desktop) or long-press " +

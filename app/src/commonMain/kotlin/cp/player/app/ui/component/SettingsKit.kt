@@ -303,6 +303,13 @@ private fun RowTitle(text: String, color: Color) {
     )
 }
 
+/**
+ * 行内副标题：允许换行完整显示。
+ *
+ * 设置行的 subtitle 常是操作说明、缓存路径、音源能力或失败原因 —— 这些信息被
+ * 固定行数截断后没有展开入口，触屏端也没有 hover 可救。设置页本身可滚动，
+ * 让行高随内容增长比静默省略更可靠。
+ */
 @Composable
 private fun RowSubtitle(text: String, color: Color) {
     CpText(
@@ -310,7 +317,7 @@ private fun RowSubtitle(text: String, color: Color) {
         style = MaterialTheme.typography.bodyMedium,
         color = color,
         fontWeight = FontWeight.Normal,
-        maxLines = 4,
+        maxLines = Int.MAX_VALUE,
     )
 }
 

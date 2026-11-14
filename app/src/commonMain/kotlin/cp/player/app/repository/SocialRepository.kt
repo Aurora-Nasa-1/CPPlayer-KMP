@@ -153,7 +153,7 @@ class SocialRepository(private val source: UnifiedMusicSource) {
             is BackendResult.Unsupported -> return BackendResult.Unsupported(message)
             is BackendResult.Success -> Unit
         }
-        val page = (this as BackendResult.Success).data
+        val page = data
         return BackendResult.Success(
             DynamicPage(
                 items = page.items.map { it.toDynamicPost() },

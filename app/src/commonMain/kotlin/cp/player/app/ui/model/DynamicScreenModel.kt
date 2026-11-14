@@ -220,12 +220,14 @@ class DynamicScreenModel : ScreenModel {
             cp.player.app.ui.util.UiEvents.notify("请先登录后再查看自己的动态")
             return
         }
-        if (_state.value.filter == DynamicFilter.Following) {
-            _state.update { it.copy(filter = DynamicFilter.User(selfId, "我的动态")) }
+        // 从「关注」或「TA 的动态」点进来都应落到自己的动态；只有已经在自己动态时
+        // 再点一次才切回关注。否则在用户主页点「我的动态」会意外回到关注流。
+        val current = _state.value.filter
+        if (current is DynamicFilter.User && current.userId == selfId) {
+            setFilter(DynamicFilter.Following)
         } else {
-            _state.update { it.copy(filter = DynamicFilter.Following) }
+            setFilter(DynamicFilter.User(selfId, "我的动态"))
         }
-        refresh()
     }
 
     // ======================== 互动 ========================

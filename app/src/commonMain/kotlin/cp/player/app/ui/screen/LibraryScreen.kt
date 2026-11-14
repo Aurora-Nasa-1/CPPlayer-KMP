@@ -2,6 +2,7 @@ package cp.player.app.ui.screen
 
 import cp.player.app.ui.component.CpText
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -88,6 +90,7 @@ import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpSongRowSkeleton
 import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.CpSpacing
+import cp.player.app.ui.component.CpSplitButton
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.LocalIsExpanded
 import cp.player.app.platform.shareText
@@ -108,6 +111,7 @@ import cp.player.app.ui.component.CpCircularWavyProgressIndeterminate
 import cp.player.app.ui.component.SongDetailInfoDialog
 import cp.player.app.ui.component.SongOptionsSheet
 import cp.player.app.ui.component.cpPressScale
+import cp.player.app.ui.component.legacySegmentGridShape
 import cp.player.app.ui.util.UiEvents
 import cp.player.core.local.LocalFolderTree
 import cp.player.core.local.LocalGridSort
@@ -887,221 +891,50 @@ private fun LocalLibrarySection(
     }
 
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        // ── 1. M3E 核心控制台卡片 ──
-        Surface(
-            shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(
-                modifier = Modifier.padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Surface(
-                        shape = MaterialTheme.shapes.large,
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Icon(
-                                Icons.Filled.FolderOpen,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.size(24.dp),
-                            )
-                        }
-                    }
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f)) {
-                        CpText(
-                            s.downloads.tabLocalLibrary,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        CpText(
-                            if (localCount > 0) {
-                                buildString {
-                                    append(s.downloads.localSongCount(localCount))
-                                    if (losslessCount > 0) {
-                                        append(" · ")
-                                        append(s.downloads.losslessCount(losslessCount))
-                                    }
-                                }
-                            } else {
-                                s.downloads.emptyLocalTitle
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    TextButton(
-                        onClick = { onOpenLocal(0) },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                    ) {
-                        CpText(s.downloads.browseLibrary, style = MaterialTheme.typography.labelLarge)
-                        Spacer(Modifier.width(2.dp))
-                        Icon(Icons.Filled.ChevronRight, null, Modifier.size(16.dp))
-                    }
-                }
+        LocalLibraryHeroCard(
+            totalSongs = localCount,
+            albumCount = albumsCount,
+            losslessCount = losslessCount,
+            covers = state.localAudioItems,
+            scanning = state.scanning,
+            scanProgressText = state.scanProgress?.let { s.downloads.scanningFound(it.scanned) }
+                ?: s.downloads.scanning,
+            onPlayAll = { model.playAll(state.localAudioItems) },
+            onShuffle = { model.shuffleAll(state.localAudioItems) },
+            onScan = { model.startScan(s) },
+            onOpen = { onOpenLocal(0) },
+            strings = s,
+        )
 
-                // 扫描动态状态条
-                if (state.scanning) {
-                    Surface(
-                        shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                CpCircularWavyProgressIndeterminate(
-                                    modifier = Modifier.size(16.dp),
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                                Spacer(Modifier.width(10.dp))
-                                CpText(
-                                    state.scanProgress?.let { s.downloads.scanningFound(it.scanned) }
-                                        ?: s.downloads.scanning,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                            CpWavyProgressIndeterminate(
-                                modifier = Modifier.fillMaxWidth().height(4.dp),
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-                }
+        LocalCategoryGrid(
+            items = listOf(
+                LocalCategoryItem(s.downloads.tabSongs, localCount, Icons.Filled.MusicNote, 0),
+                LocalCategoryItem(s.downloads.tabAlbums, albumsCount, Icons.Filled.Album, 1),
+                LocalCategoryItem(s.downloads.tabArtists, artistsCount, Icons.Filled.Person, 2),
+                LocalCategoryItem(s.downloads.tabLocalFavorites, favoritesCount, Icons.Filled.Favorite, 3),
+                LocalCategoryItem(
+                    s.downloads.tabLocalPlaylists,
+                    playlistsCount,
+                    Icons.AutoMirrored.Filled.QueueMusic,
+                    4,
+                ),
+                LocalCategoryItem(s.downloads.tabFolders, foldersCount, Icons.Filled.FolderOpen, 5),
+            ),
+            onOpenLocal = onOpenLocal,
+        )
 
-                // 快捷主动作组 (随机漫游 / 顺序播放 / 扫描设备)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (localCount > 0) {
-                        FilledTonalButton(
-                            onClick = { model.shuffleAll(state.localAudioItems) },
-                            shape = MaterialTheme.shapes.large,
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                            modifier = Modifier.weight(1f).cpPressScale(),
-                        ) {
-                            Icon(Icons.Filled.Shuffle, null, Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            CpText(s.downloads.quickShuffle, maxLines = 1)
-                        }
-                        FilledTonalButton(
-                            onClick = { model.playAll(state.localAudioItems) },
-                            shape = MaterialTheme.shapes.large,
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                            modifier = Modifier.weight(1f).cpPressScale(),
-                        ) {
-                            Icon(Icons.Filled.PlayArrow, null, Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            CpText(s.downloads.quickPlay, maxLines = 1)
-                        }
-                        FilledTonalIconButton(
-                            onClick = { model.startScan(s) },
-                            enabled = !state.scanning,
-                            shape = MaterialTheme.shapes.large,
-                            modifier = Modifier.cpPressScale(),
-                        ) {
-                            Icon(Icons.Filled.Refresh, contentDescription = s.downloads.scanDevice, Modifier.size(18.dp))
-                        }
-                    } else {
-                        FilledTonalButton(
-                            onClick = { model.startScan(s) },
-                            enabled = !state.scanning,
-                            shape = MaterialTheme.shapes.large,
-                            modifier = Modifier.fillMaxWidth().cpPressScale(),
-                        ) {
-                            Icon(Icons.Filled.Refresh, null, Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            CpText(s.downloads.scanDevice)
-                        }
-                    }
-                }
-            }
-        }
-
-        // ── 2. M3E 分类磁贴导航 (2x3 网格) ──
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                LocalCategoryPill(
-                    title = s.downloads.tabSongs,
-                    count = localCount,
-                    icon = Icons.Filled.MusicNote,
-                    onClick = { onOpenLocal(0) },
-                    modifier = Modifier.weight(1f),
-                )
-                LocalCategoryPill(
-                    title = s.downloads.tabAlbums,
-                    count = albumsCount,
-                    icon = Icons.Filled.Album,
-                    onClick = { onOpenLocal(1) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                LocalCategoryPill(
-                    title = s.downloads.tabArtists,
-                    count = artistsCount,
-                    icon = Icons.Filled.Person,
-                    onClick = { onOpenLocal(2) },
-                    modifier = Modifier.weight(1f),
-                )
-                LocalCategoryPill(
-                    title = s.downloads.tabLocalFavorites,
-                    count = favoritesCount,
-                    icon = Icons.Filled.Favorite,
-                    onClick = { onOpenLocal(3) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                LocalCategoryPill(
-                    title = s.downloads.tabLocalPlaylists,
-                    count = playlistsCount,
-                    icon = Icons.AutoMirrored.Filled.QueueMusic,
-                    onClick = { onOpenLocal(4) },
-                    modifier = Modifier.weight(1f),
-                )
-                LocalCategoryPill(
-                    title = s.downloads.tabFolders,
-                    count = foldersCount,
-                    icon = Icons.Filled.FolderOpen,
-                    onClick = { onOpenLocal(5) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-
-        // ── 3. 最近添加歌曲速览 ──
         if (state.recentAudioItems.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    CpText(
-                        s.downloads.recentAdded,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    TextButton(onClick = { onOpenLocal(0) }) {
-                        CpText(s.downloads.viewAll, style = MaterialTheme.typography.labelMedium)
-                        Icon(Icons.Filled.ChevronRight, null, Modifier.size(16.dp))
-                    }
-                }
+                SectionHeader(
+                    title = s.downloads.recentAdded,
+                    supportingText = s.downloads.localSongCount(localCount),
+                    action = {
+                        TextButton(onClick = { onOpenLocal(0) }) {
+                            CpText(s.downloads.viewAll, style = MaterialTheme.typography.labelMedium)
+                            Icon(Icons.Filled.ChevronRight, null, Modifier.size(16.dp))
+                        }
+                    },
+                )
                 state.recentAudioItems.forEachIndexed { index, song ->
                     val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
                     val mediaId = if (isVideo) "local://video/${song.path}" else "local://audio/${song.path}"
@@ -1131,61 +964,59 @@ private fun LocalLibrarySection(
             }
         }
 
-        // ── 4. 离线下载管理卡片 ──
-        BentoCard(
+        Surface(
             onClick = onOpenDownloads,
-            modifier = Modifier.fillMaxWidth(),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            contentPadding = PaddingValues(16.dp),
-            fillHeight = false,
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            modifier = Modifier.fillMaxWidth().cpPressScale(),
         ) {
             Row(
-                Modifier.fillMaxWidth(),
+                Modifier.fillMaxWidth().padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Filled.Download,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    CpText(
-                        s.library.offlineDownloads,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    if (activeCount > 0) {
-                        Spacer(Modifier.width(8.dp))
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primary,
-                        ) {
-                            CpText(
-                                s.downloads.downloadingCount(activeCount),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            )
-                        }
+                Surface(
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Filled.Download,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.size(22.dp),
+                        )
                     }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    CpText(
+                        s.library.offlineDownloads,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
                     CpText(
                         s.downloads.downloadedCount(completedCount),
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.width(4.dp))
-                    Icon(
-                        Icons.Filled.ChevronRight,
-                        null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp),
-                    )
                 }
+                if (activeCount > 0) {
+                    Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary) {
+                        CpText(
+                            s.downloads.downloadingCount(activeCount),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+                Icon(
+                    Icons.Filled.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
             }
         }
     }
@@ -1333,52 +1164,321 @@ private fun LocalLibrarySection(
     }
 }
 
+/**
+ * 「我的 → 本地」概览卡。
+ *
+ * 与 [LocalLibraryScreen] 的 Hero 保持同一套视觉语言：大标题 + 统计、右侧三张封面叠放、
+ * 主操作走 split button，扫描退成图标胶囊。窄栏（手机）隐藏封面堆，把宽度让给标题与按钮。
+ */
 @Composable
-private fun LocalCategoryPill(
-    title: String,
-    count: Int,
-    icon: ImageVector,
+internal fun LocalLibraryHeroCard(
+    totalSongs: Int,
+    albumCount: Int,
+    losslessCount: Int,
+    covers: List<LocalMediaItem>,
+    scanning: Boolean,
+    scanProgressText: String,
+    onPlayAll: () -> Unit,
+    onShuffle: () -> Unit,
+    onScan: () -> Unit,
+    onOpen: () -> Unit,
+    strings: CpStrings,
+) {
+    val d = strings.downloads
+    Surface(
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(20.dp)) {
+            val wide = maxWidth >= 520.dp
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        CpText(
+                            d.tabLocalLibrary,
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                        )
+                        CpText(
+                            if (totalSongs > 0) {
+                                buildString {
+                                    append(d.localSongCount(totalSongs))
+                                    if (albumCount > 0) append(" · ").append(d.albumCount(albumCount))
+                                    if (losslessCount > 0) append(" · ").append(d.losslessCount(losslessCount))
+                                }
+                            } else {
+                                d.emptyLocalTitle
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                        )
+                    }
+                    if (wide) {
+                        LocalLibraryAlbumStack(covers, Modifier.size(104.dp))
+                    }
+                }
+
+                if (scanning) {
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CpCircularWavyProgressIndeterminate(
+                                    modifier = Modifier.size(16.dp),
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                CpText(
+                                    scanProgressText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            CpWavyProgressIndeterminate(
+                                modifier = Modifier.fillMaxWidth().height(4.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    CpSplitButton(
+                        onLeadingClick = onPlayAll,
+                        leadingContent = {
+                            Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(24.dp))
+                            Spacer(Modifier.width(10.dp))
+                            CpText(
+                                d.playAll,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        },
+                        onTrailingClick = onShuffle,
+                        trailingContent = {
+                            Icon(
+                                Icons.Filled.Shuffle,
+                                contentDescription = d.quickShuffle,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        },
+                        enabled = totalSongs > 0,
+                        trailingWidth = 60.dp,
+                        modifier = if (wide) {
+                            Modifier.width(340.dp).height(58.dp)
+                        } else {
+                            Modifier.weight(1f).height(58.dp)
+                        },
+                    )
+                    FilledTonalIconButton(
+                        onClick = onScan,
+                        enabled = !scanning,
+                        shape = MaterialTheme.shapes.large,
+                        modifier = Modifier.size(48.dp).cpPressScale(),
+                    ) {
+                        Icon(
+                            Icons.Filled.Refresh,
+                            contentDescription = d.scanDevice,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                    FilledTonalIconButton(
+                        onClick = onOpen,
+                        shape = MaterialTheme.shapes.large,
+                        modifier = Modifier.size(48.dp).cpPressScale(),
+                    ) {
+                        Icon(
+                            Icons.Filled.ChevronRight,
+                            contentDescription = d.browseLibrary,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 分类磁贴的一格。 */
+internal data class LocalCategoryItem(
+    val title: String,
+    val count: Int,
+    val icon: ImageVector,
+    val tab: Int,
+)
+
+/**
+ * M3E 连体分类磁贴。
+ *
+ * 宽栏三列、窄栏两列；整组外圈 20dp、相邻内角 4dp（[legacySegmentGridShape]），
+ * 拼成一张连续的卡片而不是六个独立圆角块。计数用 `headlineSmall` 大号数字，
+ * 与 PixelPlayer 的 Library 分类区同一读法：先看到数量，再看到分类名。
+ */
+@Composable
+internal fun LocalCategoryGrid(
+    items: List<LocalCategoryItem>,
+    onOpenLocal: (Int) -> Unit,
+) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val columns = if (maxWidth >= 560.dp) 3 else 2
+        val rows = items.chunked(columns)
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            rows.forEachIndexed { rowIndex, row ->
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    row.forEachIndexed { columnIndex, item ->
+                        LocalCategoryTile(
+                            item = item,
+                            shape = legacySegmentGridShape(rowIndex, rows.size, columnIndex, row.size),
+                            onClick = { onOpenLocal(item.tab) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalCategoryTile(
+    item: LocalCategoryItem,
+    shape: androidx.compose.ui.graphics.Shape,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        shape = MaterialTheme.shapes.large,
+        onClick = onClick,
+        shape = shape,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = modifier
-            .cpPressScale()
-            .clickable(onClick = onClick),
+        modifier = modifier.height(108.dp).cpPressScale(),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            Modifier.fillMaxSize().padding(16.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp),
-            )
-            Spacer(Modifier.width(10.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            item.icon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                CpText(
+                    item.count.toString(),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (item.count > 0) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    },
+                )
+            }
             CpText(
-                title,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.weight(1f),
+                item.title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
             )
-            if (count > 0) {
-                Surface(
-                    shape = MaterialTheme.shapes.extraSmall,
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                ) {
-                    CpText(
-                        count.toString(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+        }
+    }
+}
+
+/** 三张专辑封面叠成的封面堆；无封面时退回 tonal 图标块。 */
+@Composable
+private fun LocalLibraryAlbumStack(
+    items: List<LocalMediaItem>,
+    modifier: Modifier = Modifier,
+) {
+    val covers = remember(items) {
+        items.asSequence()
+            .mapNotNull { it.coverUri?.takeIf { uri -> uri.isNotBlank() } }
+            .distinct()
+            .take(3)
+            .toList()
+    }
+    Box(modifier, contentAlignment = Alignment.Center) {
+        if (covers.isEmpty()) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.secondaryContainer,
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Filled.LibraryMusic,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.fillMaxSize(0.34f),
                     )
                 }
             }
+        } else {
+            if (covers.size > 1) {
+                LocalAlbumStackCover(
+                    uri = covers[1],
+                    modifier = Modifier.align(Alignment.TopStart).size(34.dp),
+                    circular = true,
+                )
+            }
+            if (covers.size > 2) {
+                LocalAlbumStackCover(
+                    uri = covers[2],
+                    modifier = Modifier.align(Alignment.BottomEnd).size(36.dp),
+                    circular = true,
+                )
+            }
+            LocalAlbumStackCover(
+                uri = covers[0],
+                modifier = Modifier.align(Alignment.Center).offset(x = 7.dp).size(64.dp),
+                circular = false,
+            )
         }
+    }
+}
+
+@Composable
+private fun LocalAlbumStackCover(
+    uri: String,
+    modifier: Modifier,
+    circular: Boolean,
+) {
+    val shape = if (circular) CircleShape else MaterialTheme.shapes.large
+    Box(
+        modifier.clip(shape)
+            .border(3.dp, MaterialTheme.colorScheme.surfaceContainerLow, shape),
+    ) {
+        LandingArtwork(uri, Modifier.fillMaxSize())
     }
 }
