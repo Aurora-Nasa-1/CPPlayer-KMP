@@ -3,6 +3,7 @@ package cp.player.app.ui.model
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
+import cp.player.app.i18n.CpStrings
 import cp.player.core.BackendResult
 import cp.player.core.util.runCatchingExceptCancellation
 import cp.player.core.music.AlbumSummary
@@ -34,21 +35,21 @@ import kotlinx.coroutines.withContext
  *
  * 只有 [Recommended] 在首屏就拉取，另两个等用户真的切过去再拉（见 [HomeScreenModel.selectPlaylistSource]）。
  */
-enum class PlaylistSource(val label: String) {
-    Recommended("推荐"),
-    Hot("热门"),
-    Premium("精品"),
+enum class PlaylistSource {
+    Recommended,
+    Hot,
+    Premium,
 }
 
 /**
  * 「新歌速递」的地区筛选，取值与上游 `top/song` 的 `type` 一一对应。
  */
-enum class NewSongRegion(val type: Int, val label: String) {
-    All(0, "全部"),
-    Chinese(7, "华语"),
-    Western(96, "欧美"),
-    Japanese(8, "日本"),
-    Korean(16, "韩国"),
+enum class NewSongRegion(val type: Int) {
+    All(0),
+    Chinese(7),
+    Western(96),
+    Japanese(8),
+    Korean(16),
 }
 
 data class HomeUiState(
@@ -231,13 +232,13 @@ class HomeScreenModel(
     }
 
     /** 播放私人 FM：按批次连续拉取，补足一组可听队列；本地模式下自动回退为随机播放本地曲库。 */
-    fun playPersonalFm() {
+    fun playPersonalFm(strings: CpStrings) {
         screenModelScope.launch {
             if (AppModel.activeProvider() == null) {
                 val localItems = AppModel.localMedia.items().value
                     .filter { it.mediaType == cp.player.core.media.MediaType.AUDIO }
                 if (localItems.isEmpty()) {
-                    cp.player.app.ui.util.UiEvents.notify("本地曲库暂无音乐，请先扫描或导入")
+                    cp.player.app.ui.util.UiEvents.notify(strings.library.localLibraryEmpty)
                     return@launch
                 }
                 AppModel.playback.playQueue(
@@ -252,7 +253,7 @@ class HomeScreenModel(
             }
             val songs = (result as? BackendResult.Success)?.data.orEmpty()
             if (songs.isEmpty()) {
-                cp.player.app.ui.util.UiEvents.notify("私人FM暂不可用，请稍后再试")
+                cp.player.app.ui.util.UiEvents.notify(strings.library.personalFmUnavailable)
                 return@launch
             }
             val provider = AppModel.activeProviderId()
@@ -301,6 +302,7 @@ class HomeScreenModel(
      */
     private fun withPlaylistTracks(
         playlist: PlaylistSummary,
+        strings: CpStrings,
         block: suspend (List<TrackSummary>) -> Unit,
     ) {
         // `isServerPlaylist` 而不是内联 `id <= 0`：判据与「要不要出菜单」共用一条。
@@ -313,7 +315,11 @@ class HomeScreenModel(
             val tracks = detail?.tracks.orEmpty()
             if (tracks.isEmpty()) {
                 cp.player.app.ui.util.UiEvents.notify(
-                    if (detail != null) "「${playlist.name}」里还没有歌" else "歌单加载失败"
+                    if (detail != null) {
+                        strings.library.emptyPlaylist(playlist.name)
+                    } else {
+                        strings.library.playlistDetailLoadFailed
+                    }
                 )
                 return@launch
             }
@@ -322,7 +328,7 @@ class HomeScreenModel(
     }
 
     /** 播放整个歌单（从第一首起）。 */
-    fun playPlaylist(playlist: PlaylistSummary) = withPlaylistTracks(playlist) { tracks ->
+    fun playPlaylist(playlist: PlaylistSummary, strings: CpStrings) = withPlaylistTracks(playlist, strings) { tracks ->
         val provider = AppModel.activeProviderId()
         AppModel.playback.playQueue(
             tracks.map { "$provider://song/${it.id}" },
@@ -332,14 +338,14 @@ class HomeScreenModel(
     }
 
     /** 把整个歌单追加到播放队列尾部（不动当前播放）。 */
-    fun queuePlaylist(playlist: PlaylistSummary) = withPlaylistTracks(playlist) { tracks ->
+    fun queuePlaylist(playlist: PlaylistSummary, strings: CpStrings) = withPlaylistTracks(playlist, strings) { tracks ->
         val provider = AppModel.activeProviderId()
         tracks.forEach { AppModel.playback.addToQueue("$provider://song/${it.id}") }
-        cp.player.app.ui.util.UiEvents.notify("已把「${playlist.name}」加入播放队列")
+        cp.player.app.ui.util.UiEvents.notify(strings.library.playlistQueued(playlist.name))
     }
 
     /** 下载整个歌单（复用 [AppModel.downloadTracks] 的批量入队与提示）。 */
-    fun downloadPlaylist(playlist: PlaylistSummary) = withPlaylistTracks(playlist) { tracks ->
+    fun downloadPlaylist(playlist: PlaylistSummary, strings: CpStrings) = withPlaylistTracks(playlist, strings) { tracks ->
         AppModel.downloadTracks(tracks)
     }
 
@@ -347,7 +353,7 @@ class HomeScreenModel(
      * 自己建的 ⇒ 删除歌单；收藏来的 ⇒ 取消收藏。成功后刷新列表
      * （侧栏「我的歌单」与「查看全部 N 个歌单」的计数都要跟着变）。
      */
-    fun deleteOrUnsubscribePlaylist(playlist: PlaylistSummary) {
+    fun deleteOrUnsubscribePlaylist(playlist: PlaylistSummary, strings: CpStrings) {
         val owner = isPlaylistOwner(playlist)
         screenModelScope.launch {
             val ok = withContext(Dispatchers.IO) {
@@ -357,8 +363,15 @@ class HomeScreenModel(
                 }.getOrDefault(false)
             }
             cp.player.app.ui.util.UiEvents.notify(
-                if (ok) (if (owner) "已删除「${playlist.name}」" else "已取消收藏「${playlist.name}」")
-                else "操作失败"
+                if (ok) {
+                    if (owner) {
+                        strings.library.playlistDeleted(playlist.name)
+                    } else {
+                        strings.library.playlistUnsubscribed(playlist.name)
+                    }
+                } else {
+                    strings.library.operationFailed
+                }
             )
             if (ok) refresh(force = true)
         }
@@ -708,7 +721,7 @@ class HomeScreenModel(
      * 所以每个分支都必须自己兜住异常。
      */
     private suspend fun <T> safe(block: suspend () -> MusicResult<T>): MusicResult<T> =
-        runCatchingExceptCancellation { block() }.getOrElse { BackendResult.Error(it.message ?: "加载失败", cause = it) }
+        runCatchingExceptCancellation { block() }.getOrElse { BackendResult.Error(it.message ?: "", cause = it) }
 
     private fun <T> MusicResult<List<T>>.dataOrEmpty(): List<T> =
         (this as? BackendResult.Success)?.data.orEmpty()

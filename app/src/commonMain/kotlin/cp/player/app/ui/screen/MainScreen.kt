@@ -1045,6 +1045,7 @@ private fun DesktopSidebar(
     // 否则首页那一屏七八个并发请求会被整份重打一遍，侧栏还跟着首页一起刷。
     val homeModel = remember { cp.player.app.ui.model.HomeScreenModel(loadDiscovery = false) }
     val homeState by homeModel.state.collectAsState()
+    val s = cpStrings()
     // 进行中的下载条数：直接收集后端 StateFlow，不另建 ScreenModel ——
     // 侧栏不是 Screen，没有 ScreenModel 的生命周期可以托管它。
     val downloadTasks by AppModel.downloads.tasksFlow.collectAsState()
@@ -1082,42 +1083,48 @@ private fun DesktopSidebar(
     val playlistMenu: (PlaylistSummary) -> List<CpContextMenuItem> = { playlist ->
         val owner = homeModel.isPlaylistOwner(playlist)
         buildList {
-            add(CpContextMenuItem("播放", Icons.Filled.PlayArrow, onClick = { homeModel.playPlaylist(playlist) }))
             add(
                 CpContextMenuItem(
-                    "加入队列", Icons.AutoMirrored.Filled.QueueMusic,
-                    onClick = { homeModel.queuePlaylist(playlist) },
+                    s.library.playAll,
+                    Icons.Filled.PlayArrow,
+                    onClick = { homeModel.playPlaylist(playlist, s) },
                 )
             )
             add(
                 CpContextMenuItem(
-                    "全部下载", Icons.Filled.Download,
-                    onClick = { homeModel.downloadPlaylist(playlist) },
+                    s.library.addToQueue, Icons.AutoMirrored.Filled.QueueMusic,
+                    onClick = { homeModel.queuePlaylist(playlist, s) },
+                )
+            )
+            add(
+                CpContextMenuItem(
+                    s.library.downloadAll, Icons.Filled.Download,
+                    onClick = { homeModel.downloadPlaylist(playlist, s) },
                 )
             )
             add(CpContextMenuSeparator)
             add(
                 CpContextMenuItem(
-                    "分享歌单", Icons.Filled.Share,
+                    s.library.sharePlaylist, Icons.Filled.Share,
                     onClick = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
                 )
             )
             // 与歌单详情页同一条可见性规则：owner 才谈得上「删除」，收藏来的只能「取消收藏」。
             add(
                 CpContextMenuItem(
-                    if (owner) "删除歌单" else "取消收藏",
+                    if (owner) s.library.deletePlaylist else s.library.unfavoritePlaylist,
                     Icons.Filled.Delete,
                     onClick = {
                         confirm.request(
-                            title = if (owner) "删除歌单" else "取消收藏",
+                            title = if (owner) s.library.deletePlaylist else s.library.unfavoritePlaylist,
                             message = if (owner) {
-                                "确定删除「${playlist.name}」吗？删除后无法恢复。"
+                                s.library.deletePlaylistMessage(playlist.name)
                             } else {
-                                "确定取消收藏「${playlist.name}」吗？之后仍可重新收藏。"
+                                s.library.unfavoritePlaylistMessage(playlist.name)
                             },
-                            confirmLabel = if (owner) "删除" else "取消收藏",
+                            confirmLabel = if (owner) s.common.confirm else s.library.unfavoritePlaylist,
                             destructive = owner,
-                            onConfirm = { homeModel.deleteOrUnsubscribePlaylist(playlist) },
+                            onConfirm = { homeModel.deleteOrUnsubscribePlaylist(playlist, s) },
                         )
                     },
                     danger = true,

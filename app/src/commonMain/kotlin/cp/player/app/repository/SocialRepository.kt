@@ -8,11 +8,21 @@ import cp.player.core.music.UnifiedMusicSource
 import cp.player.sdk.Bytes
 import cp.player.sdk.Conversation
 import cp.player.sdk.CursorRequest
+import cp.player.sdk.EventOrigin
+import cp.player.sdk.EventPage
+import cp.player.sdk.EventPageRequest
+import cp.player.sdk.ForwardEventRequest
+import cp.player.sdk.IdRequest
 import cp.player.sdk.MessageHistoryRequest
 import cp.player.sdk.PageRequest
+import cp.player.sdk.ResourceLikeRequest
 import cp.player.sdk.SendMessageRequest
 import cp.player.sdk.SocialUser
+import cp.player.sdk.SocialEvent
+import cp.player.sdk.UserEventRequest
 import cp.player.sdk.UserRequest
+import cp.player.app.model.DynamicOrigin
+import cp.player.app.model.DynamicPost
 
 internal fun cp.player.sdk.PrivateMessage.toMessage(myUid: Long): Message? {
     val fromUserId = sender.id.toLongOrNull() ?: return null
@@ -95,6 +105,105 @@ class SocialRepository(private val source: UnifiedMusicSource) {
         runCatching { source.markMessageAsRead(UserRequest(uid.toString())) }
     }
 
+    // ======================== 动态 ========================
+
+    /**
+     * 当前账号的动态流（关注 + 自己的）。
+     *
+     * 失败如实返回 [BackendResult.Unsupported] / [BackendResult.Error]：音源未声明
+     * `social.events` 时默认实现就是 Unsupported，页面据此显示「音源不支持」而不是空列表。
+     * 返回的 `cursor` 为空或 `hasMore` 不为 true 时，调用方不应再翻页。
+     */
+    suspend fun getFeed(limit: Int = 20, cursor: String? = null): MusicResult<DynamicPage> {
+        val result = source.getEvents(EventPageRequest(limit = limit, cursor = cursor))
+        return result.mapPage()
+    }
+
+    /** 指定用户的动态（用户主页 / 「只看 TA」筛选）。 */
+    suspend fun getUserFeed(
+        userId: String,
+        limit: Int = 20,
+        cursor: String? = null,
+    ): MusicResult<DynamicPage> {
+        val result = source.getUserEvents(
+            UserEventRequest(id = userId, limit = limit, cursor = cursor),
+        )
+        return result.mapPage()
+    }
+
+    /** 点赞 / 取消点赞一条动态；返回服务端是否受理。 */
+    suspend fun likeEvent(eventId: String, liked: Boolean): Boolean =
+        (source.likeResource(
+            ResourceLikeRequest(id = eventId, type = "event", liked = liked),
+        ) as? BackendResult.Success)?.data?.success == true
+
+    /** 转发一条动态并附带自己的话。 */
+    suspend fun forwardEvent(eventId: String, userId: String, text: String): Boolean =
+        (source.forwardEvent(
+            ForwardEventRequest(eventId = eventId, userId = userId, text = text),
+        ) as? BackendResult.Success)?.data?.success == true
+
+    /** 删除自己发的动态。 */
+    suspend fun deleteEvent(eventId: String): Boolean =
+        (source.deleteEvent(IdRequest(eventId)) as? BackendResult.Success)?.data?.success == true
+
+    private fun BackendResult<EventPage>.mapPage(): MusicResult<DynamicPage> {
+        when (this) {
+            is BackendResult.Error -> return BackendResult.Error(message, code, cause)
+            is BackendResult.Unsupported -> return BackendResult.Unsupported(message)
+            is BackendResult.Success -> Unit
+        }
+        val page = (this as BackendResult.Success).data
+        return BackendResult.Success(
+            DynamicPage(
+                items = page.items.map { it.toDynamicPost() },
+                hasMore = page.hasMore == true,
+                cursor = page.cursor?.takeIf(String::isNotBlank),
+            ),
+        )
+    }
+
+    private fun SocialEvent.toDynamicPost(): DynamicPost = DynamicPost(
+        id = id,
+        userId = user.id,
+        userName = user.nickname,
+        avatarUrl = user.avatarUrl.orEmpty(),
+        text = text,
+        publishedAtEpochMs = publishedAtEpochMs,
+        imageUrls = imageUrls,
+        resourceId = resourceId,
+        resourceType = resourceType,
+        resourceTitle = resourceTitle,
+        resourceCoverUrl = resourceCoverUrl,
+        resourceSubtitle = resourceSubtitle,
+        liked = liked,
+        likedCount = likedCount,
+        commentCount = commentCount,
+        forwardCount = forwardCount,
+        forwardedFrom = forwardedFrom?.toOrigin(),
+        location = location,
+    )
+
+    private fun EventOrigin.toOrigin(): DynamicOrigin = DynamicOrigin(
+        id = id,
+        userId = user.id,
+        userName = user.nickname,
+        avatarUrl = user.avatarUrl.orEmpty(),
+        text = text,
+        publishedAtEpochMs = publishedAtEpochMs,
+        imageUrls = imageUrls,
+        resourceId = resourceId,
+        resourceType = resourceType,
+        resourceTitle = resourceTitle,
+        resourceCoverUrl = resourceCoverUrl,
+        resourceSubtitle = resourceSubtitle,
+        liked = liked,
+        likedCount = likedCount,
+        commentCount = commentCount,
+        forwardCount = forwardCount,
+        location = location,
+    )
+
     // ======================== 映射 ========================
 
     private fun Conversation.toContact(): Contact? {
@@ -121,3 +230,10 @@ class SocialRepository(private val source: UnifiedMusicSource) {
         is BackendResult.Success -> null
     }
 }
+
+/** 一页动态及翻页信息。 */
+data class DynamicPage(
+    val items: List<DynamicPost>,
+    val hasMore: Boolean,
+    val cursor: String?,
+)

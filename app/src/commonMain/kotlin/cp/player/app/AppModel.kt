@@ -960,6 +960,64 @@ object AppModel {
         _bottomBarAutoHide.value = enabled
     }
 
+    // ============ 主导航入口（持久化） ============
+
+    private const val KEY_DYNAMIC_REPLACES_SEARCH = "nav_dynamic_replaces_search"
+    private const val KEY_HIDE_DYNAMIC_ENTRY = "nav_hide_dynamic_entry"
+    private const val KEY_HIDE_MESSAGES_ENTRY = "nav_hide_messages_entry"
+
+    private val _dynamicReplacesSearch = MutableStateFlow(
+        settings.getString(KEY_DYNAMIC_REPLACES_SEARCH)?.toBooleanStrictOrNull() ?: false
+    )
+
+    /**
+     * 「动态」是否占用主 tab 中「搜索」的位置（默认关）。
+     *
+     * 打开后第 2 个 tab 变成动态，搜索移到顶栏动作位（仍是同一条 `SearchScreen` 路由，
+     * 因此搜索历史、建议、结果类型切换全部照旧）。关掉即恢复「首页 / 搜索 / 我的」。
+     */
+    val dynamicReplacesSearchFlow: StateFlow<Boolean> = _dynamicReplacesSearch.asStateFlow()
+
+    fun dynamicReplacesSearch(): Boolean = _dynamicReplacesSearch.value
+
+    fun setDynamicReplacesSearch(enabled: Boolean) {
+        settings.putString(KEY_DYNAMIC_REPLACES_SEARCH, enabled.toString())
+        _dynamicReplacesSearch.value = enabled
+    }
+
+    private val _hideDynamicEntry = MutableStateFlow(
+        settings.getString(KEY_HIDE_DYNAMIC_ENTRY)?.toBooleanStrictOrNull() ?: false
+    )
+
+    /**
+     * 是否隐藏所有「动态」入口（默认关）。
+     *
+     * 隐藏只影响入口，不动数据：音源仍支持时从设置页仍可打开动态页，
+     * 关掉开关后入口原样回来。
+     */
+    val hideDynamicEntryFlow: StateFlow<Boolean> = _hideDynamicEntry.asStateFlow()
+
+    fun hideDynamicEntry(): Boolean = _hideDynamicEntry.value
+
+    fun setHideDynamicEntry(enabled: Boolean) {
+        settings.putString(KEY_HIDE_DYNAMIC_ENTRY, enabled.toString())
+        _hideDynamicEntry.value = enabled
+    }
+
+    private val _hideMessagesEntry = MutableStateFlow(
+        settings.getString(KEY_HIDE_MESSAGES_ENTRY)?.toBooleanStrictOrNull() ?: false
+    )
+
+    /** 是否隐藏顶栏 / 侧栏 / 底栏的「消息」入口（默认关）。 */
+    val hideMessagesEntryFlow: StateFlow<Boolean> = _hideMessagesEntry.asStateFlow()
+
+    fun hideMessagesEntry(): Boolean = _hideMessagesEntry.value
+
+    fun setHideMessagesEntry(enabled: Boolean) {
+        settings.putString(KEY_HIDE_MESSAGES_ENTRY, enabled.toString())
+        _hideMessagesEntry.value = enabled
+    }
+
     // ============ 封面飞行动画（持久化） ============
 
     private const val KEY_COVER_FLIGHT_ANIMATION = "cover_flight_animation"
@@ -1062,7 +1120,6 @@ object AppModel {
     private const val KEY_MOBILE_PLAYER_COVER_CORNER = "mobile_player_cover_corner"
     private const val KEY_MOBILE_PLAYER_COVER_ELEVATION = "mobile_player_cover_elevation"
     private const val KEY_MOBILE_PLAYER_AMBIENT_GLOW = "mobile_player_ambient_glow"
-    private const val KEY_MOBILE_PLAYER_COVER_SWIPE = "mobile_player_cover_swipe"
     private const val KEY_MOBILE_PLAYER_WAVY_SEEKBAR = "mobile_player_wavy_seekbar"
     private const val KEY_MOBILE_PLAYER_LYRICS_LINES = "mobile_player_lyrics_lines"
     private const val KEY_MOBILE_PLAYER_LYRICS_FONT_SIZE = "mobile_player_lyrics_font_size"
@@ -1080,7 +1137,6 @@ object AppModel {
             coverCornerDp = settings.getString(KEY_MOBILE_PLAYER_COVER_CORNER)?.toIntOrNull() ?: 24,
             coverElevationDp = settings.getString(KEY_MOBILE_PLAYER_COVER_ELEVATION)?.toIntOrNull() ?: 16,
             ambientGlow = settings.getString(KEY_MOBILE_PLAYER_AMBIENT_GLOW)?.toBooleanStrictOrNull() ?: true,
-            coverSwipeGesture = settings.getString(KEY_MOBILE_PLAYER_COVER_SWIPE)?.toBooleanStrictOrNull() ?: true,
             useWavySeekBar = settings.getString(KEY_MOBILE_PLAYER_WAVY_SEEKBAR)?.toBooleanStrictOrNull() ?: false,
             lyricsLines = settings.getString(KEY_MOBILE_PLAYER_LYRICS_LINES)?.toIntOrNull() ?: 2,
             lyricsFontSizeSp = settings.getString(KEY_MOBILE_PLAYER_LYRICS_FONT_SIZE)?.toIntOrNull() ?: 17,
@@ -1109,7 +1165,6 @@ object AppModel {
         settings.putString(KEY_MOBILE_PLAYER_COVER_CORNER, updated.coverCornerDp.toString())
         settings.putString(KEY_MOBILE_PLAYER_COVER_ELEVATION, updated.coverElevationDp.toString())
         settings.putString(KEY_MOBILE_PLAYER_AMBIENT_GLOW, updated.ambientGlow.toString())
-        settings.putString(KEY_MOBILE_PLAYER_COVER_SWIPE, updated.coverSwipeGesture.toString())
         settings.putString(KEY_MOBILE_PLAYER_WAVY_SEEKBAR, updated.useWavySeekBar.toString())
         settings.putString(KEY_MOBILE_PLAYER_LYRICS_LINES, updated.lyricsLines.toString())
         settings.putString(KEY_MOBILE_PLAYER_LYRICS_FONT_SIZE, updated.lyricsFontSizeSp.toString())
