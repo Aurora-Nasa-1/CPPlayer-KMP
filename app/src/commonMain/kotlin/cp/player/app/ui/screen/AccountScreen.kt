@@ -569,6 +569,7 @@ internal fun AccountLoginPane(
     val targetAppName by model.targetAppName.collectAsState()
     val targetAppInstalled by model.targetAppInstalled.collectAsState()
     val supportsCaptchaImage by model.supportsCaptchaImage.collectAsState()
+    val defaultCountryCode by model.defaultCountryCode.collectAsState()
     val captchaImage by model.captchaImage.collectAsState()
     val imageCaptcha by model.imageCaptcha.collectAsState()
 
@@ -626,6 +627,7 @@ internal fun AccountLoginPane(
                         onPhoneChange = { phone = it },
                         countryCode = countryCode,
                         onCountryCodeChange = { countryCode = it },
+                        fixedCountryCode = defaultCountryCode,
                         captcha = captcha,
                         onCaptchaChange = { captcha = it },
                         isLoading = isLoading,
@@ -633,8 +635,10 @@ internal fun AccountLoginPane(
                         imageCaptcha = imageCaptcha,
                         onImageCaptchaChange = { model.imageCaptcha.value = it },
                         onRefreshCaptcha = { model.fetchCaptchaImage() },
-                        onSendCaptcha = { model.sendCaptcha(phone, countryCode) },
-                        onSubmit = { useSmsCode -> model.loginPhone(phone, captcha, useSmsCode, countryCode) },
+                        onSendCaptcha = { model.sendCaptcha(phone, defaultCountryCode ?: countryCode) },
+                        onSubmit = { useSmsCode ->
+                            model.loginPhone(phone, captcha, useSmsCode, defaultCountryCode ?: countryCode)
+                        },
                     )
                     LoginChannel.COOKIE -> CookieLoginPanel(
                         raw = cookieText,
@@ -652,7 +656,7 @@ internal fun AccountLoginPane(
 /**
  * M3E 登录通道胶囊分段单选控件。
  *
- * 手机界面或窄屏下，5 个标签（扫码、手机号、邮箱、Cookie、WebView）若强行 weight(1f) 均分
+ * 手机界面或窄屏下，4 个标签（扫码、手机号、邮箱、Cookie）若强行 weight(1f) 均分
  * 会导致单项宽度不足（仅 ~55-60dp），使图标与文字严重挤压甚至截断。
  * 此处采用响应式布局：
  * - 宽屏（>= 96dp * channels.size）时均分铺满，保证对称平整；
@@ -956,6 +960,7 @@ private fun PhoneLoginPanel(
     onPhoneChange: (String) -> Unit,
     countryCode: String,
     onCountryCodeChange: (String) -> Unit,
+    fixedCountryCode: String? = null,
     captcha: String,
     onCaptchaChange: (String) -> Unit,
     isLoading: Boolean,
@@ -989,16 +994,18 @@ private fun PhoneLoginPanel(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            OutlinedTextField(
-                value = countryCode,
-                onValueChange = { onCountryCodeChange(it.filter(Char::isDigit).take(4)) },
-                label = { CpText(s.countryCodeLabel) },
-                placeholder = { CpText("86") },
-                modifier = Modifier.width(110.dp),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                shape = MaterialTheme.shapes.medium,
-            )
+            if (fixedCountryCode == null) {
+                OutlinedTextField(
+                    value = countryCode,
+                    onValueChange = { onCountryCodeChange(it.filter(Char::isDigit).take(4)) },
+                    label = { CpText(s.countryCodeLabel) },
+                    placeholder = { CpText("86") },
+                    modifier = Modifier.width(110.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.medium,
+                )
+            }
             OutlinedTextField(
                 value = phone,
                 onValueChange = { onPhoneChange(it.filter(Char::isDigit)) },
@@ -1439,6 +1446,8 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
 
     val loginChannels = MutableStateFlow(LoginChannel.DEFAULT)
     val supportsCaptchaImage = MutableStateFlow(false)
+    /** Provider-declared country code; non-null hides the manual input. */
+    val defaultCountryCode = MutableStateFlow<String?>(null)
     val captchaImage = MutableStateFlow<String?>(null)
     val imageCaptcha = MutableStateFlow("")
     val verifyUrl = MutableStateFlow<String?>(null)
@@ -1502,6 +1511,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                     }
                 }
                 supportsCaptchaImage.value = declared?.contains("captchaimage") == true
+                defaultCountryCode.value = provider?.defaultCountryCode
                 if (method.value !in loginChannels.value) {
                     method.value = loginChannels.value.first()
                 }
@@ -1520,7 +1530,7 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
      *
      * ### 为什么登录链路必须带上它
      *
-     * 二维码 / 验证码 / WebView 都是**跨音源一定失效**的长事务：请求发出后用户完全可能
+     * 二维码 / 验证码都是**跨音源一定失效**的长事务：请求发出后用户完全可能
      * 正好切了音源（「登录页 → 切换音源」就在同一屏、同一个栈里）。响应回来时「当前音源」
      * 已经换了人，如果这时按**当前**音源回写，就会：
      * 1. 把 A 音源的二维码存成 B 音源的现场（[QrLoginStore]），下次进登录页还会被
@@ -1792,12 +1802,16 @@ class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
                 val actionResult = AppModel.authRepository.login(email, password)
                 // 请求期间换了音源 ⇒ 这是上一个音源发起的登录，cookie 不能记到新音源名下。
                 if (!binding.isCurrent()) return@launch
-                if (actionResult.verifyUrl != null || actionResult.isVerificationChallenge) {
-                    verifyUrl.value = actionResult.verifyUrl
-                    message.value = account.verifyRequired
+                if (!actionResult.ok) {
+                    if (actionResult.verifyUrl != null || actionResult.isVerificationChallenge) {
+                        verifyUrl.value = actionResult.verifyUrl
+                        message.value = account.verifyRequired
+                        return@launch
+                    }
+                    message.value = account.loginFailed(actionResult.reason ?: account.pleaseRetry)
                     return@launch
                 }
-                onLoginSucceeded(actionResult.cookie, actionResult.ok, binding)
+                onLoginSucceeded(actionResult.cookie, ok = true, binding = binding)
             } catch (e: Exception) {
                 message.value = account.loginFailed(e.message)
             } finally {

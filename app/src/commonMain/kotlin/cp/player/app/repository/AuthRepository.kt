@@ -51,6 +51,8 @@ data class CaptchaImageResult(
  */
 class AuthRepository(
     private val source: UnifiedMusicSource? = null,
+    /** Provider-declared country code; when set it is authoritative. */
+    private val defaultCountryCode: String? = null,
 ) {
 
     suspend fun getLoginStatus(): Boolean = when (val result = source?.getCurrentAccount()) {
@@ -101,7 +103,7 @@ class AuthRepository(
                 phone = phone,
                 password = phoneLoginPassword(codeOrPass, useSmsCode),
                 captcha = phoneLoginCaptcha(codeOrPass, useSmsCode),
-                countryCode = countryCode,
+                countryCode = phoneCountryCode(countryCode, defaultCountryCode),
                 imageCaptcha = imageCaptcha,
                 challengeCookie = captchaCookie,
                 md5 = false,
@@ -119,7 +121,7 @@ class AuthRepository(
             AuthActionRequest(
                 action = AuthAction.CAPTCHA_SEND,
                 phone = phone,
-                countryCode = countryCode,
+                countryCode = phoneCountryCode(countryCode, defaultCountryCode),
                 imageCaptcha = imageCaptcha,
                 challengeCookie = captchaCookie,
                 md5 = false,
@@ -190,3 +192,10 @@ internal fun phoneLoginPassword(codeOrPass: String, useSmsCode: Boolean): String
 
 internal fun phoneLoginCaptcha(codeOrPass: String, useSmsCode: Boolean): String? =
     codeOrPass.takeIf { useSmsCode && it.isNotBlank() }
+
+/**
+ * 音源声明的区号优先；只有音源未声明时，调用方传入的值才生效。
+ * 网易云在 manifest 里声明 `86`，因此宿主不再让用户改区号。
+ */
+internal fun phoneCountryCode(requested: String?, providerDefault: String?): String? =
+    providerDefault?.takeIf { it.isNotBlank() } ?: requested?.takeIf { it.isNotBlank() }

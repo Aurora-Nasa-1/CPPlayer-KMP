@@ -258,7 +258,8 @@ object AppModel {
      */
     val socialRepository: SocialRepository get() = SocialRepository(backend.unifiedSource)
 
-    val authRepository: AuthRepository get() = AuthRepository(backend.unifiedSource)
+    val authRepository: AuthRepository
+        get() = AuthRepository(backend.unifiedSource, activeProvider()?.defaultCountryCode)
 
     /**
      * 睡眠定时「播完当前曲目后暂停」的哨兵值。

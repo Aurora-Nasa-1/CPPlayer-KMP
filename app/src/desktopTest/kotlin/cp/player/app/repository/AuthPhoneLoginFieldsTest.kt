@@ -29,4 +29,17 @@ class AuthPhoneLoginFieldsTest {
         assertNull(phoneLoginCaptcha("", useSmsCode = true))
         assertNull(phoneLoginPassword("", useSmsCode = false))
     }
+
+    @Test
+    fun `provider declared country code wins over user input`() {
+        assertEquals("86", phoneCountryCode("44", "86"))
+        assertEquals("86", phoneCountryCode(null, "86"))
+    }
+
+    @Test
+    fun `manual country code is used only when provider does not declare one`() {
+        assertEquals("44", phoneCountryCode("44", null))
+        assertEquals("44", phoneCountryCode("44", "  "))
+        assertNull(phoneCountryCode("  ", null))
+    }
 }
