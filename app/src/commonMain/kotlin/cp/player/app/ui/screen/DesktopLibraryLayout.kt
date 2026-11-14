@@ -59,6 +59,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
@@ -80,6 +81,7 @@ import cp.player.app.ui.component.CpContextMenu
 import cp.player.app.ui.component.CpContextMenuItem
 import cp.player.app.ui.component.cpPressScale
 import cp.player.app.ui.component.CpSplitButton
+import cp.player.app.ui.component.legacySegmentGridShape
 import cp.player.app.ui.component.ProvideCpTextFullDisplay
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.PageHeader
@@ -227,12 +229,26 @@ internal fun DesktopLibraryLayout(
                         Modifier.padding(bottom = sectionTail),
                         verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
                     ) {
-                        shortcuts.chunked(if (compact) 3 else shortcuts.size).forEach { row ->
+                        val rows = shortcuts.chunked(if (compact) 3 else shortcuts.size)
+                        rows.forEachIndexed { rowIndex, row ->
                             Row(horizontalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap)) {
-                                row.forEach { (label, icon, onClick) ->
+                                row.forEachIndexed { columnIndex, (label, icon, onClick) ->
                                     DesktopLibraryShortcut(
                                         label, icon, onClick, Modifier.weight(1f),
-                                        prominent = icon == Icons.Filled.History,
+                                        // 手机端 2×3 网格里强调一格会像"选中态"，六格统一底色；
+                                        // 桌面单行仍保留「最近播放」作为唯一表达焦点。
+                                        prominent = !compact && icon == Icons.Filled.History,
+                                        // 手机端按 M3E list 拼接：外圈 20dp，相邻内角 4dp。
+                                        shape = if (compact) {
+                                            legacySegmentGridShape(
+                                                row = rowIndex,
+                                                rowCount = rows.size,
+                                                column = columnIndex,
+                                                rowSize = row.size,
+                                            )
+                                        } else {
+                                            MaterialTheme.shapes.large
+                                        },
                                     )
                                 }
                                 if (compact) repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
@@ -358,11 +374,12 @@ private fun DesktopLibraryShortcut(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     prominent: Boolean = false,
+    shape: Shape = MaterialTheme.shapes.large,
 ) {
     Surface(
         onClick = onClick,
         modifier = modifier.cpPressScale(),
-        shape = MaterialTheme.shapes.large,
+        shape = shape,
         color = if (prominent) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         Column(
