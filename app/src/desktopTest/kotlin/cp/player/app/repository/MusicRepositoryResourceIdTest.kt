@@ -144,4 +144,41 @@ class MusicRepositoryResourceIdTest {
         assertEquals("list-001", repository.getPlaylistDetail("list-001").getOrNull()?.summary?.resourceId)
         assertTrue(repository.getIntelligenceSongs("song-1", 1L) is BackendResult.Unsupported)
     }
+
+    @Test
+    fun `missing hasMore keeps pagination open only while the page is full`() = runBlocking {
+        val source = object : UnifiedMusicSource {
+            override suspend fun getTrackDetail(mediaId: String) = BackendResult.Unsupported("unused")
+            override suspend fun getTrackDetails(mediaIds: List<String>) = BackendResult.Unsupported("unused")
+            override suspend fun getSongUrl(mediaId: String, level: String) = BackendResult.Unsupported("unused")
+            override suspend fun search(keywords: String, type: Int, providers: List<String>?) =
+                BackendResult.Unsupported("unused")
+            override suspend fun getUserPlaylists(providerId: String, uid: Long) =
+                BackendResult.Unsupported("unused")
+            override suspend fun getPlaylistTracks(
+                mediaId: String,
+                limit: Int,
+                offset: Int,
+            ): MusicResult<CatalogPage<TrackSummary>> {
+                val count = if (mediaId.endsWith("full-page")) limit else 110
+                val tracks = (0 until count).map {
+                    TrackSummary("test://song/$offset-$it", "Track", "Artist", null, null, 180_000L)
+                }
+                return BackendResult.Success(CatalogPage(tracks, 410, hasMore = null))
+            }
+        }
+        val repository = MusicRepository(source)
+
+        // 上游没给 hasMore 且返回满页：不能谎称到底，否则 300 首之后的歌单会被截断。
+        val fullPage = repository.getPlaylistTracks("test://playlist/full-page", 300, 0).getOrNull()!!
+        assertEquals(300, fullPage.tracks.size)
+        assertEquals(true, fullPage.hasMore)
+        assertEquals(false, fullPage.paginationSpecified)
+
+        // 不足一页时即使上游没给 hasMore 也应停下，避免继续请求越界 offset。
+        val tailPage = repository.getPlaylistTracks("test://playlist/tail-page", 300, 300).getOrNull()!!
+        assertEquals(110, tailPage.tracks.size)
+        assertEquals(false, tailPage.hasMore)
+        assertEquals(false, tailPage.paginationSpecified)
+    }
 }
