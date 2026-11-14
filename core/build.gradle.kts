@@ -84,6 +84,7 @@ kotlin {
             // 显式声明只是让「这行依赖是刻意的」这件事不依赖传递依赖的偶然。
             implementation(libs.androidx.core.ktx)
             implementation(libs.androidx.media3.exoplayer)
+            implementation(libs.androidx.media3.exoplayer.hls)
             implementation(libs.androidx.media3.datasource)
             implementation(libs.androidx.media3.datasource.okhttp)
             // SimpleCache / StandaloneDatabaseProvider —— 音频流磁盘缓存
@@ -116,4 +117,30 @@ tasks.named<Test>("desktopTest") {
     // `--enable-native-access`：C ABI 原生音源走 FFM（SymbolLookup.libraryLookup），
     // 不显式开启会在每个用例里打 restricted-method 警告，将来版本会直接拒绝。
     jvmArgs("--enable-preview", "--enable-native-access=ALL-UNNAMED")
+}
+
+// Developer smoke test for an already-built provider ZIP. This runs the real
+// ModuleManager/ProviderManager/ProviderHost chain, not a provider factory in
+// isolation, so manifest and session behavior are covered too.
+tasks.register<JavaExec>("providerConformance") {
+    group = "verification"
+    description = "Run kmp-sdk-v1 conformance checks against a provider ZIP"
+    dependsOn("desktopMainClasses")
+    // Relative -PproviderPackage paths are written from the repository root.
+    workingDir = rootProject.projectDir
+    val desktopMain = kotlin.targets.getByName("desktop").compilations.getByName("main")
+    classpath = files(desktopMain.output.allOutputs, desktopMain.runtimeDependencyFiles)
+    mainClass.set("cp.player.core.provider.conformance.ProviderConformanceMainKt")
+    val providerPackage = providers.gradleProperty("providerPackage")
+    providerPackage.orNull?.let { args(it) }
+    providers.gradleProperty("providerArgs").orNull
+        ?.takeIf { it.isNotBlank() }
+        ?.let { args(it.split(Regex("\\s+"))) }
+    doFirst {
+        if (!providerPackage.isPresent) {
+            throw GradleException(
+                "Use -PproviderPackage=<provider.zip> [-PproviderArgs=\"--json --xml report.xml\"]",
+            )
+        }
+    }
 }

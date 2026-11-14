@@ -846,6 +846,9 @@ class MusicBackend private constructor(
         val level = playbackController.state.value.qualityLevel.ifBlank { "exhigh" }
         val songUrl = (unifiedSource.getSongUrl(targetId, level) as? BackendResult.Success)?.data
             ?: return null
+        // Encrypted streams cannot be relayed: the receiver has no CDM session
+        // and the local server must never expose ciphertext as a playable URL.
+        if (songUrl.drm != null) return null
         if (songUrl.url.isBlank()) return null
         return StreamTarget(url = songUrl.url, headers = songUrl.headers.orEmpty())
     }

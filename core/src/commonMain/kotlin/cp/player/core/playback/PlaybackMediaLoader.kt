@@ -1,6 +1,7 @@
 package cp.player.core.playback
 
 import cp.player.core.BackendResult
+import cp.player.core.music.DrmPlaybackInfo
 import cp.player.core.music.SongUrl
 import cp.player.core.music.TrackSummary
 import cp.player.core.music.UnifiedMusicSource
@@ -94,6 +95,7 @@ internal class PlaybackMediaLoader(
 
     @Volatile private var lastHeaders: Map<String, String> = emptyMap()
     @Volatile private var lastMetadata: PlaybackMetadata? = null
+    @Volatile private var lastDrm: DrmPlaybackInfo? = null
 
     fun setRestoredResume(mediaId: String, positionMs: Long) {
         restoredResume = mediaId to positionMs
@@ -151,6 +153,7 @@ internal class PlaybackMediaLoader(
         localizeJob?.cancel()
         localized = null
         playingFromLocal = false
+        lastDrm = null
     }
 
     fun onCurrentRemoved() {
@@ -161,6 +164,7 @@ internal class PlaybackMediaLoader(
         engineReady = false
         deferredSeek = null
         playingMediaId = null
+        lastDrm = null
     }
 
     fun onNativeTrackStarted(mediaId: String, summary: TrackSummary?) {
@@ -178,6 +182,7 @@ internal class PlaybackMediaLoader(
         restoredResume = null
         localized = null
         playingFromLocal = false
+        lastDrm = null
         loadGeneration++
         triggerPreloadNext()
     }
@@ -189,6 +194,7 @@ internal class PlaybackMediaLoader(
         localizeJob?.cancel()
         engineReady = false
         deferredSeek = null
+        lastDrm = null
     }
 
     fun onPlatformError(message: String): Boolean {
@@ -272,6 +278,8 @@ internal class PlaybackMediaLoader(
 
     private suspend fun switchToLocal(mediaId: String, path: String, target: Long) {
         val gen = loadGeneration
+        // A local cache file is always a clear copy; never carry DRM state over.
+        lastDrm = null
         try {
             platform.load(
                 path,
@@ -401,6 +409,10 @@ internal class PlaybackMediaLoader(
             resolvedPreload = ResolvedPreload(nextMediaId, requestedLevel, namespace, songUrl)
             attempt.urlResult.complete(urlResult)
             if (preloadAttempt === attempt) preloadAttempt = null
+            // Encrypted streams must never enter the disk cache, the gapless
+            // queue or the background localizer: those paths only understand
+            // clear bytes and would either fail or persist ciphertext.
+            if (songUrl.drm != null) return@launch
             val actualLevel = songUrl.level.ifBlank { requestedLevel }
             val cacheKey = cacheKeyOf(nextMediaId, actualLevel, namespace)
 
@@ -662,9 +674,15 @@ internal class PlaybackMediaLoader(
                 ?: resume?.takeIf { it.first == mediaId }?.second
                 ?: 0L
             val cacheKey = cacheKeyOf(mediaId, actualLevel, namespace)
+            val drm = finalSongUrl.drm
             val isLocalFile = !finalSongUrl.url.startsWith("http://", ignoreCase = true) && !finalSongUrl.url.startsWith("https://", ignoreCase = true)
-            val localizing = streamLocalizer.isLocalizing(actualLevel)
-            val cachedLocal = if (isLocalFile) finalSongUrl.url else if (localizing) streamLocalizer.cachedPath(cacheKey) else null
+            val localizing = drm == null && streamLocalizer.isLocalizing(actualLevel)
+            val cachedLocal = when {
+                drm != null -> null
+                isLocalFile -> finalSongUrl.url
+                localizing -> streamLocalizer.cachedPath(cacheKey)
+                else -> null
+            }
             if (cachedLocal != null && !isLocalFile) {
                 streamLocalizer.recordMetadata(cacheKey, SongCacheMeta(title = summary.name, artist = summary.artist))
             }
@@ -682,15 +700,29 @@ internal class PlaybackMediaLoader(
             )
             lastHeaders = headers
             lastMetadata = metadata
+            lastDrm = drm
             try {
                 if (restartIfSourceChanged(mediaId, namespace, gen)) return@launch
                 val effectivePlayUrl = if (isLocalFile) finalSongUrl.url else (cachedLocal ?: finalSongUrl.url)
-                platform.load(
-                    effectivePlayUrl,
-                    startPositionMs = startAt,
-                    headers = headers,
-                    metadata = metadata,
-                )
+                if (drm != null) {
+                    if (!platform.supportsDrm) {
+                        throw UnsupportedOperationException("DRM playback is not supported on this platform")
+                    }
+                    platform.loadDrm(
+                        effectivePlayUrl,
+                        drm,
+                        startPositionMs = startAt,
+                        headers = headers,
+                        metadata = metadata,
+                    )
+                } else {
+                    platform.load(
+                        effectivePlayUrl,
+                        startPositionMs = startAt,
+                        headers = headers,
+                        metadata = metadata,
+                    )
+                }
                 if (restartIfSourceChanged(mediaId, namespace, gen)) return@launch
                 engineReady = true
                 consumeDeferredSeek(mediaId)?.let { platform.seekTo(it) }
@@ -699,7 +731,7 @@ internal class PlaybackMediaLoader(
                 persistSession()
                 // 直连流已经可 seek ⇒ 不必再为「拖动可用」偷偷把整首歌下到磁盘。
                 // 省下的是无损单曲几十 MB 的流量与磁盘寿命，也避免 LRU 把别的缓存挤掉。
-                if (localizing && cachedLocal == null && !isLocalFile &&
+                if (drm == null && localizing && cachedLocal == null && !isLocalFile &&
                     !platform.supportsSeekableRemoteStreams
                 ) {
                     startBackgroundLocalize(
@@ -770,6 +802,9 @@ internal class PlaybackMediaLoader(
             if (restartIfSourceChanged(mediaId, namespace, gen)) return true
             val fallback = result.getOrNull() ?: return false
             if (fallback.url.isBlank()) return false
+            // A standard-quality retry must be a clear stream; retrying another
+            // encrypted URL through the non-DRM path would fail identically.
+            if (fallback.drm != null) return false
             val fallbackFormat = AudioFormatInfo(
                 codecName = fallback.codec?.uppercase() ?: "MP3",
                 bitrate = fallback.bitrate ?: 128000,
@@ -782,6 +817,9 @@ internal class PlaybackMediaLoader(
             }
             val summary = getCurrentEntry()?.summary
             if (restartIfSourceChanged(mediaId, namespace, gen)) return true
+            lastDrm = null
+            localized = null
+            playingFromLocal = false
             platform.load(
                 fallback.url,
                 startPositionMs = 0L,

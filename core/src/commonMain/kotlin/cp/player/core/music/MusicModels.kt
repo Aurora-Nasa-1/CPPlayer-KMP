@@ -89,6 +89,8 @@ data class SongUrl(
     val bitrate: Int? = null,
     val qualityKey: String? = null,
     val qualityLabel: String? = null,
+    /** Non-null for encrypted streams; the platform must supply a CDM. */
+    val drm: DrmPlaybackInfo? = null,
 )
 
 /**

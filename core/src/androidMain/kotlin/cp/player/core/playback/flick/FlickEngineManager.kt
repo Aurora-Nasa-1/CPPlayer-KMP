@@ -119,6 +119,8 @@ class DynamicAndroidPlatformPlayer(
     private var lastEffectConfig: AudioEffectConfig? = null
     private var lastPlaybackSpeed: Float? = null
     private var lastCrossfade: Pair<Boolean, Long>? = null
+    /** DRM 只能交给 Media3；置位期间设置页的引擎选择不得把播放切回 Flick。 */
+    @Volatile private var drmPinned = false
 
     override val supportsPlaybackSpeed: Boolean get() = activePlayer.supportsPlaybackSpeed
     override val playbackSpeed: Float get() = activePlayer.playbackSpeed
@@ -126,12 +128,15 @@ class DynamicAndroidPlatformPlayer(
     override val supportsGaplessQueue: Boolean get() = activePlayer.supportsGaplessQueue
     override val nativeTrackTransitions: StateFlow<NativeTrackTransition?> get() = activePlayer.nativeTrackTransitions
     override val supportsSeekableRemoteStreams: Boolean get() = activePlayer.supportsSeekableRemoteStreams
+    /** 即使当前是 Flick，也能在 [loadDrm] 时强制切到 Media3，因此对上游声称可用。 */
+    override val supportsDrm: Boolean get() = true
 
     init {
         bindUnderlyingPlayer(activePlayer)
     }
 
     private fun resolveDesiredEngine(): AndroidPlayerEngineType {
+        if (drmPinned) return AndroidPlayerEngineType.STANDARD_MEDIA3
         if (preferredEngine != null) return preferredEngine
         val key = storage.getString(PlaybackSessionSettings.KEY_AUDIO_ENGINE)
         val isVip = isVipUser || VipLicenseManager.isVipActive
@@ -227,8 +232,26 @@ class DynamicAndroidPlatformPlayer(
         headers: Map<String, String>,
         metadata: PlaybackMetadata?,
     ) {
+        drmPinned = false
         checkAndSwitchEngine()
         activePlayer.load(url, startPositionMs, headers, metadata)
+    }
+
+    override suspend fun loadDrm(
+        url: String,
+        drm: cp.player.core.music.DrmPlaybackInfo,
+        startPositionMs: Long,
+        headers: Map<String, String>,
+        metadata: PlaybackMetadata?,
+    ) {
+        drmPinned = true
+        if (currentEngineType != AndroidPlayerEngineType.STANDARD_MEDIA3) {
+            switchEngine(AndroidPlayerEngineType.STANDARD_MEDIA3)
+        }
+        if (!activePlayer.supportsDrm) {
+            throw UnsupportedOperationException("The active Android engine does not support DRM")
+        }
+        activePlayer.loadDrm(url, drm, startPositionMs, headers, metadata)
     }
 
     override fun play() {
