@@ -247,7 +247,7 @@ fun LyricOffsetDialog(
                 shape = MaterialTheme.shapes.medium,
             ) {
                 CpText(
-                    text = "完成",
+                    text = s.common.confirm,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
                 )

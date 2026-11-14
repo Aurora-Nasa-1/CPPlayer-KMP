@@ -1064,7 +1064,10 @@ fun SettingsConfirmItem(
         AlertDialog(
             onDismissRequest = { showDialog = false },
             title = { CpText(confirmTitle) },
-            text = { CpText(confirmMessage) },
+            // 确认框正文经常是「删多少 / 迁到哪个目录 / 会发生什么」这类**必须读完才能
+            // 决定按不按**的信息，而 CpText 默认 maxLines = 1 会把第二行起全部吃掉。
+            // 这里显式放开；对话框宽度有限，原文自己换行即可。
+            text = { CpText(confirmMessage, maxLines = Int.MAX_VALUE) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -1339,6 +1342,7 @@ fun SettingsSearchBar(
     placeholder: String,
     modifier: Modifier = Modifier,
 ) {
+    val strings = cpStrings()
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -1387,7 +1391,7 @@ fun SettingsSearchBar(
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Close,
-                        contentDescription = "清空搜索",
+                        contentDescription = strings.common.clearSearch,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp),
                     )

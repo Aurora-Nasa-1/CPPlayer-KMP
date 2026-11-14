@@ -207,6 +207,7 @@ fun PosterWallScreen(
     var shuffleSeed by rememberSaveable { mutableIntStateOf(0) }
     var expanded by remember { mutableStateOf<ExpandedPoster?>(null) }
     var actionSong by remember { mutableStateOf<PosterSong?>(null) }
+    var infoSong by remember { mutableStateOf<PosterSong?>(null) }
     var addToPlaylistSongId by remember { mutableStateOf<String?>(null) }
 
     val sourceSongs = when (source) {
@@ -749,6 +750,13 @@ fun PosterWallScreen(
                 onAddToPlaylist = {
                     addToPlaylistSongId = song.id
                 },
+                // 本地海报没有「云端曲目」可查：信息走本地文件信息，路径就是 song.id。
+                onOpenInFileManager = if (song.sourceKind == "local") {
+                    { cp.player.app.ui.util.revealInFileManager(song.id, s.downloads) }
+                } else null,
+                onShowInfo = {
+                    infoSong = song
+                },
                 onDownload = {
                     val summary = cp.player.core.music.TrackSummary(
                         id = song.id,
@@ -767,6 +775,26 @@ fun PosterWallScreen(
             AddToPlaylistSheet(
                 trackId = trackId,
                 onDismiss = { addToPlaylistSongId = null }
+            )
+        }
+
+        infoSong?.let { song ->
+            cp.player.app.ui.component.SongDetailInfoDialog(
+                track = cp.player.core.music.TrackSummary(
+                    id = if (song.sourceKind == "local") {
+                        "local://audio/${song.id}"
+                    } else if (song.id.contains("://")) {
+                        song.id
+                    } else {
+                        "${AppModel.activeProviderId()}://song/${song.id}"
+                    },
+                    name = song.title,
+                    artist = song.artist,
+                    album = song.album.takeIf { it.isNotBlank() },
+                    coverUrl = song.coverUrl,
+                    durationMs = song.durationMs,
+                ),
+                onDismiss = { infoSong = null },
             )
         }
     }

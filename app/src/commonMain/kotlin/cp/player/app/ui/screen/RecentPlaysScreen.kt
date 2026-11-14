@@ -164,11 +164,11 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
         val navigator = LocalNavigator.current
         val expanded = LocalIsExpanded.current
 
-        val topBarActions = remember(playableTracks, provider) {
+        val topBarActions = remember(playableTracks, provider, s) {
             if (playableTracks.isNotEmpty()) {
                 listOf(
                     TopBarAction(
-                        icon = { Icon(Icons.Default.PlayArrow, contentDescription = "播放全部") },
+                        icon = { Icon(Icons.Default.PlayArrow, contentDescription = s.library.playAll) },
                         onClick = {
                             playableTracks.firstOrNull()?.let { CoverFlight.play(it.id, it.coverUrl) }
                             scope.launch {
@@ -184,7 +184,7 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
         }
 
         CpRouteScaffold(
-            title = "最近播放",
+            title = s.library.recentPlays,
             onBack = if (embedded) null else ({ navigator?.pop() }),
             embedded = embedded,
             topBarActions = topBarActions,
@@ -196,8 +196,8 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
                             .padding(horizontal = CpSpacing.pageHorizontal, vertical = 16.dp),
                     ) {
                         ContentState(
-                            title = "还没有最近播放",
-                            message = "播放歌曲后会显示在这里",
+                            title = s.insights.recentEmptyTitle,
+                            message = s.insights.recentEmptyNote,
                         )
                     }
                 } else {
@@ -246,9 +246,12 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
                                             Spacer(Modifier.width(8.dp))
                                             CpText(
                                                 text = if (scrobbleState.lastFmConnected) {
-                                                    "Last.fm 同步中 · 今日打卡 ${scrobbleState.todayScrobbledCount} 首"
+                                                    s.scrobble.insightsSyncConnected(
+                                                        scrobbleState.lastFmUsername.orEmpty(),
+                                                        scrobbleState.todayScrobbledCount,
+                                                    )
                                                 } else {
-                                                    "支持 Last.fm 听歌打卡，点击开启"
+                                                    s.scrobble.insightsSyncDisconnected
                                                 },
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = if (scrobbleState.lastFmConnected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -258,12 +261,12 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
                                             TextButton(
                                                 onClick = {
                                                     AppModel.scrobbleHub.flushPendingQueue()
-                                                    UiEvents.notify("已开始同步离线记录")
+                                                    UiEvents.notify(s.scrobble.flushQueueStarted)
                                                 },
                                             ) {
                                                 Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(14.dp))
                                                 Spacer(Modifier.width(4.dp))
-                                                CpText("待发 ${scrobbleState.pendingQueueSize} 条", style = MaterialTheme.typography.labelSmall)
+                                                CpText(s.scrobble.pendingQueueCount(scrobbleState.pendingQueueSize), style = MaterialTheme.typography.labelSmall)
                                             }
                                         }
                                     }
@@ -353,30 +356,32 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
                                                     scope.launch {
                                                         val target = cloudFavId !in likedIds
                                                         AppModel.playback.toggleFavoriteFor(cloudId)
-                                                        cp.player.app.ui.util.UiEvents.notify(if (target) "已收藏到云端" else "已取消云端收藏")
+                                                        cp.player.app.ui.util.UiEvents.notify(s.downloads.favoriteCloudDone(target))
                                                     }
                                                 }
                                             } else if (playable && localPath != null) {
                                                 {
                                                     val now = AppModel.localMedia.favorites.toggle(localPath)
-                                                    cp.player.app.ui.util.UiEvents.notify(if (now) "已添加到本地喜欢" else "已从本地喜欢移除")
+                                                    cp.player.app.ui.util.UiEvents.notify(
+                                                        if (now) s.downloads.addedToFavorites else s.downloads.removedFromFavorites
+                                                    )
                                                 }
                                             } else null,
                                             favoriteLabel = if (cloudId != null) {
-                                                if (isCloudFav) "取消云端收藏" else "云端收藏"
+                                                if (isCloudFav) s.downloads.unfavoriteCloud else s.downloads.favoriteCloud
                                             } else {
-                                                if (isLocalFav) "取消喜欢" else "喜欢"
+                                                if (isLocalFav) s.downloads.removedFromFavorites else s.downloads.favorite
                                             },
                                             onAddToQueue = if (playable) {
                                                 {
                                                     scope.launch { AppModel.playback.addToQueue(recentMediaId(track, provider)) }
-                                                    cp.player.app.ui.util.UiEvents.notify("已加入播放队列")
+                                                    cp.player.app.ui.util.UiEvents.notify(s.library.queuedToPlay)
                                                 }
                                             } else null,
                                             onPlayNext = if (playable) {
                                                 {
                                                     scope.launch { AppModel.playback.addNextToQueue(recentMediaId(track, provider)) }
-                                                    cp.player.app.ui.util.UiEvents.notify("将在下一首播放")
+                                                    cp.player.app.ui.util.UiEvents.notify(s.library.playNext)
                                                 }
                                             } else null,
                                             isDownloaded = cloudId != null && (isLocal || AppModel.isDownloaded(cloudId)),
@@ -390,7 +395,7 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
                                                 { addToLocalPlaylistPath = localPath }
                                             } else null,
                                             onOpenInFileManager = if (localPath != null) {
-                                                { cp.player.app.platform.openInFileManager(localPath) }
+                                                { cp.player.app.ui.util.revealInFileManager(localPath, s.downloads) }
                                             } else null,
                                             onShare = if (cloudId != null) {
                                                 { shareText(songShareText(track)) }
@@ -510,11 +515,13 @@ fun RecentPlaysOptionsHost(
                 scope.launch {
                     val target = cloudFavId !in likedIds
                     AppModel.playback.toggleFavoriteFor(cloudId)
-                    cp.player.app.ui.util.UiEvents.notify(if (target) "已收藏到云端" else "已取消云端收藏")
+                    cp.player.app.ui.util.UiEvents.notify(s.downloads.favoriteCloudDone(target))
                 }
             } else if (localPath != null) {
                 val now = AppModel.localMedia.favorites.toggle(localPath)
-                cp.player.app.ui.util.UiEvents.notify(if (now) "已添加到本地喜欢" else "已从本地喜欢移除")
+                cp.player.app.ui.util.UiEvents.notify(
+                    if (now) s.downloads.addedToFavorites else s.downloads.removedFromFavorites
+                )
             }
         },
         onAddToQueue = {
@@ -522,7 +529,7 @@ fun RecentPlaysOptionsHost(
                 UiEvents.notify(s.insights.recentOtherSourceBlocked)
             } else {
                 scope.launch { AppModel.playback.addToQueue(recentMediaId(track, provider)) }
-                cp.player.app.ui.util.UiEvents.notify("已加入播放队列")
+                cp.player.app.ui.util.UiEvents.notify(s.library.queuedToPlay)
             }
         },
         onPlayNext = {
@@ -530,7 +537,7 @@ fun RecentPlaysOptionsHost(
                 UiEvents.notify(s.insights.recentOtherSourceBlocked)
             } else {
                 scope.launch { AppModel.playback.addNextToQueue(recentMediaId(track, provider)) }
-                cp.player.app.ui.util.UiEvents.notify("将在下一首播放")
+                cp.player.app.ui.util.UiEvents.notify(s.library.playNext)
             }
         },
         onAddToPlaylist = {
@@ -554,7 +561,7 @@ fun RecentPlaysOptionsHost(
             if (cloudId != null) {
                 shareText(songShareText(track))
             } else {
-                cp.player.app.ui.util.UiEvents.notify("本地歌曲无在线分享链接")
+                cp.player.app.ui.util.UiEvents.notify(s.player.shareUnavailableLocal)
             }
         },
     )

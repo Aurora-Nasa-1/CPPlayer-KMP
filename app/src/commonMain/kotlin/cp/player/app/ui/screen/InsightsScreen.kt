@@ -424,19 +424,21 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
                             scope.launch {
                                 val target = cloudFavId !in likedIds
                                 AppModel.playback.toggleFavoriteFor(cloudId)
-                                cp.player.app.ui.util.UiEvents.notify(if (target) "已收藏到云端" else "已取消云端收藏")
+                                cp.player.app.ui.util.UiEvents.notify(strings.downloads.favoriteCloudDone(target))
                             }
                         }
                     } else if (playable && localPath != null) {
                         {
                             val now = AppModel.localMedia.favorites.toggle(localPath)
-                            cp.player.app.ui.util.UiEvents.notify(if (now) "已添加到本地喜欢" else "已从本地喜欢移除")
+                            cp.player.app.ui.util.UiEvents.notify(
+                                if (now) strings.downloads.addedToFavorites else strings.downloads.removedFromFavorites
+                            )
                         }
                     } else null,
                     favoriteLabel = if (cloudId != null) {
-                        if (isCloudFav) "取消云端收藏" else "云端收藏"
+                        if (isCloudFav) strings.downloads.unfavoriteCloud else strings.downloads.favoriteCloud
                     } else {
-                        if (isLocalFav) "取消喜欢" else "喜欢"
+                        if (isLocalFav) strings.downloads.removedFromFavorites else strings.downloads.favorite
                     },
                     onAddToQueue = if (playable) {
                         {
@@ -461,7 +463,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
                         { onAddToLocalPlaylist(localPath) }
                     } else null,
                     onOpenInFileManager = if (localPath != null) {
-                        { cp.player.app.platform.openInFileManager(localPath) }
+                        { cp.player.app.ui.util.revealInFileManager(localPath, strings.downloads) }
                     } else null,
                     onShare = if (cloudId != null) {
                         { shareText(songShareText(track)) }
@@ -839,7 +841,12 @@ private fun MetricGrid(metrics: List<Pair<String, String>>) {
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     row.forEach { (value, label) ->
-                        MetricCard(value, label, Modifier.weight(1f))
+                        MetricCard(
+                            value = value,
+                            label = label,
+                            compact = columns == 2,
+                            modifier = Modifier.weight(1f),
+                        )
                     }
                     repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                 }
@@ -849,7 +856,12 @@ private fun MetricGrid(metrics: List<Pair<String, String>>) {
 }
 
 @Composable
-private fun MetricCard(value: String, label: String, modifier: Modifier = Modifier) {
+private fun MetricCard(
+    value: String,
+    label: String,
+    compact: Boolean,
+    modifier: Modifier = Modifier,
+) {
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -867,7 +879,13 @@ private fun MetricCard(value: String, label: String, modifier: Modifier = Modifi
             )
             CpText(
                 value,
-                style = MaterialTheme.typography.headlineSmall,
+                // 两列时卡片内容宽度约 138dp；英文「1,284 tracks」在 headlineSmall
+                // 下会溢出，降一档到 titleLarge 仍保持 M3E 的层级感。
+                style = if (compact) {
+                    MaterialTheme.typography.titleLarge
+                } else {
+                    MaterialTheme.typography.headlineSmall
+                },
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 // 兜底省略号由 CpText 自己接管：溢出时桌面端悬停可看全，

@@ -10,7 +10,6 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -52,7 +51,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -81,8 +79,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
-import cp.player.app.ui.feedback.CpHaptic
-import cp.player.app.ui.feedback.LocalCpHaptics
 import cp.player.app.ui.model.MobilePlayerCustomConfig
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.util.SeekAvailability
@@ -253,9 +249,9 @@ internal fun MobileNowPlayingLayout(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 PlayerArtwork(
-                                    track, state.isPlaying, config, onSkipNext, onSkipPrevious,
+                                    track, state.isPlaying,
                                     Modifier.size(52.dp).clickable(
-                                        role = Role.Button, onClickLabel = "收起歌词",
+                                        role = Role.Button, onClickLabel = s.player.lyricsCollapse,
                                         onClick = onToggleLyrics,
                                     ),
                                 )
@@ -263,7 +259,7 @@ internal fun MobileNowPlayingLayout(
                                 TrackHeading(track, false, onArtistClick, Modifier.weight(1f))
                                 PlayerIconButton(
                                     if (isImmersive) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
-                                    if (isImmersive) "退出沉浸" else "沉浸歌词",
+                                    if (isImmersive) s.player.exitImmersive else s.player.immersive,
                                     onToggleImmersive,
                                     selected = isImmersive,
                                 )
@@ -293,7 +289,7 @@ internal fun MobileNowPlayingLayout(
                         Column(Modifier.fillMaxWidth()) {
                             Spacer(Modifier.height(topGap))
                             PlayerArtwork(
-                                track, state.isPlaying, config, onSkipNext, onSkipPrevious,
+                                track, state.isPlaying,
                                 Modifier.size(artSize).then(artworkModifier).then(dismissGesture)
                                     .testTag("player-artwork"),
                             )
@@ -374,11 +370,13 @@ internal fun MobileNowPlayingLayout(
                         )
                     }
                     state.error?.takeIf(String::isNotBlank)?.let { error ->
+                        // 播放失败的原因要能读完（可能带 URL / 协议名 / 后端报错）。
+                        // 这里不用跑马灯：错误信息滚过去就没了，换行停住更合适。
                         CpText(
                             error, modifier = Modifier.fillMaxWidth(),
                             style = MaterialTheme.typography.bodySmall,
                             color = colors.error, textAlign = TextAlign.Center,
-                            maxLines = 1, reveal = CpTextReveal.Marquee,
+                            maxLines = 3,
                         )
                     }
                     if (!lyricsExpanded) Spacer(Modifier.weight(0.15f))
@@ -389,20 +387,20 @@ internal fun MobileNowPlayingLayout(
                     ) {
                         PlayerIconButton(
                             Icons.Rounded.Lyrics,
-                            if (lyricsExpanded) "收起歌词" else "展开完整歌词",
+                            if (lyricsExpanded) s.player.lyricsCollapse else s.player.lyricsExpand,
                             onToggleLyrics, selected = lyricsExpanded,
                             modifier = Modifier.testTag("player-lyrics-toggle"),
                         )
                         if (supportsComments) {
                             PlayerIconButton(
-                                Icons.AutoMirrored.Rounded.Comment, "歌曲评论", onComments,
+                                Icons.AutoMirrored.Rounded.Comment, s.player.songComments, onComments,
                                 modifier = Modifier.testTag("player-comments"),
                             )
                         } else {
                             Spacer(Modifier.size(CpSpacing.touchTarget))
                         }
                         PlayerIconButton(
-                            Icons.Rounded.Cast, "播放设备", onCast,
+                            Icons.Rounded.Cast, s.player.audioOutputDevice, onCast,
                             modifier = Modifier.testTag("player-cast"),
                         )
                         PlayerIconButton(
@@ -486,45 +484,17 @@ private fun TrackHeading(
 private fun PlayerArtwork(
     track: TrackSummary,
     isPlaying: Boolean,
-    config: MobilePlayerCustomConfig,
-    onNext: () -> Unit,
-    onPrevious: () -> Unit,
     modifier: Modifier,
 ) {
-    val haptics = LocalCpHaptics.current
-    val threshold = with(LocalDensity.current) { 64.dp.toPx() }
-    var drag by remember(track.id) { mutableFloatStateOf(0f) }
     val scale by animateFloatAsState(
         if (isPlaying) 1f else 0.94f,
         animationSpec = CpMotion.spatialSlow(), label = "mobile-artwork-scale",
     )
-    val swipeModifier = if (config.coverSwipeGesture) {
-        Modifier.pointerInput(track.id, threshold) {
-            detectHorizontalDragGestures(
-                onHorizontalDrag = { change, amount ->
-                    change.consume()
-                    drag += amount
-                },
-                onDragCancel = { drag = 0f },
-                onDragEnd = {
-                    if (drag <= -threshold) {
-                        haptics.perform(CpHaptic.Confirm)
-                        onNext()
-                    } else if (drag >= threshold) {
-                        haptics.perform(CpHaptic.Confirm)
-                        onPrevious()
-                    }
-                    drag = 0f
-                },
-            )
-        }
-    } else Modifier
     Surface(
         modifier.graphicsLayer {
             scaleX = scale
             scaleY = scale
-            translationX = drag.coerceIn(-threshold * 2, threshold * 2) * 0.12f
-        }.then(swipeModifier),
+        },
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainerHighest,
         shadowElevation = 4.dp,
@@ -563,7 +533,9 @@ private fun PlayerTimeline(state: PlaybackUiState, onSeek: (Long) -> Unit) {
             CpText(
                 reason, style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1, reveal = CpTextReveal.Marquee,
+                // 「无损缓存中，稍后可拖动」这类说明是操作**为什么被禁用**的解释，
+                // 滚走的文字等于没解释：窄屏给它两行完整显示。
+                maxLines = 2,
                 modifier = Modifier.padding(top = 4.dp),
             )
         }

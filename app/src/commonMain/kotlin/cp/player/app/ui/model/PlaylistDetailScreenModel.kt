@@ -3,6 +3,7 @@ package cp.player.app.ui.model
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cp.player.app.AppModel
+import cp.player.app.i18n.CpStrings
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.PlaylistSortType
 import cp.player.app.ui.util.UiEvents
@@ -96,6 +97,15 @@ class PlaylistDetailScreenModel : ScreenModel {
     /** 本地乐观修改中标记，避免自身增删曲目时并发触发的 playlistEvents 覆盖本地状态。 */
     private var isSelfModifying = false
 
+    /**
+     * 最近一次由页面传入的文案。
+     *
+     * 仅用于**页面没有直接调用**的内部重拉（音源切换后的自动重拉、外部歌单变动订阅）：
+     * 这两条链路由 Model 自己触发，拿不到组合上下文；沿用「用户上一次操作时的语言」
+     * 比固定中文更接近真实预期，语言切换后下一次显式操作就会刷新它。
+     */
+    private var lastStrings: CpStrings = CpStrings.zh
+
     init {
         // 音源切换后，本页曲目属于旧音源：作废加载标记并（真实歌单）按当前音源重拉。
         // 与 HomeScreenModel / LibraryScreenModel 同一套处理。
@@ -107,7 +117,7 @@ class PlaylistDetailScreenModel : ScreenModel {
                 tracksProviderId = null
                 // 虚拟歌单（每日推荐 / 相似歌曲 / 心动模式，id < 0）的曲目来自上一级，
                 // 本模型拿不到新音源的等价数据，只作废标记让宿主重喂。
-                if (summary.isRemote) load(summary, force = true)
+                if (summary.isRemote) load(summary, lastStrings, force = true)
             }
         }
         // 订阅歌单事件：当外部修改了当前歌单（如在播放器中加入当前歌单）时静默重拉
@@ -115,7 +125,7 @@ class PlaylistDetailScreenModel : ScreenModel {
             AppModel.playlistEvents.collect { event ->
                 val summary = _state.value.summary ?: return@collect
                 if (!isSelfModifying && summary.isRemote && event.resourceId == summary.resourceId) {
-                    refresh()
+                    refresh(lastStrings)
                 }
             }
         }
@@ -128,7 +138,8 @@ class PlaylistDetailScreenModel : ScreenModel {
      *
      * @param force 为 true 时忽略 [loadedPlaylistId] 守卫（供「重试」与「刷新」使用）。
      */
-    fun load(summary: PlaylistSummary, force: Boolean = false) {
+    fun load(summary: PlaylistSummary, strings: CpStrings, force: Boolean = false) {
+        lastStrings = strings
         if (!force && loadedPlaylistId == summary.resourceId) return
         val gen = ++loadGen
         // 记下发请求这一刻的音源：曲目就绪后 mediaIds 用它拼，避免切源后被新 Provider 解释。
@@ -160,9 +171,9 @@ class PlaylistDetailScreenModel : ScreenModel {
             if (fetchingPlaylistId != summary.resourceId || gen != loadGen) return@launch
             if (results == null) {
                 if (silent) {
-                    UiEvents.notify("歌单详情刷新失败")
+                    UiEvents.notify(strings.library.playlistDetailRefreshFailed)
                 } else {
-                    _state.update { it.copy(loading = false, error = "歌单详情加载失败") }
+                    _state.update { it.copy(loading = false, error = strings.library.playlistDetailLoadFailed) }
                 }
                 return@launch
             }
@@ -188,7 +199,7 @@ class PlaylistDetailScreenModel : ScreenModel {
                         loadMoreError = null,
                     )
                     if (silent) {
-                        UiEvents.notify("已刷新")
+                        UiEvents.notify(strings.library.playlistRefreshed())
                     }
                 }
                 is BackendResult.Error -> {
@@ -205,9 +216,9 @@ class PlaylistDetailScreenModel : ScreenModel {
     }
 
     /** 手动刷新当前歌单详情与曲目（静默刷新，不闪空白屏）。 */
-    fun refresh() {
+    fun refresh(strings: CpStrings) {
         val summary = _state.value.summary ?: return
-        if (summary.isRemote) load(summary, force = true)
+        if (summary.isRemote) load(summary, strings, force = true)
     }
 
     /**
@@ -273,7 +284,8 @@ class PlaylistDetailScreenModel : ScreenModel {
     }
 
     /** 加载下一页曲目（追加、按 id 去重保序）。 */
-    fun loadMore() {
+    fun loadMore(strings: CpStrings) {
+        lastStrings = strings
         // 守卫与 fetchingMore 置位合并为一次原子 update，只有抢到置位权的调用继续执行
         var acquired = false
         _state.update { s ->
@@ -314,7 +326,7 @@ class PlaylistDetailScreenModel : ScreenModel {
                     }
                     is BackendResult.Error -> _state.update { it.copy(loadMoreError = result.message) }
                     is BackendResult.Unsupported -> _state.update { it.copy(loadMoreError = result.message) }
-                    null -> _state.update { it.copy(loadMoreError = "加载更多失败") }
+                    null -> _state.update { it.copy(loadMoreError = strings.library.loadMoreFailed) }
                 }
             }
             _state.update { it.copy(fetchingMore = false) }
@@ -456,16 +468,16 @@ class PlaylistDetailScreenModel : ScreenModel {
         screenModelScope.launch { AppModel.playback.playQueue(ids, startIndex = 0, sourceId = sourceIdOrNull()) }
     }
 
-    fun queueAll() {
+    fun queueAll(strings: CpStrings) {
         val ids = mediaIds(sortedTracks(_state.value.tracks, _state.value.sortType))
         if (ids.isEmpty()) return
         screenModelScope.launch {
             ids.forEach { AppModel.playback.addToQueue(it) }
-            UiEvents.notify("已加入播放队列")
+            UiEvents.notify(strings.library.queuedToPlay)
         }
     }
 
-    fun queueSelected() {
+    fun queueSelected(strings: CpStrings) {
         val selected = _state.value.selectedIds
         if (selected.isEmpty()) return
         val tracks = sortedTracks(_state.value.tracks, _state.value.sortType).filter { it.id in selected }
@@ -473,7 +485,7 @@ class PlaylistDetailScreenModel : ScreenModel {
         if (ids.isEmpty()) return
         screenModelScope.launch {
             ids.forEach { AppModel.playback.addToQueue(it) }
-            UiEvents.notify("已加入播放队列")
+            UiEvents.notify(strings.library.queuedToPlay)
         }
     }
 
@@ -486,7 +498,7 @@ class PlaylistDetailScreenModel : ScreenModel {
     }
 
     /** owner → 删除歌单；否则取消收藏。成功后 [onDone]（由 Screen pop）。 */
-    fun deleteOrUnsubscribe(onDone: () -> Unit) {
+    fun deleteOrUnsubscribe(strings: CpStrings, onDone: () -> Unit) {
         val playlist = _state.value.summary ?: return
         val owner = isOwner()
         screenModelScope.launch {
@@ -497,8 +509,10 @@ class PlaylistDetailScreenModel : ScreenModel {
                 }.getOrDefault(false)
             }
             UiEvents.notify(
-                if (ok) (if (owner) "已删除「${playlist.name}」" else "已取消收藏「${playlist.name}」")
-                else "操作失败"
+                if (ok) {
+                    if (owner) strings.library.playlistDeleted(playlist.name)
+                    else strings.library.playlistUnsubscribed(playlist.name)
+                } else strings.library.operationFailed
             )
             if (ok) onDone()
         }
@@ -508,7 +522,7 @@ class PlaylistDetailScreenModel : ScreenModel {
      *
      * 成功后本地追加（按 id 去重保序）并同步 trackCount，避免重新拉取整页。
      */
-    fun addTracks(newTracks: List<TrackSummary>) {
+    fun addTracks(newTracks: List<TrackSummary>, strings: CpStrings) {
         val playlist = _state.value.summary ?: return
         if (newTracks.isEmpty()) return
         screenModelScope.launch {
@@ -517,7 +531,7 @@ class PlaylistDetailScreenModel : ScreenModel {
                     runCatching { AppModel.refreshUserProfileAwait()?.nickname }.getOrNull()
                 }
                 if (freshNick == null || playlist.creatorName != freshNick) {
-                    UiEvents.notify("只能向自己创建的歌单添加歌曲")
+                    UiEvents.notify(strings.library.ownerOnlyAddTracks)
                     return@launch
                 }
             }
@@ -527,7 +541,7 @@ class PlaylistDetailScreenModel : ScreenModel {
                 val existingIds = _state.value.tracks.mapTo(HashSet()) { it.id }
                 val toAdd = newTracks.filter { it.id.isNotBlank() && it.id !in existingIds }.distinctBy { it.id }
                 if (toAdd.isEmpty()) {
-                    UiEvents.notify("所选歌曲均已在歌单中")
+                    UiEvents.notify(strings.library.tracksAlreadyInPlaylist)
                     return@launch
                 }
                 val ids = toAdd.map { it.id }
@@ -551,9 +565,9 @@ class PlaylistDetailScreenModel : ScreenModel {
                             summary = s.summary?.copy(trackCount = s.summary.trackCount + addedCount),
                         )
                     }
-                    UiEvents.notify("已添加 $addedCount 首歌曲")
+                    UiEvents.notify(strings.library.tracksAdded(addedCount))
                 } else {
-                    UiEvents.notify("加入歌单失败")
+                    UiEvents.notify(strings.library.addTracksFailed)
                 }
             } finally {
                 isSelfModifying = false
@@ -562,7 +576,7 @@ class PlaylistDetailScreenModel : ScreenModel {
     }
 
     /** 从歌单移除曲目（仅 owner 有效）；成功后本地剔除并退出多选。 */
-    fun removeTracks(trackIds: List<String>) {
+    fun removeTracks(trackIds: List<String>, strings: CpStrings) {
         val playlist = _state.value.summary ?: return
         if (trackIds.isEmpty() || !isOwner()) return
         screenModelScope.launch {
@@ -585,9 +599,9 @@ class PlaylistDetailScreenModel : ScreenModel {
                             summary = s.summary?.copy(trackCount = (s.summary.trackCount - removedCount).coerceAtLeast(0)),
                         )
                     }
-                    UiEvents.notify("已移除 $removedCount 首歌曲")
+                    UiEvents.notify(strings.library.tracksRemoved(removedCount))
                 } else {
-                    UiEvents.notify("操作失败")
+                    UiEvents.notify(strings.library.operationFailed)
                 }
             } finally {
                 isSelfModifying = false
@@ -611,7 +625,7 @@ class PlaylistDetailScreenModel : ScreenModel {
     }
 
     /** 切换收藏状态（乐观本地翻转在 API 成功后执行）。 */
-    fun toggleLike(track: TrackSummary) {
+    fun toggleLike(track: TrackSummary, strings: CpStrings) {
         val liked = _state.value.likedIds.contains(track.id)
         screenModelScope.launch {
             val ok = withContext(Dispatchers.IO) {
@@ -622,7 +636,7 @@ class PlaylistDetailScreenModel : ScreenModel {
                     s.copy(likedIds = if (liked) s.likedIds - track.id else s.likedIds + track.id)
                 }
             } else {
-                UiEvents.notify("操作失败")
+                UiEvents.notify(strings.library.operationFailed)
             }
         }
     }
@@ -642,7 +656,7 @@ class PlaylistDetailScreenModel : ScreenModel {
     }
 
     /** 切换歌单收藏（订阅）状态。 */
-    fun togglePlaylistFavorite() {
+    fun togglePlaylistFavorite(strings: CpStrings) {
         val current = _state.value.isFavorite
         val target = !current
         val playlistId = _state.value.summary?.resourceId ?: return
@@ -652,9 +666,9 @@ class PlaylistDetailScreenModel : ScreenModel {
             }
             if (ok) {
                 _state.update { it.copy(isFavorite = target) }
-                UiEvents.notify(if (target) "已收藏歌单" else "已取消收藏")
+                UiEvents.notify(if (target) strings.library.playlistFavorited else strings.library.playlistUnfavorited)
             } else {
-                UiEvents.notify("操作失败")
+                UiEvents.notify(strings.library.operationFailed)
             }
         }
     }

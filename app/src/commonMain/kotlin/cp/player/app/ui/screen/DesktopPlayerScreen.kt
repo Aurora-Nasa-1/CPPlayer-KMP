@@ -176,6 +176,8 @@ fun DesktopPlayerScreen(
     onMove: (Int, Int) -> Unit,
     onRemoveQueue: (Int) -> Unit = {},
     onClearQueue: () -> Unit = {},
+    /** 页面转场是否还在进行；转场期间冻结流体背景以省下这段着色器开销。 */
+    transitionRunning: Boolean = false,
 ) {
     // 音量直接读 [PlaybackUiState.volume]（setVolume 会同步写回状态流），
     // 与迷你播放器的音量弹层共用同一事实源 —— 之前这层持本地镜像，
@@ -204,6 +206,7 @@ fun DesktopPlayerScreen(
         // 沉浸态下标题栏把高度让给了背景，内容这一侧要补回来（见 LocalPlayerTopInset）。
         // 桌面之外没人提供它，默认 0。
         topChromeInset = cp.player.app.ui.component.LocalPlayerTopInset.current,
+        transitionRunning = transitionRunning,
     )
 }
 
@@ -400,6 +403,8 @@ internal fun DesktopPlayerLayout(
      * 默认 0：离屏渲染核对版式时不带沉浸态。
      */
     topChromeInset: Dp = 0.dp,
+    /** 页面转场是否还在进行（见 [cpFluidBackground] 的 `pauseShaderAnimation`）。 */
+    transitionRunning: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val track = state.currentTrack ?: return
@@ -440,7 +445,11 @@ internal fun DesktopPlayerLayout(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .cpFluidBackground(enabled = fluidBackground, fallback = background)
+            .cpFluidBackground(
+                enabled = fluidBackground,
+                fallback = background,
+                pauseShaderAnimation = transitionRunning,
+            )
     ) {
         val windowMaxWidth = maxWidth
         // 版式刻度：全屏 / 窄窗 / 矮窗都从这一处推，自适应各种屏幕规格（见 playerMetrics）。
@@ -482,33 +491,34 @@ internal fun DesktopPlayerLayout(
             selectedTab,
             showTranslation,
             track,
+            s,
         ) {
             buildList {
                 // 1. 播放与走带控制
                 add(
                     CpContextMenuItem(
-                        label = if (state.isPlaying) "暂停" else "播放",
+                        label = s.player.playOrPause(state.isPlaying),
                         icon = if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         onClick = onTogglePlay,
                     )
                 )
                 add(
                     CpContextMenuItem(
-                        label = "下一首",
+                        label = s.player.nextTrack,
                         icon = Icons.Rounded.SkipNext,
                         onClick = onSkipNext,
                     )
                 )
                 add(
                     CpContextMenuItem(
-                        label = "上一首",
+                        label = s.player.previousTrack,
                         icon = Icons.Rounded.SkipPrevious,
                         onClick = onSkipPrev,
                     )
                 )
                 add(
                     CpContextMenuItem(
-                        label = if (state.isFavorite) "取消收藏" else "收藏歌曲",
+                        label = if (state.isFavorite) s.player.unfavoriteTrack else s.player.favoriteTrack,
                         icon = if (state.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                         isSelected = state.isFavorite,
                         onClick = onLike,
@@ -516,7 +526,7 @@ internal fun DesktopPlayerLayout(
                 )
                 add(
                     CpContextMenuItem(
-                        label = if (state.shuffleEnabled) "关闭随机播放" else "开启随机播放",
+                        label = s.player.shuffle,
                         icon = Icons.Rounded.Shuffle,
                         isSelected = state.shuffleEnabled,
                         onClick = onShuffle,
@@ -525,9 +535,9 @@ internal fun DesktopPlayerLayout(
                 add(
                     CpContextMenuItem(
                         label = when (state.repeatMode) {
-                            RepeatMode.ONE -> "单曲循环"
-                            RepeatMode.ALL -> "列表循环"
-                            RepeatMode.OFF -> "顺序播放"
+                            RepeatMode.ONE -> s.player.repeatOne
+                            RepeatMode.ALL -> s.player.repeatAll
+                            RepeatMode.OFF -> s.player.repeatOff
                         },
                         icon = if (state.repeatMode == RepeatMode.ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
                         isSelected = state.repeatMode != RepeatMode.OFF,
@@ -540,7 +550,7 @@ internal fun DesktopPlayerLayout(
                 // 2. 界面视图与工具切换
                 add(
                     CpContextMenuItem(
-                        label = "显示歌词",
+                        label = s.player.showLyrics,
                         icon = Icons.Rounded.Lyrics,
                         isSelected = selectedTab == 0,
                         onClick = { selectedTab = 0 },
@@ -548,7 +558,7 @@ internal fun DesktopPlayerLayout(
                 )
                 add(
                     CpContextMenuItem(
-                        label = "显示队列",
+                        label = s.player.showQueue,
                         icon = Icons.AutoMirrored.Rounded.QueueMusic,
                         isSelected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
@@ -556,7 +566,7 @@ internal fun DesktopPlayerLayout(
                 )
                 add(
                     CpContextMenuItem(
-                        label = "显示评论",
+                        label = s.player.showComments,
                         icon = Icons.AutoMirrored.Rounded.Comment,
                         isSelected = selectedTab == 2,
                         onClick = { selectedTab = 2 },
@@ -565,7 +575,7 @@ internal fun DesktopPlayerLayout(
                 if (selectedTab == 0) {
                     add(
                         CpContextMenuItem(
-                            label = if (showTranslation) "隐藏歌词翻译" else "显示歌词翻译",
+                            label = if (showTranslation) s.player.hideLyricsTranslation else s.player.showLyricsTranslation,
                             icon = Icons.Rounded.Translate,
                             isSelected = showTranslation,
                             onClick = { showTranslation = !showTranslation },
@@ -575,7 +585,7 @@ internal fun DesktopPlayerLayout(
                 onChangeLyricsSource?.let { changeSource ->
                     add(
                         CpContextMenuItem(
-                            label = "歌词插件设置",
+                            label = s.player.lyricsPluginSettings,
                             icon = Icons.Rounded.AutoAwesome,
                             onClick = changeSource,
                         )
@@ -584,7 +594,7 @@ internal fun DesktopPlayerLayout(
                 track.mvId?.takeIf { it > 0 }?.let { mvId ->
                     add(
                         CpContextMenuItem(
-                            label = "播放 MV",
+                            label = s.player.playMv,
                             icon = Icons.Rounded.SmartDisplay,
                             onClick = { navigator?.push(VideoPlayerScreen("netease://mv/$mvId")) },
                         )
@@ -596,35 +606,35 @@ internal fun DesktopPlayerLayout(
                 // 3. 歌曲管理与操作（全面连通二级弹层）
                 add(
                     CpContextMenuItem(
-                        label = "添加到歌单...",
+                        label = s.player.addToPlaylistMenu,
                         icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
                         onClick = { moreSheets.showAddToPlaylist = true },
                     )
                 )
                 add(
                     CpContextMenuItem(
-                        label = "歌曲详情...",
+                        label = s.player.songDetailsMenu,
                         icon = Icons.Rounded.Info,
                         onClick = { moreSheets.showSongInfo = true },
                     )
                 )
                 add(
                     CpContextMenuItem(
-                        label = "设备接力 / 投送...",
+                        label = s.player.transferDeviceMenu,
                         icon = Icons.Rounded.Cast,
                         onClick = { moreSheets.showDevicePicker = true },
                     )
                 )
                 add(
                     CpContextMenuItem(
-                        label = "定时关闭...",
+                        label = s.player.sleepTimerMenu,
                         icon = Icons.Rounded.AccessAlarm,
                         onClick = { moreSheets.showSleepTimer = true },
                     )
                 )
                 add(
                     CpContextMenuItem(
-                        label = "复制歌曲信息",
+                        label = s.player.copyTrackInfo,
                         icon = Icons.Rounded.ContentCopy,
                         onClick = {
                             val info = "${track.name} - ${track.artist}"
@@ -638,7 +648,7 @@ internal fun DesktopPlayerLayout(
                 // 4. 界面收起
                 add(
                     CpContextMenuItem(
-                        label = "收起播放页",
+                        label = s.player.collapsePlayer,
                         icon = Icons.Rounded.KeyboardArrowDown,
                         onClick = onBack,
                     )
@@ -736,7 +746,7 @@ internal fun DesktopPlayerLayout(
                                     track.mvId?.takeIf { it > 0 }?.let { mvId ->
                                         PlayerInlineAction(
                                             icon = Icons.Rounded.SmartDisplay,
-                                            label = "播放 MV",
+                                            label = s.player.playMv,
                                             onClick = {
                                                 navigator?.push(VideoPlayerScreen("netease://mv/$mvId"))
                                             },
@@ -744,7 +754,7 @@ internal fun DesktopPlayerLayout(
                                     }
                                     PlayerInlineAction(
                                         icon = if (state.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                                        label = if (state.isFavorite) "取消收藏" else "收藏",
+                                        label = if (state.isFavorite) s.player.unfavoriteTrack else s.player.favoriteTrack,
                                         active = state.isFavorite,
                                         onClick = onLike,
                                     )
@@ -775,7 +785,7 @@ internal fun DesktopPlayerLayout(
                                 isAndroid && vipActive &&
                                     engineKey == cp.player.core.playback.PlaybackSessionSettings.ENGINE_FLICK_HIRES ->
                                     "Flick Hi-Res"
-                                !isAndroid && vipActive && exclusiveOn -> "WASAPI 独占 · Bit-Perfect"
+                                !isAndroid && vipActive && exclusiveOn -> s.player.exclusiveBadge
                                 else -> null
                             }
                             if (metrics.showMetaChips && (qualityLabel != null || engineChip != null)) {
@@ -912,7 +922,7 @@ internal fun DesktopPlayerLayout(
                                             capability = ProviderCapability.COMMENTS,
                                             fallback = {
                                                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                                    CpText("当前音源暂不支持评论功能", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                    CpText(s.player.commentsUnsupported, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                                 }
                                             }
                                         ) {
@@ -969,7 +979,7 @@ internal fun DesktopPlayerLayout(
                                 if (selectedTab == 0) {
                                     PlayerTopToolButton(
                                         icon = Icons.Rounded.Translate,
-                                        label = if (showTranslation) "关闭歌词翻译" else "歌词翻译",
+                                        label = if (showTranslation) s.player.closeLyricsTranslation else s.player.lyricsTranslation,
                                         active = showTranslation,
                                         onClick = { showTranslation = !showTranslation },
                                     )
@@ -981,14 +991,14 @@ internal fun DesktopPlayerLayout(
                                 if (!cp.player.app.platform.isAndroidPlatform()) {
                                     PlayerTopToolButton(
                                         icon = Icons.Rounded.PictureInPictureAlt,
-                                        label = "迷你播放器",
+                                        label = s.player.miniPlayer,
                                         active = false,
                                         onClick = { cp.player.app.ui.util.DesktopShell.isMiniMode = true },
                                     )
                                 }
                                 PlayerTopToolButton(
                                     icon = Icons.Rounded.MoreVert,
-                                    label = "更多",
+                                    label = s.player.more,
                                     active = moreSheets.showMoreMenu,
                                     onClick = {
                                         moreSheets.showMoreMenu = true
@@ -1029,6 +1039,7 @@ private fun PlayerSheetGrabber(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val s = cpStrings()
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
     val morph by animateFloatAsState(
@@ -1049,7 +1060,7 @@ private fun PlayerSheetGrabber(
             .clickable(
                 interactionSource = interaction,
                 indication = null,
-                onClickLabel = "收起播放页",
+                onClickLabel = s.player.collapsePlayer,
                 onClick = onClick,
             ),
         contentAlignment = Alignment.Center,
@@ -1078,13 +1089,18 @@ internal fun DesktopTabSelector(
     onTabSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val s = cpStrings()
     val isDark = LocalIsDarkTheme.current
     val supportsComments = rememberActiveProviderSupports(ProviderCapability.COMMENTS)
     // 页签：歌词 / 队列 / 评论（评论按音源能力显隐）。
     // 队列从底部小播放条搬进来（小播放条在播放页展开时根本不可见，此前桌面播放页
     // 完全没有队列入口）；内容复用 QueueContent，回调就是本函数已有的那几个。
-    val tabs = remember(supportsComments) {
-        if (supportsComments) listOf("歌词", "队列", "评论") else listOf("歌词", "队列")
+    val tabs = remember(supportsComments, s) {
+        if (supportsComments) {
+            listOf(s.player.tabLyrics, s.player.tabQueue, s.player.tabComments)
+        } else {
+            listOf(s.player.tabLyrics, s.player.tabQueue)
+        }
     }
 
     Row(
@@ -1262,6 +1278,7 @@ internal fun PlayerTransportRow(
     scale: Float = 1f,
     modifier: Modifier = Modifier,
 ) {
+    val s = cpStrings()
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1269,14 +1286,14 @@ internal fun PlayerTransportRow(
     ) {
         PlayerModeButton(
             icon = Icons.Rounded.Shuffle,
-            label = "随机播放",
+            label = s.player.shuffle,
             active = state.shuffleEnabled,
             onClick = onShuffle,
             size = 40.dp * scale,
         )
         PlayerSkipButton(
             icon = Icons.Rounded.SkipPrevious,
-            label = "上一首",
+            label = s.player.previousTrack,
             onClick = onSkipPrev,
             size = 48.dp * scale,
         )
@@ -1288,16 +1305,16 @@ internal fun PlayerTransportRow(
         )
         PlayerSkipButton(
             icon = Icons.Rounded.SkipNext,
-            label = "下一首",
+            label = s.player.nextTrack,
             onClick = onSkipNext,
             size = 48.dp * scale,
         )
         PlayerModeButton(
             icon = if (state.repeatMode == RepeatMode.ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
             label = when (state.repeatMode) {
-                RepeatMode.ONE -> "单曲循环"
-                RepeatMode.ALL -> "列表循环"
-                RepeatMode.OFF -> "循环"
+                RepeatMode.ONE -> s.player.repeatOne
+                RepeatMode.ALL -> s.player.repeatAll
+                RepeatMode.OFF -> s.player.repeat
             },
             active = state.repeatMode != RepeatMode.OFF,
             onClick = onRepeat,
@@ -1375,6 +1392,7 @@ private fun PlayerPlayPauseButton(
     onClick: () -> Unit,
     size: Dp = 62.dp,
 ) {
+    val s = cpStrings()
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val corner by animateDpAsState(
@@ -1409,7 +1427,7 @@ private fun PlayerPlayPauseButton(
                 ) { playing ->
                     Icon(
                         imageVector = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = if (playing) "暂停" else "播放",
+                        contentDescription = s.player.playOrPause(playing),
                         modifier = Modifier
                             .size(size * 0.52f)
                             .graphicsLayer {
@@ -1435,6 +1453,7 @@ internal fun DesktopVolumeControl(
     onVolumeChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val s = cpStrings()
     var lastNonZero by remember { mutableStateOf(if (volume > 0.05f) volume else 1f) }
     SideEffect { if (volume > 0.05f) lastNonZero = volume }
     val isMuted = volume <= 0.001f
@@ -1457,7 +1476,7 @@ internal fun DesktopVolumeControl(
                 .clickable(
                     interactionSource = leftInteraction,
                     indication = null,
-                    onClickLabel = if (isMuted) "恢复音量" else "静音",
+                    onClickLabel = if (isMuted) s.player.unmute else s.player.mute,
                 ) {
                     if (isMuted) onVolumeChange(lastNonZero) else onVolumeChange(0f)
                 },
@@ -1469,7 +1488,7 @@ internal fun DesktopVolumeControl(
                     volume < 0.35f -> Icons.AutoMirrored.Rounded.VolumeMute
                     else -> Icons.AutoMirrored.Rounded.VolumeDown
                 },
-                contentDescription = if (isMuted) "恢复音量" else "静音",
+                contentDescription = if (isMuted) s.player.unmute else s.player.mute,
                 modifier = Modifier.size(16.dp),
                 tint = when {
                     isMuted -> MaterialTheme.colorScheme.error
@@ -1505,7 +1524,7 @@ internal fun DesktopVolumeControl(
                 .clickable(
                     interactionSource = rightInteraction,
                     indication = null,
-                    onClickLabel = "最大音量",
+                    onClickLabel = s.player.maxVolume,
                 ) {
                     onVolumeChange(1f)
                 },
@@ -1513,7 +1532,7 @@ internal fun DesktopVolumeControl(
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Rounded.VolumeUp,
-                contentDescription = "最大音量",
+                contentDescription = s.player.maxVolume,
                 modifier = Modifier.size(16.dp),
                 tint = if (rightHovered) MaterialTheme.colorScheme.onSurface
                 else MaterialTheme.colorScheme.onSurfaceVariant,

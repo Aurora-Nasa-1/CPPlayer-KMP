@@ -251,7 +251,7 @@ fun PlayerMoreContent(
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = Icons.Filled.Close,
-                                contentDescription = "关闭",
+                                contentDescription = s.common.close,
                                 tint = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(20.dp),
                             )
@@ -291,13 +291,13 @@ fun PlayerMoreContent(
                     }
                     Column(Modifier.weight(1f)) {
                         CpText(
-                            "探索相似歌曲",
+                            s.player.exploreSimilar,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                         CpText(
-                            "基于在播曲目发现更多同风格好音乐",
+                            s.player.exploreSimilarNote,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                         )
@@ -411,7 +411,7 @@ fun PlayerMoreContent(
                 ) {
                     PlayerPillButton(
                         modifier = Modifier.weight(1f),
-                        text = if (immersiveLyrics) "沉浸歌词 (已开启)" else "沉浸歌词 (已关闭)",
+                        text = if (immersiveLyrics) s.player.immersiveLyricsOn else s.player.immersiveLyricsOff,
                         icon = Icons.Filled.Fullscreen,
                         bgColor = if (immersiveLyrics) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
                         textColor = if (immersiveLyrics) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
@@ -419,7 +419,7 @@ fun PlayerMoreContent(
                     )
                     PlayerPillButton(
                         modifier = Modifier.weight(1f),
-                        text = "播放界面设置",
+                        text = s.player.playerSettings,
                         icon = Icons.Filled.Tune,
                         bgColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         textColor = MaterialTheme.colorScheme.onSurface,
@@ -473,7 +473,7 @@ fun PlayerMoreContent(
                             )
                         }
                         CpText(
-                            text = "查看完整元数据 →",
+                            text = s.player.viewFullMetadata,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
                         )
@@ -489,7 +489,9 @@ fun PlayerMoreContent(
                             label = formatTimeMs(track.durationMs),
                             modifier = Modifier.weight(1f),
                         )
-                        val detailedFormat = formatInfo?.qualityLabel?.takeIf { it.isNotBlank() && it != "标准" }
+                        val detailedFormat = formatInfo?.qualityLabel?.takeIf {
+                            it.isNotBlank() && it != s.quality.labelOf("standard")
+                        }
                         val effectiveLevel = trackQualityLevel.ifBlank { qualityLevel }.ifBlank { "standard" }
                         val qualityLabel = when {
                             !sourceQualityLabel.isNullOrBlank() && detailedFormat != null -> "$sourceQualityLabel · $detailedFormat"
@@ -507,13 +509,17 @@ fun PlayerMoreContent(
                             label = qualityLabel,
                             modifier = Modifier.weight(1f),
                         )
-                        val lyricStatus = if (lyricsInfo?.hasWordLevel == true) "逐字歌词" else "动态歌词"
+                        val lyricStatus = if (lyricsInfo?.hasWordLevel == true) {
+                            s.player.wordByWordLyrics
+                        } else {
+                            s.player.dynamicLyrics
+                        }
                         val currentOffset = cp.player.app.ui.util.LyricOffsetManager.getOffset(track.id)
                         val lyricLabel = if (currentOffset != 0L) {
                             val sign = if (currentOffset > 0) "+" else ""
-                            "$lyricStatus (${sign}${currentOffset / 1000f}s)"
+                            s.player.lyricOffsetChipValue(lyricStatus, "$sign${currentOffset / 1000f}s")
                         } else {
-                            "$lyricStatus · 微调"
+                            "$lyricStatus · ${s.player.lyricOffsetChip}"
                         }
                         DetailChip(
                             icon = Icons.Filled.Lyrics,

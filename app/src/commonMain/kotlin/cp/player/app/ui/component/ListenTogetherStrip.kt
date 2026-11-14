@@ -132,7 +132,7 @@ internal fun ListenTogetherStripContent(
 
         Icon(
             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = "进入一起听房间",
+            contentDescription = together.openRoom,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(18.dp),
         )

@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import cp.player.app.ui.util.DesktopShell
 
 /**
  * 骨架屏（shimmer）。
@@ -78,6 +79,10 @@ fun Modifier.cpShimmer(
     base: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
     highlight: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
 ): Modifier {
+    // 窗口隐藏到托盘时降级成静态底色：骨架扫光是纯装饰，看不见时不该继续逐帧请求新帧。
+    if (DesktopShell.isWindowHidden) {
+        return this.clip(shape).background(base)
+    }
     val transition = rememberInfiniteTransition(label = "cpShimmer")
     // ⚠️ 不要写成 `by` 后在外面读：这里刻意保留 `State` 本体，让 `.value` 只在下面
     // `drawBehind` 的**绘制 lambda** 里被读 —— 每帧只重绘、不重组。

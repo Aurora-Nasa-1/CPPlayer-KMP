@@ -93,6 +93,7 @@ import cp.player.app.ui.component.LocalIsExpanded
 import cp.player.app.platform.shareText
 import cp.player.app.ui.component.PlaylistCoverCard
 import cp.player.app.ui.component.PlaylistItem
+import cp.player.app.ui.component.PlaylistMenuActions
 import cp.player.app.ui.component.PlaylistOptionsSheet
 import cp.player.app.ui.component.ProviderFeatureGate
 import cp.player.app.ui.component.SectionHeader
@@ -120,6 +121,7 @@ import cp.player.app.ui.model.LibraryScreenModel
 import cp.player.app.ui.model.LibraryUiState
 import cp.player.app.ui.wall.PosterWallIcon
 import cp.player.core.music.PlaylistSummary
+import cp.player.core.music.isRemote
 import cp.player.core.provider.ProviderCapability
 import kotlinx.coroutines.launch
 
@@ -197,6 +199,35 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
     // 页面级刷新入口：桌面 = 空白处右键「刷新」；Android = 下拉刷新。
     // 静默刷新（已有歌单时不置 loading）走模型单独的 refreshing 标记驱动指示器。
     val refreshing by model.refreshing.collectAsState()
+    // 曲库列表 / 栅格共用的歌单动作：桌面右键与「更多」读同一份，
+    // 手机端仍由 onOptionsClick 打开 PlaylistOptionsSheet。
+    val playlistMenuActions: (PlaylistSummary) -> PlaylistMenuActions? = { playlist ->
+        if (!playlist.isRemote) {
+            null
+        } else {
+            val owner = model.isOwner(playlist)
+            PlaylistMenuActions(
+                isOwner = owner,
+                isFavorite = true,
+                onRefresh = { model.refresh() },
+                onPlay = { model.play(playlist) },
+                onAddToQueue = { model.play(playlist, addOnly = true) },
+                onDownload = { model.download(playlist) },
+                onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
+                onToggleFavorite = if (!owner) {
+                    { askDeleteOrUnsubscribe(playlist, model, confirm, s) }
+                } else {
+                    null
+                },
+                onRename = if (owner) {
+                    { renameTarget = playlist }
+                } else {
+                    null
+                },
+                onDelete = { askDeleteOrUnsubscribe(playlist, model, confirm, s) },
+            )
+        }
+    }
     cp.player.app.ui.component.CpRefreshablePage(
         isRefreshing = refreshing,
         onRefresh = { model.refresh() },
@@ -227,6 +258,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
                 onOpenPlaylist = { navigator.push(PlaylistDetailScreen(it)) },
                 onPlaylistOptions = { selectedPlaylist = it },
                 isOwner = model::isOwner,
+                menuActionsOf = playlistMenuActions,
             ),
         ) {
             LocalLibrarySection(
@@ -246,6 +278,8 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
             onDismiss = { selectedPlaylist = null },
             onPlay = { model.play(playlist) },
             onAddToQueue = { model.play(playlist, addOnly = true) },
+            onRefresh = { model.refresh() },
+            onDownload = { model.download(playlist) },
             onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
             onDelete = { askDeleteOrUnsubscribe(playlist, model, confirm, s) },
             onRename = if (model.isOwner(playlist)) {
@@ -256,7 +290,11 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
             coverUrl = playlist.coverUrl,
             // 媒体库中的歌单均为已收藏/自建；非 owner 时复用同一个确认弹窗（文案按 owner 区分）
             isFavorite = true,
-            onToggleFavorite = { askDeleteOrUnsubscribe(playlist, model, confirm, s) },
+            onToggleFavorite = if (!model.isOwner(playlist)) {
+                { askDeleteOrUnsubscribe(playlist, model, confirm, s) }
+            } else {
+                null
+            },
         )
     }
 
@@ -336,7 +374,7 @@ private fun askDeleteOrUnsubscribe(
  *    问候语里本来就有）；
  * 2. **一排快捷圆形入口**：最近播放 / 云盘 / 下载（三个高频跳转，一排放得下）。
  *
- * 「创建歌单」hero 删除 —— 曲库标题行右侧的 `[+]` 就是这个动作；
+ * 「创建歌单」hero 删除 —— 曲库标题行右侧的 `[+]` / 导入就是这个区段的操作入口；
  * 偏好/存储/关于删除 —— 全部在顶栏设置可达。桌面 expanded 保持 bento 不动。
  */
 @Composable
@@ -1230,7 +1268,7 @@ private fun LocalLibrarySection(
             },
             coverUrl = song.coverUri,
             onOpenInFileManager = {
-                cp.player.app.platform.openInFileManager(song.path)
+                cp.player.app.ui.util.revealInFileManager(song.path, s.downloads)
             },
             onRemoveFromLibrary = {
                 removeTargetSong = song

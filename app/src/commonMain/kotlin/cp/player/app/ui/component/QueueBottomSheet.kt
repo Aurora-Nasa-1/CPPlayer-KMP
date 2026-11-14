@@ -242,7 +242,7 @@ fun QueueContent(
                         IconButton(onClick = onClose) {
                             Icon(
                                 imageVector = Icons.Rounded.Close,
-                                contentDescription = "关闭",
+                                contentDescription = s.common.close,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -387,12 +387,12 @@ fun QueueContent(
                                 )
                                 Column(Modifier.weight(1f)) {
                                     CpText(
-                                        "探索相似歌曲",
+                                        s.player.exploreSimilar,
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.SemiBold,
                                     )
                                     CpText(
-                                        "基于当前播放队列与在播曲目探索更多",
+                                        s.player.exploreSimilarNote,
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -837,12 +837,16 @@ private fun QueueRow(
                         fontWeight = FontWeight.Medium,
                         color = titleColor,
                         maxLines = 1,
+                        // 队列里只有「正在播放」这一行是焦点位：它溢出时滚起来，
+                        // 用户不必为了确认当前曲目名去翻播放页。其余行仍走悬停浮出。
+                        emphasized = isCurrent,
                     )
                     CpText(
                         item.artist,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
+                        emphasized = isCurrent,
                     )
                 }
             }

@@ -152,4 +152,13 @@ class LibraryScreenModel : ScreenModel {
             }
         }
     }
+
+    /** 下载整个歌单（复用 [AppModel.downloadTracks] 的批量入队与提示）。 */
+    fun download(playlist: PlaylistSummary) {
+        screenModelScope.launch {
+            val result = AppModel.musicRepository.getPlaylistDetail(playlist.resourceId)
+            if (result !is BackendResult.Success) return@launch
+            AppModel.downloadTracks(result.data.tracks)
+        }
+    }
 }

@@ -44,6 +44,7 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.AlbumItem
 import cp.player.app.ui.component.ArtistItem
@@ -65,6 +66,7 @@ import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.SongMenuActions
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.PlaylistItem
+import cp.player.app.ui.component.PlaylistMenuActions
 import cp.player.app.ui.component.songContextMenuItems
 import cp.player.app.ui.component.songShareText
 import cp.player.app.ui.component.playlistShareText
@@ -72,6 +74,7 @@ import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.shareText
 import cp.player.app.ui.model.SearchScreenModel
 import cp.player.app.repository.SearchType
+import cp.player.core.music.isRemote
 import kotlinx.coroutines.launch
 
 /**
@@ -121,6 +124,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
         val playlistActions = androidx.compose.runtime.remember {
             cp.player.app.ui.model.HomeScreenModel(loadDiscovery = false)
         }
+        val s = cpStrings()
         var playlistOptionsTarget by androidx.compose.runtime.remember {
             androidx.compose.runtime.mutableStateOf<cp.player.core.music.PlaylistSummary?>(null)
         }
@@ -352,7 +356,13 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                         Column(Modifier.weight(1f)) {
                                             CpText(hot.keyword, maxLines = 1)
                                             if (hot.description.isNotBlank()) {
-                                                CpText(hot.description, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                                                // 热词说明是「这个词指什么」的唯一解释（常带
+                                                // 歌手 / 专辑 / 事件），单行会把关键部分裁掉。
+                                                CpText(
+                                                    hot.description,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    maxLines = 2,
+                                                )
                                             }
                                         }
                                         Icon(Icons.AutoMirrored.Filled.TrendingUp, null, tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
@@ -395,7 +405,15 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                     end = CpSpacing.pageHorizontal,
                                     bottom = 32.dp,
                                 ),
-                                verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
+                                // 歌单卡片比歌曲裸行多一层边界，行距用 4dp；
+                                // 歌曲 / 专辑 / 歌手结果保持全应用统一的 2dp。
+                                verticalArrangement = Arrangement.spacedBy(
+                                    if (state.searchType == SearchType.PLAYLIST) {
+                                        CpSpacing.playlistRowGap
+                                    } else {
+                                        CpSpacing.listRowGap
+                                    },
+                                ),
                             ) {
                                 item {
                                     SectionHeader(
@@ -467,6 +485,28 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                         )
                                     }
                                     SearchType.PLAYLIST -> itemsIndexed(result.playlists, key = { _, playlist -> "playlist-${playlist.resourceId}" }) { _, playlist ->
+                                        val menuActions = if (playlist.isRemote) {
+                                            PlaylistMenuActions(
+                                                isOwner = false,
+                                                onPlay = {
+                                                    playlistActions.playPlaylist(playlist, s)
+                                                    playlistOptionsTarget = null
+                                                },
+                                                onAddToQueue = {
+                                                    playlistActions.queuePlaylist(playlist, s)
+                                                    playlistOptionsTarget = null
+                                                },
+                                                onDownload = {
+                                                    playlistActions.downloadPlaylist(playlist, s)
+                                                    playlistOptionsTarget = null
+                                                },
+                                                onShare = {
+                                                    shareText(playlistShareText(playlist.resourceId, playlist.name))
+                                                },
+                                            )
+                                        } else {
+                                            null
+                                        }
                                         PlaylistItem(
                                             playlist = playlist,
                                             isOwner = false,
@@ -475,6 +515,8 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                             // 按钮画得出来、点下去毫无反应）。
                                             // 搜索结果里的歌单都来自上游，isOwner 恒 false。
                                             onOptionsClick = { playlistOptionsTarget = playlist },
+                                            // 桌面端「更多 / 右键」与曲库共用同一份动作集合。
+                                            menuActions = menuActions,
                                         )
                                     }
                                     SearchType.ARTIST -> itemsIndexed(result.artists, key = { _, artist -> "artist-${artist.resourceId}" }) { _, artist ->
@@ -537,9 +579,17 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                 },
                 onAddToPlaylist = { addToPlaylistTrack = track },
                 onDownload = { AppModel.downloadTrack(track) },
+                onShowInfo = { showInfoTarget = track },
                 onPlayMv = track.mvId?.takeIf { it > 0 }?.let { mvId ->
                     { navigator.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV")) }
                 },
+            )
+        }
+
+        showInfoTarget?.let { track ->
+            cp.player.app.ui.component.SongDetailInfoDialog(
+                track = track,
+                onDismiss = { showInfoTarget = null },
             )
         }
 
@@ -550,74 +600,31 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
             )
         }
 
-        // 歌单「更多」：桌面端弹锚定菜单（与右键、歌单详情页左栏同一份 items），
-        // 非桌面（触屏 / 无窗口 chrome 的宽屏平板）回落到底部弹层。
+        // 歌单「更多」：桌面端由 PlaylistItem 内部锚定菜单处理（与右键同一份 items），
+        // 这里只负责非桌面（触屏 / 无窗口 chrome 的宽屏平板）的底部弹层。
         // PlaylistItem 的更多按钮位置不固定（列表很长时会滚到屏外），
         // 所以菜单/弹层挂在**页面级**状态上，而不是行内联一个 CpAnchoredMenu。
         playlistOptionsTarget?.let { playlist ->
-            // 本地虚拟歌单（id ≤ 0）没有服务端实体，搜索页理论上拿不到，
-            // 但判据与侧栏 / 详情页共用一条，避免哪天上游塞进来一个负数 id。
-            val menuItems = if (playlistActions.isServerPlaylist(playlist)) {
-                cp.player.app.ui.component.playlistContextMenuItems(
-                    cp.player.app.ui.component.PlaylistMenuActions(
-                        // 搜索结果里的歌单不可能是「我建的」，删除入口因此不会出现。
-                        isOwner = false,
-                        onPlay = {
-                            playlistActions.playPlaylist(playlist)
-                            playlistOptionsTarget = null
-                        },
-                        onAddToQueue = {
-                            playlistActions.queuePlaylist(playlist)
-                            playlistOptionsTarget = null
-                        },
-                        onDownload = {
-                            playlistActions.downloadPlaylist(playlist)
-                            playlistOptionsTarget = null
-                        },
-                        onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
-                    )
-                )
-            } else {
-                emptyList()
-            }
-            val windowChromeActive = cp.player.app.ui.component.LocalWindowChromeActive.current
-            if (windowChromeActive && menuItems.isNotEmpty()) {
-                // 桌面端没有可锚定的按钮（列表项可能已经滚出可视区），
-                // 用一层全屏透明点击层把菜单挂在页面中心偏上 —— 点空白处即收起。
-                Box(Modifier.fillMaxSize()) {
-                    androidx.compose.material3.DropdownMenu(
-                        expanded = true,
-                        onDismissRequest = { playlistOptionsTarget = null },
-                    ) {
-                        menuItems.forEach { item ->
-                            androidx.compose.material3.DropdownMenuItem(
-                                text = { CpText(item.label) },
-                                onClick = {
-                                    // 与 CpContextMenuPanel 同一顺序：先收面板再执行动作。
-                                    playlistOptionsTarget = null
-                                    item.onClick()
-                                },
-                            )
-                        }
-                    }
-                }
-            } else {
-                cp.player.app.ui.component.PlaylistOptionsSheet(
-                    playlistName = playlist.name,
-                    isOwner = false,
-                    onDismiss = { playlistOptionsTarget = null },
-                    onPlay = {
-                        playlistActions.playPlaylist(playlist)
-                        playlistOptionsTarget = null
-                    },
-                    onAddToQueue = {
-                        playlistActions.queuePlaylist(playlist)
-                        playlistOptionsTarget = null
-                    },
-                    onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
-                    coverUrl = playlist.coverUrl,
-                )
-            }
+            // 桌面端行的「更多」不会再走到这里；只有触屏形态会设置该目标。
+            cp.player.app.ui.component.PlaylistOptionsSheet(
+                playlistName = playlist.name,
+                isOwner = false,
+                onDismiss = { playlistOptionsTarget = null },
+                onPlay = {
+                    playlistActions.playPlaylist(playlist, s)
+                    playlistOptionsTarget = null
+                },
+                onAddToQueue = {
+                    playlistActions.queuePlaylist(playlist, s)
+                    playlistOptionsTarget = null
+                },
+                onDownload = {
+                    playlistActions.downloadPlaylist(playlist, s)
+                    playlistOptionsTarget = null
+                },
+                onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
+                coverUrl = playlist.coverUrl,
+            )
         }
 
         cp.player.app.ui.component.CpConfirmHost(confirm)

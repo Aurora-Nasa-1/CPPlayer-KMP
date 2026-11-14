@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import cp.player.app.ui.feedback.CpHaptic
 import cp.player.app.ui.theme.CpMotion
+import cp.player.app.i18n.cpStrings
 
 /**
  * M3 Expressive 收藏按钮：点击时回弹放大，颜色渐变切换。
@@ -33,6 +34,7 @@ fun ExpressiveLikeButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val s = cpStrings()
     var pressed by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     val haptics = cp.player.app.ui.feedback.LocalCpHaptics.current
@@ -73,7 +75,7 @@ fun ExpressiveLikeButton(
     ) {
         Icon(
             imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-            contentDescription = if (isFavorite) "取消收藏" else "收藏",
+            contentDescription = if (isFavorite) s.downloads.unfavorite else s.downloads.favorite,
             tint = tint,
             modifier = Modifier.scale(scale),
         )

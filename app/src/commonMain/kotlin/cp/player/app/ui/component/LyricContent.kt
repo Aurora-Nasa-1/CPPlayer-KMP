@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import cp.player.app.ui.util.DesktopShell
 import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -201,7 +202,10 @@ fun LyricContent(
     //
     // 用 `withFrameNanos`（逐帧时钟）而不是 `delay(16)`：后者与显示刷新率不同步，
     // 会稳定丢 / 叠帧，反而更抖。
-    LaunchedEffect(state.isPlaying) {
+    // 窗口隐藏到托盘后不再逐帧外推：`withFrameNanos` 每帧都会让窗口请求新帧，
+    // 看不见的窗口没必要维持这个循环。恢复可见时 effect 重启，位置会立刻刷新。
+    LaunchedEffect(state.isPlaying, DesktopShell.isWindowHidden) {
+        if (DesktopShell.isWindowHidden) return@LaunchedEffect
         if (!state.isPlaying) {
             // 暂停：立刻把位置钉到权威值上，不要停在最后一次外推的结果。
             smoothPosition.longValue = positionSource.currentMs()

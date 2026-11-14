@@ -63,7 +63,8 @@ import cp.player.app.ui.component.CpText
  * 粘贴文本后立刻能看到「哪些歌匹配到了、哪些没有」，而不是点完导入才知道失败。
  * 识别结果默认全选，用户可以取消个别条目；未匹配的条目单独列在底部，不会被静默吞掉。
  *
- * 入口在「我的 → 曲库」标题行（[cp.player.app.ui.screen.LibraryScreen]）。
+ * 入口在「我的 → 曲库」标题行（[cp.player.app.ui.screen.LibraryScreen]）：
+ * 桌面在页面标题下的分体按钮，手机在曲库标题行右侧。
  */
 class ImportPlaylistScreen : Screen {
     @Composable

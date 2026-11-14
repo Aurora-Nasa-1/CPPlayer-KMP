@@ -42,6 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cp.player.core.playback.SyncedLyricLine
+import cp.player.app.ui.util.DesktopShell
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -59,7 +60,8 @@ internal enum class PosterLyricStyle {
 @Composable
 internal fun rememberPosterSceneTime(playing: Boolean): State<Float> {
     val elapsed = remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(playing) {
+    LaunchedEffect(playing, DesktopShell.isWindowHidden) {
+        if (DesktopShell.isWindowHidden) return@LaunchedEffect
         if (!playing) return@LaunchedEffect
         var previous = 0L
         while (true) {

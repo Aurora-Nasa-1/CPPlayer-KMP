@@ -9,6 +9,7 @@ import cafe.adriel.voyager.navigator.Navigator
 import cp.player.app.platform.dispatchPageBack
 import cp.player.app.platform.hasPageBackHandler
 import cp.player.app.platform.isAndroidPlatform
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.util.DesktopShell
 import cp.player.app.ui.util.popOrNotify
 
@@ -53,12 +54,13 @@ fun rememberBackContextMenuItem(): CpContextMenuItem? {
     val canPop = isDesktop && (navigator?.size ?: 1) > 1
     val shellCanGoBack = isDesktop && DesktopShell.pageCanGoBack
     val pageCanGoBack = isDesktop && hasPageBackHandler()
-    return remember(navigator, canPop, shellCanGoBack, pageCanGoBack) {
+    val label = cpStrings().contextMenu.backOneLevel
+    return remember(navigator, canPop, shellCanGoBack, pageCanGoBack, label) {
         if (!canPop && !shellCanGoBack && !pageCanGoBack) {
             null
         } else {
             CpContextMenuItem(
-                label = "返回上一级",
+                label = label,
                 icon = Icons.AutoMirrored.Filled.ArrowBack,
                 onClick = { goBackOneLevel(navigator, canPop, shellCanGoBack) },
             )

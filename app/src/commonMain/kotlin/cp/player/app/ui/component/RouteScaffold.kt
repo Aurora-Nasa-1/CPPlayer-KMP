@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cp.player.app.ui.util.DesktopRouteTitle
+import cp.player.app.i18n.cpStrings
 
 /**
  * **路由页的唯一外壳。**
@@ -101,7 +102,7 @@ fun CpRouteScaffold(
                     CpContextMenu(
                         items = listOf(
                             CpContextMenuItem(
-                                label = "返回上一级",
+                                label = cpStrings().contextMenu.backOneLevel,
                                 icon = Icons.AutoMirrored.Filled.ArrowBack,
                                 onClick = backItem,
                             ),

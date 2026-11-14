@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import cp.player.app.i18n.cpStrings
 
 /**
  * 全应用统一的返回按钮（Filled Tonal 风格）。
@@ -22,9 +23,10 @@ import androidx.compose.ui.unit.dp
 fun CpBackButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    contentDescription: String = "返回",
+    contentDescription: String? = null,
 ) {
-    CpHoverReveal(fullText = contentDescription) {
+    val label = contentDescription ?: cpStrings().common.back
+    CpHoverReveal(fullText = label) {
         FilledIconButton(
             onClick = onClick,
             modifier = modifier,
@@ -35,7 +37,7 @@ fun CpBackButton(
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = contentDescription,
+                contentDescription = label,
                 modifier = Modifier.size(CpIconSize.action),
             )
         }

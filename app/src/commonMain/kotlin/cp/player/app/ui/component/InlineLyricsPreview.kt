@@ -74,7 +74,7 @@ fun InlineLyricsPreview(
     val isNextJapanese = translation == null && (isJapaneseLyrics || nextLine?.containsKana() == true)
     Column(
         modifier.fillMaxWidth().heightIn(min = if (compact) CpSpacing.touchTarget else 64.dp)
-            .clickable(role = Role.Button, onClickLabel = "展开完整歌词", onClick = onClick)
+            .clickable(role = Role.Button, onClickLabel = s.player.lyricsExpand, onClick = onClick)
             .padding(vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {

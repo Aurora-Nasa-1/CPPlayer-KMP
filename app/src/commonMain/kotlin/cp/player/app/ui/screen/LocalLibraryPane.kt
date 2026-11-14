@@ -623,7 +623,11 @@ internal fun LocalLibraryTab(
                 if (tracks.isNotEmpty()) {
                     scope.launch {
                         tracks.forEach {
-                            val id = if (it.mediaType == cp.player.core.media.MediaType.VIDEO) "local://video/" else "local://audio/"
+                            val id = if (it.mediaType == cp.player.core.media.MediaType.VIDEO) {
+                                "local://video/${it.path}"
+                            } else {
+                                "local://audio/${it.path}"
+                            }
                             AppModel.playback.addToQueue(id)
                         }
                         UiEvents.notify(strings.library.queuedToPlay)
@@ -653,7 +657,9 @@ internal fun LocalLibraryTab(
 
     optionsTargetSong?.let { song ->
         val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
-        val mediaId = if (isVideo) "local://video/" else "local://audio/"
+        // ⚠️ 这里必须带 path：不带的话 id 是 `local://audio/` 这种空资源 ID，
+        // 「歌曲信息」按 id 反查本地文件时什么都找不到。
+        val mediaId = if (isVideo) "local://video/${song.path}" else "local://audio/${song.path}"
         val isDownloaded = song.source == LocalMediaOrigin.DOWNLOADED || !song.originalMediaId.isNullOrBlank()
         val cloudMediaId = song.originalMediaId
         val cloudFavId = cloudMediaId?.let { runCatching { cp.player.core.music.CPMediaId.parse(it).resourceId }.getOrDefault(it) }
@@ -735,7 +741,7 @@ internal fun LocalLibraryTab(
             } else null,
             coverUrl = song.coverUri,
             onOpenInFileManager = {
-                cp.player.app.platform.openInFileManager(song.path)
+                cp.player.app.ui.util.revealInFileManager(song.path, strings.downloads)
             },
             onRemoveFromPlaylist = if (openedLocalPlaylist != null) {
                 {
@@ -1339,7 +1345,7 @@ internal fun LocalSongRow(
         },
         onRemoveFromPlaylist = onRemoveFromLocalPlaylist,
         onOpenInFileManager = {
-            cp.player.app.platform.openInFileManager(song.path)
+            cp.player.app.ui.util.revealInFileManager(song.path, strings.downloads)
         },
         onRemoveFromLibrary = onRemoveSong?.let { fn ->
             { fn(song) }
@@ -2271,12 +2277,16 @@ private fun DetailHeader(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
+                // 详情页标题是**焦点位**（同一屏只有一个）：文件夹名 / 歌单名可能
+                // 比标题栏宽度长得多，滚起来比让用户猜后半截好。
+                emphasized = true,
             )
             CpText(
                 subtitle,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
+                // 副标题是「N 首 · 时长」，窄屏换行也比截断好读。
+                maxLines = 2,
             )
         }
         if (trailingActions != null) {

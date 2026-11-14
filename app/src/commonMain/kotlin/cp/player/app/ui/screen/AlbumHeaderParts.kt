@@ -28,6 +28,7 @@ import cp.player.app.ui.component.AlbumCoverThumb
 import cp.player.app.ui.component.CpActionButtonGroup
 import cp.player.app.ui.component.CpActionGroupItem
 import cp.player.app.ui.component.CpText
+import cp.player.app.ui.component.CpExpandableText
 import cp.player.app.ui.component.CpToggleChip
 import cp.player.app.ui.component.epochMillisToYear
 import cp.player.app.ui.util.formatTimeMs
@@ -122,7 +123,7 @@ internal fun AlbumHeader(
             AlbumTitle(detail.name, MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(8.dp))
             AlbumMetaLine(metaLine)
-            AlbumDescriptionBlock(detail.description, maxLines = 5)
+            AlbumDescriptionBlock(detail.description, maxLines = 6)
             Spacer(Modifier.height(16.dp))
             CpActionButtonGroup(actions, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(10.dp))
@@ -189,11 +190,12 @@ private fun AlbumMetaLine(text: String) {
 private fun AlbumDescriptionBlock(text: String?, maxLines: Int) {
     val desc = text?.takeIf { it.isNotBlank() } ?: return
     Spacer(Modifier.height(12.dp))
-    CpText(
-        desc,
-        style = MaterialTheme.typography.bodyMedium,
+    // 专辑说明是上游写的介绍（可能几百字），6 行之外必须能展开读全 ——
+    // 原来第 7 行起直接消失，没有任何入口。
+    CpExpandableText(
+        text = desc,
+        collapsedMaxLines = maxLines,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = maxLines,
     )
 }
 

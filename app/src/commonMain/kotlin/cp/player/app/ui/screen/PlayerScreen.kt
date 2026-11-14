@@ -124,7 +124,7 @@ import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.LegacyModalBottomSheet
 import cp.player.app.ui.component.cpFluidBackground
-import cp.player.app.ui.component.shouldPauseFluidShaderAfterNavigation
+import cp.player.app.ui.component.shouldPauseFluidShaderDuringNavigation
 import cp.player.app.ui.component.desktopPagerMouseControl
 import cp.player.app.ui.component.PlayerMoreSheets
 import cp.player.app.ui.component.ModernPlayerScreenContent
@@ -181,6 +181,7 @@ class PlayerScreen : Screen {
 
         BoxWithConstraints(Modifier.fillMaxSize()) {
             if (CpBreakpoints.isExpanded(maxWidth) && state.currentTrack != null) {
+                val navAnimScope = LocalNavAnimatedVisibilityScope.current
                 DesktopPlayerScreen(
                     state = effectiveState,
                     onBack = { navigator.popOrNotify() },
@@ -195,6 +196,7 @@ class PlayerScreen : Screen {
                     onMove = { from, to -> scope.launch { controller.moveQueueItem(from, to) } },
                     onRemoveQueue = { idx -> scope.launch { controller.removeQueueItem(idx) } },
                     onClearQueue = { scope.launch { controller.clearQueue() } },
+                    transitionRunning = navAnimScope?.transition?.isRunning == true,
                 )
             } else {
                 val sharedScope = LocalSharedTransitionScope.current
@@ -311,7 +313,10 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                 cp.player.app.ui.component.CpText(
                     state.error ?: "",
                     color = MaterialTheme.colorScheme.error,
-                    maxLines = 2,
+                    // 无曲目 + 有错误时，这一屏**只有**这行错误可读，不能截断。
+                    maxLines = Int.MAX_VALUE,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 32.dp),
                 )
             } else {
                 cp.player.app.ui.component.CpLoadingIndicator(Modifier.size(40.dp))
@@ -398,33 +403,34 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
         pagerState.currentPage,
         showTranslation,
         track,
+        s,
     ) {
         buildList {
             // 走带控制
             add(
                 CpContextMenuItem(
-                    label = if (state.isPlaying) "暂停" else "播放",
+                    label = s.player.playOrPause(state.isPlaying),
                     icon = if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                     onClick = onTogglePlay,
                 )
             )
             add(
                 CpContextMenuItem(
-                    label = "下一首",
+                    label = s.player.nextTrack,
                     icon = Icons.Rounded.SkipNext,
                     onClick = onSkipNext,
                 )
             )
             add(
                 CpContextMenuItem(
-                    label = "上一首",
+                    label = s.player.previousTrack,
                     icon = Icons.Rounded.SkipPrevious,
                     onClick = onSkipPrev,
                 )
             )
             add(
                 CpContextMenuItem(
-                    label = if (state.isFavorite) "取消收藏" else "收藏歌曲",
+                    label = if (state.isFavorite) s.player.unfavoriteTrack else s.player.favoriteTrack,
                     icon = if (state.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     isSelected = state.isFavorite,
                     onClick = { AppModel.toggleFavoriteOf(track.id) },
@@ -432,7 +438,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             )
             add(
                 CpContextMenuItem(
-                    label = if (state.shuffleEnabled) "关闭随机播放" else "开启随机播放",
+                    label = s.player.shuffle,
                     icon = Icons.Rounded.Shuffle,
                     isSelected = state.shuffleEnabled,
                     onClick = onShuffle,
@@ -441,9 +447,9 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             add(
                 CpContextMenuItem(
                     label = when (state.repeatMode) {
-                        RepeatMode.ONE -> "单曲循环"
-                        RepeatMode.ALL -> "列表循环"
-                        RepeatMode.OFF -> "顺序播放"
+                        RepeatMode.ONE -> s.player.repeatOne
+                        RepeatMode.ALL -> s.player.repeatAll
+                        RepeatMode.OFF -> s.player.repeatOff
                     },
                     icon = if (state.repeatMode == RepeatMode.ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
                     isSelected = state.repeatMode != RepeatMode.OFF,
@@ -456,7 +462,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             // 视图切换
             add(
                 CpContextMenuItem(
-                    label = "显示歌词",
+                    label = s.player.showLyrics,
                     icon = Icons.Rounded.Lyrics,
                     isSelected = pagerState.currentPage == 0,
                     onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
@@ -464,7 +470,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             )
             add(
                 CpContextMenuItem(
-                    label = "播放主界面",
+                    label = s.player.playMainView,
                     icon = Icons.Rounded.MusicNote,
                     isSelected = pagerState.currentPage == 1,
                     onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
@@ -472,7 +478,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             )
             add(
                 CpContextMenuItem(
-                    label = "显示评论",
+                    label = s.player.showComments,
                     icon = Icons.AutoMirrored.Rounded.Comment,
                     isSelected = pagerState.currentPage == 2,
                     onClick = { scope.launch { pagerState.animateScrollToPage(2) } },
@@ -481,7 +487,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             if (pagerState.currentPage == 0) {
                 add(
                     CpContextMenuItem(
-                        label = if (showTranslation) "隐藏歌词翻译" else "显示歌词翻译",
+                        label = if (showTranslation) s.player.hideLyricsTranslation else s.player.showLyricsTranslation,
                         icon = Icons.Rounded.Translate,
                         isSelected = showTranslation,
                         onClick = { showTranslation = !showTranslation },
@@ -491,7 +497,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             onChangeLyricsSource?.let { changeSource ->
                 add(
                     CpContextMenuItem(
-                        label = "歌词插件设置",
+                        label = s.player.lyricsPluginSettings,
                         icon = Icons.Rounded.AutoAwesome,
                         onClick = changeSource,
                     )
@@ -500,7 +506,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             track.mvId?.takeIf { it > 0 }?.let { mvId ->
                 add(
                     CpContextMenuItem(
-                        label = "播放 MV",
+                        label = s.player.playMv,
                         icon = Icons.Rounded.SmartDisplay,
                         onClick = { navigator?.push(VideoPlayerScreen("netease://mv/$mvId")) },
                     )
@@ -512,42 +518,42 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             // 队列与歌曲操作
             add(
                 CpContextMenuItem(
-                    label = "当前播放队列",
+                    label = s.player.showQueue,
                     icon = Icons.AutoMirrored.Rounded.QueueMusic,
                     onClick = { showQueueSheet = true },
                 )
             )
             add(
                 CpContextMenuItem(
-                    label = "添加到歌单...",
+                    label = s.player.addToPlaylistMenu,
                     icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
                     onClick = { moreSheets.showAddToPlaylist = true },
                 )
             )
             add(
                 CpContextMenuItem(
-                    label = "歌曲详情...",
+                    label = s.player.songDetailsMenu,
                     icon = Icons.Rounded.Info,
                     onClick = { moreSheets.showSongInfo = true },
                 )
             )
             add(
                 CpContextMenuItem(
-                    label = "设备接力 / 投送...",
+                    label = s.player.transferDeviceMenu,
                     icon = Icons.Rounded.Cast,
                     onClick = { moreSheets.showDevicePicker = true },
                 )
             )
             add(
                 CpContextMenuItem(
-                    label = "定时关闭...",
+                    label = s.player.sleepTimerMenu,
                     icon = Icons.Rounded.AccessAlarm,
                     onClick = { moreSheets.showSleepTimer = true },
                 )
             )
             add(
                 CpContextMenuItem(
-                    label = "复制歌曲信息",
+                    label = s.player.copyTrackInfo,
                     icon = Icons.Rounded.ContentCopy,
                     onClick = {
                         val info = "${track.name} - ${track.artist}"
@@ -558,7 +564,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
 
             add(
                 CpContextMenuItem(
-                    label = "切换到标准播放器",
+                    label = s.player.switchToStandardPlayer,
                     icon = Icons.Rounded.AutoAwesome,
                     onClick = { AppModel.setModernMobilePlayerEnabled(true) },
                 )
@@ -567,7 +573,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             // 收起
             add(
                 CpContextMenuItem(
-                    label = "收起播放页",
+                    label = s.player.collapsePlayer,
                     icon = Icons.Rounded.KeyboardArrowDown,
                     onClick = onBack,
                 )
@@ -585,7 +591,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             .cpFluidBackground(
                 enabled = fluidBackground,
                 fallback = bgBrush,
-                pauseShaderAnimation = shouldPauseFluidShaderAfterNavigation(
+                pauseShaderAnimation = shouldPauseFluidShaderDuringNavigation(
                     animatedVisibilityScope.transition.isRunning,
                 ),
             )
@@ -653,7 +659,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                             .clickable(
                                                 interactionSource = remember { MutableInteractionSource() },
                                                 indication = null,
-                                                onClickLabel = "返回播放页",
+                                                onClickLabel = s.player.backToPlayer,
                                             ) {
                                                 scope.launch { pagerState.animateScrollToPage(1) }
                                             }
@@ -1088,7 +1094,7 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                         ) {
                             Icon(
                                 Icons.Rounded.SmartDisplay,
-                                contentDescription = "播放 MV",
+                                contentDescription = s.player.playMv,
                                 tint = MaterialTheme.colorScheme.primary,
                             )
                         }
@@ -1134,7 +1140,9 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                     textAlign = TextAlign.Center,
-                    maxLines = 2,
+                    // 播放页上的错误是唯一线索（可能含 URL / 解码器名），
+                    // 固定 2 行会把关键后半段吃掉。
+                    maxLines = 4,
                 )
             }
 
@@ -1194,10 +1202,15 @@ private fun MobilePlayerTabSelector(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val s = cpStrings()
     val isDark = LocalIsDarkTheme.current
     val supportsComments = rememberActiveProviderSupports(ProviderCapability.COMMENTS)
-    val tabs = remember(supportsComments) {
-        if (supportsComments) listOf("歌词", "歌曲", "评论") else listOf("歌词", "歌曲")
+    val tabs = remember(supportsComments, s) {
+        if (supportsComments) {
+            listOf(s.player.tabLyrics, s.player.tabSong, s.player.tabComments)
+        } else {
+            listOf(s.player.tabLyrics, s.player.tabSong)
+        }
     }
     Surface(
         modifier = modifier,
@@ -1236,7 +1249,7 @@ private fun MobilePlayerTabSelector(
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
-                            onClickLabel = "切换到$title",
+                            onClickLabel = s.player.switchToTab(title),
                         ) { onSelect(index) }
                         .padding(vertical = 3.dp),
                     contentAlignment = Alignment.Center,

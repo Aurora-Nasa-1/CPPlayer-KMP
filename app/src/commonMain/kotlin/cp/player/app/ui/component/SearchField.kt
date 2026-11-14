@@ -30,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import cp.player.app.i18n.cpStrings
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,13 +63,15 @@ fun CpSearchField(
     onSubmit: () -> Unit,
     modifier: Modifier = Modifier,
     onFocusChange: (Boolean) -> Unit = {},
-    placeholder: String = "搜索歌曲、歌手或专辑",
+    placeholder: String? = null,
     textStyle: TextStyle = MaterialTheme.typography.bodyLarge,
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
     focusedContainerColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
     focusRequester: FocusRequester? = null,
     height: Dp = CpSearchFieldHeight,
 ) {
+    val s = cpStrings()
+    val effectivePlaceholder = placeholder ?: s.library.searchFieldHint
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
     val background by animateColorAsState(
@@ -113,7 +116,7 @@ fun CpSearchField(
                 Box(Modifier.weight(1f)) {
                     if (query.isEmpty()) {
                         CpText(
-                            placeholder,
+                            effectivePlaceholder,
                             style = textStyle,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -127,12 +130,12 @@ fun CpSearchField(
                         modifier = Modifier
                             .size(clearSize)
                             .clip(CpShapes.full)
-                            .clickable(onClickLabel = "清空") { onQueryChange("") },
+                            .clickable(onClickLabel = s.library.trackSearchClear) { onQueryChange("") },
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             Icons.Rounded.Close,
-                            contentDescription = "清空",
+                            contentDescription = s.library.trackSearchClear,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(clearSize * 0.7f),
                         )

@@ -178,6 +178,14 @@ object CpSpacing {
     val listRowGap = 2.dp
 
     /**
+     * 歌单列表的**行间距**。
+     *
+     * 歌单行是独立圆角卡片，比歌曲裸行多一层视觉边界，2dp 的缝宽会让相邻卡片
+     * 几乎粘在一起。4dp 只用于歌单，歌曲列表继续沿用 [listRowGap]。
+     */
+    val playlistRowGap = 4.dp
+
+    /**
      * 桌面端页面的**统一最大内容宽度**。
      *
      * 所有桌面页面（首页 / 曲库 / 设置 …）都必须用它收口：不同 Tab 用不同的上限
@@ -336,13 +344,16 @@ fun ContentState(
             )
         }
         Spacer(Modifier.height(16.dp))
-        CpText(title, style = MaterialTheme.typography.titleMedium)
+        // 空态 / 错误态是用户**唯一**能读到原因的路径（列表里没有别的地方可看），
+        // 默认单行会把「为什么失败、下一步做什么」截掉。
+        CpText(title, style = MaterialTheme.typography.titleMedium, maxLines = Int.MAX_VALUE)
         if (!message.isNullOrBlank()) {
             Spacer(Modifier.height(6.dp))
             CpText(
                 message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = Int.MAX_VALUE,
             )
         }
         if (actionLabel != null && onAction != null) {

@@ -20,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cp.player.core.license.VipLicenseManager
+import cp.player.app.i18n.cpStrings
 
 /**
  * VIP 发烧友特权卡密激活弹层。
@@ -29,6 +30,7 @@ fun VipActivationDialog(
     onDismiss: () -> Unit,
     onSuccess: () -> Unit,
 ) {
+    val s = cpStrings().playback
     var inputCode by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
@@ -43,16 +45,14 @@ fun VipActivationDialog(
         },
         title = {
             CpText(
-                text = "解锁 Hi-Res 发烧友专有特权",
+                text = s.vipDialogTitle,
                 style = MaterialTheme.typography.titleLarge,
             )
         },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 CpText(
-                    text = "FlickEngine 在 Windows 上提供 WASAPI 硬件独占（Bit-Perfect 源码直通），"
-                        + "在 Android 上提供 Oboe 低延迟与 USB DAC 直通；两者都内置 DSD64/128 软解与"
-                        + "64 位浮点 DSP。独占模式默认关闭，激活后仍需你在设置里手动开启。",
+                    text = s.vipDialogNote,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -63,8 +63,8 @@ fun VipActivationDialog(
                         inputCode = it
                         errorMessage = null
                     },
-                    label = { CpText("请输入特权卡密") },
-                    placeholder = { CpText("输入 16 位激活卡密") },
+                    label = { CpText(s.vipKeyLabel) },
+                    placeholder = { CpText(s.vipKeyPlaceholder) },
                     isError = errorMessage != null,
                     supportingText = errorMessage?.let { { CpText(it, color = MaterialTheme.colorScheme.error) } },
                     singleLine = true,
@@ -80,16 +80,16 @@ fun VipActivationDialog(
                         onSuccess()
                         onDismiss()
                     }.onFailure {
-                        errorMessage = it.message ?: "激活失败，请检查激活码"
+                        errorMessage = it.message ?: s.vipActivateFailed
                     }
                 }
             ) {
-                CpText("立即激活")
+                CpText(s.vipActivateNow)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                CpText("暂不激活")
+                CpText(s.vipActivateLater)
             }
         },
     )

@@ -31,6 +31,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import cp.player.app.AppModel
+import cp.player.app.i18n.cpStrings
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -91,6 +92,7 @@ fun SongItem(
     supportingBadge: String? = null,
     supportingBadgeAlert: Boolean = false,
 ) {
+    val s = cpStrings()
     val globalShowAlbum by AppModel.showSongAlbumFlow.collectAsState()
     val actualShowAlbum = showAlbum ?: globalShowAlbum
     // 预览和启动早期没有后端；观察初始化信号，完成后再切换到真实播放状态。
@@ -310,7 +312,7 @@ fun SongItem(
                 ) {
                     Icon(
                         Icons.Filled.MoreVert,
-                        contentDescription = "更多操作",
+                        contentDescription = s.contextMenu.moreActions,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp),
                     )

@@ -24,6 +24,7 @@ import com.mikepenz.hypnoticcanvas.RuntimeEffect
 import com.mikepenz.hypnoticcanvas.shaders.Shader
 import cp.player.app.AppModel
 import cp.player.app.ui.theme.LocalIsDarkTheme
+import cp.player.app.ui.util.DesktopShell
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -67,7 +68,12 @@ import kotlinx.coroutines.isActive
  * @param scale 色团尺度。**越大 → 色团越小**（库的 `MeshGradient` 原话是
  *   「board 越大 → 色团越小」）。它会被拼进 SkSL 源码（编译期常量），
  *   改它会重建着色器 —— 别接在会逐帧变化的值上。
- * @param pauseShaderAnimation 页面转场期间正常更新 shader；转场结束后停止推进时间，并保留最后绘制的流体帧。
+ * @param pauseShaderAnimation 为 true 时**冻结**流体画面：停止推进时间轴、停止请求新帧，
+ *   但继续绘制当前这一帧（不会退回 [fallback]）。只用于页面转场的那几百毫秒 ——
+ *   此时整页都在缩放 / 淡入淡出，背景再叠一层自己的动画既看不出来，又白烧一份着色器开销。
+ *
+ *   ⚠️ 转场结束必须立刻恢复 false。曾经把它反过来（转场结束才冻结）实现「保留最后一帧」，
+ *   结果进播放页的 400ms 一结束，背景就永久停住 —— 用户看到的就是「流体背景完全不动」。
  */
 @Composable
 fun Modifier.cpFluidBackground(
@@ -110,13 +116,20 @@ fun Modifier.cpFluidBackground(
         speed = speed,
         fpsConfig = fpsConfig,
         dither = true,
-        pauseShaderAnimation = pauseShaderAnimation,
+        // 窗口隐藏到托盘时一并冻结：`hide()` 在 Tao 后端不算「不可见」，渲染循环不会
+        // 自己停；这里不冻结的话，看不见的窗口会持续按 VSync 请求新帧。
+        pauseShaderAnimation = pauseShaderAnimation || DesktopShell.isWindowHidden,
     )
 }
 
-/** Keep fluid frames advancing during a navigation transition, then freeze the settled frame. */
-internal fun shouldPauseFluidShaderAfterNavigation(transitionIsRunning: Boolean): Boolean =
-    !transitionIsRunning
+/**
+ * 导航转场期间冻结流体背景。
+ *
+ * 反转它（`!transitionIsRunning`）会让播放页一亮相就永久停在第一帧，
+ * 这正是「流体背景完全不动」那个 bug 的形状 —— 别再改回去。
+ */
+internal fun shouldPauseFluidShaderDuringNavigation(transitionIsRunning: Boolean): Boolean =
+    transitionIsRunning
 
 /**
  * 带有精准垂直同步（VSync）节拍分频控制的着色器背景修饰符。
@@ -136,6 +149,9 @@ private fun Modifier.cpPacedShaderBackground(
     val speedModifier = shader.speedModifier
     var reportedSize by remember { mutableStateOf(Size.Zero) }
 
+    // `produceState` 在 key 变化时重启协程但**保留上一次的 value**（内部是 remember + LaunchedEffect），
+    // 所以这里用 `resumeTime` 接住冻结时的相位：转场结束恢复后从冻结点继续流动，
+    // 而不是跳回 t=0（那会在转场末尾闪一下）。
     val time by produceState(initialValue = 0f, key1 = fpsConfig, key2 = pauseShaderAnimation) {
         if (pauseShaderAnimation) return@produceState
 
@@ -183,7 +199,13 @@ object CpFluidBackgroundDefaults {
     /** 比库的默认（1f）慢一档：Apple Music 的背景是「几乎察觉不到在动」。 */
     const val SPEED = 0.6f
 
-    /** 库默认值。色团大小在桌面 1320×860 与手机竖屏上观感都合适。 */
+    /**
+     * 视口归一化系数（库默认值）。
+     *
+     * 它只决定「坐标怎么映射到视口」，**不是**色团尺度 —— 色团的空间频率写在
+     * [CpFluidMeshGradient] 的 SkSL 采样系数里。曾经这里是唯一旋钮，且采样系数只有
+     * 0.3 / 0.7，1320×860 上连一个噪声胞都铺不满，整屏就是一块在变色的底。
+     */
     const val SCALE = 2f
 }
 
@@ -301,22 +323,39 @@ float snoise(vec3 v) {
 
 // Author : Johnny Leek / Yuri Artiukh / CPPlayer
 vec4 main( vec2 fragCoord ) {
+    // 按**短边**归一化 ⇒ 一个噪声胞永远占短边固定比例，色团在桌面与手机上是同样大小，
+    // 只是高屏能看到更多行（这正是 Apple Music 在竖屏上的样子）。
+    // 不能按对角线：那会让 1320×860 上整屏只剩一团，手机却又碎成小斑。
     float mr = min(uResolution.x, uResolution.y);
     vec2 uv = (fragCoord * $scale - uResolution.xy) / mr;
 
-    vec2 base = uv / 2.0;
+    // 空间频率：短边落 1.4 个噪声胞 ⇒ 整屏 2–4 个大色团（Apple Music 的观感）。
+    // 旧值 0.3 / 0.7 让整个视口不到一个胞 ⇒ 整屏只剩一块缓慢变色的底。
+    // x / y 必须用**同一个**系数：旧代码 0.3 : 0.7 的比值会把色团拉成斜向条纹。
+    //
+    // 竖屏用更低的系数把色团放大：按短边归一化后，390×844 的短边只有桌面的一半多，
+    // 同一系数下手机上的色团会比桌面碎一倍（出图核对过）。按宽高比插值，
+    // 手机回到「一屏两三个大的」，桌面保持原样。
+    float tall = clamp((uResolution.y / uResolution.x - 1.0) / 1.2, 0.0, 1.0);
+    vec2 base = uv * mix(0.70, 0.44, tall);
 
     vColor = uColor[MAX_COLORS - 1];
 
     // 这两个独立噪声场交替供色团使用：原先每种非底色都单独算一次 Simplex，4 色板即每像素 3 次；
     // 复用两组缓慢漂移的场仍保留两团交错流动，同时把最重的噪声求值降为每像素 2 次。
-    float noiseA = snoise(vec3(base.x * 0.3 + uTime * 0.025, base.y * 0.7, uTime * 0.03 + 1.0));
-    float noiseB = snoise(vec3(base.x * 0.3 - uTime * 0.027 + 4.1, base.y * 0.7 + 1.7, uTime * 0.033 + 5.0));
+    // 时间项：最终 uTime = 秒 × speed(0.6) × speedModifier(0.5) ⇒ 约 0.3 单位/秒。
+    // 乘上这里的 0.15，漂移约 0.045 噪声单位/秒：3 秒能看到位移、30 秒换一批色团。
+    // ⚠️ 旧值 0.025 实际只有 0.0075 单位/秒 —— 要两分多钟才走完一个胞，
+    // 就算时间轴在走，人眼也会判定成「完全不动」。
+    float noiseA = snoise(vec3(base.x + uTime * 0.13, base.y, uTime * 0.15 + 1.0));
+    float noiseB = snoise(vec3(base.x - uTime * 0.12 + 4.1, base.y + 1.7, uTime * 0.16 + 5.0));
 
     for(int i = 0; i < MAX_COLORS - 1; i++) {
         float noiseField = (mod(float(i), 2.0) < 1.0) ? noiseA : noiseB;
         float noiseFloor = 0.00001;
-        float noiseCeil = 0.6 + float(i) * 0.07;
+        // 阈值不能太高：smoothstep 的上界就是色团中心，0.6 以上时整屏六成以上留在
+        // 接近纯黑的底色里，观感是「黑背景偶尔亮一下」。0.32 起让彩色铺到六七成。
+        float noiseCeil = 0.32 + float(i) * 0.06;
         float noiseVal = smoothstep(noiseFloor, noiseCeil, noiseField);
         vColor = mix(vColor, uColor[i], noiseVal);
     }
@@ -349,28 +388,37 @@ vec4 main( vec2 fragCoord ) {
 // 三个量必须**分开定**：色相取自主题（跟着种子色走），彩度与明度按「当背景」的目标
 // 写死。这正是 `material-color-utilities` 的 HCT 干的事 —— 它本来就是这个项目的
 // 取色依赖（`CoverColor.kt`），不是为这个功能新引的东西。
+//
+// 三个色团之间也要**互相**拉开：色相各自偏一档、明暗错开、彩度不同。三个色团聚成
+// 同一 tone / chroma 时，噪声混完只剩一块色相渐变，深度和「体积感」全没了。
 // ---------------------------------------------------------------------------
 
-/** 三个色团相对主题主色相的偏移（度）。取 ±45 而不是 ±60：相邻色相过渡更柔和。 */
-private const val HueSpread = 45.0
+/**
+ * 三个色团相对主题主色相的偏移（度）。
+ *
+ * ±58° 是「一眼能看出是不同颜色」与「不要撞成红绿互补那种廉价撞色」的折中；
+ * 中间的 +6° 让主色相本身也占一块，画面不会只剩两个边缘色。
+ */
+private val BlobHueOffsets = doubleArrayOf(-58.0, 6.0, 62.0)
 
 /**
- * 深色主题：色团压到 tone 38、彩度提到 48。
+ * 深色主题：三个色团按「最深 / 最亮 / 最浓」错开 tone 与 chroma。
  *
- * tone 38 是「看得见颜色」与「白字还压得住」的交点：`onSurface` 是 tone 90，
- * 与 tone 38 的对比度约 6:1，正文与标题都安全。
+ * tone 28–42 都留在「看得见颜色」与「白字还压得住」之间：`onSurface` 是 tone 90，
+ * 最亮的那个色团（tone 42）与它的对比度仍有约 4.7:1，标题与正文都安全。
  */
-private const val DarkBlobTone = 38.0
-private const val DarkBlobChroma = 48.0
+private val DarkBlobTones = doubleArrayOf(32.0, 42.0, 28.0)
+private val DarkBlobChromas = doubleArrayOf(56.0, 46.0, 62.0)
 
 /**
- * 浅色主题：色团抬到 tone 76、彩度 40。
+ * 浅色主题：色团抬到 tone 66–83、彩度 28–44。
  *
- * 底色是 tone 98 左右的 `surface`，所以 76 与 98 之间那 22 级明度差就是「水彩晕开」
- * 的全部可见度；再淡就看不见，再浓就压住了 `onSurface`（tone 10）的正文。
+ * 底色是 tone 98 左右的 `surface`，所以 66–83 与 98 之间的明度差就是「水彩晕开」的
+ * 全部可见度；再淡就看不见，再浓就压住了 `onSurface`（tone 10）的正文。
+ * 最浓的一团（tone 66 / chroma 44）与正文的对比度约 6.6:1，仍高于正文 4.5:1 的可读线。
  */
-private const val LightBlobTone = 76.0
-private const val LightBlobChroma = 40.0
+private val LightBlobTones = doubleArrayOf(74.0, 83.0, 66.0)
+private val LightBlobChromas = doubleArrayOf(38.0, 28.0, 44.0)
 
 /**
  * 主题色 → 着色器色板。
@@ -386,14 +434,9 @@ private const val LightBlobChroma = 40.0
  */
 private fun buildFluidPalette(primary: Color, base: Color, dark: Boolean): List<Color> {
     val hue = Hct.fromInt(primary.toArgb()).hue
-    val tone = if (dark) DarkBlobTone else LightBlobTone
-    val chroma = if (dark) DarkBlobChroma else LightBlobChroma
-    return listOf(
-        blobColor(hue - HueSpread, chroma, tone),
-        blobColor(hue, chroma, tone),
-        blobColor(hue + HueSpread, chroma, tone),
-        base,
-    )
+    val tones = if (dark) DarkBlobTones else LightBlobTones
+    val chromas = if (dark) DarkBlobChromas else LightBlobChromas
+    return List(tones.size) { i -> blobColor(hue + BlobHueOffsets[i], chromas[i], tones[i]) } + base
 }
 
 /**

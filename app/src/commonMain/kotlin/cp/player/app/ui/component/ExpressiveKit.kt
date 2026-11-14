@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.ui.text.font.FontWeight
+import cp.player.app.i18n.cpStrings
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -115,6 +116,7 @@ import androidx.graphics.shapes.RoundedPolygon
 import cp.player.app.ui.feedback.CpHaptic
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.util.formatTimeMs
+import cp.player.app.ui.util.DesktopShell
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
@@ -1061,7 +1063,9 @@ fun CpPlayingEqualizer(
         horizontalArrangement = Arrangement.spacedBy(1.5.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
-        if (isPlaying) {
+        // 窗口隐藏到托盘时不挂无限动画：`rememberInfiniteTransition` 会逐帧请求新帧，
+        // 看不见的窗口没必要继续跳。展开成静态三根棒（与暂停态同形）。
+        if (isPlaying && !DesktopShell.isWindowHidden) {
             val transition = rememberInfiniteTransition(label = "cpEq")
             repeat(3) { index ->
                 // ⚠️ 不要写成 `by`：这里刻意保留 `State` 本体，让 `.value` 只在
@@ -1192,9 +1196,10 @@ fun CpPlayPauseButton(
                     },
                     label = "cpPlayPauseIcon",
                 ) { playing ->
+                    val playerStrings = cpStrings().player
                     Icon(
                         imageVector = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = if (playing) "暂停" else "播放",
+                        contentDescription = playerStrings.playOrPause(playing),
                         modifier = Modifier
                             .size(size * 0.46f)
                             .graphicsLayer {
@@ -1616,11 +1621,12 @@ fun CpRefreshablePage(
         // ⚠️ 返回项必须在这里（而不是在页面外面再包一层菜单）：
         // 本容器自己已经在处理空白处的右键，外面再包一层会被这里的 `passive` 抢先消费掉
         // （子级先于父级收到 Main 阶段的 Press），外层菜单**永远弹不出来**。
+        val refresh = cpStrings().common.refresh
         val backItem = rememberBackContextMenuItem()
-        val menuItems = remember(onRefresh, backItem) {
+        val menuItems = remember(onRefresh, backItem, refresh) {
             buildList {
                 if (backItem != null) add(backItem)
-                add(CpContextMenuItem("刷新", Icons.Filled.Refresh, onClick = onRefresh))
+                add(CpContextMenuItem(refresh, Icons.Filled.Refresh, onClick = onRefresh))
             }
         }
         CpContextMenu(items = menuItems, modifier = modifier, passive = true, content = content)

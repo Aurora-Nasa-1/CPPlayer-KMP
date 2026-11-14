@@ -50,6 +50,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cp.player.app.i18n.cpStrings
+import cp.player.app.i18n.AppUpdateStrings
 import cp.player.app.platform.desktopPlatform
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.openUrl
@@ -207,10 +208,10 @@ fun AppUpdateDialog(
                     result.publishedAt?.take(10)?.let { date ->
                         InfoTag(
                             icon = Icons.Default.CalendarToday,
-                            text = "发布于 $date",
+                            text = s.publishedAt(date),
                         )
                     }
-                    val targetPackageDesc = resolveTargetPackageDescription(result.assetName)
+                    val targetPackageDesc = resolveTargetPackageDescription(result.assetName, s)
                     InfoTag(
                         icon = Icons.Default.Terminal,
                         text = targetPackageDesc,
@@ -518,13 +519,13 @@ private fun parseChangelogContent(changelog: String?): List<ChangelogEntry> {
             trimmed.startsWith("### ") || trimmed.startsWith("## ") || trimmed.startsWith("# ") -> {
                 val title = trimmed.replace(Regex("""^#+\s*"""), "")
                 // 如果标题纯粹是比较链接则作为外链处理
-                if (title.contains("Full Changelog") || title.contains("完整变更")) {
+                if (isFullChangelogHeading(title)) {
                     extractUrl(title)?.let { entries.add(ChangelogEntry.CompareLink(it)) }
                 } else {
                     entries.add(ChangelogEntry.Header(title))
                 }
             }
-            trimmed.contains("compare/") && (trimmed.contains("Full Changelog") || trimmed.contains("完整变更")) -> {
+            trimmed.contains("compare/") && isFullChangelogHeading(trimmed) -> {
                 val url = extractUrl(trimmed)
                 if (url != null) {
                     entries.add(ChangelogEntry.CompareLink(url))
@@ -547,23 +548,31 @@ private fun parseChangelogContent(changelog: String?): List<ChangelogEntry> {
     return entries
 }
 
+/**
+ * 上游 Release 标题可能来自 GitHub 英文模板（`Full Changelog`），也可能是中文
+ * 仓库自己写的「完整变更」；这属于**解析输入格式**，不是界面文案，因此不放进
+ * `CpStrings`（否则德语之类的语言也得认识这两种标题）。
+ */
+private fun isFullChangelogHeading(text: String): Boolean =
+    text.contains("Full Changelog") || text.contains("完整变更")
+
 private fun extractUrl(text: String): String? {
     val regex = Regex("""https?://[^\s)\]]+""")
     return regex.find(text)?.value
 }
 
-private fun resolveTargetPackageDescription(assetName: String?): String {
+private fun resolveTargetPackageDescription(assetName: String?, s: AppUpdateStrings): String {
     if (assetName != null) {
-        if (assetName.endsWith(".apk", ignoreCase = true)) return "Android 安装包 (.apk)"
-        if (assetName.endsWith("-Setup.exe", ignoreCase = true)) return "Windows 安装程序 (.exe)"
-        if (assetName.endsWith(".deb", ignoreCase = true)) return "Linux Debian/Ubuntu (.deb)"
-        if (assetName.endsWith(".tar.gz", ignoreCase = true)) return "Linux 通用包 (.tar.gz)"
+        if (assetName.endsWith(".apk", ignoreCase = true)) return s.packageAndroid
+        if (assetName.endsWith("-Setup.exe", ignoreCase = true)) return s.packageWindows
+        if (assetName.endsWith(".deb", ignoreCase = true)) return s.packageLinuxDeb
+        if (assetName.endsWith(".tar.gz", ignoreCase = true)) return s.packageLinuxTar
         return assetName
     }
     return when {
-        isAndroidPlatform() -> "Android 安装包 (.apk)"
-        desktopPlatform() == "windows" -> "Windows 安装程序 (.exe)"
-        desktopPlatform() == "linux" -> "Linux 软件包"
-        else -> "跨平台软件包"
+        isAndroidPlatform() -> s.packageAndroid
+        desktopPlatform() == "windows" -> s.packageWindows
+        desktopPlatform() == "linux" -> s.packageLinux
+        else -> s.packageUniversal
     }
 }

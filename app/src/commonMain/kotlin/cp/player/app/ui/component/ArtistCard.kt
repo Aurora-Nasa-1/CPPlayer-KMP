@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.util.resized
 import cp.player.core.music.ArtistSummary
 
@@ -37,6 +38,7 @@ fun ArtistItem(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
 ) {
+    val s = cpStrings()
     LegacyListItem(
         index = 0,
         total = 1,
@@ -54,7 +56,7 @@ fun ArtistItem(
         },
         supportingContent = {
             CpText(
-                subtitle ?: "歌手",
+                subtitle ?: s.playlistSheet.artistFallback,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

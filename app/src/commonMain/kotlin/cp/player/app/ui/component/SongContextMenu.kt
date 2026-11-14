@@ -11,11 +11,13 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SmartDisplay
@@ -73,7 +75,7 @@ fun songContextMenuItems(actions: SongMenuActions): List<CpContextMenuItem> {
             add(CpContextMenuItem(s.library.play, Icons.Filled.PlayArrow, it))
         }
         actions.onPlayMv?.let {
-            add(CpContextMenuItem("播放 MV", Icons.Filled.SmartDisplay, it))
+            add(CpContextMenuItem(s.contextMenu.playMv, Icons.Filled.SmartDisplay, it))
         }
         actions.onRemoveFromQueue?.let {
             add(CpContextMenuItem(s.player.removeFromQueue, Icons.Filled.Close, it, danger = true))
@@ -111,13 +113,13 @@ fun songContextMenuItems(actions: SongMenuActions): List<CpContextMenuItem> {
             add(CpContextMenuItem(s.player.addToPlaylist, Icons.AutoMirrored.Filled.PlaylistAdd, it))
         }
         actions.onAddToLocalPlaylist?.let {
-            add(CpContextMenuItem("添加到本地歌单", Icons.AutoMirrored.Filled.PlaylistAdd, it))
+            add(CpContextMenuItem(s.contextMenu.addToLocalPlaylist, Icons.AutoMirrored.Filled.PlaylistAdd, it))
         }
         actions.onShare?.let {
             add(CpContextMenuItem(s.player.share, Icons.Filled.Share, it))
         }
         actions.onOpenInFileManager?.let {
-            add(CpContextMenuItem("在文件管理器中打开", Icons.Filled.FolderOpen, it))
+            add(CpContextMenuItem(s.contextMenu.openInFileManager, Icons.Filled.FolderOpen, it))
         }
         actions.onShowInfo?.let {
             add(CpContextMenuItem(s.player.songInfo, Icons.Filled.Info, it))
@@ -164,11 +166,13 @@ fun playlistShareText(playlistId: Any?, playlistName: String): String =
 data class PlaylistMenuActions(
     val isOwner: Boolean,
     val isFavorite: Boolean = false,
+    val onRefresh: (() -> Unit)? = null,
     val onPlay: (() -> Unit)? = null,
     val onAddToQueue: (() -> Unit)? = null,
     val onDownload: (() -> Unit)? = null,
     val onShare: (() -> Unit)? = null,
     val onToggleFavorite: (() -> Unit)? = null,
+    val onRename: (() -> Unit)? = null,
     val onDelete: (() -> Unit)? = null,
 )
 
@@ -177,6 +181,9 @@ data class PlaylistMenuActions(
 fun playlistContextMenuItems(actions: PlaylistMenuActions): List<CpContextMenuItem> {
     val s = cpStrings()
     return buildList {
+        actions.onRefresh?.let {
+            add(CpContextMenuItem(s.contextMenu.refreshPlaylist, Icons.Filled.Refresh, it))
+        }
         actions.onPlay?.let {
             add(CpContextMenuItem(s.library.playAll, Icons.Filled.PlayArrow, it))
         }
@@ -185,6 +192,11 @@ fun playlistContextMenuItems(actions: PlaylistMenuActions): List<CpContextMenuIt
         }
         actions.onDownload?.let {
             add(CpContextMenuItem(s.library.downloadAll, Icons.Filled.Download, it))
+        }
+        if (size > 0 && (actions.onShare != null || actions.onToggleFavorite != null ||
+                actions.onRename != null || actions.onDelete != null)
+        ) {
+            add(CpContextMenuSeparator)
         }
         actions.onShare?.let {
             add(CpContextMenuItem(s.library.sharePlaylist, Icons.Filled.Share, it))
@@ -198,6 +210,9 @@ fun playlistContextMenuItems(actions: PlaylistMenuActions): List<CpContextMenuIt
                     actions.onToggleFavorite,
                 )
             )
+        }
+        if (actions.isOwner && actions.onRename != null) {
+            add(CpContextMenuItem(s.library.renamePlaylist, Icons.Filled.Edit, actions.onRename))
         }
         if (actions.isOwner && actions.onDelete != null) {
             add(CpContextMenuItem(s.library.deletePlaylist, Icons.Filled.Delete, actions.onDelete, danger = true))

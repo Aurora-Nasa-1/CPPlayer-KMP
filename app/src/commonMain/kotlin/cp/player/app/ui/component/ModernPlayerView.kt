@@ -156,7 +156,7 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
             .cpFluidBackground(
                 enabled = fluidBackground,
                 fallback = backgroundBrush,
-                pauseShaderAnimation = shouldPauseFluidShaderAfterNavigation(
+                pauseShaderAnimation = shouldPauseFluidShaderDuringNavigation(
                     animatedVisibilityScope.transition.isRunning,
                 ),
             )

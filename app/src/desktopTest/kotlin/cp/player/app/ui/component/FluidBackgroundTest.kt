@@ -1,21 +1,109 @@
 package cp.player.app.ui.component
 
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.unit.Density
 import com.mikepenz.hypnoticcanvas.NonAndroidRuntimeEffect
 import cp.player.app.AppModel
+import cp.player.app.readPng
+import cp.player.app.ui.theme.CpTheme
+import cp.player.app.ui.theme.ThemeMode
 import org.jetbrains.skia.RuntimeEffect
+import java.security.MessageDigest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class FluidBackgroundTest {
 
     @Test
-    fun `流体背景在导航转场期间继续动画且结束后暂停`() {
-        assertFalse(shouldPauseFluidShaderAfterNavigation(transitionIsRunning = true))
-        assertTrue(shouldPauseFluidShaderAfterNavigation(transitionIsRunning = false))
+    fun `流体背景只在导航转场期间冻结`() {
+        // 反过来（转场结束才冻结）会让播放页一亮相就永久定格 —— 别再改回去。
+        assertTrue(shouldPauseFluidShaderDuringNavigation(transitionIsRunning = true))
+        assertFalse(shouldPauseFluidShaderDuringNavigation(transitionIsRunning = false))
+    }
+
+    /**
+     * 本 bug 的像素级回归守卫：**时间轴在走，画面就必须变**。
+     *
+     * 之前 `shouldPauseFluidShaderAfterNavigation` 把「转场结束」接成「暂停」，
+     * 播放页进场 400ms 后背景永久停在第一帧；这个用例会在那种实现下直接失败。
+     */
+    @Test
+    fun `流体背景在未暂停时随时间流动`() {
+        val frames = renderFrames(pauseShaderAnimation = false)
+        try {
+            assertNotEquals(frames.sha1, frames.laterSha1, "时间轴前进后流体画面必须变化；完全相同说明又冻住了")
+        } finally {
+            frames.close()
+        }
+    }
+
+    /** 冻结必须真的省资源：不再推进时间，后续帧应当与冻结帧逐像素一致。 */
+    @Test
+    fun `流体背景冻结时不再推进时间也不请求新帧`() {
+        val frames = renderFrames(pauseShaderAnimation = true)
+        try {
+            assertEquals(frames.sha1, frames.laterSha1, "冻结期间不应再推进时间轴")
+            repeat(10) { frames.scene.render(frames.lastFrameTimeNanos + it * 16_666_667L) }
+            assertFalse(
+                frames.scene.hasInvalidations(),
+                "冻结期间不应再有帧请求；还有失效说明时间轴仍在跑，转场动画期间白烧一份着色器开销",
+            )
+        } finally {
+            frames.close()
+        }
+    }
+
+    private class RenderedFrames(
+        val sha1: String,
+        val laterSha1: String,
+        val scene: ImageComposeScene,
+        val lastFrameTimeNanos: Long,
+    ) {
+        fun close() = scene.close()
+    }
+
+    private fun renderFrames(pauseShaderAnimation: Boolean): RenderedFrames {
+        val scene = ImageComposeScene(width = 240, height = 240, density = Density(1f)) {
+            CpTheme(themeMode = ThemeMode.DARK) {
+                androidx.compose.foundation.layout.Box(
+                    Modifier.fillMaxSize().cpFluidBackground(
+                        enabled = true,
+                        fallback = SolidColor(Color.Black),
+                        pauseShaderAnimation = pauseShaderAnimation,
+                    ),
+                )
+            }
+        }
+        var t = 0L
+        val step = 16_666_667L
+        repeat(8) { scene.render(t); t += step }
+        val first = hashRendered(scene)
+        repeat(40) { scene.render(t); t += step }
+        val later = hashRendered(scene)
+        return RenderedFrames(first, later, scene, t)
+    }
+
+    private fun hashRendered(scene: ImageComposeScene): String {
+        val bytes = scene.render().encodeToData()?.bytes ?: error("ImageComposeScene PNG encode failed")
+        val image = readPng(bytes)
+        val digest = MessageDigest.getInstance("SHA-1")
+        for (y in 0 until image.height) {
+            for (x in 0 until image.width) {
+                val argb = image.getRGB(x, y)
+                digest.update((argb ushr 16).toByte())
+                digest.update((argb ushr 8).toByte())
+                digest.update(argb.toByte())
+            }
+        }
+        return digest.digest().joinToString("") { (it.toInt() and 0xFF).toString(16).padStart(2, '0') }
     }
 
     @Test

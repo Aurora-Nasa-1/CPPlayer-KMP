@@ -778,7 +778,9 @@ private fun ActiveTaskCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = if (failed) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
+                    // 失败时这一行带的是**失败原因**（可能很长，含 URL / 状态码）：
+                    // 截成一行等于让用户无从判断是断网、403 还是磁盘满。
+                    maxLines = if (failed) 4 else 1,
                     modifier = Modifier.weight(1f),
                 )
                 if (!failed && task.status != DownloadStatus.PENDING) {
@@ -1121,7 +1123,7 @@ private fun CompletedTaskCard(
                 { onAddToLocalPlaylist(path) }
             },
             onOpenInFileManager = task.localPath?.let { path ->
-                { cp.player.app.platform.openInFileManager(path) }
+                { cp.player.app.ui.util.revealInFileManager(path, s) }
             },
             onDelete = onDelete,
             deleteLabel = s.deleteFileAndRecord,

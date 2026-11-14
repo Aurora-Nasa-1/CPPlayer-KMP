@@ -25,6 +25,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.core.music.PlaylistSummary
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.anim.coverFlightSource
 import cp.player.app.ui.util.resized
@@ -59,87 +64,120 @@ fun PlaylistItem(
     onClick: () -> Unit,
     onOptionsClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * 歌单动作。非 null 时桌面端「更多」与右键共用 [playlistContextMenuItems] 的输出；
+     * 手机 / 触屏仍走 [onOptionsClick] 的底部弹层。
+     */
+    menuActions: PlaylistMenuActions? = null,
 ) {
+    val s = cpStrings()
     // 缩略图圆角。`coverFlightSource` 要的是 **Dp**（不是 Shape），所以这里必须留一个
     // Dp 常量给两处共用；值等于 `MaterialTheme.shapes.medium`(12dp)，改刻度时一起改。
     // ⚠️ 两处必须同值 —— 不一致的话封面飞行起止圆角会对不上，飞行途中会看到角"跳"一下。
     val thumbCorner = 12.dp
-    Surface(
-        onClick = {
-            // 在卡片自身触发：无论哪条调用路径（库列表 / 搜索 / 快捷入口）都覆盖。
-            CoverFlight.openPlaylist(playlist.resourceId, playlist.coverUrl)
-            onClick()
-        },
-        modifier = modifier.fillMaxWidth(),
-        // 卡片圆角取 `shapes.largeIncreased`(20dp) —— "次级卡片"那一档：
-        // 比列表行（large=16）大、比主卡片（extraLarge=28）小。
-        shape = MaterialTheme.shapes.largeIncreased,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+    val menuItems = menuActions?.let { playlistContextMenuItems(it) }
+    val desktopMenu = menuItems != null && LocalWindowChromeActive.current
+    var menuExpanded by remember { mutableStateOf(false) }
+    val card: @Composable (Modifier) -> Unit = { cardModifier ->
+        Surface(
+            onClick = {
+                // 在卡片自身触发：无论哪条调用路径（库列表 / 搜索 / 快捷入口）都覆盖。
+                CoverFlight.openPlaylist(playlist.resourceId, playlist.coverUrl)
+                onClick()
+            },
+            modifier = cardModifier.fillMaxWidth(),
+            // 卡片圆角取 `shapes.largeIncreased`(20dp) —— "次级卡片"那一档：
+            // 比列表行（large=16）大、比主卡片（extraLarge=28）小。
+            shape = MaterialTheme.shapes.largeIncreased,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
         ) {
-            Box(
-                Modifier.size(60.dp).aspectRatio(1f).clip(RoundedCornerShape(thumbCorner))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .coverFlightSource(CoverFlight.playlistKey(playlist.resourceId), thumbCorner),
-                contentAlignment = Alignment.Center,
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (!playlist.coverUrl.isNullOrBlank()) {
-                    // [Bolt] Fetch smaller (300px) covers for playlist cards to drastically reduce list payload
-                    AsyncImage(
-                        model = playlist.coverUrl.resized(300),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                } else {
-                    Icon(
-                        Icons.AutoMirrored.Filled.QueueMusic, null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(28.dp),
-                    )
-                }
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                // CpText 而不是 Text：歌单名（尤其是「我喜欢的音乐 2026 年 10 月第 3 周合集」
-                // 这种）截断后仍可读全。静态观感不变，只在溢出时才挂悬停浮层。
-                CpText(
-                    text = playlist.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                )
-                Spacer(Modifier.height(2.dp))
-                val ownerStr = if (isOwner) "创建的歌单" else "收藏 · ${playlist.creatorName ?: "未知"}"
-                val countStr = if (playlist.trackCount > 0) "${playlist.trackCount} 首" else ""
-                CpText(
-                    text = listOf(ownerStr, countStr).filter { it.isNotEmpty() }.joinToString(" · "),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-            IconButton(onClick = onOptionsClick) {
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    modifier = Modifier.size(36.dp),
+                Box(
+                    Modifier.size(60.dp).aspectRatio(1f).clip(RoundedCornerShape(thumbCorner))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .coverFlightSource(CoverFlight.playlistKey(playlist.resourceId), thumbCorner),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
+                    if (!playlist.coverUrl.isNullOrBlank()) {
+                        // [Bolt] Fetch smaller (300px) covers for playlist cards to drastically reduce list payload
+                        AsyncImage(
+                            model = playlist.coverUrl.resized(300),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    } else {
                         Icon(
-                            Icons.Filled.MoreVert,
-                            contentDescription = "更多操作",
+                            Icons.AutoMirrored.Filled.QueueMusic, null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(28.dp),
                         )
                     }
                 }
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    // CpText 而不是 Text：歌单名（尤其是「我喜欢的音乐 2026 年 10 月第 3 周合集」
+                    // 这种）截断后仍可读全。静态观感不变，只在溢出时才挂悬停浮层。
+                    CpText(
+                        text = playlist.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    val ownerStr = if (isOwner) {
+                        s.contextMenu.ownedPlaylist
+                    } else {
+                        s.contextMenu.favoritedPlaylist + " · " + (playlist.creatorName ?: s.contextMenu.unknownCreator)
+                    }
+                    val countStr = if (playlist.trackCount > 0) s.contextMenu.trackCount(playlist.trackCount) else ""
+                    CpText(
+                        text = listOf(ownerStr, countStr).filter { it.isNotEmpty() }.joinToString(" · "),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                val moreButton: @Composable () -> Unit = {
+                    IconButton(onClick = {
+                        if (desktopMenu) menuExpanded = true else onOptionsClick()
+                    }) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Filled.MoreVert,
+                                    contentDescription = s.contextMenu.moreActions,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+                if (desktopMenu) {
+                    CpAnchoredMenu(
+                        expanded = menuExpanded,
+                        onDismiss = { menuExpanded = false },
+                        items = menuItems,
+                    ) { moreButton() }
+                } else {
+                    moreButton()
+                }
             }
         }
+    }
+    if (menuItems != null) {
+        CpContextMenu(items = menuItems, modifier = modifier) { card(Modifier) }
+    } else {
+        card(modifier)
     }
 }
 
