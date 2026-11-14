@@ -1,0 +1,9 @@
+{
+  "id": "conformance-fixture",
+  "name": "Conformance Fixture",
+  "version": "1.0.0",
+  "type": "js",
+  "contract": "kmp-sdk-v1",
+  "entryPoint": "index.js",
+  "capabilities": ["tracks.search", "tracks.get", "tracks.resolve"]
+}
