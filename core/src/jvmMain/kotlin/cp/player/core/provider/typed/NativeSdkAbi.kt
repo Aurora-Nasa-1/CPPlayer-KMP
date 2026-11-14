@@ -6,7 +6,7 @@ import java.io.Closeable
 import java.io.File
 
 /**
- * 原生音源包的 **C ABI**（`cpp_*`）会话工厂 —— 规范见 `docs/dev/PROVIDER_NATIVE_ABI.md`。
+ * 原生音源包的 **C ABI**（`cpp_*`）会话工厂 —— 规范见 `docs/dev/providers/NATIVE.md`。
  *
  * 存在的理由：JNI 契约要求「每个包独立拿到 JNI 绑定」，宿主的做法是把
  * [cp.player.sdk.jni.NativeSession] 按包 `defineClass` 一次；而 GraalVM Native Image
@@ -24,9 +24,31 @@ internal interface CAbiSessionFactory : Closeable {
 }
 
 /**
- * 探测并打开 [library] 的 C ABI。`null` = 这个库不提供 C ABI（也包含「加载失败」，
- * 由调用方在 JVM 上回落 JNI；原生构建则给出明确错误）。
+ * 探测并打开 [library] 的 C ABI。
  *
- * Android 侧恒为 `null`：ART 没有 `java.lang.foreign`，Android 继续走 JNI。
+ * 返回 [CAbiProbe.Unavailable] 而不是简单 `null`：**探测失败的原因必须留得下来**。
+ * 真实事故（2026-11-14，网易云 1.3.0 在 Windows 原生包里提示「没有导出 C ABI」）：
+ * native image 要求**每个 FFM downcall 签名在构建期登记**（`reachability-metadata.json`
+ * 的 `foreign.downcalls`），漏登记时 `downcallHandle` 抛
+ * `MissingForeignRegistrationError`；而旧实现把它 `catch` 成 `null`，用户看到的却
+ * 是「音源没导出 C ABI」——把库的问题指成了音源的问题，排查方向直接跑偏。
+ *
+ * Android 侧恒为 [CAbiProbe.Unavailable]：ART 没有 `java.lang.foreign`，继续走 JNI。
  */
-internal expect fun cAbiSessionFactory(library: File): CAbiSessionFactory?
+internal expect fun probeCAbiSessionFactory(library: File): CAbiProbe
+
+/** C ABI 探测结果。 */
+internal sealed interface CAbiProbe {
+    /** 探测通过：库导出 `cpp_abi_version == 1`，四个符号都绑上了。 */
+    class Available(val factory: CAbiSessionFactory) : CAbiProbe
+
+    /** 不提供 C ABI（含加载失败 / 缺符号 / 版本不符 / 构建期未登记 FFM 签名）。 */
+    class Unavailable(val reason: String) : CAbiProbe
+}
+
+/**
+ * 只要工厂、不关心原因时的便捷封装（JVM 回落路径与单测用）。
+ * `null` = 这个库不提供 C ABI。
+ */
+internal fun cAbiSessionFactory(library: File): CAbiSessionFactory? =
+    (probeCAbiSessionFactory(library) as? CAbiProbe.Available)?.factory

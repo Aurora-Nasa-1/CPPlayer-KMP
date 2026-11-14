@@ -53,7 +53,16 @@ internal fun installedNativeSdkProvider(manifest: ModuleManifest, root: File, co
         // - 原生构建：JNI 要按包 defineClass，native image 做不到 ⇒ C ABI 是唯一可行路径；
         // - JVM / Android：继续走原 JNI 路径（线上跑了几年的那条），行为一点不变；
         //   这里也不去 `libraryLookup`，免得白白把 DLL 加载进来钉住快照目录。
-        val cAbi = if (className == null && nativeImageRuntime) cAbiSessionFactory(entry) else null
+        var cAbiFailure: String? = null
+        val cAbi = if (className == null && nativeImageRuntime) {
+            when (val probe = probeCAbiSessionFactory(entry)) {
+                is CAbiProbe.Available -> probe.factory
+                is CAbiProbe.Unavailable -> {
+                    cAbiFailure = probe.reason
+                    null
+                }
+            }
+        } else null
         val packageLoader: ClassLoader? = when {
             cAbi != null -> null
             className == null -> nativeLibraryClassLoader(context)
@@ -65,7 +74,7 @@ internal fun installedNativeSdkProvider(manifest: ModuleManifest, root: File, co
         } else if (className == null) {
             // 没有 C ABI ⇒ 只能用「按包 defineClass 一份 NativeSession」的 JNI 旁路，
             // 而 native image 既没有类文件资源、也不支持运行时定义类（见 NativePackageClassLoader）。
-            check(!nativeImageRuntime) { nativeJniUnavailable(manifest) }
+            check(!nativeImageRuntime) { nativeJniUnavailable(manifest, cAbiFailure) }
             val bridge = packageLoader!!.loadClass(NativeSession::class.java.name)
                 .asSubclass(JniProviderSession::class.java)
             val constructor = bridge.getConstructor(String::class.java, ProviderContext::class.java, String::class.java)
@@ -111,13 +120,16 @@ internal fun installedNativeSdkProvider(manifest: ModuleManifest, root: File, co
     }
 }
 
-/** 原生构建 + 「只有 JNI、没有 C ABI」时给出的原因（见 docs/dev/PROVIDER_NATIVE_ABI.md）。 */
-private fun nativeJniUnavailable(manifest: ModuleManifest): String =
+/** 原生构建 + 「只有 JNI、没有 C ABI」时给出的原因（见 docs/dev/providers/NATIVE.md）。 */
+private fun nativeJniUnavailable(manifest: ModuleManifest, probeFailure: String?): String =
     "当前是原生构建（GraalVM Native Image），音源模块「${manifest.name}」只导出了 JNI 符号，" +
         "没有导出 C ABI（cpp_abi_version / cpp_create / cpp_invoke / cpp_cancel / cpp_close）：" +
         "JNI 要求宿主按包各自定义一次 cp.player.sdk.jni.NativeSession，而 native image " +
         "不提供类文件资源、也不支持运行时定义类。请升级该音源模块到支持 C ABI 的版本，" +
-        "或改用 JS 音源模块 / JVM 版客户端。"
+        "或改用 JS 音源模块 / JVM 版客户端。" +
+        // 探测失败的具体原因要看得到：宿主侧没登记 FFM 签名（MissingForeignRegistrationError）
+        // 长得很像「音源没导出 C ABI」，不给这一行就会把排查方向指到音源仓库去。
+        (probeFailure?.let { "\n（宿主侧 C ABI 探测失败原因：$it）" } ?: "")
 
 /** 原生构建 + 适配器 JAR（`nativeFactoryClass`）时的原因。 */
 private fun nativeAdapterJarUnavailable(manifest: ModuleManifest): String =

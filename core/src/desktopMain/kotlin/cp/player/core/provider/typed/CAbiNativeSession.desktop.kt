@@ -16,7 +16,7 @@ import java.lang.foreign.ValueLayout.JAVA_LONG
 import java.lang.invoke.MethodHandle
 
 /**
- * C ABI（`cpp_*`）的 FFM（Project Panama）实现 —— 见 `docs/dev/PROVIDER_NATIVE_ABI.md`。
+ * C ABI（`cpp_*`）的 FFM（Project Panama）实现 —— 见 `docs/dev/providers/NATIVE.md`。
  *
  * 为什么用 FFM 而不是 JNI / JNA：
  * - **JNI 不行**：JNI 绑定挂在类对象上，要「每包独立」就得按包 `defineClass`，
@@ -33,15 +33,31 @@ import java.lang.invoke.MethodHandle
  * 2. 只用 JDK 22 以前就有名字的 API（`Arena.allocate` + `asByteBuffer`），不要用
  *    `Arena.allocateFrom(String)` 这类 22+ 方法 —— 桌面运行时可能是 JBR 21。
  */
-internal actual fun cAbiSessionFactory(library: File): CAbiSessionFactory? {
-    // 探测失败（不是 C ABI 库、缺符号、版本不对、库加载不了）一律当作「不提供 C ABI」。
+internal actual fun probeCAbiSessionFactory(library: File): CAbiProbe {
+    // 探测失败（不是 C ABI 库、缺符号、版本不对、库加载不了、构建期没登记 FFM 签名）
+    // 一律当作「不提供 C ABI」——但**原因必须留下来**：调用方在原生构建里要把它显示出来。
     val arena = Arena.ofShared()
     return try {
-        FfmCAbiSessionFactory(arena, library)
-    } catch (_: Throwable) {
+        CAbiProbe.Available(FfmCAbiSessionFactory(arena, library))
+    } catch (error: Throwable) {
         runCatching { arena.close() }
-        null
+        CAbiProbe.Unavailable(describeProbeFailure(error))
     }
+}
+
+/**
+ * 把探测异常压成一行人话。
+ *
+ * `MissingForeignRegistrationError` 的消息是几十行的「请把这段 JSON 加到
+ * reachability-metadata.json」，整段塞进 UI 没意义；第一行就够定位
+ * （`Cannot perform downcall with leaf type (long)int.`）。
+ */
+private fun describeProbeFailure(error: Throwable): String {
+    val detail = error.message
+        ?.lineSequence()
+        ?.map { it.trim() }
+        ?.firstOrNull { it.isNotEmpty() }
+    return if (detail.isNullOrEmpty()) error::class.java.simpleName else "${error::class.java.simpleName}: $detail"
 }
 
 /** 本实现支持的 ABI 版本；不匹配就当不支持（未来 v2 在这里分支）。 */
