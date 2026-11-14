@@ -43,6 +43,7 @@ class ModernPlayerBackgroundTest {
                         onQueue = {},
                         onComments = {},
                         onMore = {},
+                        onCast = {},
                         modifier = Modifier.fillMaxSize(),
                         lyricsContent = {},
                     )

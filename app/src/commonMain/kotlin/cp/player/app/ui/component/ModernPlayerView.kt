@@ -189,6 +189,7 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
             onQueue = { showQueue = true },
             onComments = { showComments = true },
             onMore = { more.showMoreMenu = true },
+            onCast = { more.showDevicePicker = true },
             modifier = Modifier.fillMaxSize(),
             contentModifier = Modifier.windowInsetsPadding(WindowInsets.systemBars),
             dismissGesture = dismissGesture,

@@ -44,8 +44,8 @@ class MobilePlayerSettingsScreen(private val targetSettingId: String? = null) : 
                         title = "播放器样式",
                         subtitle = "选择封面、歌词与播放控制的排布方式",
                         options = listOf("三段式播放器", "标准播放器"),
-                        selectedIndex = if (config.enabled) 0 else 1,
-                        onSelect = { index -> AppModel.setModernMobilePlayerEnabled(index == 0) },
+                        selectedIndex = if (config.enabled) 1 else 0,
+                        onSelect = { index -> AppModel.setModernMobilePlayerEnabled(index == 1) },
                         index = 0, total = 2,
                         modifier = Modifier.settingsSearchTarget("appearance_modern_mobile_player", targetSettingId),
                     )

@@ -558,7 +558,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
 
             add(
                 CpContextMenuItem(
-                    label = "切换到三段式播放器",
+                    label = "切换到标准播放器",
                     icon = Icons.Rounded.AutoAwesome,
                     onClick = { AppModel.setModernMobilePlayerEnabled(true) },
                 )

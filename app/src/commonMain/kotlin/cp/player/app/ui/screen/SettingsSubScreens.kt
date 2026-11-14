@@ -226,6 +226,10 @@ class AppearanceSettingsScreen(
 
                 // 4. 手机端播放界面与布局
                 val mobilePlayerConfig by AppModel.mobilePlayerCustomConfigFlow.collectAsState()
+                // 标准播放器（enabled = true）只在外观页保留样式切换；播放偏好入口
+                // 仅在三段式播放器下展示，避免标准模式下出现无处生效的定制项。
+                val showMobilePlayerPreferences = !mobilePlayerConfig.enabled
+                val mobilePlayerSectionTotal = if (showMobilePlayerPreferences) 2 else 1
 
                 SettingsSection("手机端播放界面与布局") {
                     SettingsSegmentedItem(
@@ -233,21 +237,24 @@ class AppearanceSettingsScreen(
                         modifier = Modifier.settingsSearchTarget("appearance_modern_mobile_player", targetSettingId),
                         subtitle = "选择封面、歌词与播放控制的排布方式",
                         options = listOf("三段式播放器", "标准播放器"),
-                        selectedIndex = if (mobilePlayerConfig.enabled) 0 else 1,
-                        onSelect = { index -> AppModel.setModernMobilePlayerEnabled(index == 0) },
+                        // 三段式 = 经典多页横滑；标准 = 默认单页整合布局（enabled = true）。
+                        selectedIndex = if (mobilePlayerConfig.enabled) 1 else 0,
+                        onSelect = { index -> AppModel.setModernMobilePlayerEnabled(index == 1) },
                         index = 0,
-                        total = 2,
+                        total = mobilePlayerSectionTotal,
                     )
-                    SettingsClickItem(
-                        title = "手机播放偏好",
-                        subtitle = "切歌手势 · 歌词 ${mobilePlayerConfig.lyricsFontSizeSp}sp · 翻译",
-                        icon = Icons.Filled.Tune,
-                        showChevron = true,
-                        index = 1,
-                        total = 2,
-                        modifier = Modifier.settingsSearchTarget("appearance_mobile_player_layout", targetSettingId),
-                        onClick = { navigator.push(MobilePlayerSettingsScreen()) },
-                    )
+                    if (showMobilePlayerPreferences) {
+                        SettingsClickItem(
+                            title = "手机播放偏好",
+                            subtitle = "切歌手势 · 歌词 ${mobilePlayerConfig.lyricsFontSizeSp}sp · 翻译",
+                            icon = Icons.Filled.Tune,
+                            showChevron = true,
+                            index = 1,
+                            total = mobilePlayerSectionTotal,
+                            modifier = Modifier.settingsSearchTarget("appearance_mobile_player_layout", targetSettingId),
+                            onClick = { navigator.push(MobilePlayerSettingsScreen()) },
+                        )
+                    }
                 }
 
                 // 4. 字体排版与几何形态
