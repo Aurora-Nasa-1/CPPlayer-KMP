@@ -128,4 +128,52 @@ class InsightsReportPreviewTest {
         }
         assertTrue(bytes.size > 5_000, "最近播放预览图不应为空，实际 ${bytes.size} bytes")
     }
+
+    @Test
+    fun `recent rows stay readable on compact width`() {
+        val tracks = listOf(
+            TrackSummary(
+                id = "netease://song/1",
+                name = "夜に駆ける",
+                artist = "YOASOBI",
+                album = "THE BOOK",
+                coverUrl = null,
+                durationMs = 261_000,
+            ),
+            TrackSummary(
+                id = "qq://song/2",
+                name = "其他音源的歌曲",
+                artist = "另一个歌手",
+                album = null,
+                coverUrl = null,
+                durationMs = 220_000,
+            ),
+        )
+        val bytes = render(width = 390, height = 240) {
+            CompositionLocalProvider(LocalWindowChromeActive provides true) {
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
+                ) {
+                    recentPlaysRows(
+                        tracks = tracks,
+                        columns = 1,
+                        onPlay = {},
+                        onOptions = {},
+                        sourceLabelOf = { track ->
+                            if (track.id.startsWith("qq://")) "QQ 音乐" else "网易云音乐"
+                        },
+                        playableOf = { !it.id.startsWith("qq://") },
+                        contextMenu = { emptyList() },
+                    )
+                }
+            }
+        }
+        File("build/recent-plays-preview-compact.png").apply {
+            parentFile?.mkdirs()
+            writeBytes(bytes)
+        }
+        assertTrue(bytes.size > 5_000, "窄屏最近播放预览图不应为空，实际 ${bytes.size} bytes")
+    }
 }
