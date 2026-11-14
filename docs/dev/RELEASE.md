@@ -181,6 +181,26 @@ To train and collect a PGO profile on Windows:
 
 采集到的 `default.iprof` 提交到 `app/graalvm/pgo/default.iprof` 后，生产发布构建（CI 与本地）会自动消费该 profile 并启用 `-O3` 终极原生优化。
 
+**当前状态：profile 已入库**（2026-11-14 采集，30,938,646 字节，SHA-256
+`6ae1a5ec…e1f2fac`，43,195 types / 324,729 methods；其中 `cp.player` 条目 9,061 条、
+`androidx.compose` 6,801 条）。详细的采集场景、重新采集步骤与全部注意事项见
+[`app/graalvm/pgo/README.md`](../../app/graalvm/pgo/README.md)。
+
+PGO 是否真的生效，看两处，**不要只看 BUILD SUCCESSFUL**：
+
+1. `app/build/compose/tmp/main/graalvm/nativeCompile/native-image-args.txt` 中出现
+   `"--pgo=<绝对路径>"`，且没有 `--pgo-instrument`（插桩版只有 `-Ob`，不能发版）；
+2. 构建日志里有 `PGO: applying recorded profile ...`；若出现
+   `PGO: recorded profile ... ignored`，说明工具链不是 Oracle GraalVM。
+
+`desktop-release.yml` 的 Windows job 已把这两条做成硬断言 —— profile 被误删、
+或构建悄悄退化成「ML 推断版发行包」，发行 job 直接变红。
+
+⚠️ profile 与 GraalVM 版本绑定（Oracle GraalVM 25.3.4.1 / 工具链 `25i3`）；
+升级 GraalVM 后必须重新采集，否则 native-image 会报 profile 不兼容。
+⚠️ `.gitattributes` 里 `*.iprof binary` 不能删：profile 是单行 JSON，
+被 `text=auto eol=lf` 当文本处理后再规范化，`--pgo` 就解析不出来。
+
 ### Desktop tray and notifications — no AWT
 
 Nucleus 3.0 has no AWT window backend, so the desktop shell also dropped the AWT tray:

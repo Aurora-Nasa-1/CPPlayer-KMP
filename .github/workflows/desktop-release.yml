@@ -212,6 +212,22 @@ jobs:
           # 也是核对命令行参数的唯一权威来源。
           .tools/vpk.exe pack -H | head -40
 
+      # PGO 是「文件在就生效」的隐式接线（Nucleus 只在 profile 存在时追加 --pgo），
+      # 所以文件被误删/被 LFS 指针替换时，构建照样成功、发出去的却是 ML 推断版。
+      # 发版 job 里先断言文件本身。
+      - name: Verify PGO profile present
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          profile="app/graalvm/pgo/default.iprof"
+          test -s "$profile" || {
+            echo "::error::$profile 缺失或为空 —— 发行包会静默退化成 ML Profile Inference"
+            exit 1
+          }
+          echo "PGO profile: $(stat -c%s "$profile") bytes"
+          sha256sum "$profile"
+
       - name: Build desktop package
         shell: bash
         run: |
@@ -234,6 +250,30 @@ jobs:
             )
           fi
           ./gradlew ${{ matrix.gradleTasks }} --no-daemon "${gradle_args[@]}"
+
+      # 构建成功 ≠ PGO 生效。Nucleus 把真正传给 native-image 的参数落在
+      # native-image-args.txt 里，这是唯一能事后核对的物证（日志会被 --quiet / 分级吞掉）。
+      - name: Verify PGO profile applied
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          args="app/build/compose/tmp/main/graalvm/nativeCompile/native-image-args.txt"
+          test -f "$args" || {
+            echo "::error::找不到 $args，无法确认 PGO 是否真的生效"
+            exit 1
+          }
+          if grep -q -- '"--pgo-instrument"' "$args"; then
+            echo "::error::发行构建带上了 --pgo-instrument（插桩镜像）—— 采集版绝不能发版"
+            grep -n 'pgo' "$args" || true
+            exit 1
+          fi
+          grep -q -- '"--pgo=' "$args" || {
+            echo "::error::发行构建没有带上 --pgo，PGO 未生效"
+            grep -n 'pgo' "$args" || true
+            exit 1
+          }
+          grep -n 'pgo' "$args"
 
       # tar.gz 的执行位全靠打包时原样保留，这里只做布局断言（缺关键文件立刻失败，
       # 别等到用户解压才发现）。执行位无法从 tar 列表读出，AUR 的 package() 里有
