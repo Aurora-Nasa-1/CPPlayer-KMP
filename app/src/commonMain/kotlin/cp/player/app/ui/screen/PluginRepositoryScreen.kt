@@ -450,7 +450,7 @@ internal fun PluginRepositoryContent(
     CpConfirmHost(confirm)
 }
 
-private fun PluginCatalogEntry.blockReason(t: PluginRepositoryStrings): String? {
+internal fun PluginCatalogEntry.blockReason(t: PluginRepositoryStrings): String? {
     val managed = managed
     val installed = installed
     return when {

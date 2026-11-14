@@ -3,6 +3,41 @@ package cp.player.app.i18n
 interface PluginRepositoryStrings {
     val title: String
     val subtitle: String
+    val hubTitle: String
+    val hubSubtitle: String
+    val stepInstall: String
+    val stepEnable: String
+    val stepTune: String
+    val discoverPlugins: String
+    val checkAllUpdates: String
+    val providersSection: String
+    val lyricsSection: String
+    val repositoryPluginsSection: String
+    val providersHint: String
+    val lyricsHint: String
+    val repositoryPluginsHint: String
+    val repositoriesHint: String
+    val currentProvider: String
+    val noProviders: String
+    val noProvidersHint: String
+    val noLyrics: String
+    val noLyricsHint: String
+    val noRepositoryPlugins: String
+    val noRepositoryPluginsHint: String
+    val noUpdatesHint: String
+    val noSourcesHint: String
+    val importProvider: String
+    val importLyrics: String
+    val providerSettings: String
+    val checkProviderUpdates: String
+    val updateAvailable: String
+    val managedByRepository: String
+    val pendingRestartShort: String
+    val updateSectionPlugins: String
+    val updateSectionProviders: String
+    val updateSectionProvidersHint: String
+    val discoverHint: String
+    val updatesHint: String
     val browse: String
     val installed: String
     val updates: String
@@ -54,11 +89,50 @@ interface PluginRepositoryStrings {
     fun sourceFailed(name: String, error: String): String
     fun pendingFailed(error: String): String
     fun packageInfo(platform: String, arch: String, runtime: String, bytes: Long): String
+    fun statProviders(count: Int): String
+    fun statLyrics(enabled: Int, total: Int): String
+    fun statRepositories(enabled: Int, total: Int): String
+    fun providerUpdateSummary(name: String, from: String, to: String): String
 }
 
 object PluginRepositoryStringsZh : PluginRepositoryStrings {
     override val title = "插件中心"
-    override val subtitle = "浏览仓库，一键安装和更新音源与歌词插件"
+    override val subtitle = "已安装、发现、更新与仓库，一处管理音源和歌词插件"
+    override val hubTitle = "音源与歌词，一处管理"
+    override val hubSubtitle = "先安装或导入插件，再启用音源与歌词来源，最后按需调整优先级。"
+    override val stepInstall = "安装 / 导入"
+    override val stepEnable = "启用 / 切换"
+    override val stepTune = "排序 / 更新"
+    override val discoverPlugins = "发现插件"
+    override val checkAllUpdates = "检查全部更新"
+    override val providersSection = "音源模块"
+    override val lyricsSection = "歌词来源"
+    override val repositoryPluginsSection = "仓库插件"
+    override val providersHint = "音源决定能搜索、播放哪些内容。点击模块即可切换当前音源；带齿轮的模块支持自定义配置。"
+    override val lyricsHint = "歌词来源按从上到下的顺序尝试。开关控制是否参与匹配，箭头调整优先级。"
+    override val repositoryPluginsHint = "从仓库安装、但还没出现在上方列表里的插件会列在这里；待重启的更新也会保留记录。"
+    override val repositoriesHint = "仓库是插件的目录来源。只添加你信任的 HTTPS 地址；关闭联网后仍可管理已安装插件。"
+    override val currentProvider = "当前音源"
+    override val noProviders = "还没有音源模块"
+    override val noProvidersHint = "导入 .zip 模块包，或到「发现」从仓库安装音源。"
+    override val noLyrics = "还没有歌词来源"
+    override val noLyricsHint = "导入歌词插件，或在「发现」安装歌词插件。"
+    override val noRepositoryPlugins = "没有待管理的仓库插件"
+    override val noRepositoryPluginsHint = "已安装的音源和歌词来源已在上方列出。"
+    override val noUpdatesHint = "检查更新后，有新版本的插件会出现在这里。"
+    override val noSourcesHint = "添加 HTTPS 目录后即可浏览和安装插件。"
+    override val importProvider = "导入音源模块"
+    override val importLyrics = "导入歌词插件"
+    override val providerSettings = "音源配置"
+    override val checkProviderUpdates = "检查音源更新"
+    override val updateAvailable = "可更新"
+    override val managedByRepository = "由仓库管理"
+    override val pendingRestartShort = "待重启生效"
+    override val updateSectionPlugins = "插件更新"
+    override val updateSectionProviders = "音源模块更新"
+    override val updateSectionProvidersHint = "音源更新会下载新模块并在下次启动时切换，更新前请暂停播放。"
+    override val discoverHint = "从已启用的仓库浏览插件。安装前先确认作者、来源与更新说明。"
+    override val updatesHint = "这里汇总仓库插件与音源模块的可用更新。"
     override val browse = "浏览"
     override val installed = "已安装"
     override val updates = "更新"
@@ -111,11 +185,51 @@ object PluginRepositoryStringsZh : PluginRepositoryStrings {
     override fun pendingFailed(error: String) = "重启更新未完成，已尝试保留旧版本：$error"
     override fun packageInfo(platform: String, arch: String, runtime: String, bytes: Long) =
         "$platform / $arch · $runtime · $bytes 字节"
+    override fun statProviders(count: Int) = "$count 个音源"
+    override fun statLyrics(enabled: Int, total: Int) = "$enabled/$total 歌词启用"
+    override fun statRepositories(enabled: Int, total: Int) = "$enabled/$total 仓库启用"
+    override fun providerUpdateSummary(name: String, from: String, to: String) =
+        "$name · v$from → v$to"
 }
 
 object PluginRepositoryStringsEn : PluginRepositoryStrings {
     override val title = "Plugin center"
-    override val subtitle = "Browse, install and update provider and lyric plugins"
+    override val subtitle = "Installed, discover, updates and catalogs — one place for provider and lyric plugins"
+    override val hubTitle = "Providers and lyrics, managed together"
+    override val hubSubtitle = "Install or import a plugin, enable the provider or lyric source, then tune priority when needed."
+    override val stepInstall = "Install / import"
+    override val stepEnable = "Enable / switch"
+    override val stepTune = "Order / update"
+    override val discoverPlugins = "Discover plugins"
+    override val checkAllUpdates = "Check all updates"
+    override val providersSection = "Provider modules"
+    override val lyricsSection = "Lyric sources"
+    override val repositoryPluginsSection = "Repository plugins"
+    override val providersHint = "Providers decide what can be searched and played. Tap a module to make it active; modules with a gear support custom settings."
+    override val lyricsHint = "Lyric sources are tried from top to bottom. The switch controls participation; arrows change priority."
+    override val repositoryPluginsHint = "Plugins installed from a catalog that are not listed above appear here; staged updates keep their record."
+    override val repositoriesHint = "Catalogs are directories of plugins. Add only HTTPS sources you trust; installed plugins remain manageable when networking is off."
+    override val currentProvider = "Active provider"
+    override val noProviders = "No provider modules yet"
+    override val noProvidersHint = "Import a .zip module, or install a provider from Discover."
+    override val noLyrics = "No lyric sources yet"
+    override val noLyricsHint = "Import a lyric plugin, or install one from Discover."
+    override val noRepositoryPlugins = "No repository plugins to manage"
+    override val noRepositoryPluginsHint = "Installed providers and lyric sources are already listed above."
+    override val noUpdatesHint = "After checking, plugins with a newer version will appear here."
+    override val noSourcesHint = "Add an HTTPS catalog to browse and install plugins."
+    override val importProvider = "Import provider module"
+    override val importLyrics = "Import lyric plugin"
+    override val providerSettings = "Provider settings"
+    override val checkProviderUpdates = "Check provider updates"
+    override val updateAvailable = "Update available"
+    override val managedByRepository = "Managed by catalog"
+    override val pendingRestartShort = "Restart required"
+    override val updateSectionPlugins = "Plugin updates"
+    override val updateSectionProviders = "Provider module updates"
+    override val updateSectionProvidersHint = "Provider updates download a new module and switch on the next launch; pause playback before updating."
+    override val discoverHint = "Browse plugins from enabled catalogs. Check the author, source and release notes before installing."
+    override val updatesHint = "Repository plugin and provider module updates are collected here."
     override val browse = "Browse"
     override val installed = "Installed"
     override val updates = "Updates"
@@ -168,4 +282,9 @@ object PluginRepositoryStringsEn : PluginRepositoryStrings {
     override fun pendingFailed(error: String) = "A staged update failed at restart; attempted to retain the previous version: $error"
     override fun packageInfo(platform: String, arch: String, runtime: String, bytes: Long) =
         "$platform / $arch · $runtime · $bytes bytes"
+    override fun statProviders(count: Int) = "$count providers"
+    override fun statLyrics(enabled: Int, total: Int) = "$enabled/$total lyrics on"
+    override fun statRepositories(enabled: Int, total: Int) = "$enabled/$total catalogs on"
+    override fun providerUpdateSummary(name: String, from: String, to: String) =
+        "$name · v$from → v$to"
 }

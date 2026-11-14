@@ -307,6 +307,7 @@ class ProviderManagementScreen(
                                         total = providers.size,
                                         isActive = provider.id == active?.id,
                                         updateState = updateStates[provider.id],
+                                        hasPendingUpdate = AppModel.backend.hasPendingUpdate(provider.id),
                                         onActivate = { model.activate(provider) },
                                         onDelete = {
                                             confirm.request(
@@ -612,12 +613,13 @@ class ProviderManagementModel : ScreenModel {
 }
 
 @Composable
-private fun ProviderRow(
+internal fun ProviderRow(
     provider: BackendProvider,
     index: Int,
     total: Int,
     isActive: Boolean,
     updateState: ProviderUpdateState? = null,
+    hasPendingUpdate: Boolean = false,
     onActivate: () -> Unit,
     onDelete: () -> Unit,
     onExport: (destPath: String?) -> Boolean,
@@ -646,7 +648,6 @@ private fun ProviderRow(
     val tagText = provider.apiVersionTag?.let { " · $it" }.orEmpty()
     val hasConfig = !provider.settingsSchema.isNullOrEmpty()
     val configText = if (hasConfig) " · 支持自定义配置" else ""
-    val hasPendingUpdate = remember(provider.id) { AppModel.backend.hasPendingUpdate(provider.id) }
     val pendingText = if (hasPendingUpdate) " · 待重启生效" else ""
 
     val availableUpdate = updateState as? ProviderUpdateState.UpdateAvailable
@@ -812,7 +813,7 @@ private fun ProviderRow(
 // ---------------- 歌词来源相关辅助函数与组件 ----------------
 
 @Composable
-private fun LyricsSourceRowActions(
+internal fun LyricsSourceRowActions(
     source: LyricsSourceEntry,
     isFirst: Boolean,
     isLast: Boolean,
@@ -872,7 +873,7 @@ private fun SettingsRowIconButton(
     }
 }
 
-private fun sourceTitle(
+internal fun sourceTitle(
     source: LyricsSourceEntry,
     t: cp.player.app.i18n.LyricsPluginStrings,
 ): String = if (!source.localizeName) {
@@ -887,7 +888,7 @@ private fun sourceTitle(
     }
 }
 
-private fun sourceSubtitle(
+internal fun sourceSubtitle(
     source: LyricsSourceEntry,
     t: cp.player.app.i18n.LyricsPluginStrings,
 ): String {
@@ -918,7 +919,7 @@ private fun sourceSubtitle(
     return if (source.enabled) body else "$body · ${t.disabledHint}"
 }
 
-private fun builtinNote(
+internal fun builtinNote(
     source: LyricsSourceEntry,
     t: cp.player.app.i18n.LyricsPluginStrings,
 ): String? = when (source.id) {
@@ -929,4 +930,4 @@ private fun builtinNote(
     else -> null
 }
 
-private fun fileNameOf(path: String): String = path.replace('\\', '/').substringAfterLast('/')
+internal fun fileNameOf(path: String): String = path.replace('\\', '/').substringAfterLast('/')
