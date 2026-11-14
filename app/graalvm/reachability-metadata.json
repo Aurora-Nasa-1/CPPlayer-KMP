@@ -1,0 +1,97 @@
+{
+  "reflection": [
+    {
+      "type": "sun.awt.windows.WFileDialogPeer",
+      "jniAccessible": true,
+      "fields": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "fileFilter"
+        }
+      ],
+      "methods": [
+        {
+          "name": "setHWnd",
+          "parameterTypes": [
+            "long"
+          ]
+        },
+        {
+          "name": "handleSelected",
+          "parameterTypes": [
+            "char[]"
+          ]
+        },
+        {
+          "name": "handleCancel",
+          "parameterTypes": []
+        },
+        {
+          "name": "checkFilenameFilter",
+          "parameterTypes": [
+            "java.lang.String"
+          ]
+        },
+        {
+          "name": "isMultipleMode",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "java.awt.FileDialog",
+      "jniAccessible": true,
+      "fields": [
+        {
+          "name": "mode"
+        },
+        {
+          "name": "dir"
+        },
+        {
+          "name": "file"
+        },
+        {
+          "name": "filter"
+        }
+      ]
+    },
+    {
+      "type": "java.util.Locale",
+      "methods": [
+        {
+          "name": "getDefault",
+          "parameterTypes": [
+            "java.util.Locale$Category"
+          ]
+        },
+        {
+          "name": "setDefault",
+          "parameterTypes": [
+            "java.util.Locale$Category",
+            "java.util.Locale"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "com.ibm.icu.text.BreakIteratorFactory",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    }
+  ],
+  "resources": [
+    {
+      "glob": "com/ibm/icu/impl/data/icudata/brkitr/*"
+    },
+    {
+      "glob": "com/ibm/icu/impl/data/icudata/*.res"
+    }
+  ]
+}

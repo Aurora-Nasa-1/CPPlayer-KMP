@@ -752,6 +752,12 @@ nucleus {
             //   （AWT / Java2D / 字体等）在 native-image 任务中自动注入。GUI 应用
             //   必须保持 headless = false，否则会连同 L3 GUI 元数据与 Skiko/AWT
             //   原生库一起跳过，镜像启动时才炸。
+            //
+            // L4 本项目：`nativeImageConfigBaseDir` 默认就是 <项目>/graalvm，整个目录以
+            //   `-H:ConfigurationFileDirectories=...\app\graalvm` 传给 native-image，
+            //   所以 `app/graalvm/reachability-metadata.json` 是「L1~L3 都没覆盖到」时
+            //   唯一该动手的地方（现有条目：AWT FileDialog 的 JNI 字段/方法 ID、ICU4J
+            //   的 Locale 反射与断行数据）。来历、探针验证法见 app/graalvm/README.md。
             headless.set(false)
             // 项目自身资源按 resource roots 自动登记：动态 getResourceAsStream(computedPath)
             // 无法被 native-image 静态发现，漏登记就是运行时静默少文件。
