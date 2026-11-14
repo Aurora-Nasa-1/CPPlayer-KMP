@@ -113,5 +113,7 @@ kotlin {
 }
 
 tasks.named<Test>("desktopTest") {
-    jvmArgs("--enable-preview")
+    // `--enable-native-access`：C ABI 原生音源走 FFM（SymbolLookup.libraryLookup），
+    // 不显式开启会在每个用例里打 restricted-method 警告，将来版本会直接拒绝。
+    jvmArgs("--enable-preview", "--enable-native-access=ALL-UNNAMED")
 }

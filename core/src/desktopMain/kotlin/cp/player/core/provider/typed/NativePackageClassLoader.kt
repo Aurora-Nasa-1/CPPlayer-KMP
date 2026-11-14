@@ -22,7 +22,15 @@ internal actual fun nativeLibraryClassLoader(context: PlatformContext?): ClassLo
             if (name != NativeSession::class.java.name) return super.loadClass(name, resolve)
             val loaded = findLoadedClass(name) ?: run {
                 val path = name.replace('.', '/') + ".class"
-                val bytes = checkNotNull(parent.getResourceAsStream(path)).use { it.readBytes() }
+                // GraalVM Native Image 里类文件不是可读资源（getResourceAsStream 恒为 null），
+                // 所以这里绝不能只写 checkNotNull(x)：无 message 时只会显示
+                // 「Required value was null.」，看不出是什么坏了。JNI 音源在原生构建里
+                // 由 installedNativeSdkProvider 提前拦掉，这里只是兜底说明。
+                val stream = checkNotNull(parent.getResourceAsStream(path)) {
+                    "Cannot define $path per package: class files are not readable resources in " +
+                        "this runtime (JNI providers require a JVM; GraalVM Native Image is not supported)"
+                }
+                val bytes = stream.use { it.readBytes() }
                 defineClass(name, bytes, 0, bytes.size)
             }
             if (resolve) resolveClass(loaded)
