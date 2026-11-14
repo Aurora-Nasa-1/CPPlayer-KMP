@@ -30,8 +30,26 @@ internal object AudioMetadataReader {
     /** 头部扫描窗口：ID3 标签、MP4 moov、FLAC 元数据块都在这个量级内。 */
     private const val HEAD_BYTES = 96 * 1024
 
+    /**
+     * ID3v2 标签的读取上限。
+     *
+     * 96KB 的头部窗口经常不够：一张 500×500 的 APIC 封面就能把 USLT 推到 200KB 之后，
+     * 于是「文件明明有歌词，应用读不到」。这里按标签头声明的长度单独把标签读完，
+     * 上限只为防畸形文件撑爆堆。
+     */
+    private const val MAX_ID3_BYTES = 16 * 1024 * 1024
+
     /** 尾部扫描窗口：OGG 的时长需要从最后一个页面的 granule position 反推。 */
     private const val TAIL_BYTES = 64 * 1024
+
+    /** OGG 头部最多翻多少页来找注释包（异常文件保护）。 */
+    private const val MAX_OGG_PAGES = 256
+
+    /** `moov` 上限：4K 视频的样本表可能上 MB，但再大就不是音频标签了。 */
+    private const val MAX_MOOV_BYTES = 32 * 1024 * 1024
+
+    /** 判断是否形似 LRC 行首时间戳。 */
+    private val LRC_TAG = Regex("""(?m)^\s*\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?]""")
 
     /**
      * 读取 [path] 的音频元数据；不支持、损坏或 IO 失败一律返回 null。
@@ -42,7 +60,14 @@ internal object AudioMetadataReader {
             val head = ByteArray(minOf(HEAD_BYTES.toLong(), raf.length()).toInt())
             raf.seek(0)
             if (raf.read(head) < 4) return null
-            dispatch(raf, head)
+            val info = dispatch(raf, head)
+            // APE 标签在不少 MP3 / FLAC 里单独承载歌词（`Lyrics` 项），且位于文件尾。
+            // 各格式自己的歌词读取失败时兜到这里，避免「同一首歌换个封装就读不到词」。
+            if (info != null && info.lyrics.isNullOrBlank()) {
+                info.copy(lyrics = readApeLyrics(raf))
+            } else {
+                info
+            }
         }
     }.getOrNull()
 
@@ -50,8 +75,8 @@ internal object AudioMetadataReader {
         if (head.size >= 4 && head[0] == 'I'.code.toByte() && head[1] == 'D'.code.toByte() &&
             head[2] == '3'.code.toByte()
         ) return readMp3(raf, head)
-        if (isAscii(head, 0, "fLaC")) return readFlac(head)
-        if (isAscii(head, 0, "OggS")) return readOgg(raf, head)
+        if (isAscii(head, 0, "fLaC")) return readFlac(raf)
+        if (isAscii(head, 0, "OggS")) return readOgg(raf)
         if (isAscii(head, 0, "RIFF") && isAscii(head, 8, "WAVE")) return readWav(head)
         // MP4 家族：ftyp 开头，或 moov/wide/free/skip 直接在文件头（少数封装）
         if (isAscii(head, 4, "ftyp") || isAscii(head, 4, "moov") ||
@@ -76,7 +101,10 @@ internal object AudioMetadataReader {
         var hasCover = false
         var lyrics: String? = null
 
-        val tagSize = if (id3Size >= 0) id3Size else parseId3v2(head) { id, text ->
+        // ID3v2 标签可能远大于头部窗口（封面帧在前、歌词帧在后）。按声明长度补齐读取，
+        // 否则 USLT / SYLT 会被静默漏掉 —— 这是「本地歌明明带词却显示无歌词」的主因之一。
+        val tagData = if (id3Size >= 0) head else readId3Tag(raf, head) ?: head
+        val tagSize = if (id3Size >= 0) id3Size else parseId3v2(tagData) { id, text ->
             when (id) {
                 "TIT2" -> if (title == null) title = text
                 "TPE1" -> if (artist == null) artist = text
@@ -86,7 +114,7 @@ internal object AudioMetadataReader {
                 "TYER", "TDRC" -> if (year == null) year = text.take(4).toIntOrNull()
                 "TRCK" -> if (track == null) track = text.substringBefore('/').toIntOrNull()
                 "TPOS" -> if (disc == null) disc = text.substringBefore('/').toIntOrNull()
-                "USLT" -> if (lyrics == null) lyrics = text.takeIf { it.isNotBlank() }
+                "USLT", "SYLT" -> if (lyrics == null) lyrics = text.takeIf { it.isNotBlank() }
             }
             if (id == "APIC") hasCover = true
         }
@@ -169,12 +197,105 @@ internal object AudioMetadataReader {
             val text = when (id) {
                 "APIC" -> ""
                 "USLT" -> decodeId3Uslt(head, dataStart, frameSize)
+                "SYLT" -> decodeId3Sylt(head, dataStart, frameSize)
                 else -> decodeId3Text(head, dataStart, frameSize)
             }
             onFrame(id, text)
             pos = dataStart + frameSize
         }
         return size
+    }
+
+    /**
+     * 按标签头声明的长度把整个 ID3v2 标签读进内存。
+     *
+     * @return 至少包含 10 字节标签头的数组；没有标签 / 长度不可信时返回 null
+     */
+    private fun readId3Tag(raf: RandomAccessFile, head: ByteArray): ByteArray? {
+        if (head.size < 10) return null
+        if (head[0] != 'I'.code.toByte() || head[1] != 'D'.code.toByte() || head[2] != '3'.code.toByte()) return null
+        val size = syncsafe(head, 6)
+        if (size <= 0) return null
+        val total = (10L + size).coerceAtMost(MAX_ID3_BYTES.toLong()).coerceAtMost(raf.length())
+        if (total <= head.size) return head
+        return ByteArray(total.toInt()).also {
+            raf.seek(0)
+            raf.readFully(it)
+        }
+    }
+
+    /**
+     * ID3 SYLT 同步歌词帧 → LRC 文本。
+     *
+     * 帧结构：encoding(1) + language(3) + timeFormat(1) + contentType(1) + descriptor(终止符)
+     * + 重复的 `text(终止符) + time(4B BE)`。timeFormat=1 表示 MPEG 帧号（无法脱离码流换算），
+     * 这类帧不能可靠还原，直接跳过 —— 读错时间比没有歌词更糟。
+     */
+    private fun decodeId3Sylt(data: ByteArray, start: Int, size: Int): String {
+        if (size <= 6) return ""
+        val encoding = data[start].toInt() and 0xFF
+        val end = start + size
+        var p = start + 4
+        val timeFormat = data[p++].toInt() and 0xFF
+        p++ // contentType
+        if (timeFormat != 2) return ""
+        // 跳过 descriptor
+        if (encoding == 1 || encoding == 2) {
+            while (p + 1 < end) {
+                if (data[p] == 0.toByte() && data[p + 1] == 0.toByte()) { p += 2; break }
+                p += 2
+            }
+        } else {
+            while (p < end) {
+                if (data[p] == 0.toByte()) { p++; break }
+                p++
+            }
+        }
+        val out = StringBuilder()
+        while (p < end) {
+            val textStart = p
+            if (encoding == 1 || encoding == 2) {
+                while (p + 1 < end) {
+                    if (data[p] == 0.toByte() && data[p + 1] == 0.toByte()) break
+                    p += 2
+                }
+                if (p + 2 > end) break
+            } else {
+                while (p < end && data[p] != 0.toByte()) p++
+                if (p >= end) break
+            }
+            val text = decodeId3Bytes(data, textStart, p, encoding)
+            p += if (encoding == 1 || encoding == 2) 2 else 1
+            if (p + 4 > end) break
+            val time = be32(data, p)
+            p += 4
+            if (text.isBlank()) continue
+            out.append('[')
+                .append((time / 60_000).toString().padStart(2, '0')).append(':')
+                .append((time / 1_000 % 60).toString().padStart(2, '0')).append('.')
+                .append((time % 1_000 / 10).toString().padStart(2, '0'))
+                .append(']').append(text.replace('\n', ' ')).append('\n')
+        }
+        return out.toString().trim()
+    }
+
+    private fun decodeId3Bytes(data: ByteArray, from: Int, to: Int, encoding: Int): String {
+        if (to <= from) return ""
+        val raw = data.copyOfRange(from, to)
+        return runCatching {
+            when (encoding) {
+                1 -> {
+                    if (raw.size < 2) ""
+                    else {
+                        val le = raw[0] == 0xFF.toByte() && raw[1] == 0xFE.toByte()
+                        String(raw, 2, raw.size - 2, if (le) Charsets.UTF_16LE else Charsets.UTF_16BE)
+                    }
+                }
+                2 -> String(raw, Charsets.UTF_16BE)
+                3 -> String(raw, Charsets.UTF_8)
+                else -> String(raw, Charsets.ISO_8859_1)
+            }.trim().trim('\u0000')
+        }.getOrDefault("")
     }
 
     /** ID3 USLT 未同步歌词帧：encoding(1) + language(3) + descriptor(null terminated) + lyrics */
@@ -361,7 +482,7 @@ internal object AudioMetadataReader {
 
     // ==================== FLAC ====================
 
-    private fun readFlac(head: ByteArray): AudioTagInfo? {
+    private fun readFlac(raf: RandomAccessFile): AudioTagInfo? {
         var durationMs = 0L
         var sampleRate: Int? = null
         var bitDepth: Int? = null
@@ -377,32 +498,45 @@ internal object AudioMetadataReader {
         var disc: Int? = null
         var lyrics: String? = null
 
-        var offset = 4 // 跳过 "fLaC"
+        // 元数据块按声明长度**逐个读**，而不是在 96KB 头部窗口里找。
+        // 一张 1000×1000 的 PICTURE 就有数百 KB，排在它后面的 VORBIS_COMMENT（歌词所在）
+        // 会整个落在窗口之外 —— 直接后果是「文件里明明有 LYRICS 标签，应用读不到」。
+        var pos = 4L // 跳过 "fLaC"
         var guard = 0
-        while (offset + 4 <= head.size && guard++ < 64) {
-            val blockType = head[offset].toInt() and 0x7F
-            val isLast = head[offset].toInt() and 0x80 != 0
-            val length = (head[offset + 1].toInt() and 0xFF shl 16) or
-                (head[offset + 2].toInt() and 0xFF shl 8) or
-                (head[offset + 3].toInt() and 0xFF)
-            val contentStart = offset + 4
-            val contentEnd = minOf(contentStart + length, head.size)
-            if (length <= 0 || contentEnd <= contentStart) break
+        val fileSize = raf.length()
+        while (pos + 4 <= fileSize && guard++ < 64) {
+            val header = ByteArray(4)
+            raf.seek(pos)
+            if (raf.read(header) != 4) break
+            val blockType = header[0].toInt() and 0x7F
+            val isLast = header[0].toInt() and 0x80 != 0
+            val length = (header[1].toInt() and 0xFF shl 16) or
+                (header[2].toInt() and 0xFF shl 8) or
+                (header[3].toInt() and 0xFF)
+            if (length <= 0) break
+            val contentStart = pos + 4
+            if (contentStart + length > fileSize) break
+            // 只为解析所必需的两个块把内容读进来；封面等大块直接跳过。
+            val content = if (blockType == 0 || blockType == 4) {
+                ByteArray(length).also { raf.seek(contentStart); raf.readFully(it) }
+            } else null
 
             when (blockType) {
                 0 -> { // STREAMINFO
-                    if (contentEnd - contentStart >= 18) {
-                        sampleRate = bits(head, contentStart + 10, 0, 20).toInt()
-                        channels = bits(head, contentStart + 10, 20, 3).toInt() + 1
-                        bitDepth = bits(head, contentStart + 10, 23, 5).toInt() + 1
-                        val totalSamples = bits(head, contentStart + 10, 28, 36)
+                    val data = content
+                    if (data != null && data.size >= 18) {
+                        sampleRate = bits(data, 10, 0, 20).toInt()
+                        channels = bits(data, 10, 20, 3).toInt() + 1
+                        bitDepth = bits(data, 10, 23, 5).toInt() + 1
+                        val totalSamples = bits(data, 10, 28, 36)
                         if (sampleRate > 0 && totalSamples > 0) {
                             durationMs = totalSamples * 1000L / sampleRate
                         }
                     }
                 }
                 4 -> { // VORBIS_COMMENT
-                    val comments = parseVorbisComments(head, contentStart, contentEnd)
+                    val data = content ?: break
+                    val comments = parseVorbisComments(data, 0, data.size)
                     title = comments["TITLE"]
                     artist = comments["ARTIST"]
                     album = comments["ALBUM"]
@@ -412,12 +546,12 @@ internal object AudioMetadataReader {
                         ?: comments["YEAR"]?.take(4)?.toIntOrNull()
                     track = comments["TRACKNUMBER"]?.substringBefore('/')?.toIntOrNull()
                     disc = comments["DISCNUMBER"]?.substringBefore('/')?.toIntOrNull()
-                    lyrics = comments["LYRICS"] ?: comments["UNSYNCEDLYRICS"]
+                    lyrics = pickLyrics(comments)
                 }
                 6 -> hasCover = true // PICTURE
             }
             if (isLast) break
-            offset = contentEnd
+            pos = contentStart + length
         }
 
         return AudioTagInfo(
@@ -459,7 +593,7 @@ internal object AudioMetadataReader {
     // ==================== MP4 / M4A ====================
 
     private fun readMp4(raf: RandomAccessFile): AudioTagInfo? {
-        val moov = findTopAtom(raf, "moov", 8 * 1024 * 1024) ?: return null
+        val moov = findTopAtom(raf, "moov", MAX_MOOV_BYTES) ?: return null
         var durationMs = 0L
         var title: String? = null
         var artist: String? = null
@@ -472,8 +606,13 @@ internal object AudioMetadataReader {
         var hasCover = false
         var lyrics: String? = null
 
+        // `moov` 的字节里第一个原子就是它自己的 8 字节头，子原子从第 8 字节开始。
+        // 从 0 找会把 `moov` 自己当成第一个子项，后面全部错位 —— 表现为时长与所有
+        // `udta/meta/ilst` 标签都读不到。
+        val moovContent = 8
+
         // mvhd：时长
-        val mvhd = childAtom(moov, 0, moov.size, "mvhd")
+        val mvhd = childAtom(moov, moovContent, moov.size, "mvhd")
         if (mvhd != null) {
             val (start, end) = mvhd
             if (end - start >= 20) {
@@ -493,9 +632,18 @@ internal object AudioMetadataReader {
         }
 
         // udta > meta > ilst
-        val udta = childAtom(moov, 0, moov.size, "udta")
-        val meta = udta?.let { childAtom(moov, it.first, it.second, "meta") }
-        val ilst = meta?.let { childAtom(moov, it.first, it.second, "ilst") }
+        val udta = childAtom(moov, moovContent, moov.size, "udta")
+        // 少数封装把 `meta` 直接挂在 `moov` 下（不是 `udta > meta`），两条路都试。
+        val meta = udta?.let { (start, end) -> childAtom(moov, start, end, "meta") }
+            ?: childAtom(moov, moovContent, moov.size, "meta")
+        // `meta` 是 **full box**：内容开头还有 4 字节 version/flags。
+        // 不跳过它们，childAtom 会把 0 当成原子长度直接返回 null ——
+        // 结果是所有标准 m4a 的内嵌歌词都读不到（`©lyr` 永远为 null）。
+        val metaContent = meta?.let { (start, end) ->
+            val contentStart = start + 4
+            if (contentStart < end) contentStart to end else null
+        }
+        val ilst = metaContent?.let { (start, end) -> childAtom(moov, start, end, "ilst") }
         if (ilst != null) {
             var pos = ilst.first
             val end = ilst.second
@@ -508,16 +656,27 @@ internal object AudioMetadataReader {
                 val data = childAtom(moov, pos + 8, itemEnd, "data")
                 if (data != null) {
                     // data 原子：8B 头 + 4B type indicator + 4B locale，之后才是值
+                    val dataType = if (data.first + 4 <= data.second) be32(moov, data.first) else 0
                     val valueStart = minOf(data.first + 8, data.second)
                     val value = moov.copyOfRange(valueStart, data.second)
+                    val text = when (dataType) {
+                        // 1 = UTF-8，2 = UTF-16BE；部分工具写 0（隐式 UTF-8）
+                        2 -> String(value, Charsets.UTF_16BE)
+                        else -> String(value, Charsets.UTF_8)
+                    }.trim().trim('\u0000')
                     when (type) {
-                        "\u00A9nam" -> title = String(value, Charsets.UTF_8)
-                        "\u00A9ART" -> artist = String(value, Charsets.UTF_8)
-                        "\u00A9alb" -> album = String(value, Charsets.UTF_8)
-                        "aART" -> albumArtist = String(value, Charsets.UTF_8)
-                        "\u00A9gen" -> genre = normalizeGenre(String(value, Charsets.UTF_8))
-                        "\u00A9day" -> year = String(value, Charsets.UTF_8).take(4).toIntOrNull()
-                        "\u00A9lyr" -> lyrics = String(value, Charsets.UTF_8).trim()
+                        "\u00A9nam" -> title = text
+                        "\u00A9ART" -> artist = text
+                        "\u00A9alb" -> album = text
+                        "aART" -> albumArtist = text
+                        "\u00A9gen" -> genre = normalizeGenre(text)
+                        "\u00A9day" -> year = text.take(4).toIntOrNull()
+                        // 歌词除了 `©lyr`，还有 `©LYR`（大小写变体）与 `lyr `。
+                        "\u00A9lyr", "\u00A9LYR", "lyr " -> lyrics = text.takeIf { it.isNotBlank() }
+                        "\u00A9cmt", "desc" -> if (lyrics == null && text.contains('[')) {
+                            // 少数工具把 LRC 塞进注释；只在形似 LRC 时采用，避免把普通注释当歌词。
+                            lyrics = text.takeIf { LRC_TAG.containsMatchIn(it) }
+                        }
                         "covr" -> hasCover = true
                         "trkn" -> if (value.size >= 4) {
                             track = ((value[2].toInt() and 0xFF shl 8) or (value[3].toInt() and 0xFF))
@@ -593,9 +752,11 @@ internal object AudioMetadataReader {
 
     // ==================== OGG / Opus ====================
 
-    private fun readOgg(raf: RandomAccessFile, head: ByteArray): AudioTagInfo? {
-        // 头部页面里拼出前两个 packet：识别头 + 注释头
-        val packets = readOggPackets(head, 0, head.size, maxPackets = 2)
+    private fun readOgg(raf: RandomAccessFile): AudioTagInfo? {
+        // 前两个 packet（识别头 + 注释头）按**页**流式读：
+        // 注释 packet 可能跨页，封面的 BASE64（METADATA_BLOCK_PICTURE）经常几 MB，
+        // 只读 96KB 头部窗口会把排在封面之后的 LYRICS 截掉。
+        val packets = readOggPackets(raf, maxPackets = 2)
         if (packets.isEmpty()) return null
 
         val first = packets[0]
@@ -647,7 +808,7 @@ internal object AudioMetadataReader {
             year = comments["DATE"]?.take(4)?.toIntOrNull()
             track = comments["TRACKNUMBER"]?.substringBefore('/')?.toIntOrNull()
             disc = comments["DISCNUMBER"]?.substringBefore('/')?.toIntOrNull()
-            lyrics = comments["LYRICS"] ?: comments["UNSYNCEDLYRICS"]
+            lyrics = pickLyrics(comments)
         }
 
         // 时长：最后一个页面的 granule position（Opus 恒按 48kHz 计）
@@ -671,29 +832,37 @@ internal object AudioMetadataReader {
     }
 
     /** 从 OGG 页面流里拼出前 [maxPackets] 个 packet（跨页拼接）。 */
-    private fun readOggPackets(data: ByteArray, from: Int, to: Int, maxPackets: Int): List<ByteArray> {
+    private fun readOggPackets(raf: RandomAccessFile, maxPackets: Int): List<ByteArray> {
         val out = ArrayList<ByteArray>(maxPackets)
         val current = ArrayList<Byte>(4096)
-        var pos = from
+        var pos = 0L
+        val fileSize = raf.length()
         var guard = 0
-        while (pos + 27 <= to && out.size < maxPackets && guard++ < 256) {
-            if (readAscii(data, pos, 4) != "OggS") break
-            val segmentCount = data[pos + 26].toInt() and 0xFF
-            val tableStart = pos + 27
-            if (tableStart + segmentCount > to) break
+        val header = ByteArray(27)
+        while (pos + 27 <= fileSize && out.size < maxPackets && guard++ < MAX_OGG_PAGES) {
+            raf.seek(pos)
+            if (raf.read(header) != 27) break
+            if (readAscii(header, 0, 4) != "OggS") break
+            val segmentCount = header[26].toInt() and 0xFF
+            val table = ByteArray(segmentCount)
+            if (segmentCount > 0 && raf.read(table) != segmentCount) break
+            var pageSize = 27 + segmentCount
+            for (i in 0 until segmentCount) pageSize += table[i].toInt() and 0xFF
+            // 整页数据一次读入：同一页里可能有多个 packet，逐段 seek 会算错偏移。
+            val page = ByteArray(pageSize - 27 - segmentCount)
+            if (page.isNotEmpty() && raf.read(page) != page.size) break
+            var cursor = 0
             for (i in 0 until segmentCount) {
-                val segLen = data[tableStart + i].toInt() and 0xFF
-                val start = tableStart + segmentCount + current.size
-                val end = minOf(start + segLen, to)
-                for (b in start until end) current.add(data[b])
+                val segLen = table[i].toInt() and 0xFF
+                val end = minOf(cursor + segLen, page.size)
+                for (j in cursor until end) current.add(page[j])
+                cursor = end
                 if (segLen < 255) { // 小于 255 表示该 packet 在此结束
                     out.add(current.toByteArray())
                     current.clear()
                     if (out.size >= maxPackets) break
                 }
             }
-            var pageSize = 27 + segmentCount
-            for (i in 0 until segmentCount) pageSize += data[tableStart + i].toInt() and 0xFF
             pos += pageSize
         }
         return out
@@ -764,6 +933,75 @@ internal object AudioMetadataReader {
     }
 
     // ==================== 工具 ====================
+
+    /**
+     * Vorbis Comment / MP4 ilst 里的歌词字段。
+     *
+     * 不同打标工具的字段名不统一：`LYRICS` 最常见，`UNSYNCEDLYRICS` / `SYNCEDLYRICS`
+     * 也都有实际文件在用。逐个尝试比只认一个的命中率高得多。
+     */
+    private fun pickLyrics(comments: Map<String, String>): String? =
+        listOf("LYRICS", "UNSYNCEDLYRICS", "UNSYNCED LYRICS", "SYNCEDLYRICS", "LYRIC")
+            .firstNotNullOfOrNull { comments[it]?.takeIf { text -> text.isNotBlank() } }
+
+    /**
+     * 读取文件尾的 APE 标签（`APETAGEX`）里的歌词项。
+     *
+     * MP3 常同时带 ID3 与 APE 两套标签；不少打标工具只写 APE 的 `Lyrics`，
+     * 于是「ID3 里没有 USLT」被误判成「这首歌没有内嵌歌词」。
+     */
+    private fun readApeLyrics(raf: RandomAccessFile): String? = runCatching {
+        val fileSize = raf.length()
+        if (fileSize < 64) return@runCatching null
+        // 页脚 32 字节：preamble(8) version(4) size(4) itemCount(4) flags(4) reserved(8)
+        val footerSize = 32
+        // APE 标签后可能还跟着 128 字节 ID3v1；两种落点都试。
+        val footerStarts = listOf(fileSize - footerSize, fileSize - 128 - footerSize)
+        var footerAt = -1L
+        var footer: ByteArray? = null
+        for (start in footerStarts) {
+            if (start < 0) continue
+            val candidate = ByteArray(footerSize)
+            raf.seek(start)
+            if (raf.read(candidate) != footerSize) continue
+            if (readAscii(candidate, 0, 8) == "APETAGEX") {
+                footerAt = start
+                footer = candidate
+                break
+            }
+        }
+        val foot = footer ?: return@runCatching null
+        val size = le32(foot, 12)
+        if (size <= 0 || size > 16 * 1024 * 1024) return@runCatching null
+        // tags size 含 footer 与 items，不含 header
+        val bodySize = (size - footerSize).coerceAtLeast(0)
+        if (bodySize <= 0 || bodySize > fileSize) return@runCatching null
+        val body = ByteArray(bodySize)
+        raf.seek(footerAt - bodySize)
+        if (raf.read(body) != bodySize) return@runCatching null
+        var p = 0
+        while (p + 8 <= body.size) {
+            val valueSize = le32(body, p)
+            p += 4
+            var flags = 0
+            for (k in 0 until 4) flags = flags or ((body[p + k].toInt() and 0xFF) shl (8 * k))
+            p += 4
+            if (valueSize <= 0 || p + valueSize > body.size) break
+            var keyEnd = p
+            while (keyEnd < p + valueSize && body[keyEnd] != 0.toByte()) keyEnd++
+            if (keyEnd >= p + valueSize) break
+            val key = String(body, p, keyEnd - p, Charsets.ISO_8859_1).lowercase()
+            val valueStart = keyEnd + 1
+            if (key in APE_LYRIC_KEYS && valueStart < p + valueSize) {
+                return@runCatching String(body, valueStart, p + valueSize - valueStart, Charsets.UTF_8)
+                    .trim().trim('\u0000').takeIf { it.isNotBlank() }
+            }
+            p += valueSize
+        }
+        null
+    }.getOrNull()
+
+    private val APE_LYRIC_KEYS = setOf("lyrics", "unsyncedlyrics", "syncedlyrics", "lyric")
 
     /**
      * 流派归一化：ID3v1 的数字索引（`(17)`、`17`）要还原成文字，

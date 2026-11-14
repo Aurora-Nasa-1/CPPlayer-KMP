@@ -1,6 +1,7 @@
 package cp.player.core.lyrics
 
 import cp.player.core.api.AmllTtmlClient
+import cp.player.core.api.LrclibLyricsClient
 import cp.player.core.api.LyricsSourceMode
 import cp.player.core.lyricsplugin.LyricsPluginService
 import cp.player.core.lyricsplugin.LyricsPluginSourceInfo
@@ -72,6 +73,7 @@ class LyricsSourceRegistryTest {
         mode: LyricsSourceMode? = null,
         plugins: List<LyricsPluginSourceInfo> = emptyList(),
         withAmll: Boolean = true,
+        withLrclib: Boolean = true,
     ): FileLyricsSourceRegistry {
         val settings = MemorySettings().apply {
             mode?.let { putString(LyricsSourceMode.SETTINGS_KEY, it.key) }
@@ -79,6 +81,7 @@ class LyricsSourceRegistryTest {
         return FileLyricsSourceRegistry(
             rootDir = root,
             plugins = FakePlugins(plugins),            amllClient = if (withAmll) FakeAmll else null,
+            lrclibClient = if (withLrclib) FakeLrclib else null,
             legacySettings = settings,
         )
     }
@@ -91,11 +94,12 @@ class LyricsSourceRegistryTest {
                 BuiltinLyricsSourceIds.SIDECAR,
                 BuiltinLyricsSourceIds.EMBEDDED,
                 BuiltinLyricsSourceIds.AMLL,
+                BuiltinLyricsSourceIds.LRCLIB,
                 BuiltinLyricsSourceIds.PROVIDER,
             ),
             r.allSources().map { it.id },
         )
-        // 默认档下四条来源全部启用。
+        // 默认档下五条内置来源全部启用。
         assertTrue(r.allSources().all { it.enabled })
     }
 
@@ -111,7 +115,12 @@ class LyricsSourceRegistryTest {
         )
         assertEquals(false, byId[BuiltinLyricsSourceIds.AMLL]!!.enabled)
         assertEquals(
-            listOf(BuiltinLyricsSourceIds.SIDECAR, BuiltinLyricsSourceIds.EMBEDDED, BuiltinLyricsSourceIds.PROVIDER),
+            listOf(
+                BuiltinLyricsSourceIds.SIDECAR,
+                BuiltinLyricsSourceIds.EMBEDDED,
+                BuiltinLyricsSourceIds.LRCLIB,
+                BuiltinLyricsSourceIds.PROVIDER,
+            ),
             r.orderedSources().map { it.id },
             "取词顺序里不该出现被停用的 AMLL",
         )
@@ -143,6 +152,7 @@ class LyricsSourceRegistryTest {
                 BuiltinLyricsSourceIds.SIDECAR,
                 BuiltinLyricsSourceIds.EMBEDDED,
                 BuiltinLyricsSourceIds.AMLL,
+                BuiltinLyricsSourceIds.LRCLIB,
                 BuiltinLyricsSourceIds.PROVIDER,
                 "p1",
                 "p2",
@@ -177,6 +187,7 @@ class LyricsSourceRegistryTest {
                 BuiltinLyricsSourceIds.SIDECAR,
                 BuiltinLyricsSourceIds.EMBEDDED,
                 BuiltinLyricsSourceIds.AMLL,
+                BuiltinLyricsSourceIds.LRCLIB,
             ),
             r2.allSources().map { it.id },
             "已有 sources.json 时不得再次迁移（未被列入的内置源追加在末尾）",
@@ -202,7 +213,12 @@ class LyricsSourceRegistryTest {
         val r = registry(tempDir(), mode = LyricsSourceMode.AMLL_FIRST)
         r.setEnabled(BuiltinLyricsSourceIds.AMLL, false)
         assertEquals(
-            listOf(BuiltinLyricsSourceIds.SIDECAR, BuiltinLyricsSourceIds.EMBEDDED, BuiltinLyricsSourceIds.PROVIDER),
+            listOf(
+                BuiltinLyricsSourceIds.SIDECAR,
+                BuiltinLyricsSourceIds.EMBEDDED,
+                BuiltinLyricsSourceIds.LRCLIB,
+                BuiltinLyricsSourceIds.PROVIDER,
+            ),
             r.orderedSources().map { it.id },
         )
         r.setEnabled(BuiltinLyricsSourceIds.AMLL, true)
@@ -213,7 +229,7 @@ class LyricsSourceRegistryTest {
     fun `builtin sources are never removable`() = runBlocking {
         val r = registry(tempDir(), mode = LyricsSourceMode.AMLL_FIRST)
         val builtins = r.allSources().filter { it.bundled }
-        assertEquals(4, builtins.size)
+        assertEquals(5, builtins.size)
         assertTrue(builtins.none { it.removable }, "内置来源不可删除")
     }
 
@@ -222,7 +238,13 @@ class LyricsSourceRegistryTest {
         val r = registry(tempDir(), mode = LyricsSourceMode.AMLL_FIRST)
         r.setOrder(listOf("nonexistent", BuiltinLyricsSourceIds.PROVIDER))
         assertEquals(
-            listOf(BuiltinLyricsSourceIds.PROVIDER, BuiltinLyricsSourceIds.SIDECAR, BuiltinLyricsSourceIds.EMBEDDED, BuiltinLyricsSourceIds.AMLL),
+            listOf(
+                BuiltinLyricsSourceIds.PROVIDER,
+                BuiltinLyricsSourceIds.SIDECAR,
+                BuiltinLyricsSourceIds.EMBEDDED,
+                BuiltinLyricsSourceIds.AMLL,
+                BuiltinLyricsSourceIds.LRCLIB,
+            ),
             r.allSources().map { it.id },
         )
     }
@@ -234,6 +256,7 @@ class LyricsSourceRegistryTest {
             rootDir = tempDir(),
             plugins = fakePlugins,
             amllClient = FakeAmll,
+            lrclibClient = FakeLrclib,
             legacySettings = MemorySettings(),
         )
         assertEquals(false, r.allSources().any { it.id == "new-plugin" })
@@ -246,7 +269,12 @@ class LyricsSourceRegistryTest {
     fun `without amll client the amll source is absent`() = runBlocking {
         val r = registry(tempDir(), mode = LyricsSourceMode.AMLL_FIRST, withAmll = false)
         assertEquals(
-            listOf(BuiltinLyricsSourceIds.SIDECAR, BuiltinLyricsSourceIds.EMBEDDED, BuiltinLyricsSourceIds.PROVIDER),
+            listOf(
+                BuiltinLyricsSourceIds.SIDECAR,
+                BuiltinLyricsSourceIds.EMBEDDED,
+                BuiltinLyricsSourceIds.LRCLIB,
+                BuiltinLyricsSourceIds.PROVIDER,
+            ),
             r.allSources().map { it.id },
         )
     }
@@ -254,5 +282,6 @@ class LyricsSourceRegistryTest {
     private companion object {
         /** 迁移与排序都不需要真正联网，用最小可构造实例。 */
         val FakeAmll: AmllTtmlClient = AmllTtmlClient()
+        val FakeLrclib: LrclibLyricsClient = LrclibLyricsClient()
     }
 }

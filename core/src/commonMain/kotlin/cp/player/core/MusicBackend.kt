@@ -297,6 +297,9 @@ class MusicBackend private constructor(
      */
     private val amllClientLazy = lazy { AmllTtmlClient() }
 
+    /** LrcLib 兼容歌词（与 AMLL 同域）：TTML 未命中时提供行级同步词。同样需要显式关闭。 */
+    private val lrclibClientLazy = lazy { cp.player.core.api.LrclibLyricsClient() }
+
     /** 歌曲缓存（无损流落盘）的管理句柄：占用概览 + 条目列表 + 删除 / 清理。 */
     val songCache: StreamLocalizer by streamLocalizerLazy
 
@@ -463,6 +466,7 @@ class MusicBackend private constructor(
             context = context,
             plugins = lyricsPlugins,
             amllClient = amllClientLazy.value,
+            lrclibClient = lrclibClientLazy.value,
             legacySettings = settings,
             unifiedSource = unifiedSource,
         )
@@ -1043,6 +1047,7 @@ class MusicBackend private constructor(
         // AMLL 歌词客户端同样持有 Ktor 客户端。仅当真装配过时才关 —— 否则 reset 会反向触发
         // 它的惰性创建（平白多一个请求 + 多一个连接池）。
         if (amllClientLazy.isInitialized()) runCatching { amllClientLazy.value.close() }
+        if (lrclibClientLazy.isInitialized()) runCatching { lrclibClientLazy.value.close() }
         // 歌词投放：true 时会解除渠道注册（词幕 unregister / SuperLyric 反注册 /
         // 收起超级岛与实时活动）。未装配过就不碰，避免反向触发惰性创建。
         if (lyricPusherLazy.isInitialized()) runCatching { lyricPusherLazy.value.close() }

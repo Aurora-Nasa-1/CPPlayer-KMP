@@ -94,6 +94,7 @@ expect fun createLyricsSourceRegistry(
     context: cp.player.core.util.PlatformContext,
     plugins: cp.player.core.lyricsplugin.LyricsPluginService,
     amllClient: cp.player.core.api.AmllTtmlClient?,
+    lrclibClient: cp.player.core.api.LrclibLyricsClient? = null,
     legacySettings: cp.player.core.util.SettingsStorage? = null,
     unifiedSource: cp.player.core.music.UnifiedMusicSource? = null,
 ): LyricsSourceRegistry

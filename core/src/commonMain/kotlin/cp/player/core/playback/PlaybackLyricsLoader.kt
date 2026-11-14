@@ -182,6 +182,7 @@ internal class PlaybackLyricsLoader(
             name = sanitized.title.ifBlank { null },
             artist = sanitized.artist.ifBlank { null },
             album = summary?.album?.ifBlank { null },
+            durationMs = summary?.durationMs ?: 0L,
         ) ?: return null
         val lines = LyricsParser.parseTtml(ttml)
         if (lines.isEmpty()) return null

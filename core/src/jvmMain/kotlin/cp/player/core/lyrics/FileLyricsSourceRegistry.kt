@@ -1,6 +1,7 @@
 package cp.player.core.lyrics
 
 import cp.player.core.api.AmllTtmlClient
+import cp.player.core.api.LrclibLyricsClient
 import cp.player.core.api.LyricsSourceMode
 import cp.player.core.lyricsplugin.LyricsPluginService
 import cp.player.core.util.SettingsStorage
@@ -29,6 +30,8 @@ class FileLyricsSourceRegistry(
     private val rootDir: File,
     private val plugins: LyricsPluginService,
     private val amllClient: AmllTtmlClient?,
+    /** LrcLib 兼容客户端；null 表示不提供该来源。 */
+    private val lrclibClient: LrclibLyricsClient? = null,
     /** 旧设置读取器：只在迁移时用（`lyrics_source_mode`）。 */
     private val legacySettings: SettingsStorage? = null,
     private val unifiedSource: cp.player.core.music.UnifiedMusicSource? = null,
@@ -62,6 +65,7 @@ class FileLyricsSourceRegistry(
             add(SidecarLyricsSource())
             add(EmbeddedLyricsSource())
             amllClient?.let { add(AmllLyricsSource(it)) }
+            lrclibClient?.let { add(LrclibLyricsSource(it)) }
             // 恒定在册：没有 unifiedSource 时它只会返回 null，UI 也能解释「为什么没词」
             add(ProviderLyricsSource(unifiedSource))
         }

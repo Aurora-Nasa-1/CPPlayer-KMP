@@ -1,6 +1,7 @@
 package cp.player.core.lyrics
 
 import cp.player.core.api.AmllTtmlClient
+import cp.player.core.api.LrclibLyricsClient
 import cp.player.core.api.amllPlatformFor
 import cp.player.core.music.TrackLyrics
 import cp.player.core.music.UnifiedMusicSource
@@ -21,6 +22,7 @@ import cp.player.core.playback.SyncedLyricLine
  * |---|---|---|
  * | [SidecarLyricsSource] | `SidecarLyrics.load()`（仅本地曲） | 同目录同名 `.lrc/.ttml/.elrc` 解析出行 |
  * | [AmllLyricsSource] | `fetchFromAmll()` | AMLL 返回 TTML 且解析出行 |
+ * | [LrclibLyricsSource] | 无（新增） | TTML 未命中时取 LrcLib 兼容接口的 LRC |
  * | [ProviderLyricsSource] | `unifiedSource.getLyrics()` + `LyricsParser.parse` | 解析出行 |
  */
 
@@ -99,6 +101,42 @@ internal class AmllLyricsSource(
             durationMs = request.durationMs,
         ) ?: return null
         val lines = LyricsParser.parseTtml(ttml)
+        if (lines.isEmpty()) return null
+        return LyricsSourceResult(lines = lines)
+    }
+}
+
+/**
+ * LrcLib 兼容来源（`api.amll.dev/v1/lrclib`，与 AMLL 同域）。
+ *
+ * ### 为什么单独成源而不是并进 [AmllLyricsSource]
+ * 两者是**不同的词库语义**：AMLL 只收逐字 TTML，LrcLib 收行级 LRC。合并会让用户在
+ * 「AMLL 有逐字词但版本不对」时既无法跳过 TTML、也无法单独停用行级兜底。
+ *
+ * 默认顺序排在 AMLL **之后**、音源之前：先拿最好的逐字词，拿不到再要行级词。
+ * 它是纯文本来源，本仓的智能逐字（SmartKaraoke）仍然可以在这之上工作。
+ */
+internal class LrclibLyricsSource(
+    private val client: LrclibLyricsClient,
+) : LyricsSource {
+    override val id = BuiltinLyricsSourceIds.LRCLIB
+    override val name = "LrcLib"
+    override val bundled = true
+    override val localizeName = true
+
+    override val capabilities = setOf(
+        LyricsCapability.GET_LYRICS,
+        LyricsCapability.SEARCH_SONGS,
+    )
+
+    override suspend fun fetch(request: LyricsRequest): LyricsSourceResult? {
+        val lrc = client.fetchSyncedLyrics(
+            title = request.title,
+            artist = request.artist.takeIf { it.isNotBlank() },
+            album = request.album.takeIf { it.isNotBlank() },
+            durationMs = request.durationMs,
+        ) ?: return null
+        val lines = LyricsParser.parseText(lrc)
         if (lines.isEmpty()) return null
         return LyricsSourceResult(lines = lines)
     }

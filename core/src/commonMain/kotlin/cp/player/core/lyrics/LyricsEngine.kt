@@ -62,6 +62,7 @@ class LyricsEngine(
     /** 展示用格式标签；与改造前 `fetchFromAmll` / `fetchFromPlugins` 的措辞保持一致。 */
     private fun formatLabelOf(hit: LyricsSourceResult): String = when (hit.sourceId) {
         BuiltinLyricsSourceIds.AMLL -> if (hit.hasWordLevel) "TTML (Karaoke)" else "TTML"
+        BuiltinLyricsSourceIds.LRCLIB -> if (hit.hasWordLevel) "LRC (Karaoke)" else "LRC"
         BuiltinLyricsSourceIds.SIDECAR -> if (hit.hasWordLevel) "Karaoke" else "LRC"
         BuiltinLyricsSourceIds.EMBEDDED -> if (hit.hasWordLevel) "Embedded (Karaoke)" else "Embedded"
         BuiltinLyricsSourceIds.PROVIDER -> if (hit.hasWordLevel) "YRC (Karaoke)" else "LRC"

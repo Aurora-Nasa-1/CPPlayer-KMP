@@ -27,7 +27,7 @@ object LyricsParser {
     fun parseTrackLyrics(lyrics: TrackLyrics, durationMs: Long = 0L): List<SyncedLyricLine> {
         val ttml = lyrics.ttml
         if (!ttml.isNullOrBlank()) {
-            val lines = parseTtml(ttml)
+            val lines = parseTtml(ttml, durationMs)
             if (lines.isNotEmpty()) return finalize(lines)
         }
 
@@ -49,7 +49,7 @@ object LyricsParser {
         val lyricText = LyricsTimeRepair.stripBom(lyricRaw)
 
         if (lyricText.trimStart().startsWith("<tt") || lyricText.trimStart().startsWith("<?xml")) {
-            val lines = parseTtml(lyricText)
+            val lines = parseTtml(lyricText, durationMs)
             if (lines.isNotEmpty()) return finalize(lines)
         }
 
@@ -85,6 +85,12 @@ object LyricsParser {
     fun parseText(raw: String): List<SyncedLyricLine> {
         val text = LyricsTimeRepair.stripBom(raw)
         if (text.isBlank()) return emptyList()
+        // TTML 先走兼容层：AutoParser 只在正文含 `http://www.w3.org/ns/ttml` 时才选它，
+        // 而边车 / 插件导出的 TTML 经常省略命名空间，还会省掉 `p` 的 `end`。
+        if (looksLikeTtml(text)) {
+            val ttml = parseTtml(text)
+            if (ttml.isNotEmpty()) return ttml
+        }
         val parsed = finalize(autoParser.parse(text).toSyncedLyricLines())
         if (parsed.isNotEmpty()) return parsed
         if (LyricsTimeRepair.hasImpossibleSeconds(text)) {
@@ -96,12 +102,48 @@ object LyricsParser {
         return finalize(parseEnhancedLrc(text))
     }
 
+    private fun looksLikeTtml(text: String): Boolean {
+        val head = text.trimStart().take(600)
+        return head.startsWith("<?xml") && head.contains("<tt") ||
+            head.startsWith("<tt") || head.startsWith("<tt:") ||
+            head.contains("<tt ") || head.contains("<tt:tt")
+    }
+
     // ============ Core 委托解析 ============
 
-    internal fun parseTtml(raw: String): List<SyncedLyricLine> {
-        return runCatching {
-            TTMLParser().parse(raw).toSyncedLyricLines()
-        }.getOrDefault(emptyList())
+    /**
+     * 解析 TTML。
+     *
+     * ### 为什么先过 [TtmlCompat]
+     * 歌词库的 `TTMLParser` 只认 Apple Music / AMLL 的标准产出，实测这些**语法合法**的写法
+     * 会整份返回 0 行（播放页于是显示「暂无歌词」）：
+     * - `<p begin="1.0">`（省略 `end`，靠下一行推导）；
+     * - `<p>` 里只有裸文本，没有 `<span>`；
+     * - 时间写成 `1500ms`；
+     * - 数字字符引用 `&#39;`（会原样显示）。
+     *
+     * [TtmlCompat.normalize] 只补结构、不改语义；归一化失败时回退原始文本，
+     * 保证原本能解析的文件行为不变。
+     */
+    internal fun parseTtml(raw: String, durationMs: Long = 0L): List<SyncedLyricLine> {
+        val text = LyricsTimeRepair.stripBom(raw)
+        if (text.isBlank()) return emptyList()
+
+        // ⚠️ 归一化必须排在「直接解析」之前：库能把 `1500ms` 解析成 0ms 并返回非空结果，
+        // 若先信直接解析，兼容层永远不会被执行。归一化失败（不是 TTML / 结构损坏）时才回退原文。
+        val normalized = TtmlCompat.normalize(text, durationMs)
+        if (normalized != null) {
+            val normalizedLines = runCatching {
+                TTMLParser().parse(normalized).toSyncedLyricLines()
+            }.getOrDefault(emptyList())
+            if (normalizedLines.isNotEmpty()) {
+                return TtmlCompat.decodeNumericEntities(normalizedLines)
+            }
+        }
+
+        // 兼容层改坏了某些标准文件的边缘情况时，仍保留原行为；数字实体由后处理补解。
+        val direct = runCatching { TTMLParser().parse(text).toSyncedLyricLines() }.getOrDefault(emptyList())
+        return TtmlCompat.decodeNumericEntities(direct)
     }
 
     internal fun parseYrc(raw: String): List<SyncedLyricLine> {
