@@ -174,6 +174,7 @@ object NativeWireCodec {
             ProviderProtocol.SENDRESOURCEMESSAGE -> (request as ResourceMessageRequest).write(writer)
             ProviderProtocol.GETUSERCOMMENTHISTORY -> (request as UserCursorRequest).write(writer)
             ProviderProtocol.GETLIKELISTPAGE -> (request as PagedIdRequest).write(writer)
+            ProviderProtocol.LIKERESOURCE -> (request as ResourceLikeRequest).write(writer)
             else -> error("Unknown native SDK operation: $operation")
         }
         return writer.finish()
@@ -383,6 +384,7 @@ object NativeWireCodec {
             ProviderProtocol.SENDRESOURCEMESSAGE -> MutationResult.read(reader)
             ProviderProtocol.GETUSERCOMMENTHISTORY -> CommentPage.read(reader)
             ProviderProtocol.GETLIKELISTPAGE -> IdPage.read(reader)
+            ProviderProtocol.LIKERESOURCE -> MutationResult.read(reader)
             else -> error("Unknown native SDK operation: $operation")
         }
         reader.finish()

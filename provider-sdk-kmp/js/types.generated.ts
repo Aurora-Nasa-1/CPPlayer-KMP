@@ -1150,7 +1150,41 @@ export interface CalendarPage {
   readonly items?: CalendarEntry[];
 }
 
-/** Social-feed entry with plain text and typed resource/image references. */
+/** Non-recursive snapshot of the original social event nested in a forward. */
+export interface EventOrigin {
+  /** Opaque, case-sensitive provider-local identity; preserve leading zeros and punctuation. */
+  readonly id: string;
+  /** User attribution. */
+  readonly user: SocialUser;
+  /** Plain text, never an upstream JSON message envelope. */
+  readonly text: string;
+  /** Publication time in Unix epoch milliseconds. */
+  readonly publishedAtEpochMs: number;
+  /** Opaque associated resource identity. */
+  readonly resourceId?: string | null;
+  /** Associated resource kind, not an endpoint path. */
+  readonly resourceType?: string | null;
+  /** Display title of the associated resource snapshot; null means unavailable. */
+  readonly resourceTitle?: string | null;
+  /** Cover image URL for the associated resource snapshot. */
+  readonly resourceCoverUrl?: string | null;
+  /** Secondary display text of the associated resource snapshot, such as artists or a creator; null means unavailable. */
+  readonly resourceSubtitle?: string | null;
+  /** Ordered image URLs. */
+  readonly imageUrls?: string[];
+  /** Explicit desired/current liked state, not a toggle. */
+  readonly liked: boolean;
+  /** Known nonnegative like count. */
+  readonly likedCount: number;
+  /** Known nonnegative top-level comment count. */
+  readonly commentCount: number;
+  /** Known nonnegative forward/share count. */
+  readonly forwardCount: number;
+  /** Optional public location attribution text. */
+  readonly location?: string | null;
+}
+
+/** Social-feed entry with plain text, interaction counters, an optional typed resource snapshot and an optional non-recursive forwarded source. */
 export interface SocialEvent {
   /** Opaque, case-sensitive provider-local identity; preserve leading zeros and punctuation. */
   readonly id: string;
@@ -1164,8 +1198,26 @@ export interface SocialEvent {
   readonly resourceId?: string | null;
   /** Associated resource kind, not an endpoint path. */
   readonly resourceType?: string | null;
+  /** Display title of the associated resource snapshot; null means unavailable. */
+  readonly resourceTitle?: string | null;
+  /** Cover image URL for the associated resource snapshot. */
+  readonly resourceCoverUrl?: string | null;
+  /** Secondary display text of the associated resource snapshot, such as artists or a creator; null means unavailable. */
+  readonly resourceSubtitle?: string | null;
   /** Ordered image URLs. */
   readonly imageUrls?: string[];
+  /** Explicit desired/current liked state, not a toggle. */
+  readonly liked: boolean;
+  /** Known nonnegative like count. */
+  readonly likedCount: number;
+  /** Known nonnegative top-level comment count. */
+  readonly commentCount: number;
+  /** Known nonnegative forward/share count. */
+  readonly forwardCount: number;
+  /** Original social event when this entry is a forward; null means original content. */
+  readonly forwardedFrom?: EventOrigin | null;
+  /** Optional public location attribution text. */
+  readonly location?: string | null;
 }
 
 /** Social events with opaque continuation metadata. */
@@ -1204,6 +1256,16 @@ export interface ForwardEventRequest {
   readonly userId: string;
   /** Plain text, never an upstream JSON message envelope. */
   readonly text: string;
+}
+
+/** Explicit desired liked state for one typed social resource. */
+export interface ResourceLikeRequest {
+  /** Opaque, case-sensitive provider-local identity; preserve leading zeros and punctuation. */
+  readonly id: string;
+  /** Operation-specific discriminator; see the operation and record-specific constraints. */
+  readonly type: string;
+  /** Explicit desired/current liked state, not a toggle. */
+  readonly liked: boolean;
 }
 
 /** Typed resource sharing input with accompanying plain text. */
@@ -1812,7 +1874,8 @@ export type KnownCapability =
   | "media.qualities"
   | "messages.sendResource"
   | "comments.userHistory"
-  | "accounts.likes.page";
+  | "accounts.likes.page"
+  | "social.likeResource";
 
 export interface Tracks {
   /** Search audio tracks using item-offset pagination. Capability: tracks.search. Tag: 2. Undeclared or unimplemented capabilities fail with Unsupported. */
@@ -1983,6 +2046,8 @@ export interface SocialOperations {
   forwardEvent(request: ForwardEventRequest, context: Context): Promise<MutationResult>;
   /** Share a typed resource to the social feed; map resource types in the provider, not in a JSON envelope. Capability: social.share. Tag: 102. Undeclared or unimplemented capabilities fail with Unsupported. */
   shareResource(request: ShareResourceRequest, context: Context): Promise<MutationResult>;
+  /** Set the current account's liked state for one typed social resource, including an event. Capability: social.likeResource. Tag: 167. Undeclared or unimplemented capabilities fail with Unsupported. */
+  likeResource(request: ResourceLikeRequest, context: Context): Promise<MutationResult>;
 }
 
 export interface Messaging {

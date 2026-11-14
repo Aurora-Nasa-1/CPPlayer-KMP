@@ -215,6 +215,8 @@ interface ExtendedOperations {
     suspend fun getUserCommentHistory(request: UserCursorRequest): CommentPage = unsupported()
     /** Page liked track IDs with item offsets and explicit continuation; self addresses the current account. Use this operation for collections larger than 500 IDs. Capability: accounts.likes.page. Tag: 166. Undeclared or unimplemented capabilities fail with Unsupported. */
     suspend fun getLikeListPage(request: PagedIdRequest): IdPage = unsupported()
+    /** Set the current account's liked state for one typed social resource, including an event. Capability: social.likeResource. Tag: 167. Undeclared or unimplemented capabilities fail with Unsupported. */
+    suspend fun likeResource(request: ResourceLikeRequest): MutationResult = unsupported()
 }
 
 object ExtendedCapability {
@@ -324,4 +326,5 @@ object ExtendedCapability {
     const val SENDRESOURCEMESSAGE = "messages.sendResource"
     const val GETUSERCOMMENTHISTORY = "comments.userHistory"
     const val GETLIKELISTPAGE = "accounts.likes.page"
+    const val LIKERESOURCE = "social.likeResource"
 }

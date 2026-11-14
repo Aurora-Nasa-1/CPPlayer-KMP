@@ -1,0 +1,138 @@
+{
+  "protocolVersion": 1,
+  "vectors": [
+    {
+      "name": "SearchRequest",
+      "type": "SearchRequest",
+      "value": {
+        "keyword": "音乐",
+        "limit": 30,
+        "offset": 2
+      },
+      "hex": "06000000e99fb3e4b9901e00000002000000"
+    },
+    {
+      "name": "Track",
+      "type": "Track",
+      "value": {
+        "id": "001",
+        "title": "Track 音乐",
+        "artists": [
+          {
+            "id": null,
+            "name": "Artist"
+          },
+          {
+            "id": "artist-B",
+            "name": "B"
+          }
+        ],
+        "durationMs": 9500,
+        "album": null,
+        "coverUrl": "https://example.test/cover.png"
+      },
+      "hex": "030000003030310c000000547261636b20e99fb3e4b99002000000000600000041727469737401080000006172746973742d4201000000421c2500000000000000011e00000068747470733a2f2f6578616d706c652e746573742f636f7665722e706e67"
+    },
+    {
+      "name": "TrackPage",
+      "type": "TrackPage",
+      "value": {
+        "items": [
+          {
+            "id": "A",
+            "title": "A",
+            "artists": [],
+            "durationMs": 1,
+            "album": null,
+            "coverUrl": null
+          }
+        ],
+        "total": null,
+        "hasMore": false
+      },
+      "hex": "01000000010000004101000000410000000001000000000000000000000100"
+    },
+    {
+      "name": "MediaResource",
+      "type": "MediaResource",
+      "value": {
+        "url": "https://cdn.example.test/track.flac",
+        "actualQuality": "lossless",
+        "headers": [
+          {
+            "name": "X-Stream-Token",
+            "value": "token"
+          }
+        ],
+        "expiresAtEpochMs": null,
+        "format": "FLAC",
+        "bitrate": 1411200,
+        "sizeBytes": null
+      },
+      "hex": "2300000068747470733a2f2f63646e2e6578616d706c652e746573742f747261636b2e666c6163080000006c6f73736c657373010000000e000000582d53747265616d2d546f6b656e05000000746f6b656e000104000000464c4143018088150000"
+    },
+    {
+      "name": "BatchRequest",
+      "type": "BatchRequest",
+      "value": {
+        "ids": [
+          "A",
+          "a",
+          "A"
+        ]
+      },
+      "hex": "03000000010000004101000000610100000041"
+    },
+    {
+      "name": "Bytes",
+      "type": "Bytes",
+      "value": {
+        "value": [
+          0,
+          127,
+          128,
+          255
+        ]
+      },
+      "hex": "04000000007f80ff"
+    },
+    {
+      "name": "SocialEvent (nested)",
+      "type": "SocialEvent",
+      "value": {
+        "id": "event-1",
+        "user": {
+          "id": "u1",
+          "nickname": "User",
+          "avatarUrl": null
+        },
+        "text": "text",
+        "publishedAtEpochMs": 1,
+        "resourceId": null,
+        "resourceType": null,
+        "resourceTitle": null,
+        "resourceCoverUrl": null,
+        "resourceSubtitle": null,
+        "imageUrls": [],
+        "liked": false,
+        "likedCount": 0,
+        "commentCount": 0,
+        "forwardCount": 0,
+        "forwardedFrom": null,
+        "location": null
+      },
+      "hex": "070000006576656e742d3102000000753104000000557365720004000000746578740100000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "name": "Capabilities",
+      "type": "Capabilities",
+      "value": {
+        "supported": [
+          "tracks.search",
+          "tracks.resolve"
+        ]
+      },
+      "hex": "020000000d000000747261636b732e7365617263680e000000747261636b732e7265736f6c7665"
+    }
+  ]
+}

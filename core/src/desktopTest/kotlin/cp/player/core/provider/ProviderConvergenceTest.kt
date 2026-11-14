@@ -38,6 +38,26 @@ class ProviderConvergenceTest {
     }
 
     @Test
+    fun `native SDK packages never fall back to the retired legacy JNI runtime`() {
+        val directory = Files.createTempDirectory("sdk-native-policy-").toFile()
+        try {
+            // 不是有效 PE/ELF/Mach-O：即使文件名像动态库，也不能被当作可加载的旧 JNI Provider。
+            directory.resolve("provider.bin").writeText("not a native library", Charsets.UTF_8)
+            val native = manifest().copy(type = "native", entryPoint = "provider.bin")
+            assertFailsWith<IllegalArgumentException> {
+                ProviderFactory.create(native, directory.absolutePath)
+            }
+            // 旧宿主只按 type 选加载器；1.8.7 及更早版本不认 native，必须明确拒绝，
+            // 而不是把 kmp-sdk-v1 包按旧 JNI JSON 协议运行。
+            for (legacyType in listOf("http", "binary", "jna")) {
+                assertFalse(native.copy(type = legacyType).isLoadable, legacyType)
+            }
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `identity and entry point cannot escape the package`() {
         for (id in listOf("../outside", "local", "", "UPPER", "a..b", "a/b")) {
             assertFalse(manifest().copy(id = id).isLoadable, id)

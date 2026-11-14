@@ -19,6 +19,8 @@ fun jniSdkProvider(
     openSession: (ProviderContext) -> JniProviderSession,
 ): SdkBackendProvider = SdkBackendProvider(
     id = id, name = name, version = version, type = ProviderType.JNI,
-    factory = { JniMusicProvider(openSession(it)) },
+    // 每次 dispatch 都跑在单会话的串行队列上；首页会并发拉多个接口，
+    // 单会话排队会把上游往返叠加成「平均 1s+」。池化只放宽会话数，单会话仍串行。
+    factory = { context -> JniMusicProvider.pooled { openSession(context) } },
     capabilities = capabilities, settingsSchema = settingsSchema, sdkAllowedOrigins = sdkAllowedOrigins,
 )

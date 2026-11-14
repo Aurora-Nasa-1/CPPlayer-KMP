@@ -32,7 +32,7 @@ ZIP 根目录必须包含 UTF-8 的 `manifest.json`。
 | `id` | 稳定身份；匹配 `[a-z0-9][a-z0-9._-]{0,127}`，不能含 `..` 或等于 `local` |
 | `name` | 显示名称，不是更新或账号迁移的身份键 |
 | `version` | 插件版本；仓库更新使用严格 SemVer |
-| `type` | `js` / `script`，或原生适配器 `jni` / `native` |
+| `type` | `js` / `script`，或原生适配器 `native`；`jni` 仅为历史别名 |
 | `contract` | 必须精确为 `kmp-sdk-v1`；缺省、旧契约、未知主版本均拒绝 |
 | `entryPoint` | 包内相对路径；不能是绝对路径，不能含反斜杠、冒号、空段、`.` 或 `..` 段 |
 | `nativeFactoryClass` | 可选自定义 JAR 适配器类；直接安装 DLL / SO / dylib 时不需要 |
@@ -106,7 +106,7 @@ my-provider.zip
   "id": "my-native-provider",
   "name": "My Native Provider",
   "version": "1.0.0",
-  "type": "jni",
+  "type": "native",
   "contract": "kmp-sdk-v1",
   "entryPoint": "my_provider.dll",
   "supportedAbis": ["x86_64"]
@@ -114,6 +114,11 @@ my-provider.zip
 ```
 
 `entryPoint` 直接指向包内动态库，也可写成 `lib/arm64-v8a/libmy_provider.so`。无需 `nativeFactoryClass` 或附带 JVM JAR。
+
+新发布的原生包应写 `type: "native"`。1.8.7 及更早的宿主只认 `http` / `jni` / `binary`，
+且忽略 `contract`：若新包仍写 `jni`，它们会把 SDK 包当成旧 JNI Provider，用旧 JSON 协议
+调用 `nativeCallApi`。写 `native` 会让这些宿主在类型阶段明确拒绝。1.8.8 起两种写法都
+识别，但索引与包内 manifest 应一致使用 `native`。
 
 | 符号前缀 `Java_cp_player_sdk_jni_NativeSession_` | 参数（省略 `JNIEnv*` 与接收者） | 返回 |
 |---|---|---|
@@ -147,7 +152,7 @@ JNI 只在 JVM 可用。GraalVM Native Image 构建（Windows 安装包）要求
 
 新版本客户端（KMP SDK）
   └─ https://raw.githubusercontent.com/Aurora-Nasa-1/CPPlayer-Plugins-KMP/main/index.json
-       └─ kmp-sdk-v1（runtime: js / script / jni / native）
+       └─ kmp-sdk-v1（runtime: js / script / native）
 ```
 
 客户端无感迁移（`PluginRepositoryService`）：
@@ -236,7 +241,7 @@ CPPlayer-Plugins-KMP/
 
 | 字段 | 约束 |
 |---|---|
-| `runtime` | JS 用 `js` / `script`；原生用 `jni` / `native`，且与 manifest 的 `type` 一致 |
+| `runtime` | JS 用 `js` / `script`；原生用 `native`（历史包兼容 `jni`），且与 manifest 的 `type` 一致 |
 | `platform` / `arch` | JS 可写 `any`；原生必须写确切平台与架构 |
 | `sha256` / `bytes` | 对应 ZIP 的实际外部校验值 |
 | `minHostApiVersion` | 与包内 manifest 一致；未声明时填 1，不按宿主上限补成 3 |

@@ -217,14 +217,16 @@ const sourceKotlin = banner + `package cp.player.core.music\n\n` +
     `    override suspend fun ${n}(request: cp.player.sdk.${op.request}): BackendResult<cp.player.sdk.${op.response}> =\n` +
     `        extendedOperation { it.${n}(request) }`).join("\n") + `\n}\n`;
 // Nonempty, schema-derived cases exercise every additive dispatch and nested codec.
-function sample(t, field = "", record = "") {
-  if (t.endsWith("?")) return sample(t.slice(0, -1), field, record);
+// Recursive records (SocialEvent.forwardedFrom) terminate at the depth cap;
+// nested social events are exercised one level deep by the wire round-trip case.
+function sample(t, field = "", record = "", depth = 0) {
+  if (t.endsWith("?")) return sample(t.slice(0, -1), field, record, depth);
   if (t.endsWith("[]")) {
     if (field === "topReplies") return [];
     if (field.endsWith("Ids") && ["PlaylistOrderRequest", "PlaylistTrackOrderRequest"].includes(record))
       return ["Opaque-A", "a"];
     if (field.endsWith("Ids")) return ["Opaque-A", "a", "Opaque-A"];
-    return [sample(t.slice(0, -2), field, record)];
+    return [sample(t.slice(0, -2), field, record, depth)];
   }
   if (t === "bytes") return record === "Bytes" ? [] : [0, 127, -128, -1];
   if (t === "bool") return true;
@@ -265,7 +267,16 @@ function sample(t, field = "", record = "") {
   if (t === "ResourceMessageRequest") return {
     userIds: ["Opaque-A", "a", "Opaque-A"], id: "Opaque-A", type: "song", text: "Text"
   };
-  return Object.fromEntries(Object.entries(schema.records[t]).map(([n, ft]) => [n, sample(ft, n, t)]));
+  if (depth >= 1) {
+    return Object.fromEntries(Object.entries(schema.records[t]).map(([n, ft]) => [
+      n,
+      ft.endsWith("?") ? null : sample(ft, n, t, depth + 1),
+    ]));
+  }
+  return Object.fromEntries(Object.entries(schema.records[t]).map(([n, ft]) => [
+    n,
+    sample(ft, n, t, depth + 1),
+  ]));
 }
 function kotlinSample(t, value) {
   if (t.endsWith("?")) return value === null ? "null" : kotlinSample(t.slice(0, -1), value);

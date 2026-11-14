@@ -69,6 +69,10 @@ internal fun validateExtendedRequest(request: Any) {
             require(request.userIds.size in 1..100)
             require(request.type in setOf("song", "album", "playlist"))
         }
+        is ResourceLikeRequest -> request.values().also {
+            require(request.id.isNotBlank() && request.id.length <= 512)
+            require(request.type.isNotBlank() && request.type.length <= 64)
+        }
         is DeleteCommentRequest -> request.values().also { require(request.commentId > 0) }
         is MessageHistoryRequest -> request.values()
         is SendMessageRequest -> request.values().also {

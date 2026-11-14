@@ -27,8 +27,8 @@ CPPlayer 自身不含在线曲库。内容全部由 Provider 提供：它实现�
 | 目标 | 顺序 |
 |---|---|
 | 第一次写 Provider | [QUICKSTART](QUICKSTART.md) → [GUIDE](GUIDE.md) → [MANIFEST](MANIFEST.md) |
-| 写 JS / TS | QUICKSTART → [JS](JS.md) → [WORKFLOWS](WORKFLOWS.md) |
-| 写原生库 | QUICKSTART → [NATIVE](NATIVE.md) → [MANIFEST](MANIFEST.md) |
+| 写 JS / TS | [QUICKSTART](QUICKSTART.md) → [JS](JS.md) → [WORKFLOWS](WORKFLOWS.md) |
+| 写原生库 | [QUICKSTART](QUICKSTART.md) → [NATIVE](NATIVE.md) → [MANIFEST](MANIFEST.md) |
 | 查签名与字段 | [SDK_OPERATIONS](SDK_OPERATIONS.md)、[SDK_TYPES](SDK_TYPES.md) |
 | 按业务域实现 | [WORKFLOWS](WORKFLOWS.md) |
 | 发布到商店 | [MANIFEST 第 6 节](MANIFEST.md#6-商店仓库分发) |

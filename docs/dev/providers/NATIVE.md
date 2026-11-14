@@ -157,6 +157,10 @@ C ABI 改按符号名直调：每包一个动态库句柄，绑定天然独立�
 | 回调 | 不提供 native → Java upcall；需要推送就沿用轮询或 Wire 的能力查询 |
 | 后台线程 | 不要在 `cpp_create` 里留游离线程 |
 
+**并发靠多会话，不靠多线程挤一个 handle。** 宿主对同一 handle 严格串行（JNI 侧每个会话一个单线程队列，C ABI 侧由 `JniMusicProvider` 的 lane 保证），所以一个会话就是一个串行通道：首页并发拉 7 个接口时，单会话会把上游往返排成 7 份（实测上游单请求 ~150ms ⇒ 诊断页平均响应破 1s，看起来像「软件本体慢」）。`JniMusicProvider.pooled(...)` 因此按需为同一 `ProviderContext` 开最多 4 个会话（与 `ProviderHost` 的调用并发一致），每个会话仍只跑一个 invoke。
+
+会话必须只由**不可变的**上下文决定（凭据、账号、设置）。Provider 若在某会话里攒可变状态（游标、缓存、登录中途态），多会话会看到不同副本 —— 这类 Provider 不要池化，把状态放到自己的持久化存储里。
+
 后台线程的风险：JVM 从不卸载 DLL，所以 JNI 路径下「创建会话时开后台线程预热」是安全的。原生宿主不同 —— `cpp_close` 后最后一个会话关闭，宿主 `Arena.close()`，FFM 据此 `FreeLibrary`；此时仍有线程跑在库内代码里就是进程级 `0xC0000005`，而且发生在用例全绿之后（2026-11-14 酷狗模块实测：两个用例通过，JVM 退出时崩在访问违例）。需要预热请改为惰性，在真正用到的那次 `cpp_invoke` 里同步做。
 
 ### 4.5 探测顺序
@@ -184,11 +188,15 @@ pub unsafe extern "C" fn cpp_create(
 ) -> i64 { /* 复用现有 JNI 实现里 create 的那一段 */ }
 ```
 
-## 5. manifest 不改
+## 5. manifest 的 type
 
-`type: "jni"` 依旧表示原生模块，`entryPoint` 依旧指向库文件，`supportedAbis` 依旧是 ABI 白名单。C ABI 能力靠符号探测判断，不新增字段。
+`entryPoint` 依旧指向库文件，`supportedAbis` 依旧是 ABI 白名单。C ABI 能力靠符号探测判断，不新增字段。
 
-理由：manifest 由作者手写，多一个「可选但决定加载行为」的字段就有第二个真相；写错即「明明导出了却报不支持」。符号探测是自证的。
+新发布的原生包写 `type: "native"`；`jni` 保留为历史别名，仅用于已经发布的旧包。
+1.8.7 及更早的宿主只认 `http` / `jni` / `binary`，且完全忽略 `contract`。若新包继续写
+`jni`，旧宿主会把 SDK 包当成旧 JNI Provider，以旧 JSON 协议调用 `nativeCallApi`，
+表现为「降级后还能用」，实际绕过了 `kmp-sdk-v1`。写 `native` 可让这些宿主在类型阶段
+明确拒绝，再由市场索引显示不兼容。
 
 ## 6. 宿主实现
 

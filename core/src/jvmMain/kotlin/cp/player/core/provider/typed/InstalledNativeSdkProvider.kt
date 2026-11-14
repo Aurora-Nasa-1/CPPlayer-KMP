@@ -102,7 +102,9 @@ internal fun installedNativeSdkProvider(manifest: ModuleManifest, root: File, co
         val runtime = NativePackageRuntime(closable, snapshot, factory)
         val descriptor = SdkBackendProvider(
             id = manifest.id, name = manifest.name, version = manifest.version, type = ProviderType.JNI,
-            factory = { JniMusicProvider(runtime.open(it)) },
+            // 同一上下文按需开多个会话：单会话仍是串行队列，但首页并发拉多个接口时
+            // 不再把上游往返排队叠加（实测单会话会让平均响应从 ~150ms 涨到 1s+）。
+            factory = { context -> JniMusicProvider.pooled { runtime.open(context) } },
             settingsSchema = manifest.settingsSchema,
             sdkAllowedOrigins = manifest.sdkOrigins.toSet(),
             capabilities = manifest.knownCapabilities,

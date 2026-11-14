@@ -1188,3 +1188,14 @@ suspend fun ProviderHost.getLikeListPage(request: PagedIdRequest): IdPage {
         }
     }
 }
+
+suspend fun ProviderHost.likeResource(request: ResourceLikeRequest): MutationResult {
+    validateExtendedRequest(request)
+    request.write(WireWriter())
+    return callExtended(ExtendedCapability.LIKERESOURCE) { provider ->
+        provider.likeResource(request).also {
+            validateExtendedResult(it.values(), request.values())
+            it.write(WireWriter())
+        }
+    }
+}

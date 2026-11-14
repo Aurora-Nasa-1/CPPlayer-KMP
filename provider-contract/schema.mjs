@@ -128,11 +128,13 @@ export default {
     "CalendarRequest": { "startAtEpochMs": "long?", "endAtEpochMs": "long?" },
     "CalendarEntry": { "id": "string", "title": "string", "startsAtEpochMs": "long", "endsAtEpochMs": "long?", "coverUrl": "string?", "resourceId": "string?", "resourceType": "string?" },
     "CalendarPage": { "items": "CalendarEntry[]" },
-    "SocialEvent": { "id": "string", "user": "SocialUser", "text": "string", "publishedAtEpochMs": "long", "resourceId": "string?", "resourceType": "string?", "imageUrls": "string[]" },
+    "EventOrigin": { "id": "string", "user": "SocialUser", "text": "string", "publishedAtEpochMs": "long", "resourceId": "string?", "resourceType": "string?", "resourceTitle": "string?", "resourceCoverUrl": "string?", "resourceSubtitle": "string?", "imageUrls": "string[]", "liked": "bool", "likedCount": "int", "commentCount": "int", "forwardCount": "int", "location": "string?" },
+    "SocialEvent": { "id": "string", "user": "SocialUser", "text": "string", "publishedAtEpochMs": "long", "resourceId": "string?", "resourceType": "string?", "resourceTitle": "string?", "resourceCoverUrl": "string?", "resourceSubtitle": "string?", "imageUrls": "string[]", "liked": "bool", "likedCount": "int", "commentCount": "int", "forwardCount": "int", "forwardedFrom": "EventOrigin?", "location": "string?" },
     "EventPage": { "items": "SocialEvent[]", "hasMore": "bool?", "cursor": "string?" },
     "EventPageRequest": { "limit": "int", "cursor": "string?" },
     "UserEventRequest": { "id": "string", "limit": "int", "cursor": "string?" },
     "ForwardEventRequest": { "eventId": "string", "userId": "string", "text": "string" },
+    "ResourceLikeRequest": { "id": "string", "type": "string", "liked": "bool" },
     "ShareResourceRequest": { "id": "string", "type": "string", "text": "string" },
     "PlaylistUpdateRequest": { "id": "string", "name": "string?", "description": "string?", "tags": "string[]?" },
     "UserProfileUpdateRequest": { "nickname": "string?", "signature": "string?", "gender": "int?", "birthdayEpochMs": "long?", "province": "int?", "city": "int?" },
@@ -342,6 +344,7 @@ export default {
     "getMediaQualities": { "tag": 163, "request": "MediaQualityRequest", "response": "QualityPage", "group": "MediaQualities", "capability": "media.qualities", "extended": true },
     "sendResourceMessage": { "tag": 164, "request": "ResourceMessageRequest", "response": "MutationResult", "group": "Notifications", "capability": "messages.sendResource", "extended": true },
     "getUserCommentHistory": { "tag": 165, "request": "UserCursorRequest", "response": "CommentPage", "group": "Notifications", "capability": "comments.userHistory", "extended": true },
-    "getLikeListPage": { "tag": 166, "request": "PagedIdRequest", "response": "IdPage", "group": "Accounts", "capability": "accounts.likes.page", "extended": true }
+    "getLikeListPage": { "tag": 166, "request": "PagedIdRequest", "response": "IdPage", "group": "Accounts", "capability": "accounts.likes.page", "extended": true },
+    "likeResource": { "tag": 167, "request": "ResourceLikeRequest", "response": "MutationResult", "group": "SocialOperations", "capability": "social.likeResource", "extended": true }
   }
 };

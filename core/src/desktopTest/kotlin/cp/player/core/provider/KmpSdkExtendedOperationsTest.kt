@@ -14,8 +14,8 @@ class KmpSdkExtendedOperationsTest {
     @Test
     fun `all additive operations round trip nested wire records`() {
         val cases = extendedOperationCases()
-        assertEquals(106, cases.size)
-        assertEquals((61..166).toList(), cases.map { it.tag })
+        assertEquals(107, cases.size)
+        assertEquals((61..167).toList(), cases.map { it.tag })
         cases.forEach { assertTrue(it.checkWire(), it.method) }
     }
 
@@ -37,7 +37,7 @@ class KmpSdkExtendedOperationsTest {
             }
             val host = host(SessionMusicProvider(JniMusicProvider(binding)))
             try {
-                assertEquals(106, host.capabilities().supported.size)
+                assertEquals(107, host.capabilities().supported.size)
                 val source = UnifiedMusicSourceImpl(SdkEmptyLocal(), { host })
                 for (case in cases) {
                     assertEquals(case.responseValues, case.invoke(host), case.method)
@@ -142,6 +142,8 @@ class KmpSdkExtendedOperationsTest {
                     { host.likeComment(CommentLikeRequest("track", MAX_SAFE_INTEGER + 1, "music", true)) },
                     { host.postComment(PostCommentRequest("track", "music", "text", MAX_SAFE_INTEGER + 1)) },
                     { host.getFloorComments(CommentFloorRequest("track", MAX_SAFE_INTEGER + 1, "music", 30, 0)) },
+                    { host.likeResource(ResourceLikeRequest("", "event", true)) },
+                    { host.likeResource(ResourceLikeRequest("event", " ", true)) },
                 )
                 invalid.forEachIndexed { index, invoke ->
                     assertFailsWith<IllegalArgumentException>("Invalid case $index") { invoke() }

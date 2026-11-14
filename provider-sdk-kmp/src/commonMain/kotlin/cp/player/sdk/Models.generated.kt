@@ -3769,7 +3769,112 @@ data class CalendarPage(
     }
 }
 
-/** Social-feed entry with plain text and typed resource/image references. */
+/** Non-recursive snapshot of the original social event nested in a forward. */
+data class EventOrigin(
+    /** Opaque, case-sensitive provider-local identity; preserve leading zeros and punctuation. */
+    val id: String,
+    /** User attribution. */
+    val user: SocialUser,
+    /** Plain text, never an upstream JSON message envelope. */
+    val text: String,
+    /** Publication time in Unix epoch milliseconds. */
+    val publishedAtEpochMs: Long,
+    /** Opaque associated resource identity. */
+    val resourceId: String? = null,
+    /** Associated resource kind, not an endpoint path. */
+    val resourceType: String? = null,
+    /** Display title of the associated resource snapshot; null means unavailable. */
+    val resourceTitle: String? = null,
+    /** Cover image URL for the associated resource snapshot. */
+    val resourceCoverUrl: String? = null,
+    /** Secondary display text of the associated resource snapshot, such as artists or a creator; null means unavailable. */
+    val resourceSubtitle: String? = null,
+    /** Ordered image URLs. */
+    val imageUrls: List<String> = emptyList(),
+    /** Explicit desired/current liked state, not a toggle. */
+    val liked: Boolean,
+    /** Known nonnegative like count. */
+    val likedCount: Int,
+    /** Known nonnegative top-level comment count. */
+    val commentCount: Int,
+    /** Known nonnegative forward/share count. */
+    val forwardCount: Int,
+    /** Optional public location attribution text. */
+    val location: String? = null,
+) {
+    fun write(w: WireWriter) { with(w) {
+        string(this@EventOrigin.id)
+        this@EventOrigin.user.write(this)
+        string(this@EventOrigin.text)
+        long(this@EventOrigin.publishedAtEpochMs)
+        optional(this@EventOrigin.resourceId) { v -> string(v) }
+        optional(this@EventOrigin.resourceType) { v -> string(v) }
+        optional(this@EventOrigin.resourceTitle) { v -> string(v) }
+        optional(this@EventOrigin.resourceCoverUrl) { v -> string(v) }
+        optional(this@EventOrigin.resourceSubtitle) { v -> string(v) }
+        list(this@EventOrigin.imageUrls) { v -> string(v) }
+        bool(this@EventOrigin.liked)
+        int(this@EventOrigin.likedCount)
+        int(this@EventOrigin.commentCount)
+        int(this@EventOrigin.forwardCount)
+        optional(this@EventOrigin.location) { v -> string(v) }
+    } }
+    fun values(): Map<String, Any?> = mapOf(
+        "id" to id,
+        "user" to user.values(),
+        "text" to text,
+        "publishedAtEpochMs" to publishedAtEpochMs,
+        "resourceId" to resourceId?.let { it },
+        "resourceType" to resourceType?.let { it },
+        "resourceTitle" to resourceTitle?.let { it },
+        "resourceCoverUrl" to resourceCoverUrl?.let { it },
+        "resourceSubtitle" to resourceSubtitle?.let { it },
+        "imageUrls" to imageUrls.map { it },
+        "liked" to liked,
+        "likedCount" to likedCount,
+        "commentCount" to commentCount,
+        "forwardCount" to forwardCount,
+        "location" to location?.let { it },
+    )
+    companion object {
+        fun read(r: WireReader): EventOrigin = with(r) { EventOrigin(
+            string(),
+            SocialUser.read(this),
+            string(),
+            long(),
+            optional { string() },
+            optional { string() },
+            optional { string() },
+            optional { string() },
+            optional { string() },
+            list { string() },
+            bool(),
+            int(),
+            int(),
+            int(),
+            optional { string() },
+        ) }
+        fun fromValues(v: Map<String, Any?>): EventOrigin = EventOrigin(
+            valueString(v["id"]),
+            SocialUser.fromValues(valueObject(v["user"])),
+            valueString(v["text"]),
+            valueLong(v["publishedAtEpochMs"]),
+            v["resourceId"]?.let { valueString(it) },
+            v["resourceType"]?.let { valueString(it) },
+            v["resourceTitle"]?.let { valueString(it) },
+            v["resourceCoverUrl"]?.let { valueString(it) },
+            v["resourceSubtitle"]?.let { valueString(it) },
+            valueList(v["imageUrls"] ?: emptyList<Any?>()).map { valueString(it) },
+            valueBool(v["liked"]),
+            valueInt(v["likedCount"]),
+            valueInt(v["commentCount"]),
+            valueInt(v["forwardCount"]),
+            v["location"]?.let { valueString(it) },
+        )
+    }
+}
+
+/** Social-feed entry with plain text, interaction counters, an optional typed resource snapshot and an optional non-recursive forwarded source. */
 data class SocialEvent(
     /** Opaque, case-sensitive provider-local identity; preserve leading zeros and punctuation. */
     val id: String,
@@ -3783,8 +3888,26 @@ data class SocialEvent(
     val resourceId: String? = null,
     /** Associated resource kind, not an endpoint path. */
     val resourceType: String? = null,
+    /** Display title of the associated resource snapshot; null means unavailable. */
+    val resourceTitle: String? = null,
+    /** Cover image URL for the associated resource snapshot. */
+    val resourceCoverUrl: String? = null,
+    /** Secondary display text of the associated resource snapshot, such as artists or a creator; null means unavailable. */
+    val resourceSubtitle: String? = null,
     /** Ordered image URLs. */
     val imageUrls: List<String> = emptyList(),
+    /** Explicit desired/current liked state, not a toggle. */
+    val liked: Boolean,
+    /** Known nonnegative like count. */
+    val likedCount: Int,
+    /** Known nonnegative top-level comment count. */
+    val commentCount: Int,
+    /** Known nonnegative forward/share count. */
+    val forwardCount: Int,
+    /** Original social event when this entry is a forward; null means original content. */
+    val forwardedFrom: EventOrigin? = null,
+    /** Optional public location attribution text. */
+    val location: String? = null,
 ) {
     fun write(w: WireWriter) { with(w) {
         string(this@SocialEvent.id)
@@ -3793,7 +3916,16 @@ data class SocialEvent(
         long(this@SocialEvent.publishedAtEpochMs)
         optional(this@SocialEvent.resourceId) { v -> string(v) }
         optional(this@SocialEvent.resourceType) { v -> string(v) }
+        optional(this@SocialEvent.resourceTitle) { v -> string(v) }
+        optional(this@SocialEvent.resourceCoverUrl) { v -> string(v) }
+        optional(this@SocialEvent.resourceSubtitle) { v -> string(v) }
         list(this@SocialEvent.imageUrls) { v -> string(v) }
+        bool(this@SocialEvent.liked)
+        int(this@SocialEvent.likedCount)
+        int(this@SocialEvent.commentCount)
+        int(this@SocialEvent.forwardCount)
+        optional(this@SocialEvent.forwardedFrom) { v -> v.write(this) }
+        optional(this@SocialEvent.location) { v -> string(v) }
     } }
     fun values(): Map<String, Any?> = mapOf(
         "id" to id,
@@ -3802,7 +3934,16 @@ data class SocialEvent(
         "publishedAtEpochMs" to publishedAtEpochMs,
         "resourceId" to resourceId?.let { it },
         "resourceType" to resourceType?.let { it },
+        "resourceTitle" to resourceTitle?.let { it },
+        "resourceCoverUrl" to resourceCoverUrl?.let { it },
+        "resourceSubtitle" to resourceSubtitle?.let { it },
         "imageUrls" to imageUrls.map { it },
+        "liked" to liked,
+        "likedCount" to likedCount,
+        "commentCount" to commentCount,
+        "forwardCount" to forwardCount,
+        "forwardedFrom" to forwardedFrom?.let { it.values() },
+        "location" to location?.let { it },
     )
     companion object {
         fun read(r: WireReader): SocialEvent = with(r) { SocialEvent(
@@ -3812,7 +3953,16 @@ data class SocialEvent(
             long(),
             optional { string() },
             optional { string() },
+            optional { string() },
+            optional { string() },
+            optional { string() },
             list { string() },
+            bool(),
+            int(),
+            int(),
+            int(),
+            optional { EventOrigin.read(this) },
+            optional { string() },
         ) }
         fun fromValues(v: Map<String, Any?>): SocialEvent = SocialEvent(
             valueString(v["id"]),
@@ -3821,7 +3971,16 @@ data class SocialEvent(
             valueLong(v["publishedAtEpochMs"]),
             v["resourceId"]?.let { valueString(it) },
             v["resourceType"]?.let { valueString(it) },
+            v["resourceTitle"]?.let { valueString(it) },
+            v["resourceCoverUrl"]?.let { valueString(it) },
+            v["resourceSubtitle"]?.let { valueString(it) },
             valueList(v["imageUrls"] ?: emptyList<Any?>()).map { valueString(it) },
+            valueBool(v["liked"]),
+            valueInt(v["likedCount"]),
+            valueInt(v["commentCount"]),
+            valueInt(v["forwardCount"]),
+            v["forwardedFrom"]?.let { EventOrigin.fromValues(valueObject(it)) },
+            v["location"]?.let { valueString(it) },
         )
     }
 }
@@ -3948,6 +4107,39 @@ data class ForwardEventRequest(
             valueString(v["eventId"]),
             valueString(v["userId"]),
             valueString(v["text"]),
+        )
+    }
+}
+
+/** Explicit desired liked state for one typed social resource. */
+data class ResourceLikeRequest(
+    /** Opaque, case-sensitive provider-local identity; preserve leading zeros and punctuation. */
+    val id: String,
+    /** Operation-specific discriminator; see the operation and record-specific constraints. */
+    val type: String,
+    /** Explicit desired/current liked state, not a toggle. */
+    val liked: Boolean,
+) {
+    fun write(w: WireWriter) { with(w) {
+        string(this@ResourceLikeRequest.id)
+        string(this@ResourceLikeRequest.type)
+        bool(this@ResourceLikeRequest.liked)
+    } }
+    fun values(): Map<String, Any?> = mapOf(
+        "id" to id,
+        "type" to type,
+        "liked" to liked,
+    )
+    companion object {
+        fun read(r: WireReader): ResourceLikeRequest = with(r) { ResourceLikeRequest(
+            string(),
+            string(),
+            bool(),
+        ) }
+        fun fromValues(v: Map<String, Any?>): ResourceLikeRequest = ResourceLikeRequest(
+            valueString(v["id"]),
+            valueString(v["type"]),
+            valueBool(v["liked"]),
         )
     }
 }
@@ -5578,4 +5770,5 @@ object ProviderProtocol {
     const val SENDRESOURCEMESSAGE = 164
     const val GETUSERCOMMENTHISTORY = 165
     const val GETLIKELISTPAGE = 166
+    const val LIKERESOURCE = 167
 }

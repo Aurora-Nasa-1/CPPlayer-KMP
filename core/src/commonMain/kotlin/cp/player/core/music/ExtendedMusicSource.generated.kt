@@ -325,6 +325,9 @@ interface ExtendedMusicSource {
     /** Page liked track IDs with item offsets and explicit continuation; self addresses the current account. Use this operation for collections larger than 500 IDs. Capability: accounts.likes.page. Tag: 166. Undeclared or unimplemented capabilities fail with Unsupported. */
     suspend fun getLikeListPage(request: cp.player.sdk.PagedIdRequest): BackendResult<cp.player.sdk.IdPage> =
         BackendResult.Unsupported("accounts.likes.page is not supported")
+    /** Set the current account's liked state for one typed social resource, including an event. Capability: social.likeResource. Tag: 167. Undeclared or unimplemented capabilities fail with Unsupported. */
+    suspend fun likeResource(request: cp.player.sdk.ResourceLikeRequest): BackendResult<cp.player.sdk.MutationResult> =
+        BackendResult.Unsupported("social.likeResource is not supported")
 }
 
 abstract class ExtendedMusicSourceBase : ExtendedMusicSource {
@@ -541,4 +544,6 @@ abstract class ExtendedMusicSourceBase : ExtendedMusicSource {
         extendedOperation { it.getUserCommentHistory(request) }
     override suspend fun getLikeListPage(request: cp.player.sdk.PagedIdRequest): BackendResult<cp.player.sdk.IdPage> =
         extendedOperation { it.getLikeListPage(request) }
+    override suspend fun likeResource(request: cp.player.sdk.ResourceLikeRequest): BackendResult<cp.player.sdk.MutationResult> =
+        extendedOperation { it.likeResource(request) }
 }
