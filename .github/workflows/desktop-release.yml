@@ -117,11 +117,17 @@ jobs:
               "gradleTasks": ":app:packageGraalvmNative :app:packageWindowsVelopack",
               "assetPaths": "app/build/compose/binaries/main/velopack/*",
           }
+          # ⚠️ Linux 侧**必须带扩展名**，不能写 `deb/*` / `targz/*`：jpackage 与
+          # Nucleus 的 deb/tar.gz 任务会在同一层留下打包中间件 —— 图标集
+          # （16x16.png … 512x512.png）、`after-install-nucleus.tpl`、以及 electron
+          # 风格的 `package.json` / `latest-linux.yml`。用目录通配会把它们一起封进
+          # artifact（v1.9.0 实测 12 个文件里有 10 个是这种垃圾），再被 publish
+          # 全量传成 release 资产。收窄到扩展名是最省事的第一道闸。
           linux = {
               "os": "ubuntu-latest",
               "platform": "linux",
               "gradleTasks": ":app:packageDeb :app:packageLinuxTarGz",
-              "assetPaths": "app/build/compose/binaries/main/deb/*\napp/build/compose/binaries/main/targz/*",
+              "assetPaths": "app/build/compose/binaries/main/deb/*.deb\napp/build/compose/binaries/main/targz/*.tar.gz",
           }
           selected = (os.environ.get("BUILD_PLATFORM") or "all").strip()
           choices = {"all": [windows, linux], "windows": [windows], "linux": [linux]}
@@ -275,6 +281,28 @@ jobs:
           }
           grep -n 'pgo' "$args"
 
+      # 版本号同样是「不接就静默降级」：原生镜像没有 .cfg，`-Dcp.player.*` 只在
+      # 构建期有效，必须配合 `--initialize-at-build-time=cp.player.app.BuildInfo`
+      # 才能把值写进镜像堆。v1.9.0 / v1.9.1 两样都缺，「关于」页显示 1.0.0 (1)，
+      # 而构建日志一路是绿的 —— 这条断言就是补这个盲区。
+      - name: Verify version metadata args
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          args="app/build/compose/tmp/main/graalvm/nativeCompile/native-image-args.txt"
+          ver="${{ needs.meta.outputs.version }}"
+          grep -qF -- "\"-Dcp.player.versionName=$ver\"" "$args" || {
+            echo "::error::native-image 参数里没有 -Dcp.player.versionName=$ver（原生包会显示默认版本）"
+            grep -n 'cp.player' "$args" || true
+            exit 1
+          }
+          grep -qF -- '"--initialize-at-build-time=cp.player.app.BuildInfo"' "$args" || {
+            echo "::error::缺 --initialize-at-build-time=cp.player.app.BuildInfo，版本号进不了镜像"
+            exit 1
+          }
+          grep -n 'cp.player' "$args"
+
       # tar.gz 的执行位全靠打包时原样保留，这里只做布局断言（缺关键文件立刻失败，
       # 别等到用户解压才发现）。执行位无法从 tar 列表读出，AUR 的 package() 里有
       # chmod 兜底（见 packaging/aur/cpplayer-bin/PKGBUILD）。
@@ -383,6 +411,45 @@ jobs:
           path: release-assets
           pattern: CPPlayer-*
           merge-multiple: true
+      - name: Prune non-release assets
+        # ⚠️ **release 资产列表是给人看的，别把打包中间件混进去**（v1.9.0 的真实事故：
+        # 资产里多出 `16x16.png` … `512x512.png`、`after-install-nucleus.tpl`、
+        # `package.json`、`latest-linux.yml` 共 10 个文件 —— 都是打包目录里的中间件，
+        # 被 `dir/*` 通配封进 artifact，再被下面的 `release-assets/**/*` 原样上传）。
+        # 这里用**白名单**筛一遍，而不是按名字拉黑名单：以后上游多出一种中间件，
+        # 也不需要回来改这里；真产物要是被筛掉，下面的断言会立刻红。
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+          shopt -s nullglob
+          keep=()
+          drop=()
+          for f in *; do
+            case "$f" in
+              # Velopack 的更新源元数据：应用侧靠它判断有没有新版，必须留。
+              RELEASES|releases.*.json|assets.*.json) keep+=("$f") ;;
+              # 安装包 / 便携包 / 更新包 / 校验值。这里**只认扩展名**，
+              # 所以 `package.json`（electron 风格中间件）不会命中。
+              *.exe|*.msi|*.zip|*.nupkg|*.deb|*.rpm|*.dmg|*.pkg|*.apk) keep+=("$f") ;;
+              *.tar.gz|*.tgz|*.sha256|*.sha512) keep+=("$f") ;;
+              *) drop+=("$f") ;;
+            esac
+          done
+          if (( ${#drop[@]} > 0 )); then
+            echo "::notice::丢掉 ${#drop[@]} 个非发布文件（打包中间件）"
+            printf '  - %s\n' "${drop[@]}"
+            rm -rf -- "${drop[@]}"
+          fi
+          # 白名单写错了要先炸在这里，而不是发一个「除了图标什么都没有」的 release。
+          installable=( *.exe *.deb *.tar.gz *.apk )
+          if (( ${#installable[@]} == 0 )); then
+            echo "::error::筛完没有任何安装包（*.exe / *.deb / *.tar.gz / *.apk）—— 检查白名单"
+            ls -la
+            exit 1
+          fi
+          echo "--- 将发布 ${#keep[@]} 个文件 ---"
+          printf '  %s\n' "${keep[@]}"
       - name: Generate release notes
         if: github.event_name != 'workflow_dispatch'
         shell: bash

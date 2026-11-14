@@ -653,14 +653,11 @@ nucleus {
             // ⚠️ **增删依赖后要重跑 `:app:suggestModules` 并同步这一行**，否则又是「本地能跑、
             // 安装包缺类」——而且缺在类初始化期的话，表现是启动器只打一句
             // `Failed to launch JVM`，栈里连模块名都看不到（就是 1.4.3 的死法）。
-            //   - `jdk.unsupported`：`JbrFileDialogBridge` 用 `sun.misc.Unsafe` 翻转
-            //     `AccessibleObject.override`，才能调用 JBR 的 `JBRFileDialog` 扩展。
-            //     **缺它 = 文件/目录选择器退回旧式对话框**（功能仍在，只是没有
-            //     Windows 10/11 现代 Common Item Dialog 与文件夹选择模式）。
-            //     1.4.3 的死法是缺模块 + 把 `Unsafe` 当静态类型用 ⇒
-            //     `NoClassDefFoundError: sun/misc/Unsafe` 在类初始化期直接退出。
-            //     代码侧已改成 `Class.forName("sun.misc.Unsafe")` 纯反射，缺模块只会降级。
-            //     ⚠️ 但别因为「有反射兜底」就删掉这一行：JBR 文件对话框真的需要它。
+            //   - `jdk.unsupported`：jlink 默认模块集不含它，而 Kotlin / Skiko 等运行时依赖
+            //     会用到 `sun.misc.Unsafe`。1.4.3 的死法就是缺模块 + 把 `Unsafe` 当静态类型用
+            //     ⇒ `NoClassDefFoundError: sun/misc/Unsafe` 在类初始化期直接退出。
+            //     ⚠️ 原先 JBR 文件对话框桥也要用它，那座桥已随「去 AWT」删除；但别因此
+            //     删掉这一行——先重跑 `:app:suggestModules` 确认再动。
             //   - `java.instrument` / `java.management` / `jdk.security.auth` / `jdk.httpserver`：jdeps 从运行时
             //     类路径里量出来的缺口，目前没有触发崩溃，但迟早会在某条分支上炸。
             modules("java.instrument", "java.management", "jdk.security.auth", "jdk.unsupported", "jdk.httpserver")
@@ -749,15 +746,18 @@ nucleus {
                 version.set("1.1.4")
             }
             // L3 平台特定：插件 JAR 内 nucleus/graalvm/platform-metadata/windows-*.json
-            //   （AWT / Java2D / 字体等）在 native-image 任务中自动注入。GUI 应用
-            //   必须保持 headless = false，否则会连同 L3 GUI 元数据与 Skiko/AWT
-            //   原生库一起跳过，镜像启动时才炸。
+            //   （Java2D / 字体等 GUI 元数据）在 native-image 任务中自动注入，覆盖
+            //   Skiko 字体回退可能触及的 java.desktop 类。项目自身代码已不再引用 AWT，
+            //   但 GUI 应用仍必须保持 headless = false，否则插件会连同 L3 GUI 元数据
+            //   与 Skiko 原生库一起跳过，镜像启动时才炸。
             //
             // L4 本项目：`nativeImageConfigBaseDir` 默认就是 <项目>/graalvm，整个目录以
             //   `-H:ConfigurationFileDirectories=...\app\graalvm` 传给 native-image，
             //   所以 `app/graalvm/reachability-metadata.json` 是「L1~L3 都没覆盖到」时
-            //   唯一该动手的地方（现有条目：AWT FileDialog 的 JNI 字段/方法 ID、ICU4J
-            //   的 Locale 反射与断行数据）。来历、探针验证法见 app/graalvm/README.md。
+            //   唯一该动手的地方（现有条目：ICU4J 的 Locale 反射与断行数据、Win32
+            //   COM / 剪贴板 / 显示设置的 foreign.downcalls 等）。AWT FileDialog 的
+            //   JNI 字段/方法 ID 条目已随「去 AWT」删除。来历、探针验证法见
+            //   app/graalvm/README.md。
             headless.set(false)
             // 项目自身资源按 resource roots 自动登记：动态 getResourceAsStream(computedPath)
             // 无法被 native-image 静态发现，漏登记就是运行时静默少文件。
@@ -810,14 +810,66 @@ nucleus {
                 // 引入所有字符集编码支持
                 "-H:+AddAllCharsets",
                 // 不强制第三方 GUI/native 类在构建期初始化；使用 GraalVM 对安全类的默认判定，
-                // 避免把宿主机 Skia、Win32、X11、字体或 AWT 状态写入镜像。
+                // 避免把宿主机 Skia、Win32、X11 或字体状态写入镜像。
                 // Native state/OS handles stay runtime-initialized. Skiko/Skia must not load
-                // during analysis; Win32 JNA and Windows AWT backends need target OS libraries.
-                "--initialize-at-run-time=kotlin.coroutines.intrinsics.CoroutineSingletons,kotlinx.coroutines.internal.FastServiceLoader,kotlinx.coroutines.EventLoopImplBase,io.ktor.utils.io.jvm.javaio.Pollers,cp.player.core.playback.flick.FlickNativeEngine,cp.player.core.playback.DesktopHiResEngine,cp.player.core.provider.typed.QuickJsWarmup,dev.nucleusframework.composenativetray,dev.nucleusframework.notification,org.jetbrains.skiko,org.jetbrains.skia,org.jetbrains.skia.impl,com.sun.jna.platform.win32,sun.awt.windows,sun.font",
+                // during analysis; Win32 JNA needs target OS libraries.
+                // ⚠️ 末尾的 sun.font 不是 AWT 依赖：项目代码已彻底不引用 java.desktop，
+                //   sun.awt.windows 也随之从这串里删掉（WToolkit 不再可达）。但 L3 平台
+                //   元数据与 Skiko 字体回退仍可能把 sun.font 带进镜像，留 run-time 初始化
+                //   可避免构建期写入宿主机字体状态。别把整串一起删。
+                "--initialize-at-run-time=kotlin.coroutines.intrinsics.CoroutineSingletons,kotlinx.coroutines.internal.FastServiceLoader,kotlinx.coroutines.EventLoopImplBase,io.ktor.utils.io.jvm.javaio.Pollers,cp.player.core.playback.flick.FlickNativeEngine,cp.player.core.playback.DesktopHiResEngine,cp.player.core.provider.typed.QuickJsWarmup,dev.nucleusframework.composenativetray,dev.nucleusframework.notification,org.jetbrains.skiko,org.jetbrains.skia,org.jetbrains.skia.impl,com.sun.jna.platform.win32,sun.font",
                 // 确保生成 100% 独立原生机器码产物，禁止任何回落 JVM 依赖
                 "--no-fallback",
                 "-H:+ReportExceptionStackTraces",
                 "--enable-native-access=ALL-UNNAMED",
+            )
+            // ── 还能不能再压：堆参数这边的实测边界（2026-11-14）────────────────
+            // 用一个 `-Ob` 迷你镜像（同样的 `-R:MaxHeapSize=128m -R:MaxNewSize=24m`）
+            // 每 1s 采一次工作集，触达 60MB 存活集后 System.gc()：
+            //   | 时点                    | 工作集  |
+            //   | 启动后空闲              | 10.9MB  |
+            //   | 触达 60MB 存活集        | 72.9MB  |
+            //   | System.gc() 之后         | 11.2MB  |
+            // 结论：Serial GC **会把空闲堆还给 OS**，RSS 跟着存活集走、不跟着 `-Xmx` 走。所以：
+            //   - `-XX:MaxHeapFree=…`（堆收缩阈值）：实测 RSS 无变化 ⇒ 不加（默认已经缩回去）；
+            //   - `-XX:MinHeapSize=…`（初始堆）：实测 RSS 无变化（堆整块预留、按页提交）⇒ 不加；
+            //   - 继续压 `maxHeapSize`：只压峰值不动稳态，而 128m 对 55~60MB 存活集留得已经不多，
+            //     再往下必须先压测「批量歌单 / 大 provider 响应 / Base64 歌词」三条峰值路径。
+            // 剩余常驻的大头在堆外：skia 位图、29MB 内置字体（misans_vf 20MB + noto_sans_jp 9.6MB，
+            // 第一段中日文本就会整份读进内存）、字体与 Win32 图形栈。唯一验证过有效的手段是换软件渲染
+            // （实测省 ~120MB，设置页已有「软件渲染」后端；牺牲动画流畅度，故不做默认）。
+            buildArgs.addAll(
+                // 关掉 jvmstat 的 perf data：原生镜像默认开着，每次启动都会往
+                // `%TEMP%\hsperfdata_<user>\` 写一个计数文件并映射一小块缓冲。应用自己不用它，
+                // 用户机器上却是每个版本一份残留；镜像内没有 attach 的入口，关掉没有副作用。
+                "-R:-UsePerfData",
+            )
+            // ── 版本元数据：原生镜像没有 .cfg，`-D` 只作用于构建期 ────────────────
+            // 上面 `desktopCommonJvmArgs` 里那四个 `-Dcp.player.*` 是给 jpackage 启动器
+            // （`app/CPPlayer.cfg`）与 `desktopRun` 用的。原生镜像没有启动器，
+            // `System.getProperty` 里根本没有这四个键 ⇒ `BuildInfo` 回落到默认值，
+            // 于是 v1.9.0 / v1.9.1 的 Windows 原生包里「关于」页写着 `1.0.0 (1)`，
+            // 更新检查也拿它当本机版本。两件事缺一不可：
+            //
+            //   1. `-D<name>=<value>`：native-image 的 `-D` **只在构建期有效**
+            //      （`native-image --help` 原文：「set a system property for image build time only」）。
+            //      写成运行期参数没有对应的键 —— 实测镜像里 `System.getProperties()`
+            //      只剩 46 个标准项，自定义键一个都不在。
+            //   2. `--initialize-at-build-time=cp.player.app.BuildInfo`：把这个 object 的
+            //      `<clinit>` 挪到构建期执行，四个 val 随对象一起写进镜像堆。
+            //      不钉这一行就只能靠 GraalVM 的类初始化启发式，版本号会在某次升级后悄悄变回默认。
+            //
+            // 验证（同一份 GraalVM 25.3.4.1，`-Ob` 迷你镜像，同法钉住一个静态字段）：
+            // 钉初始化的镜像输出 `NAME=9.9.9`；不钉、在 `main` 里读同一属性则输出 `NAME=DEFAULT`。
+            //
+            // ⚠️ 因此 `BuildInfo` 的默认值刻意改成 `0.0.0 (0)`：这条链再断一次时，
+            // 「关于」页会明显不对，而不是继续伪装成一个像样的版本号。
+            buildArgs.addAll(
+                "-Dcp.player.versionName=$appVersionName",
+                "-Dcp.player.versionCode=$appVersionCode",
+                "-Dcp.player.releaseChannel=$appReleaseChannel",
+                "-Dcp.player.gitSha=$gitSha",
+                "--initialize-at-build-time=cp.player.app.BuildInfo",
             )
             if (pgoInstrumenting) {
                 // 实测 Oracle GraalVM 在 --pgo-instrument 下强制使用 level 2 优化（218k 方法），
@@ -1160,8 +1212,9 @@ afterEvaluate {
     //   `compose.desktop.application.javaHome`（.jbr）——不用管；
     // - `:app:desktopRun`（**Kotlin KMP 的 KotlinJvmRun**，不是 compose 的任务）：
     //   javaLauncher 默认 = Gradle 守护进程的 JDK（本机 Zulu 25）。
-    //   发行版固定跑 JBR；开发态若用别的 JDK，字体回退、Skia 渲染与
-    //   JBR 文件对话框都会和用户机器不一致，问题只能等打包后才暴露。
+    //   发行版固定跑 JBR；开发态若用别的 JDK，字体回退与 Skia 渲染
+    //   都会和用户机器不一致，问题只能等打包后才暴露。
+    //   （文件选择器已改走 Win32 COM，与运行时无关，不再是理由。）
     //
     // KotlinJvmRun 继承 JavaExec：javaLauncher 非 null 时**优先于** executable，
     // 所以必须先把它清空再设 executable，否则赋值被无声忽略。
@@ -1169,7 +1222,7 @@ afterEvaluate {
         ?.let { File(it, if (hostJbrPlatform == "windows") "bin/java.exe" else "bin/java") }
         ?.takeIf { it.isFile }
     if (resolvedJbrHome != null && runOnJbrJava == null) {
-        logger.warn("CPPlayer: JBR 目录里找不到 bin/java，desktopRun 家族将退回守护进程 JDK（字体/渲染/文件对话框可能与发行版不一致）")
+        logger.warn("CPPlayer: JBR 目录里找不到 bin/java，desktopRun 家族将退回守护进程 JDK（字体/渲染可能与发行版不一致）")
     }
     val runFamilyTaskNames = listOf(
         "run",
