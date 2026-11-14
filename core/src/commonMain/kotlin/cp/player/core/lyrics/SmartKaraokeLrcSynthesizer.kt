@@ -214,11 +214,12 @@ object SmartKaraokeLrcSynthesizer {
             }
         }
 
-        // 行焦点（endTime）覆盖到下一行真正起唱 —— 与 TTML `<p end>` 的语义一致，
-        // 也是 `TtmlSerializer` 与歌词列表判定「当前行」的依据。
-        // 逐字扫光则只到 words 末字：演唱空隙里当前行仍高亮，但最后一个字不能继续亮着。
-        // 上面已把末字钳到 nextStart - 40ms，因此这两个时间点天然分离。
-        return line.copy(words = words, endTime = nextStart)
+        // 与 AMLL 的 TTML 呈现一致：最后一个字扫完后，列表焦点提前移动到下一行，
+        // 但下一行逐字动画仍严格等到它自己的 start 才开始。
+        // 逐字扫光只到 words 末字，行焦点则在这里收尾 —— 两者都必须在间奏里结束，
+        // 否则长间奏会一直停留在上一行，不自动切到下一行。
+        val singingEnd = words.lastOrNull()?.endTime ?: line.endTime ?: (start + span)
+        return line.copy(words = words, endTime = singingEnd)
     }
 
     private fun beginOfLast(words: List<SyncedLyricLine.SyncedWord>, fallback: Long): Long =
