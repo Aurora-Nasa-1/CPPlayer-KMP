@@ -210,7 +210,7 @@ class OnboardingScreen(private val replay: Boolean = false) : Screen {
                     }
                 },
                 onPickZip = { pickZip() },
-                onOpenProviderManagement = { navigator.push(ProviderManagementScreen()) },
+                onOpenProviderManagement = { navigator.push(PluginHubScreen()) },
                 onOpenAccount = { navigator.push(AccountScreen()) },
                 onFinish = {
                     if (replay) {

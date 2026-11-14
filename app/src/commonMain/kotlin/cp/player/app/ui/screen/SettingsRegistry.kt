@@ -571,44 +571,69 @@ private fun accountEntries(): List<SettingsEntry> = listOf(
         screen = { _ -> AccountScreen() },
     ),
     SettingsEntry(
-        id = "providers",
-        group = SettingsGroup.ACCOUNT_AND_PROVIDER,
-        titleOf = { it.settings.itemProviders.title },
-        subtitleOf = { it.settings.itemProviders.subtitle + " · 歌词来源" },
-        icon = Icons.Filled.Dns,
-        accent = SettingsAccent.PRIMARY,
-        keywords = listOf(
-            "音源", "导入", "模块", "切换", "音源配置", "音源设置", "自定义配置", "provider", "module", "settings",
-            "歌词", "歌词源", "歌词来源", "来源", "排序", "优先级", "插件", "歌词插件",
-            "lyrico", "lrc", "ttml", "逐字", "导入歌词", "amll", "边车", "lyrics", "source", "priority", "karaoke",
-        ),
-        subItems = listOf(
-            SettingsSubItem(
-                id = "providers_manage",
-                titleOf = { "音源插件管理与导入" },
-                subtitleOf = { "安装第三方音源 (.zip)、启用/禁用音源与调整搜索聚合优先级" },
-                keywords = listOf("音源", "插件", "模块", "导入音源", "音源优先级", "音源配置", "音源设置", "自定义配置", "provider", "module", "source"),
-                sectionOf = { "数据源" },
-            ),
-            SettingsSubItem(
-                id = "providers_lyrics_plugins",
-                titleOf = { "歌词源插件与优先级" },
-                subtitleOf = { "管理 AMLL / TTML / 网易云 / QQ 歌词源，支持排序与导入插件" },
-                keywords = listOf("歌词", "歌词源", "逐字歌词", "歌词插件", "AMLL", "ttml", "lrc", "lyrics", "karaoke"),
-                sectionOf = { "歌词来源" },
-            ),
-        ),
-        screen = { _ -> ProviderManagementScreen() },
-    ),
-    SettingsEntry(
-        id = "plugin_repository",
+        id = "plugins",
         group = SettingsGroup.ACCOUNT_AND_PROVIDER,
         titleOf = { it.pluginRepository.title },
         subtitleOf = { it.pluginRepository.subtitle },
         icon = Icons.Filled.Extension,
-        accent = SettingsAccent.SECONDARY,
-        keywords = listOf("插件", "仓库", "安装", "更新", "plugin", "repository", "install", "update"),
-        screen = { _ -> PluginRepositoryScreen() },
+        accent = SettingsAccent.PRIMARY,
+        keywords = listOf(
+            "插件", "音源", "歌词", "仓库", "安装", "更新", "导入", "模块", "切换", "启用", "排序", "优先级",
+            "音源配置", "歌词来源", "歌词插件", "provider", "lyrics", "plugin", "repository", "catalog",
+            "install", "update", "source", "priority", "module", "settings",
+        ),
+        subItems = listOf(
+            SettingsSubItem(
+                id = "plugins_installed",
+                titleOf = { "已安装插件与音源" },
+                subtitleOf = { "查看当前音源、歌词来源与仓库插件，切换音源或调整歌词优先级" },
+                keywords = listOf(
+                    "已安装", "音源", "歌词", "插件", "切换音源", "启用", "排序", "优先级",
+                    "provider", "lyrics", "installed", "switch", "priority",
+                ),
+                sectionOf = { "已安装" },
+            ),
+            SettingsSubItem(
+                id = "plugins_discover",
+                titleOf = { "发现与安装插件" },
+                subtitleOf = { "从已启用的仓库浏览音源与歌词插件，查看作者、来源和更新说明后安装" },
+                keywords = listOf(
+                    "发现", "浏览", "安装", "插件", "仓库", "音源", "歌词", "下载",
+                    "discover", "browse", "install", "catalog", "plugin",
+                ),
+                sectionOf = { "发现" },
+            ),
+            SettingsSubItem(
+                id = "plugins_updates",
+                titleOf = { "检查插件与音源更新" },
+                subtitleOf = { "汇总仓库插件与音源模块的可用更新，支持逐个或全部检查" },
+                keywords = listOf(
+                    "更新", "检查更新", "插件更新", "音源更新", "升级", "版本",
+                    "update", "upgrade", "version", "check",
+                ),
+                sectionOf = { "更新" },
+            ),
+            SettingsSubItem(
+                id = "plugins_repositories",
+                titleOf = { "仓库与联网设置" },
+                subtitleOf = { "添加 HTTPS 插件仓库、启用联网与自动检查，管理仓库信任边界" },
+                keywords = listOf(
+                    "仓库", "联网", "自动检查", "HTTPS", "目录", "来源", "信任",
+                    "repository", "catalog", "network", "auto check", "source",
+                ),
+                sectionOf = { "仓库" },
+            ),
+        ),
+        screen = { target ->
+            PluginHubScreen(
+                initialView = when (target) {
+                    "plugins_discover" -> PluginHubView.DISCOVER
+                    "plugins_updates" -> PluginHubView.UPDATES
+                    "plugins_repositories" -> PluginHubView.REPOSITORIES
+                    else -> PluginHubView.INSTALLED
+                },
+            )
+        },
     ),
 )
 

@@ -230,7 +230,7 @@ class AccountScreen : Screen {
                     LoginBrandHeader(
                         providerName = currentProvider?.name,
                         providerType = currentProvider?.type?.name,
-                        onSwitchProvider = { navigator.push(ProviderManagementScreen()) },
+                        onSwitchProvider = { navigator.push(PluginHubScreen()) },
                         onOpenSettings = if (currentProvider != null && !schema.isNullOrEmpty()) {
                             { navigator.push(ProviderCustomSettingsScreen(currentProvider.id, currentProvider.name, schema)) }
                         } else null,
@@ -525,7 +525,7 @@ class AccountScreen : Screen {
                             icon = Icons.Filled.Extension,
                             index = 0,
                             total = providerTotalItems,
-                            onClick = { navigator.push(ProviderManagementScreen()) },
+                            onClick = { navigator.push(PluginHubScreen()) },
                             trailingContent = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     CpText(

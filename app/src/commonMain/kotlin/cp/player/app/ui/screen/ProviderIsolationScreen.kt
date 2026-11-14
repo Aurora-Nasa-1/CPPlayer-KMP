@@ -91,7 +91,7 @@ class ProviderIsolationScreen : Screen {
                         index = 2,
                         total = 3,
                         icon = Icons.Filled.Dns,
-                        onClick = { navigator.push(ProviderManagementScreen()) },
+                        onClick = { navigator.push(PluginHubScreen()) },
                     )
                 }
 
