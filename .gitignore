@@ -65,6 +65,13 @@ reference/Kazumi/
 #   先把那两个提交推到 fork，再 git submodule add。
 reference/netease-module-rust/
 
+# --- 本地实验目录（不入库） ---------------------------------------------
+# dev/provider-lab：用来端到端验「原生包能不能被宿主真正加载」的实验工程
+# （Rust fixture + JS fixture + dist/*.zip + 编译产物，约 97 MB）。
+# 它的结论已经写进 docs/dev/PROVIDER_NATIVE_WIRE.md，工程本身按需重建，
+# 不必进版本库。
+dev/provider-lab/
+
 # --- AI tooling output (local only, regenerated on demand) ---------------
 # Qoder's generated repo wiki + one-off git diff dumps. Kept on disk for
 # local use, but they drift out of date with the code and duplicate
