@@ -37,6 +37,8 @@ Repository / PlaybackController / MediaResolver / Integration
 | 适配器 | 脚本 Provider 与可信 Kotlin / JNI、桌面 Native worker 实现同一个 `MusicProvider`；JNI / worker 是传输，不是另一套 API |
 | 已移除 | 旧 HTTP / Binary / JNI JSON 协议与工厂分支；旧 JS 实现只存在于测试夹具 |
 
+加密播放是同一数据链上的可选分支：`UnifiedMusicSource.getSongUrl` 先调用 `resolveDrm`，Provider 返回 `ResolvedMedia`（资源 + `DrmDescriptor`）；平台支持 DRM 时由 `PlaybackMediaLoader` 交给 `loadDrm`，CDM 的 challenge 再经 `exchangeLicense` 回到 Provider。Desktop 没有 CDM，不会请求该分支；Android Flick 模式在 DRM 播放时会强制切到 Media3。DRM 流不进入磁盘缓存、下载与 `LocalServer` 导出。
+
 共享工作副本中未跟踪的 FFM / compat 旧文件保留在磁盘，但已排除出生产源集。验证脚本检查最终 core JAR，避免意外重新打包它们。
 
 ## 3. 生命周期与数据语义
@@ -70,8 +72,11 @@ Repository / PlaybackController / MediaResolver / Integration
 | 视频下载 | 按 MV / video 类型调用对应解析器，保留实际质量、格式、过期时间与显式媒体头 |
 | 一起听 | 页面经 `SdkListenTogetherBackend` 接入；会话切换清理旧房间与待发指令 |
 | 房间 UI | 用户 ID 仍为 Long；无法无损表示的不透明 SDK 用户 ID 明确返回 `Unsupported` |
+| 动态页 | `SocialRepository` 只消费 typed `getEvents` / `getUserEvents` / `likeResource` / `forwardEvent` / `deleteEvent`；`Unsupported` 与 `Error` 分开呈现 |
+| 转发模型 | `SocialEvent.forwardedFrom` 使用非递归 `EventOrigin`，只保留一层快照，避免原生 Provider 生成无限大小结构 |
+| 导航能力 | `socialFeed` / `messages` 由 Provider 能力派生；不支持或被用户隐藏时入口物理移除，不请求未读数 |
 
-当前 SDK 契约含 161 个业务操作。除歌曲与目录读取外，登录、推荐、评论 / 私信、一起听、MV / 视频、DJ、日历 / 动态、云盘与目录写操作已有类型化链路。
+当前 SDK 契约含 164 个业务操作。除歌曲与目录读取外，登录、推荐、评论 / 私信、一起听、MV / 视频、DJ、日历 / 动态、云盘、目录写操作与 DRM 播放已有类型化链路。
 
 `ExtendedOperations`、扩展 JS / JNI 分发、Host 方法与统一层方法由同一 schema 生成，旧编号不变。操作清单见 [SDK_OPERATIONS](providers/SDK_OPERATIONS.md)，批次范围与未移植类别见[迁移状态](../history/SDK_MIGRATION_STATUS.md)。
 

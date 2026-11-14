@@ -58,8 +58,8 @@ features:
 | Provider | [WORKFLOWS](dev/providers/WORKFLOWS.md) | 按业务域组合方法 |
 | Provider | [JS](dev/providers/JS.md) | JS / TS 差异：受控 context、单脚本打包 |
 | Provider | [NATIVE](dev/providers/NATIVE.md) | JNI 符号、Wire 字节格式、C ABI v1 |
-| 参考 | [SDK_OPERATIONS](dev/providers/SDK_OPERATIONS.md) | 161 个业务操作：tag、方法名、能力名、请求 / 响应 |
-| 参考 | [SDK_TYPES](dev/providers/SDK_TYPES.md) | 155 个 DTO：字段、类型、默认值、可空性 |
+| 参考 | [SDK_OPERATIONS](dev/providers/SDK_OPERATIONS.md) | 164 个业务操作：tag、方法名、能力名、请求 / 响应 |
+| 参考 | [SDK_TYPES](dev/providers/SDK_TYPES.md) | 162 个 DTO：字段、类型、默认值、可空性 |
 | 架构 | [ARCHITECTURE](dev/ARCHITECTURE.md) | 模块职责、数据链、生命周期、源集 |
 | 架构 | [BUILD](dev/BUILD.md) | 环境、构建、测试、验证脚本、并行会话隔离 |
 | 架构 | [INTEGRATION_API](dev/INTEGRATION_API.md) | 对外集成 API v1：发现、鉴权、端点、SSE |

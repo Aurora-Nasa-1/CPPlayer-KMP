@@ -7,17 +7,23 @@
 
 | 文件 | 责任 |
 |---|---|
-| `schema.mjs` | 契约版本、记录字段顺序、默认值、操作 tag、分组、能力名 |
+| `schema.mjs` | 契约版本、记录字段顺序、默认值、操作 tag、分组、能力名（含 DRM tag 168/169） |
 | `documentation.mjs` | 每个业务操作、每条记录、公共字段含义与逐记录覆盖 |
 | `generate.mjs` | Kotlin / TS 声明、编解码、派发、宿主与统一层转发、夹具、参考页 |
+| `rust.mjs` | Rust DTO / 编解码 / 派发 / `provider.h` / 跨语言 Wire 向量 |
+| `pack.mjs` | 零依赖 Provider ZIP 打包器；镜像宿主安装期校验 |
+| `../scripts/new-provider.mjs` | 按所选 operation 生成 JS / Rust 最小 Provider |
 | `documentation.test.mjs` | 跨语言签名与文档覆盖、宿主选择器一致性、文档链接 |
+| `pack.test.mjs` | 打包器的清单、UTF-8、原生魔数、路径与确定性测试 |
 
 ## 2. 改动流程
 
 ```powershell
 node provider-contract/generate.mjs
 node provider-contract/generate.mjs --check
+node provider-contract/rust.mjs --check
 node --test provider-contract/documentation.test.mjs provider-sdk-kmp/js/test.mjs
+node --test provider-contract/pack.test.mjs scripts/new-provider.test.mjs
 npm ci --prefix provider-sdk-kmp/js --ignore-scripts
 npm run --prefix provider-sdk-kmp/js check:types
 ```
@@ -26,7 +32,8 @@ npm run --prefix provider-sdk-kmp/js check:types
 |---|---|
 | `generate.mjs` | 重写全部生成物 |
 | `--check` | 文档元数据缺失 / 过期或生成物漂移即失败 |
-| `documentation.test.mjs` | 全部 161 个业务方法与 155 个 DTO 都有文档 |
+| `rust.mjs --check` | Rust DTO、`provider.h`、Wire 向量或 Kotlin 向量测试漂移即失败 |
+| `documentation.test.mjs` | 全部 164 个业务方法与 162 个 DTO 都有文档 |
 
 生成器维护 `MusicProvider.kt` / `CatalogProvider.kt` 的方法 KDoc，但保留手写的实现与默认方法体。运行期与生命周期声明仍是手写。
 
@@ -39,6 +46,8 @@ npm run --prefix provider-sdk-kmp/js check:types
 | 改线格式 | 需要显式的兼容 / 版本决策 |
 | 描述边界 | 描述 Provider 责任与宿主校验要分开写 |
 
+DRM 的 `DrmDescriptor` 只承载信令（key system、scheme、init data、key URI、可选 license URL），不承载 content key 或 license。`resolveDrm`（168）与 `exchangeLicense`（169）的字段顺序、Wire 向量与 Rust/Kotlin 编解码必须同步生成；challenge / license 字节不得进入夹具日志或文档示例。
+
 `AuthActionRequest.countryCode` 在 Kotlin / TS DTO 中存在，但不追加到 Native v1 的位置式请求字节里：native 编解码器把显式值镜像进既有的 auth-only `extraJson` 字段，缺省时该字段不变，Provider 保持原有默认（含适用时的 `86`）。
 
 ## 4. 生成产物
@@ -48,6 +57,8 @@ npm run --prefix provider-sdk-kmp/js check:types
 | 操作参考 | [docs/dev/providers/SDK_OPERATIONS.md](../docs/dev/providers/SDK_OPERATIONS.md) |
 | 字段参考 | [docs/dev/providers/SDK_TYPES.md](../docs/dev/providers/SDK_TYPES.md) |
 | 分域实现 | [docs/dev/providers/WORKFLOWS.md](../docs/dev/providers/WORKFLOWS.md) |
+| Rust SDK | `provider-sdk-kmp/rust/`（`src/models.rs`、`src/operations.rs`、`src/vectors.rs`、`provider.h`） |
+| Wire 向量 | `provider-contract/vectors/wire-vectors.json` |
 
 新约束要先对照 `ProviderHost` / `ExtendedOperationValidation` 与 runtime 实现，确认真的被强制，再写成文档。
 

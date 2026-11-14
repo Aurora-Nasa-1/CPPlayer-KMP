@@ -94,6 +94,27 @@
 
 宿主按实际质量与已知容器格式确定下载记录与后缀；过期直链重新解析；只转发 Provider 返回的媒体头，不从账号会话注入 Cookie。播放缓存跨音质回退须匹配账号、凭据版本与设置摘要；无归属的旧索引不参与账号回退。保存或清除当前账号凭据会立即取消旧会话请求，Provider 必须响应协程取消。
 
+### DRM
+
+加密播放走 `resolveDrm`（tag 168）+ `exchangeLicense`（tag 169），不修改 `resolve` 的返回类型。
+
+| 步骤 | Provider 行为 | 宿主行为 |
+|---|---|---|
+| 解析 | 把 ID 映射到上游曲目，取 HLS/asset 清单 | 只传平台真正支持的 key system |
+| 选择 | 按请求 key system 优先级选 manifest 里的 `EXT-X-KEY` / `EXT-X-SESSION-KEY` | 不猜 key system、不把无类型 PSSH 当 FairPlay |
+| 返回 | `ResolvedMedia.resource` + `DrmDescriptor?`；明文流可返回 `drm = null` | `drm = null` 走普通 `load`，否则走 `loadDrm` |
+| 许可 | 收到 challenge 后调用上游 license 端点，返回原始 license 字节 | 只在 `licenseUrl = null` 时调用；`licenseUrl` 非空可直接 POST |
+| 失败 | 没有匹配信令时返回 `Unsupported` | 回退 `resolve` 的明文 preview，再失败则报错 |
+
+| 禁止 | 原因 |
+|---|---|
+| 在 `DrmDescriptor` 里放 content key 或缓存 license | 契约只承载信令；密钥生命周期属于平台 CDM |
+| 记录 challenge / license | 敏感字节，日志与崩溃报告都会泄露 |
+| 把加密 HLS URL 放进旧 `resolve` | 宿主没有 DRM 信息时会直接播放失败 |
+| 让 DRM 流进入缓存 / 下载 / 本地中继 | 这些路径只理解明文，且会持久化密文 |
+
+平台支持矩阵：Android 通过 Media3 支持 Widevine；Flick 引擎本身不实现 DRM，但宿主在 `loadDrm` 时会强制切到 Media3；Desktop 没有 CDM，不会请求 `resolveDrm`。Provider 不需要为这些平台降级协议。
+
 `media.qualities` 对应 `getMediaQualities`，支持 `song`、`audio`、`mv`、`video`。
 
 | 规则 | 内容 |
@@ -171,7 +192,31 @@ const provider = defineProvider({
 
 `Notification` 只含文本、时间与已知的发送人 / 资源引用，不回传旧 API 封套。`getUnreadCount` 的各类计数独立，不能合并到私信数。
 
-`getCalendar` 的可选范围用 epoch 毫秒；`getEvents` / `getUserEvents` 用不透明 cursor。动态删除、转发、资源分享各有 typed 方法。`SocialEvent.text` 是正文，不是 JSON。图片用明确 URL 列表表达。
+`getCalendar` 的可选范围用 epoch 毫秒；`getEvents` / `getUserEvents` 用不透明 cursor。
+
+| 动态方法 | 语义 |
+|---|---|
+| `getEvents` | 当前账号的关注流；返回 `EventPage` 与不透明 `cursor` |
+| `getUserEvents` | 指定用户的动态；请求里的用户 ID 保持字符串 |
+| `deleteEvent` | 删除有权限的动态 |
+| `forwardEvent` | 转发动态并附纯文本 |
+| `shareResource` | 把 `song` / `album` / `playlist` 分享到动态 |
+| `likeResource` | 显式设置 `liked` 状态；资源类型包含动态本身，不能实现成「切换」 |
+
+| `SocialEvent` 字段 | 约定 |
+|---|---|
+| `text` | 正文纯文本，不是 JSON 或 HTML |
+| `imageUrls` | 明确 URL 列表，不塞入未拆分的图片封套 |
+| `resourceType` / `resourceId` | typed 资源快照；未知类型不要猜成歌曲 |
+| `resourceTitle` / `resourceCoverUrl` / `resourceSubtitle` | 展示快照，可为空 |
+| `liked` / `likedCount` / `commentCount` / `forwardCount` | 上游没给计数时保持 0，不伪造 |
+| `location` | 纯文本地点，可为空 |
+| `forwardedFrom` | `EventOrigin`，只允许一层非递归快照；不要再嵌 `SocialEvent` |
+
+宿主把 `social.events` / `social.userEvents` 映射为 UI 能力 `socialFeed`，把
+`messages.unread` / `messages.conversations` / `messages.history` 映射为 `messages`。
+音源未实现时返回 `Unsupported`，不要用空页伪装成功；当前契约**没有发布动态**方法，
+Provider 不应自造上游写接口。
 
 ## 6. 一起听
 

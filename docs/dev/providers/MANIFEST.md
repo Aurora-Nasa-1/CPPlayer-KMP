@@ -40,6 +40,7 @@ ZIP 根目录必须包含 UTF-8 的 `manifest.json`。
 | `sdkOrigins` | runtime HTTP origin 白名单；省略等于禁止 HTTP，不是任意域名 |
 | `capabilities` | 安装展示标签，按下节规则映射；不能替代运行期方法能力 |
 | `settingsSchema` | 声明式设置；会话拿到已保存值与默认值组成的只读快照 |
+| `defaultCountryCode` | 音源固定区号；声明后宿主隐藏区号输入并强制用于手机登录/发码；1..4 位数字，例如网易云 `"86"` |
 | `qualityOptions` | 业务音质 key 与应用档位的映射 |
 | `updateUrl` | 可选更新描述地址 |
 | `apiVersion` / `minHostApiVersion` | 既有仓库元数据，缺省 1；正整数；`minHostApiVersion` 不能高于当前宿主值 3 |
@@ -54,14 +55,18 @@ manifest 标签以 `ProviderCapability.sdkLabels` 为准。
 |---|---|
 | `search` | 标签本身，或 tracks / playlists / albums / artists 的 search 能力之一 |
 | `playback` | 标签本身，或 `tracks.resolve` |
+| `drmPlayback` | 标签本身，或同时声明 `tracks.resolveDrm` 与 `tracks.exchangeLicense` |
 | `lyricsSearch` | 标签本身，或 `lyrics.get` |
 | `userPlaylists` | 标签本身，或 `playlists.user` |
 | `artistExplorer` | 标签本身，或同时声明 `artists.get`、`artists.tracks`、`artists.albums` |
 | `albumExplorer` | 标签本身，或 `albums.get` |
+| `socialFeed` | 标签本身，或 `social.events` / `social.userEvents` 任一 |
+| `messages` | 标签本身，或 `messages.unread` / `messages.contacts` / `messages.conversations` / `messages.history` 任一 |
 
 | 规则 | 说明 |
 |---|---|
 | 运行期权威 | `MusicProvider.capabilities()` / JS `provider.capabilities` |
+| UI 门控 | 已安装音源的「消息」「动态」等入口按 manifest 标签显示 / 隐藏；标签漏写时即使运行期能力存在，宿主也会显示「不支持」 |
 | 缺方法能力 | 请求明确返回 `Unsupported` |
 | 未知标签 | 忽略，不导致解码失败 |
 | 旧标签 | `comments`、`qrLogin` 等不能启用对应功能，须改用 SDK 能力名 |
@@ -69,12 +74,16 @@ manifest 标签以 `ProviderCapability.sdkLabels` 为准。
 ```json
 {
   "qualityOptions": [
-    { "key": "flac", "label": "FLAC", "targetQuality": "lossless" }
+    { "key": "drm-standard", "label": "AAC (DRM)", "targetQuality": "standard" },
+    { "key": "drm-lossless", "label": "ALAC Lossless (DRM)", "targetQuality": "lossless" },
+    { "key": "preview", "label": "Preview (clear AAC)", "targetQuality": "standard" }
   ]
 }
 ```
 
 宿主把请求档位映射为业务 key，返回时按实际 `actualQuality` 还原标签。不要在未知情况下把请求档位当作实际音质。
+
+`drmPlayback` 只是安装页/插件页的展示标签，不能替代运行期能力声明；真正的加密播放要求 Provider 同时实现 `resolveDrm` 与 `exchangeLicense`。DRM 档位与实际明文 preview 档位应使用不同的业务 key，避免用户选择「无损」时被静默换成试听。
 
 ## 4. 安装与更新纪律
 
@@ -186,7 +195,7 @@ CPPlayer-Plugins-KMP/
       "kind": "provider",
       "name": "NeteaseCloudMusicApi-RS",
       "version": "1.2.2",
-      "description": "基于 KMP SDK v1 重构的网易云原生音源，支持 161 项业务操作、动态音质与 Native 会话。",
+      "description": "基于 KMP SDK v1 重构的网易云原生音源，支持 164 项业务操作、动态音质与 Native 会话。",
       "author": "Aurora-Nasa-1",
       "homepage": "https://github.com/Aurora-Nasa-1/3rd-CPPlayer-netcloudMusic-Muti",
       "changelog": "v1.2.2: 修复 SDK v1 下每日推荐、私人 FM 与心动模式不可用的问题，补全推荐能力声明并严格限制返回数量。",

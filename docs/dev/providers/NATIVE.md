@@ -1,7 +1,7 @@
 # 原生 Provider
 
 > 原生库的两条 ABI：JNI 符号、Wire 字节格式、C ABI v1。适用读者：原生音源作者。
-> 契约版本 `kmp-sdk-v1` · 更新 2026-11-14 · 事实源 `provider-sdk-kmp/src/commonMain/kotlin/cp/player/sdk/Wire.kt`、`NativeWireCodec.generated.kt`、`jni/NativeSession.kt`
+> 契约版本 `kmp-sdk-v1` · 更新 2026-11-15 · 事实源 `provider-sdk-kmp/src/commonMain/kotlin/cp/player/sdk/Wire.kt`、`NativeWireCodec.generated.kt`、`jni/NativeSession.kt`
 
 ## 1. 两条 ABI 的分工
 
@@ -69,12 +69,12 @@ C ABI 改按符号名直调：每包一个动态库句柄，绑定天然独立�
 
 ### 3.3 操作码
 
-`operation` 即 [SDK_OPERATIONS](SDK_OPERATIONS.md) 第一列的 tag，`2..166` 为业务操作。请求按该操作的请求 DTO 编码，响应按响应 DTO 编码。
+`operation` 即 [SDK_OPERATIONS](SDK_OPERATIONS.md) 第一列的 tag，`2..169`（排除 `6..9` 运行时操作）为业务操作。请求按该操作的请求 DTO 编码，响应按响应 DTO 编码。
 
 | 操作码 | 含义 | 要求 |
 |---|---|---|
 | `1` | `CAPABILITIES` | 原生包必须实现：请求 `Bytes`，响应 `Capabilities { supported: List<String> }` |
-| `2..166` | 业务操作 | 按 tag 编码 |
+| `2..169` | 业务操作（排除 `6..9`） | 按 tag 编码 |
 | `6..9` | `HTTP` / `SHA256` / `STORAGEGET` / `STORAGESET` | SDK 有 DTO，宿主不向原生包派发 |
 
 宿主每次调用前先取能力表；不实现 `operation = 1`，所有业务调用都会以 `Unsupported` 结束。
@@ -174,19 +174,60 @@ C ABI 改按符号名直调：每包一个动态库句柄，绑定天然独立�
 
 只导出 C ABI、不导出 JNI 的库在 JVM 上不可用。宿主只在原生构建里 `libraryLookup`；JVM 上不为探测去加载库，否则 DLL 会钉住快照目录。
 
-### 4.6 Rust 侧骨架
+### 4.6 Rust SDK
+
+仓库内 crate `provider-sdk-kmp/rust`（包名 `cpplayer-provider-sdk`）已经封装了本节的全部规则：Wire 编解码、操作派发、会话表、取消、响应封套，以及 5 个 `cpp_*` 与 4 个 JNI 符号。作者只实现 `MusicProvider`，不要手写导出函数。
 
 ```rust
-#[no_mangle]
-pub extern "C" fn cpp_abi_version() -> i32 { 1 }
+use cpplayer_provider_sdk::*;
 
-#[no_mangle]
-pub unsafe extern "C" fn cpp_create(
-    provider_id: *const c_char, account_id: *const c_char,
-    credential: *const c_char, settings_json: *const c_char,
-    err: *mut c_char, err_cap: i32,
-) -> i64 { /* 复用现有 JNI 实现里 create 的那一段 */ }
+struct MyProvider;
+
+impl MusicProvider for MyProvider {
+    fn capabilities(&self, _context: &ProviderContext) -> Vec<&'static str> {
+        vec![Capability::SEARCH, Capability::GET, Capability::RESOLVE]
+    }
+
+    fn search(&mut self, request: SearchRequest, context: &ProviderContext) -> ProviderResult<TrackPage> {
+        let _ = (request, context);
+        unsupported()
+    }
+}
+
+fn create(_context: &ProviderContext) -> Box<dyn MusicProvider> {
+    Box::new(MyProvider)
+}
+
+export_provider!(create);
 ```
+
+| 项 | 说明 |
+|---|---|
+| 生成物 | `src/models.rs`、`src/operations.rs`、`src/vectors.rs`、`provider.h` 由 `provider-contract/rust.mjs` 生成，勿手改 |
+| 字段命名 | Rust 作者侧是 `snake_case`；Wire 是位置式，字段顺序由生成 DTO 固定 |
+| 错误类型 | 作者侧 `Failure` 与 DTO 的 `Failure` 冲突，Rust DTO 因此改名 `WireFailure` |
+| 能力开关 | `capabilities()` 是运行期权威；未声明的方法返回 `Unsupported` |
+| 取消 | `ProviderContext.cancel` 是 `CancelToken`；在昂贵步骤之间调用 `check()` |
+| 日志 | `ProviderContext` 的 `Debug` 已脱敏 `credential` |
+| 双 ABI | `export_provider!` 同时导出 `cpp_*` 与 `Java_cp_player_sdk_jni_NativeSession_*` |
+
+构建与验证：
+
+```powershell
+node provider-contract/rust.mjs --check
+cd provider-sdk-kmp/rust
+cargo test --all-targets
+```
+
+Windows 上如果 `link.exe` 不在 PATH，先用 MSVC 的 `vcvars64.bat` 初始化环境再运行 Cargo。生成的动态库按平台复制到包根目录或 `lib/<abi>/`，并把 `manifest.entryPoint` 改成实际文件名：
+
+| 平台 | 库文件名 |
+|---|---|
+| Windows x64 | `<crate>.dll` |
+| Linux x64 | `lib<crate>.so` |
+| macOS | `lib<crate>.dylib` |
+
+跨语言 Wire 向量在 `provider-contract/vectors/wire-vectors.json`；Rust 与 Kotlin 两端都由同一组向量测试。契约变更后先跑 `rust.mjs --check`，再跑 `cargo test --all-targets` 与桌面测试。
 
 ## 5. manifest 的 type
 

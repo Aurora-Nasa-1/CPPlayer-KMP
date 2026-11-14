@@ -25,11 +25,13 @@
 | `get(IdRequest)` | `tracks.get` | `Track` |
 | `getMany(BatchRequest)` | `tracks.getMany`，或不声明而用默认逐项实现 | `TrackBatch` |
 | `resolve(ResolveRequest)` | `tracks.resolve` | `MediaResource` |
+| `resolveDrm(DrmResolveRequest)` | `tracks.resolveDrm`（tag 168） | `ResolvedMedia` |
+| `exchangeLicense(LicenseRequest)` | `tracks.exchangeLicense`（tag 169） | `LicenseResponse` |
 | `close()` | 无 | 释放会话资源 |
 
 已支持只读目录：远端歌词、歌单（搜索 / 详情 / 曲目 / 用户歌单）、专辑（搜索 / 详情）、歌手（搜索 / 详情 / 曲目 / 专辑）。
 
-扩展业务已接入登录、推荐、评论/私信、一起听、MV/视频、DJ、日历/动态、账号/云盘与目录写入，共 161 个操作。签名与能力名见 [SDK_OPERATIONS](SDK_OPERATIONS.md)。
+扩展业务已接入登录、推荐、评论/私信、一起听、MV/视频、DJ、日历/动态、账号/云盘、目录写入与 DRM，共 164 个操作。签名与能力名见 [SDK_OPERATIONS](SDK_OPERATIONS.md)。
 
 | 规则 | 说明 |
 |---|---|
@@ -123,7 +125,29 @@ class MyProvider(private val context: ProviderContext) : MusicProvider {
 
 取消必须原样传播，不能吞成空数据。错误文本不得包含凭证、私有 URL 或请求体。
 
-## 6. 宿主边界
+## 6. DRM 播放（可选）
+
+DRM 由两个独立能力组成，**必须成对声明**；只声明一个时宿主按未实现处理。
+
+| 方法 | 能力 | 输入 → 输出 | 责任 |
+|---|---|---|---|
+| `resolveDrm` | `tracks.resolveDrm` | `DrmResolveRequest` → `ResolvedMedia` | 解析加密资源与 HLS/信令描述，不生成许可证 |
+| `exchangeLicense` | `tracks.exchangeLicense` | `LicenseRequest` → `LicenseResponse` | 把宿主 CDM 的 challenge 换成 license |
+
+| 规则 | 内容 |
+|---|---|
+| 描述边界 | `DrmDescriptor` 只含信令（`keySystem`、`schemeIdUri`、`initData`、`keyId`、`keyUri`、`serverCertificate`、`licenseUrl`）；绝不含 content key 或可复用 license |
+| `licenseUrl = null` | 宿主**必须**调用 `exchangeLicense`；非空表示平台可直接 POST challenge |
+| 敏感字节 | challenge 与 license 只在内存中传递，不写日志、不缓存、不持久化、不进错误消息 |
+| 真实音质 | `actualQuality` 按实际选中的 HLS variant 返回，不能照抄请求档位 |
+| 不可用即失败 | 宿主请求的 key system 在资源里不存在时返回 `Unsupported`，不能返回一个必然播不了的加密 URL |
+| 平台矩阵 | Android：Widevine（Media3；Flick 模式强制切 Media3）；Desktop：无 CDM |
+| 回退顺序 | DRM → 明文 preview（`resolve`）→ `Unsupported` |
+| 禁用路径 | DRM 流不进入磁盘流缓存、`StreamLocalizer`、`DownloadEngine`、`LocalServer` 导出 |
+
+宿主只在 `supportedDrmKeySystems()` 非空且 Provider 同时声明上述两个能力时调用 `resolveDrm`；返回 `Unsupported` 后回退旧的 `resolve`。Provider 不应自行做 CDM、解密或把 license 写入文件。
+
+## 7. 宿主边界
 
 `ProviderContext` 只提供 Provider / 账号标识、设置快照、凭证与受控 runtime。
 
@@ -144,7 +168,7 @@ class MyProvider(private val context: ProviderContext) : MusicProvider {
 
 这些是宿主责任，作者不需要自己实现调度器。
 
-## 7. 安装与验证
+## 8. 安装与验证
 
 ZIP 安装支持 SDK JavaScript 与 JNI / Native 包。原生库走宿主统一 `NativeSession` 入口，无需 `nativeFactoryClass`、预注册或额外授权；布局见 [MANIFEST](MANIFEST.md#5-原生-sdk-包)。
 
@@ -176,7 +200,7 @@ pwsh -File scripts/verify-provider-chain.ps1
 
 修改契约时：结构改 `schema.mjs`，语义改 `documentation.mjs`，再运行生成器。生成结果不能手工改成另一套声明。
 
-## 8. 旧实现迁移
+## 9. 旧实现迁移
 
 | 步骤 | 动作 |
 |---|---|

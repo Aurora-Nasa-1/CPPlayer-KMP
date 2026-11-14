@@ -1,7 +1,7 @@
 # Provider 开发
 
 > 音源插件（Provider）的唯一入口。适用读者：音源作者、SDK 维护者。
-> 契约版本 `kmp-sdk-v1` · 更新 2026-11-14 · 事实源 `provider-sdk-kmp/`、`provider-contract/schema.mjs`
+> 契约版本 `kmp-sdk-v1` · 更新 2026-11-15 · 事实源 `provider-sdk-kmp/`、`provider-contract/schema.mjs`
 
 CPPlayer 自身不含在线曲库。内容全部由 Provider 提供：它实现一组强类型业务方法，宿主负责会话、调度与校验。
 
@@ -29,6 +29,7 @@ CPPlayer 自身不含在线曲库。内容全部由 Provider 提供：它实现�
 | 第一次写 Provider | [QUICKSTART](QUICKSTART.md) → [GUIDE](GUIDE.md) → [MANIFEST](MANIFEST.md) |
 | 写 JS / TS | [QUICKSTART](QUICKSTART.md) → [JS](JS.md) → [WORKFLOWS](WORKFLOWS.md) |
 | 写原生库 | [QUICKSTART](QUICKSTART.md) → [NATIVE](NATIVE.md) → [MANIFEST](MANIFEST.md) |
+| 生成模板 / 打包 / 一致性检查 | [QUICKSTART 2.1](QUICKSTART.md#21-从模板生成) → [provider-contract/README](../../../provider-contract/README.md) |
 | 查签名与字段 | [SDK_OPERATIONS](SDK_OPERATIONS.md)、[SDK_TYPES](SDK_TYPES.md) |
 | 按业务域实现 | [WORKFLOWS](WORKFLOWS.md) |
 | 发布到商店 | [MANIFEST 第 6 节](MANIFEST.md#6-商店仓库分发) |
@@ -44,8 +45,8 @@ CPPlayer 自身不含在线曲库。内容全部由 Provider 提供：它实现�
 | [JS](JS.md) | `globalThis.provider`、`context` 能力、TS 类型与打包 | JS / TS 作者 |
 | [NATIVE](NATIVE.md) | JNI 符号、Wire 字节格式、C ABI、双导出 | 原生作者 |
 | [WORKFLOWS](WORKFLOWS.md) | 搜索、播放、评论、一起听、MV/DJ、上传、登录 | 全部作者 |
-| [SDK_OPERATIONS](SDK_OPERATIONS.md) | 161 个业务操作的 tag、能力名、请求/响应 | 参考 |
-| [SDK_TYPES](SDK_TYPES.md) | 155 个 DTO 的字段、类型、默认值 | 参考 |
+| [SDK_OPERATIONS](SDK_OPERATIONS.md) | 164 个业务操作的 tag、能力名、请求/响应 | 参考 |
+| [SDK_TYPES](SDK_TYPES.md) | 162 个 DTO 的字段、类型、默认值 | 参考 |
 
 两张参考由 `provider-contract/generate.mjs` 生成，源头是 `schema.mjs`（结构）与 `documentation.mjs`（语义）。改文档不手改产物，改源头再生成。
 

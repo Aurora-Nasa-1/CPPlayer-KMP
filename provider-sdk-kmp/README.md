@@ -66,6 +66,50 @@ pwsh -File provider-sdk-kmp/examples/js/pack.ps1
 
 导入 `artifacts/provider-sdk/kmp-catalog-0.1.0.zip`，搜索 `all`，播放本地生成的 9.5 秒音。服务只绑定 `127.0.0.1:48482`；Android 上该地址指设备本身，手动验证需 `adb reverse`。预览 runtime 刻意不开放跨设备 HTTP。
 
+## 2.1 Rust（原生 SDK）
+
+`provider-sdk-kmp/rust/` 是 `cpplayer-provider-sdk` crate。它封装 Wire 编解码、操作派发、会话句柄、取消与两条原生 ABI；作者只实现 `MusicProvider` 并调用 `export_provider!`。
+
+```rust
+use cpplayer_provider_sdk::*;
+
+struct MyProvider;
+
+impl MusicProvider for MyProvider {
+    fn capabilities(&self, _context: &ProviderContext) -> Vec<&'static str> {
+        vec![Capability::SEARCH, Capability::GET, Capability::RESOLVE]
+    }
+
+    fn search(&mut self, request: SearchRequest, context: &ProviderContext) -> ProviderResult<TrackPage> {
+        let _ = (request, context);
+        unsupported()
+    }
+}
+
+fn create(_context: &ProviderContext) -> Box<dyn MusicProvider> {
+    Box::new(MyProvider)
+}
+
+export_provider!(create);
+```
+
+| 项 | 说明 |
+|---|---|
+| 生成物 | `src/models.rs`、`src/operations.rs`、`src/vectors.rs`、`provider.h` 由 `provider-contract/rust.mjs` 生成，勿手改 |
+| 命名 | 字段是 Rust `snake_case`；Wire 是位置式，字段顺序固定 |
+| 错误 | 作者侧错误类型叫 `Failure`；DTO 的 `Failure` 在 Rust 叫 `WireFailure` |
+| 能力开关 | `capabilities()` 是运行期开关；删掉方法并从列表移除即关闭 |
+| 导出 | `export_provider!` 一次导出 5 个 `cpp_*` 与 4 个 JNI 符号 |
+| 头文件 | `provider.h` 只用于确认导出面；C/C++ 作者可直接实现同一组符号 |
+
+```powershell
+node provider-contract/rust.mjs --check
+cd provider-sdk-kmp/rust
+cargo test --all-targets
+```
+
+Windows 上如果链接器不在 PATH，先初始化 MSVC 环境（`vcvars64.bat`），再运行 Cargo。原生包构建、平台库命名与打包见 [NATIVE](../docs/dev/providers/NATIVE.md#46-rust-sdk)。
+
 ## 3. 验证
 
 ```powershell
@@ -86,14 +130,18 @@ node provider-contract/generate.mjs --check
 
 | 项 | 内容 |
 |---|---|
-| 业务操作 | 161 个 typed 操作 |
+| 业务操作 | 164 个 typed 操作 |
 | tag 61..126 | 评论删除、私信、一起听房间与同步、MV / 视频、DJ、日历 / 事件、歌单元数据、账号与库操作 |
 | tag 127..165 | 扩展搜索、游标评论、独立专辑浏览、通知、排序、导入、二进制上传、视频 / DJ 浏览、最近媒体、账号绑定、音质枚举 |
 | tag 166 | 有界喜欢的 ID 分页（`accounts.likes.page`），宿主聚合完整收藏集合 |
+| tag 167 | 社交资源点赞（`social.likeResource`） |
+| tag 168..169 | DRM 资源解析与 license 交换（`tracks.resolveDrm` / `tracks.exchangeLicense`） |
 | 生成物 | 见 [操作表](../docs/dev/providers/SDK_OPERATIONS.md)、[字段参考](../docs/dev/providers/SDK_TYPES.md)、[分域实现](../docs/dev/providers/WORKFLOWS.md) |
 | 入口 | [开发指南](../docs/dev/providers/GUIDE.md) |
 
 `MusicProvider` 继承 `ExtendedOperations`；这些新增能力的 Kotlin 常量在 `ExtendedCapability`。全部新增都有 `Unsupported` 默认实现，既有 Provider 无需实现。
+
+DRM 是可选能力，必须同时声明 `tracks.resolveDrm` 与 `tracks.exchangeLicense`。Provider 只返回 HLS 信令或换取 license 字节；CDM、解密与密钥生命周期属于宿主平台。Android 通过 Media3 支持 Widevine，Flick 模式遇到 DRM 会强制切到 Media3；Desktop 没有 CDM，会回退到明文 `resolve`。
 
 生成器同时维护 JS / JNI 派发、宿主入口、统一层转发与非空跨语言用例，`--check` 覆盖这些文件。既有操作 tag 与记录布局不变。能力数上限为每会话 256 条（原 64 条），Provider 可以声明当前全部契约。
 
