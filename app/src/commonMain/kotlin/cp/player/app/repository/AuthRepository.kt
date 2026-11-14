@@ -1,8 +1,6 @@
 package cp.player.app.repository
 
 import cp.player.core.BackendResult
-import cp.player.core.api.WebLoginSession
-import cp.player.core.api.WebLoginState
 import cp.player.core.music.UnifiedMusicSource
 import cp.player.sdk.AuthAction
 import cp.player.sdk.AuthActionRequest
@@ -44,11 +42,6 @@ data class CaptchaImageResult(
     val sessionCookie: String?,
 )
 
-data class WebLoginCheckResult(
-    val state: WebLoginState,
-    val cookie: String?,
-)
-
 /**
  * 强类型认证仓库（面向 UI 层）。
  *
@@ -86,13 +79,19 @@ class AuthRepository(
     /**
      * 手机号登录。
      *
-     * 单输入框同时收验证码与密码（UI 文案即「验证码或密码」）。历史实现固定按密码提交，
-     * 这里保持一致：只有 `password` 字段会被填。需要走短信验证码登录时，
-     * 应先 `sendCaptcha` 再由音源按其能力判定（见 `AuthActionRequest.captcha`）。
+     * 短信验证码与密码必须分流到不同字段：网易云 `login/cellphone` 收到 `captcha`
+     * 后会把 `password` 置为同一个值；若只填 `password`，短信验证码会被当成密码
+     * 做 MD5 ⇒ 上游返回 502，UI 只看到「登录没反应」。
+     *
+     * 这里不用「纯数字 / 长度」猜：未调用 [sendCaptcha] 就直接提交的纯数字密码
+     * （例如 8 位数字密码）会被误判成验证码。由调用方显式声明是验证码，其余一律
+     * 按密码处理；验证码不走 MD5（`md5 = false` 只作用于密码字段）。
      */
     suspend fun loginWithPhone(
         phone: String,
         codeOrPass: String,
+        useSmsCode: Boolean = false,
+        countryCode: String? = null,
         imageCaptcha: String? = null,
         captchaCookie: String? = null,
     ): AuthActionResult = toActionResult(
@@ -100,7 +99,9 @@ class AuthRepository(
             AuthActionRequest(
                 action = AuthAction.LOGIN_PHONE,
                 phone = phone,
-                password = codeOrPass,
+                password = phoneLoginPassword(codeOrPass, useSmsCode),
+                captcha = phoneLoginCaptcha(codeOrPass, useSmsCode),
+                countryCode = countryCode,
                 imageCaptcha = imageCaptcha,
                 challengeCookie = captchaCookie,
                 md5 = false,
@@ -110,6 +111,7 @@ class AuthRepository(
 
     suspend fun sendCaptcha(
         phone: String,
+        countryCode: String? = null,
         imageCaptcha: String? = null,
         captchaCookie: String? = null,
     ): AuthActionResult = toActionResult(
@@ -117,6 +119,7 @@ class AuthRepository(
             AuthActionRequest(
                 action = AuthAction.CAPTCHA_SEND,
                 phone = phone,
+                countryCode = countryCode,
                 imageCaptcha = imageCaptcha,
                 challengeCookie = captchaCookie,
                 md5 = false,
@@ -133,26 +136,6 @@ class AuthRepository(
             captchaImage = image,
             sessionCookie = result?.cookie,
         )
-    }
-
-    /**
-     * 网页端登录入口。
-     *
-     * `sessionId` 取自 [ProviderAuthResult.key]：SDK 结果里没有独立的会话字段，
-     * 音源约定用 `key` 承载轮询游标；没有就退化成 null（调用方按「不轮询」处理）。
-     */
-    suspend fun getWebviewLoginUrl(): WebLoginSession? {
-        val result = authenticate(AuthActionRequest(action = AuthAction.WEBVIEW_URL, md5 = false))
-        val url = result?.url?.takeIf(String::isNotBlank) ?: return null
-        if (!result.success) return null
-        return WebLoginSession(url, result.key?.takeIf(String::isNotBlank))
-    }
-
-    suspend fun checkWebviewLogin(sessionId: String): WebLoginCheckResult {
-        val result = authenticate(
-            AuthActionRequest(action = AuthAction.WEBVIEW_CHECK, sessionId = sessionId, md5 = false),
-        )
-        return WebLoginCheckResult(webLoginStateOf(result), result?.cookie)
     }
 
     suspend fun loginAnonymous(): AuthActionResult =
@@ -193,12 +176,17 @@ class AuthRepository(
         }
     }
 
-    /** 网页登录状态：SDK 只给 `status`，约定 0 = 等待、其他非成功值一律按失败处理。 */
-    private fun webLoginStateOf(result: ProviderAuthResult?): WebLoginState = when {
-        result == null -> WebLoginState.FAILED
-        result.success && result.cookie?.isNotBlank() == true -> WebLoginState.AUTHORIZED
-        result.status == 0 -> WebLoginState.PENDING
-        result.success -> WebLoginState.PENDING
-        else -> WebLoginState.FAILED
-    }
 }
+
+/**
+ * 手机号登录的字段分流。
+ *
+ * 显式模式而不是按「纯数字 / 长度」猜：8 位数字密码不该被当成验证码。
+ * `captcha` 与 `password` 必须互斥，否则网易云 `login/cellphone` 会把
+ * 验证码同时塞进 `password` 做 MD5。
+ */
+internal fun phoneLoginPassword(codeOrPass: String, useSmsCode: Boolean): String? =
+    codeOrPass.takeIf { !useSmsCode && it.isNotBlank() }
+
+internal fun phoneLoginCaptcha(codeOrPass: String, useSmsCode: Boolean): String? =
+    codeOrPass.takeIf { useSmsCode && it.isNotBlank() }

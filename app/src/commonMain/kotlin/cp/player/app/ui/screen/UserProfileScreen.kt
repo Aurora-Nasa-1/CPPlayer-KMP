@@ -1,8 +1,8 @@
 package cp.player.app.ui.screen
 
 import cp.player.app.ui.component.CpText
+import cp.player.app.ui.component.CpExpandableText
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -400,15 +400,46 @@ private fun UserProfileContent(
                     }
                     items(bundle.playlists.size, key = { "pl-${bundle.playlists[it].resourceId}" }) { index ->
                         val playlist = bundle.playlists[index]
+                        val owner = playlistActions.isPlaylistOwner(playlist)
+                        val askDelete: () -> Unit = {
+                            confirm.request(
+                                title = if (owner) s.library.deletePlaylist else s.library.unfavoritePlaylist,
+                                message = if (owner) {
+                                    s.library.deletePlaylistMessage(playlist.name)
+                                } else {
+                                    s.library.unfavoritePlaylistMessage(playlist.name)
+                                },
+                                confirmLabel = if (owner) s.common.confirm else s.library.unfavoritePlaylist,
+                                destructive = owner,
+                                onConfirm = { playlistActions.deleteOrUnsubscribePlaylist(playlist, s) },
+                            )
+                        }
+                        val menuActions = if (playlistActions.isServerPlaylist(playlist)) {
+                            cp.player.app.ui.component.PlaylistMenuActions(
+                                isOwner = owner,
+                                isFavorite = true,
+                                onPlay = { playlistActions.playPlaylist(playlist, s) },
+                                onAddToQueue = { playlistActions.queuePlaylist(playlist, s) },
+                                onDownload = { playlistActions.downloadPlaylist(playlist, s) },
+                                onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
+                                onToggleFavorite = if (!owner) askDelete else null,
+                                onDelete = if (owner) askDelete else null,
+                            )
+                        } else {
+                            null
+                        }
                         PlaylistItem(
                             playlist = playlist,
                             isOwner = isMe,
-                            modifier = Modifier.animateItem(),
+                            // 歌单卡片行距 4dp；同一列表里的歌曲行仍是全局 2dp，
+                            // 所以这里用 padding 补足差额而不是改整个列表的 arrangement。
+                            modifier = Modifier.animateItem().padding(vertical = 1.dp),
                             onClick = { navigator.push(PlaylistDetailScreen(playlist)) },
                             // 点击弹歌单动作菜单（原先传的是空 lambda，按钮画得出来、
                             // 点下去毫无反应）。isOwner 跟着 isMe 走：在自己主页上才有
                             // 「删除歌单」，看别人的主页只有「取消收藏」。
                             onOptionsClick = { playlistOptionsTarget = playlist },
+                            menuActions = menuActions,
                         )
                     }
                 }
@@ -449,72 +480,33 @@ private fun UserProfileContent(
                 // 与侧栏 / 歌单详情页同一条规则：删除用通用「确定」，取消收藏直接点出动作。
                 confirmLabel = if (owner) s.common.confirm else s.library.unfavoritePlaylist,
                 destructive = owner,
-                onConfirm = { playlistActions.deleteOrUnsubscribePlaylist(playlist) },
+                onConfirm = { playlistActions.deleteOrUnsubscribePlaylist(playlist, s) },
             )
         }
-        val menuItems = if (playlistActions.isServerPlaylist(playlist)) {
-            cp.player.app.ui.component.playlistContextMenuItems(
-                cp.player.app.ui.component.PlaylistMenuActions(
-                    isOwner = owner,
-                    onPlay = {
-                        playlistActions.playPlaylist(playlist)
-                        playlistOptionsTarget = null
-                    },
-                    onAddToQueue = {
-                        playlistActions.queuePlaylist(playlist)
-                        playlistOptionsTarget = null
-                    },
-                    onDownload = {
-                        playlistActions.downloadPlaylist(playlist)
-                        playlistOptionsTarget = null
-                    },
-                    onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
-                    // 收藏状态不在这里查（要额外一次请求），所以菜单不提供「收藏歌单」；
-                    // 取消收藏走 [onDelete] 那一支的「删除歌单 / 取消收藏」——
-                    // 与侧栏同一条规则：owner 删除、非 owner 取消收藏。
-                    // 两者都先弹确认：删掉自己建的歌单不可恢复。
-                    onDelete = askDelete,
-                )
-            )
-        } else {
-            emptyList()
-        }
-        val windowChromeActive = cp.player.app.ui.component.LocalWindowChromeActive.current
-        if (windowChromeActive && menuItems.isNotEmpty()) {
-            Box(Modifier.fillMaxSize()) {
-                androidx.compose.material3.DropdownMenu(
-                    expanded = true,
-                    onDismissRequest = { playlistOptionsTarget = null },
-                ) {
-                    menuItems.forEach { item ->
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = { CpText(item.label) },
-                            onClick = {
-                                playlistOptionsTarget = null
-                                item.onClick()
-                            },
-                        )
-                    }
-                }
-            }
-        } else {
-            cp.player.app.ui.component.PlaylistOptionsSheet(
-                playlistName = playlist.name,
-                isOwner = owner,
-                onDismiss = { playlistOptionsTarget = null },
-                onPlay = {
-                    playlistActions.playPlaylist(playlist)
-                    playlistOptionsTarget = null
-                },
-                onAddToQueue = {
-                    playlistActions.queuePlaylist(playlist)
-                    playlistOptionsTarget = null
-                },
-                onDelete = if (owner) askDelete else null,
-                onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
-                coverUrl = playlist.coverUrl,
-            )
-        }
+        // 桌面端的「更多 / 右键」已经由 PlaylistItem 内部的锚定菜单处理，
+        // 这里只负责触屏形态的底部弹层。
+        cp.player.app.ui.component.PlaylistOptionsSheet(
+            playlistName = playlist.name,
+            isOwner = owner,
+            onDismiss = { playlistOptionsTarget = null },
+            onPlay = {
+                playlistActions.playPlaylist(playlist, s)
+                playlistOptionsTarget = null
+            },
+            onAddToQueue = {
+                playlistActions.queuePlaylist(playlist, s)
+                playlistOptionsTarget = null
+            },
+            onDownload = {
+                playlistActions.downloadPlaylist(playlist, s)
+                playlistOptionsTarget = null
+            },
+            onDelete = if (owner) askDelete else null,
+            isFavorite = true,
+            onToggleFavorite = if (!owner) askDelete else null,
+            onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
+            coverUrl = playlist.coverUrl,
+        )
     }
 
     // 热门歌曲行尾「更多」弹层（手机 / 触屏形态）。
@@ -598,12 +590,14 @@ private fun ProfileHero(
         )
         bundle.signature?.takeIf { it.isNotBlank() }?.let { signature ->
             Spacer(Modifier.height(8.dp))
-            CpText(
-                signature,
+            // 签名是用户自己写的一句话（可能是多行），4 行之外应当能展开；
+            // 直接截断会让「他到底写了什么」永远缺失。
+            CpExpandableText(
+                text = signature.trim(),
+                collapsedMaxLines = 4,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
-                maxLines = 4,
                 modifier = Modifier.padding(horizontal = 24.dp),
             )
         }
