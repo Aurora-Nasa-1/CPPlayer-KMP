@@ -34,6 +34,22 @@
     },
     {
       "glob": "com/ibm/icu/impl/data/icudata/*.res"
+    },
+    {
+      "glob": "fonts/*"
+    },
+    {
+      "glob": "font/*"
+    },
+    {
+      "glob": "composeResources/**"
+    }
+  ],
+  "jni": [
+    {
+      "type": "cp.player.core.playback.DesktopHiResEngine",
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
     }
   ],
   "foreign": {
@@ -206,6 +222,62 @@
         "parameterTypes": [
           "void*",
           "jint",
+          "void*"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "void*",
+          "void*"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jint"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "void*",
+          "jbyte"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "void*",
+          "jlong",
+          "void*",
+          "void*"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "void*",
+          "jlong"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jint",
+          "jint",
+          "void*",
+          "jint"
+        ]
+      },
+      {
+        "returnType": "void*",
+        "parameterTypes": []
+      },
+      {
+        "returnType": "void",
+        "parameterTypes": [
+          "void*",
           "void*"
         ]
       }

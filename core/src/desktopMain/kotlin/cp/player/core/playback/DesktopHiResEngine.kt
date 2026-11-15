@@ -141,13 +141,44 @@ object DesktopHiResEngine {
 
         val searchCandidates = linkedSetOf<File>()
 
-        // (a) 当前正在运行的可执行程序（CPPlayer.exe）所在目录探测 (Java 9+ ProcessHandle)
+        // (a) 当前正在运行的可执行程序（CPPlayer.exe）所在目录探测 (Win32 API + Java 9+ ProcessHandle)
+        try {
+            if (os.contains("win")) {
+                java.lang.foreign.Arena.ofConfined().use { arena ->
+                    val kernel32 = java.lang.foreign.SymbolLookup.libraryLookup("kernel32", arena)
+                    val getModuleFileName = java.lang.foreign.Linker.nativeLinker().downcallHandle(
+                        kernel32.find("GetModuleFileNameW").orElseThrow(),
+                        java.lang.foreign.FunctionDescriptor.of(
+                            java.lang.foreign.ValueLayout.JAVA_INT,
+                            java.lang.foreign.ValueLayout.ADDRESS,
+                            java.lang.foreign.ValueLayout.ADDRESS,
+                            java.lang.foreign.ValueLayout.JAVA_INT,
+                        ),
+                    )
+                    val pathBuf = arena.allocate(1024L)
+                    val len = getModuleFileName.invokeWithArguments(java.lang.foreign.MemorySegment.NULL, pathBuf, 512) as Int
+                    if (len > 0) {
+                        val exePath = pathBuf.getString(0, java.nio.charset.StandardCharsets.UTF_16LE)
+                        val appRoot = File(exePath).parentFile
+                        if (appRoot != null && appRoot.exists()) {
+                            searchCandidates += File(appRoot, libFileName)
+                            searchCandidates += File(appRoot, "native/$libFileName")
+                            searchCandidates += File(appRoot, "runtime/bin/$libFileName")
+                            searchCandidates += File(appRoot, "app/$libFileName")
+                        }
+                    }
+                }
+            }
+        } catch (_: Throwable) {
+        }
+
         try {
             ProcessHandle.current().info().command().ifPresent { exePath ->
                 val exeFile = File(exePath)
                 val appRoot = exeFile.parentFile
                 if (appRoot != null && appRoot.exists()) {
                     searchCandidates += File(appRoot, libFileName)
+                    searchCandidates += File(appRoot, "native/$libFileName")
                     searchCandidates += File(appRoot, "runtime/bin/$libFileName")
                     searchCandidates += File(appRoot, "app/$libFileName")
                 }

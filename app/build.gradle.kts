@@ -1128,21 +1128,52 @@ val packageWindowsVelopack = tasks.register<Exec>("packageWindowsVelopack") {
             "未找到主程序 $cpPackageName.exe（路径：${appDir.absolutePath}）。"
         }
 
-        // 打包前将预编译原生动态库（如 rust_lib_flick_player.dll）注入到 app-image 多重关键位置（exe 同级、app 目录、JRE bin 目录）
-        val nativeDir = project.file("native")
-        if (nativeDir.isDirectory) {
+        // 打包前将预编译原生动态库（如 rust_lib_flick_player.dll）注入到 app-image 多重关键位置（exe 同级、app 目录、native 目录、JRE bin 目录）
+        val nativeFiles = listOf(
+            project.file("native"),
+            rootProject.file("native"),
+        ).filter { it.isDirectory }
+            .flatMap { it.listFiles()?.filter { f -> f.isFile }?.toList() ?: emptyList() }
+            .associateBy { it.name }
+            .values
+
+        if (nativeFiles.isNotEmpty()) {
             val targets = listOf(
                 appDir,
+                appDir.resolve("native"),
                 appDir.resolve("app"),
                 appDir.resolve("runtime/bin"),
             )
-            nativeDir.listFiles()?.filter { it.isFile }?.forEach { f ->
+            nativeFiles.forEach { f ->
                 targets.forEach { targetDir ->
-                    if (targetDir.isDirectory) {
-                        val dest = targetDir.resolve(f.name)
-                        f.copyTo(dest, overwrite = true)
-                        logger.lifecycle("已注入原生动态库至安装镜像: ${f.name} -> ${dest.absolutePath}")
-                    }
+                    targetDir.mkdirs()
+                    val dest = targetDir.resolve(f.name)
+                    f.copyTo(dest, overwrite = true)
+                    logger.lifecycle("已注入原生动态库至安装镜像: ${f.name} -> ${dest.absolutePath}")
+                }
+            }
+        }
+
+        // 打包前将内置字体注入到安装镜像（fonts/ 与 resources/fonts/）
+        val fontFiles = listOf(
+            project.file("src/desktopMain/resources/fonts"),
+            project.file("src/commonMain/composeResources/font"),
+        ).filter { it.isDirectory }
+            .flatMap { it.listFiles()?.filter { f -> f.isFile && (f.name.endsWith(".ttf") || f.name.endsWith(".otf")) }?.toList() ?: emptyList() }
+            .associateBy { it.name }
+            .values
+
+        if (fontFiles.isNotEmpty()) {
+            val fontTargets = listOf(
+                appDir.resolve("fonts"),
+                appDir.resolve("resources/fonts"),
+            )
+            fontFiles.forEach { fontFile ->
+                fontTargets.forEach { targetDir ->
+                    targetDir.mkdirs()
+                    val dest = targetDir.resolve(fontFile.name)
+                    fontFile.copyTo(dest, overwrite = true)
+                    logger.lifecycle("已注入内置字体至安装镜像: ${fontFile.name} -> ${dest.absolutePath}")
                 }
             }
         }

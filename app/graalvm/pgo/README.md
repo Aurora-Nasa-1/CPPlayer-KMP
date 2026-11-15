@@ -1,6 +1,6 @@
 # Windows Native Image PGO
 
-`default.iprof` 已入库（约 29.5 MB）：只要这个文件存在，生产构建（CI 与本地）
+`default.iprof` 已入库（约 33.3 MB）：只要这个文件存在，生产构建（CI 与本地）
 就会自动给 native-image 传 `--pgo=<该文件>`，并保持 `-O3`
 （接线在 `app/build.gradle.kts` 的 `graalvm.pgo`，实现由 Nucleus 插件负责）。
 
@@ -8,15 +8,15 @@
 
 | 项 | 值 |
 | --- | --- |
-| 采集时间 | 2026-11-14 |
+| 采集时间 | 2026-11-15 |
 | 采集载体 | `desktop-pgo-instrument.yml` 产出的插桩版 app image（`--pgo-instrument`） |
-| 采集场景 | 启动 → 曲库浏览/滚动 → 搜索 → 播放 → 动态歌词 → 暂停/seek → 托盘最小化 → 正常退出 |
-| 规模 | 43,195 types / 324,729 methods；39,227 条 call-count、6,484 条虚调用、805 条采样 |
-| 字节数 | 30,938,646 |
-| SHA-256 | `6ae1a5ec05741405a45d283f30f8c6e7f2a9bb4f3c0056c6f55539b03e1f2fac` |
+| 采集场景 | 未记录 |
+| 规模 | 43,584 types / 328,455 methods；54,541 条 call-count、9,406 条虚调用、2,950 条采样 |
+| 字节数 | 34,896,703 |
+| SHA-256 | `0e8754a1a3985141ee0c8bd7e39050806c9de7a5b16e3631caa08c9c991900ef` |
 
-profile 里 `cp.player` 出现 9,061 次、`androidx.compose` 6,801 次、`dev.nucleusframework`
-1,677 次 —— 训练确实覆盖到了应用自身代码与 Compose 渲染，不是只跑了个启动。
+profile 里 `cp.player` 出现 9,483 次、`androidx.compose` 6,753 次、`dev.nucleusframework`
+1,682 次 —— 训练确实覆盖到了应用自身代码与 Compose 渲染，不是只跑了个启动。
 
 ## 重新采集（业务/场景大改后）
 
