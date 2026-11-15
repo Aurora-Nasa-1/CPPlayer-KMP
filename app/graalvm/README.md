@@ -15,10 +15,9 @@ JDK / 第三方库里能被静态分析到的（普通调用、接口实现）�
 
 | 条目 | 为什么必须写 |
 | --- | --- |
-| `java.util.Locale.getDefault(Locale$Category)` / `setDefault(Locale$Category, Locale)` | ICU4J 的 `ULocale$JDKLocaleHelper` 用**反射**调 JDK 7+ 的分类 Locale API。`ULocale.<clinit>` 在第一次 `BreakIterator` 调用时就跑 ⇒ 歌词页一进来就 `MissingReflectionRegistrationError`。 |
-| `com.ibm.icu.text.BreakIteratorFactory` `<init>` | ICU 的 `BreakIterator.getShim()` 用 `Class.forName("com.ibm.icu.text.BreakIteratorFactory")` + `Class.newInstance()` 拿实现类。纯反射，静态分析看不见。 |
-| `resources`: `com/ibm/icu/impl/data/icudata/brkitr/*`、`com/ibm/icu/impl/data/icudata/*.res`、`fonts/*`、`font/*`、`composeResources/**` | ICU 的断行规则与语言包；以及桌面端内置中日文字体（`fonts/misans_vf.ttf`、`fonts/noto_sans_jp.ttf`）与通用 Compose 资源，必须在构建期打包进原生镜像中，否则 Native Image 运行时 `getResourceAsStream` 返回 null 导致回退或找不到字体。 |
-| `jni`: `cp.player.core.playback.DesktopHiResEngine` | 桌面端 FlickEngine 音频引擎声明了 27 个 `external` (JNI) 原生方法；未登记 JNI 可达性元数据会导致 Native Image 不生成 JNI 符号绑定，启动或播放时直接抛 `UnsatisfiedLinkError`。 |
+| `resources`: `com/ibm/icu/impl/data/icudata/**`、`fonts/*`、`font/*`、`composeResources/**`、`META-INF/services/*` | ICU 的完整断行规则、语言包与字符归一化数据；桌面端内置中日文字体与通用 Compose 资源；以及 Coil 3.x 等通过 `ServiceLoader` 动态加载解码器与网络 Fetcher（`coil3.util.FetcherServiceLoaderTarget`、`coil3.util.DecoderServiceLoaderTarget`）的元服务描述符文件，必须打包进原生镜像中，否则 Native Image 运行时无法通过 ServiceLoader 发现网络抓取与解码实现。 |
+| `reflection`: `coil3.*` 与 `org.jetbrains.skiko.renderer.Direct3DRenderer` | Coil 3 ServiceLoader 反射实例化目标（`OkHttpNetworkFetcherServiceLoaderTarget`、`SkiaImageDecoder$Factory`）以及 Skiko 0.156 新包名下的渲染器类与构造。 |
+| `jni`: `cp.player.core.playback.DesktopHiResEngine` 与 `org.jetbrains.skiko.renderer.*` | 桌面端 FlickEngine 音频引擎声明了 27 个 `external` (JNI) 原生方法；Skiko 0.156 将渲染层由旧 `org.jetbrains.skiko.redrawer.*` 重构成 `org.jetbrains.skiko.renderer.*`，`Direct3DRenderer` 承载了 Direct3D 12 渲染与 Live Resize 相关的 17 个 JNI 原生方法（含 C++ 回调 Java 的 `isAdapterSupported` 及 `installLiveResizeHook` 等），必须登记 JNI 可达性，否则 Native Image 在渲染启动或窗口缩放时抛 JNI 符号缺失错误。 |
 | `foreign.downcalls`（31 条，新增 SMTC / FFM / libsentry / Tao 等 8 条） | **FFM（Project Panama）的每个 downcall 签名都必须在构建期登记**，否则运行时 `Linker.downcallHandle` 抛 `MissingForeignRegistrationError`。新增条目包括：① `SetEnvironmentVariableW` 与 COM 字符/实例绑定的 `jint(void*, void*)`；② `RoInitialize` 的 `jint(jint)`；③ SMTC 启用按钮的 `jint(void*, jbyte)`；④ SMTC 窗口绑定的 `jint(void*, jlong, void*, void*)`；⑤ SMTC 进度条时间线 `jint(void*, jlong)`；⑥ `SystemParametersInfoW` 工作区计算的 `jint(jint, jint, void*, jint)`；⑦ libsentry 初始化的 `void*()` 与 `void(void*, void*)`。漏一条 ⇒ 功能静默失效。类型名按 GraalVM 的 C 写法：`jint`/`jlong`/`jbyte`/`void`/`void*`。 |
 
 ### 关于 `foreign.downcalls` 那次事故（2026-11-14）

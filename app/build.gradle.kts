@@ -396,6 +396,11 @@ kotlin {
                 implementation(libs.kotlinx.coroutines.swing)
                 implementation(libs.ktor.client.okhttp)
                 implementation(libs.sentry.core)
+                // ICU4J BreakIterator & ULocale 的 GraalVM Substitution 支持：
+                // 仅以 runtimeOnly 挂载预编译 JAR，对普通 JVM 编译期零侵入（无需 svm 符号）；
+                // Windows Native Image 构建时由 Nucleus 纳入运行时 classpath 并由 GraalVM
+                // 自动识别 @TargetClass，彻底消除 BreakIteratorFactory 反射。
+                runtimeOnly(files("graalvm/substitutions/icu-substitutions.jar"))
             }
         }
         val desktopTest by getting {
@@ -411,6 +416,10 @@ kotlin {
 // 所有 `import ...resources.Res` 会一起断掉；钉死就不会。
 compose.resources {
     packageOfResClass = "cp.player.app.resources"
+}
+
+compose.dependencyCompatibility {
+    exclude("io.coil-kt.coil3")
 }
 
 // ---------------------------------------------------------------------------
@@ -758,9 +767,9 @@ nucleus {
             // L4 本项目：`nativeImageConfigBaseDir` 默认就是 <项目>/graalvm，整个目录以
             //   `-H:ConfigurationFileDirectories=...\app\graalvm` 传给 native-image，
             //   所以 `app/graalvm/reachability-metadata.json` 是「L1~L3 都没覆盖到」时
-            //   唯一该动手的地方（现有条目：ICU4J 的 Locale 反射与断行数据、Win32
-            //   COM / 剪贴板 / 显示设置的 foreign.downcalls 等）。AWT FileDialog 的
-            //   JNI 字段/方法 ID 条目已随「去 AWT」删除。来历、探针验证法见
+            //   唯一该动手的地方（现已通过 graalvm/substitutions 消除 ICU4J 的 Locale 与
+            //   BreakIterator 反射；资源 glob 已扩充完整 icudata；保留 Win32 COM / 剪贴板 /
+            //   显示设置的 foreign.downcalls 等）。AWT FileDialog 的 JNI 字段/方法 ID 条目已随「去 AWT」删除。来历、探针验证法见
             //   app/graalvm/README.md。
             headless.set(false)
             // 项目自身资源按 resource roots 自动登记：动态 getResourceAsStream(computedPath)

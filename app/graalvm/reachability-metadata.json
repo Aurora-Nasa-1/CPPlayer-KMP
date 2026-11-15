@@ -26,14 +26,27 @@
           "parameterTypes": []
         }
       ]
+    },
+    {
+      "type": "coil3.network.okhttp.internal.OkHttpNetworkFetcherServiceLoaderTarget",
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "coil3.decode.SkiaImageDecoder$Factory",
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "org.jetbrains.skiko.renderer.Direct3DRenderer",
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
     }
   ],
   "resources": [
     {
-      "glob": "com/ibm/icu/impl/data/icudata/brkitr/*"
-    },
-    {
-      "glob": "com/ibm/icu/impl/data/icudata/*.res"
+      "glob": "com/ibm/icu/impl/data/icudata/**"
     },
     {
       "glob": "fonts/*"
@@ -43,6 +56,12 @@
     },
     {
       "glob": "composeResources/**"
+    },
+    {
+      "glob": "META-INF/services/*"
+    },
+    {
+      "glob": "META-INF/services/coil3.util.*"
     }
   ],
   "jni": [
@@ -50,6 +69,18 @@
       "type": "cp.player.core.playback.DesktopHiResEngine",
       "allDeclaredMethods": true,
       "allDeclaredFields": true
+    },
+    {
+      "type": "org.jetbrains.skiko.renderer.Direct3DRenderer",
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "org.jetbrains.skiko.renderer.AwtRenderer",
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true,
+      "allDeclaredConstructors": true
     }
   ],
   "foreign": {
