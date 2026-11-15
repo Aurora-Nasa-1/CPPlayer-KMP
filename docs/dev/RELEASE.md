@@ -95,6 +95,20 @@ RELEASE_KEY_PASSWORD
 | 处理 | 在 `app-android/proguard-rules.pro` 加 `-dontwarn`；当前条目：Ktor 带来的 `java.lang.management.*`（历史 `java.beans.*` 随 Rhino → QuickJS 迁移已消除） |
 | 前提 | 只在该代码路径确实在 Android 不可达时才加；`-dontwarn` 不让代码能跑，只让 R8 不再拒绝压缩 |
 
+### 4.3 AI 更新日志（可选）
+
+发布 workflow 在检测到 AI 密钥时调用 `scripts/generate_ai_changelog.mjs`，把提交记录整理成用户侧更新说明；没有密钥或调用失败时自动回退到 `git log`。
+
+| 配置 | 必填 | 说明 |
+|---|---|---|
+| `OPENAI_API_KEY` | 二选一 | OpenAI 或兼容服务密钥；配置后优先走 OpenAI 兼容接口 |
+| `OPENAI_BASE_URL` | 否 | 自定义 base URL，默认 `https://api.openai.com/v1`。可填 `https://host/v1`、带尾斜杠的地址，或完整的 `.../chat/completions` |
+| `OPENAI_MODEL` | 否 | 自定义模型，默认 `gpt-4o-mini`；换第三方服务时通常必须同步修改 |
+| `GEMINI_API_KEY` | 二选一 | 仅在没有 `OPENAI_API_KEY` 时使用 |
+| `GEMINI_MODEL` | 否 | Gemini 模型，默认 `gemini-1.5-flash` |
+
+`OPENAI_BASE_URL` / `OPENAI_MODEL` / `GEMINI_MODEL` 可以放在仓库 **Variables** 或 **Secrets**，workflow 优先读 Variables。更新日志只写 AI 的正文输出，请求日志走 stderr，不会进入发布说明。
+
 ## 5. 桌面打包
 
 ### 5.1 图标

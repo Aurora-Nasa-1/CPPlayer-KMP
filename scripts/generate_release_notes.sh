@@ -37,10 +37,15 @@ generate() {
     # 若配置了 AI 密钥且存在 node 脚本，优先尝试由 AI 总结精炼的用户侧更新日志
     if [[ (-n "${OPENAI_API_KEY:-}" || -n "${GEMINI_API_KEY:-}") && -f "$ai_script" ]] && command -v node >/dev/null 2>&1; then
         echo "Attempting to generate user-facing changelog via AI SDK..." >&2
-        ai_changelog=$(node "$ai_script" "$PREV_TAG" "${CURRENT_TAG:-HEAD}" 2>&1) || {
-            echo "::warning::AI changelog generation failed, falling back to git log. Error: ${ai_changelog}" >&2
+        local ai_log
+        ai_log="$(mktemp)"
+        if ai_changelog=$(node "$ai_script" "$PREV_TAG" "${CURRENT_TAG:-HEAD}" 2>"$ai_log"); then
+            cat "$ai_log" >&2
+        else
+            echo "::warning::AI changelog generation failed, falling back to git log. Error: $(cat "$ai_log")" >&2
             ai_changelog=""
-        }
+        fi
+        rm -f "$ai_log"
     fi
 
     if [ -n "$ai_changelog" ]; then

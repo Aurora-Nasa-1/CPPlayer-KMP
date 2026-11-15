@@ -14,6 +14,11 @@
 
 import { execSync } from "node:child_process";
 import fs from "node:fs";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
+const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
+const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 
 const SYSTEM_PROMPT = `你是一个严谨、专业的发版更新日志整理助手。
 请将提供的 Git 提交记录整理为结构规范、专业克制、面向最终使用用户的正式中文发版说明。
@@ -66,8 +71,29 @@ function stripEmojis(text) {
     .trim();
 }
 
+/**
+ * 把自定义 base URL 归一成 chat completions 端点。
+ * 允许传 `https://host/v1`、带尾斜杠的地址，或完整的 `.../chat/completions`，
+ * 避免更换兼容 OpenAI 的服务时重复拼接路径。
+ */
+export function resolveChatCompletionsUrl(baseUrl) {
+  const base = (baseUrl ?? "").trim() || DEFAULT_OPENAI_BASE_URL;
+  const normalized = base.replace(/\/+$/, "");
+  return normalized.endsWith("/chat/completions")
+    ? normalized
+    : `${normalized}/chat/completions`;
+}
+
+export function resolveOpenAiConfig(env = process.env) {
+  return {
+    apiKey: env.OPENAI_API_KEY?.trim() || "",
+    baseUrl: env.OPENAI_BASE_URL?.trim() || DEFAULT_OPENAI_BASE_URL,
+    model: env.OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL,
+  };
+}
+
 async function callOpenAI({ apiKey, baseUrl, model, commits }) {
-  const url = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
+  const url = resolveChatCompletionsUrl(baseUrl);
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -75,7 +101,7 @@ async function callOpenAI({ apiKey, baseUrl, model, commits }) {
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: model || "gpt-4o-mini",
+      model: model || DEFAULT_OPENAI_MODEL,
       temperature: 0.2,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
@@ -146,21 +172,21 @@ async function main() {
     process.exit(2);
   }
 
-  const openaiKey = process.env.OPENAI_API_KEY?.trim();
+  const openai = resolveOpenAiConfig();
   const geminiKey = process.env.GEMINI_API_KEY?.trim();
 
-  if (!openaiKey && !geminiKey) {
+  if (!openai.apiKey && !geminiKey) {
     console.warn("[AI-Changelog] Neither OPENAI_API_KEY nor GEMINI_API_KEY is configured.");
     process.exit(3);
   }
 
   let changelog = "";
-  if (openaiKey) {
-    console.error(`[AI-Changelog] Requesting changelog from OpenAI (${process.env.OPENAI_MODEL || "gpt-4o-mini"})...`);
+  if (openai.apiKey) {
+    console.error(`[AI-Changelog] Requesting changelog from OpenAI-compatible endpoint (${openai.model})...`);
     changelog = await callOpenAI({
-      apiKey: openaiKey,
-      baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
-      model: process.env.OPENAI_MODEL,
+      apiKey: openai.apiKey,
+      baseUrl: openai.baseUrl,
+      model: openai.model,
       commits,
     });
   } else if (geminiKey) {
@@ -180,7 +206,13 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(`[AI-Changelog] Error: ${err.message}`);
-  process.exit(1);
-});
+const invokedDirectly =
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+
+if (invokedDirectly) {
+  main().catch((err) => {
+    console.error(`[AI-Changelog] Error: ${err.message}`);
+    process.exit(1);
+  });
+}
