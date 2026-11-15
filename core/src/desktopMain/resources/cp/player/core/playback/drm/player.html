@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>CPPlayer DRM Bridge</title>
+<style>html,body{margin:0;background:#000;}audio{display:none;}</style>
+</head>
+<body>
+<script src="/hls.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  var TOKEN = new URLSearchParams(location.search).get('token') || '';
+  var LICENSE_URL = location.origin + '/license?token=' + encodeURIComponent(TOKEN);
+  var ws = null;
+  var hls = null;
+  var audio = null;
+
+  function post(obj) {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+  }
+
+  function emitState(state, message) {
+    post({ type: 'state', state: state, message: message || null });
+  }
+
+  function probeEme() {
+    var configs = [
+      {
+        initDataTypes: ['cenc', 'cbcs', 'sinf', 'skd', 'mp4'],
+        audioCapabilities: [
+          { contentType: 'audio/mp4; codecs="mp4a.40.2"', robustness: 'SW_SECURE_CRYPTO' },
+          { contentType: 'audio/mp4; codecs="mp4a.40.2"' }
+        ]
+      }
+    ];
+    if (!navigator.requestMediaKeySystemAccess) return Promise.resolve(null);
+    return navigator.requestMediaKeySystemAccess('com.widevine.alpha', configs)
+      .then(function (access) { return access.keySystem; })
+      .catch(function () { return null; });
+  }
+
+  function destroyPipeline() {
+    if (hls) { try { hls.destroy(); } catch (e) {} hls = null; }
+    if (audio) { try { audio.pause(); audio.removeAttribute('src'); audio.load(); } catch (e) {} audio = null; }
+  }
+
+  function handleCommand(msg) {
+    switch (msg.type) {
+      case 'load': destroyPipeline(); startPlayback(msg.url, msg.startPositionMs || 0); break;
+      case 'play': if (audio) audio.play().catch(function () {}); break;
+      case 'pause': if (audio) audio.pause(); break;
+      case 'seek': if (audio) { try { audio.currentTime = (msg.positionMs || 0) / 1000; } catch (e) {} } break;
+      case 'volume': if (audio) audio.volume = Math.min(1, Math.max(0, msg.value)); break;
+      case 'rate': if (audio) audio.playbackRate = msg.value || 1; break;
+      case 'stop': destroyPipeline(); emitState('ready', null); break;
+    }
+  }
+
+  function startPlayback(url, startPositionMs) {
+    emitState('buffering', null);
+    audio = new Audio();
+    audio.preload = 'auto';
+    audio.volume = 1;
+    wireAudio(audio);
+    hls = new Hls({
+      emeEnabled: true,
+      // hls.js 1.6.x: `widevineLicenseUrl`（简写）或 `drmSystems[keySystem].licenseUrl`。
+      // 没有 `licenseServerUrl` 这个键 —— 写错会静默落回「没有 license 服务」。
+      widevineLicenseUrl: LICENSE_URL,
+      drmSystems: { 'com.widevine.alpha': { licenseUrl: LICENSE_URL } }
+    });
+    hls.on(Hls.Events.ERROR, function (event, data) {
+      if (!data.fatal) return;
+      var detail = data.details + (data.error && data.error.message ? (': ' + data.error.message) : '');
+      emitState('error', detail);
+      destroyPipeline();
+    });
+    hls.attachMedia(audio);
+    hls.on(Hls.Events.MEDIA_ATTACHED, function () {
+      hls.loadSource(url);
+    });
+    hls.on(Hls.Events.MANIFEST_PARSED, function () {
+      if (startPositionMs > 0) {
+        try { audio.currentTime = startPositionMs / 1000; } catch (e) {}
+      }
+      audio.play().catch(function (error) {
+        emitState('error', 'autoplay blocked: ' + (error && error.name ? error.name : 'unknown'));
+      });
+    });
+  }
+
+  function wireAudio(media) {
+    media.addEventListener('playing', function () { emitState('playing', null); });
+    media.addEventListener('pause', function () { if (audio && !audio.ended) emitState('paused', null); });
+    media.addEventListener('ended', function () { emitState('ended', null); });
+    media.addEventListener('waiting', function () { emitState('buffering', null); });
+    media.addEventListener('error', function () {
+      var code = audio && audio.error ? audio.error.code : 0;
+      emitState('error', 'audio element error code=' + code);
+    });
+    media.addEventListener('timeupdate', function () {
+      post({
+        type: 'progress',
+        positionMs: Math.round((audio.currentTime || 0) * 1000),
+        durationMs: Math.round((audio.duration || 0) * 1000)
+      });
+    });
+  }
+
+  function connect() {
+    var protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(protocol + '//' + location.host + '/ws?token=' + encodeURIComponent(TOKEN));
+    ws.onopen = function () {
+      probeEme().then(function (keySystem) {
+        post({ type: 'hello', eme: keySystem !== null, keySystem: keySystem });
+      });
+    };
+    ws.onmessage = function (event) {
+      var msg;
+      try { msg = JSON.parse(event.data); } catch (e) { return; }
+      handleCommand(msg);
+    };
+    ws.onclose = function () { destroyPipeline(); setTimeout(connect, 1500); };
+  }
+
+  connect();
+})();
+</script>
+</body>
+</html>

@@ -17,8 +17,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.CpRouteScaffold
@@ -28,14 +26,13 @@ import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSegmentedItem
 import cp.player.app.ui.component.SettingsSwitchItem
-import cp.player.app.ui.theme.AvailablePaletteStyles
 import cp.player.app.ui.theme.ColorSource
 import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.theme.ThemeMode
 import cp.player.app.ui.theme.description
 import cp.player.app.ui.theme.displayName
 import cp.player.app.ui.theme.isPlatformColorSourceAvailable
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 
 /**
  * 贴合原生 Android 16「深色主题与色彩」的二级设置页面。
@@ -49,7 +46,7 @@ class DarkThemeSettingsScreen : Screen {
 
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val s = cpStrings()
         val themeMode by AppModel.themeModeFlow.collectAsState()
         val pureBlack by AppModel.pureBlackFlow.collectAsState()
@@ -63,7 +60,7 @@ class DarkThemeSettingsScreen : Screen {
 
         CpRouteScaffold(
             title = s.appearance.themeMode,
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
         ) { pageModifier ->
             SettingsPage(pageModifier) {
                 // 1. 外观主题模式
@@ -128,23 +125,6 @@ class DarkThemeSettingsScreen : Screen {
                 }
                 SettingsNote(colorSource.description(s, platformAvailable))
 
-                // 5. 配色风格 / 动态调色风格
-                val paletteStyle by AppModel.paletteStyleFlow.collectAsState()
-                SettingsSection(s.appearance.paletteStyle) {
-                    SettingsSegmentedItem(
-                        title = s.appearance.paletteStyle,
-                        subtitle = paletteStyle.displayName(s),
-                        icon = Icons.Filled.Palette,
-                        options = AvailablePaletteStyles.map { it.displayName(s) },
-                        selectedIndex = AvailablePaletteStyles.indexOf(paletteStyle).coerceAtLeast(0),
-                        onSelect = { index ->
-                            AvailablePaletteStyles.getOrNull(index)?.let(AppModel::setPaletteStyle)
-                        },
-                        index = 0,
-                        total = 1,
-                    )
-                }
-                SettingsNote(s.appearance.paletteStyleNote)
             }
         }
     }

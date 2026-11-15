@@ -30,7 +30,10 @@ data class SeekFailure(val targetMs: Long, val actualMs: Long)
 data class NativeTrackTransition(val mediaId: String, val previousMediaId: String?, val sequence: Long)
 
 internal fun isNativeQueuedTrackEnding(currentMediaId: String?, queuedMediaIds: Map<String, String>, path: String): Boolean {
-    val queued = queuedMediaIds[path] ?: return false
+    val queued = queuedMediaIds[path]
+        ?: queuedMediaIds[path.replace('\\', '/')]
+        ?: queuedMediaIds[path.replace('/', '\\')]
+        ?: return false
     return queued != currentMediaId
 }
 

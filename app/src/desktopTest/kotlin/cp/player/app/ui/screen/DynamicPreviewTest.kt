@@ -12,7 +12,7 @@ import cp.player.app.model.DynamicOrigin
 import cp.player.app.model.DynamicPost
 import cp.player.app.ui.component.LocalEmbeddedInPane
 import cp.player.app.ui.component.LocalWindowChromeActive
-import cp.player.app.ui.model.DynamicFilter
+import cp.player.app.presentation.dynamic.DynamicFilter
 import cp.player.app.ui.model.DynamicUiState
 import cp.player.app.ui.theme.CpTheme
 import cp.player.app.ui.theme.ThemeMode

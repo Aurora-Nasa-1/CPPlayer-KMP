@@ -156,7 +156,10 @@ class FlickPlatformPlayer(
                     is AudioEvent.FormatChanged -> handleFormatChanged(event)
                     is AudioEvent.TrackEnded -> handleTrackEnded(event.path)
                     is AudioEvent.CrossfadeStarted -> handleNativeTransition(event.toPath)
-                    is AudioEvent.NextTrackReady -> handleNativeTransition(event.path)
+                    is AudioEvent.NextTrackReady -> {
+                        // NextTrackReady 仅表示下一首在原生队列中完成探测与排队（在 queueNext 成功后即时触发），
+                        // 绝非换源事件。若在此处换源会导致当前曲播放数秒后 UI 提前跳到下一首。
+                    }
                     is AudioEvent.Error -> handleError(event.message)
                     else -> {}
                 }
@@ -228,7 +231,11 @@ class FlickPlatformPlayer(
     }
 
     private fun handleNativeTransition(path: String) {
-        val mediaId = queuedMediaIds[path] ?: return
+        val mediaId = queuedMediaIds[path]
+            ?: queuedMediaIds[path.replace('\\', '/')]
+            ?: queuedMediaIds[path.replace('/', '\\')]
+            ?: queuedMediaIds.values.singleOrNull()
+            ?: return
         seekTracker.cancel()
         val previous = currentMediaId
         currentMediaId = mediaId

@@ -13,8 +13,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.ui.component.video.VideoPlayerView
 
@@ -36,7 +34,7 @@ data class VideoPlayerScreen(
 
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = cp.player.app.ui.navigation.LocalAppNavigator.current
         val videoController = AppModel.backend.videoController
         var isFullscreen by remember { mutableStateOf(false) }
 

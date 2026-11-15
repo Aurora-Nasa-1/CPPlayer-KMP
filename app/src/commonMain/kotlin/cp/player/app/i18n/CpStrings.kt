@@ -139,6 +139,9 @@ interface CpStrings {
     val lyricsPlugin: LyricsPluginStrings
     val pluginRepository: PluginRepositoryStrings
 
+    /** AI 接入与 A2UI 生成式界面（设置页 + 播放器私人 DJ 台）。 */
+    val ai: AiStrings
+
     /** 首次使用引导（欢迎 / 音源 / 登录 / 完成）。 */
     val onboarding: OnboardingStrings
 
@@ -356,12 +359,6 @@ interface AppearanceStrings {
     val colorSourcePlatformOff: String
     val colorSourceCoverNote: String
     val colorSourceFixedNote: String
-
-    val paletteStyle: String
-    val paletteStyleTonalSpot: String
-    val paletteStyleExpressive: String
-    val paletteStyleVibrant: String
-    val paletteStyleNote: String
 
     val pureBlack: String
     val pureBlackNote: String

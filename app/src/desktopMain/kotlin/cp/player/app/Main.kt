@@ -158,12 +158,20 @@ private fun Modifier.windowEdgeHairline(): Modifier = drawWithContent {
  * [WindowDecorChoice] 的三态仍保留，用于日志与历史配置兼容；JBR 路依赖 AWT，
  * Tao 后端下不再提供。
  */
-@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class, androidx.compose.ui.InternalComposeUiApi::class)
 fun main(args: Array<String> = emptyArray()) {
     // ⚠️ 必须是第一句，且在任何 UI 之前：Windows 安装包由 Velopack 打，安装/升级/
     // 卸载时它会用 `--veloapp-*` 参数把本 exe 当钩子拉起并要求 15~30 秒内退出，
     // 超时直接杀掉 ⇒ 安装器报「安装未完成」。见 VelopackHooks.kt。
     exitIfVelopackHook(args)
+
+    // CMP 1.13+ 将图形与文本后端 (PlatformGraphicsRegistry) 解耦为按需注册机制。
+    // 在 Nucleus Tao 原生窗口创建阶段（DecoratedWindow / PainterToRgbaKt.toRgbaIcon）转换窗口图标时，
+    // 若尚未挂载 ComposeScene，PlatformGraphicsRegistry 尚未就绪便会抛出 IllegalStateException。
+    // 在此预先注册 Skiko 实现，确保图形基元（ImageBitmap/Canvas/Paint）在建窗前全局就绪。
+    runCatching {
+        androidx.compose.ui.platform.registerSkikoComposeImplementation()
+    }
 
     // JVM 启动后即刻派发多核并行加载：
     // 1. JNI 原生音频库提前完成动态库查找与 dlopen 加载
@@ -182,8 +190,11 @@ fun main(args: Array<String> = emptyArray()) {
  * @param args 命令行参数（支持 `--mobile` 或 `-m` 进入手机版界面预览）
  * @param isMobilePreview 显式指定是否开启手机版界面预览模式
  */
-@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class, androidx.compose.ui.InternalComposeUiApi::class)
 fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean = false) {
+    runCatching {
+        androidx.compose.ui.platform.registerSkikoComposeImplementation()
+    }
     val mobilePreview = isMobilePreview ||
         System.getProperty("cp.player.mobilePreview") == "true" ||
         args.contains("--mobile") ||

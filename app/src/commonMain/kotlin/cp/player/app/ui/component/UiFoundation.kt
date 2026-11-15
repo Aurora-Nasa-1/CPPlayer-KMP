@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import cp.player.app.ui.theme.cpCardSurface
 
 /** 当前窗口是否处于 Expanded 宽度（≥840dp），由 [ProvideIsExpanded] 在根 Navigator 之上提供。 */
 val LocalIsExpanded = staticCompositionLocalOf { false }
@@ -390,7 +391,7 @@ fun StateSurface(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = cpCardSurface(),
     ) {
         Box(contentAlignment = Alignment.Center) { content() }
     }

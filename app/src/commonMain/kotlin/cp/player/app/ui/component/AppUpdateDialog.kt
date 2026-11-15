@@ -64,7 +64,6 @@ import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.desktopPlatform
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.openUrl
-import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.formatBytes
 import cp.player.app.update.AppUpdateChecker
 import cp.player.app.version.AppVersion
@@ -87,21 +86,12 @@ fun AppUpdateDialog(
     onDismiss: () -> Unit,
     onDownload: () -> Unit,
 ) {
-    val isDark = LocalIsDarkTheme.current
     val isExpanded = LocalIsExpanded.current
     val s = cpStrings().update
 
-    val containerColor = if (isDark) {
-        MaterialTheme.colorScheme.surfaceContainerHigh
-    } else {
-        MaterialTheme.colorScheme.surfaceContainer
-    }
-
-    val changelogContainerColor = if (isDark) {
-        MaterialTheme.colorScheme.surfaceContainerHighest
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerLow
-    }
+    // 对话框 = 浮层层；日志块 = 浮层内部的次级块。两者刻意不同档，否则整块糊在一起。
+    val containerColor = cp.player.app.ui.theme.cpSheetSurface()
+    val changelogContainerColor = cp.player.app.ui.theme.cpSheetInnerSurface()
 
     AlertDialog(
         onDismissRequest = onDismiss,

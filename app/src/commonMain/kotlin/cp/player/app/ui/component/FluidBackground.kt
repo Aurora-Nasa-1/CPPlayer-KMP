@@ -5,36 +5,48 @@ import androidx.compose.foundation.background
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.ImageShader
+import androidx.compose.ui.graphics.MeshGradientPainter
+import androidx.compose.ui.graphics.MeshGradientScope
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.unit.toSize
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import com.materialkolor.hct.Hct
-import com.mikepenz.hypnoticcanvas.RuntimeEffect
-import com.mikepenz.hypnoticcanvas.shaders.Shader
 import cp.player.app.AppModel
 import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.DesktopShell
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
+import kotlin.random.Random
 
 /**
  * 流体背景：仿 Apple Music 的缓慢流动的网格渐变。
  *
- * 底层是 HypnoticCanvas（`com.mikepenz.hypnoticcanvas`）的 `MeshGradient` 着色器
- * —— 用 simplex 噪声把若干色团在画面上推来推去，观感就是 Apple Music 播放页背后
- * 那层「活的」底色。着色器以 **SkSL** 写就：桌面走 skiko 的 `RuntimeEffect`，
- * Android 走 `android.graphics.RuntimeShader`。
+ * 底层是 Compose 官方的 [MeshGradientPainter]：网格顶点与颜色在 draw 阶段读取动画
+ * 时间，色团沿贝塞尔曲面缓慢漂移；不需要自写 SkSL，也不依赖平台专用着色器。
  *
  * ### 颜色来自主题，不来自封面
  *
@@ -49,28 +61,24 @@ import kotlinx.coroutines.isActive
  * 明度。直接用 `primary` 会在深色主题下甩出一块 tone 80 的亮斑，压在上面的
  * `onSurface` 文字直接不可读。
  *
- * ### 平台差异（库的行为，不是本文件的 bug）
- *
- * **Android 12 及以下没有 `RuntimeShader`（API 33 才有）**，库会跳过着色器、改用
- * 调用方传入的 [fallback] Brush。所以 [fallback] 不是「保险」，而是低版本安卓的
- * **实际外观**，必须是好看的：调用方一律传该页原本用的那支渐变。
- *
  * ### 性能与帧率控制
  *
- * 着色器靠物理时钟节拍分频驱动（见 [FluidFpsConfig]），最大帧率由用户设置（15/30/60fps），
- * 桌面和 Android 按 VSync 整数分频；缓慢背景不必追满屏幕刷新率。
- * 非渲染帧跳过 state 更新，使 Compose 智能抑制重绘，既省电又保持物理流动速度完全一致。
+ * 动画时间靠物理时钟节拍分频驱动（见 [FluidFpsConfig]），最大帧率由用户设置
+ * （15/30/60fps）。非渲染帧跳过 state 更新，使 Compose 智能抑制重绘，既省电又保持
+ * 物理流动速度完全一致。
+ *
+ * 网格绘制后再叠一层静态加性噪声（每通道 0/1 LSB，Plus 混合）：8-bit SDR 帧缓冲
+ * 上大面积暗色渐变的色带断层会被打散。这里不用 Hardlight —— 乘性抖动在暗部会被
+ * 底色压到远小于 1 LSB，正巧是色带最明显的地方；加性噪声在亮部暗部都保持同样的
+ * 量化步进，同时不会像动态噪声那样逐帧产生额外开销。
  *
  * @param enabled 设置项「流体背景」。false 时只画 [fallback]。
- * @param fallback 低版本安卓 / 着色器未就绪时的静态底色，同时是 `enabled = false` 时的唯一背景。
- * @param speed 漂移速度。库内部还会再乘一次它自己的 `speedModifier`（默认 0.5），
- *   所以这里的 1f 并不是「每秒一格」。它是个 uniform，调大调小**不会**触发着色器重编译。
- * @param scale 色团尺度。**越大 → 色团越小**（库的 `MeshGradient` 原话是
- *   「board 越大 → 色团越小」）。它会被拼进 SkSL 源码（编译期常量），
- *   改它会重建着色器 —— 别接在会逐帧变化的值上。
+ * @param fallback 绘制网格前的静态底色，同时是 `enabled = false` 时的唯一背景。
+ * @param speed 漂移速度。调大调小只影响时间推进，不重建 painter。
+ * @param scale 色团尺度。**越大 → 色团越小**。
  * @param pauseShaderAnimation 为 true 时**冻结**流体画面：停止推进时间轴、停止请求新帧，
  *   但继续绘制当前这一帧（不会退回 [fallback]）。只用于页面转场的那几百毫秒 ——
- *   此时整页都在缩放 / 淡入淡出，背景再叠一层自己的动画既看不出来，又白烧一份着色器开销。
+ *   此时整页都在缩放 / 淡入淡出，背景再叠一层自己的动画既看不出来，又白烧一份绘制开销。
  *
  *   ⚠️ 转场结束必须立刻恢复 false。曾经把它反过来（转场结束才冻结）实现「保留最后一帧」，
  *   结果进播放页的 400ms 一结束，背景就永久停住 —— 用户看到的就是「流体背景完全不动」。
@@ -112,31 +120,18 @@ fun Modifier.cpFluidBackground(
         }
     }
 
-    // ⚠️ 必须自己 remember 着色器实例，**不能**把 `CpFluidMeshGradient(...)` 直接写在
-    // 实参位置上：避免逐帧新建实例导致重新编译 SkSL。
-    val settled = rememberSettledPalette(effectivePalette)
-    val shader = remember(settled, scale) {
-        CpFluidMeshGradient(
-            colors = settled.toTypedArray(),
-            // 库把这个 `speed` 拼进 SkSL（`$speed`），改它要重编译；总速度交给 uniform 控制。
-            speed = 1f,
-            scale = scale,
-            dither = true,
-        )
-    }
-
     val targetFps by AppModel.fluidBackgroundFpsFlow.collectAsState()
     val fpsConfig = rememberFluidFpsConfig(targetFps)
+    val settled = rememberSettledPalette(effectivePalette)
+    val paused = pauseShaderAnimation || DesktopShell.isWindowHidden
+    val time = rememberFluidTime(fpsConfig = fpsConfig, paused = paused)
 
-    return this.cpPacedShaderBackground(
-        shader = shader,
-        fallback = fallback,
+    return this.cpMeshGradientBackground(
+        palette = settled,
+        time = time,
         speed = speed,
-        fpsConfig = fpsConfig,
-        dither = true,
-        // 窗口隐藏到托盘时一并冻结：`hide()` 在 Tao 后端不算「不可见」，渲染循环不会
-        // 自己停；这里不冻结的话，看不见的窗口会持续按 VSync 请求新帧。
-        pauseShaderAnimation = pauseShaderAnimation || DesktopShell.isWindowHidden,
+        scale = scale,
+        fallback = fallback,
     )
 }
 
@@ -146,65 +141,153 @@ fun Modifier.cpFluidBackground(
  * 反转它（`!transitionIsRunning`）会让播放页一亮相就永久停在第一帧，
  * 这正是「流体背景完全不动」那个 bug 的形状 —— 别再改回去。
  */
-internal fun shouldPauseFluidShaderDuringNavigation(transitionIsRunning: Boolean): Boolean =
+internal fun shouldPauseFluidBackgroundDuringNavigation(transitionIsRunning: Boolean): Boolean =
     transitionIsRunning
 
 /**
- * 带有精准垂直同步（VSync）节拍分频控制的着色器背景修饰符。
+ * 用物理时钟节拍驱动网格时间；暂停时保留当前相位，恢复后从冻结点继续。
+ *
+ * 时间只被 [MeshGradientPainter] 的 draw block 读取，因此更新它只会让绘制失效，
+ * 不会触发整棵 Compose 子树的重新组合。
  */
 @Composable
-private fun Modifier.cpPacedShaderBackground(
-    shader: Shader,
-    fallback: Brush,
-    speed: Float,
-    fpsConfig: FluidFpsConfig,
-    dither: Boolean = true,
-    pauseShaderAnimation: Boolean = false,
-): Modifier {
-    val effect = remember(shader) { buildRuntimeEffect(shader) }
-    if (!effect.supported) return this.background(fallback)
-
-    val speedModifier = shader.speedModifier
-    var reportedSize by remember { mutableStateOf(Size.Zero) }
-
-    // `produceState` 在 key 变化时重启协程但**保留上一次的 value**（内部是 remember + LaunchedEffect），
-    // 所以这里用 `resumeTime` 接住冻结时的相位：转场结束恢复后从冻结点继续流动，
-    // 而不是跳回 t=0（那会在转场末尾闪一下）。
-    val time by produceState(initialValue = 0f, key1 = fpsConfig, key2 = pauseShaderAnimation) {
-        if (pauseShaderAnimation) return@produceState
+private fun rememberFluidTime(fpsConfig: FluidFpsConfig, paused: Boolean): MutableState<Float> {
+    val time = remember { mutableStateOf(0f) }
+    LaunchedEffect(fpsConfig, paused) {
+        if (paused) return@LaunchedEffect
 
         var frameCount = 0L
         var startNanos = 0L
-        val resumeTime = value
+        val resumeTime = time.value
         val divisor = fpsConfig.divisor.coerceAtLeast(1)
         while (isActive) {
             withInfiniteAnimationFrameNanos { frameTimeNanos ->
                 if (startNanos == 0L) startNanos = frameTimeNanos
                 frameCount++
                 if (frameCount % divisor == 0L) {
-                    value = resumeTime + (frameTimeNanos - startNanos) / 1_000_000_000f
+                    time.value = resumeTime + (frameTimeNanos - startNanos) / 1_000_000_000f
                 }
             }
         }
     }
+    return time
+}
 
-    return this
-        .onGloballyPositioned { reportedSize = it.size.toSize() }
-        .drawBehind {
-            val w = if (reportedSize.width > 0f) reportedSize.width else size.width
-            val h = if (reportedSize.height > 0f) reportedSize.height else size.height
-            if (shader is CpFluidMeshGradient) {
-                shader.dither = dither
+/**
+ * 网格渐变 + 静态加性抖动。
+ *
+ * 抖动是 128×128 的单通道噪声纹理，用 [BlendMode.Plus] 以约 50% 的概率给每个
+ * 通道加 1 个 8-bit LSB。加法在暗部不会被底色衰减，因此恰好能覆盖相邻色带之间
+ * 的那一步量化差；纹理静态生成，不需要逐帧计算。
+ */
+@Composable
+private fun Modifier.cpMeshGradientBackground(
+    palette: List<Color>,
+    time: State<Float>,
+    speed: Float,
+    scale: Float,
+    fallback: Brush,
+): Modifier {
+    val painter = remember(palette, scale, speed) {
+        MeshGradientPainter(
+            rows = FluidMeshRows,
+            columns = FluidMeshColumns,
+            hasBicubicColor = true,
+        ) {
+            configureFluidMesh(
+                palette = palette,
+                time = time.value * speed,
+                scale = scale,
+            )
+        }
+    }
+    val dither = remember { createFluidDitherBrush() }
+
+    return this.drawBehind {
+        drawRect(fallback)
+        with(painter) { draw(size) }
+        drawRect(brush = dither, blendMode = BlendMode.Plus)
+    }
+}
+
+private const val FluidMeshRows = 4
+private const val FluidMeshColumns = 4
+
+/**
+ * 把 3 个色团铺到 5×5 顶点上。
+ *
+ * 顶点颜色由「底色 + 三个移动色团的距离权重」算出，位置只做轻微漂移；边缘顶点固定，
+ * 保证网格始终铺满视口。`hasBicubicColor = true` 会把相邻顶点的颜色做成平滑贝塞尔
+ * 插值，避免出现一块块多边形的色阶。
+ */
+private fun MeshGradientScope.configureFluidMesh(
+    palette: List<Color>,
+    time: Float,
+    scale: Float,
+) {
+    if (palette.isEmpty()) return
+    val base = palette.last()
+    val blobs = palette.dropLast(1)
+    val reach = (1.5f / scale.coerceAtLeast(0.1f)).coerceIn(0.45f, 1.2f)
+    val drift = time * 0.12f
+
+    for (row in 0..rows) {
+        for (column in 0..columns) {
+            val x = column / columns.toFloat()
+            val y = row / rows.toFloat()
+            val edgeX = column == 0 || column == columns
+            val edgeY = row == 0 || row == rows
+            val px = (x + if (edgeX) 0f else sin(drift + row * 1.7f + column * 2.3f) * 0.035f)
+                .coerceIn(0f, 1f)
+            val py = (y + if (edgeY) 0f else cos(drift * 0.83f + row * 2.1f + column * 1.3f) * 0.035f)
+                .coerceIn(0f, 1f)
+
+            var vertexColor = base
+            blobs.forEachIndexed { index, blob ->
+                val phase = index * 2.0943952f + time * 0.05f
+                val centerX = 0.5f + cos(phase) * 0.27f
+                val centerY = 0.5f + sin(phase * 1.31f) * 0.23f
+                val dx = (x - centerX) / reach
+                val dy = (y - centerY) / reach
+                val distance = sqrt(dx * dx + dy * dy)
+                val weight = (1f - distance).coerceIn(0f, 1f).let { it * it * (3f - 2f * it) }
+                vertexColor = lerp(vertexColor, blob, weight * 0.72f)
             }
-            // Pausing stops time updates, not drawing: reusing the last time value keeps the
-            // rendered fluid frame visible after the route transition settles.
-            effect.update(shader, time * speed * speedModifier, w, h)
-            if (effect.ready) {
-                drawRect(effect.build())
-            } else {
-                drawRect(fallback)
+
+            setVertex(row, column, Offset(px, py), vertexColor)
+        }
+    }
+}
+
+/**
+ * 生成一次性加性噪声纹理：每个像素以 50% 概率为 1 LSB，否则为 0。
+ *
+ * 用 [BlendMode.Plus] 叠加时，1 LSB 的随机扰动刚好等于 8-bit 相邻色带的量化差；
+ * 128×128 平铺后在 8-bit SDR 大面积平滑渐变上足以打碎色带，又不会形成可见的
+ * 颗粒纹理。颜色取 RGB(1,1,1)：预乘后每个颜色通道正好是 1/255。
+ */
+internal fun createFluidDitherBrush(): Brush {
+    val size = 128
+    val bitmap = ImageBitmap(size, size)
+    CanvasDrawScope().draw(
+        density = Density(1f),
+        layoutDirection = LayoutDirection.Ltr,
+        canvas = Canvas(bitmap),
+        size = Size(size.toFloat(), size.toFloat()),
+    ) {
+        val random = Random(0x5EED)
+        for (y in 0 until size) {
+            for (x in 0 until size) {
+                val step = random.nextInt(2)
+                drawRect(
+                    color = Color(step, step, step),
+                    topLeft = Offset(x.toFloat(), y.toFloat()),
+                    size = Size(1f, 1f),
+                )
             }
         }
+    }
+    return ShaderBrush(ImageShader(bitmap, TileMode.Repeated, TileMode.Repeated))
 }
 
 /**
@@ -214,184 +297,13 @@ private fun Modifier.cpPacedShaderBackground(
  * 分支，各写一份常量迟早会漂移成「同一个功能在两种窗口宽度下动得不一样快」。
  */
 object CpFluidBackgroundDefaults {
-    /** 比库的默认（1f）慢一档：Apple Music 的背景是「几乎察觉不到在动」。 */
+    /** Apple Music 的背景是「几乎察觉不到在动」，所以在默认速度上再慢一档。 */
     const val SPEED = 0.6f
 
     /**
-     * 视口归一化系数（库默认值）。
-     *
-     * 它只决定「坐标怎么映射到视口」，**不是**色团尺度 —— 色团的空间频率写在
-     * [CpFluidMeshGradient] 的 SkSL 采样系数里。曾经这里是唯一旋钮，且采样系数只有
-     * 0.3 / 0.7，1320×860 上连一个噪声胞都铺不满，整屏就是一块在变色的底。
+     * 色团尺度：越大 → 色团越小。2f 时 1320×860 上约有两三个大色团。
      */
     const val SCALE = 2f
-}
-
-/**
- * 流体网格着色器（带 TPDF 高频空间抖动）。
- *
- * 在 Simplex 噪声网格渐变的基础上：
- * 1. 引入了 [dither] 均匀变量 `uDither`，在片元着色器末端注入微量高频三角分布抖动（TPDF - Triangular
- *    Probability Density Function）；
- * 2. 在 8-bit SDR 帧缓冲区（`RGBA_8888`）下，将低频大面积暗色平滑渐变的色带断层（Color Banding）
- *    完全打碎，使肉眼观感达到逼近 10-bit / 12-bit 的丝滑过渡；
- * 3. 抖动通过 uniform 变量传递，动态开关无需重新编译 SkSL，零卡顿。
- */
-class CpFluidMeshGradient(
-    private val colors: Array<Color>,
-    val speed: Float = 1f,
-    val scale: Float = 2f,
-    @Volatile var dither: Boolean = true,
-) : Shader {
-    private val colorCount: Int = colors.size
-    private val colorUniforms: FloatArray = colors.flatMap {
-        listOf(it.red, it.green, it.blue)
-    }.toFloatArray()
-
-    override val name: String = "CpFluidMeshGradient"
-    override val authorName: String = "Mike Penz / Johnny Leek / CPPlayer"
-    override val authorUrl: String = "https://github.com/mikepenz/"
-    override val credit: String = "Mesh gradient with TPDF dither"
-    override val license: String = "MIT License"
-    override val licenseUrl: String = "https://opensource.org/license/mit"
-    override val speedModifier: Float get() = 0.5f
-
-    override val sksl: String = buildSksl(colorCount, scale, speed)
-
-    override fun applyUniforms(runtimeEffect: RuntimeEffect, time: Float, width: Float, height: Float) {
-        super.applyUniforms(runtimeEffect, time, width, height)
-        runtimeEffect.setFloatUniform("uColor", colorUniforms)
-        runtimeEffect.setFloatUniform("uDither", if (dither) 1f else 0f)
-    }
-
-    companion object {
-        private fun buildSksl(colorCount: Int, scale: Float, speed: Float): String = """
-uniform float uTime;
-uniform vec3 uResolution;
-uniform float uDither;
-
-vec3 vColor;
-const int MAX_COLORS = $colorCount;
-uniform vec3 uColor[MAX_COLORS];
-
-// Simplex 3D Noise by Ian McEwan, Ashima Arts
-vec4 permute(vec4 x) {
-    return mod(((x * 34.0) + 1.0) * x, 289.0);
-}
-vec4 taylorInvSqrt(vec4 r) {
-    return 1.79284291400159 - 0.85373472095314 * r;
-}
-
-float snoise(vec3 v) {
-    const vec2 C = vec2(1.0 / 6.0, 1.0 / 3.0);
-    const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
-
-    vec3 i = floor(v + dot(v, C.yyy));
-    vec3 x0 = v - i + dot(i, C.xxx);
-
-    vec3 g = step(x0.yzx, x0.xyz);
-    vec3 l = 1.0 - g;
-    vec3 i1 = min(g.xyz, l.zxy);
-    vec3 i2 = max(g.xyz, l.zxy);
-
-    vec3 x1 = x0 - i1 + 1.0 * C.xxx;
-    vec3 x2 = x0 - i2 + 2.0 * C.xxx;
-    vec3 x3 = x0 - 1.0 + 3.0 * C.xxx;
-
-    i = mod(i, 289.0);
-    vec4 p = permute(permute(permute(i.z + vec4(0.0, i1.z, i2.z, 1.0)) + i.y + vec4(0.0, i1.y, i2.y, 1.0)) + i.x + vec4(0.0, i1.x, i2.x, 1.0));
-
-    float n_ = 1.0 / 7.0;
-    vec3 ns = n_ * D.wyz - D.xzx;
-
-    vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
-
-    vec4 x_ = floor(j * ns.z);
-    vec4 y_ = floor(j - 7.0 * x_);
-
-    vec4 x = x_ * ns.x + ns.yyyy;
-    vec4 y = y_ * ns.x + ns.yyyy;
-    vec4 h = 1.0 - abs(x) - abs(y);
-
-    vec4 b0 = vec4(x.xy, y.xy);
-    vec4 b1 = vec4(x.zw, y.zw);
-
-    vec4 s0 = floor(b0) * 2.0 + 1.0;
-    vec4 s1 = floor(b1) * 2.0 + 1.0;
-    vec4 sh = -step(h, vec4(0.0));
-
-    vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
-    vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
-
-    vec3 p0 = vec3(a0.xy, h.x);
-    vec3 p1 = vec3(a0.zw, h.y);
-    vec3 p2 = vec3(a1.xy, h.z);
-    vec3 p3 = vec3(a1.zw, h.w);
-
-    vec4 norm = taylorInvSqrt(vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
-    p0 *= norm.x;
-    p1 *= norm.y;
-    p2 *= norm.z;
-    p3 *= norm.w;
-
-    vec4 m = max(0.6 - vec4(dot(x0, x0), dot(x1, x1), dot(x2, x2), dot(x3, x3)), 0.0);
-    m = m * m;
-    return 42.0 * dot(m * m, vec4(dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)));
-}
-
-// Author : Johnny Leek / Yuri Artiukh / CPPlayer
-vec4 main( vec2 fragCoord ) {
-    // 按**短边**归一化 ⇒ 一个噪声胞永远占短边固定比例，色团在桌面与手机上是同样大小，
-    // 只是高屏能看到更多行（这正是 Apple Music 在竖屏上的样子）。
-    // 不能按对角线：那会让 1320×860 上整屏只剩一团，手机却又碎成小斑。
-    float mr = min(uResolution.x, uResolution.y);
-    vec2 uv = (fragCoord * $scale - uResolution.xy) / mr;
-
-    // 空间频率：短边落 1.4 个噪声胞 ⇒ 整屏 2–4 个大色团（Apple Music 的观感）。
-    // 旧值 0.3 / 0.7 让整个视口不到一个胞 ⇒ 整屏只剩一块缓慢变色的底。
-    // x / y 必须用**同一个**系数：旧代码 0.3 : 0.7 的比值会把色团拉成斜向条纹。
-    //
-    // 竖屏用更低的系数把色团放大：按短边归一化后，390×844 的短边只有桌面的一半多，
-    // 同一系数下手机上的色团会比桌面碎一倍（出图核对过）。按宽高比插值，
-    // 手机回到「一屏两三个大的」，桌面保持原样。
-    float tall = clamp((uResolution.y / uResolution.x - 1.0) / 1.2, 0.0, 1.0);
-    vec2 base = uv * mix(0.70, 0.44, tall);
-
-    vColor = uColor[MAX_COLORS - 1];
-
-    // 流体域扰动 (Domain Warping):
-    // 用第 1 组 Simplex 噪声计算大尺度流体速度偏转角，模拟液体表面的涡流与拉伸
-    float warpNoise = snoise(vec3(base.x + uTime * 0.11, base.y + uTime * 0.07, uTime * 0.12 + 1.0));
-    vec2 warpDir = vec2(cos(warpNoise * 6.2831853), sin(warpNoise * 6.2831853));
-    vec2 warpedBase = base + warpDir * 0.32;
-
-    // 第 2 组 Simplex 噪声：在经历流体扭曲的坐标空间中采样色团分布场
-    float fluidNoise = snoise(vec3(warpedBase.x - uTime * 0.10 + 3.8, warpedBase.y + 1.9, uTime * 0.14 + 4.6));
-
-    // 有机流体色团柔光弥散混合 (Luminous Soft Diffusion Blending)
-    for(int i = 0; i < MAX_COLORS - 1; i++) {
-        float phase = float(i) * 2.0943951;
-        float field = mix(warpNoise, fluidNoise, 0.5 + 0.5 * sin(phase + uTime * 0.08));
-        vec2 centerOffset = vec2(cos(phase), sin(phase)) * 0.38;
-        float dist = length(warpedBase - centerOffset);
-        float threshold = 0.26 + float(i) * 0.08;
-        float intensity = smoothstep(-0.25, threshold, field - dist * 0.26);
-        vColor = mix(vColor, uColor[i], intensity * 0.88);
-    }
-
-    // High-frequency Triangular Probability Density Function (TPDF) Dithering
-    // Eliminates color banding in 8-bit SDR framebuffers (simulating 10-bit smoothness)
-    if (uDither > 0.5) {
-        float n1 = fract(52.9829189 * fract(dot(fragCoord, vec2(0.06711056, 0.00583715))));
-        float n2 = fract(52.9829189 * fract(dot(fragCoord + vec2(0.5, 0.5), vec2(0.06711056, 0.00583715))));
-        float dither = (n1 + n2 - 1.0) / 255.0;
-        vColor = clamp(vColor + vec3(dither), 0.0, 1.0);
-    }
-
-    return vec4(vColor, 1.0);
-}
-""".trimIndent()
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -432,9 +344,9 @@ private val LightBlobTones = doubleArrayOf(78.0, 84.0, 74.0)
 private val LightBlobChromas = doubleArrayOf(44.0, 36.0, 48.0)
 
 /**
- * 主题色 → 默认 Apple 风格着色器色板（无封面或取色未就绪时的回退）。
+ * 主题色 → 默认 Apple 风格网格色板（无封面或取色未就绪时的回退）。
  *
- * ⚠️ 顺序有意义：库把**最后一个**色当作「底」，前面几个按噪声混进去。底色必须排在末位。
+ * ⚠️ 顺序有意义：painter 把**最后一个**色当作「底」，前面几个按距离权重混进去。底色必须排在末位。
  *
  * @param primary 主题主色，只取它的**色相**。
  * @param base 底色参数保留兼容。
@@ -463,12 +375,12 @@ private fun blobColor(hue: Double, chroma: Double, tone: Double): Color =
 
 
 /**
- * 等色板稳定后再交给着色器 —— 挡掉**主题过渡期间**的颜色抖动。
+ * 等色板稳定后再交给 painter —— 挡掉**主题过渡期间**的颜色抖动。
  *
  * `CpTheme` 换配色时会把整套 `ColorScheme` 逐帧 lerp 600ms（见 `Theme.kt` 的
  * `ColorTransitionMillis`）。若直接拿 `MaterialTheme.colorScheme` 当 `remember` 的 key，
- * 这 600ms 里每一帧都会命中一个新 key ⇒ **重新编译约 36 次 SkSL**。噪声函数那一段
- * 编译不便宜，表现就是「换封面时播放页卡一下」。
+ * 这 600ms 里每一帧都会命中一个新 key ⇒ 重新创建 painter 并重配整张网格。
+ * 表现就是「换封面时播放页卡一下」。
  *
  * 这里的 `LaunchedEffect` 只在颜色**真的变了**才重启，`delay` 比主题过渡略长，于是
  * 整个过渡期间沿用旧色板、结束后重建**一次**。过渡中途那点色差肉眼不可辨 ——

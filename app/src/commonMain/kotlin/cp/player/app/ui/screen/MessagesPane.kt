@@ -18,14 +18,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.navigator.LocalNavigator
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.CpContactListSkeleton
 import cp.player.app.ui.component.CpSkeletonCaption
 import cp.player.app.ui.component.CpSpacing
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.CpTwoPane
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.MessageNotifyGuideSheet
@@ -63,7 +64,7 @@ import kotlinx.coroutines.launch
 fun MessagesPane(
     onChatOpenChanged: (Boolean) -> Unit = {},
 ) {
-    val navigator = LocalNavigator.current
+    val navigator = LocalAppNavigator.current
     val model = remember { MessagesModel() }
     val chatModel = remember { ChatModel() }
     val observedState by model.state.collectAsState()
@@ -113,7 +114,7 @@ fun MessagesPane(
             model.markReadLocally(contact.userId)
             scope.launch { AppModel.socialRepository.markRead(contact.userId) }
             AppModel.refreshUnreadMessages()
-            if (wide) selected = contact else navigator?.push(ChatScreen(contact.userId, contact.nickname))
+            if (wide) selected = contact else navigator.push(AppRoute.Chat(contact.userId, contact.nickname))
         }
 
         val list: @Composable (Modifier) -> Unit = { listModifier ->

@@ -110,11 +110,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
-import cafe.adriel.voyager.navigator.LocalNavigator
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.shareText
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.component.CpCoverPlaceholder
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpSeekBar
@@ -137,7 +137,7 @@ import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.SeekAvailability
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.formatTimeMs
-import cp.player.app.ui.util.pushOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.util.resized
 import cp.player.core.music.ArtistSummary
 import cp.player.core.music.CPMediaId
@@ -408,16 +408,12 @@ internal fun DesktopPlayerLayout(
     modifier: Modifier = Modifier,
 ) {
     val track = state.currentTrack ?: return
-    val navigator = LocalNavigator.current
+    val navigator = LocalAppNavigator.current
     val onArtistClick: ((ArtistSummary) -> Unit)? = remember(navigator) {
-        navigator?.let { nav ->
-            { artist -> nav.pushOrNotify(UserProfileScreen(artist.id, artist.name, artist.resourceId)) }
-        }
+        { artist -> navigator.push(AppRoute.UserProfile(artist.id, artist.name, artist.resourceId)) }
     }
     val onChangeLyricsSource: (() -> Unit)? = remember(navigator) {
-        navigator?.let { nav ->
-            { nav.pushOrNotify(cp.player.app.ui.screen.LyricsPluginSettingsScreen()) }
-        }
+        { navigator.push(AppRoute.LyricsPluginSettings) }
     }
     val moreSheets = rememberPlayerMoreSheetState()
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -602,7 +598,7 @@ internal fun DesktopPlayerLayout(
                         CpContextMenuItem(
                             label = s.player.playMv,
                             icon = Icons.Rounded.SmartDisplay,
-                            onClick = { navigator?.push(VideoPlayerScreen("netease://mv/$mvId")) },
+                            onClick = { navigator.push(AppRoute.VideoPlayer("netease://mv/$mvId")) },
                         )
                     )
                 }
@@ -754,7 +750,7 @@ internal fun DesktopPlayerLayout(
                                             icon = Icons.Rounded.SmartDisplay,
                                             label = s.player.playMv,
                                             onClick = {
-                                                navigator?.push(VideoPlayerScreen("netease://mv/$mvId"))
+                                                navigator.push(AppRoute.VideoPlayer("netease://mv/$mvId"))
                                             },
                                         )
                                     }
@@ -812,7 +808,7 @@ internal fun DesktopPlayerLayout(
                                             text = engineChip,
                                             container = MaterialTheme.colorScheme.tertiaryContainer,
                                             content = MaterialTheme.colorScheme.onTertiaryContainer,
-                                            onClick = { navigator?.push(AudioEngineSettingsScreen()) },
+                                            onClick = { navigator.push(AppRoute.AudioEngineSettings) },
                                         )
                                     }
                                 }
@@ -1004,6 +1000,16 @@ internal fun DesktopPlayerLayout(
                                         label = s.player.miniPlayer,
                                         active = false,
                                         onClick = { cp.player.app.ui.util.DesktopShell.isMiniMode = true },
+                                    )
+                                }
+                                if (cp.player.app.ui.a2ui.A2UI_ENTRY_ENABLED) {
+                                    PlayerTopToolButton(
+                                        icon = Icons.Rounded.AutoAwesome,
+                                        label = s.ai.djDeskTitle,
+                                        active = moreSheets.showDjDesk,
+                                        onClick = {
+                                            moreSheets.showDjDesk = true
+                                        },
                                     )
                                 }
                                 PlayerTopToolButton(

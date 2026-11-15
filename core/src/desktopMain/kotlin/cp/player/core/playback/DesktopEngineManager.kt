@@ -1,6 +1,9 @@
 package cp.player.core.playback
 
 import cp.player.core.license.VipLicenseManager
+import cp.player.core.music.DrmPlaybackInfo
+import cp.player.core.playback.drm.WebViewDrmBrowser
+import cp.player.core.playback.drm.WebViewDrmPlatformPlayer
 import cp.player.core.util.SettingsStorage
 import cp.player.core.util.defaultSettingsStorage
 import kotlinx.coroutines.CoroutineScope
@@ -107,16 +110,38 @@ class DynamicDesktopPlatformPlayer(
 
     // 引擎级通用能力必须逐个转发：DynamicDesktopPlatformPlayer 是 UI 唯一拿到的实例，
     // 少了任何一个 override，桌面端就会静默退回接口的「不支持」默认值。
-    override val supportsPlaybackSpeed: Boolean get() = activePlayer.supportsPlaybackSpeed
-    override val playbackSpeed: Float get() = activePlayer.playbackSpeed
+    override val supportsPlaybackSpeed: Boolean
+        get() = if (drmActive) webViewDrmPlayer?.supportsPlaybackSpeed ?: false else activePlayer.supportsPlaybackSpeed
+
+    override val playbackSpeed: Float
+        get() = if (drmActive) webViewDrmPlayer?.playbackSpeed ?: 1f else activePlayer.playbackSpeed
     override val supportsGaplessQueue: Boolean get() = activePlayer.supportsGaplessQueue
     override val nativeTrackTransitions: StateFlow<NativeTrackTransition?> get() = activePlayer.nativeTrackTransitions
     override val supportsNativeCrossfade: Boolean get() = activePlayer.supportsNativeCrossfade
     override val supportsSeekableRemoteStreams: Boolean get() = activePlayer.supportsSeekableRemoteStreams
 
+    /**
+     * 桌面 DRM 由 WebView EME 路径承载，与当前 Flick 引擎无关；
+     * 内核存在即声明能力（`supportedDrmKeySystems()` 已做同一判断），
+     * 否则 `PlaybackMediaLoader` 会在 `loadDrm` 之前直接拒绝。
+     */
+    override val supportsDrm: Boolean
+        get() = if (drmActive) webViewDrmPlayer?.supportsDrm ?: false else WebViewDrmBrowser.isAvailable
+
     private var currentEngineType: DesktopPlayerEngineType = resolveDesiredEngine()
     private var activePlayer: PlatformPlayer = createUnderlyingPlayer(currentEngineType)
     private var forwardJob: Job? = null
+    private var webViewForwardJob: Job? = null
+
+    /** 惰性创建的 WebView EME 播放器；null = 尚未创建（首次 DRM 装载时建）。 */
+    private var webViewDrmPlayer: WebViewDrmPlatformPlayer? = null
+
+    /**
+     * 当前是否由 WebView DRM 路径接管播放。Flick 引擎与浏览器内核是两个
+     * 独立音频出口，同一时刻只有一条路径处于活跃状态。
+     */
+    @Volatile
+    private var drmActive: Boolean = false
 
     private var lastVolume: Float = 1.0f
     private var lastEffectConfig: AudioEffectConfig? = null
@@ -190,6 +215,8 @@ class DynamicDesktopPlatformPlayer(
         forwardJob = scope.launch {
             launch {
                 player.state.collect { st ->
+                    // WebView DRM 活跃时引擎处于静默状态，其事件不得覆盖 DRM 状态。
+                    if (drmActive) return@collect
                     _state.value = st
                     if (st is PlatformPlaybackState.Error && currentEngineType == DesktopPlayerEngineType.FLICK_EXCLUSIVE) {
                         println("[CPPlayer Engine Manager] FlickEngine 独占模式遇到错误: ${st.message}，自动降级至标准模式！")
@@ -197,10 +224,10 @@ class DynamicDesktopPlatformPlayer(
                     }
                 }
             }
-            launch { player.positionMs.collect { _positionMs.value = it } }
-            launch { player.durationMs.collect { _durationMs.value = it } }
-            launch { player.formatInfo.collect { _formatInfo.value = it } }
-            launch { player.seekFailures.collect { _seekFailures.tryEmit(it) } }
+            launch { player.positionMs.collect { if (!drmActive) _positionMs.value = it } }
+            launch { player.durationMs.collect { if (!drmActive) _durationMs.value = it } }
+            launch { player.formatInfo.collect { if (!drmActive) _formatInfo.value = it } }
+            launch { player.seekFailures.collect { if (!drmActive) _seekFailures.tryEmit(it) } }
         }
         player.setVolume(lastVolume)
         lastEffectConfig?.let { player.applyAudioEffect(it) }
@@ -244,44 +271,92 @@ class DynamicDesktopPlatformPlayer(
         }
     }
 
+    private fun obtainWebViewDrmPlayer(): WebViewDrmPlatformPlayer? {
+        webViewDrmPlayer?.let { return it }
+        val created = WebViewDrmPlatformPlayer.create() ?: return null
+        webViewDrmPlayer = created
+        webViewForwardJob?.cancel()
+        webViewForwardJob = scope.launch {
+            launch { created.state.collect { st -> if (drmActive) _state.value = st } }
+            launch { created.positionMs.collect { if (drmActive) _positionMs.value = it } }
+            launch { created.durationMs.collect { if (drmActive) _durationMs.value = it } }
+        }
+        created.setVolume(lastVolume)
+        return created
+    }
+
+    /** 退出 DRM 模式：WebView 侧停播（浏览器与桥接服务保留，下一首 DRM 曲目可复用）。 */
+    private fun leaveDrmMode() {
+        if (!drmActive) return
+        drmActive = false
+        webViewDrmPlayer?.stop()
+        _formatInfo.value = null
+    }
+
+    override suspend fun loadDrm(
+        url: String,
+        drm: DrmPlaybackInfo,
+        startPositionMs: Long,
+        headers: Map<String, String>,
+        metadata: PlaybackMetadata?,
+    ) {
+        val player = obtainWebViewDrmPlayer()
+            ?: throw UnsupportedOperationException("WebView EME 播放器不可用：本地 DRM 桥接服务启动失败")
+        drmActive = true
+        println("[CPPlayer Engine Manager] Track loadDrm() -> WebView EME bridge")
+        player.loadDrm(url, drm, startPositionMs, headers, metadata)
+    }
+
     override suspend fun load(
         url: String,
         startPositionMs: Long,
         headers: Map<String, String>,
         metadata: PlaybackMetadata?,
     ) {
+        leaveDrmMode()
         checkAndSwitchEngine()
         println("[CPPlayer Engine] Track load() -> Engine: $currentEngineType, URL: $url")
         activePlayer.load(url, startPositionMs, headers, metadata)
     }
 
     override fun play() {
-        checkAndSwitchEngine()
-        activePlayer.play()
+        if (drmActive) {
+            webViewDrmPlayer?.play()
+        } else {
+            checkAndSwitchEngine()
+            activePlayer.play()
+        }
     }
 
     override fun pause() {
-        activePlayer.pause()
+        if (drmActive) webViewDrmPlayer?.pause() else activePlayer.pause()
     }
 
     override fun stop() {
-        activePlayer.stop()
+        if (drmActive) webViewDrmPlayer?.stop() else activePlayer.stop()
     }
 
     override fun seekTo(positionMs: Long) {
-        activePlayer.seekTo(positionMs)
+        if (drmActive) webViewDrmPlayer?.seekTo(positionMs) else activePlayer.seekTo(positionMs)
     }
 
     override fun setVolume(volume: Float) {
         lastVolume = volume
         activePlayer.setVolume(volume)
+        // DRM 活跃时音量立即作用于 WebView 播放页；非活跃时仅记录，创建时重放。
+        if (drmActive) webViewDrmPlayer?.setVolume(volume)
     }
 
-    override fun getVolume(): Float = activePlayer.getVolume()
+    override fun getVolume(): Float =
+        if (drmActive) webViewDrmPlayer?.getVolume() ?: lastVolume else activePlayer.getVolume()
 
     override fun release() {
         forwardJob?.cancel()
+        webViewForwardJob?.cancel()
         activePlayer.release()
+        webViewDrmPlayer?.release()
+        webViewDrmPlayer = null
+        drmActive = false
     }
 
     override fun applyAudioEffect(config: AudioEffectConfig) {
@@ -291,7 +366,7 @@ class DynamicDesktopPlatformPlayer(
 
     override fun setPlaybackSpeed(speed: Float) {
         lastPlaybackSpeed = speed
-        activePlayer.setPlaybackSpeed(speed)
+        if (drmActive) webViewDrmPlayer?.setPlaybackSpeed(speed) else activePlayer.setPlaybackSpeed(speed)
     }
 
     override fun queueNext(source: String, headers: Map<String, String>) {

@@ -58,8 +58,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.ApiCallRecord
 import cp.player.app.AppModel
 import cp.player.app.HealthLevel
@@ -71,7 +69,7 @@ import cp.player.app.ui.component.SettingsLazyPage
 import cp.player.app.ui.component.TopBarAction
 import cp.player.app.ui.component.rememberConfirmState
 import cp.player.app.ui.component.settingsRowContainer
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.core.monitor.HealthMonitor
 import cp.player.core.provider.BackendProvider
 import cp.player.core.util.localDateTimeOf
@@ -121,7 +119,7 @@ class HealthScreen : Screen {
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val records by AppModel.health.recordsFlow.collectAsState()
         val overall by AppModel.health.overallLevelFlow.collectAsState()
         val s = cpStrings().health
@@ -131,7 +129,7 @@ class HealthScreen : Screen {
 
         CpRouteScaffold(
             title = s.screenTitle,
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
             topBarActions = listOf(
                 TopBarAction(
                     icon = { Icon(Icons.Filled.DeleteSweep, s.clearLogAction) },

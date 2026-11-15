@@ -22,8 +22,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
@@ -32,7 +30,7 @@ import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSwitchItem
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.core.provider.ProviderCapability
 
 /**
@@ -58,7 +56,7 @@ class NavigationSettingsScreen(private val targetSettingId: String? = null) : Sc
         val supportsMessages = provider?.isFeatureAvailable(ProviderCapability.MESSAGES) ?: true
         val providerName = provider?.name.orEmpty()
         // 必须在 composable 上下文里取好导航器：`onBack` 是普通 lambda，不能在里面读 CompositionLocal。
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
             SettingsPage(pageModifier) {
@@ -146,7 +144,7 @@ class NavigationSettingsScreen(private val targetSettingId: String? = null) : Sc
         // 只在窄屏真的画出返回键时才被调用，桌面由窗口标题栏承担，两处都不需要额外判断。
         CpRouteScaffold(
             title = "导航入口",
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
         ) { pageModifier -> body(pageModifier) }
     }
 }

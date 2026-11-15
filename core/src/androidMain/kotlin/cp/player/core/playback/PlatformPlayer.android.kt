@@ -210,6 +210,9 @@ internal class Media3PlatformPlayer(context: android.content.Context) : Platform
     @Volatile
     private var drmSessionManager: DefaultDrmSessionManager? = null
 
+    /** DRM 清单归一化代理；Media3 不认 Apple 的 `METHOD=ISO-23001-7`。 */
+    private var drmPlaylistProxy: DrmPlaylistProxy? = null
+
     private val drmCallback = object : MediaDrmCallback {
         override fun executeProvisionRequest(
             uuid: UUID,
@@ -529,6 +532,15 @@ internal class Media3PlatformPlayer(context: android.content.Context) : Platform
                 .setAllowCrossProtocolRedirects(true),
         )
         val manager = obtainDrmSessionManager(uuid)
+        val proxy = obtainDrmPlaylistProxy()
+        val proxiedUrl = try {
+            proxy.playlistUrl(url)
+        } catch (error: Exception) {
+            throw IllegalStateException(
+                "DRM 清单代理不可用：${proxy.lastError ?: error.message}",
+                error,
+            )
+        }
         val mediaMetadata = metadata?.let {
             MediaMetadata.Builder()
                 .setTitle(it.title)
@@ -538,7 +550,7 @@ internal class Media3PlatformPlayer(context: android.content.Context) : Platform
                 .build()
         }
         val mediaItem = MediaItem.Builder()
-            .setUri(Uri.parse(url))
+            .setUri(Uri.parse(proxiedUrl))
             .setMimeType(MimeTypes.APPLICATION_M3U8)
             .setMediaId(metadata?.id?.takeIf { it.isNotBlank() } ?: url)
             .setMediaMetadata(mediaMetadata ?: MediaMetadata.Builder().build())
@@ -575,6 +587,14 @@ internal class Media3PlatformPlayer(context: android.content.Context) : Platform
                 it.prepare()
                 drmSessionManager = it
             }
+    }
+
+    private suspend fun obtainDrmPlaylistProxy(): DrmPlaylistProxy {
+        drmPlaylistProxy?.let { return it }
+        val proxy = DrmPlaylistProxy()
+        proxy.start()
+        drmPlaylistProxy = proxy
+        return proxy
     }
 
     override fun play() { runOnMainThread { player.play() } }
@@ -639,6 +659,8 @@ internal class Media3PlatformPlayer(context: android.content.Context) : Platform
         activeDrm = null
         runCatching { drmSessionManager?.release() }
         drmSessionManager = null
+        runCatching { drmPlaylistProxy?.stop() }
+        drmPlaylistProxy = null
     }
 
     override fun setVolume(volume: Float) {

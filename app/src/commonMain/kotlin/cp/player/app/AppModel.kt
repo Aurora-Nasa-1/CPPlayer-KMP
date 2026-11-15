@@ -397,7 +397,6 @@ object AppModel {
      */
     private val KEY_DYNAMIC_COLOR_LEGACY = "dynamic_color"
     private val KEY_COLOR_SOURCE = "color_source"
-    private val KEY_PALETTE_STYLE = "palette_style"
     private val KEY_PURE_BLACK = "pure_black"
     private val KEY_FLUID_BACKGROUND = "fluid_background"
     private val KEY_FLUID_BACKGROUND_FPS = "fluid_background_fps"
@@ -439,9 +438,6 @@ object AppModel {
 
     private val _colorSource = MutableStateFlow(colorSource())
     val colorSourceFlow: StateFlow<cp.player.app.ui.theme.ColorSource> = _colorSource.asStateFlow()
-
-    private val _paletteStyle = MutableStateFlow(paletteStyle())
-    val paletteStyleFlow: StateFlow<com.materialkolor.PaletteStyle> = _paletteStyle.asStateFlow()
 
     /**
      * 当前封面的种子色。null = 未取到（无封面 / 取色中 / 取色失败），
@@ -507,16 +503,6 @@ object AppModel {
         _colorSource.value = source
     }
 
-    fun paletteStyle(): com.materialkolor.PaletteStyle {
-        val raw = settings.getString(KEY_PALETTE_STYLE) ?: return com.materialkolor.PaletteStyle.TonalSpot
-        return runCatching { com.materialkolor.PaletteStyle.valueOf(raw) }.getOrDefault(com.materialkolor.PaletteStyle.TonalSpot)
-    }
-
-    fun setPaletteStyle(style: com.materialkolor.PaletteStyle) {
-        settings.putString(KEY_PALETTE_STYLE, style.name)
-        _paletteStyle.value = style
-    }
-
     fun pureBlack(): Boolean = settings.getString(KEY_PURE_BLACK)?.toBooleanStrictOrNull() ?: false
     fun setPureBlack(enabled: Boolean) {
         settings.putString(KEY_PURE_BLACK, enabled.toString())
@@ -531,12 +517,11 @@ object AppModel {
      * 播放页是否使用流体背景（仿 Apple Music 的流动网格渐变）。
      *
      * **默认开**：这是播放页的主视觉，默认关掉等于「做了个没人看得见的功能」。
-     * 低版本安卓（API < 33，没有 `RuntimeShader`）本来就自动回退成静态渐变，
-     * 不需要用户为平台差异操心。
+     * Compose 的 `MeshGradientPainter` 在所有目标平台都能绘制，不需要用户为平台差异操心。
      *
-     * 关掉的意义只有一条：**着色器在屏期间持续出帧**（见 `cpFluidBackground` 的 KDoc），
+     * 关掉的意义只有一条：**背景在屏期间持续出帧**（见 `cpFluidBackground` 的 KDoc），
      * 低端机 / 想省电的用户需要一个开关。所以这里存的是用户偏好，不是能力探测 ——
-     * 「这个平台跑不跑得动」由库自己判，别在设置层再猜一遍。
+     * 「这个平台跑不跑得动」不该在设置层猜。
      */
     val fluidBackgroundFlow: StateFlow<Boolean> = _fluidBackground.asStateFlow()
 
@@ -2309,7 +2294,7 @@ object AppModel {
     /**
      * 清空搜索历史（持久化键 search_history）。
      *
-     * 键是**全局单例**而不是按账号存的（见 SearchScreenModel），所以换号后
+     * 键是**全局单例**而不是按账号存的（见 SearchPresenter），所以换号后
      * 新用户会直接看到上一个账号的搜索词 —— 登出必须清掉。
      */
     fun clearSearchHistory() {
@@ -2322,7 +2307,7 @@ object AppModel {
     private val RECENT_LIMIT = cp.player.app.recent.RECENT_TRACKS_LIMIT
 
     /**
-     * 搜索历史键。必须与 `SearchScreenModel` 里的 `SEARCH_HISTORY_KEY` 保持**同一个字面量** ——
+     * 搜索历史键。必须与 `SearchPresenter` 里的 `SEARCH_HISTORY_KEY` 保持**同一个字面量** ——
      * 那边是私有常量，登出清理走 [clearSearchHistory] 时要用同一个键才删得掉。
      */
     private val KEY_SEARCH_HISTORY = "search_history"

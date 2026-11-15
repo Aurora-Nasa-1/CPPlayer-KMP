@@ -31,6 +31,19 @@ internal class PlaybackLyricsLoader(
     private val downloadedFileResolver: (mediaId: String) -> String? = { null },
 ) {
     var smartKaraokeLrcEnabled: Boolean = false
+        set(value) {
+            if (field != value) {
+                field = value
+                synchronized(lyricsCache) { lyricsCache.clear() }
+            }
+        }
+
+    private val lyricsCache = object : LinkedHashMap<String, Pair<LyricsState, LyricsInfo?>>(
+        /* initialCapacity = */ 16, /* loadFactor = */ 0.75f, /* accessOrder = */ true,
+    ) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<LyricsState, LyricsInfo?>>): Boolean =
+            size > 16
+    }
 
     private val karaokeCacheMutex = Mutex()
     private val karaokeCache = object : LinkedHashMap<String, List<SyncedLyricLine>>(
@@ -47,9 +60,28 @@ internal class PlaybackLyricsLoader(
         mediaId: String,
         summary: TrackSummary?,
     ): Pair<LyricsState, LyricsInfo?> {
+        synchronized(lyricsCache) {
+            lyricsCache[mediaId]?.let { return it }
+        }
         val id = CPMediaId.parse(mediaId)
         val outcome = fetchLyricsForInternal(id, summary)
-        return applySmartKaraokeIfEnabled(outcome)
+        val finalResult = applySmartKaraokeIfEnabled(outcome)
+        if (finalResult.first is LyricsState.Success) {
+            synchronized(lyricsCache) {
+                lyricsCache[mediaId] = finalResult
+            }
+        }
+        return finalResult
+    }
+
+    fun clearLyricsCache(mediaId: String? = null) {
+        synchronized(lyricsCache) {
+            if (mediaId == null) {
+                lyricsCache.clear()
+            } else {
+                lyricsCache.remove(mediaId)
+            }
+        }
     }
 
     private suspend fun fetchLyricsForInternal(

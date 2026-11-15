@@ -2,18 +2,12 @@ package cp.player.app.ui.component
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import com.mikepenz.hypnoticcanvas.NonAndroidRuntimeEffect
-import com.mikepenz.hypnoticcanvas.RuntimeEffect
-import com.mikepenz.hypnoticcanvas.shaders.Shader
 import java.lang.foreign.Arena
 import java.lang.foreign.FunctionDescriptor
 import java.lang.foreign.Linker
 import java.lang.foreign.MemorySegment
 import java.lang.foreign.SymbolLookup
 import java.lang.foreign.ValueLayout
-
-actual fun buildRuntimeEffect(shader: Shader): RuntimeEffect =
-    NonAndroidRuntimeEffect(shader)
 
 /**
  * 用 Win32 `EnumDisplaySettingsW` 读主显示器刷新率，不碰 AWT `GraphicsEnvironment`。

@@ -60,7 +60,6 @@ import cp.player.app.platform.saveImageToLocal
 import cp.player.app.resources.Res
 import cp.player.app.resources.sponsor_alipay
 import cp.player.app.resources.sponsor_wechat
-import cp.player.app.ui.theme.LocalIsDarkTheme
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
 
@@ -87,18 +86,15 @@ fun SponsorDialog(
     initialType: SponsorPaymentType = SponsorPaymentType.WECHAT,
     onDismiss: () -> Unit,
 ) {
-    val isDark = LocalIsDarkTheme.current
     val isExpanded = LocalIsExpanded.current
     val s = cpStrings().about
 
     var selectedType by remember { mutableStateOf(initialType) }
     val scope = rememberCoroutineScope()
 
-    val containerColor = if (isDark) {
-        MaterialTheme.colorScheme.surfaceContainerHigh
-    } else {
-        MaterialTheme.colorScheme.surfaceContainer
-    }
+    // 对话框是浮层：深色取 `surfaceContainerHigh`（比卡片略暗、比页面亮），
+    // 浅色取纯白 —— 与 `cpSheetSurface` 同一档。
+    val containerColor = cp.player.app.ui.theme.cpSheetSurface()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -349,14 +345,10 @@ fun SponsorInlineCard(
     onOpenDialog: (SponsorPaymentType) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val isDark = LocalIsDarkTheme.current
     val s = cpStrings().about
 
-    val cardBg = if (isDark) {
-        MaterialTheme.colorScheme.surfaceContainerHigh
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerLow
-    }
+    // 页面上的内联卡，走卡片层（深浅两套层级是反的，见 `cpCardSurface` 的层级表）。
+    val cardBg = cp.player.app.ui.theme.cpCardSurface()
 
     Card(
         modifier = modifier

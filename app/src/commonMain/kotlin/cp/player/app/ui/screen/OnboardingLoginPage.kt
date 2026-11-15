@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.SettingsNote
+import cp.player.app.ui.theme.cpCardSurface
 
 /**
  * 引导第 3 步：登录。
@@ -155,7 +156,7 @@ private fun NoProviderLoginCard(
     val s = cpStrings()
     Surface(
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = cpCardSurface(),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
@@ -209,7 +210,7 @@ private fun LoginSuccessCard(
     val s = cpStrings()
     Surface(
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = cpCardSurface(),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(

@@ -1,19 +1,20 @@
 package cp.player.app.ui.component
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.remember
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.Density
-import com.mikepenz.hypnoticcanvas.NonAndroidRuntimeEffect
 import cp.player.app.AppModel
 import cp.player.app.readPng
 import cp.player.app.ui.theme.CpTheme
 import cp.player.app.ui.theme.ThemeMode
 import cp.player.app.ui.theme.solidImage
-import org.jetbrains.skia.RuntimeEffect
 import java.security.MessageDigest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -27,8 +28,8 @@ class FluidBackgroundTest {
     @Test
     fun `流体背景只在导航转场期间冻结`() {
         // 反过来（转场结束才冻结）会让播放页一亮相就永久定格 —— 别再改回去。
-        assertTrue(shouldPauseFluidShaderDuringNavigation(transitionIsRunning = true))
-        assertFalse(shouldPauseFluidShaderDuringNavigation(transitionIsRunning = false))
+        assertTrue(shouldPauseFluidBackgroundDuringNavigation(transitionIsRunning = true))
+        assertFalse(shouldPauseFluidBackgroundDuringNavigation(transitionIsRunning = false))
     }
 
     /**
@@ -109,35 +110,28 @@ class FluidBackgroundTest {
     }
 
     @Test
-    fun `CpFluidMeshGradient着色器SkSL编译无错误且支持Dither`() {
-        val colors = arrayOf(
-            Color(0xFF2B1B17),
-            Color(0xFF1C2833),
-            Color(0xFF1E3F20),
-            Color(0xFF121212),
-        )
-        val shader = CpFluidMeshGradient(
-            colors = colors,
-            speed = 1f,
-            scale = 2f,
-        )
-        assertTrue(shader.dither, "抗色阶抖动默认应开启")
-
-        val sksl = shader.sksl
-        assertTrue(sksl.contains("uniform float uDither;"))
-        assertTrue(sksl.contains("TPDF"))
-        assertEquals(2, Regex("snoise\\(vec3\\(").findAll(sksl).count(), "每像素只应计算两组 Simplex 噪声场")
-        assertTrue(!sksl.contains("base.x + uTime * 0.2"), "未使用的额外 Simplex 噪声不应逐像素计算")
-
-        // 使用 Skia RuntimeEffect 验证 SkSL 语法完全合法
-        val effect = RuntimeEffect.makeForShader(sksl)
-        assertNotNull(effect, "SkSL 应该成功通过 Skia 编译")
-
-        // 验证 NonAndroidRuntimeEffect 初始化与 applyUniforms 赋值
-        val runtimeEffect = NonAndroidRuntimeEffect(shader)
-        assertTrue(runtimeEffect.supported)
-
-        shader.applyUniforms(runtimeEffect, 1.0f, 800f, 600f)
+    fun `流体背景抖动层在暗色上产生微噪声`() {
+        val scene = ImageComposeScene(width = 64, height = 64, density = Density(1f)) {
+            val dither = remember { createFluidDitherBrush() }
+            Canvas(Modifier.fillMaxSize()) {
+                // 用暗灰而不是中灰：乘性抖动在暗部会被压到不足 1 LSB，
+                // 这个底色能保证回归用例真的覆盖「暗部色带」这个场景。
+                drawRect(Color(0xFF101010))
+                drawRect(brush = dither, blendMode = BlendMode.Plus)
+            }
+        }
+        try {
+            val encoded = scene.render().encodeToData() ?: error("ImageComposeScene PNG encode failed")
+            val image = readPng(encoded.bytes)
+            val colors = buildSet {
+                for (y in 0 until image.height) {
+                    for (x in 0 until image.width) add(image.getRGB(x, y))
+                }
+            }
+            assertTrue(colors.size > 1, "纯色叠加抖动层后必须出现多个相邻像素值，否则色带不会被打破")
+        } finally {
+            scene.close()
+        }
     }
 
     @Test

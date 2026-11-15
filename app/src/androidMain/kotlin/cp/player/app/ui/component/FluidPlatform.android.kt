@@ -6,35 +6,8 @@ import android.view.Display
 import android.view.WindowManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
-import com.mikepenz.hypnoticcanvas.RuntimeEffect
-import com.mikepenz.hypnoticcanvas.shaders.Shader
 import kotlin.math.roundToInt
-
-actual fun buildRuntimeEffect(shader: Shader): RuntimeEffect {
-    return try {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val clazz = Class.forName("com.mikepenz.hypnoticcanvas.AndroidRuntimeEffect")
-            val ctor = clazz.getDeclaredConstructor(Shader::class.java)
-            ctor.isAccessible = true
-            ctor.newInstance(shader) as RuntimeEffect
-        } else {
-            val clazz = Class.forName("com.mikepenz.hypnoticcanvas.FallbackAndroidRuntimeEffect")
-            val ctor = clazz.getDeclaredConstructor()
-            ctor.isAccessible = true
-            ctor.newInstance() as RuntimeEffect
-        }
-    } catch (_: Throwable) {
-        object : RuntimeEffect {
-            override val supported: Boolean get() = false
-            override val ready: Boolean get() = false
-            override fun build(): Brush = SolidColor(Color.Transparent)
-        }
-    }
-}
 
 @Composable
 actual fun rememberFluidFpsConfig(targetFps: Int): FluidFpsConfig {

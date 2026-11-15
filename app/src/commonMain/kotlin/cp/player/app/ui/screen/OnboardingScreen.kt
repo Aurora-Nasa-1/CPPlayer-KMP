@@ -58,20 +58,21 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.OnboardingStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.rememberZipPicker
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.repository.PluginRepository
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpText
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.LocalIsExpanded
 import cp.player.app.ui.component.desktopPagerMouseControl
 import cp.player.app.ui.component.rememberConfirmState
 import cp.player.app.ui.theme.CpMotion
+import cp.player.app.ui.theme.cpCardSurface
 import cp.player.core.ImportResult
 import cp.player.core.pluginrepo.RepositoryPluginKind
 import kotlinx.coroutines.Dispatchers
@@ -98,7 +99,7 @@ import kotlinx.coroutines.withContext
 class OnboardingScreen(private val replay: Boolean = false) : Screen {
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val coroutineScope = rememberCoroutineScope()
 
         // 已加载音源与导入状态。无音源首启（NoProvider）时本页是导入入口之一；
@@ -272,7 +273,7 @@ class OnboardingScreen(private val replay: Boolean = false) : Screen {
                     }
                 },
                 onPickZip = { pickZip() },
-                onOpenProviderManagement = { navigator.push(PluginHubScreen()) },
+                onOpenProviderManagement = { navigator.push(AppRoute.PluginHub()) },
                 accountPage = { pageModifier, goToProvider, goNext ->
                     OnboardingLoginPage(
                         modifier = pageModifier,
@@ -302,7 +303,7 @@ class OnboardingScreen(private val replay: Boolean = false) : Screen {
                     } else {
                         // 即使「跳过」也标记完成，避免下次再弹。
                         AppModel.setOnboardingDone(true)
-                        navigator.replaceAll(MainScreen())
+                        navigator.replaceAll(AppRoute.Main)
                     }
                 },
             )
@@ -610,7 +611,7 @@ private fun OnboardingDonePage(
         Spacer(Modifier.height(16.dp))
         Surface(
             shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            color = cpCardSurface(),
             modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth(),
         ) {
             Column(

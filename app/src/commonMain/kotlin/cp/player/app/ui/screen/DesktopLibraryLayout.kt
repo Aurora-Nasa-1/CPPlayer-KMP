@@ -372,7 +372,7 @@ private fun DesktopLibraryShortcut(
         onClick = onClick,
         modifier = modifier.cpPressScale(),
         shape = shape,
-        color = if (prominent) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        color = if (prominent) MaterialTheme.colorScheme.secondaryContainer else cp.player.app.ui.theme.cpCardSurface(),
     ) {
         Column(
             Modifier.height(CpSpacing.musicShortcutHeight).padding(8.dp),

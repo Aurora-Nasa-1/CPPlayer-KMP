@@ -424,7 +424,6 @@ internal class PlaybackMediaLoader(
             if (!isCurrentRequest()) return@launch
 
             if (platform.supportsGaplessQueue) {
-                val cacheKey = cacheKeyOf(nextMediaId, actualLevel, namespace)
                 val cached = downloadedNext ?: streamLocalizer.cachedPath(cacheKey)
                 platform.queueNext(nextMediaId, cached ?: songUrl.url, headers)
                 preloadedKey = requestKey

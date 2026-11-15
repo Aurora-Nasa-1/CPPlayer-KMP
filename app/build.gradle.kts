@@ -20,6 +20,12 @@ plugins {
     alias(libs.plugins.nucleus)
 }
 
+compose {
+    dependencyCompatibility {
+        exclude("io.coil-kt.coil3")
+    }
+}
+
 // 版本元数据只有一处实现：根 build.gradle.kts。这里只做取值，**不要再自己算**。
 // （历史：本文件曾各自 orElse("1.0.0")，与 CI 的 -P 覆盖、app-android 的写法
 //   三份并存，同一个 tag 会得到不同的 versionCode。）
@@ -329,6 +335,11 @@ kotlin {
         }
     }
 
+tasks.withType<JavaCompile>().configureEach {
+    options.release.set(21)
+}
+
+
     sourceSets {
         val commonMain by getting {
             dependencies {
@@ -360,14 +371,14 @@ kotlin {
                 implementation(libs.ktor.serialization.json)
                 implementation(libs.accompanist.lyrics.ui)
                 implementation(libs.accompanist.lyrics.core)
-                // 播放页流体背景：SkSL 运行时着色器 → Modifier.shaderBackground。
-                // ⚠️ 只有 core 模块是 MIT；`hypnoticcanvas-shaders` 里多数着色器是
-                // CC-BY-NC-SA（非商用），**别加**。版本联动关系见 libs.versions.toml。
-                implementation(libs.hypnoticcanvas)
                 // 跨平台 Material You：seed 色 → M3 ColorScheme（含逐角色过渡动画）
                 implementation(libs.materialkolor)
                 // 封面 / 壁纸取色：Material You 官方的量化 + 打分算法（与系统 Monet 同源）
                 implementation(libs.material.color.utilities)
+                // A2UI：协议解析、数据绑定与 Material 3 基础目录都由社区 KMP 移植提供。
+                implementation(libs.a2ui.material3.kmp)
+                implementation(libs.a2ui.compose.runtime.kmp)
+                implementation(libs.a2ui.model.kmp)
             }
         }
         val androidMain by getting {
@@ -406,6 +417,9 @@ kotlin {
         val desktopTest by getting {
             dependencies {
                 implementation(kotlin("test"))
+                // Compose UI 测试（`runComposeUiTest`）：语义层级令牌需要在真实
+                // 组合里读 `MaterialTheme`，纯 JVM 断言拿不到配色。
+                implementation(compose.desktop.uiTestJUnit4)
             }
         }
     }
@@ -418,9 +432,11 @@ compose.resources {
     packageOfResClass = "cp.player.app.resources"
 }
 
-compose.dependencyCompatibility {
-    exclude("io.coil-kt.coil3")
-}
+// compose.dependencyCompatibility 在 Compose 1.13 中非标准 DSL，已注释避免编译配置中断
+// compose.dependencyCompatibility {
+//     exclude("io.coil-kt.coil3")
+// }
+
 
 // ---------------------------------------------------------------------------
 // 桌面端现代 GC、JDK 25 与运行时极致调优策略

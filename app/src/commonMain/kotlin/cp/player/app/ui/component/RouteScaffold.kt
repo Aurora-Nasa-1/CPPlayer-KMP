@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cp.player.app.ui.util.DesktopRouteTitle
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.theme.cpPageSurface
 
 /**
  * **路由页的唯一外壳。**
@@ -126,7 +127,7 @@ fun CpRouteScaffold(
         onBackPressed = onBack,
         topBarActions = topBarActions,
         floatingActionButton = floatingActionButton,
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = cpPageSurface(),
     ) { _ ->
         content(Modifier.fillMaxSize())
     }

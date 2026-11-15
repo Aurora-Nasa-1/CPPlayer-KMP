@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.util.UiEvents
+import cp.player.app.ui.theme.cpSheetInnerSurface
 
 /**
  * 添加歌曲到自定义本地歌单弹窗。
@@ -126,7 +127,8 @@ fun AddToLocalPlaylistDialog(
                                     onDismiss()
                                 },
                                 shape = MaterialTheme.shapes.medium,
-                                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                // 弹层里的可选行：比弹层底高一层的嵌套容器。
+                                color = cpSheetInnerSurface(),
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
                                 Row(

@@ -85,10 +85,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.i18n.HomeStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.recent.isRecentTrackPlayable
@@ -98,6 +97,7 @@ import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.anim.coverFlightSource
 import cp.player.app.ui.component.CpLinearProgress
 import cp.player.app.ui.component.CpPlayingEqualizer
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.CpWavyProgress
 import cp.player.app.ui.component.cpBounceClickable
 import cp.player.app.ui.component.cpPressScale
@@ -137,7 +137,6 @@ import cp.player.app.ui.model.NewSongRegion
 import cp.player.app.ui.model.PlaylistDetailScreenModel
 import cp.player.app.ui.model.PlaylistSource
 import cp.player.app.ui.theme.CpMotion
-import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.formatTimeMs
 import cp.player.app.ui.util.resized
 import cp.player.core.BackendResult
@@ -201,7 +200,7 @@ private fun HomeScreenContent(model: HomeScreenModel) {
             .distinctUntilChanged()
     }.collectAsState(initial = NowPlayingSnapshot(track = null, isPlaying = false))
     val scope = rememberCoroutineScope()
-    val navigator = LocalNavigator.currentOrThrow
+    val navigator = LocalAppNavigator.current
     // 响应式读当前音源：切源后这里先重组，保证随后的播放请求打上新源的 mediaId 前缀
     // （数据刷新由 HomeScreenModel 订阅 sourceGeneration 负责，这里只管「接下来播谁」）。
     val activeProvider by AppModel.activeProviderFlow.collectAsState()
@@ -264,10 +263,6 @@ private fun HomeScreenContent(model: HomeScreenModel) {
         }
     }
 
-    // 播放页的全屏入口要用**根** Navigator（见下面 onOpenPlayer 的说明）。
-    // `.current` 是 composable 调用，只能在组合作用域读一次，lambda 里捕获引用。
-    val rootNavigator = cp.player.app.ui.util.LocalRootNavigator.current
-
     val actions = HomeActions(
         onRefresh = { model.refresh() },
         onPlaylistSourceChange = model::selectPlaylistSource,
@@ -281,10 +276,10 @@ private fun HomeScreenContent(model: HomeScreenModel) {
             } else {
                 val playlistId = banner.targetId.takeIf { it.isNotBlank() }
                 if (playlistId == null) {
-                    navigator.push(SearchScreen(banner.title))
+                    navigator.push(AppRoute.Search(banner.title))
                 } else {
                     navigator.push(
-                        PlaylistDetailScreen(
+                        AppRoute.PlaylistDetail(
                             PlaylistSummary(
                                 id = playlistId.toLongOrNull() ?: 0L,
                                 resourceId = playlistId,
@@ -300,12 +295,12 @@ private fun HomeScreenContent(model: HomeScreenModel) {
         },
         onOpenPlaylist = {
             CoverFlight.openPlaylist(it.resourceId, it.coverUrl)
-            navigator.push(PlaylistDetailScreen(it))
+            navigator.push(AppRoute.PlaylistDetail(it))
         },
         onOpenRanking = { ranking ->
             CoverFlight.openPlaylist(ranking.resourceId, ranking.coverUrl)
             navigator.push(
-                PlaylistDetailScreen(
+                AppRoute.PlaylistDetail(
                     PlaylistSummary(
                         id = ranking.id,
                         resourceId = ranking.resourceId,
@@ -318,23 +313,23 @@ private fun HomeScreenContent(model: HomeScreenModel) {
             )
         },
         onOpenAlbumWall = {
-            navigator.push(AlbumWallScreen(initialSource = "recent"))
+            navigator.push(AppRoute.AlbumWall(initialSource = "recent"))
         },
         // 专辑 / 歌手目前没有独立详情页，落到搜索结果是**真实可用的**落点
         // （上游按专辑名或歌手名搜单曲，命中的就是这张专辑 / 这位歌手的曲目）。
         // 卡片上带搜索图标，点了会发生什么对用户是可见的。
-        onOpenAlbum = { navigator.push(SearchScreen(it.name)) },
-        onOpenArtist = { navigator.push(SearchScreen(it.name)) },
-        onOpenDaily = { navigator.push(HomeGeneratedPlaylistScreen(dailyPlaylist, dailySongs)) },
+        onOpenAlbum = { navigator.push(AppRoute.Search(it.name)) },
+        onOpenArtist = { navigator.push(AppRoute.Search(it.name)) },
+        onOpenDaily = { navigator.push(AppRoute.HomeGeneratedPlaylist(dailyPlaylist, dailySongs)) },
         onPlayDailyTrack = { track ->
             val index = dailySongs.indexOf(track).coerceAtLeast(0)
             playTracks(dailySongs, index)
-            navigator.push(HomeGeneratedPlaylistScreen(dailyPlaylist, dailySongs))
+            navigator.push(AppRoute.HomeGeneratedPlaylist(dailyPlaylist, dailySongs))
         },
         onPlayPersonalFm = { model.playPersonalFm(strings) },
         onOpenIntelligence = {
             if (AppModel.activeProvider() == null) {
-                navigator.push(LocalLibraryScreen())
+                navigator.push(AppRoute.LocalLibrary())
                 return@HomeActions
             }
             // 网易云的心动模式语义是「跟随当前播放列表」：`pid` = 队列的来源歌单，
@@ -356,11 +351,11 @@ private fun HomeScreenContent(model: HomeScreenModel) {
                 ?: likedIds.shuffled().firstOrNull()
                 ?: dailySongs.shuffled().firstOrNull()?.id
             navigator.push(
-                HomeGeneratedPlaylistScreen(
+                AppRoute.HomeGeneratedPlaylist(
                     intelligencePlaylist,
                     emptyList(),
                     // 不传 startIndex：打开心动模式只浏览，点了具体曲目才播。
-                    kind = HomeGeneratedPlaylistKind.IntelligenceFromDaily,
+                    kind = AppRoute.HomeGeneratedKind.IntelligenceFromDaily,
                     seedTrackId = seedId,
                     seedPlaylistId = pid,
                 )
@@ -372,14 +367,12 @@ private fun HomeScreenContent(model: HomeScreenModel) {
         // 桌面焦点区有在播时的「继续收听」卡同一语义族。
         onRecentTrackClick = { _, index -> playRecentAt(index) },
         onRecentPlayAll = playRecentAll,
-        onOpenRecentPlays = { navigator.push(RecentPlaysScreen()) },
+        onOpenRecentPlays = { navigator.push(AppRoute.RecentPlays()) },
         onNewSongPlay = playTracks,
         onTrackOptions = { selectedTrack = it },
-        // 播放页是**全屏体验**：必须压过整个窗口（含桌面左侧导航栏），所以显式走
-        // 根 Navigator（LocalRootNavigator，在组合作用域读一次、lambda 里只捕获引用），
-        // 而不是页面就近的 Navigator —— 桌面宽屏上后者是内容区的内嵌栈，
-        // push 进去会把播放页塞进侧栏旁边渲染。
-        onOpenPlayer = { rootNavigator?.push(PlayerScreen()) },
+        // 播放页是**全屏体验**：必须压过整个窗口（含桌面左侧导航栏），所以走 pushRoot，
+        // 而不是内容栈 —— 桌面宽屏上后者会把播放页塞进侧栏旁边渲染。
+        onOpenPlayer = { navigator.pushRoot(AppRoute.Player) },
         onTogglePlayPause = { AppModel.playback.togglePlayPause() },
     )
 
@@ -1544,7 +1537,7 @@ private fun HeroActionRow(
         enabled = enabled,
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = cp.player.app.ui.theme.cpCardSurface(),
     ) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
@@ -1679,7 +1672,7 @@ private fun HeroQuickTile(
  *     用于「发现歌单 / 新碟上架 / 热门歌手」这类栅格区块。
  *
  *   ⚠️ 为什么要有这个开关：首页原先 7 个区块全是同一套
- *   `Surface(extraLarge, surfaceContainerLow)`，纵向排下来是一屏**等宽色带**，
+ *   `Surface(extraLarge, cpCardSurface())`，纵向排下来是一屏**等宽色带**，
  *   看不出主次，也读不出区块边界（看起来像一个东西重复了 7 遍）。
  *   把「子项自带轮廓」的那几个去掉容器后，容器只留给真正需要成组的区块，
  *   容器本身就从「每条都有的背景色」变成了**有意义的分组信号**。
@@ -1715,7 +1708,7 @@ private fun HomeSectionCard(
     }
     BentoCard(
         modifier = modifier.fillMaxWidth(),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        containerColor = cp.player.app.ui.theme.cpCardSurface(),
         contentPadding = PaddingValues(bottom = 18.dp),
         fillHeight = false,
     ) {
@@ -2030,12 +2023,7 @@ private fun RankingRow(
     index: Int = -1,
 ) {
     val home = cpStrings().home
-    val isDark = LocalIsDarkTheme.current
-    val containerColor = if (isDark) {
-        MaterialTheme.colorScheme.surfaceContainerHighest
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerLow
-    }
+    val containerColor = cp.player.app.ui.theme.cpCardSurface()
 
     val handleRankingClick = {
         CoverFlight.openPlaylist(ranking.resourceId, ranking.coverUrl)
@@ -2385,18 +2373,13 @@ private fun RecentPlayPill(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val isDark = LocalIsDarkTheme.current
     val targetCorner = if (isCurrentSong) 14.dp else 26.dp
     val animatedCorner by animateDpAsState(
         targetValue = targetCorner,
         animationSpec = tween(durationMillis = 280),
         label = "recentPillCorner",
     )
-    val defaultContainer = if (isDark) {
-        MaterialTheme.colorScheme.surfaceContainerHighest
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerLow
-    }
+    val defaultContainer = cp.player.app.ui.theme.cpCardSurface()
     val targetContainerColor = if (isCurrentSong) {
         MaterialTheme.colorScheme.primaryContainer
     } else {
@@ -2508,12 +2491,7 @@ private fun DailyMixCard(
     val home = s.home
     val previewTracks = if (compact) songs.take(DESKTOP_DAILY_COUNT) else songs.take(4)
     val thumbnails = remember(songs) { songs.take(3) }
-    val isDark = LocalIsDarkTheme.current
-    val cardBackground = if (isDark) {
-        MaterialTheme.colorScheme.surfaceContainer
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerLow
-    }
+    val cardBackground = cp.player.app.ui.theme.cpCardSurface()
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -2688,12 +2666,7 @@ private fun CompactTrackCard(
     modifier: Modifier = Modifier,
 ) {
     val isCurrent = nowPlaying?.track?.id == track.id
-    val isDark = LocalIsDarkTheme.current
-    val defaultContainer = if (isDark) {
-        MaterialTheme.colorScheme.surfaceContainerHighest
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerLow
-    }
+    val defaultContainer = cp.player.app.ui.theme.cpCardSurface()
     val containerColor by animateColorAsState(
         targetValue = if (isCurrent) {
             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.75f)

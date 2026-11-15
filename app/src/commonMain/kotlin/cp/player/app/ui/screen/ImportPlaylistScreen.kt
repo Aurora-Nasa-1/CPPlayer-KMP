@@ -36,10 +36,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.component.CpLinearProgress
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpRouteScaffold
@@ -52,7 +51,7 @@ import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.settingsRowContainer
 import cp.player.app.ui.model.ImportPlaylistScreenModel
 import cp.player.app.ui.model.ImportPlaylistUiState
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.core.music.PlaylistSummary
 import cp.player.app.ui.component.CpText
 
@@ -70,11 +69,11 @@ class ImportPlaylistScreen : Screen {
     @Composable
     override fun Content() {
         val model = rememberScreenModel { ImportPlaylistScreenModel() }
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         ImportPlaylistContent(
             model = model,
-            onBack = { navigator.popOrNotify() },
-            onOpenPlaylist = { summary -> navigator.push(PlaylistDetailScreen(summary)) },
+            onBack = { navigator.pop() },
+            onOpenPlaylist = { summary -> navigator.push(AppRoute.PlaylistDetail(summary)) },
         )
     }
 }

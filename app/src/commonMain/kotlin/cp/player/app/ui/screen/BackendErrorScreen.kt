@@ -41,7 +41,7 @@ import cp.player.app.AppModel
 import cp.player.app.i18n.ProviderManagementStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.rememberZipPicker
-import cp.player.core.ImportResult
+import cp.player.app.presentation.backenderror.BackendErrorPresenter
 import cp.player.core.provider.BackendProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -102,52 +102,18 @@ class BackendErrorScreen(private val message: String) : Screen {
 }
 
 class BackendErrorScreenModel : ScreenModel {
-    val providers: StateFlow<List<BackendProvider>> = AppModel.backend.providersFlow
+    private val presenter = BackendErrorPresenter(scope = screenModelScope)
 
+    val providers = presenter.providers
     /** 非 null 时显示「正在处理」遮罩（导入 / 删除共用，文案随操作变化）。 */
-    val busy = MutableStateFlow<String?>(null)
-    val actionMessage = MutableStateFlow<String?>(null)
+    val busy = presenter.busy
+    val actionMessage = presenter.actionMessage
 
-    fun importModule(zipPath: String?, strings: ProviderManagementStrings) {
-        if (zipPath == null) { actionMessage.value = strings.noFileSelected; return }
-        screenModelScope.launch {
-            busy.value = strings.importing
-            val result = withContext(Dispatchers.IO) { AppModel.importModule(zipPath) }
-            busy.value = null
-            actionMessage.value = when (result) {
-                is ImportResult.Activated -> if (result.isUpdate) {
-                    strings.updatedAndActivated(result.provider.name)
-                } else {
-                    strings.importedAndActivated(result.provider.name)
-                }
-                is ImportResult.Loaded -> {
-                    val active = AppModel.activeProvider()?.name ?: strings.noActiveProvider
-                    if (result.isUpdate) {
-                        strings.updated(result.provider.name, active)
-                    } else {
-                        strings.imported(result.provider.name, active)
-                    }
-                }
-                is ImportResult.PendingRestart -> result.message
-                is ImportResult.Failed -> result.message
-            }
-        }
-    }
+    fun importModule(zipPath: String?, strings: ProviderManagementStrings) =
+        presenter.importModule(zipPath, strings)
 
-    fun delete(id: String, strings: ProviderManagementStrings) {
-        screenModelScope.launch {
-            busy.value = strings.deleting(id)
-            val result = withContext(Dispatchers.IO) { AppModel.deleteProvider(id) }
-            busy.value = null
-            actionMessage.value = when (result) {
-                // 删除成功后状态流会自行迁移（切剩余 / NoProvider），多数情况下页面
-                // 直接被 App.kt 换走，这条提示只在删除非活跃模块时短暂可见。
-                is cp.player.core.BackendResult.Success -> strings.deleted(id)
-                is cp.player.core.BackendResult.Error -> result.message
-                is cp.player.core.BackendResult.Unsupported -> result.message
-            }
-        }
-    }
+    fun delete(id: String, strings: ProviderManagementStrings) =
+        presenter.delete(id, strings)
 }
 
 // internal：离屏渲染预览测试（desktopTest）需要直接组合这个纯 composable。

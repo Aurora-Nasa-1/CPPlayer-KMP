@@ -114,6 +114,9 @@ import cp.player.app.auth.QrLoginStore
 import cp.player.app.i18n.NavigationStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.shareText
+import cp.player.app.presentation.navigation.AppRoute
+import cp.player.app.ui.navigation.LocalAppNavigator
+import cp.player.app.ui.navigation.VoyagerAppNavigator
 import cp.player.app.ui.component.CpCoverPlaceholder
 import cp.player.app.ui.component.CpBackButton
 import cp.player.app.ui.component.CpContextMenu
@@ -215,6 +218,7 @@ class MainScreen : Screen {
             ),
         ) { mutableStateListOf(TAB_HOME) }
         val navigator = LocalNavigator.current
+        val rootAppNavigator = LocalAppNavigator.current
         // tab 集合切换（搜索 ↔ 动态）时，把选中 key 与访问历史收敛到当前真实存在的 tab。
         // 搜索被替换成动态时，原本停在搜索上的用户自然落到动态；反向同理。
         androidx.compose.runtime.LaunchedEffect(tabs.map { it.key }, selectedTabKey) {
@@ -243,6 +247,11 @@ class MainScreen : Screen {
         // ① 发布 pageCanGoBack；② 消费标题栏的返回 / 账号 / 搜索指令；③ 切 tab 时弹回栈根。
         // 窄屏分支不装配内嵌 Navigator，此引用恒为 null，所有 `?.` 都是空操作。
         var contentNavigator by remember { mutableStateOf<Navigator?>(null) }
+        // 壳层同时持有两条栈：内容区（宽屏）与根栈（窄屏 / 全屏页）。
+        // 页面跳转一律经 AppRoute；`popUntilRoot()` 等栈维护仍由壳层直接做。
+        val contentAppNavigator = remember(contentNavigator) {
+            contentNavigator?.let { VoyagerAppNavigator(it) }
+        }
         val controller = AppModel.playback
         val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
         // 宽屏右侧面板的当前形态。原本是「desktopPlaylist + desktopSettingsOpen」两个
@@ -294,7 +303,7 @@ class MainScreen : Screen {
                 desktopPane = DesktopPane.Tabs
                 val nav = contentNavigator
                 nav?.popUntilRoot()
-                (nav ?: navigator)?.push(SearchScreen())
+                (contentAppNavigator ?: rootAppNavigator).push(AppRoute.Search())
             }
         }
         val openDynamic: () -> Unit = {
@@ -304,7 +313,7 @@ class MainScreen : Screen {
                 desktopPane = DesktopPane.Tabs
                 val nav = contentNavigator
                 nav?.popUntilRoot()
-                (nav ?: navigator)?.push(DynamicScreen())
+                (contentAppNavigator ?: rootAppNavigator).push(AppRoute.Dynamic())
             }
         }
         val closeDesktopOverlay = { desktopPane = DesktopPane.Tabs }
@@ -357,8 +366,7 @@ class MainScreen : Screen {
             if (accountRequested) {
                 cp.player.app.ui.util.DesktopShell.accountRequested = false
                 desktopPane = DesktopPane.Tabs
-                val nav = contentNavigator
-                if (nav != null) nav.push(AccountScreen()) else navigator?.push(AccountScreen())
+                (contentAppNavigator ?: rootAppNavigator).push(AppRoute.Account)
             }
         }
 
@@ -376,7 +384,7 @@ class MainScreen : Screen {
                     selectedTabKey = TAB_SEARCH
                 } else {
                     contentNavigator?.popUntilRoot()
-                    (contentNavigator ?: navigator)?.push(SearchScreen())
+                    (contentAppNavigator ?: rootAppNavigator).push(AppRoute.Search())
                 }
             }
         }
@@ -591,8 +599,7 @@ class MainScreen : Screen {
                                   // 这条分支只有平板用得上。
                                   onOpenAccount = {
                                       desktopPane = DesktopPane.Tabs
-                                      val nav = contentNavigator
-                                      if (nav != null) nav.push(AccountScreen()) else navigator?.push(AccountScreen())
+                                      (contentAppNavigator ?: rootAppNavigator).push(AppRoute.Account)
                                   },
                                   tabIndex = selectedIndex,
                                   showMessagesAction = showMessages,
@@ -635,6 +642,10 @@ class MainScreen : Screen {
                                             contentNavigator = nav
                                             onDispose { if (contentNavigator === nav) contentNavigator = null }
                                         }
+                                        cp.player.app.ui.navigation.ProvideAppNavigator(
+                                            navigator = nav,
+                                            rootNavigator = cp.player.app.ui.util.LocalRootNavigator.current ?: nav,
+                                        ) {
                                         ScreenTransition(
                                             navigator = nav,
                                             transition = {
@@ -659,6 +670,7 @@ class MainScreen : Screen {
                                                 }
                                             },
                                         )
+                                        }
                                     }
                                 }
                                 AnimatedContent(
@@ -682,7 +694,9 @@ class MainScreen : Screen {
                                     } else {
                                         Box(
                                             Modifier.fillMaxSize()
-                                                .background(MaterialTheme.colorScheme.background)
+                                                // 面板与内容区是叠放关系，底色用页面层（不是 `background`），
+                                                // 否则面板里的卡片与它只差一级、整块糊住。
+                                                .background(cp.player.app.ui.theme.cpPageSurface())
                                         ) {
                                             // 输入黑洞垫底：盖住内容层，挡住穿透点击。
                                             // ⚠️ 必须是面板正文的**兄弟**（垫在同一 Box 最底下），
@@ -736,12 +750,12 @@ class MainScreen : Screen {
                                 title = tabs.firstOrNull { it.key == selectedTabKey }?.labelOf(s.navigation).orEmpty(),
                                 navigator = navigator,
                                 scrollBehavior = scrollBehavior,
-                                onOpenSettings = { navigator?.push(SettingsScreen()) },
-                                onOpenAccount = { navigator?.push(AccountScreen()) },
+                                onOpenSettings = { rootAppNavigator.push(AppRoute.Settings) },
+                                onOpenAccount = { rootAppNavigator.push(AppRoute.Account) },
                                 // 窄屏没有内嵌 Navigator、也没有面板，消息走整页 push（原行为）。
                                 onOpenMessages = {
                                     if (showMessages) {
-                                        navigator?.push(MessagesScreen())
+                                        rootAppNavigator.push(AppRoute.Messages)
                                         AppModel.refreshUnreadMessages()
                                     }
                                 },
@@ -1311,7 +1325,8 @@ private fun DesktopSidebar(
 
     Surface(
         modifier = Modifier.width(248.dp).fillMaxSize(),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        // 桌面侧栏与页面同层（靠右侧分隔线与内容区划界，不靠底色差）。
+        color = cp.player.app.ui.theme.cpPageSurface(),
     ) {
         Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 18.dp)) {
             SidebarHeader(profileName = profile?.nickname, avatarUrl = profile?.avatarUrl)

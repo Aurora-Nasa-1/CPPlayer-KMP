@@ -93,11 +93,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
 import cp.player.app.AppModel
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.platform.BackHandler
 import cp.player.app.platform.shareText
 import cp.player.app.ui.anim.CoverFlight
@@ -126,6 +125,7 @@ import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.ui.component.PlaylistOptionsSheet
 import cp.player.app.ui.component.PlaylistMenuActions
 import cp.player.app.ui.component.PlaylistPickerSheet
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.SongMenuActions
 import cp.player.app.ui.component.SongOptionsSheet
@@ -141,7 +141,6 @@ import cp.player.app.ui.model.PlaylistDetailScreenModel
 import cp.player.app.ui.model.PlaylistDetailUiState
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.formatTimeMs
-import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.util.resized
 import cp.player.core.BackendResult
 import cp.player.core.music.CPMediaId
@@ -185,7 +184,7 @@ fun PlaylistDetailContent(
     loadingOverride: Boolean = false,
 ) {
     val s = cpStrings()
-    val navigator = LocalNavigator.currentOrThrow
+    val navigator = LocalAppNavigator.current
     val state by model.state.collectAsState()
     val playbackState by AppModel.playback.state.collectAsState()
     // TrackSummary.id 可能被解析成带命名空间的 mediaId；歌单行保存的是裸 id。
@@ -302,7 +301,7 @@ fun PlaylistDetailContent(
             },
             confirmLabel = if (isOwner) s.common.confirm else s.library.unfavoritePlaylist,
             destructive = isOwner,
-            onConfirm = { model.deleteOrUnsubscribe(s) { navigator.popOrNotify() } },
+            onConfirm = { model.deleteOrUnsubscribe(s) { navigator.pop() } },
         )
     }
 
@@ -312,7 +311,7 @@ fun PlaylistDetailContent(
             SongMenuActions(
                 onPlay = { model.playAt(index) },
                 onPlayMv = track.mvId?.takeIf { it > 0 }?.let { mvId ->
-                    { navigator.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV")) }
+                    { navigator.push(AppRoute.VideoPlayer("netease://mv/$mvId", title = "${track.name} - MV")) }
                 },
                 isFavorite = model.isLiked(track.id),
                 onToggleFavorite = { model.toggleLike(track, s) },
@@ -442,7 +441,7 @@ fun PlaylistDetailContent(
                     if (!isSearchActive) inPlaylistSearchQuery = ""
                 },
                 showBackButton = canShowInlineBack,
-                onBack = { if (embedded) onEmbeddedBack?.invoke() else navigator.popOrNotify() },
+                onBack = { if (embedded) onEmbeddedBack?.invoke() else navigator.pop() },
                 onSongOptions = { optionsTarget = it },
                 onOpenPlaylistSheet = { showPlaylistSheet = true },
                 onAddSelectedToPlaylist = { addToPlaylistIds = state.selectedIds.toList() },
@@ -479,7 +478,7 @@ fun PlaylistDetailContent(
                     isSearchActive = !isSearchActive
                     if (!isSearchActive) inPlaylistSearchQuery = ""
                 },
-                onBack = { if (embedded) onEmbeddedBack?.invoke() else navigator.popOrNotify() },
+                onBack = { if (embedded) onEmbeddedBack?.invoke() else navigator.pop() },
                 onSongOptions = { optionsTarget = it },
                 onOpenPlaylistSheet = { showPlaylistSheet = true },
                 onAddSelectedToPlaylist = { addToPlaylistIds = state.selectedIds.toList() },
@@ -582,7 +581,7 @@ fun PlaylistDetailContent(
                 shareText("「${track.name}」 https://music.163.com/#/song?id=${track.id}")
             },
             onPlayMv = track.mvId?.takeIf { it > 0 }?.let { mvId ->
-                { navigator.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV")) }
+                { navigator.push(AppRoute.VideoPlayer("netease://mv/$mvId", title = "${track.name} - MV")) }
             },
             onDelete = if (isCloudDrive) {
                 { confirmDeleteCloudTrack(track) }

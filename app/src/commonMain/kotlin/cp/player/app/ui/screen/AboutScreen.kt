@@ -31,8 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.i18n.cpStrings
 import cp.player.app.AppModel
 import cp.player.app.platform.downloadAndInstallUpdate
@@ -42,7 +40,7 @@ import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpText
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.AppUpdateDialog
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsNote
@@ -65,7 +63,7 @@ class AboutScreen : Screen {
     @Composable
     override fun Content() {
         val s = cpStrings().about
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val scope = rememberCoroutineScope()
 
         var isChecking by remember { mutableStateOf(false) }
@@ -78,7 +76,7 @@ class AboutScreen : Screen {
 
         CpRouteScaffold(
             title = s.screenTitle,
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
         ) { pageModifier ->
             SettingsPage(pageModifier) {
                 AboutHero(s)

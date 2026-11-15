@@ -1328,17 +1328,24 @@ fun CpSplitButton(
     BoxWithConstraints(modifier = modifier) {
         val totalWidth = maxWidth
         val isFullWidth = totalWidth > 0.dp && totalWidth != Dp.Infinity
+        val isFixedHeight = maxHeight > 0.dp && maxHeight != Dp.Infinity
+        val containerHeight = if (isFixedHeight) maxHeight else SplitButtonDefaults.MediumContainerHeight
         val actualTrailingWidth = trailingWidth ?: if (totalWidth >= 300.dp) 76.dp else 64.dp
         val leadingModifier = if (isFullWidth) {
-            Modifier.width((totalWidth - actualTrailingWidth - spacing).coerceAtLeast(0.dp)).fillMaxHeight()
+            Modifier.width((totalWidth - actualTrailingWidth - spacing).coerceAtLeast(0.dp))
         } else {
-            Modifier.fillMaxHeight()
-        }
-        val trailingModifier = if (isFullWidth) {
-            Modifier.width(actualTrailingWidth).fillMaxHeight()
+            Modifier
+        }.then(if (isFixedHeight) Modifier.fillMaxHeight() else Modifier.height(containerHeight))
+        val trailingModifier = (if (isFullWidth) {
+            Modifier.width(actualTrailingWidth)
         } else {
-            Modifier.fillMaxHeight()
-        }
+            Modifier
+        }).then(if (isFixedHeight) Modifier.fillMaxHeight() else Modifier.height(containerHeight))
+
+        val leadingShapes = SplitButtonDefaults.leadingButtonShapesFor(containerHeight)
+        val trailingShapes = SplitButtonDefaults.trailingButtonShapesFor(containerHeight)
+        val leadingPadding = SplitButtonDefaults.leadingButtonContentPaddingFor(containerHeight)
+        val trailingPadding = SplitButtonDefaults.trailingButtonContentPaddingFor(containerHeight)
 
         SplitButtonLayout(
             leadingButton = {
@@ -1347,6 +1354,8 @@ fun CpSplitButton(
                     enabled = enabled,
                     modifier = leadingModifier,
                     colors = colors,
+                    shapes = leadingShapes,
+                    contentPadding = leadingPadding,
                 ) {
                     leadingContent()
                 }
@@ -1357,10 +1366,13 @@ fun CpSplitButton(
                     enabled = enabled,
                     modifier = trailingModifier,
                     colors = colors,
+                    shapes = trailingShapes,
+                    contentPadding = trailingPadding,
                 ) {
                     trailingContent()
                 }
             },
+            modifier = if (isFixedHeight) Modifier.fillMaxSize() else Modifier.fillMaxWidth().height(containerHeight),
             spacing = spacing,
         )
     }
@@ -1384,17 +1396,24 @@ fun CpTonalSplitButton(
     BoxWithConstraints(modifier = modifier) {
         val totalWidth = maxWidth
         val isFullWidth = totalWidth > 0.dp && totalWidth != Dp.Infinity
+        val isFixedHeight = maxHeight > 0.dp && maxHeight != Dp.Infinity
+        val containerHeight = if (isFixedHeight) maxHeight else SplitButtonDefaults.MediumContainerHeight
         val actualTrailingWidth = trailingWidth ?: if (totalWidth >= 300.dp) 76.dp else 64.dp
         val leadingModifier = if (isFullWidth) {
-            Modifier.width((totalWidth - actualTrailingWidth - spacing).coerceAtLeast(0.dp)).fillMaxHeight()
+            Modifier.width((totalWidth - actualTrailingWidth - spacing).coerceAtLeast(0.dp))
         } else {
-            Modifier.fillMaxHeight()
-        }
-        val trailingModifier = if (isFullWidth) {
-            Modifier.width(actualTrailingWidth).fillMaxHeight()
+            Modifier
+        }.then(if (isFixedHeight) Modifier.fillMaxHeight() else Modifier.height(containerHeight))
+        val trailingModifier = (if (isFullWidth) {
+            Modifier.width(actualTrailingWidth)
         } else {
-            Modifier.fillMaxHeight()
-        }
+            Modifier
+        }).then(if (isFixedHeight) Modifier.fillMaxHeight() else Modifier.height(containerHeight))
+
+        val leadingShapes = SplitButtonDefaults.leadingButtonShapesFor(containerHeight)
+        val trailingShapes = SplitButtonDefaults.trailingButtonShapesFor(containerHeight)
+        val leadingPadding = SplitButtonDefaults.leadingButtonContentPaddingFor(containerHeight)
+        val trailingPadding = SplitButtonDefaults.trailingButtonContentPaddingFor(containerHeight)
 
         SplitButtonLayout(
             leadingButton = {
@@ -1403,6 +1422,8 @@ fun CpTonalSplitButton(
                     enabled = enabled,
                     modifier = leadingModifier,
                     colors = colors,
+                    shapes = leadingShapes,
+                    contentPadding = leadingPadding,
                 ) {
                     leadingContent()
                 }
@@ -1414,10 +1435,13 @@ fun CpTonalSplitButton(
                     enabled = enabled,
                     modifier = trailingModifier,
                     colors = colors,
+                    shapes = trailingShapes,
+                    contentPadding = trailingPadding,
                 ) {
                     trailingContent()
                 }
             },
+            modifier = if (isFixedHeight) Modifier.fillMaxSize() else Modifier.fillMaxWidth().height(containerHeight),
             spacing = spacing,
         )
     }

@@ -47,7 +47,6 @@ import androidx.compose.ui.unit.sp
 import cp.player.app.platform.openUrl
 import cp.player.app.platform.sendPlatformToast
 import cp.player.app.i18n.cpStrings
-import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.update.ProviderUpdateInfo
 import cp.player.core.provider.BackendProvider
 
@@ -63,23 +62,14 @@ fun ProviderUpdateDetailsDialog(
     onDownloadAndUpdate: () -> Unit,
 ) {
     val p = cpStrings().providerManagement
-    val isDark = LocalIsDarkTheme.current
     val critical = info.requiresUpdate(provider.version)
     val minimumVersion = info.minUsableVersion?.trim().orEmpty()
     @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
 
-    val containerColor = if (isDark) {
-        MaterialTheme.colorScheme.surfaceContainerHigh
-    } else {
-        MaterialTheme.colorScheme.surfaceContainer
-    }
-
-    val subContainerColor = if (isDark) {
-        MaterialTheme.colorScheme.surfaceContainerHighest
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerLow
-    }
+    // 对话框走浮层层，内部再嵌一层（浮层里的说明块 / 版本行）。
+    val containerColor = cp.player.app.ui.theme.cpSheetSurface()
+    val subContainerColor = cp.player.app.ui.theme.cpSheetInnerSurface()
 
     AlertDialog(
         onDismissRequest = { if (!critical) onDismiss() },
@@ -366,20 +356,11 @@ fun ProviderUpdateSourceDialog(
     onResetDefault: () -> Unit,
 ) {
     val p = cpStrings().providerManagement
-    val isDark = LocalIsDarkTheme.current
     var urlText by remember { mutableStateOf(currentCustomUrl ?: manifestDefaultUrl ?: "") }
 
-    val containerColor = if (isDark) {
-        MaterialTheme.colorScheme.surfaceContainerHigh
-    } else {
-        MaterialTheme.colorScheme.surfaceContainer
-    }
-
-    val subContainerColor = if (isDark) {
-        MaterialTheme.colorScheme.surfaceContainerHighest
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerLow
-    }
+    // 对话框走浮层层，内部再嵌一层（浮层里的说明块 / 版本行）。
+    val containerColor = cp.player.app.ui.theme.cpSheetSurface()
+    val subContainerColor = cp.player.app.ui.theme.cpSheetInnerSurface()
 
     AlertDialog(
         onDismissRequest = onDismiss,

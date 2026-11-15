@@ -36,12 +36,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.shareText
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.AddToLocalPlaylistDialog
 import cp.player.app.ui.component.AddToPlaylistSheet
@@ -68,8 +67,8 @@ import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.app.ui.model.LibraryScreenModel
 import cp.player.app.ui.model.LibrarySearchScreenModel
 import cp.player.app.ui.model.LibraryTrackHit
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.util.UiEvents
-import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.util.resized
 import cp.player.core.media.LocalMediaItem
 import cp.player.core.music.PlaylistSummary
@@ -113,7 +112,7 @@ private fun LibrarySearchContent(
     initialQuery: String,
 ) {
     val s = cpStrings()
-    val navigator = LocalNavigator.currentOrThrow
+    val navigator = LocalAppNavigator.current
     val scope = rememberCoroutineScope()
     val libraryState by library.state.collectAsState()
     val downloadsState by downloads.state.collectAsState()
@@ -177,7 +176,7 @@ private fun LibrarySearchContent(
 
     CpRouteScaffold(
         title = s.library.searchLibrary,
-        onBack = { navigator.popOrNotify() },
+        onBack = { navigator.pop() },
     ) { modifier ->
         Column(modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             CpSearchField(
@@ -216,7 +215,7 @@ private fun LibrarySearchContent(
                             ContentState(
                                 title = s.library.noSearchResults,
                                 actionLabel = s.library.searchOnlineHint(keyword),
-                                onAction = { navigator.push(SearchScreen(keyword)) },
+                                onAction = { navigator.push(AppRoute.Search(keyword)) },
                             )
                         }
                     }
@@ -274,7 +273,7 @@ private fun LibrarySearchContent(
                                 PlaylistItem(
                                     playlist = playlist,
                                     isOwner = owner,
-                                    onClick = { navigator.push(PlaylistDetailScreen(playlist)) },
+                                    onClick = { navigator.push(AppRoute.PlaylistDetail(playlist)) },
                                     onOptionsClick = { selectedPlaylist = playlist },
                                     menuActions = menuActions,
                                 )
@@ -346,7 +345,7 @@ private fun LibrarySearchContent(
                         }
                         item {
                             TextButton(
-                                onClick = { navigator.push(SearchScreen(keyword)) },
+                                onClick = { navigator.push(AppRoute.Search(keyword)) },
                                 modifier = Modifier.padding(top = 8.dp),
                             ) {
                                 Icon(
@@ -502,7 +501,7 @@ private fun LibrarySearchContent(
             onDismiss = { optionsTargetSong = null },
             onPlay = {
                 if (isVideo) {
-                    navigator.push(VideoPlayerScreen(mediaId, title = song.title))
+                    navigator.push(AppRoute.VideoPlayer(mediaId, title = song.title))
                 } else {
                     downloads.playAll(listOf(song), 0)
                 }
@@ -553,7 +552,7 @@ private fun LibrarySearchContent(
                 }
             },
             onPlayMv = if (isVideo) {
-                { navigator.push(VideoPlayerScreen(mediaId, title = song.title)) }
+                { navigator.push(AppRoute.VideoPlayer(mediaId, title = song.title)) }
             } else null,
             coverUrl = song.coverUri,
             onOpenInFileManager = {

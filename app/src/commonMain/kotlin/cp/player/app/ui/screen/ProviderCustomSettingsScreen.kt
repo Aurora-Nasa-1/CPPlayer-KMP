@@ -23,8 +23,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsDropdownItem
@@ -32,7 +30,7 @@ import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSwitchItem
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.core.provider.ProviderSettingItemSchema
 import cp.player.core.util.defaultSettingsStorage
 import cp.player.app.ui.component.CpText
@@ -55,7 +53,7 @@ class ProviderCustomSettingsScreen(
     override fun Content() {
         val s = cpStrings().providerManagement
         val common = cpStrings().common
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val storage = remember(providerId) { defaultSettingsStorage("provider_config_$providerId") }
 
         // 将当前持久化的配置读取到 Compose 响应式状态 Map 中
@@ -74,7 +72,7 @@ class ProviderCustomSettingsScreen(
 
         CpRouteScaffold(
             title = s.customSettingsTitle(providerName),
-            onBack = { navigator.popOrNotify() }
+            onBack = { navigator.pop() }
         ) { pageModifier ->
             SettingsPage(pageModifier) {
                 SettingsNote(

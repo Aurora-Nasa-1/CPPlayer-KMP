@@ -3,6 +3,7 @@ package cp.player.core.playback
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -260,6 +261,40 @@ class DesktopProgressPollTest {
                 "Ended\\s*&&[\\s\\S]*?(Idle|Paused)",
             ).containsMatchIn(block),
             "Ended 状态不能被 Idle/Paused 覆写（否则播完不切下一首）",
+        )
+    }
+
+    @Test
+    fun `DesktopHiResEngine 必须解析 CrossfadeStarted 与 NextTrackReady 事件`() {
+        val source = readSource(
+            "src/desktopMain/kotlin/cp/player/core/playback/DesktopHiResEngine.kt",
+        )
+        val block = source
+            .substringAfter("private fun parseAndEmitEvent")
+            .substringBefore("\n    private fun extractJsonString")
+        assertTrue(block.isNotEmpty(), "找不到 parseAndEmitEvent 实现")
+        assertTrue(
+            block.contains("CrossfadeStarted"),
+            "parseAndEmitEvent 必须解析 CrossfadeStarted（否则桌面端交叉淡化换源不通知宿主）",
+        )
+        assertTrue(
+            block.contains("NextTrackReady"),
+            "parseAndEmitEvent 必须解析 NextTrackReady（否则桌面端原生换源不通知宿主）",
+        )
+    }
+
+    @Test
+    fun `DesktopHiResPlatformPlayer 绝不能在 NextTrackReady 时换源`() {
+        val source = readSource(
+            "src/desktopMain/kotlin/cp/player/core/playback/DesktopHiResPlatformPlayer.kt",
+        )
+        val block = source
+            .substringAfter("DesktopHiResEngine.audioEvents.collect")
+            .substringBefore("private fun handleStateChanged")
+        assertTrue(block.isNotEmpty(), "找不到 audioEvents.collect 实现")
+        assertFalse(
+            Regex("NextTrackReady\\s*->\\s*handleNativeTransition").containsMatchIn(block),
+            "NextTrackReady 是排队就绪事件而非换源事件，不得触发 handleNativeTransition（否则播几秒界面就跳下一首）",
         )
     }
 }

@@ -4,14 +4,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.Navigator
 import cp.player.app.platform.dispatchPageBack
 import cp.player.app.platform.hasPageBackHandler
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.i18n.cpStrings
+import cp.player.app.presentation.navigation.AppNavigator
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.util.DesktopShell
-import cp.player.app.ui.util.popOrNotify
 
 /**
  * 「返回上一级」右键菜单项（桌面端）。
@@ -47,11 +46,11 @@ import cp.player.app.ui.util.popOrNotify
  */
 @Composable
 fun rememberBackContextMenuItem(): CpContextMenuItem? {
-    val navigator = LocalNavigator.current
+    val navigator = LocalAppNavigator.current
     val isDesktop = !isAndroidPlatform()
     // 四个读数都是快照读（Navigator 的栈、壳层面板状态、页面处理器数量），
     // push / pop / 开面板 / 展开播放页都会驱动这一项出现或消失。
-    val canPop = isDesktop && (navigator?.size ?: 1) > 1
+    val canPop = isDesktop && navigator.depth > 1
     val shellCanGoBack = isDesktop && DesktopShell.pageCanGoBack
     val pageCanGoBack = isDesktop && hasPageBackHandler()
     val label = cpStrings().contextMenu.backOneLevel
@@ -75,10 +74,10 @@ fun rememberBackContextMenuItem(): CpContextMenuItem? {
  * 两处各写一套判据的话，「Esc 能退、点返回键不能退」这类漂移迟早出现 ——
  * 所以宁可让这段逻辑短一点，也别让它分叉。
  */
-private fun goBackOneLevel(navigator: Navigator?, canPop: Boolean, shellCanGoBack: Boolean) {
+private fun goBackOneLevel(navigator: AppNavigator, canPop: Boolean, shellCanGoBack: Boolean) {
     if (dispatchPageBack()) return
     if (canPop) {
-        navigator?.popOrNotify()
+        navigator.pop()
     } else if (shellCanGoBack) {
         DesktopShell.backRequested = true
     }

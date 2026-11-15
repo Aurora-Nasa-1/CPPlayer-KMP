@@ -19,8 +19,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Surface
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cp.player.app.ui.screen.VideoPlayerScreen
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,10 +37,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.anim.coverFlightSource
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.theme.CpMotion
-import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.resized
 import cp.player.core.music.TrackSummary
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -127,11 +126,9 @@ fun SongItem(
     val targetContainerColor = when {
         selectionMode && isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
         isCurrent -> MaterialTheme.colorScheme.primaryContainer
-        // ⚠️ 读 LocalIsDarkTheme（已解析的明暗），不要读 isSystemInDarkTheme() ——
-        // 用户显式选深色而系统是浅色时后者会给出错的色板，行与背景撞色。
-        // 浅色分支取 surfaceContainerLow 而非 surface：后者与页面背景同色，整列会糊成一片。
-        else -> if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainerHighest
-        else MaterialTheme.colorScheme.surfaceContainerLow
+        // 行是「页面上的卡片」，统一走卡片层 —— 深浅两套层级是反的，
+        // 分散写角色名会在「用户显式选深色、系统是浅色」时取错色板（见 cpCardSurface）。
+        else -> cp.player.app.ui.theme.cpCardSurface()
     }
     val animatedContainerColor by animateColorAsState(
         targetValue = targetContainerColor,
@@ -225,14 +222,14 @@ fun SongItem(
                     )
                     val mvId = track.mvId
                     if (mvId != null && mvId > 0) {
-                        val nav = LocalNavigator.current
+                        val nav = LocalAppNavigator.current
                         Spacer(Modifier.width(6.dp))
                         Surface(
                             shape = RoundedCornerShape(4.dp),
                             color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
                             modifier = Modifier.clickable {
-                                nav?.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV"))
+                                nav.push(AppRoute.VideoPlayer("netease://mv/$mvId", title = "${track.name} - MV"))
                             },
                         ) {
                             CpText(

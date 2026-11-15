@@ -54,8 +54,6 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.isAndroidPlatform
@@ -69,7 +67,8 @@ import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSliderItem
 import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.settingsRowContainer
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.presentation.navigation.AppRoute
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.core.playback.AudioEffectConfig
 import cp.player.core.playback.AudioEffectPreset
 import cp.player.core.playback.EqBand
@@ -99,7 +98,7 @@ class AudioEffectSettingsScreen : Screen {
 
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val s = cpStrings()
 
         val capabilities = remember { AppModel.audioEffectCapabilities() }
@@ -134,7 +133,7 @@ class AudioEffectSettingsScreen : Screen {
                                 index = 0,
                                 total = 1,
                                 onClick = {
-                                    navigator.push(AudioEngineSettingsScreen())
+                                    navigator.push(AppRoute.AudioEngineSettings)
                                 },
                                 trailingContent = {
                                     CpText(
@@ -377,7 +376,7 @@ class AudioEffectSettingsScreen : Screen {
 
         CpRouteScaffold(
             title = s.audioEffect.screenTitle,
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
         ) { pageModifier -> body(pageModifier) }
     }
 }

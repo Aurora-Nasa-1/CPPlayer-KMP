@@ -51,15 +51,48 @@ private object MusicReadCaches {
     val profiles = SwrCache<ProfileBundle>(30_000L, 5 * 60_000L, maxEntries = 64)
 }
 
+/**
+ * 音乐仓储环境上下文。
+ *
+ * 将对前端全局单例（如 [AppModel]）的硬依赖解耦为抽象接口，
+ * 使 [MusicRepository] 可以独立实例化、独立单测，并可以在非 Compose / 纯后端环境下运行。
+ */
+interface MusicRepositoryContext {
+    fun activeProviderId(): String
+    fun activeUid(providerId: String): String? = null
+    fun currentUserId(): String? = null
+    fun sourceGeneration(): Int = 0
+    fun accountGeneration(): Int = 0
+    fun cookieRevision(providerId: String): Long = 0L
+    fun notifyPlaylistChanged(playlistId: String) {}
+    fun notifyAlbumFavoriteResourceChanged(albumId: String) {}
+}
+
 /** Application-facing music facade. UI models do not depend on raw Provider/API wiring. */
 class MusicRepository(
     private val unifiedSource: cp.player.core.music.UnifiedMusicSource? = null,
+    private val sessionContext: MusicRepositoryContext? = null,
 ) {
 
     private companion object {
         const val PLAYLIST_CACHE_FRESH_TTL_MS = 30_000L
         const val PLAYLIST_CACHE_STALE_TTL_MS = 5 * 60_000L
         const val FIRST_PLAYLIST_PAGE_SIZE = 300
+    }
+
+    private fun currentProviderId(): String = sessionContext?.activeProviderId() ?: AppModel.activeProviderId()
+    private fun currentUid(providerId: String): String? = sessionContext?.activeUid(providerId)
+        ?: runCatching { cp.player.app.auth.AccountStore.activeUid(providerId) }.getOrNull()
+        ?: sessionContext?.currentUserId()
+        ?: AppModel.userProfileFlow.value?.resourceId
+    private fun currentSourceGen(): Int = sessionContext?.sourceGeneration() ?: runCatching { AppModel.sourceGeneration.value }.getOrDefault(0)
+    private fun currentAccountGen(): Int = sessionContext?.accountGeneration() ?: runCatching { AppModel.accountGeneration.value }.getOrDefault(0)
+    private fun currentCookieRev(providerId: String): Long = sessionContext?.cookieRevision(providerId) ?: runCatching { AppModel.cookieStorage.revision(providerId, "default") }.getOrDefault(0L)
+    private fun dispatchPlaylistChanged(playlistId: String) {
+        sessionContext?.notifyPlaylistChanged(playlistId) ?: AppModel.notifyPlaylistChanged(playlistId)
+    }
+    private fun dispatchAlbumFavoriteChanged(albumId: String) {
+        sessionContext?.notifyAlbumFavoriteResourceChanged(albumId) ?: AppModel.notifyAlbumFavoriteResourceChanged(albumId)
     }
 
     private data class PlaylistCacheContext(
@@ -93,20 +126,18 @@ class MusicRepository(
     )
 
     private fun playlistCacheContext(providerId: String): PlaylistCacheContext {
-        val accountId = runCatching { cp.player.app.auth.AccountStore.activeUid(providerId) }.getOrNull()
-            ?: AppModel.userProfileFlow.value?.resourceId
-            ?: "anonymous"
+        val accountId = currentUid(providerId) ?: "anonymous"
         // revision 只增量标识 cookie 会话，不把 cookie/token 放入内存 key。
         val sessionId = listOf(
-            runCatching { AppModel.sourceGeneration.value }.getOrDefault(0),
-            runCatching { AppModel.accountGeneration.value }.getOrDefault(0),
-            runCatching { AppModel.cookieStorage.revision(providerId, "default") }.getOrDefault(0L),
+            currentSourceGen(),
+            currentAccountGen(),
+            currentCookieRev(providerId),
         ).joinToString(":")
         return PlaylistCacheContext(providerId, accountId, sessionId)
     }
 
     private fun readCacheKey(resource: String): String {
-        val context = playlistCacheContext(AppModel.activeProviderId())
+        val context = playlistCacheContext(currentProviderId())
         return listOf(context.providerId, context.accountId, context.sessionId, resource).joinToString("|")
     }
 
@@ -601,7 +632,7 @@ class MusicRepository(
      * 没有返回值以外的「当前是否已收藏」查询接口 —— 判定只能靠
      * [getUserAlbums] 拉全集本地比对，见 `AlbumDetailModel`。
      *
-     * ⚠️ 成功后**必须**让读取方知道收藏列表变了：专辑墙（`AlbumWallScreenModel`）
+     * ⚠️ 成功后**必须**让读取方知道收藏列表变了：专辑墙（`PosterWallScreen`）
      * 与详情页都拿 `album/sublist` 当收藏真值，不发信号的话用户收藏完回到墙上
      * 找不到刚收的专辑。
      */

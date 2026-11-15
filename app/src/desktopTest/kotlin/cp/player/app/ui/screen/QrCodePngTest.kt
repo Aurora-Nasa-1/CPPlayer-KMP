@@ -1,6 +1,7 @@
 package cp.player.app.ui.screen
 
 import org.jetbrains.skia.Image
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -13,6 +14,17 @@ import kotlin.test.assertTrue
  * 平台分支由 `saveImageToLocal` 自己负责。
  */
 class QrCodePngTest {
+
+    /**
+     * CMP 1.13+ 的图形后端按需注册；测试 JVM 没挂 ComposeScene，
+     * 不先注册 Skiko 实现时 ImageBitmap 会抛
+     * `No Compose UI graphics implementation is registered`。
+     */
+    @OptIn(androidx.compose.ui.InternalComposeUiApi::class)
+    @BeforeTest
+    fun registerGraphics() {
+        androidx.compose.ui.platform.registerSkikoComposeImplementation()
+    }
 
     @Test
     fun `qr code renders to a valid png`() {

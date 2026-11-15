@@ -61,7 +61,7 @@ import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.util.resized
 
 /** Playlist sort order shared by the playlist options sheet and screen models. */
-enum class PlaylistSortType { DEFAULT, NAME, ARTIST }
+typealias PlaylistSortType = cp.player.app.presentation.playlistdetail.PlaylistSortType
 
 /**
  * 弹层统一边距。与设置页的 16dp、筛选区的 20dp 刻意分开：弹层内容自带圆角容器，

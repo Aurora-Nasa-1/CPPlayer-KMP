@@ -57,14 +57,13 @@ import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.ProviderManagementStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.rememberZipPicker
 import cp.player.app.platform.rememberZipSaver
 import cp.player.app.platform.sendPlatformToast
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpLoadingIndicator
@@ -80,22 +79,17 @@ import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.rememberConfirmState
 import cp.player.app.ui.component.settingsContentWidth
 import cp.player.app.ui.component.settingsRowHighlightContent
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.update.ProviderUpdateInfo
-import cp.player.app.update.ProviderUpdateManager
 import cp.player.app.update.ProviderUpdateState
-import cp.player.core.BackendResult
-import cp.player.core.ImportResult
 import cp.player.core.lyrics.BuiltinLyricsSourceIds
 import cp.player.core.lyrics.LyricsCapability
 import cp.player.core.lyrics.LyricsSourceEntry
 import cp.player.core.lyrics.LyricsSourceRegistry
 import cp.player.core.provider.BackendProvider
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * 音源与歌词管理：导入、切换、更新、导出与删除音源模块及歌词来源插件。
@@ -109,7 +103,7 @@ class ProviderManagementScreen(
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val s = cpStrings()
         val p = s.providerManagement
         val t = s.lyricsPlugin
@@ -202,7 +196,7 @@ class ProviderManagementScreen(
 
         CpRouteScaffold(
             title = p.screenTitle,
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
             topBarActions = listOf(
                 cp.player.app.ui.component.TopBarAction(
                     icon = { Icon(Icons.Filled.Sync, p.checkUpdatesContentDesc) },
@@ -214,7 +208,7 @@ class ProviderManagementScreen(
                 ),
                 cp.player.app.ui.component.TopBarAction(
                     icon = { Icon(Icons.Filled.Extension, cpStrings().pluginRepository.title) },
-                    onClick = { navigator.push(PluginRepositoryScreen()) },
+                    onClick = { navigator.push(AppRoute.PluginRepository) },
                 ),
             ),
             floatingActionButton = {
@@ -352,7 +346,7 @@ class ProviderManagementScreen(
                                         onShowUpdateDetails = { info -> updateDetailTarget = provider to info },
                                         onConfigureUpdateSource = { configSourceTarget = provider },
                                         onOpenSettings = if (!schemas.isNullOrEmpty()) {
-                                            { navigator.push(ProviderCustomSettingsScreen(provider.id, provider.name, schemas)) }
+                                            { navigator.push(AppRoute.ProviderCustomSettings(provider.id, provider.name, schemas)) }
                                         } else null,
                                     )
                                 }
@@ -368,7 +362,7 @@ class ProviderManagementScreen(
                                 SettingsButtonItem(
                                     text = s.pluginRepository.title,
                                     subtitle = s.pluginRepository.subtitle,
-                                    onClick = { navigator.push(PluginRepositoryScreen()) },
+                                    onClick = { navigator.push(AppRoute.PluginRepository) },
                                     index = 0, total = 1, icon = Icons.Filled.Extension,
                                 )
                             }
@@ -489,188 +483,53 @@ class ProviderManagementScreen(
 }
 
 class ProviderManagementModel : ScreenModel {
-    val providers: StateFlow<List<BackendProvider>> = AppModel.backend.providersFlow
-    val active: StateFlow<BackendProvider?> get() = AppModel.activeProviderFlow
+    private val presenter = cp.player.app.presentation.providermanagement.ProviderManagementPresenter(
+        scope = screenModelScope,
+    )
 
-    private val updateManager: ProviderUpdateManager = ProviderUpdateManager.INSTANCE
-    val updateStates: StateFlow<Map<String, ProviderUpdateState>> = updateManager.updateStates
-    val autoCheckEnabled: MutableStateFlow<Boolean> = MutableStateFlow(updateManager.isAutoCheckEnabled())
+    val providers: StateFlow<List<BackendProvider>> get() = presenter.providers
+    val active: StateFlow<BackendProvider?> get() = presenter.active
+    val updateStates: StateFlow<Map<String, ProviderUpdateState>> get() = presenter.updateStates
+    val autoCheckEnabled: MutableStateFlow<Boolean> get() = presenter.autoCheckEnabled
+    val busy: MutableStateFlow<String?> get() = presenter.busy
+    val message: MutableStateFlow<String?> get() = presenter.message
 
-    val busy = MutableStateFlow<String?>(null)
-    val message = MutableStateFlow<String?>(null)
+    fun isAutoCheckEnabled(): Boolean = presenter.isAutoCheckEnabled()
+    fun setAutoCheckEnabled(enabled: Boolean) = presenter.setAutoCheckEnabled(enabled)
+    fun getCustomUpdateUrl(providerId: String): String? = presenter.getCustomUpdateUrl(providerId)
+    fun setCustomUpdateUrl(providerId: String, url: String?) = presenter.setCustomUpdateUrl(providerId, url)
 
-    fun isAutoCheckEnabled(): Boolean = updateManager.isAutoCheckEnabled()
+    fun checkUpdateFor(provider: BackendProvider, strings: ProviderManagementStrings) =
+        presenter.checkUpdateFor(provider, strings)
 
-    fun setAutoCheckEnabled(enabled: Boolean) {
-        updateManager.setAutoCheckEnabled(enabled)
-        autoCheckEnabled.value = enabled
-    }
+    fun checkAllUpdates(strings: ProviderManagementStrings, silent: Boolean = false) =
+        presenter.checkAllUpdates(strings, silent)
 
-    fun getCustomUpdateUrl(providerId: String): String? = updateManager.getCustomUpdateUrl(providerId)
-
-    fun setCustomUpdateUrl(providerId: String, url: String?) {
-        updateManager.setCustomUpdateUrl(providerId, url)
-    }
-
-    fun checkUpdateFor(provider: BackendProvider, strings: ProviderManagementStrings) {
-        screenModelScope.launch {
-            val state = updateManager.checkUpdate(provider)
-            when (state) {
-                is ProviderUpdateState.UpdateRequired -> {
-                    message.value = strings.updateRequired(provider.name, state.info.version)
-                }
-                is ProviderUpdateState.UpdateAvailable -> {
-                    message.value = strings.updateAvailable(provider.name, state.info.version)
-                }
-                is ProviderUpdateState.UpToDate -> {
-                    message.value = strings.upToDate(provider.name)
-                }
-                is ProviderUpdateState.Error -> {
-                    message.value = strings.checkFailed(provider.name, state.message)
-                }
-                else -> Unit
-            }
-        }
-    }
-
-    fun checkAllUpdates(strings: ProviderManagementStrings, silent: Boolean = false) {
-        screenModelScope.launch {
-            checkAllUpdatesNow(strings, silent)
-        }
-    }
-
-    /**
-     * 在当前协程里完成全部音源检查，供插件中心与仓库刷新串联。
-     *
-     * 与 [checkAllUpdates] 共用同一套忙态 / 结果提示，区别只在于完成后才返回。
-     */
-    suspend fun checkAllUpdatesNow(strings: ProviderManagementStrings, silent: Boolean = false) {
-        try {
-            if (!silent) busy.value = strings.checkingAll
-            updateManager.checkAllUpdates(providers.value)
-            if (!silent) {
-                val availableCount = updateManager.updateStates.value.values.count {
-                    it is ProviderUpdateState.UpdateAvailable || it is ProviderUpdateState.UpdateRequired
-                }
-                message.value = if (availableCount > 0) {
-                    strings.checkAllDoneAvailable(availableCount)
-                } else {
-                    strings.checkAllDoneUpToDate
-                }
-            }
-        } finally {
-            if (!silent) busy.value = null
-        }
-    }
+    suspend fun checkAllUpdatesNow(strings: ProviderManagementStrings, silent: Boolean = false) =
+        presenter.checkAllUpdatesNow(strings, silent)
 
     fun downloadAndInstallUpdate(
         provider: BackendProvider,
         info: ProviderUpdateInfo,
         strings: ProviderManagementStrings,
-    ) {
-        screenModelScope.launch {
-            busy.value = strings.downloading(provider.name, info.version)
-            val result = runCatching {
-                updateManager.downloadAndInstall(provider, info) { written, total ->
-                    if (total != null && total > 0) {
-                        val pct = ((written * 100) / total).coerceIn(0L, 100L).toInt()
-                        busy.value = strings.downloadingPercent(provider.name, info.version, pct)
-                    }
-                }
-            }.fold(
-                onSuccess = { it },
-                onFailure = { ImportResult.Failed(it.message ?: strings.downloadFailed) },
-            )
-            busy.value = null
-            message.value = when (result) {
-                is ImportResult.Activated -> strings.updatedAndActivatedVersioned(result.provider.name, info.version)
-                is ImportResult.Loaded -> strings.updatedVersioned(result.provider.name, info.version)
-                is ImportResult.PendingRestart -> result.message
-                is ImportResult.Failed -> result.message
-            }
-        }
-    }
+    ) = presenter.downloadAndInstallUpdate(provider, info, strings)
 
-    fun importModule(zipPath: String?, strings: ProviderManagementStrings) {
-        if (zipPath == null) { message.value = strings.noFileSelected; return }
-        screenModelScope.launch {
-            busy.value = strings.importing
-            val result = withContext(Dispatchers.IO) { AppModel.importModule(zipPath) }
-            busy.value = null
-            message.value = when (result) {
-                is ImportResult.Activated -> if (result.isUpdate) {
-                    strings.updatedAndActivated(result.provider.name)
-                } else {
-                    strings.importedAndActivated(result.provider.name)
-                }
-                is ImportResult.Loaded -> {
-                    val active = AppModel.activeProvider()?.name ?: strings.noActiveProvider
-                    if (result.isUpdate) {
-                        strings.updated(result.provider.name, active)
-                    } else {
-                        strings.imported(result.provider.name, active)
-                    }
-                }
-                is ImportResult.PendingRestart -> result.message
-                is ImportResult.Failed -> result.message
-            }
-        }
-    }
+    fun importModule(zipPath: String?, strings: ProviderManagementStrings) =
+        presenter.importModule(zipPath, strings)
 
-    fun updateModule(provider: BackendProvider, zipPath: String?, strings: ProviderManagementStrings) {
-        if (zipPath == null) { message.value = strings.noFileSelected; return }
-        screenModelScope.launch {
-            busy.value = strings.updating(provider.name)
-            val result = withContext(Dispatchers.IO) { AppModel.updateModule(zipPath, provider.id) }
-            busy.value = null
-            message.value = when (result) {
-                is ImportResult.Activated -> strings.updatedAndActivated(result.provider.name)
-                is ImportResult.Loaded -> strings.updated(
-                    result.provider.name,
-                    AppModel.activeProvider()?.name ?: strings.noActiveProvider,
-                )
-                is ImportResult.PendingRestart -> result.message
-                is ImportResult.Failed -> result.message
-            }
-        }
-    }
+    fun updateModule(provider: BackendProvider, zipPath: String?, strings: ProviderManagementStrings) =
+        presenter.updateModule(provider, zipPath, strings)
 
     fun exportModuleTo(
         provider: BackendProvider,
         destPath: String?,
         strings: ProviderManagementStrings,
-    ): Boolean {
-        if (destPath == null) return false
-        busy.value = strings.exporting(provider.name)
-        val result = AppModel.exportModule(provider.id, destPath)
-        busy.value = null
-        message.value = when (result) {
-            is BackendResult.Success -> strings.exported(provider.name, fileNameOf(destPath))
-            is BackendResult.Error -> result.message
-            is BackendResult.Unsupported -> result.message
-        }
-        return result is BackendResult.Success
-    }
+    ): Boolean = presenter.exportModuleTo(provider, destPath, strings)
 
-    fun activate(provider: BackendProvider, strings: ProviderManagementStrings) {
-        val ok = AppModel.switchOrReport(provider)
-        message.value = if (ok) {
-            strings.activated(provider.name)
-        } else {
-            AppModel.lastSwitchError ?: strings.switchFailed
-        }
-    }
+    fun activate(provider: BackendProvider, strings: ProviderManagementStrings) =
+        presenter.activate(provider, strings)
 
-    fun delete(id: String, strings: ProviderManagementStrings) {
-        screenModelScope.launch {
-            val result = withContext(Dispatchers.IO) { AppModel.deleteProvider(id) }
-            message.value = when (result) {
-                is BackendResult.Success<*> -> strings.deleted(id)
-                is BackendResult.Error -> result.message
-                is BackendResult.Unsupported -> result.message
-            }
-        }
-    }
+    fun delete(id: String, strings: ProviderManagementStrings) = presenter.delete(id, strings)
 }
 
 @Composable
@@ -994,4 +853,3 @@ internal fun builtinNote(
     else -> null
 }
 
-internal fun fileNameOf(path: String): String = path.replace('\\', '/').substringAfterLast('/')

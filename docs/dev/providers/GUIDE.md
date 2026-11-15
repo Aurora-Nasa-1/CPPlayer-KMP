@@ -141,11 +141,31 @@ DRM 由两个独立能力组成，**必须成对声明**；只声明一个时宿
 | 敏感字节 | challenge 与 license 只在内存中传递，不写日志、不缓存、不持久化、不进错误消息 |
 | 真实音质 | `actualQuality` 按实际选中的 HLS variant 返回，不能照抄请求档位 |
 | 不可用即失败 | 宿主请求的 key system 在资源里不存在时返回 `Unsupported`，不能返回一个必然播不了的加密 URL |
-| 平台矩阵 | Android：Widevine（Media3；Flick 模式强制切 Media3）；Desktop：无 CDM |
+| 平台矩阵 | Android：Widevine（Media3；Flick 模式强制切 Media3）；Windows 桌面：Widevine（WebView EME 桥，见 [DRM_VERIFICATION](DRM_VERIFICATION.md)）；FairPlay：仅 Apple 平台 |
 | 回退顺序 | DRM → 明文 preview（`resolve`）→ `Unsupported` |
 | 禁用路径 | DRM 流不进入磁盘流缓存、`StreamLocalizer`、`DownloadEngine`、`LocalServer` 导出 |
 
 宿主只在 `supportedDrmKeySystems()` 非空且 Provider 同时声明上述两个能力时调用 `resolveDrm`；返回 `Unsupported` 后回退旧的 `resolve`。Provider 不应自行做 CDM、解密或把 license 写入文件。
+
+### 6.1 桌面 WebView EME 桥
+
+Windows 没有面向普通桌面应用的 Widevine 系统接口，宿主改为借浏览器内核解密：
+
+| 环节 | 实现 |
+|---|---|
+| 能力探测 | `supportedDrmKeySystems()` 仅在发现 Edge / Chrome / WebView2 Runtime 内核时返回 `widevine` |
+| 启动 | `msedge.exe` / `chrome.exe` 以 `--app` 离屏窗口加载本地 `player.html` |
+| 清单 | 本地代理把 Apple `METHOD=ISO-23001-7` 归一化为 `SAMPLE-AES-CTR`（hls.js 只认后者），并把 variant / audio group 继续代理化 |
+| license | 播放页 POST challenge → 宿主 `exchangeLicense` → Provider；license 字节原样回传给 CDM |
+| 安全 | 桥只绑 `127.0.0.1`，一次性 token 校验；challenge / license 不落日志与磁盘 |
+
+此时 Provider 仍然完全平台无关：它不需要知道解密由 Media3 还是浏览器内核完成。
+接口细节见 [DRM_VERIFICATION](DRM_VERIFICATION.md) 与 [SDK_TYPES](SDK_TYPES.md)。
+
+Android 走同一份 `HlsPlaylistNormalizer`（位于 commonMain）：Media3 1.11 的
+解析器同样只接受 `SAMPLE-AES` 系列，所以 `loadDrm` 会在设备上起一个只绑
+`127.0.0.1` 的清单代理，再交给 ExoPlayer。两端的差异只在「谁持有 CDM」，
+Provider 协议与清单归一化行为完全一致。
 
 ## 7. 宿主边界
 

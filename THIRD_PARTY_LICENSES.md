@@ -22,6 +22,14 @@
 
 ---
 
+## hls.js（Apache-2.0）
+
+- **用途**：Windows 桌面 WebView EME 桥的 HLS + EME 播放页。
+- **落点**：`core/src/desktopMain/resources/cp/player/core/playback/drm/hls.min.js`（1.6.16，未修改）。
+- **许可证**：Apache License 2.0 — https://github.com/video-dev/hls.js
+
+---
+
 ## Mozilla Rhino（MPL-2.0）
 
 - **用途**：JVM 侧 JavaScript 引擎，运行 Lyrico 格式的歌词源插件。

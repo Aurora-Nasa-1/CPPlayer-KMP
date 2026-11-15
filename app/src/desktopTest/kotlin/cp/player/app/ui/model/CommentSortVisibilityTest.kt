@@ -23,6 +23,11 @@ class CommentSortVisibilityTest {
     )
 
     @Test
+    fun `sort defaults to hot`() {
+        assertEquals(CommentSort.HOT, state().sortType)
+    }
+
+    @Test
     fun `recommend is hidden while the initial request is loading`() {
         val loading = state().copy(loading = true)
 

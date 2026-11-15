@@ -35,11 +35,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.CustomCapacityDialog
 import cp.player.app.ui.component.SettingsButtonItem
@@ -56,14 +56,12 @@ import cp.player.app.ui.model.StorageSettingsModel
 import cp.player.app.ui.model.isCustomSongCacheCapacity
 import cp.player.app.ui.model.songCacheCapacityIndex
 import cp.player.app.ui.util.formatBytes
-import cp.player.app.ui.theme.AvailablePaletteStyles
 import cp.player.app.ui.theme.ColorSource
 import cp.player.app.ui.theme.ThemeMode
 import cp.player.app.ui.theme.description
 import cp.player.app.ui.theme.displayName
 import cp.player.app.ui.theme.isPlatformColorSourceAvailable
 import cp.player.app.ui.util.UiEvents
-import cp.player.app.ui.util.popOrNotify
 
 /**
  * 外观与主题设置页面（设计贴合 Android 16 现代原生风格）。
@@ -73,7 +71,7 @@ class AppearanceSettingsScreen(
 ) : Screen {
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val s = cpStrings()
         val themeMode by AppModel.themeModeFlow.collectAsState()
         val colorSource by AppModel.colorSourceFlow.collectAsState()
@@ -116,7 +114,7 @@ class AppearanceSettingsScreen(
                         },
                         modifier = Modifier.settingsSearchTarget("appearance_theme_mode", targetSettingId),
                         index = 0,
-                        total = 4,
+                        total = 3,
                     )
                     SettingsSegmentedItem(
                         title = s.appearance.colorSource,
@@ -128,20 +126,7 @@ class AppearanceSettingsScreen(
                         },
                         modifier = Modifier.settingsSearchTarget("appearance_color_source", targetSettingId),
                         index = 1,
-                        total = 4,
-                    )
-                    val paletteStyle by AppModel.paletteStyleFlow.collectAsState()
-                    SettingsSegmentedItem(
-                        title = s.appearance.paletteStyle,
-                        subtitle = paletteStyle.displayName(s),
-                        options = AvailablePaletteStyles.map { it.displayName(s) },
-                        selectedIndex = AvailablePaletteStyles.indexOf(paletteStyle).coerceAtLeast(0),
-                        onSelect = { index ->
-                            AvailablePaletteStyles.getOrNull(index)?.let(AppModel::setPaletteStyle)
-                        },
-                        modifier = Modifier.settingsSearchTarget("appearance_palette_style", targetSettingId),
-                        index = 2,
-                        total = 4,
+                        total = 3,
                     )
                     SettingsSwitchItem(
                         title = s.appearance.pureBlack,
@@ -149,8 +134,8 @@ class AppearanceSettingsScreen(
                         checked = pureBlack,
                         onCheckedChange = AppModel::setPureBlack,
                         modifier = Modifier.settingsSearchTarget("appearance_pure_black", targetSettingId),
-                        index = 3,
-                        total = 4,
+                        index = 2,
+                        total = 3,
                     )
                 }
 
@@ -255,13 +240,13 @@ class AppearanceSettingsScreen(
                             index = 1,
                             total = 2,
                             modifier = Modifier.settingsSearchTarget("appearance_mobile_player_layout", targetSettingId),
-                            onClick = { navigator.push(MobilePlayerSettingsScreen()) },
+                            onClick = { navigator.push(AppRoute.MobilePlayerSettings()) },
                         )
                     }
                 } else {
                     PlayerLyricsPresentationSection(
                         targetSettingId = targetSettingId,
-                        onNavigateLyricsPlugin = { navigator.push(LyricsPluginSettingsScreen()) },
+                        onNavigateLyricsPlugin = { navigator.push(AppRoute.LyricsPluginSettings) },
                     )
                 }
 
@@ -308,7 +293,7 @@ class AppearanceSettingsScreen(
 
         CpRouteScaffold(
             title = s.appearance.screenTitle,
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
         ) { pageModifier -> body(pageModifier) }
     }
 }
@@ -342,14 +327,14 @@ class AppearanceSettingsScreen(
 class StorageSettingsScreen : Screen {
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         // rememberScreenModel 是 Screen 的扩展函数，只能在 Content() 里调用（见 AGENTS.md）。
         val model = rememberScreenModel { StorageSettingsModel() }
         StorageSettingsContent(
             model = model,
-            onBack = { navigator.popOrNotify() },
-            onOpenDownloads = { navigator.push(DownloadsScreen()) },
-            onOpenSongCache = { navigator.push(SongCacheScreen()) },
+            onBack = { navigator.pop() },
+            onOpenDownloads = { navigator.push(AppRoute.Downloads()) },
+            onOpenSongCache = { navigator.push(AppRoute.SongCache) },
         )
     }
 }

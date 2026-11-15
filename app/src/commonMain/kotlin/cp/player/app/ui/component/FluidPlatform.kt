@@ -1,8 +1,6 @@
 package cp.player.app.ui.component
 
 import androidx.compose.runtime.Composable
-import com.mikepenz.hypnoticcanvas.RuntimeEffect
-import com.mikepenz.hypnoticcanvas.shaders.Shader
 import kotlin.math.roundToInt
 
 /**
@@ -32,8 +30,3 @@ fun calculateFluidFpsConfig(screenHz: Int, targetFps: Int): FluidFpsConfig {
 /** 获取当前平台的流体背景帧率策略。 */
 @Composable
 expect fun rememberFluidFpsConfig(targetFps: Int): FluidFpsConfig
-
-/**
- * 跨平台构建 HypnoticCanvas 的底层 RuntimeEffect（Desktop 走 Skiko，Android 走 RuntimeShader）。
- */
-expect fun buildRuntimeEffect(shader: Shader): RuntimeEffect

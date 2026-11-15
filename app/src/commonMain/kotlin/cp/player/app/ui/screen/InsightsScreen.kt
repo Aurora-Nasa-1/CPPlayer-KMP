@@ -42,12 +42,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.recent.isRecentTrackPlayable
+import cp.player.app.presentation.navigation.AppRoute
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.recent.recentPlaybackPlan
 import cp.player.app.recent.recentPlayableTracks
 import cp.player.app.recent.recentTrackProviderId
@@ -71,8 +71,9 @@ import cp.player.app.ui.component.rememberConfirmState
 import cp.player.app.ui.component.songContextMenuItems
 import cp.player.app.ui.component.songShareText
 import cp.player.app.ui.anim.CoverFlight
-import cp.player.app.ui.util.popOrNotify
 import cp.player.app.platform.shareText
+import cp.player.app.ui.theme.cpCardSurface
+import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.core.insights.Insights
 import cp.player.core.insights.RankItem
 import cp.player.core.util.localDateTimeOf
@@ -96,10 +97,10 @@ class InsightsScreen(private val initialTab: Int = TAB_OVERVIEW) : Screen {
 
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         InsightsContent(
             initialTab = initialTab,
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
         )
     }
 
@@ -122,7 +123,7 @@ private fun tabLabels(s: CpStrings) = listOf(
 
 @Composable
 private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
-    val navigator = LocalNavigator.currentOrThrow
+    val navigator = LocalAppNavigator.current
     val s = cpStrings()
     val summary by AppModel.insightsSummaryFlow.collectAsState()
     val daily by AppModel.dailyInsightsFlow.collectAsState()
@@ -221,7 +222,7 @@ private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
                         records = records,
                         selectedDay = selectedDay,
                         scrobbleState = scrobbleState,
-                        onOpenScrobble = { navigator.push(ScrobbleSettingsScreen()) },
+                        onOpenScrobble = { navigator.push(AppRoute.ScrobbleSettings) },
                         onSelectDay = { selectedDay = if (selectedDay == it) null else it },
                         onToggleGreen = { AppModel.setHeatmapGreen(!green) },
                         onClear = {
@@ -362,7 +363,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentTab(
             Surface(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                 shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                color = cpCardSurface(),
             ) {
                 CpText(
                     strings.insights.recentOtherSourceNote,
@@ -514,7 +515,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTab(
         Surface(
             modifier = Modifier.fillMaxWidth().clickable { onOpenScrobble() },
             shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            color = cpCardSurface(),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
@@ -702,7 +703,7 @@ private fun SelectedDayCard(
     val totalMs = dayRecords.sumOf { it.playedMs }
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = cpCardSurface(),
         modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -816,7 +817,7 @@ private fun InsightCard(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = cpCardSurface(),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -922,7 +923,7 @@ private fun RankRow(item: RankItem, maxMs: Long, strings: CpStrings) {
                 .fillMaxWidth()
                 .height(8.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                .background(cpNestedSurface()),
         ) {
             Box(
                 Modifier

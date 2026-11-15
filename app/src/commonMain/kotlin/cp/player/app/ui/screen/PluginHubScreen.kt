@@ -49,8 +49,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
+import cp.player.app.presentation.navigation.AppRoute
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.AppModel
 import cp.player.app.i18n.PluginRepositoryStrings
 import cp.player.app.i18n.cpStrings
@@ -77,7 +77,6 @@ import cp.player.app.ui.component.SettingsSearchBar
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.rememberConfirmState
-import cp.player.app.ui.util.popOrNotify
 import cp.player.app.update.ProviderUpdateInfo
 import cp.player.app.update.ProviderUpdateState
 import cp.player.core.lyrics.LyricsSourceEntry
@@ -105,7 +104,7 @@ class PluginHubScreen(
 
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val scope = rememberCoroutineScope()
         val repoModel = rememberScreenModel { PluginRepositoryScreenModel() }
         val providerModel = rememberScreenModel { ProviderManagementModel() }
@@ -301,7 +300,7 @@ class PluginHubScreen(
                 providers.firstOrNull { it.id == id }?.let { provider ->
                     val schema = provider.settingsSchema
                     if (!schema.isNullOrEmpty()) {
-                        navigator.push(ProviderCustomSettingsScreen(provider.id, provider.name, schema))
+                        navigator.push(AppRoute.ProviderCustomSettings(provider.id, provider.name, schema))
                     }
                 }
             },
@@ -328,7 +327,7 @@ class PluginHubScreen(
 
         CpRouteScaffold(
             title = cpStrings().pluginRepository.title,
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
         ) { modifier ->
             PluginHubContent(
                 state = uiState,

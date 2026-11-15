@@ -22,8 +22,10 @@ internal object AppWindowIcon {
     private const val RESOURCE = "/cpplayer/icon.png"
 
     /** 资源加载失败时为 null，窗口就没有图标——和修复前一样，不算回归。 */
+    @OptIn(androidx.compose.ui.InternalComposeUiApi::class)
     val painter: Painter? by lazy {
         runCatching {
+            runCatching { androidx.compose.ui.platform.registerSkikoComposeImplementation() }
             val bytes = AppWindowIcon::class.java.getResourceAsStream(RESOURCE)?.use { it.readBytes() }
                 ?: return@lazy null
             val skiaImage = Image.makeFromEncoded(bytes)

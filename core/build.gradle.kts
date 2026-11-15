@@ -52,6 +52,9 @@ kotlin {
             dependencies {
                 implementation(kotlin("test"))
                 implementation(libs.kotlinx.coroutines.test)
+                // WebView DRM 协议测试：充当「播放页」角色连接本地桥接服务
+                implementation(libs.ktor.client.cio)
+                implementation(libs.ktor.client.websockets)
             }
         }
 
@@ -69,6 +72,8 @@ kotlin {
         }
         jvmMain.dependencies {
             implementation(libs.ktor.client.okhttp)
+            // WebView EME DRM 桥：本地播放页经 WebSocket 与宿主通信（license 由宿主转发）
+            implementation(libs.ktor.server.websockets)
             // 本地服务器（REST 控制 API）——Ktor CIO，Android 与 Desktop 共用
             implementation(libs.ktor.server.core)
             implementation(libs.ktor.server.cio)

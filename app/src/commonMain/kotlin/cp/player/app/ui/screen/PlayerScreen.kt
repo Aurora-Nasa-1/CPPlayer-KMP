@@ -113,18 +113,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.foundation.layout.width
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
 import cp.player.app.AppModel
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.anim.LocalNavAnimatedVisibilityScope
 import cp.player.app.ui.anim.LocalSharedTransitionScope
 import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.LegacyModalBottomSheet
 import cp.player.app.ui.component.cpFluidBackground
-import cp.player.app.ui.component.shouldPauseFluidShaderDuringNavigation
+import cp.player.app.ui.component.shouldPauseFluidBackgroundDuringNavigation
 import cp.player.app.ui.component.desktopPagerMouseControl
 import cp.player.app.ui.component.PlayerMoreSheets
 import cp.player.app.ui.component.ModernPlayerScreenContent
@@ -139,8 +138,7 @@ import cp.player.app.ui.util.SeekAvailability
 import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.formatTimeMs
 import cp.player.app.ui.util.next
-import cp.player.app.ui.util.popOrNotify
-import cp.player.app.ui.util.pushOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.core.music.Comment
 import cp.player.core.playback.LyricsState
 import cp.player.core.playback.RepeatMode
@@ -168,7 +166,7 @@ class PlayerScreen : Screen {
     override fun Content() {
         val controller = AppModel.playback
         val state by controller.state.collectAsState()
-        val navigator = LocalNavigator.current
+        val navigator = LocalAppNavigator.current
         val scope = rememberCoroutineScope()
         val onRepeat = { controller.setRepeatMode(state.repeatMode.next()) }
 
@@ -184,7 +182,7 @@ class PlayerScreen : Screen {
                 val navAnimScope = LocalNavAnimatedVisibilityScope.current
                 DesktopPlayerScreen(
                     state = effectiveState,
-                    onBack = { navigator.popOrNotify() },
+                    onBack = { navigator.pop() },
                     onTogglePlay = controller::togglePlayPause,
                     onSeek = controller::seekTo,
                     onSkipNext = controller::skipNext,
@@ -209,7 +207,7 @@ class PlayerScreen : Screen {
                             ModernPlayerScreenContent(
                                 state = effectiveState,
                                 animatedVisibilityScope = navAnimScope,
-                                onBack = { navigator.popOrNotify() },
+                                onBack = { navigator.pop() },
                                 onTogglePlay = controller::togglePlayPause,
                                 onSeek = controller::seekTo,
                                 onSkipNext = controller::skipNext,
@@ -225,7 +223,7 @@ class PlayerScreen : Screen {
                             PlayerScreenContent(
                                 state = effectiveState,
                                 animatedVisibilityScope = navAnimScope,
-                                onBack = { navigator.popOrNotify() },
+                                onBack = { navigator.pop() },
                                 onTogglePlay = controller::togglePlayPause,
                                 onSeek = controller::seekTo,
                                 onSkipNext = controller::skipNext,
@@ -246,7 +244,7 @@ class PlayerScreen : Screen {
                                 ModernPlayerScreenContent(
                                     state = effectiveState,
                                     animatedVisibilityScope = this,
-                                    onBack = { navigator.popOrNotify() },
+                                    onBack = { navigator.pop() },
                                     onTogglePlay = controller::togglePlayPause,
                                     onSeek = controller::seekTo,
                                     onSkipNext = controller::skipNext,
@@ -262,7 +260,7 @@ class PlayerScreen : Screen {
                                 PlayerScreenContent(
                                     state = effectiveState,
                                     animatedVisibilityScope = this,
-                                    onBack = { navigator.popOrNotify() },
+                                    onBack = { navigator.pop() },
                                     onTogglePlay = controller::togglePlayPause,
                                     onSeek = controller::seekTo,
                                     onSkipNext = controller::skipNext,
@@ -337,19 +335,15 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
     // 点歌手 → 歌手主页。多歌手逐个分段可点（见 TrackArtistText 的 KDoc）。
     // ⚠️ 拿不到 Navigator 时**不挂点击区**（传 null 走纯文本分支）：与其点了只弹一句
     // 「打不开」，不如一开始就不长得像能点。
-    val navigator = LocalNavigator.current
+    val navigator = LocalAppNavigator.current
     val onArtistClick: ((cp.player.core.music.ArtistSummary) -> Unit)? = remember(navigator) {
-        navigator?.let { nav ->
-            { artist -> nav.pushOrNotify(UserProfileScreen(artist.id, artist.name, artist.resourceId)) }
-        }
+        { artist -> navigator.push(AppRoute.UserProfile(artist.id, artist.name, artist.resourceId)) }
     }
 
     // 「没歌词 → 换源」。与点歌手同一契约：拿不到 Navigator 就不显示入口
     // （宁可没有按钮，也不要一个点了没反应的按钮）。
     val onChangeLyricsSource: (() -> Unit)? = remember(navigator) {
-        navigator?.let { nav ->
-            { nav.pushOrNotify(cp.player.app.ui.screen.LyricsPluginSettingsScreen()) }
-        }
+        { navigator.push(AppRoute.LyricsPluginSettings) }
     }
 
     // 手机端 Pager：0=歌词，1=播放器/歌曲，2=评论（若音源支持能力）
@@ -368,7 +362,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
         if (pagerState.settledPage != 1 && offsetY.value > 0f) offsetY.snapTo(0f)
     }
 
-    // 背景：流体网格渐变（仿 Apple Music），低版本安卓 / 用户关掉时回退到竖向渐变。
+    // 背景：流体网格渐变（仿 Apple Music），用户关掉时回退到竖向渐变。
     //
     // 两个色都取自 MaterialTheme，所以「跟随封面 / 跟随系统」换色时这里会一起变。
     // 深色分支原先硬编码 `#1B1B22 → #0A0A0F` —— 那是「KMP 还没有封面取色」时期的替代品，
@@ -380,11 +374,8 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
     // ⚠️ 读 LocalIsDarkTheme（已解析的明暗），**不要**读 isSystemInDarkTheme()：
     // 播放页允许用户显式选浅色/深色，用系统状态会在「应用深色 + 系统浅色」时取错色板。
     //
-    // ⚠️ 这支渐变现在有**两个身份**，改色前先想清楚动的是哪一个：
-    //   1. `enabled = false`（用户在「外观」里关了流体背景）时的**唯一背景**；
-    //   2. 流体背景在 Android 12 及以下（没有 RuntimeShader）的**实际外观** —— 那边
-    //      不是「降级到一帧纯色」，而是整段播放都长这样。
-    // 所以它不是可以随便糊弄的兜底，观感必须能单独站住。
+    // ⚠️ 这支渐变是 `enabled = false`（用户在「外观」里关了流体背景）时的**唯一背景**。
+    // 它不是可以随便糊弄的兜底，观感必须能单独站住。
     val isDark = LocalIsDarkTheme.current
     val surfaceTop = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh
     else MaterialTheme.colorScheme.surfaceVariant
@@ -508,7 +499,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                     CpContextMenuItem(
                         label = s.player.playMv,
                         icon = Icons.Rounded.SmartDisplay,
-                        onClick = { navigator?.push(VideoPlayerScreen("netease://mv/$mvId")) },
+                        onClick = { navigator.push(AppRoute.VideoPlayer("netease://mv/$mvId")) },
                     )
                 )
             }
@@ -591,7 +582,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             .cpFluidBackground(
                 enabled = fluidBackground,
                 fallback = bgBrush,
-                pauseShaderAnimation = shouldPauseFluidShaderDuringNavigation(
+                pauseShaderAnimation = shouldPauseFluidBackgroundDuringNavigation(
                     animatedVisibilityScope.transition.isRunning,
                 ),
                 coverUrl = track.coverUrl,
@@ -1087,10 +1078,10 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     track.mvId?.takeIf { it > 0 }?.let { mvId ->
-                        val nav = LocalNavigator.current
+                        val nav = LocalAppNavigator.current
                         IconButton(
                             onClick = {
-                                nav?.push(VideoPlayerScreen("netease://mv/$mvId"))
+                                nav.push(AppRoute.VideoPlayer("netease://mv/$mvId"))
                             },
                         ) {
                             Icon(

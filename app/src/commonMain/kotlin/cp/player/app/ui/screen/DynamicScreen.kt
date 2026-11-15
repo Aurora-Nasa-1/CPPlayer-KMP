@@ -67,12 +67,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.model.DynamicOrigin
 import cp.player.app.model.DynamicPost
+import cp.player.app.presentation.navigation.AppNavigator
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpCoverPlaceholder
@@ -89,13 +89,15 @@ import cp.player.app.ui.component.LegacyModalBottomSheet
 import cp.player.app.ui.component.PageHeader
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.rememberConfirmState
-import cp.player.app.ui.model.DynamicFilter
+import cp.player.app.presentation.dynamic.DynamicFilter
 import cp.player.app.ui.model.DynamicScreenModel
 import cp.player.app.ui.model.DynamicUiState
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.CpShapes
+import cp.player.app.ui.theme.cpCardSurface
+import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.app.ui.util.formatChatTime
-import cp.player.app.ui.util.pushOrNotify
 import cp.player.app.ui.util.resized
 import cp.player.core.music.AlbumSummary
 import cp.player.core.music.CPMediaId
@@ -129,8 +131,8 @@ class DynamicScreen(
     override fun Content() {
         val model = rememberScreenModel(tag = modelTag) { DynamicScreenModel() }
         val state by model.state.collectAsState()
-        val navigator = LocalNavigator.currentOrThrow
-        val isRoutePage = navigator.lastItem === this
+        val navigator = LocalAppNavigator.current
+        val isRoutePage = navigator.currentKey == key
         val provider by AppModel.activeProviderFlow.collectAsState()
         val providerId = provider?.id ?: AppModel.activeProviderId()
         val activeProvider = provider
@@ -179,7 +181,7 @@ class DynamicScreen(
                 onOpenUser = { id, name ->
                     if (id.isNotBlank() && id != selfId) {
                         val uid = id.toLongOrNull()
-                        if (uid != null && uid > 0L) navigator.pushOrNotify(UserProfileScreen(uid, name, id))
+                        if (uid != null && uid > 0L) navigator.push(AppRoute.UserProfile(uid, name, id))
                     }
                 },
                 onPreviewImage = { previewUrl = it },
@@ -189,7 +191,7 @@ class DynamicScreen(
         if (isRoutePage) {
             CpRouteScaffold(
                 title = userName?.takeIf { it.isNotBlank() } ?: "动态",
-                onBack = if (navigator.size > 1) ({ navigator.pop() }) else null,
+                onBack = if (navigator.depth > 1) ({ navigator.pop() }) else null,
             ) { routeModifier -> body(routeModifier) }
         } else {
             body(Modifier)
@@ -406,7 +408,7 @@ private fun DynamicPostCard(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = cpCardSurface(),
     ) {
         Column(Modifier.fillMaxWidth().padding(18.dp)) {
             Row(verticalAlignment = Alignment.Top) {
@@ -606,7 +608,7 @@ private fun DynamicImageGrid(
                             .weight(1f)
                             .height(if (row.size == 1) 190.dp else 108.dp)
                             .clip(MaterialTheme.shapes.medium)
-                            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                            .background(cpNestedSurface())
                             .clickable { onPreview(url) },
                     )
                 }
@@ -635,7 +637,7 @@ private fun DynamicResourceCard(
         ) {
             Box(
                 Modifier.size(56.dp).clip(MaterialTheme.shapes.small)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                    .background(cpNestedSurface()),
                 contentAlignment = Alignment.Center,
             ) {
                 CpCoverPlaceholder(Modifier.fillMaxSize(), corner = 10.dp)
@@ -789,7 +791,7 @@ private fun DynamicSkeletonCard() {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = cpCardSurface(),
     ) {
         Column(Modifier.fillMaxWidth().padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1120,7 +1122,7 @@ private fun resourceTypeLabel(type: String?): String? = when (type) {
 private fun openResource(
     post: DynamicPost,
     providerId: String,
-    navigator: cafe.adriel.voyager.navigator.Navigator,
+    navigator: AppNavigator,
     scope: CoroutineScope,
 ) = openTypedResource(
     resourceId = post.resourceId,
@@ -1136,7 +1138,7 @@ private fun openResource(
 private fun openOriginResource(
     origin: DynamicOrigin,
     providerId: String,
-    navigator: cafe.adriel.voyager.navigator.Navigator,
+    navigator: AppNavigator,
     scope: CoroutineScope,
 ) = openTypedResource(
     resourceId = origin.resourceId,
@@ -1156,7 +1158,7 @@ private fun openTypedResource(
     coverUrl: String?,
     subtitle: String?,
     providerId: String,
-    navigator: cafe.adriel.voyager.navigator.Navigator,
+    navigator: AppNavigator,
     scope: CoroutineScope,
 ) {
     val id = resourceId?.takeIf { it.isNotBlank() } ?: return
@@ -1167,8 +1169,8 @@ private fun openTypedResource(
                 AppModel.playback.playQueue(listOf(mediaId), startIndex = 0)
             }
         }
-        "playlist" -> navigator.pushOrNotify(
-            PlaylistDetailScreen(
+        "playlist" -> navigator.push(
+            AppRoute.PlaylistDetail(
                 PlaylistSummary(
                     id = id.toLongOrNull() ?: 0L,
                     name = title?.takeIf { it.isNotBlank() } ?: "歌单",
@@ -1179,8 +1181,8 @@ private fun openTypedResource(
                 ),
             )
         )
-        "album" -> navigator.pushOrNotify(
-            AlbumDetailScreen(
+        "album" -> navigator.push(
+            AppRoute.AlbumDetail(
                 albumId = id.toLongOrNull() ?: 0L,
                 fallback = AlbumSummary(
                     id = id.toLongOrNull() ?: 0L,
@@ -1192,8 +1194,8 @@ private fun openTypedResource(
                 ),
             )
         )
-        "mv", "video" -> navigator.pushOrNotify(
-            VideoPlayerScreen(
+        "mv", "video" -> navigator.push(
+            AppRoute.VideoPlayer(
                 mediaId = CPMediaId.toCanonicalMediaId(id, providerId, resourceType),
                 title = title,
             )

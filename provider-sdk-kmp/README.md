@@ -35,6 +35,27 @@ class MyProvider(private val context: ProviderContext) : MusicProvider {
 
 JVM 产物包含同一契约生成的 typed JNI 会话适配器。JNI 包可直接安装，无需宿主注册或信任授权；原生库用标准 `NativeSession` JNI 导出即可，无需 JAR 或 `nativeFactoryClass`，自定义 `NativeProviderFactory` 适配器是可选路径。见 [原生 SDK 包](../docs/dev/providers/MANIFEST.md#5-原生-sdk-包)。
 
+### 1.1 DRM（可选能力）
+
+加密播放由宿主提供 CDM，Provider 只做信令与 license 转发，因此三端共用同一份实现：
+
+| 平台 | 宿主解密载体 | 宿主声明的 key system |
+|---|---|---|
+| Android | Media3 `FrameworkMediaDrm`（Flick 模式自动切 Media3） | `widevine` |
+| Windows 桌面 | WebView EME 桥：Edge / Chrome / WebView2 Runtime 内核 + hls.js | `widevine`（无内核时为空） |
+| macOS / iOS | 原生 FairPlay | 未接入，宿主不请求 FairPlay |
+
+Provider 需要**成对**声明 `tracks.resolveDrm` + `tracks.exchangeLicense` 两个能力，并实现：
+
+| 方法 | 输入 → 输出 | 约束 |
+|---|---|---|
+| `resolveDrm` | `DrmResolveRequest` → `ResolvedMedia` | 只返回请求列表里存在信令的 key system；没有就返回 `Unsupported`，不要返回必然失败的加密 URL |
+| `exchangeLicense` | `LicenseRequest` → `LicenseResponse` | challenge 与 license 只作内存字节转发，不写日志、不缓存、不持久化 |
+
+`DrmDescriptor` 只承载信令（`keySystem`、`schemeIdUri`、`initData`、`keyId`、`keyUri`、`serverCertificate`、`licenseUrl`），从不包含 content key。Windows 内核把 Apple 增强 HLS 的 `METHOD=ISO-23001-7` 交给 hls.js 前会归一化为 `SAMPLE-AES-CTR`，Provider 无需为桌面做特殊处理。
+
+宿主不负责替 Provider 申请 CDM 或生成 license；Provider 也不应自行解密。完整规则见 [GUIDE 第 6 节](../docs/dev/providers/GUIDE.md#6-drm-播放可选)，验收步骤见 [DRM_VERIFICATION](../docs/dev/providers/DRM_VERIFICATION.md)。
+
 ## 2. JavaScript / TypeScript
 
 在 `globalThis.provider` 上实现同名业务方法，每个方法收请求对象与不可变的账号作用域 context。
@@ -141,7 +162,15 @@ node provider-contract/generate.mjs --check
 
 `MusicProvider` 继承 `ExtendedOperations`；这些新增能力的 Kotlin 常量在 `ExtendedCapability`。全部新增都有 `Unsupported` 默认实现，既有 Provider 无需实现。
 
-DRM 是可选能力，必须同时声明 `tracks.resolveDrm` 与 `tracks.exchangeLicense`。Provider 只返回 HLS 信令或换取 license 字节；CDM、解密与密钥生命周期属于宿主平台。Android 通过 Media3 支持 Widevine，Flick 模式遇到 DRM 会强制切到 Media3；Desktop 没有 CDM，会回退到明文 `resolve`。
+DRM 是可选能力，必须同时声明 `tracks.resolveDrm` 与 `tracks.exchangeLicense`。Provider 只返回 HLS 信令或换取 license 字节；CDM、解密与密钥生命周期属于宿主平台。
+
+| 平台 | 解密载体 | key system |
+|---|---|---|
+| Android | Media3 `FrameworkMediaDrm`（Flick 模式强制切 Media3） | Widevine |
+| Windows 桌面 | WebView EME 桥（Edge / Chrome / WebView2 Runtime 内核） | Widevine |
+| macOS / iOS | 原生 FairPlay | FairPlay（未接入宿主） |
+
+桌面找不到可承载 Widevine 的内核时 `supportedDrmKeySystems()` 为空，音源自动回退明文 `resolve`。两条链路的验收步骤见 [DRM_VERIFICATION](../docs/dev/providers/DRM_VERIFICATION.md)。
 
 生成器同时维护 JS / JNI 派发、宿主入口、统一层转发与非空跨语言用例，`--check` 覆盖这些文件。既有操作 tag 与记录布局不变。能力数上限为每会话 256 条（原 64 条），Provider 可以声明当前全部契约。
 

@@ -52,6 +52,7 @@ import cafe.adriel.voyager.core.stack.StackEvent
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.transitions.ScreenTransition
 import cp.player.app.ui.anim.CoverFlightHost
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.component.CpTitleBarHeight
 import cp.player.app.ui.component.MiniPlayer
 import cp.player.app.ui.component.ProvideIsExpanded
@@ -138,7 +139,9 @@ fun App(
         val s = cpStrings()
         Surface(
             modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.background,
+            // 整窗底板走「页面层」而不是 `background`：后者与卡片只差 1~2 个 tone，
+            // 浅色下卡片会糊在页面上。层级定义见 `cpPageSurface`。
+            color = cp.player.app.ui.theme.cpPageSurface(),
         ) {
             val initialized by AppModel.initialized.collectAsState()
             val state by AppModel.backendState.collectAsState()
@@ -157,6 +160,9 @@ fun App(
                 }
             }
             Navigator(start) { navigator ->
+                val appNavigator = remember(navigator) {
+                    cp.player.app.ui.navigation.VoyagerAppNavigator(navigator, navigator)
+                }
                 // 当 state 变为 Ready 时自动替换为 MainScreen
                 LaunchedEffect(startDestination) {
                     val target = when (startDestination) {
@@ -219,8 +225,8 @@ fun App(
                     }
                     AppModel.consumePendingMessageOpen()
                     navigator.popToMainShell()
-                    navigator.push(
-                        cp.player.app.ui.screen.ChatScreen(
+                    appNavigator.push(
+                        AppRoute.Chat(
                             peerUid = target.peerUid,
                             peerName = target.title.ifBlank { null },
                         )
@@ -326,6 +332,8 @@ fun App(
                                 // 页面读 LocalNavigator 拿到的是内嵌那一条；要整窗路由（播放页）
                                 // 的调用点必须显式用这一条。见 LocalRootNavigator 的 KDoc。
                                 cp.player.app.ui.util.LocalRootNavigator provides navigator,
+                                // 根导航契约：所有页面与组件通过 AppRoute 表达跳转意图。
+                                cp.player.app.ui.navigation.LocalAppNavigator provides appNavigator,
                                 // 播放页要补回来的顶部内边距 = 标题栏让出的量（见 LocalPlayerTopInset）。
                                 // 两者之和恒等于 CpTitleBarHeight ⇒ 内容不动，只有背景在长高。
                                 cp.player.app.ui.component.LocalPlayerTopInset provides
@@ -387,7 +395,7 @@ fun App(
                                                         cp.player.app.ui.util.DesktopShell.miniPlayerBlockedByChat,
                                                 ),
                                                 mainScreenVisible = navigator.lastItem is MainScreen,
-                                                onClick = { navigator.push(PlayerScreen()) },
+                                                onClick = { appNavigator.push(AppRoute.Player) },
                                             ) {
                                                 val isDesktopExpanded = cp.player.app.ui.component.LocalIsExpanded.current
                                                 val isDesktop = isDesktopExpanded || titleBar != null
@@ -720,7 +728,6 @@ private fun PlaybackMediaControlsBridge() {
 internal fun AppTheme(content: @Composable () -> Unit) {
     val themeMode by AppModel.themeModeFlow.collectAsState()
     val colorSource by AppModel.colorSourceFlow.collectAsState()
-    val paletteStyle by AppModel.paletteStyleFlow.collectAsState()
     val pureBlack by AppModel.pureBlackFlow.collectAsState()
     val coverSeed by AppModel.coverSeedFlow.collectAsState()
     val wallpaperSeed by AppModel.wallpaperSeedFlow.collectAsState()
@@ -733,7 +740,6 @@ internal fun AppTheme(content: @Composable () -> Unit) {
     cp.player.app.ui.theme.CpTheme(
         themeMode = themeMode,
         colorSource = colorSource,
-        paletteStyle = paletteStyle,
         pureBlack = pureBlack,
         coverSeed = coverSeed,
         wallpaperSeed = wallpaperSeed,

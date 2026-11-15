@@ -67,7 +67,7 @@ export default defineConfig({
     nav: [
       { text: '使用指南', link: '/USER_GUIDE' },
       { text: 'Provider 开发', link: '/dev/providers/', activeMatch: '/dev/providers/' },
-      { text: '架构', link: '/dev/ARCHITECTURE', activeMatch: '/dev/(ARCHITECTURE|BUILD|FLICK_ENGINE|FONTS|I18N)' },
+      { text: '架构', link: '/dev/ARCHITECTURE', activeMatch: '/dev/(ARCHITECTURE|BUILD|FLICK_ENGINE|FONTS|I18N|A2UI)' },
       { text: '集成 API', link: '/dev/INTEGRATION_API' },
       { text: '发布', link: '/dev/RELEASE' },
     ],
@@ -111,6 +111,7 @@ export default defineConfig({
             { text: 'FlickEngine 接入', link: '/dev/FLICK_ENGINE' },
             { text: '字体栈', link: '/dev/FONTS' },
             { text: '国际化（i18n）', link: '/dev/I18N' },
+            { text: 'A2UI 生成式界面', link: '/dev/A2UI' },
           ],
         },
         {

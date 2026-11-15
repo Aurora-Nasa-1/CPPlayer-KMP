@@ -41,13 +41,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.shareText
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.recent.isRecentTrackPlayable
 import cp.player.app.recent.recentMediaId
 import cp.player.app.recent.recentPlaybackPlan
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.recent.recentPlayableTracks
 import cp.player.app.recent.recentTrackProviderId
 import cp.player.app.ui.anim.CoverFlight
@@ -66,6 +67,7 @@ import cp.player.app.ui.component.songContextMenuItems
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LocalIsExpanded
 import cp.player.app.ui.component.songShareText
+import cp.player.app.ui.theme.cpCardSurface
 import cp.player.core.music.TrackSummary
 import kotlinx.coroutines.launch
 
@@ -161,7 +163,7 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
         val likedIds by AppModel.playback.likedIds.collectAsState()
         val localFavoritePaths by AppModel.localMedia.favorites.paths.collectAsState()
         val scrobbleState by AppModel.scrobbleHub.state.collectAsState()
-        val navigator = LocalNavigator.current
+        val navigator = LocalAppNavigator.current
         val expanded = LocalIsExpanded.current
 
         val topBarActions = remember(playableTracks, provider, s) {
@@ -185,7 +187,7 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
 
         CpRouteScaffold(
             title = s.library.recentPlays,
-            onBack = if (embedded) null else ({ navigator?.pop() }),
+            onBack = if (embedded) null else ({ navigator.pop() }),
             embedded = embedded,
             topBarActions = topBarActions,
         ) { pageModifier ->
@@ -224,9 +226,9 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
                         ) {
                             item {
                                 Surface(
-                                    modifier = Modifier.fillMaxWidth().clickable { navigator?.push(ScrobbleSettingsScreen()) },
+                                    modifier = Modifier.fillMaxWidth().clickable { navigator.push(AppRoute.ScrobbleSettings) },
                                     shape = MaterialTheme.shapes.small,
-                                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                    color = cpCardSurface(),
                                 ) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
@@ -280,7 +282,7 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
                                     Surface(
                                         modifier = Modifier.fillMaxWidth(),
                                         shape = MaterialTheme.shapes.medium,
-                                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                        color = cpCardSurface(),
                                     ) {
                                         Row(
                                             modifier = Modifier.fillMaxWidth()

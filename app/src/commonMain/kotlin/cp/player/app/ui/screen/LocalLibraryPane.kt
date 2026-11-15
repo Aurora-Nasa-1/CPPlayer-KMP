@@ -81,12 +81,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.rememberDirectoryPicker
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.component.AddToLocalPlaylistDialog
 import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.ContentState
@@ -118,7 +118,7 @@ import cp.player.app.ui.component.songShareText
 import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.app.ui.model.DownloadsUiState
 import cp.player.app.ui.util.UiEvents
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.util.resized
 import cp.player.core.local.LocalAlbum
 import cp.player.core.local.LocalArtist
@@ -145,7 +145,7 @@ class LocalLibraryScreen(
 ) : Screen {
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.current
+        val navigator = LocalAppNavigator.current
         val model = rememberScreenModel { DownloadsScreenModel() }
         val state by model.state.collectAsState()
         val s = cpStrings()
@@ -156,13 +156,13 @@ class LocalLibraryScreen(
 
         CpRouteScaffold(
             title = s.downloads.tabLocalLibrary,
-            onBack = { navigator?.popOrNotify() },
+            onBack = { navigator.pop() },
             embedded = embedded,
         ) { pageModifier ->
             Box(pageModifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                 Surface(
                     Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background,
+                    color = cp.player.app.ui.theme.cpPageSurface(),
                 ) {
                     LocalLibraryTab(state = state, model = model, strings = s)
                 }
@@ -190,7 +190,7 @@ internal fun LocalLibraryTab(
 ) {
     val s = strings.downloads
     val scope = rememberCoroutineScope()
-    val navigator = LocalNavigator.current
+    val navigator = LocalAppNavigator.current
     val confirm = rememberConfirmState()
     val pickFolder = rememberDirectoryPicker { path ->
         if (path != null) model.importFolder(path, strings)
@@ -727,7 +727,7 @@ internal fun LocalLibraryTab(
             onDismiss = { optionsTargetSong = null },
             onPlay = {
                 if (isVideo) {
-                    navigator?.push(VideoPlayerScreen(mediaId, title = song.title))
+                    navigator.push(AppRoute.VideoPlayer(mediaId, title = song.title))
                 } else {
                     model.playAll(listOf(song), 0)
                 }
@@ -778,7 +778,7 @@ internal fun LocalLibraryTab(
                 }
             },
             onPlayMv = if (isVideo) {
-                { navigator?.push(VideoPlayerScreen(mediaId, title = song.title)) }
+                { navigator.push(AppRoute.VideoPlayer(mediaId, title = song.title)) }
             } else null,
             coverUrl = song.coverUri,
             onOpenInFileManager = {
@@ -1007,7 +1007,7 @@ internal fun LocalLibraryQuickActions(
                     LocalUtilityAction(action)
                 }
             }
-        } else if (compactNarrow) {
+        } else if (compactNarrow && maxWidth < 560.dp) {
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1600,7 +1600,7 @@ internal fun LocalSongRow(
     index: Int = 0,
     total: Int = 1,
 ) {
-    val navigator = LocalNavigator.current
+    val navigator = LocalAppNavigator.current
     val scope = rememberCoroutineScope()
     val s = strings.downloads
     val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
@@ -1615,7 +1615,7 @@ internal fun LocalSongRow(
 
     val handlePlay: () -> Unit = {
         if (isVideo) {
-            navigator?.push(VideoPlayerScreen(mediaId, title = song.title))
+            navigator.push(AppRoute.VideoPlayer(mediaId, title = song.title))
         } else {
             onPlay()
         }

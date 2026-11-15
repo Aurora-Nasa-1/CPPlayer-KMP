@@ -38,8 +38,6 @@ import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
@@ -47,7 +45,7 @@ import cp.player.app.ui.component.ArtistAvatar
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.util.UiEvents
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.CpChatBubblesSkeleton
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.ScrollColumn
@@ -55,13 +53,10 @@ import cp.player.app.ui.util.formatChatTime
 import cp.player.core.BackendResult
 import cp.player.core.model.Message
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
 import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.ProvideCpTextFullDisplay
+import cp.player.app.ui.theme.cpSheetSurface
 
 /**
  * 一对一私信页。
@@ -81,55 +76,39 @@ class ChatScreen(
 ) : Screen {
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         ChatContent(
             peerUid = peerUid,
             peerName = peerName,
             // `rememberScreenModel` 是定义在 `Screen` 上的**扩展函数**，只有 Screen 子类的
             // 成员里才有接收者（顶层 @Composable 里会报 `Unresolved reference`）。
             model = rememberScreenModel { ChatModel() },
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
         )
     }
 }
 
-internal data class ChatUiState(
-    val loading: Boolean = true,
-    val error: String? = null,
-    val messages: List<Message> = emptyList(),
-    val sending: Boolean = false,
-)
+internal typealias ChatUiState = cp.player.app.presentation.chat.ChatUiState
 
+/** 私信页的 Voyager 适配层（Thin Adapter）。 */
 internal class ChatModel(
-    private val fetchMessages: suspend (peerUid: Long, myUid: Long) -> BackendResult<List<Message>> =
+    fetchMessages: suspend (peerUid: Long, myUid: Long) -> BackendResult<List<Message>> =
         { peerUid, myUid -> AppModel.socialRepository.getMessages(peerUid, myUid) },
-    private val sendText: suspend (peerUid: Long, text: String) -> Boolean =
+    sendText: suspend (peerUid: Long, text: String) -> Boolean =
         { peerUid, text -> AppModel.socialRepository.sendMessage(peerUid, text) },
-    private val requestScope: CoroutineScope? = null,
+    requestScope: CoroutineScope? = null,
 ) : ScreenModel {
-    private val _state = MutableStateFlow(ChatUiState())
-    val state: StateFlow<ChatUiState> = _state
+    private val presenter = cp.player.app.presentation.chat.ChatPresenter(
+        scope = requestScope ?: screenModelScope,
+        fetchMessages = fetchMessages,
+        sendText = sendText,
+    )
 
-    private var loadedSession: ChatSessionIdentity? = null
-    private val requestGate = ChatRequestGate()
-    private var loadJob: Job? = null
-    private var sendJob: Job? = null
-    private val scope: CoroutineScope get() = requestScope ?: screenModelScope
+    val state: StateFlow<ChatUiState> get() = presenter.state
 
-    /** Mask a previous account/provider conversation on the first composition frame after a switch. */
     fun stateFor(session: ChatSessionIdentity, observedState: ChatUiState): ChatUiState =
-        if (loadedSession == session) observedState else ChatUiState()
+        presenter.stateFor(session, observedState)
 
-    /**
-     * 换会话时必须把上一段对话清掉再拉。
-     *
-     * ⚠️ 双栏模式下这个模型是**跨会话复用**的（左栏点谁就切谁），若沿用 `_state.value.copy(…)`
-     * 保留旧 messages，切换瞬间右栏会先渲染**上一个会话的气泡**（还在 `messages` 里的那些），
-     * 等网络回来才换成新的 —— 那一下闪现比空白更糟。所以进这里就换成一个干净的 state。
-     *
-     * @param strings 失败兜底文案要按**当前语言**组 —— 协程里读不到 CompositionLocal，
-     *   由组合侧传进来（见 I18N.md §5.9）。
-     */
     fun load(
         peerUid: Long,
         myUid: Long,
@@ -137,55 +116,10 @@ internal class ChatModel(
         strings: CpStrings,
         providerId: String = AppModel.activeProviderId(),
         sourceGeneration: Int = AppModel.sourceGeneration.value,
-    ) {
-        val session = ChatSessionIdentity(providerId, sourceGeneration, myUid, peerUid)
-        if (!force && loadedSession == session && _state.value.messages.isNotEmpty()) return
-        val switchingSession = loadedSession != session
-        loadedSession = session
-        val requestToken = requestGate.begin(session)
-        loadJob?.cancel()
-        loadJob = null
-        sendJob?.cancel()
-        sendJob = null
-        // Publish synchronously so a recomposition cannot render the previous account/provider.
-        _state.value = if (switchingSession) ChatUiState(loading = true)
-        else _state.value.copy(loading = true, error = null, sending = false)
-        loadJob = scope.launch {
-            if (!requestGate.isCurrent(session, requestToken)) return@launch
-            val result = try {
-                fetchMessages(peerUid, myUid)
-            } catch (cancel: CancellationException) {
-                throw cancel
-            } catch (error: Exception) {
-                BackendResult.Error(error.message ?: strings.social.chat.loadFailed)
-            }
-            if (!requestGate.isCurrent(session, requestToken)) return@launch
-            _state.value = when (result) {
-                is BackendResult.Success -> ChatUiState(loading = false, messages = result.data)
-                is BackendResult.Error -> _state.value.copy(loading = false, error = result.message)
-                is BackendResult.Unsupported -> _state.value.copy(loading = false, error = result.message)
-            }
-        }
-    }
+    ) = presenter.load(peerUid, myUid, force, strings, providerId, sourceGeneration)
 
-    /** Drop private conversation state immediately on logout or when its host leaves. */
-    fun reset() {
-        loadedSession = null
-        requestGate.invalidate()
-        loadJob?.cancel()
-        loadJob = null
-        sendJob?.cancel()
-        sendJob = null
-        _state.value = ChatUiState(loading = false)
-    }
+    fun reset() = presenter.reset()
 
-    /**
-     * 发送。
-     *
-     * 采用「**先落地再重拉**」：服务端受理后重新拉一次历史，而不是把本地气泡直接往后追加。
-     * 直接追加看似更快，但服务端返回的 id / 时间与本地臆造的不一致，
-     * 下次进这一页重新拉取时整条消息会「跳一下」。
-     */
     fun send(
         peerUid: Long,
         myUid: Long,
@@ -194,40 +128,7 @@ internal class ChatModel(
         providerId: String = AppModel.activeProviderId(),
         sourceGeneration: Int = AppModel.sourceGeneration.value,
         onResult: (Boolean) -> Unit,
-    ) {
-        val body = text.trim()
-        if (body.isEmpty() || _state.value.sending) return
-        val session = ChatSessionIdentity(providerId, sourceGeneration, myUid, peerUid)
-        val requestToken = requestGate.currentToken(session) ?: return
-        _state.value = _state.value.copy(sending = true)
-        sendJob = scope.launch {
-            val ok = try {
-                sendText(peerUid, body)
-            } catch (cancel: CancellationException) {
-                if (requestGate.isCurrent(session, requestToken)) {
-                    _state.value = _state.value.copy(sending = false)
-                    sendJob = null
-                }
-                throw cancel
-            } catch (_: Exception) {
-                false
-            }
-            if (!requestGate.isCurrent(session, requestToken)) return@launch
-            _state.value = _state.value.copy(sending = false)
-            sendJob = null
-            if (ok) {
-                load(
-                    peerUid,
-                    myUid,
-                    force = true,
-                    strings = strings,
-                    providerId = providerId,
-                    sourceGeneration = sourceGeneration,
-                )
-            }
-            onResult(ok)
-        }
-    }
+    ) = presenter.send(peerUid, myUid, text, strings, providerId, sourceGeneration, onResult)
 }
 
 /**
@@ -394,7 +295,8 @@ internal fun ChatContent(
             }
 
             Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                // 输入栏是压在页面上的浮层，走 sheet 层而不是卡片层。
+                color = cpSheetSurface(),
                 tonalElevation = 2.dp,
             ) {
                 Row(

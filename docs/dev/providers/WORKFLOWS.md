@@ -113,7 +113,7 @@
 | 把加密 HLS URL 放进旧 `resolve` | 宿主没有 DRM 信息时会直接播放失败 |
 | 让 DRM 流进入缓存 / 下载 / 本地中继 | 这些路径只理解明文，且会持久化密文 |
 
-平台支持矩阵：Android 通过 Media3 支持 Widevine；Flick 引擎本身不实现 DRM，但宿主在 `loadDrm` 时会强制切到 Media3；Desktop 没有 CDM，不会请求 `resolveDrm`。Provider 不需要为这些平台降级协议。
+平台支持矩阵：Android 通过 Media3 支持 Widevine；Flick 引擎本身不实现 DRM，但宿主在 `loadDrm` 时会强制切到 Media3；Windows 桌面通过 WebView EME 桥（Edge / Chrome / WebView2 内核）支持 Widevine，未发现内核时能力位为空、不请求 `resolveDrm`；Apple 平台的 FairPlay 尚未接入。Provider 不需要为这些平台降级协议——同一份 `resolveDrm` / `exchangeLicense` 在三端通用。
 
 `media.qualities` 对应 `getMediaQualities`，支持 `song`、`audio`、`mv`、`video`。
 

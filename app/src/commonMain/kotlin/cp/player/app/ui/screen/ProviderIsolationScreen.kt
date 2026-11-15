@@ -15,19 +15,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.auth.AccountStore
 import cp.player.app.i18n.cpStrings
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.component.CpRouteScaffold
-import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.component.SettingsButtonItem
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSwitchItem
+import cp.player.app.ui.navigation.LocalAppNavigator
 import kotlinx.coroutines.launch
 
 /**
@@ -44,7 +43,7 @@ import kotlinx.coroutines.launch
 class ProviderIsolationScreen : Screen {
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val scope = rememberCoroutineScope()
         val s = cpStrings()
         val provider by AppModel.activeProviderFlow.collectAsState()
@@ -87,7 +86,7 @@ class ProviderIsolationScreen : Screen {
                         index = 1,
                         total = 3,
                         icon = Icons.Filled.AccountCircle,
-                        onClick = { navigator.push(AccountScreen()) },
+                        onClick = { navigator.push(AppRoute.Account) },
                     )
                     SettingsClickItem(
                         title = s.settings.isolationSwitchProvider,
@@ -95,7 +94,7 @@ class ProviderIsolationScreen : Screen {
                         index = 2,
                         total = 3,
                         icon = Icons.Filled.Dns,
-                        onClick = { navigator.push(PluginHubScreen()) },
+                        onClick = { navigator.push(AppRoute.PluginHub()) },
                     )
                 }
 
@@ -106,7 +105,7 @@ class ProviderIsolationScreen : Screen {
                         index = 0,
                         total = 1,
                         icon = Icons.Filled.FolderOpen,
-                        onClick = { navigator.push(StorageSettingsScreen()) },
+                        onClick = { navigator.push(AppRoute.StorageSettings) },
                     )
                 }
 
@@ -153,7 +152,7 @@ class ProviderIsolationScreen : Screen {
 
         CpRouteScaffold(
             title = s.settings.isolationTitle,
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
         ) { pageModifier -> body(pageModifier) }
     }
 }

@@ -62,6 +62,8 @@ import cp.player.app.ui.component.CpWavyProgress
 import cp.player.app.ui.component.cpPressScale
 import cp.player.app.ui.component.rememberActiveProviderSupports
 import cp.player.app.ui.theme.CpMotion
+import cp.player.app.ui.theme.cpCardSurface
+import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.app.ui.util.formatTimeMs
 import cp.player.app.ui.util.resized
 import cp.player.core.music.TrackSummary
@@ -151,7 +153,7 @@ internal fun LandingNowPlaying(
     modifier: Modifier = Modifier,
 ) {
     val track = snapshot.track ?: return
-    Surface(modifier, shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerLow) {
+    Surface(modifier, shape = MaterialTheme.shapes.extraLarge, color = cpCardSurface()) {
         Column(
             Modifier.fillMaxSize().padding(CpSpacing.pageHorizontal),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -268,8 +270,8 @@ internal fun LandingTrackRow(
     val container by animateColorAsState(
         when {
             current -> MaterialTheme.colorScheme.secondaryContainer
-            hovered -> MaterialTheme.colorScheme.surfaceContainerHigh
-            else -> MaterialTheme.colorScheme.surfaceContainerLow
+            hovered -> cpNestedSurface()
+            else -> cpCardSurface()
         },
         animationSpec = CpMotion.effectsFast(), label = "trackHover",
     )

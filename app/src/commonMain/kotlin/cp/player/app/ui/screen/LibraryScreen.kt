@@ -64,12 +64,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.AppModel
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.component.BentoActionCard
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.BentoCard
 import cp.player.app.ui.component.BentoGap
 import cp.player.app.ui.component.BentoHeroCard
@@ -111,6 +111,7 @@ import cp.player.app.ui.model.DownloadsUiState
 import cp.player.app.ui.model.LibraryScreenModel
 import cp.player.app.ui.model.LibraryUiState
 import cp.player.app.ui.wall.PosterWallIcon
+import cp.player.app.ui.theme.cpCardSurface
 import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.isRemote
 import cp.player.core.provider.ProviderCapability
@@ -173,7 +174,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
     // 重命名目标（只有 owner 能看到入口）。与「删除 / 取消收藏」共用同一个选项弹层，
     // 但重命名不是破坏性操作，走独立的输入框而不是 CpConfirmHost。
     var renameTarget by remember { mutableStateOf<PlaylistSummary?>(null) }
-    val navigator = LocalNavigator.currentOrThrow
+    val navigator = LocalAppNavigator.current
     val downloadsModel = remember { DownloadsScreenModel() }
     val downloadsState by downloadsModel.state.collectAsState()
     val likedIds by AppModel.playback.likedIds.collectAsState()
@@ -184,7 +185,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
 
     LaunchedEffect(state.selectedPlaylistId, state.playlists) {
         val target = state.selectedPlaylistId ?: return@LaunchedEffect
-        state.playlists.firstOrNull { it.resourceId == target }?.let { navigator.push(PlaylistDetailScreen(it)) }
+        state.playlists.firstOrNull { it.resourceId == target }?.let { navigator.push(AppRoute.PlaylistDetail(it)) }
     }
 
     // 页面级刷新入口：桌面 = 空白处右键「刷新」；Android = 下拉刷新。
@@ -237,16 +238,16 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
             actions = DesktopLibraryActions(
                 onSelectTab = model::selectTab,
                 onCreatePlaylist = { showCreateDialog = true },
-                onSearch = { navigator.push(LibrarySearchScreen()) },
-                onImport = { navigator.push(ImportPlaylistScreen()) },
-                onRecentPlays = { navigator.push(InsightsScreen(InsightsScreen.TAB_RECENT)) },
-                onInsights = { navigator.push(InsightsScreen(InsightsScreen.TAB_OVERVIEW)) },
-                onDownloads = { navigator.push(DownloadsScreen()) },
-                onLocal = { navigator.push(LocalLibraryScreen()) },
-                onCloud = { navigator.push(CloudDriveScreen()) },
-                onAlbumWall = { navigator.push(AlbumWallScreen()) },
+                onSearch = { navigator.push(AppRoute.LibrarySearch()) },
+                onImport = { navigator.push(AppRoute.ImportPlaylist) },
+                onRecentPlays = { navigator.push(AppRoute.Insights(recent = true)) },
+                onInsights = { navigator.push(AppRoute.Insights()) },
+                onDownloads = { navigator.push(AppRoute.Downloads()) },
+                onLocal = { navigator.push(AppRoute.LocalLibrary()) },
+                onCloud = { navigator.push(AppRoute.CloudDrive()) },
+                onAlbumWall = { navigator.push(AppRoute.AlbumWall()) },
                 onRetry = model::refresh,
-                onOpenPlaylist = { navigator.push(PlaylistDetailScreen(it)) },
+                onOpenPlaylist = { navigator.push(AppRoute.PlaylistDetail(it)) },
                 onPlaylistOptions = { selectedPlaylist = it },
                 isOwner = model::isOwner,
                 menuActionsOf = playlistMenuActions,
@@ -256,8 +257,8 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
                 s = s,
                 state = downloadsState,
                 model = downloadsModel,
-                onOpenLocal = { initialTab -> navigator.push(LocalLibraryScreen(initialTab = initialTab)) },
-                onOpenDownloads = { navigator.push(DownloadsScreen()) },
+                onOpenLocal = { initialTab -> navigator.push(AppRoute.LocalLibrary(initialTab = initialTab)) },
+                onOpenDownloads = { navigator.push(AppRoute.Downloads()) },
             )
         }
     } // CpRefreshablePage
@@ -589,7 +590,7 @@ private fun LibraryPreferenceCard(
     val s = cpStrings()
     BentoCard(
         modifier = modifier,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        containerColor = cpCardSurface(),
         contentPadding = PaddingValues(18.dp),
     ) {
         CpText(
@@ -978,7 +979,7 @@ private fun LocalLibrarySection(
         Surface(
             onClick = onOpenDownloads,
             shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            color = cpCardSurface(),
             modifier = Modifier.fillMaxWidth().cpPressScale(),
         ) {
             Row(

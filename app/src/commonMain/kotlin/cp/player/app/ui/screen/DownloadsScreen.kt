@@ -61,12 +61,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.BackHandler
+import cp.player.app.presentation.navigation.AppRoute
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.AddToLocalPlaylistDialog
 import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.ContentState
@@ -92,7 +93,6 @@ import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.CpShapes
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.formatBytes
-import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.util.resized
 import cp.player.core.media.MediaType
 import cp.player.core.model.DownloadStatus
@@ -114,12 +114,12 @@ import kotlin.math.roundToInt
 class DownloadsScreen(private val embedded: Boolean = false) : Screen {
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.current
+        val navigator = LocalAppNavigator.current
         // rememberScreenModel 是 Screen 的扩展函数，只能在 Content() 里调用（见 AGENTS.md）。
         val model = rememberScreenModel { DownloadsScreenModel() }
         CpRouteScaffold(
             title = cpStrings().downloads.screenTitle,
-            onBack = { navigator?.popOrNotify() },
+            onBack = { navigator.pop() },
             embedded = embedded,
         ) { pageModifier ->
             DownloadsScreenContent(model, pageModifier)
@@ -193,12 +193,11 @@ private fun DownloadsScreenContent(model: DownloadsScreenModel, modifier: Modifi
             Modifier.fillMaxSize(),
             // 同 LegacyScaffold：底部弹窗形状统一取 `CpShapes.sheet`。
             shape = CpShapes.sheet,
-            // ⚠️ 底色必须是**页面底色**（`background`）而不是 `surfaceContainerLow`。
-            // 卡片取 `settingsRowContainer()`，它在浅色下正是 `surfaceContainerLow` ——
-            // 面板若也用同一档，浅色主题里卡片与面板**完全同色**，整列任务糊成一片
-            // （离屏渲图实测：卡片边界只剩进度条那一根线）。深色下两边恰好不同（Highest vs Low），
-            // 所以这个缺陷只在浅色下出现，单看深色截图是发现不了的。
-            color = MaterialTheme.colorScheme.background,
+            // 面板底 = 页面层；卡片取 `settingsRowContainer()`（= 卡片层）。
+            // ⚠️ 两者**必须**分属不同层：曾经面板与卡片都用 `surfaceContainerLow`，
+            // 浅色下完全同色、整列任务糊成一片（离屏渲图实测：卡片边界只剩进度条那一根线），
+            // 而且单看深色截图发现不了。层级定义见 `cpPageSurface`。
+            color = cp.player.app.ui.theme.cpPageSurface(),
         ) {
             HorizontalPager(
                 state = pagerState,
@@ -1059,7 +1058,7 @@ private fun CompletedTaskCard(
     onAddToCloudPlaylist: (String) -> Unit = {},
     onAddToLocalPlaylist: (String) -> Unit = {},
 ) {
-    val navigator = LocalNavigator.current
+    val navigator = LocalAppNavigator.current
     var menuExpanded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val s = strings.downloads
@@ -1077,7 +1076,7 @@ private fun CompletedTaskCard(
     val handlePlay: () -> Unit = {
         if (isVideo) {
             task.localPath?.let { path ->
-                navigator?.push(VideoPlayerScreen("local://video/$path", title = task.title))
+                navigator.push(AppRoute.VideoPlayer("local://video/$path", title = task.title))
             }
         } else {
             mediaId?.let { id ->

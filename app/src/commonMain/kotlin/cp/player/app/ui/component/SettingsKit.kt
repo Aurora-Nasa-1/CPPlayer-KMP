@@ -69,12 +69,15 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.theme.cpCardSurface
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.CpText
 import cp.player.app.ui.theme.LocalIsDarkTheme
@@ -259,19 +262,16 @@ fun MonetIcon(icon: ImageVector, containerColor: Color, contentColor: Color) {
 /**
  * 选项行的默认容器色。
  *
- * ⚠️ **必须读 [LocalIsDarkTheme]，不要读 `isSystemInDarkTheme()`。** 两者在「跟随系统」时
- * 恰好相等，但本应用允许用户显式指定浅色 / 深色 —— 用户选了深色而系统是浅色时，
- * `isSystemInDarkTheme()` 返回 false，于是这里会去取**浅色**色板的角色色，
- * 与页面背景撞色、分组卡片整块糊住。
+ * 走 [cpCardSurface]：页面底色是 `surfaceContainer`（浅色 Tone 94），
+ * 卡片是 `surfaceContainerLowest`（Tone 100），两者**隔开三级**。
+ * 早先卡片取 `surfaceContainerLow`（Tone 96），与当时的 `surface` 页面只差一级，
+ * 分组卡片在浅色下几乎不可见（离屏取像素实测：行内与页面都是 #FBF8FF）。
  *
- * ⚠️ 浅色分支**不能返回 `surface`**：设置页背景本身就是 `surface`，
- * 两者相同 ⇒ 分组卡片完全不可见（离屏取像素实测：行内与页面都是 #FBF8FF）。
- * 取 `surfaceContainerLow` 才是 M3 里「卡片浮在页面之上」的标准关系。
+ * ⚠️ 不要在这里直接写角色名 —— 深浅两套层级是**反的**，分散写必然漂移，
+ * 见 [cpCardSurface] 的层级表。
  */
 @Composable
-fun settingsRowContainer(): Color =
-    if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainerHighest
-    else MaterialTheme.colorScheme.surfaceContainerLow
+fun settingsRowContainer(): Color = cpCardSurface()
 
 /**
  * 「**当前生效 / 当前选中**」的行容器色。
@@ -912,6 +912,7 @@ fun SettingsTextInputItem(
     subtitle: String? = null,
     placeholder: String? = null,
     keyboardType: KeyboardType = KeyboardType.Text,
+    obscureText: Boolean = false,
     enabled: Boolean = true,
     containerColor: Color = Color.Unspecified,
 ) {
@@ -951,6 +952,11 @@ fun SettingsTextInputItem(
                     placeholder = placeholder?.let { hint -> { CpText(hint) } },
                     keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
                     supportingText = error?.let { msg -> { CpText(msg) } },
+                    visualTransformation = if (obscureText) {
+                        PasswordVisualTransformation()
+                    } else {
+                        VisualTransformation.None
+                    },
                     modifier = Modifier.weight(1f),
                 )
                 if (dirty) {
@@ -1118,7 +1124,8 @@ fun SettingsFieldGroup(
 ) {
     Surface(
         shape = MaterialTheme.shapes.largeIncreased,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        // 字段组是卡片内部的次级容器：与卡片同色就分不出层级（见 cpNestedSurface）。
+        color = cp.player.app.ui.theme.cpNestedSurface(),
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(

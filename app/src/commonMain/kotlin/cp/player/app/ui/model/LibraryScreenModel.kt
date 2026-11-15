@@ -2,163 +2,55 @@ package cp.player.app.ui.model
 
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
-import cp.player.app.AppModel
+import cp.player.app.presentation.library.LibraryPresenter
 import cp.player.app.ui.util.UiEvents
-import cp.player.core.BackendResult
 import cp.player.core.music.PlaylistSummary
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
-data class LibraryUiState(
-    val playlists: List<PlaylistSummary> = emptyList(),
-    val loading: Boolean = true,
-    val error: String? = null,
-    val selectedPlaylistId: String? = null,
-    val selectedTab: Int = 0,
-)
+// 兼容现有引用的类型别名
+typealias LibraryUiState = cp.player.app.presentation.library.LibraryUiState
 
-class LibraryScreenModel : ScreenModel {
-    private val _state = MutableStateFlow(LibraryUiState())
-    fun selectPlaylist(playlistId: Long?) { _state.value = _state.value.copy(selectedPlaylistId = playlistId?.toString(), selectedTab = 0) }
-    fun selectTab(index: Int) { _state.value = _state.value.copy(selectedTab = index) }
-    val state: StateFlow<LibraryUiState> = _state.asStateFlow()
+/**
+ * 媒体库页面的 Voyager 适配层（Thin Adapter）。
+ *
+ * 核心状态机交由框架中立的 [LibraryPresenter] 处理。
+ */
+class LibraryScreenModel(initialPlaylistId: Long? = null) : ScreenModel {
 
-    /** 刷新请求在途标记（驱动下拉刷新指示器；与 [LibraryUiState.loading] 分开）。 */
-    private val _refreshing = MutableStateFlow(false)
-    val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
+    private val presenter = LibraryPresenter(
+        initialPlaylistId = initialPlaylistId,
+        scope = screenModelScope,
+        notify = UiEvents::notify,
+    )
 
-    /** 在途刷新协程与世代号：登录态变化 / 切源 / 下拉刷新可能并发，后到者不该覆盖新结果。 */
-    private var refreshJob: Job? = null
-    private var refreshGen = 0
+    val state: StateFlow<LibraryUiState> get() = presenter.state
+    val refreshing: StateFlow<Boolean> get() = presenter.refreshing
 
-    init {
-        refresh()
-        // 订阅登录态变化（登录成功/登出后 userProfile 更新），自动刷新媒体库；
-        // drop(1) 跳过首次收集的当前值，避免与 init 中的 refresh() 重复加载。
-        // StateFlow 只在值真正变化时发射，无需额外去重。
-        screenModelScope.launch {
-            AppModel.userProfileFlow.drop(1).collect { refresh() }
-        }
-        // 音源切换后歌单列表属于旧音源：重新拉取。
-        // 订阅 sourceGeneration 而不是 activeProviderFlow：后者在启动恢复 Provider 时
-        // 也会发射，会造成启动时白拉一遍（见 AppModel.sourceGeneration 的 KDoc）。
-        // （云盘数据已随独立页迁往 CloudDriveScreenModel，这里不再管它。）
-        screenModelScope.launch {
-            AppModel.sourceGeneration.drop(1).collect { refresh() }
-        }
-        // 订阅歌单代际（新建、删除、收藏、取消收藏、曲目增删等），自动静默刷新媒体库歌单
-        screenModelScope.launch {
-            AppModel.playlistGeneration.drop(1).collect { refresh() }
-        }
+    fun selectPlaylist(playlistId: Long?) {
+        presenter.selectPlaylist(playlistId)
     }
 
-    /**
-     * 拉取用户歌单列表。
-     *
-     * 已有歌单时是**静默**刷新：不置 [LibraryUiState.loading]（那会把歌单栅格整个
-     * 顶成一行加载态），旧列表留在原地，拉完一次性替换；进度反馈由 [refreshing] 驱动。
-     */
+    fun selectTab(index: Int) {
+        presenter.selectTab(index)
+    }
+
     fun refresh() {
-        refreshJob?.cancel()
-        val gen = ++refreshGen
-        refreshJob = screenModelScope.launch {
-            val silent = _state.value.playlists.isNotEmpty()
-            if (!silent) _state.value = _state.value.copy(loading = true, error = null)
-            _refreshing.value = true
-            try {
-                // 无激活音源插件时直接返回空列表（本地曲库模式），不发起报错网络请求
-                if (AppModel.activeProvider() == null) {
-                    if (gen == refreshGen) {
-                        _state.update { s -> s.copy(playlists = emptyList(), loading = false, error = null) }
-                    }
-                    return@launch
-                }
-                // ⚠️ IO 线程**只负责取数据**，不要在 IO 线程上读-改-写 `_state`：
-                // 那会和 Main 上的 selectTab / selectPlaylist 并发，把用户刚选的态覆盖回退。
-                val result = withContext(Dispatchers.IO) {
-                    runCatching { AppModel.musicRepository.getCurrentUserPlaylists() }.getOrNull()
-                }
-                if (gen != refreshGen) return@launch
-                _state.update { s ->
-                    when (result) {
-                        is BackendResult.Success ->
-                            if (silent && result.data == s.playlists) {
-                                // 内容没变就保留旧列表实例：观察者（如歌单详情页的
-                                // LaunchedEffect）以列表实例为 key，换了实例会白触发一轮。
-                                s.copy(loading = false)
-                            } else {
-                                s.copy(playlists = result.data, loading = false)
-                            }
-                        is BackendResult.Error ->
-                            if (s.playlists.isNotEmpty()) s.copy(loading = false)
-                            else s.copy(loading = false, error = result.message)
-                        is BackendResult.Unsupported -> s.copy(loading = false, error = result.message)
-                        null ->
-                            if (s.playlists.isNotEmpty()) s.copy(loading = false)
-                            else s.copy(loading = false, error = "媒体库加载失败")
-                    }
-                }
-            } finally {
-                if (gen == refreshGen) _refreshing.value = false
-            }
-        }
+        presenter.refresh()
     }
 
-    // ============ 歌单管理 ============
-
-    /** 当前账号是否拥有该歌单（用于决定删除 vs 取消收藏）。 */
     fun isOwner(playlist: PlaylistSummary): Boolean {
-        val nickname = AppModel.userProfileFlow.value?.nickname
-        return nickname != null && playlist.creatorName == nickname
+        return presenter.isOwner(playlist)
     }
 
     fun deleteOrUnsubscribe(playlist: PlaylistSummary) {
-        screenModelScope.launch {
-            val ok = runCatching {
-                if (isOwner(playlist)) AppModel.musicRepository.deletePlaylist(playlist.resourceId)
-                else AppModel.musicRepository.unsubscribePlaylist(playlist.resourceId)
-            }.getOrDefault(false)
-            UiEvents.notify(
-                if (ok) (if (isOwner(playlist)) "已删除「${playlist.name}」" else "已取消收藏「${playlist.name}」")
-                else "操作失败"
-            )
-            if (ok) refresh()
-        }
+        presenter.deleteOrUnsubscribe(playlist)
     }
 
     fun play(playlist: PlaylistSummary, addOnly: Boolean = false) {
-        screenModelScope.launch {
-            val result = AppModel.musicRepository.getPlaylistDetail(playlist.resourceId)
-            if (result !is BackendResult.Success) return@launch
-            val ids = result.data.tracks.map { "${AppModel.activeProviderId()}://song/${it.id}" }
-            if (ids.isEmpty()) return@launch
-            if (addOnly) {
-                ids.forEach { AppModel.playback.addToQueue(it) }
-                UiEvents.notify("已加入播放队列")
-            } else {
-                // 带上来源歌单：心动模式等「跟随播放列表」的功能要拿它当歌单上下文。
-                AppModel.playback.playQueue(
-                    ids,
-                    startIndex = 0,
-                    sourceId = playlist.resourceId,
-                )
-            }
-        }
+        presenter.play(playlist, addOnly)
     }
 
-    /** 下载整个歌单（复用 [AppModel.downloadTracks] 的批量入队与提示）。 */
     fun download(playlist: PlaylistSummary) {
-        screenModelScope.launch {
-            val result = AppModel.musicRepository.getPlaylistDetail(playlist.resourceId)
-            if (result !is BackendResult.Success) return@launch
-            AppModel.downloadTracks(result.data.tracks)
-        }
+        presenter.download(playlist)
     }
 }

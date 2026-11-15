@@ -21,13 +21,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.shareText
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
@@ -42,7 +41,6 @@ import cp.player.app.ui.component.ltTtl
 import cp.player.app.ui.component.rememberConfirmState
 import cp.player.app.ui.component.roomText
 import cp.player.app.ui.util.UiEvents
-import cp.player.app.ui.util.popOrNotify
 import cp.player.core.listentogether.ListenTogetherEngine
 import cp.player.core.listentogether.ListenTogetherState
 import kotlinx.coroutines.launch
@@ -73,7 +71,7 @@ class ListenTogetherScreen : Screen {
 
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val scope = rememberCoroutineScope()
         val state by AppModel.listenTogetherState.collectAsState()
         val addNextOnPlay by AppModel.listenTogetherAddNextFlow.collectAsState()
@@ -100,7 +98,7 @@ class ListenTogetherScreen : Screen {
 
         // 页面标题复用 `player.listenTogether`：更多面板里那个入口是同一条文案，
         // 拆开写必然出现两种译法。
-        CpRouteScaffold(title = s.player.listenTogether, onBack = { navigator.popOrNotify() }) { pageModifier ->
+        CpRouteScaffold(title = s.player.listenTogether, onBack = { navigator.pop() }) { pageModifier ->
             SettingsPage(pageModifier) {
                 val busy = state.busy
                 // 显式标注 `() -> Unit`：不加的话 lambda 的返回类型会被推断成 `Job`

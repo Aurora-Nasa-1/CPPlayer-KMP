@@ -699,7 +699,7 @@ private fun QueueRow(
         if (isDark) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f)
         else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
     } else {
-        MaterialTheme.colorScheme.surfaceContainerLow
+        cp.player.app.ui.theme.cpCardSurface()
     }
     val animatedBg by animateColorAsState(
         targetValue = targetBg,

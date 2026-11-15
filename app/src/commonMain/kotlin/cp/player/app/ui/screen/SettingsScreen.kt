@@ -16,8 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
 import cp.player.app.i18n.cpStrings
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
@@ -28,12 +28,12 @@ import cp.player.app.ui.component.MonetIcon
 import cp.player.app.ui.component.ScrollColumn
 import androidx.compose.foundation.layout.Arrangement
 import cp.player.app.ui.component.SettingsClickItem
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSearchBar
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.settingsRowContainer
-import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.component.CpText
 
 /**
@@ -48,7 +48,7 @@ class SettingsScreen(private val embedded: Boolean = false) : Screen {
 
 @Composable
 private fun SettingsScreenContent(embedded: Boolean = false) {
-    val navigator = LocalNavigator.current
+    val navigator = LocalAppNavigator.current
     val strings = cpStrings()
     val entries = remember { settingsEntries() }
     var searchQuery by remember { mutableStateOf("") }
@@ -176,14 +176,14 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
                 SettingsSearchResults(
                     results = searchResults,
                     selectedId = null,
-                    onSelectEntry = { entry, targetId -> navigator?.push(entry.screen(targetId)) },
+                    onSelectEntry = { entry, targetId -> navigator.push(AppRoute.SettingsEntry(entry.id, targetId)) },
                     query = searchQuery,
                 )
             } else {
                 SettingsGroupedList(
                     entries = entries,
                     selectedId = null,
-                    onSelect = { entry -> navigator?.push(entry.screen(null)) },
+                    onSelect = { entry -> navigator.push(AppRoute.SettingsEntry(entry.id)) },
                 )
             }
         }
@@ -195,7 +195,7 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
 
         CpRouteScaffold(
             title = strings.settings.screenTitle,
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
         ) { pageModifier ->
             SettingsPage(pageModifier) { list() }
         }

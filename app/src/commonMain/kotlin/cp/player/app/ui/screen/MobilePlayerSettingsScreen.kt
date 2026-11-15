@@ -13,13 +13,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.isAndroidPlatform
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.SettingsButtonItem
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsHeroCard
 import cp.player.app.ui.component.SettingsPage
@@ -30,7 +30,6 @@ import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.settingsSearchTarget
 import cp.player.app.ui.feedback.CpHaptic
 import cp.player.app.ui.feedback.LocalCpHaptics
-import cp.player.app.ui.util.popOrNotify
 import kotlin.math.roundToInt
 
 /**
@@ -43,7 +42,7 @@ import kotlin.math.roundToInt
 class MobilePlayerSettingsScreen(private val targetSettingId: String? = null) : Screen {
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val haptics = LocalCpHaptics.current
         val s = cpStrings()
         val config by AppModel.mobilePlayerCustomConfigFlow.collectAsState()
@@ -54,7 +53,7 @@ class MobilePlayerSettingsScreen(private val targetSettingId: String? = null) : 
         var draggingTimeout by remember { mutableIntStateOf(-1) }
         val timeout = if (draggingTimeout >= 0) draggingTimeout else config.lyricsImmersiveTimeoutSeconds
 
-        CpRouteScaffold(title = s.appearance.playerSettingsTitle, onBack = { navigator.popOrNotify() }) { modifier ->
+        CpRouteScaffold(title = s.appearance.playerSettingsTitle, onBack = { navigator.pop() }) { modifier ->
             SettingsPage(modifier) {
                 val isAndroid = isAndroidPlatform()
                 if (isAndroid) {
@@ -98,7 +97,7 @@ class MobilePlayerSettingsScreen(private val targetSettingId: String? = null) : 
 
                 PlayerLyricsPresentationSection(
                     targetSettingId = targetSettingId,
-                    onNavigateLyricsPlugin = { navigator.push(LyricsPluginSettingsScreen()) },
+                    onNavigateLyricsPlugin = { navigator.push(AppRoute.LyricsPluginSettings) },
                 )
 
                 if (isAndroid) {

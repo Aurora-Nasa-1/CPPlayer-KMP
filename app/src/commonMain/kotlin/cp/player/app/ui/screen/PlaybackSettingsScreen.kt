@@ -14,20 +14,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.desktopPlatform
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.isIgnoringBatteryOptimizations
 import cp.player.app.platform.requestIgnoreBatteryOptimizations
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.component.CpRouteScaffold
-import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.component.SettingsBadge
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsDropdownItem
 import cp.player.app.ui.component.SettingsNote
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSegmentedItem
@@ -53,7 +52,7 @@ class PlaybackSettingsScreen(
 ) : Screen {
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val s = cpStrings()
         val quality by AppModel.playbackQualityFlow.collectAsState()
         val meteredQuality by AppModel.meteredPlaybackQualityFlow.collectAsState()
@@ -237,7 +236,7 @@ class PlaybackSettingsScreen(
                         },
                         index = 1,
                         total = kernelTotal,
-                        onClick = { navigator.push(AudioEngineSettingsScreen()) },
+                        onClick = { navigator.push(AppRoute.AudioEngineSettings) },
                         trailingContent = {
                             SettingsBadge(
                                 text = s.playback.featureDetails,
@@ -254,7 +253,7 @@ class PlaybackSettingsScreen(
                         icon = Icons.Filled.Equalizer,
                         index = 2,
                         total = kernelTotal,
-                        onClick = { navigator.push(AudioEffectSettingsScreen()) },
+                        onClick = { navigator.push(AppRoute.AudioEffectSettings) },
                         trailingContent = {
                             CpText(
                                 text = s.playback.mixer,
@@ -472,7 +471,7 @@ class PlaybackSettingsScreen(
 
         CpRouteScaffold(
             title = s.playback.screenTitle,
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
         ) { pageModifier -> body(pageModifier) }
     }
 }

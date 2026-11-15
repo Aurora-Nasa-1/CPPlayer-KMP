@@ -35,11 +35,10 @@ import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.AlbumCoverCard
@@ -48,7 +47,7 @@ import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.SongDetailInfoDialog
 import cp.player.app.ui.component.SongOptionsSheet
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.CpCardRowSkeleton
@@ -67,11 +66,8 @@ import cp.player.app.ui.component.songShareText
 import cp.player.app.ui.component.playlistShareText
 import cp.player.app.platform.shareText
 import cp.player.app.ui.util.UiEvents
-import cp.player.core.BackendResult
 import cp.player.core.music.ProfileBundle
 import cp.player.core.music.TrackSummary
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
@@ -87,106 +83,38 @@ class UserProfileScreen(
 ) : Screen {
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         UserProfileContent(
             uid = resourceId,
             displayName = displayName,
             // `rememberScreenModel` 是定义在 `Screen` 上的**扩展函数**，只有 Screen 子类的
             // 成员里才有接收者；顶层的 @Composable 里调用会报 `Unresolved reference`。
             model = rememberScreenModel { UserProfileModel() },
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
             onOpenChat = if (uid > 0L && resourceId == uid.toString()) {
-                { name -> navigator.push(ChatScreen(uid, name)) }
+                { name -> navigator.push(AppRoute.Chat(uid, name)) }
             } else null,
         )
     }
 }
 
-private data class ProfileUiState(
-    val loading: Boolean = true,
-    val error: String? = null,
-    val bundle: ProfileBundle? = null,
-)
+private typealias ProfileUiState = cp.player.app.presentation.userprofile.ProfileUiState
 
 /** 歌手主页默认展开的热门歌曲条数（超出部分折叠，避免把「专辑」推到很下面）。 */
 private const val SONG_PREVIEW = 10
 
 private class UserProfileModel : ScreenModel {
-    private val _state = MutableStateFlow(ProfileUiState())
-    val state: StateFlow<ProfileUiState> = _state
+    private val presenter = cp.player.app.presentation.userprofile.UserProfilePresenter(
+        scope = screenModelScope,
+    )
 
-    private var loadedUid: String? = null
-    private var loadGeneration = 0
+    val state: StateFlow<ProfileUiState> get() = presenter.state
 
-    /**
-     * @param strings 失败兜底文案按**当前语言**组 —— 协程里读不到 CompositionLocal，
-     *   由组合侧传进来（见 I18N.md §5.9）。
-     */
-    fun load(uid: String, fallbackName: String?, strings: CpStrings) {
-        if (loadedUid == uid && _state.value.bundle != null) return
-        loadedUid = uid
-        val generation = ++loadGeneration
-        val previousBundle = _state.value.bundle?.takeIf { it.resourceId == uid }
-        screenModelScope.launch {
-            _state.value = ProfileUiState(loading = previousBundle == null, bundle = previousBundle)
-            val result = try {
-                AppModel.musicRepository.getProfileBundle(
-                    uid,
-                    onRefresh = { refreshed ->
-                        screenModelScope.launch {
-                            if (generation != loadGeneration || loadedUid != uid) return@launch
-                            val freshBundle = (refreshed as? BackendResult.Success)?.data ?: return@launch
-                            if (_state.value.bundle?.resourceId == uid) {
-                                _state.value = _state.value.copy(bundle = freshBundle)
-                            }
-                        }
-                    },
-                    onPartial = { partial ->
-                        screenModelScope.launch {
-                            if (generation != loadGeneration || loadedUid != uid) return@launch
-                            val base = (partial as? BackendResult.Success)?.data ?: return@launch
-                            val previous = _state.value.bundle?.takeIf { it.resourceId == uid }
-                            val visible = if (previous == null) base else base.copy(
-                                albums = previous.albums,
-                                songs = previous.songs,
-                                playlists = previous.playlists,
-                            )
-                            _state.value = _state.value.copy(loading = false, error = null, bundle = visible)
-                        }
-                    },
-                )
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                BackendResult.Error(error.message ?: strings.account.profileLoadFailed)
-            }
-            if (generation != loadGeneration || loadedUid != uid) return@launch
-            _state.value = when (result) {
-                is BackendResult.Success -> ProfileUiState(loading = false, bundle = result.data)
-                is BackendResult.Error -> ProfileUiState(
-                    loading = false,
-                    error = result.message,
-                    bundle = previousBundle ?: fallbackName?.let {
-                        ProfileBundle(
-                            uid = uid.toLongOrNull() ?: 0L, resourceId = uid, isArtist = false, nickname = it,
-                            avatarUrl = null, signature = null,
-                            primaryCount = 0, follows = 0, followeds = 0,
-                        )
-                    },
-                )
-                is BackendResult.Unsupported -> ProfileUiState(
-                    loading = false,
-                    error = result.message,
-                    bundle = previousBundle,
-                )
-            }
-        }
-    }
+    fun load(uid: String, fallbackName: String?, strings: CpStrings) =
+        presenter.load(uid, fallbackName, strings)
 
-    fun reload(uid: String, fallbackName: String?, strings: CpStrings) {
-        loadedUid = null
-        load(uid, fallbackName, strings)
-    }
+    fun reload(uid: String, fallbackName: String?, strings: CpStrings) =
+        presenter.reload(uid, fallbackName, strings)
 }
 
 @Composable
@@ -198,7 +126,7 @@ private fun UserProfileContent(
     onOpenChat: ((String) -> Unit)?,
 ) {
     val state by model.state.collectAsState()
-    val navigator = LocalNavigator.currentOrThrow
+    val navigator = LocalAppNavigator.current
     val s = cpStrings()
     val me by AppModel.userProfileFlow.collectAsState()
     val playbackState by AppModel.playback.state.collectAsState()
@@ -213,9 +141,16 @@ private fun UserProfileContent(
     // 歌单列表每行右侧的「更多」动作来源。本页不是有自己 ScreenModel 的复杂页面，
     // 借 HomeScreenModel 现成的歌单动作（播放 / 队列 / 下载 / 分享 / 删除或取消收藏）：
     // 与侧栏、歌单详情页共用「先取详情再拿曲目」的那条取数路径。
-    // ⚠️ 用 `remember` 而不是 `rememberScreenModel`：后者按类型键控、会与本页的
-    // UserProfileModel 抢槽位（Voyager 一个 Screen 只保留一个同名模型）。
-    val playlistActions = remember { cp.player.app.ui.model.HomeScreenModel(loadDiscovery = false) }
+    // ⚠️ 不能用 `remember { HomeScreenModel(...) }`：Voyager 的 ScreenModel 只有在
+    // `rememberScreenModel` 托管时才会被 dispose，直接 remember 会让它的
+    // screenModelScope 永久留在全局表里。这里用页面自己的 scope 托管纯 Presenter。
+    val playlistActions = remember(scope) {
+        cp.player.app.presentation.home.HomePresenter(
+            scope = scope,
+            loadDiscovery = false,
+            notify = UiEvents::notify,
+        )
+    }
     var playlistOptionsTarget by remember {
         mutableStateOf<cp.player.core.music.PlaylistSummary?>(null)
     }
@@ -328,7 +263,7 @@ private fun UserProfileContent(
                                         scope.launch { AppModel.playback.playQueue(mediaIds, index) }
                                     },
                                     onPlayMv = track.mvId?.takeIf { it > 0 }?.let { mvId ->
-                                        { navigator.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV")) }
+                                        { navigator.push(AppRoute.VideoPlayer("netease://mv/$mvId", title = "${track.name} - MV")) }
                                     },
                                     isFavorite = track.id in likedIds,
                                     onToggleFavorite = {
@@ -383,7 +318,7 @@ private fun UserProfileContent(
                                 val album = bundle.albums[index]
                                 AlbumCoverCard(
                                     album = album,
-                                    onClick = { navigator.push(AlbumDetailScreen(album.id, album)) },
+                                    onClick = { navigator.push(AppRoute.AlbumDetail(album.id, album)) },
                                 )
                             }
                         }
@@ -434,7 +369,7 @@ private fun UserProfileContent(
                             // 歌单卡片行距 4dp；同一列表里的歌曲行仍是全局 2dp，
                             // 所以这里用 padding 补足差额而不是改整个列表的 arrangement。
                             modifier = Modifier.animateItem().padding(vertical = 1.dp),
-                            onClick = { navigator.push(PlaylistDetailScreen(playlist)) },
+                            onClick = { navigator.push(AppRoute.PlaylistDetail(playlist)) },
                             // 点击弹歌单动作菜单（原先传的是空 lambda，按钮画得出来、
                             // 点下去毫无反应）。isOwner 跟着 isMe 走：在自己主页上才有
                             // 「删除歌单」，看别人的主页只有「取消收藏」。
@@ -551,7 +486,7 @@ private fun UserProfileContent(
             onShowInfo = { showInfoTarget = track },
             onShare = { shareText(songShareText(track)) },
             onPlayMv = track.mvId?.takeIf { it > 0 }?.let { mvId ->
-                { navigator.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV")) }
+                { navigator.push(AppRoute.VideoPlayer("netease://mv/$mvId", title = "${track.name} - MV")) }
             },
         )
     }

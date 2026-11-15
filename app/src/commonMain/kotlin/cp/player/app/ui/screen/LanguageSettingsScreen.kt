@@ -8,8 +8,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.AppLanguage
 import cp.player.app.i18n.cpStrings
@@ -20,7 +18,7 @@ import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 
 /**
  * 语言设置页：跟随系统 / 简体中文 / English 三选一。
@@ -41,14 +39,14 @@ import cp.player.app.ui.util.popOrNotify
 class LanguageSettingsScreen : Screen {
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val current by AppModel.appLanguageFlow.collectAsState()
         val strings = cpStrings()
         val options = AppLanguage.entries
 
         CpRouteScaffold(
             title = strings.language.screenTitle,
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
         ) { pageModifier ->
             SettingsPage(pageModifier) {
                 SettingsSection(strings.language.screenTitle) {
@@ -71,7 +69,7 @@ class LanguageSettingsScreen : Screen {
                             total = options.size,
                             onClick = {
                                 AppModel.setAppLanguage(language)
-                                navigator.popOrNotify()
+                                navigator.pop()
                             },
                         )
                     }

@@ -16,7 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import cp.player.app.ui.model.loadSearchSuggestions
+import cp.player.app.presentation.search.loadSearchSuggestions
 import kotlinx.coroutines.ensureActive
 import kotlin.coroutines.coroutineContext
 

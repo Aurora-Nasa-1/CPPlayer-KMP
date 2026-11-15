@@ -30,7 +30,8 @@ import cp.player.app.ui.component.VipActivationDialog
 import cp.player.core.license.VipLicenseManager
 import cp.player.core.playback.PlaybackSessionSettings
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
+import cp.player.app.presentation.navigation.AppRoute
+import cp.player.app.ui.navigation.LocalAppNavigator
 
 /**
  * 「音频输出与发烧特性」设置页。
@@ -63,7 +64,7 @@ class AudioEngineSettingsScreen : Screen {
 
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.current
+        val navigator = LocalAppNavigator.current
         val isAndroid = isAndroidPlatform()
         val isWindowsDesktop = !isAndroid && desktopPlatform() == "windows"
 
@@ -127,9 +128,9 @@ class AudioEngineSettingsScreen : Screen {
                 afterVipAction = null
                 showVipDialog = true
             },
-            onOpenAudioEffect = { navigator?.push(AudioEffectSettingsScreen()) },
+            onOpenAudioEffect = { navigator.push(AppRoute.AudioEffectSettings) },
             onOpenFlickHome = { openUrl("https://github.com/moss-apps/Flick") },
-            onBack = { navigator?.pop() },
+            onBack = { navigator.pop() },
         )
     }
 }

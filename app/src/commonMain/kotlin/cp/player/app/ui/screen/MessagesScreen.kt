@@ -33,18 +33,17 @@ import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.isAndroidPlatform
+import cp.player.app.presentation.navigation.AppRoute
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.ArtistAvatar
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpContextMenu
 import cp.player.app.ui.component.CpContextMenuItem
 import cp.player.app.ui.component.CpRouteScaffold
-import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.component.CpContactListSkeleton
 import cp.player.app.ui.component.CpSkeletonCaption
 import cp.player.app.ui.component.CpSpacing
@@ -58,11 +57,7 @@ import cp.player.app.ui.util.formatChatListTime
 import cp.player.app.ui.util.formatChatTime
 import cp.player.core.BackendResult
 import cp.player.core.model.Contact
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
@@ -72,37 +67,19 @@ import kotlinx.coroutines.launch
 class MessagesScreen : Screen {
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         MessagesContent(
             // `rememberScreenModel` 是定义在 `Screen` 上的**扩展函数**，必须在 Screen
             // 子类的成员里调用（顶层的 @Composable 里没有接收者）。
             model = rememberScreenModel { MessagesModel() },
-            onBack = { navigator.popOrNotify() },
-            onOpenChat = { contact -> navigator.push(ChatScreen(contact.userId, contact.nickname)) },
+            onBack = { navigator.pop() },
+            onOpenChat = { contact -> navigator.push(AppRoute.Chat(contact.userId, contact.nickname)) },
         )
     }
 }
 
-internal data class MessagesUiState(
-    val loading: Boolean = true,
-    val error: String? = null,
-    val contacts: List<Contact> = emptyList(),
-    /**
-     * 已开启新消息推送的 uid。
-     *
-     * 刻意**放进 state 而不是每行去问 AppModel**：订阅表是 `SettingsStorage` 里的
-     * 普通字符串（不是 Flow），逐行查询既不会触发重组、又读不出「刚刚切换过」。
-     * 放进 state 后，切换 → 更新 state → 列表重组，一条链走完。
-     */
-    val subscribedUids: Set<Long> = emptySet(),
-)
-
-/** Provider and account identity for a contact-list request. */
-internal data class MessagesSessionKey(
-    val providerId: String,
-    val sourceGeneration: Int,
-    val accountUid: Long?,
-)
+internal typealias MessagesUiState = cp.player.app.presentation.messages.MessagesUiState
+internal typealias MessagesSessionKey = cp.player.app.presentation.messages.MessagesSessionKey
 
 /**
  * 会话列表的数据源。
@@ -113,104 +90,35 @@ internal data class MessagesSessionKey(
  * 这里提升成 `internal` 只是为了让 `MessagesPane` 够得到，不是共享实例。
  */
 internal class MessagesModel(
-    private val fetchContacts: suspend () -> BackendResult<List<Contact>> = {
+    fetchContacts: suspend () -> BackendResult<List<Contact>> = {
         AppModel.socialRepository.getContacts()
     },
-    private val subscribedUids: () -> Set<Long> = { AppModel.messageNotifySubscribedUids() },
-    private val requestScope: CoroutineScope? = null,
+    subscribedUids: () -> Set<Long> = { AppModel.messageNotifySubscribedUids() },
+    requestScope: CoroutineScope? = null,
 ) : ScreenModel {
-    private val _state = MutableStateFlow(MessagesUiState())
-    val state: StateFlow<MessagesUiState> = _state
-    private val requestLock = Any()
-    private var activeSession: MessagesSessionKey? = null
-    private var requestGeneration = 0L
-    private var loadJob: Job? = null
-    private val scope: CoroutineScope get() = requestScope ?: screenModelScope
+    private val presenter = cp.player.app.presentation.messages.MessagesPresenter(
+        scope = requestScope ?: screenModelScope,
+        fetchContacts = fetchContacts,
+        subscribedUids = subscribedUids,
+    )
+
+    val state: StateFlow<MessagesUiState> get() = presenter.state
 
     fun isCurrentSession(sessionKey: MessagesSessionKey): Boolean =
-        synchronized(requestLock) { activeSession == sessionKey }
+        presenter.isCurrentSession(sessionKey)
 
     fun stateFor(sessionKey: MessagesSessionKey, observedState: MessagesUiState): MessagesUiState =
-        if (isCurrentSession(sessionKey)) observedState else MessagesUiState()
+        presenter.stateFor(sessionKey, observedState)
 
-    /**
-     * @param strings 失败兜底文案按**当前语言**组 —— 协程里读不到 CompositionLocal，
-     *   由组合侧传进来（见 I18N.md §5.9）。
-     */
-    fun load(strings: CpStrings, sessionKey: MessagesSessionKey) {
-        val (token, switchingSession, previousJob) = synchronized(requestLock) {
-            val changed = activeSession != sessionKey
-            activeSession = sessionKey
-            requestGeneration += 1L
-            val previous = loadJob
-            loadJob = null
-            Triple(requestGeneration, changed, previous)
-        }
-        previousJob?.cancel()
-        _state.value = if (switchingSession) MessagesUiState(loading = true)
-        else _state.value.copy(loading = true, error = null)
+    fun load(strings: CpStrings, sessionKey: MessagesSessionKey) =
+        presenter.load(strings, sessionKey)
 
-        val request = scope.launch(start = CoroutineStart.LAZY) {
-            val result = try {
-                fetchContacts()
-            } catch (cancel: CancellationException) {
-                throw cancel
-            } catch (error: Exception) {
-                BackendResult.Error(error.message ?: strings.social.messages.loadFailed)
-            }
-            if (!isCurrent(sessionKey, token)) return@launch
-            _state.value = when (result) {
-                is BackendResult.Success -> MessagesUiState(
-                    loading = false,
-                    contacts = result.data,
-                    subscribedUids = subscribedUids(),
-                )
-                is BackendResult.Error -> MessagesUiState(loading = false, error = result.message)
-                is BackendResult.Unsupported -> MessagesUiState(loading = false, error = result.message)
-            }
-        }
-        synchronized(requestLock) {
-            if (activeSession == sessionKey && requestGeneration == token) loadJob = request
-            else request.cancel()
-        }
-        request.start()
-    }
+    fun reset() = presenter.reset()
 
-    /** Remove account/provider conversation data and invalidate every in-flight response. */
-    fun reset() {
-        val previousJob = synchronized(requestLock) {
-            activeSession = null
-            requestGeneration += 1L
-            val previous = loadJob
-            loadJob = null
-            previous
-        }
-        previousJob?.cancel()
-        _state.value = MessagesUiState(loading = false)
-    }
+    fun setNotifySubscribed(uid: Long, enabled: Boolean) =
+        presenter.setNotifySubscribed(uid, enabled)
 
-    private fun isCurrent(sessionKey: MessagesSessionKey, token: Long): Boolean =
-        synchronized(requestLock) { activeSession == sessionKey && requestGeneration == token }
-
-    /**
-     * 切换某人的新消息推送。
-     *
-     * 真正的落盘与轮询起停都在 [AppModel.toggleMessageNotify] 里；这里只负责把
-     * 结果同步回 state（否则铃铛图标不会变 —— 见 [MessagesUiState.subscribedUids]）。
-     */
-    fun setNotifySubscribed(uid: Long, enabled: Boolean) {
-        AppModel.toggleMessageNotify(uid, enabled)
-        _state.value = _state.value.copy(subscribedUids = AppModel.messageNotifySubscribedUids())
-    }
-
-    /** 把某个联系人本地标为已读（不再重新拉整页 —— 用户刚点进去，列表不该整屏闪一次）。 */
-    fun markReadLocally(userId: Long) {
-        _state.value = _state.value.copy(
-            contacts = _state.value.contacts.map {
-                if (it.userId == userId) it.copy(unreadCount = 0) else it
-            },
-        )
-    }
+    fun markReadLocally(userId: Long) = presenter.markReadLocally(userId)
 }
 
 @Composable

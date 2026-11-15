@@ -1,6 +1,7 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CloudSync
@@ -165,7 +166,7 @@ fun settingsEntries(): List<SettingsEntry> = buildList {
         (!entry.debugOnly || AppVersion.isDesktopRunOrDebug)
 }
 
-private fun generalEntries(): List<SettingsEntry> = listOf(
+private fun generalEntries(): List<SettingsEntry> = listOfNotNull(
     SettingsEntry(
         id = "appearance",
         group = SettingsGroup.GENERAL,
@@ -199,13 +200,6 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 titleOf = { it.appearance.colorSource },
                 subtitleOf = { "专辑封面取色 · 系统动态取色 (Monet) · 应用预设配色" },
                 keywords = listOf("取色", "动态取色", "配色", "莫奈", "Monet", "Material You", "封面取色", "种子色", "color"),
-                sectionOf = { it.appearance.sectionLook },
-            ),
-            SettingsSubItem(
-                id = "appearance_palette_style",
-                titleOf = { it.appearance.paletteStyle },
-                subtitleOf = { it.appearance.paletteStyleNote },
-                keywords = listOf("配色风格", "调色风格", "高表现力", "Expressive", "TonalSpot", "Vibrant", "撞色", "调色板", "palette"),
                 sectionOf = { it.appearance.sectionLook },
             ),
             SettingsSubItem(
@@ -631,6 +625,44 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
         ),
         screen = { targetId -> NavigationSettingsScreen(targetId) },
     ),
+    // A2UI 入口暂时下线：与播放器里的两个入口共用同一个开关。
+    // 恢复时把 `A2UI_ENTRY_ENABLED` 改回 true 即可，不要在这里单独删/加。
+    if (cp.player.app.ui.a2ui.A2UI_ENTRY_ENABLED) SettingsEntry(
+        id = "ai_settings",
+        group = SettingsGroup.GENERAL,
+        titleOf = { it.ai.settingsTitle },
+        subtitleOf = { it.ai.settingsSubtitle },
+        icon = Icons.Filled.AutoAwesome,
+        accent = SettingsAccent.TERTIARY,
+        keywords = listOf(
+            "ai", "a2ui", "大模型", "api key", "base uri", "openai", "deepseek", "gemini", "ollama",
+            "dj台", "私人dj", "智能", "声场", "生成式", "agent"
+        ),
+        subItems = listOf(
+            SettingsSubItem(
+                id = "ai_provider",
+                titleOf = { "接口与模型" },
+                subtitleOf = { "选择 OpenAI 兼容端点，填写基地址、密钥与模型" },
+                keywords = listOf("ai", "provider", "base uri", "api key", "端点", "密钥", "deepseek", "gemini", "openai"),
+                sectionOf = { "接口与模型" },
+            ),
+            SettingsSubItem(
+                id = "ai_test_connection",
+                titleOf = { "连接与生成诊断" },
+                subtitleOf = { "实测模型响应延迟与认证有效性" },
+                keywords = listOf("测试", "延迟", "ping", "连通性", "诊断", "test"),
+                sectionOf = { "诊断" },
+            ),
+            SettingsSubItem(
+                id = "ai_expressive_motion",
+                titleOf = { "界面动效与触觉反馈" },
+                subtitleOf = { "A2UI 结构切换动画与动作确认反馈" },
+                keywords = listOf("动效", "m3e", "expressive", "弹簧", "波形", "触感", "震动", "motion"),
+                sectionOf = { "行为" },
+            ),
+        ),
+        screen = { _ -> AiSettingsScreen() },
+    ) else null,
 )
 
 private fun accountEntries(): List<SettingsEntry> = listOf(

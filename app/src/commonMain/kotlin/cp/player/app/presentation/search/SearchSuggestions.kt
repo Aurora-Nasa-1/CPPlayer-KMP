@@ -1,4 +1,4 @@
-package cp.player.app.ui.model
+package cp.player.app.presentation.search
 
 import cp.player.app.AppModel
 import kotlinx.coroutines.CancellationException

@@ -42,11 +42,9 @@ import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
-import cp.player.app.AppModel
 import cp.player.app.i18n.PluginRepositoryStrings
 import cp.player.app.i18n.cpStrings
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.repository.PluginRepository
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpRouteScaffold
@@ -60,26 +58,23 @@ import cp.player.app.ui.component.SettingsNoteEmphasis
 import cp.player.app.ui.component.SettingsSegmentedItem
 import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.rememberConfirmState
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.core.pluginrepo.PluginCatalogEntry
 import cp.player.core.pluginrepo.PluginInstallPhase
 import cp.player.core.pluginrepo.PluginRepositoryState
 import cp.player.core.pluginrepo.PluginVersion
 import cp.player.core.pluginrepo.RepositoryPluginKind
 import cp.player.core.pluginrepo.requireRepositoryHttpsUrl
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.launch
 
 class PluginRepositoryScreen : Screen {
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val model = rememberScreenModel { PluginRepositoryScreenModel() }
         LaunchedEffect(model) { model.load() }
         val state by model.repository.state.collectAsState()
         val error by model.error.collectAsState()
-        CpRouteScaffold(cpStrings().pluginRepository.title, onBack = { navigator.popOrNotify() }) { modifier ->
+        CpRouteScaffold(cpStrings().pluginRepository.title, onBack = { navigator.pop() }) { modifier ->
             PluginRepositoryContent(
                 state = state,
                 modifier = modifier,
@@ -94,8 +89,8 @@ class PluginRepositoryScreen : Screen {
                     enableSource = { url, enabled -> model.change { enableSource(url, enabled) } },
                     removeSource = { url -> model.change { removeSource(url) } },
                     cancelDownload = model.repository::cancelDownload,
-                    manageProviders = { navigator.push(ProviderManagementScreen()) },
-                    manageLyrics = { navigator.push(LyricsPluginSettingsScreen()) },
+                    manageProviders = { navigator.push(AppRoute.ProviderManagement()) },
+                    manageLyrics = { navigator.push(AppRoute.LyricsPluginSettings) },
                 ),
             )
         }
@@ -105,44 +100,21 @@ class PluginRepositoryScreen : Screen {
 class PluginRepositoryScreenModel(
     val repository: PluginRepository = PluginRepository.current(),
 ) : ScreenModel {
-    val error = MutableStateFlow<String?>(null)
-    val pendingError = AppModel.backend.pendingPluginUpdateError
+    private val presenter = cp.player.app.presentation.pluginrepository.PluginRepositoryPresenter(
+        scope = screenModelScope,
+        repository = repository,
+    )
 
-    fun load() = launch { repository.load() }
+    val error get() = presenter.error
+    val pendingError get() = presenter.pendingError
 
-    private fun launch(block: suspend () -> Unit) {
-        screenModelScope.launch {
-            error.value = null
-            try { block() } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                error.value = failure.message ?: failure.toString()
-            }
-        }
-    }
-
-    fun refresh() = launch { repository.refresh() }
-    fun reportError(failure: Exception) {
-        error.value = failure.message ?: failure.toString()
-    }
+    fun load() = presenter.load()
+    fun refresh() = presenter.refresh()
+    fun reportError(failure: Exception) = presenter.reportError(failure)
     fun install(entry: PluginCatalogEntry, replaceLocal: Boolean) =
-        launch { repository.install(entry, replaceLocal) }
-    fun change(block: PluginRepository.() -> Unit) {
-        try {
-            repository.block()
-            error.value = null
-        } catch (failure: Exception) {
-            error.value = failure.message ?: failure.toString()
-        }
-    }
-    fun addSource(url: String): Boolean = try {
-        repository.addSource(url)
-        error.value = null
-        true
-    } catch (failure: Exception) {
-        error.value = failure.message ?: failure.toString()
-        false
-    }
+        presenter.install(entry, replaceLocal)
+    fun change(block: PluginRepository.() -> Unit) = presenter.change(block)
+    fun addSource(url: String): Boolean = presenter.addSource(url)
 }
 
 enum class PluginRepositoryTab { BROWSE, INSTALLED, UPDATES, REPOSITORIES }

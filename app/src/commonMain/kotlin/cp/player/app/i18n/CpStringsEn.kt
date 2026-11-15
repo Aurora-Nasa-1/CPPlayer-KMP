@@ -194,11 +194,6 @@ object CpStringsEn : CpStrings {
             "Taken from the current track's artwork; falls back to the system wallpaper when nothing is playing"
         override val colorSourceFixedNote = "Always uses the built-in palette, independent of content and system"
 
-        override val paletteStyle = "Color palette style"
-        override val paletteStyleTonalSpot = "Classic subtle"
-        override val paletteStyleExpressive = "Expressive"
-        override val paletteStyleVibrant = "Vibrant"
-        override val paletteStyleNote = "Controls hue rotation and contrast when expanding seed color into color schemes"
 
         override val pureBlack = "Pure black"
         override val pureBlackNote = "Use a pure black background in the dark theme — easier on OLED screens"
@@ -213,8 +208,7 @@ object CpStringsEn : CpStrings {
         override val fluidBackground = "Fluid background"
         override val fluidBackgroundNote =
             "A slowly drifting gradient behind the player, inspired by Apple Music. Colors follow the " +
-                "current theme and artwork palette; Android 13 and below falls back to a static gradient. " +
-                "Turn it off to save power."
+                "current theme and artwork palette. Turn it off to save power."
 
         override val fluidBackgroundFps = "Fluid background frame rate"
         override val fluidBackgroundFpsNote =
@@ -1353,6 +1347,7 @@ object CpStringsEn : CpStrings {
     override val social = SocialStringsEn
     override val lyricsPlugin = LyricsPluginStringsEn
     override val pluginRepository = PluginRepositoryStringsEn
+    override val ai = AiStringsEn
     override val onboarding = OnboardingStringsEn
     override val providerManagement = ProviderManagementStringsEn
     override val contextMenu = ContextMenuStringsEn
