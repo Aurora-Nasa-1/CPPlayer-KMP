@@ -1,5 +1,7 @@
 package cp.player.app.ui.screen
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -69,6 +71,7 @@ import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.LocalIsExpanded
 import cp.player.app.ui.component.desktopPagerMouseControl
 import cp.player.app.ui.component.rememberConfirmState
+import cp.player.app.ui.theme.CpMotion
 import cp.player.core.ImportResult
 import cp.player.core.pluginrepo.RepositoryPluginKind
 import kotlinx.coroutines.Dispatchers
@@ -372,23 +375,31 @@ internal fun OnboardingContent(
             .padding(horizontal = if (expanded) 32.dp else 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // 顶部：跳过（重看时不需要）。支持纯本地模式跳过。
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+        // 顶部：左侧步骤文字、中间分段指示器、右侧跳过（重看时不需要）。
+        // 指示器叠在中间而不是独占一行：原来的「圆点 + 标签」要 80dp 以上，
+        // 而步骤名在每页正文标题里已经写过一次，标签是重复信息。
+        Box(
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         ) {
-            CpText(
-                text = s.onboarding.stepProgress(pagerState.currentPage + 1, pages.size),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (!replay) {
-                TextButton(onClick = onFinish) { CpText(s.onboarding.skip) }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CpText(
+                    text = s.onboarding.stepProgress(pagerState.currentPage + 1, pages.size),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (!replay) {
+                    TextButton(onClick = onFinish) { CpText(s.onboarding.skip) }
+                }
             }
+            OnboardingStepIndicator(
+                current = pagerState.currentPage,
+                modifier = Modifier.align(Alignment.Center),
+            )
         }
-
-        OnboardingStepHeader(current = pagerState.currentPage)
 
         // 登录页内容比其它页长，滚轮必须优先滚表单；否则一滚就翻页，用户永远
         // 看不到下面的登录按钮。翻页仍可用底部按钮或横向滑动。
@@ -509,68 +520,48 @@ internal fun OnboardingContent(
 }
 
 /**
- * 顶部步骤条：编号 + 标签，已完成的步骤显示对勾。
+ * 顶部分段指示器（M3 Expressive 的「胶囊轨道」写法）。
  *
- * 不画连接线：四列等宽布局在窄屏上仍然对齐，连接线反而会和标签中心错位。
+ * 已完成的步骤是短胶囊，当前步骤拉长成一条，未到的步骤是浅色短胶囊；宽度用
+ * spatial 弹簧过渡，前进 / 后退时整排像一条会呼吸的轨道。比编号圆点小得多，
+ * 也不再重复正文标题里的步骤名。
+ *
+ * 指示器是纯装饰：步骤文字在左侧，读屏依赖那段文字就够，别再加一层
+ * `contentDescription` 把同一件事读两遍。
  */
 @Composable
-private fun OnboardingStepHeader(current: Int) {
-    val s = cpStrings()
-    val labels = OnboardingPages.entries.map { stepLabelOf(it, s.onboarding) }
+private fun OnboardingStepIndicator(
+    current: Int,
+    modifier: Modifier = Modifier,
+) {
+    val activeWidth = 24.dp
+    val idleWidth = 8.dp
     Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        labels.forEachIndexed { index, label ->
-            val done = index < current
+        repeat(OnboardingPages.entries.size) { index ->
             val active = index == current
-            Column(
-                modifier = Modifier.weight(1f),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(22.dp)
-                        .background(
-                            color = if (done || active) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.surfaceContainerHighest
-                            },
-                            shape = CircleShape,
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (done) {
-                        Icon(
-                            imageVector = Icons.Filled.Check,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(14.dp),
-                        )
-                    } else {
-                        CpText(
-                            text = "${index + 1}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (active) {
-                                MaterialTheme.colorScheme.onPrimary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        )
-                    }
-                }
-                Spacer(Modifier.height(4.dp))
-                CpText(
-                    text = label,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
-                    color = if (active) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
+            val width by animateDpAsState(
+                targetValue = if (active) activeWidth else idleWidth,
+                animationSpec = CpMotion.spatialFast(),
+                label = "onboardingStepWidth",
+            )
+            val color by animateColorAsState(
+                targetValue = if (index <= current) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHighest
+                },
+                animationSpec = CpMotion.effectsFast(),
+                label = "onboardingStepColor",
+            )
+            Box(
+                modifier = Modifier
+                    .size(width = width, height = 6.dp)
+                    .background(color, CircleShape),
+            )
         }
     }
 }
@@ -1083,13 +1074,6 @@ private enum class OnboardingPages {
     Provider,
     Account,
     Done,
-}
-
-private fun stepLabelOf(page: OnboardingPages, s: OnboardingStrings): String = when (page) {
-    OnboardingPages.Welcome -> s.stepWelcome
-    OnboardingPages.Provider -> s.stepProvider
-    OnboardingPages.Account -> s.stepLogin
-    OnboardingPages.Done -> s.stepDone
 }
 
 private fun titleOf(page: OnboardingPages, s: OnboardingStrings): String = when (page) {
