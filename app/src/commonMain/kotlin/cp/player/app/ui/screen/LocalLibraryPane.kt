@@ -105,7 +105,6 @@ import cp.player.app.ui.component.CpWavyProgressIndeterminate
 import cp.player.app.ui.component.CpCircularWavyProgressIndeterminate
 import cp.player.app.ui.component.cpPressScale
 import cp.player.app.ui.component.PlaylistOptionsSheet
-import cp.player.app.ui.component.legacySegmentGridShape
 import cp.player.app.ui.component.SongDetailInfoDialog
 import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.SongMenuActions
@@ -445,6 +444,7 @@ internal fun LocalLibraryTab(
                             onClick = { model.startScan(strings) },
                             enabled = !state.scanning,
                             loading = state.scanning,
+                            emphasis = LocalQuickActionEmphasis.UTILITY,
                         ),
                         LocalLibraryQuickAction(
                             label = if (state.importing) s.importing else s.importFolder,
@@ -452,10 +452,12 @@ internal fun LocalLibraryTab(
                             onClick = { pickFolder() },
                             enabled = !state.importing,
                             loading = state.importing,
+                            emphasis = LocalQuickActionEmphasis.UTILITY,
                         ),
                     ),
                     modifier = Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth()
                         .padding(horizontal = CpSpacing.pageHorizontal, vertical = 6.dp),
+                    compactNarrow = true,
                 )
             }
         }
@@ -950,6 +952,9 @@ private fun LocalLibraryToolbar(
     }
 }
 
+/** 快捷动作的视觉层级：播放类是主动作，扫描 / 导入 / 浏览曲库是工具动作。 */
+internal enum class LocalQuickActionEmphasis { PRIMARY, UTILITY }
+
 /** 本地曲库的一颗快捷动作。 */
 internal data class LocalLibraryQuickAction(
     val label: String,
@@ -957,87 +962,272 @@ internal data class LocalLibraryQuickAction(
     val onClick: () -> Unit,
     val enabled: Boolean = true,
     val loading: Boolean = false,
+    val emphasis: LocalQuickActionEmphasis = LocalQuickActionEmphasis.PRIMARY,
 )
 
 /**
  * 本地曲库的四个快捷动作。
  *
- * 大卡片移除后，播放 / 随机 / 扫描 / 导入不再单独占据首屏；这里用 M3E 连体动作组
- * 接在分类磁贴下面：宽栏一行，窄栏 2×2，外圈 20dp、相邻内角 4dp
- * （[legacySegmentGridShape]），与分类磁贴保持同一套形状语言。
+ * 这四个动作**不是同一层级**：播放 / 随机是内容操作，扫描 / 导入是库维护操作。
+ * 此前四格等宽、同色、连体，等于在分类磁贴下面又铺了第四块分段面板 —— 层级和
+ * 磁贴打架，宽栏里每格还被拉成一大片空白。
+ *
+ * 现在收成一个主角 + 两颗工具胶囊：
+ * - 播放 / 随机合并成 [CpSplitButton]，按压时两半按 M3E 连通形状撑开 / 收窄；
+ * - 扫描 / 导入退成 44dp 的 [Surface] 胶囊，宽栏靠右。
+ *
+ * 四个入口仍然同时可见，但画面只有一个焦点；不再像四颗同权按钮并排排队。
+ *
+ * @param compactNarrow 窄屏时把工具动作收成 48dp 图标键，与播放对同处一行。
+ *   独立本地库页要优先给歌曲列表让出高度，传 `true`；媒体库首页空间更宽裕，用默认两行。
  */
 @Composable
 internal fun LocalLibraryQuickActions(
     actions: List<LocalLibraryQuickAction>,
     modifier: Modifier = Modifier,
+    compactNarrow: Boolean = false,
 ) {
     if (actions.isEmpty()) return
+    val primaryActions = actions.filter { it.emphasis == LocalQuickActionEmphasis.PRIMARY }
+    val utilityActions = actions.filter { it.emphasis == LocalQuickActionEmphasis.UTILITY }
     BoxWithConstraints(modifier.fillMaxWidth()) {
-        val columns = if (maxWidth >= 560.dp) actions.size else 2
-        val rows = actions.chunked(columns)
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            rows.forEachIndexed { rowIndex, row ->
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    row.forEachIndexed { columnIndex, action ->
-                        LocalQuickActionTile(
-                            action = action,
-                            shape = legacySegmentGridShape(rowIndex, rows.size, columnIndex, row.size),
-                            modifier = Modifier.weight(1f),
-                        )
+        // 680–720 一带放不下「340dp 播放对 + 两颗工具胶囊」，会溢出；
+        // 这个宽度以下退回两行，比把主按钮压窄更像有意的构图。
+        if (maxWidth >= 720.dp) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                LocalPlaybackSplit(primaryActions, Modifier.width(340.dp))
+                if (primaryActions.isNotEmpty() && utilityActions.isNotEmpty()) {
+                    Spacer(Modifier.weight(1f))
+                }
+                utilityActions.forEach { action ->
+                    LocalUtilityAction(action)
+                }
+            }
+        } else if (compactNarrow) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                LocalPlaybackSplit(
+                    primaryActions,
+                    Modifier.weight(1f),
+                    height = 48.dp,
+                    compact = true,
+                )
+                utilityActions.forEach { action ->
+                    LocalCompactUtilityAction(action)
+                }
+            }
+        } else {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LocalPlaybackSplit(primaryActions, Modifier.fillMaxWidth())
+                if (utilityActions.isNotEmpty()) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        utilityActions.forEach { action ->
+                            LocalUtilityAction(
+                                action,
+                                modifier = Modifier.weight(1f),
+                                fillWidth = true,
+                            )
+                        }
                     }
-                    repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
         }
     }
 }
 
+/**
+ * 播放 / 随机合并成一颗 Expressive split button。
+ *
+ * 这是全应用已经建立的「播放对」语言（本地歌单 / 文件夹 / 专辑 / 艺术家详情都这样）：
+ * 左半是主角，右半是固定宽度的随机键。按压时两半按 M3E 的连通形状各自撑开 / 收窄，
+ * 比两颗并排按钮更有动作感，也让首屏只有一个视觉焦点。
+ */
 @Composable
-private fun LocalQuickActionTile(
+private fun LocalPlaybackSplit(
+    actions: List<LocalLibraryQuickAction>,
+    modifier: Modifier,
+    height: Dp = 56.dp,
+    compact: Boolean = false,
+) {
+    val play = actions.getOrNull(0) ?: return
+    val shuffle = actions.getOrNull(1)
+    if (shuffle == null) {
+        FilledTonalButton(
+            onClick = play.onClick,
+            enabled = play.enabled,
+            shape = MaterialTheme.shapes.large,
+            modifier = modifier.height(height).cpPressScale(),
+        ) {
+            PlaybackGlyph(play, iconSize = if (compact) 20.dp else 22.dp)
+            Spacer(Modifier.width(if (compact) 8.dp else 10.dp))
+            CpText(
+                play.label,
+                style = if (compact) {
+                    MaterialTheme.typography.titleSmall
+                } else {
+                    MaterialTheme.typography.titleMedium
+                },
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+            )
+        }
+        return
+    }
+    CpSplitButton(
+        onLeadingClick = play.onClick,
+        leadingContent = {
+            PlaybackGlyph(play, iconSize = if (compact) 20.dp else 24.dp)
+            Spacer(Modifier.width(if (compact) 8.dp else 10.dp))
+            CpText(
+                play.label,
+                style = if (compact) {
+                    MaterialTheme.typography.titleSmall
+                } else {
+                    MaterialTheme.typography.titleMedium
+                },
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+            )
+        },
+        onTrailingClick = shuffle.onClick,
+        trailingContent = {
+            if (shuffle.loading) {
+                CpLoadingIndicator(
+                    Modifier.size(if (compact) 18.dp else 20.dp),
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            } else {
+                Icon(
+                    shuffle.icon,
+                    contentDescription = shuffle.label,
+                    modifier = Modifier.size(if (compact) 18.dp else 20.dp),
+                )
+            }
+        },
+        enabled = play.enabled && shuffle.enabled,
+        trailingWidth = if (compact) 64.dp else 76.dp,
+        modifier = modifier.height(height),
+    )
+}
+
+@Composable
+private fun PlaybackGlyph(action: LocalLibraryQuickAction, iconSize: Dp) {
+    if (action.loading) {
+        CpLoadingIndicator(
+            Modifier.size(iconSize),
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+        )
+    } else {
+        Icon(
+            action.icon,
+            contentDescription = null,
+            modifier = Modifier.size(iconSize),
+        )
+    }
+}
+
+/**
+ * 工具动作是一颗安静的胶囊，而不是第二颗按钮。
+ *
+ * 不描边、不抢色：底色退回分类磁贴同级的 `surfaceContainerHigh`，高度压到 44dp。
+ * 放在 split button 右侧（宽栏）或下一行（窄栏），仍然一眼可点，但不会和主角争夺视线。
+ */
+@Composable
+private fun LocalUtilityAction(
     action: LocalLibraryQuickAction,
-    shape: androidx.compose.ui.graphics.Shape,
     modifier: Modifier = Modifier,
+    fillWidth: Boolean = false,
 ) {
     val contentColor = if (action.enabled) {
-        MaterialTheme.colorScheme.onSurface
+        MaterialTheme.colorScheme.onSurfaceVariant
     } else {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+    }
+    val content: @Composable RowScope.() -> Unit = {
+        if (action.loading) {
+            CpLoadingIndicator(
+                Modifier.size(18.dp),
+                color = contentColor,
+            )
+        } else {
+            Icon(
+                action.icon,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = contentColor,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        CpText(
+            action.label,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Medium,
+            color = contentColor,
+            maxLines = 1,
+        )
+    }
+    val rowModifier = if (fillWidth) {
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+    } else {
+        Modifier.padding(horizontal = 16.dp)
     }
     Surface(
         onClick = action.onClick,
         enabled = action.enabled,
-        shape = shape,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = modifier.height(56.dp).cpPressScale(),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = modifier.height(44.dp).cpPressScale(),
     ) {
         Row(
-            Modifier.fillMaxSize().padding(horizontal = 14.dp),
+            rowModifier,
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            content = content,
+        )
+    }
+}
+
+/**
+ * 窄屏独立本地库专用的图标工具键。
+ *
+ * 独立本地库页在手机上还要给六个分类标签、搜索框和歌曲列表让位，工具动作再占一整行
+ * 就会把首屏挤没。这里收成 48dp 方键，和左侧 split button 同高，四个入口保持单行。
+ */
+@Composable
+private fun LocalCompactUtilityAction(action: LocalLibraryQuickAction) {
+    val contentColor = if (action.enabled) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+    }
+    Surface(
+        onClick = action.onClick,
+        enabled = action.enabled,
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.size(48.dp).cpPressScale(),
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             if (action.loading) {
-                CpLoadingIndicator(
-                    Modifier.size(18.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                )
+                CpLoadingIndicator(Modifier.size(18.dp), color = contentColor)
             } else {
                 Icon(
                     action.icon,
-                    contentDescription = null,
+                    contentDescription = action.label,
+                    modifier = Modifier.size(20.dp),
                     tint = contentColor,
-                    modifier = Modifier.size(18.dp),
                 )
             }
-            CpText(
-                action.label,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = contentColor,
-                maxLines = 1,
-            )
         }
     }
 }

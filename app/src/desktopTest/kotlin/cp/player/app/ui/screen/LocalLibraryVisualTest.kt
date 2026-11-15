@@ -88,7 +88,7 @@ class LocalLibraryVisualTest {
                     strings = s,
                     onSelect = {},
                 )
-                SampleQuickActions(Modifier.padding(horizontal = 20.dp))
+                SampleQuickActions(Modifier.padding(horizontal = 20.dp), compactNarrow = true)
                 Spacer(Modifier.height(24.dp))
             }
         }
@@ -128,7 +128,7 @@ class LocalLibraryVisualTest {
                     strings = s,
                     onSelect = {},
                 )
-                SampleQuickActions(Modifier.padding(horizontal = 20.dp))
+                SampleQuickActions(Modifier.padding(horizontal = 20.dp), compactNarrow = true)
                 LocalSectionHeader(title = s.downloads.tabSongs, count = items.size) {
                     FilledTonalIconButton(
                         onClick = {},
@@ -237,16 +237,30 @@ class LocalLibraryVisualTest {
     }
 
     @Composable
-    private fun SampleQuickActions(modifier: Modifier = Modifier) {
+    private fun SampleQuickActions(
+        modifier: Modifier = Modifier,
+        compactNarrow: Boolean = false,
+    ) {
         val d = cpStrings().downloads
         LocalLibraryQuickActions(
             actions = listOf(
                 LocalLibraryQuickAction(d.playAll, Icons.Filled.PlayArrow, {}),
                 LocalLibraryQuickAction(d.shuffleAll, Icons.Filled.Shuffle, {}),
-                LocalLibraryQuickAction(d.scanDevice, Icons.Filled.Refresh, {}),
-                LocalLibraryQuickAction(d.importFolder, Icons.Filled.FolderOpen, {}),
+                LocalLibraryQuickAction(
+                    d.scanDevice,
+                    Icons.Filled.Refresh,
+                    {},
+                    emphasis = LocalQuickActionEmphasis.UTILITY,
+                ),
+                LocalLibraryQuickAction(
+                    d.importFolder,
+                    Icons.Filled.FolderOpen,
+                    {},
+                    emphasis = LocalQuickActionEmphasis.UTILITY,
+                ),
             ),
             modifier = modifier,
+            compactNarrow = compactNarrow,
         )
     }
 

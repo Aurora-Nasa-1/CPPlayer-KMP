@@ -921,11 +921,13 @@ private fun LocalLibrarySection(
                     onClick = { model.startScan(s) },
                     enabled = !state.scanning,
                     loading = state.scanning,
+                    emphasis = LocalQuickActionEmphasis.UTILITY,
                 ),
                 LocalLibraryQuickAction(
                     label = s.downloads.browseLibrary,
                     icon = Icons.Filled.ChevronRight,
                     onClick = { onOpenLocal(0) },
+                    emphasis = LocalQuickActionEmphasis.UTILITY,
                 ),
             ),
         )
