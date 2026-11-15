@@ -172,9 +172,9 @@ class FluidBackgroundTest {
     fun `AppleMusic流体色盘提取具备深邃暗底与鲜活多色团`() {
         val coverArgb = 0xFF3B82F6.toInt()
         val image = solidImage(coverArgb)
-        // HCT 的 chroma 上限随色相变化：蓝色在 tone 50 附近最多只能到 ~43，
-        // 直接要求 chroma≥60 是几何上不可能的。改为「不比封面原色更灰」。
-        val coverChroma = com.materialkolor.hct.Hct.fromInt(coverArgb).chroma
+        // HCT 的 chroma 上限随色相与明度变化：蓝色在 tone 50 附近最多只能到 ~43，
+        // 超过上限会被色域裁剪。这里改为「贴近该色相/明度下的色域边界」，
+        // 既能验证色团够鲜艳，又不会要求几何上达不到的彩度。
         val darkPalette = cp.player.app.ui.theme.extractCoverFluidPalette(image, dark = true)
         assertNotNull(darkPalette, "彩色封面必须能提取出深色流体色盘")
         assertEquals(4, darkPalette.size, "流体色盘必须包含 3 个流体光团色与 1 个底色（共 4 色）")
@@ -187,9 +187,11 @@ class FluidBackgroundTest {
         for (i in 0 until 3) {
             val hct = com.materialkolor.hct.Hct.fromInt(darkPalette[i].toArgb())
             assertTrue(hct.tone in 40.0..62.0, "流体高光色团明度需通透且文字可读（Tone 40~62），当前 Tone=${hct.tone}")
+            val maxChromaAtTone = com.materialkolor.hct.Hct.from(hct.hue, 200.0, hct.tone).chroma
             assertTrue(
-                hct.chroma >= coverChroma * 0.9,
-                "流体高光色团不应比封面原色更灰（封面 Chroma=$coverChroma），当前 Chroma=${hct.chroma}",
+                hct.chroma >= maxChromaAtTone * 0.9,
+                "流体高光色团应贴近色域边界（Hue=${hct.hue} Tone=${hct.tone} " +
+                    "上限 Chroma=$maxChromaAtTone），当前 Chroma=${hct.chroma}",
             )
         }
 
