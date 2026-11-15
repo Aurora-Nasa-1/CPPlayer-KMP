@@ -91,6 +91,10 @@ internal object DesktopRenderTuning {
     private const val PROP_RENDER_API = "skiko.renderApi"
     private const val PROP_VSYNC = "skiko.vsync.enabled"
 
+    /** CMP 1.13+ 同步窗口实时缩放属性名（Skiko SKIKO-1196）。 */
+    const val PROP_WINDOWS_SYNC_LIVE_RESIZE = "skiko.rendering.windows.direct3DSynchronousLiveResize"
+    const val PROP_MACOS_SYNC_LIVE_RESIZE = "skiko.rendering.macos.metalSynchronousLiveResize"
+
     /** Skiko 官方环境变量，存在即代表外部已显式指定。 */
     private const val ENV_SKIKO_RENDER_API = "SKIKO_RENDER_API"
 
@@ -442,6 +446,18 @@ internal object DesktopRenderTuning {
         }
         vsyncOverride?.let { System.setProperty(PROP_VSYNC, it.toString()) }
 
+        // ---- CMP 1.13+ Synchronous Live Resize ----
+        // 允许外部用 -D...=false 手工关闭；未显式指定时默认启用，使桌面窗口拖拽拉伸具备实时同步呈现，消灭白边与撕裂。
+        if (isWindows) {
+            if (System.getProperty(PROP_WINDOWS_SYNC_LIVE_RESIZE) == null) {
+                System.setProperty(PROP_WINDOWS_SYNC_LIVE_RESIZE, "true")
+            }
+        } else {
+            if (System.getProperty(PROP_MACOS_SYNC_LIVE_RESIZE) == null) {
+                System.setProperty(PROP_MACOS_SYNC_LIVE_RESIZE, "true")
+            }
+        }
+
         val sourceLabel = when (source) {
             BackendSource.EXTERNAL -> "外部启动参数（不干预）"
             BackendSource.OVERRIDE -> "启动参数/环境变量"
@@ -452,6 +468,11 @@ internal object DesktopRenderTuning {
             externalApi != null -> "$externalApi（外部指定，本模块未干预）"
             backend == null || backend == Backend.AUTO -> "自动（未设置 $PROP_RENDER_API，交给 Skiko）"
             else -> "${backend.label} → $PROP_RENDER_API=${backend.value}（来源：$sourceLabel）"
+        }
+        val liveResizeStatus = if (isWindows) {
+            "Windows(Direct3D)=${System.getProperty(PROP_WINDOWS_SYNC_LIVE_RESIZE)}"
+        } else {
+            "macOS(Metal)=${System.getProperty(PROP_MACOS_SYNC_LIVE_RESIZE)}"
         }
         println(
             buildString {
@@ -464,6 +485,7 @@ internal object DesktopRenderTuning {
                         else -> "未干预（Skiko 默认）"
                     },
                 )
+                appendLine("[RenderTuning] 同步窗口缩放 (Live Resize)：$liveResizeStatus")
                 append("[RenderTuning] 安全模式：只有同一后端连续 $FAILURE_THRESHOLD 次未能出帧才回退；单次异常退出不切换。")
                 append("手工干预：-D$OVERRIDE_BACKEND=AUTO，或删除 ${storageHint()} 中的 $KEY_BACKEND / $KEY_VSYNC 项。")
             },
