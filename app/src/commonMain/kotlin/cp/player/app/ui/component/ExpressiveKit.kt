@@ -70,6 +70,8 @@ import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SliderState
+import androidx.compose.material3.rememberSliderState
 import androidx.compose.material3.SplitButtonDefaults
 import androidx.compose.material3.SplitButtonLayout
 import androidx.compose.material3.Surface
@@ -741,8 +743,19 @@ fun CpMinimalSeekBar(
     )
     val idleTrackAlpha = if (enabled) SeekTrackIdleTrackAlpha else 0.08f
     val idleActiveAlpha = if (enabled) SeekTrackIdleActiveAlpha else 0.25f
-    Slider(
+    val sliderState = rememberSliderState(
         value = shown,
+        trackRange = 0f..duration,
+    )
+    LaunchedEffect(shown) {
+        if (!dragging) {
+            sliderState.value = shown
+        }
+    }
+    Slider(
+        state = sliderState,
+        modifier = modifier,
+        enabled = enabled,
         onValueChange = {
             dragging = true
             dragValue = it
@@ -757,12 +770,6 @@ fun CpMinimalSeekBar(
             dragging = false
             onScrubPreview?.invoke(null)
         },
-        valueRange = 0f..duration,
-        enabled = enabled,
-        interactionSource = interactionSource,
-        modifier = modifier,
-        // AM 没有拇指圆点：留空，轨道因此也顶到两端。
-        thumb = {},
         colors = SliderDefaults.colors(
             thumbColor = Color.Transparent,
             activeTrackColor = Color.Transparent,
@@ -770,13 +777,16 @@ fun CpMinimalSeekBar(
             activeTickColor = Color.Transparent,
             inactiveTickColor = Color.Transparent,
         ),
-        track = { sliderState ->
+        interactionSource = interactionSource,
+        // AM 没有拇指圆点：留空，轨道因此也顶到两端。
+        thumb = {},
+        track = { state: SliderState ->
             Canvas(Modifier.fillMaxWidth().height(SeekTrackPressHeight)) {
                 val e = expansion.value.coerceIn(0f, 1f)
                 val thicknessPx = (SeekTrackIdleHeight + (SeekTrackPressHeight - SeekTrackIdleHeight) * e).toPx()
                 val top = (size.height - thicknessPx) / 2f
                 val radius = CornerRadius(thicknessPx / 2f)
-                val fraction = (sliderState.value / duration).coerceIn(0f, 1f)
+                val fraction = (state.value / duration).coerceIn(0f, 1f)
                 drawRoundRect(
                     color = ink.copy(alpha = idleTrackAlpha + (SeekTrackPressedTrackAlpha - SeekTrackIdleTrackAlpha) * e),
                     topLeft = Offset(0f, top),
@@ -1442,7 +1452,6 @@ fun CpToggleChip(
         onCheckedChange = onCheckedChange,
         modifier = modifier,
         enabled = enabled,
-        shapes = ToggleButtonDefaults.shapes(),
     ) {
         ChipContent(icon = icon, label = label, badge = badge)
     }

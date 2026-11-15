@@ -8,13 +8,13 @@ datetime = "0.6.1"
 # 1.12.2 = 当前 stable 线最新。这一行同时**决定 skiko 版本**（1.11.1→0.144.6，1.12.x→0.150.1），
 # 而 skiko 又是 Coil 选型的分水岭（见下面 coil 的注释）：两边一致时 compose 插件才不会报
 # "Skiko dependencies' versions are incompatible"。
-compose = "1.12.2"
+compose = "1.13.0-beta02"
 nucleus = "3.0.0-dev-202611061347"
 # Nucleus 同作者的无 AWT 托盘库：托盘图标与右键菜单都走平台原生 API
 # （Windows Shell_NotifyIcon / macOS NSStatusItem / Linux AppIndicator），
 # 不创建 `java.awt.SystemTray` / `TrayIcon`。
 composenativetray = "2.1.6"
-adaptive = "1.3.0"
+adaptive = "1.4.0-alpha01"
 # 2.2.21-1.10.3 是「Kotlin 2.2.21 + Compose 1.10.3」的兼容性标记，不是语义版本。
 # 升它之前担心的「跨大版本破坏」经 javap 逐类核对**不成立**：61 个公共类一个没删，
 # 全部差异只是接口默认实现的 JVM 呈现方式变了 —— 旧的 `-Xjvm-default=disable`
@@ -108,7 +108,7 @@ material-color-utilities = "5.0.1"
 #   - 它依赖 `androidx.graphics:graphics-shapes`（形状变形的底层实现）；
 #   - 与 `material-kolor` 5.0.1 的编译目标**完全一致**（5.0.1 自己就依赖这个精确版本）。
 # 换版本后必须复核 material-kolor 的字节码兼容性（见 TOPICS.md「主题 / 取色」）。
-material3 = "1.12.0-alpha03"
+material3 = "1.13.0-beta02"
 # 核心库脱糖（core library desugaring）：把 `java.time` / `java.util.stream` /
 # `java.util.function` / `java.util.Optional` 这些 **Java 8+ 才有的 JDK API**
 # 打包进 APK，让 minSdk 24（Android 7.0）也能跑。
