@@ -48,7 +48,7 @@
 | 游标 | 不解析、不 URL 解码、不转数字；首次通常 null，后续原样回传响应 token（含空字符串） |
 | 归一化陷阱 | 不要写 `cursor || undefined` |
 
-未知 `hasMore` 与已知 `false` 不同。是否继续翻页由具体业务的上游语义决定。
+未知 `hasMore`（`null`）与已知 `false` 不同。上游省略 `hasMore` 时，宿主默认按满页（返回条数达到 `limit`）继续翻页，直到不足一页或空页；音源已知末页时应显式返回 `hasMore = false`。
 
 收藏 ID 超过 500 项时实现 `getLikeListPage(PagedIdRequest): IdPage` 并声明 `accounts.likes.page`（tag 166）：
 
@@ -215,8 +215,7 @@ const provider = defineProvider({
 
 宿主把 `social.events` / `social.userEvents` 映射为 UI 能力 `socialFeed`，把
 `messages.unread` / `messages.conversations` / `messages.history` 映射为 `messages`。
-音源未实现时返回 `Unsupported`，不要用空页伪装成功；当前契约**没有发布动态**方法，
-Provider 不应自造上游写接口。
+音源未实现时返回 `Unsupported`；当前契约未提供发布动态接口。
 
 ## 6. 一起听
 
@@ -332,7 +331,7 @@ MV 与视频使用独立 ID 类型与能力；相同字符串不说明是同一�
 | 错误类别 | `Authentication` |
 | 日志 | 原始凭证不入日志 |
 | 会话 | 宿主保存新凭证并替换会话；Provider 不跨账号续用旧 context |
-| `countryCode` 省略 | 沿用 Provider 原有默认区号（现有网易云 Native flow 为 `86`） |
+| `countryCode` 省略 | 优先使用清单声明的 `defaultCountryCode`（如网易云声明 `"86"`），未声明时沿用界面输入或留空 |
 | Native v1 区号 | 通过既有 auth-only `extraJson` 传递，不改变位置 wire 布局 |
 | JS `close` | 引擎由宿主关闭，不存在可依赖的 `provider.close` 回调；可信 Kotlin 实现应在 `close()` 释放资源 |
 
@@ -369,7 +368,7 @@ MV 与视频使用独立 ID 类型与能力；相同字符串不说明是同一�
 - [ ] 上传：整块确认、错误 offset、句柄失效、去重与发布
 - [ ] 一起听：空队列、序列 / 版本、真实上游协调行为
 
-契约夹具证明类型链路，不替代具体音源的上游集成验证。验证按 [GUIDE 第 7 节](GUIDE.md#7-安装与验证) 执行，以保存的 TEST XML 判断失败、错误与跳过；编译成功不等于测试已运行。改 SDK 本身时先改 `schema.mjs` 与 `documentation.mjs`，再生成并跑一致性检查；tag、字段顺序与类型保持兼容，新方法提供 Unsupported 默认。
+契约夹具证明类型链路，不替代具体音源的上游集成验证。验证按 [GUIDE 第 8 节](GUIDE.md#8-安装与验证) 执行，以保存的 TEST XML 判断失败、错误与跳过；编译成功不等于测试已运行。改 SDK 本身时先改 `schema.mjs` 与 `documentation.mjs`，再生成并跑一致性检查；tag、字段顺序与类型保持兼容，新方法提供 Unsupported 默认。
 
 ## 相关
 

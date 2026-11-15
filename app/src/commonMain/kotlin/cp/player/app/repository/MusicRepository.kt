@@ -78,6 +78,19 @@ class MusicRepository(
         PLAYLIST_CACHE_FRESH_TTL_MS,
         PLAYLIST_CACHE_STALE_TTL_MS,
     )
+    /**
+     * 云盘曲目分页缓存。
+     *
+     * 云盘没有真实歌单 id，不能混进 [playlistTracksCache]：那张表的 key 带 canonical
+     * playlist id，云盘若借用某个负数 id，切账号 / 切音源后非常容易读到上一份内容。
+     * 这里单独分桶，key 仍复用 [PlaylistCacheKey]，保证 provider / account / session
+     * 三段身份完整参与。
+     */
+    private val cloudTracksCache = SwrCache<PlaylistTracksPage>(
+        PLAYLIST_CACHE_FRESH_TTL_MS,
+        PLAYLIST_CACHE_STALE_TTL_MS,
+        maxEntries = 16,
+    )
 
     private fun playlistCacheContext(providerId: String): PlaylistCacheContext {
         val accountId = runCatching { cp.player.app.auth.AccountStore.activeUid(providerId) }.getOrNull()
@@ -733,9 +746,60 @@ class MusicRepository(
         ) { getUserPlaylistsOf(uid) }
     }
 
-    suspend fun getUserCloud(limit: Int = 200, offset: Int = 0): MusicResult<List<TrackSummary>> {
-        return unifiedSource?.getUserCloud(limit, offset)
-            ?: BackendResult.Unsupported("Unified music source is not configured")
+    /**
+     * 云盘分页（歌单详情 UI 的数据源）。
+     *
+     * [refresh] 为 true 时先清掉当前云盘全部分页缓存，避免下拉刷新 / 重试在 30s fresh
+     * 窗口内又拿回同一份旧数据。正常翻页不传，交给 SWR 命中。
+     */
+    suspend fun getCloudDriveTracks(
+        limit: Int = 200,
+        offset: Int = 0,
+        refresh: Boolean = false,
+    ): MusicResult<PlaylistTracksPage> {
+        val source = unifiedSource
+            ?: return BackendResult.Unsupported("Unified music source is not configured")
+        val context = playlistCacheContext(AppModel.activeProviderId())
+        if (refresh) invalidateCloudDriveTracks()
+        val key = PlaylistCacheKey(
+            kind = "cloud",
+            providerId = context.providerId,
+            accountId = context.accountId,
+            sessionId = context.sessionId,
+            playlistId = cp.player.core.music.PlaylistSummary.CLOUD_DRIVE_RESOURCE_ID,
+            limit = limit,
+            offset = offset,
+        ).encode()
+        return cloudTracksCache.get(key, playlistCacheScope) {
+            when (val result = source.getUserCloud(limit, offset)) {
+                is BackendResult.Success -> BackendResult.Success(
+                    PlaylistTracksPage(
+                        tracks = result.data,
+                        // `user/cloud` 不返回 hasMore；满页即认为可能还有下一页，
+                        // 最终以空页 / 去重后为空结束（与歌单详情同一套约定）。
+                        hasMore = result.data.size >= limit,
+                        paginationSpecified = false,
+                    )
+                )
+                is BackendResult.Error -> result
+                is BackendResult.Unsupported -> result
+            }
+        }
+    }
+
+    suspend fun getUserCloud(limit: Int = 200, offset: Int = 0): MusicResult<List<TrackSummary>> =
+        when (val result = getCloudDriveTracks(limit, offset)) {
+            is BackendResult.Success -> BackendResult.Success(result.data.tracks)
+            is BackendResult.Error -> result
+            is BackendResult.Unsupported -> result
+        }
+
+    /** 删除后让所有云盘分页缓存失效；下一次进入会重新拉第一页。 */
+    private suspend fun invalidateCloudDriveTracks() {
+        val prefix = PlaylistCacheKey.playlistPrefix(
+            cp.player.core.music.PlaylistSummary.CLOUD_DRIVE_RESOURCE_ID
+        )
+        cloudTracksCache.invalidateMatching { it.startsWith(prefix) }
     }
 
     suspend fun getLikeList(): MusicResult<Set<String>> {
@@ -902,11 +966,25 @@ class MusicRepository(
         )
     }
 
-    /** 从云盘删除歌曲（上游 `user/cloud/del`）。 */
-    suspend fun deleteUserCloud(songId: String): Boolean {
+    /** 从云盘删除歌曲（上游 `user/cloud/del`）。成功后清空云盘分页缓存。 */
+    suspend fun deleteUserCloud(songId: String): Boolean = deleteUserCloudBatch(listOf(songId))
+
+    /** 批量删除云盘歌曲；按 100 首分块，避免一次请求超过上游批量上限。 */
+    suspend fun deleteUserCloudBatch(songIds: List<String>): Boolean {
+        val ids = songIds.map(String::trim).filter(String::isNotEmpty).distinct()
+        if (ids.isEmpty()) return false
+        val source = unifiedSource ?: return false
         val providerId = AppModel.activeProviderId()
-        val mediaId = cp.player.core.music.CPMediaId.toCanonicalMediaId(songId, providerId, "song")
-        return (unifiedSource?.deleteUserCloud(mediaId) as? BackendResult.Success)?.data == true
+        val ok = runCatching {
+            ids.chunked(100).all { chunk ->
+                val mediaIds = chunk.map {
+                    cp.player.core.music.CPMediaId.toCanonicalMediaId(it, providerId, "song")
+                }
+                (source.deleteUserCloudBatch(mediaIds) as? BackendResult.Success)?.data == true
+            }
+        }.getOrDefault(false)
+        if (ok) invalidateCloudDriveTracks()
+        return ok
     }
 }
 

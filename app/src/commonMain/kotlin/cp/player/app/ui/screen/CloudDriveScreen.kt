@@ -1,6 +1,7 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -15,11 +16,13 @@ import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cp.player.app.AppModel
+import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.shareText
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpRefreshablePage
+import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.SongDetailInfoDialog
 import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.SongOptionsSheet
@@ -34,8 +37,11 @@ import cp.player.app.ui.component.songShareText
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.popOrNotify
 import cp.player.core.BackendResult
+import cp.player.core.music.PlaylistKind
+import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.TrackSummary
 import cp.player.core.provider.ProviderCapability
+import cp.player.app.ui.model.PlaylistDetailScreenModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -82,13 +88,38 @@ class CloudDriveScreen(private val embedded: Boolean = false) : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.current
-        // rememberScreenModel 是 Screen 上的扩展函数，只能在 Content() 里调（见 AGENTS.md）。
-        val model = rememberScreenModel { CloudDriveScreenModel() }
-        CloudDriveContent(
-            model = model,
-            embedded = embedded,
-            onBack = { navigator?.popOrNotify() },
-        )
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val expanded = CpBreakpoints.isExpanded(maxWidth)
+            if (expanded) {
+                // 桌面宽屏保留云盘自己的紧凑列表壳；手机端直接套歌单详情界面。
+                // rememberScreenModel 是 Screen 上的扩展函数，只能在 Content() 里调（见 AGENTS.md）。
+                val model = rememberScreenModel { CloudDriveScreenModel() }
+                CloudDriveContent(
+                    model = model,
+                    embedded = embedded,
+                    onBack = { navigator?.popOrNotify() },
+                )
+            } else {
+                val s = cpStrings()
+                val cloudPlaylist = remember(s.library.cloudDrive) {
+                    PlaylistSummary(
+                        id = PlaylistSummary.CLOUD_DRIVE_ID,
+                        name = s.library.cloudDrive,
+                        coverUrl = null,
+                        trackCount = 0,
+                        creatorName = null,
+                        resourceId = PlaylistSummary.CLOUD_DRIVE_RESOURCE_ID,
+                        kind = PlaylistKind.CLOUD_DRIVE,
+                    )
+                }
+                PlaylistDetailContent(
+                    playlist = cloudPlaylist,
+                    model = rememberScreenModel { PlaylistDetailScreenModel() },
+                    embedded = embedded,
+                    onEmbeddedBack = { navigator?.popOrNotify() },
+                )
+            }
+        }
     }
 }
 
@@ -149,14 +180,20 @@ class CloudDriveScreenModel : ScreenModel {
             _refreshing.value = true
             try {
                 val result = withContext(Dispatchers.IO) {
-                    runCatching { AppModel.musicRepository.getUserCloud(limit = PAGE_SIZE, offset = 0) }.getOrNull()
+                    runCatching {
+                        AppModel.musicRepository.getCloudDriveTracks(
+                            limit = PAGE_SIZE,
+                            offset = 0,
+                            refresh = force,
+                        )
+                    }.getOrNull()
                 }
                 if (myGen != gen) return@launch
                 _state.value = when (result) {
                     is BackendResult.Success -> CloudDriveUiState(
-                        songs = result.data,
+                        songs = result.data.tracks,
                         loading = false,
-                        hasMore = result.data.size >= PAGE_SIZE,
+                        hasMore = result.data.hasMore,
                     )
                     is BackendResult.Error -> CloudDriveUiState(loading = false, error = result.message)
                     is BackendResult.Unsupported -> CloudDriveUiState(loading = false, error = result.message)
@@ -178,19 +215,19 @@ class CloudDriveScreenModel : ScreenModel {
             _state.update { it.copy(loadingMore = true, loadMoreError = null) }
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    AppModel.musicRepository.getUserCloud(limit = PAGE_SIZE, offset = s.songs.size)
+                    AppModel.musicRepository.getCloudDriveTracks(limit = PAGE_SIZE, offset = s.songs.size)
                 }.getOrNull()
             }
             if (myGen != gen) return@launch
             when (result) {
                 is BackendResult.Success -> _state.update { cur ->
                     val known = cur.songs.mapTo(mutableSetOf()) { it.id }
-                    val appended = result.data.filterNot { it.id in known }
+                    val appended = result.data.tracks.filterNot { it.id in known }
                     cur.copy(
                         songs = cur.songs + appended,
                         loadingMore = false,
                         // 追加去重后为空时以返回数量为准，避免反复拉同一页（与歌单详情页同一约定）。
-                        hasMore = if (appended.isEmpty()) false else result.data.size >= PAGE_SIZE,
+                        hasMore = if (appended.isEmpty()) false else result.data.hasMore,
                     )
                 }
                 is BackendResult.Error -> _state.update { it.copy(loadingMore = false, loadMoreError = result.message) }

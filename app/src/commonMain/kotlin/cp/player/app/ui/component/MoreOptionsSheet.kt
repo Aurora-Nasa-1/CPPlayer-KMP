@@ -308,9 +308,11 @@ fun PlaylistOptionsSheet(
     currentSort: PlaylistSortType? = null,
     onSortChange: ((PlaylistSortType) -> Unit)? = null,
     onConvertToPlaylist: (() -> Unit)? = null,
+    /** 覆盖头部状态文案（云盘这类借用歌单弹层的场景）。 */
+    statusOverride: String? = null,
 ) {
     val s = cpStrings()
-    val statusText = when {
+    val statusText = statusOverride ?: when {
         isOwner -> s.contextMenu.ownedPlaylist
         onConvertToPlaylist != null ->
             if (isFavorite) s.contextMenu.convertedPlaylist else s.contextMenu.dailyRecommendation

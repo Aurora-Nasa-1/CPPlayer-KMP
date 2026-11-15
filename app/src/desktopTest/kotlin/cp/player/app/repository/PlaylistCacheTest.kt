@@ -6,12 +6,15 @@ import cp.player.core.music.MusicResult
 import cp.player.core.music.PlaylistDetail
 import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.TrackSummary
+import cp.player.core.music.isCloudDrive
+import cp.player.core.music.isRemote
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotSame
 import kotlin.test.assertSame
@@ -45,6 +48,24 @@ class PlaylistCacheTest {
         )
         variants.forEach { assertNotEquals(encoded, it.encode()) }
         assertTrue(encoded.startsWith(PlaylistCacheKey.playlistPrefix(baseKey.playlistId)))
+    }
+
+    @Test
+    fun `cloud drive is an explicit playlist kind not a negative remote playlist`() {
+        val cloud = PlaylistSummary(
+            id = PlaylistSummary.CLOUD_DRIVE_ID,
+            name = "Cloud",
+            coverUrl = null,
+            trackCount = 0,
+            creatorName = null,
+            resourceId = PlaylistSummary.CLOUD_DRIVE_RESOURCE_ID,
+            kind = cp.player.core.music.PlaylistKind.CLOUD_DRIVE,
+        )
+        assertTrue(cloud.isCloudDrive)
+        assertFalse(cloud.isRemote)
+        assertTrue(
+            PlaylistSummary(1L, "List", null, 1, "Owner", "list-1").isRemote
+        )
     }
 
     @Test

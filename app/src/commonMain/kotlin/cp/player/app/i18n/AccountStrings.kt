@@ -303,6 +303,12 @@ interface AccountStrings {
     /** @param name 歌曲名。 */
     fun cloudDeleted(name: String): String
 
+    /** @param count 删除的歌曲数（多选删除）。 */
+    fun cloudDeleteManyMessage(count: Int): String
+
+    /** @param count 已删除的歌曲数（多选删除）。 */
+    fun cloudDeletedMany(count: Int): String
+
     val cloudDeleteFailed: String
 }
 
@@ -473,6 +479,8 @@ object AccountStringsZh : AccountStrings {
     override val cloudDelete = "删除"
     override fun cloudDeleteMessage(name: String) = "确定从云盘删除「$name」吗？删除后无法恢复。"
     override fun cloudDeleted(name: String) = "已从云盘删除「$name」"
+    override fun cloudDeleteManyMessage(count: Int) = "确定从云盘删除选中的 $count 首歌曲吗？删除后无法恢复。"
+    override fun cloudDeletedMany(count: Int) = "已从云盘删除 $count 首歌曲"
     override val cloudDeleteFailed = "删除失败"
 }
 
@@ -647,5 +655,7 @@ object AccountStringsEn : AccountStrings {
     override val cloudDelete = "Delete"
     override fun cloudDeleteMessage(name: String) = "Delete \"$name\" from the cloud drive? This can't be undone."
     override fun cloudDeleted(name: String) = "Deleted \"$name\" from the cloud drive"
+    override fun cloudDeleteManyMessage(count: Int) = "Delete the $count selected songs from the cloud drive? This can't be undone."
+    override fun cloudDeletedMany(count: Int) = "Deleted $count songs from the cloud drive"
     override val cloudDeleteFailed = "Delete failed"
 }

@@ -10,6 +10,7 @@ import cp.player.app.ui.util.UiEvents
 import cp.player.core.BackendResult
 import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.TrackSummary
+import cp.player.core.music.isCloudDrive
 import cp.player.core.music.isRemote
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -107,18 +108,14 @@ class PlaylistDetailScreenModel : ScreenModel {
     private var lastStrings: CpStrings = CpStrings.zh
 
     init {
-        // 音源切换后，本页曲目属于旧音源：作废加载标记并（真实歌单）按当前音源重拉。
+        // 音源切换后，本页曲目属于旧音源：作废加载标记并按当前音源重拉。
         // 与 HomeScreenModel / LibraryScreenModel 同一套处理。
         screenModelScope.launch {
-            AppModel.sourceGeneration.drop(1).collect {
-                val summary = _state.value.summary ?: return@collect
-                loadedPlaylistId = null
-                autoPlayedPlaylistId = null
-                tracksProviderId = null
-                // 虚拟歌单（每日推荐 / 相似歌曲 / 心动模式，id < 0）的曲目来自上一级，
-                // 本模型拿不到新音源的等价数据，只作废标记让宿主重喂。
-                if (summary.isRemote) load(summary, lastStrings, force = true)
-            }
+            AppModel.sourceGeneration.drop(1).collect { reloadAfterIdentityChange(cloudOnly = false) }
+        }
+        // 云盘内容属于账号：同一音源下换账号也必须重拉，否则会留下上一个账号的歌。
+        screenModelScope.launch {
+            AppModel.accountGeneration.drop(1).collect { reloadAfterIdentityChange(cloudOnly = true) }
         }
         // 订阅歌单事件：当外部修改了当前歌单（如在播放器中加入当前歌单）时静默重拉
         screenModelScope.launch {
@@ -128,6 +125,18 @@ class PlaylistDetailScreenModel : ScreenModel {
                     refresh(lastStrings)
                 }
             }
+        }
+    }
+
+    private fun reloadAfterIdentityChange(cloudOnly: Boolean) {
+        val summary = _state.value.summary ?: return
+        loadedPlaylistId = null
+        autoPlayedPlaylistId = null
+        tracksProviderId = null
+        // 虚拟歌单（每日推荐 / 相似歌曲 / 心动模式，id < 0）的曲目来自上一级，
+        // 本模型拿不到新音源的等价数据，只作废标记让宿主重喂。
+        if (summary.isCloudDrive || (!cloudOnly && summary.isRemote)) {
+            load(summary, lastStrings, force = true)
         }
     }
 
@@ -141,6 +150,10 @@ class PlaylistDetailScreenModel : ScreenModel {
     fun load(summary: PlaylistSummary, strings: CpStrings, force: Boolean = false) {
         lastStrings = strings
         if (!force && loadedPlaylistId == summary.resourceId) return
+        if (summary.isCloudDrive) {
+            loadCloudDrive(summary, strings, force)
+            return
+        }
         val gen = ++loadGen
         // 记下发请求这一刻的音源：曲目就绪后 mediaIds 用它拼，避免切源后被新 Provider 解释。
         val requestProvider = AppModel.activeProviderId()
@@ -215,10 +228,78 @@ class PlaylistDetailScreenModel : ScreenModel {
         }
     }
 
+    /**
+     * 云盘复用歌单详情状态：分页取 `user/cloud`，没有 detail / 收藏 / 订阅语义。
+     *
+     * 云盘封面没有独立字段，取第一首歌的封面填进 summary，这样窄屏顶栏与 hero 都有图。
+     */
+    private fun loadCloudDrive(summary: PlaylistSummary, strings: CpStrings, force: Boolean) {
+        val gen = ++loadGen
+        val requestProvider = AppModel.activeProviderId()
+        loadedPlaylistId = summary.resourceId
+        fetchingPlaylistId = summary.resourceId
+        tracksProviderId = requestProvider
+        val silent = force && _state.value.tracks.isNotEmpty()
+        if (!silent) {
+            _state.value = PlaylistDetailUiState(
+                summary = summary,
+                description = strings.account.cloudUploadHint,
+                loading = true,
+            )
+        }
+        loadLiked()
+        screenModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    AppModel.musicRepository.getCloudDriveTracks(
+                        limit = PAGE_SIZE,
+                        offset = 0,
+                        refresh = force,
+                    )
+                }.getOrNull()
+            }
+            if (fetchingPlaylistId != summary.resourceId || gen != loadGen) return@launch
+            when (result) {
+                is BackendResult.Success -> {
+                    val page = result.data
+                    val tracks = page.tracks.distinctBy { it.id }
+                    _state.update { current ->
+                        current.copy(
+                            summary = (current.summary ?: summary).copy(
+                                coverUrl = tracks.firstOrNull()?.coverUrl ?: summary.coverUrl,
+                                trackCount = tracks.size,
+                            ),
+                            description = strings.account.cloudUploadHint,
+                            tracks = tracks,
+                            loading = false,
+                            error = null,
+                            hasMore = page.hasMore,
+                            nextOffset = page.tracks.size,
+                            loadMoreError = null,
+                        )
+                    }
+                    if (silent) UiEvents.notify(strings.library.playlistRefreshed())
+                }
+                is BackendResult.Error -> {
+                    if (silent) UiEvents.notify(result.message)
+                    else _state.update { it.copy(loading = false, error = result.message) }
+                }
+                is BackendResult.Unsupported -> {
+                    if (silent) UiEvents.notify(result.message)
+                    else _state.update { it.copy(loading = false, error = result.message) }
+                }
+                null -> {
+                    if (silent) UiEvents.notify(strings.library.playlistDetailRefreshFailed)
+                    else _state.update { it.copy(loading = false, error = strings.account.cloudLoadFailed) }
+                }
+            }
+        }
+    }
+
     /** 手动刷新当前歌单详情与曲目（静默刷新，不闪空白屏）。 */
     fun refresh(strings: CpStrings) {
         val summary = _state.value.summary ?: return
-        if (summary.isRemote) load(summary, strings, force = true)
+        if (summary.isRemote || summary.isCloudDrive) load(summary, strings, force = true)
     }
 
     /**
@@ -295,15 +376,23 @@ class PlaylistDetailScreenModel : ScreenModel {
             } else s
         }
         if (!acquired) return
-        val playlistId = _state.value.summary?.resourceId ?: return
+        val summary = _state.value.summary ?: return
+        val playlistId = summary.resourceId
+        val isCloudDrive = summary.isCloudDrive
         val sortKey = _state.value.sortType.name
         screenModelScope.launch {
             val offset = _state.value.nextOffset
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    AppModel.musicRepository.getPlaylistTracks(
-                        playlistId, limit = PAGE_SIZE, offset = offset, sortKey = sortKey,
-                    )
+                    if (isCloudDrive) {
+                        AppModel.musicRepository.getCloudDriveTracks(
+                            limit = PAGE_SIZE, offset = offset,
+                        )
+                    } else {
+                        AppModel.musicRepository.getPlaylistTracks(
+                            playlistId, limit = PAGE_SIZE, offset = offset, sortKey = sortKey,
+                        )
+                    }
                 }.getOrNull()
             }
             if (fetchingPlaylistId == playlistId) {
@@ -317,10 +406,18 @@ class PlaylistDetailScreenModel : ScreenModel {
                             it.copy(
                                 tracks = existing + appended,
                                 // 追加去重后为空时以服务端 hasMore 为准，避免 size >= PAGE_SIZE 兜底放大导致反复拉取
-                                hasMore = if (appended.isEmpty()) page.hasMore
+                                hasMore = if (appended.isEmpty()) {
+                                    // 云盘没有 hasMore，重复页再按满页兜底就会无限拉同一页。
+                                    if (isCloudDrive) false else page.hasMore
+                                }
                                 else page.hasMore || (!page.paginationSpecified && page.tracks.size >= PAGE_SIZE),
                                 nextOffset = offset + page.tracks.size,
                                 loadMoreError = null,
+                                summary = if (isCloudDrive) {
+                                    it.summary?.copy(trackCount = (existing + appended).size)
+                                } else {
+                                    it.summary
+                                },
                             )
                         }
                     }
@@ -493,6 +590,7 @@ class PlaylistDetailScreenModel : ScreenModel {
 
     /** 当前账号是否拥有该歌单（用于决定删除 vs 取消收藏）。 */
     fun isOwner(): Boolean {
+        if (_state.value.summary?.isCloudDrive == true) return false
         val nickname = AppModel.userProfileFlow.value?.nickname
         return nickname != null && _state.value.summary?.creatorName == nickname
     }
@@ -578,6 +676,10 @@ class PlaylistDetailScreenModel : ScreenModel {
     /** 从歌单移除曲目（仅 owner 有效）；成功后本地剔除并退出多选。 */
     fun removeTracks(trackIds: List<String>, strings: CpStrings) {
         val playlist = _state.value.summary ?: return
+        if (playlist.isCloudDrive) {
+            deleteCloudTracks(trackIds, strings)
+            return
+        }
         if (trackIds.isEmpty() || !isOwner()) return
         screenModelScope.launch {
             isSelfModifying = true
@@ -602,6 +704,48 @@ class PlaylistDetailScreenModel : ScreenModel {
                     UiEvents.notify(strings.library.tracksRemoved(removedCount))
                 } else {
                     UiEvents.notify(strings.library.operationFailed)
+                }
+            } finally {
+                isSelfModifying = false
+            }
+        }
+    }
+
+    /** 云盘删除：批量删上游记录，成功后就地剔除，避免整页重拉。 */
+    private fun deleteCloudTracks(trackIds: List<String>, strings: CpStrings) {
+        val ids = trackIds.distinct().filter(String::isNotBlank)
+        if (ids.isEmpty()) return
+        screenModelScope.launch {
+            isSelfModifying = true
+            try {
+                val ok = withContext(Dispatchers.IO) {
+                    runCatching { AppModel.musicRepository.deleteUserCloudBatch(ids) }
+                        .getOrDefault(false)
+                }
+                if (ok) {
+                    val idSet = ids.toSet()
+                    val removedTracks = _state.value.tracks.filter { it.id in idSet }
+                    var removedCount = 0
+                    _state.update { s ->
+                        removedCount = s.tracks.count { it.id in idSet }
+                        s.copy(
+                            tracks = s.tracks.filterNot { it.id in idSet },
+                            selectionMode = false,
+                            selectedIds = emptySet(),
+                            summary = s.summary?.copy(
+                                trackCount = (s.summary.trackCount - removedCount).coerceAtLeast(0),
+                            ),
+                        )
+                    }
+                    UiEvents.notify(
+                        if (removedCount == 1) {
+                            strings.account.cloudDeleted(removedTracks.firstOrNull()?.name ?: ids.first())
+                        } else {
+                            strings.account.cloudDeletedMany(removedCount)
+                        }
+                    )
+                } else {
+                    UiEvents.notify(strings.account.cloudDeleteFailed)
                 }
             } finally {
                 isSelfModifying = false
