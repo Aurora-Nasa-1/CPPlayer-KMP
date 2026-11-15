@@ -2,7 +2,6 @@ package cp.player.app.ui.screen
 
 import cp.player.app.ui.component.CpText
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,15 +14,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
@@ -38,7 +32,6 @@ import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Shuffle
@@ -49,10 +42,7 @@ import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
@@ -90,7 +80,6 @@ import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpSongRowSkeleton
 import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.CpSpacing
-import cp.player.app.ui.component.CpSplitButton
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.LocalIsExpanded
 import cp.player.app.platform.shareText
@@ -106,8 +95,6 @@ import cp.player.app.ui.component.rememberActiveProviderSupports
 import cp.player.app.ui.component.AddToLocalPlaylistDialog
 import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.CpConfirmDialog
-import cp.player.app.ui.component.CpWavyProgressIndeterminate
-import cp.player.app.ui.component.CpCircularWavyProgressIndeterminate
 import cp.player.app.ui.component.SongDetailInfoDialog
 import cp.player.app.ui.component.SongOptionsSheet
 import cp.player.app.ui.component.cpPressScale
@@ -526,7 +513,6 @@ private fun LibraryDashboard(
         }
     }
 }
-
 @Composable
 private fun LibraryGreeting(
     title: String,
@@ -846,7 +832,6 @@ private fun LocalLibrarySection(
 ) {
     val scope = rememberCoroutineScope()
     val localCount = state.localAudioItems.size
-    val losslessCount = state.losslessCount
     val completedCount = state.completedTasks.size
     val activeCount = state.activeTasks.size
     val playbackState by AppModel.playback.state.collectAsState()
@@ -891,20 +876,13 @@ private fun LocalLibrarySection(
     }
 
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        LocalLibraryHeroCard(
-            totalSongs = localCount,
-            albumCount = albumsCount,
-            losslessCount = losslessCount,
-            covers = state.localAudioItems,
-            scanning = state.scanning,
-            scanProgressText = state.scanProgress?.let { s.downloads.scanningFound(it.scanned) }
-                ?: s.downloads.scanning,
-            onPlayAll = { model.playAll(state.localAudioItems) },
-            onShuffle = { model.shuffleAll(state.localAudioItems) },
-            onScan = { model.startScan(s) },
-            onOpen = { onOpenLocal(0) },
-            strings = s,
-        )
+        if (localCount == 0) {
+            CpText(
+                s.downloads.emptyLocalNote,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         LocalCategoryGrid(
             items = listOf(
@@ -923,6 +901,35 @@ private fun LocalLibrarySection(
             onOpenLocal = onOpenLocal,
         )
 
+        LocalLibraryQuickActions(
+            actions = listOf(
+                LocalLibraryQuickAction(
+                    label = s.downloads.playAll,
+                    icon = Icons.Filled.PlayArrow,
+                    onClick = { model.playAll(state.localAudioItems) },
+                    enabled = localCount > 0,
+                ),
+                LocalLibraryQuickAction(
+                    label = s.downloads.shuffleAll,
+                    icon = Icons.Filled.Shuffle,
+                    onClick = { model.shuffleAll(state.localAudioItems) },
+                    enabled = localCount > 0,
+                ),
+                LocalLibraryQuickAction(
+                    label = if (state.scanning) s.downloads.scanning else s.downloads.scanDevice,
+                    icon = Icons.Filled.Refresh,
+                    onClick = { model.startScan(s) },
+                    enabled = !state.scanning,
+                    loading = state.scanning,
+                ),
+                LocalLibraryQuickAction(
+                    label = s.downloads.browseLibrary,
+                    icon = Icons.Filled.ChevronRight,
+                    onClick = { onOpenLocal(0) },
+                ),
+            ),
+        )
+
         if (state.recentAudioItems.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 SectionHeader(
@@ -935,31 +942,33 @@ private fun LocalLibrarySection(
                         }
                     },
                 )
-                state.recentAudioItems.forEachIndexed { index, song ->
-                    val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
-                    val mediaId = if (isVideo) "local://video/${song.path}" else "local://audio/${song.path}"
-                    LocalSongRow(
-                        song = song,
-                        isCurrentlyPlaying = currentPlayingTrackId == mediaId,
-                        likedIds = likedIds,
-                        favoritePaths = state.favoritePaths,
-                        model = model,
-                        strings = s,
-                        onPlay = {
-                            val allIdx = state.localAudioItems.indexOfFirst { it.path == song.path }.coerceAtLeast(0)
-                            model.playAll(state.localAudioItems, allIdx)
-                        },
-                        onToggleCloudFav = toggleCloudFav,
-                        onToggleLocalFav = toggleLocalFav,
-                        onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
-                        onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
-                        onRemoveSong = { removeTargetSong = it },
-                        onDeleteSong = { deleteTargetSong = it },
-                        onShowInfo = { showInfoTrack = it },
-                        onOptionsClick = { optionsTargetSong = it },
-                        index = index,
-                        total = state.recentAudioItems.size,
-                    )
+                Column(verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap)) {
+                    state.recentAudioItems.forEachIndexed { index, song ->
+                        val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
+                        val mediaId = if (isVideo) "local://video/${song.path}" else "local://audio/${song.path}"
+                        LocalSongRow(
+                            song = song,
+                            isCurrentlyPlaying = currentPlayingTrackId == mediaId,
+                            likedIds = likedIds,
+                            favoritePaths = state.favoritePaths,
+                            model = model,
+                            strings = s,
+                            onPlay = {
+                                val allIdx = state.localAudioItems.indexOfFirst { it.path == song.path }.coerceAtLeast(0)
+                                model.playAll(state.localAudioItems, allIdx)
+                            },
+                            onToggleCloudFav = toggleCloudFav,
+                            onToggleLocalFav = toggleLocalFav,
+                            onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
+                            onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
+                            onRemoveSong = { removeTargetSong = it },
+                            onDeleteSong = { deleteTargetSong = it },
+                            onShowInfo = { showInfoTrack = it },
+                            onOptionsClick = { optionsTargetSong = it },
+                            index = index,
+                            total = state.recentAudioItems.size,
+                        )
+                    }
                 }
             }
         }
@@ -1164,159 +1173,6 @@ private fun LocalLibrarySection(
     }
 }
 
-/**
- * 「我的 → 本地」概览卡。
- *
- * 与 [LocalLibraryScreen] 的 Hero 保持同一套视觉语言：大标题 + 统计、右侧三张封面叠放、
- * 主操作走 split button，扫描退成图标胶囊。窄栏（手机）隐藏封面堆，把宽度让给标题与按钮。
- */
-@Composable
-internal fun LocalLibraryHeroCard(
-    totalSongs: Int,
-    albumCount: Int,
-    losslessCount: Int,
-    covers: List<LocalMediaItem>,
-    scanning: Boolean,
-    scanProgressText: String,
-    onPlayAll: () -> Unit,
-    onShuffle: () -> Unit,
-    onScan: () -> Unit,
-    onOpen: () -> Unit,
-    strings: CpStrings,
-) {
-    val d = strings.downloads
-    Surface(
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        BoxWithConstraints(Modifier.fillMaxWidth().padding(20.dp)) {
-            val wide = maxWidth >= 520.dp
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        CpText(
-                            d.tabLocalLibrary,
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                        )
-                        CpText(
-                            if (totalSongs > 0) {
-                                buildString {
-                                    append(d.localSongCount(totalSongs))
-                                    if (albumCount > 0) append(" · ").append(d.albumCount(albumCount))
-                                    if (losslessCount > 0) append(" · ").append(d.losslessCount(losslessCount))
-                                }
-                            } else {
-                                d.emptyLocalTitle
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                        )
-                    }
-                    if (wide) {
-                        LocalLibraryAlbumStack(covers, Modifier.size(104.dp))
-                    }
-                }
-
-                if (scanning) {
-                    Surface(
-                        shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                CpCircularWavyProgressIndeterminate(
-                                    modifier = Modifier.size(16.dp),
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                                Spacer(Modifier.width(10.dp))
-                                CpText(
-                                    scanProgressText,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                            CpWavyProgressIndeterminate(
-                                modifier = Modifier.fillMaxWidth().height(4.dp),
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    CpSplitButton(
-                        onLeadingClick = onPlayAll,
-                        leadingContent = {
-                            Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(24.dp))
-                            Spacer(Modifier.width(10.dp))
-                            CpText(
-                                d.playAll,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        },
-                        onTrailingClick = onShuffle,
-                        trailingContent = {
-                            Icon(
-                                Icons.Filled.Shuffle,
-                                contentDescription = d.quickShuffle,
-                                modifier = Modifier.size(22.dp),
-                            )
-                        },
-                        enabled = totalSongs > 0,
-                        trailingWidth = 60.dp,
-                        modifier = if (wide) {
-                            Modifier.width(340.dp).height(58.dp)
-                        } else {
-                            Modifier.weight(1f).height(58.dp)
-                        },
-                    )
-                    FilledTonalIconButton(
-                        onClick = onScan,
-                        enabled = !scanning,
-                        shape = MaterialTheme.shapes.large,
-                        modifier = Modifier.size(48.dp).cpPressScale(),
-                    ) {
-                        Icon(
-                            Icons.Filled.Refresh,
-                            contentDescription = d.scanDevice,
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
-                    FilledTonalIconButton(
-                        onClick = onOpen,
-                        shape = MaterialTheme.shapes.large,
-                        modifier = Modifier.size(48.dp).cpPressScale(),
-                    ) {
-                        Icon(
-                            Icons.Filled.ChevronRight,
-                            contentDescription = d.browseLibrary,
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
 /** 分类磁贴的一格。 */
 internal data class LocalCategoryItem(
     val title: String,
@@ -1415,70 +1271,3 @@ private fun LocalCategoryTile(
     }
 }
 
-/** 三张专辑封面叠成的封面堆；无封面时退回 tonal 图标块。 */
-@Composable
-private fun LocalLibraryAlbumStack(
-    items: List<LocalMediaItem>,
-    modifier: Modifier = Modifier,
-) {
-    val covers = remember(items) {
-        items.asSequence()
-            .mapNotNull { it.coverUri?.takeIf { uri -> uri.isNotBlank() } }
-            .distinct()
-            .take(3)
-            .toList()
-    }
-    Box(modifier, contentAlignment = Alignment.Center) {
-        if (covers.isEmpty()) {
-            Surface(
-                modifier = Modifier.fillMaxSize(),
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.secondaryContainer,
-            ) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Filled.LibraryMusic,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.fillMaxSize(0.34f),
-                    )
-                }
-            }
-        } else {
-            if (covers.size > 1) {
-                LocalAlbumStackCover(
-                    uri = covers[1],
-                    modifier = Modifier.align(Alignment.TopStart).size(34.dp),
-                    circular = true,
-                )
-            }
-            if (covers.size > 2) {
-                LocalAlbumStackCover(
-                    uri = covers[2],
-                    modifier = Modifier.align(Alignment.BottomEnd).size(36.dp),
-                    circular = true,
-                )
-            }
-            LocalAlbumStackCover(
-                uri = covers[0],
-                modifier = Modifier.align(Alignment.Center).offset(x = 7.dp).size(64.dp),
-                circular = false,
-            )
-        }
-    }
-}
-
-@Composable
-private fun LocalAlbumStackCover(
-    uri: String,
-    modifier: Modifier,
-    circular: Boolean,
-) {
-    val shape = if (circular) CircleShape else MaterialTheme.shapes.large
-    Box(
-        modifier.clip(shape)
-            .border(3.dp, MaterialTheme.colorScheme.surfaceContainerLow, shape),
-    ) {
-        LandingArtwork(uri, Modifier.fillMaxSize())
-    }
-}

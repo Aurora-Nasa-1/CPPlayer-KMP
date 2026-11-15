@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -72,24 +73,10 @@ class LocalLibraryVisualTest {
     }
 
     @Test
-    fun `local library hero and tabs fit a phone`() {
+    fun `local library quick actions and tabs fit a phone`() {
         val bytes = render(390, 844, ThemeMode.DARK) {
             val s = cpStrings()
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                LocalLibraryHero(
-                    totalSongs = 128,
-                    albumCount = 12,
-                    losslessCount = 36,
-                    covers = sampleItems(),
-                    canPlay = true,
-                    scanning = false,
-                    importing = false,
-                    onPlayAll = {},
-                    onShuffle = {},
-                    onScan = {},
-                    onImport = {},
-                    strings = s,
-                )
                 LocalLibrarySubTabs(
                     selected = 0,
                     songCount = 128,
@@ -101,11 +88,12 @@ class LocalLibraryVisualTest {
                     strings = s,
                     onSelect = {},
                 )
+                SampleQuickActions(Modifier.padding(horizontal = 20.dp))
                 Spacer(Modifier.height(24.dp))
             }
         }
         write("build/local-library-hero-phone.png", bytes)
-        assertTrue(bytes.size > 20_000, "手机端本地库 Hero 不应为空，实际 ${bytes.size} bytes")
+        assertTrue(bytes.size > 10_000, "手机端本地库动作组不应为空，实际 ${bytes.size} bytes")
     }
 
     @Test
@@ -129,20 +117,6 @@ class LocalLibraryVisualTest {
             val items = sampleItems()
             val model = DownloadsScreenModel()
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                LocalLibraryHero(
-                    totalSongs = items.size,
-                    albumCount = 1,
-                    losslessCount = 3,
-                    covers = items,
-                    canPlay = true,
-                    scanning = false,
-                    importing = false,
-                    onPlayAll = {},
-                    onShuffle = {},
-                    onScan = {},
-                    onImport = {},
-                    strings = s,
-                )
                 LocalLibrarySubTabs(
                     selected = 0,
                     songCount = items.size,
@@ -154,6 +128,7 @@ class LocalLibraryVisualTest {
                     strings = s,
                     onSelect = {},
                 )
+                SampleQuickActions(Modifier.padding(horizontal = 20.dp))
                 LocalSectionHeader(title = s.downloads.tabSongs, count = items.size) {
                     FilledTonalIconButton(
                         onClick = {},
@@ -239,20 +214,6 @@ class LocalLibraryVisualTest {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
         ) {
-            LocalLibraryHeroCard(
-                totalSongs = 128,
-                albumCount = 12,
-                losslessCount = 36,
-                covers = sampleItems(),
-                scanning = false,
-                scanProgressText = s.downloads.scanning,
-                onPlayAll = {},
-                onShuffle = {},
-                onScan = {},
-                onOpen = {},
-                strings = s,
-            )
-            Spacer(Modifier.height(16.dp))
             LocalCategoryGrid(
                 items = listOf(
                     LocalCategoryItem(s.downloads.tabSongs, 128, Icons.Filled.MusicNote, 0),
@@ -269,8 +230,24 @@ class LocalLibraryVisualTest {
                 ),
                 onOpenLocal = {},
             )
+            Spacer(Modifier.height(16.dp))
+            SampleQuickActions()
             Spacer(Modifier.height(24.dp))
         }
+    }
+
+    @Composable
+    private fun SampleQuickActions(modifier: Modifier = Modifier) {
+        val d = cpStrings().downloads
+        LocalLibraryQuickActions(
+            actions = listOf(
+                LocalLibraryQuickAction(d.playAll, Icons.Filled.PlayArrow, {}),
+                LocalLibraryQuickAction(d.shuffleAll, Icons.Filled.Shuffle, {}),
+                LocalLibraryQuickAction(d.scanDevice, Icons.Filled.Refresh, {}),
+                LocalLibraryQuickAction(d.importFolder, Icons.Filled.FolderOpen, {}),
+            ),
+            modifier = modifier,
+        )
     }
 
     private fun sampleItems(): List<LocalMediaItem> = listOf(
