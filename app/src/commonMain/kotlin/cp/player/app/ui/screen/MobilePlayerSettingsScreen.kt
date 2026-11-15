@@ -17,6 +17,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
+import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.SettingsButtonItem
 import cp.player.app.ui.component.SettingsClickItem
@@ -55,159 +56,94 @@ class MobilePlayerSettingsScreen(private val targetSettingId: String? = null) : 
 
         CpRouteScaffold(title = s.appearance.playerSettingsTitle, onBack = { navigator.popOrNotify() }) { modifier ->
             SettingsPage(modifier) {
-                SettingsHeroCard(
-                    title = if (config.enabled) s.appearance.playerStyleStandard else s.appearance.playerStyleThreePane,
-                    subtitle = if (config.enabled) {
-                        s.appearance.playerStyleStandardNote
-                    } else {
-                        s.appearance.playerStyleThreePaneNote
-                    },
-                    icon = Icons.Filled.Tune,
-                    badgeText = s.appearance.playerSettingsHeroNote,
-                )
-
-                SettingsSection(s.appearance.playerStyle) {
-                    SettingsSegmentedItem(
-                        title = s.appearance.playerStyle,
+                val isAndroid = isAndroidPlatform()
+                if (isAndroid) {
+                    SettingsHeroCard(
+                        title = if (config.enabled) s.appearance.playerStyleStandard else s.appearance.playerStyleThreePane,
                         subtitle = if (config.enabled) {
                             s.appearance.playerStyleStandardNote
                         } else {
                             s.appearance.playerStyleThreePaneNote
                         },
-                        options = listOf(
-                            s.appearance.playerStyleThreePane,
-                            s.appearance.playerStyleStandard,
-                        ),
-                        selectedIndex = if (config.enabled) 1 else 0,
-                        onSelect = { index ->
-                            haptics.perform(CpHaptic.Tick)
-                            AppModel.setModernMobilePlayerEnabled(index == 1)
-                        },
-                        index = 0,
-                        total = 1,
-                        modifier = Modifier.settingsSearchTarget(
-                            "appearance_modern_mobile_player",
-                            targetSettingId,
-                        ),
+                        icon = Icons.Filled.Tune,
+                        badgeText = s.appearance.playerSettingsHeroNote,
                     )
+
+                    SettingsSection(s.appearance.playerStyle) {
+                        SettingsSegmentedItem(
+                            title = s.appearance.playerStyle,
+                            subtitle = if (config.enabled) {
+                                s.appearance.playerStyleStandardNote
+                            } else {
+                                s.appearance.playerStyleThreePaneNote
+                            },
+                            options = listOf(
+                                s.appearance.playerStyleThreePane,
+                                s.appearance.playerStyleStandard,
+                            ),
+                            selectedIndex = if (config.enabled) 1 else 0,
+                            onSelect = { index ->
+                                haptics.perform(CpHaptic.Tick)
+                                AppModel.setModernMobilePlayerEnabled(index == 1)
+                            },
+                            index = 0,
+                            total = 1,
+                            modifier = Modifier.settingsSearchTarget(
+                                "appearance_modern_mobile_player",
+                                targetSettingId,
+                            ),
+                        )
+                    }
                 }
 
-                SettingsSection(s.appearance.playerLyricsPresentation) {
-                    SettingsSwitchItem(
-                        title = s.appearance.playerLyricsTranslation,
-                        subtitle = s.appearance.playerLyricsTranslationNote,
-                        checked = config.showTranslation,
-                        onCheckedChange = { checked ->
-                            AppModel.updateMobilePlayerCustomConfig { it.copy(showTranslation = checked) }
-                        },
-                        index = 0,
-                        total = 6,
-                        modifier = Modifier.settingsSearchTarget("mobile_player_translation", targetSettingId),
-                    )
-                    SettingsSwitchItem(
-                        title = s.playback.showMiniPlayerLyrics,
-                        subtitle = s.playback.showMiniPlayerLyricsSubtitle,
-                        checked = showMiniPlayerLyrics,
-                        onCheckedChange = { AppModel.setShowMiniPlayerLyrics(it) },
-                        index = 1,
-                        total = 6,
-                        modifier = Modifier.settingsSearchTarget(
-                            "mobile_player_lyrics_mini",
-                            targetSettingId,
-                        ),
-                    )
-                    SettingsSwitchItem(
-                        title = s.playback.showRubyLyrics,
-                        subtitle = s.playback.showRubyLyricsSubtitle,
-                        checked = showRuby,
-                        onCheckedChange = { AppModel.setShowRubyLyrics(it) },
-                        index = 2,
-                        total = 6,
-                        modifier = Modifier.settingsSearchTarget(
-                            "mobile_player_lyrics_ruby",
-                            targetSettingId,
-                        ),
-                    )
-                    SettingsSwitchItem(
-                        title = s.playback.lyricsWordSegmentation,
-                        subtitle = s.playback.lyricsWordSegmentationSubtitle,
-                        checked = wordSeg,
-                        onCheckedChange = { AppModel.setLyricsWordSegmentation(it) },
-                        index = 3,
-                        total = 6,
-                        modifier = Modifier.settingsSearchTarget(
-                            "mobile_player_lyrics_segmentation",
-                            targetSettingId,
-                        ),
-                    )
-                    SettingsSwitchItem(
-                        title = s.playback.smartKaraokeLrc,
-                        subtitle = s.playback.smartKaraokeLrcSubtitle,
-                        checked = smartKaraoke,
-                        onCheckedChange = { AppModel.setSmartKaraokeLrc(it) },
-                        index = 4,
-                        total = 6,
-                        modifier = Modifier.settingsSearchTarget(
-                            "mobile_player_lyrics_karaoke",
-                            targetSettingId,
-                        ),
-                    )
-                    SettingsClickItem(
-                        title = s.playback.lyricsSource,
-                        subtitle = s.playback.lyricsSourceNote,
-                        icon = Icons.Filled.Lyrics,
-                        index = 5,
-                        total = 6,
-                        onClick = { navigator.push(LyricsPluginSettingsScreen()) },
-                        showChevron = true,
-                        modifier = Modifier.settingsSearchTarget(
-                            "mobile_player_lyrics_source",
-                            targetSettingId,
-                        ),
-                    )
-                }
+                PlayerLyricsPresentationSection(
+                    targetSettingId = targetSettingId,
+                    onNavigateLyricsPlugin = { navigator.push(LyricsPluginSettingsScreen()) },
+                )
 
-                SettingsSection(s.appearance.playerLyricsImmersive) {
-                    SettingsSwitchItem(
-                        title = s.appearance.playerLyricsImmersiveToggle,
-                        subtitle = s.appearance.playerLyricsImmersiveNote,
-                        icon = Icons.Filled.Fullscreen,
-                        checked = config.lyricsImmersiveEnabled,
-                        onCheckedChange = { checked ->
-                            haptics.perform(CpHaptic.Tick)
-                            AppModel.updateMobilePlayerCustomConfig {
-                                it.copy(lyricsImmersiveEnabled = checked)
-                            }
-                        },
-                        index = 0,
-                        total = 2,
-                        modifier = Modifier.settingsSearchTarget(
-                            "mobile_player_lyrics_immersive",
-                            targetSettingId,
-                        ),
-                    )
-                    SettingsSliderItem(
-                        title = s.appearance.playerLyricsImmersiveTimeout,
-                        subtitle = s.appearance.playerLyricsImmersiveTimeoutNote,
-                        value = timeout.toFloat(),
-                        onValueChange = { draggingTimeout = it.roundToInt() },
-                        onValueChangeFinished = {
-                            AppModel.updateMobilePlayerCustomConfig {
-                                it.copy(lyricsImmersiveTimeoutSeconds = timeout.coerceIn(2, 15))
-                            }
-                            draggingTimeout = -1
-                        },
-                        valueRange = 2f..15f,
-                        steps = 12,
-                        valueLabel = s.appearance.playerLyricsImmersiveSeconds(timeout),
-                        enabled = config.lyricsImmersiveEnabled,
-                        index = 1,
-                        total = 2,
-                        modifier = Modifier.settingsSearchTarget(
-                            "mobile_player_lyrics_timeout",
-                            targetSettingId,
-                        ),
-                    )
+                if (isAndroid) {
+                    SettingsSection(s.appearance.playerLyricsImmersive) {
+                        SettingsSwitchItem(
+                            title = s.appearance.playerLyricsImmersiveToggle,
+                            subtitle = s.appearance.playerLyricsImmersiveNote,
+                            icon = Icons.Filled.Fullscreen,
+                            checked = config.lyricsImmersiveEnabled,
+                            onCheckedChange = { checked ->
+                                haptics.perform(CpHaptic.Tick)
+                                AppModel.updateMobilePlayerCustomConfig {
+                                    it.copy(lyricsImmersiveEnabled = checked)
+                                }
+                            },
+                            index = 0,
+                            total = 2,
+                            modifier = Modifier.settingsSearchTarget(
+                                "mobile_player_lyrics_immersive",
+                                targetSettingId,
+                            ),
+                        )
+                        SettingsSliderItem(
+                            title = s.appearance.playerLyricsImmersiveTimeout,
+                            subtitle = s.appearance.playerLyricsImmersiveTimeoutNote,
+                            value = timeout.toFloat(),
+                            onValueChange = { draggingTimeout = it.roundToInt() },
+                            onValueChangeFinished = {
+                                AppModel.updateMobilePlayerCustomConfig {
+                                    it.copy(lyricsImmersiveTimeoutSeconds = timeout.coerceIn(2, 15))
+                                }
+                                draggingTimeout = -1
+                            },
+                            valueRange = 2f..15f,
+                            steps = 12,
+                            valueLabel = s.appearance.playerLyricsImmersiveSeconds(timeout),
+                            enabled = config.lyricsImmersiveEnabled,
+                            index = 1,
+                            total = 2,
+                            modifier = Modifier.settingsSearchTarget(
+                                "mobile_player_lyrics_timeout",
+                                targetSettingId,
+                            ),
+                        )
+                    }
                 }
 
                 SettingsSection(s.appearance.playerResetSection) {
@@ -226,5 +162,96 @@ class MobilePlayerSettingsScreen(private val targetSettingId: String? = null) : 
                 }
             }
         }
+    }
+}
+
+/**
+ * 歌词呈现设置分区：全平台通用（桌面端与移动端共享）。
+ */
+@Composable
+fun PlayerLyricsPresentationSection(
+    targetSettingId: String? = null,
+    onNavigateLyricsPlugin: () -> Unit,
+) {
+    val s = cpStrings()
+    val config by AppModel.mobilePlayerCustomConfigFlow.collectAsState()
+    val showMiniPlayerLyrics by AppModel.showMiniPlayerLyricsFlow.collectAsState()
+    val showRuby by AppModel.showRubyLyricsFlow.collectAsState()
+    val wordSeg by AppModel.lyricsWordSegmentationFlow.collectAsState()
+    val smartKaraoke by AppModel.smartKaraokeLrcFlow.collectAsState()
+
+    SettingsSection(s.appearance.playerLyricsPresentation) {
+        SettingsSwitchItem(
+            title = s.appearance.playerLyricsTranslation,
+            subtitle = s.appearance.playerLyricsTranslationNote,
+            checked = config.showTranslation,
+            onCheckedChange = { checked ->
+                AppModel.updateMobilePlayerCustomConfig { it.copy(showTranslation = checked) }
+            },
+            index = 0,
+            total = 6,
+            modifier = Modifier.settingsSearchTarget("mobile_player_translation", targetSettingId),
+        )
+        SettingsSwitchItem(
+            title = s.playback.showMiniPlayerLyrics,
+            subtitle = s.playback.showMiniPlayerLyricsSubtitle,
+            checked = showMiniPlayerLyrics,
+            onCheckedChange = { AppModel.setShowMiniPlayerLyrics(it) },
+            index = 1,
+            total = 6,
+            modifier = Modifier.settingsSearchTarget(
+                "mobile_player_lyrics_mini",
+                targetSettingId,
+            ),
+        )
+        SettingsSwitchItem(
+            title = s.playback.showRubyLyrics,
+            subtitle = s.playback.showRubyLyricsSubtitle,
+            checked = showRuby,
+            onCheckedChange = { AppModel.setShowRubyLyrics(it) },
+            index = 2,
+            total = 6,
+            modifier = Modifier.settingsSearchTarget(
+                "mobile_player_lyrics_ruby",
+                targetSettingId,
+            ),
+        )
+        SettingsSwitchItem(
+            title = s.playback.lyricsWordSegmentation,
+            subtitle = s.playback.lyricsWordSegmentationSubtitle,
+            checked = wordSeg,
+            onCheckedChange = { AppModel.setLyricsWordSegmentation(it) },
+            index = 3,
+            total = 6,
+            modifier = Modifier.settingsSearchTarget(
+                "mobile_player_lyrics_segmentation",
+                targetSettingId,
+            ),
+        )
+        SettingsSwitchItem(
+            title = s.playback.smartKaraokeLrc,
+            subtitle = s.playback.smartKaraokeLrcSubtitle,
+            checked = smartKaraoke,
+            onCheckedChange = { AppModel.setSmartKaraokeLrc(it) },
+            index = 4,
+            total = 6,
+            modifier = Modifier.settingsSearchTarget(
+                "mobile_player_lyrics_karaoke",
+                targetSettingId,
+            ),
+        )
+        SettingsClickItem(
+            title = s.playback.lyricsSource,
+            subtitle = s.playback.lyricsSourceNote,
+            icon = Icons.Filled.Lyrics,
+            index = 5,
+            total = 6,
+            onClick = onNavigateLyricsPlugin,
+            showChevron = true,
+            modifier = Modifier.settingsSearchTarget(
+                "mobile_player_lyrics_source",
+                targetSettingId,
+            ),
+        )
     }
 }

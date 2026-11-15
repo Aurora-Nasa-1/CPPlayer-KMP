@@ -215,32 +215,39 @@ class AppearanceSettingsScreen(
                     )
                 }
 
-                // 4. 手机端播放界面与布局
-                val mobilePlayerConfig by AppModel.mobilePlayerCustomConfigFlow.collectAsState()
-                SettingsSection(s.appearance.sectionMobile) {
-                    SettingsSegmentedItem(
-                        title = s.appearance.playerStyle,
-                        modifier = Modifier.settingsSearchTarget("appearance_modern_mobile_player", targetSettingId),
-                        subtitle = s.appearance.playerStyleNote,
-                        options = listOf(
-                            s.appearance.playerStyleThreePane,
-                            s.appearance.playerStyleStandard,
-                        ),
-                        // 三段式 = 经典多页横滑；标准 = 默认单页整合布局（enabled = true）。
-                        selectedIndex = if (mobilePlayerConfig.enabled) 1 else 0,
-                        onSelect = { index -> AppModel.setModernMobilePlayerEnabled(index == 1) },
-                        index = 0,
-                        total = 2,
-                    )
-                    SettingsClickItem(
-                        title = s.appearance.mobilePreferences,
-                        subtitle = s.appearance.mobilePreferencesNote,
-                        icon = Icons.Filled.Tune,
-                        showChevron = true,
-                        index = 1,
-                        total = 2,
-                        modifier = Modifier.settingsSearchTarget("appearance_mobile_player_layout", targetSettingId),
-                        onClick = { navigator.push(MobilePlayerSettingsScreen()) },
+                // 4. 播放界面与歌词选项（Android 端展示手机播放器样式与偏好，桌面端展示桌面端可调整的歌词选项）
+                if (cp.player.app.platform.isAndroidPlatform()) {
+                    val mobilePlayerConfig by AppModel.mobilePlayerCustomConfigFlow.collectAsState()
+                    SettingsSection(s.appearance.sectionMobile) {
+                        SettingsSegmentedItem(
+                            title = s.appearance.playerStyle,
+                            modifier = Modifier.settingsSearchTarget("appearance_modern_mobile_player", targetSettingId),
+                            subtitle = s.appearance.playerStyleNote,
+                            options = listOf(
+                                s.appearance.playerStyleThreePane,
+                                s.appearance.playerStyleStandard,
+                            ),
+                            // 三段式 = 经典多页横滑；标准 = 默认单页整合布局（enabled = true）。
+                            selectedIndex = if (mobilePlayerConfig.enabled) 1 else 0,
+                            onSelect = { index -> AppModel.setModernMobilePlayerEnabled(index == 1) },
+                            index = 0,
+                            total = 2,
+                        )
+                        SettingsClickItem(
+                            title = s.appearance.mobilePreferences,
+                            subtitle = s.appearance.mobilePreferencesNote,
+                            icon = Icons.Filled.Tune,
+                            showChevron = true,
+                            index = 1,
+                            total = 2,
+                            modifier = Modifier.settingsSearchTarget("appearance_mobile_player_layout", targetSettingId),
+                            onClick = { navigator.push(MobilePlayerSettingsScreen()) },
+                        )
+                    }
+                } else {
+                    PlayerLyricsPresentationSection(
+                        targetSettingId = targetSettingId,
+                        onNavigateLyricsPlugin = { navigator.push(LyricsPluginSettingsScreen()) },
                     )
                 }
 

@@ -226,4 +226,49 @@ class SettingsRegistryTest {
             )
         }
     }
+
+    @Test
+    fun `desktop hides mobile player style switcher but exposes lyrics options`() {
+        withReleaseChannel("debug") {
+            val entries = settingsEntries()
+            val appearanceEntry = entries.first { it.id == "appearance" }
+            val visibleSubItemIds = appearanceEntry.visibleSubItems().map { it.id }.toSet()
+
+            // 桌面端不显示手机端播放器界面设置切换与手机播放器专属项
+            assertFalse(
+                "appearance_modern_mobile_player" in visibleSubItemIds,
+                "桌面端不应显示手机端播放器样式切换 (appearance_modern_mobile_player)",
+            )
+            assertFalse(
+                "appearance_mobile_player_layout" in visibleSubItemIds,
+                "桌面端不应显示手机播放器偏好入口 (appearance_mobile_player_layout)",
+            )
+            assertFalse(
+                "mobile_player_lyrics_immersive" in visibleSubItemIds,
+                "桌面端不应显示手机端专属沉浸歌词 (mobile_player_lyrics_immersive)",
+            )
+
+            // 桌面端显示可以调整的歌词选项
+            val expectedLyricsOptions = listOf(
+                "mobile_player_translation",
+                "mobile_player_lyrics_mini",
+                "mobile_player_lyrics_ruby",
+                "mobile_player_lyrics_segmentation",
+                "mobile_player_lyrics_karaoke",
+                "mobile_player_lyrics_source",
+            )
+            for (id in expectedLyricsOptions) {
+                assertTrue(
+                    id in visibleSubItemIds,
+                    "桌面端应包含可调整的歌词选项: $id",
+                )
+                // 且桌面端点击定位应直接打开 AppearanceSettingsScreen
+                val screen = appearanceEntry.screen(id)
+                assertTrue(
+                    screen is AppearanceSettingsScreen,
+                    "桌面端歌词子项应直接指向 AppearanceSettingsScreen，实际指向: ${screen::class.simpleName}",
+                )
+            }
+        }
+    }
 }

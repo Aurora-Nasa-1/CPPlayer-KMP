@@ -249,6 +249,7 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 subtitleOf = { "切换播放页排版" },
                 keywords = listOf("三段式", "标准", "播放器样式", "单页", "播放页", "播放界面", "歌词", "封面", "布局", "手机播放器", "player", "layout"),
                 sectionOf = { it.appearance.sectionMobile },
+                androidOnly = true,
             ),
             SettingsSubItem(
                 id = "appearance_mobile_player_layout",
@@ -256,6 +257,7 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 subtitleOf = { it.appearance.mobilePreferencesNote },
                 keywords = listOf("播放界面", "歌词翻译", "沉浸歌词", "恢复默认", "播放器"),
                 sectionOf = { it.appearance.sectionMobile },
+                androidOnly = true,
             ),
             SettingsSubItem(
                 id = "mobile_player_lyrics_mini",
@@ -305,6 +307,7 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 subtitleOf = { it.appearance.playerLyricsImmersiveNote },
                 keywords = listOf("沉浸歌词", "全屏歌词", "隐藏控制栏", "immersive"),
                 sectionOf = { it.appearance.playerLyricsImmersive },
+                androidOnly = true,
             ),
             SettingsSubItem(
                 id = "mobile_player_lyrics_timeout",
@@ -312,6 +315,7 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 subtitleOf = { it.appearance.playerLyricsImmersiveTimeoutNote },
                 keywords = listOf("沉浸歌词", "等待时间", "自动隐藏", "timeout"),
                 sectionOf = { it.appearance.playerLyricsImmersive },
+                androidOnly = true,
             ),
             SettingsSubItem(
                 id = "mobile_player_reset",
@@ -319,6 +323,7 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 subtitleOf = { "重置歌词呈现与沉浸歌词选项" },
                 keywords = listOf("恢复默认", "重置", "播放器设置", "reset"),
                 sectionOf = { it.appearance.playerResetSection },
+                androidOnly = true,
             ),
             SettingsSubItem(
                 id = "appearance_font_roundness",
@@ -359,12 +364,14 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
             ),
         ),
         screen = { targetId ->
-            if (targetId != null && targetId.startsWith("mobile_player_")) {
-                MobilePlayerSettingsScreen(targetId)
-            } else if (targetId == "appearance_mobile_player_layout") {
-                MobilePlayerSettingsScreen(targetId)
-            } else if (targetId == "appearance_modern_mobile_player") {
-                AppearanceSettingsScreen(targetId)
+            if (isAndroidPlatform()) {
+                if (targetId != null && targetId.startsWith("mobile_player_")) {
+                    MobilePlayerSettingsScreen(targetId)
+                } else if (targetId == "appearance_mobile_player_layout") {
+                    MobilePlayerSettingsScreen(targetId)
+                } else {
+                    AppearanceSettingsScreen(targetId)
+                }
             } else {
                 AppearanceSettingsScreen(targetId)
             }
