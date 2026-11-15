@@ -22,9 +22,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.BentoCard
+import cp.player.app.ui.component.CpAutoSizeText
 import cp.player.app.ui.component.CpCoverPlaceholder
 import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.ScrollColumn
@@ -108,11 +110,12 @@ internal fun PlaylistHeaderInfo(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                CpText(
+                CpAutoSizeText(
                     text = summary.name,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,
+                    minFontSize = 14.sp,
                     modifier = Modifier.weight(1f, fill = false),
                 )
                 if (isFavorite) {
@@ -162,11 +165,12 @@ private fun headerMetaLine(creatorName: String?, trackCountLabel: String): Strin
  */
 @Composable
 internal fun PlaylistTopBarTitle(summary: PlaylistSummary) {
-    CpText(
+    CpAutoSizeText(
         text = summary.name,
         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
         color = MaterialTheme.colorScheme.onSurface,
         maxLines = 1,
+        minFontSize = 12.sp,
         modifier = Modifier.fillMaxWidth(),
     )
 }
@@ -232,12 +236,13 @@ internal fun PlaylistInfoRail(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                CpText(
+                CpAutoSizeText(
                     text = summary.name,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
                     maxLines = 2,
+                    minFontSize = 15.sp,
                     modifier = Modifier.weight(1f, fill = false),
                 )
                 if (isFavorite) {

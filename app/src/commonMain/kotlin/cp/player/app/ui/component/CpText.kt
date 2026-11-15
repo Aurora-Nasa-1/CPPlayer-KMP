@@ -3,6 +3,8 @@ package cp.player.app.ui.component
 import androidx.compose.foundation.MarqueeAnimationMode
 import androidx.compose.foundation.MarqueeSpacing
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
@@ -151,7 +153,9 @@ private const val MAX_EXTENSION_LEN = 6
  *
  * - 多了 [reveal] / [ellipsisMode] / [emphasized] 三个可选参数；
  * - [fontWeight] 走参数而不是 `style.copy(fontWeight = …)`（它参与测量，必须合进 style）；
- * - 内部渲染的仍是 material3 的 [Text]，`Modifier`（含 `sharedBounds`）原样传给它。
+ * - 内部渲染的仍是 material3 的 [Text]，`Modifier`（含 `sharedBounds`）原样传给它；
+ * - 传了 [autoSize] 时会多包一层 `BoxWithConstraints` 做渲染前测量，此时 `Modifier`
+ *   作用在容器上（见 [CpAutoSizeText]）。
  *
  * @param emphasized 焦点位标记。只有它为真的文本才允许**自动**滚动，见 [CpTextReveal.Marquee]。
  * @param marqueeEnabled 是否**允许**自动滚动，默认 true。
@@ -183,6 +187,7 @@ fun CpText(
     textDecoration: TextDecoration? = null,
     fontFamily: FontFamily? = null,
     isJapanese: Boolean? = null,
+    autoSize: CpTextAutoSize? = null,
 ) {
     // 字重 / 字号 / 行距等参与测量，颜色不影响宽度 ⇒ 合入样式。
     val merged = when {
@@ -205,13 +210,13 @@ fun CpText(
     // 汉字 / 全角标点 → MiSans 或 Noto Sans JP（声明与路由见 theme/FontStack.kt）。
     val families = LocalAppFontFamilies.current
 
-    var hasVisualOverflow by remember(text, resolvedStyle, maxLines) { mutableStateOf(false) }
-    var maxWidthPx by remember(text, resolvedStyle, maxLines) { mutableIntStateOf(0) }
+    var hasVisualOverflow by remember(text, resolvedStyle, maxLines, autoSize) { mutableStateOf(false) }
+    var maxWidthPx by remember(text, resolvedStyle, maxLines, autoSize) { mutableIntStateOf(0) }
 
     // 外部回调走 rememberUpdatedState：不把它放进 remember 的 key，否则调用方每次重组
     // 传进来的新 lambda 都会重建内部回调（并让下游的 Text 认为回调变了）。
     val externalLayout = rememberUpdatedState(onTextLayout)
-    val onLayout = remember(text, resolvedStyle, maxLines) {
+    val onLayout = remember(text, resolvedStyle, maxLines, autoSize) {
         { layout: TextLayoutResult ->
             // ⚠️ 单向置位，见本组件 KDoc。宽度从 layoutInput 现取，不再额外测量一遍。
             if (!hasVisualOverflow && layout.hasVisualOverflow) {
@@ -270,9 +275,10 @@ fun CpText(
 
     if (hasVisualOverflow && effective == CpTextReveal.Hover) {
         CpHoverReveal(fullText = text) {
-            Text(
+            CpTextRender(
                 text = styled,
-                modifier = modifier.then(marquee),
+                modifier = modifier,
+                marquee = marquee,
                 style = resolvedStyle,
                 color = color,
                 maxLines = maxLines,
@@ -281,12 +287,14 @@ fun CpText(
                 overflow = overflow,
                 softWrap = softWrap,
                 onTextLayout = onLayout,
+                autoSize = autoSize,
             )
         }
     } else {
-        Text(
+        CpTextRender(
             text = styled,
-            modifier = modifier.then(marquee),
+            modifier = modifier,
+            marquee = marquee,
             style = resolvedStyle,
             color = color,
             maxLines = maxLines,
@@ -295,6 +303,7 @@ fun CpText(
             overflow = overflow,
             softWrap = softWrap,
             onTextLayout = onLayout,
+            autoSize = autoSize,
         )
     }
 }
@@ -327,6 +336,7 @@ fun CpText(
     fontFamily: FontFamily? = null,
     inlineContent: Map<String, InlineTextContent> = mapOf(),
     isJapanese: Boolean? = null,
+    autoSize: CpTextAutoSize? = null,
 ) {
     val rawText = text.text
     val merged = when {
@@ -355,12 +365,12 @@ fun CpText(
             else AnnotatedString.Range(metrics, span.start, span.end, span.tag)
         }
     }
-    var hasVisualOverflow by remember(rawText, layoutSpans, text.paragraphStyles, resolvedStyle, maxLines) {
+    var hasVisualOverflow by remember(rawText, layoutSpans, text.paragraphStyles, resolvedStyle, maxLines, autoSize) {
         mutableStateOf(false)
     }
 
     val externalLayout = rememberUpdatedState(onTextLayout)
-    val onLayout = remember(rawText, layoutSpans, text.paragraphStyles, resolvedStyle, maxLines) {
+    val onLayout = remember(rawText, layoutSpans, text.paragraphStyles, resolvedStyle, maxLines, autoSize) {
         { layout: TextLayoutResult ->
             if (!hasVisualOverflow && layout.hasVisualOverflow) {
                 hasVisualOverflow = true
@@ -393,9 +403,10 @@ fun CpText(
 
     if (hasVisualOverflow && effective == CpTextReveal.Hover) {
         CpHoverReveal(fullText = rawText) {
-            Text(
+            CpTextRender(
                 text = styled,
-                modifier = modifier.then(marquee),
+                modifier = modifier,
+                marquee = marquee,
                 style = resolvedStyle,
                 color = color,
                 maxLines = maxLines,
@@ -405,12 +416,14 @@ fun CpText(
                 softWrap = softWrap,
                 inlineContent = inlineContent,
                 onTextLayout = onLayout,
+                autoSize = autoSize,
             )
         }
     } else {
-        Text(
+        CpTextRender(
             text = styled,
-            modifier = modifier.then(marquee),
+            modifier = modifier,
+            marquee = marquee,
             style = resolvedStyle,
             color = color,
             maxLines = maxLines,
@@ -420,6 +433,77 @@ fun CpText(
             softWrap = softWrap,
             inlineContent = inlineContent,
             onTextLayout = onLayout,
+            autoSize = autoSize,
+        )
+    }
+}
+
+/**
+ * [CpText] 两个重载共用的渲染层。
+ *
+ * 只有 [autoSize] 非空时才额外包一层 [BoxWithConstraints]：普通文本必须保持
+ * 「`Modifier` 直接挂在 `Text` 上」的原有布局路径，多一个 Box 就可能改变尺寸或对齐。
+ *
+ * [marquee] 刻意和 [modifier] 分开：它挂在内部 `Text` 上，这样 [BoxWithConstraints]
+ * 拿到的仍是容器真实约束。否则跑马灯会把测量约束改成无限宽，缩字直接失效。
+ */
+@Composable
+private fun CpTextRender(
+    text: AnnotatedString,
+    modifier: Modifier,
+    marquee: Modifier,
+    style: TextStyle,
+    color: Color,
+    maxLines: Int,
+    minLines: Int,
+    textAlign: TextAlign?,
+    overflow: TextOverflow,
+    softWrap: Boolean,
+    inlineContent: Map<String, InlineTextContent> = emptyMap(),
+    autoSize: CpTextAutoSize? = null,
+    onTextLayout: (TextLayoutResult) -> Unit,
+) {
+    if (autoSize == null) {
+        Text(
+            text = text,
+            modifier = modifier.then(marquee),
+            style = style,
+            color = color,
+            maxLines = maxLines,
+            minLines = minLines,
+            textAlign = textAlign,
+            overflow = overflow,
+            softWrap = softWrap,
+            inlineContent = inlineContent,
+            onTextLayout = onTextLayout,
+        )
+        return
+    }
+
+    BoxWithConstraints(modifier = modifier) {
+        val fittedStyle = rememberCpTextAutoSizeStyle(
+            text = text,
+            style = style,
+            maxLines = maxLines,
+            softWrap = softWrap,
+            autoSize = autoSize,
+            constraints = constraints,
+        )
+        Text(
+            text = text,
+            // 固定宽度 / weight 槽位里让文本占满，textAlign 才有意义；
+            // 纯 wrap-content 场景保持按内容宽度布局，避免挤掉同行兄弟。
+            modifier = (if (constraints.minWidth > 0) Modifier.fillMaxWidth() else Modifier)
+                .then(marquee),
+            style = fittedStyle,
+            color = color,
+            maxLines = maxLines,
+            minLines = minLines,
+            textAlign = textAlign,
+            overflow = overflow,
+            softWrap = softWrap,
+            inlineContent = inlineContent,
+            onTextLayout = onTextLayout,
         )
     }
 }

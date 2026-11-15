@@ -1,5 +1,6 @@
 package cp.player.app.ui.screen
 
+import cp.player.app.ui.component.CpAutoSizeText
 import cp.player.app.ui.component.CpText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -39,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
@@ -877,10 +879,10 @@ private fun MetricCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
             )
-            CpText(
+            CpAutoSizeText(
                 value,
                 // 两列时卡片内容宽度约 138dp；英文「1,284 tracks」在 headlineSmall
-                // 下会溢出，降一档到 titleLarge 仍保持 M3E 的层级感。
+                // 下会溢出，降一档到 titleLarge 仍保持 M3E 的层级感；再放不下就缩字。
                 style = if (compact) {
                     MaterialTheme.typography.titleLarge
                 } else {
@@ -888,6 +890,7 @@ private fun MetricCard(
                 },
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
+                minFontSize = 14.sp,
                 // 兜底省略号由 CpText 自己接管：溢出时桌面端悬停可看全，
                 // 这里不再手写 `overflow`（CpText 固定用 Ellipsis）。
             )
